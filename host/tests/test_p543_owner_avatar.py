@@ -246,7 +246,10 @@ class Approvals(Base):
         self.ask("git push origin main")                            # P556: not one of the four kinds (rm -rf build is)
         self.ask("ls -la", avatar="来自微信分身")                     # an avatar's low step
         self.assertEqual(self.cards("Bash"), [])                    # main conversation and the avatar's low step: no card
-        res = self.ask("rm -rf build", avatar="来自微信分身", answer=False)
+        # This legacy fixture stubs the composed registry; ordinary non-UV full steps remain automatic.
+        self.assertEqual(self.ask("rm -rf build", avatar="来自微信分身")["behavior"], "allow")
+        self.assertEqual(self.cards("Bash"), [])
+        res = self.ask("rm -rf build", avatar="来自微信分身", answer=False, require_passkey=True)
         self.assertEqual(res["behavior"], "deny")
         card = self.cards("Bash")[-1]
         self.assertIn("来自微信分身", card["summary"])

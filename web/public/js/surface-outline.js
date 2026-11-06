@@ -32,6 +32,7 @@ export function paintSurfaceOutline(node) {
   if(node.classList.contains('aj-surface-outline')!==needs)node.classList.toggle('aj-surface-outline',needs);
 }
 export function initSurfaceOutlines() {
+  if(typeof document==='undefined' || typeof MutationObserver!=='function' || typeof requestAnimationFrame!=='function')return;
   let queued=false;
   const update=()=>{queued=false;for(const n of document.querySelectorAll('.toast.on,.sheet:not([hidden]),.ajmodal:not(.setpage):not([hidden]) > .box'))paintSurfaceOutline(n);};
   const queue=()=>{if(!queued){queued=true;requestAnimationFrame(update);}};

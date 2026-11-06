@@ -357,22 +357,52 @@ def _http(url: str, data: bytes | None, timeout: float) -> int:
         return e.code
 
 
+def _http_retry(url, data):
+    """A read-only probe gets one retry for 5xx/timeout, never a binding repair."""
+    for attempt in range(2):
+        try:
+            code = _http(url, data, NET_TIMEOUT)
+        except (TimeoutError, urllib.error.URLError) as exc:
+            timeout = isinstance(exc, TimeoutError) or isinstance(getattr(exc, 'reason', None), TimeoutError)
+            if timeout and attempt == 0:
+                continue
+            if timeout:
+                return None
+            raise
+        if 500 <= code <= 599:
+            if attempt == 0:
+                continue
+            return None
+        return code
+
+
+def _server_unavailable():
+    return {**_c('dashboard', WARN,
+                '服务端暂时不可用，稍后再次检查；本次无法验证账户连接 / '
+                'Server temporarily unavailable; retry later. Account connection could not be verified.', ''),
+            'server_unavailable': True}
+
+
 def check_dashboard(st: State) -> dict:
     try:
         api, app = cloud.api_url(st), cloud.app_url(st)
     except cloud.CloudError:
         return _c("dashboard", FAIL, "服务器 / 账号后台地址不是 https:// / not https://", "检查 config.json / AGENTJ_API_URL")
     try:
-        code = _http(api.rstrip("/") + "/v1/host/poll", b"{}", NET_TIMEOUT)
+        code = _http_retry(api.rstrip("/") + "/v1/host/poll", b"{}")
     except Exception as e:  # noqa: BLE001
         return _c("dashboard", FAIL, f"{api} 连不上 / unreachable ({_why(e)})", "检查网络 / 代理 / check network, proxy")
+    if code is None:
+        return _server_unavailable()
     if code != 400:
         return _c("dashboard", FAIL, f"{api} 答复异常 / unexpected answer (HTTP {code})",
                   "Agent J 服务器暂时不可用，稍后再试 / the Agent J server is unavailable, retry later")
     try:
-        app_code = _http(app, None, NET_TIMEOUT)
+        app_code = _http_retry(app, None)
     except Exception as e:  # noqa: BLE001
         return _c("dashboard", WARN, f"服务器 ok · 账号后台 {app} 连不上 / account dashboard unreachable ({_why(e)})", "")
+    if app_code is None:
+        return _server_unavailable()
     if app_code >= 500:
         return _c("dashboard", WARN, f"服务器 ok · 账号后台 / account dashboard {app} HTTP {app_code}", "")
     return _c("dashboard", OK, f"服务器 / server {api} · 账号后台 / account dashboard {app}")
@@ -1758,39 +1788,19 @@ def check_main_identity(st):
 
 
 def check_skills(home=None) -> dict:
-    """P57: every skill the package ships (agentj/skills/*: agentj-config, agentj-recall, agentj-manual …) linked into the
-    four harness skill folders. Never ✗: the main Agent works without them (its core names `agentj recall`); a foreign
-    copy of the same name is the owner's and stays (a conflict, reported, never replaced)."""
-    from . import personalize
+    """Report automatic bundled skill updates, without a per-skill decision queue."""
+    from . import personalize, preferences
     try:
-        rows = personalize.status(home)
+        try:language=preferences.get(preferences.read()[1],'appearance.language','zh')
+        except (OSError,preferences.ConfigError):language='zh'
+        rows=personalize.status(home)
+        ready=all(r['installed'] for r in rows)
+        detail=personalize.summary(home,language)
+        if not ready:
+            detail='Built-in skills update automatically at service startup; user configuration is preserved' if language=='en' else '内置技能将在服务启动时自动更新，用户配置原样保留，旧逻辑另存备份'
+        return _c('skills', OK if ready else WARN, detail)
     except OSError:
-        return _c("skills", WARN, "随包技能：检查失败 / bundled skills: check failed")
-    names = personalize.bundled()
-    missing = sorted({r["skill"] for r in rows if not r["installed"] and not r["conflict"] and not r.get("kept") and not r.get("legacy")})
-    foreign = sorted({r["skill"] for r in rows if r["conflict"]})
-    try:                                 # P244 (§30): a skill alias that clashes with another name / alias is dropped
-        from .workflows import common_skills
-        clash = sorted({f"{c['alias']} ({c['skill'].rsplit(':', 1)[-1]})" for c in common_skills(None)[2]})[:8]
-    except (OSError, ValueError):
-        clash = []
-    legacy = sorted({r["skill"] for r in rows if r.get("legacy")})
-    if not missing and not foreign and not legacy and not clash:
-        kept = sorted({r["skill"] for r in rows if r.get("kept")})
-        detail = f"；已选择保留 / chosen copies kept: {', '.join(kept)}" if kept else ""
-        return _c("skills", OK, f"随包技能已就绪 / bundled skills ready: {', '.join(names)}" + detail)
-    parts = ([f"未安装 / not linked: {', '.join(missing)}"] if missing else []) + \
-            ([f"同名副本有修改或来源未确认，已保留 / modified or unverified copy kept: {', '.join(foreign)}"] if foreign else []) + \
-            ([f"旧版随包副本，启动时自动更新 / released copies update at startup: {', '.join(legacy)}"] if legacy else []) + \
-            ([f"技能别名重名，后来的没用上 / alias clash, the later one dropped: {', '.join(clash)}"] if clash else [])
-    hint = "agentj skill install" if missing or legacy else ""
-    if foreign:
-        choices=[]
-        for name in foreign:
-            can_keep=all(r.get("can_keep") for r in rows if r["skill"]==name and r["conflict"])
-            choices.append(f"agentj skill replace {name}" + (f" / agentj skill keep {name}" if can_keep else " (副本无法完整读取，请先检查权限 / check unreadable copy permissions first)"))
-        hint = "; ".join(filter(None, [hint] + choices))
-    return _c("skills", WARN, "随包技能 / bundled skills — " + "; ".join(parts), hint)
+        return _c('skills', WARN, '内置技能将在服务启动时自动更新 / Built-in skills update automatically at service startup')
 
 
 for _name in [n for n in list(globals()) if n.startswith("check_") and callable(globals()[n])]:

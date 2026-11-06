@@ -322,6 +322,10 @@ class RemotePair:
         return cloud.post_json(cloud.api_url(self.host.st,link)+'/v1/host/remote-pair',cloud.envelope(POLL_CONTEXT,body,self.host.sk))
 
     async def run(self):
+        from .poll_backoff import Backoff, response_delay
+        backoff = Backoff()
+        next_poll = 0.0
+        inflight = None
         from .reporter import in_daemon_thread
         while True:
             try:
@@ -333,14 +337,23 @@ class RemotePair:
                     cid=p.cid; self.host._pair_finish(p,{'ev':'denied','reason':'remote_pair_disabled'})
                     if cid is not None: await self.host.close_cid(cid,'remote_pair_disabled')
                 link=cloud.read_cloud(self.host.st)
-                if link:
+                if (link and time.monotonic() >= next_poll and not backoff.remaining()
+                        and (inflight is None or inflight.done())):
+                    next_poll = time.monotonic() + 4
                     results=[{'id':k,'reply':v[1]} for k,v in list(self.results.items())[-4:]]
                     t0=int(time.time()*1000)
-                    status,obj=await asyncio.wait_for(in_daemon_thread(self.poll,link,results),12)
+                    inflight = asyncio.ensure_future(in_daemon_thread(self.poll,link,results))
+                    inflight.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+                    done, _ = await asyncio.wait({inflight}, timeout=12)
+                    if not done: raise TimeoutError
+                    status,obj=inflight.result()
+                    if status == 200: backoff.reset()
+                    else: backoff.failed(cloud.status_class(status), response_delay(status, obj))
                     if status==200 and isinstance(obj,dict): self.learn_clock(obj.get('now'),t0,int(time.time()*1000))
                     if status==200 and isinstance(obj.get('requests'),list) and len(obj['requests'])<=4:
                         for env in obj['requests']: await self.execute(env)
             except Exception:
                 # No exception repr: it may contain pairing material or HTTP data.
+                backoff.failed()
                 self.host.st.log('remote_pair_poll',status='failed')
-            await asyncio.sleep(4)
+            await asyncio.sleep(1)

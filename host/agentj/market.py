@@ -1750,10 +1750,10 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
             print(_perm_refusal(name, res, bool(perm_extra), pub_changed, bool(audit_blk)), file=out)
             st.log("plaza_pkg_install", name=m["name"], result="host_" + str(res.get("why"))[:20])
             return EXIT_PERMISSION
-        g = {"rid": res.get("rid"), "device": res.get("device")}
+        g = {"rid": res.get("rid"), "device": res.get("device"), **({"inherited": True, "parent_grant": res.get("parent_grant")} if res.get("inherited") is True else {})}
         grant, pub_grant = (g if perm_extra else None), (g if pub_changed else None)
         audit_grant = {**g, "findings": [a["rule"] for a in audit_blk]} if audit_blk else None
-        print("主人已在手机上签名允许这次安装 / the owner allowed this install on the phone (signed)", file=out)
+        print("按已签署的全放行档自动安装，未请求新签名 / installed under signed Full access; no new signature requested" if res.get("inherited") else "主人已在手机上签名允许这次安装 / the owner allowed this install on the phone (signed)", file=out)
         if m["type"] == "workflow":
             print(WS_DIGEST, file=out)
     elif (perm_extra and not _starter) or pub_changed or audit_blk:
@@ -1767,14 +1767,17 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
             st.log("plaza_pkg_install", name=m["name"], result=("permission_" if items else "publisher_" if pub_changed else "audit_")
                    + ("no_serve" if res is None else str(res.get("why"))[:20]))
             return EXIT_PERMISSION
-        g = {"rid": res.get("rid"), "device": res.get("device")}
+        g = {"rid": res.get("rid"), "device": res.get("device"), **({"inherited": True, "parent_grant": res.get("parent_grant")} if res.get("inherited") is True else {})}
         grant = g if items else None
         pub_grant = g if pub_changed else None
         audit_grant = {**g, "findings": [a["rule"] for a in audit_blk]} if audit_blk else None
         what = [x for x in (("权限", "these permissions") if items else None, ("新的发布方", "the new publisher") if pub_changed else None,
                             ("审计拦下的这几处（只这一次）", "the audit findings (this one time)") if audit_blk else None) if x]
-        print("和".join(z for z, _ in what) + "：主人已在手机上签名允许 / the owner allowed " + " and ".join(e for _, e in what)
-              + " on the phone (signed)", file=out)
+        if res.get("inherited"):
+            print("按已签署的全放行档自动处理，未请求新签名 / authorised by signed Full access; no new signature requested", file=out)
+        else:
+            print("和".join(z for z, _ in what) + "：主人已在手机上签名允许 / the owner allowed " + " and ".join(e for _, e in what)
+                  + " on the phone (signed)", file=out)
 
     vran = False
     # 1. install.verify — in a throw-away copy of the raw package (before rendering, FORMAT §7.7), only inside a real sandbox
@@ -2150,7 +2153,7 @@ def _install_card(st, m, files, sha, certified, downgrade, *, name, version, rep
         if res is None or not res.get("ok"):
             print(_perm_refusal(name, res, False, pubr["changed"], bool(audit_blk)), file=out)
             return EXIT_PERMISSION
-        g = {"rid": res.get("rid"), "device": res.get("device")}
+        g = {"rid": res.get("rid"), "device": res.get("device"), **({"inherited": True, "parent_grant": res.get("parent_grant")} if res.get("inherited") is True else {})}
         pub_grant = g if pubr["changed"] else None
         audit_grant = {**g, "findings": [a["rule"] for a in audit_blk]} if audit_blk else None
     r = jcards_pkg.install(st.root, files, {"name": m["name"], "version": m["version"], "sha256": sha, "certified": certified})

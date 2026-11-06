@@ -251,7 +251,7 @@ def _mail_summary(target: dict, lang: str) -> str:
                       *(changes or [tr('设置未改变', 'Settings unchanged')])])
 
 
-CLI_REASONS = frozenset(('unknown', 'offline', 'no_device', 'host_unavailable', 'estop', 'group_source', 'owner_grant_scope',
+CLI_REASONS = frozenset(('level_harness', 'unknown', 'offline', 'no_device', 'host_unavailable', 'estop', 'group_source', 'owner_grant_scope',
                          'timeout', 'device', 'serve_stop', 'agent_gone', 'superseded', 'too_many'))
 
 

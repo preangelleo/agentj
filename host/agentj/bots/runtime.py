@@ -12,6 +12,7 @@ import struct
 import time
 from websockets.asyncio.client import connect
 from .. import cloud,wire
+from ..poll_backoff import Backoff, response_delay
 from .store import BotError,canonical
 from .visitor import VisitorSession,public
 from .engine import Engine,UNAVAILABLE
@@ -27,6 +28,7 @@ class Runtime:
     def __init__(self,manager):
         self.manager=manager;self.host=manager.host;self.seated=True;self.tasks={};self.active={};self.stopping=False;self.epochs={};self.synced={};self.pruned=0;self.telegram_tasks={};self.telegram_epochs={};self.telegram_targets={}
         self.knowledge_tasks={}
+        self.registration_tasks={};self.registration_backoffs={};self.registration_tickets={}
         self.owner_guest=None   # P297: GuestChannel on the owner's own Telegram bot, or None
     def seat_ok(self):
         f=getattr(self.host,'seat_refusal',None)
@@ -102,13 +104,42 @@ class Runtime:
             ch=self.owner_guest=GuestChannel(self,wanted,bot_id,send)
         return ch
     async def register(self,bid):
+        epoch=self.manager.state().lifecycle(bid)['epoch']
+        cached=self.registration_tickets.get(bid)
+        if cached and cached[1]==epoch and time.monotonic()-cached[2]<60:
+            return cached[:2]
+        task=self.registration_tasks.get(bid)
+        if task is None or task.done():
+            backoff=self.registration_backoffs.setdefault(bid,Backoff())
+            if backoff.remaining():raise BotError('registration_unavailable')
+            task=asyncio.create_task(self._register_attempt(bid,backoff))
+            # Shield HTTP work from one caller cancelling; all entry points share this flight.
+            task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+            self.registration_tasks[bid]=task
+        result = await asyncio.shield(task)
+        if result[1] != self.manager.state().lifecycle(bid)['epoch']:
+            raise BotError('registration_unavailable')
+        return result
+    async def _register_attempt(self,bid,backoff):
+        try:
+            ticket,epoch=await self._register_request(bid,backoff)
+        except (cloud.CloudError,TimeoutError,OSError):
+            backoff.failed()
+            raise
+        self.registration_tickets[bid]=(ticket,epoch,time.monotonic())
+        backoff.reset()
+        return ticket,epoch
+    async def _register_request(self,bid,backoff):
         store=self.manager.state();c=store.get(bid);now=int(time.time());life=store.lifecycle(bid);epoch=life['epoch']
         manifest={'bot':bid,'host':wire.b64u(public(self.host.sk)),'epoch':epoch,'expires':now+300,'slug':c['slug'],'title':c['title'],
                   'description':c['description'],'language':c['language'],'enabled':c['enabled'],'status':'removed' if life['removed'] else 'enabled' if c['enabled'] else 'paused','embed_origins':c['embed_origins'],'widget':c['widget']}
         signature=wire.b64u(self.host.sk.sign(b'agentjarvis/bot-manifest-v1\n'+canonical(manifest).encode()))
         inner={'v':1,'t':'bots_register','channel':self.host.channel,'ts':now,'seq':time.time_ns()//1000000,'manifest':manifest,'manifest_sig':signature}
-        code,value=await asyncio.to_thread(cloud.post_json,cloud.api_url(self.host.st)+'/v1/host/bots/register',cloud.envelope('agentjarvis-host-bots-register-v1',inner,self.host.sk))
-        if code!=200 or not isinstance(value.get('host_ticket'),dict):raise BotError('registration_unavailable')
+        from ..reporter import in_daemon_thread
+        code,value=await in_daemon_thread(cloud.post_json,cloud.api_url(self.host.st)+'/v1/host/bots/register',cloud.envelope('agentjarvis-host-bots-register-v1',inner,self.host.sk))
+        if code!=200 or not isinstance(value.get('host_ticket'),dict):
+            backoff.failed(cloud.status_class(code),response_delay(code,value))
+            raise BotError('registration_unavailable')
         return value['host_ticket'],epoch
     async def serve_bot(self,bid):
         while not self.stopping:

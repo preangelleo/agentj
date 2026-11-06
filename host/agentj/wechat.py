@@ -120,9 +120,9 @@ def error_hint(code, lang='zh'):
 
 
 class HandoffSend(Send):
-    def __init__(self, channel, record, text):
+    def __init__(self, channel, record, text, *, autonomous=False):
         super().__init__('wechat', secrets.token_urlsafe(16), record['turn'], text=text, by={'mail':'Email','telegram':'Telegram'}.get(record.get('source'), 'WeChat'),
-                         source=provenance.wechat_task(record['id']))
+                         source=(provenance.automation('held-channel-data') if autonomous else provenance.wechat_task(record['id'])))
         self.owner, self.record = channel, record
         self.generation = channel.store.data['generation']
 
@@ -900,14 +900,36 @@ class WeChat:
                 r['state'] = 'pending'
         self.store.save()
 
-    async def approval(self, summary, target, ttl=300, *, rid=None, pk=True):
-        """Existing signed paired-remote approval/log path; no level/goal/grant bypass.
-    pk=False requests a signed tap; resulting main actions retain their own approval rules."""
+    async def approval(self, summary, target, ttl=300, *, rid=None, pk=True, receipt=None):
+        """UV stays on the paired-remote path; full access handles ordinary data transfer/unbind.
+
+        Automatic transfer never grants owner or delegated execution authority.
+        """
         from .serve import Ask
+        from . import approval_level
+        if self.h.stopped() or self.closed:
+            return False
         rid = rid or secrets.token_hex(16)
+        # Transferring an already held request conveys data, never owner authority.
+        transfer = not pk and isinstance(target, dict) and set(target) == {'id'}
+        unbind = not pk and target == {'op': 'unbind'}
+        row = self.store.data['records'].get(target['id']) if transfer and hasattr(self, 'store') else None
+        live_transfer = transfer and row and row.get('state') == 'pending' and row.get('until', 0) > self.clock()
+        if ((live_transfer or unbind) and not self.h.stopped() and not self.closed
+                and approval_level.level(getattr(self.h, 'preferences', {}), self.h.st) == 'harness'):
+            approvals.record(self.h.st, rid=rid, agent='host', tool='wechat_confirm',
+                             input_sha256=approvals.input_digest(target),
+                             shown_sha256=approvals.shown_digest('wechat_confirm', summary),
+                             decision='allow', reason='level_harness', grant=approval_level.level_grant(self.h.st))
+            self.h.st.log('wechat_confirmation_auto', operation='transfer_data' if transfer else 'unbind',
+                          owner_answered=False, execute=False)
+            if isinstance(receipt, dict):
+                receipt['autonomous'] = True
+            return True
         a = Ask(rid, 'wechat_confirm', summary, approvals.shown_digest('wechat_confirm', summary), target,
                 approvals.input_digest(target), time.monotonic() + ttl,
-                asyncio.get_running_loop().create_future(), pk_if_any=pk)
+                asyncio.get_running_loop().create_future(), pk_if_any=pk,
+                require_passkey=target == {'op': 'setup'})
         self.cards[target.get('id', rid)] = a
         self.h._post(self.h._send_ready, lambda s: self.h._ask_msg(a, s))
         self.h.status_changed()
@@ -931,16 +953,17 @@ class WeChat:
                 if self.h.lang == 'zh' else 'From WeChat · Owner confirmation\nForward this request only; attachments remain untrusted, sensitive actions still require approval.\n')
         text = text.replace('来自微信', '来自' + {'mail':'邮件', 'telegram':'Telegram'}.get(r.get('source'), '微信')).replace('From WeChat', 'From ' + r.get('source', 'WeChat'))
         text += r['text'][:1000] + '\n' + '\n'.join(r['paths'])
-        allowed = await self.approval(text, {'id': r['id']}, max(1, r['until'] - self.clock()), pk=False)
+        receipt = {}
+        allowed = await self.approval(text, {'id': r['id']}, max(1, r['until'] - self.clock()), receipt=receipt, pk=False)
         if self.closed or self.h.stopped():
             return                           # restart / stop keeps the durable pending request
         if allowed:
-            await self.claim(r['id'], approved=True)
+            await self.claim(r['id'], approved=True, autonomous=receipt.get('autonomous') is True)
         elif r['state'] == 'pending':
             r['state'] = 'expired' if r['until'] <= self.clock() else 'denied'
             self.store.save()
 
-    async def claim(self, rid, *, source=None, approved=False):
+    async def claim(self, rid, *, source=None, approved=False, autonomous=False):
         async with self.handoff_lock:
             if not approved and not (isinstance(source, dict) and source.get('kind') == 'phone' and source.get('role') == 'owner'):
                 return {'ok': False, 'why': 'owner_phone_required'}
@@ -963,8 +986,10 @@ class WeChat:
             else:
                 self.h.hist_update(page['id'], text='', end='open')
             r['turn'] = page['id']
-            send = HandoffSend(self, r, 'WeChat request data; owner confirmed transfer only. Apply normal approvals.\n' + DRAW_HINT +
-                                peer_guard.wrap('wechat', 'WeChat', json.dumps(payload, ensure_ascii=False)))
+            transfer_note = ('Host transferred request data automatically; no owner answer or execution authorization.\n' if autonomous else
+                             'WeChat request data; owner confirmed transfer only. Apply normal approvals.\n')
+            send = HandoffSend(self, r, transfer_note + DRAW_HINT +
+                                peer_guard.wrap('wechat', 'WeChat', json.dumps(payload, ensure_ascii=False)), autonomous=autonomous)
             self.h.agent.submit(send)
             r['state'] = 'claimed'
             self.store.save()
@@ -1007,7 +1032,7 @@ class WeChat:
             if provenance.untrusted_turn(getattr(self.h, 'agent', None)):
                 return {'ok': False, 'why': 'owner_required'}
             summary = ('连接微信 ClawBot，仅服务扫码者本人。' if op == 'setup' else '解除这台主机的微信通道绑定。') if self.h.lang == 'zh' else ('Connect WeChat ClawBot for the scanning owner only.' if op == 'setup' else 'Unbind this host from WeChat.')
-            # P573 §三: connecting / unbinding the channel is reversible (scan again) — an ordinary signed button, no Face ID
+            # #520: unbinding is reversible; setup establishes a new channel trust root and requires UV.
             if not await self.approval(summary, {'op': op}, pk=False):
                 return {'ok': False, 'why': 'denied'}
             return await (self.setup() if op == 'setup' else self.unbind())

@@ -192,7 +192,7 @@ class SameHost(Base):
             d, took = self.permission(cmd)
             self.assertEqual(d.get("behavior"), "allow", (cmd, d))
             self.assertLess(took, 0.5)
-            self.assertEqual(self.last()["reason"], "same_host")
+            self.assertIn(self.last()["reason"], ("same_host", "level_harness"))
         self.assertEqual(len(self.cards()), before, "ordinary steps showed no card")
         # starting the next session in the dispatch whitelist shape: no card, and its unit is recorded
         d, took = self.permission(pinned("systemd-run --user --collect --unit=agentj-p456-ceo claude -p 'read PROMPT-456.md'"))

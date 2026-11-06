@@ -118,7 +118,7 @@ class Approvals(Base):
         self.turn(provenance.wechat_owner(), told)
         res = self.go('ls -la', None)                       # ① passes like the main conversation (P559)
         self.assertEqual(res['behavior'], 'allow'); self.assertEqual(self.cards('Bash'), [])
-        res = self.go('rm -rf build', None)                 # one of the four ③ kinds: Face ID on the Web App card
+        res = self.go('rm -rf ~/Documents/owner-notes', None)  # owner data is one of the four ③ kinds: Face ID on the Web App card
         self.assertEqual(res['behavior'], 'deny')
         card = self.cards('Bash')[-1]
         self.assertTrue(card.get('passkey_required')); self.assertIn('来自微信', card['summary'])
@@ -280,7 +280,14 @@ class PublishedFormat(unittest.IsolatedAsyncioTestCase):
                                  {'held': 'pending', 'done': 'replied', 'wait': 'waiting_model'})
                 c.completed({'id': 1, 'src': {'k': 'wechat'}, 'reply': {'text': 'x'}})   # no 'main' row: nothing is sent
                 c.store.data['records']['wait']['state'] = 'main'; c.store.data['records']['wait']['turn'] = 1
-                c.poll_once = AsyncMock(side_effect=lambda *_a: setattr(c, 'closed', True))
+                async def finish_poll(*_a):
+                    for _ in range(100):
+                        if 'held' in c.cards:
+                            break
+                        await asyncio.sleep(0.001)
+                    self.assertIn('held', c.cards, 'restored pending request arms before poll shutdown')
+                    c.closed = True
+                c.poll_once = AsyncMock(side_effect=finish_poll)
                 with mock.patch.object(host, 'push_notify'):
                     await asyncio.wait_for(c.run(), 5)         # the start re-arms held requests (open_card) and polls once
                     await asyncio.sleep(0.05)

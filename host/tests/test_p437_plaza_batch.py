@@ -356,11 +356,20 @@ class WorkspaceDigest(hi.HostRequest):
         self.assertIn("--workspace", out)
 
     def test_refused_verify_is_on_the_card_and_install_goes_on(self):
+        from test_l1 import Phone, _ready
         self.add_skill(manifest={"install": {"skill_dir_name": "demo-skill", "post_install": [],
                                              "verify": "python3 scripts/demo.py; touch pwned"}})
+        # The unchanged package requests DEMO_TOKEN. A plain device signature cannot
+        # authorize this real secret scope, even though its refused verify is skipped.
+        refused, _ = self.run_host({"name": "demo-skill", "harness": "claude_code"})
+        self.assertEqual((refused["rc"], refused["why"]), (market.EXIT_PERMISSION, "timeout"))
+        self.assertFalse((self.e.home / ".claude" / "skills" / "demo-skill").exists())
+        self.phone = Phone(self.st, with_passkey=True)
+        self.s = _ready(self.host, self.phone, cid=12)
         res, _ = self.run_host({"name": "demo-skill", "harness": "claude_code"})
         self.assertEqual(res["rc"], 0, res)
-        card = self.cards()[0]["summary"]
+        self.assertTrue(self.cards()[-1]["passkey_required"])
+        card = self.cards()[-1]["summary"]
         self.assertIn("自检：格式不被接受", card)
         self.assertIn("已跳过自检，安装继续", card)
         self.assertIn("已跳过自检，安装继续", res["out"])

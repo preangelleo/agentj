@@ -1,6 +1,7 @@
 """Fixed offline report operation on the existing same-user host socket."""
 from __future__ import annotations
 import base64
+import hashlib
 import json
 import pathlib
 import os
@@ -57,6 +58,92 @@ def _files(files):
             raise LocalFailure('input_limits')
         result[name] = data
     return result
+
+
+
+class _FrozenJob:
+    """In-process capability for the host's freshly-created private job; never decoded from IPC."""
+    def __init__(self, root, files):
+        self.root = pathlib.Path(root).absolute()
+        info = self.root.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+            raise LocalFailure('job_root')
+        self.identity = (info.st_dev, info.st_ino)
+        self.inputs = {name: (len(data), hashlib.sha256(data).digest()) for name, data in files.items()}
+        for name in self.inputs:
+            _parts(name)
+        self.verify()
+
+    def _open(self):
+        if any(parent.is_symlink() for parent in self.root.parents):
+            raise LocalFailure('job_root')
+        fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        info = os.fstat(fd)
+        if ((info.st_dev, info.st_ino) != self.identity or info.st_uid != os.getuid()
+                or stat.S_IMODE(info.st_mode) != 0o700):
+            os.close(fd)
+            raise LocalFailure('job_root')
+        return fd
+
+    def verify(self, value=None):
+        fd = self._open()
+        try:
+            found, count = set(), 0
+            for folder in ('input-data', 'input-template'):
+                for path in (self.root / folder).rglob('*'):
+                    count += 1
+                    if count > MAX_FILES * MAX_DEPTH or path.is_symlink():
+                        raise LocalFailure('job_input')
+                    if path.is_file():
+                        found.add(path.relative_to(self.root).as_posix())
+                    elif not path.is_dir():
+                        raise LocalFailure('job_input')
+                if (self.root / folder).is_symlink():
+                    raise LocalFailure('job_input')
+            if found != set(self.inputs):
+                raise LocalFailure('job_input')
+            for name, (size, digest) in self.inputs.items():
+                parent = os.dup(fd)
+                try:
+                    parts = _parts(name)
+                    for part in parts[:-1]:
+                        nxt = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+                        os.close(parent)
+                        parent = nxt
+                    file = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+                    with os.fdopen(file, 'rb') as stream:
+                        info = os.fstat(stream.fileno())
+                        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
+                            raise LocalFailure('job_input')
+                        data = stream.read(MAX_FILE + 1)
+                    if len(data) != size or hashlib.sha256(data).digest() != digest:
+                        raise LocalFailure('job_input')
+                finally:
+                    os.close(parent)
+            if value is not None:
+                try:
+                    relative = pathlib.Path(value).relative_to(self.root).as_posix()
+                except ValueError:
+                    raise LocalFailure('job_path') from None
+                if relative not in self.inputs and not (relative.split('/')[0] == 'input-template' and any(n.startswith(relative + '/') for n in self.inputs)):
+                    raise LocalFailure('job_path')
+        finally:
+            os.close(fd)
+
+    def export(self, value, data):
+        if pathlib.Path(value) != self.root / 'email.html':
+            raise LocalFailure('job_path')
+        self.verify()
+        rootfd = self._open()
+        try:
+            fd = os.open('email.html', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=rootfd)
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+        finally:
+            os.close(rootfd)
+        return self.root / 'email.html'
 
 
 def request(engine, original, args, root, *, capture=False):
@@ -217,7 +304,8 @@ def _execute(req):
         args = [str(root / v[len('/input/'):]) if v.startswith('/input/') else v for v in args]
         if args[0] == 'render':
             args[args.index('--out') + 1] = str(root / 'email.html')
-        result = report_local.run(engine, args, args, root, capture=True, _host=True)
+        job = _FrozenJob(root, files)
+        result = report_local.run(engine, args, args, root, capture=True, _host=True, _job=job)
         if result is None:
             return failure('integrity')
         if result.returncode and ('bwrap:' in result.stderr or 'prlimit:' in result.stderr):

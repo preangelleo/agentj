@@ -85,8 +85,6 @@ function render(form = true) {
   const tg = el('mail-on');
   tg.setAttribute('aria-checked', String(!!c.enabled));
   tg.disabled = busy || !c.address;
-  el('mail-mark-read').setAttribute('aria-checked', String(c.mark_processed_read !== false));
-  el('mail-mark-read').disabled = busy;
   // allowlist
   el('mail-allow').replaceChildren(...(c.allow || []).map((r) => {
     const li = document.createElement('li');
@@ -207,7 +205,6 @@ export function configure() {
       : t('mail.testFail', { why: why(m.why) }));
   });
   el('mail-on').addEventListener('click', () => save({ enabled: !cfg().enabled }));
-  el('mail-mark-read').addEventListener('click', () => save({mark_processed_read: cfg().mark_processed_read === false}));
   el('mail-pin').addEventListener('click', () => { const s = view && view.auth_sample; if (s && s.servid) save({ auth_servid: s.servid }); });
   el('mail-add-addr').addEventListener('input', () => {
     const domain = el('mail-add-addr').value.trim().startsWith('@');

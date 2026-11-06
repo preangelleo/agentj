@@ -26,7 +26,7 @@ test('P344: zh and en texts', () => {
 });
 
 test('P344: new CSS uses tokens only (no literal colours), text kept off the field edges', () => {
-  const css = menu.slice(menu.indexOf('/* P344'));
+  const css = menu.slice(menu.indexOf('/* P344')).replace(/\/\*[\s\S]*?\*\//g, '');
   assert.ok(css.length > 100);
   assert.doesNotMatch(css, /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
   assert.match(css, /#keysFindInput\{[^}]*padding:0 var\(--sp-3\)/);

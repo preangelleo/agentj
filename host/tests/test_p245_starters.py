@@ -130,12 +130,25 @@ class Starters(unittest.TestCase):
         self.ensure();self.assertEqual(list(outside.iterdir()),[])
         with mock.patch.dict(os.environ,{'AGENTJ_NO_STARTERS':'1'}):self.assertEqual(self.ensure(),[])
 
-    def test_verify_failure_does_not_mark_installed(self):
+    def test_verify_failure_installs_but_never_marks_verified(self):
+        # ADR-0269-w4-plaza (#479): failed self-test preserves installation and an explicit pending diagnostic.
         with mock.patch('agentj.market.sandbox_kind',return_value='bubblewrap'), \
-             mock.patch('agentj.market.run_verify',return_value=(1,'synthetic failure')):
+             mock.patch('agentj.market.run_verify',return_value=(1,'synthetic failure')) as verify:
             self.ensure()
-        self.assertEqual(starters.wdb_folders(self.root),[])
-        self.assertTrue(all(r['state']=='pending' for r in starters.status(self.root)))
+        self.assertEqual(verify.call_count,len(starters.STARTERS))
+        self.assertEqual(set(starters.wdb_folders(self.root)),set(starters.STARTERS))
+        self.assertTrue(all(r['state']=='installed' for r in starters.status(self.root)))
+        records=market.read_installed(self.e.st)
+        self.assertEqual(len(records),len(starters.STARTERS))
+        for record in records:
+            self.assertEqual(record['verify']['state'],'pending')
+            self.assertTrue(record['verify']['missing'])
+        for call in verify.call_args_list:
+            # Verification is confined to the throw-away raw package; no user workflow is executed.
+            raw,scratch=call.args[1:3]
+            self.assertEqual(raw.parent,scratch)
+            self.assertFalse(raw.is_relative_to(self.root))
+            self.assertEqual(call.kwargs['kind'],'bubblewrap')
 
     def test_download_bytes_corrupt_refused(self):
         self.srv.serve_bytes=b'not a valid bundle'

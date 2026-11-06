@@ -27,27 +27,35 @@ def devices_unavailable(as_json):
     return {'exit':1, 'output':(json.dumps(obj, ensure_ascii=False) if as_json else obj['error'] + ': ' + obj['detail']) + '\n'}
 
 
+def asr_unavailable(as_json):
+    import json
+    obj={'ok':False,'error':'host_state_unavailable','detail':'ASR host state unavailable; do not infer from sandbox defaults / 无法读取宿主转写记录，不得用沙箱默认值推断'}
+    return {'exit':1,'output':(json.dumps(obj,ensure_ascii=False) if as_json else obj['detail'])+'\n'}
+
+
 def request(op, **fields):
     from . import elevate, fence, names
     from .state import State
     required = agent_side()
     if not required:
         return None
-    if op == 'devices' and not os.environ.get(elevate.ENV):
-        res = devices_unavailable(fields.get('as_json'))
+    bound = op in ('devices','asr_status')
+    unavailable = asr_unavailable if op == 'asr_status' else devices_unavailable
+    if bound and not os.environ.get(elevate.ENV):
+        res = unavailable(fields.get('as_json'))
         print(res['output'], end='')
         return 1
-    st = None if op == 'devices' else State()
+    st = None if bound else State()
     from . import instance
-    if op == 'devices':
+    if bound:
         fields['selected_instance'] = instance.current()
     try:
         res = elevate.client_request(st, {"t": "host_diagnostics", "op": op, **fields},
                                      timeout=(90 + min(max(fields.get("wait", 0), 0), 180) if op in ("support", "feedback_send") else 300), path=os.environ.get(elevate.ENV) or names.elevate_sock(st))
     except (OSError, ValueError) as e:
         res = {"error": type(e).__name__}  # class name only
-    if op == 'devices' and (not isinstance(res, dict) or type(res.get('host_instance')) is not int or res.get('host_instance') != instance.current()):
-        res = devices_unavailable(fields.get('as_json'))
+    if bound and (not isinstance(res, dict) or type(res.get('host_instance')) is not int or res.get('host_instance') != instance.current()):
+        res = unavailable(fields.get('as_json'))
     if isinstance(res, dict) and type(res.get("exit")) is int and isinstance(res.get("output"), str):
         print(res["output"], end="")
         return res["exit"]
@@ -67,6 +75,7 @@ def feedback_snapshot():
 
 
 ALLOWED = {  # P569: each op is signature-tested
+    'asr_status': {'as_json','selected_instance'},
     "devices": {"as_json", "selected_instance"}, "diag": set(), "layout_last": set(), "status": set(), "reconnect": {"session", "caller_session", "as_json"},
     "support": {"kind", "text", "thread", "attach_doctor", "wait", "lang", "owner_confirmed"},
     "thread": {"thread", "wait"}, "list": set(),
@@ -95,6 +104,14 @@ def execute(st, req):
         return {"exit": 1, "output": "Request refused: support fields\n"}
     out = io.StringIO()
     try:
+        if op == 'asr_status':
+            from . import voice, preferences
+            import json
+            if type(req.get('selected_instance')) is not int or req['selected_instance'] != host_instance(st):
+                return asr_unavailable(req.get('as_json'))
+            result=voice.asr_status(preferences.effective(st),state_dir=st.root)
+            text=json.dumps(result,ensure_ascii=False)
+            return {'exit':0,'output':text+'\n','host_instance':host_instance(st)}
         if op == 'devices':
             from . import instance, names, cli
             from types import SimpleNamespace
@@ -149,13 +166,15 @@ def execute(st, req):
             rc = support.run_send(req.get("kind"), req.get("text"), thread=req.get("thread"),
                                   attach_doctor=req.get("attach_doctor", False), wait=wait, lang=req.get("lang"),
                                   ch=support.channel_for(st), doctor_fn=feedback_snapshot, out=out,
-                                  owner_confirmed=req.get("owner_confirmed", False))  # P573: as feedback_send
+                                  owner_confirmed=req.get("owner_confirmed", False) and not support._full_access(st))  # #520: no fabricated human answer
         elif op == "thread":
             rc = support.run_thread(req.get("thread"), wait=wait, ch=support.channel_for(st), out=out)
         elif op == "list":
             rc = support.run_list(st=st, out=out)
         elif op == "feedback_send":
-            rc = feedback.run_send(None, raw_text=req.get("raw"), owner_confirmed=req.get("owner_confirmed", False), out=out)
+            rc = feedback.run_send(None, raw_text=req.get("raw"),
+                                   owner_confirmed=req.get("owner_confirmed", False) and not support._full_access(st),
+                                   out=out, state=st)
         else:
             rc = feedback.run_replies(as_json=req.get("as_json", False), out=out)
     except (support.SupportError, cloud.CloudError, feedback.FeedbackError) as exc:
@@ -165,6 +184,8 @@ def execute(st, req):
         rc = support.EXIT_SEAT if isinstance(exc, support.SupportSeatError) else 1
         print(str(exc), file=out)
     except Exception as exc:  # P569: class name only, never the text
+        if op == 'asr_status':
+            return asr_unavailable(req.get('as_json'))
         if op == 'devices':
             return devices_unavailable(req.get('as_json'))
         rc, name = 1, type(exc).__name__

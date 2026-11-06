@@ -70,8 +70,9 @@ class Reasons(base.CardFixture):
         self.package()
         rc, out = self.install_flow()
         self.assertEqual(rc, 0, out)
-        self.assertEqual(len(self.cards()), 1)
-        self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "device")
+        self.assertEqual(len(self.cards()), 0)
+        self.assertTrue(self.replies[-1]["inherited"])
+        self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "level_harness")
 
     def test_fenced_cli_reaches_serve_through_elevate_sock(self):
         """Inside the Agent fence control.sock is hidden: the card request must take elevate.sock, not say 'not running'."""
@@ -167,9 +168,15 @@ class HostRequest(base.CardFixture):
                     self.package(name)
                     before = len(self.cards())
                     res, _ = self.run_host(self.req(name), outcome)
-                    self.assertEqual(len(self.cards()), before + 1)
-                    self.assertEqual(self.installed(name), outcome == "allow")
-                    if outcome == "allow":
+                    inherited = lv in ("harness", "full")
+                    self.assertEqual(len(self.cards()), before + (0 if inherited else 1))
+                    self.assertEqual(self.installed(name), inherited or outcome == "allow")
+                    if inherited:
+                        self.assertEqual(res["rc"], 0, res)
+                        rec=next(r for r in market.read_installed(self.st) if r["name"] == name)
+                        self.assertTrue(rec["perm_grant"]["inherited"])
+                        self.assertEqual(rec["perm_grant"]["parent_grant"], approval_level.level_grant(self.st))
+                    elif outcome == "allow":
                         self.assertEqual(res["rc"], 0, res)
                         self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "device")
                     else:
@@ -178,7 +185,9 @@ class HostRequest(base.CardFixture):
                         self.assertNotIn("你已在手机上拒绝" if outcome == "timeout" else "超时", res["out"])
 
     def test_skill_without_extra_permissions_still_needs_the_card(self):
-        self.add_skill(manifest={"permissions": {}})
+        self.add_skill(files={"README.md":"# Synthetic skill\n", "SKILL.md":"---\nname: demo-skill\ndescription: synthetic\n---\nRead local notes.\n"},
+                       manifest={"permissions":{}, "requires":{"harness":["claude_code"]},
+                                 "install":{"skill_dir_name":"demo-skill","post_install":[],"verify":None}})
         with mock.patch.object(market.plaza_perms, "allowed", return_value=(market.plaza_perms.ALL, "test: everything")):
             res, _ = self.run_host({"name": "demo-skill", "harness": "claude_code"}, "deny")
         self.assertEqual(res["why"], "denied")
@@ -310,7 +319,9 @@ class HostRequest(base.CardFixture):
         with pv.task_run(), mock.patch.object(self.host, "_parked_take", side_effect=AssertionError("parked consumed")):
             res, _ = self.run_host(self.req("task-flow"))
         self.assertEqual(res["rc"], 0, res)
-        self.assertEqual(len(self.cards()), 2)
+        self.assertEqual(len(self.cards()), 0)
+        for rec in market.read_installed(self.st):
+            self.assertTrue(rec["perm_grant"]["inherited"])
 
     def test_bad_request_shapes(self):
         from agentj import plaza_host
@@ -875,7 +886,9 @@ class SecurityRound6(SecurityRound5):
     def test_m5_ordinary_paths_unaffected_and_digits_in_folder_names_visible(self):
         import os
         self.package()
-        self.add_skill()
+        self.add_skill(files={"README.md":"# Synthetic skill\n", "SKILL.md":"---\nname: demo-skill\ndescription: synthetic\n---\nRead local notes.\n"},
+                       manifest={"permissions":{}, "requires":{"harness":["claude_code"]},
+                                 "install":{"skill_dir_name":"demo-skill","post_install":[],"verify":None}})
         with mock.patch.dict(os.environ, {"SYNTHETIC_API_KEY": self.SECRET}):
             res, _ = self.run_host(self.req(workspace=str(self.e.home / "agent-workspace")))
             self.assertEqual(res["rc"], 0, res)

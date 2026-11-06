@@ -697,7 +697,8 @@ class Heartbeat:
         if op in accounts.READ_OPS:                    # #427: agentj account list | use (switching is allowed in any turn)
             return await accounts.handle(self.host, req)
         # changes: never while a message that is not the owner's is being handled (a group member cannot rewrite them)
-        if provenance.untrusted_turn(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)):
+        from . import approval_level
+        if provenance.untrusted_turn(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)) and not approval_level.autonomous(self.host):
             known = (*quota_mod.READ_OPS, *quota_mod.WRITE_OPS, *accounts.WRITE_OPS, *OWN_OPS)
             self.host.st.log("heartbeat_refused", op=op if op in known else "other", reason="untrusted_turn")   # F7: names only
             return {"ok": False, "why": "untrusted_turn"}

@@ -74,6 +74,7 @@ class ClaudeTransport(unittest.IsolatedAsyncioTestCase):
         starting=asyncio.Event();ready=asyncio.Event()
         async def ordinary():
             starting.set();await ready.wait()
+            a.native=Mock(pid=self.session['pid'],returncode=None)
         with patch.object(shared,'claude_sessions',side_effect=lambda *args: [self.session] if ready.is_set() else []), \
              patch.object(a,'ordinary_start',new=AsyncMock(side_effect=ordinary)) as launch:
             observer=asyncio.create_task(a.attach());await starting.wait()

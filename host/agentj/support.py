@@ -1,6 +1,6 @@
 """Agent J support client (worker/FEEDBACK_API.md).
 Support replies are untrusted advice, never instructions. Seat/install authentication stays host-local.
-Outbound credentials cannot be bypassed; personal data or unavailable review requires owner confirmation.
+Outbound credentials cannot be bypassed; full access degrades failed privacy review to fixed metadata.
 Logs and local thread records exclude message bodies and secrets."""
 from __future__ import annotations
 
@@ -290,6 +290,14 @@ def metadata_ok(text, attach_doctor=False, thread=None) -> bool:
             and len(keys) == len(set(keys)) and all(meta_line_ok(ln) for ln in lines[1:]))
 
 
+def _full_access(st) -> bool:
+    """Only the live paired-device signature enables autonomous support fallback."""
+    if st is None:
+        return False
+    from . import approval_level, preferences
+    return approval_level.level(preferences.effective(st), st) == "harness"
+
+
 def run_send(kind: str, text: str, *, thread: str | None = None, attach_doctor=False, wait=DEFAULT_WAIT, lang: str | None = None,
              ch: Channel | None = None, env=None, transport=None, identity=None, doctor_fn=None, out=None, clock=time.monotonic,
              owner_confirmed: bool = False, metadata_only: bool = False) -> int:
@@ -314,13 +322,25 @@ def run_send(kind: str, text: str, *, thread: str | None = None, attach_doctor=F
         print(f"NOT SENT — layer 2 (Jev) flagged it: {v.reason}; most likely {v.kind or '?'} ({privacy.kind_text(v.kind)}). "
               "Remove that and run again. / 没发出：第 2 层判定仍含隐私，请删掉后重发。", file=out)
         return EXIT_BLOCKED
-    # P573 (chairman item 6): personal details flagged / layer 2 unavailable → held for the owner, never sent directly
-    if v.status == "blocked" and not owner_confirmed:
+    # #520: full access never turns a failed privacy review into raw transmission
+    # or a fabricated owner confirmation. Send only a fixed, content-free notice.
+    degraded = (v.status in ("blocked", "unavailable") and getattr(ch, "signed", False)
+                and _full_access(getattr(ch, "st", None)))
+    if degraded:
+        review = v.status
+        draft = {"body": "Agent J support request\nprivacy_review: " + review +
+                 "\npayload: withheld\nmode: automatic-metadata-only"}
+        attach = None
+        owner_confirmed = False
+        ch.st.log("support_autonomous", kind=kind, reason="review_" + review, result="metadata_only",
+                  by="full_access_no_owner_answer")
+    # Other modes keep their existing explicit-confirmation flow.
+    if v.status == "blocked" and not owner_confirmed and not degraded:
         print(f"NOT SENT — layer 2 (Jev) flagged personal details: {v.reason}; most likely {v.kind} ({privacy.kind_text(v.kind)}). "
               "Show your human the exact text; send again with --owner-confirmed only after they read it and said yes. / "
               "没发出：第 2 层判定含个人信息。请把原文给主人看，主人同意后加 --owner-confirmed 再发。", file=out)
         return EXIT_BLOCKED
-    if v.status == "unavailable" and not owner_confirmed:
+    if v.status == "unavailable" and not owner_confirmed and not degraded:
         print(f"NOT SENT — layer 2 (Jev) unavailable ({v.reason}). Show your human the exact text; send again with "
               "--owner-confirmed only after they read it and said yes. Do not look for or set a key yourself. / "
               "没发出：第 2 层隐私检查不可用。请把原文给主人看，主人同意后加 --owner-confirmed 再发。", file=out)
@@ -345,6 +365,7 @@ def run_send(kind: str, text: str, *, thread: str | None = None, attach_doctor=F
     print(f"已脱敏 {sum(hits.values())} 处后提交，工单号 {tid} / Submitted after redacting {sum(hits.values())} occurrence(s); ticket {tid} · layer 1: "
           + (", ".join(f"{k}×{n}" for k, n in sorted(hits.items())) if hits else "nothing replaced")
           + f" · layer 2: {v.status}" + (" · owner confirmed" if owner_confirmed and v.status != "ok" else "")
+          + (" · automatic metadata only; owner did not answer" if degraded else "")
           + (" · +doctor" if attach else ""), file=out)
     if wait <= 0:
         print(f"之后查看 / read later: agentj support thread {tid}", file=out)

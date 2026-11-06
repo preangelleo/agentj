@@ -17,6 +17,7 @@ from .state import _write_private
 COMMAND = re.compile(r'/recover-background(?:\s+([a-f0-9]{64}))?\s*')
 MAX = 128
 LIMIT = 65536
+CAPACITY_WINDOW = 60
 
 
 def valid_row(row):
@@ -80,6 +81,10 @@ class Book:
         self.path = Path(host.st.root) / 'busy' / 'recovery.json'
         self.lock = threading.RLock()
         self.corrupt = False
+        self.capacity_since = None
+        self.capacity_last = 0
+        self.capacity_count = 0
+        self.capacity_retry = 0
         try:
             if self.path.is_symlink():
                 raise ValueError('unsafe_state')
@@ -172,25 +177,60 @@ class Book:
 
     def add(self, key, row):
         with self.lock:
-            if self.corrupt:
-                return
-            if key in self.rows:
-                return
-            # Never evict an unresolved recovery point to make room for a flood.
-            if len(self.rows) >= MAX:
-                settled = next((k for k,v in self.rows.items() if v.get('state') == 'reconciled'), None)
-                if settled is not None:
-                    del self.rows[settled]
-            if len(self.rows) >= MAX:
-                self.host.st.log('recovery_capacity', result='awaiting_owner_verification')
-                return
-            self.rows[key] = {**row, 'binding':self.binding(), 'state':'awaiting_owner_verification', 'notified':False, 'created_at':int(time.time())}
-            self._settle()
-            self.save()
+            if self._add_locked(key, row):
+                self.save()
+
+    def _capacity_event(self, blocked):
+        """Metadata only: first transition, one aggregate per minute, then recovery."""
+        now = time.monotonic()
+        if blocked:
+            self.capacity_count += 1
+            if self.capacity_since is None or now - self.capacity_last >= CAPACITY_WINDOW:
+                self.host.st.log('recovery_capacity', result='awaiting_owner_verification',
+                                 count=self.capacity_count, window_seconds=round(now - (self.capacity_since if self.capacity_since is not None else now), 1))
+                self.capacity_since = now
+                self.capacity_last = now
+                self.capacity_count = 0
+            self.capacity_retry = now + CAPACITY_WINDOW
+        elif self.capacity_since is not None:
+            self.host.st.log('recovery_capacity', result='available', count=self.capacity_count,
+                             window_seconds=round(now - self.capacity_since, 1))
+            self.capacity_since = None
+            self.capacity_count = 0
+            self.capacity_retry = 0
+
+    def capture_due(self):
+        """Defer a full unchanged backlog; reconciliation makes the next poll eligible immediately."""
+        with self.lock:
+            available = len(self.rows) < MAX or any(r.get('state') == 'reconciled' for r in self.rows.values())
+            if available:
+                self._capacity_event(False)
+            return available or time.monotonic() >= self.capacity_retry
+
+    def _add_locked(self, key, row):
+        """Mutate under the caller's lock; the caller persists its whole batch."""
+        if self.corrupt or key in self.rows:
+            return False
+        # Never evict an unresolved recovery point to make room for a flood.
+        if len(self.rows) >= MAX:
+            settled = next((k for k,v in self.rows.items() if v.get('state') == 'reconciled'), None)
+            if settled is not None:
+                del self.rows[settled]
+        if len(self.rows) >= MAX:
+            self._capacity_event(True)
+            return False
+        self._capacity_event(False)
+        self.rows[key] = {**row, 'binding':self.binding(), 'state':'awaiting_owner_verification', 'notified':False, 'created_at':int(time.time())}
+        self._settle()
+        return True
 
     def capture(self, key, value, snapshot=True):
-        if key in self.rows:
-            return
+        with self.lock:
+            if self.corrupt or key in self.rows:
+                return
+            if len(self.rows) >= MAX and not any(r.get('state') == 'reconciled' for r in self.rows.values()):
+                self._capacity_event(True)
+                return
         row = {'task_id':value.get('task_id'), 'generation':value.get('generation'), 'since':value.get('since'), 'ended':value.get('ended'), 'original_error':None, 'exit_code':value.get('exit_code'),
                'source':'unknown', 'recovery_point':'read_report', 'report':value.get('report_path') or '',
                'origin': 'foreign' if value.get('foreign') is True else 'missing_launch_evidence',
@@ -269,7 +309,7 @@ class Book:
                         # hotfix #455b: 0.26.10a2 quieted only the source_gate row below; this completion row kept
                         # notified=False and the owner's next phone message pushed the reminder (23:59, run:5ee2f098a2ce)
                         self.rows[tid].update(notified=True, quiet='group_source')
-            self.add(key, {'task_id':getattr(self.host, 'cur_turn', None), 'source':'unknown',
+            self._add_locked(key, {'task_id':getattr(self.host, 'cur_turn', None), 'source':'unknown',
                           'original_error':reason, 'action':{'tool':tool, 'input_sha256':digest},
                           'recovery_point':'reconcile_only', 'task_label':getattr(self.host, 'task_label', None),
                           'native_session':getattr(a, 'sid', None) or getattr(a, 'tid', None), 'child_id':child_id, 'stage':'source_gate'})
@@ -298,6 +338,26 @@ class Book:
             if changed:
                 self.save()
             return ''
+
+    def reconcile_local(self, key):
+        """#520: the host checks a saved report as data; no action is replayed or authorised."""
+        from . import approval_level
+        h = self.host
+        if (h.stopped() or approval_level.level(getattr(h, 'preferences', {}), h.st) != 'harness'):
+            return None
+        row = self.rows.get(key)
+        if (not row or row.get('binding') != self.binding() or row.get('state') != 'awaiting_owner_verification'
+                or row.get('recovery_point') != 'read_report' or row.get('origin') == 'foreign'):
+            return None
+        result = self.recover(key, verify=lambda:not h.stopped()
+                              and approval_level.level(getattr(h, 'preferences', {}), h.st) == 'harness')
+        if result.get('result') == 'reconciled':
+            self.acknowledge(key)
+            h.st.log('recovery_reconciled', result='read_report', source='unknown', action_replayed=False)
+            return result.get('report')
+        # Missing/changed data is diagnostic evidence, never a request for an owner reply.
+        h.st.log('recovery_reconciled', result=result.get('why', 'unavailable'), source='unknown', action_replayed=False)
+        return None
 
     def acknowledge(self, key):
         with self.lock:

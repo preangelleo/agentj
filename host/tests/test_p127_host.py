@@ -198,7 +198,7 @@ class StatuslineDefault(_Home):
     def run_line(self, settings):
         import subprocess
         cmd = json.loads(settings.read_text())["statusLine"]["command"]
-        return subprocess.run(cmd, shell=True, input=json.dumps(self.blob()).encode(), capture_output=True)
+        return subprocess.run(cmd, shell=True, input=json.dumps(self.blob()).encode(), capture_output=True, env={**os.environ, 'PYTHONPATH': os.pathsep.join([str(Path(__file__).resolve().parents[1]), os.environ.get('PYTHONPATH', '')])})
 
     def test_shared_default_on_with_backup_notice_and_off_is_final(self):
         self.write(inbound.path(), {"other": 1})

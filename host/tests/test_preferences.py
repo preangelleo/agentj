@@ -102,14 +102,19 @@ class PreferencesTest(unittest.TestCase):
         self.assertEqual(h.preferences['appearance']['theme'],'dark');self.assertIsNotNone(h.config_problem)
     def test_skill_three_harness_links_clean_uninstall_without_owner_gate(self):
         import io
-        from agentj.personalize import command
+        from agentj import personalize
+        command=personalize.command
         with patch('sys.stdout',new_callable=io.StringIO),patch('os.isatty',return_value=False):
             self.assertEqual(command(['skill','install']),0)   # F14: no owner-confirmed / terminal gate
             self.assertEqual(command(['skill','install','--owner-confirmed']),0)   # still accepted, idempotent
-            for rel in ['.claude/skills/agentj-config','.codex/skills/agentj-config','.config/opencode/skills/agentj-config']:
-                self.assertTrue((self.home/rel).is_symlink())
+            targets=[self.home/rel for rel in ['.claude/skills/agentj-config','.codex/skills/agentj-config','.config/opencode/skills/agentj-config']]
+            for target in targets:
+                self.assertTrue(personalize.skill_links.managed(personalize.SKILLS/'agentj-config',target))
+                (target/'settings.json').write_text('Owner configuration')
             self.assertEqual(command(['skill','uninstall']),0)
-            self.assertFalse((self.home/'.claude/skills/agentj-config').exists())
+            for target in targets:
+                self.assertFalse((target/'SKILL.md').exists())
+                self.assertEqual((target/'settings.json').read_text(),'Owner configuration')
     def test_secret_parser_error_not_echoed(self):
         with self.assertRaises(p.ConfigError) as cm:p.parse('{voice: "SECRET_SENTINEL" invalid}')
         self.assertNotIn('SECRET_SENTINEL',str(cm.exception))

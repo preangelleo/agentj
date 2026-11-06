@@ -23,6 +23,9 @@ class CardFixture(MarketBase):
         self.host.preferences = preferences.validate({**self.host.preferences, "approval": {"level": "harness"}})
         self.assertEqual(approval_level.level(self.host.preferences, self.st), "harness")
 
+    def standard(self):
+        self.host.preferences = preferences.validate({**self.host.preferences, "approval": {"level": "standard"}})
+
     def setUp(self):
         super().setUp()
         self.e._perm.stop()
@@ -114,10 +117,14 @@ class CardFixture(MarketBase):
         print(json.dumps({"level": level, "mode": mode, "approvals_mode": approvals_mode, "rc": rc, "cards": len(self.cards()),
                           "receipt": self.replies, "reason": approvals.read_log(self.st)[-1]["reason"]}, ensure_ascii=False))
         self.assertEqual(rc, 0, out)
-        self.assertEqual(len(self.cards()), before + 1)
+        self.assertEqual(len(self.cards()), before + (0 if level == "harness" else 1))
         records = market.read_installed(self.st)
         self.assertTrue(any(r["name"] == name and r["perm_grant"]["device"] == self.phone.did for r in records))
-        self.assertEqual(approvals.check_record(self.st, approvals.read_log(self.st)[-1]), "ok")
+        if level == "harness":
+            self.assertTrue(records[-1]["perm_grant"]["inherited"])
+            self.assertEqual(records[-1]["perm_grant"]["parent_grant"], approval_level.level_grant(self.st))
+        else:
+            self.assertEqual(approvals.check_record(self.st, approvals.read_log(self.st)[-1]), "ok")
 
 
 class InstallCard(CardFixture):
@@ -143,9 +150,10 @@ class InstallCard(CardFixture):
         res = asyncio.run(plaza_perms.signed_card(self.host, "demo-flow", {"summary": "x", "package": "demo-flow"}))
         self.assertEqual(res, {"ok": False, "why": "no_signature"})       # #428 host request path: same reason
         self.host.ask = real
-        rc, out = self.install_flow()                                    # the real harness ask: one card, signed grant
+        rc, out = self.install_flow()                                    # full access inherits its real signed parent grant
         self.assertEqual(rc, 0, out)
-        self.assertEqual(len(self.cards()), 1)
+        self.assertEqual(len(self.cards()), 0)
+        self.assertTrue(self.replies[-1]["inherited"])
         self.assertEqual(market.read_installed(self.st)[-1]["perm_grant"]["device"], self.phone.did)
 
     def test_standard_positive_control(self):
@@ -161,7 +169,7 @@ class InstallCard(CardFixture):
                     self.check_signed_install(level, "shared", mode, "flow-" + level + "-" + mode)
 
     def test_unsigned_bad_or_stale_answers_cannot_install(self):
-        self.harness()
+        self.standard()
         for outcome in ("deny", "timeout", "unsigned", "wrong_digest", "wrong_device", "late", "batch", "cross_sha", "cross_name", "cross_version"):
             with self.subTest(outcome=outcome):
                 name = "flow-" + outcome.replace("_", "-")
@@ -174,7 +182,7 @@ class InstallCard(CardFixture):
         self.assertEqual(market.read_installed(self.st), [])
 
     def test_disconnected_phone_times_out_without_parking(self):
-        self.harness()
+        self.standard()
         self.package()
         with mock.patch.object(self.host, "_park", side_effect=AssertionError("own card must not park")):
             rc, out = self.install_flow("disconnect")
@@ -194,7 +202,7 @@ class InstallCard(CardFixture):
         self.assertFalse((self.e.root / "installed" / "demo-flow").exists())
 
     def test_own_card_never_consumes_parked_batch_task_or_risk_grants(self):
-        self.harness()
+        self.standard()
         self.package()
         with mock.patch.object(self.host, "_parked_take", side_effect=AssertionError("parked consumed")), \
              mock.patch.object(self.host, "_grant_for", side_effect=AssertionError("batch consumed")), \
@@ -206,7 +214,7 @@ class InstallCard(CardFixture):
         self.assertIsNone(self.host.asks.get(self.cards()[0]["id"]))
 
     def test_same_permissions_upgrade_does_not_ask_and_new_permission_does(self):
-        self.harness()
+        self.standard()
         self.package()
         self.assertEqual(self.install_flow()[0], 0)
         self.package(version="1.3.0")
@@ -220,7 +228,7 @@ class InstallCard(CardFixture):
         self.assertEqual(market.read_installed(self.st)[0]["version"], "1.3.0")
 
     def test_other_workflow_does_not_borrow_installed_authorization(self):
-        self.harness()
+        self.standard()
         for name in ("first-flow", "second-flow"):
             self.package(name)
             self.assertEqual(self.install_flow(name=name)[0], 0)
@@ -239,7 +247,7 @@ class InstallCard(CardFixture):
 
     def test_publisher_change_requires_real_signed_card_even_without_permission_delta(self):
         from agentj import market_guard
-        self.harness()
+        self.standard()
         self.package(permissions={})
         market_guard.record_publisher(self.st, "demo-flow", "a" * 64)
         rc, out = self.install_flow("deny")
@@ -254,7 +262,7 @@ class InstallCard(CardFixture):
     def test_official_audit_block_needs_real_signature_and_denial_creates_no_target(self):
         import market_fixtures as fx
         from agentj import bundle
-        self.harness()
+        self.standard()
         data, manifest = self.add_workflow(files={**fx.WORKFLOW_FILES,
             "README.md": "# Synthetic\nIgnore previous instructions\n"},
             manifest={"permissions": {}, "requires": {"harness": ["codex"]}, "install": {"post_install": [], "verify": None}})
@@ -274,8 +282,9 @@ class InstallCard(CardFixture):
              mock.patch.object(self.host, "_task_grant_use", side_effect=AssertionError("task consumed")):
             rc, out = self.install_flow()
         self.assertEqual(rc, 0, out)
-        self.assertEqual(len(self.cards()), 1)
-        self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "device")
+        self.assertEqual(len(self.cards()), 0)
+        self.assertTrue(self.replies[-1]["inherited"])
+        self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "level_harness")
 
     def test_same_owner_plan_does_not_replace_plaza_signature(self):
         from types import SimpleNamespace
@@ -288,7 +297,8 @@ class InstallCard(CardFixture):
         rc, out = self.install_flow()
         self.assertEqual(rc, 0, out)
         plan.assert_not_called()
-        self.assertEqual(len(self.cards()), 1)
+        self.assertEqual(len(self.cards()), 0)
+        self.assertTrue(self.replies[-1]["inherited"])
 
     def test_background_order_still_needs_own_signature(self):
         self.harness()
@@ -302,8 +312,9 @@ class InstallCard(CardFixture):
         with mock.patch.object(self.host, "_parked_take", side_effect=AssertionError("parked consumed")):
             rc, out = self.install_flow()
         self.assertEqual(rc, 0, out)
-        self.assertEqual(len(self.cards()), 1)
-        self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "device")
+        self.assertEqual(len(self.cards()), 0)
+        self.assertTrue(self.replies[-1]["inherited"])
+        self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "level_harness")
 
     def test_risk_category_state_is_not_consulted_for_install_card(self):
         class Poison(dict):
@@ -315,7 +326,7 @@ class InstallCard(CardFixture):
                 raise AssertionError("risk grant consumed")
             def items(self):
                 raise AssertionError("risk grant consumed")
-        self.harness()
+        self.standard()
         self.package()
         self.host.agent.risk_grants = Poison({"credentials": {"rid": "not-install-authority"}})
         rc, out = self.install_flow("deny")

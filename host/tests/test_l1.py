@@ -450,7 +450,7 @@ class Flows(unittest.TestCase):
         self.assertEqual(to_b[4]["from"], "agent")
         to_a = [o for c, o in self.sent[n:] if c == 11]
         self.assertEqual([o.get("seq") for o in to_a if o["t"] == "msg"], [2])
-        self.assertEqual(to_a[0], {"t": "status", "s": "none", "agent": None, "name": None})
+        self.assertEqual(to_a[0], {"t": "status", "s": "none", "agent": None, "name": None, "goal_active": False})
 
 
 # ------------------------------------------------------------------ the whole chain with a stand-in claude

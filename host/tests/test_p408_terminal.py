@@ -547,11 +547,33 @@ class Parser(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         st = _state(tmp.name)
         a = self.root_parser().parse_args(["terminal", "enable"])
+        from agentj import names
+        # #520: an Agent marker is not the authority decision. Real passkey state
+        # is still required, and the live host can refuse a new trust-root grant.
         with mock.patch("agentj.state.State", return_value=st), mock.patch.object(terminal, "platform_ok", return_value=True), \
-                mock.patch.dict(os.environ, {"CLAUDECODE": "1"}), mock.patch("sys.stdin.isatty", return_value=True):
+                mock.patch.dict(os.environ, {"CLAUDECODE": "1"}), mock.patch("sys.stdin.isatty", return_value=True), \
+                mock.patch.object(term_cli, "_password_sudo", return_value=None), mock.patch.object(names, "ctl_call") as call:
             with self.assertRaises(SystemExit) as e:
                 term_cli.cmd_terminal(a)
-        self.assertIn("Agent", str(e.exception.code))
+            self.assertIn("passkey", str(e.exception.code))
+            call.assert_not_called()
+            Phone(st, with_passkey=True)
+            call.return_value = {"ok": False, "error": "claim_required"}
+            with contextlib.redirect_stdout(__import__('io').StringIO()), self.assertRaises(SystemExit) as e:
+                term_cli.cmd_terminal(a)
+            self.assertIn("Only the owner", str(e.exception.code))
+            request = call.call_args.args[1]
+            self.assertEqual((request["cmd"], request["op"]), ("terminal_cfg", "enable"))
+            self.assertRegex(request["code"], r"^\d{6}$")
+            self.assertNotIn("force", request)
+            self.assertFalse(term_store.read_config(st)["on"])
+            # Existing-authority success is decided by the host, not the CLI flag.
+            call.return_value = {"ok": True}
+            a.json = True
+            with contextlib.redirect_stdout(__import__('io').StringIO()):
+                term_cli.cmd_terminal(a)
+            self.assertEqual(call.call_count, 2)
+            self.assertFalse(term_store.read_config(st)["on"], "CLI never writes the widening locally")
 
 
 class Writer:

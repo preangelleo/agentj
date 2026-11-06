@@ -537,6 +537,23 @@ def view(root) -> dict:
     return out
 
 
+def phone_view(host) -> dict:
+    """#536: primary status has the key manager's single source; saved slots stay intact.
+
+    keys' OAuth rows also describe API-key/token precedence. Copy only their public
+    status fields, never key tails, source paths, fingerprints or enrollment material.
+    Blocking login probes belong in the caller's worker thread. No migration/write.
+    """
+    from . import keys
+    out = view(host.st.root)
+    fields = ("type", "name", "set", "state", "use", "use_name", "use_src", "pending")
+    out["primary"] = {row["name"]: {k: row[k] for k in fields if k in row}
+                      for vendor in keys.scan(host).get("base", [])
+                      for row in vendor.get("rows", [])
+                      if row.get("type") == "oauth" and row.get("name") in HARNESSES}
+    return out
+
+
 # ------------------------------------------------------------------ switch / rename / remove (worker threads)
 def switch_sync(root, h: str, ref) -> dict:
     """→ {ok, why?, conflict?, same?, from?, to?, name?}. Claude: the target's token into the service env file + this
@@ -848,7 +865,7 @@ async def phone(host, s, t: str, obj: dict) -> dict:
         res = await remove(host, h, iid, device=s.device, confirm=ok)
     else:
         res = {"ok": False, "why": "unsupported"}
-    out = {"ok": bool(res.get("ok")), "view": await asyncio.to_thread(view, host.st.root)}
+    out = {"ok": bool(res.get("ok")), "view": await asyncio.to_thread(phone_view, host)}
     if res.get("why"):
         out["why"] = res["why"]
     if res.get("conflict"):
@@ -861,7 +878,7 @@ async def phone(host, s, t: str, obj: dict) -> dict:
 
 # ------------------------------------------------------------------ CLI: agentj account list|add|use|rename|remove
 def add_parser(sub) -> None:
-    p = sub.add_parser("account", help="每个 AI 登记多个账号、一键切换 · list · add · use · rename · remove / several sign-ins per harness")
+    p = sub.add_parser("account", help="Claude Code、Codex 备用账号；主账号到「模型和 API Key」修改 / backup AI accounts; manage the primary in Models & API keys")
     s = p.add_subparsers(dest="acct_cmd", required=True)
     x = s.add_parser("list", help="列出账号（当前 / 额度）/ list accounts")
     x.add_argument("--json", action="store_true")

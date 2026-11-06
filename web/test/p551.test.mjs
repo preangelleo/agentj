@@ -55,7 +55,7 @@ test('「全放行」: the 3rd button of the same picker (P552: merged; P556: re
   const s = js('settings.js');
   assert.match(s, /const LEVELS = \['safe', 'standard', 'harness'\];/);
   assert.equal((html.match(/data-set-level="/g) || []).length, 3);
-  assert.match(html, /<button type="button" data-set-level="harness" aria-pressed="false" data-i18n="p336\.harness">全放行<\/button><\/div>/);
+  assert.match(html, /<button class="setsegment" type="button" data-set-level="harness" aria-pressed="false" data-i18n="p336\.harness">全放行<\/button><\/div>/);
   assert.match(s, /const full = \(jev && value === 'off'\) \|\| harness, goal = key === 'approval\.goal_nocard';/);    // red
   assert.match(s, /harness \? t\('p336\.note\.harness'\) \+ ' ' \+ t\('p551\.harnessSign'\)/);
   // P550: no passkey → the plain words + 「在本机设置 Face ID（需另一台批准）」 (P551 待拍板 3: every widening is ③)

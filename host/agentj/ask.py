@@ -25,6 +25,8 @@ OTHER = {"zh": "其他（我在聊天框里写）", "en": "Other (I'll type it i
 OPEN = {"zh": "好，我在聊天框里回答", "en": "OK, I'll answer in the chat"}
 
 NOTE = {
+    "autonomous": {"zh": "全放行：卡片未弹出，主人没有作答。按已有目标自主选择合理默认并继续，不等待回复；UV动作走原权限通道。",
+                   "en": "Full access: no card was shown and the owner did not answer. Choose a reasonable default and continue without a reply; use the existing permission channel for UV actions."},
     "answered": {"zh": "主人已在手机上作答，按上面的答案继续。",
                  "en": "The owner answered on the phone; carry on with the answers above."},
     "typed": {"zh": "主人选择在聊天框里写答案：现在结束这一轮，等主人的下一条消息，不要替主人填写。",
@@ -65,7 +67,7 @@ def zi(s: str) -> float:
     return sum(1 if unicodedata.east_asian_width(c) in "WF" else 0.5 for c in s)
 
 
-EXIT = {"answered": 0, "cancelled": 3, "pending": 4, "bad": 2, "not_running": 1}
+EXIT = {"autonomous": 0, "answered": 0, "cancelled": 3, "pending": 4, "bad": 2, "not_running": 1}
 
 
 class AskError(ValueError):
@@ -238,7 +240,7 @@ class CliAsks:
     def view(self, qid, result: str, answers: list | None = None, detail: str = "") -> dict:
         lang = getattr(self.host, "lang", "zh")
         typed = any(a["typed_in_chat"] for a in answers or [])
-        out = {"ok": result in ("answered", "cancelled", "pending"), "result": result,
+        out = {"ok": result in ("answered", "cancelled", "pending", "autonomous"), "result": result,
                "shown": result in ("answered", "cancelled", "pending", "timeout")}
         if qid:
             out["id"] = qid

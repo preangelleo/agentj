@@ -483,8 +483,15 @@ class ContactService:
         cfg, pw, why = self.mail_state()
         if why:
             return {"ok": False, "why": why}
-        if provenance.untrusted_turn(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)) \
-                and not _chain_turn(getattr(self.host, "agent", None)):   # E2: the owner's own words started it
+        from . import approval_level
+        agent = getattr(self.host, "agent", None)
+        # #520: a host-generated follow-up uses the existing signed full-access
+        # grant. The unattended check rejects a foreign-tainted system turn or a
+        # stricter request source; it never turns outside mail into owner intent.
+        full_system = (approval_level.follow_harness(getattr(self.host, "preferences", {}), self.st)
+                       and provenance.unattended_turn(agent) == "system")
+        if provenance.untrusted_turn(agent) and not provenance.delegated_turn(agent) \
+                and not _chain_turn(agent) and not full_system:
             return group_refusal(provenance.turn_source(getattr(self.host, "agent", None)))
         recips, missing = [], []
         for key, who in [("to", w) for w in to_raw] + [(k, w) for k in ("cc", "bcc") for w in lists[k]]:

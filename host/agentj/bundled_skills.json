@@ -1,0 +1,164 @@
+{
+  "skills": [
+    "agentj-add-doc",
+    "agentj-add-memory",
+    "agentj-add-note",
+    "agentj-add-todo",
+    "agentj-automation",
+    "agentj-bots",
+    "agentj-browser",
+    "agentj-calendar",
+    "agentj-capability",
+    "agentj-cards",
+    "agentj-commands",
+    "agentj-config",
+    "agentj-contacts",
+    "agentj-first-run",
+    "agentj-friends",
+    "agentj-goal",
+    "agentj-good-morning",
+    "agentj-google",
+    "agentj-handoff",
+    "agentj-heartbeat",
+    "agentj-hooks",
+    "agentj-imessage",
+    "agentj-manual",
+    "agentj-meeting-notes",
+    "agentj-multi-seat",
+    "agentj-obsidian",
+    "agentj-pair",
+    "agentj-recall",
+    "agentj-reconnect",
+    "agentj-reply-components",
+    "agentj-report",
+    "agentj-screen-help",
+    "agentj-switch-harness",
+    "agentj-theme",
+    "agentj-update",
+    "agentj-wechat",
+    "feedback-to-agentj-father"
+  ],
+  "logic_files": {
+    "agentj-add-doc": [
+      "SKILL.md"
+    ],
+    "agentj-add-memory": [
+      "SKILL.md"
+    ],
+    "agentj-add-note": [
+      "SKILL.md"
+    ],
+    "agentj-add-todo": [
+      "SKILL.md"
+    ],
+    "agentj-automation": [
+      "SKILL.md"
+    ],
+    "agentj-bots": [
+      "SKILL.md"
+    ],
+    "agentj-browser": [
+      "SKILL.md"
+    ],
+    "agentj-calendar": [
+      "SKILL.md"
+    ],
+    "agentj-capability": [
+      "SKILL.md"
+    ],
+    "agentj-cards": [
+      "SKILL.md"
+    ],
+    "agentj-commands": [
+      "SKILL.md"
+    ],
+    "agentj-config": [
+      "SKILL.md"
+    ],
+    "agentj-contacts": [
+      "SKILL.md"
+    ],
+    "agentj-first-run": [
+      "SKILL.md"
+    ],
+    "agentj-friends": [
+      "SKILL.md"
+    ],
+    "agentj-goal": [
+      "SKILL.md"
+    ],
+    "agentj-good-morning": [
+      "SKILL.md"
+    ],
+    "agentj-google": [
+      "SKILL.md"
+    ],
+    "agentj-handoff": [
+      "SKILL.md"
+    ],
+    "agentj-heartbeat": [
+      "SKILL.md"
+    ],
+    "agentj-hooks": [
+      "SKILL.md"
+    ],
+    "agentj-imessage": [
+      "SKILL.md"
+    ],
+    "agentj-manual": [
+      "SKILL.md",
+      "cards.en.md",
+      "cards.zh.md",
+      "friends.en.md",
+      "friends.zh.md",
+      "manual.en.md",
+      "manual.zh.md",
+      "share-screenshot.en.md",
+      "share-screenshot.zh.md",
+      "shortcuts.en.md",
+      "shortcuts.zh.md"
+    ],
+    "agentj-meeting-notes": [
+      "SKILL.md"
+    ],
+    "agentj-multi-seat": [
+      "SKILL.md"
+    ],
+    "agentj-obsidian": [
+      "SKILL.md"
+    ],
+    "agentj-pair": [
+      "SKILL.md"
+    ],
+    "agentj-recall": [
+      "SKILL.md"
+    ],
+    "agentj-reconnect": [
+      "SKILL.md"
+    ],
+    "agentj-reply-components": [
+      "SKILL.md"
+    ],
+    "agentj-report": [
+      "SKILL.md"
+    ],
+    "agentj-screen-help": [
+      "SKILL.md"
+    ],
+    "agentj-switch-harness": [
+      "SKILL.md"
+    ],
+    "agentj-theme": [
+      "SKILL.md"
+    ],
+    "agentj-update": [
+      "SKILL.md"
+    ],
+    "agentj-wechat": [
+      "SKILL.md"
+    ],
+    "feedback-to-agentj-father": [
+      "SKILL.md"
+    ]
+  }
+}

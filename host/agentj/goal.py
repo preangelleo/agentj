@@ -411,9 +411,9 @@ def suspect(tool: str, tool_input, verdict) -> str | None:
         return "injection"                 # … | sh, base64 -d | bash, source <url>, python -c "$(…)", $'\x72m'
     from . import service
     try:
-        names = {service.name(), "agentj", "agentjarvis", "net.agentj.host", "net.agentjarvis.host"}
+        names = {service.name(), service.DEFAULT_UNIT, service.LEGACY_UNIT, service.DEFAULT_LABEL, service.LEGACY_LABEL}
     except (OSError, ValueError, service.ServiceError):
-        names = {"agentj", "agentjarvis", "net.agentj.host", "net.agentjarvis.host"}
+        names = {service.DEFAULT_UNIT, service.LEGACY_UNIT, service.DEFAULT_LABEL, service.LEGACY_LABEL}
     text = action_text(tool, tool_input)
     from . import danger
     if tool == "Bash":
@@ -427,7 +427,7 @@ def suspect(tool: str, tool_input, verdict) -> str | None:
         for c in danger.unwrap(command):
             if c.name in ("systemctl", "launchctl") and any(a in mutations for a in c.args) and any(
                     a.rsplit("/", 1)[-1].removesuffix(".service").removesuffix(".plist") in names or re.fullmatch(
-                        r"(?:agentj|agentjarvis)-[1-9][0-9]*(?:\.service)?|net\.(?:agentj|agentjarvis)\.host\.[1-9][0-9]*(?:\.plist)?", a.rsplit("/", 1)[-1]) for a in c.args):
+                        rf"(?:{re.escape(service.DEFAULT_UNIT)}|{re.escape(service.LEGACY_UNIT)})-[1-9][0-9]*(?:\.service)?|(?:{re.escape(service.DEFAULT_LABEL)}|{re.escape(service.LEGACY_LABEL)})\.[1-9][0-9]*(?:\.plist)?", a.rsplit("/", 1)[-1]) for a in c.args):
                 own_control = True
             if c.name == "agentj" and (c.args[:1] == ["serve"] or c.args[:1] == ["service"] and any(a in mutations for a in c.args[1:])):
                 own_control = True
@@ -1358,6 +1358,14 @@ class Goals:
         OWNER_GOAL_SECS), from the main thread of an owner turn, with no spend / price grant — else None (the card)."""
         from . import approval_level, provenance
         h = self.host
+        if (approval_level.level(getattr(h, "preferences", {}), self.st) == "harness"
+                and (not provenance.untrusted_turn(getattr(h, "agent", None))
+                     or provenance.unattended_turn(getattr(h, "agent", None)) in ("system", "same_host", "scheduled_task"))
+                and not any(x.get("cat") in ("spend", "price") for x in g.get("grants") or [])):
+            signed = approval_level._live(self.st, approval_level.KEY)
+            if signed:
+                self.owner_at = None
+                return {"rid": signed["rid"], "device": signed["device"], "sk_sha": signed["sk_sha"], "how": "level_harness"}
         at, self.owner_at = self.owner_at, None
         if at is None or time.monotonic() - at > approval_level.OWNER_GOAL_SECS:
             return None
@@ -1581,13 +1589,15 @@ class Goals:
                  grant={"rid": rid, "device": pre["device"], "sk_sha": pre["sk_sha"]})
         save(self.st, d)
         self.st.log("goal_start", id=gid, device=pre["device"], how="preauth")
-        h.activity("goal_start", text=g["goal"][:120], grants=len(g["grants"]), by="goal_nocard")
+        h.activity("goal_start", text=g["goal"][:120], grants=len(g["grants"]), by=pre.get("how", "goal_nocard"))
         h.emit("goal_start", id=gid)
         if hasattr(h, "status_changed"):
             h.status_changed()
         en = self.lang() == "en"
-        h.agent_notice((f"🎯 Goal mode on until {_when(g['deadline'])} (no opening card — your switch): " if en else
-                        f"🎯 目标模式开始，截止 {_when(g['deadline'])}（「设了目标就不弹窗」已打开，没有弹开工卡）：") + g["goal"])
+        reason = ("Full access" if en else "全放行") if pre.get("how") == "level_harness" else \
+                 ("your no-opening-card switch" if en else "「设了目标就不弹窗」")
+        h.agent_notice((f"🎯 Goal mode on until {_when(g['deadline'])} ({reason}, no opening card): " if en else
+                        f"🎯 目标模式开始，截止 {_when(g['deadline'])}（{reason}，没有弹开工卡）：") + g["goal"])
         return {"result": "active", "id": gid, "deadline": int(g["deadline"]), "preauth": True}
 
     # ---------------------------------------------------------- P339: an extra grant while the goal runs (one card)
@@ -1619,6 +1629,7 @@ class Goals:
         async def card() -> dict:
             try:
                 ans = await h.ask(TOOL_GRANT, {"goal": gid, "digest": dg, "card": text}, batch=False, grant_info=True,
+                                  require_passkey=any(g.get("cat") in ("spend", "price") for g in norm),
                                   ttl=5 * h.ask_ttl)
             finally:
                 self.waiting = None
@@ -1627,7 +1638,7 @@ class Goals:
             if ans.get("behavior") != "allow" or not info.get("device") or h.stopped() or not cur or cur.get("id") != gid:
                 self.host.activity("goal_grant_declined", text="; ".join(g["what"] for g in norm)[:120])
                 return {"result": "declined", "id": gid}
-            if not self.add_grants(norm, info.get("rid"), info["device"], "card", gid=gid):
+            if not self.add_grants(norm, info.get("parent_grant") if info.get("inherited") else info.get("rid"), info["device"], "level_harness" if info.get("inherited") else "card", gid=gid):
                 return {"result": "refused", "why": "too_many", "detail": f"at most {MAX_ALL_GRANTS} grants"}
             en = lang == "en"
             self.host.agent_notice(("🎯 Goal grant extended: " if en else "🎯 目标授权已追加：")

@@ -62,7 +62,7 @@ class TaskSource(Base):
             self.host.agent_notice.assert_called_once()
             self.assertIn('owner did not reject', self.host.agent_notice.call_args.args[0])
             self.assertEqual(a.call.call_args.args[0], 'thread/inject_items')
-            self.assertIn(self.host.agent_notice.call_args.args[0], str(a.call.call_args))
+            self.assertIn(self.host.agent_notice.call_args.args[0], a.call.call_args.args[1]['items'][0]['content'][0]['text'])
         asyncio.run(run())
 
     def test_low_risk_task_not_guest_or_system(self):

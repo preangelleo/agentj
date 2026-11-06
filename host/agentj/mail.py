@@ -899,8 +899,19 @@ def _mail_identity(c, uidvalidity, uid, want, gone):
     if str(uv, "ascii", "replace") != str(uidvalidity):
         raise MailError(gone)
     typ, data = c.uid("FETCH", str(int(uid)), "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)] BODY.PEEK[]<0.2048>)")
-    parts = [x[1] for x in data or [] if typ == "OK" and isinstance(x, tuple) and len(x) > 1 and isinstance(x[1], bytes)]
-    if len(parts) != 2 or id_hash(msg_id(email.message_from_bytes(parts[0], policy=email.policy.default)), parts[1][:2048]) != want:
+    parts = {}
+    uids = []
+    for x in data or []:
+        if typ != "OK" or not isinstance(x, tuple) or len(x) != 2 or not isinstance(x[1], bytes):
+            continue
+        meta = x[0].upper()
+        uids.extend(re.findall(rb"\bUID ([0-9]+)\b", meta))
+        key = "header" if b"BODY[HEADER.FIELDS (MESSAGE-ID)]" in meta else "body" if b"BODY[]<0>" in meta else None
+        if key is None or key in parts:
+            raise MailError(gone)
+        parts[key] = x[1]
+    if set(parts) != {"header", "body"} or uids != [str(int(uid)).encode()] or id_hash(
+            msg_id(email.message_from_bytes(parts["header"], policy=email.policy.default)), parts["body"][:2048]) != want:
         raise MailError(gone)
 
 
@@ -1339,6 +1350,7 @@ class Mail:
         self.st = host.st
         self.wake = asyncio.Event()
         self.busy = asyncio.Lock()
+        self.read_busy = asyncio.Lock()
         self._config_lock = threading.RLock() # serve writes vs. secret-card sink worker; no network under this lock
         self.sending: set = set()
         self.error = None
@@ -1458,6 +1470,8 @@ class Mail:
                 save_state(self.st, s)
                 return {"ok": False, "why": "no_password"}
             await self.recover(cfg, s)
+            with contextlib.suppress(MailError):
+                await self.reconcile_read(cfg, pw)
             try:
                 got = await asyncio.to_thread(mail_recovery.run, self.host, fetch_new, cfg, pw, s["uidvalidity"], s["last_uid"])
             except MailError as e:
@@ -1509,9 +1523,10 @@ class Mail:
                 await self._mark_processed(cfg, s["uidvalidity"], uid, id_hash(msg_id(msg), raw[:2048]))
             return done(v.reason, v.addr, v.detail)
         if v.role == "owner" and (why := owner_request(msg, cfg, s, v.addr)):
-            # Archive in the original mailbox: no model, attachments, phone turn, Seen flag or reply route.
+            # Recorded no-action conclusion: no model, attachments, phone turn or reply route.
             s["seen"] = (s["seen"] + [id_hash(msg_id(msg), raw[:2048])])[-KEEP_IDS:]
             save_state(self.st, s)
+            await self._mark_processed(cfg, s["uidvalidity"], uid, id_hash(msg_id(msg), raw[:2048]))
             return done("archive", detail=why)
         hour = _hour()
         used = s["hour"].get("in", [0, 0])
@@ -1526,6 +1541,7 @@ class Mail:
             self.note(T[self.lang()]["stopped"].format(n=1))
             return done("stopped")
         v.id = id_hash(msg_id(msg), raw[:2048])     # P565: also the id `agentj mail trash` takes
+        v.read_receipt = {"epoch": s["uidvalidity"], "uid": uid, "id": v.id}
         delivered = await self.deliver(cfg, msg, v)
         st2 = read_state(self.st)
         st2["seen"] = (st2["seen"] + [v.id])[-KEEP_IDS:]
@@ -1537,20 +1553,19 @@ class Mail:
         save_state(self.st, st2)
         if delivered and v.notice:
             self.log("notice", reason=v.notice, id=v.id)     # P565: which automatic marker; never the address or the subject
-        if delivered:
+        if delivered and v.notice:
             await self._mark_processed(cfg, s["uidvalidity"], uid, v.id)
         return done("delivered" if delivered else "not_delivered")
 
     async def _mark_processed(self, cfg, epoch, uid, mid):
-        # Fetches stay read-only. A reconnect verifies epoch + identity before changing this one Seen flag.
-        if not cfg.get("mark_processed_read", True) or read_config(self.st) != cfg:
-            return
-        pw = self.password(cfg)
-        if pw:
-            try:
-                await asyncio.to_thread(mark_read, cfg, pw, epoch, uid, mid)
-            except MailError as e:
-                self.log("mark_read", result=e.why)
+        from . import mail_read
+        async with self.read_busy:
+            await mail_read.completed(self, cfg, epoch, uid, mid)
+
+    async def reconcile_read(self, cfg, password):
+        from . import mail_read
+        async with self.read_busy:
+            await mail_read.reconcile(self, cfg, password)
 
     async def deliver(self, cfg: dict, msg, v: Verdict) -> bool:
         from . import inbox, provenance
@@ -1642,7 +1657,8 @@ class Mail:
         owner = v.role == "owner" and v.auth in VERIFIED     # P562 review: an unverified letter is a guest's, also for the reply
         st2["routes"][str(send.turn)] = {"to": v.addr, "role": "owner" if owner else "guest", "verified": v.auth in VERIFIED, "subject": subject, "msgid": msg_id(msg),
                                          "refs": str(msg.get("References", "") or "")[:2000], "gen": now["generation"],
-                                         "state": "awaiting", "at": int(time.time()), "explicit_owner": v.role == "owner"}
+                                         "state": "awaiting", "at": int(time.time()), "explicit_owner": v.role == "owner",
+                                         "read_receipt": getattr(v, "read_receipt", None)}
         if owner:
             remember_owner_thread(st2, msg_id(msg), v.addr, now)
         while len(st2["routes"]) > 50:
@@ -1674,7 +1690,9 @@ class Mail:
         cfg = read_config(self.st)
         lang = self.lang()
 
-        def drop(result: str) -> str:
+        async def drop(result: str) -> str:
+            if result in ("sent", "silent", "archive") and route.get("gen") == cfg["generation"] and (r := route.get("read_receipt")):
+                await self._mark_processed(cfg, r["epoch"], r["uid"], r["id"])
             st2 = read_state(self.st)
             st2["routes"].pop(str(tid), None)
             self.count(st2, "reply_" + result)
@@ -1682,24 +1700,24 @@ class Mail:
             self.log("reply", id=tid, result=result)
             return result
         if route.get("role") == "owner" and route.get("explicit_owner") is not True:
-            return drop("archive")
+            return await drop("archive")
         if not text or is_silent(text):
-            return drop("silent")
+            return await drop("silent")
         row = allow_row(cfg["allow"], route["to"])
         if not cfg["enabled"] or row is None or route.get("gen") != cfg["generation"]:
-            return drop("not_allowed")             # only allowlisted addresses, and only the account that received it
+            return await drop("not_allowed")             # only allowlisted addresses, and only the account that received it
         if row["role"] == "owner" and route.get("explicit_owner") is not True:
-            return drop("archive")
+            return await drop("archive")
         if not (row["role"] == "owner" and route.get("role") == "owner" and route.get("verified") is True):
             row = {**row, "role": "guest"}         # P562 review: unverified (or a pre-0.25.16 route) → the guest's redacted reply
         pw = self.password(cfg)
         if not pw:
-            return drop("no_password")
+            return await drop("no_password")
         hour = _hour()
         used = s["hour"].get("out", [0, 0])
         if used[0] == hour and used[1] >= cfg["reply_per_hour"]:
             self.note(T[lang]["limited"].format(to=route["to"]))
-            return drop("limited")
+            return await drop("limited")
         pending, keys = [], []
         if row["role"] == "owner":      # P194: owner-directed — as written; credentials → secret pickup cards on the phone
             from . import owner_route   # P573 (#386-3): placeholders now, the cards only once the reply is confirmed
@@ -1729,10 +1747,10 @@ class Mail:
         ans = await self.host.ask("agentj mail reply", send_target(cfg,msg,[str(msg["To"])]),   # P562: the mail channel's card
                                   batch=False, **({"avatar": "来自邮件" if lang == "zh" else "From email"} if row["role"] == "owner" and route.get("verified") else {}))
         if ans.get("behavior") != "allow":
-            return drop("denied")
+            return await drop("denied")
         s = read_state(self.st)
         if read_config(self.st) != cfg or s["routes"].get(str(tid)) != route or self.host.stopped():
-            return drop("stale")
+            return await drop("stale")
         if getattr(pending, "found", 0) or keys:   # P573: confirmed — now the pickup cards (never before: a refused reply opens none)
             from . import owner_route
             rep = await owner_route.deliver(self.host, pending, "mail", lang, route.get("subject") or "邮件")
@@ -1742,7 +1760,7 @@ class Mail:
                 await owner_route.offer_files(self.host, keys, lang, owner_route.MAX_CARDS - rep["cards"])
         used = s["hour"].get("out",[0,0])
         if used[0] == hour and used[1] >= cfg["reply_per_hour"]:
-            return drop("limited")
+            return await drop("limited")
         if str(tid) in s["routes"]:
             s["routes"][str(tid)]["state"] = "sending"
         s["hour"]["out"] = [hour, (used[1] if used[0] == hour else 0) + 1]
@@ -1751,13 +1769,13 @@ class Mail:
             await asyncio.to_thread(mail_recovery.run, self.host, send, cfg, pw, msg)
         except MailError as e:
             self.note(T[lang]["send_failed"].format(why=why_text(e.why, lang)))
-            return drop("failed")
+            return await drop("failed")
         st2 = read_state(self.st)
         st2["sent"] = (st2["sent"] + [str(msg["Message-ID"])])[-KEEP_IDS:]
         if row["role"] == "owner":
             remember_owner_thread(st2, str(msg["Message-ID"]), route["to"], cfg)
         save_state(self.st, st2)
-        return drop("sent")
+        return await drop("sent")
 
     async def trash(self, mid) -> dict:
         """See ARCHITECTURE."""
@@ -2288,7 +2306,7 @@ def cmd(a) -> int:
         elif res.get("why") == "no_owner_address":
             res["detail"] = why_text("no_owner_address", lang)
         elif res.get("why") == "denied":       # P296: declined or nobody confirmed in time → exit 1 and say it plainly
-            res["detail"] = why_text("mail_denied", lang)
+            res.setdefault("detail", why_text("mail_denied", lang))
         if not res.get("ok"):
             human(str(res.get("detail") or why_text(str(res.get("why") or ""), lang)))
         return out(res)
@@ -2412,7 +2430,7 @@ def add_parser(sub) -> None:
     p.add_argument("--days", type=int, default=None, help="workflow-grant: optional explicit expiry (1–30 days); otherwise valid until revoked")
     p.add_argument("--max", dest="workflow_max", type=int, default=100, help="compatibility only; total message-count limit removed")
     p.add_argument("--per-day", type=int, default=0, help="compatibility only; daily limit removed")
-    p.add_argument("--retry-original-manifest", help="workflow-retry replacement: exact previous manifest; only remove attachments, keep original R2-link body")
+    p.add_argument("--retry-original-manifest", help="workflow-retry replacement: exact previous manifest; remove attachments and optionally narrow original CC; keep original subject/R2-link body")
     p.add_argument("--delivery", help="workflow-retry: exact delivery key from failed send; owner approval required")
     p.add_argument("--address", dest="address_opt", help="setup：Agent 用的邮箱地址 / the mailbox address")
     p.add_argument("--preset", choices=sorted(PRESETS), help="setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)")

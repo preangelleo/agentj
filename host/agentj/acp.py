@@ -622,8 +622,10 @@ class AcpAgent(Agent):
         gone = asyncio.get_running_loop().create_future()
         self.pending[rid] = gone
         ans = selected(reject)
+        autonomous = False
         try:
             outcome, picks = await self.host.question(card, gone, task=getattr(self.host, "task_label", None))
+            autonomous = outcome == "autonomous"
             if outcome == "answer" and picks and picks[0]:
                 k = picks[0][0] - 1           # the signed card's option k is exactly the request's allow option k
                 if 0 <= k < len(allows):
@@ -633,7 +635,11 @@ class AcpAgent(Agent):
         finally:
             self.pending.pop(rid, None)
             if not gone.done():
-                self._answer(rid, ans)
+                if autonomous:
+                    from .ask import note
+                    self._answer(rid, error={"code": -32000, "message": note("autonomous", getattr(self.host, "lang", "zh"))})
+                else:
+                    self._answer(rid, ans)
 
     # ------------------------------------------------ turns
     def _block(self, uri: str, mime: str, text: str) -> dict:

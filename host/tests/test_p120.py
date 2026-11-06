@@ -56,8 +56,7 @@ class Receipts(unittest.TestCase):
 
 class DictionaryPackaging(unittest.TestCase):
     def test_recompressed_wake_dictionary_preserves_all_original_bytes(self):
-        import gzip,hashlib
-        from pathlib import Path
-        data=Path(__file__).resolve().parents[1]/'agentj/config/en.phone.gz'
-        self.assertEqual(hashlib.sha256(gzip.decompress(data.read_bytes())).hexdigest(),
+        import hashlib
+        from agentj.wake import dictionary_bytes
+        self.assertEqual(hashlib.sha256(dictionary_bytes()).hexdigest(),
                          'f7000ec3a90544c0c7c16090d8951779c2b322e14dad5006290f498567d439ea')

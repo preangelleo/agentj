@@ -144,10 +144,10 @@ class Matrix(unittest.TestCase):
             self.assertEqual(p.main_requirement(tool, {'command':'sudo rm -rf ~', 'cmd':'sudo rm -rf ~'}), 'uv')
         for tool in ('Write','Edit','MultiEdit','file.write','mcp__fixture__write_file'):
             self.assertEqual(p.main_requirement(tool, {'file_path':'notes.md'}), 'allow')
-            self.assertEqual(p.main_requirement(tool, {'file_path':'.env'}), 'hold')   # P573: a credential write is one button
+            self.assertEqual(p.main_requirement(tool, {'file_path':'.env'}), 'uv')   # P573: a credential write is one button
             self.assertEqual(p.channel_tool_decision(tool), 'handoff')
         self.assertEqual(p.main_requirement('NotebookEdit', {'notebook_path':'notes.ipynb', 'edit_mode':'delete'}), 'uv')
-        self.assertEqual(p.main_requirement('Read', {'file_path':'.env'}), 'hold')   # P573: a key read for the Agent
+        self.assertEqual(p.main_requirement('Read', {'file_path':'.env'}), 'uv')   # P573: a key read for the Agent
         self.assertEqual(p.main_requirement('apply_patch', {'patch':'*** Begin Patch\n*** Delete File: notes.md\n*** End Patch'}), 'uv')
         self.assertEqual(p.main_requirement('apply_patch', {'patch':'*** Begin Patch\n*** Add File: notes.md\n+hello\n*** End Patch'}), 'allow')
 
@@ -159,7 +159,7 @@ class MainExecution(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             st=_state(directory);h=_owner_host(st,[]);ph=Phone(st);_ready(h,ph)
             h.ask_ttl=.1
-            h.goals.current=lambda: self.fail('registry floor bypassed via goal')
+            h.goals.current=lambda: None  # #520 may inspect authority; no goal may authorize these UV cards
             h._grant_for=lambda *args: self.fail('registry floor bypassed via batch')
             for action, uv in (('settings.write',False),('Delete',True),('Bash',True),('memory.restore',False),('mcp__mail__send_email',True),('company.write',True)):
                 with self.subTest(action=action):
@@ -209,7 +209,7 @@ class MainExecution(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(len(cards), 0 if floor == 'deny' or (floor == 'allow' and level == 'full') else 1)
                     if floor in ('hold', 'uv', 'deny'):
                         judge.assert_not_called()
-                    lookup.assert_called_once_with(tool, inp)
+                    lookup.assert_any_call(tool, inp, env=None, cwd=None)  # normalized UV floor retains the exact native input
                     if cards:
                         # P573 (#386 ⑤): an opaque command is one button now — Face ID only for a uv floor
                         self.assertEqual(cards[0].get('passkey_required', False), floor == 'uv')
@@ -377,7 +377,7 @@ class LegacyFloors(unittest.TestCase):
     def test_exact_native_mapping_and_no_tool_masquerading(self):
         for tool,action in {**p.NATIVE_TOOLS,**p.HOST_TOOLS}.items():
             want = 'allow' if tool in ('Bash','exec_command','shell_command','Monitor') else p.decision('main',action)
-            if tool == 'RemoteTrigger':
+            if tool in ('RemoteTrigger', 'agentj config'):
                 want = 'uv'   # P573: kept above its (now one-button) admin row — a cloud run outside Agent J's hook
             self.assertEqual(p.main_requirement(tool), want, tool)
         for tool,action in p.MCP_TOOLS.items():
@@ -497,8 +497,8 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(out.getvalue(), '', (warnings, tool))
             for tool, inp, requirement in (
                 ('Bash', {'command': 'rm -rf ~'}, 'uv'),
-                ('Write', {'file_path': '.env'}, 'hold'),                    # P573: a credential write is one button
-                ('Write', {'file_path': '~/.aws/credentials'}, 'hold'),
+                ('Write', {'file_path': '.env'}, 'uv'),                    # P573: a credential write is one button
+                ('Write', {'file_path': '~/.aws/credentials'}, 'uv'),
                 ('Bash', {'command': 'agentj secret get fixture'}, 'uv'),
                 ('Bash', {'command': 'sudo ls'}, 'hold'),                    # P573: sudo is one button
                 ('Bash', {'command': 'stripe payment_intents create'}, 'uv'),

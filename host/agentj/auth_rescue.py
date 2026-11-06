@@ -1,8 +1,10 @@
 """Deterministic subscription-login rescue and renewal through official harness CLIs; no Agent-assisted login.
-Only login failures offer rescue; balance/rate limits do not. A paired phone plus passkey is required. Codes/tokens stay
+Only login failures offer rescue; balance/rate limits do not. Account web login needs a paired phone plus passkey;
+primary API keys retain the ordinary Models & API Key store. Codes/tokens stay
 out of logs, history, notices, relay plaintext and Agent context; PTY text is inspected only in memory. Authorization
-links go only to paired phones. A real live check must pass before replacing credentials; failed checks retain the old
-ones. Owned harness restart and native-screen verification precede the recovered claim. Never automate provider web pages.
+links go only to paired phones. Native Kimi owns its login files; API keys retain the ordinary key card's save semantics.
+Other account-renewal flows retain their verification/rollback rules. Owned harness restart and native-screen verification
+precede the recovered claim. Never automate provider web pages.
 
 Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / auth_rescue.py.
 """
@@ -29,6 +31,7 @@ TOKEN_DAYS = 365                     # `claude setup-token`: "long-lived (1-year
 WARN_DAYS = 7                        # P288: the phone shows 「还有 N 天」 + 现在续期 from this many days before the expiry
 MARKS = (7, 3, 1)                    # P288: one reminder per expiry on each of these days left (smallest crossed mark only)
 RENEW_ROUNDS = 3                     # P288: an authorize link that expired / a refused code opens a new round, this many in all
+FOREGROUND_TIMEOUT = 65.0             # whole foreground flight, including discovery
 HEALTH_TIMEOUT = 60.0                # P288: one daily tool-free call per harness, bounded
 HEALTH_DELAY = float(os.environ.get("AGENTJ_TEST_AUTH_HEALTH_DELAY") or 600)   # s after serve start before the first one
 ALERT_GAP = 600                      # one phone alert per harness per 10 minutes
@@ -539,9 +542,30 @@ class CodexFlow:
 
 
 # ------------------------------------------------------------------ Kimi Code: device code (P305)
+def kimi_authorization(text: str) -> tuple[str, str]:
+    """Node's stderr banner and legacy Python's verification URL; trusted HTTPS origins only."""
+    from urllib.parse import urlsplit, parse_qs
+    text = plain(text)
+    for match in KIMI_URL_RE.finditer(text):
+        url = match.group(0).rstrip(".,;)")
+        parsed = urlsplit(url)
+        try:
+            trusted = parsed.hostname in ("auth.kimi.com", "auth.kimi.ai", "www.kimi.com", "www.kimi.ai", "kimi.com", "kimi.ai") and not parsed.username and not parsed.password and parsed.port in (None, 443)
+        except ValueError:
+            trusted = False
+        if not trusted:
+            continue
+        code = KIMI_CODE_RE.search(text)
+        value = code.group(1) if code else parse_qs(parsed.query).get("user_code", [""])[0]
+        if value and not re.fullmatch(r"[A-Za-z0-9-]{4,16}", value):
+            continue
+        return url, value
+    return "", ""
+
+
 class KimiFlow(CodexFlow):
     """`kimi login --region <r>`: the same device-code shape as Codex. Kimi writes ~/.kimi-code/credentials/<slot>.json and
-    may touch config.toml (its oauth ref): both are backed up as bytes and put back unless the live check passes."""
+    may touch config.toml (its oauth ref): native Kimi alone owns both; failed checks never rewind login files."""
 
     def __init__(self, region: str | None = None):
         super().__init__()
@@ -550,21 +574,9 @@ class KimiFlow(CodexFlow):
         self.home = agent_kimi.home()
         self.saved: dict[Path, bytes | None] | None = None
 
-    def _files(self) -> list[Path]:
-        d = self.home / "credentials"
-        try:
-            creds = [p for p in d.iterdir() if p.suffix == ".json" and p.is_file() and not p.is_symlink()]
-        except OSError:
-            creds = []
-        return [self.home / "config.toml", *creds]
-
     def _snapshot(self) -> None:
-        self.saved = {}
-        for p in self._files():
-            try:
-                self.saved[p] = p.read_bytes() if p.is_file() and not p.is_symlink() else None
-            except OSError:
-                self.saved[p] = None
+        # Native Kimi owns config/tokens. Never rewind a concurrent native login/refresh.
+        pass
 
     def start(self) -> tuple[str, str, int]:
         exe = binary("kimi")
@@ -584,9 +596,9 @@ class KimiFlow(CodexFlow):
         while time.monotonic() < end:
             self._read(.3)
             txt = plain(self.out)
-            u, c = KIMI_URL_RE.search(txt), KIMI_CODE_RE.search(txt)
-            if u and c:
-                self.url, self.code = u.group(0).rstrip(".,;)"), c.group(1)
+            url, code = kimi_authorization(txt)
+            if url:
+                self.url, self.code = url, code
                 stop = time.monotonic() + 2                # the expiry is the next line: give it a moment
                 while not re.search(r"expires in \d+s", txt) and time.monotonic() < stop and self.proc.poll() is None:
                     self._read(.2)
@@ -599,33 +611,10 @@ class KimiFlow(CodexFlow):
                 self._read(.2)
                 break
         self.close(restore=True)
-        raise RescueError("no_code_kimi")
+        raise RescueError("no_url")
 
     def restore(self) -> None:
-        """Every file `kimi login` may have written goes back to its bytes before the flow (new ones are removed)."""
-        if self.saved is None:
-            return
-        for p in self._files():
-            if p not in self.saved:
-                try:
-                    p.unlink()
-                except OSError:
-                    pass
-        for p, data in self.saved.items():
-            try:
-                if data is None:
-                    if p.is_file() and not p.is_symlink():
-                        p.unlink()
-                    continue
-                if p.is_file() and p.read_bytes() == data:
-                    continue
-                fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=".agentj-p305-")
-                with os.fdopen(fd, "wb") as f:
-                    f.write(data)
-                os.chmod(tmp, 0o600)
-                os.replace(tmp, p)
-            except OSError:
-                pass
+        """Verification failure never undoes native credentials or an independent refresh."""
         self.saved = None
 
     def close(self, restore: bool, keep: bool = False):
@@ -794,7 +783,7 @@ def expiry_kind(kind: str, meta: dict) -> str:
 
 
 _HEALTH_ENV_DROP = ("AGENTJ_", "AGENTJARVIS_", "HERDR_", "VIBE_REMOTE_", "TMUX", "SSH_")
-HEALTH_WHY = ("cli", "config")        # #458: health failures that are neither login nor quota (their own phone line)
+HEALTH_WHY = ("cli", "config", "timeout")        # #458: health failures that are neither login nor quota (their own phone line)
 _FLAG_REFUSED = re.compile(r"(?:unrecognized|unknown)\s+(?:flag|option|argument)|unexpected argument", re.I)
 
 
@@ -858,6 +847,16 @@ def health_check(kind: str, timeout: float = HEALTH_TIMEOUT, env_extra: dict | N
            if not k.startswith(_HEALTH_ENV_DROP) and not (kind == "claude" and k in CLAUDE_STRIP)}
     if kind == "claude":
         env.update(effective_auth_env())
+    if kind in ("codex", "opencode"):
+        from . import provider_runtime, keys
+        from . import harness
+        names = tuple(keys.HARNESS_NAMES.get(kind, ())) if kind == "codex" else harness.OPENCODE_KEY_ENV
+        if kind == "codex":
+            from .peer_session import codex_user_model
+            custom = (codex_user_model(env).get("provider_table") or {}).get("env_key")
+            if isinstance(custom, str):
+                names += (custom,)
+        env = provider_runtime.fresh_environment(env, extra=names)
     env.update(env_extra or {})           # #427: a new account's own CODEX_HOME slot
     if kind == "kimi":                    # P305: no one-shot print mode — one ACP session in plan mode (agent_kimi.probe)
         from . import agent_kimi
@@ -1032,6 +1031,7 @@ class Rescue:
         self.cancel = threading.Event()
         self.health_task = None
         self.checking = False
+        self.health_pending = set()
         self.credential_stamp = None
         self.health_generation = 0
         self.invalid_health = False
@@ -1101,6 +1101,7 @@ class Rescue:
     def clear(self, kind):
         self.state.pop(kind, None)
 
+
     # ---- phone view
     def view(self) -> dict:
         from . import harness
@@ -1110,15 +1111,17 @@ class Rescue:
         for k in KINDS:
             exe = binary(k)
             st = self.state.get(k, {})
+            checking = self.checking and k in self.health_pending
+            invalid = self.invalid_health and (not self.checking or k in self.health_pending)
             r = {"kind": k, "label": LABEL[k], "installed": bool(exe), "current": self.current() == k,
-                 "state": "checking" if self.checking else "unknown" if self.invalid_health else st.get("cls") or "ok", "routes": {"claude": ["setup_token", "paste", "login"],
+                 "state": "checking" if checking else "unknown" if invalid else st.get("cls") or "ok", "routes": {"claude": ["setup_token", "paste", "login"],
                                                              "codex": ["device"], "opencode": ["provider_key"],
                                                              "kimi": ["device"]}[k]}
             r["expiry"] = expiry_kind(k, meta)                   # P288: known / unknown / auto / none
             hc = health.get(k)
-            if not self.checking and isinstance(hc, dict) and not hc.get("ok") and not st.get("cls"):
+            if not checking and isinstance(hc, dict) and not hc.get("ok") and not st.get("cls"):
                 r["state"] = "unknown"
-            if isinstance(hc, dict) and not (self.checking or self.invalid_health):
+            if isinstance(hc, dict) and not (checking or invalid):
                 r["health"] = {x: hc[x] for x in ("at", "ok", "cls", "why") if x in hc}
                 if hc.get("why") in HEALTH_WHY:          # #458: CLI / config, never shown as "not logged in"
                     r["health"]["detail"] = self.why(hc["why"], h=LABEL[k])
@@ -1132,7 +1135,7 @@ class Rescue:
                 except Exception:  # noqa: BLE001
                     pass
                 r["conflicts"] = conflicts()
-            if k in self.last and not (self.checking or self.invalid_health):
+            if k in self.last and not (checking or invalid):
                 r["last"] = self.last[k]
             rows.append(r)
         f = self.flow
@@ -1318,7 +1321,7 @@ class Rescue:
         self.host.agent_notice(self.t("account_added", h=LABEL[kind], n=item["name"]))
 
     async def _kimi(self):
-        """P305: `kimi login --region <the configured site>` — the Codex shape; a failed live check puts the files back."""
+        """`kimi login --region <configured site>`; native Kimi owns any accepted login even when a test fails."""
         flow = KimiFlow((getattr(self.host, "agent_cfg", None) or {}).get("region"))
         try:
             url, code, ttl = await asyncio.to_thread(flow.start)
@@ -1334,7 +1337,7 @@ class Rescue:
         hc = await asyncio.to_thread(health_check, "kimi")
         if not hc["ok"]:
             await asyncio.to_thread(flow.restore)
-            return self._end("kimi", "failed", "quota" if hc.get("cls") in ("balance", "rate_limit") else "verify_kimi")
+            return self._end("kimi", "failed", "quota" if hc.get("cls") in ("balance", "rate_limit") else "probe")
         self._health_mark("kimi", hc)
         await self.recover("kimi")
 
@@ -1498,6 +1501,7 @@ class Rescue:
         finally:
             for i in range(len(tok)):
                 tok[i] = 0
+
 
     async def _opencode(self, *, remote=None) -> dict:
         """OpenCode logs in per provider: the existing provider key card (P33 provider_key) is the rescue."""
@@ -1663,7 +1667,10 @@ class Rescue:
     def _credential_stamp(self):
         # Only a memory-local digest. Login files contribute inode/timestamp metadata, never their contents.
         h = hashlib.sha256(json.dumps(effective_auth_env(), sort_keys=True).encode())
-        paths = [Path(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")) / "auth.json",
+        from . import keys, agent_kimi
+        h.update(json.dumps({k: v for k, v in keys.read_env().items() if keys.importable(k)}, sort_keys=True).encode())
+        paths = [agent_kimi.home() / "config.toml", agent_kimi.home() / "credentials", *agent_kimi.oauth_files(),
+                 Path(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")) / "auth.json",
                  Path(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")) / ".credentials.json"]
         paths.append(Path(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")) / "settings.json")
         if sys.platform == "darwin":
@@ -1683,45 +1690,66 @@ class Rescue:
         return h.digest()
 
     async def refresh_health(self, force=True):
-        """Opening/manual check tests live; foreground polling detects replacements. One shared flight."""
-        current = await asyncio.to_thread(self._credential_stamp)
+        """One bounded flight; providers run concurrently and publish independent conclusions."""
         if self.health_task and not self.health_task.done():
             return
-        if not force and current == self.credential_stamp:
-            return
         self.checking = True
+        self.health_pending = set(KINDS)
         self.health_generation += 1
         self.broadcast()
+
         async def run():
-            nonlocal current
             self.invalid_health = True
-            try:
+            async def check_all():
+                current = await asyncio.to_thread(self._credential_stamp)
+                if not force and current == self.credential_stamp:
+                    self.invalid_health = False
+                    return
                 for _ in range(3):
                     generation = self.health_generation
                     targets = await asyncio.to_thread(health_targets)
                     for k in ("claude", "codex"):
                         if k not in targets and await asyncio.to_thread(binary, k):
-                            targets.append(k)  # a stale detector saying signed out cannot suppress the check
-                    results = {}
-                    for k in targets:
+                            targets.append(k)
+                    self.health_pending = set(targets)
+                    async def one(k):
                         if self.flow and self.flow.get("kind") == k and self.flow.get("stage") not in ("done", "failed"):
-                            continue
-                        results[k] = await asyncio.to_thread(health_check, k)
-                    latest = await asyncio.to_thread(self._credential_stamp)
-                    if latest != current or generation != self.health_generation:
-                        current = latest
-                        continue  # stay checking; never paint the old conclusion between retries
-                    for k, res in results.items():
+                            self.health_pending.discard(k)
+                            return
+                        try:
+                            res = await asyncio.to_thread(health_check, k)
+                        except Exception:
+                            res = {"ok": False, "cls": None, "why": "failed"}
+                        latest = await asyncio.to_thread(self._credential_stamp)
+                        if latest != current or generation != self.health_generation:
+                            return
                         self._health_mark(k, res)
                         self.state.pop(k, None)
                         if res.get("cls"):
                             self.state[k] = {"cls": res["cls"], "at": int(time.time())}
+                        self.health_pending.discard(k)
+                        self.broadcast()
+                    await asyncio.gather(*(one(k) for k in targets))
+                    latest = await asyncio.to_thread(self._credential_stamp)
+                    if latest != current or generation != self.health_generation:
+                        current = latest
+                        self.health_pending = set(KINDS)
+                        continue
                     self.credential_stamp = current
                     self.invalid_health = False
                     return
-                self.credential_stamp = None  # rapid replacements: unknown until the next foreground poll
+                self.credential_stamp = None
+            try:
+                await asyncio.wait_for(check_all(), FOREGROUND_TIMEOUT)
+            except Exception:
+                for k in self.health_pending:
+                    self._health_mark(k, {"ok": False, "cls": None, "why": "timeout"})
+                    self.state.pop(k, None)
+                self.invalid_health = False
+                self.credential_stamp = None
             finally:
                 self.checking = False
+                self.health_pending.clear()
                 self.broadcast()
         bg = getattr(self.host, "_bg", None)
         self.health_task = bg(run(), "auth_health") if bg else asyncio.create_task(run())

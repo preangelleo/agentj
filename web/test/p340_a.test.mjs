@@ -69,7 +69,7 @@ test('#27 the notice plan: copied → success (share only where it exists); not 
 
 test('#27 wiring: the gear fires on release, the screenshot writes the clipboard before any await, shotclip skips our copy', () => {
   const s = read('js/settings.js'), a = read('app.js'), sc = read('js/shotclip.js'), ui = read('js/ui.js');
-  assert.match(s, /longPress\(el\('setBtn'\), \(\) => H\.screenshot\?\.\(\), \{ at: 'release' \}\)/);
+  assert.match(s, /longPress\(el\('setBtn'\), \(\) => \{ if \(H\.paired\(\)\) H\.screenshot\?\.\(\); \}, \{ at: 'release' \}\)/);
   const body = a.slice(a.indexOf('const screenshot = () => {'), a.indexOf('const shotNotice'));
   assert.ok(body.indexOf('shotcopy.copyImage(shot)') > 0 && !/await/.test(body.slice(0, body.indexOf('shotcopy.copyImage(shot)'))), 'no await before copyImage');
   assert.match(sc, /if \(ownCopy\) \{ ownCopy = false; lastHash = h; return; \}/);

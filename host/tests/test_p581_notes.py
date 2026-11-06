@@ -3,6 +3,8 @@ import asyncio
 import contextlib
 import json
 import time
+import tempfile
+from pathlib import Path
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -49,7 +51,9 @@ class HarnessNotes(unittest.TestCase):
 
     def test_queue_rechecks_harness_at_delivery(self):
         n = self.notice()
-        st = Mock(agent_config=Mock(return_value={'kind':'claude'}))
+        tmp = tempfile.TemporaryDirectory(prefix='p581-notice-')
+        self.addCleanup(tmp.cleanup)
+        st = Mock(root=Path(tmp.name), agent_config=Mock(return_value={'kind':'claude'}))
         h = SimpleNamespace(st=st, agent=SimpleNamespace(kind='claude'), lang='en', preferences={}, official_pending={}, stopped=lambda:False)
         send = notices.NoticeSend(h, n, 'ask_upgrade', 'en')
         self.assertIn('Claude status line', send.text)

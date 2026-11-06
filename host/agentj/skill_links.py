@@ -1,14 +1,14 @@
-"""Recognize exact released skill trees; preserve edits and unknown origins.
+"""Update bundled skill entries automatically, preserving old copies outside discovery.
 
 History is pinned to public release tags, not names or writable ownership markers.
 A receipt only proves a now-dangling link that this installer previously created.
 All replacement renames the old entry first; external link destinations stay untouched.
 """
-import errno
 import hashlib
 import json
 import os
 import stat
+import shutil
 import uuid
 from functools import lru_cache
 from pathlib import Path
@@ -58,31 +58,6 @@ def fingerprint(root, choice=False):
     except (OSError,ValueError,RuntimeError):
         return None
 
-def choice_fingerprint(root):
-    """Acknowledgement only: link text is data, never evidence of package ownership."""
-    try:
-        mode=root.lstat().st_mode
-        if stat.S_ISLNK(mode):
-            raw=os.readlink(root)
-            try:resolved=root.resolve(strict=True)
-            except FileNotFoundError:parts=['dangling',raw]
-            except RuntimeError:parts=['loop',raw]
-            except OSError as exc:
-                if exc.errno!=errno.ELOOP:raise
-                parts=['loop',raw]
-            else:
-                digest=choice_fingerprint(resolved)
-                if digest is None:return None
-                parts=['link',raw,digest]
-        elif stat.S_ISREG(mode):
-            if root.stat().st_size>2*1024*1024:return None
-            with root.open('rb') as stream:data=stream.read(2*1024*1024+1)
-            if len(data)>2*1024*1024:return None
-            parts=['file',hashlib.sha256(data).hexdigest()]
-        else:return fingerprint(root,choice=True)
-        return hashlib.sha256(json.dumps(parts,separators=(',',':')).encode()).hexdigest()
-    except (OSError,ValueError,RuntimeError):return None
-
 def _read(parent):
     try:
         path=parent/RECEIPT
@@ -105,7 +80,7 @@ def classify(name,source,target):
     try:
         try:own=target.is_symlink() and target.resolve()==source.resolve()
         except (OSError,RuntimeError):own=False
-        if own:return 'installed',None
+        if own or managed(source,target):return 'installed',None
         if not os.path.lexists(target):return 'missing',None
         digest=fingerprint(target)
         current=fingerprint(source)
@@ -120,74 +95,186 @@ def classify(name,source,target):
             old=receipt.get('digest')
             if receipt.get('source')==link and old and (old==current or old in history().get(name,{})):
                 return 'legacy',old
-        choice=choice_fingerprint(target)
-        if choice and receipt.get('keep')==choice:return 'kept',digest
         return 'conflict',digest
     except (OSError,ValueError,RuntimeError):return 'conflict',None
 
-def link(name,source,target,replace=False):
-    """One entry only; keep original under a unique sibling name on replacement."""
-    before,digest=classify(name,source,target)
-    if before=='installed':
-        receipt={'source':str(source),'digest':fingerprint(source)}
-        if _read(target.parent).get(name)!=receipt:_save(target.parent,name,receipt)
-        return False
-    if before not in ('missing','legacy') and not replace:return False
-    target.parent.mkdir(parents=True,exist_ok=True)
-    if before=='missing':
-        target.symlink_to(source)
-        _save(target.parent,name,{'source':str(source),'digest':fingerprint(source)})
-        return True
-    backup=None
-    old_link=None
-    def restore():
-        if backup is None:return
-        # Exclusive creation: never replace a concurrently created owner entry.
-        try:target.symlink_to(old_link if old_link is not None else backup)
-        except FileExistsError:pass
-    try:
-        if os.path.lexists(target):
-            backup_root=target.parent.parent/'.agentj-skill-backups'
-            if backup_root.is_symlink():raise OSError('backup_link')
-            backup_root.mkdir(mode=0o700,exist_ok=True)
-            os.chmod(backup_root,0o700)
-            backup=backup_root/(name+'-'+uuid.uuid4().hex)
-            observed=target.lstat()
-            identity=(observed.st_dev,observed.st_ino,stat.S_IFMT(observed.st_mode))
-            old_link=os.readlink(target) if stat.S_ISLNK(observed.st_mode) else None
-            original=(target.parent/old_link).absolute() if old_link is not None else None
-            was_dangling=old_link is not None and not target.exists()
-            target.rename(backup)
-            moved=backup.lstat()
-            if identity!=(moved.st_dev,moved.st_ino,stat.S_IFMT(moved.st_mode)):
-                old_link=os.readlink(backup) if stat.S_ISLNK(moved.st_mode) else None
-                restore()
-                raise OSError('skill_entry_changed')
-            if old_link is not None:
-                # Retain raw link bytes for restore and its original resolution base for review.
-                meta=backup.with_name(backup.name+'.json')
-                meta.write_text(json.dumps({'path':str(target),'link':old_link,'resolved_from':str(original)}))
-                os.chmod(meta,0o600)
-                backup.with_name(backup.name+'.resolved').symlink_to(original)
-            if before=='legacy' and not replace:
-                after=fingerprint(original if original is not None else backup)
-                known_dangling=was_dangling and old_link is not None and os.readlink(backup)==old_link
-                if after!=digest and not known_dangling:
-                    restore()
-                    raise OSError('skill_changed')
-        try:target.symlink_to(source)
-        except OSError:
-            restore()
-            raise
-        _save(target.parent,name,{'source':str(source),'digest':fingerprint(source)})
-        return True
-    except OSError:
-        restore()
-        raise
+LOGIC_SUFFIXES = {'.md', '.py', '.sh', '.js', '.mjs', '.ts'}
 
-def keep(name,source,target):
-    kind,_=classify(name,source,target)
-    digest=choice_fingerprint(target)
-    if kind not in ('conflict','kept') or not digest:return False
-    _save(target.parent,name,{'keep':digest})
+def logic_files(source):
+    try:
+        inventory=json.loads(Path(__file__).with_name('bundled_skills.json').read_text())['logic_files']
+        if source.name in inventory:return [Path(rel) for rel in inventory[source.name]]
+    except (OSError,ValueError,KeyError):pass
+    return sorted(p.relative_to(source) for p in source.rglob('*')
+                  if p.is_file() and p.suffix in LOGIC_SUFFIXES)
+
+def points_to(path, source):
+    try:return path.is_symlink() and path.resolve()==source.resolve()
+    except (OSError,RuntimeError):return False
+
+def managed(source, target):
+    """Only exact package logic paths are managed; user configuration is not evidence."""
+    try:
+        return target.is_dir() and all((target/rel).is_symlink() and
+            (target/rel).resolve()==(source/rel).resolve() for rel in logic_files(source))
+    except (OSError, RuntimeError):return False
+
+def _seed(source,target):
+    """Durable local root: package deletion must never delete future user configuration."""
+    target.mkdir(mode=0o700)
+    for entry in source.rglob('*'):
+        path=target/entry.relative_to(source)
+        if entry.is_dir():path.mkdir(parents=True,exist_ok=True)
+        elif entry.is_file():
+            path.parent.mkdir(parents=True,exist_ok=True)
+            if entry.relative_to(source) in set(logic_files(source)):path.symlink_to(entry)
+            else:shutil.copy2(entry,path)
+
+def _durable_overlay(source,original,destination):
+    """Materialize config/data before replacing an old package-owned root link."""
+    destination.mkdir(mode=0o700)
+    def copy_dir(old,new):
+        for entry in old.iterdir():
+            path=new/entry.name
+            if entry.is_symlink():
+                raw=os.readlink(entry);resolved=Path(os.path.abspath(entry.parent/raw))
+                try:inside=resolved.relative_to(original.absolute())
+                except ValueError:path.symlink_to(resolved)
+                else:path.symlink_to(raw if not Path(raw).is_absolute() else destination/inside)
+            elif entry.is_dir():path.mkdir();copy_dir(entry,path)
+            elif entry.relative_to(original) not in set(logic_files(source)):shutil.copy2(entry,path)
+    copy_dir(original,destination)
+    for rel in logic_files(source):
+        cursor=destination
+        for part in rel.parts[:-1]:
+            child=cursor/part
+            if child.is_symlink():
+                origin=child.resolve();child.unlink();_overlay_empty(origin,child)
+            else:child.mkdir(exist_ok=True)
+            cursor=child
+        path=destination/rel
+        if os.path.lexists(path):path.unlink()
+        path.symlink_to(source/rel)
+
+def _overlay(source, original, destination):
+    """Local view of external trees; never write through the user's root symlink."""
+    destination.mkdir(mode=0o700)
+    for entry in original.iterdir():
+        (destination/entry.name).symlink_to(entry.absolute())
+    # Replace only the directories that contain packaged logic, preserving their siblings.
+    for rel in logic_files(source):
+        cursor=destination
+        for part in rel.parts[:-1]:
+            child=cursor/part
+            if child.is_symlink():
+                origin=child.resolve();child.unlink();_overlay_empty(origin, child)
+            else:child.mkdir(exist_ok=True)
+            cursor=child
+        path=destination/rel
+        if os.path.lexists(path):path.unlink()
+        path.symlink_to(source/rel)
+
+def _overlay_empty(original, destination):
+    destination.mkdir(mode=0o700)
+    for entry in original.iterdir():
+        (destination/entry.name).symlink_to(entry.absolute())
+
+def link(name,source,target,replace=False):
+    """Update exact packaged logic paths. Config/data retain their paths and bytes."""
+    before,digest=classify(name,source,target)
+    receipt=_read(target.parent).get(name,{})
+    if not isinstance(receipt,dict):receipt={}
+    if before=='installed' and not points_to(target,source):
+        row={**receipt,'source':str(source),'digest':fingerprint(source)}
+        if row!=receipt:_save(target.parent,name,row)
+        return False
+    target.parent.mkdir(parents=True,exist_ok=True)
+    if before=='installed':before='legacy';digest=fingerprint(target)
+    if before=='missing':
+        _seed(source,target)
+        _save(target.parent,name,{'source':str(source),'digest':fingerprint(source)})
+        return True
+    backup_root=target.parent.parent/'.agentj-skill-backups'
+    if backup_root.is_symlink():raise OSError('backup_link')
+    backup_root.mkdir(mode=0o700,exist_ok=True);os.chmod(backup_root,0o700)
+    same_logic=all((target/rel).is_file() and (target/rel).read_bytes()==(source/rel).read_bytes() for rel in logic_files(source)) if digest is not None and target.is_dir() else False
+    reason='unreadable_or_unverified' if digest is None else 'released_copy' if before=='legacy' or same_logic else 'modified'
+    label='你改过的旧版本' if reason!='released_copy' else '内置技能旧版本'
+    backup=backup_root/(name+'-'+label+'-'+uuid.uuid4().hex)
+    saved_links=[]
+    original_link=os.readlink(target) if target.is_symlink() else None
+    original=(target.parent/original_link).absolute() if original_link is not None else None
+    logic_backup=None
+    directory=target.is_dir() and not target.is_symlink()
+    if directory:
+        # Never scan or move unknown user files. Renaming a chmod-000 logic file needs no read.
+        backup.mkdir(mode=0o700)
+        for rel in logic_files(source):
+            path=target/rel
+            # A nested linked directory belongs to the user too: materialize a local view first.
+            cursor=target
+            for part in rel.parts[:-1]:
+                child=cursor/part
+                if child.is_symlink():
+                    origin=child.resolve();view=child.with_name('.agentj-view-'+uuid.uuid4().hex)
+                    _overlay_empty(origin,view)
+                    # Directory links must never become ancestors of saved logic paths.
+                    links_root=backup.with_name(backup.name+'-directory-links');links_root.mkdir(mode=0o700,exist_ok=True)
+                    saved=links_root/uuid.uuid4().hex
+                    saved_links.append({'path':str(child),'link':os.readlink(child),'resolved_from':str(origin),'backup':str(saved)})
+                    child.rename(saved);view.rename(child)
+                else:child.mkdir(exist_ok=True)
+                cursor=child
+            if points_to(path,source/rel):continue
+            saved=backup/rel;saved.parent.mkdir(parents=True,exist_ok=True)
+            if os.path.lexists(path):
+                if path.is_symlink():saved_links.append({'path':str(path),'link':os.readlink(path),'resolved_from':str((path.parent/os.readlink(path)).absolute()),'backup':str(saved)})
+                path.rename(saved)
+            try:path.symlink_to(source/rel)
+            except OSError:
+                if os.path.lexists(saved) and not os.path.lexists(path):saved.rename(path)
+                raise
+        # Packaged non-logic examples are defaults: seed absent files only, never replace.
+        for entry in source.rglob('*'):
+            if entry.is_file() and entry.relative_to(source) not in set(logic_files(source)):
+                path=target/entry.relative_to(source)
+                if not os.path.lexists(path):
+                    path.parent.mkdir(parents=True,exist_ok=True)
+                    try:
+                        with path.open('xb') as stream:stream.write(entry.read_bytes())
+                    except FileExistsError:pass
+    else:
+        view=None
+        if target.is_symlink() and target.is_dir():
+            view=backup.with_name(backup.name+'-current')
+            old_receipt=receipt.get('source')
+            if points_to(target,source) or old_receipt==str(original):
+                _durable_overlay(source,original,view)
+                logic_backup=backup.with_name(backup.name+'-旧逻辑');logic_backup.mkdir(mode=0o700)
+                for rel in logic_files(source):
+                    old=original/rel;saved=logic_backup/rel;saved.parent.mkdir(parents=True,exist_ok=True)
+                    if old.is_file():
+                        if old.is_symlink():shutil.copy2(old,saved)
+                        else:
+                            try:shutil.copy2(old,saved)
+                            except PermissionError:os.link(old,saved)
+            else:_overlay(source,original,view)
+        observed=target.lstat()
+        target.rename(backup)
+        moved=backup.lstat()
+        if (observed.st_dev,observed.st_ino)!=(moved.st_dev,moved.st_ino):
+            if not os.path.lexists(target):target.symlink_to(original_link or backup)
+            raise OSError('skill_entry_changed')
+        try:target.symlink_to(view or source)
+        except OSError:
+            if not os.path.lexists(target):target.symlink_to(original_link or backup)
+            raise
+        if original is not None:
+            backup.with_name(backup.name+'.resolved').symlink_to(original)
+    info={'path':str(target),'reason':reason,'modified':reason!='released_copy','saved_links':saved_links,'logic_backup':str(logic_backup) if logic_backup else ''}
+    if original_link is not None:info.update(link=original_link,resolved_from=str(original))
+    meta=backup.with_name(backup.name+'.json')
+    meta.write_text(json.dumps(info,ensure_ascii=False));os.chmod(meta,0o600)
+    _save(target.parent,name,{'source':str(source),'digest':fingerprint(source),'updated':True,
+          'backup':str(backup),'modified':reason!='released_copy','reason':reason})
     return True

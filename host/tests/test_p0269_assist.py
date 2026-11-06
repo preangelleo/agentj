@@ -313,8 +313,8 @@ class Grant(_KeyEnv, unittest.IsolatedAsyncioTestCase):
         loop = asyncio.create_task(self.h.assist.loop())
         try:
             for _ in range(200):
-                if self.h.assist.g.get("revoked"):
-                    break
+                if self.h.assist.g.get("revoked") and not self.h.assist.ending:
+                    break  # end() has durably persisted and completed cleanup before cancelling its loop
                 await asyncio.sleep(0.02)
         finally:
             loop.cancel()

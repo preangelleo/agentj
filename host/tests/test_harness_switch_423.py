@@ -269,7 +269,7 @@ class QueueLifetime(unittest.IsolatedAsyncioTestCase):
 class LockVisibility(unittest.IsolatedAsyncioTestCase):
     async def test_dequeued_hello_waiting_for_real_turn_lock_is_deferred(self):
         from types import SimpleNamespace
-        host = SimpleNamespace(turn_lock=asyncio.Lock())
+        host = SimpleNamespace(turn_lock=asyncio.Lock(), st=mock.Mock())
         a = shared.SharedClaudeAgent(host, {'kind':'claude','dir':'/isolated','_workflow_ceo':True})
         host.agent = a
         await host.turn_lock.acquire()

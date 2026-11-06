@@ -67,7 +67,7 @@ class Core(unittest.TestCase):
                     self.assertNotIn(phrase, core(lang))
 
     def test_budgets_not_raised(self):
-        self.assertEqual(main_identity.verify_core()["version"], 25)          # manifest + pinned hashes agree
+        self.assertEqual(main_identity.verify_core()["version"], 26)          # manifest + pinned hashes agree
         for lang, cap in (("zh", 4408), ("en", 13957)):
             self.assertLessEqual(len(core(lang)), cap, lang)
         self.assertEqual((shared.SharedClaudeAgent.INLINE_MAX, shared.SharedClaudeAgent.HOOK_MAX), (9500, 10000))

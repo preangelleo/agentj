@@ -12,7 +12,10 @@ test('P537 heartbeat signed object binds draft operation and revision',()=>{
 test('P537 settings cannot introduce an inline multiline textarea',()=>{
  const html=read('../public/index.html');
  const settings=html.slice(html.indexOf('<section id="settings"'),html.indexOf('<div class="reader'));
- assert.doesNotMatch(settings,/<textarea\b/);
+ const fields=[...settings.matchAll(/<textarea\b([^>]*)>/g)];
+ assert.ok(fields.length>0,'authored multiline fields exercise shared editor conversion');
+ for(const [,attrs] of fields)assert.match(attrs,/id="[^"]+"/,'multiline value keeps an ID for the shared editor');
+ assert.match(read('../public/js/text-editor.js'),/querySelectorAll\('textarea'\)/);
  for(const module of ['settings','mail','mail-servers','ctmanage','contacts','imessage','local-files','heartbeat-prompt']){
   assert.doesNotMatch(read('../public/js/'+module+'.js'),/(?:mk|createElement)\(['"]textarea['"]|['"]textarea['"]\s*:\s*['"]input['"]/);
  }

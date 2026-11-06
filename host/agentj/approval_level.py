@@ -412,6 +412,41 @@ def harness_floor(tool: str, tool_input, verdict) -> str | None:
     return None
 
 
+def full_access_keep(tool: str, tool_input, verdict, *, env=None, workdir=None,
+                     requirement=None, require_passkey=False) -> str | None:
+    """#520: the actual UV floor for a full-access step; None means no human gate.
+
+    Provenance, stop state and action admission remain the caller's responsibility.
+    Native PermissionRequest, an ordinary confirmation card or background turn is
+    not a UV floor. The host's real request requirement and existing key / money /
+    destructive / trust-root floors remain authoritative.
+    """
+    from . import confirm_tier, policy_registry
+    if requirement is None:
+        requirement = policy_registry.main_requirement(tool, tool_input, env=env, cwd=workdir)
+    if requirement == "deny":
+        return "deny"
+    if require_passkey or requirement == "uv":
+        return "uv"
+    try:
+        from . import approval_policy, danger, goal
+        operation = tool.split("__")[-1]
+        shell = operation in ("Bash", "exec_command", "shell_command", "execute_command", "bash", "Monitor") and isinstance(tool_input, dict) and ("command" in tool_input or "cmd" in tool_input)
+        canonical = "Bash" if shell else tool
+        normalized = {**tool_input, "command": tool_input.get("command", tool_input.get("cmd", ""))} if shell else tool_input
+        if shell or operation in ("js_repl", "PowerShell", "write_stdin"):
+            raw_code = goal.action_text(canonical, normalized) if shell else "\n".join(
+                tool_input.get(k, "") for k in ("command", "cmd", "code", "chars", "input")
+                if isinstance(tool_input, dict) and isinstance(tool_input.get(k), str))
+            if approval_policy.shows_secret(danger.executable_text(raw_code)):
+                return "credentials"
+        keep = confirm_tier.harness_keeps(canonical, normalized, env=env, workdir=workdir)
+        floor = harness_floor(canonical, normalized, verdict)
+    except Exception:  # noqa: BLE001 — retain the existing fail-closed safety floor
+        return "credentials"
+    return next((why for why in (keep, floor) if why in confirm_tier.HARNESS_KINDS + FLOOR_FACE), None)
+
+
 WHY = {"zh": {"missing": "没有在已配对的遥控器上确认过", "changed": "确认记录和当前设置对不上",
               "unpaired": "当初确认它的遥控器「{dev}」已经解绑", "rekeyed": "当初确认它的遥控器「{dev}」重新设置了 Face ID / 指纹",
               "bad_sig": "当初的确认签名核对不上"},
@@ -523,3 +558,18 @@ async def tell_owner(host, text: str) -> list[str]:
     except Exception:  # noqa: BLE001
         pass
     return sent
+
+
+def autonomous(host) -> bool:
+    """#520: existing signed Full access for an owner or a verified internal turn.
+
+    External content, unknown requests and delegated grants never gain authority.
+    Callers recheck after asynchronous validation, immediately before their effect.
+    """
+    from . import provenance
+    agent = getattr(host, "agent", None)
+    return (level(host.preferences, host.st) == "harness"
+            and not provenance.owner_grant_required(agent)
+            and (not provenance.untrusted_turn(agent)
+                 or provenance.unattended_turn(agent) in ("system", "same_host", "scheduled_task")
+                 or bool(provenance.owner_channel_turn(agent))))

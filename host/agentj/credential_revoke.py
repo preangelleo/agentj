@@ -121,10 +121,13 @@ def snapshot(env, st, seq, now, keys=None):
 class Revocations:
     def __init__(self, host):
         import asyncio
+        from .poll_backoff import Backoff
+        self.backoff = Backoff()
         self.host = host
         self.seq = int(time.time()*1000)
         self.lock = asyncio.Lock()
         self.results = []
+        self.inflight = None
 
     def poll(self, link, seq):
         h = self.host
@@ -143,6 +146,8 @@ class Revocations:
             h = self.host; link = cloud.read_cloud(h.st)
             if not link:
                 return True
+            if self.backoff.remaining() or (self.inflight is not None and not self.inflight.done()):
+                raise ValueError('revocation_sync')
             # Persist before send: a restart/clock rollback cannot reuse an earlier signed response's poll sequence.
             with h.st.devices_lock():
                 path=h.st.root/'credential_revoke_seq.json'
@@ -152,7 +157,20 @@ class Revocations:
                 h.st.write_private(path,json.dumps(self.seq).encode())
             seq = self.seq
             deadline = time.monotonic() + SYNC_TIMEOUT
-            code, obj = await asyncio.wait_for(in_daemon_thread(self.poll,link,seq),SYNC_TIMEOUT)
+            from .poll_backoff import response_delay
+            try:
+                self.inflight = asyncio.ensure_future(in_daemon_thread(self.poll,link,seq))
+                self.inflight.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+                done, _ = await asyncio.wait({self.inflight}, timeout=SYNC_TIMEOUT)
+                if not done: raise TimeoutError
+                code, obj = self.inflight.result()
+            except (cloud.CloudError, TimeoutError):
+                self.backoff.failed()
+                raise
+            if code == 200:
+                self.backoff.reset()
+            else:
+                self.backoff.failed(cloud.status_class(code), response_delay(code, obj))
             q = snapshot(obj.get('snapshot'),h.st,seq,int(time.time()*1000)) if code == 200 else None
             if q is None or time.monotonic() >= deadline:
                 raise ValueError('revocation_sync')

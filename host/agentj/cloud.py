@@ -18,6 +18,7 @@ from typing import Callable, NamedTuple
 
 from . import __version__ as VERSION, wire   # VERSION: single source in agentj/__init__.py
 from .envcompat import getenv
+from .poll_backoff import Response, response_delay, retry_after
 from .text import agent_name_problem, clean_label, clean_line, is_clean_agent_name, machine_name, normalise_agent_name
 
 AGENT = f"agentj/{VERSION}"
@@ -79,6 +80,7 @@ class ReportResult(NamedTuple):
     seq: int | None = None
     account: dict | None = None   # A1: account language
     notices: list | None = None   # verified official data, saved privately before callback
+    retry_after: float | None = None
 
 
 # ------------------------------------------------------------------ envelope
@@ -182,8 +184,10 @@ def post_json(url: str, payload: dict, timeout: float = HTTP_TIMEOUT, max_respon
     try:
         with opener.open(req, timeout=timeout) as r:
             status, raw = r.status, r.read(max_response + 1)
+            retry_header = retry_after(r.headers.get("Retry-After"))
     except urllib.error.HTTPError as e:
         status = e.code
+        retry_header = retry_after(e.headers.get("Retry-After")) if e.headers else None
         try:
             raw = e.read(max_response + 1)
         except Exception:
@@ -201,7 +205,9 @@ def post_json(url: str, payload: dict, timeout: float = HTTP_TIMEOUT, max_respon
             obj = parsed if isinstance(parsed, dict) else {}
         except (ValueError, RecursionError):   # a hostile answer nested deeper than the parser goes
             obj = {}
-    return status, obj
+    answer = Response(obj)
+    answer.retry_after = retry_header
+    return status, answer
 
 
 # ------------------------------------------------------------------ whitelisted response parsing
@@ -564,7 +570,7 @@ def send_report(st, online, pending, *, post: Callable = report_post_json, now: 
             continue
         if status == 403 and err == "not_bound":
             return ReportResult("unbound", status_class(status), seq)
-        return ReportResult("fail", status_class(status) if status != 200 else "bad_response", seq)
+        return ReportResult("fail", status_class(status) if status != 200 else "bad_response", seq, retry_after=response_delay(status, obj))
 
 
 # ------------------------------------------------------------------ login (RFC 8628 shape)
@@ -845,6 +851,7 @@ class SyncResult(NamedTuple):
     status: str = ""
     unbind: tuple = ()              # ((request id, device id), ...) — requests only; serve decides
     name: tuple = ("none", None)    # A3.2 agent_name: ("none", None) absent/null · ("ok", name) · ("bad", None) refused
+    retry_after: float | None = None
 
 
 def parse_sync_name(obj: dict) -> tuple:
@@ -893,7 +900,7 @@ def send_sync(st, results: list[tuple[str, str]], *, post: Callable = post_json,
         return SyncResult("ok", "200", req, parse_sync_name(obj)) if req is not None else SyncResult("fail", "bad_response")
     if status == 403 and parse_error(obj) == "not_bound":
         return SyncResult("unbound", status_class(status))
-    return SyncResult("fail", status_class(status))
+    return SyncResult("fail", status_class(status), retry_after=response_delay(status, obj))
 
 
 # ------------------------------------------------------------------ rename (A3.2: host-initiated Agent rename)

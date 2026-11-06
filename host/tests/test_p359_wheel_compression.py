@@ -8,6 +8,7 @@ import types
 import unittest
 import warnings
 import zipfile
+import zlib
 from pathlib import Path
 from unittest import mock
 
@@ -19,14 +20,17 @@ class WheelCompression(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        # Only the build plugin interface is synthetic; ZIP reads/writes are real.
-        # Runtime/full-suite imports need no build-time Hatch dependency.
+        # Build-only interfaces/encoder are substituted here; ZIP reads/writes are real.
+        # The actual declared zopfli algorithm is exercised by the uv-build fidelity integration.
         interface = types.ModuleType('hatchling.builders.hooks.plugin.interface')
         interface.BuildHookInterface = object
         spec = importlib.util.spec_from_file_location('p359_wheel_hook', HOST / 'hatch_build.py')
         self.hook = importlib.util.module_from_spec(spec)
         with mock.patch.dict(sys.modules, {interface.__name__: interface}):
             spec.loader.exec_module(self.hook)
+        encoder = mock.patch.object(self.hook, "_dense_compress", lambda data: zlib.compress(data, 9)[2:-4])
+        encoder.start()
+        self.addCleanup(encoder.stop)
 
     def wheel(self, name='candidate.whl', method=zipfile.ZIP_DEFLATED):
         p = self.root / name
@@ -105,11 +109,23 @@ class WheelCompression(unittest.TestCase):
             p.unlink()
         self.assertEqual(list(self.root.iterdir()), [])
 
+    def test_invalid_dense_encoder_fails_closed_without_global_zip_changes(self):
+        p = self.wheel()
+        original = p.read_bytes()
+        compressor = zipfile._get_compressor
+        with mock.patch.object(self.hook, '_dense_compress', lambda data: zlib.compress(data + b'wrong', 9)[2:-4]):
+            with self.assertRaisesRegex(ValueError, 'DEFLATE content changed'):
+                self.hook.CustomBuildHook().finalize('standard', {}, str(p))
+        self.assertIs(zipfile._get_compressor, compressor)
+        self.assertEqual(p.read_bytes(), original)
+        self.assertFalse(list(self.root.glob('*.compression-*')))
+
     def test_official_recipe_uses_wheel_hook_and_ships_it_in_sdist(self):
         data = tomllib.loads((HOST / 'pyproject.toml').read_text())
         targets = data['tool']['hatch']['build']['targets']
         self.assertEqual(targets['wheel']['hooks']['custom'], {'path': 'hatch_build.py'})
         self.assertIn('hatch_build.py', targets['sdist']['include'])
+        self.assertIn('zopfli==0.4.3', data['build-system']['requires'])
 
 
 if __name__ == '__main__':

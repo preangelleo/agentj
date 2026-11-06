@@ -161,7 +161,7 @@ def _units(s: str) -> int:
     return len(s.encode("utf-16-le")) // 2
 
 
-def shape_problems(obj: dict) -> list[str]:
+def shape_problems(obj: dict, *, require_owner_informed=True) -> list[str]:
     """Everything the feedback API would answer `400 invalid` for, as plain lines (empty = the shape is fine). The same
     rules as the server, so `check` fails here instead of `send` getting an HTTP 400."""
     out, missing = [], []
@@ -186,9 +186,9 @@ def shape_problems(obj: dict) -> list[str]:
         out.append("resolved: must be true or false")
     elif obj["resolved"] and not obj.get("resolution"):
         out.append("resolution: required when resolved is true (how you got past it)")
-    if "owner_informed" not in obj:
+    if require_owner_informed and "owner_informed" not in obj:
         missing.append("owner_informed")
-    elif obj["owner_informed"] is not True:
+    elif require_owner_informed and obj["owner_informed"] is not True:
         out.append("owner_informed: must be true; it means your human has read exactly what is sent")
     if missing:
         out.insert(0, "missing: " + ", ".join(missing))
@@ -248,11 +248,15 @@ UNAVAILABLE_NEXT = (
 
 
 def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_file: str = SESSION_FILE,
-             transport=None, env=None, identity=None, http_fn=None, out=None, raw_text=None) -> int:
+             transport=None, env=None, identity=None, http_fn=None, out=None, raw_text=None, state=None) -> int:
     """Review SS-05: send always judges with the default threshold (privacy.THRESHOLD) — there is no knob here, so a draft
     layer 2 blocks goes out only with --owner-confirmed (the human read it and said yes), never by loosening the gate."""
     threshold = privacy.THRESHOLD
     http_fn, out = http_fn or http, out or sys.stdout
+    from . import support
+    from .state import State
+    st = state if state is not None else State()
+    autonomous = support._full_access(st)
     if raw_text is None:
         raw, obj = _read_json_object(checked)
     else:
@@ -277,12 +281,12 @@ def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_fi
     if reason:
         print("未提交：脱敏后仍含凭据 / Not sent: residual credential (" + reason + ")", file=out)
         return EXIT_BLOCKED
-    if hits and not owner_confirmed:
+    if hits and not owner_confirmed and not autonomous:
         print("refused: layer 1 would still change this draft; run check and obtain consent, or use --owner-confirmed after consent.", file=out)
         return EXIT_ERROR
     if hits:
         raw = (json.dumps(obj, ensure_ascii=False) + "\n").encode()
-    probs = shape_problems(obj)
+    probs = shape_problems(obj, require_owner_informed=not autonomous)
     if len(raw) > MAX_BODY:
         probs.append(f"the whole report is {len(raw)} bytes; at most {MAX_BODY}: shorten problem / resolution")
     if probs:
@@ -290,6 +294,16 @@ def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_fi
         return EXIT_ERROR
     v = privacy.layer2(obj, threshold=threshold, env=env, transport=transport)
     print(_verdict_line(v, threshold), file=out)
+    # #520: the legacy feedback API requires owner_informed=true (human read it).
+    # Do not fabricate that assertion: autonomous reports use the
+    # existing signed support channel and a fixed content-free body instead.
+    if autonomous and not (v.status == "blocked" and v.kind in ("credential", None)):
+        review = v.status if v.status in ("ok", "blocked", "unavailable") else "unavailable"
+        body = ("Agent J feedback request\nprivacy_review: " + review +
+                "\npayload: withheld\nmode: automatic-metadata-only")
+        st.log("feedback_autonomous", reason="review_" + review, result="metadata_only", by="full_access_no_owner_answer")
+        return support.run_send("report", body, ch=support.channel_for(st), wait=0, env={}, out=out,
+                                owner_confirmed=False)
     if v.status == "blocked" and (v.kind in ("credential", None) or not owner_confirmed):
         if v.kind in ("credential", None):
             print("未提交：脱敏后仍有凭据风险（credential / unknown）；主人确认也不能绕过，请删掉后重新检查。/ "

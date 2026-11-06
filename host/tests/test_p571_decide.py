@@ -256,10 +256,10 @@ class IdentityV24(unittest.TestCase):
         return (main_identity.DATA / f"core.{lang}.md").read_text(encoding="utf-8")
 
     def test_v24_manifest_and_new_rules_in_both_languages(self):
-        self.assertEqual((main_identity.VERSION, main_identity.verify_core()["version"]), (25, 25))
+        self.assertEqual((main_identity.VERSION, main_identity.verify_core()["version"]), (26, 26))
         for lang, needles in self.NEW.items():
             text = self.core(lang)
-            self.assertTrue(text.splitlines()[0].endswith("v25"))
+            self.assertTrue(text.splitlines()[0].endswith("v26"))
             for n in needles:
                 self.assertIn(n, text, (lang, n))
 

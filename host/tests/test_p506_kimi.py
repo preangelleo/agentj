@@ -17,10 +17,11 @@ class KimiModels(unittest.TestCase):
             self.assertEqual(result['KIMI_MODEL_NAME'],'kimi-k3.1-pro')
             self.assertIn(domain,result['KIMI_MODEL_BASE_URL'])
 
-    def test_existing_model_login_and_unknown_plan_are_preserved(self):
+    def test_existing_model_and_primary_key_override_with_native_fallback(self):
         for name in ('KIMI_API_KEY','MOONSHOT_API_KEY'):
             self.assertEqual(self.env({name:'synthetic-key'},model='owner-choice')['KIMI_MODEL_NAME'],'owner-choice')
-            self.assertEqual(self.env({name:'synthetic-key'},own=True),{})
+            self.assertEqual(self.env({name:'synthetic-key'},own=True)['KIMI_MODEL_API_KEY'],'synthetic-key')
+        self.assertEqual(self.env({},own=True),{})
         self.assertEqual(self.env({'KIMI_API_KEY':'synthetic-coding'})['KIMI_MODEL_NAME'],'kimi-for-coding')
 
     def test_new_plus_recipe_and_bilingual_availability_guard(self):

@@ -18,6 +18,7 @@ import time
 from typing import Callable
 
 from . import cloud
+from .poll_backoff import Backoff
 from .envcompat import getenv
 
 
@@ -67,6 +68,7 @@ class Reporter:
         self.debounce = DEBOUNCE if debounce is None else debounce
         self.heartbeat = HEARTBEAT if heartbeat is None else heartbeat
         self.hard_timeout, self.rate_per_hour = hard_timeout, rate_per_hour
+        self.backoff = Backoff(base=4)
         self.wake = asyncio.Event()
         self.reason: str | None = None
         self.inflight: asyncio.Future | None = None
@@ -94,6 +96,8 @@ class Reporter:
                 continue
             await asyncio.sleep(self.debounce)       # coalesce a burst of triggers into one report
             await self._rate_wait()
+            while self.backoff.remaining():
+                await asyncio.sleep(self.backoff.remaining())
             why, self.reason = self.reason, None
             self.wake.clear()
             await self.send_once(why)
@@ -108,12 +112,14 @@ class Reporter:
             await asyncio.sleep(self.sent[0] + 3600 - now)
 
     async def send_once(self, why: str) -> cloud.ReportResult | None:
+        if self.inflight is not None and not self.inflight.done():
+            self.st.log("report_fail", status="busy", trigger=why)
+            return None
+        if self.backoff.remaining():
+            return None
         self.last_attempt = time.monotonic()
         link = cloud.read_cloud(self.st)
         if not link or link["host_id"] == self.unbound_host:
-            return None
-        if self.inflight is not None and not self.inflight.done():
-            self.st.log("report_fail", status="busy", trigger=why)
             return None
         online, pending = self.view()            # computed on the loop: a live snapshot
         self.sent.append(time.monotonic())
@@ -145,5 +151,9 @@ class Reporter:
                 self.st.log("report_unbound", trigger=why)
             elif res.kind == "fail":
                 self.st.log("report_fail", status=res.status, trigger=why)
+        if res.kind == "ok":
+            self.backoff.reset()
+        elif res.kind == "fail":
+            self.backoff.failed(res.status, getattr(res, "retry_after", None))
         self.results.append(res)
         return res

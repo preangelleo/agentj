@@ -25,7 +25,7 @@ class HostDiagnostics(unittest.IsolatedAsyncioTestCase):
         self.checked = Path(self.drafts.name) / 'draft.checked.json'
         self.checked.write_text(json.dumps(dict(stage='other', host_form='mac', os='macOS', agent_kind='codex',
             agent_version='1', install_md_version='1', problem='Connection check', resolved=False, owner_informed=True)))
-        self.el = elevate.Elevator(SimpleNamespace(st=self.st))
+        self.el = elevate.Elevator(SimpleNamespace(st=self.st, preferences={}, agent=SimpleNamespace(native_source={'kind':'terminal','role':'owner'})))
         self.env = patch.dict(os.environ, {})
         self.env.start()
         await self.el.start()

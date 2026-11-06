@@ -272,7 +272,7 @@ class KimiEnv(unittest.TestCase):
         p.mkdir(exist_ok=True)
         return p.joinpath(*parts)
 
-    def test_key_variables_only_without_a_kimi_login(self):
+    def test_primary_key_variables_override_stale_native_login(self):
         src = {"KIMI_API_KEY": "sk-test-a"}
         with mock.patch("agentj.agent_kimi.fresh_keys", lambda base, names=(): {k: base[k] for k in base if k.endswith("_API_KEY")}):
             out = agent_kimi.key_environment(self.env, "global", None, source=src)
@@ -282,7 +282,7 @@ class KimiEnv(unittest.TestCase):
             self.assertEqual(out["KIMI_MODEL_BASE_URL"], "https://api.moonshot.cn/v1")
             (self.kimi("credentials")).mkdir()
             (self.kimi("credentials", "kimi-code.json")).write_text("{}")
-            self.assertEqual(agent_kimi.key_environment(self.env, None, None, source=src), {})   # its own login wins
+            self.assertEqual(agent_kimi.key_environment(self.env, None, None, source=src)["KIMI_MODEL_API_KEY"], src["KIMI_API_KEY"])
         self.assertEqual(agent_kimi.login(self.env)[0], "ok")
 
     def test_login_states(self):
@@ -388,20 +388,20 @@ class LoginRescue(unittest.TestCase):
         self.assertEqual((url.split("?")[0], code, ttl), ("https://www.kimi.com/code/authorize_device", "ABCD-1234", 600))
         self.assertEqual(f.wait(), "ok")
         self.assertTrue((self.home / ".kimi-code/credentials/kimi-code.json").exists())
-        f.restore()                                             # a failed live check: everything back as it was
-        self.assertFalse((self.home / ".kimi-code/credentials/kimi-code.json").exists())
-        self.assertEqual((self.home / ".kimi-code/config.toml").read_text(), "old = 1\n")
+        f.restore()                                             # failed verification keeps native login files
+        self.assertTrue((self.home / ".kimi-code/credentials/kimi-code.json").exists())
+        self.assertEqual((self.home / ".kimi-code/config.toml").read_text(), "new = 1\n")
 
-    def test_failed_login_restores(self):
+    def test_failed_login_keeps_native_files(self):
         os.environ["FAKE_RC"] = "1"
         f = auth_rescue.KimiFlow(None)
         self.assertEqual(f.region, "mainland-cn")
         f.start()
         self.assertEqual(f.wait(), "failed")
-        self.assertFalse((self.home / ".kimi-code/credentials/kimi-code.json").exists())
-        self.assertEqual((self.home / ".kimi-code/config.toml").read_text(), "old = 1\n")
+        self.assertTrue((self.home / ".kimi-code/credentials/kimi-code.json").exists())
+        self.assertEqual((self.home / ".kimi-code/config.toml").read_text(), "new = 1\n")
 
-    def test_cancel_restores(self):
+    def test_cancel_before_write_keeps_existing_files(self):
         import threading
         os.environ["FAKE_SLEEP"] = "5"
         f = auth_rescue.KimiFlow(None)

@@ -69,6 +69,15 @@ export function setFontStep(i) {
   try { localStorage.setItem(FONT_KEY, String(FONT_STEPS[fontAt])); } catch { /* blocked storage: this visit only */ }
   renderFont();
 }
+// #538c: a second tab for this seat can change the preference. Re-read only that seat's key;
+// never write from a storage event (and never consume another seat or the legacy root's event).
+addEventListener('storage', e => {
+  if (e.key !== FONT_KEY + (window.AJSeat?.id ? '@' + window.AJSeat.id : '')) return;
+  let v; try { v = Number(localStorage.getItem(FONT_KEY)); } catch { return; }
+  const i = FONT_STEPS.indexOf(v);
+  fontAt = i >= 0 ? i : FONT_STEPS.indexOf(1);
+  applyFont(); renderFont();
+});
 // P157: Jev layer-2 threshold, 0.50–0.95 in steps of 0.05 (host validates the same range)
 const JEV_MIN = 10, JEV_MAX = 19;        // in twentieths: 10/20 = 0.50 … 19/20 = 0.95
 const jevAt = () => {

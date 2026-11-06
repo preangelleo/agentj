@@ -201,7 +201,7 @@ class Cli(unittest.TestCase):
         self.assertIn("自己搜一下广场", (self.d / "home/.claude/CLAUDE.md").read_text())
         r = self.run_("skill", "install")
         self.assertTrue(json.loads(r.stdout)["ok"])
-        self.assertTrue((self.d / "home/.claude/skills/agentj-config").is_symlink())
+        self.assertTrue((self.d / "home/.claude/skills/agentj-config/SKILL.md").is_symlink())
 
 
 class Telegram(unittest.TestCase):

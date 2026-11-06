@@ -3,9 +3,6 @@ name: agentj-reply-components
 description: Stable inline reply components, diagrams and draft-only forms. 回复内嵌组件、流程图与草稿表单。
 ---
 
-主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
-Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
-
 # Reply components / 回复内嵌组件
 
 Generated from web/reply-components.json. Use ordinary Markdown first. Do not use HTML, JavaScript, external scripts or tool callbacks. A malformed or incomplete component stays source text; never rely on it for approvals.

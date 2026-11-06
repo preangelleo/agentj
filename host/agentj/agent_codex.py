@@ -30,6 +30,20 @@ RATE_RETRY_TEXT = ("（Agent J 自动重试：上一次请求被服务方限流�
 _SHELLS = ("bash", "sh", "zsh", "dash")
 
 
+def primary_environment(base):
+    """Refresh only the selected native key names from the shared primary file before launch."""
+    from . import keys
+    from .peer_session import codex_user_model
+    env = dict(base)
+    names = set(keys.HARNESS_NAMES["codex"])
+    custom = (codex_user_model(env).get("provider_table") or {}).get("env_key")
+    if isinstance(custom, str):
+        names.add(custom)
+    managed = keys.read_env()
+    env.update({k: managed[k] for k in names if k in managed})
+    return env
+
+
 def unwrap_shell(cmd: str) -> str:
     """Codex runs `/usr/bin/bash -lc '<command>'`: the phone (and the batch scope) see the command itself."""
     try:
@@ -307,7 +321,7 @@ def start_probe(st, cfg: dict, limit: float = 150, *, clock=time.monotonic) -> d
             prefs = preferences.validate(preferences.read()[1])
         except Exception:  # noqa: BLE001
             prefs = preferences.defaults()
-        env = proxy.environment(os.environ, prefs)
+        env = proxy.environment(primary_environment(os.environ), prefs)
         if cfg.get("session_mode") != "shared" and cfg.get("fence", True):
             if fence.problem(st, d):
                 return None
@@ -523,7 +537,7 @@ class CodexAgent(Agent):
             return False
         from .proxy import environment
         from . import fence
-        env = environment(os.environ, self.host.preferences)
+        env = environment(primary_environment(os.environ) if self.kind == "codex" else os.environ, self.host.preferences)
         if self.cfg.get("_workflow_ceo"):
             env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"), host_state=self.host.st)
         if self.cfg.get("fence", True):
@@ -1056,8 +1070,10 @@ class CodexAgent(Agent):
         gone = asyncio.get_running_loop().create_future()
         self.pending[rid] = gone
         ans = {"answers": {}}
+        autonomous = False
         try:
             outcome, picks = await self.host.question(card, gone, task=getattr(self.host, "task_label", None))
+            autonomous = outcome == "autonomous"
             if outcome == "answer" and picks:
                 # the label comes from the signed card itself (P33-X04), the id from the request at the same position
                 ans = {"answers": {q["id"]: {"answers": ([p] if isinstance(p, str) else [c["o"][p[0] - 1]["l"]])} for q, c, p in zip(qs, card, picks)}}
@@ -1066,7 +1082,11 @@ class CodexAgent(Agent):
         finally:
             self.pending.pop(rid, None)
             if not gone.done():
-                self._answer(rid, ans)
+                if autonomous:
+                    from .ask import note
+                    self._answer(rid, error={"code": -32000, "message": note("autonomous", getattr(self.host, "lang", "zh"))})
+                else:
+                    self._answer(rid, ans)
 
     def rate_meter(self, r) -> None:
         """account rate limits → the 5 h / week meters (the 300-minute window → h5, 10 080 → week); exact numbers only."""

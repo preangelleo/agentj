@@ -72,6 +72,10 @@ def login(environ=None) -> tuple[str, str]:
     """(ok | env | warn, where) — existence hints only, like the other harnesses; key validity is not checked here."""
     from .service import tilde
     env = os.environ if environ is None else environ
+    keys = fresh_keys(env)
+    for k in (KEY_ENV, PLATFORM_KEY_ENV):
+        if keys.get(k):
+            return "env", f"env {k} (primary managed key; name only)"
     files = oauth_files(env)
     if files:
         return "ok", f"login {tilde(str(files[0].parent))} (kimi login)"
@@ -90,30 +94,17 @@ def version_ok(version: str | None) -> bool:
 
 def fresh_keys(base: dict, names=(KEY_ENV, PLATFORM_KEY_ENV)) -> dict:
     """The key names from the service env file as it is NOW (a key card saved after serve started), else `base`."""
+    from . import keys
     out = {k: base[k] for k in names if base.get(k)}
-    try:
-        from . import service
-        lines = Path(service.env_file(service.name())).read_text().splitlines()
-    except Exception:  # noqa: BLE001 — no service: what serve's own environment has
-        return out
-    for line in lines:
-        k, sep, v = line.strip().partition("=")
-        if sep and k in names:
-            try:
-                parts = shlex.split(v, comments=False)
-            except ValueError:
-                continue
-            if len(parts) == 1 and parts[0]:
-                out[k] = parts[0]
+    managed = keys.read_env()
+    out.update({k: managed[k] for k in names if k in managed})
     return out
 
 
 def key_environment(env: dict, region: str | None, model: str | None, source: dict | None = None,
                     names=(KEY_ENV, PLATFORM_KEY_ENV)) -> dict:
-    """Kimi's in-memory model variables for an API key — only when Kimi has no login / provider of its own. `source` = where
-    the key is read from (serve's environment); the returned dict holds the variables to add (never logged)."""
-    if oauth_files(env) or config_facts(env)["providers"]:
-        return {}
+    """Primary managed key supplies a temporary provider; native OAuth/config files are never changed.
+    Without a key Kimi keeps its native login. Values remain in child memory, never logs."""
     keys = fresh_keys(source if source is not None else os.environ, names)
     r = region if region in REGIONS else "mainland-cn"
     if keys.get(KEY_ENV):

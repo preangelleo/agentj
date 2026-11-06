@@ -1156,7 +1156,8 @@ def _simple(sc: Simple, hits: _Hits, depth: int, text: str) -> None:
     _opaque_rules(sc, hits, text)
     # ---- delete
     native_args = list(args)
-    native_name = name in ("agentj", "aj", "jarvis")
+    from . import alias
+    native_name = name in ("agentj", alias.NAME, alias.COMPAT)
     if name in ("python", "python3", "pypy", "pypy3") and "-m" in args:
         mi = args.index("-m")
         if len(args) > mi + 1 and args[mi + 1] in ("agentj", "agentj.cli") and all(

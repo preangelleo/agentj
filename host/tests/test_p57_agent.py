@@ -57,7 +57,7 @@ class Skills(unittest.TestCase):
             code = personalize.command(["skill", *args])
         return code, json.loads(out.getvalue())
 
-    def test_serve_links_free_targets_and_never_touches_a_foreign_one(self):
+    def test_serve_updates_logic_and_backs_up_foreign_copy(self):
         """P57: `serve` calls personalize.ensure() before the harness starts — no `agentj skill install` needed."""
         foreign = self.home / ".claude/skills/agentj-recall"
         foreign.mkdir(parents=True)
@@ -66,10 +66,12 @@ class Skills(unittest.TestCase):
         # a source checkout (this one) and tests never link by themselves — only an installed package does
         self.assertEqual(personalize.ensure(), {"linked": 0, "conflicts": 0, "off": True})
         self.assertFalse((self.home / ".codex/skills").exists())
-        self.assertEqual(personalize.ensure(force=True), {"linked": n - 1, "conflicts": 1})
-        self.assertEqual((foreign / "SKILL.md").read_text(), "the user's own")
+        self.assertEqual(personalize.ensure(force=True), {"linked": n, "conflicts": 0})
+        self.assertEqual((foreign / "SKILL.md").read_bytes(), (personalize.SKILLS / "agentj-recall/SKILL.md").read_bytes())
+        backup=pathlib.Path(personalize.skill_links._read(foreign.parent)["agentj-recall"]["backup"])
+        self.assertEqual((backup/"SKILL.md").read_text(),"the user's own")
         self.assertTrue((self.home / ".codex/skills/agentj-manual/manual.zh.md").is_file())
-        self.assertEqual(personalize.ensure(force=True), {"linked": 0, "conflicts": 1})      # idempotent
+        self.assertEqual(personalize.ensure(force=True), {"linked": 0, "conflicts": 0})      # idempotent
 
     def test_every_bundled_skill_lands_in_the_four_harnesses(self):
         names = personalize.bundled()
@@ -81,38 +83,25 @@ class Skills(unittest.TestCase):
         for name in names:
             for h in personalize.HARNESS_DIRS:
                 t = self.home / h / name
-                self.assertTrue(t.is_symlink(), t)
-                self.assertEqual(t.resolve(), (personalize.SKILLS / name).resolve())
+                self.assertTrue(personalize.skill_links.managed(personalize.SKILLS/name,t))
                 self.assertTrue((t / "SKILL.md").is_file())
         self.assertEqual(doctor.check_skills(self.home)["status"], "ok")
         code, r = self.run_cmd("uninstall")
         self.assertEqual(code, 0)
-        self.assertFalse(any((self.home / h / n).exists() for h in personalize.HARNESS_DIRS for n in names))
+        self.assertFalse(any((self.home / h / n / "SKILL.md").exists() for h in personalize.HARNESS_DIRS for n in names))
 
-    def test_new_skill_folder_ships_itself_and_a_foreign_copy_stays(self):
+    def test_new_skill_folder_does_not_ship_itself(self):
         pkg = pathlib.Path(self.tmp.name) / "skills"
-        for n in ("agentj-config", "zz-new"):
-            (pkg / n).mkdir(parents=True)
-            (pkg / n / "SKILL.md").write_text(f"---\nname: {n}\ndescription: x\n---\n")
-        (pkg / "no-skill-md").mkdir()
-        mine = self.home / ".claude/skills/zz-new"
-        mine.mkdir(parents=True)
-        (mine / "SKILL.md").write_text("the owner's own")
-        with patch.object(personalize, "SKILLS", pkg):
-            self.assertEqual(personalize.bundled(), ["agentj-config", "zz-new"])
-            code, r = self.run_cmd("install")
-            self.assertEqual(code, 1, "a foreign copy is a conflict")
-            self.assertEqual((mine / "SKILL.md").read_text(), "the owner's own", "never replaced")
-            self.assertTrue((self.home / ".codex/skills/zz-new").is_symlink())
-            row = doctor.check_skills(self.home)
-            self.assertEqual(row["status"], "warn")
-            self.assertIn("zz-new", row["summary"])
-            self.assertNotIn("not linked", row["summary"])
+        (pkg / "zz-new").mkdir(parents=True)
+        (pkg / "zz-new/SKILL.md").write_text("new skill")
+        with patch.object(personalize,"SKILLS",pkg):
+            self.assertNotIn("zz-new",personalize.bundled())
+            self.assertFalse(any(n=="zz-new" for n,_,_ in personalize.links(self.home)))
 
     def test_doctor_hint_when_missing(self):
         row = doctor.check_skills(self.home)
-        self.assertEqual((row["status"], row["hint"]), ("warn", "agentj skill install"))
-        self.assertIn("agentj-recall", row["summary"])
+        self.assertEqual((row["status"], row["hint"]), ("warn", ""))
+        self.assertIn("自动更新", row["summary"])
 
     def test_skill_text(self):
         t = (personalize.SKILLS / "agentj-recall" / "SKILL.md").read_text()
@@ -249,7 +238,7 @@ class Recall(unittest.TestCase):
 # ------------------------------------------------------------------ identity
 class Identity(unittest.TestCase):
     def test_core_v4_rules_and_hashes(self):
-        self.assertEqual(main_identity.verify_core()["version"], 25)   # P156: v11; P244: v12
+        self.assertEqual(main_identity.verify_core()["version"], 26)   # P156: v11; P244: v12
         man = json.loads((main_identity.DATA / "manifest.json").read_text())
         self.assertEqual(man, {"version": main_identity.VERSION, "hashes": main_identity.HASHES})
         zh = main_identity.prompt({"language": "zh"})
@@ -263,7 +252,7 @@ class Identity(unittest.TestCase):
             from test_l1 import _state
             rows = doctor.check_main_identity(_state(td))
         self.assertEqual((rows[0]["id"], rows[0]["status"]), ("main-core", "ok"))
-        self.assertIn("core v25:", rows[0]["summary"])
+        self.assertIn("core v26:", rows[0]["summary"])
 
     def test_bare_word_compact_is_the_command_only_when_alone(self):
         for t in ("压缩", "压缩一下", " 压缩。", "compact", "Compact"):

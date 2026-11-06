@@ -677,9 +677,9 @@ class SchedulerChain(unittest.TestCase):
                 await wait(lambda: host.agent is not None)
                 s = _ready(host, ph)
                 # 1. cron (this minute) → runs by itself; research = read-only: the write is denied by the hook, no card
-                await wait(lambda: any("任务research-one" in n for n in notices()))
-                n = [x for x in notices() if "任务research-one" in x][0]
-                self.assertEqual(n, "定时任务「任务research-one」：attention — 两个异常（只读运行）")
+                await wait(lambda: tasks.load(self.st)["last"].get("research-one", {}).get("verdict") == "attention")
+                self.assertEqual((tasks.load(self.st)["last"]["research-one"]["verdict"], tasks.load(self.st)["last"]["research-one"]["line"]), ("attention", "两个异常"))
+                self.assertFalse(any("任务research-one" in n for n in notices()), "CLI-enabled tasks remain main-session work")
                 self.assertFalse((self.work / "workflows" / "research-one" / "research-wrote.txt").exists(), "read-only run: the write never ran")
                 self.assertEqual([o for _, o in sent if o["t"] == "ask"], [], "denied by the hook, not asked")
                 reports = list((self.work / "workflows/research-one/reports").glob("run-*.md"))
@@ -688,7 +688,7 @@ class SchedulerChain(unittest.TestCase):
                 self.assertIn("被 hook 拒绝", reports[0].read_text())
                 # once per minute only
                 await asyncio.sleep(1.2)
-                self.assertEqual(sum("任务research-one" in x for x in notices()), 1)
+                self.assertEqual(sum(r["id"] == "research-one" for r in tasks.load(self.st)["runs"].values()), 1)
                 # 2. a normal task run by hand: the write asks the phone, with the task's name on the card
                 os.environ["FAKE_CLAUDE_LOG"] = str(self.work / "workflows" / "normal-one" / ".argv.jsonl")
                 host.scheduler.request("normal-one")
@@ -696,13 +696,14 @@ class SchedulerChain(unittest.TestCase):
                 card = [o for _, o in sent if o["t"] == "ask"][-1]
                 self.assertEqual(card["task"], "任务normal-one")
                 await host._app(s, ph.answer(card, True))
-                await wait(lambda: any("任务normal-one" in x for x in notices()))
+                await wait(lambda: tasks.load(self.st)["last"].get("normal-one", {}).get("verdict") == "ok")
                 self.assertEqual(len([o for _, o in sent if o["t"] == "ask"]), 1, "delegated run needs its own signed approval")
                 self.assertTrue(any(r.get("decision") == "allow" and r.get("reason") == "device" for r in approvals.read_log(self.st)))
                 self.assertFalse(any(r.get("reason") == "group_source" for r in approvals.read_log(self.st)))
                 self.assertFalse((self.work / "normal-wrote.txt").exists(), "CEO writes stay in its own folder")
                 self.assertTrue((self.work / "workflows" / "normal-one" / "normal-wrote.txt").exists())
-                self.assertIn("ok — 一切正常", [x for x in notices() if "normal-one" in x][0])
+                self.assertEqual((tasks.load(self.st)["last"]["normal-one"]["verdict"], tasks.load(self.st)["last"]["normal-one"]["line"]), ("ok", "一切正常"))
+                self.assertFalse(any("任务normal-one" in n for n in notices()))
                 os.environ["FAKE_CLAUDE_LOG"] = str(self.argv_log)
                 # 3. a chat turn still works afterwards (the chat process stepped aside and comes back)
                 await host._app(s, {"t": "msg", "id": "a" * 16, "text": "还在吗", "ts": 0})
@@ -714,7 +715,8 @@ class SchedulerChain(unittest.TestCase):
                 await asyncio.sleep(1.5)
                 t0 = time.monotonic()
                 await host._app(s, sign(ph, "estop", {}, {"t": "estop", "r": "s1"}))
-                await wait(lambda: any("被急停中断" in x for x in notices()), 10000)
+                await wait(lambda: tasks.load(self.st)["last"].get("slow-one", {}).get("status") == "interrupted", 10000)
+                self.assertIn("急停", tasks.load(self.st)["last"]["slow-one"]["line"])
                 self.assertLess(time.monotonic() - t0, 10)
                 os.environ["FAKE_CLAUDE_LOG"] = str(self.argv_log)
                 # 5. a chat turn in the middle of a long step is ended too
@@ -736,7 +738,10 @@ class SchedulerChain(unittest.TestCase):
         self.assertEqual((last["research-one"]["verdict"], last["normal-one"]["verdict"]), ("attention", "ok"))
         kinds = [r["k"] for r in activity.all_since(self.st)]
         for k in ("task_run", "task_done", "decision", "estop", "resume", "turn_start", "turn_end"):
-            self.assertIn(k, kinds)
+            if k == "task_done":
+                self.assertIn(k, [json.loads(line)["ev"] for line in self.st.log_path.read_text().splitlines()])
+            else:
+                self.assertIn(k, kinds)
         log_files = [self.argv_log] + list((self.work / "workflows").glob("*/.argv.jsonl"))
         starts = [s for log in log_files for s in (json.loads(x) for x in log.read_text().splitlines()) if "argv" in s]   # control lines: §10.10 meters
         research = [a for a in starts if any("research" in x for x in a["argv"] if "danger hook" in x)]

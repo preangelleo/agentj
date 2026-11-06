@@ -303,6 +303,8 @@ class SharedClaudeAgent(Agent):
         self.open_cards = {}            # P139: input digest → futures withdrawing phone cards answered elsewhere
         self.card_agent = {}            # P172: withdraw future → sub-agent id (None = the main thread) that asked
         self.sub_agents = {}            # P172: sub-agent id → (type, description) for the card's 「来自子 Agent」 line
+        self.child_sources, self.child_pending, self.child_pending_uncertain = {}, [], False
+        self.child_tool_sources, self.child_tool_overflow = {}, False
         self.sub_pending = []           # P172: (type, description) of Agent/Task calls whose SubagentStart is still to come
         self.tool_agent = {}            # P172: input digest → sub-agent id of its PreToolUse (PermissionRequest may omit it)
         self.heal_seen = {}             # P147: sid → monotonic time of its SessionStart(startup/resume) hook in this folder
@@ -733,6 +735,24 @@ class SharedClaudeAgent(Agent):
         return ("来自子 Agent：" if zh else "From sub-agent: ") + who
 
     async def hook_event(self, event):
+        aid = event.get("agent_id") if isinstance(event, dict) else None
+        if aid and event.get("hook_event_name") != "SubagentStart":
+            src = self.child_sources.get(aid, provenance.normalize(None))
+            with provenance.shared_child_request(self, src):
+                return await self._hook_event(event)
+        if not aid and isinstance(event, dict) and event.get("hook_event_name") == "PermissionRequest":
+            digest = hashlib.sha256(json.dumps([event.get("tool_name"), event.get("tool_input")], sort_keys=True).encode()).hexdigest()
+            if self.child_tool_overflow or digest in self.child_tool_sources:
+                src = provenance.normalize(None) if self.child_tool_overflow else self.child_tool_sources[digest]
+                if not provenance.is_owner(src):
+                    current = provenance.turn_source(self)
+                    if src != current or (provenance.untrusted_turn(self) and not provenance.delegated_turn(self)
+                                          and not provenance.unattended_turn(self)):
+                        with provenance.shared_child_request(self, provenance.normalize(None)):
+                            return await self._hook_event(event)
+        return await self._hook_event(event)
+
+    async def _hook_event(self, event):
         gone = event.pop("_agentj_gone", None) if isinstance(event, dict) else None
         if not isinstance(event, dict):
             return {}
@@ -781,6 +801,46 @@ class SharedClaudeAgent(Agent):
                 return await self._background_child(event, gone)
             return {}
         name = event.get("hook_event_name")
+        aid = event.get("agent_id")
+        if not aid and name in ("SessionStart", "SessionEnd"):
+            self.child_sources.clear()
+            self.child_pending.clear()
+            self.child_pending_uncertain = False
+            self.child_tool_sources.clear()
+            self.child_tool_overflow = False
+        elif not aid and name == "UserPromptSubmit":
+            self.child_pending_uncertain = self.child_pending_uncertain or bool(self.child_pending)
+            self.child_pending.clear()
+        if name == "PreToolUse" and aid:
+            digest = hashlib.sha256(json.dumps([event.get("tool_name"), event.get("tool_input")], sort_keys=True).encode()).hexdigest()
+            src = provenance.turn_source(self)
+            if digest in self.child_tool_sources:
+                src = src if self.child_tool_sources[digest] == src else provenance.normalize(None)
+            if len(self.child_tool_sources) < 128 or digest in self.child_tool_sources:
+                self.child_tool_sources[digest] = src
+            else:
+                self.child_tool_overflow = True
+        if name == "PreToolUse" and event.get("tool_name") in ("Agent", "Task"):
+            ti = event.get("tool_input") or {}
+            src = provenance.turn_source(self)
+            if provenance.untrusted_turn(self) and not provenance.delegated_turn(self) and not provenance.unattended_turn(self):
+                src = provenance.normalize(None)
+            self.child_pending_uncertain = self.child_pending_uncertain or len(self.child_pending) >= 64
+            self.child_pending = (self.child_pending + [(str(ti.get("subagent_type") or ""), src)])[-64:]
+        elif name == "SubagentStart" and isinstance(aid, str):
+            matches = [i for i, (typ, _) in enumerate(self.child_pending) if typ == str(event.get("agent_type") or "") or not typ]
+            sources = [self.child_pending[i][1] for i in matches]
+            src = sources[0] if sources and not self.child_pending_uncertain and all(s == sources[0] for s in sources) else provenance.normalize(None)
+            if sources and any(s != sources[0] for s in sources):
+                self.child_pending = [(typ, provenance.normalize(None) if i in matches else pending)
+                                      for i, (typ, pending) in enumerate(self.child_pending)]
+            if matches:
+                self.child_pending.pop(matches[0])
+            self.child_sources[aid] = src if aid not in self.child_sources else provenance.normalize(None)
+            while len(self.child_sources) > 128:
+                self.child_sources.pop(next(iter(self.child_sources)))
+        elif name == "SubagentStop" and aid:
+            self.child_sources.pop(aid, None)
         self._note_agent(name, event)
         self._withdraw_answered(name, event)
         if not event.get("agent_id"):
@@ -825,7 +885,7 @@ class SharedClaudeAgent(Agent):
             if not self._phone_echo(event, prompt) and not (self.native_source.get("kind") == "same_host"
                                                             and prompt.strip() == self.__dict__.get("_peer_text")):
                 self.native_source = provenance.terminal_input(event, prompt, prompt)
-        elif name == "SessionStart" or name == "PreCompact":
+        elif name in ("SessionStart", "PreCompact") and not event.get("agent_id"):
             self.native_source = provenance.normalize(None)
         self._note_background(name, event)
         self._note_skill(name, event)
@@ -2114,7 +2174,7 @@ class SharedClaudeAgent(Agent):
             why = "untrusted_turn_live"                  # B1: trust only goes down within a turn, until its end
         else:
             launches = getattr(self.host, "peer_launch", None)
-            unit, why = launches.verify(o, self.session) if launches is not None else (None, "off")
+            unit, why = launches.verify(o, self.session, busy=getattr(getattr(self.host, "busy", None), "launch", None)) if launches is not None else (None, "off")
             if unit:
                 src = peer_origin.source(unit)
                 if launches.dirty:                       # M1: the pinned unit root survives a restart

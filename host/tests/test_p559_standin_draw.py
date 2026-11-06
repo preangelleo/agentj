@@ -56,7 +56,7 @@ class Levels(Base):
 
     def test_full_access_avatar_third_kind_keeps_face_id(self):
         self.full()
-        res = self.ask('rm -rf build', avatar='来自 Telegram 分身', answer=False)
+        res = self.ask('rm -rf ~/Documents/owner-notes', avatar='来自 Telegram 分身', answer=False)
         self.assertEqual(res['behavior'], 'deny')
         card = self.cards('Bash')[-1]
         self.assertTrue(card.get('passkey_required'))
@@ -79,9 +79,12 @@ class Levels(Base):
             for avatar in (None, '来自 Telegram 分身'):
                 n = len(self.cards('Bash'))
                 res = self.ask(cmd, answer=False, **({'avatar': avatar} if avatar else {}))
-                self.assertEqual(res['behavior'], 'deny', (cmd, avatar))
-                self.assertEqual(len(self.cards('Bash')), n + 1, (cmd, avatar))
-                self.assertEqual(bool(self.cards('Bash')[-1].get('passkey_required')), face, (cmd, avatar))
+                self.assertEqual(res['behavior'], 'deny' if face else 'allow', (cmd, avatar))
+                self.assertEqual(len(self.cards('Bash')), n + int(face), (cmd, avatar))
+                if face:
+                    self.assertTrue(self.cards('Bash')[-1].get('passkey_required'), (cmd, avatar))
+                else:
+                    self.assertEqual(self.last()['reason'], 'level_harness')
 
     def test_standard_level_avatar_low_step_is_a_card_without_face_id(self):
         res = self.ask('agentj status --json 2>&1 | head -c 1500', avatar='来自 Telegram 分身', answer=True)

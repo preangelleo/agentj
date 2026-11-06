@@ -103,7 +103,7 @@ test('② gains the step (no new top-level entry); the step follows the assist1 
 
 test('the layer: Esc closes 「看实时画面」; controls ≥ 44 px; palette colours only', () => {
   assert.match(AS, /registerLayer\(\{ element: \(\) => el\('assist-view'\), open: \(\) => viewOpen, close: closeView/);
-  const block = CSS.slice(CSS.lastIndexOf('/*', CSS.indexOf('0.26.9 backlog 468 (CONTRACT §B2, js/assist.js; §B3 task feed)')));
+  const block = CSS.slice(CSS.lastIndexOf('/*', CSS.indexOf('0.26.9 backlog 468 (CONTRACT §B2, js/assist.js; §B3 task feed)'))).replace(/\/\*[\s\S]*?\*\//g, '');
   assert.ok(block.length > 100);
   for (const m of block.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/g)) assert.fail('hard-coded colour ' + m[0]);
   assert.match(block, /\.asbanner__go\{[^}]*min-height:44px/); assert.match(block, /\.asbtn\{[^}]*min-height:44px;min-width:44px/);

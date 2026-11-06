@@ -348,6 +348,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
         client = self.client
         sid = form.get("sessionID") if form.get("sessionID") in self.children else self.sid   # P426: a sub-agent's own form
         answer = None
+        autonomous = False
         try:
             raw, keys = form_questions(form)
             card = norm_questions(self._label(raw, sid)) if raw and not self.research else None
@@ -356,6 +357,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
                     card = None                         # S3: a group member's sub-agent asks the owner nothing
                 if card is not None:
                     outcome, picks = await self.host.question(card, gone, task=getattr(self.host, "task_label", None))
+                    autonomous = outcome == "autonomous"
                     if outcome == "answer" and picks:
                         answer = {}
                         for (key, multi, values), q, pk in zip(keys, card, picks):
@@ -368,6 +370,14 @@ class OpenCodeV2Agent(OpenCodeAgent):
             self.questions.pop(fid, None)
         if gone.done() or not client:
             return
+        if autonomous:
+            # The native form cannot carry free-text policy in an enum field. Add a
+            # synthetic host instruction before cancelling it, without an owner answer.
+            from .ask import note
+            with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
+                await client.request("POST", f"/api/session/{quote(sid)}/synthetic",
+                                     {"text": "[Host policy; no owner answer] " + note("autonomous", getattr(self.host, "lang", "zh")),
+                                      "resume": False})
         with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
             if answer:
                 self.q_sent[fid] = answer

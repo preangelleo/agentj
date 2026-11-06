@@ -58,7 +58,7 @@ class Shared(unittest.IsolatedAsyncioTestCase):
 
     def group_live(self, a):
         g = _group()
-        a.cur_send, a.pending_source = g, g.source
+        a.cur_send, a.pending_source, a.native_turn = g, g.source, True
         a._mark_untrusted("pending")            # a group envelope the native session may still run
         a.cur_send = None
 
@@ -75,17 +75,20 @@ class Shared(unittest.IsolatedAsyncioTestCase):
         a.session = {"sessionId": "owner"}       # no live registry in the fixture: keep it attached
 
     # ------------------------------------------------------------ handoff recovery turns
-    async def recover(self, a, how):
+    async def recover(self, a, how, quiet=True):
         with mock.patch("agentj.shared.claude_send") as cs:
             if how == "prep":
                 with mock.patch.object(handoff, "PREP_WAIT", 0.01), mock.patch.object(handoff, "ensure"), \
                         mock.patch.object(handoff, "mtime", return_value=None):
                     await a._handoff_prep()
             else:
-                a._registry_quiet = lambda: True
+                a._registry_quiet = lambda: quiet
                 with mock.patch.object(handoff, "RECOVER_DELAY", 0):
                     await a._recover("compact", True, a.turn_began_at)
-            self.assertEqual(cs.call_args.args[2], provenance.system())
+            if how == "recover" and not quiet:
+                cs.assert_not_called()
+            else:
+                self.assertEqual(cs.call_args.args[2], provenance.system())
 
     async def test_recovery_turns_are_unattended_host_turns(self):
         for how in ("prep", "recover"):
@@ -101,7 +104,7 @@ class Shared(unittest.IsolatedAsyncioTestCase):
             with self.subTest(how=how), tempfile.TemporaryDirectory() as td:
                 h, a = self.agent(td)
                 self.group_live(a)
-                await self.recover(a, how)
+                await self.recover(a, how, quiet=False)
                 self.assertIsNone(provenance.unattended_turn(a))
                 self.assertEqual(await self.perm(h, a), ("deny", 0))
 

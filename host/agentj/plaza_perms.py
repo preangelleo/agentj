@@ -431,7 +431,7 @@ def gate_refused(host, name, tool_input, why: str) -> dict:
     return {"ok": False, "why": why}
 
 
-async def signed_card(host, name: str, tool_input: dict, emit=None, gate: dict | None = None) -> dict:
+async def signed_card(host, name: str, tool_input: dict, emit=None, gate: dict | None = None, *, require_passkey=False) -> dict:
     """One always-asked `agentj plaza` card; only a paired device's signed allow counts (grant_info). `emit` gets
     {"stage": "card", "online", "ttl"} once the card is really out, so the caller can say where it waits. A host card (host
     text, not 「Agent 附注」, QA #1); a gated turn is refused at once (round 1, M1), not queued. #437: waits its turn
@@ -441,18 +441,19 @@ async def signed_card(host, name: str, tool_input: dict, emit=None, gate: dict |
         return gate_refused(host, name, tool_input, gate["why"])
     try:
         async with card_turn(host, emit):
-            return await _signed_card(host, name, tool_input, emit)
+            return await _signed_card(host, name, tool_input, emit, require_passkey=require_passkey)
     except CardQueueFull:
         host.st.log("plaza_perm_card_done", name=name, result="deny", why="queue_full")
         return {"ok": False, "why": "queue_full"}
 
 
-async def _signed_card(host, name: str, tool_input: dict, emit) -> dict:
+async def _signed_card(host, name: str, tool_input: dict, emit, *, require_passkey=False) -> dict:
     import asyncio
     from . import policy_registry
     asks = lambda: set(getattr(host, "asks", None) or ())
     before = asks()
-    task = asyncio.ensure_future(host.ask(CARD_TOOL, tool_input, batch=False, grant_info=True, always_ask=True,
+    needs_uv = require_passkey or any(i.get("kind") == "secret" for i in tool_input.get("items", []) if isinstance(i, dict))
+    task = asyncio.ensure_future(host.ask(CARD_TOOL, tool_input, batch=False, grant_info=True, always_ask=True, require_passkey=needs_uv,
                                           _company_proposal=policy_registry.HOST_CARD))
     if emit is not None:
         for _ in range(100):
@@ -467,8 +468,18 @@ async def _signed_card(host, name: str, tool_input: dict, emit) -> dict:
         why = WHYS.get(ans.get("reason") if isinstance(ans, dict) else None, "no_signature")
         host.st.log("plaza_perm_card_done", name=name, result="deny", why=why)
         return {"ok": False, "why": why}
-    host.st.log("plaza_perm_card_done", name=name, result="allow")
-    return {"ok": True, "approved": True, "rid": g.get("rid"), "device": g.get("device")}
+    inherited = g.get("inherited") is True
+    extra = {}
+    if inherited and needs_uv:
+        return {"ok": False, "why": "no_signature"}
+    if inherited:
+        from . import approval_level
+        parent = approval_level.level_grant(host.st)
+        if approval_level.level(host.preferences, host.st) != "harness" or not parent or g.get("parent_grant") != parent:
+            return {"ok": False, "why": "no_signature"}
+        extra = {"inherited": True, "parent_grant": parent}
+    host.st.log("plaza_perm_card_done", name=name, result="allow", mode="level_harness" if inherited else "card")
+    return {"ok": True, "approved": True, "rid": g.get("rid"), "device": g.get("device"), **extra}
 
 
 _ISO = re.compile(r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?")

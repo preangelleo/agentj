@@ -36,7 +36,7 @@ class Father(unittest.TestCase):
             targets=[t for n,s,t in personalize.links(d) if n==NAME]
             self.assertEqual(len(targets),4)
             for target in targets:
-                self.assertTrue(target.is_symlink())
+                self.assertTrue(personalize.skill_links.managed(personalize.SKILLS/NAME,target))
                 text=(target/"SKILL.md").read_text()
                 for marker in ("no second confirmation","only after agreement","customer data","ticket ID","Read this explanation"):
                     self.assertIn(marker,text)
@@ -96,7 +96,7 @@ class Father(unittest.TestCase):
         self.assertNotIn("private-customer", public["body"])
 
     def test_pinned_identity_consent_in_all_harnesses(self):
-        self.assertEqual(main_identity.verify_core()["version"],25)
+        self.assertEqual(main_identity.verify_core()["version"],26)
         for lang in ("zh","en"):
             for harness in KINDS:
                 text=main_identity.prompt({"language":lang},harness)

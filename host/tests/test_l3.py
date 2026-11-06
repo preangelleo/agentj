@@ -790,6 +790,25 @@ class WheelInstall(unittest.TestCase):
         self.assertEqual(p["mcp"], {"type": "stdio", "command": p["py"], "args": ["-P", "-m", "agentj.permtool"]})
         self.assertEqual(p["ver"], [3, int(self.py.split(".")[1])], "the venv runs the Python we claim as the floor")
 
+    def test_lossless_wake_dictionary_from_the_installed_wheel(self):
+        probe = (
+            "import hashlib,json,os,sys,time; from agentj import wake\n"
+            "start=time.monotonic(); raw=wake.dictionary_bytes(); dictionary_s=time.monotonic()-start\n"
+            "print(json.dumps({'package':os.path.realpath(wake.__file__), 'prefix':os.path.realpath(sys.prefix),"
+            "'bytes':len(raw),'rows':len(raw.splitlines()),'sha256':hashlib.sha256(raw).hexdigest(),"
+            "'keyword':wake.keyword('Hey Ada'),'dictionary_seconds':dictionary_s}))\n")
+        with tempfile.TemporaryDirectory() as d:
+            env = {**self.env, "HOME": d, "AGENTJ_STATE_DIR": d + "/state"}
+            r = subprocess.run([self.venv + "/bin/python", "-I", "-c", probe], cwd="/", env=env,
+                               capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        result = json.loads(r.stdout)
+        self.assertTrue(pathlib.Path(result['package']).is_relative_to(pathlib.Path(result['prefix'])))
+        self.assertNotIn(str(HOST), result['package'])
+        self.assertEqual((result['bytes'], result['rows']), (3330061, 126052))
+        self.assertEqual(result['sha256'], 'f7000ec3a90544c0c7c16090d8951779c2b322e14dad5006290f498567d439ea')
+        self.assertEqual(result['keyword'], 'HH EY1 EY1 D AH0 @agentj')
+
     def test_doctor_and_init_from_the_wheel(self):
         with tempfile.TemporaryDirectory() as d:
             env = {**self.env, "AGENTJ_STATE_DIR": d + "/s", "AGENTJ_SERVICE_NAME": f"agentjarvis-test-{secrets.token_hex(4)}"}
@@ -800,7 +819,7 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v25:", core["summary"])
+            self.assertIn("core v26:", core["summary"])
 
     def test_fenced_chain_against_the_installed_package(self):
         # Installed wheel identity is checked before the V2 contract; no checkout fallback.

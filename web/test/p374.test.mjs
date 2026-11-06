@@ -86,7 +86,7 @@ test('dictionaries: contract copy, both languages, same placeholders, no emoji',
 });
 
 test('palette only: the P374 CSS names no colour', () => {
-  const block = menuCss.slice(menuCss.indexOf('/* P374'));
+  const block = menuCss.slice(menuCss.indexOf('/* P374')).replace(/\/\*[\s\S]*?\*\//g, '');
   assert.ok(block.length > 50);
   assert.doesNotMatch(block, /#[0-9a-f]{3,8}\b|rgb\(|hsl\(/i);
 });

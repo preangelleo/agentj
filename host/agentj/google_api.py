@@ -160,13 +160,17 @@ SRC = {"telegram": ("群聊或转发的消息", "a group or forwarded message"),
        "system": ("系统提示", "a system notice")}
 
 
-def refusal(agent) -> dict | None:
+def refusal(agent, host=None) -> dict | None:
     """Round 1 (H1 / L1): the turn gate for every Google op. A group / outside turn (not the owner, not a delegated task) or
     a delegated task whose grant needs the originating host → refused here, before Google, a card or a file."""
     from . import provenance
     if provenance.owner_grant_required(agent):
         return {"ok": False, "why": "owner_grant_scope",
                 "detail": "授权单未覆盖这一步或已失效，请回发起主机补授权 / the grant does not cover this step; ask the originating host"}
+    from . import approval_level
+    if (host is not None and approval_level.level(getattr(host, "preferences", {}), host.st) == "harness"
+            and provenance.unattended_turn(agent) in ("system", "same_host", "scheduled_task")):
+        return None
     if not provenance.untrusted_turn(agent) or provenance.delegated_turn(agent):
         return None
     s = provenance.turn_source(agent)
@@ -254,7 +258,7 @@ async def serve(host, st, req: dict) -> dict:
     if bad:
         return {"ok": False, "why": "shape", "detail": bad}
     op = req["op"]
-    no = refusal(getattr(host, "agent", None))
+    no = refusal(getattr(host, "agent", None), host)
     if no:
         st.log("google_api", kind=op, result=no["why"])
         return no

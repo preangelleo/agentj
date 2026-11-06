@@ -1,4 +1,4 @@
-"""Union seam: preserve subset delivery and exact original-recipient native retry."""
+"""Union seam: preserve subset delivery and signed narrowing of original-recipient native retry."""
 import _hermetic
 import copy,os
 from types import SimpleNamespace
@@ -24,18 +24,18 @@ class Union(SubsetDelivery):
         self.ask.side_effect=sign_retry
         return key,new,retry
 
-    async def test_original_four_cc_unknown_retries_only_same_four_once(self):
+    async def test_original_four_cc_unknown_retries_signed_narrowing_once(self):
         key,new,retry=await self.prepared_unknown(self.cc)
-        # A normal subset remains legal, but cannot modify an unknown retry's original CC.
+        # The new owner-signed retry may narrow the original recipients, never broaden them.
         narrowed=copy.deepcopy(retry);narrowed['cc']=self.cc[:2];narrowed['delivery_manifest']['cc']=self.cc[:2]
-        self.assertEqual((await self.service.control(narrowed,os.getpid()))['why'],'retry_manifest_changed')
-        self.ask.assert_not_awaited()
-        approved=await self.service.control(retry,os.getpid());self.assertTrue(approved['ok'],approved)
+        approved=await self.service.control(narrowed,os.getpid());self.assertTrue(approved['ok'],approved)
+        self.assertEqual((await self.service.send(new,os.getpid()))['why'],'retry_manifest_changed')
+        new['cc']=self.cc[:2];new['delivery_manifest']['cc']=self.cc[:2]
         status=(await self.service.control({'op':'status','workflow_id':'story','delivery':key},os.getpid()))
         self.assertIn(wm.SUBSET_CAPABILITY,status['capabilities'])
         self.assertTrue(status['retry_authorization']['allowed'])
         result=await self.service.send(new,os.getpid());self.assertTrue(result['ok'],result)
-        self.assertEqual(result['sent'],[self.service.load()['grants']['story']['core']['binding']['primary']]+self.cc)
+        self.assertEqual(result['sent'],[self.service.load()['grants']['story']['core']['binding']['primary']]+self.cc[:2])
         self.assertEqual(self.service.load()['deliveries'][key]['previous']['status'],'unknown')
         self.assertEqual((await self.service.send(new,os.getpid()))['why'],'duplicate')
         self.ask.assert_awaited_once()

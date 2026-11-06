@@ -460,7 +460,7 @@ def check(command, root, state=None, ctx=None):
 
 def _note_target(path, bases, root, state):
     """A plain CEO note cannot shadow an executable or alter a control file."""
-    if not isinstance(path, str) or not re.fullmatch(r"\.jarvis/[A-Za-z0-9][A-Za-z0-9_.-]*\.md", path):
+    if not isinstance(path, str) or not re.fullmatch(re.escape(NOTES) + r"/[A-Za-z0-9][A-Za-z0-9_.-]*\.md", path):
         return False
     return all(_writes(path, base, root, state) and os.path.basename(_real(path, base) or "").endswith(".md")
                for base in bases)
@@ -924,12 +924,12 @@ class Launches:
         unit, _ = self.verify(origin, session, proc=proc, cgroup=cgroup, ns=ns)
         return unit is not None
 
-    def verify(self, origin, session, proc=Path("/proc"), cgroup=Path("/sys/fs/cgroup"), uid=None, ns=None):
+    def verify(self, origin, session, proc=Path("/proc"), cgroup=Path("/sys/fs/cgroup"), uid=None, ns=None, busy=None):
         if not sys.platform.startswith("linux"):
             return None, "platform"
         if not isinstance(origin, dict) or origin.get("kind") != "peer":
             return None, "shape"
-        if "hopChain" in origin or origin.get("fromMode") != "bypass":
+        if "hopChain" in origin or origin.get("fromMode") not in ("bypass", "prompting"):
             return None, "relayed_or_mode"
         pid, start = origin.get("verifiedPeerPid"), origin.get("verifiedPeerProcStart")
         if type(pid) is not int or pid <= 1 or not isinstance(start, str) or not start.isdigit():
@@ -945,6 +945,15 @@ class Launches:
             return None, "sender_gone"
         if _uid(proc, pid) != uid:
             return None, "sender_uid"
+        # #566: the host's live IPC-verified busy pin also proves a CEO report.
+        # Permission mode is not provenance; prompting is valid only on this
+        # independently pinned chain. Request fields cannot supply `busy`.
+        if busy is not None and busy.known_process(pid):
+            if _stat(proc, pid) != me or _uid(proc, pid) != uid:
+                return None, "sender_changed"
+            return "busy:" + str(pid) + ":" + start, "ok"
+        if origin.get("fromMode") != "bypass":
+            return None, "relayed_or_mode"
         path = _cgroup(proc, pid)
         name = path.rsplit("/", 1)[-1] if path else ""
         if not path or path != f"/user.slice/user-{uid}.slice/user@{uid}.service/app.slice/{name}":   # M1: exact, no nesting

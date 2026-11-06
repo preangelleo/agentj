@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import signal
 import contextlib
 from collections import deque
 import json
@@ -188,6 +190,7 @@ def read_items(root, now: float | None = None) -> list[dict]:
             raw = it
             it = item(it["key"], it.get("who"), it.get("kind"), it.get("label", ""), it.get("lk"), it.get("since"),
                       it.get("pid"), it.get("session"), it.get("ns"), it.get("report"), **task_meta(it))
+            it.update(restart_meta(raw))
             it["self_reported"] = True
             it["_ctime"] = p.stat().st_ctime        # hotfix #455 R2-S1: kernel-set, judged at first sight, never kept
             if isinstance(raw.get("proc_start"), str):
@@ -663,6 +666,33 @@ def unit_report(unit: str, run=subprocess.run) -> str | None:
 
 
 
+# #550: restart matching is exact metadata, never command text or an authority grant.
+def restart_meta(v):
+    out = {}
+    if isinstance(v.get("restart_label"), str) and re.fullmatch(r"[a-f0-9]{64}", v["restart_label"]):
+        out["restart_label"] = v["restart_label"]
+    if isinstance(v.get("unit"), str) and re.fullmatch(r"[A-Za-z0-9_.@-]{1,240}\.service", v["unit"]):
+        out["unit"] = v["unit"]
+    if type(v.get("started")) in (int, float):
+        out["started"] = v["started"]
+    if v.get("stop_signal") == 15:
+        out["stop_signal"] = 15
+    if v.get("stop_reason") in ("sigterm", "timeout"):
+        out["stop_reason"] = v["stop_reason"]
+    return out
+
+
+def current_unit():
+    try:
+        parts = _own_cg(Path("/proc")).split("/")
+        from . import service
+        excluded = {"agentj.service", service.LEGACY_UNIT + ".service", service.name() + ".service"}
+        unit = next((p for p in reversed(parts) if p.endswith(".service")), None)
+        return unit if unit not in excluded else None
+    except (OSError, AttributeError):
+        return None
+
+
 # P262: completion receipts are local metadata, never argv or report contents.
 def write_finished(root, it, code):
     d = items_dir(root) / "finished"
@@ -684,6 +714,7 @@ def finished_items(root):
             if not isinstance(v, dict) or not isinstance(v.get("key"), str):
                 continue
             it = item(v["key"], v.get("who"), v.get("kind"), v.get("label"), since=v.get("since"), report=v.get("report"))
+            it.update(restart_meta(v))
             it["ended"] = v.get("ended") if isinstance(v.get("ended"), (int, float)) else time.time()
             it["exit_code"] = v.get("exit_code") if type(v.get("exit_code")) is int else None
             out.append(it)
@@ -708,7 +739,8 @@ def unit_since(unit, run=subprocess.run):
 def unit_end(unit, run=subprocess.run):
     try:
         r = run(["systemctl", "--user", "show", unit, "-p", "ActiveState", "-p", "LoadState",
-                 "-p", "ExecMainStatus", "-p", "ExecMainCode", "--no-pager"],
+                 "-p", "ExecMainStatus", "-p", "ExecMainCode", "-p", "Result",
+                 "-p", "InactiveEnterTimestampMonotonic", "--no-pager"],
                 capture_output=True, text=True, timeout=3)
     except (OSError, subprocess.SubprocessError):
         return None
@@ -719,7 +751,18 @@ def unit_end(unit, run=subprocess.run):
         return None
     code = props.get("ExecMainStatus", "")
     mode = props.get("ExecMainCode", "")
-    return {"exit_code": int(code) if mode in ("1", "exited") and code.isdigit() else None}
+    result = {"exit_code": int(code) if mode in ("1", "exited") and code.isdigit() else None}
+    if props.get("Result") == "timeout":
+        result["stop_reason"] = "timeout"
+    elif props.get("Result") == "success" and mode in ("2", "killed") and code == "15":
+        result["stop_reason"] = "sigterm"
+    try:
+        at = int(props.get("InactiveEnterTimestampMonotonic", "0"))
+        if at > 0:
+            result["ended"] = time.time() - time.monotonic() + at / 1000000
+    except ValueError:
+        pass
+    return result
 
 
 
@@ -1243,7 +1286,11 @@ class Board:
                 L.judge(it, self.context, table, sids)
         for it in files:
             it.pop("_ctime", None)
-        known = lambda it: {**it, **L.fields(it["key"]), "foreign": False} if L is not None and L.ok(it["key"]) else {**it, "foreign": True}   # noqa: E731 — #450
+        def known(it):
+            if L is not None and L.ok(it["key"]):
+                base = {k: v for k, v in it.items() if k not in ("restart_label", "unit", "started")}
+                return {**base, **L.fields(it["key"]), "foreign": False}
+            return {**it, "foreign": True}
         if self.root is not None:
             for receipt in finished_items(self.root):
                 self.finish(known(receipt), receipt.get("exit_code"), receipt.get("ended"))
@@ -1262,7 +1309,7 @@ class Board:
                         if result is None:
                             retained.append(it)  # still running, or lookup failed: try next scan
                         elif not it.get("covered"):  # hotfix #455: a unit wrapping a `busy run` ends through that job's receipt
-                            self.finish({**it, "foreign": True}, result.get("exit_code"), result.get("ended"))
+                            self.finish({**it, "foreign": True, **restart_meta(result)}, result.get("exit_code"), result.get("ended"))
                 for it in scanned:
                     if it["key"] in old:
                         it.update(since=old[it["key"]]["since"], report=old[it["key"]].get("report"),
@@ -1277,8 +1324,9 @@ class Board:
                 u["covered"] = True
         got = files + [u for u in getattr(self, "units", []) if not u.get("covered") and not any(same_job(f, u) for f in files)]
         live = {it["key"] for it in got}
+        receipted = {v["key"] for v in self.finished}
         for it in self.outside:
-            if not it["key"].startswith("unit:") and it["key"] not in live:
+            if not it["key"].startswith("unit:") and it["key"] not in live and it["key"] not in receipted:
                 self.finish(known(it))   # unwrapped pid/stop: exit code is unknowable
 
         changed = got != self.outside
@@ -1692,6 +1740,17 @@ def cmd_busy(a) -> int:
         return 0
     if a.busy_cmd == "stop":
         return 0 if remove_item(root, a.key if a.key.startswith(("cli:", "run:")) else "cli:" + a.key) else 1
+    if a.busy_cmd == "delegate":
+        from . import names
+        from .state import State
+        request = ({"id": a.id} if a.id else {"workflow": a.workflow, "data": a.data})
+        try:
+            result = names.ctl_call(State(root), {"cmd": "ceo_data", **request}, timeout=10)
+        except names.ServeBusy as exc:
+            result = exc.response()
+        result = result or {"ok": False, "error": "host_unreachable"}
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if result.get("ok") else 1
     if a.busy_cmd == "run":
         cmd = a.command[1:] if a.command[:1] == ["--"] else a.command
         if not cmd:
@@ -1701,7 +1760,11 @@ def cmd_busy(a) -> int:
         path = None
         try:
             print("派新任务前先运行 agentj quota --pick（内容创作加 --task content，Agent J 开发加 --task agentj）/ Check dispatch quota first", file=sys.stderr)
-            path = write_item(root, item(key, a.who, a.kind, a.label, pid=os.getpid(), ns=pidns(), report=a.report, cwd=os.getcwd(), **task_meta({k:v for k,v in vars(a).items() if k != "cwd"})))
+            it = item(key, a.who, a.kind, a.label, pid=os.getpid(), ns=pidns(), report=a.report, cwd=os.getcwd(), **task_meta({k:v for k,v in vars(a).items() if k != "cwd"}))
+            it.update(started=time.time(), restart_label=hashlib.sha256(a.label.encode()).hexdigest() if a.label else None,
+                      unit=current_unit())
+            it = {**it, **restart_meta(it)}
+            path = write_item(root, it)
         except OSError as e:              # e.g. no state dir: the work still runs, only unseen on the phone
             print(f"agentj busy: 手机上不会显示这件事 / not shown on the phone ({e.__class__.__name__})", file=sys.stderr)
         if path is not None:
@@ -1717,19 +1780,46 @@ def cmd_busy(a) -> int:
                     os.utime(path)
         threading.Thread(target=beat, daemon=True).start()
         code = 127
+        child = None
+        terminated = False
+        previous_term = signal.getsignal(signal.SIGTERM)
+
+        def terminate(signum, frame):
+            nonlocal terminated
+            terminated = True
+            if child is not None:
+                with contextlib.suppress(ProcessLookupError):
+                    child.terminate()
+        signal.signal(signal.SIGTERM, terminate)
         try:
             from . import binaries, peer_origin
             n = peer_origin.pin_name(cmd)   # #455 F3 B pin: a dispatched harness runs from its read-only install folder
-            code = subprocess.call(cmd, env=binaries.pinned(n) if n else None)
+            child = subprocess.Popen(cmd, env=binaries.pinned(n) if n else None)
+            if terminated:
+                child.terminate()
+            code = child.wait()
             return code
         except OSError as e:
             print(e, file=sys.stderr)
             return 127
         finally:
+            signal.signal(signal.SIGTERM, previous_term)
             stop.set()
             if path is not None:
-                with contextlib.suppress(OSError, ValueError):
+                with contextlib.suppress(OSError, ValueError, subprocess.SubprocessError):
                     it = json.loads(path.read_text())
+                    if terminated or code == -signal.SIGTERM:
+                        if terminated:
+                            it["stop_signal"] = signal.SIGTERM
+                        if not it.get("unit"):
+                            it["stop_reason"] = "sigterm"
+                        else:
+                            # Query before this wrapper exits: a --collect unit cannot yet disappear.
+                            with contextlib.suppress(OSError, subprocess.SubprocessError):
+                                result = subprocess.run(["systemctl", "--user", "show", it["unit"], "-p", "Result", "--value"],
+                                                        capture_output=True, text=True, timeout=3)
+                                if result.returncode == 0 and result.stdout.strip() in ("success", "timeout"):
+                                    it["stop_reason"] = "timeout" if result.stdout.strip() == "timeout" else "sigterm"
                     write_finished(root, it, code)
             remove_item(root, key)
     return 2
@@ -1756,6 +1846,10 @@ def add_parser(sub) -> None:
             x.add_argument("--pid", type=int, default=None, help="这个进程结束就自动撤下 / removed when this pid ends")
         else:
             x.add_argument("command", nargs=argparse.REMAINDER)
+    x = ps.add_parser("delegate", help="把外部数据交已登记 CEO 无工具诊断，自动运行并在主机留报告 / tool-free registered CEO diagnosis")
+    x.add_argument("--workflow", help="已登记工作流目录名 / registered workflow folder")
+    x.add_argument("--data", help="外部数据和本地证据（不是授权）/ untrusted data and evidence")
+    x.add_argument("--id", help="查看该派单的状态与本机报告 / inspect status and local report")
     x = ps.add_parser("capacity", help="还能再起几条后台活：核数、负载、可用内存、在跑的条数 → 建议 / how many more background "
                                          "jobs the Agent J host can take now")
     x.add_argument("--json", action="store_true")

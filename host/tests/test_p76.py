@@ -149,7 +149,7 @@ class Statusline(unittest.TestCase):
                 'token':'DO_NOT_CAPTURE','cwd':'DO_NOT_CAPTURE'}
     def invoke(self, raw):
         import subprocess
-        return subprocess.run(inbound.read()['statusLine']['command'],shell=True,input=raw,capture_output=True)
+        return subprocess.run(inbound.read()['statusLine']['command'],shell=True,input=raw,capture_output=True, env={**os.environ, 'PYTHONPATH': os.pathsep.join([str(Path(__file__).resolve().parents[1]), os.environ.get('PYTHONPATH', '')])})
     def test_chain_preserves_stdin_stdout_exit_restore_and_keys(self):
         from agentj import claude_statusline as tap
         import shlex

@@ -74,7 +74,7 @@ def run(st, lang="zh", session=None, ask=None, out=None, ctl=None, service=None,
                 service.start(st)
                 steps.append(_say(lang, "后台服务没在运行 → 已启动", "background service was not running → started"))
             restarted = True
-        except Exception as e:  # noqa: BLE001 — a service manager error is reported, never raised at the owner
+        except Exception as e:  # noqa: BLE001; report service errors
             return finish(False, f"后台服务起不来（{type(e).__name__}）：运行 agentj doctor 看具体原因。",
                           f"The background service would not start ({type(e).__name__}): run agentj doctor for the reason.",
                           broken="serve")
@@ -92,12 +92,12 @@ def run(st, lang="zh", session=None, ask=None, out=None, ctl=None, service=None,
                 service.restart()
                 restarted = True
                 steps.append(_say(lang, "中继连不上 → 已重启后台服务", "relay not connected → background service restarted"))
-            except Exception as e:  # noqa: BLE001 — P192 (B18): the step list says the restart did not happen
+            except Exception as e:  # noqa: BLE001; record a failed restart
                 steps.append(_say(lang, f"中继连不上 → 重启后台服务失败（{type(e).__name__}）",
                                   f"relay not connected → restarting the background service failed ({type(e).__name__})"))
             res = _wait(st, ctl, sleep, 30, lambda r: up(r) and r.get("relay_state") == "up")
         if not up(res) or res.get("relay_state") != "up":
-            from . import relaydiag     # P317: where the host leg sticks (phase / reason / close code), not a guess
+            from . import relaydiag     # Report observed host phase/reason/close.
             last = res.get("relay_last") if isinstance(res, dict) else None
             return finish(False, "Agent J 主机连不上 Agent J 中继，手机暂时联系不到它" + (f"：卡在 {relaydiag.text(last, 'zh')}" if last else
                           "（网络或账户问题）") + "。运行 agentj doctor 看主机腿探测。",
@@ -119,7 +119,7 @@ def run(st, lang="zh", session=None, ask=None, out=None, ctl=None, service=None,
     if status not in OK_AGENT or session:
         r = ctl(st, {"cmd": "agent_reconnect", "session": here}, 45) or {}
         if not r.get("ok") and r.get("why") == "not_found" and here and not session:
-            r = ctl(st, {"cmd": "agent_reconnect"}, 45) or {}      # this session is not in the Agent's folder
+            r = ctl(st, {"cmd": "agent_reconnect"}, 45) or {}      # Session cwd mismatch.
         if not r.get("ok") and r.get("why") == "ambiguous":
             choices = r.get("choices") or []
             ask = (sys.stdin.isatty() and sys.stdout.isatty()) if ask is None else ask
@@ -150,7 +150,7 @@ def run(st, lang="zh", session=None, ask=None, out=None, ctl=None, service=None,
             steps.append(_say(lang, ("已接上会话 " if r.get("changed") else "会话正常 ") + r["session"],
                               ("attached session " if r.get("changed") else "session fine ") + r["session"]))
     else:
-        with contextlib.suppress(Exception):   # P306: links fine, phone may still show an old status → re-send it
+        with contextlib.suppress(Exception):   # Refresh stale phone status.
             ctl(st, {"cmd": "status_push"}, 5)
     return finish(True, "三段都通：后台服务在跑、中继已连上、Agent J 已接上。手机上下拉刷新或等几秒就会变回正常颜色。",
                   "All three links are up: the service runs, the relay is connected and Agent J is attached. The phone "

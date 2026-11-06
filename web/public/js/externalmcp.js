@@ -1,7 +1,6 @@
 // #474: metadata only. Credentials use the existing signed secret_out pickup flow.
 import { mk } from './ui.js';
 import { t, locale } from './t.js';
-import { RelayMD } from './md.js';
 import { copyButton } from './copycode.js';
 import { createInput } from './externalmcp-model.js';
 export { parseConnectors } from './externalmcp-model.js';
@@ -37,7 +36,7 @@ export function connectorsSection(connectors, D) {
     if(c.state!=='revoked') {
       const acts=mk('div','whacts');
       if(c.state==='active') {
-        if(c.url) acts.append(button('mcp474.copy','mcp474-copy',e=>copyButton(c.url,e.currentTarget,s=>RelayMD.copyText(s))));
+        if(c.url) acts.append(button('mcp474.copy','mcp474-copy',e=>copyButton(c.url,e.currentTarget)));
         acts.append(button('mcp474.rotate','mcp474-rotate',async()=>{
           if(await D.confirm(t('mcp474.confirm',{name:c.name}),t('mcp474.rotateNote'),t('mcp474.rotate'),true)) operate('mcp-rotate',{id:c.id});
         }));
@@ -50,8 +49,8 @@ export function connectorsSection(connectors, D) {
   }
   box.append(ul);
   const form=mk('form','mcp474-form');
-  const name=mk('input','mcp474-name'); name.id='mcp474-name'; name.maxLength=40; name.required=true; name.autocomplete='off';
-  const origins=mk('textarea','mcp474-origins'); origins.id='mcp474-origins'; origins.rows=3; origins.required=true; origins.maxLength=4096; origins.autocapitalize='none'; origins.spellcheck=false;
+  const name=mk('input','aj-input mcp474-name'); name.id='mcp474-name'; name.maxLength=40; name.required=true; name.autocomplete='off';
+  const origins=mk('textarea','aj-textarea mcp474-origins'); origins.id='mcp474-origins'; origins.rows=3; origins.required=true; origins.maxLength=4096; origins.autocapitalize='none'; origins.spellcheck=false;
   const nl=mk('label','',t('mcp474.name')); nl.htmlFor=name.id;
   const ol=mk('label','',t('mcp474.origins')); ol.htmlFor=origins.id;
   const go=button('mcp474.create','mcp474-create',()=>{}); go.type='submit';

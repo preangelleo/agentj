@@ -404,6 +404,7 @@ class _Agent:
 class _Host:
     def __init__(self, st, work, value=b"GOODCODE"):
         self.st, self.lang, self.agent_cfg = st, "zh", {"dir": str(work)}
+        self.preferences = {}  # Real Host always has preferences; default mode keeps the external-turn refusal.
         self.agent = None
         self.notices, self.asks, self.allow = [], [], True
         self.elevate = _Elev(value)
@@ -558,7 +559,8 @@ class Wire(Base, unittest.IsolatedAsyncioTestCase):
         s = _Sess()
         got = await accounts.phone(self.host, s, "acct_get", {})
         self.assertEqual(set(got), {"ok", "view"})
-        self.assertEqual(set(got["view"]), {"claude", "codex", "conflict"})
+        self.assertEqual(set(got["view"]), {"claude", "codex", "conflict", "primary"})
+        self.assertEqual(set(got["view"]["primary"]), {"claude", "codex"})
         res = await accounts.phone(self.host, s, "acct_use", {"harness": "claude", "id": self.backup["id"]})
         self.assertTrue(res["ok"], res)
         self.assertEqual(res["restart"], "next_turn")

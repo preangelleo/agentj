@@ -3,8 +3,14 @@ name: agentj-config
 description: REQUIRED for Agent J personalization and troubleshooting: how to address the owner / 称呼（以后叫我 X）, wake word / 唤醒词, ASR / 语音识别, TTS / 播报 / 音色, channels / 通道, menus / 命令菜单, shortcuts / 快捷键, themes / 主题, language / 语言, e-mail channel / 邮件通道 (agentj mail); whenever editing ~/.config/agentj/. Read-only reference for safety settings.
 ---
 
-主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
-Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+### 本次语音的转写路线 / Which engine transcribed this recording
+
+主人问「刚才语音走 Olares 千问还是本地小模型」时，主 Agent 在当前 Agent J 主机会话亲自运行 `agentj asr status --json`，不要派隔离子 Agent。主机配置/运行记录查询必须由主 Agent 直接执行；沙箱子 Agent 的默认值不能代表宿主配置。受保护的主 Agent 会话通过现有只读宿主接口读取真实记录，不需要解除隔离。`last_used` 是最近一次**成功**完成的转写：`engine`、`model`、UTC `at`、`elapsed_ms`（整条路线耗时，包含失败的远端尝试和本地回退）、`fallback`。核对 `at` 是否对应所问录音再回答；失败不覆盖旧成功，`null` 表示尚无可读成功记录，不能据当前配置猜本次路线。`voxtype` 的底层模型不可核实，`model:null`。`local_fallback` 是当前是否允许本地回退，`last_used.fallback` 才表示那次实际发生回退。若返回 `host_state_unavailable`，明确说宿主记录不可达，不能把沙箱默认值当结果。
+
+When asked which ASR route handled a recording, the main Agent runs `agentj asr status --json` itself in the current Agent J host session; never delegate host configuration or runtime-record queries to a sandboxed sub-Agent. Sandbox defaults are not host facts. A protected main session uses the existing read-only host interface without relaxing isolation. `last_used` describes the latest **successful** transcription: engine, model, UTC `at`, total `elapsed_ms` (including a failed remote attempt and local recovery), and actual `fallback`. Match `at` to the recording before answering. Failures preserve the previous success; `null` means no readable success record. Never infer a recording's route from current configuration. Voxtype's underlying model is unknown (`model:null`). `local_fallback` describes current permission; `last_used.fallback` describes what happened. Report `host_state_unavailable` honestly instead of using sandbox defaults.
+
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；本机配置/运行状态快查由主 Agent 自己执行；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Host configuration and runtime-status quick checks are the main Agent’s own task. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
 
 Brand and name: Agent J is the product. Read `agentj status --json` field `agent_display_name` and use that formatted label verbatim for the conversational Agent. Keep the stored name unchanged; never add a prefix yourself. To return from another channel: 「请回 Agent J 网页跟 `<agent_display_name>` 沟通」 / “Return to the Agent J web app to talk with `<agent_display_name>`.” If the label is unavailable, say Agent J and explain that the name is unavailable. Never invent a name or suggest another product's assistant name.
 
@@ -223,6 +229,12 @@ session's own process: tell the owner to restart it.
 OpenCode: a changed `auth.json` / global config (metadata only) restarts our own `opencode serve` automatically before the next message, re-attaching
 the same session. Failure lines and `agentj doctor` name the class: login (401), region (403/451 region), access (403), balance (402/quota), rate_limit (429), model, network, internal.
 For region/network failures suggest the proxy above or Claude Code; never suggest pasting keys or proxy passwords into chat.
+
+## 主账号与备用 AI 账号 / Primary and Backup AI accounts
+
+用户问「Key 填哪里」：引导到设置 →「模型和 API Key」配置主账号。「备用 AI 账号」专门管理 Claude Code、Codex 额度用完时自动切换的备用账号；其中主账号只读，与「模型和 API Key」显示同一份配置，点链接去修改。只添加或管理备用账号，不重复填写主账号，不删除或重写已有账号或凭据。密钥只在专用密钥卡里填写，不发到聊天框。
+
+For “where do I enter the key?”, use Settings → Models & API keys for the primary account. Backup AI accounts manages the backup accounts Claude Code and Codex switch to automatically when quota runs out. Its primary account is read-only and shares the configuration in Models & API keys, with a link there to change it. Add or manage only backups here. Do not enter the primary account twice or delete or rewrite existing accounts or credentials. Keys go only in the dedicated secret card, never chat.
 
 ## 切换服务商 / Switch model providers
 

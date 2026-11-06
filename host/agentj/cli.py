@@ -2572,10 +2572,15 @@ def cmd_inbox(a) -> None:
 def cmd_asr(a) -> None:
     """`agentj asr install|status|test <wav>|engine <e>|remove` (PROTOCOL §10.9): asr.py does the work."""
     from . import asr
+    from . import host_diagnostics
+    args=list(a.args or [])
+    if args in (['status'], ['status','--json']):
+        rc=host_diagnostics.request('asr_status', as_json='--json' in args)
+        if rc is not None:
+            sys.exit(rc)
     st = State()
     _need_init(st)
     from . import preferences
-    args=list(a.args or [])
     if len(args) in (2,3) and args[0]=='engine' and set(args[2:]) <= {'--force'}:
         selected={'auto':'sensevoice','sherpa':'sensevoice','voxtype':'voxtype','off':'off'}.get(args[1])
         if selected=='voxtype':   # P393 (#120): some desktops ship voxtype as English-only Whisper unless the human changed it
@@ -2590,15 +2595,16 @@ def cmd_asr(a) -> None:
     except Exception:  # noqa: BLE001 — unreadable preferences: config.json's asr.engine alone, as before
         override=None
         cfg={}
-    if preferences.get(cfg,'voice.asr.mode')=='custom' and args and args[0] in ('status','test'):
+    mode=preferences.get(cfg,'voice.asr.mode')
+    if mode in ('custom','cloud') and args and args[0] in ('status','test'):
         from . import voice
+        engine='custom' if mode=='custom' else preferences.get(cfg,'voice.asr.provider')
         if args[0]=='status':
-            result={'state':'ready','engine':'custom','active':'custom','model':preferences.get(cfg,'voice.asr.model'),
-                    'local_fallback':True}
+            result=voice.asr_status(cfg,state_dir=st.root)
         else:
             wav=next((x for x in args[1:] if not x.startswith('-')),str(asr.asr_dir(st.root)/'model'/'zh.wav'))
             result=voice.transcribe(wav,cfg,120,state_dir=st.root)
-        print(json.dumps(result,ensure_ascii=False) if '--json' in args else (result.get('text') or 'custom ASR: '+result.get('state',result.get('reason','failed'))))
+        print(json.dumps(result,ensure_ascii=False) if '--json' in args else (result.get('text') or engine+' ASR: '+result.get('state',result.get('reason','failed'))))
         sys.exit(0 if result.get('ok',result.get('state')=='ready') else 1)
     sys.exit(asr.cli_main(args, state_dir=st.root, engine_override=override))
 
@@ -3809,7 +3815,7 @@ def main(argv=None) -> None:
     ob.set_defaults(fn=cmd_onboarding)
     a = p.parse_args(argv)
     from . import host_diagnostics
-    host_owned = a.cmd in ("diag", "status", "support", "feedback", "devices") or (a.cmd == "doctor" and a.reconnect)
+    host_owned = a.cmd in ("diag", "status", "support", "feedback", "devices") or (a.cmd == "doctor" and a.reconnect) or (a.cmd == 'asr' and list(a.args or []) in (['status'], ['status','--json']))
     host_owned = host_owned and host_diagnostics.agent_side()
     if not host_owned and a.cmd not in NO_MIGRATE and not (a.cmd == "report" and getattr(a, "action", None)) and a.cmd not in ("keep-awake", "browser") and not (a.cmd == "doctor" and (a.isolation_only or a.read_only)):
         from . import migrate

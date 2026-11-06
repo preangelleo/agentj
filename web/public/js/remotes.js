@@ -163,7 +163,7 @@ function row(d) {
   if (editing === d.id) {
     const f = mk('form', 'rmrename');
     const lab = mk('label', 'vh', t('rm.renameLabel'));
-    const inp = mk('input');
+    const inp = mk('input', 'aj-input');
     inp.id = 'rm-name-' + d.id.replace(/[^A-Za-z0-9_-]/g, '');
     lab.htmlFor = inp.id;
     inp.type = 'text'; inp.maxLength = 64; inp.value = clean(d.name); inp.autocomplete = 'off'; inp.enterKeyHint = 'done';

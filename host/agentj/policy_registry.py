@@ -97,6 +97,7 @@ HOST_TOOLS = MappingProxyType({
     "DoomLoop": "settings.write", "task": "agent.dispatch", "AskUserQuestion": "settings.write",
     "AgentJHook": "settings.write", "AgentJTerminal": "admin",
     "agentj mail workflow-grant": "settings.write",
+    "agentj mail workflow-retry": "mail.send",
     "agentj mail": "mail.send", "agentj mail send": "mail.send",
     "agentj mail notes": "mail.send", "agentj mail reply": "mail.send",
     "agentj calendar": "calendar.write",

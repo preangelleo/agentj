@@ -29,7 +29,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from agentj import cloud, elevate, feedback, field_tools, host_diagnostics as hd, layout_diag, names, reconnect, support, wire
+from agentj import cloud, elevate, feedback, field_tools, host_diagnostics as hd, layout_diag, names, reconnect, support, voice, wire
 from agentj.state import State
 
 AJ = Path(__file__).resolve().parents[2]
@@ -160,7 +160,7 @@ class OfficialReplyReachesIsolatedAgent(unittest.IsolatedAsyncioTestCase):
         # Jev (layer 2) is an external call: offline here; layer 1 still runs for real.
         self.jev = patch.object(support.privacy, "layer2", return_value=SimpleNamespace(status="ok"))
         self.jev.start()
-        self.el = elevate.Elevator(SimpleNamespace(st=self.st))
+        self.el = elevate.Elevator(SimpleNamespace(st=self.st, preferences={}, agent=SimpleNamespace(native_source={'kind':'terminal','role':'owner'})))
         await self.el.start()
 
     async def asyncTearDown(self):
@@ -232,6 +232,7 @@ class EveryOpBindsItsTarget(unittest.TestCase):
         self.st.init(relay="ws://127.0.0.1:1")
 
     CASES = {
+        'asr_status': ({'as_json': True, 'selected_instance': 1}, (voice, 'asr_status', {'last_used': None})),
         "diag": ({}, (field_tools, "collect", {})),
         "layout_last": ({}, (layout_diag, "last", 0)),
         "status": ({}, (names, "ctl_call", {"ok": True})),
@@ -255,7 +256,7 @@ class EveryOpBindsItsTarget(unittest.TestCase):
                 real = getattr(mod, name)
                 with patch.object(mod, name, autospec=True, return_value=ret) as target, \
                      patch.object(support, "channel_for", autospec=True, return_value=object()), \
-                     patch.object(hd, "host_instance", return_value=1 if op == "devices" else hd.host_instance(self.st)):
+                     patch.object(hd, "host_instance", return_value=1 if op in ("devices", "asr_status") else hd.host_instance(self.st)):
                     res = hd.execute(self.st, {"t": "host_diagnostics", "op": op, **fields})
                 self.assertEqual(res["exit"], 0, res)
                 self.assertNotIn("Background request", res["output"])

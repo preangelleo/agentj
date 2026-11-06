@@ -1,10 +1,12 @@
-"""Official wheel build: DEFLATE9 without changing installed bytes or ZIP semantics."""
+"""Official wheel build: standard dense DEFLATE without changing installed bytes or ZIP semantics."""
 from copy import copy
 import os
 from pathlib import Path
 import stat
 import tempfile
 import zipfile
+import zlib
+
 
 from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
@@ -26,6 +28,41 @@ def _verify_equivalent(original, rewritten):
                 raise ValueError('wheel member metadata changed')
 
 
+def _dense_compress(data):
+    from zopfli.zlib import compress
+    return compress(data, numiterations=5)[2:-4]
+
+
+class _DenseDeflater:
+    """Per-entry compressor; no process-wide zipfile changes and no alternate ZIP method."""
+    def __init__(self):
+        self.parts = []
+
+    def compress(self, data):
+        self.parts.append(data)
+        return b''
+
+    def flush(self):
+        data = b''.join(self.parts)
+        self.parts.clear()
+        standard = zlib.compressobj(level=9, wbits=-15)
+        ordinary = standard.compress(data) + standard.flush()
+        dense = _dense_compress(data)
+        if zlib.decompress(dense, -15) != data:
+            raise ValueError('dense DEFLATE content changed')
+        return dense if len(dense) < len(ordinary) else ordinary
+
+
+class _DenseZipFile(zipfile.ZipFile):
+    def _open_to_write(self, zinfo, force_zip64=False):
+        writer = super()._open_to_write(zinfo, force_zip64=force_zip64)
+        if zinfo.compress_type == zipfile.ZIP_DEFLATED and zinfo.filename.endswith(
+                ('.py', '.md', '.json', '.json5', '.js', '.html', '.css', '.txt')):
+            # zipfile still owns headers, flags, CRC, size accounting and central directory.
+            writer._compressor = _DenseDeflater()
+        return writer
+
+
 class CustomBuildHook(BuildHookInterface):
     def finalize(self, version, build_data, artifact_path):
         artifact = Path(artifact_path)
@@ -36,7 +73,7 @@ class CustomBuildHook(BuildHookInterface):
         os.close(fd)
         temporary = Path(name)
         try:
-            with zipfile.ZipFile(artifact) as before, zipfile.ZipFile(temporary, 'w') as after:
+            with zipfile.ZipFile(artifact) as before, _DenseZipFile(temporary, 'w') as after:
                 entries = before.infolist()
                 if len({i.filename for i in entries}) != len(entries):
                     raise ValueError('duplicate wheel member')

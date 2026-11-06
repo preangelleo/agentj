@@ -38,7 +38,7 @@ agentj = "agentj.cli:main"
 dev = ["noiseprotocol==0.3.1"]   # test-only third oracle for the Noise state machine; never imported at runtime
 
 [build-system]
-requires = ["hatchling>=1.27"]   # 1.27: PEP 639 license-files
+requires = ["hatchling>=1.27", "zopfli==0.4.3"]   # 1.27: PEP 639 license-files
 build-backend = "hatchling.build"
 
 [tool.hatch.version]

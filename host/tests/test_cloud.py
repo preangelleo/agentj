@@ -427,6 +427,8 @@ class Scheduler(unittest.TestCase):
             self.assertIsNone(await r.send_once("approve"))  # previous call still in flight → skipped, not stacked
             release.set()
             await _until(lambda: r.inflight.done())   # the released call settles on the loop (no fixed sleep: CPU load)
+            self.assertIsNone(await r.send_once("revoke"), "finished HTTP must still obey failure cooldown")
+            r.backoff.clock = lambda: r.backoff.until + 1
             self.assertEqual((await r.send_once("revoke")).kind, "ok")
             return ticks
         self.assertEqual(asyncio.run(run()), 5)

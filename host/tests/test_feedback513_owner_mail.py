@@ -20,7 +20,7 @@ class OwnerIntent(_Base):
         self.assertEqual(self.smtp.sent, [])
         self.assertEqual(M.read_state(self.st)['counts'].get('archive'), 1)
         self.assertEqual(M.read_state(self.st)['routes'], {})
-        self.assertNotIn('\\Seen', self.imap.flags.get(2, set()))
+        self.assertIn('\\Seen', self.imap.flags.get(2, set()))
 
     async def test_agent_to_with_external_cc_is_archive_only(self):
         self.assertEqual((await self.poll(extra='Cc: collaborator@outside.example\n'))['delivered'], 0)

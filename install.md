@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.28.18
+version: 0.28.19
 released: 2026-11-06
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.27.0
-source_tag: v0.27.0
-host_wheel: agentj-0.27.0-py3-none-any.whl
-host_wheel_sha256: 56d67b634bad1bdf483c8d5cedd1b53a588e05e6d5fb5669cf39daeba1a858eb
-host_sdist: agentj-0.27.0.tar.gz
-host_sdist_sha256: 602cc1460236c225dd8dc3493a093e0ab7eaae75af094d5be1b9c3473450c115
+host_version: 0.27.1
+source_tag: v0.27.1
+host_wheel: agentj-0.27.1-py3-none-any.whl
+host_wheel_sha256: 28bf265faa231e828c21b3e023bcbc29fea4847f4d5ce5d923fce7e76b864e2a
+host_sdist: agentj-0.27.1.tar.gz
+host_sdist_sha256: 8b162ba50d48ee7da13e030bf0fb26440075502bf834552a3e55113d61b83cb6
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -726,7 +726,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.27.0` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.27.1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -768,13 +768,13 @@ uv tool install "./$W"          # the wheel; its dependencies come from PyPI or 
 `https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.9`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.27.0#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.27.1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.27.0#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.27.1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.27.0`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.27.1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1785,7 +1785,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.27.0#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.27.1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1811,11 +1811,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.27.0#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.27.1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.27.0#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.27.1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -3398,9 +3398,9 @@ Notebook entries keep an optional title, content and date separately. Copy copie
 
 ### Post-upgrade reminders and Claude version managers
 
-After upgrading, the host checks itself automatically. With no blocking problems it says “Upgrade succeeded; everything is working.” A blocking problem is named in the receipt with a Repair button on the phone, using the existing paired-device confirmation flow. Continue the first-run checklist in Settings; its counts and doctor use the same host record and do not appear in upgrade receipts. Waiting for the first phone message after restart is not an upgrade failure.
+After upgrading, the Agent J host checks itself. The receipt reports the version, self-check and AI session separately: installation is not proof of session recovery; only a new AI reply is. Blocking problems are named with a Repair button using paired-device confirmation. Continue the first-run checklist in Settings; its counts and doctor share the host record, outside upgrade receipts. Waiting for the first phone message after restart is not an upgrade failure.
 
-升级后主机会自动自检；没有阻塞问题时只提示「升级成功，一切正常」。有阻塞时会说明故障，并在手机回执上提供「一键修复」，沿用已配对手机的确认流程。首次准备清单在「设置」里继续，待办数字与清单、doctor 使用同一份主机记录，不计入升级回执。重启后等待首条手机消息不算升级故障。
+升级后 Agent J 主机会自动自检；回执分别说明版本、自检与 AI 会话连接结果。安装完成不代表会话已恢复，收到新的 AI 回复才算恢复。有阻塞时会说明故障，并在手机回执上提供「一键修复」，沿用已配对手机的确认流程。首次准备清单在「设置」里继续，待办数字与清单、doctor 使用同一份主机记录，不计入升级回执。重启后等待首条手机消息不算升级故障。
 
 Claude Code installed with mise/asdf may have several versions. Agent J reports `ambiguous_install` and defaults to the highest executable numeric version unless a version was explicitly selected. Set `AGENTJ_CLAUDE_BIN` to an executable or select an installed version with mise/asdf. This is not `not_installed`.
 

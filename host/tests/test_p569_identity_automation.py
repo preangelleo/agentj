@@ -20,17 +20,17 @@ def core(lang):
     return (main_identity.DATA / f"core.{lang}.md").read_text()
 
 
-class IdentityV23(unittest.TestCase):   # P571: the core is v25 now (0.26.9 E5); the v23 rules below must survive it
+class IdentityV23(unittest.TestCase):   # P571: the core is v26 now (0.26.9 E5); the v23 rules below must survive it
     def test_manifest_version_and_hashes(self):
         man = json.loads((main_identity.DATA / "manifest.json").read_text())
-        self.assertEqual(man["version"], 25)
-        self.assertEqual(main_identity.VERSION, 25)
-        self.assertEqual(main_identity.verify_core()["version"], 25)
+        self.assertEqual(man["version"], 26)
+        self.assertEqual(main_identity.VERSION, 26)
+        self.assertEqual(main_identity.verify_core()["version"], 26)
         for lang in ("zh", "en"):
             digest = hashlib.sha256((main_identity.DATA / f"core.{lang}.md").read_bytes()).hexdigest()
             self.assertEqual(man["hashes"][lang], digest)
             self.assertEqual(main_identity.HASHES[lang], digest)
-            self.assertTrue(core(lang).splitlines()[0].endswith("v25"))
+            self.assertTrue(core(lang).splitlines()[0].endswith("v26"))
 
     def test_update_check_comes_before_support_and_father(self):
         for lang, persist in (("zh", "仍在"), ("en", "If it persists")):
@@ -41,16 +41,16 @@ class IdentityV23(unittest.TestCase):   # P571: the core is v25 now (0.26.9 E5);
             self.assertLess(text.index("agentj update apply"), text.index(persist))
             self.assertLess(text.index(persist), text.index("agentj support ask"))
         self.assertIn("落后告知主人", core("zh"))
-        self.assertIn("同意即发", core("zh"))
-        self.assertIn("if behind, with the owner's OK run `agentj update apply`", core("en"))
-        self.assertIn("落后告知主人，同意后 `agentj update apply`", core("zh"))
-        self.assertIn("Send only after agreement", core("en"))
+        self.assertIn("全放行档自行脱敏提交", core("zh"))
+        self.assertIn("run `agentj update apply` within the current permission mode", core("en"))
+        self.assertIn("按当前权限档 `agentj update apply`", core("zh"))
+        self.assertIn("full-access mode redacts and submits automatically", core("en"))
 
     def test_scheduler_default_is_in_the_core(self):
         zh, en = core("zh"), core("en")
         for needle in ("定时任务默认", "系统调度", "无头全权限", "agentj-automation", "手动跑通", "预先认可", "不再请示"):
             self.assertIn(needle, zh)
-        for needle in ("recurring jobs default to the OS scheduler", "headless with full access", "agentj-automation",
+        for needle in ("Recurring jobs default to the OS scheduler", "headless with full access", "agentj-automation",
                        "run once by hand", "pre-approved"):
             self.assertIn(needle, en)
 

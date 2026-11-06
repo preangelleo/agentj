@@ -95,7 +95,8 @@ html[data-kbd] .omq:focus-visible{box-shadow:0 0 0 2px var(--ring)}
 /* overscroll-behavior on the root too: a sideways swipe that is not a page turn
    (from the screen edge, or at the first / last page) must never become the
    browser's history-back gesture and leave the app (ADR-033). */
-html{height:100%;overflow:hidden;background:var(--pg);overscroll-behavior:none}
+/* #538b: rem-based Settings uses the same 16px baseline as the chat, independent of browser default font size. */
+html{font-size:16px;font-family:var(--font-body);height:100%;overflow:hidden;background:var(--pg);overscroll-behavior:none}
 /* The body is pinned to the *visual* viewport so the keyboard shrinks it from the
    bottom instead of scrolling the status bar away. Android Chrome: the
    interactive-widget=resizes-content meta does it natively (dvh shrinks).
@@ -384,7 +385,7 @@ main::-webkit-scrollbar{display:none}
 .omhd .t{font-weight:400;opacity:.72;white-space:nowrap}
 .omhd b{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .omhd .pg{flex:none;font:600 calc(13px*var(--fz))/1 var(--font-mono);letter-spacing:.02em}
-.omtxt{font:400 calc(15px*var(--fz))/1.5 var(--font-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+.omtxt{font:400 calc(15px*var(--fz)*var(--rs,1))/1.5 var(--font-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   padding-right:48px;min-height:22px}
 .omtxt.none{opacity:.6}
 .ommore{position:absolute;right:6px;top:36px;min-width:44px;height:44px;display:grid;place-items:center;
@@ -1708,14 +1709,14 @@ p.setval{grid-column:1 / -1;text-align:left;margin:0}
 .tgl[aria-checked="true"] i::after{transform:translateX(18px)}
 .tgl:focus-visible,.seg button:focus-visible,.setx:focus-visible,.setnav:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}
 .fontstep{display:inline-flex;align-items:center;gap:2px}
-.fontstep>button:not(.setlink){width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);border:0;color:var(--text);padding:0}
+.fontstep>.setstep{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);border:0;color:var(--text);padding:0}
 .fontstep>button:disabled{opacity:.35}
 .fontstep svg{width:18px;height:18px}
 .fontstep output{min-width:3.2em;text-align:center;font:600 var(--fs-sm)/1 var(--font-mono);color:var(--text)}
 .fontstep .setlink{margin-left:var(--sp-2)}
 /* P154 提示音音量: mute · slider (filled to the value) · % · 试听, on one line under the label. */
 .setrow>.sfxvol{grid-column:1 / -1;display:flex;align-items:center;gap:var(--sp-2);min-width:0}
-.sfxvol>button:not(.setlink){width:44px;height:44px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);border:0;color:var(--text);padding:0;cursor:pointer}
+.sfxvol>.setstep{width:44px;height:44px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);border:0;color:var(--text);padding:0;cursor:pointer}
 .sfxvol svg{width:20px;height:20px}
 .sfxvol svg .off{display:none}
 .sfxvol button[aria-pressed="true"] svg .on{display:none}
@@ -2491,7 +2492,7 @@ i.bd.still{animation:none}
 .setacts{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-control);margin-top:var(--space-content)}
 .setacts:empty{display:none}
 .setnav[hidden]{display:none}
-.setnav,.setside button{white-space:normal}
+.setnav,.setside .setsidebtn{white-space:normal}
 .setid{grid-template-columns:auto minmax(0,1fr);gap:var(--space-control);border-bottom:1px dashed var(--border-soft);padding:0 0 var(--space-control)}
 .setid img{border-radius:50%;background:var(--surface-2)}
 .setid__txt{min-width:0}
@@ -2502,12 +2503,12 @@ i.bd.still{animation:none}
 @media (min-width:900px){
   .setmain{grid-template-columns:13.5rem minmax(0,1fr)}
   .setside{display:flex;flex-direction:column;gap:var(--sp-1);position:sticky;top:0}
-  .setside button{min-height:44px;padding:0 var(--space-control);border:0;border-radius:var(--r-md);background:none;color:var(--text);
+  .setside .setsidebtn{min-height:44px;padding:0 var(--space-control);border:0;border-radius:var(--r-md);background:none;color:var(--text);
     text-align:left;font:500 var(--fs-sm)/1.3 var(--font-body);cursor:pointer}
-  .setside button:hover{background:var(--surface-2)}
-  .setside button[aria-current="true"]{background:var(--surface-2);font-weight:700;border-left:3px solid var(--accent);padding-left:calc(var(--space-control) - 3px)}
-  .setside button[hidden]{display:none}
-  .setside button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  .setside .setsidebtn:hover{background:var(--surface-2)}
+  .setside .setsidebtn[aria-current="true"]{background:var(--surface-2);font-weight:700;border-left:3px solid var(--accent);padding-left:calc(var(--space-control) - 3px)}
+  .setside .setsidebtn[hidden]{display:none}
+  .setside .setsidebtn:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
   .setcards{columns:2 26rem;column-gap:var(--space-section)}
   /* P369 (#77, owner 10-17: 「跑到了最左边……这一行应该放到右边」): the side column is navigation only; the Brand Kit row
      sits under the content (after 「账号和帮助」), as wide as the content column. A phone keeps it last in the one column. */
@@ -2988,7 +2989,7 @@ code[data-cc],pre[data-cc],.cc-in{cursor:copy}
 }
 /* P261: the folded source uses at most the existing two-line quote + one-line body budget.
    All content, quote spacing and padding scale with --fz. Tools never add a line. */
-.om{font-size:calc(15px*var(--fz));--om-tools:48px}
+.om{font-size:calc(15px*var(--fz)*var(--rs,1));--om-tools:48px}
 /* P244 reserved 30 px for the reply overlap; P299 cut the overlap to 12 px (five-pages.css .rm), so reserve 12 px; only the
    remaining visible padding scales (P290 merge of P261 onto P299). */
 .deck .om{padding-bottom:calc(12px + .533333em)}
@@ -2996,7 +2997,7 @@ code[data-cc],pre[data-cc],.cc-in{cursor:copy}
 .omtxt{white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.5em;padding-right:var(--om-tools);
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3}
 .om:has(.omq:not([hidden])) .omtxt{-webkit-line-clamp:1}
-.omq{font-size:calc(13px*var(--fz));margin-bottom:.461538em;padding:.461538em .769231em .461538em calc(.846154em - 3px);
+.omq{font-size:calc(13px*var(--fz)*var(--rs,1));margin-bottom:.461538em;padding:.461538em .769231em .461538em calc(.846154em - 3px);
   max-width:calc(100% - var(--om-tools))}
 .omq .qb{gap:calc(1px*var(--fz));max-width:100%}
 .omtools{position:absolute;right:6px;top:36px;height:44px;display:flex;align-items:center}
@@ -3141,7 +3142,7 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 /* P387: remote focus remains visible over every state colour. */
 [data-tv-focus="1"]{outline:3px solid #faf9f5!important;outline-offset:-5px;box-shadow:inset 0 0 0 7px #141414}
 html[data-tv-no-mic="1"] #mic{display:none!important}
-@media(min-width:1600px) and (min-height:850px){html[data-tv="1"]{--fz:1.15}html[data-tv="1"] .words{line-height:1.65}}
+/* #538c: remote-screen keyboard support must never change the saved typography. */
 
 /* P387 #106: before voice is usable, its short status replaces the icon so setup is visible even on a phone. */
 .tools .tool.mic[data-preparing] svg{display:none}
@@ -3662,8 +3663,6 @@ body[data-sheet="1"]:has(.reply-notices>#sheet.cp-docked) .scrim{opacity:0}
 .reply-notices>.ajmodal.cp-docked>.box>.cp-host{background:var(--dlg-bg)}
 
 /* #440: ordinary preference fields; key material stays in the existing secret card. */
-#set-asr .asr-input{grid-column:1 / -1;width:100%;min-width:0;min-height:44px;padding:10px 12px;border:1px solid var(--border-soft);border-radius:var(--radius-sm,8px);background:var(--surface-2);color:var(--text);font:inherit;box-sizing:border-box}
-#set-asr select{max-width:100%;min-width:0;min-height:44px}
 .asr-notice{width:100%;flex-basis:100%;margin:0 0 6px;color:var(--text);font-size:var(--fs-sm)}
 .asr-notice[hidden]{display:none}
 

@@ -9,6 +9,7 @@ import logging
 import signal
 import stat
 import tempfile
+import time
 import urllib.parse
 from websockets.asyncio.client import connect as _ws_connect
 import io
@@ -307,10 +308,37 @@ def phone_asr_change_allowed(before,after):
     if changed=={'mode'} and p.get(after,'voice.asr.mode')=='local': return True
     return not (changed and (old_key or new_key))
 
+def asr_status(cfg, *, state_dir=None):
+    """The effective host route and its last completed success; no endpoint or credentials."""
+    from . import asr, asr_usage
+    mode=p.get(cfg,'voice.asr.mode')
+    if mode in ('custom','cloud'):
+        engine='custom' if mode=='custom' else p.get(cfg,'voice.asr.provider')
+        return {'state':'ready','engine':engine,'active':engine,'model':asr_usage._model(p.get(cfg,'voice.asr.model')),
+                'local_fallback':p.get(cfg,'voice.asr.engine')!='off', 'last_used':asr_usage.last_used(state_dir)}
+    # The RPC exposes only these diagnostic fields, never local paths or worker details.
+    status=asr.status(state_dir, engine_override=p.get(cfg,'voice.asr.engine'))
+    status['model']=asr_usage._model(status['model'])
+    return {k:status[k] for k in ('state','engine','active','model','last_used')}
+
+
 def transcribe(path,cfg,timeout=60,*,state_dir=None,local_asr=None):
+    """Host provenance covers the complete route, including recovery time."""
+    from . import asr, asr_usage
+    started=time.monotonic()
+    with asr_usage.suppress_nested():
+        result=_transcribe(path,cfg,timeout,state_dir=state_dir,local_asr=local_asr)
+    engine=result.get('engine')
+    model=(asr.MODEL_ID if engine=='sherpa' else
+           p.get(cfg,'voice.asr.model') if engine in ('custom','openai','openrouter') else None)
+    asr_usage.record(result,state_dir=state_dir,model=model,elapsed_ms=(time.monotonic()-started)*1000,
+                     fallback=result.get('notice')=='local_fallback')
+    return result
+
+
+def _transcribe(path,cfg,timeout=60,*,state_dir=None,local_asr=None):
     """One routing boundary shared by serve and CLI. Local workers are demand-only in custom mode."""
     from . import asr
-    import time
     local_asr=local_asr or asr
     mode=p.get(cfg,'voice.asr.mode')
     if mode in ('custom','cloud'):

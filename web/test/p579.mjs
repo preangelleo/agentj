@@ -1,4 +1,4 @@
-// P579: real paired client, allowlist roles, processed-mail switch and selectable internal links.
+// P579: real paired client, allowlist roles, mandatory processed-mail read handling and selectable internal links.
 import assert from 'node:assert/strict';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
@@ -30,9 +30,8 @@ try{
    const geometry=await page.evaluate(()=>{const role=document.querySelector('#mail-allow select'),a=document.querySelector('#mail-allow li>span'),add=document.querySelector('#mail-add-role'),input=document.querySelector('#mail-add-addr');const rr=role.getBoundingClientRect(),ar=a.getBoundingClientRect(),nr=add.getBoundingClientRect(),ir=input.getBoundingClientRect();return {same:Math.abs(rr.y+rr.height/2-ar.y-ar.height/2)<2,right:rr.x>ar.x,compact:rr.width<=70,newSame:Math.abs(nr.y-ir.y)<2,newRight:nr.x>ir.x,tap:rr.height>=44};});
    check('compact role geometry '+lang+' '+width,()=>assert.ok(Object.values(geometry).every(Boolean),JSON.stringify(geometry)));
    if(capture){writeFileSync(resolve(out,`${phase}-${lang}-${theme}-${width}-theme.json`),JSON.stringify(await page.evaluate(()=>({theme:document.documentElement.dataset.theme,settingsBackground:getComputedStyle(document.getElementById('settings')).backgroundColor,roleColor:getComputedStyle(document.getElementById('mail-add-role')).color})),null,2));await page.locator('#mail-add-addr').evaluate(e=>e.scrollIntoView({block:'center'}));await page.screenshot({path:resolve(out,`${phase}-${lang}-${theme}-${width}-chip.png`)});await role.focus();await page.keyboard.press('Space');await page.screenshot({path:resolve(out,`${phase}-${lang}-${theme}-${width}-menu.png`)});await page.keyboard.press('Escape');}
-   const sw=page.locator('#mail-mark-read');const exists=await sw.count();check('#397 switch exists '+lang,()=>assert.equal(exists,1));
-   if(exists){assert.equal(await sw.getAttribute('aria-checked'),'true');await sw.click();await page.waitForFunction(()=>document.getElementById('mail-mark-read').getAttribute('aria-checked')==='false');assert.equal(fake.st.mail.config.mark_processed_read,false);await sw.click();}
-   if(capture){await page.locator(exists?'#mail-mark-read':'#mail-poll').evaluate(e=>e.scrollIntoView({block:'center'}));await page.screenshot({path:resolve(out,`${phase}-${lang}-${theme}-${width}-mark-read.png`)});await page.locator('#mail-allow-card').evaluate(e=>e.scrollIntoView({block:'center'}));await page.screenshot({path:resolve(out,`${phase}-${lang}-${theme}-${width}-mail.png`)});}
+   const exists=await page.locator('#mail-mark-read').count();check('#543 no optional processed-read switch '+lang,()=>assert.equal(exists,0));
+   if(capture){await page.locator('#mail-poll').evaluate(e=>e.scrollIntoView({block:'center'}));await page.screenshot({path:resolve(out,`${phase}-${lang}-${theme}-${width}-mark-read.png`)});await page.locator('#mail-allow-card').evaluate(e=>e.scrollIntoView({block:'center'}));await page.screenshot({path:resolve(out,`${phase}-${lang}-${theme}-${width}-mail.png`)});}
    await page.evaluate(async()=>await import('./js/settings.js').then(m=>m.close()));
    const text=lang==='zh'?'应用市场里的 Agent J 今天可用。':'The Agent J in the app store is ready.';
    await fake.addTurn({k:'phone',dev:'other',text:'question'},text);await page.waitForFunction(t=>document.querySelector('#words').textContent.includes(t),text);

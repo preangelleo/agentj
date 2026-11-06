@@ -169,7 +169,7 @@ class SubAgentCard(unittest.TestCase):
             self.assertEqual(r["hookSpecificOutput"]["permissionDecision"], "ask")
             pr = ev("PermissionRequest", **({"agent_id": agent_id} if pr_has_agent else {}))
             card = asyncio.ensure_future(a.hook_event(pr))
-            await opened.wait()
+            await asyncio.wait_for(opened.wait(), 2)
             for f in follow:
                 await a.hook_event(dict(f))
             return await asyncio.wait_for(card, 5)
@@ -199,9 +199,13 @@ class SubAgentCard(unittest.TestCase):
         a = self.agent(ask)
 
         async def go():
-            await a.hook_event(ev("PreToolUse", agent_id="s9"))
+            await a.hook_event(ev("PreToolUse", {"subagent_type": "general-purpose", "prompt": "isolated task",
+                                                 "run_in_background": True}, tool="Agent"))
+            await a.hook_event({"hook_event_name": "SubagentStart", "session_id": "owner", "agent_id": "s9",
+                                "agent_type": "general-purpose"})
+            await a.hook_event(ev("PreToolUse", agent_id="s9", agent_type="general-purpose"))
             card = asyncio.ensure_future(a.hook_event(ev("PermissionRequest")))
-            await opened.wait()
+            await asyncio.wait_for(opened.wait(), 2)
             a._withdraw_answered("Stop", {})            # what _end_without_stop does
             return await card
         self.assertEqual(asyncio.run(go())["hookSpecificOutput"]["decision"]["behavior"], "allow")
@@ -236,7 +240,7 @@ class SubAgentCard(unittest.TestCase):
         async def go():
             await a.hook_event(ev("PreToolUse"))
             card = asyncio.ensure_future(a.hook_event(ev("PermissionRequest")))
-            await opened.wait()
+            await asyncio.wait_for(opened.wait(), 2)
             await a.hook_event(dict(self.MAIN_STOP))
             return await asyncio.wait_for(card, 5)
         self.assertEqual(asyncio.run(go()), {})

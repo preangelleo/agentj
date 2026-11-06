@@ -854,7 +854,7 @@
         <kbd class="setesc" aria-hidden="true">Esc</kbd>
         <div id="set-actions" class="set-actions"></div>
       </div>
-      <div id="set-find" class="set-find" hidden><input id="set-find-input" type="search" data-i18n-attr="placeholder=p264.search,aria-label=p264.search" placeholder="搜索设置" aria-label="搜索设置"><div id="set-find-results" role="status"></div></div>
+      <div id="set-find" class="set-find" hidden><input class="aj-input" id="set-find-input" type="search" data-i18n-attr="placeholder=p264.search,aria-label=p264.search" placeholder="搜索设置" aria-label="搜索设置"><div id="set-find-results" role="status"></div></div>
       <nav class="unpaired-links" aria-label="Agent J">
         <a href="https://agentj.app/account/" target="_blank" rel="noopener" data-i18n="set.accountOpen">打开账号后台</a>
         <a href="https://agentj.app/docs/phone/" target="_blank" rel="noopener" data-i18n="set.helpDocs">手机怎么用</a>
@@ -864,16 +864,16 @@
       </nav>
       <div id="set-main" class="setmain">
         <nav class="setside" data-i18n-attr="aria-label=set.nav" aria-label="设置分区">
-          <button type="button" data-set-jump="set-s-agent" data-paired><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 7V3M9 13h.01M15 13h.01"/></svg><span data-i18n="set.gAgent">Agent 与遥控器</span></button>
-          <button type="button" data-set-jump="set-s-rescue" data-paired><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M5.6 5.6l3.6 3.6M14.8 14.8l3.6 3.6M18.4 5.6l-3.6 3.6M9.2 14.8l-3.6 3.6"/></svg><span data-i18n="p332.title">紧急修复</span></button>
-          <button type="button" data-set-jump="set-s-tools" data-paired><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg><span data-i18n="set.gTools">Agent 的功能</span></button>
-          <button type="button" data-set-jump="set-s-look"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg><span data-i18n="set.gLook">语言和外观</span></button>
-          <button type="button" data-set-jump="set-s-read"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 5.5h6a3.5 3.5 0 0 1 3.5 3.5v10.5a2.5 2.5 0 0 0-2.5-2.5h-7z"/><path d="M21.5 5.5h-6A3.5 3.5 0 0 0 12 9v10.5a2.5 2.5 0 0 1 2.5-2.5h7z"/></svg><span data-i18n="set.gRead">阅读和声音</span></button>
-          <button type="button" data-set-jump="set-s-notify" data-paired><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg><span data-i18n="set.gNotify">通知</span></button>
-          <button type="button" data-set-jump="set-s-channels" data-paired><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6 8.5-6"/></svg><span data-i18n="set.gChannels">沟通渠道</span></button>
-          <button type="button" data-set-jump="set-s-safety"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/></svg><span data-i18n="set.gSafety">安全</span></button>
-          <button type="button" data-set-jump="set-s-app"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><span data-i18n="set.gApp">网页版 App</span></button>
-          <button type="button" data-set-jump="set-s-help"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .9-1 1.6v.4M12 17h.01"/></svg><span data-i18n="set.gHelp">账号和帮助</span></button>
+          <button class="setsidebtn" type="button" data-set-jump="set-s-agent" data-paired><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 7V3M9 13h.01M15 13h.01"/></svg><span data-i18n="set.gAgent">Agent 与遥控器</span></button>
+          <button class="setsidebtn" type="button" data-set-jump="set-s-rescue" data-paired><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M5.6 5.6l3.6 3.6M14.8 14.8l3.6 3.6M18.4 5.6l-3.6 3.6M9.2 14.8l-3.6 3.6"/></svg><span data-i18n="p332.title">紧急修复</span></button>
+          <button class="setsidebtn" type="button" data-set-jump="set-s-tools" data-paired><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg><span data-i18n="set.gTools">Agent 的功能</span></button>
+          <button class="setsidebtn" type="button" data-set-jump="set-s-look"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="currentColor"/></svg><span data-i18n="set.gLook">语言和外观</span></button>
+          <button class="setsidebtn" type="button" data-set-jump="set-s-read"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 5.5h6a3.5 3.5 0 0 1 3.5 3.5v10.5a2.5 2.5 0 0 0-2.5-2.5h-7z"/><path d="M21.5 5.5h-6A3.5 3.5 0 0 0 12 9v10.5a2.5 2.5 0 0 1 2.5-2.5h7z"/></svg><span data-i18n="set.gRead">阅读和声音</span></button>
+          <button class="setsidebtn" type="button" data-set-jump="set-s-notify" data-paired><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg><span data-i18n="set.gNotify">通知</span></button>
+          <button class="setsidebtn" type="button" data-set-jump="set-s-channels" data-paired><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6 8.5-6"/></svg><span data-i18n="set.gChannels">沟通渠道</span></button>
+          <button class="setsidebtn" type="button" data-set-jump="set-s-safety"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/></svg><span data-i18n="set.gSafety">安全</span></button>
+          <button class="setsidebtn" type="button" data-set-jump="set-s-app"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><span data-i18n="set.gApp">网页版 App</span></button>
+          <button class="setsidebtn" type="button" data-set-jump="set-s-help"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .9-1 1.6v.4M12 17h.01"/></svg><span data-i18n="set.gHelp">账号和帮助</span></button>
         </nav>
         <div class="setcards">
           <section class="setcard" id="set-s-agent" data-paired aria-labelledby="set-h-agent">
@@ -950,7 +950,7 @@
             <h3 class="setg" id="set-h-tools" data-i18n="set.gTools">Agent 的功能</h3>
             <button type="button" id="open-models" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></svg><span><b data-i18n="models.title">模型和 API Key</b><small data-i18n="set.modelsNote">换模型，管理你的 API Key。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <!-- #427: Settings → AI 账号 — several named accounts per harness, one tap makes one current (js/accounts.js) -->
-            <button type="button" id="set-accts-nav" class="setnav" data-keywords="account claude codex token device switch 账号 切换 备用 额度"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5l3 3-3 3M22 7.5h-6"/></svg><span><b data-i18n="acct.nav">AI 账号</b><small data-i18n="acct.navNote">Claude Code、Codex 各存几个账号，额度用完一键切到另一个。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+            <button type="button" id="set-accts-nav" class="setnav" data-keywords="account claude codex token device switch 账号 切换 备用 额度"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5l3 3-3 3M22 7.5h-6"/></svg><span><b data-i18n="acct.nav">备用 AI 账号</b><small data-i18n="acct.navNote">Claude Code、Codex 额度用完时自动切换的备用账号。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="open-mem" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 3H18a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6.5A2.5 2.5 0 0 1 4 18.5v-13A2.5 2.5 0 0 1 6.5 3z"/><path d="M8 3v18M11.5 8H16M11.5 12H16"/></svg><span><b data-i18n="nav.mem">记忆</b><small data-i18n="set.memNote">Agent 记住了什么，不想要的可以删。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="open-act" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg><span><b data-i18n="nav.act">记录</b><small data-i18n="set.actNote">Agent 做过的每件事。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="open-tasks" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg><span><b data-i18n="nav.tasks">定时任务</b><small data-i18n="set.tasksNote">按时自动跑的任务，可以开关。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
@@ -1003,7 +1003,7 @@
             </div>
             <div class="setrow">
               <span class="setlab" data-i18n="set.theme">外观</span>
-              <div class="segrow" role="group" data-i18n-attr="aria-label=set.theme" aria-label="外观"><button type="button" data-set-theme="system" aria-pressed="false" data-i18n="set.themeSystem">跟随系统</button><button type="button" data-set-theme="light" aria-pressed="false" data-i18n="set.themeLight">浅色</button><button type="button" data-set-theme="dark" aria-pressed="false" data-i18n="set.themeDark">深色</button></div>
+              <div class="segrow" role="group" data-i18n-attr="aria-label=set.theme" aria-label="外观"><button class="setsegment" type="button" data-set-theme="system" aria-pressed="false" data-i18n="set.themeSystem">跟随系统</button><button class="setsegment" type="button" data-set-theme="light" aria-pressed="false" data-i18n="set.themeLight">浅色</button><button class="setsegment" type="button" data-set-theme="dark" aria-pressed="false" data-i18n="set.themeDark">深色</button></div>
             </div>
             <!-- P340 (#45): the four buttons above the message box, left to right — drag (touch: hold, then drag), tap one then a
                  place, or ← → on a focused one (js/toolsort.js); saved through pref_set ui.composer_buttons, else on this device -->
@@ -1022,9 +1022,9 @@
             <div class="setrow">
               <span class="setlab" data-i18n="set.font">回复字号</span>
               <div class="fontstep">
-                <button type="button" id="set-font-minus" data-i18n-attr="aria-label=set.fontMinus,title=set.fontMinus" aria-label="字小一号" title="字小一号"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+                <button class="setstep" type="button" id="set-font-minus" data-i18n-attr="aria-label=set.fontMinus,title=set.fontMinus" aria-label="字小一号" title="字小一号"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
                 <output id="set-font-val" aria-live="polite">100%</output>
-                <button type="button" id="set-font-plus" data-i18n-attr="aria-label=set.fontPlus,title=set.fontPlus" aria-label="字大一号" title="字大一号"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
+                <button class="setstep" type="button" id="set-font-plus" data-i18n-attr="aria-label=set.fontPlus,title=set.fontPlus" aria-label="字大一号" title="字大一号"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
                 <button type="button" id="set-font-reset" class="setlink" data-i18n="set.fontReset">恢复默认</button>
               </div>
               <p class="setnote" data-i18n="set.fontNote">只改回复卡片里的字，只存在这台手机上。</p>
@@ -1034,8 +1034,8 @@
             <div class="setrow" id="set-sfx-row">
               <span class="setlab" data-i18n="set.sfx">提示音音量</span>
               <div class="sfxvol">
-                <button type="button" id="set-sfx-mute" aria-pressed="false" data-i18n-attr="aria-label=set.sfxMute,title=set.sfxMute" aria-label="静音" title="静音"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5v14l-4.5-4.5H4z"/><path class="on" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button>
-                <input type="range" id="set-sfx" min="0" max="100" step="5" value="15" data-i18n-attr="aria-label=set.sfx" aria-label="提示音音量">
+                <button class="setstep" type="button" id="set-sfx-mute" aria-pressed="false" data-i18n-attr="aria-label=set.sfxMute,title=set.sfxMute" aria-label="静音" title="静音"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5v14l-4.5-4.5H4z"/><path class="on" d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/><path class="off" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button>
+                <input class="aj-range" type="range" id="set-sfx" min="0" max="100" step="5" value="15" data-i18n-attr="aria-label=set.sfx" aria-label="提示音音量">
                 <output id="set-sfx-val" aria-live="polite">15%</output>
                 <button type="button" id="set-sfx-test" class="setlink" data-i18n="set.sfxTest">试听</button>
               </div>
@@ -1080,13 +1080,13 @@
               <button type="button" id="set-wake" class="tgl" role="switch" aria-checked="false" data-pref="voice.wake_enabled" data-i18n-attr="aria-label=set.wake" aria-label="语音唤起"><i></i></button>
               <p class="setnote" data-i18n="set.wakeNote">说出唤醒词就能开始说话。只在 Agent J 的安卓 App 里起作用，网页版没有这个功能。</p>
             </div>
-            <div id="set-asr" hidden>
+            <div id="set-asr" class="setsection" hidden>
               <h4 class="setg" data-i18n="asr440.title">语音转写</h4>
-              <div class="setrow"><label class="setlab" for="set-asr-mode" data-i18n="asr440.source">转写来源</label><select id="set-asr-mode"><option value="local" data-i18n="asr440.local">本机内置模型</option><option value="cloud" data-i18n="asr440.cloud">已配置的服务商</option><option value="custom" data-i18n="asr440.custom">自定义转写端点</option></select></div>
-              <div class="setrow" data-asr-custom><label class="setlab" for="set-asr-url" data-i18n="asr440.url">端点地址</label><input class="asr-input" id="set-asr-url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="http(s)://…/v1"></div>
-              <div class="setrow" data-asr-remote><label class="setlab" for="set-asr-model" data-i18n="asr440.model">模型名称</label><input class="asr-input" id="set-asr-model" type="text" autocomplete="off" spellcheck="false"></div>
-              <div class="setrow" data-asr-remote><label class="setlab" for="set-asr-key-env" data-i18n="asr440.keyName">密钥名称（可不填）</label><input class="asr-input" id="set-asr-key-env" type="text" autocomplete="off" spellcheck="false" placeholder="ASR_API_KEY"><p class="setnote" data-i18n="asr440.keyNote">这里只填密钥的名称。密钥内容请在手机密钥卡里填写，再请 Agent 配置转写。无需认证的自定义端点可留空并直接保存。</p><button type="button" id="set-asr-key" class="aj-btn aj-btn--sm" data-i18n="asr440.key">打开密钥卡</button></div>
-              <div class="setrow"><label class="setlab" for="set-asr-hotwords" data-i18n="asr440.hotwords">语音热词</label><textarea class="asr-input" id="set-asr-hotwords" rows="3" spellcheck="false"></textarea><p class="setnote" data-i18n="asr440.hotwordsNote">每行一个专有名词。远端服务是否采用热词取决于模型支持。</p></div>
+              <div class="setrow"><label class="setlab" for="set-asr-mode" data-i18n="asr440.source">转写来源</label><select id="set-asr-mode" class="aj-select"><option value="local" data-i18n="asr440.local">本机内置模型</option><option value="cloud" data-i18n="asr440.cloud">已配置的服务商</option><option value="custom" data-i18n="asr440.custom">自定义转写端点</option></select></div>
+              <div class="setrow" data-asr-custom><label class="setlab" for="set-asr-url" data-i18n="asr440.url">端点地址</label><input class="aj-input setfieldwide" id="set-asr-url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="http(s)://…/v1"></div>
+              <div class="setrow" data-asr-remote><label class="setlab" for="set-asr-model" data-i18n="asr440.model">模型名称</label><input class="aj-input setfieldwide" id="set-asr-model" type="text" autocomplete="off" spellcheck="false"></div>
+              <div class="setrow" data-asr-remote><label class="setlab" for="set-asr-key-env" data-i18n="asr440.keyName">密钥名称（可不填）</label><input class="aj-input setfieldwide" id="set-asr-key-env" type="text" autocomplete="off" spellcheck="false" placeholder="ASR_API_KEY"><p class="setnote" data-i18n="asr440.keyNote">这里只填密钥的名称。密钥内容请在手机密钥卡里填写，再请 Agent 配置转写。无需认证的自定义端点可留空并直接保存。</p><button type="button" id="set-asr-key" class="aj-btn aj-btn--sm" data-i18n="asr440.key">打开密钥卡</button></div>
+              <div class="setrow"><label class="setlab" for="set-asr-hotwords" data-i18n="asr440.hotwords">语音热词</label><textarea class="aj-textarea setfieldwide" id="set-asr-hotwords" rows="3" spellcheck="false"></textarea><p class="setnote" data-i18n="asr440.hotwordsNote">每行一个专有名词。远端服务是否采用热词取决于模型支持。</p></div>
               <div class="setrow"><button type="button" id="set-asr-save" class="aj-btn" data-i18n="asr440.save">保存转写设置</button><p class="setnote" data-i18n="asr440.note">远端转写成功时不加载本机模型；连接失败会尝试本机转写，并提示结果。配好后请先录一小段试试。</p></div>
             </div>
             <p class="setcmd" id="set-pref-cmd" hidden><span class="setnote" data-i18n="set.readOnly">这台Agent J 主机上的程序还不能从手机改设置。要改，在Agent J 主机上运行：</span><code id="set-pref-cmd-code" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-pref-cmd-code" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
@@ -1121,10 +1121,10 @@
             <fieldset class="forward-options" id="set-forward">
               <legend data-i18n="p536.destination">转发去向</legend>
               <p class="setnote" id="set-fwd-note" data-i18n="p536.destinationNote">用于回复卡和阅读器。在此遥控器上自动保存。</p>
-              <label><input type="radio" name="forward-destination" value="share"><span data-i18n="p536.system">系统分享（默认）</span></label>
-              <label><input type="radio" name="forward-destination" value="wx" disabled><span data-i18n="p536.wechat">微信 ClawBot</span></label>
+              <label><input class="aj-check-input" type="radio" name="forward-destination" value="share"><span data-i18n="p536.system">系统分享（默认）</span></label>
+              <label><input class="aj-check-input" type="radio" name="forward-destination" value="wx" disabled><span data-i18n="p536.wechat">微信 ClawBot</span></label>
               <div class="forward-why" id="set-fwd-wx-why" hidden><p class="setnote" id="set-fwd-wx-note"></p><button type="button" id="set-fwd-wx-bind" class="aj-btn aj-btn--sm" data-i18n="p554.bind">去绑定</button></div>
-              <label><input type="radio" name="forward-destination" value="tg" disabled><span data-i18n="p536.telegram">{channel}</span></label>
+              <label><input class="aj-check-input" type="radio" name="forward-destination" value="tg" disabled><span data-i18n="p536.telegram">{channel}</span></label>
             </fieldset>
           </section>
 
@@ -1133,7 +1133,7 @@
             <div class="setrow" data-paired><button type="button" id="set-estop" class="aj-btn"><span data-i18n="p435.estop">紧急停止所有 Agent</span><kbd class="setkbd" data-ix-key="app.stop_all" hidden></kbd></button></div>
             <div class="setrow" data-paired id="set-level-row" hidden>
               <span class="setlab" data-i18n="p336.level">审批档位</span>
-              <div class="segrow" role="group" data-i18n-attr="aria-label=p336.level" aria-label="审批档位"><button type="button" data-set-level="safe" aria-pressed="false" data-i18n="p336.safe">安全</button><button type="button" data-set-level="standard" aria-pressed="false" data-i18n="p336.standard">中等</button><button type="button" data-set-level="harness" aria-pressed="false" data-i18n="p336.harness">全放行</button></div>
+              <div class="segrow" role="group" data-i18n-attr="aria-label=p336.level" aria-label="审批档位"><button class="setsegment" type="button" data-set-level="safe" aria-pressed="false" data-i18n="p336.safe">安全</button><button class="setsegment" type="button" data-set-level="standard" aria-pressed="false" data-i18n="p336.standard">中等</button><button class="setsegment" type="button" data-set-level="harness" aria-pressed="false" data-i18n="p336.harness">全放行</button></div>
               <p class="setnote" id="set-level-note" aria-live="polite"></p>
               <!-- P556 (10-27 copy): one plain paragraph per level; the technical detail (per-tool parameters, background work) is on the docs page -->
               <p class="setlinks"><a id="set-level-more" href="https://agentj.app/docs/phone/#approval-level" target="_blank" rel="noopener" data-i18n="p556.more">了解更多</a></p>
@@ -1182,9 +1182,9 @@
             <div class="setrow" id="set-jev-legacy" hidden>
               <span class="setlab" data-i18n="set.jev">Jev 判断阈值</span>
               <div class="fontstep">
-                <button type="button" id="set-jev-minus" data-i18n-attr="aria-label=set.jevMinus,title=set.jevMinus" aria-label="调低（弹窗更少）" title="调低（弹窗更少）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+                <button class="setstep" type="button" id="set-jev-minus" data-i18n-attr="aria-label=set.jevMinus,title=set.jevMinus" aria-label="调低（弹窗更少）" title="调低（弹窗更少）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
                 <output id="set-jev-val" aria-live="polite">0.70</output>
-                <button type="button" id="set-jev-plus" data-i18n-attr="aria-label=set.jevPlus,title=set.jevPlus" aria-label="调高（弹窗更多）" title="调高（弹窗更多）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
+                <button class="setstep" type="button" id="set-jev-plus" data-i18n-attr="aria-label=set.jevPlus,title=set.jevPlus" aria-label="调高（弹窗更多）" title="调高（弹窗更多）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
               </div>
               <p class="setnote" data-i18n="set.jevNote">Jev 打开后，Agent J 看不清的命令会先问它是否与当前任务一致，概率不低于这个值就直接放行，并记进记录。调低弹窗更少，调高更谨慎（0.50–0.95，默认 0.70）。花钱、删除、对外发送、改凭据、改价这五类明确危险的动作不受影响，一律弹卡。</p>
             </div>
@@ -1351,11 +1351,6 @@
               <option value="1" data-i18n="mail.poll1">每 1 分钟</option><option value="5" data-i18n="mail.poll5">每 5 分钟（推荐）</option>
               <option value="10" data-i18n="mail.poll10">每 10 分钟</option><option value="15" data-i18n="mail.poll15">每 15 分钟</option>
               <option value="30" data-i18n="mail.poll30">每 30 分钟</option><option value="60" data-i18n="mail.poll60">每 60 分钟</option></select></label>
-            <div class="setrow">
-              <span class="setlab" data-i18n="p579.markRead">处理后标为已读</span>
-              <button type="button" id="mail-mark-read" class="tgl" role="switch" aria-checked="true" data-i18n-attr="aria-label=p579.markRead" aria-label="处理后标为已读"><i></i></button>
-              <p class="setnote" data-i18n="p579.markReadNote">只标记白名单内已处理的来信；被拦下的邮件保持未读。</p>
-            </div>
             <p class="mailbtns"><button type="button" id="mail-save" class="aj-btn aj-btn--primary aj-btn--sm" data-i18n="mail.save">保存</button>
               <button type="button" id="mail-key" class="aj-btn aj-btn--sm" data-i18n="mail.key">设置邮箱授权码</button>
               <button type="button" id="mail-test" class="aj-btn aj-btn--sm" data-i18n="mail.test">测试连接</button>
@@ -1369,7 +1364,7 @@
             <div class="mailadd"><input id="mail-add-addr" class="aj-input" type="text" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-attr="placeholder=mail.addPh" placeholder="你常用的邮箱">
               <select id="mail-add-role" class="aj-select mail-role" aria-label="新增来信身份" data-i18n-attr="aria-label=p579.addRole"><option value="owner" data-i18n="p579.chipOwner">主人</option><option value="guest" data-i18n="p579.chipGuest">访客</option></select>
               <button type="button" id="mail-add" class="aj-btn aj-btn--sm" data-i18n-attr="aria-label=mail.add,title=mail.add" aria-label="加入" title="加入"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
-            <label class="mailf mailchk"><input type="checkbox" id="mail-add-subdomains"><span data-i18n="p567.subdomains">包含子域名</span></label>
+            <label class="mailf mailchk"><input class="aj-check-input" type="checkbox" id="mail-add-subdomains"><span data-i18n="p567.subdomains">包含子域名</span></label>
             <p class="setnote" data-i18n="p567.domainNote">可填 @anthropic.com，域名只能作为访客；通知需通过 DMARC 或对齐 DKIM 校验，不能添加公共邮箱域名。</p>
             <p class="setnote" data-i18n="mail.roleNote">「主人」的邮件按你的指令处理；「访客」的邮件不当作你的指令，不能批准任何操作，回信会去掉私人信息。白名单里的人，Agent 给他们发信不用你再确认；加进来之前想清楚：Agent 可以不经你确认给他发信。白名单里的通知邮件（如区块浏览器提醒）也会交给 Agent J 阅读；它只读，不会回信。</p>
 
@@ -1407,9 +1402,10 @@
       <div id="set-accts" class="setsub" hidden>
         <div class="setsub__in">
           <section class="setcard">
-            <p class="setnote" data-i18n="acct.intro">每个 AI 编程工具可以存几个账号。点「设为当前」就切过去：主 Agent 从下一条消息起用新账号，接着原来的对话；正在跑的后台任务用完原来的账号为止。</p>
+            <p class="setnote" data-i18n="acct.intro">Claude Code、Codex 额度用完时自动切换的备用账号。主账号与「模型和 API Key」使用同一份配置，在那里修改；这里只添加和管理备用账号。</p>
             <p class="setnote mailmsg" id="acct-msg" role="status" aria-live="polite"></p>
             <div id="acct-flow" class="arflow" hidden></div>
+            <div id="acct-primary"></div>
             <div id="acct-list"></div>
             <p class="setnote" data-i18n="acct.safety">登录凭据只存在 Agent J 主机上，这里只显示名字、登录方式和额度。添加账号需要主人的通行密钥确认。</p>
           </section>
@@ -1421,9 +1417,9 @@
         <p class="small" data-i18n="p478.note">管理允许导入的文件夹和到期时间。撤销只影响以后的导入，已复制的文件会保留。</p>
         <div id="local-files-list"></div>
         <label for="local-files-path" data-i18n="p478.path">文件夹完整路径</label>
-        <input id="local-files-path" type="text" autocomplete="off" spellcheck="false">
+        <input class="aj-input" id="local-files-path" type="text" autocomplete="off" spellcheck="false">
         <label for="local-files-duration" data-i18n="p478.duration">有效时间</label>
-        <select id="local-files-duration"><option value="hour" data-i18n="p478.hour">一小时</option><option value="always" data-i18n="p478.permanent">直到撤销</option></select>
+        <select class="aj-select" id="local-files-duration"><option value="hour" data-i18n="p478.hour">一小时</option><option value="always" data-i18n="p478.permanent">直到撤销</option></select>
         <button id="local-files-add" class="aj-btn aj-btn--primary" type="button" data-i18n="p478.allow">批准添加</button>
       </div>
       <div id="set-imessage" class="setsub setmail setimsg" hidden>
@@ -1519,7 +1515,7 @@
               <button type="button" id="ctm-add" class="menuicon ctm-ic" data-i18n-attr="aria-label=ct.add,title=ct.add" aria-label="新增联系人" title="新增联系人"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6"/></svg></button>
               <button type="button" id="ctm-import" class="menuicon ctm-ic" data-i18n-attr="aria-label=p207set.ct.import,title=p207set.ct.import" aria-label="导入（vCard / CSV）" title="导入（vCard / CSV）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/></svg></button>
               <button type="button" id="ctm-export" class="menuicon ctm-ic" data-i18n-attr="aria-label=p207set.ct.export,title=p207set.ct.export" aria-label="导出（vCard）" title="导出（vCard）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M5 19h14"/></svg></button>
-              <input id="ctm-file" type="file" accept=".vcf,.csv,.json,text/vcard,text/csv,application/json,text/plain" hidden>
+              <input class="aj-file" id="ctm-file" type="file" accept=".vcf,.csv,.json,text/vcard,text/csv,application/json,text/plain" hidden>
             </div>
             <p class="setnote" id="ctm-msg" role="status" aria-live="polite"></p>
             <ul id="ctm-list" class="ctm-list"></ul>

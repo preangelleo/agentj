@@ -225,7 +225,7 @@ async def handle(host, req: dict, emit=None, **run_kw) -> dict:
             card.update(await _card(host, [infos[n] for n in ready], group,
                                     [(n, futs[n].result()) for n in todo if futs[n].done()], gate, index, emit, en))
             for n in ready:                       # the card's signed tool_input binds every name / sha256 / digest
-                waits[n].set_result({k: card[k] for k in ("ok", "rid", "device", "why") if k in card})
+                waits[n].set_result({k: card[k] for k in ("ok", "rid", "device", "why", "inherited", "parent_grant") if k in card})
         rcs = {n: await futs[n] for n in todo}
     finally:
         for f in waits.values():
@@ -375,4 +375,5 @@ async def _card(host, infos: list, group: bool, before: list, gate: dict, index,
     host.st.log("plaza_request_card", name=infos[0]["name"], n=len(tool_input["items"]), packages=len(infos),
                 certified=all(p["certified"] for p in pk))
     label = infos[0]["name"] if not group else f"{len(infos)} packages"
-    return {**await plaza_perms.signed_card(host, label, tool_input, emit, gate), "version": infos[0]["version"], "packages": pk}
+    needs_uv = any(x.get("kind") == "secret" for i in infos for x in i.get("extra") or [])
+    return {**await plaza_perms.signed_card(host, label, tool_input, emit, gate, require_passkey=needs_uv), "version": infos[0]["version"], "packages": pk}

@@ -1,33 +1,32 @@
 <!-- generated from https://agentj.app/docs/manual/en.md by agentjarvis/tools/manual_skill.mjs — do not edit -->
 # User guide
 
-This page walks through everything you can see on the phone screen, one thing at a time. If you have not installed or
-paired yet, start with [Install](https://agentj.app/docs/install/) and [Using your phone](https://agentj.app/docs/phone/).
+A guide to the phone screen. For installation/pairing, start with [Install](https://agentj.app/docs/install/) and [Using your phone](https://agentj.app/docs/phone/).
 
-You can also just ask Agent J — "what does this colour mean?", "how do I send a file?". It reads this same guide.
+Ask Agent J "what does this colour mean?" or "how do I send a file?"; it reads this guide.
 
 ## Agent not replying and you only have your phone? {#phone-only}
 
-No reply, or stuck on “Not yet received”? You can do this from your phone. After each step, send a short test message in chat and stop when a reply arrives:
+No reply / “Not yet received”? Use your phone; after each step send a short test message and stop when answered:
 
 1. Tap **Stop** to interrupt the current task.
-2. Open **Settings → Emergency repair → Terminal Commands**, find `agentj doctor --reconnect`, and tap **Run** beside it (recommended). Your phone asks the host to check and repair the connection; you do not need to open a terminal. Confirm with Face ID when asked.
-3. Still no reply? In **Emergency repair**, tap **Restart service** (recommended), wait for the connection to return, then try again.
-4. Still no reply? Tap **Emergency repair → Reopen AI session** (requires host and web versions from 0.25.2a1). It ends the stuck AI session process and tries to resume the same conversation; if that fails, it opens a new session and keeps the old conversation. On an older version without this button, go to the next step.
-5. Still stuck? Tap **Emergency repair → ② Ask Agent J Father for remote help**. Only your tap sends a diagnostic report redacted on the host; keep the ticket number. Passwords, keys, chats and work files are not sent.
+2. Open **Settings → Emergency repair → Terminal Commands**, tap **Run** beside `agentj doctor --reconnect` (recommended); confirm with Face ID when asked. The phone requests host repair without opening a terminal.
+3. Still no reply? In **Emergency repair**, tap **Restart service** (recommended); wait for reconnection and retry.
+4. Still no reply? Tap **Emergency repair → Reopen AI session** (host and web 0.25.2a1+). It ends the stuck process, tries the same conversation, or keeps it and opens a new one. Skip if an older version lacks the button.
+5. Still stuck? Tap **Emergency repair → ② Ask Agent J Father for remote help**; keep the ticket number. Only your tap sends host-redacted diagnostics, never passwords, keys, chats or work files.
 
 **Stopped by the model's safety check? No computer needed either.** With Claude Code the phone shows a card to pick what happens next: continue on the fallback model, retry as is, "Edit and resend" (your words go back in the message box) or "New conversation".
 
-**Check quota before connection repairs.** For a Claude quota limit, first open Claude settings on your phone and check **Usage**. Use **Free reset** if offered; otherwise wait until the displayed reset time. A free reset is not available for every account or every limit. If quota has recovered but messages are still “Not yet received”, follow the five steps above. Restarting or reopening a session does not add quota. For an expired AI sign-in, use **AI login rescue**.
+**Check quota first.** In phone Claude settings, check **Usage**. Use **Free reset** only if offered (not every account/limit); otherwise wait until the displayed reset time. After quota recovers, persistent “Not yet received” needs the five steps. Restart/reopen adds no quota. Expired sign-in needs **AI login rescue**.
 
-**A grey, disconnected phone takes a different path.** Check your phone’s network, tap “Try now”, then **Settings → Emergency repair → ① Reset connection**, followed by **② Ask Agent J Father for remote help** if needed. Give a brief drop a few seconds. Commands, restarts and session repair require a connection to the host or rescue helper; a phone cannot force them to run on a powered-off, sleeping or offline host. If it stays unreachable, open [the support chat](https://support.agentj.app) in your phone browser or email [feedback@agentj.app](mailto:feedback@agentj.app) with the symptom, versions and time, never credentials. You do not need to go to the computer.
+**Grey/disconnected:** wait a few seconds for a brief drop, check phone networking and “Try now”, then **Settings → Emergency repair → ① Reset connection**, followed by **② Ask Agent J Father for remote help** if needed. Commands/restart/session repair need the host or rescue helper online; they cannot force a powered-off, sleeping or offline host. Still unreachable? Use phone [support chat](https://support.agentj.app) or [feedback@agentj.app](mailto:feedback@agentj.app): symptom, versions, time, never credentials. No computer visit needed.
 
-Agent J Father is the official support platform run by the developers. Once chat works, `/feedback-to-agentj-father` can report the problem too; while there is no reply, use the phone support controls above.
+
+Agent J Father is support from the developers. Once chat works, use `/feedback-to-agentj-father`; otherwise use the phone controls above.
 
 ## First use: two remotes and the first message
 
-After the install, the agent that set things up takes you through adding the Agent J host to your seat and then pairing two
-remotes. Both are required:
+The installing Agent binds the Agent J host to your seat, then pairs two required remotes:
 
 1. **the Agent J host's browser**: open [https://m.agentj.app/](https://m.agentj.app/) on the Agent J host and pair it. It is the quickest, and the big screen
    makes every step easy to follow.
@@ -128,15 +127,11 @@ today's count and "Recent deliveries" (up to 50, with the Agent's triage). Secre
 
 ## One message per page — swipe through them
 
-Each page shows what you said at the top and the Agent's reply below. Swipe right for older pages, left for newer ones;
-1 / 1 in the corner is the page number and total. A page turn is a quick flick that starts the moment your finger lands;
-hold still for a third of a second and then drag, and you are selecting text instead — that never turns the page, nor does
-dragging a selection's handles. While a long reply scrolls, the name, the load line and the robots stay pinned at the top of
-the card.
+Your words are above the Agent's reply. Swipe right for older pages, left for newer; the corner shows page/total. Flick as your finger lands to turn; hold for a third of a second before dragging to select text. Selection and its handles never turn pages. The name, load line and robots stay pinned while a long reply scrolls.
 
-The header is split into three equal parts: double-tap the left third to go to the first (oldest) message, double-tap the right third (the page number) for the latest; the middle third is for unread replies. When replies arrived after you last looked, a small pulsing round badge in the middle of the header shows how many; tap it to jump to the first unread reply and page forward from there — the badge goes away once you reach the latest. With nothing unread there is no badge and a tap in the middle does nothing. Pressing `u` on a computer also jumps to the first unread reply. Unread replies sync across all your remotes: seeing a reply on any remote clears that reply and earlier unread hints on the others. An offline remote syncs before showing unread hints when it returns. After an upgrade the replies already there count as read, so no remote opens at 99+; a read that did not reach the Agent J host is sent again by itself. One exception: if this remote is on an older page when a new reply arrives, its page number keeps pulsing and the badge keeps counting it until you reach that reply here, even when another remote already read it. Silent turns do not count.
+The header has three equal parts: double-tap the left third for the oldest page, or the right third/page number for the latest. A pulsing badge in the middle counts unread replies: tap it, or press `u` on a computer, for the first unread; page forward until the badge disappears at the latest. With none unread, the middle does nothing. Reading on any remote clears that reply and earlier unread hints on the others; an offline remote syncs before showing hints again. Existing replies count as read after an upgrade (no initial 99+), and unsynced read acknowledgments retry automatically. Exception: a remote viewing an older page keeps the new reply's pulsing page number and badge count until you reach it there, even if read elsewhere. Silent turns never count.
 
-While you read an older page, nothing moves you: sending a message, or a new reply from the Agent, leaves you on the same page at the same scroll position; a new reply only makes the page number at the top right pulse, and you page on when you are ready. Only when you are already on the newest page does a sent message take you to its new page.
+Reading an older page preserves both page and scroll position when you send or receive a message. A new reply only pulses the top-right page number; page forward when ready. Sending opens a new page only if you were already on the latest.
 
 The buttons under a reply, left to right:
 
@@ -148,44 +143,31 @@ The buttons under a reply, left to right:
 | Two pages | Copy the whole reply |
 | Curved arrow | Reply to this one; the quote appears above the message box |
 
-Select some text in a reply to quote just that part. Selecting somewhere else adds another quote instead of replacing it — up to 5, from any replies, also while paging or in the full-screen reader — side by side above the message box; tap a quote's words to read it in full, its time to jump back to it (highlighted), its ✕ to remove it; the ✕ at the end or Esc clears them all. The clipboard always holds your latest selection.
+Select reply text to quote it. New selections add (not replace) up to five quotes from any reply, including while paging or full-screen reading. Above the composer, tap words for the full quote, its time for the highlighted source, or ✕ to remove it; the final ✕ or Esc clears all. The clipboard holds your latest selection.
 
-When a message you sent carries two or more quotes, its card first folds them into one row — how many quotes there are, the start of the first one and how many more, the same look as above the message field before sending. Tap the row to show every quote (each still jumps back to its source); tap that top row again to fold them. A single quote shows as before.
+A sent message with two or more quotes folds them into one row, as in the composer: count, first quote's start and number remaining. Tap to expand all (each still links to its source), then tap the top row to fold. Single quotes are unchanged.
 
-On its own at the bottom left of the reply card is a white round button (a ring with a gap and an arrow leaving it): Share as a web report — it turns what you worked out in the chat into a good-looking web page you can send to others. Tap it and the message box gets `/web-page-report` with the cursor after it; nothing is sent. Add a line if you like — "only the pricing part, for people at my company, open for a week" — or send it as it is and the Agent asks first: the whole conversation, a few topics or just this reply; who may open it (anyone with the link, an access code, only your company's e-mail domain, any e-mail sign-in); how long it stays up; whether to hide names and numbers. Once you have said it, it does not ask again. Tap it on an older reply and that reply goes along as a quote, so the Agent knows where to start. If the web report skill is not on the Agent J host yet, the Agent asks whether to install it from the plaza first.
+The white round button at the reply card's bottom left (a broken ring with an outward arrow) shares a web report. Tap to prefill `/web-page-report` with the cursor after it; nothing sends. Add instructions — "only the pricing part, for people at my company, open for a week" — or send as is. The Agent asks scope (conversation, topics or this reply), access (any link holder, code, company e-mail domain or any e-mail sign-in), expiry, and whether to hide names/numbers; answered choices are not asked again. An older reply is included as a quote. If the skill is missing, the Agent first asks to install it from the plaza.
 
-Hold the round button and the Hot key sheet rises from the bottom: what it is bound to now and what a tap does, then every command and skill of the phone's 「/」 menu (one-tap commands, your own commands, the Agent's skills), with a search box. Bind it to anything you use often: pick one, tap Bind it, and from then on the button is that — the icon stays the same. Bound to a command (`/status`, `/compact` …) a tap runs it at once; one that wipes the conversation such as `/clear` still asks you first — a hot key never skips that. Bound to a skill, a tap puts it in the message box; add a line and send, and the Agent runs it on that reply. Back to default at the top of the list makes it Share as a web report again. You can also ask the Agent to change it, or run `agentj config set ui.card_hot_action status` on the Agent J host.
+Hold that button for the Hot key sheet: current binding/action, then a searchable list of every 「/」 menu command and skill, including your commands. Pick one and tap Bind it; the icon stays unchanged. A command such as `/status` or `/compact` runs on tap, but destructive `/clear` still asks — bindings bypass no confirmation. A skill prefills the message box; add words and send to run it on that reply. Back to default restores web-report sharing. Ask the Agent to change it, or run `agentj config set ui.card_hot_action status` at the Agent J host.
 
-The name at the top left of the reply card is the name you gave your Agent. Press and hold it to rename the Agent — the same as `agentj name` on the Agent J host; the new name shows on the phone and the Agent J host. Sometimes a few little pixel robots dance at the top right: each one is an Agent working for you in the background — a workflow CEO, or a helper the main Agent sent out. New work brings a new robot; a robot whose work is done takes a bow and floats away. A phone shows up to 6 side by side, then +N. Tap the robots and a square opens in the middle of the screen: how many Agents are at work, who is watching them for you, and all of them listed — each row its robot, who, and what it is doing (the whole task title, with an ellipsis if it is too long). Tap a row to open that Agent's own card: where it runs, how long it has been working, its latest step, and for a background dispatch the report path and the report's first line; the card is only for looking, and Back returns to the list. Sub-agents sent out by Claude Code, Codex and OpenCode all show up this way. They show whether or not the main Agent is replying; work running with no robot means it was not registered — ask the Agent to wrap it in `agentj busy run`. At its bottom, "Change the look" sends the Agent a message from you asking to customize the look, and it asks how you want the robots, colours, logo or send button to change, then validates the theme before applying it. Pressing and holding the robots does the same. ESC or a tap outside closes it. The robot gallery and the display rules: [Background robots](https://agentj.app/docs/robots/).
+Hold the Agent's name at the reply card's top left to rename it (`agentj name` at the Agent J host); both screens update. Dancing pixel robots at top right represent background workflow CEOs/helpers: new work adds one; finished work bows and floats away. Phones show six, then +N. Tap for a centred square listing the count, supervisor, robot, name and full task title (ellipsized if long). A row opens that Agent's read-only card: location, elapsed time, latest step and, for background dispatches, report path/first line; Back returns to the list. Claude Code, Codex and OpenCode sub-agents appear even while the main Agent is replying. Missing robots mean unregistered work: ask the Agent to use `agentj busy run`. "Change the look" at the bottom sends your customization request; the Agent asks how to change robots, colours, logo or Send, then validates the theme before applying. Holding the robots does the same. Esc/outside closes. See [Background robots](https://agentj.app/docs/robots/) for the gallery and display rules.
 
-The thin grey line under the name is the load line: a light-coloured segment glides back and forth along it, and the faster it glides, the busier the Agent J host is — if it is racing and your message can wait, wait a little. Tap the line and a square in the middle of the screen explains it: the overall load right now, then five rows — CPU, memory, GPU, disk and network: disk is how busy reads and writes are plus the space left, network is what goes in and out per second. Without a graphics card, or when it cannot be read, the row says "— (not detected)". The five are measured every 2–3 s only while the square is open and stop when it closes, so they cost the Agent J host nothing otherwise. Last, how fast idle, normal and busy look (about 6 s, 3 s and 1 s a sweep). It stands still while the phone is disconnected.
+The thin grey load line below the name has a pale segment sweeping back and forth, faster when the Agent J host is busier; if it races and your message can wait, pause. Tap for overall load and five rows: CPU, memory, GPU, disk (read/write activity and space left), network (traffic per second). An absent/unreadable graphics card shows "— (not detected)". Measurements run every 2–3 s only while this square is open, stopping on close. Idle/normal/busy sweeps take about 6/3/1 s; disconnected phones show a still line.
 
 Replies are laid out for you:
 
-- **Code** is syntax-highlighted and scrolls sideways when wide; a code block has a copy button at its top right. A short
-  shaded command inside the text (inline code) copies with one tap ("Copied"), ready to paste into a terminal.
-- **Maths** (LaTeX) shows as formulas. Commands never turn into formulas: `$HOME` and `$(…)` stay as written, and system cards (such as a goal's result) show no formulas at all.
-- **Diagrams** (mermaid) are drawn as pictures.
-- **Images, audio, video, PDFs, web pages and other files the Agent mentions** show up right in the reply, as long as
-  they are inside its working folder: tap an image to enlarge it, play audio and video in place, preview web pages in a
-  safe frame (no scripts run there). Under every file card is one row of icons: preview, download, share, forward by email,
-  forward to Telegram. Small files load by themselves once they are on screen; big ones load on a tap (the button shows the
-  size), and nothing loads by itself on data saver or a cellular connection. Preview opens full screen: PDFs, Word (docx),
-  Excel (xlsx), CSV tables, Markdown, code and text show right there; kinds it can't show yet, such as PowerPoint, offer the
-  download. On a computer, select a card and press Space to preview; Space or Esc closes it. While a preview is open, the left and right arrow keys (a sideways swipe on the phone) move to the previous or next file of the same reply, and the top bar shows which one of how many; on a zoomed picture one finger moves the picture instead. Download saves the file under its own name (Chinese, spaces and emoji included) and a short note confirms it went to the browser's downloads; in the iPhone Home Screen app it opens the share sheet — choose Save to Files.
-- Files that are too large or outside the working folder are not sent to the phone — the reply gets one line saying why.
-  The working folder you set always counts, even after the Agent `cd`s into a sub-folder; the folder it is in right now counts too.
-  Scripts and source files (`.sh`, `.py`, `.ps1` …) come as text cards: preview and download, never run. When a file is held back because it looks like a key, the note names the line it is on (showing only its first two characters).
-  Audio, video and pictures always go, whatever their names (Chinese, underscores, long names are fine). Credential files
-  (such as `.env`, `.pem`, private keys) and text files holding a real key are not sent as ordinary files: a secret pickup
-  card opens on the phone instead (Face ID to open); when no card opens, the line says why and how to get the file. Image
-  links to the web are never opened automatically.
+- **Code**: syntax highlighting, sideways scrolling for wide blocks, top-right copy button. Tap shaded inline code to copy ("Copied") for terminal pasting.
+- **Maths**: LaTeX formulas. Commands (`$HOME`, `$(…)`) stay literal; system cards such as goal results show no formulas.
+- **Diagrams**: mermaid pictures.
+- **Images, audio, video, PDFs, web pages and files** inside the working folder appear in replies. Enlarge images, play audio/video, preview web pages in a script-free frame. Each file has preview/download/share/email/Telegram icons. Small visible files load automatically; large files need a tap with size shown. Data saver/cellular never auto-loads. Full-screen previews support PDF, docx, xlsx, CSV, Markdown, code and text; unsupported kinds such as PowerPoint offer download. On a computer, Space previews a selected card; Space/Esc closes. Left/right arrows or phone swipes move among files in the same reply, with position/total on the top bar; one finger pans a zoomed image instead. Downloads retain names (Chinese, spaces, emoji), with a browser-download confirmation; the iPhone Home Screen app opens the share sheet — choose Save to Files.
+- Too-large/outside-folder files get a reason instead. Both the configured root (even after `cd` into a subfolder) and the current folder count. Scripts/source (`.sh`, `.py`, `.ps1`…) are text cards: preview/download, never run. A suspected key's notice gives its line and only its first two characters. Audio/video/images always send regardless of Chinese, underscores or long names. Credential files (`.env`, `.pem`, private keys) and text holding real keys use a phone secret-pickup card (Face ID), never ordinary attachment; if unavailable, the notice explains why and how to retrieve it. External image links never open automatically.
 
-To include a local image, the Agent writes a complete `[label](absolute-path)` reference, optionally with an exclamation mark before it for an image. Both forms accept absolute paths and `~/`. Once the host receives the complete reference, it prepares the file while work continues. The slot shows preparation or a failure reason until the file card is ready. Path, file-type and secret checks still apply.
+For a local image, write a complete `[label](absolute-path)` reference, optionally prefixed with `!`. Both forms accept absolute paths and `~/`. Receipt of the complete reference starts preparation while work continues; the slot shows progress/failure until the file card is ready. Path, type and secret checks still apply.
 
-For an explicit attachment to the current page, the Agent can run `agentj file show PATH --label LABEL --json` in an admitted owner phone turn. Without a live owner turn it fails; a standalone desktop turn cannot use it to create an outgoing message. `queued` means pending. The later `FILE_SHOW_RESULT` reports `attached_to_page` or `failure`. Neither receipt means you have seen or downloaded the file. This fix was tested in isolated Linux processes and a real Chromium page with a synthetic image. Physical phones, macOS, WSL and end-to-end real Claude Code/Codex/OpenCode model sessions remain untested. Kimi/Qwen ACP has no accepted file-show integration; Windows must use WSL.
+In an admitted live owner phone turn, `agentj file show PATH --label LABEL --json` attaches explicitly to that page. No live owner turn, including a standalone desktop turn, means no outgoing message. `queued` is pending; later `FILE_SHOW_RESULT` says `attached_to_page` or `failure`, neither proves viewing/downloading. Isolated Linux processes/real Chromium passed with a synthetic image; physical phones, macOS, WSL and real Claude Code/Codex/OpenCode model sessions remain untested. No accepted Kimi/Qwen ACP integration; Windows requires WSL.
 
-`PATH` accepts absolute paths and `~/`; it still must stay within the admitted working root. Failure reasons: `broker_unavailable` means the local attachment service cannot be reached; `no_owner_session` means the current owner turn or its context could not be confirmed; `native_admission_missing` means this exact request has not been admitted by the AI tool; `native_admission_expired` means its admission is no longer valid; `native_admission_ambiguous` means more than one valid admission matches. These failures do not attach a file. Keep the current owner turn and report the reason; do not change the target page or bypass the checks.
+Absolute or `~/` PATHs must remain in the admitted working root. Failures: `broker_unavailable` — attachment service unreachable; `no_owner_session` — owner turn/context unconfirmed; `native_admission_missing` — no admission for this exact request; `native_admission_expired` — admission expired; `native_admission_ambiguous` — multiple valid matches. None attaches a file. Keep the owner turn, report the reason, and never change target pages or bypass checks.
 
 （Screenshot：A picture, a formula and highlighted code in a reply — https://agentj.app/docs/manual/rich.en.webp）
 （Screenshot：Further down: a diagram, a file to download and a line about a file that was not sent — https://agentj.app/docs/manual/rich-more.en.webp）
@@ -193,21 +175,11 @@ For an explicit attachment to the current page, the Agent can run `agentj file s
 
 The magnifier and search shortcut search the page you are on: chat history in the conversation, cards in Workflows, Skills, Memory and Agent J, or the current text in Settings, a menu page or an open document.
 
-The magnifier left of Settings at the top right (`⌘K` / `Ctrl+K` on a computer) opens the search: type words into the dark
-card in the middle of the screen and it searches what you sent, quotes, attachment names and the Agent's replies at once.
-Separate words with spaces; a page matches when all of them appear. Case, full-width / half-width and Traditional /
-Simplified Chinese do not matter.
+The top-right magnifier beside Settings (`⌘K`/`Ctrl+K` on computers) opens a centred dark search card for messages, quotes, attachment names and replies together. Space-separated words must all appear; case, full-/half-width and Traditional/Simplified Chinese are equivalent.
 
-Results come in best-match order — more hits, hits in what you sent, at the start or in the first line, the whole phrase or
-an exact match rank higher, and recent pages a little higher — or switch to "Newest". Each result shows who sent it, when,
-and the matching snippet with the words marked. Pages already on the phone show at once; older pages that are only on the
-computer are added a moment later.
+Best-match order favours more hits, your messages, starts/first lines, whole phrases/exact matches, then recency; or choose "Newest". Results show sender, time and highlighted snippets. Phone-cached pages appear immediately; older pages from the Agent J host follow shortly.
 
-Tap a result: the card closes and the chat turns to that page, which flashes once. Tap the magnifier again to get back to
-the same results at the same scroll position. Every search is kept as a page (up to 20): swipe sideways in the card (`←`
-`→` or the `‹` `›` buttons on a computer) to go back to earlier searches; the top line says "Search N of M: words". These
-searches stay on this phone, encrypted like your drafts, and are cleared with the conversation (`/clear`) or when you
-unpair.
+Tap a result to close the card, open that page and flash it once. Reopen for the same results/scroll position. Up to 20 searches are kept as pages: swipe sideways or use `←`/`→`/`‹`/`›` on a computer; the top says "Search N of M: words". Stored only on this phone and encrypted like drafts, they clear with `/clear` or unpairing.
 
 On the Agent J host: `agentj history search <words>`.
 
@@ -493,11 +465,11 @@ hitting a rate limit never asks you to sign in again.
 
 **Sign in again under the reply**: when a reply says the AI is signed out, expired or needs device confirmation, **Sign in again** appears under it (so does a `/login` in the reply). Tap it, confirm with Face ID and approve on the authorization page: for Claude Code paste the code into **Paste the authorisation code**, for Codex enter its code on that page. It counts as signed in only once a test message in your current conversation gets a reply. OpenCode: **Other ways to sign in**.
 
-### Several accounts per AI tool {#accounts}
+### Backup AI accounts {#accounts}
 
-Have two Claude Code or two Codex accounts? Keep both: when one runs out, switch to the other with one tap instead of signing in again over the old one. Open Settings → "Agent tools" → "AI accounts".
+Open Settings → "Agent tools" → "Backup AI accounts" to manage the backup accounts Claude Code and Codex switch to automatically when quota runs out. The primary account is read-only and shows the same configuration as Models & API keys; follow its link there to change it. Add or manage only backup accounts here, without entering the primary account again. Previously saved accounts remain visible with their existing data.
 
-- Tap "Add account", give it a name (1–24 characters, up to 8 per tool), confirm with your passkey, then sign in on the phone as usual: Claude Code sends an authorize link and its code goes into the key card; Codex shows a link and a one-time code. The new account is saved on its own and never replaces an existing one. The first time, the login in use now is saved as the first account, "Main", with no new sign-in.
+- Tap "Add backup account", give it a name (1–24 characters, up to 8 per tool), confirm with your passkey, then sign in on the phone as usual: Claude Code sends an authorize link and its code goes into the key card; Codex shows a link and a one-time code. The new backup account is saved separately and never replaces an existing one. You do not need to enter the primary account again.
 - Tap "Make current" to switch, no Face ID needed: the main Agent uses the new account from its next message and continues the same conversation. Background tasks already running finish on the old account; tasks started after that use the new one.
 - Or just say “switch to my Claude backup account” in the chat. At the Agent J host, `agentj account list` shows the accounts and `agentj account use claude Backup` switches; to add one, run `agentj account add claude Backup` in your own terminal.
 - Quota is kept per account: the account in use shows its live reading, the others the last one read.

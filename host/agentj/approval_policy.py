@@ -198,7 +198,7 @@ def _text(tool, tool_input) -> str:
 
 
 def decide(tool, tool_input, verdict, *, requirement, dispatch=False, workdir=None, env=None, classify=None,
-           amount=None, budget=None, known_recipients=False, chain=False):
+           amount=None, budget=None, known_recipients=False, chain=False, full_access=False):
     """→ (tier, row). tier None = the host's other cards decide (their own card, class still `row`)."""
     from . import approval_level, confirm_tier, goal, policy_registry
     inp = tool_input if isinstance(tool_input, dict) else {}
@@ -206,8 +206,10 @@ def decide(tool, tool_input, verdict, *, requirement, dispatch=False, workdir=No
     action = policy_registry.tool_action(tool)
     tier, row = _decide(tool, inp, cats, rules, action, verdict, requirement, dispatch, workdir, env, classify, amount, budget,
                         known_recipients, approval_level, confirm_tier, goal, policy_registry)
-    if chain and tier == NONE and (cats or row in ("mail_known", "spend_in_budget")):
-        tier = TAP      # E2: a follow-up in a background turn — its dangerous steps still raise the owner's card
+    # #520: a background completion is the same task, never a reason to add a button.
+    # The caller validates provenance before consulting this action-only table.
+    if full_access and requirement not in ("uv", "deny") and tier in (TAP, None):
+        tier = NONE
     return tier, row
 
 

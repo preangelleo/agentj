@@ -394,7 +394,7 @@ class Source(unittest.TestCase):
         from agentj import policy_registry
         original_requirement = policy_registry.main_requirement
         # Legacy goal/grant mechanics only; real composed floors are tested in P512.
-        floor = mock.patch.object(policy_registry, 'main_requirement', side_effect=lambda tool, inp=None: 'allow' if tool == 'Bash' else original_requirement(tool, inp))
+        floor = mock.patch.object(policy_registry, 'main_requirement', side_effect=lambda tool, inp=None, **kw: 'allow' if tool == 'Bash' else original_requirement(tool, inp, **kw))
         floor.start(); self.addCleanup(floor.stop)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -487,7 +487,7 @@ class ChainBase:
         from agentj import policy_registry
         original_requirement = policy_registry.main_requirement
         # Legacy goal/grant mechanics only; real composed floors are tested in P512.
-        floor = mock.patch.object(policy_registry, 'main_requirement', side_effect=lambda tool, inp=None: 'allow' if tool == 'Bash' else original_requirement(tool, inp))
+        floor = mock.patch.object(policy_registry, 'main_requirement', side_effect=lambda tool, inp=None, **kw: 'allow' if tool == 'Bash' else original_requirement(tool, inp, **kw))
         floor.start(); self.addCleanup(floor.stop)
         ph = Phone(self.st)
         sent = []

@@ -168,7 +168,12 @@ class ExpiredReading(_Home):
         self.assertEqual(a["reminders"], [])
         self.assertIn("额度读数已过期", quota.render({"harnesses": [a]}, "zh"))
         self.assertIn("usage reading expired", quota.render({"harnesses": [a]}, "en"))
-        self.assertEqual(quota.pick({"harnesses": [a]})["harness"], None)
+        choice = quota.pick({"harnesses": [a]})
+        self.assertEqual(choice["harness"], "claude", "a valid last weekly reading remains a labelled fallback")
+        self.assertIn("degraded", choice["reason_en"])
+        self.assertFalse(choice["accounts"][0]["fresh"])
+        self.assertIsNone(choice["accounts"][0]["h5_used_pct"], "stale 5-hour usage is never used as a fresh reading")
+        self.assertEqual(choice["accounts"][0]["why"], "last_weekly_reading")
 
     def test_idle_or_recent_reading_stays_valid(self):
         self.reading(age=3 * 3600, active_ago=3 * 3600 + 60)       # nobody used Claude since: just old, not expired

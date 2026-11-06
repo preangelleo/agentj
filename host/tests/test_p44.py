@@ -293,8 +293,8 @@ class UpgradedNotice(unittest.IsolatedAsyncioTestCase):
 
     async def test_once_in_the_owners_language(self):
         rows = [{"status": "ok"}] * 3 + [{"status": "warn"}, {"status": "fail"}]
-        for lang, want in (("zh", f"Agent J 主机上的 Agent J 程序已升级到 {__version__}（原 0.14.0a1）。 自检有 1 项未通过；点手机上的「一键修复」。\n\n手机/网页的新版会单独上线：上线后页面会弹「服务器已升级」，点「刷新」就行（也可以点右上角设置图标 →「更新并刷新」）；在那之前页眉下有一行小字「Agent J 主机已升级，新版网页稍后上线」。"),
-                           ("en", f'Agent J on the Agent J host has been upgraded to {__version__} (previously 0.14.0a1). Self-check found 1 failed check. Tap Repair on your phone.\n\nThe phone/web page updates separately: when its new version is out, the page shows "Server upgraded" — tap Refresh (or the settings icon at the top right → "Update and reload"). Until then a small line under the header says the new page is on its way.')):
+        for lang, want in (("zh", f"Agent J 主机上的 Agent J 程序已升级到 {__version__}（原 0.14.0a1）。 自检有 1 项未通过；点手机上的「一键修复」。\n\n手机/网页的新版会单独上线；新版网页稍后上线，再刷新页面。刷新入口：右上角齿轮（设置）→ 向下找到「网页版 App」→「更新并刷新」（旧页面是版本号下方的圆形箭头按钮）。若刷新后仍灰，先关闭并重新打开页面；仍未恢复，再确认 Agent J 主机已唤醒并联网，在那台主机打开终端运行 \n```sh\nagentj doctor --reconnect\n```\n，再重新打开页面。"),
+                           ("en", f'Agent J on the Agent J host has been upgraded to {__version__} (previously 0.14.0a1). Self-check found 1 failed check. Tap Repair on your phone.\n\nThe new web page will be released separately; refresh after it is available. To refresh, tap the top-right gear (Settings) → scroll to "Web app" → "Update and reload" (the circular-arrow button below the version on older pages). If the page stays grey after refreshing, close and reopen it. If it is still grey, make sure the computer is awake and online; on that computer, open Terminal and run \n```sh\nagentj doctor --reconnect\n```\n, then reopen the page.')):
             update.write_marker(self.st, "0.14.0a1", __version__)
             host, sent = await self._host()
             host.preferences["appearance"]["language"] = lang

@@ -61,7 +61,8 @@ def shared_v(cmd, mode="standard"):
 
 class Standard(unittest.TestCase):
     def test_tonights_three_cards_no_longer_ask(self):
-        for cmd in TONIGHT:
+        self.assertTrue(shared_v(TONIGHT[0]).danger, "inline bulk credential-file reads require review")
+        for cmd in TONIGHT[1:]:
             self.assertFalse(shared_v(cmd).danger, cmd)
 
     def test_strict_keeps_the_old_rule_for_them(self):
@@ -162,7 +163,7 @@ class SharedE2E(unittest.IsolatedAsyncioTestCase):
         from agentj import policy_registry
         original_requirement = policy_registry.main_requirement
         # Legacy goal/grant mechanics only; real composed floors are tested in P512.
-        floor = patch.object(policy_registry, 'main_requirement', side_effect=lambda tool, inp=None: 'allow' if tool == 'Bash' else original_requirement(tool, inp))
+        floor = patch.object(policy_registry, 'main_requirement', side_effect=lambda tool, inp=None, **kw: 'allow' if tool == 'Bash' else original_requirement(tool, inp, **kw))
         floor.start();self.addCleanup(floor.stop)
         self.tmp = tempfile.TemporaryDirectory(prefix="p128-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
@@ -187,7 +188,7 @@ class SharedE2E(unittest.IsolatedAsyncioTestCase):
 
     async def test_standard_read_by_name_silent_cat_asks(self):
         a = self.agent("standard")
-        self.assertEqual(await self.pre(a, TONIGHT[0]), {})
+        self.assertEqual((await self.pre(a, TONIGHT[0]))["hookSpecificOutput"]["permissionDecision"], "ask")
         out = await self.pre(a, "cat ~/workspace/.env")
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "ask")
         self.assertIn("显示到屏幕", out["hookSpecificOutput"]["permissionDecisionReason"])

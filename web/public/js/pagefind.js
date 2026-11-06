@@ -14,7 +14,7 @@ export const matches = (hay, ts) => { const h = String(hay || '').toLocaleLowerC
 export function field(id, ph) {
   const box = document.createElement('div'); box.className = 'set-find pfind'; box.id = id; box.hidden = true;
   box.setAttribute('role', 'search');
-  const i = document.createElement('input'); i.type = 'search'; i.id = id + '-input'; i.enterKeyHint = 'search';
+  const i = document.createElement('input'); i.className = 'aj-input'; i.type = 'search'; i.id = id + '-input'; i.enterKeyHint = 'search';
   i.autocomplete = 'off'; i.spellcheck = false; i.maxLength = 200; i.setAttribute('autocapitalize', 'off');
   const n = document.createElement('p'); n.className = 'pfind-n'; n.id = id + '-n'; n.setAttribute('role', 'status'); n.hidden = true;
   box.append(i, n);

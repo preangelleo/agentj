@@ -67,6 +67,24 @@ def sessions(contexts, table, turns=()):
     return out, core
 
 
+def restart_snapshot(it, pid, started):
+    """Freeze matching metadata at verified first sight; cgroup/start come from the host kernel."""
+    from .busy import restart_meta
+    meta = restart_meta(it)
+    meta.pop("stop_reason", None)
+    meta.pop("stop_signal", None)
+    meta.pop("unit", None)
+    cg = _cgroup(pid)
+    if isinstance(cg, str):
+        from . import service
+        excluded = {"agentj.service", service.LEGACY_UNIT + ".service", service.name() + ".service"}
+        unit = next((p for p in reversed(cg.split("/")) if p.endswith(".service")), None)
+        if unit and unit not in excluded:
+            meta["unit"] = unit
+    meta["started"] = started
+    return restart_meta(meta)
+
+
 class Launch:
     def __init__(self, root):
         self.path = Path(root) / "busy" / "launch.json"
@@ -83,6 +101,10 @@ class Launch:
             self.taint = [[float(s), None if e is None else float(e)] for s, e in d.get("taint", [])][-KEEP:]
             self.jobs = {str(k): ({f: str(v.get(f) or "")[:400] for f in FIELDS} if isinstance(v, dict) else False)
                          for k, v in d.get("jobs", {}).items()}
+            from .busy import restart_meta
+            for k, v in (d.get("jobs") or {}).items():
+                if isinstance(v, dict) and isinstance(self.jobs.get(str(k)), dict):
+                    self.jobs[str(k)].update({f: x for f, x in restart_meta(v).items() if f not in ("stop_reason", "stop_signal")})
             for k, v in (d.get("jobs") or {}).items():
                 if isinstance(v, dict) and isinstance(v.get("chain"), str) and isinstance(self.jobs.get(str(k)), dict):
                     self.jobs[str(k)]["chain"] = v["chain"][:32]
@@ -188,7 +210,7 @@ class Launch:
             return False
         with self.lock:
             if not isinstance(self.jobs.get(key), dict):
-                self.jobs[key] = {f: str(it.get(f) or "")[:400] for f in FIELDS} | {"pid": pid, "proc_start": row[2]}
+                self.jobs[key] = {f: str(it.get(f) or "")[:400] for f in FIELDS} | {"pid": pid, "proc_start": row[2]} | restart_snapshot(it, pid, row[3])
                 self.dirty = True
             self.jobs[key].update(pid=pid, proc_start=row[2])
             self.dirty = True
@@ -238,6 +260,8 @@ class Launch:
                     chain = (self.open[2] if self.open and len(self.open) > 2 and self.open[0] == s0 and self.open[1]
                              else self.owner.get("%.6f" % s0))
             self.jobs[key] = ({f: str(it.get(f) or "")[:400] for f in FIELDS} | ({"chain": chain} if chain else {})) if ok or clean else False
+            if isinstance(self.jobs[key], dict):
+                self.jobs[key].update(restart_snapshot(it, pid, row[3]))
             while len(self.jobs) > 4 * KEEP:
                 self.jobs.pop(next(iter(self.jobs)))
             self.dirty = True
@@ -263,7 +287,9 @@ class Launch:
         """A known job's first-sight who / label / report (overrides a rewritten item or receipt); {} otherwise."""
         with self.lock:
             v = self.jobs.get(key)
-            return ({f: v[f] or None for f in FIELDS} | ({"chain": v["chain"]} if v.get("chain") else {})) if isinstance(v, dict) else {}
+            from .busy import restart_meta
+            return ({f: v[f] or None for f in FIELDS} | {f: x for f, x in restart_meta(v).items() if f not in ("stop_reason", "stop_signal")}
+                    | ({"chain": v["chain"]} if v.get("chain") else {})) if isinstance(v, dict) else {}
 
     def current_chain(self):
         """E2: the owner chain of the turn running now (None outside an owner turn)."""

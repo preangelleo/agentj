@@ -186,7 +186,7 @@ class MailOwner(_Owner):
         m.log = m.count = m.note = lambda *a, **k: None
         cfg = mail.blank_config()
         cfg.update(enabled=True, generation='g', allow=[{'addr': 'owner@example.com', 'role': 'owner'}], reply_per_hour=10)
-        route = {'to': 'owner@example.com', 'role': 'owner', 'verified': True, 'gen': 'g', 'subject': 's', 'state': 'awaiting'}   # P562: a verified owner route
+        route = {'to': 'owner@example.com', 'role': 'owner', 'verified': True, 'explicit_owner': True, 'gen': 'g', 'subject': 's', 'state': 'awaiting'}   # P562: a verified owner route
         built = {}
 
         def build(cfg_, route_, body, name, lang, files):

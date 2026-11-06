@@ -134,7 +134,7 @@ def validate_args(args):
     return final
 
 
-def run(engine: Path, original: list[str], args: list[str], root: Path, *, capture=False, _host=False):
+def run(engine: Path, original: list[str], args: list[str], root: Path, *, capture=False, _host=False, _job=None):
     """See ARCHITECTURE."""
     if not args or args[0] not in ('templates', 'schema', 'example', 'validate', 'render'):
         return None
@@ -156,10 +156,16 @@ def run(engine: Path, original: list[str], args: list[str], root: Path, *, captu
         if _host:
             raise report_host.LocalFailure('helper_integrity')
         return report_host.request(engine, original, args, root, capture=capture)
+    if _host:
+        from . import report_host
+        if not isinstance(_job, report_host._FrozenJob) or _job.root != root.absolute():
+            raise report_host.LocalFailure('job_root')
+        _job.verify()
+    check_path = _job.verify if _host else safe_path
     final = validate_args(args)
     action = args[0]
     if action in ('validate', 'render'):
-        safe_path(original[1])
+        check_path(original[1])
     # Every custom input was frozen by report._run; guard its original root too.
     ti = original.index('--template') + 1 if '--template' in original else (1 if action in ('schema', 'example') else None)
     if ti is not None and str(root / 'input-template') in final[ti]:
@@ -167,12 +173,16 @@ def run(engine: Path, original: list[str], args: list[str], root: Path, *, captu
         path = Path(raw).expanduser()
         if '/' not in raw and not path.is_dir():
             path = Path(os.environ.get('AGENT_WORKSPACE') or '~/agent-workspace').expanduser() / 'report-templates' / raw
-        safe_path(str(path))
+        check_path(str(path))
     dest = None
     if action == 'render':
         oi = final.index('--out') + 1
         dest = original[oi]
-        safe_path(dest)
+        if _host:
+            if Path(dest) != root / 'email.html':
+                raise ValueError('report host output refused')
+        else:
+            safe_path(dest)
         final[oi] = '/out/email.html'
     final = [v.replace(str(root) + '/', '/job/', 1) if v.startswith(str(root) + '/') else v for v in final]
     output = root / 'local-output'
@@ -204,7 +214,7 @@ def run(engine: Path, original: list[str], args: list[str], root: Path, *, captu
         data = file.read_bytes()
         custom = any(v.startswith('/job/input-template/') for v in final)
         check_email(data, allow_https_images=not custom)
-        target = export_email(dest, data)
+        target = _job.export(dest, data) if _host else export_email(dest, data)
         result.stdout = f'Rendered local email → {target}\n'
     if not capture:
         print(result.stdout, end='')

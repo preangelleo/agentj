@@ -197,9 +197,23 @@ async def host_card(h, text: str, target: dict, face: bool = True) -> str:
     """ONE `AgentJTerminal` card on every ready remote; the first signed answer decides. face (P573 c): Face ID — only a
     remote with a passkey may allow — the first time a remote gets the terminal; after that one signed button.
     → "allow" · "deny" · "timeout" · "estop" · "serve_stop" · "busy" · "no_device"."""
-    from . import approvals
+    from . import approvals, approval_level, provenance
     from .serve import Ask
     from .terminal import CARD_TTL, TOOL
+    if h.stopped():
+        return "estop"
+    trusted = (not provenance.untrusted_turn(getattr(h, "agent", None))
+               or provenance.unattended_turn(getattr(h, "agent", None)) in ("system", "same_host", "scheduled_task")
+               or bool(provenance.owner_channel_turn(getattr(h, "agent", None))))
+    if not face and trusted and not provenance.owner_grant_required(getattr(h, "agent", None)) and approval_level.level(h.preferences, h.st) == "harness":
+        grant = approval_level.level_grant(h.st)
+        if grant:
+            rid = secrets.token_hex(16)
+            approvals.record(h.st, rid=rid, agent="host", tool=TOOL, input_sha256=approvals.input_digest(target),
+                             shown_sha256=approvals.shown_digest(TOOL, text), decision="allow", reason="level_harness", grant=grant, auto="level")
+            h.st.log("ask_done", id=rid, tool=TOOL, decision="allow", reason="level_harness")
+            h.activity("auto", id=rid, tool=TOOL, summary=text.split("\n", 1)[0], by="harness")
+            return "allow"
     if not h._approvers():
         return "no_device"
     if any(a.tool == TOOL and not a.fut.done() for a in h.asks.values()):
@@ -375,9 +389,9 @@ def cmd_terminal(a) -> None:
         from .terminal import platform_ok
         if not platform_ok():
             sys.exit("✗ " + ERR["os"])
-        if set(os.environ) & set(ctl_auth.AGENT_ENV) or not sys.stdin.isatty():
-            sys.exit("✗ 只有主人能在自己的终端里打开网页终端，Agent 和脚本做不了。/ Only the owner, typing in their own terminal, "
-                     "can turn the web terminal on — not an Agent or a script.")
+        # #520: the live host decides from the signed level, source and actual
+        # terminal UV state; a model flag or this CLI's tty is not authorisation.
+
         why = _password_sudo()
         if why:
             sys.exit("✗ " + why)
@@ -392,9 +406,8 @@ def cmd_terminal(a) -> None:
             if not dev:
                 sys.exit("✗ allow 要给一台遥控器：agentj terminal allow <id 或名字> / name a remote.")
             req.update(device=dev, hours=a.hours)
-        print(f"已在已配对的手机上发出确认卡片，对照码 {code[:3]} {code[3:]}。请在有通行密钥的手机上核对后用 Face ID 确认（5 分钟内）。\n"
-              f"A card went to your paired phones with match code {code[:3]} {code[3:]}. Confirm it with Face ID on a remote "
-              f"that has a passkey (within 5 minutes).", flush=True)
+        print(f"请求主机核验网页终端授权，对照码 {code[:3]} {code[3:]}；若需新授权，主机会请求指纹验证。\n"
+              f"Checking terminal authorisation at the host, match code {code[:3]} {code[3:]}; a new grant still requires UV.", flush=True)
     elif a.action in ("deny", "forget"):
         dev = _resolve(st, a.target or (a.device or [None])[0])
         if a.action == "deny" and not dev:

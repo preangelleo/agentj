@@ -238,7 +238,8 @@ RESTART_AFTER = ("login", "no_key", "model", "access", "region", "model_missing"
 
 
 def opencode_env(base: dict, password: str) -> dict:
-    env = dict(base)
+    from . import provider_runtime, harness
+    env = provider_runtime.fresh_environment(base, extra=harness.OPENCODE_KEY_ENV)
     env.update(OPENCODE_SERVER_PASSWORD=password, OPENCODE_SERVER_USERNAME=USER, OPENCODE_DISABLE_MODELS_FETCH="1",
                OPENCODE_DISABLE_LSP_DOWNLOAD="1", OPENCODE_DISABLE_AUTOUPDATE="1", OPENCODE_DISABLE_SHARE="1",
                OPENCODE_DISABLE_EMBEDDED_WEB_UI="1", OPENCODE_CONFIG_CONTENT=config_content(base.get("OPENCODE_CONFIG_CONTENT")))
@@ -1419,6 +1420,11 @@ class OpenCodeAgent(Agent):
                     card = None                         # S3: a group member's sub-agent asks the owner nothing
                 if card is not None:
                     outcome, picks = await self.host.question(card, gone, task=getattr(self.host, "task_label", None))
+                    if outcome == "autonomous":
+                        from .ask import note
+                        instruction = "[Host policy; no owner answer] " + note("autonomous", getattr(self.host, "lang", "zh"))
+                        body = {"answers": [[instruction] for _ in card]}
+                        path = f"/question/{qid}/reply"
                     if outcome == "answer" and picks:
                         body = {"answers": [[p] if isinstance(p, str) else [q["o"][n - 1]["l"] for n in p] for q, p in zip(card, picks)]}
                         path = f"/question/{qid}/reply"

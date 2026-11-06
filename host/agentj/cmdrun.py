@@ -51,32 +51,13 @@ _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|[\x00-\x08\x0b
 
 
 def skill_command(name: str):
-    """Hidden doctor actions, fixed argv only; never advertised as terminal rows."""
-    if not isinstance(name, str):
-        return None
-    match = re.fullmatch(r"skill_(replace|keep)_([a-z][a-z0-9-]{0,79})", name or "")
-    if not match:
-        return None
-    from . import personalize
-    action, skill = match.groups()
-    return ("skill", action, skill) if skill in personalize.bundled() else None
+    """Retired per-skill choices are no longer commands."""
+    return None
 
 
 def skill_conflicts() -> list[dict]:
-    """Only bundled names and capability flags leave the computer, never paths/content."""
-    from . import personalize
-    try:
-        names = set(personalize.bundled())
-        rows = {}
-        for row in personalize.status():
-            if not isinstance(row, dict):
-                continue
-            name = row.get("skill")
-            if isinstance(name, str) and row.get("conflict") is True and name in names and re.fullmatch(r"[a-z][a-z0-9-]{0,79}", name):
-                rows[name] = rows.get(name, True) and row.get("can_keep", False) is True
-        return [{"name": name, "can_keep": rows[name]} for name in sorted(rows)]
-    except (OSError, ValueError, RuntimeError):
-        return []
+    """Built-in logic updates automatically; never return a decision queue."""
+    return []
 
 
 def argv(name: str) -> list[str]:

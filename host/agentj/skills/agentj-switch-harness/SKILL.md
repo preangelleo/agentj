@@ -139,7 +139,7 @@ Ark401: Agent Plan and Coding Plan keys are not interchangeable. A confirmed mis
 
 **Same harness, other account (#427)** — 「换 Claude 备用账号」 is no harness switch: `agentj account list`, then
 `agentj account use claude 备用` (codex too; no scan, no card). The main Agent restarts before the next message, same
-conversation; running background tasks finish on the old account. Adding one is the owner's: Settings → AI or
+conversation; running background tasks finish on the old account. Settings → Backup AI accounts (「备用 AI 账号」) manages Claude Code/Codex quota backups only. Its read-only primary account matches Models & API keys (「模型和 API Key」); follow the link there to change the primary. Adding a backup is the owner's: Settings → Backup AI accounts or
 `agentj account add` in their own terminal.
 
 Docs: https://agentj.app/docs/switch-harness/zh.md · https://agentj.app/docs/switch-harness/en.md

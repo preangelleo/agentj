@@ -482,7 +482,8 @@ class Service:
                     expected = digest({'host': row['core']['host'], 'workflow_id': wid, 'root': contract['root'], 'delivery': manifest['idempotency_key']})
                     if (not isinstance(original, dict) or digest(original) != rec['manifest_sha256'] or expected != key
                             or manifest['attachments'] or req.get('files')
-                            or {k: v for k, v in original.items() if k != 'attachments'} != {k: v for k, v in manifest.items() if k != 'attachments'}):
+                            or not set(manifest.get('cc', [])) <= set(original.get('cc', []))
+                            or {k: v for k, v in original.items() if k not in ('attachments', 'cc')} != {k: v for k, v in manifest.items() if k not in ('attachments', 'cc')}):
                         return {'ok': False, 'why': 'retry_manifest_changed'}
                     target = digest(manifest)
                 except (ValueError, KeyError, TypeError, OSError, tasks.TaskError):
@@ -497,10 +498,15 @@ class Service:
         summary = f"Subject / 主题: {preview}\nTo/Cc / 收件人: {', '.join(recipients)}\nAttachments / 附件: {attachments}\nRetry one workflow email / 补发一次工作流邮件: {wid}\nDelivery: {key}\nManifest: {rec['manifest_sha256']}\nThe first result was uncertain; this may deliver a duplicate. / 首次结果不确定，补发可能重复。"
         if replacement:
             summary += f"\nRemove attachments; keep original R2-link body / 移除附件，保留原R2链接正文\nNew manifest: {target}\nSubject SHA256: {manifest['subject_sha256']}\nBody SHA256: {manifest['body_sha256']}"
+        receipt = {}
         ans = await self.host.ask('agentj mail workflow-retry', {'summary': summary}, batch=False,
-                                  always_ask=True, require_passkey=True, grant_info=True, _company_proposal=policy_registry.HOST_CARD)
+                                  always_ask=True, require_passkey=True, grant_info=True, _company_proposal=policy_registry.HOST_CARD,
+                                  _receipt=receipt)
         if ans.get('behavior') != 'allow':
-            return {'ok': False, 'why': 'denied'}
+            why = receipt.get('reason') or ans.get('reason') or 'unknown'
+            return {'ok': False, 'why': 'approval_not_shown' if receipt.get('approval_card_shown') is False else 'denied',
+                    'approval_reason': why, 'approval_card_shown': receipt.get('approval_card_shown'),
+                    'detail': ans.get('message') or ('批准卡未获确认，邮件没有发出 / The retry was not approved; no mail was sent: ' + why)}
         async with self.lock:
             data = await asyncio.to_thread(self.load)
             rec, current = data['deliveries'].get(key), data['grants'].get(wid)

@@ -53,11 +53,11 @@ class CoreV10(unittest.TestCase):
 
     def test_delegation_memory_never_lifts_approvals(self):
         for needle in ("这种不用问我", "这种要先问我", "documentation/MEMORY.md", "「放权规则」", "按决策类型", "不重复问",
-                       "不写凭据", "不解除五类危险操作的手机审批"):
+                       "不写凭据", "UV、凭据规则和底层硬限制不解除"):
             self.assertIn(needle, self.zh)
         for needle in ("don't ask me about this", "ask me first", "documentation/MEMORY.md", '"Delegation rules"',
                        "each decision type", "without repeating questions", "never credentials",
-                       "never lifts the five dangerous operation phone approvals"):
+                       "UV, credential rules and hard harness limits remain"):
             self.assertIn(needle, self.en)
 
     def test_handoff_before_compaction_and_plain_names(self):

@@ -250,12 +250,17 @@ class Files:
         async with self.lock:
             cancelled = threading.Event()
             try:
-                from . import provenance
-                if provenance.untrusted_turn(getattr(self.host, "agent", None)):
+                from . import provenance, approval_level
+                def permitted():
+                    return (not automatic or approval_level.autonomous(self.host)) and (not provenance.untrusted_turn(getattr(self.host, "agent", None)) or approval_level.autonomous(self.host))
+                automatic = approval_level.autonomous(self.host)
+                if not permitted():
                     raise Refused("owner_turn_required")
                 source, stamp = await asyncio.to_thread(allowed_path, self.st, req.get("path"))
                 if self.host.stopped():
                     raise Refused("stopped")
+                if not permitted():
+                    raise Refused("source_changed")
                 persistent = has_grant(self.st, source)
                 if not persistent:
                     from .approvals import norm_questions
@@ -268,14 +273,20 @@ class Files:
                     if qs is None:
                         raise Refused("path_too_long")
                     decision, picks = await self.host.question(qs)
-                    if decision != "answer" or picks not in ([[1]], [[2]]):
+                    autonomous_once = decision == "autonomous" and approval_level.autonomous(self.host)
+                    if not autonomous_once and (decision != "answer" or picks not in ([[1]], [[2]])):
                         raise Refused("denied")
+                    if autonomous_once:
+                        automatic = True
+                        self.st.log("files_auto_once", reason="level_harness")
                     if self.host.stopped() or (await asyncio.to_thread(allowed_path, self.st, str(source)))[1] != stamp:
                         raise Refused("changed_or_stopped")
-                    if picks == [[2]]:
+                    if decision == "answer" and picks == [[2]]:
                         grant(self.st, str(source.parent), 0)
                         persistent = True
-                res = await asyncio.to_thread(copy_file, self.st, str(source), lambda: cancelled.is_set() or self.host.stopped(),
+                if not permitted():
+                    raise Refused("source_changed")
+                res = await asyncio.to_thread(copy_file, self.st, str(source), lambda: cancelled.is_set() or self.host.stopped() or not permitted(),
                                               lambda: not persistent or has_grant(self.st, source))
             except asyncio.CancelledError:
                 # to_thread cannot stop the worker: withdraw its authority to publish.

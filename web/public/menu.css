@@ -200,7 +200,7 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .menuicon:hover{background:var(--menu-chip)}
 .menuicon:active{background:var(--menu-press)}
 .menuicon svg,.menupage .mi,#settings .mi,#settings .chev,.cmdmenu .mi svg{width:var(--ui-icon);height:var(--ui-icon);flex:none}
-:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-btn,.seg button,.setnav,.setside button,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):focus-visible{
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-btn,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):focus-visible{
   outline:var(--ui-focus-w) solid var(--menu-accent);outline-offset:var(--ui-focus-gap)}
 kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(--menu-muted)}
 
@@ -218,11 +218,11 @@ kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(-
 #settings .setnav:hover{background:linear-gradient(var(--menu-chip),var(--menu-chip)) no-repeat;background-size:calc(100% + 2 * var(--sp-2)) 100%;background-position:center}
 #settings .setrow{min-height:var(--menu-row-2);border-bottom-color:var(--menu-line)}
 @media (min-width:900px){
-  #settings .setside button{display:flex;align-items:center;gap:var(--ui-space-control);min-height:var(--menu-row-3);color:var(--menu-text)}
-  #settings .setside button .mi{color:var(--menu-muted)}
-  #settings .setside button:hover{background:var(--menu-chip)}
-  #settings .setside button[aria-current="true"]{background:var(--menu-chip);border-left-color:var(--menu-accent)}
-  #settings .setside button[aria-current="true"] .mi{color:var(--menu-accent)}
+  #settings .setside .setsidebtn{display:flex;align-items:center;gap:var(--ui-space-control);min-height:var(--menu-row-3);color:var(--menu-text)}
+  #settings .setside .setsidebtn .mi{color:var(--menu-muted)}
+  #settings .setside .setsidebtn:hover{background:var(--menu-chip)}
+  #settings .setside .setsidebtn[aria-current="true"]{background:var(--menu-chip);border-left-color:var(--menu-accent)}
+  #settings .setside .setsidebtn[aria-current="true"] .mi{color:var(--menu-accent)}
 }
 @media (max-width:899px){ #settings .setside .mi{display:none} }
 
@@ -238,7 +238,7 @@ kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(-
 #settings .setcopy:hover,#settings button.setval.setwide:hover{background:var(--menu-chip);border-color:var(--menu-text)}
 #settings .setlinks a,#settings .setlink{color:var(--menu-text)}
 /* filled icon buttons inside rows (text size −/+, mute): the header's icon button with the chip fill */
-#settings .fontstep>button:not(.setlink),#settings .sfxvol>button:not(.setlink),#settings .cueplay{width:var(--ui-icon-btn);height:var(--ui-icon-btn);
+#settings .fontstep>.setstep,#settings .sfxvol>.setstep,#settings .cueplay{width:var(--ui-icon-btn);height:var(--ui-icon-btn);
   border-radius:var(--ui-radius-control);background:var(--menu-chip);color:var(--menu-text)}
 #settings .fontstep svg,#settings .sfxvol svg,#settings .cueplay svg{width:var(--ui-icon);height:var(--ui-icon)}
 
@@ -446,11 +446,11 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
    Its own class (.segrow), not .seg: the brand's P87 action-group rule stacks .seg vertically on phones (!important). */
 .segrow{position:relative;display:inline-flex;flex-direction:row;align-items:center;flex-wrap:nowrap}
 .segrow::before{content:"";position:absolute;inset:4px 0;border:1px solid var(--quiet-border);border-radius:var(--ui-radius-pill);pointer-events:none}
-.segrow button{position:relative;isolation:isolate;flex:none;min-height:var(--ui-tap);min-width:var(--ui-tap);padding:0 12px;border:0;background:none;cursor:pointer;
+.segrow .setsegment{position:relative;isolation:isolate;flex:none;min-height:var(--ui-tap);min-width:var(--ui-tap);padding:0 12px;border:0;background:none;cursor:pointer;
   color:var(--menu-muted);font:500 var(--ui-fs-small)/1 var(--font-body);white-space:nowrap}
-.segrow button[aria-pressed="true"]{color:var(--menu-bg);font-weight:600}
-.segrow button[aria-pressed="true"]::after{content:"";position:absolute;inset:8px 4px;border-radius:var(--ui-radius-pill);background:var(--menu-text);z-index:-1}
-.segrow button:focus-visible{outline:var(--ui-focus-w) solid var(--menu-accent);outline-offset:-2px;border-radius:var(--ui-radius-pill)}
+.segrow .setsegment[aria-pressed="true"]{color:var(--menu-bg);font-weight:600}
+.segrow .setsegment[aria-pressed="true"]::after{content:"";position:absolute;inset:8px 4px;border-radius:var(--ui-radius-pill);background:var(--menu-text);z-index:-1}
+.segrow .setsegment:focus-visible{outline:var(--ui-focus-w) solid var(--menu-accent);outline-offset:-2px;border-radius:var(--ui-radius-pill)}
 #settings .setrow:has(>.segrow){grid-template-columns:minmax(0,1fr) auto}
 #settings .setrow>.segrow{grid-column:2;justify-self:end}
 @media (max-width:420px){ #settings .setrow:has(>.segrow){grid-template-columns:minmax(0,1fr)} #settings .setrow>.segrow{grid-column:1 / -1;justify-self:start} }
@@ -458,7 +458,7 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
    of equal cells across the card, so no language overflows 360 px; a wider screen keeps the row at the end. */
 @media (max-width:420px){
   #settings #set-level-row>.segrow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));justify-self:stretch}
-  #set-level-row>.segrow button{padding:0 6px;overflow-wrap:anywhere;line-height:1.2}
+  #set-level-row>.segrow .setsegment{padding:0 6px;overflow-wrap:anywhere;line-height:1.2}
 }
 
 /* P340 #22: Settings' notices are the Noir Notification now (settings.js say → ui.js notify); no bar under the header */
@@ -955,7 +955,7 @@ body[data-assist-view]{overflow:hidden}
 /* #474: lifecycle controls reuse the Webhook page's Noir/Lotion surface. */
 #set-hooks .mcp474{margin-top:var(--ui-space-section);color:var(--menu-text)}
 #set-hooks .mcp474-form{display:flex;flex-direction:column;gap:12px;margin-top:var(--ui-space-section)}
-#set-hooks .mcp474-form input,#set-hooks .mcp474-form textarea{box-sizing:border-box;width:100%;min-height:44px;padding:12px;border:1px solid var(--menu-text);border-radius:var(--ui-radius-control);background:var(--noir);color:var(--lotion);font:inherit}
+#set-hooks .mcp474-form :is(.aj-input,.aj-textarea){box-sizing:border-box}
 #set-hooks .mcp474-form button{align-self:flex-start;min-height:44px}
 #set-hooks .mcp474 .whline{white-space:pre-wrap;color:var(--menu-text)}
 
@@ -963,3 +963,14 @@ body[data-assist-view]{overflow:hidden}
 #settings .rscmdskills .rscmdacts{gap:var(--ui-space-control);justify-content:flex-start}
 #settings .rscmdskills .act{width:auto;min-width:44px;padding-inline:12px;white-space:nowrap}
 #settings .rscmdskills code{overflow-wrap:anywhere}
+/* #517: shared settings section rhythm, also for sections rendered after pairing.
+   First headings use card padding; every subsequent heading has a full section gap. */
+#settings .setsection{margin-top:var(--space-section)}
+#settings .setg:not(:first-child){margin-top:var(--space-section)}
+#settings .setrow>.setfieldwide{grid-column:1 / -1;width:100%;min-width:0;box-sizing:border-box}
+#settings :is(.aj-input,.aj-select,.aj-textarea){max-width:100%;min-width:0}
+
+/* Native specialised settings inputs: component classes own styling; keep browser semantics. */
+#settings .aj-range{min-height:var(--ui-tap);accent-color:var(--menu-accent)}
+#settings .aj-check-input{min-height:var(--ui-tap);accent-color:var(--menu-accent);cursor:pointer}
+#settings .aj-file{max-width:100%;color:var(--menu-text);font:inherit}

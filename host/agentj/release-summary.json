@@ -1,5 +1,5 @@
 {
-  "version": "0.27.0",
-  "zh": "[主机/网页] 手机和平板可用完整终端；修复终端配色、任务通知来源、邮件误处理与抄送子集、升级后会话恢复和随包技能误判。",
-  "en": "[host/web] Full mobile terminal; fixes for terminal colors, task notices, mail targeting/Cc, session recovery and bundled skills."
+  "version": "0.27.1",
+  "zh": "[主机/网页] 修复子Agent与自派任务审批、邮件已读、停止重启通知、语音状态及日志刷屏；优化字号与后台轮询退避，保留技能配置。",
+  "en": "Fix subagent/CEO approvals, mail read state, restart notices, ASR status and log floods; improve typography and polling backoff; preserve skill settings."
 }

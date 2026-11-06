@@ -238,10 +238,13 @@ class CliExit(unittest.TestCase):
         return code, json.loads(outb.getvalue()), errb.getvalue()
 
     def test_send_denied_exits_1_with_a_sentence(self):
-        fake = mock.patch("agentj.elevate.client_request", return_value={"ok": False, "why": "denied", "detail": "x"})
-        code, res, err = self.run_cli(["mail", "send", "--to", OTHER, "--subject", "s", "--body", "b", "--json"], fake)
-        self.assertEqual((code, res["why"]), (1, "denied"))
-        self.assertIn("主人没在手机上确认，邮件没有发出", err)
+        for detail, expected in ((None, "主人没在手机上确认，邮件没有发出"), ("x", "x")):
+            with self.subTest(detail=detail):
+                reply={"ok":False,"why":"denied", **({"detail":detail} if detail is not None else {})}
+                fake=mock.patch("agentj.elevate.client_request",return_value=reply)
+                code,res,err=self.run_cli(["mail","send","--to",OTHER,"--subject","s","--body","b","--json"],fake)
+                self.assertEqual((code,res["why"]),(1,"denied"))
+                self.assertIn(expected,err)
 
     def test_send_ok_exits_0(self):
         fake = mock.patch("agentj.elevate.client_request", return_value={"ok": True, "sent": [ALLOW_ME], "owner_direct": True})

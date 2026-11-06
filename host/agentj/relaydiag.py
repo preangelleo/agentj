@@ -15,6 +15,8 @@ TEXT = {   # why → (中文, English); "timeout" is split by phase below
                         "opening the relay connection timed out (TCP / TLS / WebSocket upgrade)"),
     "timeout_auth": ("中继没在时限内回应主机认证（本机进程或磁盘卡顿时也会这样）",
                      "the relay's auth answer did not arrive in time (also happens when the Agent J host's process or disk stalls)"),
+    "timeout_revocations": ("同步账户撤销记录超时，稍后重试", "account revocation sync timed out; retrying"),
+    "revocation_sync": ("账户撤销记录暂时无法验证，稍后重试", "account revocation state could not be verified; retrying"),
     "timeout_seat": ("读取本机席位证书超时（磁盘卡住？）", "reading the Agent J host's seat certificate timed out (disk stalled?)"),
     "tls": ("TLS / 证书校验失败（抓包软件、代理或系统证书有问题）", "TLS / certificate check failed (an intercepting proxy or system certificates)"),
     "refused": ("中继地址拒绝连接", "the relay address refused the connection"),
@@ -52,7 +54,7 @@ def _http(e: BaseException) -> int | None:
 
 
 def classify(e: BaseException, phase: str) -> dict:
-    """{phase, why, code, http, kind} for one failed attempt. `phase`: seat · connect · auth · up."""
+    """{phase, why, code, http, kind} for one failed attempt. `phase`: seat · connect · auth · revocations · up."""
     code, http, kind = close_code(e), _http(e), type(e).__name__
     if code in CLOSE_WHY:
         why = CLOSE_WHY[code]
@@ -72,6 +74,8 @@ def classify(e: BaseException, phase: str) -> dict:
         why = "refused"
     elif isinstance(e, ValueError) and str(e) in ("relay refused auth", "bad challenge"):   # our own two messages (serve._auth)
         why = "auth_refused" if str(e) == "relay refused auth" else "bad_challenge"
+    elif phase == "revocations" and isinstance(e, ValueError):
+        why = "revocation_sync"
     elif isinstance(e, OSError):
         why = "network"
     else:

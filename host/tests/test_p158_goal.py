@@ -202,11 +202,12 @@ class HostGoal(unittest.TestCase):
 
     def start_goal(self, prop=PROP, ok=True):
         async def go():
+            before = len(self.asks(goal.TOOL))
             t = asyncio.ensure_future(self.host.goals.propose(prop, wait=True))
             card = None
             for _ in range(200):
                 await asyncio.sleep(0.01)
-                cards = self.asks(goal.TOOL)
+                cards = self.asks(goal.TOOL)[before:]
                 if cards:
                     card = cards[-1]
                     break

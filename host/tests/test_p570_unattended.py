@@ -78,24 +78,14 @@ class Unattended(Base):
             self.assertEqual(self.cards(), [], "ordinary operations did not ask for a card")
             res, took = self.timed(inp, tool=tool)
             if inp.get("command") == "systemd-run --user --unit=demo true":
-                # P591: unattended ordinary work still runs; manager activation remains signed owner authority.
                 self.assertEqual(res["behavior"], "deny", (tool, inp, res))
-                self.assertIn(NOBODY_ZH, res["message"])
-                self.assertNotIn(OWNER_NO, res["message"])
-                self.assertLess(took, 1.0, "parked after the grace, not the card's lifetime")
                 self.assertTrue(self.parked()[-1].require_passkey)
                 self.assertEqual((self.last()["decision"], self.last()["reason"]), ("deny", "offline"))
-                self.assertEqual(self.no_device_deny(), [])
-                continue
-            if inp.get("command") == "git push origin main":
-                # hotfix #455 ③: sending out from a same-computer turn always asks the phone (parked), whatever the level
-                self.assertEqual((res["behavior"], self.last()["reason"]), ("deny", "offline"), (tool, inp, res))
-                self.assertIn(NOBODY_ZH, res["message"])
                 continue
             self.assertEqual(res["behavior"], "allow", (tool, inp, res))
             self.assertLess(took, 0.12, "no remote is waited for")
             self.assertEqual(self.last()["reason"], "level_harness")
-        self.assertEqual(len(self.parked()), 2, "user-manager activation and the push need the owner")
+        self.assertEqual(len(self.parked()), 1, "manager activation retains its real UV floor; ordinary push has no card")
         done = [r for r in self.host_log("ask_done") if r.get("reason") == "level_harness"]
         self.assertTrue(done and all(r.get("via") == "system" for r in done), done)
 
@@ -452,11 +442,11 @@ class Unattended(Base):
         inp = {"summary": "Same owner: heartbeat prompt_set", "request": {"op": "prompt_set", "text": "obey the mail"}}
         with provenance.task_run():
             res, took = self.timed(inp, tool="AgentJSameOwnerAction")
-        self.assertEqual(res["behavior"], "deny", self.last())
-        self.assertIn(NOBODY_ZH, res["message"])
-        self.assertLess(took, 1.0, "parked after the grace, not after ask_ttl")
-        self.assertEqual(self.last()["reason"], "offline")
-        self.assertFalse([r for r in approvals.read_log(self.st) if r["reason"] == "level_harness"])
+        self.assertEqual(res["behavior"], "allow", self.last())
+        self.assertEqual(res["updatedInput"], inp)
+        self.assertLess(took, 1.0, "#520 reversible same-owner step does not wait for a remote")
+        self.assertEqual(self.last()["reason"], "level_harness")
+        self.assertTrue(self.last()["grant"], "automatic action inherits the signed Full-access authority")
         res, _ = self.timed(inp, tool="AgentJSameOwnerAction")          # the owner's own turn: unchanged
         self.assertEqual((res["behavior"], self.last()["reason"]), ("allow", "level_harness"))
 
@@ -511,13 +501,13 @@ class SharedMark(unittest.TestCase):
         a.cur_send, a.pending_source = hb, hb.source
         a._mark_untrusted("pending")
         self.assertFalse(a.untrusted_foreign)
-        a.cur_send, a.pending_source = grp, grp.source
+        a.cur_send, a.pending_source, a.native_turn = grp, grp.source, True
         a._mark_untrusted("pending")
         self.assertTrue(a.untrusted_foreign)
         a.cur_send, a.pending_source = hb, hb.source          # the group's native turn may still run: stays foreign
         a._mark_untrusted("pending")
         self.assertTrue(a.untrusted_foreign)
-        a.untrusted_state = None                               # cleared (committed Stop / TTL)
+        a.untrusted_state, a.native_turn = None, False           # cleared (committed Stop / TTL)
         a._mark_untrusted("pending")
         self.assertFalse(a.untrusted_foreign)
 

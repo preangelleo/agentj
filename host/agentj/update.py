@@ -743,6 +743,12 @@ def upgrade_due(st):
 
 
 def health_text(counts, lang="zh", rows=None, *, verified_upgrade=False) -> str:
+    if any(r.get('id') == 'dashboard' and r.get('status') == 'warn' and r.get('server_unavailable') is True
+           for r in rows or [] if isinstance(r, dict)) and not upgrade_blockers(rows)[0] and not any(
+               r.get('session_disconnected') is True for r in rows or [] if isinstance(r, dict)):
+        return ("The server is temporarily unavailable. Account connection could not be verified. "
+                "Check again later." if lang == "en" else
+                "服务端暂时不可用，本次未能验证账户连接，请稍后再检查。")
     if verified_upgrade:
         blockers, _ = upgrade_blockers(rows)
         if not blockers and any(r.get("session_disconnected") is True for r in rows or [] if isinstance(r, dict)):

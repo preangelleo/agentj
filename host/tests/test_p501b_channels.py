@@ -90,9 +90,9 @@ class Routing(unittest.IsolatedAsyncioTestCase):
         from email import policy as ep
         from email.parser import Parser
         from agentj import mail
-        msg = Parser(policy=ep.default).parsestr('From: owner@example.test\nMessage-ID: <one@example.test>\nSubject: Hello\n\nHello')
+        msg = Parser(policy=ep.default).parsestr('From: owner@example.test\nTo: agent@example.test\nMessage-ID: <one@example.test>\nSubject: Hello\n\nHello')
         cfg = mail.blank_config()
-        cfg.update(enabled=True, generation='fixture', allow=[{'addr':'owner@example.test', 'role':'owner'}])
+        cfg.update(enabled=True, address='agent@example.test', generation='fixture', allow=[{'addr':'owner@example.test', 'role':'owner'}])
         avatar = NS(receive_owner=AsyncMock(return_value='分身答复'))
         host = NS(stopped=lambda:False, agent_cfg={}, external_channels=avatar, _accept=AsyncMock(return_value=NS(turn=7)), hist_add=lambda *a:{'id':1})
         manager = object.__new__(mail.Mail)

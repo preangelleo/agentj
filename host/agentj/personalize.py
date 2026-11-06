@@ -84,9 +84,9 @@ SKILLS=Path(__file__).with_name('skills')
 HARNESS_DIRS=('.claude/skills','.codex/skills','.agents/skills','.config/opencode/skills')
 
 def bundled():
-    """Every skill shipped in the package (P57: generic — a new folder under agentj/skills/ with a SKILL.md ships itself)."""
-    try:return sorted(d.name for d in SKILLS.iterdir() if d.is_dir() and (d/'SKILL.md').is_file() and not d.name.startswith(('.','_')))
-    except OSError:return []
+    """Frozen built-in names. New skills belong in the plaza."""
+    try:return json.loads(Path(__file__).with_name('bundled_skills.json').read_text())['skills']
+    except (OSError,ValueError,KeyError):return []
 
 def links(home=None):
     """[(skill, source, target)] for every bundled skill × the four harness skill folders."""
@@ -98,15 +98,11 @@ def status(home=None):
     for name,source,target in links(home):
         kind,_=skill_links.classify(name,source,target)
         out.append({'skill':name,'path':str(target),'installed':kind=='installed',
-                    'conflict':kind=='conflict','legacy':kind=='legacy','kept':kind=='kept',
-                    'can_keep':kind!='conflict' or skill_links.choice_fingerprint(target) is not None})
+                    'conflict':kind=='conflict','legacy':kind=='legacy','kept':False})
     return out
 
 def ensure(home=None,force=False):
-    """P57: `serve` links every bundled skill where nothing is in the way yet, before the Agent starts — the main Agent's
-    skills (agentj-config, agentj-recall, agentj-manual) work without anyone running `agentj skill install`. Exact current/released trees are migrated with a backup. Modified or unverified entries
-    are preserved; `agentj skill uninstall` removes ours (they come back at the next serve start only
-    where the target is free again). → {"linked": n, "conflicts": n}; never raises."""
+    """Install all bundled names automatically, with recoverable backups; never raises."""
     # Only an installed package links by itself: a source checkout (host/pyproject.toml beside the package — tests, e2e suites,
     # development) never writes into the real ~/.claude etc.; AGENTJ_SKILL_LINK=off turns it off anywhere (tests/_hermetic.py).
     if not force and (os.environ.get('AGENTJ_SKILL_LINK')=='off' or (SKILLS.parent.parent/'pyproject.toml').is_file()):
@@ -116,25 +112,47 @@ def ensure(home=None,force=False):
         try:
             if skill_links.link(name,source,target):linked+=1
             if skill_links.classify(name,source,target)[0]=='conflict':conflicts+=1
-        except (OSError,ValueError,RuntimeError):conflicts+=1
+        except (OSError,ValueError,RuntimeError) as exc:
+            conflicts+=1
+            try:skill_links._save(target.parent,name,{'error':'directory_permission_denied' if isinstance(exc,PermissionError) else 'update_failed','errno':getattr(exc,'errno',None)})
+            except OSError:pass
     return {'linked':linked,'conflicts':conflicts}
 
 def skill(a):
-    # A named replace keeps an exact backup. keep records a content-bound decision.
-    if a.action not in ('install','uninstall','list','status','replace','keep'):return 1
-    names=bundled()
-    if a.action in ('replace','keep') and a.value not in names:
-        print(json.dumps({'ok':False,'error':'choose one bundled skill','skills':names}));return 1
-    errors=0
+    # Package-managed entries update automatically; no owner decision queue.
+    if a.action not in ('install','uninstall','list','status'):return 1
+    names=bundled();errors=0
     for name,source,target in links():
-        if a.action in ('replace','keep') and name!=a.value:continue
         try:
             kind,_=skill_links.classify(name,source,target)
-            if a.action in ('install','replace'):skill_links.link(name,source,target,replace=a.action=='replace')
-            elif a.action=='keep':skill_links.keep(name,source,target)
-            elif a.action=='uninstall' and kind=='installed':target.unlink()
+            if a.action=='install':skill_links.link(name,source,target)
+            elif a.action=='uninstall' and kind=='installed':
+                if target.is_symlink():target.unlink()
+                else:
+                    for rel in skill_links.logic_files(source):
+                        path=target/rel
+                        if skill_links.points_to(path,source/rel):path.unlink()
+                    try:target.rmdir()
+                    except OSError:pass
         except (OSError,ValueError,RuntimeError):errors+=1
     out=status()
-    if a.action in ('replace','keep'):out=[r for r in out if r['skill']==a.value]
-    ok=not errors and not any(r['conflict'] or r['legacy'] or (a.action in ('install','replace') and not (r['installed'] or r['kept'])) for r in out)
+    ok=not errors and (a.action not in ('install',) or all(r['installed'] for r in out))
     print(json.dumps({'ok':ok,'skills':names,'harnesses':out}));return 0 if ok else 1
+
+
+def summary(home=None,language="zh"):
+    updated=set();modified=set();folders=set()
+    for name,source,target in links(home):
+        row=skill_links._read(target.parent).get(name,{})
+        if not isinstance(row,dict) or not row.get('updated'):continue
+        updated.add(name)
+        if row.get('modified') and row.get('backup'):
+            modified.add(name);folders.add(str(Path(row['backup']).parent))
+    if not updated:
+        return 'Built-in skills are up to date' if language=='en' else '内置技能已是新版，用户配置已保留'
+    where='、'.join(sorted(folders))
+    if language=='en':
+        return (f'Updated {len(updated)} built-in skills; {len(modified)} modified copies backed up; user configuration preserved' +
+                (f'; recover them in {where}' if folders else ''))
+    return (f'已更新 {len(updated)} 个内置技能，你改过的 {len(modified)} 个已另存备份，用户配置已保留' +
+            (f'，可在 {where} 找回' if folders else ''))

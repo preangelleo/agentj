@@ -933,16 +933,29 @@ class RealHostCard(unittest.TestCase):
         log = [x for x in approvals.read_log(self.st) if x.get("tool") == "agentj tasks migrate"]
         self.assertEqual([(x.get("decision"), x.get("device")) for x in log][-1:], [("allow", self.ph.did)], "red line: device + log")
 
-    def test_no_level_answers_the_card_by_itself(self):
+    def test_no_level_answers_the_card_by_itself(self):  # historical case retained; #520 adds signed-Full positive
         from agentj import approval_level
-        self.assertIn("agentj tasks migrate", approval_level.HARNESS_KEEPS, "全放行 never auto-allows it without the card")
-        for lv in ("full", "harness"):
+        self.assertIn("agentj tasks migrate", approval_level.HARNESS_KEEPS, "the legacy list remains; the current Full-access path has its own UV floor")
+        for lv in ("safe", "standard"):
             sysmigrate._update(self.st, lambda m: (m.pop("decision", None), m.__setitem__("offers", {})))
             self.sent.clear()                       # answer() signs the newest card: not the previous level's
             with mock.patch.object(approval_level, "level", return_value=lv):
                 ask, res = self.answer(True, fa=False)
             self.assertEqual(res, "yes", lv)
             self.assertFalse(ask.get("passkey_required"), lv)
+        self.sent.clear()
+        sysmigrate._update(self.st, lambda m: (m.pop("decision", None), m.__setitem__("offers", {})))
+        from test_p551_confirm_levels import sign
+        from agentj import preferences, approvals
+        signed = sign(self.ph, {"key": "approval.level", "value": "harness"})
+        approval_level.note_signer(self.st, "approval.level", "harness", self.ph.did,
+                                   self.st.sign_key(self.ph.did), "migration-parent", signed)
+        self.host.preferences = preferences.validate({**self.host.preferences, "approval": {"level": "harness"}})
+        self.assertEqual(approval_level.level(self.host.preferences, self.st), "harness")
+        result = asyncio.run(sysmigrate.offer(self.host))
+        self.assertEqual(result, "yes", "#520 Full access executes ordinary migration autonomously")
+        self.assertFalse([o for _, o in self.sent if o.get("t") == "ask"])
+        self.assertEqual(approvals.read_log(self.st)[-1]["auto"], "level")
 
     def test_signed_decline_is_no(self):
         _, res = self.answer(False, fa=False)

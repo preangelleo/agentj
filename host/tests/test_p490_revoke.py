@@ -267,6 +267,10 @@ class Freshness(Revoke):
                 await h.credential_revocations.sync()
             apply.assert_not_awaited()
         failed = json.loads((self.st.root/'credential_revoke_seq.json').read_text())
+        with self.assertRaisesRegex(ValueError, 'revocation_sync'):
+            await h.credential_revocations.sync()
+        self.assertEqual(json.loads((self.st.root/'credential_revoke_seq.json').read_text()), failed)
+        h.credential_revocations.backoff.clock = lambda: h.credential_revocations.backoff.until + 1
         self.assertTrue(await self.sync_response(h))
         self.assertGreater(json.loads((self.st.root/'credential_revoke_seq.json').read_text()), failed)
 

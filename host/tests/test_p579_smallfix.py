@@ -55,14 +55,14 @@ class MailRead(unittest.IsolatedAsyncioTestCase):
             st=State(Path(tmp));st.init()
             host=SimpleNamespace(st=st,agent=object(),stopped=lambda:False,lang='en')
             m=M.Mail(host)
-            cfg=M.validate({**M.blank_config(), 'auth':'off', 'allow':[{'addr':'owner@example.com','role':'owner'}]})
+            cfg=M.validate({**M.blank_config(), 'auth':'off', 'address':'agent@example.com', 'allow':[{'addr':'owner@example.com','role':'owner'}]})
             M.save_config(st,cfg)
             M.save_state(st,{**M.read_state(st),'uidvalidity':9})
-            raw=b'From: owner@example.com\r\nMessage-ID: <one@example.com>\r\n\r\nHello'
+            raw=b'From: owner@example.com\r\nTo: agent@example.com\r\nMessage-ID: <one@example.com>\r\n\r\nHello'
             with patch.object(m,'deliver',new=AsyncMock(return_value=True)), patch.object(m,'password',return_value='synthetic'), \
                  patch.object(M,'mark_read',return_value=True, create=True) as mark:
                 self.assertEqual(await m.one(cfg,5,len(raw),raw),'delivered')
-                mark.assert_called_once()
+                mark.assert_not_called()
                 mark.reset_mock()
                 outsider=raw.replace(b'owner@example.com',b'other@example.com')
                 self.assertEqual(await m.one(cfg,6,len(outsider),outsider),'not_allowed')
@@ -86,7 +86,7 @@ class MailRead(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as tmp:
             st=State(Path(tmp));st.init();m=M.Mail(SimpleNamespace(st=st,agent=object(),stopped=lambda:False,lang='en'))
             cfg=M.validate({**M.blank_config(),'auth':'off','allow':[{'addr':'owner@example.com','role':'owner'}]})
-            raw=b'From: owner@example.com\r\nMessage-ID: <one@example.com>\r\n\r\nHello'
+            raw=b'From: owner@example.com\r\nTo: agent@example.com\r\nMessage-ID: <one@example.com>\r\n\r\nHello'
             with patch.object(M,'mark_read',return_value=True, create=True) as mark, patch.object(m,'password',return_value='synthetic'):
                 with patch.object(m,'deliver',new=AsyncMock(return_value=False)):
                     await m.one(cfg,5,len(raw),raw)
@@ -115,7 +115,7 @@ class MarkIdentity(unittest.TestCase):
         from mailfake import FakeIMAP
         server=FakeIMAP('owner@example.com','synthetic')
         try:
-            raw=b'From: owner@example.com\r\nMessage-ID: <one@example.com>\r\n\r\nHello'
+            raw=b'From: owner@example.com\r\nTo: agent@example.com\r\nMessage-ID: <one@example.com>\r\n\r\nHello'
             server.add(raw.decode());server.add(raw.decode().replace('<one','<two'))
             cfg={**M.blank_config(),'address':'owner@example.com','imap':{'host':'127.0.0.1','port':server.port,'security':'plain'}}
             self.assertTrue(M.mark_read(cfg,'synthetic',server.uidvalidity,1,M.id_hash('<one@example.com>')))
@@ -124,11 +124,11 @@ class MarkIdentity(unittest.TestCase):
             server.close()
 
     def test_397_epoch_identity_and_store_failure(self):
-        raw=b'From: owner@example.com\r\nMessage-ID: <one@example.com>\r\n\r\nHello'
+        raw=b'From: owner@example.com\r\nTo: agent@example.com\r\nMessage-ID: <one@example.com>\r\n\r\nHello'
         mid=M.id_hash('<one@example.com>',raw[:2048])
         def client(epoch=b'9', body=raw, status='OK'):
             c=Mock();c.untagged_responses={'UIDVALIDITY':[epoch]};c.select.return_value=('OK',[])
-            c.uid.side_effect=[('OK',[(b'header',(b'Message-ID: <other@example.com>\r\n' if body == b'changed' else b'Message-ID: <one@example.com>\r\n')),(b'body',body)]),(status,[])]
+            c.uid.side_effect=[('OK',[(b'5 (UID 5 BODY[HEADER.FIELDS (MESSAGE-ID)] {40}',(b'Message-ID: <other@example.com>\r\n' if body == b'changed' else b'Message-ID: <one@example.com>\r\n')),(b' BODY[]<0> {100}',body)]),(status,[])]
             return c
         for c in (client(epoch=b'10'), client(body=b'changed'), client(status='NO')):
             with patch.object(M,'imap_login',return_value=c), self.assertRaises(M.MailError):

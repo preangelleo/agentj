@@ -77,7 +77,7 @@ class Table(unittest.TestCase):
         for r in list(t.values()) + list(en.values()):
             self.assertNotRegex(r["why_scope"], "存过|以前发过|以前没发过|mailed before|never sent to before")
         self.assertEqual({r["cls"] for r in t.values()} - {"irreversible"},
-                         {"spend_over_budget", "secret_reveal", "new_recipient", "public_publish", "permanent_delete"})
+                         {"spend_over_budget", "secret_reveal", "new_recipient", "public_publish", "permanent_delete", "reversible"})
 
     def test_decisions(self):
         self.assertEqual(decide("pip install requests", self.w), ("none", "routine"))
@@ -109,12 +109,12 @@ class Table(unittest.TestCase):
         # Agent J's own approval files / hooks
         self.assertEqual(decide("echo x > ~/.claude/settings.json", self.w), ("face", "self_protect"))
 
-    def test_chain_floor_raises_no_card_rows_to_a_tap(self):
+    def test_chain_kind_does_not_raise_no_card_rows(self):
         need(ap)
         v = danger.classify("agentj mail send", {})
         self.assertEqual(ap.decide("agentj mail send", {}, v, requirement="hold", known_recipients=True), ("none", "mail_known"))
         self.assertEqual(ap.decide("agentj mail send", {}, v, requirement="hold", known_recipients=True, chain=True),
-                         ("tap", "mail_known"))
+                         ("none", "mail_known"))
         self.assertEqual(ap.decide("agentj mail send", {}, v, requirement="hold"), ("tap", "send_new"))
 
     def test_budget_verdict(self):
@@ -661,9 +661,9 @@ class MailLine(unittest.TestCase):
     def test_mail_line_matches_the_policy(self):
         from agentj import main_identity as mi
         zh, en = mi.MAIL_LINE["zh"], mi.MAIL_LINE["en"]
-        for needle in ("主人或白名单不弹卡", "其他收件人弹确认卡", "不用 Face ID"):
+        for needle in ("主人或白名单不弹卡", "全放行档其它非 UV", "其它档弹普通确认卡"):
             self.assertIn(needle, zh)
-        for needle in ("owner or allowlisted addresses needs no card", "any other recipient gets one confirmation card", "never Face ID"):
+        for needle in ("owner or allowlisted addresses needs no card", "in full-access mode other non-UV", "other modes use an ordinary confirmation card"):
             self.assertIn(needle, en)
         self.assertNotIn("通行密钥确认最终收件人", zh)
         self.assertNotIn("存过", zh, "r6 B1: contacts never make a recipient known")
@@ -695,7 +695,10 @@ class Dispatch469Default(f3b.Dispatch469):
                 self.assertEqual((res["behavior"], card), ("allow", None))
                 self.assertEqual(len(self.cards()), before, "no card at all")
                 self.assertEqual(self.last()["cats"], [], "not 「改凭据」")
-                self.assertEqual((self.last()["reason"], self.last().get("policy")), ("owner_scope", "ceo_dispatch"))
+                receipt = self.last()
+                self.assertEqual((receipt["reason"], receipt.get("policy")), ("dispatch", None))
+                self.assertEqual(receipt["decision"], "allow")
+                self.assertEqual(receipt["input_sha256"], approvals.input_digest({"command": cmd}))
 
     def test_469_negative_unproven_dispatch_still_carded(self):
         p = pathlib.Path(self.f.tree) / "2.1.316" / "claude"

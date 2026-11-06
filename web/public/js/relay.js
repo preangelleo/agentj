@@ -1109,13 +1109,16 @@ function pillHalf(e){
 // P154 追加 13 (Leo, 2026-10-12: 「每次刷新以后就回到了初始默认值」): the step is phone-local and remembered in
 // localStorage beside the other look settings (aj.fontScale, aj.sfxVolume) — a reload, a reopen or the iPhone
 // home-screen app comes back at the same size. Applied at load, before the first paint of the chat screen.
-// Not the same state as Settings' 「回复字号」 (--rs, reply text only); the two multiply and stay independent.
+// Not the same state as Settings' 「回复字号」 (--rs, message text); the two multiply and stay independent.
 export const FZ_KEY = "aj.pageFz";
 const FZ_STEPS = ["m", "l", "m", "s"];
 let fzAt = 0;
 function paintFz(){
   const v = FZ_STEPS[fzAt], root = document.documentElement;
   if (v === "m") delete root.dataset.fz; else root.dataset.fz = v;
+  // #538c: the saved page choice owns this factor, including medium. The inline value also
+  // defeats an older cached CSS TV media rule when new JS and old CSS are mixed.
+  root.style.setProperty('--fz', String(v === 'l' ? 1.2 : v === 's' ? 0.85 : 1));
 }
 try { const v = localStorage.getItem(FZ_KEY); const i = v && v !== "m" ? FZ_STEPS.indexOf(v) : -1; if (i > 0) fzAt = i; } catch (_) { /* blocked storage: default */ }
 paintFz();
@@ -1127,6 +1130,14 @@ function setFz(i, say){
   paintPlaceholder();
   if (say) toast(t('r.fz.' + v), 1000);
 }
+
+addEventListener('storage', e => {
+  if (e.key !== FZ_KEY + (window.AJSeat?.id ? '@' + window.AJSeat.id : '')) return;
+  let v; try { v = localStorage.getItem(FZ_KEY); } catch { return; }
+  const i = FZ_STEPS.indexOf(v);
+  fzAt = i >= 0 ? i : 0;
+  paintFz(); paintPlaceholder();
+});
 
 // ---- the logo wears the state colour ----------------------------------------------
 

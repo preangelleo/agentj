@@ -77,7 +77,7 @@ export function sourceFiles() {
   const out = new Map();
   for (const f of walk(PUBLIC_DIR)) {
     const r = relPosix(f);
-    if (MANIFEST_FILES.has(r) || r.startsWith('proto/') || (HAVE_BRAND && r.startsWith('brand/'))) continue;
+    if (r.startsWith('.preview/') || MANIFEST_FILES.has(r) || r.startsWith('proto/') || (HAVE_BRAND && r.startsWith('brand/'))) continue;
     out.set(r, readFileSync(f));
   }
   for (const n of PROTO_FILES) out.set(`proto/${n}`, readFileSync(join(PROTOCOL_DIR, n)));

@@ -189,7 +189,8 @@ class Flow(unittest.TestCase):
             cp.script = [500, 500, ("hang", 3), 500]
             p = self._serve()
             # start report + heartbeats keep coming although the control plane fails / hangs
-            self._wait(lambda: len(cp.reports) >= 5, 20)
+            # Four transient failures now deliberately cool down 4/8/16/32 seconds (+ jitter).
+            self._wait(lambda: len(cp.reports) >= 5, 90)
             self.assertIsNone(p.poll(), "serve still running")
             st = self.agentj("status")
             self.assertEqual(st.returncode, 0)

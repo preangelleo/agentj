@@ -1,0 +1,7 @@
+{
+  "formal_commit": "11eb5c0811c2444994fc5c71274d89267df41f93",
+  "files": {
+    "proto/wire.js": "03fbdf1cfc6152c58b2b03f8826427d67219f9a2f0586ba0e4eb8107ef4a7e19",
+    "proto/noise.js": "800c4cc56d5cc1cc012a3701c5d0851a87bfc2fe5397aa34f05f58992b96d365"
+  }
+}

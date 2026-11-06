@@ -341,9 +341,13 @@ class Background(Fixture):
     def test_standard_keeps_its_own_face_id_floor(self):
         # P573 (#386 ⑤): sudo / reading a credential are a button now, and an automation is not asked a button; the
         # three classes keep Face ID in the background too (review B2's floor, narrowed by the chairman 10-29)
-        for c in ("sudo systemctl restart x", "cat .env"):
+        for c in ("sudo systemctl restart x",):
             self.assertEqual(self.ask(c, background="task")["behavior"], "allow", c)
             self.assertEqual(self.last()["reason"], "background")
+        n = len(self.cards())
+        self.assertEqual(self.ask("cat .env", background="task")["behavior"], "deny")
+        self.assertTrue(self.cards()[-1]["passkey_required"])
+        self.assertEqual(len(self.cards()), n + 1)
         n = len(self.cards())
         self.assertEqual(self.ask("rm -rf ~/Documents/old", background="task")["behavior"], "deny")
         self.assertEqual(len(self.cards()), n + 1)
@@ -351,7 +355,8 @@ class Background(Fixture):
         # under 「减少弹窗」 only the four kinds: sudo on the owner's own machine runs (chairman 10-26 17:5x)
         self.harness()
         self.assertEqual(self.ask("sudo systemctl restart x", background="task")["behavior"], "allow")
-        self.assertEqual(self.last()["reason"], "background")
+        self.assertEqual(self.last()["reason"], "level_harness")
+        self.assertTrue(self.last()["grant"], "signed Full access is the parent authority")
 
     def test_attack_and_host_decisions_keep_their_card(self):
         n = len(self.cards())

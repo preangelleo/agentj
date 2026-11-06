@@ -109,8 +109,11 @@ class Hotfix455(LaunchSource):
         self.host.agent.cur_send = None
         self.host._foreign_seen(True)
         n = len(approvals.read_log(self.st))
-        self.ask("cat reports/review.md")
-        self.assertEqual(self.last()["reason"], "same_machine")
+        result = self.ask("cat reports/review.md")
+        self.assertEqual(result["behavior"], "deny", "a foreign episode cannot acquire automatic owner authority")
+        self.assertEqual((self.last()["decision"], self.last()["reason"]), ("deny", "offline"))
+        self.assertEqual(self.last()["input_sha256"], approvals.input_digest({"command": "cat reports/review.md"}))
+        self.assertTrue(any(a.parked for a in self.host.asks.values()))
         self.host._foreign_seen(False)                      # the owner's own turn clears it
         self.assertFalse(self.host._foreign_seen())
         del other

@@ -81,7 +81,7 @@ class Registry(unittest.TestCase):
         self.assertEqual(p.main_requirement("ExitWorktree", {"action": "remove", "discard_changes": True}), "uv")
         self.assertEqual(confirm_tier.harness_keeps("ExitWorktree", {"action": "remove", "discard_changes": True}), "delete")
         # P573 (#386 ⑤): a key read for the Agent / code the lexer cannot read are one button now
-        self.assertEqual(p.main_requirement("NotebookRead", {"notebook_path": "~/.aws/credentials"}), "hold")
+        self.assertEqual(p.main_requirement("NotebookRead", {"notebook_path": "~/.aws/credentials"}), "uv")
         self.assertEqual(p.main_requirement("PowerShell", {"command": "dir"}), "hold")
 
     def test_registered_rows_unchanged(self):

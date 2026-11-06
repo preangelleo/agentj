@@ -41,7 +41,7 @@ class ApprovalPaths(Base):
         with patch.object(self.host.goals, 'current', return_value={'preauth': True}) as current, \
              patch.object(goal, 'tier', return_value=('low', None)) as tier:
             self.assertEqual(self.ask('git push origin main', answer=False)['behavior'], 'deny')
-        current.assert_not_called()
+        current.assert_called()  # status goal_active may read the goal; its authority is never consumed
         tier.assert_not_called()
         self.assertEqual(len(self.cards()), 1)
 

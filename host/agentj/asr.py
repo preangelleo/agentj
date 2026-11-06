@@ -305,6 +305,7 @@ def _shared_usable(state_dir=None) -> bool:
 def status(state_dir=None, engine_override=None) -> dict:
     """What `ready.asr` / `agentj asr status` / doctor show. `state` ∈ ready | not_installed | off | broken (PROTOCOL
     §10.0); `active` = the engine a take would use now (None when none)."""
+    from . import asr_usage
     d = asr_dir(state_dir)
     s = settings(state_dir)
     if engine_override in ("sensevoice", "voxtype", "off"):
@@ -332,7 +333,8 @@ def status(state_dir=None, engine_override=None) -> dict:
            "model_bytes": _tree_bytes(d / "model") if (d / "model").exists() else 0,
            "threads": s["threads"], "voxtype": vox, "platform_ok": platform_key() is not None,
            "worker": {"running": bool(w and w.alive()), "pid": w.proc.pid if w and w.alive() else None},
-           "last_error": _read_json(d / "last_error.json").get("detail"), "shared": shared}
+           "last_error": _read_json(d / "last_error.json").get("detail"), "shared": shared,
+           "last_used": asr_usage.last_used(state_dir)}
     return out
 
 
@@ -561,6 +563,17 @@ def remote_timeout(wav_path: str) -> float:
 
 
 def transcribe(wav_path: str, *, timeout_s: float, state_dir=None, engine_override=None) -> dict:
+    """Record direct local calls too; the outer voice router owns routed calls."""
+    from . import asr_usage
+    started = time.monotonic()
+    result = _transcribe(wav_path, timeout_s=timeout_s, state_dir=state_dir, engine_override=engine_override)
+    asr_usage.record(result, state_dir=state_dir, model=MODEL_ID if result.get('engine') == 'sherpa' else None,
+                     elapsed_ms=(time.monotonic() - started) * 1000,
+                     fallback=result.get('notice') == 'local_fallback')
+    return result
+
+
+def _transcribe(wav_path: str, *, timeout_s: float, state_dir=None, engine_override=None) -> dict:
     """An explicitly selected voxtype may be remote; every failure gets local recovery.
 
     Keep configuration unchanged and release a recovery model after use. Automatic

@@ -22,8 +22,11 @@ class Policy(unittest.TestCase):
             with self.subTest(cmd=cmd):
                 v = danger.classify('Bash', {'command': cmd})
                 self.assertIn('cred.service', v.rules)
-                self.assertEqual(approval_level.harness_floor('Bash', {'command': cmd}, v), 'hooks')
-                self.assertEqual(policy_registry.main_requirement('Bash', {'command': cmd}), 'uv')
+                for tool in ('Bash', 'exec_command'):
+                    inp={'command': cmd}
+                    requirement=policy_registry.main_requirement(tool, inp)
+                    self.assertEqual(requirement, 'uv', tool)
+                    self.assertEqual(approval_level.full_access_keep(tool, inp, v, requirement=requirement), 'uv', tool)
                 self.assertTrue(set(danger.shared_keys(v, {'approvals': 'native'})) & danger.ALWAYS_CARD)
 
     def test_unit_roots_cannot_replace_the_private_proc_or_filesystem_root(self):

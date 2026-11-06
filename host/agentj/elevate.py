@@ -1822,8 +1822,13 @@ class Elevator:
                 w.close()
                 return
             if isinstance(req, dict) and req.get("t") == "host_diagnostics":
-                from . import host_diagnostics
-                res = await asyncio.to_thread(host_diagnostics.execute, self.st, req)
+                from . import host_diagnostics, approval_level, provenance
+                external_send = req.get("op") in ("support", "feedback_send") and (
+                    provenance.owner_grant_required(getattr(self.host, "agent", None)) or (
+                        provenance.untrusted_turn(getattr(self.host, "agent", None))
+                        and not approval_level.autonomous(self.host)))
+                res = ({"exit": 1, "output": "External data cannot authorize support or feedback sending.\n"} if external_send
+                       else await asyncio.to_thread(host_diagnostics.execute, self.st, req))
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
                 await w.drain()
                 w.close()

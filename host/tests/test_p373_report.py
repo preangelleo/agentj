@@ -154,8 +154,9 @@ class ReportCLI(unittest.TestCase):
         mail_cmd.assert_not_called()
 
     def test_send_dry_run(self):
-        keep = self.tmp / "keep" / "mail.html"
-        with mock.patch("agentj.mail.cmd") as mail_cmd:
+        workspace = self.tmp / "workspace"; workspace.mkdir()
+        keep = workspace / "keep" / "mail.html"
+        with mock.patch.dict(os.environ, {"HOME":str(self.tmp), "AGENT_WORKSPACE":str(workspace)}), mock.patch("agentj.mail.cmd") as mail_cmd:
             code, out, _ = self.run_cli("send", str(self.good), "--to-owner", "--dry-run", "-o", str(keep))
         self.assertEqual(code, 0)
         mail_cmd.assert_not_called()

@@ -165,7 +165,7 @@ METER_GAP = 2.0                             # ≤ 1 meter message per 2 s
 HIST_READY = 50                             # turns a p33 device gets on ready (it pages for more)
 SWEEP_EVERY = 60
 RETAIN_EVERY = 86_400
-P33_ONLY = ("say", "say_cancel", "say_sync", "cmd_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
+P33_ONLY = ("web_preview_attest", "say", "say_cancel", "say_sync", "cmd_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
             "q_answer", "tts_get", "pref_set", "notice_read", "media_get", "provider_get", "provider_key", "asr_install", "models_get", "ark_plan_get", "ping",
             "tg_fwd", "wx_fwd", "turn_wait", "res_watch", "busy_get",   # P181 (§22.1) load card resources; P160 (§22) one 「在办」 row's detail
             "mail_get", "mail_set", "mail_key", "mail_test", "mail_check",   # P170 (§10.20)
@@ -584,6 +584,10 @@ def _same_machine_card(host, tool, tool_input, v, requirement, dispatch, env, kn
     return tier is not None and tier != approval_policy.NONE
 
 
+AUTONOMOUS_CHOICE = ("全放行：按主人已有目标自主选择合理默认并继续，不等待主人回复；真正需要 UV 的动作走原权限通道。 / "
+                     "Full access: choose a reasonable default consistent with the owner's goal and continue without a reply. "
+                     "Use the existing permission channel for actions requiring UV.")
+
 class Host:
     def __init__(self, st: State, events: str = "text", read_stdin: bool = True):
         self.st = st
@@ -888,6 +892,7 @@ class Host:
                 async with connect(url, max_size=2**17, ping_interval=resource_policy.PING_INTERVAL, ping_timeout=resource_policy.PING_TIMEOUT, open_timeout=resource_policy.OPEN_TIMEOUT) as ws:
                     phase = "auth"
                     await self._auth(ws, cert)
+                    phase = "revocations"  # a Dashboard failure is distinct from relay authentication
                     await self.credential_revocations.sync()  # P490: apply before accepting any restored remote
                     phase = "up"
                     self.ws, self.relay_up, self.relay_ever_up, backoff, fails = ws, True, True, 1, 0
@@ -2071,7 +2076,9 @@ class Host:
 
         from . import ctl_auth
         cmd = req.get("cmd")
-        if cmd == "terminal_cfg" and req.get("op") not in ("enable", "allow"):
+        if cmd == "terminal_cfg" and (req.get("op") not in ("enable", "allow") or approval_level.autonomous(self)):
+            # #520: full access routes to the host's real terminal card. First use
+            # still requires its UV; repeated access needs no typed-owner claim.
             return True                       # P408: reading and narrowing the web terminal need only the socket
         tok = req.get("claim")
         claims = getattr(self, "ctl_claims", {})
@@ -2302,7 +2309,31 @@ class Host:
                     continue
                 if cmd in ctl_auth.SENSITIVE and not await self._ctl_gate(w, req, pid):
                     continue
-                if cmd == "busy_launch":
+                if cmd == "local_service_notice":
+                    from . import local_service_notice
+                    service = await asyncio.to_thread(local_service_notice.verified, pid, puid)
+                    if not service:
+                        await self._ctl_send(w, {"ok": False, "error": "unverified_service"})
+                    else:
+                        try:
+                            await self._ctl_send(w, local_service_notice.deliver(self, req, service=service))
+                        except ValueError as exc:
+                            await self._ctl_send(w, {"ok": False, "error": str(exc)})
+                elif cmd == "ceo_data":
+                    from . import untrusted_dispatch
+                    try:
+                        if puid != os.getuid() or type(pid) is not int or pid <= 0:
+                            raise ValueError("peer")
+                        data = {k: v for k, v in req.items() if k != "cmd"}
+                        worker = untrusted_dispatch.manager(self)
+                        result = (worker.status(data["id"]) if set(data) == {"id"} else
+                                  await asyncio.to_thread(worker.submit, data))
+                        # submit only persists off-loop; scheduling always belongs to this loop.
+                        worker.kick()
+                        await self._ctl_send(w, {"ok": True, **result})
+                    except ValueError as exc:
+                        await self._ctl_send(w, {"ok": False, "error": str(exc)})
+                elif cmd == "busy_launch":
                     await self._ctl_send(w, {"ok": await asyncio.to_thread(self._busy_launch_request, req, pid, puid)})
                 elif cmd == "opencode_auth":
                     agent = self.agent
@@ -2743,6 +2774,8 @@ class Host:
 
     async def sync_loop(self) -> None:
 
+        from .poll_backoff import Backoff
+        backoff = Backoff(base=SYNC_EVERY)
         results: list[tuple[str, str]] = []
         fut: asyncio.Future | None = None
         while not self.stopping.is_set():
@@ -2758,6 +2791,7 @@ class Host:
                 except Exception:  # noqa: BLE001 — a sync bug must never reach serve
                     res = cloud.SyncResult("fail", "error")
                 if res.kind == "ok":
+                    backoff.reset()
                     self.adopt_name(res.name)
                     sent = {i for i, _ in results[:cloud.MAX_SYNC_ITEMS]}
                     results = [x for x in results if x[0] not in sent]
@@ -2771,7 +2805,7 @@ class Host:
                     wait = SYNC_IDLE
                 elif res.kind == "fail":
                     self.st.log("sync_fail", status=res.status)
-                    wait = SYNC_EVERY
+                    wait = max(SYNC_EVERY, backoff.failed(res.status, getattr(res, "retry_after", None)))
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self.stopping.wait(), wait)
 
@@ -5018,6 +5052,18 @@ class Host:
             if type(_receipt) is dict:
                 _receipt.update(reason=reason, approval_card_shown=shown)
         observe('unknown')
+        def stopping_result():
+            observe('serve_stop', False)
+            rid = secrets.token_hex(16)
+            base = dict(rid=rid, agent=getattr(self.agent, "kind", "?"), tool=tool,
+                        input_sha256=approvals.input_digest(tool_input), shown_sha256=approvals.shown_digest(tool, ""), cats=[])
+            approvals.record(self.st, **base, decision="deny", reason="serve_stop")
+            self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="serve_stop")
+            self.activity("decision", id=rid, tool=tool, result="deny", reason="serve_stop", cats=[], summary="")
+            self.emit("ask_done", id=rid, result="deny", reason="serve_stop")
+            return {"behavior": "deny", "message": "agentj serve 已停止：默认拒绝。", **({"reason": "serve_stop"} if grant_info else {})}
+        if self.stopping.is_set():
+            return stopping_result()
         from . import policy_registry
         own = _company_proposal is policy_registry.HOST_CARD    # P570b L-c: not judged by the main turn's source
         if avatar is None and not own and (via := provenance.owner_channel_turn(self.agent)):
@@ -5026,6 +5072,9 @@ class Host:
                 tool, tool_input, gone, batch, risk_scope, require_passkey, context, ttl, grant_info, origin, allow_offer,
                 _company_proposal, bind, avatar=lbl, background=background, always_ask=always_ask, task_actions=task_actions, task_target=task_target, only=only, _receipt=_receipt,
                 known_recipients=known_recipients))
+        if tool == "AskUserQuestion" and not self.stopped() and approval_level.level(self.preferences, self.st) == "harness":
+            self.st.log("question_autonomous", tool=tool, reason="level_harness")
+            return {"behavior": "deny", "message": AUTONOMOUS_CHOICE}
         if avatar is not None and tool == "AskUserQuestion":            # P543: the channel asks in its reply instead
             return {"behavior": "deny", "message": "这条消息来自主人的通道，不能弹出提问卡，请直接在回复里问主人。 / Ask the owner in your reply instead."}
         always_ask = always_ask or task_actions is not None
@@ -5037,6 +5086,8 @@ class Host:
         from . import handoff           # P539 (#301): reading Agent J's own handoff file never needs the owner
         if not strict and not self.stopped() and handoff.owner_side(self.agent) and (handoff.own_read(tool, tool_input, self._switch_cfg()) or handoff.own_state(tool, tool_input, self._switch_cfg())):
             own_rid = await asyncio.to_thread(handoff.record_own, self.st, getattr(self.agent, "kind", None), tool, tool_input)
+            if self.stopping.is_set():
+                return stopping_result()
             self.st.log("ask_done", id=own_rid, tool=tool, decision="allow", reason="own_handoff")
             return {"behavior": "allow", "updatedInput": tool_input}
         from . import background_done as bd_mod   # #450 1b: a known completion turn reads its own report (ADR-#450)
@@ -5046,12 +5097,25 @@ class Host:
             await asyncio.to_thread(approvals.record, self.st, rid=own_rid, agent=getattr(self.agent, "kind", "?"), tool=tool,
                                     input_sha256=approvals.input_digest(tool_input), shown_sha256=approvals.shown_digest(tool, bd_mod.OWN_SHOWN),
                                     decision="allow", reason="own_report", cats=[])
+            if self.stopping.is_set():
+                return stopping_result()
             self.st.log("ask_done", id=own_rid, tool=tool, decision="allow", reason="own_report", via="system")
+            return {"behavior": "allow", "updatedInput": tool_input}
+        from . import untrusted_dispatch
+        if (not strict and not always_ask and not bound and avatar is None and not own and not self.stopped()
+                and await asyncio.to_thread(untrusted_dispatch.safe_command, self, tool, tool_input)):
+            if self.stopping.is_set():
+                return stopping_result()
+            rid = secrets.token_hex(16)
+            approvals.record(self.st, rid=rid, agent=getattr(self.agent, "kind", "?"), tool=tool,
+                             input_sha256=approvals.input_digest(tool_input), shown_sha256=approvals.shown_digest(tool, "CEO data diagnosis"),
+                             decision="allow", reason="ceo_data_only", cats=[])
             return {"behavior": "allow", "updatedInput": tool_input}
         policy_env = getattr(self.agent, "approval_env", None)
         requirement = (policy_registry.decision("main", bound) if bound else
                        policy_registry.main_requirement(tool, tool_input, env=policy_env, cwd=(self.agent_cfg or {}).get("dir")))
         if requirement == "deny":
+            observe('unknown_action', False)
             policy_registry.log_unknown(self.st, tool, tool_input, agent=getattr(self.agent, "kind", "?"))   # P553
             return {"behavior": "deny", "message": UNKNOWN_ACTION}
         v = self._classify(tool, tool_input)
@@ -5183,6 +5247,13 @@ class Host:
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="estop")
             self.activity("decision", id=rid, tool=tool, result="deny", reason="estop", cats=v.cats, summary=summary)
             return {"behavior": "deny", "message": "已急停（全部停下）：什么都不执行，等人恢复。", **({"reason": "estop"} if grant_info else {})}
+        if self.stopping.is_set():
+            observe('serve_stop', False)
+            approvals.record(self.st, **base, decision="deny", reason="serve_stop")
+            self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="serve_stop")
+            self.activity("decision", id=rid, tool=tool, result="deny", reason="serve_stop", cats=v.cats, summary=summary)
+            self.emit("ask_done", id=rid, result="deny", reason="serve_stop")
+            return {"behavior": "deny", "message": "agentj serve 已停止：默认拒绝。", **({"reason": "serve_stop"} if grant_info else {})}
         if provenance.untrusted_turn(self.agent) and not delegated and not own:
             observe('group_source', False)
             recovery = getattr(getattr(self, "background_done", None), "recovery", None)
@@ -5192,7 +5263,7 @@ class Host:
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="group_source")
             self.activity("decision", id=rid, tool=tool, result="deny", reason="group_source", cats=v.cats, summary=summary)
             self.emit("ask_done", id=rid, result="deny", reason="group_source")
-            return {"behavior": "deny", "message": provenance.refusal_text(self.agent), **({"reason": "group_source"} if grant_info else {})}
+            return {"behavior": "deny", "message": provenance.refusal_text(self.agent) + "\n" + untrusted_dispatch.HINT, **({"reason": "group_source"} if grant_info else {})}
         if (restart_input is not None and set(v.cats) == {"service"} and set(v.rules) == {"service.restart"}
                 and not provenance.owner_grant_required(self.agent)):
             return await self._restart_request(tool, tool_input, restart_input, v, base, summary, gone, lv,
@@ -5275,6 +5346,62 @@ class Host:
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="owner_grant_scope")
             self.emit("ask_done", id=rid, result="deny", reason="owner_grant_scope")
             return {"behavior":"deny", "message":"授权单未覆盖这一步或已失效，请回发起主机补授权。 / The grant does not cover this step or is no longer valid; ask the originating host for added scope.", **({"reason": "owner_grant_scope"} if grant_info else {})}
+        # #520: Full access is one standing authorisation, also in native/system/task turns.
+        # Source admission and exact delegated grant boundaries above remain authoritative.
+        full_source = (own or not provenance.untrusted_turn(self.agent)
+                       or provenance.unattended_turn(self.agent) in ("system", "same_host", "scheduled_task")
+                       or bool(provenance.owner_channel_turn(self.agent)))
+        if lv == "harness" and full_source and not provenance.owner_grant_required(self.agent):
+            def full_boundary():
+                return (id(self.agent), id(getattr(self.agent, "cur_send", None)), self.cur_turn,
+                        provenance.turn_source(self.agent), provenance._REQUEST.get(),
+                        provenance.untrusted_turn(self.agent), provenance.unattended_turn(self.agent))
+            boundary = full_boundary()
+            keep = await asyncio.to_thread(approval_level.full_access_keep, tool, tool_input, v,
+                                           env=policy_env, workdir=workdir, requirement=requirement,
+                                           require_passkey=require_passkey)
+            if self.stopped():
+                observe('estop', False)
+                approvals.record(self.st, **base, decision="deny", reason="estop")
+                return {"behavior": "deny", "message": "已急停 / Stop everything is on"}
+            if boundary != full_boundary() or provenance.owner_grant_required(self.agent):
+                observe('group_source', False)
+                approvals.record(self.st, **base, decision="deny", reason="group_source")
+                return {"behavior": "deny", "message": "来源已变化，重新核验后继续 / Source changed; revalidate before continuing"}
+            if self.stopping.is_set():
+                return stopping_result()
+            if keep is None:
+                if dispatch:
+                    await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
+                    if self.stopping.is_set():
+                        return stopping_result()
+                    if self.stopped():
+                        approvals.record(self.st, **base, decision="deny", reason="estop")
+                        return {"behavior": "deny", "message": "已急停 / Stop everything is on"}
+                    if boundary != full_boundary() or provenance.owner_grant_required(self.agent):
+                        approvals.record(self.st, **base, decision="deny", reason="group_source")
+                        return {"behavior": "deny", "message": "来源已变化，重新核验后继续 / Source changed; revalidate before continuing"}
+                grant = approval_level.level_grant(self.st)
+                if not grant or approval_level.level(self.preferences, self.st) != "harness":
+                    return {"behavior": "deny", "message": "授权已撤销 / Authorisation revoked"}
+                approvals.record(self.st, **base, decision="allow", reason="level_harness", grant=grant, auto="level")
+                observe('level_harness', False)
+                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="level_harness",
+                            **({"via": "avatar"} if avatar is not None else {"via": unattended} if unattended else {}))
+                self.activity("auto", id=rid, tool=tool, summary=summary, by="harness", cats=v.cats, task=self.task_label)
+                self.emit("auto", id=rid, tool=tool, grant=grant)
+                line = summary.split("\n", 1)[0][:200]
+                self._post(self._send_ready, lambda s: {"t": "auto", "id": rid, "tool": tool, "summary": line, "by": "harness"})
+                answer = {"behavior": "allow", "updatedInput": tool_input}
+                if grant_info:
+                    signer = approval_level._live(self.st, approval_level.KEY)
+                    if signer is None:
+                        return {"behavior": "deny", "message": "授权已撤销 / Authorisation revoked"}
+                    answer["grant_info"] = {"rid": rid, "device": signer["device"],
+                                             "sign_pub": self.st.sign_key(signer["device"]), "inherited": True, "parent_grant": grant}
+                return answer
+            # A UV verdict cannot fall through into any legacy no-card route.
+            require_passkey, batch, own_pk, strict = True, False, True, True
         if policy_registry.dispatch(tool) and not strict:
             approvals.record(self.st, **base, decision="allow", reason="dispatch")
             self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="dispatch")
@@ -7369,6 +7496,15 @@ class Host:
             await self.send_app(s, {"t": "busy_info", "r": r, "id": wid, "item": d})
 
     async def on_p33(self, s: Session, t: str, obj: dict) -> None:
+        if t == "web_preview_attest":  # #547: read-only metadata, existing authenticated Noise channel only
+            if not wire.is_rid(obj.get("r")) or self.sessions.get(s.cid) is not s or s.state != "ready":
+                return
+            from . import web_preview
+            signature = await asyncio.to_thread(web_preview.attest, self.st, self.channel, s.pub, obj.get("message"))
+            if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
+                await self.send_app(s, {"t": "web_preview_proof", "r": obj["r"], "ok": signature is not None,
+                                        **({"signature": signature} if signature else {})})
+            return
         if t in ("preauth_list", "preauth_revoke"):   # P539
             return await self.on_preauth(s, t, obj)
         if t == "ark_plan_get":
@@ -8290,6 +8426,9 @@ class Host:
         if self.stopped():
             approvals.record_question(self.st, **base, decision="stopped", reason="estop")
             return "stopped", None
+        if approval_level.level(self.preferences, self.st) == "harness":
+            approvals.record_question(self.st, **base, decision="autonomous", reason="level_harness")
+            return "autonomous", None
         if not self._approvers() or sum(1 for q in self.questions.values() if not q.fut.done()) >= MAX_QUESTIONS:
             approvals.record_question(self.st, **base, decision="no_device", reason="no_device")
             return "no_device", None
@@ -8369,6 +8508,8 @@ class Host:
                 if refusal_flag.stayed(ans, local[2]):
                     refusal_flag.after_stay(self, self.agent, local[2])
             return {"behavior": "allow", "updatedInput": {**tool_input, "answers": ans}}
+        if decision == "autonomous":
+            return {"behavior": "deny", "message": AUTONOMOUS_CHOICE}
         if decision == "cancel":
             return {"behavior": "deny", "message": Q_CANCEL}
         return {"behavior": "deny", "message": Q_TIMEOUT}
@@ -8574,6 +8715,8 @@ class Host:
         await self.bots.start()
         await self.elevate.start()                 # F17: <state>/agentperm/elevate.sock for `agentj sudo` / `agentj secret`
         self.scheduler.recover()                   # P248: reconcile before accepting any dispatch
+        from . import untrusted_dispatch
+        untrusted_dispatch.manager(self).kick()    # #519: queued data diagnosis does not wait for an owner turn
         await self.capabilities.start()            # 0.18: <state>/agentperm/capability.sock for `agentj capability`
         try:                                       # P156: heartbeat.sock + the default heartbeat.md; never blocks serve
             from .heartbeat import ensure_prompt

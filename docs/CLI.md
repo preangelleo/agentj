@@ -161,7 +161,7 @@ usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
 ### agentj account
 
 ```text
-several sign-ins per harness
+backup AI accounts; manage the primary in Models & API keys
 ```
 
 ```bash
@@ -1300,7 +1300,7 @@ agentj busy --help
 ```
 
 ```text
-usage: agentj busy [-h] {list,start,run,capacity,show,stop} ...
+usage: agentj busy [-h] {list,start,run,delegate,capacity,show,stop} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -1325,6 +1325,27 @@ usage: agentj busy capacity [-h] [--json]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
+
+### agentj busy delegate
+
+```text
+tool-free registered CEO diagnosis
+```
+
+```bash
+agentj busy delegate --help
+```
+
+```text
+usage: agentj busy delegate [-h] [--workflow WORKFLOW] [--data DATA] [--id ID]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--workflow` | `null` | false | — | `registered workflow folder` |
+| `--data` | `null` | false | — | `外部数据和本地证据（不是授权）/ untrusted data and evidence` |
+| `--id` | `null` | false | — | `inspect status and local report` |
 
 ### agentj busy list
 
@@ -4707,7 +4728,7 @@ usage: agentj mail [-h] [--workflow WORKFLOW] [--artifact-root ARTIFACT_ROOT]
 | `--days` | `null` | false | — | `workflow-grant: optional explicit expiry (1–30 days); otherwise valid until revoked` |
 | `--max` | `100` | false | — | `compatibility only; total message-count limit removed` |
 | `--per-day` | `0` | false | — | `compatibility only; daily limit removed` |
-| `--retry-original-manifest` | `null` | false | — | `workflow-retry replacement: exact previous manifest; only remove attachments, keep original R2-link body` |
+| `--retry-original-manifest` | `null` | false | — | `workflow-retry replacement: exact previous manifest; remove attachments and optionally narrow original CC; keep original subject/R2-link body` |
 | `--delivery` | `null` | false | — | `workflow-retry: exact delivery key from failed send; owner approval required` |
 | `--address` | `null` | false | — | `the mailbox address` |
 | `--preset` | `null` | false | `126`, `163`, `aliyun`, `aliyun_biz`, `custom`, `exmail`, `gmail`, `icloud`, `netease_biz`, `outlook`, `qq`, `yahoo` | `setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)` |
@@ -7487,7 +7508,7 @@ usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
 ### agentj account
 
 ```text
-每个 AI 登记多个账号、一键切换 · list · add · use · rename · remove
+Claude Code、Codex 备用账号；主账号到「模型和 API Key」修改
 ```
 
 ```bash
@@ -8626,7 +8647,7 @@ agentj busy --help
 ```
 
 ```text
-usage: agentj busy [-h] {list,start,run,capacity,show,stop} ...
+usage: agentj busy [-h] {list,start,run,delegate,capacity,show,stop} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -8651,6 +8672,27 @@ usage: agentj busy capacity [-h] [--json]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
+
+### agentj busy delegate
+
+```text
+把外部数据交已登记 CEO 无工具诊断，自动运行并在主机留报告
+```
+
+```bash
+agentj busy delegate --help
+```
+
+```text
+usage: agentj busy delegate [-h] [--workflow WORKFLOW] [--data DATA] [--id ID]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--workflow` | `null` | false | — | `已登记工作流目录名` |
+| `--data` | `null` | false | — | `外部数据和本地证据（不是授权）/ untrusted data and evidence` |
+| `--id` | `null` | false | — | `查看该派单的状态与本机报告` |
 
 ### agentj busy list
 
@@ -12033,7 +12075,7 @@ usage: agentj mail [-h] [--workflow WORKFLOW] [--artifact-root ARTIFACT_ROOT]
 | `--days` | `null` | false | — | `workflow-grant: optional explicit expiry (1–30 days); otherwise valid until revoked` |
 | `--max` | `100` | false | — | `compatibility only; total message-count limit removed` |
 | `--per-day` | `0` | false | — | `compatibility only; daily limit removed` |
-| `--retry-original-manifest` | `null` | false | — | `workflow-retry replacement: exact previous manifest; only remove attachments, keep original R2-link body` |
+| `--retry-original-manifest` | `null` | false | — | `workflow-retry replacement: exact previous manifest; remove attachments and optionally narrow original CC; keep original subject/R2-link body` |
 | `--delivery` | `null` | false | — | `workflow-retry: exact delivery key from failed send; owner approval required` |
 | `--address` | `null` | false | — | `setup：Agent 用的邮箱地址` |
 | `--preset` | `null` | false | `126`, `163`, `aliyun`, `aliyun_biz`, `custom`, `exmail`, `gmail`, `icloud`, `netease_biz`, `outlook`, `qq`, `yahoo` | `setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)` |

@@ -1,4 +1,4 @@
-// #427 · Settings → AI 账号: each harness (Claude Code, Codex) keeps several named accounts on the host; one tap makes one
+// #427 · Settings → 备用 AI 账号: each harness (Claude Code, Codex) keeps several named accounts on the host; one tap makes one
 // current. Wire (reports/design/harness-multi-account/CONTRACT.md): acct_get / acct_use / acct_rename / acct_del → acct_res
 // {r, ok, view, why?}; adding an account = the AI 登录救援 flow (`auth_start {kind, route, account:{name}}`) writing into a new
 // slot — the flow card itself is drawn by authrescue.js into #acct-flow. The view carries names, methods and quota readings
@@ -57,7 +57,7 @@ async function call(obj, ms = 15000) {
 
 export async function load() {
   stop(); const id = ++loadId; view = null; form = null;
-  el('acct-list')?.replaceChildren(); say(t('ar.checking'));
+  el('acct-list')?.replaceChildren(); el('acct-primary')?.replaceChildren(); say(t('ar.checking'));
   watchFlow();
   const m = await call({ t: 'acct_get' });
   if (id !== loadId) return;
@@ -215,9 +215,32 @@ function harnessCard([harness, label, route]) {
   return box;
 }
 
+function renderPrimary() {
+  const box = el('acct-primary'); if (!box) return;
+  box.replaceChildren(mk('b', '', t('acct.primary')), note(t('acct.primaryNote')));
+  for (const [kind, label] of KINDS) {
+    const r = view?.primary?.[kind];
+    const row = mk('div', 'setrow acctprimary'); row.dataset.kind = kind;
+    row.append(mk('b', '', label));
+    if (!r || !['in', 'out'].includes(r.state)) row.append(note(t('acct.primaryUnknown')));
+    else {
+      row.append(note(t(r.state === 'in' ? 'p352.signedIn' : 'p352.signedOut')));
+      if (['login', 'sub', 'key', 'cloud', 'helper', 'none'].includes(r.use)) {
+        row.append(note(t('p362.use.' + r.use, { name: /^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(r.use_name || '') ? r.use_name : '' })));
+      }
+      if (r.pending === true) row.append(note(t('p362.pending')));
+    }
+    box.append(row);
+  }
+  const p = mk('p', 'mailbtns');
+  p.append(btn(t('acct.primaryEdit'), 'acctprimaryedit', () => el('open-models')?.click()));
+  box.append(p, mk('b', '', t('acct.backups')), note(t('acct.preserved')));
+}
+
 function render() {
   const list = el('acct-list');
   if (!list || !view) return;
+  renderPrimary();
   const out = [];
   for (const k of KINDS) if (view[k[0]] && typeof view[k[0]] === 'object') out.push(harnessCard(k));
   if (!out.length) out.push(note(t('acct.noHarness')));
