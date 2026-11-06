@@ -54,7 +54,7 @@ test('arrows: CSI normally, SS3 in application cursor mode, CSI 1;m with modifie
 
 test('the extra-keys bar: the ordered keys with the right bytes; sticky modifiers only for Ctrl / Alt', () => {
   const BAR = JSON.parse(JSON.stringify(vm.runInNewContext('(' + PTY.slice(PTY.indexOf('export const BAR = [') + 'export const BAR = '.length, PTY.indexOf('];', PTY.indexOf('export const BAR = [')) + 1) + ')')));
-  assert.deepEqual(BAR.map((k) => k.id), ['esc', 'tab', 'ctrl', 'alt', 'up', 'down', 'left', 'right', 'intr', 'eof', 'susp', 'pipe', 'tilde', 'slash']);
+  assert.deepEqual(BAR.map((k) => k.id), ['paste', 'enter', 'esc', 'tab', 'ctrl', 'alt', 'up', 'down', 'left', 'right', 'intr', 'eof', 'susp', 'pipe', 'tilde', 'slash']);
   const by = Object.fromEntries(BAR.map((k) => [k.id, k]));
   assert.equal(by.esc.seq, '\x1b'); assert.equal(by.tab.seq, '\t');
   assert.equal(by.intr.seq, '\x03'); assert.equal(by.eof.seq, '\x04'); assert.equal(by.susp.seq, '\x1a');
@@ -87,14 +87,15 @@ test('term_in frames: ≤ 8 KiB UTF-8, cut between code points; ≤ 64 KiB/s; si
   assert.match(TERM, /send\(\{ t: 'term_resize', id: S\.id, cols: z\.cols, rows: z\.rows \}\);/);
 });
 
-test('open: only with "pty" in the host block; signed over {"mode":"pty"} with the size; a 「!」 line and enable stay line mode', () => {
+test('open: only with "pty" in the host block; signed over {"mode":"pty"} with the size; a 「!」 line stays line mode; first enable can use full PTY', () => {
   assert.match(HOOK, /pty: Array\.isArray\(x\.modes\) && x\.modes\.includes\('pty'\)/);
-  assert.match(TERM, /S\.pty = !!info\?\.pty && !o\.bang && !S\.enable;/);
-  assert.match(TERM, /const obj = \{ mode: S\.enable \? 'enable' : S\.pty \? 'pty' : 'line' \};/);
+  assert.match(TERM, /S\.pty = !!info\?\.pty && !o\.bang;/);
+  assert.match(TERM, /const obj = \{ mode: S\.enable \? 'enable' : S\.pty \? 'pty' : 'line', \.\.\.\(S\.resume \? \{resume: S\.resume\} : \{\}\) \};/);
   assert.match(TERM, /S\.pty \? \{ t: 'term_open', \.\.\.ptyOpen\(\) \}/, 'step 1 names the mode and the size');
-  assert.match(TERM, /function ptyOpen\(\) \{ const g = S\.size \|\| ptyMod\?\.guess\(\) \|\| \{ cols: 80, rows: 24 \}; return \{ mode: 'pty', \.\.\.clampSize\(g\.cols, g\.rows\) \}; \}/);
-  // the module failed to load → line mode, said once, the challenge asked for line mode
-  assert.match(TERM, /\(\) => \{ if \(S\.phase !== 'intro'\) return; S\.pty = false; paintChrome\(\); toast\(t\('pty\.loadFail'\), 5000, 'error'\); fetchChallenge\(\); \}/);
+  assert.match(TERM, /function ptyOpen\(\) \{ const g = S\.size \|\| ptyMod\?\.guess\(\) \|\| \{ cols: 80, rows: 24 \}; return \{ mode: 'pty', \.\.\.clampSize\(g\.cols, g\.rows\), \.\.\.\(S\.resume \? \{resume: S\.resume\} : \{\}\) \}; \}/);
+  // Loading errors stop the full terminal rather than silently switching input models.
+  assert.match(TERM, /closeSheet\(\); abandon\(\); toast\(t\('terminal\.loadFailed'\)/);
+  assert.match(TERM, /!o\.bang && !info\?\.pty/);
 });
 
 test('lazy + ours only: termpty.js loads by a module script from terminal.js; xterm only from vendor/; nothing on first paint', () => {
@@ -128,7 +129,7 @@ test('confirm in the PTY: the same signed term_line; 取消 / expiry → Ctrl+U;
   assert.match(TERM, /const d = typeof m\.d === 'string' \? m\.d : typeof m\.data === 'string' \? m\.data : '';/, 'contract §A field `d` (the line-mode `data` accepted too)');
   // the Agent's line / a prefill is typed in only on the owner's tap, never with Enter
   assert.match(TERM, /if \(S\.pty\) \{ S\.go = g; paintGo\(\); return; \}/);
-  assert.match(TERM, /if \(S\.pty\) \{ S\.go = null; ptyType\(g\.cmd\); S\.goNote = true; paintGo\(\); return; \}/);
+  assert.match(TERM, /if \(S\.pty\) \{ ptyType\(g\.cmd\); return; \}/);
   assert.match(PTY, /type: \(s\) => term\.paste\(String\(s\)\)/, 'a paste (bracketed when the program asks) — no Enter');
   assert.match(TERM, /ptyDrop\(\);   \/\/ 0\.26\.9 #463: the xterm buffer/, 'wiped with the session');
   assert.match(PTY, /term\.clear\(\); term\.reset\(\);/);

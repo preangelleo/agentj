@@ -71,6 +71,10 @@ class Launch:
     def __init__(self, root):
         self.path = Path(root) / "busy" / "launch.json"
         self.lock = threading.Lock()
+        try:
+            self.boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+        except OSError:
+            self.boot = None
         self.trusted, self.taint, self.jobs, self.open, self.dirty = [], [], {}, None, False
         self.owner, self.chains = {}, {}       # E2: trusted-window start → chain id; chain id → [at, the owner's words]
         try:
@@ -82,6 +86,10 @@ class Launch:
             for k, v in (d.get("jobs") or {}).items():
                 if isinstance(v, dict) and isinstance(v.get("chain"), str) and isinstance(self.jobs.get(str(k)), dict):
                     self.jobs[str(k)]["chain"] = v["chain"][:32]
+            for k, v in (d.get("jobs") or {}).items():
+                if (self.boot and d.get("boot") == self.boot and isinstance(v, dict) and type(v.get("pid")) is int and v["pid"] > 1
+                        and isinstance(v.get("proc_start"), str) and v["proc_start"].isdigit()):
+                    self.jobs[str(k)].update(pid=v["pid"], proc_start=v["proc_start"])
             self.owner = {str(k): str(v)[:32] for k, v in (d.get("owner") or {}).items()}
             self.chains = {str(k): [float(v[0]), str(v[1])[:CHAIN_WORDS]] for k, v in (d.get("chains") or {}).items()}
         except (OSError, ValueError, TypeError, AttributeError):
@@ -151,6 +159,42 @@ class Launch:
                     t[1] = now
                     self.dirty = True
         return table, sids
+
+    def known_process(self, pid, table=None):
+        """Only a live kernel ancestor pinned by the host proves a descendant; PID reuse fails."""
+        table = procs() if table is None else table
+        with self.lock:
+            pins = {(v.get("pid"), v.get("proc_start")) for v in self.jobs.values() if isinstance(v, dict)}
+        seen = set()
+        while type(pid) is int and pid > 1 and pid not in seen and len(seen) < 64:
+            seen.add(pid)
+            row = table.get(pid)
+            if row is None:
+                return False
+            if (pid, row[2]) in pins:
+                return True
+            pid = row[0]
+        return False
+
+    def accept_verified(self, it, table=None):
+        """Host-only caller proof. Freeze wrapper identity and completion fields before it runs."""
+        table = procs() if table is None else table
+        pid, key = it.get("pid"), it.get("key")
+        row = table.get(pid) if type(pid) is int else None
+        if row is None or row[2] != it.get("proc_start") or not isinstance(key, str):
+            return False
+        since = it.get("_ctime")
+        if not isinstance(since, (int, float)) or abs(row[3] - since) > LAUNCH_SKEW:
+            return False
+        with self.lock:
+            if not isinstance(self.jobs.get(key), dict):
+                self.jobs[key] = {f: str(it.get(f) or "")[:400] for f in FIELDS} | {"pid": pid, "proc_start": row[2]}
+                self.dirty = True
+            self.jobs[key].update(pid=pid, proc_start=row[2])
+            self.dirty = True
+            while len(self.jobs) > 4 * KEEP:
+                self.jobs.pop(next(iter(self.jobs)))
+            return isinstance(self.jobs.get(key), dict)
 
     def judge(self, it, contexts, table=None, sids=None):
         """First sight of an outside item: remember whether it was launched by this harness in a trusted turn."""
@@ -243,7 +287,7 @@ class Launch:
             live = time.time() - CHAIN_TTL
             self.chains = {k: v for k, v in self.chains.items() if v[0] >= live}
             self.owner = {k: v for k, v in self.owner.items() if v in self.chains}
-            body = json.dumps({"trusted": self.trusted, "taint": self.taint, "jobs": self.jobs, "owner": self.owner,
+            body = json.dumps({"boot": self.boot, "trusted": self.trusted, "taint": self.taint, "jobs": self.jobs, "owner": self.owner,
                                "chains": self.chains}, ensure_ascii=False).encode()
             self.dirty = False
         try:

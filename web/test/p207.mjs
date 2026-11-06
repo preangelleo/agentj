@@ -93,7 +93,7 @@ async function shots() {
     try {
       await click(p, '#mWeek'); await sleep(450); await save(p, `zh-${sz}-usage`); await esc(p); await sleep(200);
       await openSettings(p);
-      for (const [sel, name] of [['#set-hb-row', 'heartbeat'], ['#set-s-look', 'look'], ['#set-mode', 'mode'], ['#set-risk-cmd', 'copy']]) {
+      for (const [sel, name] of [['#set-hb-row', 'heartbeat'], ['#set-s-look', 'look'], ['#set-mode', 'mode'], ['#set-risk', 'risk']]) {
         if (await scrollTo(p, sel)) { await sleep(150); await save(p, `zh-${sz}-${name}`); }
       }
       if (await ev(p, `!!document.getElementById('set-contacts-nav')`)) {
@@ -166,12 +166,9 @@ try {
       try {
         await openSettings(p);
         const r = await ev(p, `[...document.querySelectorAll('#settings .setcopy')].map((b) => ({ txt: b.textContent.trim(), aria: b.getAttribute('aria-label'), title: b.title, svg: !!b.querySelector('svg'), w: b.getBoundingClientRect().width, h: b.getBoundingClientRect().height, vis: !b.closest('[hidden]') }))`);
-        ok(r.length >= 5, 'copy buttons ' + r.length);
+        ok(r.length === 3, 'only legacy fallback copy buttons ' + r.length);
         for (const b of r) ok(b.txt === '' && b.svg && b.aria === '复制命令' && b.title === '复制命令', 'icon button ' + JSON.stringify(b));
         for (const b of r.filter((x) => x.vis)) ok(b.w >= 43.5 && b.h >= 43.5, '44 px ' + JSON.stringify(b));
-        await p.send('Browser.grantPermissions', { permissions: ['clipboardReadWrite', 'clipboardSanitizedWrite'] }).catch(() => {});
-        await click(p, '#settings .setcopy[data-copy="set-risk-cmd"]'); await sleep(250);
-        ok(await ev(p, `document.querySelector('#settings .setcopy[data-copy="set-risk-cmd"]').dataset.done === '1'`), 'copied feedback ✓');
       } finally { await p.dispose(); }
     });
 

@@ -3468,6 +3468,14 @@ Additive; line mode above is unchanged and stays the fallback. Host block `termi
 - **Input:** `{"t":"term_in","id","seq","d"}` — `d` = xterm `onData` text (control bytes and escapes allowed), ≤ 8 KiB UTF-8,
   ≤ 64 KiB/s (excess refused, one notice line); accepted only from a device on the session's writer list (today: the opener).
   `term_keys` on a pty session = the bytes Ctrl+C / Ctrl+\.
+- **Native colour/cursor reports (2026-11-06):** `term_in` may carry `reply:true` for one complete ≤128-character
+  OSC 4 (index 0–255), 10, 11 or 12 `rgb:h/h/h` response (1–4 hex digits per component, BEL or ST), or cursor-position
+  DSR `CSI [?] row ; col R` (positive 1–4 digit coordinates), or the single literal status response `CSI 0 n`. The host validates the entire frame independently. Existing
+  writer/session/disconnection/e-stop and byte-rate guards still apply. Only a positively identified foreground program,
+  outside a shell prompt and outside query/confirmation holds, receives it immediately even during the launch typeahead hold.
+  Invalid, mixed, unknown-foreground or mistimed reports are refused and never queued for a later prompt. Reports do not
+  consume an owner Enter sequence, cancel a confirmation, enter the typed-echo ring or signal owner activity.
+
 - **Resize:** `{"t":"term_resize","id","cols","rows"}` (opener only, ≤ 20/s) → TIOCSWINSZ (the kernel sends SIGWINCH); recorded as
   an asciicast `"r"` event.
 - **Output:** `{"t":"term_out","id","seq","d","prompt"?:true}` — the masked VT stream (escapes kept, OSC 52 removed), ≤ 16 KiB per

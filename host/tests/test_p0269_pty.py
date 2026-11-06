@@ -165,6 +165,20 @@ class Pty(Rig):
         await self.until(lambda: want in self.out(n0), timeout)
         return n0
 
+    async def confirmed_line(self, line, want):
+        # Environment-inspection fixtures legitimately require the secret-read gate.
+        x = self.desk.term
+        await self.until(lambda: x.at_prompt and x.hold is None)
+        n0 = len(self.sent)
+        await self.typed(line + "\r")
+        c = await self.until(lambda: self.confirm(n0))
+        await self.desk.on_phone(self.s, {"t": "term_line", "id": x.id, "line": c["line"], "seq": 500,
+                                        "n": c["n"], "fa": FA,
+                                        **signed(self.phone, "term_line", {"id": x.id, "line": c["line"]}, c["n"])})
+        await self.until(lambda: want in self.out(n0))
+        await self.until(lambda: x.at_prompt)
+        return n0
+
     def confirm(self, n0):
         return next((o for _, o in self.sent[n0:] if o.get("t") == "term_confirm"), None)
 
@@ -185,7 +199,7 @@ class Pty(Rig):
             # w2-sec H-2: the owner's start-up files are NOT read (FROM_RC unset, no rc-bin on PATH, no sudo alias)
             await self.run_line("./tty.py", "TTY|True|True|xterm-256color|True|None")
             # (the owner masking hides some PATH values as an assignment, so test it in the shell)
-            n0 = await self.run_line('declare -f sudo; [[ ":$PATH:" == *"/rc-bin:"* ]] && echo HAS-RC""-BIN || echo NO-RC""-BIN',
+            n0 = await self.confirmed_line('declare -f sudo; [[ ":$PATH:" == *"/rc-bin:"* ]] && echo HAS-RC""-BIN || echo NO-RC""-BIN',
                                      "NO-RC-BIN")
             self.assertIn("-k -A", self.out(n0))               # the checked function is there
             x = self.desk.term
@@ -509,7 +523,7 @@ class Pty(Rig):
 
         async def go():
             await self.open_pty()
-            await self.run_line("env > env.txt; echo env-ok", "env-ok")
+            await self.confirmed_line("env > env.txt; echo env-ok", "env-ok")
         with mock.patch.dict(os.environ, fake):
             self.run_async(go)
         env = (self.work / "env.txt").read_text()

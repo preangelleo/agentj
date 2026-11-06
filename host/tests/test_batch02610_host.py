@@ -35,7 +35,7 @@ class Mail(Delivery):
         await self.grant()
         row=self.service.load()['grants']['story']
         row['core'].pop('mail_account')
-        self.assertEqual(self.service.why(row,self.contract),'account_changed')
+        self.assertEqual(self.service.why(row,self.contract),'smtp_binding_required')
         await self.grant()
         self.assertIsNone(self.service.why(self.service.load()['grants']['story'],self.contract))
 

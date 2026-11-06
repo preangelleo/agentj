@@ -23,7 +23,7 @@
 // open is signed over {"mode":"pty"} with the size; keystrokes / pastes → `term_in` (≤ 8 KiB a frame, ≤ 64 KiB/s), the grid →
 // `term_resize`, `term_out.d` → xterm. Face ID, the login card, limits, 结束, the confirm / sudo sheets stay this page's.
 // A host without "pty", a 「!」 line or a module that did not load → the line mode above.
-import { register } from './termhook.js';
+import { register, termInfo } from './termhook.js';
 import { request, done, sendApp, gen, channel } from './session.js';
 import { controlMessage, controlObject, sealValue, elevateFields, elevateDigest, elevateMessage, sha256hex, b64u, unb64u } from '../proto/wire.js';
 import { signKey } from './store.js';
@@ -59,7 +59,7 @@ function fresh() {
   return { phase: 'idle', minutes: 15, G: null, ch: null, r1: null, r2: null, id: null, expires: 0, fa: null, seq: 0, atPrompt: true,
     hist: [], hi: -1, draft: '', prefill: '', login: null, hiddenAt: 0,
     view: 'full', origin: 'settings', bang: null, pendBang: null, go: null, reCollapse: false,   // P414
-    enable: false,   // P417 #185
+    enable: false, resume: null, prefillSeq: 0, prefillBusy: null, prefillPending: false, prefillCap: false, resumeCap: false,   // P417 #185
     pty: false, px: null, sentSize: null, inSeq: 0, inQ: [], inQb: 0, budget: PTY_RATE, budgetAt: 0, inTimer: 0, size: null, rsTimer: 0 };   // 0.26.9 #463
 }
 let root = null, tick = 0, hideTimer = 0, closeTimer = 0;
@@ -97,7 +97,7 @@ function build() {
   const bottom = mk('div', 'term-bottom');
   const status = mk('p', 'term-status'); status.id = 'term-status'; status.hidden = true; status.setAttribute('role', 'status');
   const stActs = mk('div', 'term-acts term-stacts'); stActs.id = 'term-stacts'; stActs.hidden = true;
-  stActs.append(btn('term-rescue', 'term-btn'), btn('term-back', 'term-btn term-btn--yes'));
+  stActs.append(btn('term-resume', 'term-btn term-btn--yes'), btn('term-rescue', 'term-btn'), btn('term-back', 'term-btn term-btn--yes'));
   const prog = mk('p', 'term-hint'); prog.id = 'term-prog'; prog.hidden = true;
   const bad = mk('p', 'term-hint'); bad.id = 'term-bad'; bad.hidden = true; bad.setAttribute('role', 'alert');
   const form = mk('form', 'term-form'); form.id = 'term-form'; form.autocomplete = 'off'; form.noValidate = true;
@@ -146,6 +146,7 @@ function build() {
   $('term-shot').addEventListener('click', () => { shot().catch(() => toast(t('p414.shotFail'), 3600, 'error')); });
   go.addEventListener('click', () => takeGo());
   $('term-back').addEventListener('click', () => hide());
+  $('term-resume').addEventListener('click', () => { const i = termInfo(); if (i && S.resume) open('', i); });
   $('term-rescue').addEventListener('click', () => { hide(); H.openRescue(); });
   form.addEventListener('submit', (e) => { e.preventDefault(); sendLine(); });
   input.addEventListener('keydown', (e) => {
@@ -185,6 +186,7 @@ function labels() {
   $('term-k-up').setAttribute('aria-label', t('p408.k.up'));
   $('term-k-down').setAttribute('aria-label', t('p408.k.down'));
   for (const b of root.querySelectorAll('[data-ins]')) b.setAttribute('aria-label', t('p408.k.ins', { c: b.dataset.ins }));
+  $('term-resume').textContent = t('terminal.resume'); $('term-resume').hidden = !S.resume;
   $('term-rescue').textContent = t('p408.rescue');
   $('term-back').textContent = t('p408.back');
   for (const [id, k] of [['term-grab', 'p414.grab'], ['term-exit', 'p414.exit']]) { $(id).setAttribute('aria-label', t(k)); $(id).title = t(k); }
@@ -429,12 +431,14 @@ function open(prefill, info, o = {}) {
   if (S.phase === 'ready') { show(); setInput(prefill); return true; }
   if (S.phase !== 'idle') { show(); if (o.go) S.go = o.go; return true; }
   if (phoneConfirmation()) return false;
+  if (!o.bang && !info?.pty) { toast(t('terminal.upgradePty'), 7000, 'error'); return false; }
   if (!canAssert()) { noPasskey(); return false; }
-  S = fresh(); S.prefill = prefill || ''; S.minutes = info?.minutes || 15;
+  const resume = S.resume && info?.resume ? S.resume : null;
+  S = fresh(); S.resume = resume; S.prefillCap = info?.prefill === true; S.resumeCap = info?.resume === true; S.prefill = prefill || ''; S.minutes = info?.minutes || 15;
   build(); wipe(); S.prefill = prefill || '';
   S.origin = o.bang || o.go ? 'chat' : 'settings'; S.pendBang = o.bang || null; S.go = o.go || null;
   S.enable = !!o.enable && !o.bang && !o.go;
-  S.pty = !!info?.pty && !o.bang && !S.enable;   // 0.26.9 #463: a 「!」 line keeps line mode (its result card needs term_line)
+  S.pty = !!info?.pty && !o.bang;   // 0.26.9 #463: a 「!」 line keeps line mode (its result card needs term_line)
   if (S.origin === 'chat') H.goChat();
   S.phase = 'intro'; S.G = gen();
   paintChrome(); show();
@@ -444,7 +448,7 @@ function open(prefill, info, o = {}) {
     onYes: introYes, onNo: () => { const b = S.pendBang; S.phase = 'idle'; abandon(); if (b) restore(b.line); } });
   if (!S.pty) fetchChallenge();
   else loadPty().then(() => { if (S.phase === 'intro') fetchChallenge(); },
-    () => { if (S.phase !== 'intro') return; S.pty = false; paintChrome(); toast(t('pty.loadFail'), 5000, 'error'); fetchChallenge(); });   // fallback: line mode
+    () => { if (S.phase !== 'intro') return; closeSheet(); abandon(); toast(t('terminal.loadFailed'), 7000, 'error'); });   // fallback: line mode
   return true;
 }
 function abandon() { if (S.r1) done(S.r1); if (S.r2) done(S.r2); S.phase = 'idle'; hideQuiet(); }
@@ -453,7 +457,7 @@ function hideQuiet() { S.phase = 'idle'; hide(); }
 function fetchChallenge() {
   S.ch = null;
   let timer = 0;
-  const r = request(S.enable ? { t: 'term_open', mode: 'enable' } : S.pty ? { t: 'term_open', ...ptyOpen() } : { t: 'term_open' }, (m) => {
+  const r = request(S.enable ? { t: 'term_open', ...(S.pty ? ptyOpen() : {}), mode: 'enable' } : S.pty ? { t: 'term_open', ...ptyOpen() } : { t: 'term_open' }, (m) => {
     if (m.t !== 'ctl_res' && m.t !== 'offline') return;
     clearTimeout(timer); done(r); if (S.r1 === r) S.r1 = null;
     if (S.phase !== 'intro') return;
@@ -481,14 +485,14 @@ function introYes() {
     try {   // P414 (R3-4): the PRF is zeroed even when signing throws before the seal
       if (S.phase !== 'intro') return;
       S.fa = c.fa; S.faS = c.fa_s;   // P539: the later sheets (confirm / sudo) say the same about this passkey
-      const obj = { mode: S.enable ? 'enable' : S.pty ? 'pty' : 'line' };   // P417 #185 · 0.26.9 #463: the signature names what it is for
+      const obj = { mode: S.enable ? 'enable' : S.pty ? 'pty' : 'line', ...(S.resume ? {resume: S.resume} : {}) };   // P417 #185 · 0.26.9 #463: the signature names what it is for
       const signed = await signCtl('term_open', obj, c.n);
       const sealed = prf ? await sealPrf(c.epk, prf, c.n, 'term_open', obj) : {};
       closeSheet();
       S.phase = 'opening'; paintChrome(); status(t('p408.opening'));
       const size = S.pty ? ptyOpen() : null;
       if (size) S.sentSize = { cols: size.cols, rows: size.rows };
-      openStep2({ t: 'term_open', ...(S.enable ? { mode: 'enable' } : size || {}), ...signed, fa, ...sealed });
+      openStep2({ t: 'term_open', ...(S.enable ? { ...(size || {}), mode: 'enable' } : size || {}), ...signed, fa, ...sealed });
     } finally { prf?.fill(0); }
   }, (e) => {
     if (S.phase !== 'intro') return;
@@ -524,7 +528,7 @@ function refuse(why, m = {}) {
 function ready(m) {
   if (S.phase !== 'opening' || typeof m.id !== 'string' || !HEX16.test(m.id) || !Number.isInteger(m.expires_at)) return refuse('shape');
   closeSheet();
-  S.phase = 'ready'; S.id = m.id; S.expires = m.expires_at; S.seq = 0; S.atPrompt = true; S.login = null;
+  S.phase = 'ready'; S.resume = null; S.id = m.id; S.expires = m.expires_at; S.seq = 0; S.atPrompt = true; S.login = null;
   status('');
   paintChrome();
   clearInterval(tick); tick = setInterval(onTick, 1000);
@@ -536,7 +540,7 @@ function ready(m) {
   if (b) { collapse(); sendLine(b.line, b.sid); }   // P414: opened for a 「!」 line — it runs behind the chip
 }
 function setInput(v) {
-  if (S.pty && S.px) { if (v) { S.go = { cmd: String(v).replace(CTRL, ' ').slice(0, LINE_MAX), h: '', own: true }; paintGo(); } S.px.focus(); return; }   // 0.26.9: typed in only on a tap
+  if (S.pty && S.px) { if (v) { S.go = { cmd: String(v).slice(0, LINE_MAX), h: '', own: true }; S.prefillPending = true; paintGo(); } S.px.focus(); return; }   // 0.26.9: typed in only on a tap
   const i = $('term-input');
   if (v) i.value = String(v).replace(CTRL, ' ').slice(0, LINE_MAX);
   try { i.focus({ preventScroll: true }); i.setSelectionRange(i.value.length, i.value.length); } catch { /* old browsers */ }
@@ -690,7 +694,7 @@ function goInto(g) {
 function takeGo() {
   const g = S.go;
   if (!g) return;
-  if (S.pty) { S.go = null; ptyType(g.cmd); S.goNote = true; paintGo(); return; }
+  if (S.pty) { ptyType(g.cmd); return; }
   const i = $('term-input');
   if (i.value && S.hist[S.hist.length - 1] !== i.value) S.hist.push(i.value);   // the owner's words stay reachable with ↑
   i.value = g.cmd; S.go = null; S.goNote = true;
@@ -792,10 +796,16 @@ function onMsg(m) {
     if (m.t === 'term_close' && S.phase === 'opening') refuse(CLOSE_WHY.includes(m.why) ? m.why : 'host');
     return;
   }
+  if (m.t === 'term_prefill_res' && m.seq === S.prefillBusy) {
+    S.prefillBusy = null;
+    if (m.ok === true) { S.go = null; S.goNote = true; }
+    else toast(t('terminal.prefillBusy'), 5000, 'error');
+    paintGo(); return;
+  }
   if (m.t === 'term_out' && S.pty) {   // 0.26.9 #463: the raw VT stream (masked by the host), escape sequences kept
     const d = typeof m.d === 'string' ? m.d : typeof m.data === 'string' ? m.data : '';
     if (d && S.px) S.px.write(d.slice(0, 65536));
-    if (m.prompt === true) S.atPrompt = true;
+    if (m.prompt === true) { S.atPrompt = true; if (S.prefillPending && S.go) { S.prefillPending = false; ptyType(S.go.cmd); } }
     return;
   }
   if (m.t === 'term_out') { if (typeof m.data === 'string') out(m.data.slice(0, 65536)); if (m.prompt === true) { S.atPrompt = true; paintProg(); } return; }
@@ -881,15 +891,16 @@ function closed(why) {
 function dropped() {
   if (S.phase === 'intro' || S.phase === 'opening') return refuse('offline');
   if (S.phase !== 'ready') return;
+  const resume = S.pty && S.resumeCap ? S.id : null;
   S.phase = 'closed';
   queue.length = 0; closeSheet();
   clearInterval(tick); tick = 0;
   clearTimeout(S.bang?.timer); S.bang = null;
-  if (S.view === 'collapsed') { wipe(); toast(t('p408.dropped'), 5000, 'error'); hide(); return; }   // P414
+  if (S.view === 'collapsed') { wipe(); toast(t('p408.dropped'), 5000, 'error'); hide(); S.resume = resume; return; }   // P414
   paintChrome();
-  status(t('p408.dropped'));
+  status(t(resume ? 'terminal.reconnect' : 'p408.dropped'));
   $('term-stacts').hidden = false;
-  wipe();
+  wipe(); S.phase = 'idle'; S.resume = resume; $('term-resume').hidden = !resume;
 }
 function onTick() {
   if (S.phase !== 'ready') return;
@@ -947,12 +958,12 @@ function loadPty() {
 }
 /** §A: cols 20..400, rows 5..200. */
 export const clampSize = (c, r) => ({ cols: Math.max(20, Math.min(400, Math.floor(Number(c) || 80))), rows: Math.max(5, Math.min(200, Math.floor(Number(r) || 24))) });
-function ptyOpen() { const g = S.size || ptyMod?.guess() || { cols: 80, rows: 24 }; return { mode: 'pty', ...clampSize(g.cols, g.rows) }; }
+function ptyOpen() { const g = S.size || ptyMod?.guess() || { cols: 80, rows: 24 }; return { mode: 'pty', ...clampSize(g.cols, g.rows), ...(S.resume ? {resume: S.resume} : {}) }; }
 function ptyStart() {
   if (!ptyMod || S.px) return;
   const host = $('term-xt');
   host.hidden = false; host.parentElement.firstElementChild.hidden = true;   // the line-mode output steps aside
-  S.px = ptyMod.mount(host, { data: ptyIn, resize: ptyResize });
+  S.px = ptyMod.mount(host, { data: ptyIn, reply: ptyReply, resize: ptyResize, pasteBlocked: () => toast(t('terminal.pasteBlocked'), 5000) });
   root.querySelector('.term-bottom').insertBefore(S.px.bar, $('term-tools'));
   const z = S.px.fit();
   ptyResize(z.cols, z.rows);
@@ -966,6 +977,15 @@ function ptyIn(d) {
   S.inQ.push(d); S.inQb += n;
   if (/[\r\n]/.test(d)) { S.atPrompt = false; if (S.goNote) { S.goNote = false; paintGo(); } }
   ptyFlush();
+}
+/** Native terminal protocol replies are bounded and immediate. They cannot queue across a sheet or disconnect. */
+function ptyReply(d) {
+  if (S.phase !== 'ready' || !S.pty || !d || sheet) return;
+  const now = Date.now(), n = utf8Len(d);
+  S.budget = Math.min(PTY_RATE, S.budget + (S.budgetAt ? (now - S.budgetAt) * PTY_RATE / 1000 : 0)); S.budgetAt = now;
+  if (n > 128 || S.budget < n) return;
+  S.budget -= n;
+  send({ t: 'term_in', id: S.id, seq: ++S.inSeq, d, reply: true });
 }
 /** ≤ PTY_FRAME bytes a frame, ≤ PTY_RATE bytes a second (a token bucket); the rest waits, in order. */
 function ptyFlush() {
@@ -1002,7 +1022,12 @@ function ptyResize(cols, rows) {
   }, 120);
 }
 /** A command typed in for the owner — never with Enter (the host's confirm still sees the line when Enter comes). */
-function ptyType(cmd) { if (S.px && cmd) { S.px.type(cmd); S.px.focus(); } }
+function ptyType(cmd) {
+  if (!S.px || !S.prefillCap || !cmd || /[\x00-\x1f\x7f-\x9f\u2028\u2029]/.test(cmd) || S.prefillBusy) return;
+  S.prefillBusy = ++S.prefillSeq;
+  send({t:'term_prefill',id:S.id,seq:S.prefillBusy,cmd});
+  S.px.focus();
+}
 /** A dangerous line refused / expired in the PTY: Ctrl+U clears it at the prompt (§A: the host holds the Enter). */
 function ptyRefuse(expired = false) {
   if (!S.pty || !S.px || S.phase !== 'ready') return;

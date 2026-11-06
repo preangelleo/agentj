@@ -248,6 +248,9 @@ async def new_session(host) -> dict:
     if a is None:
         return {"ok": False, "why": "no_agent"}
     if (getattr(a, "cfg", None) or {}).get("session_mode") == "shared":
+        if a.kind == "claude" and getattr(a, "session", None) is None:
+            # The owner's existing repair button can bootstrap the managed shared process remotely.
+            return await host.agent_reconnect()
         return {"skip": True, "why": "shared"}
     if getattr(a, "status", None) in ("working", "compacting"):
         return {"ok": False, "why": "agent_working"}

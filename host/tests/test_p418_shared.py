@@ -30,7 +30,7 @@ from agentj import shared, harness_setup, resource_policy  # noqa: E402
 
 PIN = "aaaaaaaa-1111-1111-1111-111111111111"
 NEWID = "bbbbbbbb-2222-2222-2222-222222222222"
-OLD_TEXT = "共享 Claude 会话不存在或有多个匹配"
+OLD_TEXT = "Claude 会话没接上"
 
 
 class Host:

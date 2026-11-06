@@ -162,7 +162,8 @@ def claude_sessions(directory: str, sid: str = "", owner_only: bool = False) -> 
             out.append(d)
         except (OSError, ValueError, TypeError):
             continue
-    return sorted(out, key=lambda d: int(d.get("updatedAt") or 0), reverse=True)
+    return sorted(out, key=lambda d: (int(d.get("updatedAt") or 0), int(d.get("startedAt") or 0),
+                                      str(d.get("sessionId") or "")), reverse=True)
 
 
 CLAUDE_SID = re.compile(r"[0-9a-fA-F-]{8,64}")
@@ -308,6 +309,11 @@ class SharedClaudeAgent(Agent):
         self.heal_choices = []          # P147: live owner sessions when Agent J could not tell which one to serve
         self.heal_told = None
         self.healed = None              # P147: (old sid, new sid, how) to announce once the new session is attached
+        self._managed_attempted = False  # one automatic startup per serve; an owner repair may retry
+        self._upgrade_restart = False
+        with contextlib.suppress(OSError, TypeError, ValueError):
+            from . import update
+            self._upgrade_restart = bool(update.upgrade_due(self.host.st))
         self.lost_started = 0           # P147: startedAt (ms) of the served session that went away
         # P151: a turn that ends on a tool call (ScheduleWakeup, Monitor, …) gets no native Stop; the transcript still
         # records its end (system/turn_duration). Its reply = the last assistant text since the turn (or phone input) began.
@@ -1211,6 +1217,10 @@ class SharedClaudeAgent(Agent):
     def is_down(self):
         return self.failed_start
 
+    def readiness(self):
+        ready = self.session is not None and not self.failed_start and not self._observe_down
+        return {"ready": ready, "code": "attached" if ready else "session_disconnected"}
+
     async def command(self, name, arg):
         from .slash import Result, HELP
         if name == "help":
@@ -1593,8 +1603,10 @@ class SharedClaudeAgent(Agent):
                 choice, how = told[0], "announced"
             elif self.lost_started and len(newer) == 1:
                 choice, how = newer[0], "newer"
+        if choice is None and rows:
+            choice, how = rows[0], "recent"  # registry is newest-updated first, exact cwd + owner only
         if choice is None:
-            self.heal_choices = [d["sessionId"] for d in rows]
+            self.heal_choices = []
             return []
         self._repin(dead, choice, how)
         return [choice]
@@ -1637,7 +1649,16 @@ class SharedClaudeAgent(Agent):
                     return {"ok": True, "changed": False, "session": self.session["sessionId"][:8]}
                 self._lost()
             self.heal_told = None
-            ok = await self._attach_selected(False)
+            self._managed_attempted = False
+            # The paired owner's repair can resume a known conversation or create a managed one.
+            # Unknown pins are never resumed; fresh startup retains the configured folder and permissions.
+            pinned = self.cfg.get("shared_session_id", "")
+            REBOOT_TRIED.discard(pinned)
+            self._resume_requested = True
+            try:
+                ok = await self._attach_selected(True)
+            finally:
+                self._resume_requested = False
             if ok:
                 return {"ok": True, "changed": True, "session": self.session["sessionId"][:8]}
             if not self.heal_choices:
@@ -1650,6 +1671,17 @@ class SharedClaudeAgent(Agent):
 
         if not CLAUDE_SID.fullmatch(pinned or ""):
             return None
+        try:
+            transcript = claude_transcript(self.cfg["dir"], pinned)
+            known = last_served == pinned and transcript.is_file()
+            if getattr(self, "_resume_requested", False):
+                return "resume_requested" if known else "new_managed"
+            from . import update
+            if self._upgrade_restart or update.upgrade_due(self.host.st):
+                return "resume_after_upgrade" if known else "new_managed"
+        except (OSError, TypeError, ValueError):
+            if getattr(self, "_resume_requested", False):
+                return None
         boot = boot_time()
         if boot is None:
             return None
@@ -1672,7 +1704,10 @@ class SharedClaudeAgent(Agent):
         def log(result, **kw):
             self.host.st.log("shared_reboot_resume", agent=self.kind, how=plan, result=result, session=pinned[:8], **kw)
         try:
-            await self.ordinary_start(resume=pinned if plan == "resume" else None)
+            await self.ordinary_start(resume=pinned if plan.startswith("resume") else None)
+        except asyncio.CancelledError:
+            await self._drop_native()
+            raise
         except (OSError, ValueError) as e:
             log("failed", error=type(e).__name__)
             await self._drop_native()
@@ -1683,14 +1718,19 @@ class SharedClaudeAgent(Agent):
             await self._drop_native()
             return []
         new = rows[0]
-        if plan == "resume" and new["sessionId"] == pinned:
+        if plan.startswith("resume") and new["sessionId"] == pinned:
             log("same")
             lang = getattr(self.host, "lang", "zh")
-            self.host.agent_notice(pick(lang, f"Agent J 主机重启过，Agent J 已在后台重新打开你之前的 Claude Code 会话（{pinned[:8]}）并接上了。",
+            if plan == "resume":
+                notice = pick(lang, f"Agent J 主机重启过，Agent J 已在后台重新打开你之前的 Claude Code 会话（{pinned[:8]}）并接上了。",
                                         f"The computer restarted; Agent J reopened your previous Claude Code session ({pinned[:8]}) "
-                                        "in the background and is attached to it."))
+                                        "in the background and is attached to it.")
+            else:
+                notice = pick(lang, "程序升级或重新连接后，之前的 Claude 会话已重新接上。",
+                              "Your previous Claude session is attached again after the upgrade or reconnect.")
+            self.host.agent_notice(notice)
         else:
-            self._repin(pinned, new, "resumed" if plan == "resume" else "new_after_reboot")
+            self._repin(pinned, new, "resumed" if plan.startswith("resume") else "new_after_reboot")
             log("repinned", new=new["sessionId"][:8])
         return [new]
 
@@ -1722,6 +1762,8 @@ class SharedClaudeAgent(Agent):
         return ok
 
     async def _attach_once(self, allow_start=True):
+        if self.native is not None and self.native.returncode is not None:
+            await self._drop_native()
         pinned = self.cfg.get("shared_session_id", "")
         if pinned and pinned == self.host.st.agent_session(self.kind + ".clear_from"):
             self.cfg["shared_session_id"] = self.host.st.agent_session(self.kind) or pinned
@@ -1733,11 +1775,20 @@ class SharedClaudeAgent(Agent):
         if (not sessions and pinned and not self.heal_choices and self.native is None and allow_start
                 and pinned not in REBOOT_TRIED):
             sessions = await self._reboot_resume(pinned)    # P418 (#183 ①): gone because the computer restarted
-        if not sessions and not self.cfg.get("shared_session_id") and self.native is None and allow_start:
-            await self.ordinary_start()
-            sessions = claude_sessions(self.cfg["dir"])
+        if (not sessions and not self.cfg.get("shared_session_id") and self.native is None and allow_start
+                and not self._managed_attempted):
+            self._managed_attempted = True
+            try:
+                await self.ordinary_start()
+                sessions = [d for d in claude_sessions(self.cfg["dir"]) if d["pid"] == self.native.pid]
+            except asyncio.CancelledError:
+                await self._drop_native()
+                raise
+            except (OSError, ValueError):
+                await self._drop_native()
         if len(sessions) > 1 and not pinned:
-            self.heal_choices = [d["sessionId"] for d in sessions]
+            self._repin("", sessions[0], "recent")
+            sessions = sessions[:1]
         if len(sessions) != 1:
             if self.heal_choices and len(self.heal_choices) > 1:
                 if self.heal_told != tuple(self.heal_choices):
@@ -1746,7 +1797,7 @@ class SharedClaudeAgent(Agent):
                 self.failed_start = True
                 return False
             if not self.failed_start:
-                self.local_fail(pick(getattr(self.host, "lang", "zh"), "共享 Claude 会话不存在或有多个匹配：在Agent J 主机指定 session id。", "Choose one live Claude session ID."))
+                self.local_fail(pick(getattr(self.host, "lang", "zh"), "Claude 会话没接上。请点「一键修复」；若仍未接上，点「请客服帮忙」。", "The Claude session is disconnected. Tap Repair; if it remains disconnected, tap Ask support."))
             self.failed_start = True
             return False
         self.session = sessions[0]

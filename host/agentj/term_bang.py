@@ -322,8 +322,7 @@ class BangDesk:
             self._log("term_go", None, "refused:rate", {"cmd": cmd or ""})
             return {"ok": False, "error": "rate"}
         targets = [s for s in list(self.h.sessions.values()) if s.state == "ready" and getattr(s, "p33", False)
-                   and s.device in listed and self.st.is_allowed(s.pub) and not self._card_open_on(s.device)
-                   and store.device_kind(self.st, s.device) != "phone"]     # P417 #185: never on a phone
+                   and s.device in listed and self.st.is_allowed(s.pub) and not self._card_open_on(s.device)]
         if not targets:
             return {"ok": False, "error": "offline"}
         self.go_last = now

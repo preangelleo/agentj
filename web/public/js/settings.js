@@ -91,7 +91,6 @@ function renderJev() {
   el('set-jev-val').textContent = jevStr(n);
   el('set-jev-minus').disabled = n <= JEV_MIN;
   el('set-jev-plus').disabled = n >= JEV_MAX;
-  el('set-jev-cmd').textContent = cmdFor('approval.jev_threshold', jevStr(Math.max(JEV_MIN, n - 1)));
 }
 function setJev(n) {
   n = Math.min(JEV_MAX, Math.max(JEV_MIN, n));
@@ -451,22 +450,16 @@ export function render() {
   tgl('set-risk', risk);
   const goalAuto = pget('approval.goal_auto', true) !== false;          // P158: goal-mode 10-second countdown
   tgl('set-goal', goalAuto);
-  el('set-goal-cmd').textContent = cmdFor('approval.goal_auto', goalAuto ? 'false' : 'true');
   const qSwitch = pget('quota.auto_switch', false) === true;            // P254: quota alarm → new tasks to another AI account
   tgl('set-qswitch', qSwitch);
-  el('set-qswitch-cmd').textContent = cmdFor('quota.auto_switch', qSwitch ? 'false' : 'true');
-  el('set-risk-cmd').textContent = cmdFor('agent.high_risk_warnings', risk ? 'false' : 'true');
   renderJev();
   renderLevel();
   const mode = pget('agent.session_mode', 'independent') === 'shared' ? 'shared' : 'independent';   // P174: independent by default
   twoWay('set-updates', !autoUpdates());     // P207 two-way (left 自动 · right 先问我) over P203's two keys: 自动 = install when idle
   twoWay('set-mode', mode === 'shared');                                // P207: left 独立 · right 共享
-  el('set-mode-cmd').textContent = cmdFor('agent.session_mode', mode === 'shared' ? 'independent' : 'shared');
   const iso = pget('agent.isolation', true) !== false, dock = pget('agent.allow_docker', false) === true;
   tgl('set-iso', iso);
-  el('set-iso-cmd').textContent = cmdFor('agent.isolation', iso ? 'false' : 'true');
   tgl('set-docker', dock);
-  el('set-docker-cmd').textContent = cmdFor('agent.allow_docker', dock ? 'false' : 'true');
   isoScope(iso, mode);
   // P156: a host before 0.20 has no heartbeat: the row stays hidden
   const hbKnown = !!(hostInfo && Array.isArray(hostInfo.settable) && hostInfo.settable.includes('heartbeat.enabled'));
@@ -515,6 +508,7 @@ export function setRunCmds(names) {
 export function setPrefs(value, host) {
   prefs = value && typeof value === 'object' ? value : null;
   hostInfo = host && typeof host === 'object' ? host : null;
+  cmdrun.render(hostInfo);                  // #514b: chat repair knows the host whitelist before Settings opens
   renderRemotesRow();
   toolorder.fromHost(prefs);              // P340: every remote repaints the composer buttons from the broadcast
   forwarding.fromHost(prefs, hostInfo);   // P554: 转发去向 is the host's, the same on every remote
@@ -807,6 +801,7 @@ export function configure(hooks) {
     renderPush();
   });
   push.onChange(() => { if (isOpen()) renderPush(); });
+  el('connection-refresh').addEventListener('click', () => refreshApp());
   el('set-refresh').addEventListener('click', () => refreshApp());   // @ix app.refresh_web
   el('set-a2hs').addEventListener('click', onA2hs);
   el('set-mail-nav').addEventListener('click', () => showSub('mail'));   // P170

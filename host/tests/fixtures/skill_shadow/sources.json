@@ -1,0 +1,15 @@
+{
+  "v0.15.2a1": {
+    "commit": "d17b1eb06e2231ae843e4d9e6904ead137d3d219"
+  },
+  "v0.26.9": {
+    "commit": "dd3f6d311c5c7978a35371a683b8c539c36deb03"
+  },
+  "v0.26.10a4": {
+    "commit": "21b234b672a8375ba17acd4d9af236bc341ed97f"
+  },
+  "v0.26.12": {
+    "commit": "4516f081187043bd7cdea9ef631477bc03e302c8"
+  },
+  "zip_sha256": "bda70c0134b140027097cc8eded7864be11c392b81515d764e88e1ede5d2cacf"
+}

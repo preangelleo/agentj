@@ -3,7 +3,7 @@
 // (js/terminal.js + terminal.css) is loaded on the first open only, as a module script next to this file (never in the
 // first-screen bundle). P417 #185 (Leo 10-21): the terminal is used from a COMPUTER browser only. There the row can switch it
 // on for this browser (`term_open` mode "enable": Face ID + the Agent J host's login password, then it opens in this window);
-// the copyable `agentj terminal enable` stays as the other way. On a phone the row only says why not — no buttons. This
+// Settings shows CLI guidance only when this browser cannot enable it here. On a phone the row only says why not — no buttons. This
 // judgement is UX routing only; the host refuses a remote that paired as a phone by itself (terminal.py).
 import { signedWrite, whyText } from './controls.js';
 import { myIdSync } from './api.js';
@@ -28,6 +28,7 @@ function parse(x) {
   return { external_url: externalUrl(x.external_url), on: x.on, os: x.os, me: x.me === true, web_ok: x.web_ok !== false, sudo: MODES.includes(x.sudo) ? x.sudo : null,
     minutes, idle_s: Number.isInteger(x.idle_s) && x.idle_s > 0 ? x.idle_s : 300, open: x.open === true,
     until: Number.isInteger(x.until) ? x.until : null, pk: x.pk !== false,   // P417 #185: pk absent (older host) → no Face ID line
+    mobile: x.mobile === true, resume: x.resume === true, prefill: x.prefill === true,
     kind: ['phone', 'desktop', 'unknown'].includes(x.kind) ? x.kind : null,   // P417 #185: null = an older host (no remote enable)
     pty: Array.isArray(x.modes) && x.modes.includes('pty') };   // 0.26.9 #463: the host can run a real terminal (cap term_pty1)
 }
@@ -50,7 +51,7 @@ export function state() {
   if (!info) return 'none';
   if (info.external_url) return 'external';
   if (!info.os) return 'os';
-  if (info.kind === 'phone' || !computerBrowser()) return 'phone';
+  if (!info.mobile && (info.kind === 'phone' || !computerBrowser())) return 'phone';
   if (!info.on) return 'off';
   if (!info.me) return 'notme';
   return info.web_ok ? 'ok' : 'noweb';
@@ -59,7 +60,7 @@ export const usable = () => state() === 'ok';
 export const minutes = () => (info ? info.minutes : 15);
 export const termInfo = () => info && { ...info };
 /** P417 #185: the row may switch the terminal on for this computer browser (the host knows it paired as a computer). */
-export const canEnable = () => !!info && info.kind === 'desktop' && ['off', 'notme', 'noweb'].includes(state());
+export const canEnable = () => !!info && (info.mobile || info.kind === 'desktop') && ['off', 'notme', 'noweb'].includes(state());
 
 export function configure(h) {
   H = { ...H, ...h };
@@ -106,12 +107,12 @@ export function paint() {
         : t('p408.mode.' + (info.sudo || 'none'));
   // RESUME 9 ④: a remote paired before 0.25.1a1 has no recorded kind — the command, plus how to get the button
   if (info.kind === 'unknown' && ['off', 'notme', 'noweb'].includes(s)) el('set-term-state').textContent += ' ' + t('p417.repair');
-  el('set-term-cmdline').hidden = !cmd;
-  el('set-term-cmd').textContent = en ? 'agentj terminal enable' : cmd;   // P417: enable from here, or this line at the host
+  el('set-term-cmdline').hidden = !cmd || en;
+  el('set-term-cmd').textContent = en ? '' : cmd;   // #511: the enable button already performs this operation
   const nopk = s !== 'os' && s !== 'phone' && !info.pk;   // P417 #185: no passkey on this device yet → 「设置 Face ID」 first
   el('set-term-acts').hidden = s !== 'ok' || nopk;
   el('set-term-en').hidden = !en || nopk;
-  el('set-term-or').hidden = !en;
+  el('set-term-or').hidden = true;   // #511: no duplicate terminal-command alternative
   el('set-term-pk').hidden = !nopk;
   el('set-term-forget').hidden = !(info.sudo === 'prf' || info.sudo === 'local');
   el('set-term-note').textContent = t('p408.rowNote', { n: info.minutes });
@@ -155,6 +156,11 @@ function backToRow() {
   if (row && !row.hidden) row.scrollIntoView({ block: 'center' });
 }
 /** P417 #185: 「开启并打开网页终端」 — the open flow with mode "enable" (Face ID, then the host's login password card). */
+export function enter(prefill = '') {
+  if (usable()) return open(prefill);
+  if (canEnable() && info.pk) return load().then(m => m.open(String(prefill || ''), termInfo(), {enable: true}));
+  backToRow(); return Promise.resolve(false);
+}
 export function enable() {
   if (!canEnable() || !info.pk) return Promise.resolve(false);
   return load().then((m) => m.open('', termInfo(), { enable: true }), () => { toast(t('p408.loadFail'), 4000, 'error'); return false; });

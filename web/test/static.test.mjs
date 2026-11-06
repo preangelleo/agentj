@@ -192,7 +192,7 @@ test('index.html: CSP-compatible (no inline script/style, no on*=), noindex, zh-
   for (const id of ['status', 'pair-link', 'pair-go', 'scan', 'sas', 'send', 'badge', 'badge-panel', 'version-hash', 'repair', 'retry',
     'input', 'deck', 'om', 'rm', 'words', 'rmbar', 'sheet', 'pendTag', 'tray', 'mic', 'menu', 'sug', 'keys', 'rd', 'qbar', 'meta', 'water',
     'mWeek', 'm5h', 'brand-name', 'estop-banner', 'grant-bar', 'set-push', 'confirm', 'unpair', 'mem-view', 'act-view', 'tasks-view',
-    'setBtn', 'settings', 'keysBtn', 'set-remotes', 'set-remotes-open', 'rm-add', 'rm-list', 'rm-code', 'set-font-plus', 'set-refresh', 'set-a2hs', 'set-risk-cmd', 'set-mode-cmd', 'set-iso-cmd', 'set-docker-cmd']) {
+    'setBtn', 'settings', 'keysBtn', 'set-remotes', 'set-remotes-open', 'rm-add', 'rm-list', 'rm-code', 'set-font-plus', 'set-refresh', 'set-a2hs']) {
     assert.match(HTML, new RegExp(`id="${id}"`), `missing #${id}`);
   }
   const ids = [...HTML.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
@@ -686,13 +686,9 @@ test('F13 Settings: the gear replaced the bulb; s / ⌘, / Ctrl+, / ? wired; pre
   assert.doesNotMatch(SET, /pref_set'[^\n]*agent\./);
   assert.match(panel, /data-pref="agent\.high_risk_warnings"/, 'risk switch available');
   assert.match(panel, /data-pref="agent\.session_mode"/, 'mode switch available');
-  assert.match(SET, /cmdFor\('agent\.high_risk_warnings'/);
-  assert.match(SET, /cmdFor\('agent\.session_mode'/);
   // F14 (P45b): isolation and docker are the owner's switches on a paired phone
   assert.match(panel, /data-pref="agent\.isolation"/, 'isolation switch available');
   assert.match(panel, /data-pref="agent\.allow_docker"/, 'docker switch available');
-  assert.match(SET, /cmdFor\('agent\.isolation'/);
-  assert.match(SET, /cmdFor\('agent\.allow_docker'/);
   // update app: unregister every worker, drop Cache Storage, reload — no fetch (CSP connect-src = the relays only)
   assert.match(SET, /navigator\.serviceWorker\.getRegistrations\(\)/);
   assert.match(SET, /await r\.unregister\(\)/);

@@ -5062,5 +5062,29 @@
   "mcp474.last": "最近请求 {time}",
   "mcp474.copy": "复制连接地址",
   "ask.cat.service": "重启 Agent J 服务",
-  "p510.categoryNote": "{category}；Agent 原始说明见「展开全部」"
+  "p510.categoryNote": "{category}；Agent 原始说明见「展开全部」",
+  "terminal.paste": "粘贴",
+  "pty.k.paste": "粘贴剪贴板文字",
+  "pty.k.enter": "回车键（运行当前输入）",
+  "terminal.cardNote": "完整终端 · 手机上也能操作",
+  "terminal.execute": "执行",
+  "terminal.draft": "填入终端，等你按回车",
+  "terminal.danger": "危险命令：填入后请先检查，再按回车",
+  "terminal.prefillBusy": "请先回到空白的命令提示行，再点填入。",
+  "terminal.reconnect": "连接已断开。30 秒内可用通行密钥恢复原终端。",
+  "terminal.resume": "验证并恢复终端",
+  "terminal.pasteBlocked": "请长按终端输入区，选择粘贴。",
+  "terminal.upgradePty": "请先更新 Agent J 主机，再打开完整终端。",
+  "terminal.loadFailed": "终端没能加载，请重新打开。",
+  "connectionHelp": {
+    "text": "没连上 Agent J 主机，正在重连。请点「更新并刷新」；若仍是灰色，请打开「设置 → 紧急修复 → 请客服帮忙」。"
+  },
+  "sessionHelp.text": "{agent} 会话没接上，电脑仍在线。请点「修复会话连接」。若仍接不上，在「设置 → 安全 → 会话模式」选「独立会话」，保存成功后到「紧急修复」点「重启服务」；也可点「请客服帮忙」。",
+  "sessionHelp.repair": "修复会话连接",
+  "p515.skillsNote": "这些同名技能有修改或来源还没确认，请选择怎么处理。",
+  "p515.replace": "换成新版",
+  "p515.keep": "保留",
+  "p515.replaceConfirm": "将 {skill} 换成随包新版？所有工具目录中的原件会先备份，您自己的改动不会丢失。",
+  "p515.keepConfirm": "保留 {skill} 现在的副本？以后升级不会覆盖这些副本；内容再变时会重新提示。",
+  "p515.keepUnavailable": "暂时无法读取或确认这个副本，请先检查文件权限；原件已保留。"
 }

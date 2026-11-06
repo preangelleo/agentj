@@ -22,7 +22,7 @@ from . import term_mac
 from .term_askpass import NO_PYTHON, TOKEN_ENV, Helper, SudoDesk, in_session, safe_python
 from .term_bang import BangDesk, line_problem
 from .term_vshare import VshareDesk
-from .term_pty import CAP as PTY_CAP, PtyDesk, VtMasker, pick_shell as pty_shell, size_ok   # 0.26.9 (ADR-0269-pty): the PTY mode
+from .term_pty import CAP as PTY_CAP, PtyDesk, VtMasker, password_mode, pick_shell as pty_shell, size_ok
 from .term_mask import Masker
 from .term_shell import (HIST_SETUP, Term, _sha, checked_sudo, classify, local_ok, platform_ok, scrub_history, service_keys,
                          shell_env)
@@ -31,9 +31,11 @@ TOOL = "AgentJTerminal"            # the host card for `enable` / `allow` (appro
 PHONE_TYPES = ("term_open", "term_line", "term_keys", "term_close", "term_forget", "term_sudo_ok", "term_sudo_no")
 PHONE_TYPES += ("vault_share",)     # P414 (§37.11): term_vshare.py
 PHONE_TYPES += ("term_in", "term_resize", "term_confirm_no")   # 0.26.9 (§38.15): PTY keys / size / 「取消」 (term_pty.py)
+PHONE_TYPES += ("term_prefill",)
 ESTOP_OK = ("term_close", "term_forget")
 NONCE_TTL, CONFIRM_TTL, PENDING_MS, CARD_TTL = 120, 120, 180000, 300
 HIDDEN_S, KILL_GRACE, CAST_DAYS = 60, 3.0, 30
+RECONNECT_S, REPLAY_CHARS = 30, 128 * 1024
 LINE_MAX, FRAME_CHARS, RATE = 4096, 4000, 64 * 1024
 UNRECORDED = "[输入给正在运行的程序，未记录]"
 _HEX32 = re.compile(r"[0-9a-f]{32}")
@@ -112,7 +114,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
                "web_ok": bool(e) and (e["web"] or not store.is_web(self.st, device)), "minutes": cfg["minutes"],
                "idle_s": store.IDLE_S, "open": t is not None,
                "pk": bool(device) and self.st.passkey_of_device(device) is not None,   # P417 #185: 「先设置 Face ID」
-               "kind": store.device_kind(self.st, device),   # P417 #185: phone → 「只能在电脑浏览器里操控」; desktop may enable
+               "kind": store.device_kind(self.st, device), "mobile": True, "resume": True, "prefill": True,
                "modes": ["line", "pty"] if self.pty_supported() else ["line"]}   # 0.26.9 (§38.15): cap term_pty1
         why = self.pty_blocked()
         if why:                                  # w2-sec H-3: the page says why the full terminal is not offered
@@ -135,6 +137,9 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         if self.h.stopped() and t not in ESTOP_OK:
             if t in ("term_open", "vault_share") and wire.is_rid(obj.get("r")):
                 await self._res(s, obj["r"], t, False, why="estop")
+            if t == "term_prefill":
+                await self.h.send_app(s, {"t": "term_prefill_res", "id": obj.get("id"), "seq": obj.get("seq"),
+                                          "ok": False, "why": "estop"})
             self.st.log("control_refused", device=s.device, action=t, reason="estop")
             return
         if t == "vault_share":
@@ -145,8 +150,19 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             return await self.on_forget(s, obj)
         x = self.term
         if x is None or obj.get("id") != x.id or x.closing:
+            if t == "term_prefill":
+                await self.h.send_app(s, {"t": "term_prefill_res", "id": obj.get("id"), "seq": obj.get("seq"),
+                                          "ok": False, "why": "not_open"})
             self.st.log("control_refused", device=s.device, action=t, reason="not_open")
             return
+        if x.disconnected_at is not None or (s.device == x.device and x.s is not s):
+            if t == "term_prefill":
+                await self.h.send_app(s, {"t": "term_prefill_res", "id": x.id, "seq": obj.get("seq"),
+                                          "ok": False, "why": "disconnected"})
+            self.refused(s.device, t, "disconnected")
+            return
+        if t == "term_prefill":
+            return await self.on_prefill(x, s, obj)
         if t == "term_in":                                   # 0.26.9 (§B): only from a device on this session's writer list
             if s.device not in x.writers:
                 self.refused(s.device, t, "not_writer")      # w2-sec L-4: once per minute, not once per frame
@@ -181,14 +197,14 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         with contextlib.suppress(Exception):
             await self.h.send_app(s, {"t": "ctl_res", "r": r, "action": action, "ok": ok, **kw})
 
-    def _refusal(self, s, enable: bool = False):
+    def _refusal(self, s, enable: bool = False, resume=None):
+        if self.h.sessions.get(s.cid) is not s or s.state != "ready" or not self.st.is_allowed(s.pub):
+            return "device_not_allowed", {}
         if not self.supported():
             return "os", {}
         kind = store.device_kind(self.st, s.device)
-        if kind == "phone":                   # P417 #185: never from a remote that paired as a phone (open or enable)
-            return "phone", {}
-        if enable:                            # P417 #185: switch on from this computer browser (+ the computer password)
-            if kind != "desktop":
+        if enable:                            # #375: phone/tablet use the same UV + computer-password contract
+            if kind not in ("desktop", "phone"):
                 return "device_type", {}
             if not self.st.passkey_of_device(s.device):
                 return "no_passkey", {}
@@ -212,7 +228,15 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             return "web_not_allowed", {}
         if not self.st.passkey_of_device(s.device):
             return "no_passkey", {}
-        if self.term is not None or self.opening:
+        if resume is not None:
+            x = self.term
+            if x is None or x.closing or x.kind != "pty" or x.id != resume or x.device != s.device:
+                return "not_open", {}
+            if x.disconnected_at is None:
+                return "busy", {}
+            if self.clock() - x.disconnected_at >= RECONNECT_S or self.clock() >= x.expires or self.clock() - x.last >= store.IDLE_S:
+                return "stale", {}
+        elif self.term is not None or self.opening:
             return "busy", {}
         if self.h.stopped():
             return "estop", {}
@@ -228,17 +252,20 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         mode = obj.get("mode", "line")       # P417 #185: "enable" = switch on for this remote, then open
         if mode not in ("line", "enable", "pty"):
             return await self._res(s, r, "term_open", False, why="shape")
+        resume = obj.get("resume")
+        if "resume" in obj and (mode != "pty" or not isinstance(resume, str) or not re.fullmatch(r"[0-9a-f]{16}", resume)):
+            return await self._res(s, r, "term_open", False, why="shape")
         size = (obj.get("cols"), obj.get("rows"))     # 0.26.9 (§38.15): pty needs the window size (enable + size = pty)
         if mode == "pty" and not self.pty_supported():
             return await self._res(s, r, "term_open", False, why="fence_dev" if self.pty_blocked() else "os")
         if mode == "pty" and not size_ok(*size):
             return await self._res(s, r, "term_open", False, why="shape")
-        why, extra = self._refusal(s, mode == "enable")
+        why, extra = self._refusal(s, mode == "enable", resume)
         if why:
             self._log("term_open", s.device, "refused:" + why, {"mode": mode})
             return await self._res(s, r, "term_open", False, why=why, **extra)
         pk = self.st.passkey_of_device(s.device)
-        target = {"mode": mode}
+        target = {"mode": mode, **({"resume": resume} if resume is not None else {})}
         if "n" not in obj and "fa" not in obj:                       # step 1: the host issues the nonce (L5)
             now = self.clock()
             self.opens = {k: v for k, v in self.opens.items() if now - v["at"] < NONCE_TTL}
@@ -251,6 +278,8 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             priv = X25519PrivateKey.generate()
             from .elevate import _raw_pub
             self.opens[n] = {"device": s.device, "r": r, "at": now, "salt": salt, "priv": priv, "vn": vn, "mode": mode}
+            if resume is not None:
+                self.opens[n]["resume"] = resume
             if self.pty_supported() and size_ok(*size) and mode in ("pty", "enable"):
                 self.opens[n]["size"] = size
             ch = passkey.elevate_challenge(self.h.channel, s.device, n, "term_open", n, controls.object_digest("term_open", target))
@@ -260,7 +289,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         pend = self.opens.pop(n, None) if isinstance(n, str) else None
         if pend is None or pend["device"] != s.device:
             why = "replay" if isinstance(n, str) and _HEX32.fullmatch(n) else "shape"
-        elif pend["mode"] != mode:                       # P417: the step-1 nonce names what it is for (open ≠ enable)
+        elif pend["mode"] != mode or pend.get("resume") != resume:
             why = "shape"
         elif self.clock() - pend["at"] > NONCE_TTL:
             why = "stale"
@@ -281,7 +310,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             prf = self._open_prf(pend["priv"], obj, s.device, n, n, controls.object_digest("term_open", target))
             why = None if prf is not None else "shape"
         if not why:
-            why, extra = self._refusal(s, mode == "enable")
+            why, extra = self._refusal(s, mode == "enable", resume)
         if why:
             if prf is not None:
                 from .elevate import wipe
@@ -292,6 +321,11 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         if size_ok(*size) and "size" in pend:
             pend["size"] = size                   # step 2's size (the window may have changed since step 1)
         self._log("term_open", s.device, "start", target, sig=obj.get("sig"), n=n, ts=obj.get("ts"))
+        if resume is not None:
+            if prf is not None:
+                from .elevate import wipe
+                wipe(prf)
+            return await self._resume(s, r, pend)
         self.opening = s.device
         self.h._bg(self._open(s, r, pend, prf, pk), "term_open")
         with contextlib.suppress(Exception):
@@ -515,10 +549,71 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
                      f"Web terminal opened ({self.h._dname(x.device) or x.device}, up to {cfg['minutes']} min)")
         m = {"t": "term_ready", "r": r, "id": x.id, "expires_at": x.expires_at, "idle_s": store.IDLE_S, "sudo": mode,
              "cwd": service.tilde(cwd), "mode": x.kind}
+        x.ready_msg = dict(m)
         await self.h.send_app(s, m)
         self._prefs()
 
     # ------------------------------------------------------------ lines
+    async def on_prefill(self, x: Term, s, obj: dict) -> None:
+        """A chat command is data, never a program's answer or an implicit Enter."""
+        cmd, seq = obj.get("cmd"), obj.get("seq")
+        now, cfg = self.clock(), store.prune(self.st)
+        e = store.entry(cfg, s.device)
+        why = None
+        if type(seq) is not int or not isinstance(cmd, str) or not cmd or len(cmd) > LINE_MAX or \
+                any(ord(c) < 32 or 127 <= ord(c) <= 159 or c in "\u2028\u2029" for c in cmd) or line_problem(cmd):
+            why = "shape"
+        elif s.device != x.device or not self.st.is_allowed(s.pub):
+            why = "not_writer"
+        elif self.h.stopped():
+            why = "estop"
+        elif not cfg["on"] or e is None or e.get("until", self.wall() + 1) <= self.wall() or \
+                not self.st.passkey_of_device(s.device) or (store.is_web(self.st, s.device) and not e["web"]):
+            why = "disabled"
+        elif now >= x.expires:
+            why = "timeout"
+        elif now - x.last >= store.IDLE_S:
+            why = "idle"
+        elif x.kind != "pty" or not x.at_prompt or x.hold is not None or x.io is None or \
+                not self.shell_front(x, strict=True) or password_mode(x.io.fd) or \
+                x.edit or not x.edit_ok:
+            why = "busy"
+        elif not self._pty_write(x, cmd):
+            why = "full"
+        else:
+            from .term_pty import edit_apply
+            edit_apply(x, cmd)
+            x.last = self.clock()
+            self.owner_acted()
+        self._log("term_prefill", s.device, "refused:" + why if why else "ok", {"id": x.id})
+        await self.h.send_app(s, {"t": "term_prefill_res", "id": x.id, "seq": seq, "ok": why is None,
+                                  **({"why": why} if why else {})})
+
+    async def _resume(self, s, r, pend) -> None:
+        """Fresh UV bound to the old id; same paired owner, original expiry, no new writer."""
+        x = self.term
+        async with x.frame_lock:
+            why, extra = self._refusal(s, False, pend["resume"])
+            if why:
+                return await self._res(s, r, "term_open", False, why=why, **extra)
+            if x.hold is not None:
+                self._pty_cancel(x, "reconnect")
+            for ask in x.sudo.values():
+                if not ask["fut"].done():
+                    ask["fut"].set_result(None)
+            x.s = s
+            x.disconnected_at, x.hidden = None, None
+            await self.h.send_app(s, {**x.ready_msg, "r": r, "resumed": 1})
+            for data, prompt in x.replay:
+                x.seq += 1
+                await self.h.send_app(s, {"t": "term_out", "id": x.id, "seq": x.seq, "d": data,
+                                          **({"prompt": True} if prompt else {})})
+            x.viewers = [s]
+            if "size" in pend:
+                await self.on_resize(x, s, {"cols": pend["size"][0], "rows": pend["size"][1]})
+            self._log("term_resume", x.device, "ready", {"id": x.id})
+        self._prefs()
+
     async def on_line(self, x: Term, s, obj: dict) -> None:
         line, seq = obj.get("line"), obj.get("seq")
         # 0.26.9: the signed answer to a held PTY Enter carries the shell's own line (a bracketed paste may hold \n / TAB);
@@ -707,13 +802,19 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             await self._frame(x, data[k:k + FRAME_CHARS], prompt and last)
 
     async def _frame(self, x: Term, data: str, prompt: bool) -> None:
-        x.seq += 1
-        m = {"t": "term_out", "id": x.id, "seq": x.seq, ("d" if x.kind == "pty" else "data"): data}
-        if prompt:
-            m["prompt"] = True
-        for v in list(x.viewers):                            # 0.26.9 (§B): every viewer of this session (today: the opener)
-            with contextlib.suppress(Exception):
-                await self.h.send_app(v, m)
+        async with x.frame_lock:
+            if x.kind == "pty":
+                x.replay.append((data, prompt))
+                x.replay_chars += len(data)
+                while x.replay_chars > REPLAY_CHARS and len(x.replay) > 1:
+                    x.replay_chars -= len(x.replay.pop(0)[0])
+            x.seq += 1
+            m = {"t": "term_out", "id": x.id, "seq": x.seq, ("d" if x.kind == "pty" else "data"): data}
+            if prompt:
+                m["prompt"] = True
+            for v in list(x.viewers):
+                with contextlib.suppress(Exception):
+                    await self.h.send_app(v, m)
 
     # ------------------------------------------------------------ the recording (asciicast v2, M4)
     def _cast_open(self, x: Term):
@@ -772,12 +873,15 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             return await self.close("estop")
         if not cfg["on"] or e is None or ("until" in e and e["until"] <= self.wall()):
             return await self.close("disabled")
-        if self.h.sessions.get(s.cid) is not s or s.state != "ready":
-            return await self.close("relay_lost")
         if now >= x.expires:
             return await self.close("timeout")
         if now - x.last >= store.IDLE_S:
             return await self.close("idle")
+        if self.h.sessions.get(s.cid) is not s or s.state != "ready":
+            self.session_gone(s)
+            if x.kind != "pty" or now - x.disconnected_at >= RECONNECT_S:
+                return await self.close("relay_lost")
+            return
         self.bang_tick(x)
         if x.kind == "pty" and self.pty_blocked():        # w2-sec H-3: a fenced Agent started without a private /dev
             return await self.close("disabled")
@@ -794,10 +898,21 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
                 await self.tick()
 
     def session_gone(self, s) -> None:
-        """serve._detach: the opening device's session ended (sync; the close runs in the background)."""
+        """PTY: bounded reconnect grace; line mode retains its immediate-close contract."""
         x = self.term
         if x is not None and x.s is s and not x.closing:
-            self.h._bg(self.close("relay_lost"), "term_close")
+            if x.kind == "pty":
+                if x.disconnected_at is None:
+                    if x.hold is not None:
+                        self._pty_cancel(x, "disconnect")
+                    x.disconnected_at = self.clock()
+                    x.viewers = []
+                    for ask in x.sudo.values():
+                        if not ask["fut"].done():
+                            ask["fut"].set_result(None)
+                    self._log("term_disconnect", x.device, "waiting", {"id": x.id})
+            else:
+                self.h._bg(self.close("relay_lost"), "term_close")
 
     async def close(self, why: str) -> None:
         x = self.term

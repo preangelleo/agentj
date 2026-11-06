@@ -4675,6 +4675,7 @@ usage: agentj mail [-h] [--workflow WORKFLOW] [--artifact-root ARTIFACT_ROOT]
                    [--workflow-cc-contact WORKFLOW_CC_CONTACT]
                    [--delivery-manifest DELIVERY_MANIFEST] [--days DAYS]
                    [--max WORKFLOW_MAX] [--per-day PER_DAY]
+                   [--retry-original-manifest RETRY_ORIGINAL_MANIFEST]
                    [--delivery DELIVERY] [--address ADDRESS_OPT]
                    [--preset {126,163,aliyun,aliyun_biz,custom,exmail,gmail,icloud,netease_biz,outlook,qq,yahoo}]
                    [--username USERNAME] [--imap-host IMAP_HOST]
@@ -4706,6 +4707,7 @@ usage: agentj mail [-h] [--workflow WORKFLOW] [--artifact-root ARTIFACT_ROOT]
 | `--days` | `null` | false | — | `workflow-grant: optional explicit expiry (1–30 days); otherwise valid until revoked` |
 | `--max` | `100` | false | — | `compatibility only; total message-count limit removed` |
 | `--per-day` | `0` | false | — | `compatibility only; daily limit removed` |
+| `--retry-original-manifest` | `null` | false | — | `workflow-retry replacement: exact previous manifest; only remove attachments, keep original R2-link body` |
 | `--delivery` | `null` | false | — | `workflow-retry: exact delivery key from failed send; owner approval required` |
 | `--address` | `null` | false | — | `the mailbox address` |
 | `--preset` | `null` | false | `126`, `163`, `aliyun`, `aliyun_biz`, `custom`, `exmail`, `gmail`, `icloud`, `netease_biz`, `outlook`, `qq`, `yahoo` | `setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)` |
@@ -4723,7 +4725,7 @@ usage: agentj mail [-h] [--workflow WORKFLOW] [--artifact-root ARTIFACT_ROOT]
 | `--guest` | `false` | false | — | `allow：访客（不是主人本人，不能批准）/ a guest, not the owner` |
 | `--name` | `null` | false | — | `a label` |
 | `--to` | `null` | false | — | `notes：收件人——邮箱，或通讯录里的名字 / 昵称 / 拼音（可多次；notes 只能是主人写过的地址）/ recipient: address or an address-book name (repeatable; notes: only addresses the owner named)` |
-| `--to-owner` | `false` | false | — | `with --delivery-manifest: slot-0 primary; v1 no CC, explicit signed v2 exact fixed CC only` |
+| `--to-owner` | `false` | false | — | `with --delivery-manifest: owner slot-0 primary required; v1 no CC, subset-capable v2 may narrow the signed CC pool` |
 | `--cc` | `null` | false | — | `send：抄送——同 --to（可多次；白名单 / 手机批准规则每个收件人都算，合计最多 10 个）/ Cc: like --to (repeatable; every recipient counts for the approval rule; 10 in all)` |
 | `--bcc` | `null` | false | — | `Bcc: like --to, hidden from the others` |
 | `--format` | `null` | false | `markdown`, `html`, `text` | `send：正文格式——markdown（默认，排成带格式的邮件）· html（网页原样，.html 文件自动选它）· text（纯文本）/ body format: markdown (default, a formatted mail) · html (the page as is; picked for .html files) · text` |
@@ -6723,7 +6725,7 @@ usage: agentj telegram-cursor status [-h]
 ### agentj terminal
 
 ```text
-the web terminal (line mode)
+the web terminal (PTY)
 ```
 
 ```bash
@@ -6747,7 +6749,7 @@ usage: agentj terminal [-h] [--device DEVICE] [--minutes MINUTES]
 | `--minutes` | `null` | false | — | `enable：每次最长几分钟（1–60，默认 15）/ minutes per session` |
 | `--hours` | `null` | false | — | `allow：几小时后自动取消（1–24，默认 2）/ hours until it ends` |
 | `--allow-web` | `false` | false | — | `allow a web-version remote` |
-| `--cmd` | `null` | false | — | `open：在手机终端的输入框里填好这一行（不会自动运行）/ prefill this line in the phone's terminal (never sent)` |
+| `--cmd` | `null` | false | — | `open：在设备终端光标处填好这一行（不会自动运行）/ prefill this line at the device terminal cursor (never sent)` |
 | `--lines` | `null` | false | — | `output：最后几行（1–2000，默认 200）/ the last N lines` |
 | `--json` | `false` | false | — | `` |
 
@@ -11999,6 +12001,7 @@ usage: agentj mail [-h] [--workflow WORKFLOW] [--artifact-root ARTIFACT_ROOT]
                    [--workflow-cc-contact WORKFLOW_CC_CONTACT]
                    [--delivery-manifest DELIVERY_MANIFEST] [--days DAYS]
                    [--max WORKFLOW_MAX] [--per-day PER_DAY]
+                   [--retry-original-manifest RETRY_ORIGINAL_MANIFEST]
                    [--delivery DELIVERY] [--address ADDRESS_OPT]
                    [--preset {126,163,aliyun,aliyun_biz,custom,exmail,gmail,icloud,netease_biz,outlook,qq,yahoo}]
                    [--username USERNAME] [--imap-host IMAP_HOST]
@@ -12030,6 +12033,7 @@ usage: agentj mail [-h] [--workflow WORKFLOW] [--artifact-root ARTIFACT_ROOT]
 | `--days` | `null` | false | — | `workflow-grant: optional explicit expiry (1–30 days); otherwise valid until revoked` |
 | `--max` | `100` | false | — | `compatibility only; total message-count limit removed` |
 | `--per-day` | `0` | false | — | `compatibility only; daily limit removed` |
+| `--retry-original-manifest` | `null` | false | — | `workflow-retry replacement: exact previous manifest; only remove attachments, keep original R2-link body` |
 | `--delivery` | `null` | false | — | `workflow-retry: exact delivery key from failed send; owner approval required` |
 | `--address` | `null` | false | — | `setup：Agent 用的邮箱地址` |
 | `--preset` | `null` | false | `126`, `163`, `aliyun`, `aliyun_biz`, `custom`, `exmail`, `gmail`, `icloud`, `netease_biz`, `outlook`, `qq`, `yahoo` | `setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)` |
@@ -12047,7 +12051,7 @@ usage: agentj mail [-h] [--workflow WORKFLOW] [--artifact-root ARTIFACT_ROOT]
 | `--guest` | `false` | false | — | `allow：访客（不是主人本人，不能批准）/ a guest, not the owner` |
 | `--name` | `null` | false | — | `allow：备注名` |
 | `--to` | `null` | false | — | `send` |
-| `--to-owner` | `false` | false | — | `send 和 notes：发给主人本人（通讯录 0 号位 + 白名单里的「主人」地址）；和 --to 同时给就两边都发（去重，合计最多 10 个）/ the owner's own addresses (slot 0 + the owner allowlist rows); with --to: both (deduped, 10 at most). 带 --delivery-manifest：0号主邮箱；v1禁CC，v2仅签名固定CC` |
+| `--to-owner` | `false` | false | — | `send 和 notes：发给主人本人（通讯录 0 号位 + 白名单里的「主人」地址）；和 --to 同时给就两边都发（去重，合计最多 10 个）/ the owner's own addresses (slot 0 + the owner allowlist rows); with --to: both (deduped, 10 at most). 带 --delivery-manifest：主人0号主邮箱必收；v1禁CC，支持子集的v2可缩小已签CC名单` |
 | `--cc` | `null` | false | — | `send：抄送——同 --to（可多次；白名单 / 手机批准规则每个收件人都算，合计最多 10 个）/ Cc: like --to (repeatable; every recipient counts for the approval rule; 10 in all)` |
 | `--bcc` | `null` | false | — | `send：密送——同 --to，别的收件人看不到` |
 | `--format` | `null` | false | `markdown`, `html`, `text` | `send：正文格式——markdown（默认，排成带格式的邮件）· html（网页原样，.html 文件自动选它）· text（纯文本）/ body format: markdown (default, a formatted mail) · html (the page as is; picked for .html files) · text` |
@@ -14071,7 +14075,7 @@ usage: agentj terminal [-h] [--device DEVICE] [--minutes MINUTES]
 | `--minutes` | `null` | false | — | `enable：每次最长几分钟（1–60，默认 15）/ minutes per session` |
 | `--hours` | `null` | false | — | `allow：几小时后自动取消（1–24，默认 2）/ hours until it ends` |
 | `--allow-web` | `false` | false | — | `允许网页版遥控器` |
-| `--cmd` | `null` | false | — | `open：在手机终端的输入框里填好这一行（不会自动运行）/ prefill this line in the phone's terminal (never sent)` |
+| `--cmd` | `null` | false | — | `open：在设备终端光标处填好这一行（不会自动运行）/ prefill this line at the device terminal cursor (never sent)` |
 | `--lines` | `null` | false | — | `output：最后几行（1–2000，默认 200）/ the last N lines` |
 | `--json` | `false` | false | — | `` |
 

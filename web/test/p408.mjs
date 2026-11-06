@@ -499,8 +499,8 @@ export async function runP408({ B, web, fake, out = OUT }) {
         check(!(await vis('set-term-en')) && await evaluate(p, `${$('set-term-state')}.textContent`) === s.off + ' ' + s.repair, 'host does not know it paired as a computer → the command + 「重新配对」 (RESUME 9 ④) ' + tag);
         await setBlock(BLOCK({ on: false, me: false, kind: 'desktop' }));
         const r = await evaluate(p, `({st:${$('set-term-state')}.textContent,en:${$('set-term-enable')}.textContent,or:${$('set-term-or')}.textContent,cmd:${$('set-term-cmd')}.textContent,acts:${$('set-term-acts')}.hidden})`);
-        check(r.st.startsWith(s.offDesk) && r.en === s.enable && r.or === s.orCli && r.cmd === 'agentj terminal enable' && r.acts && await vis('set-term-en') && await vis('set-term-cmdline'),
-          'desktop, off → 开启并打开网页终端 + the command as the other way ' + tag + JSON.stringify(r));
+        check(r.st.startsWith(s.offDesk) && r.en === s.enable && r.cmd === '' && r.acts && await vis('set-term-en') && !(await vis('set-term-cmdline')),
+          'desktop, off → enable button without duplicate command ' + tag + JSON.stringify(r));
         await evaluate(p, `${$('set-term-row')}.scrollIntoView({block:'center'})`); await save('1-row');
         await click('set-term-enable');
         await waitFor(p, `${$('term-sheetwrap')}?.dataset.kind === 'intro' && !${$('term-sheetwrap')}.hidden && !${$('term-sh-yes')}.disabled`, 10000);

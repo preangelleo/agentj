@@ -626,7 +626,35 @@ class Scheduler:
         with contextlib.suppress(Exception):
             self.st.log("task_sched_error", where=where, exception_type=type(exc).__name__)
 
-    def request(self, tid: str, trigger: str = "manual", minute: str | None = None) -> str:
+    def completion_caller_known(self, pid):
+        """A running native workflow's actual pinned process tree, never the main turn or caller env."""
+        scope = getattr(self, "mail_scope", None)
+        if not scope or not scope.get("live") or self.host.stopped():
+            return False
+        from . import workflow_mail
+        if not any(p.returncode is None and workflow_mail.descendant(pid, p.pid, token)
+                   for p, token in scope.get("mail_roots", [])):
+            return False
+        admission, contract = scope.get("mail_admission") or {}, scope.get("mail_contract") or {}
+        journal = load(self.st)
+        run = journal["runs"].get(admission.get("run_id")) or {}
+        if (run.get("completion_known") is not True or run.get("status") != "running"
+                or run.get("instance_id") != self.instance_id or admission.get("instance_id") != self.instance_id
+                or run.get("id") != contract.get("workflow_id")):
+            return False
+        try:
+            entry = find(self.workdir(), run["id"])
+        except TaskError:
+            return False
+        if entry["problems"] or run.get("tsha") != entry["tsha"] or workflow_mail.task_contract(entry) != contract:
+            return False
+        if admission.get("scheduled"):
+            on = journal["on"].get(run["id"]) or {}
+            if on.get("tsha") != entry["tsha"] or not str(on.get("by", "")).startswith(("phone:", "account:")):
+                return False
+        return True
+
+    def request(self, tid: str, trigger: str = "manual", minute: str | None = None, *, caller_known: bool = False) -> str:
         if self.current_id == tid or any(t == tid for t, _ in self.waiting):
             return self.queued.get(tid, "")
         if uncertain_run(self.st, tid):
@@ -646,7 +674,7 @@ class Scheduler:
         owner_schedule = bool(trigger in ("schedule", "catch_up") and on.get("tsha") == e["tsha"]
                               and str(on.get("by", "")).startswith(("phone:", "account:")))
         rec["owner_notify"] = owner_schedule and notify.task_allowed(getattr(self.host, "preferences", None), tid, e["task"])
-        rec["completion_known"] = owner_schedule or (trigger == "dispatch" and not provenance.untrusted_turn(getattr(self.host, "agent", None)))
+        rec["completion_known"] = owner_schedule or (trigger == "manual" and caller_known is True) or (trigger == "dispatch" and not provenance.untrusted_turn(getattr(self.host, "agent", None)))
         def change(d):
             if len(d["runs"]) >= 1000:
                 raise TaskError("busy", "运行记录已满；请先核对未确认的运行 / Run journal full; review uncertain runs first")

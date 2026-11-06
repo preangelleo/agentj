@@ -5063,5 +5063,29 @@
   "mcp474.last": "Last request {time}",
   "mcp474.copy": "Copy connection URL",
   "ask.cat.service": "Restart the Agent J service",
-  "p510.categoryNote": "{category}; expand to read the agent's original note"
+  "p510.categoryNote": "{category}; expand to read the agent's original note",
+  "terminal.paste": "Paste",
+  "pty.k.paste": "Paste clipboard text",
+  "pty.k.enter": "Enter (submit current input)",
+  "terminal.cardNote": "Full terminal, on your phone too",
+  "terminal.execute": "Run",
+  "terminal.draft": "Fill the terminal; you press Enter",
+  "terminal.danger": "Dangerous command: review it before pressing Enter",
+  "terminal.prefillBusy": "Return to an empty shell prompt, then fill the command.",
+  "terminal.reconnect": "Disconnected. Verify your passkey within 30 seconds to resume.",
+  "terminal.resume": "Verify and resume terminal",
+  "terminal.pasteBlocked": "Press and hold the terminal input, then choose Paste.",
+  "terminal.upgradePty": "Update Agent J on your computer to use the full terminal.",
+  "terminal.loadFailed": "The terminal could not load. Please reopen it.",
+  "connectionHelp": {
+    "text": "Reconnecting to your computer. Tap “Update and reload”. If it stays grey, open Settings → Emergency repair → “Ask support for help”."
+  },
+  "sessionHelp.text": "{agent} session is disconnected; the computer is online. Tap “Repair session connection”. If needed, choose an independent session in Settings → Security → Session mode. Once saved, tap “Restart service” in Emergency repair, or ask support for help.",
+  "sessionHelp.repair": "Repair session connection",
+  "p515.skillsNote": "These same-name skills were changed or their origin is unverified. Choose what to do.",
+  "p515.replace": "Use latest version",
+  "p515.keep": "Keep my copy",
+  "p515.replaceConfirm": "Replace {skill} with the bundled version? Originals in every tool folder are backed up first, so your changes are preserved.",
+  "p515.keepConfirm": "Keep the current copies of {skill}? Future upgrades will leave them in place; another change will prompt you again.",
+  "p515.keepUnavailable": "This copy cannot be read or verified yet. Check file permissions; the original has been kept."
 }

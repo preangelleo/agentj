@@ -387,7 +387,7 @@ class SecPtyR3(SecPty):
 
         async def go():
             await self.open_pty()
-            await self.run_line("echo r3-1; env | grep -c -E '^(PS0|MAILPATH|MAIL|MAILCHECK)=' ; echo end-r3", "end-r3")
+            await self.confirmed_line("echo r3-1; env | grep -c -E '^(PS0|MAILPATH|MAIL|MAILCHECK)=' ; echo end-r3", "end-r3")
             await self.run_line("echo after", "after")
         with mock.patch.dict(os.environ, env):
             self.run_async(go)

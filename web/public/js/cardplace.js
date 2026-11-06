@@ -65,6 +65,7 @@ export const CARDS = Object.freeze({
 /** host → phone message types in app.js's switch that raise no card (state, data, replies). The test requires every case
  *  to be either here or in some CARDS[kind].msgs. */
 export const NOT_CARDS = Object.freeze([
+  'term_prefill_res', // Terminal draft acknowledgement; no standalone card or content surface.
   'pair_guide', 'cmds_state', 'preferences', 'status', 'busy', 'res', 'theme', 'pair_ev', 'jcard_open', 'fr_changed', 'hook_changed',
   'reset_step', 'assist_task', 'msg_steered', 'devs', 'dev_pending', 'dev_pair_end', 'host_moved', 'pk_reg_res', 'pk_state', 'preauth',
   'draft_restore', 'rt', 'push_key', 'hist_read', 'hist_meta', 'hist_turn', 'meter', 'models', 'msg', 'budget_state',

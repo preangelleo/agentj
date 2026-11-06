@@ -1,5 +1,5 @@
 /* P408 (PROTOCOL §38): the web terminal page — loaded by js/terminal.js on the first open, never with the first screen.
-   Dark in both themes (Noir chrome, Sooty output, Lotion text); closed palette only (leo-palette.json): noir #2c2b26,
+   Noir chrome in both themes; the PTY canvas follows light/dark appearance; closed palette only (leo-palette.json): noir #2c2b26,
    sooty #141414, lotion #faf9f5, black-mana #858585, strawberry-field #f7827e (the recording dot), banana-republic #ffe292
    (warnings), milky-waves #71bbde (the owner's own lines, focus). Every tap target ≥ 44 px; no scrollbar drawn. */
 .term{position:fixed;left:0;right:0;top:var(--vvtop,0px);height:var(--vvh,100dvh);z-index:47;display:flex;flex-direction:column;
@@ -114,14 +114,14 @@
 .term-sheet .pkassist{margin:0;color:rgba(250,249,245,.78)}
 .term-sheet .pkassist[data-state="fail"] .pkassist__text{color:#ffe292}
 
-/* ---- 0.26.9 #463 (ADR-0269-w-term): the full terminal (js/termpty.js, xterm.js). The xterm grid fills the output area on the
-   page's Noir; its own scrollbar is drawn transparent (the page shows none, wheel / finger still scroll). The extra-keys bar
+/* ---- 0.26.9 #463 (ADR-0269-w-term): the full terminal (js/termpty.js, xterm.js). The xterm grid fills the output area with its current
+   light/dark canvas; its own scrollbar is drawn transparent (the page shows none, wheel / finger still scroll). The extra-keys bar
    (Esc · Tab · Ctrl · Alt · arrows · Ctrl+C / D / Z · | ~ /) shows on touch screens and narrow windows; every key ≥ 44 px;
    Ctrl / Alt stay pressed (Milky Waves ring) until the next key. */
 .term-outbox>[hidden]{display:none}
-.term-xt{flex:1;min-height:0;position:relative;isolation:isolate;padding:8px 4px 0 12px;background:#2c2b26;overflow:hidden}   /* xterm's own z-indexes stay under the sheet */
+.term-xt{flex:1;min-height:0;position:relative;isolation:isolate;padding:8px 4px 0 12px;background:var(--term-canvas,#2c2b26);overflow:hidden}   /* xterm's own z-indexes stay under the sheet */
 .term-xt .xterm{height:100%}
-.term-xt .xterm .xterm-viewport{background-color:#2c2b26}
+.term-xt .xterm .xterm-viewport{background-color:var(--term-canvas,#2c2b26)}
 .term-xt .xterm .scrollbar,.term-xt .xterm .xterm-decoration-overview-ruler{opacity:0}
 .term-xkeys{display:none;gap:6px;overflow-x:auto;scrollbar-width:none;padding-bottom:1px;-webkit-user-select:none;user-select:none}
 .term-xkeys::-webkit-scrollbar{display:none}

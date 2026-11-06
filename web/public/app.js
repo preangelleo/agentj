@@ -1,3 +1,4 @@
+import * as sessionHelp from './js/session-help.js';
 import * as wechat from './js/wechat.js';
 import { floatAuthAsk } from './js/auth-overlay.js';
 import { showPairGuide, noteRemotes } from './js/pair-guide.js';
@@ -313,7 +314,7 @@ let renderQueued = false;
 function rerender() {
   if (renderQueued) return;
   renderQueued = true;
-  queueMicrotask(() => { renderQueued = false; relay.render(snap.snapshot()); });
+  queueMicrotask(() => { renderQueued = false; relay.render(snap.snapshot()); sessionHelp.render({connected:state === 'ready', status:snap.S.status, agent:snap.S.agent}); });
 }
 
 function deviceLabel() {
@@ -470,7 +471,7 @@ function onApp(m) {
   if (m.assist === true && typeof m.t === 'string' && m.t.startsWith('term_')) return;   // 0.26.9 #468 (§B3): nothing terminal-shaped from the helper — never the owner's terminal
   switch (m.t) {
     case 'pair_guide': showPairGuide(m.kind); return;
-    case 'cmds_state': settings.setRunCmds(m.names); return;
+    case 'cmds_state': settings.setRunCmds(m.names); rerender(); return;
     case 'preferences': setHostVersion(m.host?.version); relay.hostVersionIs(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); rerender(); if(m.problem)relay.configProblem(m.problem.error); return;
     case 'status': setAgentName(m.name); document.body.dataset.goalActive = m.goal_active === true ? '1' : '0'; wechat.channelStatus(m); snap.setStatus(m); renderTg(); return;
     // P150 (§22): who works in the background (display only)
@@ -508,7 +509,7 @@ function onApp(m) {
     case 'assist_task': assist.onTask(m); return;        // 0.26.9 #468 (§B3): a task the helper sent to this Agent, as it moves → the read-only feed
     case 'budget_state': budget.onState(m); return;     // 0.26.9 §E3: the day / month budget (Settings → 安全 → 预算)
     case 'msg_steered': relay.onSteered(m); return;      // 0.26.9 #471 (§D): an owner message went into the running turn → 「已插入当前这一轮」
-    case 'term_out': case 'term_confirm': case 'term_sudo': case 'term_close': termhook.msg(m); return;   // P408 (§38)
+    case 'term_prefill_res': case 'term_out': case 'term_confirm': case 'term_sudo': case 'term_close': termhook.msg(m); return;   // P408 (§38)
     case 'term_bang': case 'term_go': termhook.msg(m); return;   // P414 (§38.12 / §38.13): a 「!」 line's answer · the Agent opens the terminal
     case 'elev_grants': elevate.grants(m); return;     // #116 (§11.1): 10-minute same-class approvals + 「收回授权」
     case 'elev_auto': elevate.auto(m); return;         // #116: ran under that approval, no card
@@ -819,6 +820,7 @@ pkpeer.configure({
 });
 secretout.configure({ setupFaceId });
 keys.configure({ setupFaceId });   // P352: 拷贝 / 删除 on a phone without a passkey offer the same F20 setup
+sessionHelp.configure({ repair: () => { settings.openRescue(); cmdrun.run('reconnect'); }, supported: () => cmdrun.supports('reconnect') });
 cmdrun.configure({ setupFaceId, openTerminal: (cmd) => termhook.open(cmd) }); // P361: 「执行」 on a phone without a passkey — the same F20 offer · P408: 「在终端里打开」
 termhook.configure({ setupFaceId, openSettings: () => { if (!settings.isOpen()) settings.open(); }, openRescue: () => settings.openRescue(), changed: () => cmdrun.paint(),
   attach: (f) => relay.attachShot(f, true), insert: (s) => relay.insertText(s), goChat: () => { if (settings.isOpen()) settings.close(); } });   // P408 · P414: 截屏发到聊天 / 放回输入框
@@ -1633,7 +1635,7 @@ function wire() {
     connected: () => state === 'ready',
     myId: api.myIdSync,
     unpair: unpairAsk,
-    reload: () => location.reload(),
+    reload: async () => { if (await relay.saveDraft()) location.reload(); else toast(t('set.refreshFail'), 3200); },
     view: () => view,
     forget: forgetHost,                               // P171: this remote unbound itself from 遥控器管理
     setupFaceId: () => { setupFaceId().catch(() => {}); },   // P547: 转移席位 on a remote without Face ID

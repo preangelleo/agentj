@@ -3679,3 +3679,20 @@ body[data-sheet="1"]:has(.reply-notices>#sheet.cp-docked) .scrim{opacity:0}
 
 /* #509 r2: bottom action/question sheets grow from the composer on the page colour, without a frame. */
 .sheet:not(.cp-docked){background:var(--pg);border:0;outline:none}
+
+/* #375: a shell draft, placed beside the code block's existing copy action. */
+.term-command{min-height:44px;min-width:64px;margin:8px 12px;padding:8px 16px;border:1px solid currentColor;border-radius:12px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.term-command--danger{color:#f7827e;background:#2c2b26}
+/* P514: recovery stays above the last reply while the host is disconnected. */
+.connection-help{display:none;flex:none;align-items:center;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);background:var(--noir);color:var(--lotion)}
+.connection-help p{margin:0;flex:1;font-size:14px;line-height:1.5}
+.connection-help button{flex:none;min-height:44px}
+body[data-conn="off"] .connection-help{display:flex}
+@media(max-width:600px){.connection-help{align-items:stretch;flex-direction:column}.connection-help button{align-self:flex-start}}
+
+/* P514b: the host is reachable but its coding session is absent. */
+.session-help{display:flex;flex:none;align-items:center;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);background:var(--noir);color:var(--lotion)}
+.session-help[hidden]{display:none}
+.session-help p{margin:0;flex:1;font-size:14px;line-height:1.5}
+.session-help button{flex:none;min-height:44px}
+@media(max-width:600px){.session-help{align-items:stretch;flex-direction:column}.session-help button{align-self:flex-start}}

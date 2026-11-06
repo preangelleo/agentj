@@ -59,8 +59,8 @@ class Upgrade(_Env):
         rows = [{'id':'version','status':'ok'}, {'id':'main-inject','status':'fail','summary':'no verified main Agent launch yet'},
                 {'id':'root-structure','status':'fail'}, {'id':'serve','status':'warn'}]
         text = update.completion_text({'to':'9.0','from':'8.0'}, update.doctor_counts(rows), 'zh', rows)
-        self.assertIn('升级成功，一切正常', text)
-        self.assertIn('Upgrade succeeded; everything is working', update.completion_text({'to':'9.0'}, update.doctor_counts(rows), 'en', rows))
+        self.assertIn('升级成功，主机本次自检通过', text)
+        self.assertIn('Upgrade succeeded; host self-check passed at this time', update.completion_text({'to':'9.0'}, update.doctor_counts(rows), 'en', rows))
         self.assertNotIn('升级成功', update.completion_text({'to':'9.0'}, (0,0,1), 'zh', [{'id':'state','status':'fail'}]))
 
     def test_repair_only_named_findings_and_keep_json_clean(self):

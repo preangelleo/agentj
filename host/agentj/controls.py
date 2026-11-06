@@ -143,7 +143,7 @@ def object_text(action: str, obj: dict) -> str:
     if action == "cmd_run":          # P361: the whitelisted command's name (cmdrun.RUN_CMDS); no argument travels
         return str(obj["cmd"])
     if action == "term_open":        # P408 (§38): object {"mode": "line"} → "line"
-        return str(obj["mode"])
+        return str(obj["mode"]) + ("\n" + str(obj["resume"]) if "resume" in obj else "")
     if action == "term_line":        # the terminal id \n the line exactly as sent (a confirmed dangerous line)
         return f"{obj['id']}\n{obj['line']}"
     if action == "term_sudo":        # the terminal id \n the host's sudo request id

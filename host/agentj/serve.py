@@ -2245,6 +2245,19 @@ class Host:
             return text
         return await self.apply_preferences(build=build)
 
+    def _completion_caller_known(self, pid, uid):
+        """Completion provenance only: live pinned CEO descendants or a signed systemd dispatch."""
+        if uid != os.getuid() or type(pid) is not int or pid <= 1:
+            return False
+        if self.scheduler.completion_caller_known(pid):
+            return True
+        if self.busy.launch.known_process(pid):
+            return True
+        known = self.peer_launch.verified_process(pid)
+        if known:
+            self.peer_launch.save()
+        return known
+
     def _busy_launch_request(self, req, pid, uid):
         """Pin a live wrapper before its command runs; never accept caller-supplied process facts."""
         from . import busy as busy_mod
@@ -2255,7 +2268,12 @@ class Host:
                       if it.get("key") == req.get("key") and it.get("pid") == pid), None)
         if found is None:
             return False
-        self.busy.launch.judge(found, self.busy.context, table, sids)
+        if self._completion_caller_known(pid, uid):
+            self.busy.launch.accept_verified(found, table)
+        else:
+            self.busy.launch.judge(found, self.busy.context, table, sids)
+            if self.busy.launch.ok(found["key"]):
+                self.busy.launch.accept_verified(found, table)
         self.busy.launch.save()
         return self.busy.launch.ok(found["key"])
 
@@ -2518,7 +2536,7 @@ class Host:
                         await self._ctl_send(w, {"ok": False, "error": "no_agent"})
                     else:
                         try:
-                            rid = self.scheduler.request(tid, "manual")
+                            rid = self.scheduler.request(tid, "manual", caller_known=await asyncio.to_thread(self._completion_caller_known, pid, puid))
                             from . import diskq
                             if not await diskq.aflush():
                                 raise tasks.TaskError("busy", "运行记录尚未完成落盘；重试前请核对状态 / Run journal has not settled; inspect state before retrying")
@@ -3228,7 +3246,7 @@ class Host:
             return {"ok": a.status != "down", "why": "unsupported", "agent": a.kind, "agent_status": self.eff_status()}
         sid = session if isinstance(session, str) and re.fullmatch(r"[0-9A-Fa-f-]{8,64}", session) else None
         try:
-            res = await asyncio.wait_for(fn(sid), 15)
+            res = await asyncio.wait_for(fn(sid), 40)
         except asyncio.TimeoutError:
             res = {"ok": False, "why": "timeout"}
         res.update(agent=a.kind, agent_status=self.eff_status())
@@ -4351,7 +4369,7 @@ class Host:
                     try:
                         rows = await asyncio.to_thread(doctor.run, self.st)
                         completed["counts"] = update.doctor_counts(rows)
-                        completed["checks"] = [{"id": r.get("id"), "status": r.get("status"), **({"summary": "no verified main Agent launch"} if update.benign_waiting(r) else {})} for r in rows]
+                        completed["checks"] = [{"id": r.get("id"), "status": r.get("status"), **({"session_disconnected": True} if r.get("session_disconnected") is True else {}), **({"summary": "no verified main Agent launch"} if update.benign_waiting(r) else {})} for r in rows]
                         failed, completed["existing_issues"] = update.upgrade_health(rows)
                     except Exception:
                         completed["counts"], failed = None, True

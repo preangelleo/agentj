@@ -16,8 +16,8 @@ class Receipt(unittest.TestCase):
             for render in (lambda: update.completion_text({'to':'2'},(999,10,7),lang,rows),
                            lambda: phone_update.text({'to':'2','reason':'upgraded','counts':(999,10,7),'checks':rows},lang)):
                 text=render()
-                self.assertIn('一切正常' if lang=='zh' else 'everything is working',text)
-                for forbidden in ('doctor','7','10','待办','remain'):self.assertNotIn(forbidden,text)
+                self.assertIn('主机本次自检通过' if lang=='zh' else 'host self-check passed at this time',text)
+                for forbidden in ('7','10','待办','remain'):self.assertNotIn(forbidden,text)
 
     def test_blockers_count_is_derived_from_checks_with_safe_names(self):
         rows=[{'id':'serve','status':'fail','summary':'PRIVATE'}, {'id':'state','status':'fail'},
@@ -26,8 +26,8 @@ class Receipt(unittest.TestCase):
             text=update.completion_text({'to':'2'},(0,99,99),lang,rows)
             self.assertIn('2',text);self.assertNotIn('99',text);self.assertNotIn('PRIVATE',text)
             self.assertIn('一键修复' if lang=='zh' else 'Repair',text)
-            self.assertNotIn('doctor',text)
-            self.assertNotIn('一切正常' if lang=='zh' else 'everything is working',text)
+            self.assertIn('agentj doctor --reconnect',text)
+            self.assertNotIn('主机本次自检通过' if lang=='zh' else 'host self-check passed at this time',text)
 
     def test_unknown_and_unfinished_check_never_claim_success(self):
         for rows in (None,[],[{'status':'fail'}]):

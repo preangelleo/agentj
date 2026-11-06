@@ -389,6 +389,7 @@ class Executors(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(p.stat().st_mode), 0o600)
         self.assertEqual(json.loads(p.read_text())["session"], "11111111-2222-3333-4444-555555555555")
         A.cfg = {"session_mode": "shared"}
+        A.session = {"sessionId": "11111111-2222-3333-4444-555555555555"}
         self.assertTrue(asyncio.run(reset.new_session(host)).get("skip"))
         A.cfg, A.status = {}, "working"
         self.assertFalse(asyncio.run(reset.new_session(host))["ok"])

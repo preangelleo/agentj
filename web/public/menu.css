@@ -958,3 +958,8 @@ body[data-assist-view]{overflow:hidden}
 #set-hooks .mcp474-form input,#set-hooks .mcp474-form textarea{box-sizing:border-box;width:100%;min-height:44px;padding:12px;border:1px solid var(--menu-text);border-radius:var(--ui-radius-control);background:var(--noir);color:var(--lotion);font:inherit}
 #set-hooks .mcp474-form button{align-self:flex-start;min-height:44px}
 #set-hooks .mcp474 .whline{white-space:pre-wrap;color:var(--menu-text)}
+
+/* Feedback #515: named decisions under the doctor result, outside terminal command rows. */
+#settings .rscmdskills .rscmdacts{gap:var(--ui-space-control);justify-content:flex-start}
+#settings .rscmdskills .act{width:auto;min-width:44px;padding-inline:12px;white-space:nowrap}
+#settings .rscmdskills code{overflow-wrap:anywhere}

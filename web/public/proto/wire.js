@@ -171,7 +171,7 @@ export function controlObject(action, o) {
   if (action === 'reset') return String(o.what);                 // P332 (§33): object {"what":"connection"} → "connection"
   if (action === 'rescue_do') return String(o.action);           // P332 (§33): object {"action":<action>} → the action name
   if (action === 'cmd_run') return String(o.cmd);                // P361 (§34): object {"cmd":<name>} → the name
-  if (action === 'term_open') return String(o.mode);                // P408 (§38): object {"mode":"line"} → "line"
+  if (action === 'term_open') return o.resume ? String(o.mode) + '\n' + String(o.resume) : String(o.mode);                // P408 (§38): object {"mode":"line"} → "line"
   if (action === 'term_line') return `${o.id}\n${o.line}`;         // P408: terminal id \n the line (a confirmed dangerous line)
   if (action === 'term_sudo') return `${o.id}\n${o.rid}`;          // P408: terminal id \n the host's sudo request id
   if (action === 'term_forget') return 'forget';                   // P408: object {} (no Face ID)

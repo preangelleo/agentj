@@ -1,5 +1,5 @@
-# Agent J v0.26.12
+# Agent J v0.27.0
 
-[host/web] Background-result routing, accurate restart notices, iPhone mic startup, borderless cards and fingerprint-free service restarts.
+[host/web] Full mobile terminal; fixes for terminal colors, task notices, mail targeting/Cc, session recovery and bundled skills.
 
-[主机/网页] 后台结果交主会话核对，修复重启后通知与退出码；改善 iPhone 首次开麦，底部卡片去边框，自身重启免指纹。
+[主机/网页] 手机和平板可用完整终端；修复终端配色、任务通知来源、邮件误处理与抄送子集、升级后会话恢复和随包技能误判。

@@ -89,7 +89,7 @@ def run(st, apply_fn=None, restart_fn=None):
         if rec.get("reason") in ("upgraded", "doctor_failed"):
             rows = doctor.run(st)
             rec["counts"] = update.doctor_counts(rows)
-            rec["checks"] = [{"id": r.get("id"), "status": r.get("status"), **({"summary": "no verified main Agent launch"} if update.benign_waiting(r) else {})} for r in rows]
+            rec["checks"] = [{"id": r.get("id"), "status": r.get("status"), **({"session_disconnected": True} if r.get("session_disconnected") is True else {}), **({"summary": "no verified main Agent launch"} if update.benign_waiting(r) else {})} for r in rows]
         if rec.get("result") != "ok" and (rec.get("step") or rec.get("reason") == "not_owner"):   # #475: not_owner → fix sentence
             # P277: a failed phone upgrade reports itself (metadata + redacted installer tail) unless switched off
             from . import upgrade_diag

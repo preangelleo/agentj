@@ -83,7 +83,7 @@ test('§38 signed object texts = the host (controls.py object_text), in both wir
   const msg = new TextDecoder().decode(await wire.controlMessage('C'.repeat(22), 'D'.repeat(22), 'term_open', 'a'.repeat(32), 1, { mode: 'line' }));
   assert.match(msg, /^agentjarvis-control-v1\nC{22}\nD{22}\nterm_open\na{32}\n1\n[0-9a-f]{64}$/);
   assert.match(TERM, /signCtl\('term_open', obj, c\.n\)/, 'the host nonce from step 1');
-  assert.match(TERM, /const obj = \{ mode: S\.enable \? 'enable' : S\.pty \? 'pty' : 'line' \};/);   // 0.26.9 #463: {"mode":"pty"}   // P417 #185: the signature names open or enable
+  assert.match(TERM, /const obj = \{ mode: S\.enable \? 'enable' : S\.pty \? 'pty' : 'line', \.\.\.\(S\.resume \? \{resume: S\.resume\} : \{\}\) \};/);   // 0.26.9 #463: {"mode":"pty"}   // P417 #185: the signature names open or enable
   assert.match(TERM, /signCtl\('term_line', \{ id: S\.id, line \}, m\.n\)/);
   assert.match(TERM, /const obj = \{ id: S\.id, rid \};\n\s+const signed = await signCtl\('term_sudo', obj, m\.n\);/);
   assert.match(HOOK, /signedWrite\('term_forget', \{\}, \{ t: 'term_forget' \}\)/, 'forget: signed, no Face ID');
@@ -94,7 +94,7 @@ test('§38 signed object texts = the host (controls.py object_text), in both wir
   assert.match(TERM, /function assertFa\(chB64, credId, salt, vn = null\) \{ return assertPrf\(unb64u\(chB64\), credId, salt, salt \? vn : null\); \}/);
   assert.match(TERM, /sealValue\(unb64u\(epk\), prf, channel\(\), await myDeviceId\(\), n, 'term_prf', n, digest\)/);
   assert.match(TERM, /\} finally \{ prf\.fill\(0\); \}/);
-  assert.match(TERM, /\{ t: 'term_open', \.\.\.\(S\.enable \? \{ mode: 'enable' \} : size \|\| \{\}\), \.\.\.signed, fa, \.\.\.sealed \}/);   // 0.26.9: + {mode:'pty', cols, rows}
+  assert.match(TERM, /\{ t: 'term_open', \.\.\.\(S\.enable \? \{ \.\.\.\(size \|\| \{\}\), mode: 'enable' \} : size \|\| \{\}\), \.\.\.signed, fa, \.\.\.sealed \}/);   // 0.26.9: + {mode:'pty', cols, rows}
   // the login password: sealed + signed exactly like a sudo card (kind login), the bytes zeroed, the field cleared
   assert.match(TERM, /sealValue\(c\.epk, value, ch, dev, c\.id, 'login', c\.n, c\.digest\)/);
   assert.match(TERM, /elevateMessage\(ch, dev, c\.id, 'login', ok \? 'allow' : 'deny', c\.n, ts, c\.digest, ctSha\)/);

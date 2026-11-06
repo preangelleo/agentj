@@ -5,6 +5,7 @@ import os
 import sys
 from pathlib import Path
 from . import preferences as p
+from . import skill_links
 
 def command(args):
     group=args[0]; args=args[1:]
@@ -95,38 +96,45 @@ def links(home=None):
 def status(home=None):
     out=[]
     for name,source,target in links(home):
-        own=target.is_symlink() and target.resolve()==source.resolve()
-        out.append({'skill':name,'path':str(target),'installed':own,'conflict':os.path.lexists(target) and not own})
+        kind,_=skill_links.classify(name,source,target)
+        out.append({'skill':name,'path':str(target),'installed':kind=='installed',
+                    'conflict':kind=='conflict','legacy':kind=='legacy','kept':kind=='kept',
+                    'can_keep':kind!='conflict' or skill_links.choice_fingerprint(target) is not None})
     return out
 
 def ensure(home=None,force=False):
     """P57: `serve` links every bundled skill where nothing is in the way yet, before the Agent starts — the main Agent's
-    skills (agentj-config, agentj-recall, agentj-manual) work without anyone running `agentj skill install`. A foreign file or
-    link at a target is never replaced; `agentj skill uninstall` removes ours (they come back at the next serve start only
+    skills (agentj-config, agentj-recall, agentj-manual) work without anyone running `agentj skill install`. Exact current/released trees are migrated with a backup. Modified or unverified entries
+    are preserved; `agentj skill uninstall` removes ours (they come back at the next serve start only
     where the target is free again). → {"linked": n, "conflicts": n}; never raises."""
     # Only an installed package links by itself: a source checkout (host/pyproject.toml beside the package — tests, e2e suites,
     # development) never writes into the real ~/.claude etc.; AGENTJ_SKILL_LINK=off turns it off anywhere (tests/_hermetic.py).
     if not force and (os.environ.get('AGENTJ_SKILL_LINK')=='off' or (SKILLS.parent.parent/'pyproject.toml').is_file()):
         return {'linked':0,'conflicts':0,'off':True}
     linked=conflicts=0
-    for _name,source,target in links(home):
+    for name,source,target in links(home):
         try:
-            if target.is_symlink() and target.resolve()==source.resolve():continue
-            if os.path.lexists(target):conflicts+=1;continue
-            target.parent.mkdir(parents=True,exist_ok=True);target.symlink_to(source);linked+=1
-        except OSError:conflicts+=1
+            if skill_links.link(name,source,target):linked+=1
+            if skill_links.classify(name,source,target)[0]=='conflict':conflicts+=1
+        except (OSError,ValueError,RuntimeError):conflicts+=1
     return {'linked':linked,'conflicts':conflicts}
 
 def skill(a):
-    # F14: no owner-confirmed / terminal gate (--owner-confirmed still accepted). Each link must point at this package's own
-    # skill folder; a foreign file or link at a target is a conflict, never replaced. P57: every bundled skill, not only
-    # agentj-config (agentj-recall, agentj-manual, …).
-    if a.action not in ('install','uninstall','list','status'):return 1
-    out=[]
+    # A named replace keeps an exact backup. keep records a content-bound decision.
+    if a.action not in ('install','uninstall','list','status','replace','keep'):return 1
+    names=bundled()
+    if a.action in ('replace','keep') and a.value not in names:
+        print(json.dumps({'ok':False,'error':'choose one bundled skill','skills':names}));return 1
+    errors=0
     for name,source,target in links():
-        own=target.is_symlink() and target.resolve()==source.resolve()
-        if a.action=='install':
-            if not os.path.lexists(target):target.parent.mkdir(parents=True,exist_ok=True);target.symlink_to(source);own=True
-        elif a.action=='uninstall' and own:target.unlink();own=False
-        out.append({'skill':name,'path':str(target),'installed':own,'conflict':os.path.lexists(target) and not own})
-    print(json.dumps({'ok':not any(x['conflict'] for x in out),'skills':bundled(),'harnesses':out}));return 1 if any(x['conflict'] for x in out) else 0
+        if a.action in ('replace','keep') and name!=a.value:continue
+        try:
+            kind,_=skill_links.classify(name,source,target)
+            if a.action in ('install','replace'):skill_links.link(name,source,target,replace=a.action=='replace')
+            elif a.action=='keep':skill_links.keep(name,source,target)
+            elif a.action=='uninstall' and kind=='installed':target.unlink()
+        except (OSError,ValueError,RuntimeError):errors+=1
+    out=status()
+    if a.action in ('replace','keep'):out=[r for r in out if r['skill']==a.value]
+    ok=not errors and not any(r['conflict'] or r['legacy'] or (a.action in ('install','replace') and not (r['installed'] or r['kept'])) for r in out)
+    print(json.dumps({'ok':ok,'skills':names,'harnesses':out}));return 0 if ok else 1

@@ -1,5 +1,5 @@
 """P147 reconnect: check serve, relay, then agent; repair only the failed link.
-Report each step. Never print secrets or start Claude Code itself.
+Report each step. Never print secrets; serve owns any exact-session recovery.
 """
 from __future__ import annotations
 
@@ -117,9 +117,9 @@ def run(st, lang="zh", session=None, ask=None, out=None, ctl=None, service=None,
                       "No main Agent chosen yet: run agentj agent claude (or codex / opencode).", broken="agent")
     here = session or (env.get("CLAUDE_CODE_SESSION_ID") if res.get("agent") == "claude" else None)
     if status not in OK_AGENT or session:
-        r = ctl(st, {"cmd": "agent_reconnect", "session": here}, 25) or {}
+        r = ctl(st, {"cmd": "agent_reconnect", "session": here}, 45) or {}
         if not r.get("ok") and r.get("why") == "not_found" and here and not session:
-            r = ctl(st, {"cmd": "agent_reconnect"}, 25) or {}      # this session is not in the Agent's folder
+            r = ctl(st, {"cmd": "agent_reconnect"}, 45) or {}      # this session is not in the Agent's folder
         if not r.get("ok") and r.get("why") == "ambiguous":
             choices = r.get("choices") or []
             ask = (sys.stdin.isatty() and sys.stdout.isatty()) if ask is None else ask
@@ -128,7 +128,7 @@ def run(st, lang="zh", session=None, ask=None, out=None, ctl=None, service=None,
                     print(f"  {i}. {c}", file=out)
                 answer = input(_say(lang, f"接哪一个？[1-{len(choices)}] ", f"Which one? [1-{len(choices)}] ")).strip()
                 if answer.isdigit() and 1 <= int(answer) <= len(choices):
-                    r = ctl(st, {"cmd": "agent_reconnect", "session": choices[int(answer) - 1]}, 25) or {}
+                    r = ctl(st, {"cmd": "agent_reconnect", "session": choices[int(answer) - 1]}, 45) or {}
             if not r.get("ok"):
                 ids = ", ".join(choices)
                 return finish(False, f"这个目录开着好几个会话（{ids}），不知道接哪个：在要用的那个会话里运行 agentj doctor --reconnect，"

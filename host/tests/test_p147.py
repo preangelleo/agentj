@@ -117,18 +117,13 @@ class Heal(Fixture):
         self.assertIn("又接上了，新会话 " + new[:8], self.host.notices[-1])
         self.assertEqual(self.host.statuses[-1], "idle")
 
-    async def test_two_equally_likely_sessions_ask_once_then_the_announced_one_wins(self):
-        dead = "99999999-1111-1111-1111-111111111111"          # pinned before this serve started; nothing known about it
+    async def test_multiple_scoped_owner_sessions_choose_most_recent(self):
+        dead = "99999999-1111-1111-1111-111111111111"
         one, two = self.session("a", 100), self.session("b", 200)
         a = shared.SharedClaudeAgent(self.host, {**self.cfg, "shared_session_id": dead})
-        self.assertFalse(await a.attach())
-        self.assertFalse(await a.attach())
-        asks = [n for n in self.host.notices if "不确定接哪个" in n]
-        self.assertEqual(len(asks), 1)
-        self.assertIn(one[:8], asks[0]); self.assertIn(two[:8], asks[0])
-        res = await a.hook_event({"hook_event_name": "SessionStart", "source": "startup", "session_id": two})
+        self.assertTrue(await a.attach())
         self.assertEqual(a.session["sessionId"], two)
-        self.assertIsInstance(res, dict)
+        self.assertFalse(any("不确定接哪个" in n for n in self.host.notices))
 
     async def test_the_one_started_after_the_lost_session_wins(self):
         older = self.session("a", 50)
@@ -172,8 +167,7 @@ class Heal(Fixture):
         one, two = self.session("a", 100), self.session("b", 200)
         a = shared.SharedClaudeAgent(self.host, {**self.cfg, "shared_session_id": dead})
         r = await a.reconnect()
-        self.assertEqual((r["ok"], r["why"]), (False, "ambiguous"))
-        self.assertEqual(sorted(r["choices"]), sorted([one[:8], two[:8]]))
+        self.assertEqual((r["ok"], r["session"]), (True, two[:8]))
         r = await a.reconnect(one[:8])
         self.assertEqual((r["ok"], r["session"]), (True, one[:8]))
         self.assertEqual(a.cfg["shared_session_id"], one)

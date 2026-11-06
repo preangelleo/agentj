@@ -2,7 +2,7 @@
 // Loaded by js/terminal.js as a module script next to it, only when the host's `terminal.modes` has "pty" and only on the
 // first open (never in the first-screen bundle). xterm.js + its fit addon are OUR copies (vendor/xterm/, pinned by sha256 in
 // vendor/VERSIONS.md, MIT); nothing is fetched from anywhere else.
-// What this module owns: the xterm instance (theme = the closed palette, Noir ground, Lotion words), fitting it to the page
+// What this module owns: the xterm instance (theme = the closed palette, following light/dark canvas), fitting it to the page
 // (ResizeObserver, the visual viewport for the soft keyboard, orientation), the extra-keys bar for a touch screen (Esc, Tab,
 // sticky Ctrl / Alt, arrows, Ctrl+C / Ctrl+D / Ctrl+Z, | ~ /) and Esc / Tab inside the terminal going to the program (not to
 // the page's layers). terminal.js owns the wire: every byte xterm hands us goes out as `term_in`, sizes as `term_resize`,
@@ -25,8 +25,27 @@ export const THEME = {
   brightBlack: '#acacac', brightRed: '#fbc8c6', brightGreen: '#dff3d1', brightYellow: '#ffe292', brightBlue: '#c1e1f0',
   brightMagenta: '#ebd8f5', brightCyan: '#c4f0f0', brightWhite: '#faf9f5',
 };
+/** A light canvas uses the same closed palette; OSC responses come from xterm's active ThemeService, not this map. */
+export const LIGHT_THEME = { ...THEME, background: '#faf9f5', foreground: '#141414', cursor: '#2c2b26', cursorAccent: '#faf9f5',
+  black: '#141414', white: '#858585', brightBlack: '#2c2b26', brightWhite: '#faf9f5' };
+export function terminalScheme(choice, systemDark) {
+  return choice === 'dark' || choice === 'light' ? choice : systemDark ? 'dark' : 'light';
+}
+/** xterm already implements OSC 4/10/11/12. Distinguish its finite protocol replies from owner keys/paste. */
+export function isPtyReply(d) {
+  if (typeof d !== 'string' || d.length > 128) return false;
+  if (d === '\x1b[0n') return true; // DSR status barrier after Nvim's OSC11 startup query.
+  if (/^\x1b\[\??[1-9]\d{0,3};[1-9]\d{0,3}R$/.test(d)) return true;
+  const m = /^\x1b\](10|11|12|4;(\d{1,3}));rgb:[\da-f]{1,4}\/[\da-f]{1,4}\/[\da-f]{1,4}(?:\x07|\x1b\\)$/i.exec(d);
+  return !!m && (!m[2] || Number(m[2]) <= 255);
+}
+export function routePtyData(d, cb, take) {
+  if (isPtyReply(d)) cb.reply(d);
+  else cb.data(withMods(d, take()));
+}
 /** The bar, left to right. `seq` = the bytes; `mod` = a sticky modifier; `ins` = a character typed as if by the keyboard. */
 export const BAR = [
+  { id: 'paste', label: '', paste: true }, { id: 'enter', label: 'Enter', seq: '\r' },
   { id: 'esc', label: 'Esc', seq: '\x1b' }, { id: 'tab', label: 'Tab', seq: '\t' },
   { id: 'ctrl', label: 'Ctrl', mod: 'ctrl' }, { id: 'alt', label: 'Alt', mod: 'alt' },
   { id: 'up', label: '↑', arrow: 'A' }, { id: 'down', label: '↓', arrow: 'B' }, { id: 'left', label: '←', arrow: 'D' }, { id: 'right', label: '→', arrow: 'C' },
@@ -71,18 +90,39 @@ function css() {
   cssOnce = true;
 }
 
-/** Put a terminal into `host`. cb.data(bytes) = what the owner typed / pasted (and xterm's own replies to the program);
+/** Put a terminal into `host`. cb.data(bytes) = what the owner typed / pasted; cb.reply(bytes) = native finite terminal responses;
  *  cb.resize(cols, rows) = the grid changed. → the handle terminal.js drives. */
 function mount(host, cb) {
   css();
   const fontFamily = (getComputedStyle(document.documentElement).getPropertyValue('--font-mono') || '').trim() || 'monospace';
   const narrow = Math.min(innerWidth, screen?.width || innerWidth) < 500;
-  const term = new Terminal({ fontFamily, fontSize: narrow ? 13 : 14, lineHeight: 1.2, scrollback: 5000, cursorBlink: true, theme: THEME,
+  const systemScheme = matchMedia('(prefers-color-scheme: dark)');
+  const activeTheme = () => terminalScheme(document.documentElement.getAttribute('data-theme'), systemScheme.matches) === 'dark' ? THEME : LIGHT_THEME;
+  const term = new Terminal({ fontFamily, fontSize: narrow ? 13 : 14, lineHeight: 1.2, scrollback: 5000, cursorBlink: true, theme: activeTheme(),
     minimumContrastRatio: 4.5, macOptionIsMeta: true, allowProposedApi: false, convertEol: false, drawBoldTextInBrightColors: false,
     screenReaderMode: false, rightClickSelectsWord: true, overviewRuler: { width: 0 }, linkHandler: linkHandler() });
   const fit = new FitAddon();
   term.loadAddon(fit);
   term.open(host);
+  const paintTheme = () => {
+    const theme = activeTheme();
+    term.options.theme = theme;
+    host.style.setProperty('--term-canvas', theme.background);
+  };
+  const themeObserver = new MutationObserver(paintTheme);
+  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  systemScheme.addEventListener('change', paintTheme);
+  paintTheme();
+  // A short tap anywhere on the screen focuses xterm's own textarea during the
+  // touch gesture. Keep scrolling and long-press selection native.
+  let tap = null;
+  const touchStart = e => { tap = e.pointerType === 'touch' ? {x:e.clientX,y:e.clientY,at:performance.now()} : null; };
+  const touchEnd = e => {
+    if (tap && Math.hypot(e.clientX-tap.x,e.clientY-tap.y) < 10 && performance.now()-tap.at < 400) term.focus();
+    tap = null;
+  };
+  host.addEventListener('pointerdown', touchStart);
+  host.addEventListener('pointerup', touchEnd);
   term.textarea?.setAttribute('aria-label', t('pty.aria'));
   for (const [k, v] of [['autocapitalize', 'off'], ['autocorrect', 'off'], ['autocomplete', 'off'], ['enterkeyhint', 'enter']]) term.textarea?.setAttribute(k, v);
   const mods = { ctrl: false, alt: false };
@@ -93,7 +133,7 @@ function mount(host, cb) {
   };
   const take = () => { const m = { ...mods }; if (mods.ctrl || mods.alt) { mods.ctrl = mods.alt = false; paintMods(); } return m; };
   const emit = (d) => { if (d) cb.data(d); };
-  const subs = [term.onData((d) => emit(withMods(d, take()))), term.onResize(({ cols, rows }) => cb.resize(cols, rows))];
+  const subs = [term.onData((d) => routePtyData(d, cb, take)), term.onResize(({ cols, rows }) => cb.resize(cols, rows))];
   // Esc and Tab inside the terminal belong to the program (vim, the shell's completion) — the page's layers listen on the
   // document in the capture phase, so we take them one step earlier (window, capture) and type them ourselves.
   const keys = (e) => {
@@ -122,8 +162,12 @@ function mount(host, cb) {
     const b = mk('button', 'term-key term-xkey', k.label); b.type = 'button'; b.id = 'term-x-' + k.id; b.dataset.k = k.id;
     if (k.mod) { b.dataset.mod = k.mod; b.setAttribute('aria-pressed', 'false'); }
     b.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse') e.preventDefault(); });   // keep the soft keyboard where it is
-    b.addEventListener('click', (e) => {
-      if (k.mod) { mods[k.mod] = !mods[k.mod]; paintMods(); }
+    b.addEventListener('click', async (e) => {
+      if (k.paste) {
+        try { const text = await navigator.clipboard.readText(); if (text) term.paste(text); }
+        catch { cb.pasteBlocked?.(); }
+      }
+      else if (k.mod) { mods[k.mod] = !mods[k.mod]; paintMods(); }
       else if (k.arrow) emit(arrowSeq(k.arrow, term.modes.applicationCursorKeysMode, take()));
       else if (k.ins) emit(withMods(k.ins, take()));
       else emit(k.id === 'esc' || k.id === 'tab' ? withMods(k.seq, take()) : (take(), k.seq));
@@ -133,7 +177,7 @@ function mount(host, cb) {
   }
   const labels = () => {
     bar.setAttribute('aria-label', t('pty.keys'));
-    for (const b of bar.querySelectorAll('button')) b.setAttribute('aria-label', t('pty.k.' + b.dataset.k, { c: b.textContent }));
+    for (const b of bar.querySelectorAll('button')) { if (b.dataset.k === 'paste') b.textContent = t('terminal.paste'); b.setAttribute('aria-label', t('pty.k.' + b.dataset.k, { c: b.textContent })); }
     term.textarea?.setAttribute('aria-label', t('pty.aria'));
   };
   live = labels;
@@ -154,11 +198,14 @@ function mount(host, cb) {
     viewRows: () => lines(term, true),
     mods: () => ({ ...mods }),
     dispose() {
+      host.removeEventListener('pointerdown', touchStart);
+      host.removeEventListener('pointerup', touchEnd);
       removeEventListener('keydown', keys, true);
       vv?.removeEventListener('resize', refit);
       removeEventListener('orientationchange', refit);
       removeEventListener('resize', refit);
-      ro?.disconnect(); cancelAnimationFrame(raf);
+      ro?.disconnect(); themeObserver.disconnect(); systemScheme.removeEventListener('change', paintTheme);
+      host.style.removeProperty('--term-canvas'); cancelAnimationFrame(raf);
       if (live === labels) live = null;
       for (const s of subs) s.dispose();
       try { term.clear(); term.reset(); } catch { /* disposed */ }

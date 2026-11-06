@@ -63,6 +63,15 @@ SIGNAL_KEYS = ("\x03", "\x1c", "\x1a")                                   # Ctrl+
 _HIST_RERUN = re.compile(r"^\s*\^|(?:^|[;&|(\n`{]|\$\()\s*(?:\w+=\S*\s+)*(?:(?:builtin|command|exec|noglob|nocorrect)\s+)*"
                          r"\\?(?:fc|r)(?=\s|$|[;&|)])")
 _ALT = re.compile(r"\x1b\[\?([0-9;]*)([hl])")                                # DECSET / DECRST (alternate screen: 47 1047 1049)
+# Only complete native xterm colour/cursor reports; no command, newline or arbitrary OSC payload.
+_REPLY = re.compile(r"(?:\x1b\[0n|\x1b\](?:(?:10|11|12)|4;(?P<index>[0-9]{1,3}));rgb:[0-9a-fA-F]{1,4}/[0-9a-fA-F]{1,4}/[0-9a-fA-F]{1,4}(?:\x07|\x1b\\)|\x1b\[\??[1-9][0-9]{0,3};[1-9][0-9]{0,3}R)")
+
+
+def terminal_reply(text: str) -> bool:
+    m = _REPLY.fullmatch(text) if len(text) <= 128 else None
+    return m is not None and (m["index"] is None or int(m["index"]) <= 255)
+
+
 REFUSED_EVERY = 60.0                                                         # w2-sec L-4: one control_refused per minute
 
 # w2-sec N-3: before the shell starts, the shim moves itself into the session's own cgroup (`cg_make`; AJ_TERM_CG = its
@@ -500,6 +509,7 @@ class PtyDesk:
         x.rc_dir = d
         env = utf8_locale(env)
         env["INPUTRC"] = "/dev/null"                    # w2-sec H-2: no ~/.inputrc macro rewrites a line after it was checked
+        # Native colour/cursor reports now reach foreground programs immediately; keep Nvim's theme detection enabled.
         env.update(TERM="xterm-256color", COLORTERM="truecolor", SHELL=shell_path(shell))
         argv = rc_files(str(d), shell, _setup(shell, hist, sudo, helper, mark, ignore, nopy), env)
         master, slave = open_pair(x.cols, x.rows)
@@ -641,6 +651,16 @@ class PtyDesk:
                 await self._frame(x, "\r\n[输入太快，这一段没有送出 / input too fast: not sent]\r\n", False)
             return
         x.in_bytes += len(b)
+        if "reply" in obj:
+            # A report is not owner typing: never cancel a confirmation, consume an Enter sequence,
+            # enter the echo ring or wait in typeahead for a later shell prompt.
+            if (obj["reply"] is not True or not terminal_reply(d) or x.closing or
+                    x.disconnected_at is not None or x.at_prompt or x.hold not in (None, "after") or
+                    not self.program_front(x)):
+                self.refused(s.device, "term_in", "reply")
+                return
+            self._pty_write(x, d)
+            return
         x.last = now
         if x.io is not None and not password_mode(x.io.fd):  # echo recognition only; an echo-off answer is never kept
             x.typed = (x.typed + plain(d).replace("\n", ""))[-TYPED_KEEP:]
@@ -661,6 +681,8 @@ class PtyDesk:
         self._pty_feed(x, d)
 
     def _pty_write(self, x, text: str) -> bool:
+        if x.disconnected_at is not None:
+            return False
         ok = x.io is not None and x.io.write(text.encode("utf-8"))
         if not ok and x.io is not None and not x.io.closed:
             self.refused(x.device, "term_in", "full")
@@ -678,16 +700,26 @@ class PtyDesk:
         seen[key] = (now, 0)
         self.st.log("control_refused", device=device, action=action, reason=reason, **({"more": n} if n else {}))
 
-    def shell_front(self, x) -> bool:
+    def shell_front(self, x, *, strict=False) -> bool:
         """The shell itself owns the terminal's foreground (its prompt, a builtin, between two commands) — not a program it
         started (job control: every job is its own process group). Unknown → True (the stricter side: keep / classify)."""
         try:
             if os.tcgetpgrp(x.io.fd) != x.proc.pid:
                 return False
         except (OSError, AttributeError, TypeError):
-            return True
+            return not strict
         name = proc_name(x.proc.pid)                       # `exec prog` keeps the pid: the front is the shell only by name
-        return name is None or os.path.basename(name).lstrip("-") in ("bash", "zsh", x.shell)
+        return (name is None and not strict) or (name is not None and os.path.basename(name).lstrip("-") in ("bash", "zsh", x.shell))
+
+    def program_front(self, x) -> bool:
+        """Positive foreground-program evidence; unlike shell_front, unknown never authorizes a reply."""
+        try:
+            if os.tcgetpgrp(x.io.fd) != x.proc.pid:
+                return True
+        except (OSError, AttributeError, TypeError):
+            return False
+        name = proc_name(x.proc.pid)
+        return name is not None and os.path.basename(name).lstrip("-") not in ("bash", "zsh", x.shell)
 
     def _pty_feed(self, x, d: str) -> None:
         if x.io is None or x.closing:

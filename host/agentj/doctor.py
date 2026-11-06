@@ -1045,6 +1045,11 @@ def check_serve(st: State) -> dict:
     if not res.get("relay_up") and res.get("relay_state", res.get("relay")) == "connecting":
         res = _wait_relay(st, res)          # P127: right after a start, give the first connection a moment
     up = res.get("relay_up")
+    readiness = res.get("harness_readiness") or {}
+    if res.get("agent") == "claude" and (res.get("agent_status") in ("down", "none", None)
+            or isinstance(readiness, dict) and readiness.get("code") == "session_disconnected"):
+        return {**_c("serve", WARN, "后台服务在运行，但 Claude 会话没接上 / Service running, but the Claude session is disconnected",
+                     "agentj doctor --reconnect"), "session_disconnected": True}
     obs = res.get("agent_observe") if isinstance(res.get("agent_observe"), dict) else {}
     if obs.get("down") is True:     # P192 (B17): the shared session's observe loop gave up after repeated errors
         return _c("serve", WARN, "在运行 / running · 共享会话读取连续出错，已标记断开 / shared session reads kept failing, "
@@ -1762,19 +1767,30 @@ def check_skills(home=None) -> dict:
     except OSError:
         return _c("skills", WARN, "随包技能：检查失败 / bundled skills: check failed")
     names = personalize.bundled()
-    missing = sorted({r["skill"] for r in rows if not r["installed"] and not r["conflict"]})
+    missing = sorted({r["skill"] for r in rows if not r["installed"] and not r["conflict"] and not r.get("kept") and not r.get("legacy")})
     foreign = sorted({r["skill"] for r in rows if r["conflict"]})
     try:                                 # P244 (§30): a skill alias that clashes with another name / alias is dropped
         from .workflows import common_skills
         clash = sorted({f"{c['alias']} ({c['skill'].rsplit(':', 1)[-1]})" for c in common_skills(None)[2]})[:8]
     except (OSError, ValueError):
         clash = []
-    if not missing and not foreign and not clash:
-        return _c("skills", OK, f"随包技能已安装 / bundled skills linked: {', '.join(names)}")
+    legacy = sorted({r["skill"] for r in rows if r.get("legacy")})
+    if not missing and not foreign and not legacy and not clash:
+        kept = sorted({r["skill"] for r in rows if r.get("kept")})
+        detail = f"；已选择保留 / chosen copies kept: {', '.join(kept)}" if kept else ""
+        return _c("skills", OK, f"随包技能已就绪 / bundled skills ready: {', '.join(names)}" + detail)
     parts = ([f"未安装 / not linked: {', '.join(missing)}"] if missing else []) + \
-            ([f"同名的是你自己的，保留 / your own copy kept: {', '.join(foreign)}"] if foreign else []) + \
+            ([f"同名副本有修改或来源未确认，已保留 / modified or unverified copy kept: {', '.join(foreign)}"] if foreign else []) + \
+            ([f"旧版随包副本，启动时自动更新 / released copies update at startup: {', '.join(legacy)}"] if legacy else []) + \
             ([f"技能别名重名，后来的没用上 / alias clash, the later one dropped: {', '.join(clash)}"] if clash else [])
-    return _c("skills", WARN, "随包技能 / bundled skills — " + "; ".join(parts), "agentj skill install" if missing else "")
+    hint = "agentj skill install" if missing or legacy else ""
+    if foreign:
+        choices=[]
+        for name in foreign:
+            can_keep=all(r.get("can_keep") for r in rows if r["skill"]==name and r["conflict"])
+            choices.append(f"agentj skill replace {name}" + (f" / agentj skill keep {name}" if can_keep else " (副本无法完整读取，请先检查权限 / check unreadable copy permissions first)"))
+        hint = "; ".join(filter(None, [hint] + choices))
+    return _c("skills", WARN, "随包技能 / bundled skills — " + "; ".join(parts), hint)
 
 
 for _name in [n for n in list(globals()) if n.startswith("check_") and callable(globals()[n])]:

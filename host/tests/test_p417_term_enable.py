@@ -1,4 +1,4 @@
-"""#185 (P417): switch the web terminal on from a COMPUTER browser — and never use it from a phone.
+"""#185 (P417): switch the web terminal on from paired computer, phone and tablet browsers (#375 supersedes #185 phone refusal).
 
 - the device kind comes from the label the remote gave itself at pairing (`self_name` 「网页 · <OS> <browser>」):
   iOS / Android / 华为 → phone, macOS / Windows / Linux → desktop, anything else → unknown.
@@ -190,30 +190,30 @@ class RemoteEnable(Kind):
         self.run_async(go)
 
 
-class PhoneRefused(Kind):
-    def test_phone_cannot_enable_or_open_even_when_listed(self):
+class PhoneAllowed(Kind):
+    def test_phone_enables_and_opens_with_the_same_uv_and_password(self):
         for label in (IPHONE, ANDROID):
             self.label(label)
             self.passkey()
-            self.assertEqual(self.host.preferences_msg(self.s)["host"]["terminal"]["kind"], "phone")
-
             async def go():
-                self.assertEqual((await self.enable_step1())["why"], "phone")
-                self.enable()                                             # listed at the computer (older config)
-                self.assertEqual((await self.step1())["why"], "phone")
+                c1 = await self.enable_step1()
+                self.assertEqual(c1["why"], "passkey_required")
+                await self.enable_step2(c1)
+                self.assertEqual((await self.finish(c1))["t"], "term_ready")
+                await self.desk.close("owner")
+                self.assertEqual((await self.open())["t"], "term_ready")
+                await self.desk.close("owner")
                 term_store.write_config(self.st, {"on": False, "entries": [], "minutes": 15})
             self.run_async(go)
-        self.assertIsNone(self.desk.term)
 
-    def test_phone_signed_step_two_still_refused(self):
-        """A phone that got a nonce while it was labelled otherwise is refused again at step 2."""
+    def test_phone_still_needs_its_passkey_at_step_two(self):
         self.label(DESK)
         self.passkey()
-
         async def go():
             c1 = await self.enable_step1()
             self.label(IPHONE)
-            self.assertEqual((await self.enable_step2(c1))[-1]["why"], "phone")
+            with mock.patch.object(passkey, "verify_assertion", side_effect=passkey.PasskeyError("bad", "sig")):
+                self.assertEqual((await self.enable_step2(c1))[-1]["why"], "passkey_failed")
         self.run_async(go)
         self.assertFalse(term_store.read_config(self.st)["on"])
 
@@ -226,18 +226,15 @@ class PhoneRefused(Kind):
             self.assertEqual((await self.open())["t"], "term_ready")
         self.run_async(go)
 
-    def test_terminal_go_skips_phones(self):
+    def test_terminal_go_reaches_allowed_phones(self):
         self.host.agent = _owner_agent(self.host)
         self.label(IPHONE)
         self.passkey()
         self.enable()
-
         res = asyncio.run(self.desk.ctl_go({}))
-        self.assertEqual(res.get("error"), "offline", res)
-        self.assertEqual(self.msgs("term_go"), [])
-        self.label(DESK)
-        self.assertTrue(asyncio.run(self.desk.ctl_go({}))["ok"])          # the same remote as a computer browser: reached
+        self.assertTrue(res["ok"], res)
         self.assertEqual(len(self.msgs("term_go")), 1)
+
 
 
 class CliEnable(Kind):
@@ -261,18 +258,17 @@ class CliEnable(Kind):
         self.assertTrue(cfg["on"])
         self.assertEqual([e["device"] for e in cfg["entries"]], [self.phone.did])
 
-    def test_cli_enable_refuses_a_named_phone_and_skips_it_as_default(self):
+    def test_cli_enable_accepts_a_named_phone_and_default_is_unambiguous(self):
         self.label(IPHONE)
         self.passkey()
-        self.assertEqual(asyncio.run(self.cli([self.phone.did], answer=False))["error"], "phone_device")
-        self.assertEqual(asyncio.run(self.cli([], answer=False))["error"], "no_passkey")
+        self.assertTrue(asyncio.run(self.cli([self.phone.did]))["ok"])
+        self.sent.clear()
+        self.assertTrue(asyncio.run(self.cli([]))["ok"])
         laptop = Phone(self.st, name=DESK)
         _ready(self.host, laptop, cid=12).p33 = True
         self.passkey(laptop)
-        res = asyncio.run(self.cli([]))                                   # the phone answers the card; the laptop is listed
-        self.assertTrue(res["ok"], res)
-        self.assertEqual([e["device"] for e in term_store.read_config(self.st)["entries"]], [laptop.did])
-        self.assertIn("phone_device", term_cli.ERR)
+        self.assertEqual(asyncio.run(self.cli([], answer=False))["error"], "choose_device")
+
 
 
 if __name__ == "__main__":

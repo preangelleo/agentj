@@ -29,7 +29,9 @@ test('§1: Weekly / 5H open the centred dialog, never a toast', () => {
 
 test('§3: copy icons, two-way switches, one-row segments, scan icon, scan page icons, heartbeat, contacts', () => {
   const copies = html.match(/<button type="button" class="setcopy"[^>]*>/g);
-  assert.ok(copies.length >= 8);
+  // #511: duplicate commands were removed; only command-only compatibility rows keep copy controls.
+  assert.deepEqual([...html.matchAll(/class="setcopy" data-copy="([^"]+)"/g)].map(m=>m[1]).sort(),
+    ['set-lang-cmd-code', 'set-pref-cmd-code', 'set-term-cmd'].sort());
   for (const b of copies) assert.match(b, /aria-label="复制命令" title="复制命令"/);
   assert.doesNotMatch(html, /data-i18n="set\.copy">复制命令</);
   for (const id of ['set-lang', 'set-mode', 'set-updates']) assert.match(html, new RegExp(`role="switch" id="${id}" class="tw-sw"`));

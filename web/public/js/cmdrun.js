@@ -13,7 +13,7 @@ import { glyph } from './icons.js';
 import { longPress } from './longpress.js';
 import { copyable } from './copycode.js';
 import { t, onLang } from './t.js';
-import { el, mk, toast, toastAction } from './ui.js';
+import { el, mk, toast, toastAction, confirmSheet } from './ui.js';
 import { pkSheet, paintPk } from './pkassist.js';   // P539: no own passkey here (the sheet) · why the tap failed (the result)
 import { usable as termUsable, state as termState } from './termhook.js';   // P408: 「在终端里打开」 only while the terminal is on for this phone
 
@@ -21,11 +21,34 @@ const READ_CMDS = new Set(['doctor']);
 export const CMDS = { doctor: 'doctor', reconnect: 'doctor --reconnect', status: 'status', service_status: 'service status',
   rescue_status: 'rescue status', update_check: 'update check' };
 for (const h of ['claude','codex','opencode','kimi','qwen','dsh']) CMDS['switch_' + h] = 'agent switch ' + h + ' --force';
-const line = (name) => 'agentj ' + CMDS[name];
+const skillCommand = (name) => /^skill_(replace|keep)_([a-z][a-z0-9-]{0,79})$/.exec(name || '');
+const line = (name) => { const m = skillCommand(name); return 'agentj ' + (m ? `skill ${m[1]} ${m[2]}` : CMDS[name]); };
+let skillOptions = [], skillPrompt = false;
+const parseSkills = (rows) => Array.isArray(rows) ? rows.slice(0, 80).filter((r) => r && typeof r.name === 'string' && /^[a-z][a-z0-9-]{0,79}$/.test(r.name)).map((r) => ({ name: r.name, can_keep: r.can_keep === true })) : [];
+function skillChoices() {
+  if (!skillOptions.length || !R || (R.name !== 'doctor' && !skillCommand(R.name))) return [];
+  const box = mk('div', 'rscmdskills'); box.id = 'rs-skill-choices';
+  box.append(mk('p', 'rsnote', t('p515.skillsNote')));
+  for (const r of skillOptions) {
+    const row = mk('div', 'rscmd'); row.dataset.skill = r.name;
+    row.append(mk('code', '', r.name));
+    const acts = mk('div', 'rmbar rscmdacts');
+    for (const action of ['replace', 'keep']) {
+      const b = mk('button', 'act', t('p515.' + action)); b.type = 'button'; b.dataset.skillAction = action;
+      b.disabled = action === 'keep' && !r.can_keep;
+      b.addEventListener('click', () => run('skill_' + action + '_' + r.name)); acts.append(b);
+    }
+    row.append(acts);
+    if (!r.can_keep) row.append(mk('small', 'rsnote', t('p515.keepUnavailable')));
+    box.append(row);
+  }
+  return [box];
+}
 let H = { setupFaceId() {}, openTerminal() {} }, names = [], R = null, term = false;   // R: the last run {name, st: run|done|fail, code, out, cut, why}
 
 export function configure(h) { H = { ...H, ...h }; onLang(paint); }
 /** settings.js render(): the host block decides which rows exist (an older host: the card stays hidden). */
+export const supports = (name) => names.includes(name);
 export function render(info) {
   const list = info && Array.isArray(info.run_cmds) ? info.run_cmds.filter((n) => typeof n === 'string' && Object.hasOwn(CMDS, n)) : [];
   if (list.join() !== names.join() || term !== termUsable()) { names = list; term = termUsable(); paint(); }
@@ -76,6 +99,7 @@ function result() {
     paintPk(pk, { fa: R.fa_s, err: R.err, retry: () => run(name) });
     bar.prepend(pk);
   }
+  out.push(...skillChoices());
   if (R.fold) {                        // P393: Settings opened again — one line; the output stays under 「详情」
     if (!R.out) return out;
     const d = mk('details', 'rsmore'); d.id = 'rs-cmd-log'; d.append(mk('summary', '', t('p332.details')));
@@ -110,8 +134,23 @@ async function faceId(res) {
   return p;
 }
 export async function run(name) {
+  if (skillPrompt) return;
+  const skill = skillCommand(name);
+  if (skill) {
+    const option = skillOptions.find((r) => r.name === skill[2]);
+    if (!option || (skill[1] === 'keep' && !option.can_keep) || (R && (R.st === 'run' || R.st === 'ask')) || phoneConfirmation()) return;
+    skillPrompt = true;
+    try {
+      const yes = await confirmSheet(t('p515.' + skill[1]), t('p515.' + skill[1] + 'Confirm', { skill: skill[2] }), t('p515.' + skill[1]));
+      if (yes) return await execute(name);
+    } finally { skillPrompt = false; }
+    return;
+  }
   if(!READ_CMDS.has(name)&&phoneConfirmation())return;
   if (!Object.hasOwn(CMDS, name) || !names.includes(name) || (R && R.st === 'run')) return;
+  return execute(name);
+}
+async function execute(name) {
   R = { name, st: 'ask' };
   if (!isReady()) { R = { name, st: 'fail', why: 'offline', hm: new Date().toTimeString().slice(0, 5) }; return paint(); }
   paint();
@@ -120,6 +159,7 @@ export async function run(name) {
   const str = (v) => (typeof v === 'string' ? v.slice(0, 20000) : '');
   // the link dropped while the computer ran it (doctor --reconnect may restart Agent J there): say so, not a bare failure
   if (m.why === 'offline' && R && R.st === 'run') m.why = 'dropped';
+  if (Array.isArray(m.skill_conflicts)) skillOptions = parseSkills(m.skill_conflicts);
   R = { name, st: m.ok ? 'done' : 'fail', code: Number.isInteger(m.code) ? m.code : -1, out: str(m.out), cut: m.cut === true,
     why: m.ok ? '' : String(m.why || ''), hm: new Date().toTimeString().slice(0, 5), err: m.ok ? null : m.err || null, fa_s: m.fa_s || null };
   if (m.why === 'no_passkey' && phoneConfirmation(true)) { paint(); return; }
@@ -133,4 +173,4 @@ export function foldEnded() { if (R && (R.st === 'done' || R.st === 'fail') && !
 export function onReady() { if (R && R.st === 'fail' && R.why === 'offline') { R.why = 'restored'; paint(); } }
 // tests
 export const _debug = () => ({ names: [...names], R: R && { ...R } });
-export function _reset() { names = []; R = null; paint(); }
+export function _reset() { names = []; skillOptions = []; skillPrompt = false; R = null; paint(); }

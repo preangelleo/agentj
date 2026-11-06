@@ -280,22 +280,14 @@ try {
     try {
       await click(p, '#setBtn');
       await waitFor(p, `document.getElementById('set-risk').getAttribute('aria-checked') === 'true'`);
-      assert.equal(await ev(p, `document.getElementById('set-risk-cmd').textContent`), 'agentj config set agent.high_risk_warnings false');
       assert.equal(await ev(p, `document.getElementById('set-mode').getAttribute('aria-checked')`), 'true');   // P207: two-way switch, right = 共享
-      assert.equal(await ev(p, `document.getElementById('set-mode-cmd').textContent`), 'agentj config set agent.session_mode independent');
       // P294: shared mode → a line under 隔离运行 says the open computer session is not covered (the switch stays usable)
       assert.equal(await ev(p, `document.querySelector('[data-i18n="set.iso"]').textContent`), '隔离运行');
       assert.equal(await ev(p, `!document.getElementById('set-iso-shared').hidden && !document.getElementById('set-iso').disabled`), true);
-      // nothing on these rows can write: no switch, no pref_set
-      assert.equal(await ev(p, `document.querySelectorAll('#set-risk-cmd, #set-mode-cmd').length === 2 && !!document.querySelector('#settings [data-pref^="agent."]')`), true);
+      assert.equal(await ev(p, `document.querySelectorAll('#set-risk-cmd, #set-mode-cmd, #set-iso-cmd, #set-docker-cmd').length`), 0);
       fake.st.prefs = { ...PREFS, agent: { high_risk_warnings: false, session_mode: 'independent' } };
       await fake.send(fake.prefsMsg(fake.st.prefs));
       await waitFor(p, `document.getElementById('set-risk').getAttribute('aria-checked') === 'false'`);
-      assert.equal(await ev(p, `document.getElementById('set-risk-cmd').textContent`), 'agentj config set agent.high_risk_warnings true');
-      assert.equal(await ev(p, `document.getElementById('set-mode-cmd').textContent`), 'agentj config set agent.session_mode shared');
-      await ev(p, `document.querySelector('[data-copy="set-risk-cmd"]').click()`);
-      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已复制'`);
-      assert.equal(await ev(p, `navigator.clipboard.readText()`), 'agentj config set agent.high_risk_warnings true');
       await click(p, '#set-risk');
       await waitFor(p, `document.getElementById('set-risk').getAttribute('aria-checked') === 'true'`);
       assert.equal(fake.st.prefSets.at(-1).key, 'agent.high_risk_warnings');
@@ -306,10 +298,8 @@ try {
       fake.st.prefs = { ...PREFS, agent: { high_risk_warnings: false } };
       await fake.send(fake.prefsMsg(fake.st.prefs));
       await waitFor(p, `document.getElementById('set-mode').getAttribute('aria-checked') === 'false' && document.querySelector('#set-mode ~ .tw-lab, .tw-lab[data-tw="set-mode"][data-side="left"]').getAttribute('aria-current') === 'true'`);
-      assert.equal(await ev(p, `document.getElementById('set-mode-cmd').textContent`), 'agentj config set agent.session_mode shared');
       // F14 (P45b): isolation (default on) and docker (default off) switch from the phone
       assert.equal(await ev(p, `document.getElementById('set-iso').getAttribute('aria-checked')`), 'true');
-      assert.equal(await ev(p, `document.getElementById('set-iso-cmd').textContent`), 'agentj config set agent.isolation false');
       assert.equal(await ev(p, `document.getElementById('set-iso-shared').hidden`), true);   // P294: independent → no shared note
       assert.equal(await ev(p, `document.getElementById('set-docker').getAttribute('aria-checked')`), 'false');
       assert.equal(await ev(p, `document.getElementById('set-docker-off').hidden && !document.getElementById('set-docker').disabled`), true);

@@ -1,3 +1,4 @@
+import {paint as terminalCommands} from './termcommands.js';
 import { paintReportActions } from './report-actions.js';
 import {reopenSession, setStuck} from './rescue.js';
 import * as chatheal from './chatheal.js';
@@ -1512,7 +1513,8 @@ function showPage(){
   el("words").classList.toggle("empty", !visibleReply(p));
   renderMedia(el("words"), p);
   wireComponents(el("words"), replyBtn.agentWords(p) && p.end !== "open", text => appendText("\n" + text + "\n"));
-  replyBtn.paint(el("words"), p, {pages, say: sayReply, find: search.find});   // P368
+  replyBtn.paint(el("words"), p, {pages, say: sayReply, find: search.find});
+  terminalCommands(el("words"), p);   // P368
   if (rdAt && rdAt.key === shownKey && !rdAt.file) renderReaderMedia(el("rdWords"), p);   // P59: the reader's slots, same Blobs
   if (rdOpen()) rdSync();                                                   // P273: the reader follows every jump
   document.body.dataset.pageOpen = p.end === "open" ? "1" : "0";

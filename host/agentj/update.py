@@ -644,22 +644,25 @@ def web_state(web: str | None, version: str | None = None, timeout: float = 5.0)
 
 
 def web_refresh_text(lang="zh", web: str | None = "older") -> str:
-    """P320: the page's sentence follows what the web actually serves (web_state): the same version → refresh now; still
-    older → it comes separately; unknown → refresh if the page offers it."""
+    """The server version is known, not the version loaded in this browser.
+    Settings remains usable offline; reloading a page cannot restart its host.
+    """
+    menu = ('the top-right gear (Settings) → scroll to "Web app" → "Update and reload" (the circular-arrow button below the version on older pages)' if lang == "en" else
+            '右上角齿轮（设置）→ 向下找到「网页版 App」→「更新并刷新」（旧页面是版本号下方的圆形箭头按钮）')
     if web == "same":
-        return ('The phone/web page is already on this version: just refresh the page (or the settings icon at the top right → '
-                '"Update and reload").' if lang == "en" else
-                '手机/网页已经是同一版本：刷新页面即可（或点右上角设置图标 →「更新并刷新」）。')
-    if web is None:
-        return ('Could not check the web page\'s version just now: if the page shows "Server upgraded", tap Refresh; otherwise '
-                'refresh the page once.' if lang == "en" else
-                '这次没查到网页的版本：页面弹「服务器已升级」就点「刷新」；没弹的话刷新一次页面试试。')
+        note = ('The web server has this version: just refresh the page.' if lang == "en" else
+                '网页服务器已上线同一版本：刷新页面即可。')
+    elif web is None:
+        note = ('Could not check the web server version: refresh the page once.' if lang == "en" else
+                '这次没查到网页服务器的版本：刷新一次页面试试。')
+    else:
+        note = ('The new web page will be released separately; refresh after it is available.' if lang == "en" else
+                '手机/网页的新版会单独上线；新版网页稍后上线，再刷新页面。')
     if lang == "en":
-        return ('The phone/web page updates separately: when its new version is out, the page shows "Server upgraded" — tap '
-                'Refresh (or the settings icon at the top right → "Update and reload"). Until then a small line under the header says the new page is on its way.')
-    # P240: the page's new version can lag the Agent J host (batch B after A); telling the owner to refresh now sent them round a
-    # refresh loop on the old page (Leo 10-13 23:13). The page itself now offers a refresh only when one would help.
-    return '手机/网页的新版会单独上线：上线后页面会弹「服务器已升级」，点「刷新」就行（也可以点右上角设置图标 →「更新并刷新」）；在那之前页眉下有一行小字「Agent J 主机已升级，新版网页稍后上线」。'
+        return (note + ' To refresh, tap ' + menu + '. If the page stays grey after refreshing, close and reopen it. If it is still grey, make sure the computer is awake and online; '
+                'on that computer, open Terminal and run `agentj doctor --reconnect`, then reopen the page.')
+    return (note + '刷新入口：' + menu + '。若刷新后仍灰，先关闭并重新打开页面；仍未恢复，再确认 Agent J 主机已唤醒并联网，在那台主机打开终端运行 '
+            '`agentj doctor --reconnect`，再重新打开页面。')
 
 
 def repair_upgrade(st, rows):
@@ -742,8 +745,12 @@ def upgrade_due(st):
 def health_text(counts, lang="zh", rows=None, *, verified_upgrade=False) -> str:
     if verified_upgrade:
         blockers, _ = upgrade_blockers(rows)
+        if not blockers and any(r.get("session_disconnected") is True for r in rows or [] if isinstance(r, dict)):
+            return ("The program is upgraded, but the Claude session is disconnected. Tap Repair; if it remains disconnected, "
+                    "tap Ask support on this page." if lang == "en" else
+                    "程序已升级，但 Claude 会话没接上。点「一键修复」；若仍未接上，点本页「请客服帮忙」。")
         if not blockers and counts:
-            return "Upgrade succeeded; everything is working." if lang == "en" else "升级成功，一切正常。"
+            return "Upgrade succeeded; host self-check passed at this time." if lang == "en" else "升级成功，主机本次自检通过。"
         if not counts or blockers == [DOCTOR_UNPARSABLE]:
             return ("The host self-check could not finish. Tap Repair on your phone." if lang == "en" else
                     "主机自检未能完成，点手机上的「一键修复」。")
@@ -1398,7 +1405,7 @@ def result_block(res: dict) -> str:
                      "没有自动回滚 / the upgrade record could not reach the host (its data is hidden inside the fence): the phone's "
                      "\"upgraded\" notice may be off and there is no automatic rollback")
     if res.get("result") == "ok" and res.get("reason") == "upgraded" and res.get("health") != "unverifiable":
-        lines.append("message: 升级成功，一切正常 / Upgrade succeeded; everything is working")
+        lines.append("message: 升级成功，程序版本已确认；会话连接将在重启后检查 / Upgrade succeeded; program version confirmed. The session connection is checked after restart")
     elif res.get("result") != "ok" and res.get("existing_issues"):
         lines.append("existing_issues: " + ", ".join(res["existing_issues"]))
     if res.get("result") != "ok" and res.get("step"):        # P277: where it failed, the installer's own words (redacted)

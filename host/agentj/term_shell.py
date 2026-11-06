@@ -159,6 +159,9 @@ class Term:
         self.in_win, self.in_bytes, self.in_note, self.enter_seq, self.resized, self.typed = 0.0, 0, False, 0, -1e9, ""
         self.cg = None                        # w2-sec N-3: this session's cgroup.procs (term_pty.cg_make), None = none here
         self.hold_key, self.alt, self.after_task = "\r", False, None   # 0.26.9 w2-sec: held key (H-1), alt screen (M-4), M-2 poll
+        self.disconnected_at = None
+        self.replay, self.replay_chars, self.ready_msg = [], 0, None
+        self.frame_lock = asyncio.Lock()
 
 
 # ---------------------------------------------------------------- history (#184)

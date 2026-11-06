@@ -152,14 +152,7 @@ async function reply(p, fake, s, tag, touch, save) {
 
 async function settings(p, s, tag, touch, save) {
   await evaluate(p, `${$('setBtn')}.click()`); await waitFor(p, `!${$('settings')}.hidden`); await sleep(400);
-  await waitFor(p, `${$('set-risk-cmd')}.textContent.length > 0`, 4000).catch(() => {});
-  await evaluate(p, `${$('set-risk-cmd')}.scrollIntoView({block:'center'})`); await sleep(200);
-  await wired(p, tag + ' settings', `document.getElementById('settings')`);
-  const want = await evaluate(p, `${$('set-risk-cmd')}.textContent`);
-  check(/^agentj config set /.test(want), tag + ': a real command in the row');
-  await copiesExactly(p, '#set-risk-cmd', want, touch, tag + ' settings command');
-  await waitFor(p, `document.querySelector('#settings .setcopy[data-copy="set-risk-cmd"]').dataset.done==='1'`, 2000);
-  await save('settings-command');
+  check(await evaluate(p, `!document.querySelector('#set-risk-cmd')`), tag + ': settings switch has no duplicate command');
   // the help text's `agentj name <新名字>` (dictionary code → ⧉)
   const sel = '#settings [data-i18n="set.computerNote"] code';
   if (await evaluate(p, `!!document.querySelector(${JSON.stringify(sel)}) && document.querySelector(${JSON.stringify(sel)}).getClientRects().length>0`)) {

@@ -50,9 +50,41 @@ OUT_MAX = 12000        # characters sent back (the tail is cut, `cut: true`)
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|[\x00-\x08\x0b-\x1f\x7f]")
 
 
+def skill_command(name: str):
+    """Hidden doctor actions, fixed argv only; never advertised as terminal rows."""
+    if not isinstance(name, str):
+        return None
+    match = re.fullmatch(r"skill_(replace|keep)_([a-z][a-z0-9-]{0,79})", name or "")
+    if not match:
+        return None
+    from . import personalize
+    action, skill = match.groups()
+    return ("skill", action, skill) if skill in personalize.bundled() else None
+
+
+def skill_conflicts() -> list[dict]:
+    """Only bundled names and capability flags leave the computer, never paths/content."""
+    from . import personalize
+    try:
+        names = set(personalize.bundled())
+        rows = {}
+        for row in personalize.status():
+            if not isinstance(row, dict):
+                continue
+            name = row.get("skill")
+            if isinstance(name, str) and row.get("conflict") is True and name in names and re.fullmatch(r"[a-z][a-z0-9-]{0,79}", name):
+                rows[name] = rows.get(name, True) and row.get("can_keep", False) is True
+        return [{"name": name, "can_keep": rows[name]} for name in sorted(rows)]
+    except (OSError, ValueError, RuntimeError):
+        return []
+
+
 def argv(name: str) -> list[str]:
     from . import service
-    return [*service.agentj_argv(), *RUN_CMDS[name][0]]
+    args = RUN_CMDS[name][0] if name in RUN_CMDS else skill_command(name)
+    if args is None:
+        raise KeyError(name)
+    return [*service.agentj_argv(), *args]
 
 
 def clean(text: str) -> tuple[str, bool]:
@@ -77,6 +109,8 @@ def run(name: str, *, runner=None) -> dict:
     res = {"code": code, "out": out, "ms": int((time.monotonic() - t0) * 1000)}
     if cut:
         res["cut"] = True
+    if name == "doctor" or skill_command(name) is not None:
+        res["skill_conflicts"] = skill_conflicts()
     return res
 
 
@@ -96,7 +130,7 @@ class Desk:
             await h.send_app(s, {"t": "ctl_res", "r": r, "action": "cmd_run", "ok": ok, **kw})
 
         n = obj.get("n")
-        if not isinstance(name, str) or name not in RUN_CMDS or not isinstance(n, str) or not re.fullmatch(r"[0-9a-f]{32}", n):
+        if not isinstance(name, str) or (name not in RUN_CMDS and skill_command(name) is None) or not isinstance(n, str) or not re.fullmatch(r"[0-9a-f]{32}", n):
             controls.log(h.st, action="cmd_run", device=s.device, result="refused:shape")
             return await res(False, why="shape")
         target = {"cmd": name}

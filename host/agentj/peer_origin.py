@@ -913,6 +913,17 @@ class Launches:
         except OSError:
             pass
 
+    def verified_process(self, pid, proc=Path("/proc"), cgroup=Path("/sys/fs/cgroup")):
+        """SO_PEERCRED caller → existing signed unit proof; never accept request-origin fields."""
+        sender, receiver, ns = _stat(proc, pid), _stat(proc, os.getpid()), _ns(proc)
+        if sender is None or receiver is None or ns is None:
+            return False
+        origin = {"kind": "peer", "fromMode": "bypass", "verifiedPeerPid": pid,
+                  "verifiedPeerProcStart": sender[2]}
+        session = {"pid": os.getpid(), "procStart": receiver[2], "pidDomain": "host:pid:" + ns}
+        unit, _ = self.verify(origin, session, proc=proc, cgroup=cgroup, ns=ns)
+        return unit is not None
+
     def verify(self, origin, session, proc=Path("/proc"), cgroup=Path("/sys/fs/cgroup"), uid=None, ns=None):
         if not sys.platform.startswith("linux"):
             return None, "platform"

@@ -3,8 +3,7 @@ serve's control.sock `terminal_cfg`. P414 (§38.13): `agentj terminal open [--cm
 the terminal (a line prefilled, never sent) and reads its agent-masked transcript (`terminal_go` / `terminal_read`, on
 elevate.sock so they work inside the Agent fence; control.sock answers the same commands).
 
-P417 #185: a computer-browser remote may also switch it on for itself (terminal.py `term_open` mode "enable": signature +
-passkey + the computer login password checked by sudo); a remote that paired as a phone is never a default or a target here.
+P417 / #375: paired computer, phone and tablet remotes use the same signature + passkey + checked computer-password contract.
 Widening (`enable`, `allow`) needs the owner AT the computer AND a passkey remote: the CLI refuses inside an Agent harness or
 without a terminal; serve's `terminal_cfg` is ctl_auth.SENSITIVE (claim refused to any descendant of serve — the Agent,
 tasks, the shared session, the web terminal itself — and to an Agent-marked environment) and wants a terminal on the caller's
@@ -119,8 +118,7 @@ async def ctl_cfg(desk, req: dict) -> dict:
     if not isinstance(devs, list) or not all(isinstance(d, str) for d in devs):
         return {"ok": False, "error": "shape"}
     if not devs and op == "enable":
-        # P417 #185: a remote that paired as a phone never uses the terminal — not a default, refused when named
-        pks = [d for d in st.devices() if st.passkey_of_device(d) and store.device_kind(st, d) != "phone"]
+        pks = [d for d in st.devices() if st.passkey_of_device(d)]
         if len(pks) != 1:
             return {"ok": False, "error": "choose_device" if pks else "no_passkey"}
         devs = pks
@@ -129,8 +127,6 @@ async def ctl_cfg(desk, req: dict) -> dict:
             return {"ok": False, "error": "unknown_device", "device": d}
         if not st.passkey_of_device(d):
             return {"ok": False, "error": "no_passkey", "device": d}
-        if store.device_kind(st, d) == "phone":
-            return {"ok": False, "error": "phone_device", "device": d}
     if op == "allow" and not cfg["on"]:
         return {"ok": False, "error": "disabled"}
     web_flag = req.get("web") is True
@@ -267,25 +263,22 @@ ERR = {
     "busy": "已经有一张网页终端卡片在等手机确认。/ A web terminal card is already waiting on the phones.",
     "no_device": "现在没有在线的遥控器能确认：打开手机上的 Agent J 再试。/ No remote is online to confirm.",
     "not_listed": "这台遥控器不在名单上。/ That remote is not on the list.",
-    "phone_device": "这台遥控器是手机：因为安全性和便捷性的原因，网页终端只能在电脑浏览器里操控。选一台电脑浏览器（--device）。/ "
-                    "That remote is a phone; the web terminal can only be used from a computer browser — pick one with --device.",
 }
 
 
 def add_parser(sub) -> None:
     p = sub.add_parser("terminal", help="网页终端：status · enable · allow · deny · disable · forget · logs · open · output / the web "
-                       "terminal (line mode)",
-                       description="在电脑浏览器里开一个限时的终端（默认关）。在这台 Agent J 主机上运行 enable，或在电脑浏览器的「设置 → 安全」里"
-                                   "用 Face ID + Agent J 主机登录密码开启；手机上不能用。 / A time-limited terminal in a computer browser (off by "
-                                   "default): run enable here, or switch it on in the computer browser's Settings → Security with Face "
-                                   "ID + the Agent J host login password; not on phones.")
+                       "terminal (PTY)",
+                       description="在设备浏览器里打开 Agent J 主机的限时终端（默认关）。在这台 Agent J 主机上运行 enable，或在遥控器的终端卡里"
+                                   "用通行密钥 + Agent J 主机登录密码开启。 / A time-limited Agent J host terminal in your device browser (off by "
+                                   "default): run enable here, or use the remote's Terminal card with a passkey + the Agent J host login password.")
     p.add_argument("action", choices=["status", "enable", "allow", "deny", "disable", "forget", "logs", "open", "output"])
     p.add_argument("target", nargs="?", help="遥控器（id 或名字），用于 allow、deny、forget / the remote (id or name) for allow, deny, forget")
     p.add_argument("--device", action="append", help="enable：能用的遥控器（可多次；默认 = 唯一有通行密钥的那台）/ a remote (repeatable)")
     p.add_argument("--minutes", type=int, help=f"enable：每次最长几分钟（1–{store.MIN_MAX}，默认 {store.MIN_DEFAULT}）/ minutes per session")
     p.add_argument("--hours", type=int, help=f"allow：几小时后自动取消（1–{HOURS_MAX}，默认 {HOURS_DEFAULT}）/ hours until it ends")
     p.add_argument("--allow-web", action="store_true", help="允许网页版遥控器 / allow a web-version remote")
-    p.add_argument("--cmd", help="open：在手机终端的输入框里填好这一行（不会自动运行）/ prefill this line in the phone's terminal (never sent)")
+    p.add_argument("--cmd", help="open：在设备终端光标处填好这一行（不会自动运行）/ prefill this line at the device terminal cursor (never sent)")
     p.add_argument("--lines", type=int, help="output：最后几行（1–2000，默认 200）/ the last N lines")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_terminal)

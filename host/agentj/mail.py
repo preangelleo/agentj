@@ -207,7 +207,7 @@ def read_state(st) -> dict:
     d = _read_json(st.root / DIR / STATE, {})
     base = {"uidvalidity": None, "last_uid": None, "seen": [], "sent": [], "routes": {}, "blocked": [], "counts": {},
             "hour": {}, "last_check": None, "last_ok": None, "last_error": None, "auth_seen": None, "allow_seen": None,
-            "pw_state": None}
+            "pw_state": None, "owner_threads": []}
     base.update({k: v for k, v in d.items() if k in base})
     return base
 
@@ -620,6 +620,55 @@ def judge(msg, cfg: dict, seen: list[str], raw: bytes = b"") -> Verdict:
     if id_hash(msg_id(msg), raw[:2048]) in seen:
         return Verdict(ok=False, reason="duplicate", detail="", addr=addr, role=row["role"], auth=how)
     return Verdict(ok=True, reason="ok", detail="", addr=addr, role=row["role"], auth=how, name=row.get("name", ""), notice=why)
+
+
+def owner_request(msg, cfg: dict, state: dict, addr: str) -> str | None:
+    """Sender authentication proves who, not whom the owner is asking (#513)."""
+    if any(k.lower().startswith("resent-") for k in msg.keys()):
+        return "resent"
+    target = cfg.get("address", "")
+    for field in ("To", "Cc", "Bcc"):
+        values = msg.get_all(field, [])
+        if len(values) > 1 or (field == "To" and not values):
+            return "recipients"
+        for value in values:
+            if getattr(value, "defects", ()):
+                return "recipients"
+            pairs = email.utils.getaddresses([str(value)])
+            if not pairs:
+                return "recipients"
+            for _, address in pairs:
+                try:
+                    if not _same(norm_addr(address), target):
+                        return "external_recipient"
+                except MailError:
+                    return "recipients"
+    refs = []
+    for field in ("In-Reply-To", "References"):
+        values = msg.get_all(field, [])
+        if len(values) > 1:
+            return "thread"
+        for value in values:
+            text = str(value).strip()
+            ids = re.findall(r"<[^<>\s]{1,250}>", text)
+            if not ids or re.sub(r"<[^<>\s]{1,250}>", "", text).strip():
+                return "thread"
+            refs.extend(ids)
+    if refs:
+        known = {r["id"] for r in state.get("owner_threads", []) if isinstance(r, dict)
+                 and r.get("addr") == addr and r.get("gen") == cfg.get("generation") and "id" in r}
+        if any(mid not in known for mid in refs):
+            return "external_thread"
+    elif re.match(r"(?i)^\s*(re|回复|答复)\s*[:：]", decode_subject(msg)):
+        return "thread"
+    return None
+
+
+def remember_owner_thread(state: dict, mid: str, addr: str, cfg: dict) -> None:
+    if mid:
+        row = {"id": mid, "addr": addr, "gen": cfg["generation"]}
+        rows = [r for r in state.get("owner_threads", []) if isinstance(r, dict) and r != row]
+        state["owner_threads"] = (rows + [row])[-KEEP_IDS:]
 
 
 # ------------------------------------------------------------------ reading a mail
@@ -1459,6 +1508,11 @@ class Mail:
             if v.reason == "auto" and row and authenticate(msg, v.addr, "strict" if row["addr"].startswith("@") else cfg["auth"], cfg.get("auth_servid") or "")[0]:
                 await self._mark_processed(cfg, s["uidvalidity"], uid, id_hash(msg_id(msg), raw[:2048]))
             return done(v.reason, v.addr, v.detail)
+        if v.role == "owner" and (why := owner_request(msg, cfg, s, v.addr)):
+            # Archive in the original mailbox: no model, attachments, phone turn, Seen flag or reply route.
+            s["seen"] = (s["seen"] + [id_hash(msg_id(msg), raw[:2048])])[-KEEP_IDS:]
+            save_state(self.st, s)
+            return done("archive", detail=why)
         hour = _hour()
         used = s["hour"].get("in", [0, 0])
         if used[0] == hour and used[1] >= IN_PER_HOUR:
@@ -1502,6 +1556,8 @@ class Mail:
         from . import inbox, provenance
         from .privacy import owner_text, redact
         from .text import clean
+        if v.role == "owner" and owner_request(msg, cfg, read_state(self.st), v.addr):
+            return False
         lang = self.lang()
         subject = decode_subject(msg)
         words, fwd = split_forward(body_text(msg))
@@ -1559,7 +1615,7 @@ class Mail:
         text = head + "\n" + provenance.body(text, source)
         # The configuration may have changed while the attachments were written: re-check before the Agent sees anything.
         now = read_config(self.st)
-        if not now["enabled"] or not ((current := allow_row(now["allow"], v.addr)) and current["role"] == v.role) or (
+        if (v.role == "owner" and owner_request(msg, now, read_state(self.st), v.addr)) or not now["enabled"] or not ((current := allow_row(now["allow"], v.addr)) and current["role"] == v.role) or (
                 current["addr"].startswith("@") and (v.auth not in ("dmarc", "dkim") or
                 not authenticate(msg, v.addr, "strict", now.get("auth_servid") or "")[0])):
             for p in paths:
@@ -1586,7 +1642,9 @@ class Mail:
         owner = v.role == "owner" and v.auth in VERIFIED     # P562 review: an unverified letter is a guest's, also for the reply
         st2["routes"][str(send.turn)] = {"to": v.addr, "role": "owner" if owner else "guest", "verified": v.auth in VERIFIED, "subject": subject, "msgid": msg_id(msg),
                                          "refs": str(msg.get("References", "") or "")[:2000], "gen": now["generation"],
-                                         "state": "awaiting", "at": int(time.time())}
+                                         "state": "awaiting", "at": int(time.time()), "explicit_owner": v.role == "owner"}
+        if owner:
+            remember_owner_thread(st2, msg_id(msg), v.addr, now)
         while len(st2["routes"]) > 50:
             st2["routes"].pop(next(iter(st2["routes"])))
         save_state(self.st, st2)
@@ -1623,11 +1681,15 @@ class Mail:
             save_state(self.st, st2)
             self.log("reply", id=tid, result=result)
             return result
+        if route.get("role") == "owner" and route.get("explicit_owner") is not True:
+            return drop("archive")
         if not text or is_silent(text):
             return drop("silent")
         row = allow_row(cfg["allow"], route["to"])
         if not cfg["enabled"] or row is None or route.get("gen") != cfg["generation"]:
             return drop("not_allowed")             # only allowlisted addresses, and only the account that received it
+        if row["role"] == "owner" and route.get("explicit_owner") is not True:
+            return drop("archive")
         if not (row["role"] == "owner" and route.get("role") == "owner" and route.get("verified") is True):
             row = {**row, "role": "guest"}         # P562 review: unverified (or a pre-0.25.16 route) → the guest's redacted reply
         pw = self.password(cfg)
@@ -1692,6 +1754,8 @@ class Mail:
             return drop("failed")
         st2 = read_state(self.st)
         st2["sent"] = (st2["sent"] + [str(msg["Message-ID"])])[-KEEP_IDS:]
+        if row["role"] == "owner":
+            remember_owner_thread(st2, str(msg["Message-ID"]), route["to"], cfg)
         save_state(self.st, st2)
         return drop("sent")
 
@@ -2175,7 +2239,7 @@ def cmd(a) -> int:
             return ctl_call(st, req, timeout, max_bytes)
         except ServeBusy as e:
             return e.response()
-    if a.action in ("workflow-status", "workflow-grant", "workflow-revoke", "workflow-retry", "workflow-migrate"):
+    if a.action in ("workflow-status", "workflow-grant", "workflow-revoke", "workflow-retry", "workflow-migrate") and not (a.action == "workflow-retry" and a.delivery_manifest):
         from .elevate import client_request
         res = client_request(st, {"t": "workflow_mail", "op": a.action.removeprefix("workflow-"),
                     "workflow_id": a.workflow, "delivery": a.delivery, "artifact_root": a.artifact_root, "cc_contacts": a.workflow_cc_contact, "days": a.days, "max": a.workflow_max, "per_day": a.per_day}, timeout=700)
@@ -2184,7 +2248,7 @@ def cmd(a) -> int:
         return out(res)
     if a.action == "presets":
         return out({"ok": True, "presets": preset_list(lang)})
-    if a.action == "send":                     # P184: the Agent mails someone — the owner approves on the phone first
+    if a.action == "send" or a.action == "workflow-retry" and a.delivery_manifest:  # P184: the Agent mails someone — the owner approves on the phone first
         from .elevate import client_request
         body = a.body or ""
         if a.body_file:
@@ -2206,7 +2270,16 @@ def cmd(a) -> int:
                 extra["delivery_manifest"] = json.loads(raw)
             except (ValueError, OSError):
                 return out({"ok": False, "why": "manifest"})
-        res = client_request(st, {**extra, "t": "mail_send", "to": a.to or ([a.address] if a.address else []),
+        if a.action == "workflow-retry":
+            try:
+                raw = pathlib.Path(a.retry_original_manifest).expanduser().read_bytes()
+                if len(raw) > 65536:
+                    raise ValueError("manifest too large")
+                extra.update(t="workflow_mail", op="retry", workflow_id=a.workflow, delivery=a.delivery,
+                             retry_original_manifest=json.loads(raw))
+            except (ValueError, OSError, TypeError):
+                return out({"ok": False, "why": "manifest"})
+        res = client_request(st, {"t": "mail_send", **extra, "to": a.to or ([a.address] if a.address else []),
                                   "cc": a.cc or [], "bcc": a.bcc or [], "format": fmt,
                                   "to_owner": bool(a.to_owner), "subject": a.subject or "",
                                   "body": body, "files": files}, timeout=700)
@@ -2339,6 +2412,7 @@ def add_parser(sub) -> None:
     p.add_argument("--days", type=int, default=None, help="workflow-grant: optional explicit expiry (1–30 days); otherwise valid until revoked")
     p.add_argument("--max", dest="workflow_max", type=int, default=100, help="compatibility only; total message-count limit removed")
     p.add_argument("--per-day", type=int, default=0, help="compatibility only; daily limit removed")
+    p.add_argument("--retry-original-manifest", help="workflow-retry replacement: exact previous manifest; only remove attachments, keep original R2-link body")
     p.add_argument("--delivery", help="workflow-retry: exact delivery key from failed send; owner approval required")
     p.add_argument("--address", dest="address_opt", help="setup：Agent 用的邮箱地址 / the mailbox address")
     p.add_argument("--preset", choices=sorted(PRESETS), help="setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)")
@@ -2357,8 +2431,8 @@ def add_parser(sub) -> None:
                                                  "recipient: address or an address-book name (repeatable; notes: only addresses the owner named)")
     p.add_argument("--to-owner", action="store_true", help="send 和 notes：发给主人本人（通讯录 0 号位 + 白名单里的「主人」地址）；和 --to 同时给就两边都发（去重，合计最多 10 个）/ "
                                                        "the owner's own addresses (slot 0 + the owner allowlist rows); with --to: both (deduped, 10 at most). "
-                                                       "带 --delivery-manifest：0号主邮箱；v1禁CC，v2仅签名固定CC / "
-                                                       "with --delivery-manifest: slot-0 primary; v1 no CC, explicit signed v2 exact fixed CC only")
+                                                       "带 --delivery-manifest：主人0号主邮箱必收；v1禁CC，支持子集的v2可缩小已签CC名单 / "
+                                                       "with --delivery-manifest: owner slot-0 primary required; v1 no CC, subset-capable v2 may narrow the signed CC pool")
     p.add_argument("--cc", action="append", help="send：抄送——同 --to（可多次；白名单 / 手机批准规则每个收件人都算，合计最多 10 个）/ "
                                                  "Cc: like --to (repeatable; every recipient counts for the approval rule; 10 in all)")
     p.add_argument("--bcc", action="append", help="send：密送——同 --to，别的收件人看不到 / Bcc: like --to, hidden from the others")

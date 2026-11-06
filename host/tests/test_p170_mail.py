@@ -211,7 +211,7 @@ class _Base(unittest.IsolatedAsyncioTestCase):
 
 class Flow(_Base):
     async def test_allowlisted_owner_mail_becomes_one_task_and_the_reply_threads(self):
-        self.imap.add(mail(msgid="<task1@corp.example>", extra="References: <a@corp.example>\n"))
+        self.imap.add(mail(msgid="<task1@corp.example>"))
         res = await self.m.check()
         self.assertEqual((res["new"], res["delivered"]), (1, 1))
         [(session, text, blobs)] = self.delivered()
@@ -225,7 +225,7 @@ class Flow(_Base):
         [(frm, to, msg)] = self.sent()
         self.assertEqual((frm, to), (AGENT, [BOSS]))
         self.assertEqual(msg["In-Reply-To"], "<task1@corp.example>")
-        self.assertEqual(msg["References"], "<a@corp.example> <task1@corp.example>")
+        self.assertEqual(msg["References"], "<task1@corp.example>")
         self.assertEqual(msg["Subject"], "Re: 请整理周报")
         self.assertEqual(msg["Auto-Submitted"], "auto-replied")
         self.assertEqual(msg["X-AgentJ"], M.mark(M.read_config(self.st), "reply"))  # P569: + o=

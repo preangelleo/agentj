@@ -48,9 +48,9 @@ class FixedDelivery(Delivery):
         self.assertFalse((await self.service.send(req, os.getpid()))['ok'])
         self.assertEqual(self.smtp.sent, [])
 
-    async def test_contact_drift_invalidates_and_new_list_requires_card(self):
-        await self.grant(cc_contacts=self.ids)
+    async def test_contact_drift_invalidates_and_broader_list_requires_card(self):
         await self.grant(cc_contacts=self.ids[:3])
+        await self.grant(cc_contacts=self.ids)
         self.assertEqual(self.ask.await_count, 2)
         b = contacts.read(self.st); contacts.get(b, self.ids[0])['emails'][0]['v'] = 'changed@example.test'
         contacts.write(self.st, b)

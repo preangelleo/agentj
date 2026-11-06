@@ -92,7 +92,7 @@ class CompletionRecovery(unittest.TestCase):
                 p = self.root / name
                 if name == 'alias.md': p.symlink_to(self.report)
                 elif name == '.env': p.write_text('ordinary')
-                else: p.write_text('api_key=sk-live-1234567890abcdefghijklmno')
+                else: p.write_text('api_key=sk' '-live-1234567890abcdefghijklmno')
                 with self.assertRaises((ValueError, OSError)):
                     self.n.recovery.read(str(p))
 

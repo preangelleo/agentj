@@ -291,6 +291,14 @@
 
   <!-- ================================================================ chat (relay's page) -->
   <div class="chatv" id="chat-view">
+    <div id="connection-help" class="connection-help" role="status" aria-live="polite">
+      <p data-i18n="connectionHelp.text">没连上 Agent J 主机，正在重连。请点「更新并刷新」；若仍是灰色，请打开「设置 → 紧急修复 → 请客服帮忙」。</p>
+      <button type="button" id="connection-refresh" class="aj-btn aj-btn--sm" data-i18n="set.refresh">更新并刷新</button>
+    </div>
+    <div id="session-help" class="session-help" role="status" aria-live="polite" hidden>
+      <p id="session-help-text"></p>
+      <button type="button" id="session-repair" class="aj-btn aj-btn--sm" data-i18n="sessionHelp.repair">修复会话连接</button>
+    </div>
     <p id="shared-status" class="shared-status" role="status" hidden></p>
     <!-- P240: the computer runs a newer Agent J than any page a refresh can fetch yet (batch B not out) — one quiet line, no dialog. -->
     <p id="version-later" class="ver-later" role="status" hidden></p>
@@ -1161,7 +1169,6 @@
               <span class="setlab" data-i18n="set.risk">高风险提醒</span>
               <button type="button" role="switch" aria-checked="false" class="setswitch" id="set-risk" data-pref="agent.high_risk_warnings" data-i18n-attr="aria-label=set.risk" aria-label="高风险提醒"></button>
               <p class="setnote" data-i18n="set.riskNote">额外高危提醒默认是关着的。你可以在这儿开关；底层工具自身的权限规则一直生效。</p>
-              <p class="setcmd"><code id="set-risk-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-risk-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <div class="setrow" data-paired id="set-jev-mode-row" hidden>
               <span class="setlab" data-i18n="p409.title">安全审核（Jev）</span>
@@ -1180,40 +1187,34 @@
                 <button type="button" id="set-jev-plus" data-i18n-attr="aria-label=set.jevPlus,title=set.jevPlus" aria-label="调高（弹窗更多）" title="调高（弹窗更多）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
               </div>
               <p class="setnote" data-i18n="set.jevNote">Jev 打开后，Agent J 看不清的命令会先问它是否与当前任务一致，概率不低于这个值就直接放行，并记进记录。调低弹窗更少，调高更谨慎（0.50–0.95，默认 0.70）。花钱、删除、对外发送、改凭据、改价这五类明确危险的动作不受影响，一律弹卡。</p>
-              <p class="setcmd"><code id="set-jev-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-jev-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <div class="setrow" data-paired>
               <span class="setlab" data-i18n="set.goalAuto">目标模式 10 秒自动批准</span>
               <button type="button" role="switch" aria-checked="true" class="setswitch" id="set-goal" data-pref="approval.goal_auto" data-i18n-attr="aria-label=set.goalAuto" aria-label="目标模式 10 秒自动批准"></button>
               <p class="setnote" data-i18n="set.goalAutoNote">用 /goal 交代好一件事后，授权范围外、Agent J 主机能撤回的动作（git 里有提交、移到回收站、推到已有的远端）会弹 10 秒倒计时卡，你不点就算同意，好让目标在你睡觉或开会时也能做完。不可逆的和疑似攻击的永远等你决定。公司或团队用的话可以关掉：关掉后这些卡只会等你点。</p>
               <p class="setnote setscope" id="set-goal-safe" hidden data-i18n="p336.goalSafe">选了「安全」档时，倒计时不会自动批准，一律等你点。</p>
-              <p class="setcmd"><code id="set-goal-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-goal-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <div class="setrow" data-paired>
               <span class="setlab" data-i18n="set.quotaSwitch">额度告警时自动转交（只管后台任务）</span>
               <button type="button" role="switch" aria-checked="false" class="setswitch" id="set-qswitch" data-pref="quota.auto_switch" data-i18n-attr="aria-label=set.quotaSwitch" aria-label="额度告警时自动转交（只管后台任务）"></button>
               <p class="setnote" data-i18n="set.quotaSwitchNote">5 小时额度到 80%（或周额度到 90%）时，新定时任务和工作流优先改用另一个已登录、确认能用的 AI 账号。关闭时先在手机上问你。5 小时额度到 90% 后，本账号不再启动新的后台任务；没有可用替代、任务固定账号或拒绝切换，都不能绕过。窗口重置后，重新按默认账号与最新读数派活。正在运行的任务和当前对话不切换。</p>
-              <p class="setcmd"><code id="set-qswitch-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-qswitch-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <div class="setrow" data-paired>
               <span class="setlab" data-i18n="set.mode">会话模式</span>
               <div class="twoway" role="group" data-i18n-attr="aria-label=set.mode" aria-label="会话模式"><button type="button" class="tw-lab" data-side="left" data-tw="set-mode" data-i18n="p207set.tw.independent">独立会话</button><button type="button" role="switch" id="set-mode" class="tw-sw" aria-checked="false" data-pref="agent.session_mode" data-i18n-attr="aria-label=p207set.tw.mode" aria-label="会话模式：左边独立会话，右边共享Agent J 主机会话"><i class="tw-knob"></i></button><button type="button" class="tw-lab" data-side="right" data-tw="set-mode" data-i18n="p207set.tw.shared">共享会话</button></div>
               <p class="setnote" data-i18n="set.modeNote">默认用独立会话：Agent J 自己开一个，不改你终端里的工具。共享（高级）会接入你Agent J 主机上正在用的会话，沿用它的权限。</p>
-              <p class="setcmd"><code id="set-mode-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-mode-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <div class="setrow" data-paired>
               <span class="setlab" data-i18n="set.iso">隔离运行</span>
               <button type="button" role="switch" aria-checked="true" class="setswitch" id="set-iso" data-pref="agent.isolation" data-i18n-attr="aria-label=set.iso" aria-label="隔离运行"></button>
               <p class="setnote" data-i18n="set.isoNote">只管 Agent J 自己启动的 Agent（独立会话和定时任务）：它们在隔离环境里跑，看不到 Agent J 的密钥和配对数据。关掉后，就按底层工具自身的权限来。下次启动 Agent 时生效。</p>
               <p class="setnote setscope" id="set-iso-shared" hidden data-i18n="set.isoShared">你现在用的是共享会话：Agent J 主机上已经开着的那个会话不受这一项影响，只有定时任务等 Agent J 自己启动的还会隔离。</p>
-              <p class="setcmd"><code id="set-iso-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-iso-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <div class="setrow" data-paired>
               <span class="setlab" data-i18n="set.docker">允许使用 Docker</span>
               <button type="button" role="switch" aria-checked="false" class="setswitch" id="set-docker" data-pref="agent.allow_docker" data-i18n-attr="aria-label=set.docker" aria-label="允许使用 Docker"></button>
               <p class="setnote" data-i18n="set.dockerNote">依附于隔离运行，只对隔离中的 Agent 生效。默认关闭；开启后它们可以使用 docker / podman，容器能挂载Agent J 主机上的任何文件。</p>
               <p class="setnote setscope" id="set-docker-off" hidden data-i18n="set.dockerOff">隔离运行已关闭，这一项暂时不生效。</p>
-              <p class="setcmd"><code id="set-docker-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-docker-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <!-- P408 (PROTOCOL §38): 网页终端 — only when the host block `terminal` exists. P417 #185: a computer browser may switch it
                  on here (「开启并打开网页终端」 = Face ID + the host's login password) or run the command at the host; a phone gets one
@@ -1259,7 +1260,7 @@
             </div>
             <div class="setrow">
               <p class="setver"><span id="set-webver"></span><br><span id="set-hostver"></span></p>
-              <button type="button" id="set-refresh" class="aj-btn aj-btn--sm" data-i18n-attr="aria-label=set.refresh,title=set.refresh" aria-label="更新并刷新" title="更新并刷新"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></svg></button>
+              <button type="button" id="set-refresh" class="aj-btn aj-btn--sm" data-i18n-attr="aria-label=set.refresh,title=set.refresh" aria-label="更新并刷新" title="更新并刷新"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></svg><span data-i18n="set.refresh">更新并刷新</span></button>
               <p class="setnote" data-i18n="set.refreshNote">网页版升级以后，点这里拉取新版本、清掉旧缓存，再重新打开。</p>
             </div>
             <div class="setrow" id="set-a2hs-row">
