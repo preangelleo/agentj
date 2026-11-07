@@ -712,6 +712,9 @@ class State:
                 "shared_pin_owner": owner_pin if isinstance(owner_pin, str) else "",
                 "shared_opencode_port": preferences.get(prefs, "agent.shared_opencode_port", 0),
                 "high_risk_warnings": preferences.get(prefs, "agent.high_risk_warnings", False),
+                "main_thread_guard": preferences.get(prefs,"agent.main_thread_guard",True),
+                "main_thread_work_calls": preferences.get(prefs,"agent.main_thread_work_calls",8),
+                "main_thread_seconds": preferences.get(prefs,"agent.main_thread_seconds",180),
                 "approvals": approval_level.shared_mode(prefs, self),   # P336: safe level → "safe"; P551 harness → native
                 "follow_harness": approval_level.follow_harness(prefs, self),   # P551 (#320): the hook asks only for ③
                 # P305: Kimi's site (kimi.com = mainland-cn, kimi.ai = global) for an API key / the login rescue; None = mainland-cn

@@ -2044,7 +2044,10 @@ class Elevator:
                         provenance.untrusted_turn(getattr(self.host, "agent", None))
                         and not approval_level.autonomous(self.host)))
                 why = host_diagnostics.caller_refusal(req, sock, self.host)
-                if why:
+                broker = getattr(getattr(getattr(self.host, 'peers', None), 'xfer', None), 'broker', None)
+                if req.get('op') == 'support' and broker is not None and broker.feedback_applicable() and not external_send:
+                    res = broker.feedback_receipt(req, peer)
+                elif why:
                     res = host_diagnostics.refused(why)
                 else:
                     with approval_material.capture(self.host, peer, req) as captured, privacy_host.broker_scope(self.host, peer):

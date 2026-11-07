@@ -720,9 +720,9 @@ class OpenCodeAgent(Agent):
         self.host.st.log("agent_not_ready", agent=self.kind, phase=phase, code=reason,
                          proc_ready=self.proc is not None and self.proc.returncode is None,
                          client_ready=self.client is not None)
-        text = ("OpenCode is not ready to open this conversation. Your message was not delivered. Try Reopen AI session, then send again."
+        text = ("OpenCode is not ready to open this conversation. Your message was not delivered. Try Restart Agent, then send again."
                 if getattr(self.host, "lang", "zh").startswith("en") else
-                "OpenCode 还没准备好，无法打开这段对话；这条消息没有交给它。请点「重开 AI 会话」，完成后再发消息。")
+                "OpenCode 还没准备好，无法打开这段对话；这条消息没有交给它。请点「重启 Agent」，完成后再发消息。")
         from .startup_help import guidance
         self.fail_notice(text + "\n" + guidance("opencode", phase, getattr(self.host, "lang", "zh")), recovery=True)
 

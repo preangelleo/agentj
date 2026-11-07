@@ -16,7 +16,7 @@ export function hintKey(fa) {
  *  way out 「重新设置（需另一台批准）」 beside 「再试一次」, never one button that keeps failing. */
 export function failKey(err, fa) {
   const n = typeof err === 'string' ? err : err && err.name;
-  if (n === 'NotAllowedError') return fa === 'borrowed' ? 'p539.fail.borrowed' : fa === 'local' ? 'p561.fail.missing' : 'p539.fail.cancel';
+  if (n === 'NotAllowedError') return fa === 'borrowed' ? 'p539.fail.borrowed' : fa === 'local' ? 'p0285.pk.incomplete' : 'p539.fail.cancel';
   if (n === 'AbortError') return 'p539.fail.abort';
   if (n === 'WrongSeatKey') return 'p566.pk.wrongSeat';   // P566 (#350): another seat's passkey was picked — nothing sent, nothing marked
   return 'p539.fail.other';

@@ -1757,6 +1757,40 @@
     "apply": "hot",
     "verify": "agentj voice status",
     "since": "0.21"
-   }
+   },
+  "agent.main_thread_guard": {
+   "type": "boolean",
+   "default": true,
+   "description": "Limit main-session work to keep owner messages responsive / 主线程派活守卫，默认开",
+   "tier": "user",
+   "apply": "reload",
+   "verify": "agentj config validate --json",
+   "since": "0.28.4",
+   "aliases": ["主线程派活守卫", "main thread guard"]
+  },
+  "agent.main_thread_work_calls": {
+   "type": "integer",
+   "default": 8,
+   "minimum": 2,
+   "maximum": 1000,
+   "description": "Main-thread work calls before dispatch reminder / 主线程工作调用阈值",
+   "tier": "user",
+   "apply": "reload",
+   "verify": "agentj config validate --json",
+   "since": "0.28.4",
+   "aliases": ["主线程工作调用阈值", "main thread work calls"]
+  },
+  "agent.main_thread_seconds": {
+   "type": "integer",
+   "default": 180,
+   "minimum": 30,
+   "maximum": 3600,
+   "description": "Main-thread work seconds before dispatch reminder / 主线程工作秒数阈值",
+   "tier": "user",
+   "apply": "reload",
+   "verify": "agentj config validate --json",
+   "since": "0.28.4",
+   "aliases": ["主线程工作秒数阈值", "main thread seconds"]
+  }
  }
 }

@@ -25,7 +25,7 @@ try {
     await fake.addTurn({k:'sys', text:''}, note, 'done', {recovery:'restart_session'});
     await waitFor(p, `!!document.querySelector('#cmdx [data-recovery="restart_session"]')`, 5000);
     const label = await evaluate(p, `document.querySelector('#cmdx button').textContent`);
-    assert.equal(label, language === 'zh' ? '重开 AI 会话' : 'Reopen AI session');
+    assert.equal(label, language === 'zh' ? '重启 Agent' : 'Restart Agent');
     assert.equal(await evaluate(p, `document.getElementById('words').textContent.includes('AttributeError')`), false);
     writeFileSync(new URL(`recovery-${language}-${width}-${theme}.png`,out), await shoot(p,''));
     await evaluate(p, `document.querySelector('#cmdx button').click()`);

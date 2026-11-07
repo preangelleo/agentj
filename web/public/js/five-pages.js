@@ -41,7 +41,7 @@ const names=()=>[['chat',t('p244.fivepages1'),'◌'],['workflows',t('p244.fivepa
 function node(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;n.setAttribute('data-aj-owner', 'aj-knowledge'); return n;}
 function button(text,fn,cls='fp-action'){const n=node('button',text,cls);n.type='button';n.onclick=fn;return n;}
 function icon(key){const ns='http://www.w3.org/2000/svg',s=document.createElementNS(ns,'svg');s.setAttribute('viewBox','0 0 24 24');s.setAttribute('class','fp-line-icon');s.setAttribute('aria-hidden','true');s.setAttribute('fill','none');s.setAttribute('stroke','currentColor');s.setAttribute('stroke-width','1.7');s.setAttribute('stroke-linecap','round');s.setAttribute('stroke-linejoin','round');
- const paths={chat:'M5 4h14v12H9l-4 4V4z',workflows:'M12 4v6M5 10h14M5 10v6M19 10v6M9 4h6M2 16h6v5H2zM16 16h6v5h-6z',skills:'m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z',memory:'M6 4h12v16H6zM9 8h6M9 12h6M9 16h4',lock:'M7 10V7a5 5 0 0 1 10 0v3M5 10h14v11H5zM12 14v3',back:'M15 5l-7 7 7 7',reload:'M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5',doc:'M8.6 4.4H5.8a.8.8 0 0 0-.8.8v16a.8.8 0 0 0 .8.8h12.4a.8.8 0 0 0 .8-.8v-16a.8.8 0 0 0-.8-.8h-2.8M8.6 3.4h1.9a1.5 1.5 0 0 1 3 0h1.9v3.2H8.6zM7.9 10.3l2.6 2.6M10.5 10.3l-2.6 2.6M13.2 10.6h3.3M13.2 12.7h3.3M7.8 17.4l1.3 1.3 2.4-2.6M13.2 16.4h3.3M13.2 18.5h3.3',all:'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',global:'M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20M2 12h20M12 2c-6 6-6 14 0 20M12 2c6 6 6 14 0 20',terminal:'M4 4h16v16H4zM7 8l4 4-4 4M13 16h4',local:'M3 11l9-8 9 8M6 10v11h12V10M10 21v-7h4v7'};
+ const paths={friends:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8M22 21v-2a4 4 0 0 0-3-3.87M13 7a4 4 0 1 1-8 0a4 4 0 0 1 8 0Z',chat:'M5 4h14v12H9l-4 4V4z',workflows:'M12 4v6M5 10h14M5 10v6M19 10v6M9 4h6M2 16h6v5H2zM16 16h6v5h-6z',skills:'m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z',memory:'M6 4h12v16H6zM9 8h6M9 12h6M9 16h4',lock:'M7 10V7a5 5 0 0 1 10 0v3M5 10h14v11H5zM12 14v3',back:'M15 5l-7 7 7 7',reload:'M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5',doc:'M8.6 4.4H5.8a.8.8 0 0 0-.8.8v16a.8.8 0 0 0 .8.8h12.4a.8.8 0 0 0 .8-.8v-16a.8.8 0 0 0-.8-.8h-2.8M8.6 3.4h1.9a1.5 1.5 0 0 1 3 0h1.9v3.2H8.6zM7.9 10.3l2.6 2.6M10.5 10.3l-2.6 2.6M13.2 10.6h3.3M13.2 12.7h3.3M7.8 17.4l1.3 1.3 2.4-2.6M13.2 16.4h3.3M13.2 18.5h3.3',all:'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',global:'M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20M2 12h20M12 2c-6 6-6 14 0 20M12 2c6 6 6 14 0 20',terminal:'M4 4h16v16H4zM7 8l4 4-4 4M13 16h4',local:'M3 11l9-8 9 8M6 10v11h12V10M10 21v-7h4v7'};
  const path=document.createElementNS(ns,'path');path.setAttribute('d',paths[key]||paths.doc);s.append(path);return s;
 }
 function iconButton(key,label,fn){const b=button('',fn,'fp-back menuicon');b.setAttribute('aria-label',label);b.title=label;b.append(icon(key));return b;}
@@ -49,7 +49,7 @@ function robot(r,working=false){const n=node('span',undefined,'fp-robot');n.data
 export function clear(){composer?.clear();jc.clear();epoch++;clearTimeout(timer);pic=null;busy=false;selected=null;closeDetail();closeMenu();go('chat');}
 export function refresh(){
  syncPlus();if(H&&isReady())jc.refresh();
- if(current==='card'){render();return;}
+ if(current==='card'&&$('five-menu').hidden){render();return;}
  if(!H||busy||!isReady())return;
  if(!peer.wf1){pic=null;if(current!=='chat')render();return;}
  busy=true;const e=epoch, items=[],skills=[],memory=[];
@@ -61,7 +61,7 @@ export function refresh(){
   else if(m.t==='wf_same')finish();
   else if(m.t==='offline')finish(true);
  });
- function finish(failed=false){done(r);clearTimeout(timer);busy=false;if(failed)pic=null;if(current!=='chat')render();}
+ function finish(failed=false){done(r);clearTimeout(timer);busy=false;if(failed)pic=null;if(current!=='chat')render();if(!$('five-menu').hidden)buildDeck(false);}
  if(!r){busy=false;return;} timer=setTimeout(()=>finish(true),15000);
 }
 export function go(page,folder,at){
@@ -70,7 +70,7 @@ export function go(page,folder,at){
  $('five-page').hidden=page==='chat';document.body.dataset.fivePage=page;place();$('five-page').scrollTop=0;
  if(page==='chat'){H.chat();arm();return;}H.chat();render();if(page!=='card')refresh();arm();
 }
-export function toggleMenu(){if(!$('five-menu'))return;const e=$('five-menu');if(!e.hidden){closeMenu();return;}place();buildDeck(true);jc.refresh();}
+export function toggleMenu(){if(!$('five-menu'))return;const e=$('five-menu');if(!e.hidden){closeMenu();return;}place();buildDeck(true);refresh();}
 // P360: rebuilt in place when the computer's card list changes while the menu is open (focus stays on the same card)
 function buildDeck(focus){const e=$('five-menu'),was=document.activeElement?.closest?.('.fp-menu-card'),key=was&&(was.dataset.page||'card:'+was.dataset.card);
  e.replaceChildren();const deck=node('div',undefined,'fp-menu-deck');

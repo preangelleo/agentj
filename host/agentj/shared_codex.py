@@ -1123,10 +1123,11 @@ class SharedCodexAgent(CodexAgent):
     def _emit(self,text):
         super()._emit(public_text(text))
 
-    async def halt(self,clear_queue=True):
+    async def halt(self,clear_queue=True,expected_target=None):
         """/stop · the stop switch. The phone's own turn: app-server `turn/interrupt` (confirmed by the caller). P328: a turn
         the owner started on the Agent J host runs in the desktop's own Codex — not our app-server's — so the phone cannot stop
         it: say so (Esc / Ctrl+C on the Agent J host); a phone message queued behind it (wait_desktop) is withdrawn, as before."""
+        if expected_target is not None and not expected_target.live(self):return False
         busy=self.status=='working'
         if clear_queue:
             while not self.q.empty():
@@ -1138,9 +1139,14 @@ class SharedCodexAgent(CodexAgent):
             from .turn_heal import desktop_stuck
             with contextlib.suppress(Exception):
                 sid = self.rollout_sid or self.cfg.get('shared_session_id')
-                if await asyncio.to_thread(desktop_stuck, self.rollout, self._own_pids(), sid):
+                stuck=await asyncio.to_thread(desktop_stuck, self.rollout, self._own_pids(), sid)
+                if expected_target is not None and not expected_target.live(self):return False
+                if stuck:
                     self.dead_turn, waiting = (str(self.rollout), self.rollout.stat().st_size), False
         desktop=waiting or (asked and not self.phone_turn and await self._desktop_running())
+        if expected_target is not None:
+            if not expected_target.live(self) or desktop:return False
+            return bool(await self.interrupt_request(expected_target.proc,expected_target=expected_target))
         if not desktop:
             await self.interrupt_request(self.proc)
         if self.turn_done:self.turn_done.set()

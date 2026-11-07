@@ -31,6 +31,7 @@ RUN_CMDS = {
     "service_status": (("service", "status"), "read-only: whether the background service is installed / running"),
     "rescue_status": (("rescue", "status"), "read-only: the rescue watchdog's state and whitelisted log metadata"),
     "update_check": (("update", "check"), "read-only: compares versions, installs nothing"),
+    "version": (("--version",), "#584 read-only: prints the installed version"),
 }
 for _h in harness.SUPPORTED:
     RUN_CMDS["switch_" + _h] = (("agent", "switch", _h, "--force"), "owner-confirmed emergency AI switch")
@@ -55,7 +56,7 @@ def command_harnesses(*, detect=False):
 
 
 # Only this argv has a whole-CLI zero-write contract (including startup migration).
-READ_CMDS = frozenset(('doctor',))
+READ_CMDS = frozenset(('doctor', 'version'))
 TIMEOUT = 120          # s per run (doctor --reconnect may wait for the relay)
 PENDING_MS = 150000    # what the phone waits after `ctl_pending`
 OUT_MAX = 12000        # characters sent back (the tail is cut, `cut: true`)

@@ -17,7 +17,7 @@ export function osOf(ua = '', touch = 0) {
 }
 /** The name of this system's own unlock, from the dictionary (zh / en). */
 export function bioLabel(os, lang = 'zh') {
- const d = DICT[lang === 'en' ? 'en' : 'zh'] || {}, k = 'p539.bio.' + (OSES.includes(os) ? os : 'other');
+ const d = DICT[lang === 'en' ? 'en' : 'zh'] || {}, k = (['ios','android','mac','windows'].includes(os)?'p0284.bio.':'p539.bio.') + (OSES.includes(os) ? os : 'other');
  return d[k] ?? DICT.zh[k] ?? 'Face ID';
 }
 export function browserEnvironment(ua = '', touch = 0) {

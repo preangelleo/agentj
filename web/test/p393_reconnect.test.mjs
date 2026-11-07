@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { createGate, DOWN_DEBOUNCE_MS, LATE_MS } from '../public/js/reconnect.js';
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
-const APP = read('../public/app.js'), CARD = read('../public/js/offline-card.js'), SET = read('../public/js/settings.js');
+const APP = read('../public/app.js'), SET = read('../public/js/settings.js');
 const RESCUE = read('../public/js/rescue.js'), CMD = read('../public/js/cmdrun.js'), MENU = read('../public/menu.css'), CSS = read('../public/app.css');
 const DICT = (await import('../public/i18n.js')).default;
 
@@ -46,11 +46,11 @@ function rig() {
 test('P393 the debounce is one named constant: 5000 ms', () => {
   assert.equal(DOWN_DEBOUNCE_MS, 5000);
   assert.match(APP, /const QUIET_MS = DOWN_DEBOUNCE_MS;/);
-  assert.match(CARD, /export const SHOW_AFTER_MS = DOWN_DEBOUNCE_MS;/);
+  assert.doesNotMatch(APP, /offline-card\.js|offline\.(?:update|hush|dropped)/, 'the retired modal cannot be driven by the link gate');
   assert.doesNotMatch(APP, /QUIET_MS = 6000/);
 });
 
-test('P393 fake clock: disconnect + reconnect at 4.9 s → the popup is never shown', () => {
+test('P393 fake clock: disconnect + reconnect at 4.9 s → the down indicator state is never entered', () => {
   const { c, g, log, shownCount } = rig();
   assert.equal(g.drop(), true);
   assert.equal(g.state(), 'quiet');
@@ -81,7 +81,7 @@ test('P393 fake clock: a disconnect that persists 5.1 s → shown (once), and re
   assert.deepEqual(log, ['quiet', 'down', 'up', 'quiet', 'up']);
 });
 
-test('P393 fake clock: foreground / visibilitychange resume with a reconnect inside 5 s → no popup', () => {
+test('P393 fake clock: foreground / visibilitychange resume with a reconnect inside 5 s → no down indicator state', () => {
   // the link died while the screen was locked; the hidden page's window ran out in the background
   const { c, g, shownCount, hide } = rig();
   hide(true);
@@ -133,11 +133,10 @@ test('P393 wiring: every 「连不上」 surface reads the gate', () => {
   assert.doesNotMatch(APP, /key !== 'st\.hostDown'/, 'host-down is no longer shown at once');
   for (const ev of [/addEventListener\('online', \(\) => \{ wakeLink\(\)/, /addEventListener\('pageshow', \(e\) => \{ wakeLink\(\)/,
     /addEventListener\('resume', \(\) => \{ wakeLink\(\)/, /navigator\.connection\?\.addEventListener\?\.\('change'/, /if \(fg\) wakeLink\(\);/]) assert.match(APP, ev);
-  assert.match(APP, /link\.state\(\) === 'quiet' \|\| \(painted === 'idle'/, 'the card waits while quiet');
+  assert.doesNotMatch(APP, /offMode\(/, 'no modal mode or rendering hooks remain');
   assert.match(APP, /settings\.connectionChanged\(on, !on && link\.state\(\) === 'quiet'\)/, 'Settings red waits too');
   assert.match(APP, /rescue\.onLinkDown\(\)/);
   assert.match(APP, /linkState: \(\) => \(session\.isReady\(\) \? 'up' : link\.state\(\) === 'quiet' \? 'quiet' : 'down'\)/);
-  assert.match(CARD, /export function hush\(\)/);
   // Settings: pending = amber 「正在重新连接…」, no notice
   assert.match(SET, /n\.dataset\.online = 'pending'; n\.textContent = t\('p393\.reconnecting'\)/);
   assert.match(MENU, /\.setconnection\[data-online="pending"\]\{color:var\(--c-peachy-feeling\)\}/);

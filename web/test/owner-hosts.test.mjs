@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import {createHash} from 'node:crypto';
+import * as view from '../public/js/owner-hosts-view.js';
 import { controlObject, CONTROL_ACTIONS } from '../../protocol/wire.js';
 
 const source = readFileSync(new URL('../public/js/owner-hosts.js', import.meta.url), 'utf8');
@@ -19,7 +21,7 @@ function setup() {
   }
   const anchor = new Element('div'); anchor.id = 'set-budget-row';
   const context = vm.createContext({ document: { createElement: tag => new Element(tag), getElementById: id => elements.get(id) },
-    t: k => k, onLang: () => {}, copyable: n => n, isReady: () => true,
+    ...view, structuredClone, t: k => k, onLang: () => {}, copyable: n => n, isReady: () => true,
     request: (obj, fn) => { requests.push({ obj, fn }); return 'request-id'; }, done: () => {},
     signedWriteFa: async (action, target, extra, faceId) => { writes.push({ action, target, extra, faceId }); return { ok: true }; },
     settings: { faceIdStep: async () => ({ uv: true }) }, whyText: x => x, console });
@@ -31,6 +33,8 @@ function setup() {
     rows: [{ alias: 'box', hostname: '192.168.1.9', user: 'dev', port: 22, public_key: 'ssh-ed25519 public',
       fingerprint: 'SHA256:public', peer: '', owner: 'self', expires: 1799999999, status: 'active', ssh: 'ssh pinned', scp: 'scp pinned' }],
     candidates: [{ alias: 'lan', hostname: '192.168.1.10', user: 'coder', port: 22, status: 'pending' }] };
+  const key=Buffer.concat([Buffer.from([0,0,0,11]),Buffer.from('ssh-ed25519'),Buffer.from([0,0,0,32]),Buffer.alloc(32,3)]);
+  sample.rows[0].public_key='ssh-ed25519 '+key.toString('base64');sample.rows[0].fingerprint='SHA256:'+createHash('sha256').update(key).digest('base64').replace(/=+$/,'');sample.rows[0].expires=Math.floor(Date.now()/1000)+3600;
   return { api: context.api, elements, requests, writes, sample };
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -50,8 +54,9 @@ test('capable Host loads status, pinned commands and pending candidates without 
   assert.equal(h.elements.get('owner-hosts').hidden, false);
   const list = h.elements.get('owner-hosts-list');
   assert.equal(list.children.length, 2);
-  assert.match(list.children[0].children[0].textContent, /ownerHosts.active/);
-  list.children[1].listeners.click();
+  assert.match(list.children[0].children[0].textContent, /p0285.ssh.own/);
+  assert.equal(list.children[1].tag,'details');
+  list.children[1].children.find(n=>n.tag==='div').children.find(n=>n.tag==='button').listeners.click();
   assert.equal(h.elements.get('owner-hosts-alias').value, 'lan');
   assert.equal(h.writes.length, 0);
 });
@@ -60,7 +65,9 @@ test('editing an alias replaces its old binding through signed UV control with e
   const h = setup(); h.api.capability({ owner_hosts: 1 }); h.api.onState(h.sample);
   h.elements.get('owner-hosts-list').children[0].children.find(n => n.textContent === 'ownerHosts.edit').listeners.click();
   h.elements.get('owner-hosts-alias').value = 'renamed';
-  h.elements.get('owner-hosts-form').listeners.submit({ preventDefault() {} }); await tick();
+  await h.elements.get('owner-hosts-form').listeners.submit({ preventDefault() {} });
+  assert.equal(h.writes.length,0,'staging does not grant trust or request UV');
+  h.elements.get('owner-hosts-batch').listeners.click();await tick();
   assert.equal(h.writes.length, 1);
   const w = h.writes[0]; assert.equal(w.action, 'owner_hosts_set');
   assert.equal(w.target.rev, 'revision'); assert.equal(w.target.scope.seat, 'SEAT');

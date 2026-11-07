@@ -547,7 +547,7 @@ class Desk:
                     self.attempted=False;self.retry_at=time.monotonic()+2   # an unchanged screen is offered again
             elif self.gone is gone:
                 self.attempted=False;self.retry_at=time.monotonic()+30
-                a.host.agent_notice(pick(lang,'菜单操作未确认，请重试；仍无响应可在紧急修复中重开 AI 会话。','Menu action unconfirmed. Retry, or use Emergency repair to reopen the AI session.'))
+                a.host.agent_notice(pick(lang,'菜单操作未确认，请重试；仍无响应可在紧急修复中重启 Agent。','Menu action unconfirmed. Retry, or use Emergency repair to restart the Agent.'))
 
     async def _gone_from_screen(self, route, seconds=6.0):
         """Wait (bounded) until the screen is readable and shows no native modal; the fresh text, else None."""
@@ -578,8 +578,8 @@ class Desk:
                 a.host.st.log('shared_menu_key',kind='paused',key='enter')
                 a.host.agent_notice(rf.paused_done('retry',info,lang))
             else:
-                a.host.agent_notice(pick(lang,'已选「原话重试」，但没能确认原话重新发出去了：在手机上把原话再发一次就行；仍无响应可在紧急修复中重开 AI 会话。',
-                                         'Chose "retry as is", but could not confirm it was sent again: send your words once more from the phone; if nothing answers, use Emergency repair to reopen the AI session.'))
+                a.host.agent_notice(pick(lang,'已选「原话重试」，但没能确认原话重新发出去了：在手机上把原话再发一次就行；仍无响应可在紧急修复中重启 Agent。',
+                                         'Chose "retry as is", but could not confirm it was sent again: send your words once more from the phone; if nothing answers, use Emergency repair to restart the Agent.'))
             return
         if then=='edit':
             device,text=getattr(self,'draft',(None,''))

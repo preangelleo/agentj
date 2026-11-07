@@ -18,6 +18,7 @@
 // Card text (#472 ② / §E1): `scopeLine()` draws the card's class and the host's one-line "why your task scope does not cover
 // this" when the host sends `cls` / `why_scope` (optional; nothing extra when absent).
 
+import { layoutPopups } from './popup-layout.js';
 import { SVG } from './icons.js';   // the one SVG namespace constant (static.test: no URLs in shipped files)
 
 // #500 rollback (chairman 11-05): `own` = the card is drawn where 0.26.8a2 drew it (the approval / question sheet from the bottom of
@@ -63,13 +64,12 @@ export const CARDS = Object.freeze({
                    why: 'the passkey / Face ID / fingerprint sheet is drawn by the operating system (WebAuthn) over the whole screen; a web page cannot place it' },
   secret_full:   { place: 'exception', surface: '.ajmodal.sout.sout-full', msgs: [], was: 'full screen',
                    why: 'the owner tapped 「全屏」 to read a key he already unlocked with Face ID — a reader he opened, not a card that popped' },
-  offline:       { place: 'exception', surface: '#offDlg', msgs: [], was: 'centred square over the greyed page',
-                   why: 'the disconnected state is the page\'s own (no host is reachable to have sent a card); the whole page is unusable until it reconnects' },
 });
 
 /** host → phone message types in app.js's switch that raise no card (state, data, replies). The test requires every case
  *  to be either here or in some CARDS[kind].msgs. */
 export const NOT_CARDS = Object.freeze([
+  'owner_hosts_state', // paired-host configuration metadata; updates an existing Settings section.
   'term_prefill_res', // Terminal draft acknowledgement; no standalone card or content surface.
   'pair_guide', 'cmds_state', 'preferences', 'status', 'busy', 'res', 'theme', 'pair_ev', 'jcard_open', 'fr_changed', 'hook_changed',
   'reset_step', 'assist_task', 'msg_steered', 'devs', 'dev_pending', 'dev_pair_end', 'host_moved', 'pk_reg_res', 'pk_state', 'preauth',
@@ -170,11 +170,19 @@ export function slotShow(el, mode = 'nearest') {
  *  the others are the centred dialogs P551 (ontop.js) keeps on top. Nothing is moved into #reply-notices any more; the short
  *  notices (#toast, banners, sudo strip, grants) stay in that slot as before (P440). One pass: a card left docked by an older
  *  build of this page goes home, and every open host card carries the security r4 F8 host-only badge (55ca571c5f). */
+// 0284 changes geometry through popup-layout; all existing dismissal, protocol and on-top lifetimes remain authoritative.
+// Dialog-shaped pages keep their full-page layout; a CSS class alone does not make them a popup.
+export function sharesPopupLayout(node) {
+  if (!node || typeof node.matches !== 'function') return false;
+  if (Object.keys(NOT_CARD_SURFACES).some(selector => node.matches(selector))) return false;
+  return CARDS[kindOf(node)]?.place !== PLACE.EXCEPTION;
+}
 export function sync() {
   if (busy || typeof document === 'undefined') return;
   const slot = $('reply-notices');
   busy = true;
   try {
+    layoutPopups([...document.querySelectorAll('#sheet,.gdlg,.ajmodal,dialog[open]')].filter(sharesPopupLayout));
     for (const node of document.querySelectorAll(DOCK_SEL)) {
       // #0282: host action cards share the ordinary sheet's reading-area frame.
       // Its quota boundary, reply toolbar and composer remain outside this frame.

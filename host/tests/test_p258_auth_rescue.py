@@ -439,7 +439,7 @@ class Manager(Base, unittest.IsolatedAsyncioTestCase):
             res = await self.r.recover("claude", route="login")
         self.assertEqual(res, {"ok": False, "why": "main_session"})
         self.assertEqual((self.r.last["claude"]["result"], self.r.last["claude"]["why"]), ("partial", "main_session"))
-        self.assertIn("重开 AI 会话", self.host.notices[-1])
+        self.assertIn("重启 Agent", self.host.notices[-1])
         self.assertNotIn("已恢复", self.host.notices[-1])
 
     async def test_expiry_reminder(self):

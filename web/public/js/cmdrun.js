@@ -17,9 +17,9 @@ import { el, mk, toast, toastAction } from './ui.js';
 import { pkSheet, paintPk } from './pkassist.js';   // P539: no own passkey here (the sheet) · why the tap failed (the result)
 import { usable as termUsable, state as termState } from './termhook.js';   // P408: 「在终端里打开」 only while the terminal is on for this phone
 
-const READ_CMDS = new Set(['doctor']);
+const READ_CMDS = new Set(['doctor', 'version']);
 export const CMDS = { doctor: 'doctor', reconnect: 'doctor --reconnect', status: 'status', service_status: 'service status',
-  rescue_status: 'rescue status', update_check: 'update check' };
+  rescue_status: 'rescue status', update_check: 'update check', version: '--version' };
 // #555: switch names come only from the host's registry-backed whitelist.
 const SWITCH_NAME = /^switch_([a-z][a-z0-9_-]{0,31})$/;
 let harnesses = new Map();
@@ -120,6 +120,8 @@ async function faceId(res) {
   R.st = 'run'; paint();
   return p;
 }
+/** The one place a cmd_run goes out (Settings and #584's code blocks): a NAME, never a command line. */
+function send(name, faceId) { return signedWriteFa('cmd_run', { cmd: name }, { t: 'cmd_run', cmd: name }, faceId); }
 export async function run(name) {
   // #515b: skill copies update automatically on the host. Never offer or send the retired
   // skill_replace_/skill_keep_ actions, including when an older host returns skill_conflicts.
@@ -128,7 +130,7 @@ export async function run(name) {
   R = { name, st: 'ask' };
   if (!isReady()) { R = { name, st: 'fail', why: 'offline', hm: new Date().toTimeString().slice(0, 5) }; return paint(); }
   paint();
-  const pending = signedWriteFa('cmd_run', { cmd: name }, { t: 'cmd_run', cmd: name }, faceId);
+  const pending = send(name, faceId);
   // Return immediately so the existing switch progress, introduction and rollback page are visible.
   if (SWITCH_NAME.test(name)) H.showChat();
   const m = await pending;
@@ -144,6 +146,32 @@ export async function run(name) {
   if (SWITCH_NAME.test(name)) {
     if (!m.ok || R.code !== 0) toast(t('p555.switchFailed', { why: !m.ok ? whyText(R.why) || t('p361.failed') : t('p361.fail', { code: R.code }) }), 8000);
   } else el('rs-cmd-out')?.scrollIntoView({ block: 'nearest' });
+}
+/** #584: the name of the whitelisted command this exact text is (`agentj doctor --reconnect` → 'reconnect'), or null. Pure. */
+export function nameOf(text) {
+  const s = String(text || '').trim().replace(/\s+/g, ' ');
+  for (const n of Object.keys(CMDS)) if (!SWITCH_NAME.test(n) && s === line(n)) return n;
+  return null;
+}
+/** #584: a reply code block's 「执行」 for a whitelisted command — the same signed cmd_run as Settings (a NAME, never the
+ *  text), its result returned to the caller instead of Settings' box: {ok, code, out, cut, ms, why}. */
+export async function exec(name) {
+  if (!Object.hasOwn(CMDS, name) || !names.includes(name) || SWITCH_NAME.test(name)) return { ok: false, why: 'shape' };
+  if (!READ_CMDS.has(name) && phoneConfirmation()) return { ok: false, why: 'cancel' };
+  if (!isReady()) return { ok: false, why: 'offline' };
+  const fa = async (res) => {
+    if (typeof res.fa !== 'string' || typeof res.fa_ch !== 'string' || !canAssert()) return Promise.reject(new Error('passkey_failed'));
+    const yes = el('confirm-yes'); let p = null;
+    const grab = () => { p = faApprove(unb64u(res.fa_ch), res.fa); p.catch(() => {}); };
+    yes.addEventListener('click', grab);
+    const ok = await pkSheet(res.fa_s, t('p361.faTitle'), t('p361.faText', { cmd: line(name) }), t('p361.faYes'));
+    yes.removeEventListener('click', grab);
+    return ok && p ? p : null;
+  };
+  const m = await send(name, fa);
+  const str = (v) => (typeof v === 'string' ? v.slice(0, 20000) : '');
+  return { ok: !!m.ok, code: Number.isInteger(m.code) ? m.code : null, out: str(m.out), cut: m.cut === true,
+    ms: Number.isInteger(m.ms) ? m.ms : null, why: m.ok ? '' : String(m.why || '') };
 }
 /** P393 · settings.js open(): an ended result opens folded to one line (× still closes it). */
 export function foldEnded() { if (R && (R.st === 'done' || R.st === 'fail') && !R.fold) { R.fold = true; paint(); } }

@@ -230,28 +230,6 @@
       <div class="gdlg-row"><button type="button" id="ctm-e-del" class="ctm-del aj-dialog-action" data-i18n-attr="aria-label=p207set.ct.delete,title=p207set.ct.delete" aria-label="删除" title="删除" data-aj-owner="aj-dialog-action"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/></svg></button><button class="aj-dialog-action" type="button" id="ctm-e-cancel" data-i18n="ct.cancel" data-aj-owner="aj-dialog-action">取消</button><button type="submit" id="ctm-e-save" class="go aj-dialog-action aj-dialog-action--primary" data-i18n-attr="aria-label=ct.cardSave,title=ct.cardSave" aria-label="保存" title="保存" data-aj-owner="aj-dialog-action"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4 4L19 7"/></svg></button></div>
     </form>
   </div>
-  <!-- P168: disconnected — the grey page blurred behind the same centred square; never takes focus, 稍后 / ESC / outside = later. -->
-  <div id="offDlg" class="gdlg offdlg" role="dialog" aria-modal="false" aria-labelledby="offTitle" aria-describedby="offSince" hidden>
-    <div class="sq">
-      <div class="gdlg-icon off-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.8a15 15 0 0 1 4.2-2.6"/><path d="M10.7 5.1A15 15 0 0 1 22 8.8"/><path d="M5 12.5a10 10 0 0 1 3.5-2"/><path d="M15.5 10.5a10 10 0 0 1 3.5 2"/><path d="M8.5 16.1a5 5 0 0 1 7 0"/><circle cx="12" cy="19.6" r=".6" fill="currentColor"/><path d="M3 3l18 18"/></svg></div>
-      <h2 id="offTitle" data-aj-owner="aj-dialog"></h2>
-      <p class="gdlg-sub" id="offSince" aria-live="polite"></p>
-      <p class="off-prog" id="offProg"></p>
-      <p class="off-do" data-i18n="off.do">你可以：</p>
-      <ul class="off-tips"><li data-i18n="off.tip1">确认 Agent J 主机开着、连着网</li><li id="offTip2" data-i18n="off.tip2">检查遥控器网络，或点「立即重试」。</li></ul>
-      <div class="off-long" id="offLong" hidden>
-        <p class="off-long-h" data-i18n="off.long">长时间连不上？写信到 feedback@agentj.app</p>
-        <p class="off-long-note" data-i18n="off.longNote">写上账号 ID、看到了什么、什么时候开始的，能附上截图更好。</p>
-        <div class="off-mail"><a id="offMail" href="mailto:feedback@agentj.app" rel="noopener" data-aj-owner="aj-recovery">feedback@agentj.app</a><button id="offCopy" class="off-copy" type="button" data-aj-owner="aj-recovery">
-          <svg class="g g0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>
-          <svg class="g gok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
-        </button></div>
-        <p class="off-copied" id="offCopyNote" role="status" aria-live="polite"></p>
-      </div>
-      <div class="gdlg-row off-rsrow"><button class="aj-dialog-action" id="offRescue" type="button" data-i18n="p332.offBtn" data-aj-owner="aj-dialog-action">打开紧急恢复</button></div>
-      <div class="gdlg-row"><button class="aj-dialog-action" id="offLater" type="button" data-i18n="off.later" data-aj-owner="aj-dialog-action">稍后</button><button id="offRetry" class="go aj-dialog-action aj-dialog-action--primary" type="button" data-i18n="off.retry" data-aj-owner="aj-dialog-action">立即重试</button></div>
-    </div>
-  </div>
       <div id="share-notice" class="share-notice" hidden role="status" aria-live="polite"><span id="share-status"></span><button id="share-paste" type="button" hidden data-i18n="share.paste" data-aj-owner="aj-notice">粘贴截图</button></div>
   <div class="aura" aria-hidden="true"></div>
   <!-- The context window as a water level (relay): the screen is the tank, the surface rises as the window fills. -->
@@ -324,6 +302,7 @@
       <button type="button" id="rescue-banner-go" class="rsbanner__go" data-i18n="p332.bannerGo" data-aj-owner="aj-recovery">紧急修复</button>
       <button type="button" id="rescue-banner-x" class="setup-banner__x" data-i18n-attr="aria-label=p424.bannerClose,title=p424.bannerClose" aria-label="先关掉这条提示" title="先关掉这条提示" data-aj-owner="aj-recovery">✕</button>
     </div>
+
     <!-- The rule under the header is the weekly quota; the one above the composer is the 5-hour window. -->
     <div class="meter" id="mWeek" role="img" data-known="0" data-i18n-attr="aria-label=r.meter.week" aria-label="本周额度"><i></i><span class="lab"></span></div>
 
@@ -380,6 +359,9 @@
           <div class="rmbar" id="rmbar" role="toolbar" data-i18n-attr="aria-label=r.bar.aria" aria-label="这条回复" data-aj-owner="aj-reply-action">
             <button class="wrbtn" id="webReportBtn" type="button" aria-haspopup="dialog" aria-label="分享成网页报告" title="分享成网页报告" data-aj-owner="aj-reply-action">
               <svg viewBox="0 0 36 36" aria-hidden="true"><circle class="disc" cx="18" cy="18" r="18"/><g transform="translate(6.5 6.5) scale(.96)" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.76 11.19A7 7 0 1 1 12.81 6.24"/><path d="M11.6 12.4 20 4M14.6 4H20v5.4"/></g></svg>
+            </button>
+            <button class="wrbtn" id="main-thread-interrupt" type="button" hidden aria-label="打断并先回我" title="打断并先回我" data-aj-owner="aj-reply-action">
+              <svg viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="18" fill="var(--lotion)"/><rect x="12" y="12" width="12" height="12" fill="var(--noir)"/></svg>
             </button>
             <div class="rmicons" id="rmIcons">
             <button class="act" id="readBtn" type="button" data-i18n-attr="aria-label=r.bar.read,title=r.bar.read" aria-label="全屏阅读（f · 双击卡片）" title="全屏阅读（f · 双击卡片）" data-aj-owner="aj-reply-action">
@@ -898,7 +880,7 @@
             <div class="setrow pkrow" id="set-pk-row" hidden>
               <svg class="mi" data-icon="face" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9.5v1M15 9.5v1M12 9.5V13h-1M9.5 16a3.5 3.5 0 0 0 5 0"/></svg>
               <svg class="mi" data-icon="finger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4M14 13.12c0 2.38 0 6.38-1 8.88M17.29 21.02c.12-.6.43-2.3.5-3.02M2 12a10 10 0 0 1 18-6M2 16h.01M21.8 16c.2-2 .131-5.354 0-6M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2M8.65 22c.21-.66.45-1.32.57-2M9 6.8a6 6 0 0 1 9 5.2v2"/></svg>
-              <span class="pkrow__txt"><b class="setlab" id="set-pk-state" data-i18n="p539.pk.st.unknown">本机 {bio}：未确认</b><small id="set-pk-sub" data-aj-owner="aj-settings"></small><small class="pkrow__note" id="set-pk-note" hidden data-aj-owner="aj-settings"></small></span>
+              <span class="pkrow__txt"><b class="setlab" id="set-pk-state" data-i18n="p539.pk.st.unknown">本机{bio}：未确认</b><small id="set-pk-sub" data-aj-owner="aj-settings"></small><small class="pkrow__note" id="set-pk-note" hidden data-aj-owner="aj-settings"></small></span>
               <button type="button" id="set-pk-setup" class="aj-action aj-action--sm" data-i18n="p539.pk.setup" data-aj-owner="aj-action" data-aj-action-context="dialog">在本机设置</button>
               <span class="pkrow__acts" id="set-pk-acts" hidden><button type="button" id="set-pk-test" class="aj-action aj-action--sm" data-i18n="p566.pk.test" data-aj-owner="aj-action" data-aj-action-context="dialog">测试一下</button><button type="button" id="set-pk-reset" class="aj-action aj-action--sm" data-i18n="p561.pk.reset" data-aj-owner="aj-action" data-aj-action-context="dialog">重新设置</button></span>
             </div>
@@ -918,12 +900,12 @@
                ② ask Agent J Father (signed `rescue_do help`), ③ the AI account login (P258 / P288, moved here). js/rescue.js -->
           <section class="setcard rescue" id="set-s-rescue" data-paired aria-labelledby="set-h-rescue">
             <h3 class="setg" id="set-h-rescue" data-i18n="p332.title" data-aj-owner="aj-settings">紧急修复</h3>
-            <p class="setnote" data-i18n="p332.intro">Agent J 主机上的 Agent J 出问题时，从第 ① 步开始，按顺序试。</p>
+            <p class="setnote" data-i18n="p332.intro">Agent 卡住、不回话时，先点「一键修复」。下面每个按钮都要确认真的修好了，才会显示成功。</p>
             <p class="setnote rsmode" id="rs-mode" role="status" hidden data-i18n="p332.modeNote">Agent J 主机上的 Agent J 没响应，现在由救援守护代为接听：只有下面的修复能用。</p>
             <ol class="rscards">
               <li class="rscard" id="rs-reset" data-state="idle">
                 <div class="rshead"><span class="rsnum" aria-hidden="true">1</span><h4 class="rstitle" data-i18n="p332.reset.title" data-aj-owner="aj-settings">重置连接</h4></div>
-                <p class="rsnote" data-i18n="p332.reset.note">连不上、断了又连、卡住、不回消息时，先点这个。会自动帮你重新连上，必要时开一个新对话。</p>
+                <p class="rsnote" data-i18n="p332.reset.note">手机连不上、断了又连时用：重新连上 Agent J 主机，必要时开一个新对话。Agent 卡住不回话，先点上面的「一键修复」。</p>
                 <div class="rsbody" id="rs-reset-body"></div>
               </li>
               <li class="rscard" id="rs-help" data-state="idle">
@@ -941,7 +923,7 @@
             <!-- P361 (PROTOCOL §34): 电脑上的命令 — whitelisted commands with ⧉ and 「执行」 (Face ID every run). js/cmdrun.js -->
             <details class="rscard rscmds setfold" id="rs-cmds" hidden>
               <summary class="rstitle" id="rs-cmds-h" data-i18n="p361.title" data-aj-owner="aj-settings">终端指令</summary>
-              <p class="rsnote" id="rs-repair-order" data-i18n="p438.order">没回应时按这个顺序：Stop → 执行 agentj doctor --reconnect → 重启服务 → 重开 AI 会话（0.25.1a1 起）→ ② 请 Agent J Father 远程帮忙。额度问题先看 Claude 设置 Usage / 免费重置；手机灰了先用 ① 重置连接。</p>
+              <p class="rsnote" id="rs-repair-order" data-i18n="p438.order">没回应时，先点上面的「一键修复」，不需要到终端执行命令。下面这些终端指令留给熟悉终端的人。</p>
               <p class="rsnote" data-i18n="p361.note">在 Agent J 主机上执行的终端指令。</p>
               <ul class="rscmdlist" id="rs-cmd-list" aria-labelledby="rs-cmds-h"></ul>
               <div class="rscmdres" id="rs-cmd-out" role="status" aria-live="polite" hidden></div>
@@ -976,6 +958,13 @@
             <!-- P366: 设置 → Webhook — external services tell the Agent (js/webhooks.js, AGENTJ-HOOKS-SPEC §8.3) -->
             <button type="button" id="set-local-files-nav" class="setnav" data-paired data-aj-owner="aj-settings"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.6l2 2.5h7.4A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><path d="M12 10.5v6M9.5 14l2.5 2.5 2.5-2.5"/></svg><span><b data-i18n="p478.nav">本机文件访问</b><small data-i18n="p478.note" data-aj-owner="aj-settings">管理允许导入的文件夹和到期时间。撤销只影响以后的导入，已复制的文件会保留。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="set-hooks-nav" class="setnav" data-keywords="webhook 回调 callback stripe github 告警 alert" data-aj-owner="aj-settings"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="6.5" r="2.5"/><circle cx="6" cy="17" r="2.5"/><circle cx="18" cy="17" r="2.5"/><path d="M10.8 8.7L7.3 14.8M13.2 8.7l3.5 6.1M8.5 17h7"/></svg><span><b data-i18n="p366.nav">Webhook</b><small data-i18n="p366.navNote" data-aj-owner="aj-settings">外部服务做完事或出了问题，直接通知 Agent。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+            <div class="setrow" id="set-main-thread-row" hidden>
+              <span class="setlab" data-i18n="p579.guard">主线程优先回应</span>
+              <button type="button" id="set-main-thread" class="tgl" role="switch" aria-checked="true" data-pref="agent.main_thread_guard" data-i18n-attr="aria-label=p579.guard" data-aj-owner="aj-settings-control" aria-label="主线程优先回应"><i></i></button>
+              <p class="setnote" data-i18n="p579.guardNote">持续工作超过任一限额时，先把工作交给后台，让主线程回应你的消息。</p>
+              <label class="sethb-f"><span data-i18n="p579.calls">连续工作次数（2–1000）</span><input id="set-main-thread-calls" class="aj-input" type="number" inputmode="numeric" min="2" max="1000" step="1" data-aj-owner="aj-settings"></label>
+              <label class="sethb-f"><span data-i18n="p579.seconds">连续工作秒数（30–3600）</span><input id="set-main-thread-seconds" class="aj-input" type="number" inputmode="numeric" min="30" max="3600" step="1" data-aj-owner="aj-settings"></label>
+            </div>
             <div class="setrow" id="set-hb-row">
               <span class="setlab" data-i18n="set.heartbeat">心跳</span>
               <button type="button" id="set-hb" class="tgl" role="switch" aria-checked="false" data-pref="heartbeat.enabled" data-aj-owner="aj-settings-control"><i></i></button>

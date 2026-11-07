@@ -71,8 +71,9 @@ class RealHost(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_owner_text_tilde_and_hidden_folder_still_become_cards(self):
-        self.assertEqual(privacy.owner_text("[a.md](/home/someone/coding/.worktrees/a.md)"), "[a.md](~/coding/.worktrees/a.md)",
-                         "the owner channel writes ~ for the home folder — the page text the scan and the phone both read")
+        with mock.patch.dict(os.environ, {"HOME": "/home/someone"}):
+            self.assertEqual(privacy.owner_text("[a.md](/home/someone/coding/.worktrees/a.md)"), "[a.md](~/coding/.worktrees/a.md)",
+                             "only the actual owner home is shortened; unrelated user paths stay unchanged")
         shown = "完整设计稿：[plan.md](~/coding/proj/.worktrees/w1/reports/plan.md)\n" \
                 "- [思念.mp3](~/coding/audio/memorial/思念.mp3)\n- [歌](<~/coding/audio/a b 🎵.mp3>)"
         with mock.patch.dict(os.environ, {"HOME": str(self.home)}):

@@ -34,7 +34,7 @@ test('os detection matrix; browserEnvironment keeps its exact shape; probeEnviro
 });
 
 test('bioLabel zh / en', () => {
-  const want = { ios: ['Face ID', 'Face ID'], android: ['Touch ID', 'Touch ID'], mac: ['Touch ID', 'Touch ID'],
+  const want = { ios: ['Face ID/Touch ID', 'Face ID/Touch ID'], android: ['指纹或面容', 'fingerprint or face'], mac: ['Touch ID', 'Touch ID'],
     windows: ['Windows Hello', 'Windows Hello'], linux: ['Touch ID', 'Touch ID'], other: ['Touch ID', 'Touch ID'] };   // P559: two names only
   for (const [os, [zh, en]] of Object.entries(want)) { assert.equal(ENV.bioLabel(os, 'zh'), zh); assert.equal(ENV.bioLabel(os, 'en'), en); }
   assert.equal(ENV.bioLabel('nope', 'en'), 'Touch ID');
@@ -44,11 +44,11 @@ test('t(): Face ID becomes the platform label on Android / Mac / Windows / Linux
   LANG('zh');
   T.setTextOs(undefined);
   assert.equal(T.textOs(), 'ios', 'node (no browser UA) never substitutes');
-  assert.equal(T.t('phoneEnv.setup'), '设置 Face ID');
+  assert.equal(T.t('phoneEnv.setup'), '设置 Face ID/Touch ID');
   T.setTextOs('android');
-  assert.equal(T.t('phoneEnv.setup'), '设置 Touch ID');
-  assert.equal(T.t('pk.askTitle'), '用 Touch ID 记住这台手机？');
-  assert.equal(T.t('p352.needFaceId', { device: 'X' }).split('Touch ID').length, 2, 'the "Face ID / Touch ID" pair collapses to one label');
+  assert.equal(T.t('phoneEnv.setup'), '设置指纹或面容');
+  assert.equal(T.t('pk.askTitle'), '用指纹或面容记住这台手机？');
+  assert.equal(T.t('p352.needFaceId', { device: 'X' }).split('指纹或面容').length, 2, 'the "Face ID / Touch ID" pair collapses to one label');
   T.setTextOs('mac');
   assert.equal(T.t('p352.needFaceId', { device: 'X' }).split('Touch ID').length, 2);
   assert.ok(!T.t('elev.fa.cancel').includes('Face ID'));
@@ -56,13 +56,13 @@ test('t(): Face ID becomes the platform label on Android / Mac / Windows / Linux
   assert.equal(T.t('phoneEnv.setup'), '设置 Touch ID');
   LANG('en');
   T.setTextOs('android');
-  assert.equal(T.t('elev.fa.cancel'), "Touch ID didn't go through. Nothing was sent.");
-  assert.equal(T.t('phoneEnv.setup'), 'Set up Touch ID');
+  assert.equal(T.t('elev.fa.cancel'), "Fingerprint or face didn't go through. Nothing was sent.");
+  assert.equal(T.t('phoneEnv.setup'), 'Set up fingerprint or face');
   T.setTextOs('windows');
   assert.equal(T.t('pk.restore'), 'Reconnect with Windows Hello');
   T.setTextOs('ios');
-  assert.equal(T.t('pk.restore'), 'Reconnect with Face ID');
-  assert.equal(T.bioWords('{device} uses Face ID', 'android', 'en'), '{device} uses Touch ID', 'vars are filled after the swap');
+  assert.equal(T.t('pk.restore'), 'Reconnect with Face ID/Touch ID');
+  assert.equal(T.bioWords('{device} uses Face ID', 'android', 'en'), '{device} uses fingerprint or face', 'vars are filled after the swap');
   T.setTextOs(undefined); LANG('zh');
 });
 
@@ -83,7 +83,7 @@ test('pk.notSaved / pk.none per platform: Android never says Apple / iCloud / iP
       assert.ok(!/Apple|iCloud|Face ID/.test(T.t(A.osKey(base, 'linux'))), 'linux → other');
       assert.equal(A.osKey(base, 'linux'), base + '.other');
       T.setTextOs('ios');
-      assert.equal(T.t(A.osKey(base, 'ios')), DICT[lng][base], 'iOS keeps the iCloud Keychain path word for word');
+      assert.ok(T.t(A.osKey(base, 'ios')).includes('iCloud'), 'iOS keeps the iCloud Keychain path');
     }
   }
   T.setTextOs(undefined); LANG('zh');
@@ -96,7 +96,7 @@ test('fa_s → the quiet hint; WebAuthn errors → the reason', () => {
   assert.equal(R.hintKey(null), null, 'older host: nothing extra');
   assert.equal(R.faState('local'), 'local'); assert.equal(R.faState('LOCAL'), null); assert.equal(R.faState(undefined), null);
   assert.equal(R.failKey({ name: 'NotAllowedError' }, 'borrowed'), 'p539.fail.borrowed');
-  assert.equal(R.failKey('NotAllowedError', 'local'), 'p561.fail.missing');   // P561: this remote's own key refused here
+  assert.equal(R.failKey('NotAllowedError', 'local'), 'p0285.pk.incomplete');   // P561: this remote's own key refused here
   assert.equal(R.failKey('NotAllowedError', null), 'p539.fail.cancel');
   assert.equal(R.failKey('AbortError'), 'p539.fail.abort');
   assert.equal(R.failKey('SecurityError'), 'p539.fail.other');
@@ -104,7 +104,7 @@ test('fa_s → the quiet hint; WebAuthn errors → the reason', () => {
   assert.equal(R.errName({ name: '<x>' }), 'Error');
   assert.equal(R.errName(null), 'Error');
   LANG('zh');
-  assert.equal(T.t('p539.hint.borrowed'), '这台遥控器还没有设置自己的 {bio}，系统会请你用手机扫码确认。');
+  assert.equal(T.t('p539.hint.borrowed'), '这台遥控器还没有设置自己的{bio}，系统会请你用手机扫码确认。');
   assert.equal(T.t('p539.pk.setup'), '在本机设置');
 });
 

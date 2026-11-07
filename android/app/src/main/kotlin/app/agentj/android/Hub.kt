@@ -39,7 +39,7 @@ object Hub {
 
     fun set(s: Listen, err: String? = null) {
         if (state == s && error == err) return
-        android.util.Log.i("JarvisHub", "state $state -> $s${err?.let { " ($it)" } ?: ""}")
+        android.util.Log.i("AgentJHub", "state $state -> $s${err?.let { " ($it)" } ?: ""}")
         state = s; error = err; changed()
     }
 

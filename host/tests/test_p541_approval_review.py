@@ -146,7 +146,17 @@ class Review(unittest.IsolatedAsyncioTestCase):
             # Each refusal scenario is a fresh owner task; a denied operation in the same task cannot be revived.
             source = self.h.hist_add({'k':'phone','name':'你','text':'A fresh synthetic owner request.'}, '', 'done')
             self.origin = review.remember(self.h, source, provenance.phone())
-            self.agent.cur_send.approval_origin = {**self.origin,'suspicious':suspicious,'channel':'email' if suspicious else 'phone'}
+            self.agent.cur_send.approval_origin = self.origin
+            if suspicious:
+                # A fabricated external projection is not an authenticated owner
+                # task under the current source contract: it cannot even mint a
+                # card, much less reuse the previous card's refusal/reopen path.
+                self.agent.cur_send.approval_origin = {**self.origin,'suspicious':True,'channel':'email'}
+                before = len([m for _,m in self.sent if m.get('t') == 'ask'])
+                result = await self.h.ask('Bash', {'command':'rm -rf /synthetic/old'})
+                self.assertEqual(result['behavior'],'deny')
+                self.assertEqual(len([m for _,m in self.sent if m.get('t') == 'ask']),before)
+                continue
             task, ask = await self.open()
             await self.h._answer(self.s,self.ph.answer(self.h._ask_msg(ask,self.s),False))
             self.assertEqual((await task)['behavior'],'deny')

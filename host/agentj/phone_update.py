@@ -56,8 +56,8 @@ def text(rec, lang="zh", web="older", machine=None):
     if rec.get("tell_owner"):          # P277: the plain sentence (what failed, where the Agent J host is, whether support has it)
         from . import upgrade_diag
         return upgrade_diag.owner_sentence(rec, _rep_of(rec), lang)
-    return (f"Upgrade failed ({reason}). Run `agentj update check`, then `agentj update apply` on the Agent J host." if lang == "en" else
-            f"升级未完成（{reason}）。在Agent J 主机运行 `agentj update check`，再运行 `agentj update apply` 重试。")
+    return (f"Upgrade failed ({reason}). Use Repair connection below, or Settings → Emergency repair. If the host is offline, wake that computer first." if lang == "en" else
+            f"升级未完成（{reason}）。使用下方「修复连接」，或前往设置中的「紧急修复」。主机离线时，请先唤醒那台电脑。")
 
 def _rep_of(rec):
     import re

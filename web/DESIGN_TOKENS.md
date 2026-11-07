@@ -1,5 +1,21 @@
 # Spacing tokens — the phone web's global CSS (P302, 2026-10-15)
 
+## 0.28.5 chairman review contract (2026-11-08)
+
+Approval and Face ID / Touch ID confirmations use the existing bottom sheet: viewport-wide,
+no side margin, the current state background, growing above the five-hour quota rule and
+joining the composer. They must not become centred dialogs. Centred floating dialogs use
+the existing opaque Noir / Lotion dialog tokens and blurred backdrop in both themes.
+These are distinct component roles; a centred state-coloured approval is invalid.
+
+Text, controls and cards require visible separation. Use the existing semantic spacing
+tokens below; the DOM audit floor is 8px, including text-to-card and text-to-button gaps.
+Icon controls contain only their icon; accessible `title` / `aria-label` remain available.
+Do not insert a status row between the existing header and main content. The visible
+header icon set must match the same state in the released 0.28.4 baseline.
+The 0.28.5 rework DOM gate measures these contracts on rendered product fixtures; the
+release owner must run it again on the merged A/B/C tree before offering a new preview.
+
 > Owner (10-15): 「这些 margin 说好的这些页面的文档里边要有标准的 margin，这 global CSS 怎么设置的？」
 > This page is the answer. New pages use these tokens; **no hard-coded px for spacing**.
 > The automatic check is `test/p302.mjs` (spacing audit, gate `p302-phone`), which cites this file.

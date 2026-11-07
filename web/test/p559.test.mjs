@@ -33,7 +33,7 @@ test('a touch tablet in desktop mode is the Android family: Touch ID, never Face
   assert.equal(ENV.osOf(PAD, 10), 'android');
   assert.equal(ENV.osOf(PAD, 0), 'linux');                 // a desktop Linux browser stays linux
   T.setTextOs(ENV.osOf(PAD, 10));
-  assert.equal(T.t('p336.faYes'), '用 Touch ID 确认');         // the card's button on the Huawei Pad
+  assert.equal(T.t('p336.faYes'), '用指纹或面容确认');         // the card's button on the Huawei Pad
   assert.doesNotMatch(T.t('p539.fail.setup'), /Face ID/);
   T.setTextOs(undefined);
 });
@@ -101,14 +101,14 @@ test('the unlock is named Face ID or Touch ID — never 屏幕锁 / 指纹或人
   for (const os of ['ios', 'android', 'mac', 'linux', 'other']) {
     const want = os === 'ios' ? 'Face ID' : 'Touch ID';
     assert.equal(zh['p539.bio.' + os], want, 'zh ' + os); assert.equal(en['p539.bio.' + os], want, 'en ' + os);
-    assert.equal(ENV.bioLabel(os, 'zh'), want);
+    assert.equal(ENV.bioLabel(os, 'zh'), os==='ios'?'Face ID/Touch ID':os==='android'?'指纹或面容':want);
   }
-  for (const [ua, touch, want] of [[PAD, 10, 'Touch ID'], ['Mozilla/5.0 (Linux; Android 14; PJZ110) Chrome/129.0 Mobile', 5, 'Touch ID'],
-    ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/141.0', 0, 'Touch ID'], ['Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)', 5, 'Face ID'],
-    ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605', 5, 'Face ID']]) {   // the last one: an iPad asking for the desktop site
+  for (const [ua, touch, want] of [[PAD, 10, '指纹或面容'], ['Mozilla/5.0 (Linux; Android 14; PJZ110) Chrome/129.0 Mobile', 5, '指纹或面容'],
+    ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/141.0', 0, 'Touch ID'], ['Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)', 5, 'Face ID/Touch ID'],
+    ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605', 5, 'Face ID/Touch ID']]) {   // the last one: an iPad asking for the desktop site
     T.setTextOs(ENV.osOf(ua, touch));
-    for (const k of ['p539.pk.st.local', 'p539.pk.st.none']) assert.equal(A.withBio(k), '本机 ' + want + '：' + zh[k].split('：')[1], ua + ' ' + k);
-    assert.equal(T.t('p336.faYes'), '用 ' + want + ' 确认');
+    for (const k of ['p539.pk.st.local', 'p539.pk.st.none']) assert.equal(A.withBio(k), (want==='指纹或面容'?'本机':'本机 ') + want + '：' + zh[k].split('：')[1], ua + ' ' + k);
+    assert.equal(T.t('p336.faYes'), want==='指纹或面容'?'用指纹或面容确认':'用 ' + want + ' 确认');
   }
   T.setTextOs(undefined);
   // the explanation line, verbatim, and it is never swapped (it names all three)

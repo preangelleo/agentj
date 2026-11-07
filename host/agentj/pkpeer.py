@@ -87,14 +87,13 @@ class Desk:
         return h.sessions.get(s.cid) is s and s.state == "ready" and s.device == wire.device_id(s.pub) and h.st.is_allowed(s.pub)
 
     def _eligible(self, did: str) -> bool:
-        """Review minor 4: a device approves only with a key IT registered (`dev` == its id; a legacy record without `dev`
-        counts). A record moved by a passkey restore keeps the registering id — its key lives on another device, and asking
-        it would pop the browser's cross-device QR sheet."""
-        pk = self.host.st.passkey_of_device(did)
-        return bool(pk) and pk.get("dev", did) == did
+        """Chairman 2026-11-07 21:15: all Host-bound, unrevoked keys are equal UV approvers.
+        The registering device is historical metadata, including after recovery; assertions
+        still verify against the current bound record and a key cannot approve itself."""
+        return bool(self.host.st.passkey_of_device(did))
 
     def _approver(self, s, r: Req) -> bool:
-        """Another listed device, with its own key (never the credential D holds), registered by itself."""
+        """Another listed device with a distinct currently bound key (never the credential D holds)."""
         mine = self._pk_id(s.device)
         return bool(mine) and s.device != r.device and mine != self._pk_id(r.device) and self._eligible(s.device)
 

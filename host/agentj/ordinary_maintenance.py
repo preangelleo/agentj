@@ -447,7 +447,15 @@ def _seal(paths):
     return tuple(result)
 
 
-def qualify(tool,inp,*,cwd=None,state_root=None):
+def qualify(tool,inp,*,cwd=None,state_root=None,_native_scratch=None):
+    if _native_scratch is not None:
+        from . import native_scratch
+        if type(_native_scratch) is not native_scratch.Context:return None
+        try:
+            proof=native_scratch.qualify(tool,inp,cwd,_native_scratch)
+            if proof is not None:return ('native-scratch-prefix-v1',proof)
+            if _native_scratch.background is not None:return None
+        except (OSError,ValueError,TypeError):pass
     paths=set();token=_PATHS.set(paths);units=[];unit_token=_UNITS.set(units)
     try:
         if not proven(tool,inp,cwd=cwd,state_root=state_root):return None
@@ -460,6 +468,9 @@ def qualify(tool,inp,*,cwd=None,state_root=None):
 
 
 def still_valid(proof):
+    if proof[0]=='native-scratch-prefix-v1':
+        from . import native_scratch
+        return native_scratch.still_valid(proof[1])
     if _seal(proof[0])!=proof[1]:return False
     current=qualify(proof[3],proof[4],cwd=proof[5],state_root=proof[6])
     return current is not None and current[:3]==proof[:3]

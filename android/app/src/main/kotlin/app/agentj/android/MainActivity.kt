@@ -43,7 +43,7 @@ import android.window.OnBackInvokedDispatcher
 class MainActivity : Activity() {
 
     companion object {
-        private const val TAG = "JarvisMain"
+        private const val TAG = "AgentJMain"
         const val EXTRA_FROM_WAKE = "from_wake"
         /** A reply notification was tapped: open that turn's page (ADR-050). */
         const val EXTRA_TURN = "turn"
@@ -845,7 +845,7 @@ class MainActivity : Activity() {
                 if (failed.isNotEmpty()) toast("有 ${failed.size} 个文件读不出来：${failed.first()}")
                 cb.onReceiveValue(if (out.isEmpty()) null else out.toTypedArray())
             }
-        }, "jarvis-pick").start()
+        }, "agentj-pick").start()
     }
 
     /** One picked file → a copy under our PickProvider (same name and type). Big files are cut

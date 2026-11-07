@@ -27,8 +27,9 @@ export function notFound(): Response {
  *  attributes — before render.js turns it into an <img>. Scripts stay 'self' only (no inline script, no eval), and the page
  *  never parses Agent text as HTML, so no Agent text can become a style; img / font / connect stay 'self' / the relays. */
 export function csp(relay: string, versionSource = ""): string {
+  const fileSources=relay.split(' ').filter(source=>RELAY_RE.test(source)).map(source=>source.replace(/^wss:/,'https:')+'/v1/file/').join(' ');
   return "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
-    `connect-src ${relay}${versionSource ? " " + versionSource : ""}; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'`;
+    `connect-src ${relay}${fileSources ? " " + fileSources : ""}${versionSource ? " " + versionSource : ""}; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'`;
 }
 
 export function webHeaders(relay: string, versionSource = ""): Record<string, string> {

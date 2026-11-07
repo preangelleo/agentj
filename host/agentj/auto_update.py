@@ -569,15 +569,15 @@ def notice(r, lang='zh', prefs=None, harness=None):
     if r.get('result') == 'rolled_back':
         own = (' ' + upgrade_owner.sentence(r, lang)) if r.get('owner_kind') and r.get('fix') else ''   # #475
         return humane.say('update.auto_rollback', lang, prefs, **{'from': r['from'], 'reason': r['reason']}) + own
-    text = (f"Automatic update did not complete ({r['reason']}); run agentj doctor." if lang == 'en' else
-            f"自动升级未完成，原因：{r['reason']}；请运行 agentj doctor。")
+    text = (f"Automatic update did not complete ({r['reason']}). Use Repair connection below, or Settings → Emergency repair." if lang == 'en' else
+            f"自动升级未完成，原因：{r['reason']}。使用下方「修复连接」，或前往设置中的「紧急修复」。")
     if upgrade_diag.install_unchanged(r):
         frm = r.get('from') or __version__
         return (f"Automatic update did not complete ({r['reason']}); still on {frm}, working as before." if lang == 'en' else
                 f"自动升级未完成，原因：{r['reason']}；Agent J 主机仍是 {frm}，照常可用。")
     if r.get('reason') == 'rollback_failed' and r.get('recover'):
-        text += (" Rollback also failed; restore the previous version: " if lang == 'en' else
-                 " 回滚也没成功；请运行这一条装回原版本：") + r['recover']
+        text += (" Automatic rollback also failed. Repair connection checks the existing host link; contact AgentJ support if it cannot recover." if lang == 'en' else
+                 " 自动回滚也未完成。「修复连接」会检查现有主机连接；仍未恢复时，请联系 AgentJ 支持。")
     return text
 
 

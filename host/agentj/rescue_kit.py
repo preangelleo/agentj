@@ -708,9 +708,9 @@ def check_harness(r: Report):
             pass
     r.facts["harness_readiness"] = {"ready": ready, "code": code}
     r.add("harness", OK if ready else FAIL,
-          "AI 会话已就绪（适配器状态检查；未测试模型回复）" if ready else "AI 会话尚未确认就绪；请在手机点「重开 AI 会话」，再发一条短消息验证",
+          "AI 会话已就绪（适配器状态检查；未测试模型回复）" if ready else "AI 会话尚未确认就绪；请在手机点「重启 Agent」，再发一条短消息验证",
           "AI session ready (adapter state checked; model reply not tested)" if ready else
-          "AI session readiness is unconfirmed. Use Reopen AI session on the phone, then send a short message to verify.")
+          "AI session readiness is unconfirmed. Use Restart Agent on the phone, then send a short message to verify.")
 
 
 def check_doctor(r: Report):

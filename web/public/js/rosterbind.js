@@ -23,7 +23,7 @@ export async function offer(m) {
     const e = m.entry, ch = channel(), g = gen(), key = await signKey(), dev = await deviceId((await deviceKey()).pub);
     if (!ch || !g || !e || e.dev !== dev || e.sign_pub !== b64u(key.pub) || e.rp !== location.hostname) return false;
     const challenge = await bindChallenge(e);
-    if (!await confirmSheet(t('p336.faTitle'), t('p574.bindWhy'), t('p336.faYes'))) return false;
+    if (!await confirmSheet(t('p336.faTitle'), t('p574.bindWhy'), t('p336.faYes'), false, undefined, '', 'grow')) return false;
     // No asynchronous work between confirmation and get(): preserve the iOS tap gesture.
     const fa = await approve(challenge, e.id);
     if (!await verifyBindingAssertion(e, fa, challenge, { rp: location.hostname, origin: location.origin })) throw new Error('binding assertion');

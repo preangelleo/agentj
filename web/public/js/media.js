@@ -1,4 +1,4 @@
-import { downloadFile, revokeFile, downloadError } from './private-files.js';
+import { downloadFile, revokeFile, downloadError, forgetDownloads } from './private-files.js';
 import { fileDoubleTap, DOUBLE_MS } from './file-gestures.js';
 import { registerLayer } from './layers.js';
 // Media out (PROTOCOL §13, F21, 0.15.2): files, pictures, audio, video, PDFs and generated HTML that the Agent's reply
@@ -112,6 +112,7 @@ export function handle(m) {
 }
 /** Unpair / re-pair / revoke: every Blob and every fetch goes. */
 export function forgetAll() {
+  forgetDownloads();
   tgStates.clear();
   for (const f of [...flights.values()]) f.fail('net');
   waiting.length = 0; cache.clear(); cacheBytes = 0;
@@ -159,11 +160,11 @@ const privateLabels = new WeakMap();
 onLang(() => { if(typeof document!=='undefined')for(const box of document.querySelectorAll('[data-private-file]'))privateLabels.get(box)?.(); });
 function skipCard(s) {
   const box = mk('div', 'mskip', skipText(s));
-  if (!s.download || !peer.privatefiles1) return box;
+  if (!s.download || (!peer.privatefiles1&&!peer.privatefiles2)) return box;
   box.dataset.privateFile='1';
   const label=mk('span'),revoke=mk('button','aj-action aj-action--quiet',undefined,'aj-action','dialog'),button=mk(s.download.locator?'a':'button','aj-action aj-action--quiet',undefined,'aj-action','dialog'),limitation=mk('span');
-  const supported=typeof globalThis.showSaveFilePicker==='function';let revoked=false,progress=null;
-  const paint=()=>{label.textContent=s.name+' · '+t(revoked?'p0280.file.revoked':'p0280.file.card');revoke.textContent=t('p0280.file.revoke');button.textContent=progress===null?t('p0280.file.save'):t('p0280.file.progress',{n:progress});limitation.textContent=' '+t('p0280.file.unsupported');};
+  const supported=s.download.transport==='https1'&&peer.privatefiles2||typeof globalThis.showSaveFilePicker==='function';let revoked=false,progress=null;
+  const paint=()=>{label.textContent=s.name+' · '+t(revoked?'p0280.file.revoked':s.download.transport==='https1'?'p578.file.card':'p0280.file.card');revoke.textContent=t('p0280.file.revoke');button.textContent=progress===null?t('p0280.file.save'):t('p578.file.preparing',{n:progress});limitation.textContent=' '+t('p0280.file.unsupported');};
   revoke.type='button';revoke.onclick=async()=>{
     revoke.disabled=true;
     try{await revokeFile(s.download);revoked=true;revoke.hidden=true;button.hidden=true;limitation.hidden=true;paint();}
@@ -452,10 +453,18 @@ function download(m, c, blob) {
 }
 /** P432: the Files card's download — the same §13 media_get pull (SHA-256 checked) and save as a reply's 下载 icon. */
 export function save(m) {
+  if(m.download?.transport==='https1'&&peer.privatefiles2)return downloadFile(m.download,m.name).catch(error=>toast(downloadError(error),6000));
   return fetchMedia(m).then((blob) => download(m, null, blob), (e) => toast(t(e && e.why === 'gone' ? 'media.expired' : e && e.why === 'sha' ? 'media.shaBad' : 'media.dlFailed'), 2600));
 }
 /** The 下载 icon: fetch the bytes if needed (the icon breathes meanwhile), then save; a failed fetch marks the icon and says so. */
 function dlTap(m, c, load, b) {
+  if(m.download?.transport==='https1'&&peer.privatefiles2){
+    if(b.dataset.state==='sending')return;b.dataset.state='sending';
+    const status=c.querySelector('.mtap');
+    downloadFile(m.download,m.name,(n,total)=>{if(status)status.textContent=t('p578.file.preparing',{n:Math.floor(n/total*100)});})
+      .catch(error=>{if(status)status.textContent=downloadError(error);toast(downloadError(error),6000);})
+      .finally(()=>{b.dataset.state='idle';});return;
+  }
   if (c._blob) { download(m, c, c._blob); return; }
   b.dataset.state = 'sending';
   load().then((blob) => { b.dataset.state = 'idle'; download(m, c, blob); }, (e) => {

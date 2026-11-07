@@ -75,7 +75,7 @@ test('#430 busy: a task mention carries who, what and the task id; the chip is @
   const m = busy.mentionOf({ id: 'agentj-busy-7f3a', who: '掌枢', label: 'P160 harness 对等' });
   assert.match(m.text, /^@/);
   assert.ok(m.text.includes('掌枢') && m.text.includes('P160 harness 对等') && m.text.includes('agentj-busy-7f3a'), m.text);
-  assert.equal(m.label, '@掌枢');
+  assert.equal(m.label, '@掌枢 · P160 harness 对等');assert.equal(m.taskId,'agentj-busy-7f3a');
   const anon = busy.mentionOf({ id: '', who: null, label: 'x'.repeat(200) });
   assert.ok(anon.text.length < 140, 'bounded');
   assert.ok(!/ID/.test(anon.text), 'no id → no id clause');

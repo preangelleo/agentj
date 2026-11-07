@@ -1142,6 +1142,211 @@
         }
       ],
       "sourceReview": "#577 source6 command source split"
+    },
+    {
+      "file": "public/app.css",
+      "selector": ":is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system=\"center\"]>:is(.sq,.box),\n:is(dialog,#full541).aj-shared-popup[data-popup-system=\"center\"]",
+      "owner": "aj-dialog",
+      "purpose": "0285 A chairman-defined shared popup surface or existing native disclosure presentation only; no action/authority ownership is transferred.",
+      "evidence": {
+        "source": "public/app.css",
+        "decision": "Chairman 0285 page FAIL items 2/4/11/12; reviewed exact A popup/disclosure presentation"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".fr-owner-details,.pkp-details",
+      "owner": "aj-dialog",
+      "purpose": "0285 A chairman-defined shared popup surface or existing native disclosure presentation only; no action/authority ownership is transferred.",
+      "evidence": {
+        "source": "public/app.css",
+        "decision": "Chairman 0285 page FAIL items 2/4/11/12; reviewed exact A popup/disclosure presentation"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": ":is(.fr-owner-details,.pkp-details)>summary",
+      "owner": "aj-dialog",
+      "purpose": "0285 A chairman-defined shared popup surface or existing native disclosure presentation only; no action/authority ownership is transferred.",
+      "evidence": {
+        "source": "public/app.css",
+        "decision": "Chairman 0285 page FAIL items 2/4/11/12; reviewed exact A popup/disclosure presentation"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": ":is(.fr-owner-details,.pkp-details)>summary::before",
+      "owner": "aj-dialog",
+      "purpose": "0285 A chairman-defined shared popup surface or existing native disclosure presentation only; no action/authority ownership is transferred.",
+      "evidence": {
+        "source": "public/app.css",
+        "decision": "Chairman 0285 page FAIL items 2/4/11/12; reviewed exact A popup/disclosure presentation"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": ":is(.fr-owner-details,.pkp-details)[open]>summary::before",
+      "owner": "aj-dialog",
+      "purpose": "0285 A chairman-defined shared popup surface or existing native disclosure presentation only; no action/authority ownership is transferred.",
+      "evidence": {
+        "source": "public/app.css",
+        "decision": "Chairman 0285 page FAIL items 2/4/11/12; reviewed exact A popup/disclosure presentation"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": ":is(.fr-owner-details,.pkp-details):not([open])>:not(summary)",
+      "owner": "aj-dialog",
+      "purpose": "0285 A chairman-defined shared popup surface or existing native disclosure presentation only; no action/authority ownership is transferred.",
+      "evidence": {
+        "source": "public/app.css",
+        "decision": "Chairman 0285 page FAIL items 2/4/11/12; reviewed exact A popup/disclosure presentation"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".aj-shared-popup[data-popup-system=\"center\"] :is(.elev-kicker,.lt-kicker)",
+      "owner": "aj-dialog",
+      "purpose": "Chairman 0285 A: existing centered dialog kicker text inherits the required Lotion color. State buttons and badges keep their own contrast.",
+      "evidence": {
+        "source": "public/app.css",
+        "decision": "Chairman FAIL centered popups Noir + white text; independent QA descendant color audit"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#frOwnerRetry",
+      "owner": "aj-friends",
+      "purpose": "0285 A same-owner existing recovery control spacing below the closed native explanation; no click behavior changes.",
+      "evidence": {
+        "source": "public/app.css",
+        "decision": "Chairman FAIL margin gate; independent QA recovery card DOM measurement"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": ":is(#elev-kicker,#sout-kicker,#lqr-kicker,#hlp-kicker)",
+      "owner": "aj-dialog",
+      "purpose": "0285 A: exact existing popup semantic-block spacing, measured by the independent eight-state matrix; no new container or action ownership.",
+      "evidence": {
+        "source": "public/app.css",
+        "decision": "Chairman margin gate; check-all-semantic-final 13 gap classes across 390/1440 zh/en light/dark"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#lt>.box>.lt-left",
+      "owner": "aj-dialog",
+      "purpose": "0285 A: exact existing popup semantic-block spacing, measured by the independent eight-state matrix; no new container or action ownership.",
+      "evidence": {
+        "source": "public/app.css",
+        "decision": "Chairman margin gate; check-all-semantic-final 13 gap classes across 390/1440 zh/en light/dark"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#lt-caps-title+.lt-goal",
+      "owner": "aj-dialog",
+      "purpose": "0285 A: exact existing popup semantic-block spacing, measured by the independent eight-state matrix; no new container or action ownership.",
+      "evidence": {
+        "source": "public/app.css",
+        "decision": "Chairman margin gate; check-all-semantic-final 13 gap classes across 390/1440 zh/en light/dark"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#mail-servers-title+.setnote",
+      "owner": "aj-dialog",
+      "purpose": "0285 A: exact existing popup semantic-block spacing, measured by the independent eight-state matrix; no new container or action ownership.",
+      "evidence": {
+        "source": "public/app.css",
+        "decision": "Chairman margin gate; check-all-semantic-final 13 gap classes across 390/1440 zh/en light/dark"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": ":is(#nameDlg,#loadDlg)>.sq>.gdlg-sub",
+      "owner": "aj-dialog",
+      "purpose": "0285 A: exact existing popup semantic-block spacing, measured by the independent eight-state matrix; no new container or action ownership.",
+      "evidence": {
+        "source": "public/app.css",
+        "decision": "Chairman margin gate; check-all-semantic-final 13 gap classes across 390/1440 zh/en light/dark"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": ":is(#loadDlg,#ctmEdit)>.sq>.gdlg-row",
+      "owner": "aj-dialog",
+      "purpose": "0285 A: exact existing popup semantic-block spacing, measured by the independent eight-state matrix; no new container or action ownership.",
+      "evidence": {
+        "source": "public/app.css",
+        "decision": "Chairman margin gate; check-all-semantic-final 13 gap classes across 390/1440 zh/en light/dark"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#private-file-locator .private-file-open",
+      "owner": "aj-dialog",
+      "purpose": "Private file locator owns the dedicated Open row layout; this exact container does not own the nested link action.",
+      "producerEvidence": [
+        {
+          "file": "public/js/private-files.js",
+          "purpose": "locatorView creates #private-file-locator[data-aj-owner=aj-dialog] and the dedicated openRow, then appends it to the locator square."
+        }
+      ],
+      "sourceReview": "0285 Root exact five-selector namespace delta; DOM/callback source reviewed at ba8b27f16c9b12daf90ad6bdf97005d4ed4fde86; metadata only, no public byte changes"
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#private-file-locator .private-file-open a",
+      "owner": "aj-dialog-action",
+      "purpose": "The locator Open anchor is its own dialog action: minimum hit size, padding and current-color ink only; no transfer/authentication ownership changes.",
+      "producerEvidence": [
+        {
+          "file": "public/js/private-files.js",
+          "purpose": "locatorView explicitly sets open.className=aj-dialog-action and data-aj-owner=aj-dialog-action; showReady holds the verified local Blob; paintLocator assigns the PDF anchor href to its local object URL. Activation is the existing target=_blank anchor behavior, not a new callback."
+        }
+      ],
+      "sourceReview": "0285 Root exact five-selector namespace delta; DOM/callback source reviewed at ba8b27f16c9b12daf90ad6bdf97005d4ed4fde86; metadata only, no public byte changes"
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#private-file-locator .private-file-open:has(a[hidden])",
+      "owner": "aj-dialog",
+      "purpose": "The dedicated locator Open row collapses only when its existing anchor is hidden; this is container visibility, not an action or file authorization rule.",
+      "producerEvidence": [
+        {
+          "file": "public/js/private-files.js",
+          "purpose": "locatorView creates a hidden Open anchor inside openRow; showReady/wipeReady toggle that existing anchor, while registerLayer keeps the locator close lifecycle."
+        }
+      ],
+      "sourceReview": "0285 Root exact five-selector namespace delta; DOM/callback source reviewed at ba8b27f16c9b12daf90ad6bdf97005d4ed4fde86; metadata only, no public byte changes"
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".aj-shared-popup[data-popup-system]",
+      "owner": "aj-dialog",
+      "purpose": "Exact shared popup stacking presentation using the registered layer open order; no descendant action role or approval authority is inferred from this root selector.",
+      "producerEvidence": [
+        {
+          "file": "public/js/layers.js",
+          "purpose": "sync maps registered popup roots to --popup-layer-order; popup-layout.js classifies only the existing shared popup roots into center/grow presentation."
+        }
+      ],
+      "sourceReview": "0285 Root exact five-selector namespace delta; DOM/callback source reviewed at ba8b27f16c9b12daf90ad6bdf97005d4ed4fde86; metadata only, no public byte changes"
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".aj-shared-popup.aj-layer-covered",
+      "owner": "aj-dialog",
+      "purpose": "Exact covered-popup visibility and pointer suppression; the layer owner retains the original hidden/open state and existing close callback. No new action owner is assigned.",
+      "producerEvidence": [
+        {
+          "file": "public/js/layers.js",
+          "purpose": "sync assigns aj-layer-covered to lower shared popup DOM nodes and preserves/restores their original inert value once per node."
+        }
+      ],
+      "sourceReview": "0285 Root exact five-selector namespace delta; DOM/callback source reviewed at ba8b27f16c9b12daf90ad6bdf97005d4ed4fde86; metadata only, no public byte changes"
     }
   ],
   "source6ProducerBindings": {

@@ -106,8 +106,8 @@ class Switch(Base, unittest.IsolatedAsyncioTestCase):
         self.host.agent = _Shared(term.pid)
         res = await accounts.use(self.host, "claude", self.backup["id"], device="dev1")
         self.assertEqual((res["restart"], res["verified"], res["live"]), ("owner_session", False, "stale"), res)
-        self.assertEqual(len(self.host.recovery), 1)                         # the one-tap signed 「重开 AI 会话」 card
-        self.assertIn("重开 AI 会话", self.host.recovery[0])
+        self.assertEqual(len(self.host.recovery), 1)                         # the one-tap signed 「重启 Agent」 card
+        self.assertIn("重启 Agent", self.host.recovery[0])
         self.assertIsNone(term.poll())                                       # never signalled by the switch itself
         self.assertTrue(self.host.__dict__.get("_claude_live_pending"))
         # the owner taps it: P435 reopens the same conversation in Agent J's own PTY from serve's (new) environment
@@ -159,7 +159,7 @@ class Switch(Base, unittest.IsolatedAsyncioTestCase):
                                                        "live": "stale"}), \
                 mock.patch("builtins.print", lambda *x, **k: out.append(" ".join(map(str, x)))):
             a.cmd_account(types.SimpleNamespace(acct_cmd="use", harness="claude", ref="备用"))
-        self.assertIn("重开 AI 会话", out[-1])
+        self.assertIn("重启 Agent", out[-1])
 
 
 class MacKeychain(Base, unittest.IsolatedAsyncioTestCase):
@@ -240,7 +240,7 @@ class RescueInMainSession(Base, unittest.IsolatedAsyncioTestCase):
         await self.drain()
         self.assertEqual((self.r.last["claude"]["result"], self.r.last["claude"]["why"]), ("partial", "main_session"), self.r.last)
         self.assertFalse(any("已重新登录并恢复" in t for t in self.host.notices + self.host.recovery))
-        self.assertIn("重开 AI 会话", self.host.recovery[-1])
+        self.assertIn("重启 Agent", self.host.recovery[-1])
         self.assertIsNone(term.poll())
         reopened = self.terminal(CLAUDE_CODE_OAUTH_TOKEN=GOOD)               # after the owner's signed reopen
         self.host.agent = _Shared(reopened.pid, native=True)

@@ -1,7 +1,7 @@
 """Extra command names next to `agentj`, as symlinks in the same bin directory — never shadowing anything:
 
 - `aj`: the short command (0.10). Installed by `agentj init`, after the 0.9 → 0.10 state move, and by `agentj alias install`.
-- `jarvis`: the ≤ 0.9 command name, for ONE version cycle and only on a computer that actually migrated (migrated.json
+- `jarvis`: the ≤ 0.9 command name, for compatibility and only on a computer that actually migrated (migrated.json
   records a moved 0.9 state directory). The wheel ships no `jarvis` script: a fresh install never gets that name, and
   `uv tool install` can never be blocked by someone else's `~/.local/bin/jarvis`. Invoked as `jarvis`, the CLI prints the
   rename notice first (cli.main looks at argv[0]).
@@ -139,8 +139,11 @@ def tilde(p: str) -> str:
 def line(r: dict) -> str:
     """One human line for any result of status / install / remove."""
     n, st, why = r.get("name", NAME), r["state"], r.get("why")
-    what = ("短命令 `aj`（= agentj）", "short command `aj`") if n == NAME else \
-           ("旧命令 `jarvis`（= agentj，下个版本移除）", "the old command `jarvis` (= agentj, until the next version)")
+    if n == COMPAT:
+        labels = {"installed": ("可用", "available"), "absent": ("未安装", "not installed"), "taken": ("未覆盖同名入口", "existing command kept"), "checkout": ("源码模式不安装", "not installed in a source checkout"), "no_agentj": ("未找到 agentj", "agentj not found")}
+        zh, en = labels.get(st, ("未更改" if not r.get("changed") else "已移除", "unchanged" if not r.get("changed") else "removed"))
+        return f"旧版命令兼容：{zh}；继续使用 agentj / Legacy command compatibility: {en}; use agentj. https://agentj.app/docs/legacy-migration/"
+    what = ("短命令 `aj`（= agentj）", "short command `aj`")
     if st == "installed":
         return (f"✓ 已装{what[0]}：{tilde(r['link'])} / {what[1]} installed" if r.get("changed")
                 else f"✓ {what[0]}可用：{tilde(r['link'])} / {what[1]} works")

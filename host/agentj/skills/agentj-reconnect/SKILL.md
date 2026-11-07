@@ -17,7 +17,7 @@ When busy, run doctor resources. Never promise uptime.
 1. 点 **Stop**，打断当前任务。
 2. 打开 **设置 → 紧急修复 → 终端指令**，点 `agentj doctor --reconnect` 旁的 **执行**（推荐），按提示用 Face ID 确认；手机让主机检查修复，无需打开终端。
 3. 仍没回应，在 **紧急修复** 点 **重启服务**（推荐），连接恢复后重试。
-4. 仍没回应，点 **紧急修复 → 重开 AI 会话**（主机、网页均需 0.25.2a1+）；结束卡住进程，优先接回原对话，失败则保留原对话、另开会话。旧版无按钮就跳过。
+4. 仍没回应，点 **紧急修复 → 重启 Agent**（主机、网页均需 0.25.2a1+）；结束卡住进程，优先接回原对话，失败则保留原对话、另开会话。旧版无按钮就跳过。
 5. 仍没解决，点 **紧急修复 → ② 请 Agent J Father 远程帮忙**，记下工单号。仅在你点后发送主机脱敏诊断，不发密码、密钥、聊天或工作文件。
 
 **先分额度与连接。** Claude 额度用完，先在手机 Claude 设置看 **Usage**；有 **免费重置** 才按提示使用（非每个账号/每次都有），否则等显示的重置时间。额度恢复仍「尚未接收」再走五步；重启/重开不增额度。登录过期用 **AI 登录救援**。
@@ -33,7 +33,7 @@ No reply / “Not yet received”? Use your phone; after each step send a short 
 1. Tap **Stop** to interrupt the current task.
 2. Open **Settings → Emergency repair → Terminal Commands**, tap **Run** beside `agentj doctor --reconnect` (recommended); confirm with Face ID when asked. The phone requests host repair without opening a terminal.
 3. Still no reply? In **Emergency repair**, tap **Restart service** (recommended); wait for reconnection and retry.
-4. Still no reply? Tap **Emergency repair → Reopen AI session** (host and web 0.25.2a1+). It ends the stuck process, tries the same conversation, or keeps it and opens a new one. Skip if an older version lacks the button.
+4. Still no reply? Tap **Emergency repair → Restart Agent** (host and web 0.25.2a1+). It ends the stuck process, tries the same conversation, or keeps it and opens a new one. Skip if an older version lacks the button.
 5. Still stuck? Tap **Emergency repair → ② Ask Agent J Father for remote help**; keep the ticket number. Only your tap sends host-redacted diagnostics, never passwords, keys, chats or work files.
 
 **Check quota first.** In phone Claude settings, check **Usage**. Use **Free reset** only if offered (not every account/limit); otherwise wait until the displayed reset time. After quota recovers, persistent “Not yet received” needs the five steps. Restart/reopen adds no quota. Expired sign-in needs **AI login rescue**.
@@ -48,7 +48,7 @@ After a reset, restore the requested earlier conversation with `agentj rescue un
 
 1. `agentj status --json`
    - `running: false`, `relay_state: reconnecting`, or `agent_status` outside `idle` / `working` / `waiting` / `compacting` (including `down`) → step 2. Quote `relay_stuck` phase/reason/close code for relay failures.
-   - Check `harness_readiness.ready`: false/missing means AI unverified even with relay connected. OpenCode startup failure → phone Reopen AI session, then send once. Never auto-resend. Adapter-ready is not a model reply test.
+   - Check `harness_readiness.ready`: false/missing means AI unverified even with relay connected. OpenCode startup failure → phone Restart Agent, then send once. Never auto-resend. Adapter-ready is not a model reply test.
 2. `agentj doctor --reconnect` — run it **in this session**: it attaches the session that runs it.
    In order, repair only the broken link: **service** (`agentj serve`) unresponsive → start/restart; **relay** (host ↔ relay) disconnected → wait, then one restart; **Agent** (Agent J ↔ AI session) → reattach, listing concurrent sessions in the folder.
    Exit 0 = all three up. Repeat its last line (✓ / ✗ sentence) to the owner word for word.

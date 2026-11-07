@@ -31,6 +31,8 @@ from . import wire
 from .term_mask import agent_mask
 
 BANG_WAIT = 120                    # s a bang's output is collected before the Agent gets what there is
+RUN_WAIT = 300                     # #584: a reply code block's 「执行」 waits up to 5 minutes for its output
+RUN_KEEP = 8                       # #584: at most this many run marks waiting for their line per terminal
 BANG_COLLECT_MAX = 256 * 1024       # code points; at most 1 MiB of Unicode payload
 BANG_MAX = 16000                   # chars of output the Agent / the page get (head + tail)
 RING_MAX = 256 * 1024              # bytes of transcript kept per session
@@ -193,9 +195,26 @@ class BangDesk:
         with contextlib.suppress(Exception):    # P414 (R3-1): why "program" = the shell is not at its prompt
             await self.h.send_app(x.s, {"t": "term_bang", "id": x.id, "sid": sid, "ok": False, "why": why})
 
+    def run_mark(self, x, sid, obj: dict) -> None:
+        """#584: `term_line {…, bang, run: 1, from?}` — a reply code block's 「执行」. Every §37 rule and the line's confirm
+        (classify / term_confirm / Face ID, terminal.py) stay exactly as for a 「!」 line; only where the result goes changes:
+        back to the page that tapped (`term_bang {run: 1, …}`), never a chat turn for the Agent (the owner may ask it
+        afterwards with 「问 Agent」). `from` (the reply's turn id) is a log label only: never trusted for anything."""
+        if sid is None or obj.get("run") != 1:
+            return
+        runs = getattr(x, "runs", None)
+        if runs is None:
+            runs = x.runs = {}
+        f = obj.get("from")
+        runs.pop(sid, None)
+        runs[sid] = {"from": f if type(f) is int and 0 <= f < 2 ** 53 else None, "via": "confirmed" if "n" in obj else "direct"}
+        while len(runs) > RUN_KEEP:
+            runs.pop(next(iter(runs)))
+
     def bang_start(self, x, sid: str, line: str) -> None:
+        run = (getattr(x, "runs", None) or {}).pop(sid, None)
         x.bang = {"sid": sid, "line": line, "at": self.clock(), "head": "", "full": False, "hidden": 0,
-                  "cr_at": getattr(getattr(x, "masker", None), "carriage_count", 0), "cr": False}
+                  "cr_at": getattr(getattr(x, "masker", None), "carriage_count", 0), "cr": False, "run": run}
 
     def bang_out(self, x, data: str, prompt: bool) -> None:
         b = getattr(x, "bang", None)
@@ -224,7 +243,7 @@ class BangDesk:
 
     def bang_tick(self, x) -> None:
         b = getattr(x, "bang", None)
-        if b is not None and self.clock() - b["at"] >= BANG_WAIT:
+        if b is not None and self.clock() - b["at"] >= (RUN_WAIT if b.get("run") is not None else BANG_WAIT):
             self.bang_end(x, "running")
 
     def bang_end(self, x, state: str) -> None:
@@ -240,7 +259,21 @@ class BangDesk:
         if len(out) > BANG_MAX:
             out = out[:BANG_MAX // 2] + "\n…\n" + out[-(BANG_MAX // 2):]
         hidden = n1 + n2
+        if b.get("run") is not None:
+            self.h._bg(self._run_res(x, b, out, cut, hidden, state), "term_run")
+            return
         self.h._bg(self._bang_turn(x, b["sid"], line, out, cut, hidden, state), "term_bang")
+
+    async def _run_res(self, x, b, out, cut, hidden, state) -> None:
+        """#584: the page's own result for a 「执行」 — owner-masked like a 「!」 card; one controls.log line (ids only)."""
+        run, ms = b["run"], int((self.clock() - b["at"]) * 1000)
+        self._log("term_run", x.device, state, extra={"via": run["via"], "ms": ms, "hidden": hidden, "line_sha256": sha(b["line"]),
+                                                      **({"from": run["from"]} if run["from"] is not None else {})})
+        with contextlib.suppress(Exception):
+            self.st.log("term_run", device=x.device, state=state, via=run["via"], ms=ms)
+        with contextlib.suppress(Exception):
+            await self.h.send_app(x.s, {"t": "term_bang", "id": x.id, "sid": b["sid"], "ok": True, "run": 1, "state": state,
+                                        "out": out, "cut": bool(cut), "hidden": int(hidden), "ms": ms})
 
     async def _bang_turn(self, x, sid, line, out, cut, hidden, state) -> None:
         turn = None

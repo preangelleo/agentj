@@ -1,4 +1,4 @@
-<!-- generated from https://agentj.app/docs/cards/en.md by agentjarvis/tools/manual_skill.mjs — do not edit -->
+<!-- generated from https://agentj.app/docs/cards/en.md by the Agent J documentation generator — do not edit -->
 # Using cards
 
 ## Open and switch cards {#open}

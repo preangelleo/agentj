@@ -18,7 +18,7 @@ import * as layoutDiag from './layout-diag.js';
 // <action>` (flow = the action name). A used button is gone; a new ② run clears them. Support's advice rows carry the
 // caution line the command-line version prints (LOW-12) and stay plain text.
 import { request, done, isReady, peer, ask1 } from './session.js';
-import { signed } from './controls.js';
+import { signed, estop, onResume } from './controls.js';
 import { t, fillText, onLang } from './t.js';
 import { el, mk, confirmSheet } from './ui.js';
 import * as authrescue from './authrescue.js';
@@ -27,9 +27,9 @@ import * as assist from './assist.js';   // 0.26.9 #468 (§B2): ② gains 「请
 import { registerLayer } from './layers.js';
 
 export const HELPER_CMD = 'curl -fsSL https://agentj.app/rescue | sh';
-export const STEPS = { reset: 4, help: 3, offer: 1, restart: 1, restart_session: 1, clear: 1, ark: 1, end_turn: 1, takeover: 4 };          // §33: the reset ladder has four steps, the help flow three
+export const STEPS = { reset: 4, help: 3, offer: 1, restart: 1, restart_session: 2, clear: 1, ark: 1, end_turn: 1, takeover: 4, repair: 4, stop_hard: 1, new_chat: 1, report: 1 };          // §33: the reset ladder has four steps, the help flow three
 export const FIRST_MS = 30000;                       // no answer at all this long → the host is stuck or too old
-export const IDLE_MS = { reset: 120000, help: 240000, offer: 240000, restart: 120000, restart_session: 120000, clear: 120000, ark: 240000, end_turn: 120000, takeover: 180000 };   // then: silence this long between two messages = no answer
+export const IDLE_MS = { reset: 120000, help: 240000, offer: 240000, restart: 200000, restart_session: 180000, clear: 120000, ark: 240000, end_turn: 120000, takeover: 200000, repair: 240000, stop_hard: 120000, new_chat: 180000, report: 240000 };   // then: silence this long between two messages = no answer
 const WHY = ['shape', 'stale', 'no_key', 'bad_signature', 'replay', 'busy', 'unavailable'];
 const STATES = ['run', 'ok', 'fail', 'skip'];
 const TICKET = /^st_[A-Za-z0-9_-]{8,40}$/;
@@ -46,9 +46,13 @@ const ADVICE = /^(Agent J Father ?的建议：|Agent J Father suggests:)/;
 export const FOLD_MS = 30000;
 let H = { openSettings() {}, closeSettings() {}, toChat() {}, linkState: () => (isReady() ? 'up' : 'down') };
 const fresh = () => ({ st: 'idle', step: 0, text: '', steps: [], details: [], ticket: '', old: '', why: '', r: null, timer: 0, heard: false, dropped: false,
-  offers: [], used: [], name: '', advice: false, fold: false, foldTimer: 0, wait: false, at: 0 });
-const S = { reset: fresh(), help: fresh(), offer: fresh(), restart: fresh(), restart_session: fresh(), clear: fresh(), ark: fresh(), end_turn: fresh(), takeover: fresh(), stuck: false, failedOnce: false, askFirst: false, rescue: null, auth: null, authFold: '', authHide: '', bannerHide: '' };
-const FLOWS = ['reset', 'help', 'offer', 'restart', 'restart_session', 'clear', 'ark', 'end_turn', 'takeover'];
+  offers: [], used: [], name: '', advice: false, fold: false, foldTimer: 0, wait: false, at: 0,
+  resume: false, next: '', report: false, cont: '', contSent: false });   // #585: what the host says to do next
+const S = { reset: fresh(), help: fresh(), offer: fresh(), restart: fresh(), restart_session: fresh(), clear: fresh(), ark: fresh(), end_turn: fresh(), takeover: fresh(), repair: fresh(), stop_hard: fresh(), new_chat: fresh(), report: fresh(), stuck: false, failedOnce: false, askFirst: false, rescue: null, auth: null, authFold: '', authHide: '', bannerHide: '' };
+const FLOWS = ['reset', 'help', 'offer', 'restart', 'restart_session', 'clear', 'ark', 'end_turn', 'takeover', 'repair', 'stop_hard', 'new_chat', 'report'];
+const CONTS = ['probe', 'repair_cont', 'takeover', 'repair'];
+const CONT_MS = 600000;                 // a card waits at most 10 min for the owner's Resume          // #585: what the page sends once the link / the stop switch is back
+const NEXTS = ['restart', 'restart_session', 'repair', 'help'];
 
 const str = (v, n = 400) => (typeof v === 'string' ? v.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '').slice(0, n) : '');
 const tx = (k, vars) => t(k, vars);
@@ -124,7 +128,7 @@ function step(flow, m) {
   paint();
 }
 function stepText(flow, n) {
-  if (flow === 'offer') return tx('p332.reset.start');
+  if (flow === 'offer' || FIX[flow] || flow === 'report') return tx('p332.reset.start');
   if (flow === 'end_turn') return tx('p0269.queue.ending');
   if (flow === 'takeover') return tx('p0269.take.s' + Math.min(4, Math.max(1, n)));
   if (flow === 'reset') return tx('p332.reset.s' + Math.min(4, Math.max(1, n)));
@@ -133,6 +137,11 @@ function stepText(flow, n) {
 function finish(flow, m) {
   const F = S[flow];
   takeOffers(flow, m);
+  if (m.pending === true && CONTS.includes(m.cont)) {     // #585: a service restart was handed over — the card keeps running
+    F.cont = m.cont; F.contSent = false; F.heard = true;
+    const tx1 = str(m.text, 400); if (tx1) { F.text = tx1; F.steps.push({ n: Number.isInteger(m.step) ? m.step : F.step || 1, state: 'run', text: tx1 }); }
+    arm(flow, IDLE_MS[flow]); paint(); return;
+  }
   clearTimeout(F.timer); F.timer = 0;
   if (F.r) { done(F.r); F.r = null; }
   const ok = m.ok === true;
@@ -145,6 +154,9 @@ function finish(flow, m) {
   F.text = str(m.text, flow === 'help' ? 1600 : 400);
   const d = str(m.detail, 600);
   if (d) F.details.push(d);
+  F.resume = !ok && m.resume === true; F.cont = F.resume && CONTS.includes(m.cont) ? m.cont : '';
+  F.next = !ok && NEXTS.includes(m.next) ? m.next : ''; F.report = !ok && m.report === true;
+  if (FIX[flow] || flow === 'takeover') F.steps = F.steps.filter((x) => x.state !== 'run');   // #585: progress rows end with the run
   F.st = ok ? 'ok' : 'fail'; F.wait = false; F.at = Date.now();
   if (ok && isReady()) foldLater(flow);
   if (flow === 'help' && F.text && (m.advice === true || ADVICE.test(F.text))) F.advice = true;
@@ -441,42 +453,140 @@ function paintMode() {
   const n = el('rs-mode'); if (n) n.hidden = !on;
   document.body.toggleAttribute('data-rescue', on);
 }
-export async function reopenSession() {
-  if (await confirmSheet(tx('p435.session'), tx('p435.sessionConfirm'), tx('p435.session'))) start('restart_session', 'restart_session');
+// ---------------------------------------------------------------- #585: every button proves what it promises
+// Chairman 11-07: 「点了没用，放在那里干啥呢？」 Each card below runs one signed `rescue_do` and shows every step the host took
+// (✓ / ✗ and why), then the one thing to do next as a button — 「恢复」 when Stop everything blocks it, the next rung, or
+// 「把诊断发给客服」 (the privacy-cleaned `report`, only after the owner agrees). 一键修复 climbs stop → restart Agent →
+// restart service → new conversation and stops at the first rung where the Agent answers a test line.
+const FIX = {
+  repair: { id: 'rs-repair', title: 'p585.repair.title', note: 'p585.repair.note', go: 'p585.repair.go', primary: true },
+  stop_hard: { id: 'rs-stop', title: 'p585.stop.title', note: 'p585.stop.note', go: 'p585.stop.title', confirm: 'p585.stop.confirm' },
+  restart_session: { id: 'rs-session', title: 'p435.session', note: 'p435.sessionNote', go: 'p435.session', confirm: 'p435.sessionConfirm' },
+  restart: { id: 'rs-restart', title: 'p385.restart.go', note: 'p385.restart.note', go: 'p385.restart.go', confirm: 'p585.restart.confirm' },
+  new_chat: { id: 'rs-newchat', title: 'p585.new.title', note: 'p585.new.note', go: 'p585.new.title', confirm: 'p585.new.confirm' },
+};
+const P585_WHY = ['estop', 'no_reply', 'desktop_live', 'foreign', 'not_installed', 'all_failed'];   // a headline that names the real cause
+const ORDER = ['stop_hard', 'restart_session', 'restart', 'new_chat'];      // the ladder's rungs, under ① 重置连接
+const anyRun = () => FLOWS.some((f) => S[f].st === 'run');
+async function sendCont(flow) {
+  const F = S[flow];
+  if (!F.cont || F.contSent) return;
+  F.contSent = true; F.dropped = false;
+  const action = F.cont;
+  let obj;
+  try { obj = await signed('rescue_do', { action }, { t: 'rescue_do', action }); } catch (e) { return finish(flow, { ok: false, why: e && e.message === 'no_key' ? 'no_key' : 'offline' }); }
+  const r = request(obj, (m) => onMsg(flow, m));
+  if (!r) return finish(flow, { ok: false, why: 'offline' });
+  F.r = r; F.cont = '';
+  arm(flow, IDLE_MS[flow]);
+  paint();
 }
-function paintSession() {
-  const reset = el('rs-reset');
-  if (!reset) return;
-  let card = el('rs-session');
-  if (!card) { card = node('li', 'rscard'); card.id = 'rs-session'; reset.after(card); }
-  const F = S.restart_session;
+/** controls.js estopChanged: Stop everything was lifted (the card's 「恢复」 or Settings → Safety) → the waiting card goes on. */
+export function onEstopChange() {
+  if (estop.on) return;
+  for (const flow of FLOWS) {
+    const F = S[flow];
+    if (F.st !== 'fail' || !F.resume || !F.cont) continue;
+    if (Date.now() - F.at > CONT_MS) { F.resume = false; F.cont = ''; continue; }   // security #585-6: an old card does not act
+    Object.assign(F, { st: 'run', resume: false, contSent: false, fold: false, text: tx('p585.resumed') });
+    F.steps.push({ n: F.step || 1, state: 'ok', text: tx('p585.resumed') });
+    clearTimeout(F.foldTimer); sendCont(flow);
+  }
+  paint();
+}
+async function go(flow) {
+  if (anyRun()) return;
+  const c = FIX[flow];
+  if (flow === 'repair') {
+    const text = tx('p585.repair.confirm') + (estop.on ? '\n\n' + tx('p585.repair.confirmStop') : '');
+    if (!await confirmSheet(tx('p585.repair.title'), text, tx('p585.repair.go'))) return;
+  } else if (c && c.confirm && !await confirmSheet(tx(c.title), tx(c.confirm), tx(c.go))) return;
+  start(flow, flow === 'report' ? 'report' : flow);
+}
+async function sendReport(from) {
+  if (anyRun()) return;
+  if (!await confirmSheet(tx('p585.report.title'), tx('p585.report.confirm'), tx('p585.report.go'))) return;
+  S.report = fresh(); S.reportFrom = from;
+  start('report', 'report');
+}
+/** The buttons under an ended card: Resume · the next rung · send the diagnosis · back to the chat · again. */
+function extras(flow, F) {
+  const bs = [];
+  if (F.st === 'fail' && F.resume) bs.push(btn('rs-' + flow + '-resume', tx('estop.resumeYes'), 'aj-action--primary', () => onResume()));
+  if (F.st === 'fail' && F.next) bs.push(btn('rs-' + flow + '-next', tx('p585.next.' + F.next), F.resume ? '' : 'aj-action--primary', () => {
+    if (F.next === 'help') { S.failedOnce = true; start('help'); el('rs-help')?.scrollIntoView({ block: 'nearest' }); } else go(F.next);
+  }));
+  if (F.st === 'fail' && F.report) bs.push(btn('rs-' + flow + '-report', tx('p585.report.go'), 'aj-action--primary', () => sendReport(flow)));
+  if (F.st === 'ok') bs.push(backBtn(flow));
+  return bs;
+}
+function stepList(flow, F) {
+  if (!F.steps.length) return null;
+  const ol = node('ol', 'rssteps'); ol.id = 'rs-' + flow + '-steps'; ol.setAttribute('aria-live', 'polite');
+  for (const x of F.steps) { const li = node('li', '', x.text); li.dataset.state = x.state; li.dataset.step = String(x.n); ol.append(li); }
+  return ol;
+}
+function resultLines(F) {
+  return String(F.text || '').split('\n').map((x) => x.trim()).filter(Boolean).filter((x) => !F.steps.some((y) => y.text === x));
+}
+function reportBox(flow) {      // the diagnosis sent from a card that gave up: its ticket, or why it was not sent
+  const R = S.report;
+  if (R.st === 'idle' || S.reportFrom !== flow) return null;
+  const box = node('div', 'rsoffres'); box.id = 'rs-report-res'; box.dataset.state = R.st;
+  if (R.st === 'run') box.append(bar('report', { ...R, step: 1 }, 1));
+  if (R.st === 'ok') { const p = node('p', 'rsmsg rsticket'); fillText(p, R.text || tx('p585.report.sent')); box.append(p, node('p', 'rsnote', tx('p332.help.ticketNote'))); }
+  if (R.st === 'fail') box.append(node('p', 'rsmsg rsfail', R.text || whyText(R.why) || tx('p585.report.fail')));
+  return box;
+}
+function paintFix(flow) {
+  const c = FIX[flow], F = S[flow];
+  let card = el(c.id);
+  if (!card) {
+    card = node(flow === 'repair' ? 'div' : 'li', 'rscard' + (flow === 'repair' ? ' rsrepair' : '')); card.id = c.id;
+    if (flow === 'repair') { const list = el('set-s-rescue')?.querySelector('.rscards'); if (!list) return; list.before(card); }
+  }
+  if (flow !== 'repair') {        // ladder order under ①: stop · restart Agent · restart service · new conversation
+    const i = ORDER.indexOf(flow), prev = i === 0 ? el('rs-reset') : el(FIX[ORDER[i - 1]].id);
+    if (prev && prev.nextElementSibling !== card) prev.after(card);
+  }
+  card.dataset.state = F.st;
+  const title = node('h4', 'rstitle', tx(c.title));
+  const note = node('p', 'rsnote', tx(c.note)); note.id = c.id + '-note';
   // @ix app.restart_session
-  const go = btn('rs-session-go', tx('p435.session'), '', reopenSession);
-  go.disabled = FLOWS.some(f => S[f].st === 'run');
-  const status = node('p', 'rsmsg', F.text || ''); status.setAttribute('role', 'status');
-  card.replaceChildren(node('h4', 'rstitle', tx('p435.session')), node('p', 'rsnote', tx('p435.sessionNote')), acts(go), status);
+  const goBtn = (label, cls) => { const b = btn(c.id + '-go', label, cls, () => go(flow)); b.disabled = anyRun(); b.setAttribute('aria-describedby', note.id); return b; };
+  const parts = [title, note];
+  if (F.fold && F.st === 'ok') { card.replaceChildren(title, ...folded(flow, F, logOf(F), () => clearFlow(flow)), acts(goBtn(tx(c.go), ''))); return; }
+  if (F.st === 'run') { parts.push(bar(flow, F, STEPS[flow])); const l = stepList(flow, F); if (l) parts.push(l); }
+  if (F.st === 'ok' || F.st === 'fail') {
+    const first = F.st === 'ok' ? node('p', 'rsok', tx('p332.ok')) : node('p', 'rsmsg rsfail', whyText(F.why) || (P585_WHY.includes(F.why) ? tx('p585.why.' + F.why) : tx('p585.fail.' + flow)));
+    first.id = c.id + '-msg';
+    parts.push(headBar(flow, first, () => clearFlow(flow)));
+    const l = stepList(flow, F); if (l) parts.push(l);
+    for (const x of resultLines(F)) { const p = node('p', 'rsmsg rsres'); fillText(p, x); parts.push(p); }
+    if (F.old) { const p = node('p', 'rsmsg rsold'); p.id = c.id + '-old'; fillText(p, tx('p332.oldSession', { id: F.old })); parts.push(p); }
+    const rb = reportBox(flow); if (rb) parts.push(rb);
+    parts.push(acts(...extras(flow, F), F.st === 'fail' ? goBtn(tx('p332.again'), '') : null));
+    if (F.st === 'fail' && F.why === 'offline') parts.push(helperLine(c.id + '-helper'));
+  }
+  if (F.st === 'idle') parts.push(acts(goBtn(tx(c.go), c.primary || (flow === 'restart' && estop.on) ? 'aj-action--primary' : '')));
+  card.replaceChildren(...parts);
 }
-function paintRestart() {
+function paintClear() {
   const block = el('set-s-rescue');
   if (!block) return;
-  let card = el('rs-restart');
-  if (!card) { card = node('div', 'rscard'); card.id = 'rs-restart'; block.append(card); }
-  const F = S.restart;
-  const go = btn('rs-restart-go', tx('p385.restart.go'), '', () => start('restart', 'restart'));
-  go.disabled = FLOWS.some(flow => S[flow].st === 'run');
-  const note = node('p', 'rsnote', tx('p385.restart.note')); note.id = 'rs-restart-note';
-  go.setAttribute('aria-describedby', note.id);
-  const status = node('p', 'rsmsg', F.st === 'idle' || F.fold ? '' : F.st === 'run' ? tx('p385.restart.wait') : F.st === 'ok' ? tx('p332.reset.back') : whyText(F.why) || tx('p332.noAnswer'));
-  status.setAttribute('role', 'status');
-  card.dataset.state = F.st;
+  let card = el('rs-clear');
+  if (!card) { card = node('div', 'rscard'); card.id = 'rs-clear'; block.append(card); }
   const clear = btn('rs-clear-friend-asks', tx('p419.clearFriendAsks'), '', () => start('clear', 'clear_friend_asks'));
-  clear.disabled = go.disabled;
-  const clearStatus = node('p', 'rsmsg', S.clear.st === 'idle' ? '' : S.clear.st === 'run' ? tx('p419.clearFriendAsks') : S.clear.text || whyText(S.clear.why));
-  clearStatus.setAttribute('role', 'status');
-  card.replaceChildren(node('h4', 'rstitle', tx('p385.restart.go')), node('small', 'rsnote', tx('p438.recommended')), note, acts(go, clear), status, clearStatus);
+  clear.disabled = anyRun();
+  const st = node('p', 'rsmsg', S.clear.st === 'idle' ? '' : S.clear.st === 'run' ? tx('p419.clearFriendAsks') : S.clear.text || whyText(S.clear.why));
+  st.setAttribute('role', 'status');
+  card.replaceChildren(node('h4', 'rstitle', tx('p419.clearFriendAsks')), acts(clear), st);
 }
+export async function reopenSession() { go('restart_session'); }
 export function paint() {
-  paintReset(); paintHelp(); assist.paintCard(el('rs-help-body')); assistTerminal.paintCard(el('rs-help-body')); paintAuth(); paintMode(); paintRestart(); paintSession(); paintTakeover(); paintArk();
+  paintReset(); paintHelp(); assist.paintCard(el('rs-help-body')); assistTerminal.paintCard(el('rs-help-body')); paintAuth(); paintMode();
+  for (const f of ['repair', ...ORDER]) paintFix(f);
+  paintClear(); paintTakeover(); paintArk();
   const block = el('set-s-rescue');
   if (block && !el('rs-detail-help')) block.append(helperLine('rs-detail-help'));
   const sup = el('rs-support-box');   // P400: 在线客服 (index.html) stays the block's last line, under the cards painted here
@@ -499,6 +609,9 @@ export function onRescue(m) {
 }
 /** app.js: a broadcast `reset_done` (another remote's run, or an answer that outlived its request). */
 export function onDone(m) {
+  const own = m && (m.flow === 'repair_cont' ? 'repair' : m.flow === 'probe' ? FLOWS.find((f) => S[f].st === 'run' && S[f].cont === 'probe')
+    : ['repair', 'stop_hard', 'new_chat', 'report'].includes(m.flow) ? m.flow : '');
+  if (own) { if (S[own].st === 'run' && (S[own].dropped || S[own].cont)) finish(own, m); return; }
   const flow = m && (m.flow === 'end_turn' || m.flow === 'takeover') ? m.flow : m && m.flow === 'restart_session' ? 'restart_session' : m && /^ark_fix_[0-9a-f]{24}$/.test(m.flow || '') ? 'ark' : m && m.flow === 'clear_friend_asks' ? 'clear' : m && m.flow === 'restart' ? 'restart' : m && m.flow === 'help' ? 'help' : m && OFFERS.includes(m.flow) ? 'offer' : 'reset';
   if (flow === 'offer' && m.flow !== S.offer.name) return;
   if (flow === 'ark' && m.flow !== S.ark.name) return;
@@ -512,6 +625,7 @@ export function onReady() {
   for (const flow of FLOWS) {
     const F = S[flow];
     if (F.st === 'run' && F.wait) { F.st = 'idle'; F.wait = false; start(flow, F.name); continue; }   // P393: tapped while reconnecting
+    if (F.st === 'run' && F.cont && !peer.rescue) { if (!F.contSent) sendCont(flow); continue; }   // #585: back after the restart
     if (!['ark', 'end_turn', 'takeover'].includes(flow) && F.st === 'fail' && F.why === 'offline' && !peer.rescue) finish(flow, { ok: true, text: tx('p392.restored') });
     if (flow !== 'ark' && F.st === 'run' && F.dropped && !peer.rescue) finish(flow, { ok: true, step: F.step, ticket: F.ticket, text: tx('p332.reset.back') });
     if ((F.st === 'ok' || F.st === 'fail') && !F.fold && !F.foldTimer) foldLater(flow);   // the link is back: ended results fold
@@ -572,8 +686,8 @@ function paintTakeover() {
   let card = el('rs-takeover');
   if (!card) { card = node('li', 'rscard'); card.id = 'rs-takeover'; }
   const F = S.takeover;
-  // first while a turn is stuck; otherwise right under ① (and its 重开 AI 会话 row)
-  const anchor = S.stuck ? null : (el('rs-session') || reset);
+  // first while a turn is stuck; otherwise right under ① (and its 重启 Agent row)
+  const anchor = S.stuck ? null : (el('rs-newchat') || el('rs-session') || reset);
   if (S.stuck) { if (reset.previousElementSibling !== card) reset.before(card); }
   else if (anchor.nextElementSibling !== card) anchor.after(card);
   card.dataset.state = F.st;
@@ -587,11 +701,12 @@ function paintTakeover() {
   if (F.st === 'run') parts.push(bar('takeover', F, STEPS.takeover));
   if (F.st === 'ok') { const [first, ...rest] = okBlock('takeover', F); parts.push(headBar('takeover', first, () => clearFlow('takeover')), ...rest, acts(backBtn('takeover'))); }
   if (F.st === 'fail') {
-    const known = whyText(F.why);
-    const msg = node('p', 'rsmsg rsfail', known || (F.why === 'timeout' && !F.heard ? tx('p332.noAnswer') : tx('p0269.take.fail'))); msg.id = 'rs-takeover-msg';
+    const known = whyText(F.why), lines = resultLines(F), real = !known && F.heard && lines.length ? lines.shift() : '';
+    // #585: the host's real reason is the headline (never the generic 「没能接管」 above a different reason)
+    const msg = node('p', 'rsmsg rsfail', known || real || (F.why === 'timeout' && !F.heard ? tx('p332.noAnswer') : tx('p0269.take.fail'))); msg.id = 'rs-takeover-msg';
     parts.push(headBar('takeover', msg, () => clearFlow('takeover')));
-    if (!known && F.text) parts.push(node('p', 'rsmsg', F.text));
-    parts.push(acts(go(tx('p332.again'), '')));
+    for (const x of lines) { const p = node('p', 'rsmsg rsres'); fillText(p, x); parts.push(p); }
+    parts.push(acts(...extras('takeover', F), go(tx('p332.again'), '')));   // #585: the real reason + the next step as a button
   }
   if (F.st === 'idle') parts.push(acts(go(tx('p0269.take.title'), S.stuck ? 'aj-action--primary' : '')));
   card.replaceChildren(...parts);

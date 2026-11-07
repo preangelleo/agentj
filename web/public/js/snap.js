@@ -326,7 +326,7 @@ export function toPage(t) {
   const reply = t.reply && typeof t.reply === 'object' ? t.reply : { text: typeof t.reply === 'string' ? t.reply : '' };
   return {
     id: t.id, ts: typeof t.ts === 'number' ? t.ts / 1000 : null,
-    source: { k, ...(k === 'sys' && ['wsl', 'loop'].includes(src.guide) ? { guide: src.guide } : {}), dev: typeof src.dev === 'string' ? src.dev : null, name: typeof src.name === 'string' ? src.name.slice(0, 64) : '',
+    source: { k, ...(src.k === 'sys' && src.repair === 'reconnect' ? {repair:'reconnect'} : {}), ...(k === 'sys' && ['wsl', 'loop'].includes(src.guide) ? { guide: src.guide } : {}), dev: typeof src.dev === 'string' ? src.dev : null, name: typeof src.name === 'string' ? src.name.slice(0, 64) : '',
       text: typeof src.text !== 'string' ? '' : k === 'telegram' ? src.text.replace(TG_SOURCE_LINE, '') : src.text, quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}), ...(k === 'agent' && ['loop', 'task', 'quota', 'auto', 'hook'].includes(src.via) ? {via: src.via} : {}), ...(k === 'task' && src.via === 'same-owner' ? {via: src.via} : {}),
       ...(src.form && typeof src.form.id === "string" ? {form: {id: src.form.id.slice(0, 18), title: String(src.form.title || "").slice(0, 80)}} : {}),
       ...assistCarry(src),   // 0.26.9 #468: k = official_assist (+ the task id) whichever way the host wrote it

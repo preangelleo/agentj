@@ -43,7 +43,7 @@ class Upgrade(unittest.IsolatedAsyncioTestCase):
             with patch.object(update,"check",return_value={"status":status,"latest":"0.16.2a1"}),patch.object(phone_update,"launch") as launch:
                 await self.h.phone_upgrade(1,"Owner")
                 launch.assert_not_called()
-                self.assertIn("最新" if status=="current" else "agentj update check",self.h.cmd_card.call_args.args[1].text)
+                self.assertIn("最新" if status=="current" else "修复连接",self.h.cmd_card.call_args.args[1].text)
     async def test_new_version_launches_and_reports_apply_failure(self):
         with patch.object(update,"check",return_value={"status":"newer","latest":"0.16.3a1"}),patch.object(phone_update,"launch") as launch,patch.object(phone_update,"take",return_value={"result":"failed","reason":"install_failed"}),patch("agentj.serve.asyncio.sleep",new=AsyncMock()):
             await self.h.phone_upgrade(1,"Owner");launch.assert_called_once_with(self.st)
@@ -59,7 +59,7 @@ class Upgrade(unittest.IsolatedAsyncioTestCase):
         with patch("agentj.doctor.run",return_value=[{"status":"fail"}]):
             await self.h.upgraded_notice()
         self.assertIn("自检有 1 项未通过",self.h.cmd_card.call_args.args[1].text)
-        self.assertIn("agentj doctor --reconnect",self.h.cmd_card.call_args.args[1].text)
+        self.assertIn("修复连接",self.h.cmd_card.call_args.args[1].text)
     def test_worker_durable_before_restart_and_apply_failure_no_restart(self):
         restart=Mock(side_effect=lambda:self.assertTrue((self.st.root/phone_update.RESULT).exists()))
         with patch("agentj.doctor.run",return_value=[{"status":"ok"}]):
@@ -80,4 +80,4 @@ class InstalledDoctorFailure(unittest.TestCase):
             with patch("agentj.doctor.run",return_value=[{"status":"fail"}]):
                 phone_update.run(st,apply_fn=Mock(return_value={"from":"0.16.1a1","to":__version__,"reason":"doctor_failed","result":"failed"}),restart_fn=restart)
             restart.assert_called_once();rec=phone_update.take(st)
-            self.assertIn("自检有 1 项未通过",phone_update.text(rec));self.assertIn("agentj doctor --reconnect",phone_update.text(rec,"en"))
+            self.assertIn("自检有 1 项未通过",phone_update.text(rec));self.assertIn("Repair connection",phone_update.text(rec,"en"))

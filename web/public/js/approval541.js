@@ -4,7 +4,7 @@ import { el, toast } from './ui.js';
 import { specialApprovalById, reviewSpecial } from './approval-special541.js';
 import { setApprovalAnchor } from './approval-anchor541.js';
 import { approvalReview } from './api.js';
-import { stepTitle } from './approval-layout0281.js';
+import { stepTitle, stepReason } from './approval-layout0281.js';
 const detailIds=['cmdBox','why','apprScope','cmdReason'];
 const homes=new Map();
 let key='', current=null, hooks=null, active=false;
@@ -40,7 +40,7 @@ export function paint(p, options){
  // @ix appr.source
  source.disabled=outside||!src.message_id;
  source.onclick=async()=>{if(!source.disabled){options.fold();await options.locate(src);}};
- const action=el('action541');action.hidden=false;action.textContent=String((lang()==='en'&&e.action_en)||e.action||p.reason||'');
+ const action=el('action541');action.hidden=false;action.textContent=stepReason(e);
  if(e.plan?.display){action.append(text('span','scope541','\n'+((lang()==='en'&&e.plan.display_en)||e.plan.display)));}
  el('sheetTitle').textContent=stepTitle(e,t('p336.faTitle'));
  el('askText').textContent=t('p541.wait');el('askTags').hidden=true;el('cmdToggle').hidden=true;el('goalInfo').hidden=true;

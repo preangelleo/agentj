@@ -1,4 +1,5 @@
 import { mountCall } from './js/call.js';
+import { forgetDownloads } from './js/private-files.js';
 import { specialQuestioned, clearSpecialApprovals } from './js/approval-special541.js';
 import * as sessionHelp from './js/session-help.js';
 import * as wechat from './js/wechat.js';
@@ -81,14 +82,13 @@ import * as bots from './js/bots.js';
 import * as friends from './js/friends.js';    // §17.7: /friends + the friend cards
 import * as setupcard from './js/setup.js';   // P115: the first-run checklist card
 import * as devRename from './js/dev-rename.js';   // P179: long-press the source label → rename this remote
+import * as mainThread from './js/main-thread.js';
 import * as busy from './js/busy.js';         // P150 (§22): 「在办事项」 dots + the centred dialog
 import * as agentname from './js/agentname.js';   // P181 (§22.2): long-press the header name → rename
 import { paintHeader, initHeaderLogo } from './js/logo.js';
 import { applyTheme } from './js/theme.js';  // P169 (§23): the owner's theme (colours, logo, Send glyph, robots / dots)
 import * as shotclip from './js/shotclip.js'; // P154: a screenshot copied on a computer → the attachment tray
-import * as offline from './js/offline-card.js'; // P168: the disconnected card (blur + gdlg square, feedback@ after 30 min)
 import { hintKey, hostKind, HINT_AFTER_MS } from './js/offhint.js';   // P287: the offline line under 「电脑离线」
-import { createRecovery } from './js/recovery574.js';
 import { createGate, DOWN_DEBOUNCE_MS } from './js/reconnect.js';   // P393: the five-second rule (one constant for every 「连不上」)
 import { parseAgentId } from './proto/wire.js';
 import { SCAN_CONSTRAINTS, SCAN_FALLBACK, SCAN_SLOW_MS, scanFrame } from './js/scan.js';   // F29 (ADR-A177)
@@ -218,11 +218,9 @@ let statusKey = ['st.idle'];
 // P393: the window is the link gate (js/reconnect.js): DOWN_DEBOUNCE_MS of foreground time, started again when the page
 // comes back to the front; the relay's 「Agent J 主机离线」 waits it out too. During it only the dots say so (data-relink).
 const QUIET_MS = DOWN_DEBOUNCE_MS;
-const recovery574 = createRecovery();
 let quietPaint = false, painted = 'idle';
 const link = createGate({ ms: QUIET_MS, onChange: (v) => {
   document.body.toggleAttribute('data-relink', v === 'quiet');
-  if (v === 'quiet') { offline.hush(); recovery574.drop(); }
   if (v === 'down') { quietPaint = false; paintStatus(); rescue.onLinkDown(); }
   else settings.connectionChanged(state === 'ready', v === 'quiet');
 } });
@@ -238,10 +236,10 @@ function setStatus(s, key, vars) {
   // relay deploy, a phone back from the lock screen: the computer is back a second later).
   const down = s === 'connecting' || s === 'waiting-host';
   if (down && (painted === 'ready' || quietPaint)) {
-    if (link.drop()) { quietPaint = true; relay.connLost(); offline.dropped(); }
+    if (link.drop()) { quietPaint = true; relay.connLost(); }
     if (quietPaint) return;
   }
-  if (down && PAIRED_VIEWS.includes(view) && link.drop()) offline.dropped();   // a paired page starting without a link
+  if (down && PAIRED_VIEWS.includes(view)) link.drop();   // a paired page starting without a link
   if (!down) { quietPaint = false; link.up(); }
   paintStatus();
 }
@@ -252,6 +250,7 @@ function paintStatus() {
   st.dataset.state = s;
   st.textContent = plain(t(key, vars));
   const on = s === 'ready';
+  mainThread.connection(on);
   onShareReady(on);
   snap.S.conn = on;
   $('meta').hidden = !on;
@@ -260,15 +259,6 @@ function paintStatus() {
   paintOffHint();
   renderLogo();
   rerender();
-  const m = offMode();
-  if (m) offline.update(m, key);
-}
-// P168: what the disconnected card should do for the painted state + view (offline-card.js update()).
-function offMode() {
-  if (link.state() === 'quiet' || (painted === 'idle' && PAIRED_VIEWS.includes(view))) return null;   // quiet window / boot: no news yet
-  if (painted === 'ready') return 'ready';
-  if (['idle', 'pairing', 'awaiting-approval', 'revoked'].includes(painted)) return 'gone';
-  return (painted === 'connecting' || painted === 'waiting-host') && PAIRED_VIEWS.includes(view) ? 'down' : 'other';
 }
 // P287: 「电脑离线」 for a while → one line in the page's own words on why and what to do (js/offhint.js). Only the relay's
 // "computer offline" counts (our own network drop is 「正在恢复连接…」), only on the chat screen, never while connected.
@@ -313,8 +303,6 @@ function show(v) {
   push.renderA2hs(v);
   renderPhoneEnvironment();
   renderLogo();
-  const m = offMode();
-  if (m) offline.update(m, statusKey[0]);
 }
 function renderLogo() { paintHeader(); if (view === "chat") rerender(); }
 let renderQueued = false;
@@ -336,7 +324,7 @@ function allowRelay(url) {
   const u = new URL(url);
   const ours = u.protocol === 'wss:' && !u.port && RELAY_HOSTS.includes(u.hostname);
   // localhost too (F20): WebAuthn refuses an IP address as rp id, so the passkey tests serve the page as localhost
-  if (['127.0.0.1', 'localhost'].includes(location.hostname)) return ours || (u.protocol === 'ws:' && u.hostname === '127.0.0.1');
+  if (['127.0.0.1', 'localhost'].includes(location.hostname)) return ours || (['ws:','wss:'].includes(u.protocol) && u.hostname === '127.0.0.1');
   return ours;
 }
 
@@ -386,7 +374,6 @@ session.configure({
   // P153 (§3.3): the host put a card on the paired remotes — nothing to type; the code stays as the one to compare
   onPairWait: () => { $('sas-view').dataset.mode = 'card'; setStatus('awaiting-approval', 'st.awaitingRemote'); },
   async onApproved(ctx) {
-    recovery574.reset();
     knownHost = { plat: null, boot: null };           // P287: a new computer; its ready says what it is
     // dk = this browser's device public key: a later page that finds the pairing but another device key knows the browser
     // lost the key (0.15.1) instead of failing the resume and calling it "removed"
@@ -408,7 +395,6 @@ session.configure({
     return host;
   },
   onReady() {
-    recovery574.up(session.peer.recoveryStall); // Reconnection is quiet; waking the phone must not cover its messages.
     backfillPairing().catch(() => { /* only a hint for later */ });
     learnHost().catch(() => { /* only a hint for later */ });
     restoreKind = null; rtRetries = 0; pkTakeover = false;
@@ -457,7 +443,7 @@ snap.configure({
   onTurn: (p) => { relay.upsertTurn(p); assist.onTurn(p); },   // 0.26.9 #468: a task's reply grows in the assist feed too
 });
 api.onState((m) => relay.onSayState(m));
-controls.configure({ faceId: settings.faceIdStep, show, estopChanged: () => { relay.onEstop(); rerender(); }, friends: () => friends.refresh(), bots: () => bots.refresh() });
+controls.configure({ faceId: settings.faceIdStep, show, estopChanged: () => { relay.onEstop(); rerender(); rescue.onEstopChange(); }, friends: () => friends.refresh(), bots: () => bots.refresh() });
 setkeys.configure();
 bots.configure({openPanel:controls.openPanel});
 setupcard.configure({ openPanel: controls.openPanel, view: () => view });   // P131: the checklist page + chat banner
@@ -492,7 +478,7 @@ function onApp(m) {
     case 'pair_guide': showPairGuide(m.kind); return;
     case 'cmds_state': settings.setRunCmds(m.names, m.harnesses); rerender(); return;
     case 'preferences': ownerHosts.capability(m.host); setHostVersion(m.host?.version); relay.hostVersionIs(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); rerender(); if(m.problem)relay.configProblem(m.problem.error); return;
-    case 'status': setAgentName(m.name); document.body.dataset.goalActive = m.goal_active === true ? '1' : '0'; wechat.channelStatus(m); snap.setStatus(m); renderTg(); return;
+    case 'status': mainThread.set(m.main_thread); setAgentName(m.name); document.body.dataset.goalActive = m.goal_active === true ? '1' : '0'; wechat.channelStatus(m); snap.setStatus(m); renderTg(); return;
     // P150 (§22): who works in the background (display only)
     // P575: 在办 empty → 全部完成
     case 'busy': busy.setBusy(m); relay.cueTasks(busy.currentCounts().task_count); return;
@@ -502,8 +488,8 @@ function onApp(m) {
       if (snap.addAsk(m)) { frontAsk(m); rosterbind.ensureForCeremony(m).catch(() => {}); }
       return;
     case 'approval_questioned': specialQuestioned(m); snap.approvalQuestioned(m); relay.approvalQuestioned(m); return;
-    case 'ask_done': friends.answerDone(m); snap.askDone(m); pkhandin.answered('ask:' + m.id); return;   // P566: a handed-in approval ended
-    case 'answer_refused': relay.answerRefused(m); friends.answerRefused(m); snap.answerRefused(m); toast(t('fr.ask.failed'), 5000); return;
+    case 'ask_done': relay.approvalEnded(m.id); friends.answerDone(m); snap.askDone(m); pkhandin.answered('ask:' + m.id); return;   // P566: a handed-in approval ended
+    case 'answer_refused': {const text=relay.answerRefused(m);friends.answerRefused(m);snap.answerRefused(m);toast(text,5000);return;}
     case 'pair_ev': settings.onPairEv(m); return;    // P153 (§3.3): how the pairing this remote opened went
     case 'bots_tool_request': bots.toolRequest(m); return;
     case 'bots_proposal': bots.proposal(m); return;
@@ -577,7 +563,7 @@ function onApp(m) {
     case 'grant': controls.setGrant(m); return;
     case 'grant_end': controls.endGrant(m.id, m.why); return;
     case 'push_key': push.gotPushKey(m.k); return;
-    case 'estop_state': controls.setEstop(m); snap.S.estop = { ...controls.estop }; return;
+    case 'estop_state': controls.setEstop(m); if(m.on===true)forgetDownloads(); snap.S.estop = { ...controls.estop }; return;
     case 'hist_read': relay.ownerRead(m); return;
     case 'hist_meta': snap.setMeta(m); relay.ownerRead(m); return;
     case 'hist_turn': snap.pushTurn(m); return;
@@ -641,7 +627,7 @@ async function revoked(why = 'revoked') {
   $('takeover-pk').hidden = true;
   if (replaced) renderTakeover(h && { ...h, approved: false, removed: why }).catch(() => { $('takeover-pk').hidden = true; });
 }
-// P198 (F20 over F36, Jarvis's decision): Safari / the Home Screen app / a private tab share one Face ID record, and the side
+// P198 (F20 over F36, Agent J's decision): Safari / the Home Screen app / a private tab share one Face ID record, and the side
 // that was taken over may take the connection back here — one button on this page, never a prompt. It shows only when this
 // pairing has (or may have) a passkey: `pk` true = saved or restored with one here; false = the computer offered to save
 // one, i.e. it has none (a record from before P198 never said: the button shows, and a refused tap says why).
@@ -829,6 +815,7 @@ async function regOpts() {
   return { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, tag: await pkTag(h.channel), name: agentName ?? DEFAULT_NAME, displaySuffix: t('pk.computer') };
 }
 pkpeer.configure({
+  openSettings: () => pkassist.scrollToPkRow({ setupFallback: false }),
   channel: () => session.channel(), device: () => api.myDeviceId(), sendBootstrap: (o) => session.sendApp(o),
   ask: (o, want, ms) => session.ask1(o, want, ms), send: (o) => (o && o.t === 'pk_reg' ? pkhandin.handIn(o)   // P565 追加 A: a made key is handed in, never lost with the socket
     // P566 (#364): an approval of another remote's set-up carries this remote's Face ID — handed in the same way (≤ 2 min)
@@ -916,7 +903,7 @@ async function offerPasskey(m) {
   const no = $('confirm-no');
   no.dataset.i18n = 'pk.later'; no.textContent = t('pk.later');
   let yes;
-  try { yes = await confirmSheet(t('pk.askTitle'), t('pk.askText'), t('pk.save')); } finally { no.dataset.i18n = 'sheet.cancel'; no.textContent = t('sheet.cancel'); }
+  try { yes = await confirmSheet(t('pk.askTitle'), t('pk.askText'), t('pk.save'), false, undefined, '', 'grow'); } finally { no.dataset.i18n = 'sheet.cancel'; no.textContent = t('sheet.cancel'); }
   if (!yes) return;
   let reg;
   // cancelled / refused by the system (iPhone: no iCloud Keychain → no passkey can be saved): nothing changes; say why once
@@ -1002,7 +989,6 @@ function moveFailed() {
   if (!movePending) return;
   movePending = false;
   if (state === 'ready' || state === 'revoked') return;
-  offline.later();                                    // the reconnecting card steps aside for the one way forward
   confirmSheet(t('hmv.failTitle'), t('hmv.failed'), t('hmv.rescan')).then((yes) => { if (yes) forgetHost().catch(() => {}); });
 }
 // Restore: on the empty pairing screen, one button when this browser has Face ID / a platform authenticator. The new
@@ -1585,24 +1571,10 @@ function wire() {
   };
   $('unpair').addEventListener('click', unpairAsk);
   initVersionNotice(settings.refreshApp, {blocked: relay.refreshBlocked, save: relay.saveDraft});
+  mainThread.init();
   busy.init({ name: () => displayAgentName(), prompt: (k) => relay.sayPreset(k), detail: api.busyDetail, mention: (text) => relay.insertText(text), orderMain: relay.sayOrder, orderStopped: () => controls.estop.on });   // P160: a row → its read-only card
   agentname.init({ name: () => agentName ?? DEFAULT_NAME, canRename: () => session.isReady() });
   shotclip.init({ attach: (f) => relay.attachShot(f, false, true), say: () => toast(t('set.shotDenied'), 4000) });   // P398: auto
-  offline.configure({
-    retry: () => { if (session.retryInfo().nextAt) session.reconnectNow('manual'); else resume().catch(() => {}); },
-    retryInfo: session.retryInfo,
-    version: VERSION.version,
-    device: deviceLabel,
-    // the outage start survives a reload in the host record (a number, nothing else); written in order with the ticket
-    persist: (at) => ticketQueue(async () => {
-      const h = await dbGet('host');
-      if (!h || !h.approved) return;
-      if (at === null) { if (h.downAt === undefined) return; const { downAt, ...rest } = h; await dbPut('host', rest); }
-      else if (h.downAt !== at) await dbPut('host', { ...h, downAt: at });
-    }),
-  });
-  offline.init();
-  $('offRescue').addEventListener('click', () => { offline.later(); rescue.openBlock(); });   // P332: the card's 「紧急修复」
   devRename.init({ myDev: api.myIdSync });
   let shotBusy = false;
   // P340 #27: the screenshot goes into the attachments AND the system clipboard. Synchronous up to copyImage(): it must
@@ -1764,6 +1736,8 @@ async function main() {
     settings: settings.toggleFromKey,
     openSettings: () => settings.open(),
     openShotSetting: () => settings.openShot(),     // P398 (#156): the 「自动放入 · 设置里可关」 chip
+    repairSupported: () => cmdrun.supports('reconnect'),
+    repairConnection: () => { settings.openRescue(); cmdrun.run('reconnect'); },
     resetConn: rescue.resetFromCommand,              // P332: ≡ 重置连接 and /reset
     upgradeHost: settings.upgradeFromKey,
     refreshApp: settings.refreshApp,
@@ -1795,7 +1769,7 @@ async function main() {
     if (!same) return startPairing(l);
     toast(t('pair.already'));
   }
-  if (host && host.approved && !lost) { offline.restore(host.downAt); askPersist(); show('chat'); resume(); openFriendsWanted(); return; }
+  if (host && host.approved && !lost) { askPersist(); show('chat'); resume(); openFriendsWanted(); return; }
   if (host && !host.approved && ['replaced', 'revoked'].includes(host.removed)) return revoked(host.removed);
   if (await tryTicket()) { openFriendsWanted(); return; }   // P122: no pairing here, but this phone's ticket cookie is
   showIdle();

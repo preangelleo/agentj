@@ -44,7 +44,7 @@ import java.io.File
 class WakeService : Service(), ListenLoop.Listener {
 
     companion object {
-        private const val TAG = "JarvisWake"
+        private const val TAG = "AgentJWake"
         const val ACTION_START = "app.agentj.android.START"
         const val ACTION_STOP = "app.agentj.android.STOP"          // stop listening (user)
         const val ACTION_CAPTURE = "app.agentj.android.CAPTURE"    // record now, no wake word
@@ -344,7 +344,7 @@ class WakeService : Service(), ListenLoop.Listener {
     private fun startAudio() {
         running = true
         Hub.set(Hub.Listen.STARTING)
-        thread = Thread({ audioMain() }, "jarvis-audio").apply { priority = Thread.MAX_PRIORITY; start() }
+        thread = Thread({ audioMain() }, "agentj-audio").apply { priority = Thread.MAX_PRIORITY; start() }
     }
 
     private fun audioMain() {

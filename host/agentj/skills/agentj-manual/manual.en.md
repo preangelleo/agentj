@@ -1,4 +1,4 @@
-<!-- generated from https://agentj.app/docs/manual/en.md by agentjarvis/tools/manual_skill.mjs — do not edit -->
+<!-- generated from https://agentj.app/docs/manual/en.md by the Agent J documentation generator — do not edit -->
 # User guide
 
 A guide to the phone screen. For installation/pairing, start with [Install](https://agentj.app/docs/install/) and [Using your phone](https://agentj.app/docs/phone/).
@@ -12,7 +12,7 @@ No reply / “Not yet received”? Use your phone; after each step send a short 
 1. Tap **Stop** to interrupt the current task.
 2. Open **Settings → Emergency repair → Terminal Commands**, tap **Run** beside `agentj doctor --reconnect` (recommended); confirm with Face ID when asked. The phone requests host repair without opening a terminal.
 3. Still no reply? In **Emergency repair**, tap **Restart service** (recommended); wait for reconnection and retry.
-4. Still no reply? Tap **Emergency repair → Reopen AI session** (host and web 0.25.2a1+). It ends the stuck process, tries the same conversation, or keeps it and opens a new one. Skip if an older version lacks the button.
+4. Still no reply? Tap **Emergency repair → Restart Agent** (host and web 0.25.2a1+). It ends the stuck process, tries the same conversation, or keeps it and opens a new one. Skip if an older version lacks the button.
 5. Still stuck? Tap **Emergency repair → ② Ask Agent J Father for remote help**; keep the ticket number. Only your tap sends host-redacted diagnostics, never passwords, keys, chats or work files.
 
 **Stopped by the model's safety check? No computer needed either.** With Claude Code the phone shows a card to pick what happens next: continue on the fallback model, retry as is, "Edit and resend" (your words go back in the message box) or "New conversation".
@@ -777,7 +777,7 @@ Recordings shorter than half a second or with too little audio data are discarde
 
 In Settings → Safety, tap **Emergency stop all Agents** and confirm to interrupt the main Agent’s current turn, stop Agent J background tasks, pause Agent J scheduled tasks and reject pending approvals. Esc cancels. Resume remains at the top; resuming uses a signed confirmation button on a paired remote. Emergency stop is no longer in the slash menu; `/stop-all`, `/stop_all` and `/estop` direct you to Settings.
 
-After Reset connection in Settings → Emergency repair, tap **Reopen AI session** and confirm once. The host ends the current AI session process and resumes the same conversation; if that fails, a new session is connected to your phone and the old conversation is kept. Claude Code, Codex and OpenCode reconnect from your phone: no need to go to the computer. Native permissions stay in place. If the host cannot verify the selected process identity, it refuses to end it and offers remote help. Automatic retry after quota recovery is separate.
+After Reset connection in Settings → Emergency repair, tap **Restart Agent** and confirm once. The host ends the current AI session process and resumes the same conversation; if that fails, a new session is connected to your phone and the old conversation is kept. Claude Code, Codex and OpenCode reconnect from your phone: no need to go to the computer. Native permissions stay in place. If the host cannot verify the selected process identity, it refuses to end it and offers remote help. Automatic retry after quota recovery is separate.
 
 ## Approval and execution cards {#approval-inset}
 

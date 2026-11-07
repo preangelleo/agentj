@@ -1334,6 +1334,8 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
    green = Emerald Oasis fill with Lotion text (P340 深底必白字), failure = Strawberry Field line + text on the dark card (≥ 7:1), the
    suggested next step = the menu accent. ② dimmed = dashed outline, muted number / title (body text keeps its contrast). */
 #settings .rscards{list-style:none;margin:var(--ui-space-content) 0 0;padding:0;display:flex;flex-direction:column;gap:var(--ui-space-control)}
+/* #585: the standalone repair card needs the same text-to-card space as the existing ladder. */
+#settings .rsrepair{margin-top:var(--ui-space-content)}
 #settings .rscard{padding:var(--ui-space-content);border:1px solid var(--menu-line);border-radius:var(--ui-radius-panel);background:var(--menu-chip);
   color:var(--menu-text);transition:background-color var(--ui-dur) var(--ui-ease),border-color var(--ui-dur) var(--ui-ease)}
 #settings .rshead{display:flex;align-items:center;gap:var(--ui-space-control)}
@@ -1657,9 +1659,18 @@ html:root #rm-add{
   display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
   width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
 }
-html:root #rm-copy{
-  display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
-  width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
+/* P0285: pairing actions contain labels; the icon-only 44 px contract clipped them. */
+#settings #rm-addacts{display:flex;flex-wrap:wrap;align-items:stretch;gap:var(--ui-space-control);max-width:100%}
+html:root #rm-addacts > .aj-action{
+  display:inline-flex;align-items:center;justify-content:center;gap:var(--ui-space-control);
+  flex:0 1 auto;width:auto;min-width:44px;max-width:100%;min-height:44px;height:var(--ui-btn-h);
+  padding:0 var(--ui-btn-px);border:1.5px solid var(--menu-line);
+  border-radius:var(--ui-radius-pill);background:transparent;color:var(--menu-text);
+  white-space:normal;overflow-wrap:anywhere;
+}
+#rm-addacts > .aj-action > span{min-width:0}
+@media (max-width:480px){
+  html:root #rm-addacts > .aj-action{flex-basis:100%;width:100%}
 }
 #five-page .jc-body[data-card="notes"] .jc-actions > [data-act="add"]{
   display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
@@ -1817,7 +1828,9 @@ body[data-assist-view]{overflow:hidden}
 /* #400: settings fields reuse brand inputs/actions; the owner-host section owns only its layout. */
 #settings .owner-hosts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--ui-space-control);min-width:0;padding-block:var(--ui-space-content)}
 #settings .owner-hosts[hidden]{display:none}
+#settings .owner-hosts{scroll-margin-top:calc(var(--menu-head-h) + var(--ui-space-content))}
 #settings .owner-hosts>:is(h3,p,div,form){grid-column:1/-1;min-width:0;margin:0}
+#settings #owner-hosts-list{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--ui-space-control)}
 #settings .owner-hosts__item{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--ui-space-control);min-width:0;padding-block:var(--ui-space-control)}
 #settings .owner-hosts__item>:is(p,.cc){grid-column:1/-1;min-width:0;overflow-wrap:anywhere}
 #settings #owner-hosts-form{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--ui-space-control)}
@@ -1826,3 +1839,13 @@ body[data-assist-view]{overflow:hidden}
 #settings #owner-hosts-form input{width:100%;min-width:0;box-sizing:border-box}
 #settings #owner-hosts-form>button{grid-column:1/-1}
 @media(min-width:700px){#settings #owner-hosts-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* Owner SSH presentation only: full public fingerprints and explicit local batch selection. */
+#settings .owner-hosts__aliases{grid-column:1/-1;min-width:0}
+#settings .owner-hosts__others>.owner-hosts__item{margin-top:var(--ui-space-control)}
+#settings .owner-hosts__draft{display:flex;align-items:center;gap:var(--sp-2);min-height:44px;overflow-wrap:anywhere}
+#settings .owner-hosts__draft input{flex:none;min-width:24px;min-height:24px}
+#settings .owner-hosts__review,#confirm .owner-hosts__review{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;margin-block:var(--sp-3)}
+#settings .owner-hosts button{white-space:nowrap;max-width:100%;min-width:0}
+#settings #owner-hosts-batch{grid-column:1/-1}
+/* SSH whole-target review is dialog prose, not a light-theme code sample. */
+#confirm .owner-hosts__review{background:transparent;color:inherit}

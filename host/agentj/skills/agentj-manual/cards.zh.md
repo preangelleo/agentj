@@ -1,4 +1,4 @@
-<!-- generated from https://agentj.app/docs/cards/zh.md by agentjarvis/tools/manual_skill.mjs — do not edit -->
+<!-- generated from https://agentj.app/docs/cards/zh.md by the Agent J documentation generator — do not edit -->
 # 卡片怎么用
 
 ## 打开与开关 {#open}

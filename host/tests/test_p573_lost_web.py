@@ -12,7 +12,7 @@ class Where(unittest.TestCase):
         r = busy.remote_of
         self.assertEqual(r('~/bin/olares-run -c abc --at /w -o /o -- bash run.sh'), 'Olares')
         self.assertEqual(r('ssh -i ~/.ssh/k -p 2222 olares@olares "ls /data"'), 'olares')
-        self.assertEqual(r('cd x && ssh -o BatchMode=yes animagent uptime'), 'animagent')
+        self.assertEqual(r('cd x && ssh -o BatchMode=yes fixture-remote uptime'), 'fixture-remote')
         self.assertEqual(r('ssh 10.0.0.5 ls'), 'ssh')            # an address is never shown
         self.assertEqual(r('ssh root@[fe80::1] ls'), 'ssh')
         for local in ('python3 -m pytest', 'echo /usr/bin/ssh-keygen', 'git push origin x', '', None):

@@ -47,16 +47,18 @@ test('waiting sheet: nobody online and the host offers its terminal → host mod
   assert.equal(await P.onOffer({ n: Buffer.alloc(32, 1).toString('base64url'), peer: ID }), true);
   assert.deepEqual(h.shown.at(-1), { mode: 'approved', by: t('pkp.byHost') });
   const src = read('../public/js/pkpeer.js');
-  assert.match(src, /hostOnly \? 'pkp\.waitHostTitle' : 'pkp\.waitTitle'/);
+  assert.match(src, /hostOnly \? 'pkp\.waitHostTitle' : 'p0285\.uv\.waitTitle'/);
   assert.match(src, /fillText\(cmd, t\('pkp\.hostWay', \{ code: s\.code \}\)\)/, 'the command is a copyable `code`');
 });
 
-test('Settings row: 已设好 hides the button; a key the Agent J host cannot place offers 「用 Face ID 确认」, not a new key', () => {
+test('Settings row: 已登记 hides the setup button; a key the Agent J host cannot place offers 「用 Face ID 确认」, not a new key', () => {
   const box = () => ({ row: { hidden: true, dataset: {} }, label: {}, note: {}, setupBtn: {}, oldBtn: { dataset: {} } });
   const b = box();
   A.paintPkRow('local', b);
   assert.equal(b.setupBtn.hidden, true);
-  assert.match(b.label.textContent, /：已设好$/);
+  assert.equal(b.label.textContent, A.withBio('p0285.pk.registered'));
+  assert.match(b.label.textContent, /：已登记$/);
+  assert.doesNotMatch(b.label.textContent, /已设好|可用/);
   const u = box();
   A.paintPkRow('unknown', u);
   assert.equal(u.setupBtn.hidden, false);
@@ -97,7 +99,7 @@ test('wording: new keys in all four dictionaries; zh says 「Agent J 主机」; 
     assert.equal(D['web.zh'][k], D['web.zh.override'][k]);
   }
   const zh = D['web.zh'];
-  assert.equal(zh['p539.pk.st.local'], '本机 {bio}：已设好');
+  assert.equal(zh['p539.pk.st.local'], '本机{bio}：已设好');
   // the chairman's final seat-transfer wording (10-27), verbatim; 「你」 as everywhere else on the phone
   assert.equal(zh['sxf.rowNote'], '换新的 Agent J 主机时用：席位和遥控器都跟过去。');
   assert.equal(zh['sxf.explainTitle'], '把席位转到另一台 Agent J 主机');

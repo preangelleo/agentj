@@ -52,5 +52,5 @@ Heartbeat 60 seconds, 45 seconds for ten minutes after an urgent notice, 2-secon
 Expected first online arrival ~0..62 seconds plus HTTPS time; not a measured SLA. Receipt normally takes one additional
 triggered report. Urgent phone pushes use encrypted/padded fixed security kind and high urgency, no notice body.
 An occupied or absent native Agent waits for its queue to accept the data; no harness preemption or authority bypass.
-Jarvis invokes fleet push after the 09:00 upgrade-mail digest; emergency fixes are sent immediately to an explicit range.
+The operator invokes fleet push after the 09:00 upgrade-mail digest; emergency fixes are sent immediately to an explicit range.
 That operator schedule is outside this feature's deployment-free worktree.

@@ -523,7 +523,7 @@ def _python_file_program(text, cwd):
             if receiver[0] == "argv":
                 if not isinstance(node.slice, ast.Constant) or type(node.slice.value) is not int or not 0 <= node.slice.value < len(receiver[1]): raise Unknown()
                 return ("text", receiver[1][node.slice.value])
-            if receiver[0] in ("data", "text"):
+            if receiver[0] in ("data", "text", "counter"):
                 expr(node.slice)
                 return ("data", None)
             raise Unknown()
@@ -545,6 +545,25 @@ def _python_file_program(text, cwd):
             left, right = expr(node.left), expr(node.right)
             if left[0] == "path" and right[0] == "text" and right[1] is not None:
                 return ("path", os.path.join(left[1], right[1]))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "sorted":
+            # Only a structural tuple/dict-key selector; no callable body can
+            # hide reads, writes, imports or callbacks in this diagnostic sort.
+            if len(node.args) != 1 or len(node.keywords) > 1: raise Unknown()
+            if expr(node.args[0])[0] not in ("data", "text"): raise Unknown()
+            if node.keywords:
+                keyword = node.keywords[0]
+                key = keyword.value
+                if keyword.arg != "key" or not isinstance(key, ast.Lambda): raise Unknown()
+                args = key.args
+                if (len(args.args) != 1 or args.posonlyargs or args.kwonlyargs or args.defaults
+                        or args.kw_defaults or args.vararg or args.kwarg): raise Unknown()
+                selector = key.body
+                while isinstance(selector, ast.Subscript):
+                    index = selector.slice
+                    if not isinstance(index, ast.Constant) or type(index.value) not in (str, int): raise Unknown()
+                    selector = selector.value
+                if not isinstance(selector, ast.Name) or selector.id != args.args[0].arg: raise Unknown()
+            return ("data", None)
         if isinstance(node, ast.Call):
             # Fixed formatting options only. Callbacks, custom JSON classes and
             # arbitrary opener functions never enter this data-only adapter.
@@ -593,6 +612,17 @@ def _python_file_program(text, cwd):
                 receiver = expr(node.func.value)
                 if receiver == ("module", "os.path") and method == "exists" and len(args)==1 and args[0][0] in ("text", "path") and args[0][1] is not None:
                     return ("scalar", None)
+                if receiver == ("module", "collections") and method == "Counter" and not args and not node.keywords:
+                    return ("counter", None)
+                if receiver == ("module", "time") and not node.keywords:
+                    if method == "strptime" and len(args) == 2 and all(a[0] == "text" for a in args):
+                        return ("time_tuple", None)
+                    if method == "mktime" and len(args) == 1 and args[0][0] == "time_tuple":
+                        return ("scalar", None)
+                    if method == "localtime" and len(args) == 1 and args[0][0] in ("scalar", "data"):
+                        return ("time_tuple", None)
+                    if method == "strftime" and len(args) == 2 and args[0][0] == "text" and args[1][0] == "time_tuple":
+                        return ("text", None)
                 if receiver == ("module", "datetime.datetime") and method == "fromtimestamp" and 1 <= len(args) <= 2:
                     return ("datetime", None)
                 if receiver[0] == "datetime" and method == "strftime" and len(args) == 1 and args[0][0] == "text":
@@ -609,6 +639,8 @@ def _python_file_program(text, cwd):
                         elif args[0][0] == "file" and args[0][1][1].startswith("r"):storage(args[0][1][0])
                         else:raise Unknown()
                     elif args[0][0] != "text": raise Unknown()
+                    return ("data", None)
+                if receiver[0] == "counter" and method in ("items", "keys", "values") and not args and not node.keywords:
                     return ("data", None)
                 if receiver[0] == "data" and method in ("get", "items", "keys", "values"):
                     return ("data", None)
@@ -648,7 +680,7 @@ def _python_file_program(text, cwd):
             values[key]=options[0] if all(option==options[0] for option in options) and options[0] is not None else ("data", None)
     def statements(body):
         for statement in body:
-            if isinstance(statement, ast.Import) and all(n.name in ("os", "json", "sys", "datetime") and not n.asname for n in statement.names):
+            if isinstance(statement, ast.Import) and all(n.name in ("os", "json", "sys", "datetime", "time", "collections") and not n.asname for n in statement.names):
                 for item in statement.names: values[item.name] = ("module", item.name)
                 continue
             if isinstance(statement, ast.ImportFrom) and statement.module == "pathlib" and len(statement.names) == 1 and statement.names[0].name == "Path" and not statement.names[0].asname:
@@ -656,6 +688,12 @@ def _python_file_program(text, cwd):
             if isinstance(statement, ast.Assign) and all(isinstance(t, ast.Name) for t in statement.targets):
                 value = expr(statement.value)
                 for target in statement.targets: bind(target, value)
+            elif isinstance(statement, ast.AugAssign):
+                target = statement.target
+                if (not isinstance(statement.op, ast.Add) or not isinstance(target, ast.Subscript)
+                        or expr(target.value)[0] != "counter" or not isinstance(statement.value, ast.Constant)
+                        or type(statement.value.value) is not int): raise Unknown()
+                expr(target.slice)
             elif isinstance(statement, ast.Expr): expr(statement.value)
             elif isinstance(statement, ast.For):
                 iterable = expr(statement.iter)

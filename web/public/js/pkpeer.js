@@ -11,11 +11,11 @@
 //   Face ID」 + time + 对照码 + 「批准（Face ID）」「拒绝」 → approve(fa_ch, fa) synchronously in the tap → pk_peer_answer
 //   {id, ok:true, fa} · {id, ok:false}; pk_peer_close {id} puts the card away.
 // Logic and view are apart: configure({view}) lets node tests drive the state machine without a DOM (p547_pkpeer.test.mjs).
-import { t, locale, onLang, fillText } from './t.js';
+import { t, tRaw, locale, onLang, fillText } from './t.js';
 import { mk, toast, notify } from './ui.js';
 import { registerLayer } from './layers.js';
 import { unb64u, b64u, sealValue } from '../proto/wire.js';
-import { keyPlatform } from './phone-env.js';
+import { keyPlatform, osOf } from './phone-env.js';
 
 export const ID = /^[A-Za-z0-9_-]{16,43}$/;          // the host's request id (b64u of 16 bytes = 22 chars)
 export const CODE = /^\d{6}$/;
@@ -295,32 +295,33 @@ function build() {
 function paint() {
   if (!spec) return;
   const r = build(), s = spec;
+  const bio = tRaw('p0285.uv.bio.' + osOf(H.ua(), H.touch()));
   const box = mk('div', 'box');
-  const kick = mk('p', 'elev-kicker', t(s.mode === 'ask' ? 'pkp.askKicker' : 'pkp.kicker'));
+  const kick = mk('p', 'elev-kicker', t(s.mode === 'ask' ? 'pkp.askKicker' : 'p0285.uv.kicker'));
   const title = mk('h2', '', '', 'aj-passkey'); title.id = 'pkp-title';
   const kids = [kick, title];
   const codeRow = (code) => { const d = mk('div', 'pkp-code'); d.id = 'pkp-code'; d.append(mk('span', 'pkp-code-l', t('pkp.codeLabel')), mk('b', 'pkp-code-v', code)); return d; };
   const row = mk('div', 'ajrow pkp-acts');
   if (s.mode === 'wait') {
     const hostOnly = s.host && !(s.online > 0);       // P555: nobody online to approve → the Agent J host's terminal first
-    title.textContent = t(s.roster ? 'p574.introWaitTitle' : hostOnly ? 'pkp.waitHostTitle' : 'pkp.waitTitle');
-    kids.push(mk('p', 'pkp-text', t(s.roster ? 'p574.introText' : hostOnly ? 'pkp.waitHostText' : 'pkp.waitText')), codeRow(s.code));
+    title.textContent = t(s.roster ? 'p574.introWaitTitle' : hostOnly ? 'pkp.waitHostTitle' : 'p0285.uv.waitTitle');
+    kids.push(mk('p', 'pkp-text', t(s.roster ? 'p574.introText' : hostOnly ? 'pkp.waitHostText' : 'p0285.uv.waitCheck')), codeRow(s.code));
     if (!hostOnly) kids.push(mk('p', 'elev-note', s.online > 0 ? t('pkp.online', { n: s.online }) : t('pkp.noneOnline')));
     if (s.host) {
       const cmd = mk('p', 'elev-note pkp-host'); cmd.id = 'pkp-host';
       fillText(cmd, t('pkp.hostWay', { code: s.code }));
       kids.push(cmd);
     }
-    kids.push(mk('p', 'elev-note', t('pkp.eachOwn') + ' ' + t('pkp.where.' + s.where)));
+    kids.push(mk('p', 'elev-note', t('p0285.uv.eachOwn') + ' ' + t('pkp.where.' + s.where)));
     row.append(btn('pkp-cancel', 'aj-action--quiet', 'sheet.cancel', () => cancelWait()));
   } else if (s.mode === 'approved') {
-    title.textContent = t(s.err ? 'p561.save.failTitle' : 'pkp.approvedTitle');
+    title.textContent = t(s.err ? 'p561.save.failTitle' : 'p0285.uv.approvedTitle');
     if (s.err) {                                       // P561 追加 11: the system made no key — say so plainly, the approval stands
       const f = mk('p', 'pkp-text pkp-fail', t('p561.save.fail')); f.id = 'pkp-fail'; f.dataset.err = s.err; f.setAttribute('role', 'status');
       kids.push(f, mk('p', 'elev-note', t(s.notSaved || 'pk.notSaved')));
     } else {
-      kids.push(mk('p', 'pkp-text', s.by ? t('pkp.approvedBy', { by: s.by }) : t('pkp.approvedText')));
-      kids.push(mk('p', 'elev-note', t('pkp.eachOwn') + ' ' + t('pkp.where.' + keyPlatform(H.ua(), H.touch()))));
+      kids.push(mk('p', 'pkp-text', s.by ? t('p0285.uv.approvedBy', { by: s.by }) : t('p0285.uv.approvedText')));
+      kids.push(mk('p', 'elev-note', t('p0285.uv.eachOwn') + ' ' + t('pkp.where.' + keyPlatform(H.ua(), H.touch()))));
     }
     row.append(btn('pkp-save', 'aj-action--primary', s.err ? 'p539.fail.retry' : 'pk.save', () => saveTap()), btn('pkp-later', 'aj-action--quiet', 'pk.later', () => { S.offer = null; S.req = null; hide(); }));
   } else if (s.mode === 'result') {
@@ -328,11 +329,11 @@ function paint() {
     kids.push(mk('p', 'pkp-text', t('pkp.r.' + s.why)));
     row.append(btn('pkp-ok', 'aj-action--primary', 'pkp.ok', () => closeResult()));
   } else if (s.mode === 'ask') {
-    title.textContent = t(s.roster ? 'p574.introTitle' : 'pkp.askTitle', { name: s.name });
+    title.textContent = t(s.roster ? 'p574.introTitle' : 'p0285.uv.askTitle', { name: s.name, bio });
     const at = when(s.at);
     if (at) kids.push(mk('p', 'elev-note pkp-at', t('pkp.askAt', { time: at })));
-    kids.push(codeRow(s.code), mk('p', 'pkp-text', t(s.roster ? 'p574.introText' : 'pkp.askText')));
-    if (s.needsSetup) kids.push(mk('p', 'elev-note', t(s.bootstrapUnavailable ? 'pkp.passwordNotSet' : s.bootstrap ? 'pkp.bootstrapText' : 'pkp.setupFirst')));
+    kids.push(codeRow(s.code), mk('p', 'pkp-text', t(s.roster ? 'p574.introText' : 'p0285.uv.askText')));
+    if (s.needsSetup) kids.push(mk('p', 'elev-note', t(s.bootstrapUnavailable ? 'pkp.passwordNotSet' : s.bootstrap ? 'pkp.bootstrapText' : 'p0285.uv.noKey')));
     else if (!s.can) kids.push(mk('p', 'elev-note', t('pkp.noAssert')));
     if (s.bootstrap) {
       const input = mk('input', 'aj-input', undefined, 'aj-passkey'); input.type = 'password'; input.autocomplete = 'off';
@@ -340,13 +341,20 @@ function paint() {
       kids.push(input);
       row.append(btn('pkp-bootstrap', 'aj-action--primary', 'pkp.bootstrapApprove', () => bootstrapTap(input)));
     }
-    if (s.needsSetup && !s.bootstrap && !s.bootstrapUnavailable) row.append(btn('pkp-setup-first', 'aj-action--quiet', 'pkp.setupFirstAction', () => { hide(); (H.restart || startPeerSetup)(); }));
-    const ok = btn('pkp-approve', 'aj-action--primary', 'pkp.approve', () => approveTap());
+    if (s.needsSetup && !s.bootstrap && !s.bootstrapUnavailable) row.append(btn('pkp-setup-first', 'aj-action--quiet', 'p0285.uv.viewSettings', () => { hide(); H.openSettings?.(); }));
+    const ok = btn('pkp-approve', 'aj-action--primary', 'p0285.uv.approve', () => approveTap());
+    ok.textContent = t('p0285.uv.approve', { bio });
     ok.hidden = !s.can;
     row.append(ok, btn('pkp-deny', 'aj-action--quiet', 'pkp.deny', () => denyTap()));
   }
-  kids.push(row);
-  box.append(...kids);
+  // Presentation only: keep the comparison and actions visible; explanations use the existing disclosure.
+  if (kids.some(n => n.classList.contains('pkp-code'))) {
+    const more = mk('details', 'pkp-details');
+    more.append(mk('summary', '', t('p339.details')));
+    const primary = kids.filter(n => n.classList.contains('pkp-code') || n.tagName === 'INPUT');
+    more.append(...kids.filter(n => !primary.includes(n)));
+    box.append(...primary, row, more);
+  } else box.append(...kids, row);
   r.replaceChildren(box);
   r.dataset.mode = s.mode;
   r.hidden = false;

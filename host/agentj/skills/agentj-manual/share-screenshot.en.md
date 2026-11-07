@@ -1,4 +1,4 @@
-<!-- generated from https://agentj.app/docs/share-screenshot/en.md by agentjarvis/tools/manual_skill.mjs — do not edit -->
+<!-- generated from https://agentj.app/docs/share-screenshot/en.md by the Agent J documentation generator — do not edit -->
 # Share screenshots and files with Agent J
 
 Recordings, screenshots, Word / Excel / PowerPoint files, archives — any file can go to the Agent on the Agent J host. It lands in the attachment tray under the composer; add a note if you like ("summarise this recording"), then send. Sharing never sends anything by itself.

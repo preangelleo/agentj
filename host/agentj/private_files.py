@@ -1,4 +1,4 @@
-"""#329: ephemeral, paired-only file cards. No HTTP handler and no caller-supplied paths.
+"""#329/#578: ephemeral paired-only cards, no caller-supplied paths.
 
 Offers originate only in a completed reply's explicit references inside its working
 folder. Each bounded Noise read is signed, sequential and bound to that live session.
@@ -27,6 +27,8 @@ class Downloads:
         self.host, self.clock = host, clock
         self.offers, self.transfers = {}, {}
         self.lock = threading.RLock()
+        from .private_direct import Direct
+        self.direct = Direct(self)
 
     def prune(self):
         with self.lock:
@@ -34,8 +36,11 @@ class Downloads:
 
     def _prune(self):
         now = self.clock()
-        self.offers = {k: v for k, v in self.offers.items() if now < v['until'] and self.origin_live(v['origin'])}
+        self.offers = {k: v for k, v in self.offers.items() if now < v['until'] and self.origin_live(v['origin'])
+                       and v['host_state'] is self.host.st and v['host_epoch'] == getattr(self.host, '_pairing_epoch', 0)
+                       and v['stop_epoch'] == self.stop_epoch()}
         self.transfers = {k: v for k, v in self.transfers.items() if v['id'] in self.offers}
+        self.direct.prune()
 
     def _page_digest(self, page):
         return hashlib.sha256(json.dumps({'src':page.get('src'), 'text':(page.get('reply') or {}).get('text'),
@@ -64,11 +69,11 @@ class Downloads:
                 and all(history.get(tid) is page and self._page_digest(page) == digest
                         for tid,page,digest in origin['pages']))
 
-    def offer(self, scanner, ref, *, turn=None):
+    def offer(self, scanner, ref, *, turn=None, direct=False):
         with self.lock:
-            return self._offer(scanner, ref, turn=turn)
+            return self._offer(scanner, ref, turn=turn, direct=direct)
 
-    def _offer(self, scanner, ref, *, turn=None):
+    def _offer(self, scanner, ref, *, turn=None, direct=False):
         self.prune()
         origin = self.origin(turn)
         if not origin:
@@ -81,7 +86,9 @@ class Downloads:
         if raw != os.path.realpath(raw) or os.path.commonpath([raw, os.path.abspath(root)]) != os.path.abspath(root):
             return None
         rec, why = scanner.check(ref, owner=False, root=root, large=True)
-        if why or not rec or rec['bytes'] <= media.CAPS[rec['kind']] or rec['root'] != os.path.realpath(root):
+        minimum = 8 * media.MIB if direct else (media.CAPS[rec['kind']] + 1 if rec else 0)
+        if (why or not rec or rec['bytes'] < minimum or rec['root'] != os.path.realpath(root)
+                or (direct and rec['bytes'] > 100 * media.MIB)):
             return None
         fd = media.open_rel(rec['root'], rec['parts'])
         try:
@@ -92,22 +99,26 @@ class Downloads:
         finally:
             os.close(fd)
         for fid, row in self.offers.items():
-            if (row['rec'] == rec and row['agent'] is self.host.agent
+            if (bool(row.get('direct')) == direct and row['rec'] == rec and row['agent'] is self.host.agent
                     and row['session'] == self.host.st.agent_session(self.host.agent.kind)
-                    and row['stop_epoch'] == self.stop_epoch() and row['origin'] == origin
+                    and row['stop_epoch'] == self.stop_epoch() and row['host_epoch'] == getattr(self.host, '_pairing_epoch', 0)
+                    and row['host_state'] is self.host.st and row['origin'] == origin
                     and self.origin_live(origin)):
                 return self.card(fid, row)
         if not self.origin_live(origin) or len(self.offers) >= MAX_OFFERS:
             return None
         fid = secrets.token_hex(16)
-        row = {'rec': rec, 'until': self.clock() + TTL, 'expires': int(time.time()) + TTL,
+        ttl = 86400 if direct else TTL
+        row = {'rec': rec, 'direct': direct, 'until': self.clock() + ttl, 'expires': int(time.time()) + ttl,
+               'host_state': self.host.st, 'host_epoch': getattr(self.host, '_pairing_epoch', 0),
                'seat': self.host.channel, 'root': root, 'agent': self.host.agent, 'origin': origin,
                'session': self.host.st.agent_session(self.host.agent.kind), 'stop_epoch': self.stop_epoch()}
         self.offers[fid] = row
         return self.card(fid, row)
 
     def card(self, fid, row):
-        return {'id': fid, 'seat': row['seat'], 'bytes': row['rec']['bytes'],
+        return {**({'transport': 'https1', 'mime': row['rec']['mime'], 'expires_at': row['expires'],
+                    'chunk_size': 65536} if row.get('direct') else {}),'id': fid, 'seat': row['seat'], 'bytes': row['rec']['bytes'],
                 'expires': row['expires'], 'sha256': row['rec']['sha256'],
                 'locator': f"/{seaturl.seat_id(row['seat'])}/#file={fid}"}
 
@@ -160,23 +171,45 @@ class Downloads:
                     result = {'ok': True}
                 elif req.get('info') is True:
                     result = {'ok': True, 'card': self.card(fid, row), 'name': row['rec']['name']}
+                elif row.get('direct') and req.get('claim') is True:
+                    result = await self.direct.claim(s, fid, row, req)
                 else:
                     offset, transfer = req.get('offset'), req.get('transfer')
                     key = (s.device, transfer) if isinstance(transfer, str) and _ID.fullmatch(transfer) else None
                     entry = self.transfers.get(key)
-                    if (key and type(offset) is int and 0 <= offset < row['rec']['bytes']
-                            and ((entry and entry['session'] is s and entry['id'] == fid and entry['next'] == offset
-                                  and entry['signer'] == self.host.st.sign_key(s.device))
-                                 or (entry is None and offset == 0 and len(self.transfers) < MAX_TRANSFERS))):
+                    legacy_direct = bool(row.get('direct'))
+                    eligible = (key and type(offset) is int and 0 <= offset < row['rec']['bytes']
+                                and ((entry and entry['session'] is s and entry['id'] == fid and entry['next'] == offset
+                                      and entry['signer'] == self.host.st.sign_key(s.device))
+                                     or (entry is None and offset == 0 and len(self.transfers) < MAX_TRANSFERS)))
+                    refusal = None
+                    if legacy_direct and eligible:
+                        # Claim only a real first read, before any await. HTTPS/legacy claims are exclusive.
+                        refusal = self.direct.legacy_claim(s, fid, row, transfer)
+                        if refusal:
+                            result = {'ok': False, 'why': refusal}
+                    if eligible and not refusal:
                         entry = {'session': s, 'id': fid, 'next': -1, 'signer': self.host.st.sign_key(s.device)}
                         self.transfers[key] = entry  # reserve before await: no concurrent repeat
                         try:
                             data = await asyncio.to_thread(self.read, row, offset)
+                            if legacy_direct:
+                                from .private_direct import source
+                                await asyncio.to_thread(source, row['rec'])
                             if (self.offers.get(fid) is row and self.live(s, row)
-                                    and self.host.st.sign_key(s.device) == entry['signer']):
+                                    and self.host.st.sign_key(s.device) == entry['signer']
+                                    and (not legacy_direct or (self.direct.authority(row)
+                                         and self.direct.claims.get(fid, {}).get('session') is s))):
                                 entry['next'] = offset + len(data)
                                 result = {'ok': True, 'offset': offset, 'd': wire.b64u(data),
                                           'last': entry['next'] == row['rec']['bytes'], 'sha256': hashlib.sha256(data).hexdigest()}
+                                if legacy_direct and result['last']:
+                                    self.offers.pop(fid, None)  # one successful legacy recipient consumes the same offer
+                                    self.prune()
                         except (media.Gone, OSError):
                             self.offers.pop(fid, None)
-        await self.host.send_app(s, {'t': 'private_file_res', 'r': obj.get('r'), **result})
+        message = {'t': 'private_file_res', 'r': obj.get('r'), **result}
+        if result.get('ok') and 'key' in result:
+            await self.direct.send_key(s, message, fid, row)
+        else:
+            await self.host.send_app(s, message)

@@ -125,6 +125,10 @@ def snapshot(host):
     ref = getattr(send, 'approval_origin', None) if not shared or (getattr(agent, 'phone_turn', False) and getattr(agent, 'phone_seen', False)) else None
     if ref:
         return copy.deepcopy(ref)
+    from . import shared_turn_origin
+    native = shared_turn_origin.snapshot(agent) if shared else None
+    if native:
+        return native
     # A desktop turn id is host-generated from a verified native transcript, not an agent field.
     tid = getattr(host, 'desktop_turn', None) if getattr(agent, 'phone_turn', False) is False else None
     refs = host.__dict__.get('_approval_origins', {})

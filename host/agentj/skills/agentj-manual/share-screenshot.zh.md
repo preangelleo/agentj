@@ -1,4 +1,4 @@
-<!-- generated from https://agentj.app/docs/share-screenshot/zh.md by agentjarvis/tools/manual_skill.mjs — do not edit -->
+<!-- generated from https://agentj.app/docs/share-screenshot/zh.md by the Agent J documentation generator — do not edit -->
 # 分享截图和文件给 Agent J
 
 录音、截图、Word / Excel / PPT、压缩包，任何文件都能发给Agent J 主机上的 Agent。先把文件放进输入框下方的附件栏，再补一句话（比如「帮我总结这段录音」），然后发送。分享不会自动发送。

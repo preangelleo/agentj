@@ -122,7 +122,7 @@ test('#364 every get() path hands its answer in (static)', () => {
   assert.match(api, /approveMessage\(ch, await myDeviceId\(\)/);
   assert.match(api, /H\.handed\?\.\(p\.id\);/, 'the held 「正在补交…」 goes when the hand-in ends');
   assert.match(app, /handed: \(\) => \{ if \(approveHanding\) \{ approveHanding = false; toastOff\(\); \} \}/);
-  assert.match(app, /case 'ask_done': friends\.answerDone\(m\); snap\.askDone\(m\); pkhandin\.answered\('ask:' \+ m\.id\);/);
+  assert.match(app, /case 'ask_done': relay\.approvalEnded\(m\.id\); friends\.answerDone\(m\); snap\.askDone\(m\); pkhandin\.answered\('ask:' \+ m\.id\);/);
   // a Face ID confirmation (controls.signedWriteFa): resent on the reconnected session, same computer
   assert.match(ctl, /return fa \? commandFa\(\{ \.\.\.obj, fa \}, ch\) : \{ ok: false, why: 'cancel' \};/);
   assert.match(ctl, /if \(g2 !== g\) \{ if \(!fa\) throw new Error\('offline'\);/);

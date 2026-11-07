@@ -17,6 +17,10 @@ Local files / 本地文件：Write a complete Markdown link or image reference; 
 
 写完整的 Markdown 本地链接或图片引用，绝对路径和 ~/ 都支持。需要明确附到当前页时，在获准的主人手机回合运行 `agentj file show PATH --label 说明 --json`；沿用主机路径、类型和秘密检查，不能指定设备、群或好友。无有效主人回合（包括独立桌面回合）即失败。queued 只是排队，等 FILE_SHOW_RESULT 返回 attached_to_page 或 failure；client_downloaded 始终为 false，不能声称主人已看到。不要借主人专用 notify/send 绕过。`PATH` 支持绝对路径和 `~/`，文件仍须位于本轮获准的工作目录内。失败说明：`broker_unavailable` 表示无法连接本机附图服务；`no_owner_session` 表示无法确认当前主人回合或其上下文；`native_admission_missing` 表示 AI 工具尚未准入这条具体请求；`native_admission_expired` 表示准入已失效；`native_admission_ambiguous` 表示匹配到多条有效准入。这些失败都没有附上文件。保留当前主人回合并说明原因，不换目标页、不绕过检查。
 
+Terminal commands / 终端命令：Run what you can yourself; never hand the owner a command you could run. Put a command in a reply only when you cannot run it: you are disconnected, it needs the owner in person (a sudo password, an interactive login, a QR scan) or it must run on another computer. Write it as a one-line ```sh fence with no `!` prefix; the phone shows Run left of Copy (sudo or interactive: Open in terminal), and the host still classifies it and asks for approval as usual.
+
+能自己跑的命令自己跑，不把命令甩给主人。只有你跑不了时才写进回复：你断线了、需要主人本人在场（sudo 密码、交互式登录、扫码），或要在另一台电脑上跑。写成单行 ```sh 围栏，不加 `!`；手机在拷贝左边显示「执行」（sudo 或交互式显示「在终端里打开」），主机照常判定和审批。
+
 Limits: 16000 characters per block, 20 components per reply. Unknown properties/types, oversized data, dangling flowchart edges and duplicate IDs fall back to text. Numbers must be finite. Links keep the existing URL filter and host-authorized local media path.
 
 ## link

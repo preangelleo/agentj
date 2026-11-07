@@ -1005,17 +1005,20 @@ export function renderAsk(p, ctx) {
     const x = pqOf(p);
     if (x.pairing) {
       el('sheetTitle').textContent = t('fr.sameOwner');
-      box.append(mk('p', 'fr-askcard__note', t('fr.sameOwner.request', { name: x.name })));
+      const more = mk('details', 'fr-owner-details');
+      more.append(mk('summary', '', t('p339.details')));
+      more.append(mk('p', 'fr-askcard__note', t('fr.sameOwner.request', { name: x.name })));
       const modern = p.pq?.pairing_scope !== undefined;
       box.append(mk('p', 'fr-owner-code', modern ? p.pairing_code || '' : x.code));
       if (p.pairing_roster) for (const roster of p.pairing_roster) {
-        box.append(mk('p', 'fr-askcard__note', t(roster.here ? 'p574.rosterHere' : 'p574.rosterPeer', { remotes: roster.remotes.join(' · ') || t('p574.rosterEmpty') })));
-        if (roster.pendingRemotes.length) box.append(mk('p', 'small', t('p574.rosterPending', { remotes: roster.pendingRemotes.join(' · ') })));
+        more.append(mk('p', 'fr-askcard__note', t(roster.here ? 'p574.rosterHere' : 'p574.rosterPeer', { remotes: roster.remotes.join(' · ') || t('p574.rosterEmpty') })));
+        if (roster.pendingRemotes.length) more.append(mk('p', 'small', t('p574.rosterPending', { remotes: roster.pendingRemotes.join(' · ') })));
       }
-      box.append(mk('p', 'small fr-owner-order', t('p417.so.order')));   // #186: one tap here finishes it
+      more.append(mk('p', 'small fr-owner-order', t('p417.so.order')));   // #186: one tap here finishes it
+      box.append(more);
       if (st === 'open' && ctx.sign) {
         if (modern && p.pairing_scope_ok !== true) {
-          box.append(mk('p', 'small', t(p.pairing_bind_needed ? 'p0284.so.bindNeeded' : p.pairing_prepare_failed ? 'p0284.so.notReady' : 'p0284.so.preparing')));
+          more.append(mk('p', 'small', t(p.pairing_bind_needed ? 'p0284.so.bindNeeded' : p.pairing_prepare_failed ? 'p0284.so.notReady' : 'p0284.so.preparing')));
           box.append(btn('', t(p.pairing_bind_needed ? 'p0284.so.bind' : 'p0284.so.retry'), async () => {
             await ensureForCeremony(p); retryPairingPreparation();
           }, 'frOwnerRetry'));

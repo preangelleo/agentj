@@ -14,7 +14,7 @@ class Receipt(unittest.TestCase):
             for web in ('same', 'older', None):
                 with self.subTest(lang=lang, web=web):
                     text = phone_update.text(rec, lang, web)
-                    for required in (group, button, scroll, grey, 'agentj doctor --reconnect'):
+                    for required in (group, button, scroll, grey, 'Repair connection' if lang=='en' else '修复连接'):
                         self.assertIn(required, text)
                     self.assertIn('circular-arrow button' if lang == 'en' else '圆形箭头按钮', text)
                     self.assertNotIn('Update & refresh', text)

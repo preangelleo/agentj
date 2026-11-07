@@ -329,9 +329,9 @@ test('worker: public (no Access since 2026-10-02) → asset with the full header
     const r = await handle(req(origin + '/'), env());
     assert.equal(r.status, 200, origin);
     assert.equal(await r.text(), '<html>client</html>');
-    // connect-src = exactly our two relays (the legacy one: pairing links from not-yet-updated hosts), on both hosts
+    // Exact relay websocket origins, their file-only HTTPS paths, and two exact same-origin controls.
     assert.equal(r.headers.get('content-security-policy'),
-      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src wss://relay.agentj.app wss://alpha-relay.agentjarvis.net " + origin + "/version.json " + origin + "/.aj/rt" + "; " +
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src wss://relay.agentj.app wss://alpha-relay.agentjarvis.net https://relay.agentj.app/v1/file/ https://alpha-relay.agentjarvis.net/v1/file/ " + origin + "/version.json " + origin + "/.aj/rt" + "; " +
       "media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'", origin);
     assert.equal(r.headers.get('strict-transport-security'), 'max-age=31536000', `${origin}: HSTS`);
   }
@@ -376,7 +376,7 @@ test('worker: wrong host, non-GET/HEAD, malformed RELAY_URL → bare 404 without
   // without the legacy vars: only the new host, only the new relay
   const bare = { ...env(), LEGACY_WEB_HOST: undefined, LEGACY_RELAY_URL: undefined };
   assert.equal((await handle(req('https://alpha-web.agentjarvis.net/'), bare)).status, 404);
-  assert.match((await handle(req('https://m.agentj.app/'), bare)).headers.get('content-security-policy'), /connect-src wss:\/\/relay\.agentj\.app https:\/\/m\.agentj\.app\/version\.json https:\/\/m\.agentj\.app\/\.aj\/rt; /);
+  assert.match((await handle(req('https://m.agentj.app/'), bare)).headers.get('content-security-policy'), /connect-src wss:\/\/relay\.agentj\.app https:\/\/relay\.agentj\.app\/v1\/file\/ https:\/\/m\.agentj\.app\/version\.json https:\/\/m\.agentj\.app\/\.aj\/rt; /);
   assert.equal((await handle(req('https://m.agentj.app/'), { ...env(), WEB_HOST: '' })).status, 404, 'no WEB_HOST → nothing');
 });
 

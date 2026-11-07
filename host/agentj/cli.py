@@ -2,7 +2,7 @@
 unlink · remote-unbind · agent · approvals · passphrase · doctor · service · update (L3) · stop · resume · memory · activity ·
 config · tasks (phone controls, ADR-A50 – A54) · wizard (L3.5, `wizard/__init__.py`) · migrate · alias (0.10 rename) ·
 history · inbox · asr (relay parity, PROTOCOL §10: the phone's pages, uploads, local speech-to-text — asr.py).
-No arguments = the next-step hint. `jarvis` (the ≤ 0.9 name) still works for one version cycle on computers that migrated
+No arguments = the next-step hint. `jarvis` (the ≤ 0.9 name) still works for compatibility on computers that migrated
 (a symlink made by alias.py, never shipped in the wheel): one notice line on stderr, then the same CLI. Every command first runs migrate.auto() (the 0.9 → 0.10 state move; messages on stderr).
 Seat setup (0.7): `agentj login --seat <ajt_…> | --seat-file <path> | --seat - --name <name>` binds with a setup code from
 the company (no y/N; exit 3 name taken · 4 invalid code · 5 seat not paid · 2 refused locally); `agentj agent detect`.
@@ -3287,7 +3287,7 @@ def cmd_hint() -> None:
     print("自检 / health check:  agentj doctor     ·     全部命令 / all commands:  agentj --help")
 
 
-JARVIS_NOTICE = "`jarvis` 已改名为 `agentj`，旧命令下个版本移除 / `jarvis` is now `agentj`; the old name goes away in the next version"
+JARVIS_NOTICE = "旧命令已由 `agentj` 兼容，请改用 `agentj`；迁移说明：https://agentj.app/docs/legacy-migration/ / Use `agentj`; the old command remains compatible. Migration guide: https://agentj.app/docs/legacy-migration/"
 
 
 def main_jarvis(argv=None) -> None:
@@ -3888,13 +3888,13 @@ def main(argv=None) -> None:
     from . import codex_perm
     codex_perm.add_parser(sub)     # F30 (P73): agentj codex-sandbox status|set|default|fix — always the top level of config.toml
     mg = sub.add_parser("migrate", help="改名后的状态目录搬迁：status 查看 · rollback 撤销 / the 0.10 state move: status · rollback",
-                        description="0.9 的状态目录 ~/.local/state/agentjarvis-alpha 会自动搬到 ~/.local/state/agentj（旧路径留一个链接）。"
+                        description="经主人同意后，将旧版状态迁到 ~/.local/state/agentj（旧路径保留兼容链接）；精确旧路径见 https://agentj.app/docs/legacy-migration/。"
                                     "rollback 搬回去（serve 必须没在运行）/ the old state directory moves automatically; rollback moves it back")
     mg.add_argument("mode", nargs="?", choices=["status", "rollback"], default="status")
     mg.add_argument("--json", action="store_true")
     mg.set_defaults(fn=cmd_migrate)
-    al = sub.add_parser("alias", help="短命令 aj（迁移过的Agent J 主机另有旧命令 jarvis）：status · install · remove（同名已存在就不装）/ "
-                                      "the short command `aj` (+ `jarvis` on a migrated computer)",
+    al = sub.add_parser("alias", help="短命令 aj：status · install · remove（同名已存在就不装；旧版兼容见迁移说明）/ "
+                                      "the short command `aj` (legacy compatibility: migration guide)",
                         description="只在 PATH 里没有任何 aj 时，在 agentj 旁边建一个链接 aj → agentj；remove 只删我们自己的链接 / "
                                     "`aj` → agentj, only when no other `aj` exists; remove deletes only our own link")
     al.add_argument("mode", nargs="?", choices=["status", "install", "remove"], default="status")

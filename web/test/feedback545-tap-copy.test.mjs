@@ -4,8 +4,8 @@ globalThis.window = {};
 const {shortFieldMatches: fields} = await import('../public/js/shortfields.js');
 import {RelayMD} from '../public/js/md.js';
 const values = (s, opts) => fields(s, opts).map(x => x.value);
-test('#545 exact chairman email, Chinese neighbours and punctuation', () => {
-  assert.deepEqual(values('邮箱 founder@agentj.app、agentj.founder@gmail.com，preangelleo@gmail.com。'), ['founder@agentj.app','agentj.founder@gmail.com','preangelleo@gmail.com']);
+test('#545 synthetic email, Chinese neighbours and punctuation', () => {
+  assert.deepEqual(values('邮箱 support@example.invalid、team@example.invalid，fixture.user@example.invalid。'), ['support@example.invalid','team@example.invalid','fixture.user@example.invalid']);
   assert.deepEqual(values('（账号 ID zypn-q9q5），网址agentj.app 与 alpha-app.agentjarvis.net。'), ['zypn-q9q5','agentj.app','alpha-app.agentjarvis.net']);
 });
 test('#545 explicit identifiers only; ordinary hyphenated prose stays text', () => {
@@ -18,7 +18,7 @@ test('#545 owner inline values copy without delimiters and HTTP remains a link',
   assert.deepEqual(values('`email@example.com`', {inlineCode:true}), ['email@example.com']);
 });
 test('#545 mail links retain only a validated single address, never query or client action', () => {
-  assert.equal(RelayMD.mailHref('mailto:founder@agentj.app?subject=hello'), 'mailto:founder@agentj.app');
+  assert.equal(RelayMD.mailHref('mailto:support@example.invalid?subject=hello'), 'mailto:support@example.invalid');
   assert.equal(RelayMD.mailHref('MAILTO:hello%2B545@agentj.app?subject=hello'), 'mailto:hello+545@agentj.app');
   assert.equal(RelayMD.safeHref('mailto:a@b.io?bcc=c@d.io'), null);
   assert.equal(RelayMD.safeHref('mailto:x@example.com,evil@example.com'), null);

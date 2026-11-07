@@ -7,7 +7,7 @@ request and rechecked against device revocation and the emergency stop.
 import asyncio
 import hashlib
 import json
-from . import danger, policy_registry
+from . import danger, policy_registry, refusal_intent
 from .text import pick
 
 # P539 (#301): the deny reason the agent sees says what happened and what it can do next (never a bare "denied").
@@ -37,6 +37,8 @@ class RiskGuard:
 
     def reset(self, turn_id=None):
         self.turn_id=turn_id
+        from . import main_thread
+        main_thread.of(self.adapter).reset()
         self.epoch+=1
         self.grants.clear()
         self.denied.clear()
@@ -82,13 +84,15 @@ class RiskGuard:
             keys=danger.shared_keys(verdict,a.cfg)
             async with self.lock:
                 if set(keys) & self.denied:
+                    a.host.st.log('shared_risk_denied',tool=tool,reason='owner_denied_before',agent=a.kind)
                     return self._deny('denied_before')
                 epoch=self.epoch
-                answer=await a.host.ask(policy_registry.harness_tool(tool),inp,batch=False,require_passkey=requirement == 'uv')
+                receipt={}
+                answer=await a.host.ask(policy_registry.harness_tool(tool),inp,batch=False,require_passkey=requirement == 'uv',_receipt=receipt)
                 if answer.get('behavior') != 'allow':
-                    if epoch == self.epoch:
+                    if epoch == self.epoch and refusal_intent.owner_denied(receipt):
                         self.denied.update(keys)
-                    return self._deny('host',answer.get('message'))
+                    return self._deny('host',refusal_intent.message(refusal_intent.reason(receipt),getattr(a.host,'lang','zh'),answer.get('message')))
                 grant=answer.get('risk_grant')
                 if a.host.stopped():
                     return self._deny('stopped')
@@ -103,6 +107,7 @@ class RiskGuard:
             return True
         async with self.lock:
             if set(keys) & self.denied:
+                a.host.st.log('shared_risk_denied',tool=tool,reason='owner_denied_before',agent=a.kind)
                 return self._deny('denied_before')
             for cat,grant in list(self.grants.items()):
                 if a.host.stopped() or a.host.st.sign_key(grant['device']) != grant['sign_pub']:
@@ -113,11 +118,12 @@ class RiskGuard:
                         turn=self.turn_id,input_sha256=hashlib.sha256(json.dumps(inp,sort_keys=True).encode()).hexdigest())
                 return True
             epoch=self.epoch
-            answer=await a.host.ask(policy_registry.harness_tool(tool),inp,batch=False,risk_scope=True)
+            receipt={}
+            answer=await a.host.ask(policy_registry.harness_tool(tool),inp,batch=False,risk_scope=True,_receipt=receipt)
             if answer.get('behavior') != 'allow':
-                if self.epoch == epoch:
+                if self.epoch == epoch and refusal_intent.owner_denied(receipt):
                     self.denied.update(keys)
-                return self._deny('host',answer.get('message'))
+                return self._deny('host',refusal_intent.message(refusal_intent.reason(receipt),getattr(a.host,'lang','zh'),answer.get('message')))
             grant=answer.get('risk_grant')
             if a.host.stopped():
                 return self._deny('stopped')
@@ -135,6 +141,10 @@ class RiskGuard:
             import os
             if os.path.realpath(event.get('cwd','')) == os.path.realpath(a.cfg['dir']):
                 self.ready.set()
+                if getattr(a,'kind',None) == 'opencode' and getattr(a,'v2',False):
+                    a._main_dispatch_available=True
+                    from . import main_thread
+                    main_thread.of(a).changed()
             return {}
         if isinstance(event,dict) and event.get('hook_event_name') == 'PreToolUse':
             a.host.emit('shared_pretool', agent=a.kind, tool=event.get('tool_name'), input_keys=sorted((event.get('tool_input') or {}).keys()), matching=event.get('session_id') == a.cfg.get('shared_session_id'))
@@ -142,12 +152,23 @@ class RiskGuard:
             return {}
         if event.get('hook_event_name') == 'UserPromptSubmit':
             self.reset(event.get('turn_id'))
+        elif event.get('hook_event_name') in ('Stop','SessionEnd','PreCompact','PostCompact'):
+            from . import main_thread
+            main_thread.of(a).observe(event)
         if event.get('hook_event_name') != 'PreToolUse':
             return {}
         tool=event.get('tool_name','?');inp=event.get('tool_input') or {}
         if getattr(a,'kind',None) == 'codex':
             tool=policy_registry.codex_hook_tool(tool)   # P559: namespace+tool names from Codex's own hook
+        from . import main_thread
+        dispatch=main_thread.of(a).check(tool,inp,event)
+        dispatch_output=dispatch.get('hookSpecificOutput',{})
+        if dispatch_output.get('permissionDecision') == 'deny':
+            return dispatch
+        if getattr(a,'kind',None) == 'opencode' and getattr(a,'v2',False):
+            return dispatch  # dispatch-only hook: native permission.asked still owns all approvals
         if await self.check(tool,inp):
-            return {}  # no allow: preserve every native hook/permission decision
+            return dispatch  # no allow: preserve every native hook/permission decision
         return {'hookSpecificOutput':{'hookEventName':'PreToolUse','permissionDecision':'deny',
-                                     'permissionDecisionReason':self.reason()}}
+                                     'permissionDecisionReason':self.reason(),
+                                     **({'additionalContext':dispatch_output['additionalContext']} if dispatch_output.get('additionalContext') else {})}}

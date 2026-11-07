@@ -11,9 +11,8 @@ permission reply / interrupt / compact / model / forms → question cards), the 
 - P67: owned server gets the main-Agent identity and phone language; an external owner keeps native identity;
 - the ordinary session is titled "Agent J shared", kept across serve restarts (key / proxy change), its id in
   `shared_session_id`;
-- `high_risk_warnings`: the v1 pre-execution plugin (`shared_opencode_hook`, OpenCode 1.x `tool.execute.before`) is not a
-  v2 plugin, so on v2 the warning layer rides on v2's own permission rules instead (the risky patterns ask on the phone —
-  what the independent v2 adapter does with the same switch);
+- #579 uses the v2 native execute.before plugin for dispatch budget only. The separate optional high-risk warning layer
+  still follows native permission rules; neither dispatch enforcement nor its reminder grants permissions.
 - slash commands work (the server is Agent J's own child). A v2 server the OWNER started (`shared_opencode_port`) is attached
   by OwnerOpenCodeV2Agent below (P64; before it, a plain notice only): text, cards and desktop mirroring, nothing else.
 """
@@ -88,9 +87,8 @@ class SharedOpenCodeV2Agent(OpenCodeV2Agent):
         self.root = self.cfg["dir"]
         self.identity_sent = getattr(self, "identity_sent", {})
         self.agent_rules, self.rules = [], []
-        # P198: still opt-in here — v2 has no pre-execution plugin, and its ask rules would card every call (no low-risk
-        # pass in shared mode); the five-danger guard on a v2 shared server is a known gap (REPORT-198)
-        if self.cfg.get("high_risk_warnings", False):    # the v1 plugin is not a v2 plugin: v2's own ask rules instead
+        # Optional high-risk warnings remain native rules; #579 dispatch-only native plugin is installed separately.
+        if self.cfg.get("high_risk_warnings", False):
             ag = None
             for _ in range(AGENT_TRIES):
                 st, ags = await self.client.request("GET", "/api/agent")
@@ -202,6 +200,8 @@ class OwnerOpenCodeV2Agent(SharedOpenCodeV2Agent):
             self.connected_at_start = await self._connected()
             self.texts_seen, self.identity_sent, self.step_tokens = set(), {}, None
             await self._attach()
+            from .main_opencode_hook import prepare
+            await prepare(self)  # install for the next native load; never global location reload
             self.connected = asyncio.Event()
             self._bg(self._events(self.proc))
             await asyncio.wait_for(self.connected.wait(), CONNECT_WAIT)

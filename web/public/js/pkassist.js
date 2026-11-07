@@ -50,7 +50,7 @@ export function paintPk(box, { fa = null, err = null, retry = null, setup = true
   const acts = mk('div', 'pkassist__acts');
   if (err && retry) acts.append(button('pkassist__retry', 'p539.fail.retry', retry));
   if ((f !== 'local' || err) && setup) acts.append(   // P555: a failed tap on a key thought local (lost, #317) may set a new one
-button('pkassist__setup', key === 'p561.fail.missing' ? 'p561.pk.reset' : err ? 'p539.fail.setup' : 'p539.pk.setup', () => H.setupFaceId()));
+button('pkassist__setup', key === 'p0285.pk.incomplete' ? 'p561.pk.reset' : err ? 'p539.fail.setup' : 'p539.pk.setup', () => H.setupFaceId()));
   box.replaceChildren(line, ...(acts.childElementCount ? [acts] : []));
   box.hidden = false;
 }
@@ -73,14 +73,14 @@ function paintNoKey(box) {
 /** P561 追加 14/17: the ONE place to set up this remote's key is Settings' first card (「本机 Face ID：…」). Every other place
  *  that needs it (the web terminal row, a ③ card without a key here) points there: Settings opens, the row scrolls into view
  *  and lights up for a moment, focus goes to its button. An older host without the row → the setup itself, as before. */
-export function scrollToPkRow() {
+export function scrollToPkRow({ setupFallback = true } = {}) {
   if (typeof H.openSettings === 'function') { try { H.openSettings(); } catch { /* settings not ready */ } }
   let tries = 0;
   const find = () => {
     const row = document.getElementById('set-pk-row');
     if (!row || row.hidden || !row.getClientRects().length) {
       if (++tries < 12) return setTimeout(find, 50);
-      return H.setupFaceId();
+      return setupFallback ? H.setupFaceId() : false;
     }
     row.scrollIntoView({ block: 'center', behavior: matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ? 'auto' : 'smooth' });
     row.classList.remove('set-found'); void row.offsetWidth; row.classList.add('set-found');   // the Settings search's own highlight
@@ -103,6 +103,7 @@ export function setupStepsAside(box, away) {
  *  主机上的命令」, the approval switches, 恢复, 「让这台也能用」 all ask for the passkey from this sheet. confirmSheet clears it. */
 export function pkSheet(fa, ...args) {
   const shown = confirmSheet(...args);
+  document.getElementById('confirm').dataset.popupKind = 'grow';
   const box = document.getElementById('confirm-pk');
   setupStepsAside(box, closeConfirm);
   paintPk(box, { fa });
@@ -115,7 +116,7 @@ export function pkSheet(fa, ...args) {
 export const regWhy = (why) => (why === 'proof' ? 'p550.pkReg.proof' : why === 'expired' ? 'p550.pkReg.expired' : 'p550.pkReg.fail');
 export function failNotice(err, fa, retry) {
   const f = faState(fa), key = failKey(err, f);
-  const lost = key === 'p561.fail.missing';            // P561: this remote's own key refused here → the way out, not 「再试一次」
+  const lost = key === 'p0285.pk.incomplete';            // P561: this remote's own key refused here → the way out, not 「再试一次」
   const setup = f === 'borrowed' || lost || !retry;
   toastAction(withBio(key), t(lost ? 'p561.pk.reset' : setup ? 'p539.fail.setup' : 'p539.fail.retry'), setup ? () => H.setupFaceId() : retry, 8000);
 }
@@ -127,9 +128,9 @@ export function paintPkRow(state, { row, label, note, setupBtn, oldBtn, failed =
   if (!row) return;
   row.hidden = !s;
   if (!s) { if (oldBtn) oldBtn.dataset.pkRow = '0'; return; }
-  // P559 · P561: 「已设好」 only while this device's own key passes here — refused here since its last pass → 「钥匙找不到了」
+  // 0.28.5: host registration is not proof that this browser currently holds the key. A refusal is inconclusive.
   const bad = s === 'local' && failed;
-  label.textContent = withBio(bad ? 'p561.pk.st.missing' : 'p539.pk.st.' + s);   // P550: 「本机 Face ID / 指纹」 as this system calls it (PASSKEY-SEAT-MODEL §1, §2)
+  label.textContent = withBio(bad ? 'p0285.pk.unverified' : s === 'local' ? 'p0285.pk.registered' : 'p539.pk.st.' + s);   // P550: 「本机 Face ID / 指纹」 as this system calls it (PASSKEY-SEAT-MODEL §1, §2)
   row.dataset.pk = bad ? 'failed' : s;
   setupBtn.hidden = s === 'local' && !bad;
   // P566 (#346): 「已设好」 can be checked (one Face ID tap, when the Agent J host sent a check challenge) and redone in place
@@ -137,7 +138,7 @@ export function paintPkRow(state, { row, label, note, setupBtn, oldBtn, failed =
   if (testBtn) testBtn.hidden = !canTest;
   // P555: a key the Agent J host has on record but cannot place → 「用 Face ID 确认」 (one tap, no other remote)
   setupBtn.textContent = s === 'unknown' ? withBio('p555.pk.check') : t(bad ? 'p561.pk.reset' : 'p539.pk.setup');
-  const n = bad ? '' : s === 'borrowed' ? withBio('p539.pk.borrowedNote') : s === 'unknown' ? withBio('p555.pk.unknownNote') : '';   // P559: 「未设」 needs no note — the explanation line under the title says it; P561 (chairman 10-27 23:1x): nor 「找不到了」 — the title says 「可以重新设置」
+  const n = s === 'local' ? withBio(bad ? 'p0285.pk.incomplete' : 'p0285.pk.checkHere') : s === 'borrowed' ? withBio('p539.pk.borrowedNote') : s === 'unknown' ? withBio('p555.pk.unknownNote') : '';   // P559: 「未设」 needs no note — the explanation line under the title says it; P561 (chairman 10-27 23:1x): nor 「找不到了」 — the title says 「可以重新设置」
   note.textContent = n; note.hidden = !n;
   // P559 (chairman 10-27): the row looks like 遥控器管理 / 转移席位 — face icon on iPhone / iPad, fingerprint elsewhere, and
   // the small line saying what it is for (that line names Face ID, Touch ID and the screen lock side by side: tRaw)

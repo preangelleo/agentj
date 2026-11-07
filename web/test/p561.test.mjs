@@ -78,15 +78,15 @@ test('approve(): the rejection name reaches noteResult (AbortError leaves Settin
 });
 
 test('card: own key refused → one line 「{bio} 记录找不到了（可以重新设置）」 + 「再试一次」 + 「重新设置」; other states unchanged', () => {
-  assert.equal(A.failKey('NotAllowedError', 'local'), 'p561.fail.missing');
+  assert.equal(A.failKey('NotAllowedError', 'local'), 'p0285.pk.incomplete');
   assert.equal(A.failKey('NotAllowedError', 'borrowed'), 'p539.fail.borrowed');
   assert.equal(A.failKey('NotAllowedError', null), 'p539.fail.cancel');
   assert.equal(A.failKey('AbortError', 'local'), 'p539.fail.abort');
   const box = { hidden: true, dataset: {}, replaceChildren(...k) { this.kids = k; } };
   A.paintPk(box, { fa: 'local', err: 'NotAllowedError', retry: () => {} });
   const [line, acts] = box.kids;
-  assert.equal(line.dataset.k, 'p561.fail.missing');
-  assert.equal(line.textContent, '这台遥控器的 Face ID 记录找不到了（可以重新设置）');   // chairman 10-27 23:1x: one line, no cases
+  assert.equal(line.dataset.k, 'p0285.pk.incomplete');
+  assert.match(line.textContent, /未完成验证/); assert.doesNotMatch(line.textContent, /记录找不到/);   // chairman 10-27 23:1x: one line, no cases
   assert.deepEqual(acts.children.map((b) => b.dataset.k), ['p539.fail.retry', 'p561.pk.reset']);
   assert.deepEqual(acts.children.map((b) => b.textContent), ['再试一次', '重新设置']);
   const b2 = { hidden: true, dataset: {}, replaceChildren(...k) { this.kids = k; } };
@@ -99,14 +99,14 @@ test('Settings row: 「这台遥控器的 {bio} 记录找不到了（可以重�
   const b = box();
   A.paintPkRow('local', { ...b, failed: true });
   assert.equal(b.row.dataset.pk, 'failed');
-  assert.equal(b.label.textContent, '这台遥控器的 Face ID 记录找不到了（可以重新设置）');
+  assert.equal(b.label.textContent, '本机Face ID/Touch ID：本次未完成验证');
   assert.equal(b.setupBtn.hidden, false);
   assert.equal(b.setupBtn.textContent, '重新设置');
-  assert.equal(b.note.textContent, ''); assert.equal(b.note.hidden, true);   // the one-remote way lives on the wait page (pkp.waitHost*)
+  assert.match(b.note.textContent, /取消、超时/); assert.equal(b.note.hidden, false);   // the one-remote way lives on the wait page (pkp.waitHost*)
   const ok = box();
   A.paintPkRow('local', ok);                               // a key that passes here: unchanged
   assert.equal(ok.setupBtn.hidden, true);
-  assert.match(ok.label.textContent, /已设好$/);
+  assert.match(ok.label.textContent, /已登记$/); assert.match(ok.note.textContent, /测试一下/);
   for (const s of ['none', 'borrowed', 'unknown']) {       // the mark is only about this device's own key
     const x = box(); A.paintPkRow(s, { ...x, failed: true }); assert.equal(x.row.dataset.pk, s);
   }

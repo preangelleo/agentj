@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 
-from . import resource_policy
+from . import resource_policy, shared_turn_origin, native_owner_launch
 
 import asyncio
 import contextlib
@@ -282,6 +282,7 @@ class SharedClaudeAgent(Agent):
         self.risk_requests = {}
         self.risk_grants = {}
         self.risk_denied = set()
+        self.risk_child_denied = {}
         self.risk_epoch = 0
         self.risk_lock = asyncio.Lock()
         self.attach_lock = asyncio.Lock()
@@ -367,7 +368,7 @@ class SharedClaudeAgent(Agent):
 
     def _risk_reset(self):
         self.risk_epoch += 1
-        for d in (self.permissions, self.risk_requests, self.risk_grants, self.risk_denied):
+        for d in (self.permissions, self.risk_requests, self.risk_grants, self.risk_denied, self.risk_child_denied):
             d.clear()
 
     def _host_turn(self, state="pending"):
@@ -407,7 +408,8 @@ class SharedClaudeAgent(Agent):
         emit = getattr(self.host, "emit", None)
         if emit:
             emit("shared_stop", agent="claude", phone=self.phone_turn, phone_input=self.phone_turn and self.phone_seen, source=source)
-        self.native_turn = self.peer_low = False
+        self.native_turn = self.peer_low = self.untrusted_foreign = False
+        self._native_approval_origin = None
         self._limit_check(reply)
         if self.phone_turn and (self.phone_seen or self.phone_claim):
             self.phone_reply_seen = True
@@ -587,6 +589,7 @@ class SharedClaudeAgent(Agent):
     def _note_background(self, name, event):
 
         import time
+        shared_turn_origin.launched(self, name, event)
         aid = event.get("agent_id")
         if not aid:
             self.main_seen_at = time.monotonic()
@@ -736,6 +739,16 @@ class SharedClaudeAgent(Agent):
         return ("来自子 Agent：" if zh else "From sub-agent: ") + who
 
     async def hook_event(self, event):
+        result = await self._scoped_hook_event(event)
+        context = event.pop('_agentj_dispatch_context',None) if isinstance(event,dict) else None
+        if context:
+            output = dict(result.get('hookSpecificOutput') or {})
+            output.setdefault('hookEventName','PreToolUse')
+            output['additionalContext'] = (output.get('additionalContext','') + '\n' + context).strip()
+            result = {**result,'hookSpecificOutput':output}
+        return result
+
+    async def _scoped_hook_event(self, event):
         aid = event.get("agent_id") if isinstance(event, dict) else None
         if aid and event.get("hook_event_name") != "SubagentStart":
             src = self.child_sources.get(aid, provenance.normalize(None))
@@ -804,6 +817,15 @@ class SharedClaudeAgent(Agent):
             return {}
         name = event.get("hook_event_name")
         aid = event.get("agent_id")
+        from . import main_thread
+        main_thread.of(self).observe(event)
+        if name == 'PreToolUse':
+            dispatch = main_thread.of(self).check(event.get('tool_name','?'), event.get('tool_input') or {}, event)
+            output = dispatch.get('hookSpecificOutput',{})
+            if output.get('permissionDecision') == 'deny':
+                return dispatch
+            if output.get('additionalContext'):
+                event['_agentj_dispatch_context'] = output['additionalContext']
         from . import approval_material
         approval_material.observe(self.host, self, event)
         if not aid and name in ("PreToolUse", "PermissionRequest"):
@@ -927,11 +949,13 @@ class SharedClaudeAgent(Agent):
         if busy is not None:                        # P150: the phone's 「在办事项」 dots (busy.py)
             with contextlib.suppress(Exception):
                 busy.set_context("shared-" + str(self.kind), harness=self.kind, cwd=self.cfg.get("dir"), pid=(self.session or {}).get("pid"))
-                busy.hook_event(event, scope="shared-" + str(self.kind))
+                with native_owner_launch.board_scope(self,event):
+                    busy.hook_event(event, scope="shared-" + str(self.kind))
                 if name in ("SubagentStart", "SubagentStop") and event.get("agent_id"):   # P291: metadata only, for diagnosis
                     mem = getattr(busy, "mem", None)
                     self.host.st.log("busy_sub", event=name, id=str(event.get("agent_id"))[:8],
                                      count=len(mem) if isinstance(mem, dict) else None)
+        shared_turn_origin.committed_launch(self, event)
         self.sync_compacting()
         if name == "SessionStart" and event.get("source") == "clear" and self.clear_seen != sid:
             self.clear_seen = sid
@@ -1078,13 +1102,21 @@ class SharedClaudeAgent(Agent):
             key = next((k for k in self.risk_requests if k[1] == digest), None)
             cats = self.risk_requests.pop(key, []) if key else []
             epoch = self.risk_epoch
+            owner = event.get("agent_id") or self.tool_agent.get(digest)
+            owner = owner if isinstance(owner,str) and owner else None
+            cache_owner = owner if event.get('agent_id') or owner in self.sub_agents else None
+            denied = self.risk_denied if cache_owner is None else self.risk_child_denied.setdefault(cache_owner,set())
+            from . import refusal_intent
+            receipt = {}
             async with self.risk_lock:
                 for cat, grant in list(self.risk_grants.items()):
                     if self.host.stopped() or self.host.st.sign_key(grant['device']) != grant['sign_pub']:
                         self.permissions.discard(cat)
                         self.risk_grants.pop(cat, None)
-                if set(cats) & self.risk_denied:
-                    answer = {'behavior': 'deny'}
+                if set(cats) & denied:
+                    receipt['reason']='owner_denied_before'
+                    self.host.st.log('shared_risk_denied',tool=tool,reason='owner_denied_before',kind='child' if cache_owner else 'main')
+                    answer = {'behavior':'deny'}
                 elif cats and set(cats) <= self.permissions and policy_registry.main_requirement(tool, inp, cwd=self.cfg.get("dir")) == "allow" \
                         and not provenance.unattended_turn(self):
                     answer = {"behavior": "allow"}
@@ -1098,7 +1130,7 @@ class SharedClaudeAgent(Agent):
                     origin = self.card_origin(self.card_agent[withdraw])
                     try:
                         ctx = approval_jev.transcript_context(event.get("transcript_path")) if event.get("transcript_path") else None
-                        answer = await self.host.ask(policy_registry.harness_tool(tool), inp, batch=False, risk_scope=bool(cats), gone=withdraw,
+                        answer = await self.host.ask(policy_registry.harness_tool(tool), inp, batch=False, risk_scope=bool(cats), gone=withdraw, _receipt=receipt,
                                                      **({"context": ctx} if ctx is not None else {}),
                                                      **({"origin": origin} if origin else {}))
                     finally:
@@ -1117,13 +1149,10 @@ class SharedClaudeAgent(Agent):
                         elif grant and self.risk_epoch == epoch:
                             self.permissions.update(keep)
                             self.risk_grants.update({c: grant for c in keep})
-                    elif cats and self.risk_epoch == epoch:
-                        self.risk_denied.update(cats)
-            decision = {"behavior": "allow"} if answer.get("behavior") == "allow" else {
-                "behavior": "deny", "message": "Denied by paired phone or timeout."}
-            if decision["behavior"] == "deny" and tool != "AskUserQuestion" and isinstance(answer.get("message"), str) \
-                    and answer["message"].strip():
-                decision["message"] = answer["message"][:1000]   # P358 (#68): the host's why (goal hold / timeout / nobody)
+                    elif cats and self.risk_epoch == epoch and refusal_intent.owner_denied(receipt):
+                        denied.update(cats)
+            decision = {"behavior":"allow"} if answer.get("behavior") == "allow" else {
+                "behavior":"deny", "message":refusal_intent.message(refusal_intent.reason(receipt),getattr(self.host,'lang','zh'),answer.get('message'))}
             if tool == "AskUserQuestion":
                 # P307 (Leo 10-15 11:0x, probed live 2.1.296): a bare allow leaves the terminal's question dialog open and
                 # the phone's answer lost — the answers ride in updatedInput (the host built them from the signed picks).
@@ -2100,6 +2129,7 @@ class SharedClaudeAgent(Agent):
                 if not text or role not in ("user", "assistant"):
                     continue
                 if role == "user":
+                    delivery_echo = shared_turn_origin.delivered(self, item, text)
                     from .transcript_input import human_input, proactive_origin
                     if item.get("isMeta") and self._from_phone(item, text):
                         self._held_seen(text)
@@ -2111,11 +2141,13 @@ class SharedClaudeAgent(Agent):
                     if via:
                         b = getattr(self.host, "busy", None)
                         sid = (self.session or {}).get("sessionId")
-                        if ids and proactive_origin(item) == "task" and not self.untrusted() and all(getattr(b, "launched", {}).get(f"shared-{self.kind}:{sid}:{t}") is False for t in ids):
+                        if ids and proactive_origin(item) == "task" and not self.untrusted() and shared_turn_origin.notification_trusted(self,ids) and all(getattr(b, "launched", {}).get(f"shared-{self.kind}:{sid}:{t}") is False for t in ids):
                             self._host_turn("running")  # P570b: every job it names was launched by a trusted turn
                         else:
                             self.native_source = provenance.system()
                             self.untrusted_foreign = self.peer_low = True   # P570; #455 B1
+                        shared_turn_origin.completed(self, ids, provenance.unattended_turn(self) == "system",
+                            successful=bool(ids) and re.findall(r"<status>([^<]*)</status>", text)==["completed"]*len(ids))
                         self.native_turn = True
                         self.stop_since_end = False   # P151: a harness-started turn begins (loop tick, task notification)
                         self._turn_begins()
@@ -2125,7 +2157,7 @@ class SharedClaudeAgent(Agent):
                         if mark:
                             mark(via)
                         continue
-                    if self._phone_echo(item, text):
+                    if delivery_echo or self._phone_echo(item, text):
                         if self.phone_turn:
                             self.phone_seen = True
                             self.input_seen.set()
@@ -2613,6 +2645,7 @@ class SharedClaudeAgent(Agent):
         self.phone_seen = self.phone_reply_seen = self.phone_claim = False
         self.phone_anchored, self.streamed, self.flushed = False, [], len(self.turn_texts)
         source = provenance.normalize(getattr(getattr(self, "cur_send", None), "source", None))
+        shared_turn_origin.prepare(self, source)
         self.pending_source = self.native_source = source
         self.pending_text = provenance.body(text, source)   # what the transcript / prompt will show
         self.native_request = (self.session.get("sessionId"), self.cur_send, self.pending_text)
@@ -2796,6 +2829,7 @@ class SharedClaudeAgent(Agent):
         from . import compactprep
         text = compactprep.decorate(self, nxt)
         source = provenance.normalize(getattr(nxt, "source", None))
+        shared_turn_origin.prepare(self, source)
         self.pending_source, self.pending_text = source, provenance.body(text, source)
         self.native_source = source
         self.native_request = (self.session.get("sessionId"), nxt, self.pending_text)
@@ -2804,7 +2838,17 @@ class SharedClaudeAgent(Agent):
         self.host.turn_queued_note(True)
         await self.deliver(lambda: asyncio.to_thread(claude_send, self.session, text, source))
 
-    async def halt(self, clear_queue=True):
+    async def halt(self, clear_queue=True, expected_target=None):
+        if expected_target is not None:
+            from .main_thread import interrupt_route
+            if not expected_target.live(self) or not interrupt_route(self)[0]:return False
+            # This branch is only the Host-owned PTY. No await/Herdr thread can
+            # replace the target between this final check and the Esc write.
+            if not expected_target.live(self):return False
+            os.write(expected_target.master,b"\x1b")
+            self._stop_esc_at=time.monotonic()
+            if expected_target.claude_done is not None:expected_target.claude_done.set()
+            return True
         self.halting = True
         if self.control_name:
             self.control_ack.set()  # wake the wait; halting prevents a success claim
@@ -3089,8 +3133,11 @@ class SharedOpenCodeAgent(OpenCodeAgent):
             # pinned — our server opens that session from OpenCode's own store, same folder, else a new one). Native config
             # and permissions stay untouched.
             self.owned_server = True
-            if not await self._installed_v2():        # P63: the v1 plugin is not a v2 plugin (shared_opencode2)
+            if not await self._installed_v2():
                 await self.prepare_risk()
+            else:
+                from .main_opencode_hook import prepare
+                await prepare(self)  # native v2 execute.before; no permission/model rewrite
             return await super()._spawn()
         if type(port) is not int or not 1 <= port <= 65535:
             self.failed_start = True                  # P326: a failed start, not an idle Agent (the switch job ends at once)

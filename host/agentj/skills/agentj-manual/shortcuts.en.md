@@ -1,4 +1,4 @@
-<!-- generated from https://agentj.app/docs/shortcuts/en.md by agentjarvis/tools/manual_skill.mjs — do not edit -->
+<!-- generated from https://agentj.app/docs/shortcuts/en.md by the Agent J documentation generator — do not edit -->
 # Keyboard shortcuts and gestures
 
 On a computer browser or a tablet with a keyboard, every gesture of the web app has a keyboard shortcut. Press `?` for the list; it is also in Settings → Keyboard shortcuts. The magnifier at its top right (or `/`, `⌘+K` / `Ctrl+K`) searches it by action, key or gesture, in Chinese or English.
@@ -185,7 +185,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | — | At the message top, pull down and release; blocked by recording, attachments or unfinished cards | Save draft and update the page |
 | `⌘+C` / `Ctrl+C` | Hold a swatch to copy HEX; move to cancel | Copy swatch HEX |
 | `Alt+Shift+S` | Tap the button, then confirm | Stop all Agents (confirm first) |
-| — | Tap the button, then confirm | Reopen AI session (confirm first) |
+| — | Tap the button, then confirm | Restart Agent (confirm first) |
 | — | Tap | Send layout diagnostic |
 | — | Tap Create connection | Create a connection and confirm its signed card |
 | — | Tap Rotate credential | Rotate a connection credential |

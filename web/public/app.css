@@ -3153,35 +3153,6 @@ button.aj-dialog-action:disabled{opacity:var(--aj-dialog-action-disabled-opacity
 .ct-more{align-self:flex-start;min-height:44px;padding:0 4px;border:0;background:none;color:inherit;opacity:.72;
   font:500 calc(13px*var(--fz))/1 var(--font-body);cursor:pointer}
 .ct-more::before{content:"+ "}
-/* ---- P168: disconnected — the grey page blurred behind the same gdlg square (no second modal look) ------------------
-   The blur keeps the page's outline readable (header, card edges); without backdrop-filter a denser grey veil stands in.
-   Never takes focus; 稍后 / ESC / outside hide it (layers.js). Reduced motion: no pulse (the square's own entry is off too). */
-.gdlg.offdlg{background:rgba(20,20,20,.24);-webkit-backdrop-filter:blur(8px) saturate(.7);backdrop-filter:blur(8px) saturate(.7)}
-@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.gdlg.offdlg{background:rgba(96,96,96,.78)}}
-.offdlg .sq{padding-bottom:16px}
-.offdlg .off-icon{background:var(--c-offline)}
-.offdlg[data-state="reconnecting"] .off-icon svg{animation:aj-recovery-off-pulse 1.8s ease-in-out infinite}
-@keyframes aj-recovery-off-pulse{0%,100%{opacity:1}50%{opacity:.45}}
-@media(prefers-reduced-motion:reduce){.offdlg[data-state="reconnecting"] .off-icon svg{animation:none}}
-.offdlg .gdlg-sub{margin-bottom:2px;opacity:.8;font-weight:600}
-.offdlg p.off-prog{margin:0;font-size:calc(13px*var(--fz));opacity:.7}
-.offdlg p.off-do{align-self:stretch;text-align:left;margin-top:var(--space-content);font-weight:600;opacity:.9}
-.off-tips{align-self:stretch;text-align:left;margin:4px 0 0;padding-left:1.2em;font:400 calc(14px*var(--fz))/1.45 var(--font-body)}
-.off-tips li+li{margin-top:3px}
-.offdlg code{display:inline-block;max-width:100%;font-size:.9em;overflow-wrap:anywhere;padding:1px 5px;border-radius:6px;background:rgba(127,127,127,.18)}
-.off-long{align-self:stretch;text-align:left;margin-top:var(--space-content);padding:12px 12px 4px;border-radius:20px;background:rgba(127,127,127,.14)}
-.off-long[hidden]{display:none}
-.offdlg p.off-long-h{margin:0;font-weight:600;opacity:1}
-.offdlg p.off-long-note{margin-top:4px;font-size:calc(13px*var(--fz))}
-.off-mail{display:flex;align-items:center;gap:8px;margin-top:4px}
-.off-mail a{flex:1;min-width:0;min-height:44px;display:flex;align-items:center;color:inherit;font:600 calc(15px*var(--fz))/1.2 var(--font-body);
-  text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
-.off-copy{flex:none;width:44px;height:44px;border-radius:50%;border:0;background:none;color:inherit;display:grid;place-items:center;cursor:pointer;padding:0}
-.off-copy svg{grid-area:1/1;width:20px;height:20px}
-.off-copy .gok,.off-copy.done .g0{display:none}
-.off-copy.done .gok{display:block}
-.off-copy:focus-visible,.off-mail a:focus-visible{outline:2px solid var(--dfg);outline-offset:2px}
-.offdlg p.off-copied{margin:0;min-height:1.3em;font-size:calc(12px*var(--fz))}
 /* the error / removed pages: who to ask when the Agent itself cannot */
 .state-view .helpline{margin:var(--sp-4) 0 0}
 .state-view .helpline+.helpline{margin-top:var(--sp-2)}
@@ -3601,7 +3572,7 @@ code[data-cc],pre[data-cc],[data-cc-field],.cc-in{cursor:copy}
 body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]) #srchBtn{display:grid}
 /* P368 (#78): the Agent's one-tap answers ([派](reply:派), js/replybtn.js) — pills in the words' own ink, room around the
    label; tapped → that one stays marked, the group greys out with 「已回复：…」. #tags = .fp-link's underline, dotted (a search, not a page). */
-.words .rbtn{display:inline-flex;align-items:center;justify-content:center;gap:.4em;text-align:center;min-height:44px;margin:.25em .5em .25em 0;padding:.3em .95em;
+.words .rbtn{display:inline-flex;align-items:center;justify-content:center;gap:.4em;text-align:center;min-height:44px;margin:var(--sp-2) var(--space-control) var(--sp-2) 0;padding:.3em .95em;
   border:0;border-radius:999px;background:#2c2b26;color:#faf9f5;
   font:600 .92em/1.3 var(--font-body);letter-spacing:.02em;cursor:pointer;vertical-align:baseline;touch-action:manipulation}
 .words .rbtn:active{background:#141414}
@@ -3612,9 +3583,6 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .words .rb-note{display:var(--aj-reply-action-sprite-note-display,inline-block);margin:var(--aj-reply-action-sprite-note-margin,.2em 0);font-size:var(--aj-reply-action-sprite-note-font-size,.82em);color:var(--aj-reply-action-sprite-note-color,var(--ink-soft))}
 .words .rtag{display:inline;min-height:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;
   text-decoration:underline dotted;text-decoration-thickness:1.5px;text-underline-offset:3px}   /* .fp-link's line, dotted = a search */
-
-/* P375: the offline card follows the actual message card, without the global square's height floor. */
-.gdlg.offdlg .sq{width:min(100%,var(--off-compose-width,960px));min-height:0;max-height:100%;border-radius:24px;background:#141414;color:#faf9f5}
 
 /* P380: optional native continuation belongs to the original clear card. */
 .cmdresume{width:100%;font:400 calc(13px*var(--fz))/1.5 var(--font-body)}
@@ -4270,8 +4238,31 @@ body[data-sheet="1"]:has(.reply-notices>#sheet.cp-docked) .scrim{opacity:0}
 .sheet:not(.cp-docked){background:var(--pg);border:0;outline:none}
 
 /* #375: a shell draft, placed beside the code block's existing copy action. */
-.term-command{min-height:44px;min-width:64px;margin:8px 12px;padding:8px 16px;border:1px solid currentColor;border-radius:12px;background:transparent;color:inherit;font:inherit;cursor:pointer}
-.term-command--danger{color:#f7827e;background:#2c2b26}
+/* #584: 「执行」 sits in the code block's bar, left of the copy glyph (the copy keeps its place at the right edge) */
+.codeblock .bar .term-command{display:inline-flex;align-items:center;gap:0;width:44px;min-height:44px;justify-content:center;margin-left:auto;padding:0;border:0;border-radius:12px;
+  background:none;color:var(--ink);font:500 calc(14px*var(--fz,1))/1 var(--font-body);cursor:pointer;white-space:nowrap}
+.codeblock .bar .term-command>svg{width:21px;height:21px;pointer-events:none}
+.codeblock .bar .term-command+.copy{margin-left:8px}
+.codeblock .bar .term-command:active{background:rgba(250,249,245,.16)}
+.codeblock .bar .term-command:focus-visible{outline:2px solid currentColor;outline-offset:-6px}
+.codeblock .bar .term-command:disabled,.codeblock .bar .term-command.off,.fixbtn:disabled,.fixbtn.off{opacity:.5;cursor:default}
+.term-command--danger{color:#f7827e}
+/* #584 ⑧: a whitelisted repair as one plain-words button; the command folded under 「命令」 */
+.fixbtn{width:44px;justify-content:center;display:inline-flex;align-items:center;gap:8px;min-height:48px;margin:8px 0;padding:0;border:0;border-radius:14px;
+  background:var(--noir);color:var(--lotion);font:600 calc(15px*var(--fz,1))/1 var(--font-body);cursor:pointer}
+.fixbtn>svg{width:21px;height:21px;pointer-events:none}
+.fixbtn:focus-visible{outline:2px solid var(--c-milky-waves);outline-offset:2px}
+details.fixcmd{margin:0 0 var(--sp-3)}
+details.fixcmd>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--ink-soft);font:500 calc(13px*var(--fz,1))/1 var(--font-body)}
+/* #584 ⑤: the result under the block — the 「!」 card's black box */
+.runbox{margin:8px 0 var(--sp-3)}
+.runhead{margin:0;padding:10px 14px 4px;font:600 calc(13px*var(--fz,1))/1.45 var(--font-body);color:var(--lotion)}
+.runacts{display:flex;flex-wrap:wrap;gap:4px;padding:4px 8px 8px;border-top:1px solid rgba(250,249,245,.14)}
+.runact{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 12px;border:0;border-radius:12px;background:none;
+  color:var(--lotion);font:500 calc(14px*var(--fz,1))/1 var(--font-body);cursor:pointer}
+.runact>svg{width:21px;height:21px;pointer-events:none}
+.runact:disabled{opacity:.5;cursor:default}
+.runact:focus-visible{outline:2px solid var(--c-milky-waves);outline-offset:-2px}
 /* P514: recovery stays above the last reply while the host is disconnected. */
 .connection-help{display:none;flex:none;align-items:center;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);background:var(--noir);color:var(--lotion)}
 .connection-help p{margin:0;flex:1;font-size:14px;line-height:1.5}
@@ -4393,5 +4384,87 @@ body[data-conn="off"] .connection-help{display:flex}
 
 #sheet[data-approval-v="2"] .approval-source572{border:0;padding:0 2px;margin:0 0 10px;color:var(--ink);font-size:calc(13px*var(--fz)*var(--rs,1))}
 
+/* #579: reuse the existing report action slot without adding a row. */
+.rmbar:has(#main-thread-interrupt:not([hidden])) #webReportBtn{visibility:hidden}
+.rmbar #main-thread-interrupt{margin-left:-44px}
+#private-file-locator .private-file-open{display:flex;justify-content:center;margin:var(--sp-3) 0}
+#private-file-locator .private-file-open a{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;padding:0 var(--space-control);color:inherit}
+#private-file-locator .private-file-open:has(a[hidden]){display:none}
+#private-file-locator .gdlg-row{gap:var(--sp-3);margin-top:var(--sp-3)}
+
+
+/* 0284 shared popup geometry: center inside the reading area; preserve the composer. */
+:is(.gdlg,.ajmodal,#confirm).aj-shared-popup:not([hidden]){position:fixed;inset:auto;top:var(--popup-top);left:var(--popup-left);width:var(--popup-width);height:var(--popup-height);max-height:var(--popup-height);display:grid;place-items:center;align-items:center;padding:0;box-sizing:border-box;overflow:hidden}
+:is(.gdlg,.ajmodal,#confirm).aj-shared-popup>:is(.sq,.box){box-sizing:border-box;width:var(--popup-card-width);max-width:var(--popup-card-width);height:auto;min-height:0;max-height:var(--popup-height);aspect-ratio:auto;overflow-y:auto;border:0;border-radius:28px;transform:none;animation:none}
+#sheet.aj-shared-popup,:is(dialog,#full541).aj-shared-popup{position:fixed;inset:auto;top:var(--popup-center);left:var(--popup-card-left);right:auto;bottom:auto;box-sizing:border-box;width:var(--popup-card-width);max-width:var(--popup-card-width);height:auto;min-height:0;max-height:var(--popup-height);margin:0;transform:translateY(-50%);transition:none;animation:none;overflow-y:auto;border:0;border-radius:28px;box-shadow:none}
+:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-context="settings"]>:is(.sq,.box),#sheet.aj-shared-popup[data-popup-context="settings"],:is(dialog,#full541).aj-shared-popup[data-popup-context="settings"]{border:1px solid var(--line)}
+
+#sheet.aj-shared-popup>.grab{display:none}
+/* The same reply-button component needs an edge against the reader's Noir surface. */
+#rdWords .rbtn{border:1px solid currentColor}
 /* Keep the measured circle diameter in WebKit; text cannot expand it into an oval. */
 .toast.circle{min-width:0}
+
+/* 0285: a chat UV dialog has no decorative green outline; Settings keeps its fine border. */
+.ajmodal.pkp.aj-shared-popup[data-popup-context="chat"]>.box{outline:0}
+
+/* 0.28.5 chairman rework A: two existing popup systems, never a tinted floating approval. */
+.aj-shared-popup[data-popup-system="center"]{
+  --bg:var(--noir);--pg:var(--noir);--text:var(--lotion);--text-muted:var(--lotion);
+  --ink:var(--lotion);--ink-soft:var(--lotion);--surface:var(--sooty);--surface-2:var(--sooty);
+  --raised:var(--noir);--dbg:var(--noir);--dfg:var(--lotion);--dlg-bg:var(--noir);--dlg-fg:var(--lotion);
+  --line:var(--black-mana);--border:var(--black-mana);color-scheme:dark;
+}
+:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="center"]{
+  background:var(--dlg-scrim);backdrop-filter:blur(var(--dlg-blur));-webkit-backdrop-filter:blur(var(--dlg-blur));
+}
+:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="center"]>:is(.sq,.box),
+:is(dialog,#full541).aj-shared-popup[data-popup-system="center"]{background:var(--noir);color:var(--lotion)}
+:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="grow"]:not([hidden]){
+  display:flex;align-items:flex-end;justify-content:stretch;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;
+}
+:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="grow"]>:is(.sq,.box){
+  width:100%;max-width:none;margin:0;border:0;border-radius:28px 28px 0 0;background:var(--pg);color:var(--ink);box-shadow:none;outline:0;
+}
+#sheet.aj-shared-popup[data-popup-system="grow"]{
+  top:auto;left:0;right:auto;bottom:calc(100dvh - var(--popup-top) - var(--popup-height));
+  width:100vw;max-width:100vw;transform:none;border-radius:28px 28px 0 0;background:var(--pg);color:var(--ink);box-shadow:none;
+}
+/* The quota rule is the common floor; neither the card nor its veil covers the input area. */
+body[data-sheet="1"] .scrim{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
+.fr-owner-details,.pkp-details{margin-top:var(--sp-3);text-align:left}
+:is(.fr-owner-details,.pkp-details)>summary{min-height:44px;display:flex;align-items:center;cursor:pointer;gap:var(--sp-2)}
+:is(.fr-owner-details,.pkp-details)>summary::before{content:'›'}
+:is(.fr-owner-details,.pkp-details)[open]>summary::before{transform:rotate(90deg)}
+:is(.fr-owner-details,.pkp-details):not([open])>:not(summary){display:none}
+#sheet:has(.fr-owner-details) .fr-owner-code{margin-top:var(--sp-3)}
+#pkp .pkp-code-l{display:none}
+#pkp .pkp-code{justify-content:center;margin-top:0;background:none;border:0}
+#pkp .pkp-details .elev-note{color:inherit}
+/* Same-owner origin remains readable when the explanation is expanded. */
+#sheet:has(.fr-owner-details:not([open]))>:is(.cp-host,.ask,.asktags,.sheethead,.askleft,.elsewhere){display:none}
+
+#pkp .pkp-acts{gap:var(--sp-3)}
+
+.aj-shared-popup[data-popup-system="center"] :is(.elev-kicker,.lt-kicker){color:inherit}
+#frOwnerRetry{margin-top:var(--sp-2)}
+#pkp .elev-kicker{margin-bottom:var(--sp-2)}
+
+#sheet:has(.fr-owner-details) .fr-askbtns{gap:var(--sp-3)}
+/* A-track semantic spacing: measured existing modal blocks, without adding a layout container. */
+:is(#elev-kicker,#sout-kicker,#lqr-kicker,#hlp-kicker){margin-bottom:var(--sp-2)}
+#lt>.box>.lt-left{margin-top:var(--sp-2)}
+#lt-caps-title+.lt-goal{margin-top:var(--sp-2)}
+#mail-servers-title+.setnote{margin-top:var(--sp-2);margin-bottom:var(--sp-2)}
+#mail-servers>.box>.aj-action{display:block;width:100%}
+#mail-servers>.box>.aj-action+.aj-action{margin-top:var(--sp-3)}
+:is(#nameDlg,#loadDlg)>.sq>.gdlg-sub{margin-top:var(--sp-2)}
+:is(#loadDlg,#ctmEdit)>.sq>.gdlg-row{margin-top:var(--sp-2)}
+
+/* Existing layer owner also owns presentation: one visible interactive popup. */
+.aj-shared-popup[data-popup-system]{z-index:calc(var(--z-confirm) + 100 + var(--popup-layer-order,0)*2)!important}
+.aj-shared-popup.aj-layer-covered{visibility:hidden!important;pointer-events:none!important}
+body:has(#sheet.aj-layer-covered) .scrim{visibility:hidden;pointer-events:none}
+
+/* Preserve the native parent's center while its existing ontop child uses the viewport. */
+:is(dialog,#full541).aj-shared-popup:modal:has(>.ontop-float){transform:none;top:calc(var(--popup-center) - var(--popup-native-height,0px)/2);overflow:visible}

@@ -5,6 +5,7 @@
 // implementation. Answer signatures ARE verified here against wire.js (approveMessage; questionMessage when wire.js has
 // it) with the device's Ed25519 key from msg1 — the real host does the same (host/tests, tests/e2e_*).
 import { createServer } from 'node:http';
+import { createServer as createTlsServer } from 'node:https';
 import { createHash, randomBytes, webcrypto } from 'node:crypto';
 import { Handshake, IK, IKPSK2, generateKeypair, keypairFromPrivate } from '../../protocol/noise.js';
 import * as wire from '../../protocol/wire.js';
@@ -86,7 +87,7 @@ export function wavOk(b) {
 }
 
 // ---------------------------------------------------------------- fake relay + host
-export async function startFakeHost({ channelSeed, visualSeed, hostKeypair, ephemeral } = {}) {
+export async function startFakeHost({ channelSeed, visualSeed, hostKeypair, ephemeral, tls, httpHandler } = {}) {
   // Public synthetic visual vectors only. Omission preserves normal random fixture behavior.
   let visualCounter = 0;
   const visualBytes = (label, length = 32) => createHash('sha256').update(`P577 public visual fixture/${visualSeed}/${label}`).digest().subarray(0, length);
@@ -681,7 +682,8 @@ export async function startFakeHost({ channelSeed, visualSeed, hostKeypair, ephe
     c.sendBin(frame(KIND.HS_RESP, msg2));
   }
 
-  const server = createServer((req, res) => { res.writeHead(404).end(); });
+  const handler=httpHandler||((req,res)=>{res.writeHead(404).end();});
+  const server = tls ? createTlsServer(tls,handler) : createServer(handler);
   server.on('upgrade', (req, sock) => {
     if (req.url !== `/v1/dev/${channel}`) { sock.end('HTTP/1.1 404 Not Found\r\n\r\n'); return; }
     accept(req, sock, (c) => {
@@ -693,7 +695,7 @@ export async function startFakeHost({ channelSeed, visualSeed, hostKeypair, ephe
     });
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  const relay = `ws://127.0.0.1:${server.address().port}`;
+  const relay = `${tls?'wss':'ws'}://127.0.0.1:${server.address().port}`;
   st.seq = 0;
   st.asksOpen = new Map();
 

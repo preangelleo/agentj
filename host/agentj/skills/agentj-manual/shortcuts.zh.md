@@ -1,4 +1,4 @@
-<!-- generated from https://agentj.app/docs/shortcuts/zh.md by agentjarvis/tools/manual_skill.mjs — do not edit -->
+<!-- generated from https://agentj.app/docs/shortcuts/zh.md by the Agent J documentation generator — do not edit -->
 # 键盘快捷键和手势
 
 在遥控器浏览器或者接了键盘的平板上，网页版的每个手势都有对应的快捷键。按 `?` 打开快捷键表，「设置」→「键盘快捷键」里也有；表右上角的放大镜（或按 `/`、`⌘+K` / `Ctrl+K`）可以按说明、按键或手势搜索，中英文都行。
@@ -185,7 +185,7 @@
 | — | 消息滚到顶部后继续下拉，看到「松开刷新」后松手；录音、附件或未提交卡片时不刷新 | 保存草稿并更新刷新网页 |
 | `⌘+C` / `Ctrl+C` | 长按色块复制 HEX；移动手指取消 | 复制色块 HEX |
 | `Alt+Shift+S` | 点按钮后确认 | 停止所有 Agent（先确认） |
-| — | 点按钮后确认 | 重开 AI 会话（先确认） |
+| — | 点按钮后确认 | 重启 Agent（先确认） |
 | — | 点一下 | 发送画面诊断 |
 | — | 点创建连接 | 创建连接并签名确认 |
 | — | 点轮换凭据 | 轮换连接凭据 |

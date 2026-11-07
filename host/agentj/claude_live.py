@@ -19,7 +19,7 @@ AUTH = (*OUTRANK, TOKEN)
 CTX = ("HOME", "CLAUDE_CONFIG_DIR", "USER", "LOGNAME")
 STATUS_WAIT = 20.0
 TEXT = {"zh": {"ok": "已在主对话自己的环境里核对：Claude Code 用的就是新登录。",
-               "owner": "新登录已存好，但主对话是你在终端里开的 Claude Code，它启动时没有这个登录，还在用旧的。点下面「重开 AI 会话」："
+               "owner": "新登录已存好，但主对话是你在终端里开的 Claude Code，它启动时没有这个登录，还在用旧的。点下面「重启 Agent」："
                         "Agent J 用新登录接着同一段对话重开（你终端里那个窗口会退出）。",
                "bad": "主对话没有用上新登录（{why}）：请在 设置 → 紧急修复 → AI 登录救援 里重新检查。",
                "stale": "主对话进程里的登录不是新的", "outranked": "主对话里有优先级更高的凭据", "not_logged_in": "主对话里未登录",
@@ -28,7 +28,7 @@ TEXT = {"zh": {"ok": "已在主对话自己的环境里核对：Claude Code 用�
                "refused": "主对话用的 Claude 配置目录无法确认是它自己的，为了安全没有在那里登录。请在 Agent J 主机上主对话的终端里输入 /login 登录。"},
         "en": {"ok": "Checked in the main conversation's own environment: Claude Code uses the new login.",
                "owner": "The new login is stored, but the main conversation is a Claude Code you started in a terminal and it still "
-                        "runs on the old login. Tap Reopen AI session below: Agent J reopens the same conversation with the new login "
+                        "runs on the old login. Tap Restart Agent below: Agent J reopens the same conversation with the new login "
                         "(the window in your terminal exits).",
                "bad": "The main conversation is not on the new login ({why}): check again in Settings → Emergency repair → AI login rescue.",
                "stale": "its process holds another login", "outranked": "a higher-priority credential is set there",
@@ -219,7 +219,7 @@ async def reopen(host) -> str | None:
 
 
 async def deliver(host, why: str, wait: bool = False) -> dict:
-    """The owner's own terminal process is never signalled here: only their signed P435 「重开 AI 会话」."""
+    """The owner's own terminal process is never signalled here: only their signed P435 「重启 Agent」."""
     kind, a = where(host)
     if kind == "none":
         return {"restart": "none", "verified": None}

@@ -255,13 +255,16 @@ class Desk:
                 status = "active" if row["expires"] > time.time() and self.peer_active(row["peer"]) else "expired" if row["expires"] <= time.time() else "unbound"
                 rows.append({**row, "status": status, "ssh": command(row),
                              "scp": command(row, source="./code.py", destination="code/")})
-        candidates = discover_config() if discovery else []
+        candidates = []
         svc = getattr(self.host, "peers", None)
         if discovery and svc:
-            candidates += [{"peer": fid, "status": "pending", "source": "same_owner"}
-                           for fid in svc.store.friends() if svc.same_owner.active(fid)][:128]
+            candidates = [{"peer": fid, "status": "pending", "source": "same_owner"}
+                          for fid in svc.store.friends() if svc.same_owner.active(fid)][:128]
+        if discovery:
+            candidates += discover_config()
         return {"t": "owner_hosts_state", "r": r, "scope": scope(self.st), "rev": self.revision(),
-                "valid": bool(rec), "rows": rows, "candidates": candidates[:24]}
+                "valid": bool(rec), "rows": rows, "candidates": candidates[:24],
+                "candidate_more": max(0, len(candidates) - 24)}
 
     def prove(self, tool, inp):
         """Host-only transport proof: exact canonical command, active signed row + key pin.

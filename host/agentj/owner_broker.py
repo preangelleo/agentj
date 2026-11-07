@@ -9,6 +9,7 @@ import pathlib
 import shlex
 import shutil
 import time
+import copy
 
 from . import owner_call, provenance
 
@@ -83,16 +84,49 @@ def key(req):
 class Broker:
     def __init__(self, xfer):
         self.xfer, self.calls, self.receipts, self.jobs = xfer, {}, {}, set()
+        self.feedback_proc, self.feedback_seen = None, set()
+
+    def feedback_applicable(self):
+        import sys
+        a = getattr(self.xfer.svc.host, 'agent', None)
+        cfg = getattr(a, 'cfg', None)
+        return (sys.platform == 'linux' and isinstance(cfg, dict) and cfg.get('fence') is True
+                and cfg.get('session_mode') != 'shared' and getattr(a, 'proc', None) is not None
+                and getattr(a, 'kind', None) in ('claude', 'codex'))
 
     def register(self, call, tool, inp, cwd, raw=None, native=None):
         x = self.xfer
         req = parse(tool, raw if raw is not None else inp, cwd)
+        if req is None and self.feedback_applicable():
+            from . import feedback_native
+            req = feedback_native.command(tool, raw if raw is not None else inp, cwd)
         execution = getattr(x, 'execution', None)
         if not req or not isinstance(call, str) or not execution or not execution.live or execution.send is None:
             return
+        if req['t'] == 'support_native' and call in self.calls:
+            old = self.calls[call]
+            if old.get('request') == req and old.get('native') == native and old.get('execution') is execution and old.get('input') == inp:
+                return  # repeated native admission never refreshes its original source/timeout
+            if old.get('feedback'):
+                old['feedback'].closed = True
+            return
+        if req['t'] == 'support_native':
+            proc = getattr(x.svc.host.agent, 'proc', None)
+            if proc is not self.feedback_proc:
+                self.feedback_proc, self.feedback_seen = proc, set()
+            if (call, native) in self.feedback_seen or len(self.feedback_seen) >= 1024:
+                return
         self.calls[call] = {'request':req, 'tool':tool, 'input':inp, 'execution':execution,
                             'source':provenance.turn_source(x.svc.host.agent), 'native':native,
                             'project_root': os.path.realpath((x.svc.host.agent_cfg or {}).get('dir') or '')}
+        if req['t'] == 'support_native':
+            from .feedback_native import Binding
+            row = self.calls[call]
+            row.update(input=copy.deepcopy(inp), registered_at=time.monotonic())
+            try:
+                row['feedback'] = Binding(self, row)
+                self.feedback_seen.add((call, native))
+            except (ValueError, AttributeError, OSError): self.calls.pop(call, None)
         while len(self.calls) > 64:
             self.calls.pop(next(iter(self.calls)))
 
@@ -101,8 +135,12 @@ class Broker:
         matches = [(cid, row) for cid,row in self.calls.items() if row['tool'] == tool and row['input'] == inp
                    and (call is None or call == cid)]
         if not matches:
-            if parse(tool, inp, (getattr(self.xfer.svc.host, 'agent_cfg', None) or {}).get('dir') or os.getcwd()):
-                return {'behavior':'deny', 'message':'No live native secret-call admission'}
+            missing = parse(tool, inp, (getattr(self.xfer.svc.host, 'agent_cfg', None) or {}).get('dir') or os.getcwd())
+            if missing is None and self.feedback_applicable():
+                from . import feedback_native
+                missing = feedback_native.command(tool, inp, self.xfer.svc.host.agent_cfg.get('dir') or os.getcwd())
+            if missing:
+                return {'behavior':'deny', 'message':'No live native feedback admission' if missing['t'] == 'support_native' else 'No live native secret-call admission'}
             return None
         if len(matches) != 1:
             return {'behavior':'deny', 'message':'Ambiguous native secret call'}
@@ -120,6 +158,20 @@ class Broker:
         if policy_registry.main_requirement(tool, inp) == 'deny':
             return {'behavior':'deny', 'message':'Native secret call blocked by policy'}
         req = dict(row['request'])
+        if req['t'] == 'support_native':
+            from . import feedback_native, approval_review
+            binding = row.get('feedback')
+            if binding is None or not binding.live():
+                return {'behavior':'deny', 'message':'Original native feedback call expired.'}
+            try: binding.bind_body(await asyncio.to_thread(feedback_native.payload, req, binding.root))
+            except (OSError, ValueError, UnicodeError):
+                return {'behavior':'deny', 'message':'Cannot bind the exact feedback draft.'}
+            with owner_call.request(binding.live), provenance.request_source(binding.source), approval_review.origin_scope(binding.origin):
+                answer = await x.svc.host.ask(tool, inp, gone, batch=False)
+            if answer.get('behavior') != 'allow' or not binding.live():
+                return answer if answer.get('behavior') != 'allow' else {'behavior':'deny','message':'Original native feedback call expired.'}
+            row.update(admitted=True, ticket=secrets.token_hex(16), check=binding.live)
+            return answer
         if req['t'] == 'file_show':
             host = x.svc.host
             page = host.hist.get(getattr(host, 'cur_turn', None))
@@ -159,8 +211,10 @@ class Broker:
         row.update(request=req, admitted=True, ticket=secrets.token_hex(16), check=live)
         return {'behavior':'allow', 'updatedInput':inp}
 
-    def complete(self, call, success, output, tool=None, inp=None, cwd=None, native=None):
+    def complete(self, call, success, output, tool=None, inp=None, cwd=None, native=None, child=False):
         row = self.calls.get(call)
+        if row and row.get('feedback') and child:
+            return  # a nested native result never completes a root's feedback call
         if not row or not row.get('admitted') or not row.get('issued') or row.get('native') != native:
             return
         if tool is not None and (tool != row['tool'] or inp != row['input'] or os.path.abspath(cwd or '') != row['request']['cwd']):
@@ -180,6 +234,19 @@ class Broker:
     async def _finish(self, row):
         x = self.xfer
         req = row['request']
+        if req['t'] == 'support_native':
+            from . import host_diagnostics, approval_review
+            binding = row['feedback']
+            if not binding.live():
+                return
+            request = {'t':'host_diagnostics', 'op':'support', **json.loads(binding.body)}
+            try:
+                with owner_call.request(binding.live), provenance.request_source(binding.source), approval_review.origin_scope(binding.origin), binding.review_scope():
+                    result = await asyncio.to_thread(host_diagnostics.execute, x.svc.host.st, request, _support_binding=binding)
+                x.svc.host.agent_notice('SUPPORT_TASK_RESULT: ' + json.dumps(result, ensure_ascii=False))
+            finally:
+                binding.closed = True
+            return
         with owner_call.request(row['check']), provenance.request_source(row['source']):
             from . import file_show
             if req['t'] == 'file_show':
@@ -193,6 +260,20 @@ class Broker:
         while len(self.receipts) > 64:
             self.receipts.pop(next(iter(self.receipts)))
         x.svc.host.agent_notice(('FILE_SHOW_RESULT: ' if req['t'] == 'file_show' else 'SECRET_TASK_RESULT: ') + json.dumps(result, ensure_ascii=False))
+
+    def feedback_receipt(self, req, peer):
+        """Only an exact admitted payload produces a pending result; never HTTP here."""
+        from . import feedback_native
+        value = feedback_native.canonical(req)
+        rows = [r for r in self.calls.values() if r.get('feedback') and r.get('admitted')
+                and r['feedback'].body == value and r['feedback'].live()]
+        if value is None or len(rows) != 1:
+            return {'exit':3, 'output':'NOT SENT — no unique exact native feedback admission.\n'}
+        row = rows[0]
+        if not row['feedback'].peer(peer) or row.get('issued'):
+            return {'exit':3, 'output':'NOT SENT — original native feedback caller is unverified or already issued.\n'}
+        row['issued'] = True
+        return {'exit':0, 'output':'SUPPORT_TASK_PENDING: ' + json.dumps(_pending(row),sort_keys=True) + '\n'}
 
     async def drain(self):
         if self.jobs:
@@ -234,7 +315,7 @@ def _contains(output, pending, depth=0):
             pass
         for line in output.splitlines()[:100]:
             try:
-                value = json.loads(line.removeprefix('SECRET_TASK_PENDING: '))
+                value = json.loads(line.removeprefix('SECRET_TASK_PENDING: ').removeprefix('SUPPORT_TASK_PENDING: '))
             except ValueError:
                 continue
             if value == pending:
@@ -244,6 +325,8 @@ def _contains(output, pending, depth=0):
 
 def _pending(row):
     result = {'result':'pending', 'ticket':row['ticket'], 'request_sha256':key(row['request'])}
+    if row['request']['t'] == 'support_native':
+        result['payload_sha256'] = row['feedback'].body_sha256
     if row['request']['t'] == 'file_show':
         result.update(result='queued', client_downloaded=False)
     if row['request']['t'] == 'tell':

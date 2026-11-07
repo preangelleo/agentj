@@ -3373,8 +3373,8 @@
         }
       ],
       "keys": [],
-      "zh": "重开 AI 会话（先确认）",
-      "en": "Reopen AI session (confirm first)",
+      "zh": "重启 Agent（先确认）",
+      "en": "Restart Agent (confirm first)",
       "gesture_zh": "点按钮后确认",
       "gesture_en": "Tap the button, then confirm",
       "nokey": "settings-only"

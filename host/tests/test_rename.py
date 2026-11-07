@@ -61,11 +61,13 @@ class Version(unittest.TestCase):
     def test_jarvis_compat_entry(self):
         r = subprocess.run([sys.executable, "-m", "jarvis_host.cli", "--version"], cwd=HOST, capture_output=True, text=True)
         self.assertEqual(r.stdout.strip(), f"agentj {agentj.__version__}")
-        self.assertIn("`jarvis` 已改名为 `agentj`", r.stderr)
+        self.assertIn("旧命令已由 `agentj` 兼容", r.stderr)
+        self.assertNotIn("jarvis", r.stderr)
+        self.assertIn("https://agentj.app/docs/legacy-migration/", r.stderr)
         self.assertEqual(len(r.stderr.strip().splitlines()), 1, "one notice line")
         r = subprocess.run([str(HOST / "jarvis"), "--version"], capture_output=True, text=True)
         self.assertEqual(r.stdout.strip(), f"agentj {agentj.__version__}", r.stderr)
-        self.assertIn("`jarvis` is now `agentj`", r.stderr)
+        self.assertIn("the old command remains compatible", r.stderr)
         r = subprocess.run([str(HOST / "bin" / "agentj"), "--version"], capture_output=True, text=True)
         self.assertEqual((r.stdout.strip(), r.stderr), (f"agentj {agentj.__version__}", ""))
 
@@ -393,7 +395,8 @@ class Alias(unittest.TestCase):
             rs = alias.install_all(path)
             self.assertEqual([(r["name"], r["state"]) for r in rs], [("aj", "installed"), ("jarvis", "installed")])
             self.assertEqual(os.path.realpath(self.bin / "jarvis"), os.path.realpath(self.t / "venv" / "bin" / "agentj"))
-            self.assertIn("下个版本移除", alias.line(rs[1]))
+            self.assertIn("旧版命令兼容：可用", alias.line(rs[1]))
+            self.assertNotIn("jarvis", alias.line(rs[1]))
             self.assertEqual([r["name"] for r in alias.remove_all(path) if r["changed"]], ["aj", "jarvis"])
             self.assertFalse(os.path.lexists(self.bin / "jarvis"))
             foreign = self.other / "jarvis"           # somebody else's jarvis anywhere on PATH: never ours to replace
@@ -401,7 +404,7 @@ class Alias(unittest.TestCase):
             foreign.chmod(0o755)
             r = alias.install_all(path)[1]
             self.assertEqual((r["state"], r["changed"]), ("taken", False))
-            self.assertIn(f"`jarvis` 已被 {foreign} 占用", alias.line(r))
+            self.assertIn("未覆盖同名入口", alias.line(r))
             self.assertFalse(os.path.lexists(self.bin / "jarvis"))
             self.assertFalse(alias.remove(path, "jarvis")["changed"])
             self.assertTrue(foreign.exists())
@@ -412,12 +415,12 @@ class Alias(unittest.TestCase):
         with mock.patch.object(cli.sys, "argv", ["/x/bin/jarvis", "--version"]), mock.patch.object(cli.sys, "stderr", err), \
                 mock.patch.object(cli.sys, "stdout", __import__("io").StringIO()), self.assertRaises(SystemExit):
             cli.main()
-        self.assertIn("`jarvis` is now `agentj`", err.getvalue())
+        self.assertIn("the old command remains compatible", err.getvalue())
         err = __import__("io").StringIO()
         with mock.patch.object(cli.sys, "argv", ["/x/bin/agentj", "--version"]), mock.patch.object(cli.sys, "stderr", err), \
                 mock.patch.object(cli.sys, "stdout", __import__("io").StringIO()), self.assertRaises(SystemExit):
             cli.main()
-        self.assertNotIn("is now `agentj`", err.getvalue())   # only the notice matters: GC may print an unrelated ResourceWarning here
+        self.assertNotIn("old command remains compatible", err.getvalue())   # only the notice matters: GC may print an unrelated ResourceWarning here
 
     def test_doctor_row(self):
         from agentj import doctor
@@ -432,7 +435,8 @@ class Alias(unittest.TestCase):
                 alias.install_all()
                 row = doctor.check_alias()
                 self.assertEqual(row["status"], doctor.OK)
-                self.assertIn("jarvis → agentj", row["summary"], "the row reports both names")
+                self.assertIn("legacy command compatibility: installed", row["summary"])
+                self.assertNotIn("jarvis", row["summary"])
 
 
 class StatusName(unittest.TestCase):

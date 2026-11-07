@@ -5,7 +5,7 @@ import {mkdirSync,writeFileSync} from 'node:fs';
 import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
 import {approvalEnvelopeDigest} from '../../protocol/wire.js';
-const require=createRequire(import.meta.url),pw=require(process.env.AJ_PLAYWRIGHT_MODULE||'/home/laogege/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const require=createRequire(import.meta.url),pw=require(process.env.AJ_PLAYWRIGHT_MODULE||'playwright');
 const out=process.env.P0282_AIR_WEBKIT_OUT||'reports/qa/p0282-air-web/webkit';mkdirSync(out,{recursive:true});
 const web=await startWebServer({port:0,relayCsp:'ws://127.0.0.1:*'}),fake=await startFakeHost(),B=await pw.webkit.launch(),rows=[];
 try{

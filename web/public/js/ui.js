@@ -222,7 +222,7 @@ if (typeof document !== 'undefined') addEventListener('keydown', (e) => {
 /** Two-step confirmation for every write (and /clear): → true / false. `danger` = a destructive yes (unbind, unpair);
  *  `no` = an optional label for the other button (P182). */
 const pkOff = () => { const b = el('confirm-pk'); if (b) { b.hidden = true; b.replaceChildren(); } };
-export function confirmSheet(title, text, yes, danger = false, no, details = '') {
+export function confirmSheet(title, text, yes, danger = false, no, details = '', presentation = 'center') {
   return new Promise((resolve) => {
     el('confirm-title').textContent = title; fillText(el('confirm-text'), text);   /* P292: `agentj pair` in the text → code + ⧉ */ el('confirm-yes').textContent = yes;
     const raw = el('confirm-details'); raw.open = false; raw.hidden = !details;
@@ -233,6 +233,7 @@ export function confirmSheet(title, text, yes, danger = false, no, details = '')
     const noBtn = el('confirm-no'), noWas = noBtn.textContent;              // P182: an optional label for the other button
     if (no) noBtn.textContent = no;
     const box = el('confirm'), opener = document.activeElement;
+    box.dataset.popupKind = presentation;
     box.hidden = false; box.dataset.modalOpen = '1';
     el('confirm-yes').focus();
     const done = (v) => { if (no) noBtn.textContent = noWas; box.hidden = true; raw.open = false; el('confirm-raw').textContent = ''; pkOff(); delete box.dataset.modalOpen; el('confirm-yes').onclick = null; el('confirm-no').onclick = null; if(opener?.isConnected&&!opener.closest('[hidden]')) opener.focus({preventScroll:true}); resolve(v); };

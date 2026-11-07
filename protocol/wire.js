@@ -135,7 +135,7 @@ export async function mailAllowMessage(channel, device, id, tool, summary, picks
 export const CONTROL_CONTEXT = 'agentjarvis-control-v1';
 export const CONTROL_ACTIONS = ['native_scheduler_control', 'heartbeat_write', 'security_begin','security_verify','security_retire', 'host_write', 'mem_rm', 'mem_undo', 'estop', 'resume', 'task_on', 'task_off',
   'fr_set', 'pg_set', 'pg_del', 'fr_add', 'fr_discoverable', 'fr_card',          // §17.7 agent friends (0.16)
-  'fr_ctx', 'update', 'mail_fwd', 'private_file_get', 'private_file_revoke', 'bots_write', 'setup_mark', 'setup_run', 'setup_cancel', 'pair_new',               // P153: pair_new = a paired remote opens a pairing (§3.3)
+  'fr_ctx', 'update', 'mail_fwd', 'private_file_get', 'private_file_revoke', 'main_thread_interrupt', 'bots_write', 'setup_mark', 'setup_run', 'setup_cancel', 'pair_new',               // P153: pair_new = a paired remote opens a pairing (§3.3)
   'dev_name', 'dev_unbind', 'dev_add', 'dev_confirm',                     // P171 (§24): the phone's 遥控器管理 page                                                         // P115: first-run checklist card                                                                       // P73: a friend's 「补充设定」
   'agent_name',                                                             // P181 (§22.2): rename the Agent from the header
   'cards_get',                                                              // P203 (§29.1): the signed open-cards snapshot (a read)
@@ -160,7 +160,7 @@ export function controlObject(action, o) {
   if (action === 'fr_report_remark') return `${o.friend}\n${o.name}`;
   if (action === 'native_scheduler_control') return canonicalJson(o);
   if (action === 'host_write' || action === 'heartbeat_write' || action === 'owner_hosts_set') return canonicalJson(o);
-  if (['bots_write', 'mail_fwd', 'private_file_get', 'private_file_revoke'].includes(action)) return canonicalJson(o.request);
+  if (['bots_write', 'mail_fwd', 'private_file_get', 'private_file_revoke', 'main_thread_interrupt'].includes(action)) return canonicalJson(o.request);
   if (action === 'update') return 'latest';
   if (action === 'cards_get') return 'cards';
   if (action === 'pair_new') return 'start';

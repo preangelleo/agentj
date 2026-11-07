@@ -12,7 +12,7 @@ try{for(const lang of ['zh','en'])for(const theme of ['light','dark'])for(const 
  await waitFor(p,`!!document.getElementById('rs-restart-go')`);await evaluate(p,`document.getElementById('rs-restart-go').scrollIntoView({block:'center'});true`);
  assert.equal(await evaluate(p,`document.getElementById('rs-restart-go').textContent`),lang==='zh'?'重启服务':'Restart service');
  assert.ok(await evaluate(p,`(()=>{const r=document.getElementById('rs-restart-go').getBoundingClientRect();return r.height>=44&&r.width>=44&&document.documentElement.scrollWidth<=innerWidth})()`));
- await evaluate(p,`document.getElementById('rs-restart-go').click();true`);await waitFor(p,`document.getElementById('rs-restart').dataset.state==='ok'`);
+ await evaluate(p,`document.getElementById('rs-restart-go').click();true`);await waitFor(p,`!document.getElementById('confirm').hidden`);await evaluate(p,`document.getElementById('confirm-yes').click();true`);await waitFor(p,`document.getElementById('rs-restart').dataset.state==='ok'`);
  writeFileSync(`${out}/${lang}-${theme}-${w}.png`,await shoot(p,''));console.log('PASS restart',lang,theme,w);
  }finally{await p.dispose();}
 }assert.equal(calls,8);}finally{await B.close();await fake.stop();await web.stop();}

@@ -186,6 +186,7 @@ function readCaps(m) {
   peer.wfresume1 = Array.isArray(m.caps) && m.caps.includes('wfresume1');
   peer.friendreport1 = Array.isArray(m.caps) && m.caps.includes('friendreport1');
   peer.privatefiles1 = Array.isArray(m.caps) && m.caps.includes('privatefiles1');
+  peer.privatefiles2 = Array.isArray(m.caps) && m.caps.includes('privatefiles2');
   peer.mailuv1 = Array.isArray(m.caps) && m.caps.includes('mailuv1');
   peer.wf1 = Array.isArray(m.caps) && m.caps.includes('wf1');
   peer.jpalette1 = Array.isArray(m.caps) && m.caps.includes('jpalette1'); // P420 global palette library

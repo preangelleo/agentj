@@ -7,7 +7,7 @@ description: Make, change or remove an Agent J card — the owner's own cards in
 Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
 
 A card = one folder with `card.json` (+ `sample/<data file>`). Schema: `agentj card schema`; spec:
-`agentjarvis/docs/specs/AGENTJ-CARDS-SPEC.md`. **Phase 1 opens template cards only**: no code, no web page, no image —
+`https://agentj.app/docs/cards/`. **Phase 1 opens template cards only**: no code, no web page, no image —
 the phone draws one of two built-in templates from one data file on this computer. You do all the work here; the
 phone only shows the data and turns a button into a chat message the owner confirms.
 

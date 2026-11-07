@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import types
 import unittest
 from unittest.mock import AsyncMock, Mock
 from agentj import danger, shared, shared_hook
@@ -76,7 +77,9 @@ class ClaudeHooks(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ask['hookSpecificOutput']['permissionDecision'],'ask')
         allow=await self.event('PermissionRequest')
         self.assertEqual(allow['hookSpecificOutput']['decision']['behavior'],'allow')
-        self.assertEqual((await self.event('PreToolUse',inp={'command':'git push other branch'}))['hookSpecificOutput']['permissionDecision'],'ask')
+        reused=await self.event('PreToolUse',inp={'command':'git push other branch'})
+        self.assertEqual(reused,{})  # same-category grant preserves native authority; it never returns auto-allow
+        self.assertNotEqual(reused.get('hookSpecificOutput',{}).get('permissionDecision'),'allow')
         self.host.ask.assert_awaited_once()
         await self.event('UserPromptSubmit')
         self.assertEqual((await self.event('PreToolUse'))['hookSpecificOutput']['permissionDecision'],'ask')
@@ -109,7 +112,10 @@ class ClaudeHooks(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.event('PreToolUse'))['hookSpecificOutput']['permissionDecision'],'ask')
 
     async def test_same_category_denial_does_not_generate_another_card(self):
-        self.host.ask.return_value={'behavior':'deny'}
+        async def owner_deny(*args,**kwargs):
+            kwargs['_receipt']['reason']='device'
+            return {'behavior':'deny'}
+        self.host.ask.side_effect=owner_deny
         for path in ('first.pem','second.pem'):
             self.assertEqual((await self.event('PreToolUse',tool='Read',inp={'file_path':path}))['hookSpecificOutput']['permissionDecision'],'ask')
             self.assertEqual((await self.event('PermissionRequest',tool='Read',inp={'file_path':path}))['hookSpecificOutput']['decision']['behavior'],'deny')
@@ -165,7 +171,11 @@ class NativeRiskHooks(unittest.IsolatedAsyncioTestCase):
 
     async def test_category_denial_is_one_card_until_next_turn(self):
         from agentj.shared_risk import RiskGuard
-        a=Mock();a.cfg={'high_risk_warnings':True};a.host.ask=AsyncMock(return_value={'behavior':'deny'})
+        async def owner_deny(*args,**kwargs):
+            kwargs['_receipt']['reason']='device'  # only an authenticated owner refusal populates this Host receipt
+            return {'behavior':'deny'}
+        host=Mock();host.stopped.return_value=False;host.ask=AsyncMock(side_effect=owner_deny)
+        a=types.SimpleNamespace(kind='codex',v2=False,cfg={'high_risk_warnings':True},host=host)
         guard=RiskGuard(a)
         self.assertFalse(await guard.check('Read',{'file_path':'first.pem'}))
         self.assertFalse(await guard.check('Read',{'file_path':'second.pem'}));a.host.ask.assert_awaited_once()
@@ -175,7 +185,9 @@ class NativeRiskHooks(unittest.IsolatedAsyncioTestCase):
         from agentj.shared_risk import RiskGuard
         for family in ('codex','opencode'):
             with self.subTest(family=family):
-                a=Mock();a.kind=family;a.cfg={'dir':'/var/tmp','shared_session_id':'owner','high_risk_warnings':True}
+                a=types.SimpleNamespace(kind=family,v2=False,host=Mock(),
+                    cfg={'dir':'/var/tmp','shared_session_id':'owner','high_risk_warnings':True})
+                a.host.busy=None;a.host.preferences={}
                 a.host.stopped.return_value=False;a.host.st.sign_key.return_value='SIGN'
                 a.host.ask=AsyncMock(return_value={'behavior':'allow','risk_grant':{'rid':'request','device':'device','sign_pub':'SIGN'}})
                 guard=RiskGuard(a)
@@ -187,6 +199,37 @@ class NativeRiskHooks(unittest.IsolatedAsyncioTestCase):
                 a.host.ask.return_value={'behavior':'deny'};guard.reset('deny')
                 result=await guard.hook_event(ev('cat denied.pem'))
                 self.assertEqual(result['hookSpecificOutput']['permissionDecision'],'deny')
+
+    async def test_unknown_timeout_and_internal_cancel_are_not_cached_as_owner_denial(self):
+        from agentj.shared_risk import RiskGuard
+        for reason in (None,'timeout','agent_gone','serve_stop','superseded','unknown'):
+            with self.subTest(reason=reason):
+                async def denied(*args,**kwargs):
+                    if reason is not None:
+                        kwargs['_receipt']['reason']=reason
+                    return {'behavior':'deny'}
+                host=Mock();host.stopped.return_value=False;host.ask=AsyncMock(side_effect=denied)
+                a=types.SimpleNamespace(kind='codex',v2=False,cfg={'high_risk_warnings':True},host=host)
+                guard=RiskGuard(a)
+                for path in ('first.pem','second.pem'):
+                    self.assertFalse(await guard.check('Read',{'file_path':path}))
+                self.assertEqual(host.ask.await_count,2)
+                self.assertEqual(guard.denied,set())
+
+    async def test_explicit_opencode_v2_hook_is_dispatch_only_not_an_approval(self):
+        from agentj.shared_risk import RiskGuard
+        a=types.SimpleNamespace(kind='opencode',v2=True,host=Mock(),
+            cfg={'dir':'/var/tmp','shared_session_id':'owner','high_risk_warnings':True})
+        a.host.busy=None;a.host.preferences={}
+        a.host.ask=AsyncMock()
+        guard=RiskGuard(a)
+        guard.check=AsyncMock(side_effect=AssertionError('V2 hook must not perform permission.asked approval'))
+        result=await guard.hook_event({'hook_event_name':'PreToolUse','session_id':'owner',
+            'tool_name':'Bash','tool_input':{'command':'cat demo.pem'}})
+        self.assertEqual(result,{})
+        self.assertNotEqual(result.get('hookSpecificOutput',{}).get('permissionDecision'),'allow')
+        a.host.ask.assert_not_awaited()
+        guard.check.assert_not_awaited()
 
 class DisconnectedHooks(unittest.TestCase):
     """F11 / ADR-A146: the real hook script with no host listening on its channel."""

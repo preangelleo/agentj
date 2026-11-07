@@ -14,6 +14,8 @@ const web = await startWebServer(process.env.P574_PUBLIC_DIR ? {publicDir:proces
 const fake = await startFakeHost(), fakePeer = await startFakeHost(), B = await launch();
 const { ownerConfirmChallenge, verifyBindingAssertion, introductionChallenge } = await import('../public/js/ownergrant.js');
 const NOTICES=JSON.parse(readFileSync(new URL('./fixtures/p574-notices.json',import.meta.url),'utf8'));
+const NOTICE_LABELS=Object.fromEntries(['zh','en'].map(lang=>[lang,JSON.parse(readFileSync(new URL('../i18n/web.'+lang+'.json',import.meta.url),'utf8'))['p0269w4.notice']]));
+assert.ok(Object.values(NOTICE_LABELS).every(v=>typeof v==='string'&&v.length));
 const GRANTS=JSON.parse(readFileSync(new URL('./fixtures/p574-grants.json',import.meta.url),'utf8'));
 const regs = [], checks = [], stops = [], ceremonies = [], binds = [];
 let legacyOfferEntry=null, introRequest=null;
@@ -92,14 +94,17 @@ try {
     const cd=JSON.parse(Buffer.from(fake.st.answers[0].fa.cd,'base64url').toString());
     check(cd.challenge===ch,tag+' authenticator assertion binds exact displayed grant challenge');
     await sleep(200);
-    await evaluate(p, `import('./js/relay.js').then(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})))`);
+    // Completion retains its review card. One Escape can be consumed by the
+    // completion toast; fold the card through its actual user control instead.
+    await tap(p,'#sheetClose');
+    await waitFor(p, `document.body.dataset.sheet!=='1'`);
     // The host publishes the ordinary notice stream only; no new card or wait at the holding host.
     const hostNotice=structuredClone(NOTICES[lang]), notice=hostNotice.notice.text;
     await fake.addTurn(hostNotice.turn.src,hostNotice.turn.reply.text,hostNotice.turn.end);
     await waitFor(p, `document.body.innerText.includes(${JSON.stringify(notice)})`);
     check(await evaluate(p, `window.__gets.length===1`),tag+' holding-host notice requires no second assertion');
     // 0.26.9 #431 (owner 11-03: 「只要有input message就应该有response message card，哪怕card里边没有内容」): the notice keeps its card, one grey line
-    check(await evaluate(p, `/不用回|不需要回复|No reply needed/.test(document.querySelector('#words').textContent) && document.querySelector('#words').classList.contains('empty') && getComputedStyle(document.querySelector('#main')).display!=='none'`),tag+' real Host broadcast keeps its reply card with one grey line (#431)');
+    check(await evaluate(p, `document.querySelector('#words').textContent===${JSON.stringify(NOTICE_LABELS[lang])} && document.querySelector('#words').classList.contains('empty') && getComputedStyle(document.querySelector('#main')).display!=='none'`),tag+' real Host broadcast keeps its reply card with one grey line (#431)');
     const nstop=stops.length;
     await fake.send({...hostNotice.notice,peer:'test-peer',grant:'0123456789abcdef0123456789abcdef'});
     await waitFor(p, `document.querySelector('#toast .nt-acts button')!==null`);
@@ -131,7 +136,7 @@ try {
     check(await evaluate(p, `/无文字回复|No text reply/.test(document.querySelector('#words').textContent)&&getComputedStyle(document.querySelector('#main')).display!=='none'`),tag+' history navigation restores ordinary empty reply');
     await evaluate(p, `import('./js/relay.js').then(m=>m.remoteMessage(-1))`);
     await waitFor(p, `document.querySelector('#rm').classList.contains('host-notice')`);
-    check(await evaluate(p, `/不用回|不需要回复|No reply needed/.test(document.querySelector('#words').textContent)&&getComputedStyle(document.querySelector('#main')).display!=='none'`),tag+' history return preserves notice-only rendering (card + grey line, #431)');
+    check(await evaluate(p, `document.querySelector('#words').textContent===${JSON.stringify(NOTICE_LABELS[lang])}&&getComputedStyle(document.querySelector('#main')).display!=='none'`),tag+' history return preserves notice-only rendering (card + grey line, #431)');
     await evaluate(p, `import('./js/relay.js').then(m=>m.remoteMessage(1))`);
     await waitFor(p, `document.querySelector('#omText').textContent==='Empty answer regression'`);
     check(await evaluate(p, `getComputedStyle(document.querySelector('#rmbar')).display!=='none'&&getComputedStyle(document.querySelector('#rmbar .act')).visibility!=='hidden'`),tag+' leaving a notice restores reply controls');
@@ -163,6 +168,7 @@ try {
     legacyOfferEntry=entry;
     const incoming={id:randomBytes(16).toString('hex'),tool:'peer_question',summary:'Upgrade binding',ttl:120,pq:{pairing:true,friend:'test-peer',name:'Spare host',code:'482913',challenge:'0'.repeat(32),pairing_scope:JSON.stringify([['local-agent','host-ed',own,'n',[]],['test-peer','peer-ed','remote-ed','n',[]]])}};
     await fake.ask(incoming);await waitFor(p, `!document.querySelector('#confirm').hidden`);
+    check(await evaluate(p,`document.querySelector('#frOwnerAllow').disabled && document.querySelector('.fr-owner-code').textContent===''`),'missing local binding keeps native confirmation disabled and never substitutes an unverified code');
     await evaluate(p, `import('./js/ui.js').then(m=>m.toastOff())`);await shot(p,'390-light-zh-legacy-bind');
     await tap(p,'#confirm-yes');for(let i=0;i<100&&!binds.length;i++)await sleep(25);
     await fake.askDone(incoming.id,'ended');legacyOfferEntry=null;
@@ -214,6 +220,10 @@ try {
       }
     }
 
+    check(await evaluate(p,`!document.querySelector('#frAsk .reason.none')`),'same-owner card shows peer source without a missing Agent reason');
+    check(await evaluate(p,`!!document.querySelector('#frAsk .fr-owner-details')&&!document.querySelector('#frAsk .fr-owner-details').open`),'same-owner signing roster stays in the approved collapsed details before the user opens it');
+    await tap(p,'#frAsk .fr-owner-details > summary');
+    await waitFor(p,`document.querySelector('#frAsk .fr-owner-details').open`);
     check(await evaluate(p,`document.querySelector('#frAsk').innerText.includes('Work phone · '+${JSON.stringify(dev)})&&document.querySelector('#frAsk').innerText.includes('Spare tablet · '+${JSON.stringify(local2.dev)})`),'ceremony existing card displays both pinned signing rosters');
     await evaluate(p,`import('./js/ui.js').then(m=>m.toastOff())`);await shot(p,'390-light-zh-ceremony-roster');
     check(await evaluate(p,`import('./js/snap.js').then(s=>{const a=s.S.asks.get(${JSON.stringify(card.id)});return a.pairing_roster.every(r=>r.trusted.length===1)&&a.pairing_roster[0].pending.length===1&&a.pairing_roster.every(r=>r.trusted.every(e=>e.id!==${JSON.stringify(remote.id)}));})`),'fake self-signed extra device remains pending and never enters initial trusted roots');

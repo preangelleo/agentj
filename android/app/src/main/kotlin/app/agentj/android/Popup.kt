@@ -28,7 +28,7 @@ import android.view.WindowManager
  * ROMs may add their own gate on top (ColorOS: 「后台弹出界面」); then only 1 and 3 remain.
  */
 object Popup {
-    private const val TAG = "JarvisPopup"
+    private const val TAG = "AgentJPopup"
     private const val ORB_MS = 4000L
     /** ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED (API 33+). */
     private const val BAL_ALLOWED = 1

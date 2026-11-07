@@ -135,9 +135,9 @@ export const what = (x) => x.label || (x.lk ? t('busy.lk.' + x.lk) : '');
 // short chip the composer shows instead, like @CEO. Plain text only; the host's id / label are bounded already (sanitize).
 const clip = (v, n) => (v.length > n ? v.slice(0, n - 1) + '…' : v);
 export function mentionOf(x) {
-  const name = clip(who(x), 24), job = clip(what(x).replace(/\s+/g, ' ').trim(), 60);
+  const name = clip(who(x), 24), job = clip(what(x).replace(/\s+/g, ' ').trim(), LABEL_MAX);
   const text = '@' + t('p0269w4.busy.mention', { who: name, what: job || name }) + (x.id ? t('p0269w4.busy.mentionId', { id: x.id }) : '');
-  return { text, label: '@' + name };
+  return { text, label: '@' + name + ' · ' + (job || name), taskId:x.id||'' };
 }
 /** The tasks put in the composer on this page (the composer turns each `text` back into its chip). */
 export const mentions = () => [...mentioned.values()];
@@ -150,7 +150,8 @@ function mentionTask(x) {
 function atButton(x) {
   const b = document.createElement('button');
   b.type = 'button'; b.className = 'busy-at'; b.setAttribute('data-aj-owner', 'aj-busy');
-  const label = t('p0269w4.busy.at', { who: who(x) });
+  const label = mentionOf(x).label;
+  b.dataset.taskId=x.id||'';
   b.setAttribute('aria-label', label); b.title = label;
   const NS = SVG, svg = document.createElementNS(NS, 'svg');
   for (const [k, v] of [['viewBox', '0 0 24 24'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '1.9'], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']]) svg.setAttribute(k, v);
@@ -158,7 +159,7 @@ function atButton(x) {
     const path = document.createElementNS(NS, 'path'); path.setAttribute('d', d); svg.append(path);
   }
   b.append(svg);
-  b.addEventListener('click', (e) => { e.stopPropagation(); mentionTask(x); });
+  b.addEventListener('click', (e) => { e.stopPropagation();const id=e.currentTarget.dataset.taskId;const rows=tasks.filter(t=>t.id===id&&t.who===x.who&&t.label===x.label);if(rows.length===1)mentionTask(rows[0]); });
   b.addEventListener('keydown', (e) => e.stopPropagation());   // Enter / Space press this button, not the row under it
   return b;
 }
@@ -320,7 +321,7 @@ function paintDialog() {
   const fig = (x, k, cls) => (dotsMode() ? dot(x, k, cls) : robot(x, k, 24));
   $('busyBig').replaceChildren(...big.map((x, k) => fig(x, k)));
   $('busyList').replaceChildren(...orderedBusy(keyed(tasks)).map((x, k) => {
-    const li = document.createElement('li');
+    const li = document.createElement('li');li.dataset.taskId=x.id||'';
     const oid = orderId(x); if (oid) li.dataset.order = oid;
     const b = document.createElement('b'); b.textContent = who(x);
     const s = document.createElement('span'); s.textContent = what(x); s.title = what(x);

@@ -55,6 +55,7 @@ const enc = new TextEncoder();
 
 let H = { setupFaceId() {}, openSettings() {}, openRescue() {}, attach() { return null; }, insert() {}, goChat() {} };
 const BANG_MS = 130000;   // P414: the host answers a 「!」 line within 120 s (next prompt, 120 s or the close)
+const RUN_MS = 310000;    // #584: a reply code block's 「执行」 — the host waits up to 300 s
 let S = fresh();
 function fresh() {
   return { phase: 'idle', minutes: 15, G: null, ch: null, r1: null, r2: null, id: null, expires: 0, fa: null, seq: 0, atPrompt: true,
@@ -448,7 +449,7 @@ function open(prefill, info, o = {}) {
   const text = o.bang ? t('p414.introBang', { line: o.bang.line.slice(0, 200), n: S.minutes }) : o.go ? t('p414.introGo', { n: S.minutes })
     : S.enable ? t('p417.intro', { n: S.minutes }) : t('p408.intro', { n: S.minutes });
   openSheet({ kind: 'intro', title: t('p408.title'), text, yes: t('p408.preparing'), no: t('sheet.cancel'), wait: true,
-    onYes: introYes, onNo: () => { const b = S.pendBang; S.phase = 'idle'; abandon(); if (b) restore(b.line); } });
+    onYes: introYes, onNo: () => { const b = S.pendBang; S.phase = 'idle'; abandon(); if (b) unrun(b, 'cancel'); } });
   if (!S.pty) fetchChallenge();
   else loadPty().then(() => { if (S.phase === 'intro') fetchChallenge(); },
     () => { if (S.phase !== 'intro') return; closeSheet(); abandon(); toast(t('terminal.loadFailed'), 7000, 'error'); });   // fallback: line mode
@@ -523,7 +524,7 @@ function refuse(why, m = {}) {
   const b = S.pendBang;
   S.phase = 'idle';
   hideQuiet();
-  if (b) restore(b.line);
+  if (b) unrun(b, 'open');
   if (why === 'no_passkey') { noPasskey(); return; }
   const w = OPEN_WHY.includes(why) ? t('p408.no.' + why, { n: Math.max(1, Math.ceil((Number(m.secs) || 60) / 60)) }) : why;
   toast(t('p408.failed', { why: w }), 5000, 'error');
@@ -540,7 +541,7 @@ function ready(m) {
   setInput(S.prefill); S.prefill = '';
   if (S.go) { const g = S.go; S.go = null; goInto(g); }
   const b = S.pendBang; S.pendBang = null;
-  if (b) { collapse(); sendLine(b.line, b.sid); }   // P414: opened for a 「!」 line — it runs behind the chip
+  if (b) { collapse(); sendLine(b.line, b.sid, b.run); }   // P414: opened for a 「!」 line — it runs behind the chip (#584: or a 「执行」)
 }
 function setInput(v) {
   if (S.pty && S.px) { if (v) { S.go = { cmd: String(v).slice(0, LINE_MAX), h: '', own: true }; S.prefillPending = true; paintGo(); } S.px.focus(); return; }   // 0.26.9: typed in only on a tap
@@ -611,7 +612,7 @@ function loginAnswer(c, ok) {
 
 // ---------------------------------------------------------------- lines, keys, history
 /** The input line — or (P414, §37.12) a 「!」 line from the message box with its say sid (`bang`), which leaves the input alone. */
-function sendLine(given, bang) {
+function sendLine(given, bang, run = null) {
   if (S.phase !== 'ready' || (sheet && !bang)) return false;
   const i = $('term-input'), line = bang ? given : i.value;
   if (CTRL.test(line)) return badLine('p408.bad');
@@ -619,10 +620,10 @@ function sendLine(given, bang) {
   if (enc.encode(line).length > LINE_MAX) return badLine('p408.long');
   const seq = ++S.seq;
   S.pre = { seq, was: S.atPrompt };   // P414 (R3-1): a line the host did not run gives the prompt state back (notRun)
-  send({ t: 'term_line', id: S.id, seq, line, ...(bang ? { bang } : {}) });
+  send({ t: 'term_line', id: S.id, seq, line, ...(bang ? { bang } : {}), ...(bang && run ? runFields(run) : {}) });
   echo(line);
   if (line) { if (S.hist[S.hist.length - 1] !== line) S.hist.push(line); if (S.hist.length > 200) S.hist.shift(); }
-  if (bang) { clearTimeout(S.bang?.timer); S.bang = { sid: bang, seq, line, timer: setTimeout(() => bangEnd(bang), BANG_MS) }; paintChip(); }
+  if (bang) { clearTimeout(S.bang?.timer); S.bang = { sid: bang, seq, line, run, timer: setTimeout(() => bangLost(bang), run ? RUN_MS : BANG_MS) }; paintChip(); }
   else { S.hi = -1; S.draft = ''; i.value = ''; S.go = null; paintGo(); }
   S.atPrompt = false; paintProg();
   return true;
@@ -670,12 +671,32 @@ function bang(line, sid, info) {
 /** P414 (R3-1): the terminal full screen + 「a program is waiting for input; answer it there」. */
 function programWaits() { expand(); toast(t('p414.bangProgram'), 6000); }
 function bangEnd(sid) { if (S.bang && S.bang.sid === sid) { clearTimeout(S.bang.timer); S.bang = null; paintChip(); } }
+// #584: a reply code block's 「执行」 rides the 「!」 path with `run` = {from, cb}: the host's result (term_bang {run: 1}) goes to
+// cb, never a chat page; a line that did not run says why to cb instead of offering it back to the message box.
+const runFields = (run) => ({ run: 1, ...(Number.isInteger(run.from) && run.from >= 0 ? { from: run.from } : {}) });
+function unrun(b, why) { if (b && b.run) { try { b.run.cb({ ok: false, why }); } catch { /* the block is gone */ } } else if (b) restore(b.line); }
+function bangLost(sid) { const b = S.bang && S.bang.sid === sid ? S.bang : null; bangEnd(sid); if (b && b.run) unrun(b, 'lost'); }
+/** termhook.run(): like bang() for a code block's 「执行」 → 'sent' | 'open' (the open flow started) | 'pty' (a PTY terminal is
+ *  open: the caller fills the line in instead) | 'busy' | 'program' | false. */
+function run(line, sid, info, r) {
+  if (S.phase === 'ready') {
+    if (S.bang) return 'busy';
+    if (!S.atPrompt) { programWaits(); return 'program'; }
+    if (S.pty) return 'pty';
+    return sendLine(line, sid, r) ? 'sent' : false;
+  }
+  if (S.phase !== 'idle') { toast(t('p414.opening'), 3000); return false; }
+  return open('', info, { bang: { line, sid, run: r } }) ? 'open' : false;
+}
+/** #584 「停止」: Ctrl+C to what this 「执行」 started (only while it is the running line). */
+function stopRun(sid) { if (S.bang && S.bang.sid === sid && S.phase === 'ready') { sendKey('int'); return true; } return false; }
 /** Put a 「!」 line that did not run back into the message box (offered, never forced over what is there). */
 function restore(line) { toastAction(t('p414.notRun'), t('p414.putBack'), () => H.insert('!' + line), 8000); }
 function onBang(m) {
   if (typeof m.sid !== 'string' || !S.bang || m.sid !== S.bang.sid) return;
   const b = S.bang;
   bangEnd(m.sid);
+  if (b.run) { try { b.run.cb(m.run === 1 ? m : { ok: false, why: m.why || 'failed' }); } catch { /* gone */ } if (m.why === 'program') programWaits(); return; }
   if (m.ok !== false) return;
   // §37.12 (host build): `failed` = the line DID run (its output is on this page) but its chat page could not be written —
   // never offered back for a second run; `running` (another 「!」 still running) = it did not run
@@ -835,10 +856,11 @@ function confirmLine(m) {
   // P414 (H1): a line the Agent filled in and the owner sent unedited — always this card, whatever the classifier said
   const agent = m.agent === 1 || m.agent === true;
   const bangSid = S.bang && S.bang.seq === m.seq ? S.bang.sid : null;   // §37.12: the signed resend keeps `bang`
+  const bangRun = bangSid ? S.bang.run : null;                           // #584: … and `run`
   openSheet({ kind: agent ? 'agent' : 'confirm', title: t(agent ? 'p414.agentTitle' : 'p408.confirmTitle'), pre: line,
     text: agent ? t('p414.agentText') : why ? t('p408.confirmWhy', { why }) : '', yes: t('p408.run'), no: t('sheet.cancel'),
-    ttl: 120000, pk: uv ? { fa: S.faS || null } : null, onExpire: () => { out(t('p408.expired') + '\n'); notRun(m.seq); ptyRefuse(true); if (bangSid) bangEnd(bangSid); },
-    onNo: () => { out(t('p408.notRun') + '\n'); notRun(m.seq); ptyRefuse(); if (bangSid) { bangEnd(bangSid); restore(line); } },
+    ttl: 120000, pk: uv ? { fa: S.faS || null } : null, onExpire: () => { out(t('p408.expired') + '\n'); notRun(m.seq); ptyRefuse(true); if (bangSid) { const b = S.bang; bangEnd(bangSid); if (bangRun) unrun(b, 'expired'); } },
+    onNo: () => { out(t('p408.notRun') + '\n'); notRun(m.seq); ptyRefuse(); if (bangSid) { const b = S.bang; bangEnd(bangSid); if (bangRun) unrun(b, 'refused'); else restore(line); } },
     onYes: () => {
       let p;
       if (!uv) p = Promise.resolve({ fa: undefined });
@@ -846,9 +868,9 @@ function confirmLine(m) {
       sheetBusy(true);
       p.then(async ({ fa }) => {
         const signed = await signCtl('term_line', { id: S.id, line }, m.n);
-        send({ t: 'term_line', id: S.id, seq: m.seq, line, ...signed, ...(fa ? { fa } : {}), ...(bangSid ? { bang: bangSid } : {}) });
+        send({ t: 'term_line', id: S.id, seq: m.seq, line, ...signed, ...(fa ? { fa } : {}), ...(bangSid ? { bang: bangSid } : {}), ...(bangSid && bangRun ? runFields(bangRun) : {}) });
         // §37.12: the host's 120 s for a 「!」 line start when it runs (now), not when it was first sent
-        if (bangSid && S.bang && S.bang.sid === bangSid) { clearTimeout(S.bang.timer); S.bang.timer = setTimeout(() => bangEnd(bangSid), BANG_MS); }
+        if (bangSid && S.bang && S.bang.sid === bangSid) { clearTimeout(S.bang.timer); S.bang.timer = setTimeout(() => bangLost(bangSid), bangRun ? RUN_MS : BANG_MS); }
         closeSheet();
       }).catch((e) => { sheetBusy(false); if (e?.name === 'Error' || !sheetPkFail(sheet?.kind === 'confirm' || sheet?.kind === 'agent' ? sheet : null, e)) toast(t('p408.faCancel'), 3600); });   // P539
     } });
@@ -892,7 +914,7 @@ function closed(why) {
   S.phase = 'closed';
   queue.length = 0; closeSheet();
   clearInterval(tick); tick = 0;
-  clearTimeout(S.bang?.timer); S.bang = null;
+  clearTimeout(S.bang?.timer); { const b = S.bang; S.bang = null; if (b && b.run) unrun(b, 'closed'); }
   paintChrome();
   status(t('p408.closed', { why: t('p408.why.' + why) }));
   wipe();
@@ -907,7 +929,7 @@ function dropped() {
   S.phase = 'closed';
   queue.length = 0; closeSheet();
   clearInterval(tick); tick = 0;
-  clearTimeout(S.bang?.timer); S.bang = null;
+  clearTimeout(S.bang?.timer); { const b = S.bang; S.bang = null; if (b && b.run) unrun(b, 'closed'); }
   if (S.view === 'collapsed') { wipe(); toast(t('p408.dropped'), 5000, 'error'); hide(); S.resume = resume; return; }   // P414
   paintChrome();
   status(t(resume ? 'terminal.reconnect' : 'p408.dropped'));
@@ -1061,7 +1083,7 @@ function paintLeft() {
 
 register({
   configure(h) { H = { ...H, ...h }; },
-  open, onMsg, bang, go,
+  open, onMsg, bang, go, run, stopRun,
   gone: () => dropped(),
   isOpen: () => S.phase === 'ready',
   _debug: () => ({ phase: S.phase, id: S.id, seq: S.seq, hist: [...S.hist], atPrompt: S.atPrompt, login: !!S.login, sheet: sheet && sheet.kind, queued: queue.length,

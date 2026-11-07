@@ -126,8 +126,12 @@ def task_row(r: dict) -> dict:
     return out
 
 
-def execute(st, req):
+def execute(st, req, *, _support_binding=None):
     """No paths, URLs, credentials, subprocesses or caller-selected function names accepted."""
+    if _support_binding is not None:
+        from .feedback_native import Binding, canonical
+        if not isinstance(_support_binding, Binding) or _support_binding.host.st is not st or not _support_binding.live() or canonical(req) != _support_binding.body:
+            return {'exit':3, 'output':'NOT SENT — original native feedback binding is no longer current.\n'}
     from . import cloud, feedback, reconnect, support
     op, allowed = req.get("op"), ALLOWED
     fields = set(req) - {"t", "op"}
@@ -208,7 +212,7 @@ def execute(st, req):
         elif op == "support":
             rc = support.run_send(req.get("kind"), req.get("text"), thread=req.get("thread"),
                                   attach_doctor=req.get("attach_doctor", False), wait=wait, lang=req.get("lang"),
-                                  ch=support.channel_for(st), doctor_fn=feedback_snapshot, out=out,
+                                  ch=(_support_binding.channel(support.channel_for(st)) if _support_binding is not None else support.channel_for(st)), doctor_fn=feedback_snapshot, out=out,
                                   owner_confirmed=req.get("owner_confirmed", False) and not support._full_access(st))  # #520: no fabricated human answer
         elif op == "thread":
             rc = support.run_thread(req.get("thread"), wait=wait, ch=support.channel_for(st), out=out)

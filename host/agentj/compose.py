@@ -54,6 +54,7 @@ T = {
         "excerpt": "（摘录）",
         "mq_head": "【引用 {i}/{n} · 你的回复 #{id} · {when}】",
         "mq_ctx": "（选自这条回复，它的开头：{line}）",
+        "voice_only_error": "（这条消息的语音转写失败，音频仍在附件路径。请如实说明转写失败；不要推断录音没有声音，也不要猜内容。可以请主人重试转写或选择打字。）",
         "voice_only_fail": "（这条消息只有语音、没有文字，而且语音没转写出来。请简短告诉对方没听清，请他再说一遍或者打字——不要自己猜他说了什么。）",
         "who": {"phone": "你", "host": "Agent J 主机", "agent": "Agent", "sys": "系统", "task": "定时任务", "cmd": "命令"},
         "why": {"timeout": "处理超时", "no_speech": "没有听到说话", "not_installed": "Agent J 主机上还没装语音转写",
@@ -82,6 +83,7 @@ T = {
         "excerpt": "(excerpt)",
         "mq_head": "[Quote {i}/{n} · your reply #{id} · {when}]",
         "mq_ctx": "(selected from that reply, which begins: {line})",
+        "voice_only_error": "(Voice transcription failed; the audio is still at the attachment path. Explain that transcription failed. Do not infer that the recording is silent or guess its content. The owner can retry transcription or choose to type.)",
         "voice_only_fail": "(This message is a voice note only, with no text, and it could not be transcribed. Briefly tell them you "
                            "did not catch it and ask them to say it again or type it — do not guess what was said.)",
         "who": {"phone": "you", "host": "computer", "agent": "Agent", "sys": "system", "task": "scheduled task",
@@ -226,7 +228,7 @@ def render(text: str, files: list[dict], lang: str = "zh", quote: str | None = N
             parts.append(head + "\n" + t["asr_fail"].format(why=t["why"].get(a.get("why"), a.get("why") or "?")))
     if files and not (text and text.strip()) and all(f.get("asr") and not (f["asr"].get("ok") and (f["asr"].get("text") or "").strip())
                                                      for f in files):
-        parts.append(t["voice_only_fail"])
+        parts.append(t["voice_only_fail"] if all(f["asr"].get("why") == "no_speech" for f in files) else t["voice_only_error"])
     return "\n\n".join(parts)
 
 

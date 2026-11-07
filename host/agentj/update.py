@@ -659,10 +659,10 @@ def web_refresh_text(lang="zh", web: str | None = "older") -> str:
         note = ('The new web page will be released separately; refresh after it is available.' if lang == "en" else
                 '手机/网页的新版会单独上线；新版网页稍后上线，再刷新页面。')
     if lang == "en":
-        return (note + ' To refresh, tap ' + menu + '. If the page stays grey after refreshing, close and reopen it. If it is still grey, make sure the computer is awake and online; '
-                'on that computer, open Terminal and run `agentj doctor --reconnect`, then reopen the page.')
-    return (note + '刷新入口：' + menu + '。若刷新后仍灰，先关闭并重新打开页面；仍未恢复，再确认 Agent J 主机已唤醒并联网，在那台主机打开终端运行 '
-            '`agentj doctor --reconnect`，再重新打开页面。')
+        return (note + ' To refresh, tap ' + menu + '. If the page stays grey, close and reopen it. '
+                'Use Repair connection below, or Settings → Emergency repair. If the host is offline, wake that computer first.')
+    return (note + '刷新入口：' + menu + '。若刷新后仍灰，先关闭并重新打开页面。'
+            '使用下方「修复连接」，或前往设置中的「紧急修复」。主机离线时，请先唤醒那台电脑。')
 
 
 def repair_upgrade(st, rows):

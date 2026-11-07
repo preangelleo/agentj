@@ -186,3 +186,6 @@ body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hi
 #busyList .busy-at svg{width:20px;height:20px;pointer-events:none}
 #busyList .busy-at:hover,#busyList .busy-at:active{background:color-mix(in srgb,currentColor 10%,transparent)}
 #busyList .busy-at:focus-visible{outline:2px solid currentColor;outline-offset:-4px}
+
+/* 0284 busy-task chips identify the task title; raw task identity remains hidden metadata. */
+.workflow-token[data-task-id]{max-width:100%}

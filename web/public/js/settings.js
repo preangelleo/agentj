@@ -197,6 +197,7 @@ async function onA2hs() {
 export const PREF_KEYS = ['appearance.language', 'appearance.theme', 'voice.speak_replies', 'voice.wake_enabled', 'agent.high_risk_warnings', 'agent.session_mode', 'agent.isolation', 'agent.allow_docker'];
 PREF_KEYS.push(...ASR_KEYS, REMOTE_NAMES);
 PREF_KEYS.push('updates.mode', 'heartbeat.enabled', 'heartbeat.interval_minutes', 'approval.jev_threshold', 'approval.goal_auto', 'quota.auto_switch');
+PREF_KEYS.push('agent.main_thread_guard','agent.main_thread_work_calls','agent.main_thread_seconds');
 PREF_KEYS.push('updates.auto_install');                 // P203: half of the 升级方式 (自动 = install when idle) choice
 PREF_KEYS.push(...imsg.PREF_KEYS);       // P274: the iMessage card's parameters (host lists them only on a Mac)
 PREF_KEYS.push('heartbeat.quiet_enabled', 'heartbeat.quiet_start', 'heartbeat.quiet_end');
@@ -472,6 +473,9 @@ export function render() {
   const name = H.agentName();
   el('set-computer').textContent = !H.paired() ? t('set.computerNone') : t(H.connected() ? 'set.computerOn' : 'set.computerOff', { name });
   wechat.renderChannels();
+  el('set-main-thread-row').hidden = !hostInfo?.settable?.includes('agent.main_thread_guard');
+  tgl('set-main-thread',pget('agent.main_thread_guard',true)!==false);
+  for(const [id,key,fallback] of [['set-main-thread-calls','agent.main_thread_work_calls',8],['set-main-thread-seconds','agent.main_thread_seconds',180]]){const input=el(id);if(document.activeElement!==input)input.value=pget(key,fallback);}
   const risk = pget('agent.high_risk_warnings', false) !== false;
   tgl('set-risk', risk);
   const goalAuto = pget('approval.goal_auto', true) !== false;          // P158: goal-mode 10-second countdown
@@ -757,8 +761,9 @@ export function configure(hooks) {
     render();
     setPref('appearance.theme', b.dataset.setTheme);
   });
+  for(const [id,key,min,max] of [['set-main-thread-calls','agent.main_thread_work_calls',2,1000],['set-main-thread-seconds','agent.main_thread_seconds',30,3600]])el(id).addEventListener('change',()=>{const input=el(id),v=Number(input.value);if(Number.isInteger(v)&&v>=min&&v<=max)setPref(key,v).then(ok=>{if(!ok)explainPrefFail();});else{input.reportValidity();render();}});
   bindAsr({ set: setPref, failed: explainPrefFail, keysSet, t, notify });
-  for (const id of ['set-speak', 'set-wake', 'set-risk', 'set-goal', 'set-qswitch', 'set-iso', 'set-docker', 'set-hb']) el(id).addEventListener('click', () => {
+  for (const id of ['set-main-thread','set-speak', 'set-wake', 'set-risk', 'set-goal', 'set-qswitch', 'set-iso', 'set-docker', 'set-hb']) el(id).addEventListener('click', () => {
     const b = el(id), next = b.getAttribute('aria-checked') !== 'true';
     tgl(id, next);
     if (id === 'set-iso') isoScope(next, pget('agent.session_mode', 'independent') === 'shared' ? 'shared' : 'independent');
@@ -1031,6 +1036,6 @@ export function connectionChanged(on, pending = false) {
     n.textContent = t(on ? (connectionRecovered ? 'p392.restored' : 'p392.connected') : 'p392.disconnected');
     n.setAttribute('aria-label', n.textContent); n.title = n.textContent;
   }
-  if (changed && isOpen()) toast(t(on ? 'p392.restored' : 'p392.disconnected'), 3600);
+  // 1450 G: connection changes update the quiet status line only.
 }
 onLang(() => { if (connectionState !== null || connectionPending) connectionChanged(!!connectionState && !connectionPending, connectionPending); });

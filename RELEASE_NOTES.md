@@ -1,5 +1,5 @@
-# Agent J v0.28.4
+# Agent J v0.28.5
 
-Fix Codex child provenance, same-owner confirmation and legacy pairing polls; size notifications by measured text width. Approval checks stay intact.
+Fix native child task binding; add encrypted downloads, reply commands and repair actions. Refine device approvals, readers and connection notices.
 
-修复Codex子线程来源、同主人确认与标签、旧配对服务兼容；通知按实际文字宽度选形，危险操作验证保持。
+修复原生子线程来源，新增加密大文件下载、回复命令和紧急修复；整理设备审批、阅读器与连接提示。

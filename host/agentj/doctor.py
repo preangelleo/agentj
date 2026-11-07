@@ -1231,6 +1231,10 @@ def check_alias() -> dict:
     parts, warn = [], False
     for r in rows:
         n = r["name"]
+        if n == alias.COMPAT:
+            warn = warn or r["state"] == "absent"
+            parts.append("旧版命令兼容 / legacy command compatibility: " + r["state"] + " (agentj.app/docs/legacy-migration/)")
+            continue
         if r["state"] == "installed":
             parts.append(f"{n} → agentj ({tilde(r['link'])})" + (" · 下个版本移除 / goes away next version" if n == alias.COMPAT else ""))
         elif r["state"] == "taken":

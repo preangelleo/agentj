@@ -202,6 +202,44 @@ class OwnerHostsHost(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state['r'], 'owned-read')
         self.assertEqual(state['rows'][0]['owner'], 'self')
 
+    async def test_discovery_prioritizes_same_owner_without_claiming_ssh_key(self):
+        svc = mock.Mock()
+        svc.store.friends.return_value = ['peer-first', 'peer-second']
+        svc.same_owner.active.return_value = True
+        self.host.peers = svc
+        candidates = oh.parse_config(''.join(f'Host alias{i}\n User dev\n' for i in range(30)))
+        with mock.patch.object(oh, 'discover_config', return_value=candidates):
+            state = self.host.owner_hosts.state()
+        self.assertEqual([r['peer'] for r in state['candidates'][:2]], ['peer-first', 'peer-second'])
+        self.assertEqual(len(state['candidates']), 24)
+        self.assertEqual(state['candidate_more'], 8)
+        for candidate in state['candidates']:
+            self.assertNotIn('public_key', candidate)
+            self.assertNotIn('fingerprint', candidate)
+        self.assertEqual(state['rows'], [])
+
+    async def test_one_uv_covers_every_batch_row_and_retained_entry(self):
+        rows = [{**row(), 'alias': alias} for alias in ['retained', 'new-a', 'new-b']]
+        target = self.target(rows)
+        self.assertFalse(self.host.owner_hosts.shape(self.target([{**row(), 'alias': f'entry{i}'} for i in range(13)])))
+        original = self.signed(target)
+        response = await self.send(original)
+        self.assertEqual(response['why'], 'passkey_required')
+        uv = self.with_uv(original)['fa']
+        changed = copy.deepcopy(target)
+        changed['rows'][1]['hostname'] = 'substituted.example'
+        resigned = sign(self.phone, oh.ACTION, changed,
+                        {'t': oh.ACTION, 'r': 'batch-changed', 'target': changed},
+                        n=original['n'], ts=original['ts'])
+        result = await self.send({**resigned, 'fa': uv})
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['why'], 'passkey_failed')
+        self.assertIsNone(self.host.owner_hosts.read())
+        # A failed request consumes its nonce. Fresh exact batch gets one new whole-target UV.
+        await self.bind(rows)
+        self.assertEqual([r['alias'] for r in self.host.owner_hosts.read()['target']['rows']],
+                         ['retained', 'new-a', 'new-b'])
+
     async def test_estop_blocks_binding(self):
         self.host.estop = {'on': True}
         result = await self.send(self.with_uv(self.signed(self.target())))

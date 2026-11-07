@@ -31,12 +31,13 @@ import subprocess
 import time
 from types import SimpleNamespace as NS
 
-from . import controls, wire
+from . import controls, rescue_repair, wire
 from .text import pick
 
 OK_AGENT = ("idle", "working", "waiting", "compacting")
 RESCUE_ACTIONS = ("help", "report", "reconnect", "restart", "linger", "rollback", "new_session", "clear_friend_asks", "restart_session",
-                  "end_turn", "takeover")    # 0269 (#461): owner-signed only — never offered, never run by support
+                  "end_turn", "takeover",    # 0269 (#461): owner-signed only — never offered, never run by support
+                  "stop_hard", "probe", "repair", "repair_cont", "new_chat")   # #585: owner-signed only, never support
 RESET_CMDS = ("reset",)
 UNDO = "reset_undo.json"
 RELAY_WAIT = 25.0        # s: the relay link back after a re-dial
@@ -548,8 +549,227 @@ class HostOps:
         return await asyncio.to_thread(run_restart_serve, self.h.st)
 
 
+# ------------------------------------------------------------------ #585: buttons that prove what they promise
+P585_FLOWS = ("stop_hard", "probe", "repair", "repair_cont", "new_chat", "new_session", "restart")
+TAKE_WHY = {   # 「接管」's real reason and what to do next (chairman: never a silent failure)
+    "estop": ("现在是「全部停下」状态，接管不会动它。点下面的「恢复」，Agent J 会接着自动接管。",
+              "Agent J is stopped (Stop everything), so take-over does nothing. Tap Resume below and Agent J takes over by itself."),
+    "busy": ("另一个修复正在进行，请等它做完再点。", "Another repair is running; wait for it to finish, then tap again."),
+    "no_agent": ("Agent J 主机上还没选好 AI 助手，没有可接管的会话。", "No AI assistant is set up on the Agent J host; there is no session to take over."),
+    "foreign": HEAL["foreign"],
+    "not_recovered": ("已经打断了这一轮，但排队的消息没能送到 AI，会话还没恢复。下一步：点「重启 Agent」（会重新拉起 AI 程序，对话保留）。",
+                      "The turn was interrupted, but the queued message did not reach the AI; the session is not back yet. "
+                      "Next: tap Restart Agent (it starts the AI program again; the conversation is kept)."),
+}
+TAKE_NEXT = {"foreign": "restart", "not_recovered": "restart_session", "busy": "", "no_agent": ""}
+RESTART_RUN = ("正在结束 Agent J 的全部进程并重启服务…", "Ending every Agent J process and restarting the service…")
+RESTART_WAIT = ("服务正在重启，连上后会自动确认 Agent 能回话，不用再点。", "The service is restarting; once connected it checks by itself that the Agent answers — no need to tap again.")
+RESTART_NONE = ("这台 Agent J 主机上的 Agent J 不是作为后台服务运行的，没法从手机重启。", "Agent J on this host does not run as a background service, so it cannot be restarted from the phone.")
+RESTART_FAIL = ("服务没能重启。", "The service did not restart.")
+RESTARTED = ("服务已经重启好了（换成了新的进程）。", "The service restarted (it is a new process now).")
+NOT_RESTARTED = ("服务没有真的重启（还是原来的进程）。", "The service did not really restart (it is still the same process).")
+LADDER = {1: ("停止", "Stop"), 2: ("重启 Agent", "Restart Agent"), 3: ("重启服务", "Restart service"), 4: ("换个新对话", "New conversation")}
+REPAIR_RUN = {1: ("① 正在停下卡住的一切（这一轮、子 Agent、命令、没答完的确认）…", "① Stopping everything that is stuck (the turn, sub-agents, commands, unanswered cards)…"),
+              2: ("② 正在重启 Agent（重新拉起 AI 程序，对话保留）…", "② Reopening the AI session (starting the AI program again; conversation kept)…"),
+              3: ("③ 正在重启服务…", "③ Restarting the service…"),
+              4: ("④ 正在换个新对话（原来的对话保存着）…", "④ Starting a new conversation (the old one is kept)…")}
+STOPPED_WAIT = ("现在是「全部停下」状态。点下面的「恢复」，一键修复会自动接着做，不用再点。",
+                "Stop everything is on. Tap Resume below and One-tap repair goes on by itself; no need to tap again.")
+NEW_OK = ("新对话开好了；原来的对话保存着，随时能找回。", "A new conversation is ready; the old one is kept and can be brought back.")
+NEW_SHARED = ("这个对话开在 Agent J 主机上你自己的窗口里，新对话要在那台电脑上开。可以点「重启 Agent」。",
+              "This conversation lives in your own window on the Agent J host; a new one has to be opened there. You can tap Restart Agent.")
+NEW_FAIL = ("没能开新对话。", "Could not start a new conversation.")
+ALL_FAIL = ("四步都试过了，Agent 还是不回话。可以把去掉隐私的诊断发给客服，请他们远程看看（发之前会再问你一次）。",
+            "All four steps were tried and the Agent still does not answer. You can send a privacy-cleaned diagnosis to "
+            "support so they can look remotely (you are asked once more before it is sent).")
+
+
+def _summary(steps, lang) -> str:
+    marks = [(_t(lang, LADDER[n]) + (" ✓" if ok else " ✗")) for n, ok in steps]
+    return pick(lang, "做了：", "Done: ") + (" → ".join(marks) if marks else "—")
+
+
+class _Rescue585:
+    """#585 flows of Desk (stop_hard · probe · repair · repair_cont · new_chat / new_session · restart)."""
+    async def _p585(self, device, r, flow, emit, finish, ops, lang) -> bool:
+        h = self.h
+        if flow == "stop_hard":
+            await emit(1, "run", _t(lang, REPAIR_RUN[1])[2:])
+            res = await rescue_repair.stop_hard(h, device)
+            text = rescue_repair.stop_text(res, lang)
+            await emit(1, "ok" if res.get("ok") else "fail", text, res.get("why"))
+            extra = {} if res.get("ok") else {"next": "restart" if res.get("why") in ("foreign", "still_running", "not_stopped") else "repair"}
+            await finish({"ok": bool(res.get("ok")), "step": 1, "text": text, **({"why": res["why"]} if res.get("why") else {}), **extra})
+            return False
+        if flow == "probe":
+            rec = rescue_repair.take_marker(h.st)
+            lines = [_t(lang, RESTARTED if rec.get("restarted") else NOT_RESTARTED)] if rec else []
+            await emit(1, "run", _t(lang, rescue_repair.PROBE_RUN))
+            pr = await rescue_repair.probe(h)
+            lines.append(rescue_repair.probe_line(pr, lang))
+            await emit(1, "ok" if pr.get("ok") else "fail", lines[-1], pr.get("why"))
+            await finish({"ok": bool(pr.get("ok")), "step": 1, "text": "\n".join(lines),
+                          **({} if pr.get("ok") else {"why": pr.get("why") or "no_reply", **self._next_for(pr, "repair")})})
+            return False
+        if flow in ("new_chat", "new_session"):
+            await self._new_chat(device, 1, emit, lang, finish_it=finish)
+            return False
+        if flow == "restart":
+            await self._restart(device, r, flow, 1, emit, finish, lang, cont="probe", steps=[])
+            return False
+        if flow == "repair":
+            steps = []
+            estop0 = h.stopped()
+            await emit(1, "run", _t(lang, REPAIR_RUN[1]))
+            res = await rescue_repair.stop_hard(h, device)
+            await emit(1, "ok" if res.get("ok") else "fail", rescue_repair.stop_text(res, lang), res.get("why"))
+            if res.get("why") == "no_agent":
+                await finish({"ok": False, "step": 1, "why": "no_agent", "text": rescue_repair.stop_text(res, lang)})
+                return False
+            if estop0:      # security #585-1/2: a repair never lifts Stop everything itself — the owner's own Resume does,
+                # then the page sends `repair` again (a fresh signature) and the ladder goes on from a clean stop
+                text = rescue_repair.stop_text(res, lang) + "\n" + _t(lang, STOPPED_WAIT)
+                await finish({"ok": False, "step": 1, "why": "estop", "resume": True, "cont": "repair", "text": text})
+                return False
+            if await self._probe_ok(1, emit, lang):
+                steps.append((1, True))
+                return await self._repaired(finish, steps, 1, lang)
+            steps.append((1, False))
+            await emit(2, "run", _t(lang, REPAIR_RUN[2]))
+            from . import phone_restart
+            a0 = h.agent
+            release = bool(a0 is not None and _desktop_waiting(a0) and await desktop_dead(a0))   # as the single button does
+            try:
+                pres = await phone_restart.run(h, release=release)
+            except Exception as e:  # noqa: BLE001
+                pres = {"ok": False, "why": type(e).__name__}
+            await emit(2, "ok" if pres.get("ok") else "fail",
+                       pick(lang, "AI 程序已重新拉起。", "The AI program was started again.") if pres.get("ok") else
+                       pick(lang, "AI 程序没能重新拉起。", "The AI program could not be started again."), pres.get("why"))
+            if pres.get("ok") and await self._probe_ok(2, emit, lang):
+                steps.append((2, True))
+                return await self._repaired(finish, steps, 2, lang)
+            steps.append((2, False))
+            if await self._restart(device, r, "repair", 3, emit, finish, lang, cont="repair_cont", steps=steps):
+                return False
+            steps.append((3, False))
+            return await self._step4(device, finish, emit, steps, lang)
+        if flow == "repair_cont":
+            rec = rescue_repair.take_marker(h.st) or {}
+            steps = [tuple(x) for x in rec.get("steps") or [] if isinstance(x, list) and len(x) == 2 and x[0] in LADDER
+                     and isinstance(x[1], bool)]
+            restarted = bool(rec.get("restarted"))
+            await emit(3, "ok" if restarted else "fail", _t(lang, RESTARTED if restarted else NOT_RESTARTED))
+            if restarted and await self._probe_ok(3, emit, lang):
+                steps.append((3, True))
+                return await self._repaired(finish, steps, 3, lang)
+            steps.append((3, False))
+            return await self._step4(device, finish, emit, steps, lang)
+        return False
+
+
+    async def _step4(self, device, finish, emit, steps, lang) -> bool:
+        ok, res = await self._new_chat(device, 4, emit, lang, label=_t(lang, REPAIR_RUN[4]))
+        if ok:
+            steps.append((4, True))
+            return await self._repaired(finish, steps, 4, lang, old=res.get("old_session"))
+        steps.append((4, False))
+        self.h.st.log("rescue_repair", result="all_failed")
+        await finish({"ok": False, "step": 4, "why": "all_failed", "report": True,
+                      "text": _summary(steps, lang) + "\n" + _t(lang, ALL_FAIL)})
+        return False
+
+
+    async def _repaired(self, finish, steps, n, lang, old=None) -> bool:
+        self.h.st.log("rescue_repair", result="ok", step=n)
+        await finish({"ok": True, "step": n, "steps": [x[0] for x in steps if x[1]],
+                      "text": _summary(steps, lang),
+                      **({"old_session": old} if old else {})})
+        return False
+
+
+    async def _probe_ok(self, step, emit, lang) -> bool:
+        return bool((await self._probe_step(step, emit, lang)).get("ok"))
+
+
+    async def _probe_step(self, step, emit, lang) -> dict:
+        await emit(step, "run", _t(lang, rescue_repair.PROBE_RUN))
+        pr = await rescue_repair.probe(self.h)
+        await emit(step, "ok" if pr.get("ok") else "fail", rescue_repair.probe_line(pr, lang), pr.get("why"))
+        return pr
+
+
+    @staticmethod
+    def _next_for(pr: dict, nxt: str) -> dict:
+        if pr.get("why") == "estop":
+            return {"resume": True, "cont": "probe"}
+        return {"next": nxt} if nxt else {}
+
+
+    async def _new_chat(self, device, step, emit, lang, finish_it=None, label=None):
+        """「换个新对话」: stop what is stuck first, put the conversation aside (kept, reset_undo.json), prove the new one answers."""
+        h = self.h
+        await emit(step, "run", label or _t(lang, REPAIR_RUN[4])[2:])
+        a = h.agent
+        if a is not None and (getattr(a, "status", None) in ("working", "compacting") or _desktop_waiting(a)):
+            sr = await rescue_repair.stop_hard(h, device)
+            await emit(step, "ok" if sr.get("ok") else "fail", rescue_repair.stop_text(sr, lang), sr.get("why"))
+        res = await new_session(h)
+        if res.get("skip"):
+            text, ok, why = _t(lang, NEW_SHARED), False, "shared"
+            await emit(step, "skip", text)
+        elif res.get("ok"):
+            await emit(step, "ok", _t(lang, NEW_OK))
+            pr = await self._probe_step(step, emit, lang)
+            ok, why = bool(pr.get("ok")), pr.get("why")
+            text = _t(lang, NEW_OK) + "\n" + rescue_repair.probe_line(pr, lang)
+        else:
+            why = res.get("why") or "failed"
+            text, ok = _t(lang, NEW_FAIL), False
+            await emit(step, "fail", text, why)
+        if finish_it is not None:
+            extra = {} if ok else ({"resume": True, "cont": "probe"} if why == "estop" else {"next": "restart_session" if why == "shared" else "repair"})
+            await finish_it({"ok": ok, "step": step, "text": text, **({"old_session": res["old_session"]} if res.get("old_session") else {}),
+                             **({} if ok else {"why": why or "failed"}), **extra})
+        return ok, res
+
+
+    async def _restart(self, device, r, flow, step, emit, finish, lang, cont, steps) -> bool:
+        """「重启服务」: end the harness tree Agent J started (a detached backend would outlive the service otherwise — the
+        customer's `agentj service restart` left Codex stuck), leave a marker, tell the page what to send once it is back
+        (`cont`), then ask the service manager. → True when the restart was handed over (the page continues), False when it
+        could not be (not a service / the manager refused): the caller goes on."""
+        h = self.h
+        from . import service as svc
+        try:
+            installed = bool((await asyncio.to_thread(svc.status)).get("installed"))
+        except Exception:  # noqa: BLE001
+            installed = False
+        if not installed:
+            await emit(step, "skip" if flow == "repair" else "fail", _t(lang, RESTART_NONE))
+            if flow != "repair":
+                await finish({"ok": False, "step": step, "why": "not_installed", "text": _t(lang, RESTART_NONE), "next": "restart_session"})
+            return False
+        await emit(step, "run", _t(lang, RESTART_RUN if flow != "repair" else REPAIR_RUN[3]))
+        with contextlib.suppress(Exception):
+            await rescue_repair.stop_hard(h, device)
+        rescue_repair.write_marker(h.st, flow, r, device, steps=[list(x) for x in steps])
+        await finish({"ok": True, "step": step, "pending": True, "cont": cont, "text": _t(lang, RESTART_WAIT),
+                      **({"resume": True} if h.stopped() else {})})
+        await asyncio.sleep(1.0)                  # let reset_done leave first
+        res = await asyncio.to_thread(run_restart_serve, h.st)
+        if res.get("ok"):
+            return True
+        with contextlib.suppress(OSError):
+            (h.st.root / rescue_repair.MARKER).unlink()
+        await emit(step, "fail", _t(lang, RESTART_FAIL), res.get("why") or res.get("detail"))
+        if flow != "repair":
+            await finish({"ok": False, "step": step, "why": "restart_failed", "text": _t(lang, RESTART_FAIL), "next": "help"})
+        return False
+
+
 # ------------------------------------------------------------------ serve glue
-class Desk:
+class Desk(_Rescue585):
     """`reset` / `rescue_do` (signed, §8 control-v1) and `/reset`. One run at a time; works during an e-stop (it only
     repairs connectivity — the stop switch stays on)."""
 
@@ -632,7 +852,9 @@ class Desk:
 
         ops = HostOps(h, device)
         try:
-            if flow == "restart_session":
+            if flow in P585_FLOWS:                       # #585: every button proves its promise (rescue_repair)
+                restart_after = await self._p585(device, r, flow, emit, finish, ops, lang)
+            elif flow == "restart_session":
                 from . import phone_restart
                 a0 = h.agent
                 release = False
@@ -641,11 +863,11 @@ class Desk:
                     un = {"ran": True, "ok": True, "how": "released"} if release else {"ran": True, "ok": False, "why": "desktop_live"}
                 elif a0 is not None and getattr(a0, "status", None) in ("working", "compacting"):
                     un = {"ran": True, "ok": True, "how": "stopped"}      # the reopen ends that process: a /stop and more
-                await emit(1, "run", pick(lang, "正在重开 AI 会话…", "Reopening the AI session…"))
+                await emit(1, "run", pick(lang, "正在重启 Agent…", "Reopening the AI session…"))
                 res = await phone_restart.run(h, release=release)
                 if not res.get("ok") and un.get("ran") and un.get("ok"):
                     un = {"ran": False}
-                text = pick(lang, "AI 会话已重开，可以继续聊天，不需要到 Agent J 主机前。", "The AI session is ready. Continue chatting without going to the computer.") if res.get("ok") else pick(lang, "没能重开 AI 会话，请试「请 Agent J Father 远程帮忙」。", "Could not reopen the AI session. Try Ask Agent J Father for remote help.")
+                text = pick(lang, "Agent 已重启，可以继续聊天，不需要到 Agent J 主机前。", "The Agent has restarted. Continue chatting without going to the computer.") if res.get("ok") else pick(lang, "没能重启 Agent，请试「请 Agent J Father 远程帮忙」。", "Could not restart the Agent. Try Ask Agent J Father for remote help.")
                 if res.get("new"):
                     text = pick(lang, "原会话没能恢复，已开新会话并接好手机；之前的对话保存着，不需要到 Agent J 主机前。", "The old session could not resume. A new session is connected to your phone; the old conversation is kept. No need to go to the computer.")
                 if res.get("ok"):          # #462: a pending Claude sign-in hand-over is proven in the reopened process
@@ -653,10 +875,24 @@ class Desk:
                     live = await claude_live.after_reopen(h)
                     text += ("\n" + live) if live else ""
                 await emit(1, "ok" if res.get("ok") else "fail", text)
-                await finish_told({**res, "step": 1, "text": text})
+                extra = {}
+                if res.get("ok"):          # #585: 「重启 Agent」 is done only when the new process answers one line
+                    pr = await self._probe_step(2, emit, lang)
+                    if not pr.get("ok"):
+                        res = {**res, "ok": False, "why": pr.get("why") or "no_reply"}
+                        text += "\n" + rescue_repair.probe_line(pr, lang)
+                        extra = self._next_for(pr, "repair")
+                    else:
+                        text += "\n" + rescue_repair.probe_line(pr, lang)
+                elif res.get("why") == "estop":
+                    text = rescue_repair.probe_line({"why": "estop"}, lang)
+                    extra = {"resume": True, "cont": "probe"}
+                else:
+                    extra = {"next": "restart"}
+                await finish_told({**res, "step": 1, "text": text, **extra})
             elif flow in ("end_turn", "takeover"):
                 await self._heal(device, flow, emit, finish, ops, lang)
-            elif flow in ("reset", "reconnect", "new_session", "restart"):
+            elif flow in ("reset", "reconnect"):
                 if flow in ("reset", "new_session"):         # #484: what /stop does, first — never wait behind the turn
                     a0 = h.agent
                     if a0 is not None and (_desktop_waiting(a0) or getattr(a0, "status", None) in ("working", "compacting")):
@@ -757,7 +993,18 @@ class Desk:
         why = res.get("why")
         text = pick(lang, *(HEAL[flow][1] if res.get("ok") else HEAL["estop" if why == "estop" else "foreign" if why == "foreign" else "fail"]))
         await emit(1, "ok" if res.get("ok") else "fail", text, why)
-        await finish({"ok": bool(res.get("ok")), "step": 1, "text": text, **({"why": why} if why else {})})
+        extra = {}
+        if flow == "takeover":     # #585: never a silent failure — the real reason, the next step, and proof it answers
+            if res.get("ok"):
+                pr = await self._probe_step(2, emit, lang)
+                text += "\n" + rescue_repair.probe_line(pr, lang)
+                if not pr.get("ok"):
+                    res, why = {**res, "ok": False}, pr.get("why") or "no_reply"
+                    extra = self._next_for(pr, "restart_session")
+            else:
+                text = _t(lang, TAKE_WHY.get(why) or TAKE_WHY["not_recovered"])
+                extra = {"resume": True, "cont": "takeover"} if why == "estop" else {"next": TAKE_NEXT.get(why, "restart_session")}
+        await finish({"ok": bool(res.get("ok")), "step": 1, "text": text, **({"why": why} if why else {}), **extra})
 
     async def _help(self, emit, finish, ops, lang) -> bool:
         """② in a worker thread (rescue_kit.help_flow); its actions map to the same executors. A restart (asked by support

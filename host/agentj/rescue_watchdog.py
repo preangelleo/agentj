@@ -50,6 +50,10 @@ MAX_SESSIONS = 64
 LOG_MAX = 256 * 1024
 CLOSE_REPLACED, CLOSE_SEAT = 4001, 4002
 ACTIONS = ("help", "report", "reconnect", "restart", "linger", "rollback", "new_session")
+# #585: when serve itself is stuck, every button that needs serve can only mean "restart it" — the watchdog runs its
+# restart, then the page's `probe` (answered by the restarted serve) proves the Agent answers. Signed over the name sent.
+SERVE_ACTIONS = {"repair": "restart", "stop_hard": "restart", "restart_session": "restart", "new_chat": "restart",
+                 "takeover": "restart", "end_turn": "restart"}
 HELP_ACTIONS = ("reconnect", "restart")   # what support's AGENTJ-ACTIONS may RUN (review P332 HIGH-1; the rest is offered)
 _R16 = re.compile(r"[0-9a-f]{16}")
 _NONCE = re.compile(r"[A-Za-z0-9_-]{43}")
@@ -517,7 +521,7 @@ class Watchdog:
             action, target, name = "reset", {"what": "connection"}, "restart"
         else:
             name = obj.get("action")
-            if not isinstance(name, str) or name not in ACTIONS:   # never the phone's string in the log (review LOW-6)
+            if not isinstance(name, str) or (name not in ACTIONS and name not in SERVE_ACTIONS):   # never the phone's string in the log (review LOW-6)
                 return await self.refuse(s, r, "reset", t, "shape", "unknown")
             action, target = "rescue_do", {"action": name}
         flow = "help" if name in ("help", "report") else "reset"
@@ -530,7 +534,8 @@ class Watchdog:
         self.log("request", device=s.device, action=name, result="accepted")
         self.busy = True
         from . import bg   # light (asyncio + time): holds the task and logs a failure without its text
-        bg.spawn(self._run_action(s, r, flow, name), "rescue_action", None)
+        run = SERVE_ACTIONS.get(name, name)
+        bg.spawn(self._run_action(s, r, flow, run, cont="probe" if run != name else None), "rescue_action", None)
 
     async def refuse(self, s: Sess, r: str, flow: str, action: str, why: str, name: str | None) -> None:
         self._controls_log(action, s.device, "refused:" + why, None, None)
@@ -560,7 +565,7 @@ class Watchdog:
                 fut.result(10)
         return emit
 
-    async def _run_action(self, s: Sess, r: str, flow: str, name: str) -> None:
+    async def _run_action(self, s: Sess, r: str, flow: str, name: str, cont: str | None = None) -> None:
         lang = await asyncio.to_thread(self.lang_fn)
         emit = self._emit(s, r, flow)
         try:
@@ -577,6 +582,8 @@ class Watchdog:
         offer = _offer(done.get("offer"))
         if offer:
             msg["offer"] = offer
+        if cont and done.get("ok"):          # #585: the page asks the restarted serve whether the Agent answers
+            msg.update(pending=True, cont=cont)
         await self.send_app(s, msg)
         for o in list(self.sessions.values()):        # every other ready p33 remote hears the outcome too
             if o is not s and o.state == "ready" and o.p33:

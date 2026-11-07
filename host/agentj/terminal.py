@@ -42,6 +42,12 @@ _HEX32 = re.compile(r"[0-9a-f]{32}")
 
 
 
+def _readonly(line: str) -> bool:
+    """H1 execution proof: closed literal-output subset, never historical danger.readonly."""
+    from .term_direct import literal_output
+    return literal_output(line)
+
+
 def line_needs_face(line: str) -> bool:
     """P573 (#386 ⑤): a confirmed terminal line needs Face ID only for the three classes — money, the owner's data deleted
     for good, a key going out (or unbinding a remote) — or a rewrite of an Agent's hook / approval files; any other confirmed
@@ -506,6 +512,10 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         shell = self.shell or (term_mac.pick_shell() if sys.platform == "darwin" else "bash")
         x.shell = shell
         env = shell_env(dict(os.environ), await asyncio.to_thread(service_keys))
+        from .term_direct import pristine_env
+        # PTY/login shells may load arbitrary configuration. Any later non-profile
+        # input permanently invalidates this session's proof, including owner input.
+        x.h1_pristine = x.kind == "line" and shell == "bash" and os.path.exists("/bin/bash") and pristine_env(env)
         if sys.platform == "darwin":
             env = term_mac.fix_env(env)                  # P437: launchd's bare PATH and C locale
         env.update(INPUTRC="/dev/null", TERM="dumb", **{TOKEN_ENV: x.token})
@@ -652,6 +662,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         if bang is not None and not wire.is_id22(bang):
             self.st.log("control_refused", device=s.device, action="term_line", reason="shape")
             return
+        self.run_mark(x, bang, obj)                          # #584: a reply code block's 「执行」 (term_bang.py)
         if line_problem(line) and not held:                  # P414 (H1c): invisible / direction characters, > 8 spaces
             self.st.log("control_refused", device=s.device, action="term_line", reason="invisible")
             return await self._frame(x, "\n[这一行含有看不见的字符或一长串空格，没有运行 / the line has invisible characters or a long run "
@@ -693,7 +704,10 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
                 return self._pty_release(x, line)            # 0.26.9: the held Enter goes, nothing is retyped
             return await self._write(x, line, bang)
         bad = classify(line)
-        agent = self.go_match(line)                          # P414 (H1): the Agent's term_go line, unedited → always confirmed
+        # P414 term_go still always confirms. H1's exception is a closed literal
+        # output profile in a proved pristine shell; all other run lines confirm.
+        direct = getattr(x, "h1_pristine", False) and _readonly(line)
+        agent = self.go_match(line) or (obj.get("run") == 1 and not bad and not direct)
         if agent:
             bad = ("Agent 填写的命令", "filled in by the Agent")
         if bad:
@@ -724,6 +738,8 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         return None
 
     async def _write(self, x: Term, line: str, bang: str | None = None) -> None:
+        if not _readonly(line):
+            x.h1_pristine = False  # before any await/write: aliases/functions/options may now change
         if x.kind == "pty":
             return None if x.proc is None or x.closing else await self.pty_line(x, line, bang)
         if x.proc is None or x.writer is None or x.closing:

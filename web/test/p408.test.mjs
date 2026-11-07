@@ -50,10 +50,10 @@ test('a line with a control character (TAB, CR, LF, ESC, DEL, C1, U+2028/9) is n
   assert.ok(send.indexOf('CTRL.test(line)') > 0 && send.indexOf('CTRL.test(line)') < send.indexOf("t: 'term_line'"), 'checked before it is sent');
   assert.ok(send.indexOf('LINE_MAX') > 0 && send.indexOf('LINE_MAX') < send.indexOf("t: 'term_line'"), 'byte limit before it is sent');
   assert.match(TERM, /const LINE_MAX = 4096/);
-  assert.match(send, /send\(\{ t: 'term_line', id: S\.id, seq, line, \.\.\.\(bang \? \{ bang \} : \{\}\) \}\)/, 'term_line {id, seq, line} (+ P414 bang)');
+  assert.match(send, /send\(\{ t: 'term_line', id: S\.id, seq, line, \.\.\.\(bang \? \{ bang \} : \{\}\), \.\.\.\(bang && run \? runFields\(run\) : \{\}\) \}\)/, 'term_line {id, seq, line} (+ P414 bang, + #584 run)');
   assert.equal([...code(TERM).matchAll(/t: 'term_line'/g)].length, 2, 'two places send a line: the plain one and the confirmed one');
   // P573: `fa` rides only when the host asked for Face ID (term_confirm uv 1 / no uv); uv 0 = the button, still signed
-  assert.match(TERM, /send\(\{ t: 'term_line', id: S\.id, seq: m\.seq, line, \.\.\.signed, \.\.\.\(fa \? \{ fa \} : \{\}\), \.\.\.\(bangSid \? \{ bang: bangSid \} : \{\}\) \}\)/, 'the confirmed line = the line the host showed');
+  assert.match(TERM, /send\(\{ t: 'term_line', id: S\.id, seq: m\.seq, line, \.\.\.signed, \.\.\.\(fa \? \{ fa \} : \{\}\), \.\.\.\(bangSid \? \{ bang: bangSid \} : \{\}\), \.\.\.\(bangSid && bangRun \? runFields\(bangRun\) : \{\}\) \}\)/, 'the confirmed line = the line the host showed');
   assert.match(TERM, /i\.value = String\(v\)\.replace\(CTRL, ' '\)/, 'a prefilled command cannot carry one either');
 });
 

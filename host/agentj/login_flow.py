@@ -408,7 +408,7 @@ class Login:
             owner = live.get("restart") == "owner_session"
             msg = claude_live.text(lang, "owner" if owner else "bad", live.get("live"))
             if owner:
-                getattr(h, "agent_recovery_notice", h.agent_notice)(msg)          # the signed one-tap 「重开 AI 会话」 card
+                getattr(h, "agent_recovery_notice", h.agent_notice)(msg)          # the signed one-tap 「重启 Agent」 card
             return {"ok": False, "why": "main_session", "live": live.get("live") or "unknown", "route": plan["route"],
                     "text": self._say("login.main", why=msg)}
         k, ag = claude_live.where(h)

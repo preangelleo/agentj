@@ -70,6 +70,11 @@ function upgrade(root, ownerRoot = root) {
     b.addEventListener('click', (e) => { e.stopPropagation(); tap(ownerRoot, b); });
     s.replaceWith(b); out.push(b);
   }
+  // The shared reply/reader renderer keeps prose intact; a bare separator between two controls is layout, not prose.
+  for (const b of out) {
+    const gap = b.nextSibling;
+    if (gap?.nodeType === Node.TEXT_NODE && /^\s*·\s*$/.test(gap.data) && gap.nextSibling?.matches?.('button.rbtn')) gap.remove();
+  }
   return out;
 }
 async function tap(root, b) {

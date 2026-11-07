@@ -63,15 +63,15 @@ test('#323 补 ③: the same device replaces its own left-behind key (same user 
   assert.doesNotMatch(f.slice(f.indexOf('export async function register'), f.indexOf('export async function register') + 1500), /getRandomValues|Date\.now/);
 });
 
-test('#323 ④: on Android / HarmonyOS the words are Touch ID (P559) — never Face ID', () => {
+test('#323 ④: on Android / HarmonyOS the words are fingerprint or face (0284 chairman correction) — never Face ID', () => {
   LANG('zh');
   T.setTextOs('android');
   for (const k of ['pk.askTitle', 'pk.saved', 'pkp.setupHere', 'p550.pkReg.proof', 'p551.noPasskey', 'phoneEnv.setup', 'pk.restore']) {
     const s = T.t(k);
     assert.doesNotMatch(s, /Face ID/, k + ': ' + s);
   }
-  assert.equal(T.t('pk.askTitle'), '用 Touch ID 记住这台手机？');
-  assert.match(T.t('pkp.setupHere'), /^在本机设置 Touch ID（需另一台批准）$/);
+  assert.equal(T.t('pk.askTitle'), '用指纹或面容记住这台手机？');
+  assert.match(T.t('pkp.setupHere'), /^在本机设置指纹或面容（需另一台批准）$/);
   LANG('en');
   assert.doesNotMatch(T.t('p550.pkReg.proof'), /Face ID/);
   T.setTextOs(undefined); LANG('zh');

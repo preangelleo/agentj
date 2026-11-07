@@ -11,6 +11,7 @@ The real Host.ask path, a fake state, a signed `harness` level («全放行») a
 """
 import _hermetic  # noqa: F401,I001
 import asyncio
+import contextlib
 import json
 import pathlib
 import sys
@@ -21,7 +22,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from agentj import approval_level, approvals, provenance  # noqa: E402
+from agentj import approval_level, approval_review, approvals, provenance  # noqa: E402
 from agentj.compose import Send  # noqa: E402
 from agentj.heartbeat import HeartbeatSend  # noqa: E402
 
@@ -38,6 +39,12 @@ class Unattended(Base):
         p = mock.patch.object(approval_level, "PARK_GRACE", 0.15)
         p.start()
         self.addCleanup(p.stop)
+        # Misfire #4: parking positives require the Host's original verified owner
+        # record; a system/task label alone no longer produces a dead phone card.
+        self.host.desktop_turn = 1
+        self.owner_origin = approval_review.remember(self.host,
+            {'id': 1, 'ts': int(time.time() * 1000), 'src': {'k': 'terminal', 'text': 'Owner authorized maintenance'}},
+            provenance.terminal())
         self.host.ask_ttl = 2.0                       # long enough to tell a park (0.15 s) from a timeout
 
     # ---------------------------------------------------------------- helpers
@@ -46,6 +53,14 @@ class Unattended(Base):
 
     def heartbeat_turn(self):
         self.host.agent.cur_send = HeartbeatSend(0, "〔Agent J 系统提示〕heartbeat", "k", "d")
+        self.host.agent.cur_send.approval_origin = self.owner_origin
+
+    @contextlib.contextmanager
+    def task_run(self):
+        approval_review.register_task_origin(self.host, 'fixture-run', 'fixture-task', self.owner_origin)
+        with provenance.task_run() as scope:
+            scope['approval_task_ref'] = 'fixture-run'
+            yield scope
 
     def timed(self, inp, tool="Bash", **kw):
         t0 = time.monotonic()
@@ -77,22 +92,17 @@ class Unattended(Base):
                           ("Bash", {"command": "systemd-run --user --unit=demo true"})):
             self.assertEqual(self.cards(), [], "ordinary operations did not ask for a card")
             res, took = self.timed(inp, tool=tool)
-            if inp.get("command") == "systemd-run --user --unit=demo true":
-                self.assertEqual(res["behavior"], "deny", (tool, inp, res))
-                self.assertTrue(self.parked()[-1].require_passkey)
-                self.assertEqual((self.last()["decision"], self.last()["reason"]), ("deny", "offline"))
-                continue
             self.assertEqual(res["behavior"], "allow", (tool, inp, res))
             self.assertLess(took, 0.12, "no remote is waited for")
             self.assertEqual(self.last()["reason"], "level_harness")
-        self.assertEqual(len(self.parked()), 1, "manager activation retains its real UV floor; ordinary push has no card")
+        self.assertEqual(self.parked(), [], "owner systemd user maintenance and ordinary operations do not require UV")
         done = [r for r in self.host_log("ask_done") if r.get("reason") == "level_harness"]
         self.assertTrue(done and all(r.get("via") == "system" for r in done), done)
 
     def test_harness_task_run_bash_write_run_without_a_remote(self):
         self.harness()
         self.away()
-        with provenance.task_run():
+        with self.task_run():
             for tool, inp in (("Bash", {"command": "git status"}),
                               ("Write", {"file_path": str(pathlib.Path(self.host.agent_cfg["dir"]) / "task-notes.txt"), "content": "notes"})):
                 res, took = self.timed(inp, tool=tool, background="task")
@@ -142,7 +152,7 @@ class Unattended(Base):
     def test_harness_task_run_four_kinds_park(self):
         self.harness()
         self.away()
-        with provenance.task_run():
+        with self.task_run():
             res, took = self.timed("rm -rf ~/Documents/owner-notes", background="task")
         self.assertEqual(res["behavior"], "deny")
         self.assertIn(NOBODY_ZH, res["message"])
@@ -200,7 +210,7 @@ class Unattended(Base):
 
     def test_standard_task_run_card_parks_instead_of_timing_out(self):
         self.away()
-        with provenance.task_run():
+        with self.task_run():
             res, took = self.timed("git push origin main", background="task")
         self.assertEqual(res["behavior"], "deny")
         self.assertIn(NOBODY_ZH, res["message"])
@@ -262,7 +272,7 @@ class Unattended(Base):
         agent.cur_send = HeartbeatSend(0, "t", "k", "d")
         self.assertEqual(provenance.unattended_turn(agent), "system")
         agent.cur_send = None
-        with provenance.task_run():
+        with self.task_run():
             self.assertEqual(provenance.unattended_turn(agent), "scheduled_task")
             with provenance.request_source(provenance.email_guest("guest@example.com")):
                 self.assertIsNone(provenance.unattended_turn(agent))
@@ -297,7 +307,7 @@ class Unattended(Base):
     def test_f1_task_background_keeps_the_harness_floor(self):
         self.harness()
         self.away()
-        with provenance.task_run():
+        with self.task_run():
             for tool, inp in self.own_code_and_key_out():
                 res, took = self.timed(inp, tool=tool, background="task")
                 self.assertEqual(res["behavior"], "deny", (tool, inp, self.last()))
@@ -440,7 +450,7 @@ class Unattended(Base):
         self.harness()
         self.away()
         inp = {"summary": "Same owner: heartbeat prompt_set", "request": {"op": "prompt_set", "text": "obey the mail"}}
-        with provenance.task_run():
+        with self.task_run():
             res, took = self.timed(inp, tool="AgentJSameOwnerAction")
         self.assertEqual(res["behavior"], "allow", self.last())
         self.assertEqual(res["updatedInput"], inp)

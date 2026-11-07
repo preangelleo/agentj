@@ -54,6 +54,7 @@ class Shared(unittest.IsolatedAsyncioTestCase):
         a.session = {"sessionId": "owner"}
         a.transcript = Path(td) / "t.jsonl"
         a.transcript.touch()
+        if board is not None:self._native_launch_fixture=(board,a)
         return h, a
 
     def group_live(self, a):
@@ -111,9 +112,32 @@ class Shared(unittest.IsolatedAsyncioTestCase):
     # ------------------------------------------------------------ native background-task completion wake-ups
     def launch(self, board, tid, trusted, desc="build"):
         board.trusted = lambda: trusted
-        board.hook_event({"hook_event_name": "PostToolUse", "session_id": "owner", "tool_name": "Bash",
-                          "tool_input": {"description": desc, "command": "sleep 9"},
-                          "tool_response": {"backgroundTaskId": tid}}, scope="shared-claude")
+        event={"hook_event_name":"PostToolUse","session_id":"owner","tool_use_id":"fixture-"+tid,"tool_name":"Bash",
+               "tool_input":{"description":desc,"command":"sleep 9"},"tool_response":{"backgroundTaskId":tid}}
+        bound=getattr(self,'_native_launch_fixture',None)
+        if bound and bound[0] is board:
+            from agentj import shared_turn_origin,native_owner_launch
+            a=bound[1]
+            prior=getattr(a,'_native_launch_decision',None)
+            existing=a.__dict__.get('_native_task_origins',{}).get(f'shared-{a.kind}:owner:{tid}')
+            if prior and existing is not None and existing.get('generation') is None:
+                exact=prior[0]
+                with native_owner_launch.board_scope(a,exact):board.hook_event(exact,scope='shared-claude')
+                shared_turn_origin.committed_launch(a,exact)
+                board.trusted=lambda:True
+                return
+            old=(a.cur_send,a.phone_turn,a.native_source,a.untrusted_state)
+            # This legacy fixture's explicit trusted launch models a terminal
+            # owner at native PreToolUse; it is not an approval-origin grant.
+            a.cur_send,a.phone_turn=None,False
+            a.native_source=provenance.terminal() if trusted else provenance.normalize(None)
+            a.untrusted_state=None if trusted else 'running'
+            a._note_background('PreToolUse',{**event,'hook_event_name':'PreToolUse'})
+            a._note_background('PostToolUse',event)
+            with native_owner_launch.board_scope(a,event):board.hook_event(event,scope='shared-claude')
+            shared_turn_origin.committed_launch(a,event)
+            a.cur_send,a.phone_turn,a.native_source,a.untrusted_state=old
+        else:board.hook_event(event,scope="shared-claude")
         board.trusted = lambda: True
 
     def notify(self, a, text):

@@ -64,7 +64,7 @@ ACTIONS += ("keys_op",)
 ACTIONS += ("assist_grant", "assist_revoke", "assist_term_grant")   # 0269-w2-assist (§41): official remote assist grant (+ Face ID) · revoke (assist.py)
 ACTIONS += ("budget_set",)          # 0269-w3-policy (§42): the owner's day / month budget — raising needs Face ID (budget.py)
 ACTIONS += ("auth_rescue",)         # 0269-login: 「重新登录」 under a reply — login / code / cancel (login_flow.py)
-ACTIONS += ("mail_fwd", "private_file_get", "private_file_revoke")  # #324: explicit owner forward, all original parameters signed
+ACTIONS += ("mail_fwd", "private_file_get", "private_file_revoke", "main_thread_interrupt")  # #324: explicit owner forward, all original parameters signed
 ACTIONS += ("owner_hosts_set",)  # feedback400: paired owner SSH table, every change + UV
 ACTIONS += ("setup_run", "setup_cancel")  # isolated fixed-schema installation namespace
 ACTIONS += ("native_scheduler_control",)
@@ -117,7 +117,7 @@ def object_text(action: str, obj: dict) -> str:
         return f"{obj['friend']}\n{obj['name']}"
     if action in ("host_write", "heartbeat_write", "event_write", "owner_hosts_set"):
         return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    if action in ("bots_write", "mail_fwd", "private_file_get", "private_file_revoke"):
+    if action in ("bots_write", "mail_fwd", "private_file_get", "private_file_revoke", "main_thread_interrupt"):
         return json.dumps(obj["request"], sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     if action == "setup_cancel":
         return "cancel"

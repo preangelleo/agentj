@@ -84,7 +84,7 @@ try {
     await waitFor(p, `document.getElementById('confirm').hidden`,3000); await sleep(150);
     assert.deepEqual(controls,[{type:'estop',ok:true}]);
     await evaluate(p, `import('./js/settings.js').then(s=>s.openRescue())`);
-    assert.equal(await evaluate(p, `document.getElementById('rs-reset').nextElementSibling.id`),'rs-session');
+    assert.equal(await evaluate(p, `document.getElementById('rs-stop').nextElementSibling.id`),'rs-session');   // #585 ladder: stop · restart Agent · …
     await evaluate(p, `document.getElementById('rs-session-go').click()`);
     await waitFor(p, `!document.getElementById('confirm').hidden`,3000);
     await evaluate(p, `document.getElementById('confirm-no').click()`);

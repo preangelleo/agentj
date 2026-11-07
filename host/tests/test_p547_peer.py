@@ -5,8 +5,7 @@ device gets a direct offer; a device whose account already has a keyed remote ne
 the pk_peer challenge) — then exactly one peer offer replaces D's record without the old key; wrong / missing assertions,
 denial, expiry, cancellation, the rate and open limits, the approver set (never D itself, never D's own credential), cards for
 an approver that connects later and the approved offer for D after a reconnect. Review M1: every offer path (pk_offer_req,
-after a pairing, after a restore) follows the one rule — direct only while no other device holds a key. Review minor 4: only
-a device whose key it registered itself approves (a passkey-restored record does not)."""
+after a pairing, after a restore) follows the one rule — direct only while no other device holds a key. Chairman 2026-11-07 21:15: every Host-bound unrevoked key approves equally, including restored records."""
 import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import asyncio
 import json
@@ -219,11 +218,9 @@ class Peer(unittest.TestCase):
         self.assertEqual(self.to(sA, "pk_reg_res")[-1], {"t": "pk_reg_res", "ok": True})
         self.assertEqual(self.st.devices()[A]["pk"]["dev"], A, "the record notes the device that registered it")
 
-    def test_restored_record_is_not_an_approver(self):
-        """Review minor 4: a passkey restore moves A's record to a new device id; its key lives on the old device, so the
-        new id is not asked (it would pop the browser's QR sheet). A legacy record without `dev` still approves."""
+    def test_restored_bound_key_is_equal_approver_with_real_uv(self):
         akey = p57.Authenticator()
-        kpA, A, _ = self.device("iPhone", akey, online=False)
+        _, A, _ = self.device("iPhone", akey, online=False)
         _, D, sD = self.device("Mac Chrome")
         kpA2, sk2 = Keypair.generate(), ed25519.Ed25519PrivateKey.generate()
         A2 = self.st.passkey_restore(A, wire.b64u(akey.id), kpA2.pub,
@@ -231,28 +228,43 @@ class Peer(unittest.TestCase):
         self.assertTrue(A2 and A2 != A)
         self.assertEqual(self.st.devices()[A2]["pk"]["dev"], A)
         sA2 = self.connect(kpA2, A2)
-        self.assertFalse(self.host.pkpeer.direct_ok(D), "a key is still listed: no direct offer for D")
-        res = self.req(sD)                                # P555: opens for the terminal; A2 is still not asked
-        self.assertEqual((res["ok"], res["mode"], res["online"]), (True, "peer", 0))
-        self.assertEqual(self.to(sA2, "pk_peer_ask"), [])
-        self.run_(self.host.pkpeer.on_phone(sD, "pk_peer_cancel", {"id": res["id"]}))
-        # a legacy record (no `dev`) counts as its own
-        d = self.st.devices()
-        d[A2]["pk"].pop("dev")
-        from agentj import state as state_mod
-        with self.st.devices_lock():
-            state_mod._write_private(self.st.devices_path, json.dumps(d).encode())
+        self.assertTrue(self.host.pkpeer._eligible(A2))
         res = self.req(sD)
         self.assertEqual((res["ok"], res["mode"], res["online"]), (True, "peer", 1))
-        self.assertEqual(self.to(sA2, "pk_peer_ask")[-1]["id"], res["id"])
+        ask = self.to(sA2, "pk_peer_ask")[-1]
+        self.assertNotIn("needs_setup", ask)
+        self.assertEqual(ask["fa"], wire.b64u(akey.id))
+        self.assertEqual(self.answer(sA2, akey, ask, challenge=os.urandom(32))["why"], "passkey_failed")
+        ordinary = serve.Ask("u" * 32, "Synthetic UV", "Synthetic", "d" * 64, {}, "i", time.monotonic()+9, None, require_passkey=True)
+        uv = self.host._ask_msg(ordinary, sA2)
+        self.assertEqual(uv["fa"], wire.b64u(akey.id))
+        passkey.verify_assertion(self.st.passkey_of_device(A2), passkey.approval_fields(self.fa(akey, wire.unb64u(uv["fa_ch"]))), wire.unb64u(uv["fa_ch"]))
+        self.assertTrue(self.answer(sA2, akey, ask)["ok"])
+        self.assertTrue(self.to(sD, "pk_offer"))
+
+    def test_bound_approver_revocation_immediately_removes_eligibility(self):
+        auth = p57.Authenticator()
+        _, did, approver = self.device("iPhone", auth)
+        _, _, target = self.device("Mac Chrome")
+        self.req(target)
+        ask = self.to(approver, "pk_peer_ask")[-1]
+        self.assertTrue(self.host.pkpeer._eligible(did))
+        self.assertTrue(self.st.remove_device(did))
+        self.assertFalse(self.host.pkpeer._eligible(did))
+        self.run_(self.host._app(approver, {"t":"pk_peer_answer", "id":ask["id"], "ok":True, "fa":self.fa(auth, wire.unb64u(ask["fa_ch"]))}))
+        self.assertFalse(any(x.get("ok") for x in self.to(approver, "pk_peer_answer_res")))
+        self.assertEqual(self.to(target, "pk_offer"), [])
 
     def test_a_device_holding_ds_own_credential_is_not_an_approver(self):
         shared = p57.Authenticator()                      # #300: D borrowed this remote's key
         _, D, sD = self.device("Mac Chrome", shared)
         _, B, sB = self.device("iPhone", shared)
         res = self.req(sD)                                # P555: opens for the terminal only
-        self.assertEqual((res["ok"], res["online"]), (True, 0))
-        self.assertEqual(self.to(sB, "pk_peer_ask"), [])
+        self.assertTrue(res["ok"])
+        ask = self.to(sB, "pk_peer_ask")[-1]
+        self.assertTrue(ask["needs_setup"])
+        self.assertFalse(self.answer(sB, shared, ask)["ok"])
+        self.assertEqual(self.to(sD, "pk_offer"), [])
 
     def test_deny_cancel_and_expiry(self):
         _, D, sD = self.device("Mac Chrome", p57.Authenticator())

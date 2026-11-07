@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 
-from . import resource_policy, restart_guard
+from . import resource_policy, restart_guard, secret_display_route
 
 import asyncio
 import contextlib
@@ -758,7 +758,8 @@ class Host:
         from . import busy as busy_mod
         self.busy = busy_mod.Board(st.root, on_change=self.busy_changed, verify_sources=True)   # P150 (§22): who works in the background
         self.busy.remote_aliases = lambda: preferences.get(self.preferences, "ui.remote_servers", [])
-        self.busy.trusted = lambda: not provenance.untrusted_turn(self.agent) or provenance.unattended_turn(self.agent) in ("system", "scheduled_task")
+        from . import native_owner_launch
+        self.busy.trusted = lambda: native_owner_launch.board_trusted(self.agent)
         from .busy_launch import Launch
         self.busy.launch = Launch(st.root)      # #450: outside jobs inherit a trusted launching turn (ADR-#450)
         self.busy.chain = self.busy.launch.current_chain   # 0269-w3-policy E2: native jobs started in an owner turn
@@ -887,6 +888,14 @@ class Host:
 
     async def send_app(self, s: Session, obj: dict) -> bool:
 
+        file_message = obj
+        file_key = obj.get('t') == 'private_file_res' and any(k in obj for k in ('key', 'nonce_prefix'))
+        direct = getattr(getattr(self, 'private_files', None), 'direct', None)
+        async def file_delivery_live():
+            if not file_key:
+                return True
+            current = getattr(getattr(self, 'private_files', None), 'direct', None)
+            return bool(direct is not None and current is direct and await direct.delivery_live(s, file_message))
         from .silent import public_message
         obj = public_message(obj)
         def special_delivery_live():
@@ -897,6 +906,7 @@ class Host:
             return bool(card and card.get('delivery_authority')==(s,self.st.sign_key(s.device))
                         and self.st.is_allowed(s.pub) and approval_special.source_allows(card,self))
         async with self.send_lock:  # nonce order == wire order
+            if not await file_delivery_live():return False
             if not special_delivery_live():return False
             if self.sessions.get(s.cid) is not s:  # closed / revoked while this send was queued
                 return False
@@ -910,6 +920,7 @@ class Host:
             else:
                 msgs, limit = [obj], wire.MAX_JSON
             for i, m in enumerate(msgs):
+                if not await file_delivery_live():return False
                 if not special_delivery_live():return False
                 if i and (self.sessions.get(s.cid) is not s or (s.state == "ready" and not self.st.is_allowed(s.pub))):
                     self.st.log("frag_abort", cid=s.cid, device=s.device)
@@ -947,6 +958,8 @@ class Host:
                         self._tap("in", msg)
                         if isinstance(msg, bytes):
                             await self.on_frame(msg)
+                        elif isinstance(msg, str):
+                            await self.private_files.direct.relay_message(ws, msg)
             except Exception as e:  # network, handshake refusal, relay auth failure → back off and retry
                 code = _close_code(e)
                 self.relay_seat_refused = code == CLOSE_SEAT
@@ -1049,6 +1062,9 @@ class Host:
                 t = time.monotonic()
                 probe.beat()
                 await asyncio.sleep(1)
+                from . import main_thread
+                if main_thread.status(self) is not None:
+                    self.status_changed()
                 late = time.monotonic() - t - 1
                 if late >= LOOP_STALL:
                     self._recovery_stall = (time.monotonic(), int(late * 1000))
@@ -1272,6 +1288,9 @@ class Host:
                 return
         if t in ("msg", "say", "answer", "slash", "blob_open", "blob_chunk", "blob_end", "ask_answer", "estop", "resume", "task_set", "task_migrate", "lt_answer") or t in elevate.PHONE_TYPES or t in ("fr_answer", "fr_accept"):
             self._phone_touch()                   # P292: config lock + write, off the loop
+        if t == 'main_thread_interrupt':
+            from . import main_thread
+            return await main_thread.interrupt(self, s, obj)
         if t in ("private_file_get", "private_file_revoke"):
             return await self.private_files.on_phone(s, obj)
         if t == "msg":
@@ -3110,7 +3129,7 @@ class Host:
         from . import auto_update
         note = auto_update.take_notice(self.st, self.lang, self.preferences, notices.release_notes.current(self.st, self.agent))
         if note:
-            self.agent_notice(note)
+            self.agent_notice(note,repair="reconnect")
         from . import claude_inbound
         notice = claude_inbound.default_notice(self.st, self.lang)
         if notice:
@@ -3307,6 +3326,10 @@ class Host:
         if self.telegram is not None and hasattr(self.telegram, 'status_view'):
             view = self.telegram.status_view()
             m['channels'] = {'tg_bound': view['enrolled'], 'tg_forward': view['forward']}
+        from . import main_thread
+        view = main_thread.status(self)
+        if view is not None:
+            m['main_thread'] = view
         return m
 
     def telegram_changed(self) -> None:
@@ -4248,6 +4271,8 @@ class Host:
         self._post(self._send_p33, lambda s: m)
 
     def hist_add(self, src: dict, reply: str = "", end: str = "done", card: dict | None = None, form: dict | None = None) -> dict:
+        if src.get("k") == "sys":
+            src = {**src,"name":"AgentJ"}  # presentation only; never rename the configured owner/Agent
         if src.get("k") in ("sys", "cmd"):
             from .system_text import remote
             reply = remote(reply)
@@ -4336,11 +4361,12 @@ class Host:
             st = "waiting:question"
         msg = self._status_msg()
         phase = (msg.get("ph"), msg.get("tool"))
-        if st == self.sent_status and msg["goal_active"] == getattr(self, "sent_goal_active", None) and phase == getattr(self, "sent_phase", None):
+        if st == self.sent_status and msg["goal_active"] == getattr(self, "sent_goal_active", None) and phase == getattr(self, "sent_phase", None) and msg.get("main_thread") == getattr(self, "sent_main_thread", None):
             return
         self.sent_status = st
         self.sent_goal_active = msg["goal_active"]
         self.sent_phase = phase
+        self.sent_main_thread = msg.get("main_thread")
         st = st.split(":")[0]
         self.emit("agent_status", s=st)
         self._post(self._send_ready, lambda s: msg)
@@ -4550,6 +4576,8 @@ class Host:
         login_flow.on_text(self, tid, text)
 
     def desktop_end(self) -> None:
+        from . import main_thread
+        main_thread.completed(self)
         self.proactive_via = None
         _hb_touch(self)
         tid = getattr(self, "desktop_turn", None)
@@ -4561,7 +4589,7 @@ class Host:
     def agent_recovery_notice(self, text: str) -> None:
         self.agent_notice(text, recovery=True)
 
-    def agent_notice(self, text: str, *, recovery=False, card: dict | None = None) -> int | None:
+    def agent_notice(self, text: str, *, recovery=False, card: dict | None = None, repair: str | None = None) -> int | None:
         from .system_text import remote
         text = remote(one(self.lang, text))       # P128: a legacy "中文 / English" notice reaches the phone in one language
         local, self.notice_local = getattr(self, "notice_local", False), False
@@ -4569,7 +4597,8 @@ class Host:
         self.emit("agent_notice", text=text)
         e = self._remember("notice", text)
         self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
-        t = self.hist_add({"k": "sys", "text": "", **({"local": True} if local else {})}, text, "done",
+        t = self.hist_add({"k": "sys", "text": "", **({"local": True} if local else {}),
+                           **({"repair":"reconnect"} if repair=="reconnect" else {})}, text, "done",
                           card={"recovery": "restart_session"} if recovery else card)
         login_flow.mark(self, t["id"], login_flow.take_pending(self))   # 0269-login: an adapter's login failure notice
         return t["id"]
@@ -4763,7 +4792,7 @@ class Host:
             warning = service_recovery.failure(self.st)
             notice = self.st.root / service_recovery.NOTICE
             if warning and (notice.exists() or service_recovery.receipt_path().exists() or warning.get("status") != "failed"):
-                self.cmd_card("update", slash.Result(service_recovery.failure_text(warning), "error"))
+                self.cmd_card("update", slash.Result(service_recovery.failure_text(warning,mobile=True), "error"))
                 notice.unlink(missing_ok=True)
             completed = phone_update.take(self.st)
             if completed:
@@ -4801,7 +4830,7 @@ class Host:
             return
         e = self._remember("notice", note)
         self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
-        self.hist_add({"k": "sys", "text": ""}, note, "done")
+        self.hist_add({"k": "sys", "text": "", "repair":"reconnect"}, note, "done")
 
     async def _receipt_context(self) -> tuple:
 
@@ -4886,6 +4915,8 @@ class Host:
             observer.first_output()
 
     def agent_turn_end(self) -> None:
+        from . import main_thread
+        main_thread.completed(self)
         if getattr(self, "voice_stream", None) is not None:
             self._post(self.voice_stream.reply, getattr(self.agent, "cur_send", None), "", True)
         approval_review.acknowledge(self, getattr(self.agent, "cur_send", None))
@@ -5680,7 +5711,7 @@ class Host:
                             raise ValueError("unbounded plan program")
                     verdict = self._classify(name, inp)
                     if (set(verdict.cats) & {"credentials", "opaque"}
-                            or approval_review.reveals_to_session(name, inp, (self.agent_cfg or {}).get("dir"), policy_env)):
+                            or secret_display_route.reveals_to_session(name, inp, (self.agent_cfg or {}).get("dir"), policy_env)):
                         raise ValueError("individual UV required")
                     from . import bounded_plan
                     binding = bounded_plan.shell_seal(name, inp, (self.agent_cfg or {}).get("dir"), self.__dict__.setdefault("_plan_seal_key", secrets.token_bytes(32)))
@@ -5753,14 +5784,18 @@ class Host:
             return {"behavior": "deny", "message": provenance.refusal_text(self.agent) + "\n" + untrusted_dispatch.HINT, **({"reason": "group_source"} if grant_info else {})}
         # Owner 11-07: ordinary maintenance is not a credential/payment/publication
         # action. Qualify effects only for the same real owner ingress and task.
+        from . import native_scratch
+        scratch_context = native_scratch.context(self)
+        native_bg_scratch = scratch_context is not None and scratch_context.background is not None
         if (not strict and not always_ask and not bound and not learned and avatar is None
-                and not own and not delegated and not caller_uv and lv != "safe"
+                and not own and (not delegated or native_bg_scratch) and not caller_uv and lv != "safe"
                 and not provenance.owner_grant_required(self.agent)):
             from . import ordinary_maintenance, approval_special
             maintenance_source, maintenance_task = approval_special._current_context(self)
             source_owner = (maintenance_source and maintenance_source.get("verified") is True
                             and not maintenance_source.get("suspicious")
-                            and provenance.is_owner(provenance.turn_source(self.agent)))
+                            and (provenance.is_owner(provenance.turn_source(self.agent))
+                                 or scratch_context is not None and scratch_context.background is not None))
             if source_owner:
                 actor = self.agent
                 sender = getattr(actor, "cur_send", None)
@@ -5769,7 +5804,7 @@ class Host:
                 state, epoch = self.st, self.hist.epoch
                 maintenance_root, pairing_epoch = self.st.root, getattr(self, "_pairing_epoch", None)
                 ordinary = await asyncio.to_thread(ordinary_maintenance.qualify, tool, tool_input,
-                    cwd=workdir, state_root=self.st.root)
+                    cwd=workdir, state_root=self.st.root, _native_scratch=scratch_context)
                 if ordinary:
                     effect_live = await asyncio.to_thread(ordinary_maintenance.still_valid, ordinary)
                     current_source, current_task = approval_special._current_context(self)
@@ -6182,16 +6217,24 @@ class Host:
         a.tg_key = tgk if not gt else None
         a.task_scope = plan_scope if a.tg_key else None
         a.prow = prow or approval_policy.card_row(tool, v, requirement, require_passkey, tool_input)
-        self._interrupt("cards", face=require_passkey, chain=chain)
         if pa_action and not g_add and require_passkey:   # P539: 「以后这台遥控器上 Computer Use 免问」 (signed pick, needs UV)
             a.allow_offer.append(preauth.offer(pa_action))
         a.bounded_plan = _bounded_context
         if _bounded_context is not None:
             _bounded_context.rid = a.rid
         a.tg_plan_only = bool(_plan_only)
-        a.secret_display_route = approval_review.reveals_to_session(tool, tool_input, (self.agent_cfg or {}).get("dir"), policy_env)
+        a.secret_display_route = secret_display_route.reveals_to_session(tool, tool_input, (self.agent_cfg or {}).get("dir"), policy_env)
         source_before_bind = approval_review.snapshot(self)
         approval_review.bind(self, a, origin=source_before_bind)
+        # Same source rule as _answer: never publish a card whose allow is disabled.
+        source = a.envelope["source"]
+        if source.get("verified") is not True or source.get("suspicious") is True:
+            observe('group_source', False)
+            approvals.record(self.st, **base, decision="deny", reason="group_source")
+            self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="group_source")
+            self.emit("ask_done", id=rid, result="deny", reason="group_source")
+            return {"behavior": "deny", "message": provenance.refusal_text(self.agent), **({"reason": "group_source"} if grant_info else {})}
+        self._interrupt("cards", face=require_passkey, chain=chain)
         a.review_request_source = approval_review.digest(source_before_bind)
         a.review_live_authority = self._approval_live_authority()
         if _bounded_context is None:
@@ -6294,6 +6337,7 @@ class Host:
         observe(reason)
         if decision == "allow":
             if getattr(a, "secret_display_route", False):
+                observe("secret_display_route")
                 return {"behavior":"deny", "message":("Use agentj secret send for the controlled pickup card; values reach only the UV-confirming device." if card_lang(self.lang) == "en" else "请使用 agentj secret send 受控领取卡；秘密只交给完成本人验证的遥控器。")}
             if reason == "device":
                 await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
@@ -7485,6 +7529,8 @@ class Host:
                  interim: bool = False) -> None:
 
         x = {"cmd": name, "ok": res.kind in ("ok", "info"), "kind": res.kind}
+        if name=="update" and not interim and res.kind in ("ok","error"):
+            x.update(repair="reconnect",system_name="AgentJ")
         if name == 'model' and self.agent is not None:
             from .harness import LABEL
             label = LABEL.get(self.agent.kind, self.agent.kind)
@@ -7902,7 +7948,7 @@ class Host:
 
         if s is not None and not s.p33:
             return {}
-        caps = [wire.CAP_P33, "heartbeat", wire.CAP_LT1, pair_card.CAP, "mailuv1", "privatefiles1"]
+        caps = [wire.CAP_P33, "heartbeat", wire.CAP_LT1, pair_card.CAP, "mailuv1", "privatefiles1", "privatefiles2"]
         if getattr(self, "telegram", None) is not None and self.telegram.can_forward():   # P118 B10: share → the owner's Telegram
             caps.append("tgfwd")
         if getattr(self, "telegram", None) is not None:   # P183: this host forwards a reply's file too (tg_fwd {mid}); the phone
@@ -8834,6 +8880,8 @@ class Host:
                 quote = dict(quote, more=[compose.quote_info(qt, ex, self.lang) for qt, ex in items[1:]])
             quote_text = compose.quotes_block(items, self.lang)
         await _rcpt_recv(self, s.device, sid)
+        from . import main_thread
+        main_thread.owner_queued(self)
         frec = None
         if form is not None:
             from .forms import FormError

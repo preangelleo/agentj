@@ -9,8 +9,8 @@ import { osOf, bioLabel } from './phone-env.js';
 const fmtVars = (str, vars) => (vars ? String(str).replace(/\{(\w+)\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k]) : m)) : str);
 // P539 (#300): the dictionary says 「Face ID」 (written for iPhone). Elsewhere the same words name that system's unlock.
 // P559 (chairman 10-27): only two names — iPhone / iPad = Face ID; Mac, Android / HarmonyOS (a Huawei Pad included), Linux
-// and unknown = Touch ID (Windows keeps Windows Hello). 「屏幕锁」 is never a title; it lives only in the explanation line.
-const SUB_OS = ['android', 'mac', 'windows', 'linux', 'other'];
+// and unknown retain their existing label. 0284 uses the actual platform name. 「屏幕锁」 is never a title; it lives only in the explanation line.
+const SUB_OS = ['ios','android', 'mac', 'windows', 'linux', 'other'];
 let osOverride;                     // tests: setTextOs('android') · setTextOs(undefined) = detect again
 let osSeen;
 export function setTextOs(os) { osOverride = os; osSeen = undefined; }

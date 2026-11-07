@@ -1,4 +1,4 @@
-import { stepTitle } from './approval-layout0281.js';
+import { stepTitle, stepReason } from './approval-layout0281.js';
 // Dedicated secret/elevation cards keep their sealed-value protocols. Only safe metadata is shared.
 import { approvalEnvelopeDigest } from '../proto/wire.js';
 import { channel } from './session.js';
@@ -80,7 +80,7 @@ export function decorateSpecial(root,c,{title,metadata=[],allow,deny,fold,repain
  const ch=t('p541.channel.'+src.channel),tm=Number(src.time),stamp=tm>0?new Date(tm<1e12?tm*1000:tm).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false}):'';
  source.append(node('span','auth-meta541',src.history_outside_window?t('p541.initiator',{name:src.initiator||'Agent J'}):[ch.startsWith('p541.')?src.channel:ch,src.sender||t('p541.you'),stamp].filter(Boolean).join(' · ')),node('span','auth-text541',src.history_outside_window?t('p541.older'):src.text||t('p541.unknown')),node('span','auth-id541',src.history_outside_window?t('p541.task',{task:src.task_record||''}):'Message ID · '+(src.message_id||'—')));
  source.disabled=!src.message_id||src.history_outside_window===true;source.onclick=()=>{c.collapsed=true;fold();dispatchEvent(new CustomEvent('approval541-locate',{detail:src}));refreshSpecialVisibility();};
- ui.querySelector('.auth-action541').textContent=e.action||'';
+ ui.querySelector('.auth-action541').textContent=stepReason(e);
  const details=ui.querySelector('details');for(const n of metadata)if(n)details.append(n);
  ui.querySelector('.auth-full541').onclick=()=>{let d=document.getElementById('auth-full541');if(!d){d=document.getElementById('full541').cloneNode(true);d.id='auth-full541';for(const n of [d,...d.querySelectorAll('*')]){if(n!==d)n.removeAttribute('id');n.setAttribute('data-aj-owner','aj-auth-card');}document.body.append(d);}d.querySelector('pre').textContent=[e.details||'',src.root_message_id?t('p541.rootRef',{id:src.root_message_id}):'',src.message_id?t('p541.triggerRef',{id:src.message_id}):'',src.task_record?t('p541.task',{task:src.task_record}):''].filter(Boolean).join('\n\n');c.collapsed=true;fold();d.addEventListener('close',()=>{if(records.get(c.id)?.c===c){c.collapsed=false;repaint();}},{once:true});d.showModal();d.querySelector('button').onclick=()=>d.close();};
  deny.textContent=t('r.appr.deny');

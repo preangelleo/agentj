@@ -1,5 +1,5 @@
 {
-  "about": "P154 追加 11: the background-robot library. One robot = one Agent working in the background. Every colour is a token of Leo's palette (leo-palette.json); body = Heavy, face = Light, feet / accent = a dark tone; eyes are always Sooty. Shape parts: antenna std|none|dark|accent, eyes dots|visor, chest light|accent. Robots 0–8 wear the nine P150 colour pairs in their order, so a CEO's host colour c is its robot. Sprite sheets (robots-12.png / robots-18.png, one row per robot, 13 frames: 12 dance steps + the bow) are generated from this file by .jarvis/assets/robots/make_robots.py.",
+  "about": "Agent J background-robot library. One robot represents one background Agent. Sprite sheets have one row per robot and 13 frames: 12 dance steps and a bow. Colours and shape parts are defined by this library; the Agent J asset generator creates the sprite sheets.",
   "frames": 12,
   "bow": 12,
   "robots": [

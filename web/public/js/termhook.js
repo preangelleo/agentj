@@ -175,6 +175,13 @@ export function bang(line, sid) {
   if (!usable()) return Promise.resolve(false);
   return load().then((m) => m.bang(line, sid, termInfo()), () => { toast(t('p408.loadFail'), 4000, 'error'); return false; });
 }
+/** #584: a reply code block's 「执行」 → a promise of 'sent' | 'open' | 'pty' | 'busy' | 'program' | false (see terminal.js run()).
+ *  `r` = {from: the reply's turn id, cb(result)}. Only while the terminal may be used here. */
+export function run(line, sid, r) {
+  if (!usable()) return Promise.resolve(false);
+  return load().then((m) => m.run(line, sid, termInfo(), r), () => { toast(t('p408.loadFail'), 4000, 'error'); return false; });
+}
+export const stopRun = (sid) => !!(mod && mod.stopRun && mod.stopRun(sid));
 /** app.js: term_* and the `login` elev card (with its elev_done / elev_refused) — only a loaded page cares. P414 (§37.13):
  *  `term_go` (the Agent opens the terminal, maybe with a line to fill in) loads the page first; never on a remote that may
  *  not use it. */

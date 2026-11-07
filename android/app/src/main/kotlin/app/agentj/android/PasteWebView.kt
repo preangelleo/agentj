@@ -44,7 +44,7 @@ class PasteWebView(ctx: Context, private val onImage: (bytes: ByteArray, mime: S
     }
 
     companion object {
-        private const val TAG = "JarvisPaste"
+        private const val TAG = "AgentJPaste"
         /** = inbox.ALLOWED's images (the bridge is the gate; HEIC is left to the page's own checks). */
         val IMAGE_TYPES = arrayOf("image/png", "image/jpeg", "image/webp", "image/gif")
         /** inbox.MAX_BYTES; one byte more marks "too large" without reading the rest. */

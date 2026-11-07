@@ -9,7 +9,7 @@ const installReceiptPath=process.env.P541_INSTALL_RECEIPT;let installReceipt=nul
 if(process.env.P541_INSTALLED==='1'){if(!installReceiptPath)throw new Error('POSTINSTALL requires guard installation receipt');const bytes=readFileSync(installReceiptPath);if(!bytes.length)throw new Error('empty installation receipt');installReceipt={path:installReceiptPath,sha256:createHash('sha256').update(bytes).digest('hex')};}
 const {setup,fake,B,ev,web,currentQuestion,currentCard}=await import('./p541.mjs');
 const {shoot,sleep,waitFor,newPage}=await import('./browser.mjs');
-const root='/home/laogege/coding/vibe-remote',out=process.env.P541_INSTALLED==='1'?homedir()+'/coding/.agentj/outbox':process.cwd()+'/reports/qa/541-implement/web/preinstall',evidence=process.cwd()+'/reports/qa/541-implement/web';
+const root=process.env.AGENTJ_QA_ROOT||process.cwd(),out=process.env.P541_INSTALLED==='1'?homedir()+'/coding/.agentj/outbox':process.cwd()+'/reports/qa/541-implement/web/preinstall',evidence=process.cwd()+'/reports/qa/541-implement/web';
 mkdirSync(evidence,{recursive:true});mkdirSync(out,{recursive:true});
 const startedAt=new Date().toISOString(),sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 const publicRoot=new URL('../public/',import.meta.url),sourceManifest=JSON.parse(readFileSync(new URL('version.json',publicRoot),'utf8'));

@@ -18,6 +18,15 @@ const ID22 = /^[A-Za-z0-9_-]{22}$/;
 const MIME = /^[a-z0-9.+-]{1,40}\/[a-z0-9.+-]{1,80}$/i;
 const base = (s) => String(s).split(/[/\\]/).filter(Boolean).pop() || '';
 
+function privateOffer(d,bytes){
+  if(!d||!/^[0-9a-f]{32}$/.test(d.id)||!/^[A-Za-z0-9_-]{22}$/.test(d.seat)
+    ||!Number.isSafeInteger(d.bytes)||d.bytes!==bytes||!Number.isInteger(d.expires))return null;
+  if(d.transport!==undefined&&(d.transport!=='https1'||d.chunk_size!==65536||!/^[0-9a-f]{64}$/.test(d.sha256)))return null;
+  return {id:d.id,seat:d.seat,bytes:d.bytes,expires:d.expires,
+    ...(d.transport==='https1'?{transport:'https1',chunk_size:65536,sha256:d.sha256,mime:MIME.test(d.mime||'')?d.mime:'application/octet-stream',expires_at:d.expires}:{}),
+    ...(/^\/[a-z2-7]{8}\/#file=[0-9a-f]{32}$/.test(d.locator)&&d.locator.endsWith(d.id)?{locator:d.locator}:{})};
+}
+
 /** The wire's media / media_skip of a turn → safe plain objects (unknown kinds, bad ids, over-cap sizes dropped). */
 export function sanitize(t) {
   const media = (Array.isArray(t && t.media) ? t.media : []).filter((m) => m && typeof m === 'object'
@@ -25,13 +34,11 @@ export function sanitize(t) {
     && Object.hasOwn(CAPS, m.kind) && Number.isInteger(m.bytes) && m.bytes > 0 && m.bytes <= CAPS[m.kind]
     && typeof m.sha256 === 'string' && /^[0-9a-f]{64}$/.test(m.sha256)).slice(0, MAX_ITEMS)
     .map((m) => ({ mid: m.mid, name: base(m.name).slice(0, 128) || m.kind, mime: m.mime.toLowerCase(), kind: m.kind, bytes: m.bytes,
-      sha256: m.sha256, ref: typeof m.ref === 'string' ? m.ref.slice(0, 512) : '' }));
+      sha256: m.sha256, ref: typeof m.ref === 'string' ? m.ref.slice(0, 512) : '',
+      ...(privateOffer(m.download,m.bytes)&&(!m.download.sha256||m.download.sha256===m.sha256)?{download:privateOffer(m.download,m.bytes)}:{}) }));
   const skip = (Array.isArray(t && t.media_skip) ? t.media_skip : []).filter((s) => s && typeof s.name === 'string' && WHYS.includes(s.why))
     .slice(0, MAX_ITEMS * 2).map((s) => ({ name: base(s.name).slice(0, 128), why: s.why, bytes: Number.isInteger(s.bytes) && s.bytes > 0 ? s.bytes : 0,
-      ...(s.download && /^[0-9a-f]{32}$/.test(s.download.id) && /^[A-Za-z0-9_-]{22}$/.test(s.download.seat)
-        && Number.isSafeInteger(s.download.bytes) && s.download.bytes === s.bytes && Number.isInteger(s.download.expires)
-        ? { download: { id: s.download.id, seat: s.download.seat, bytes: s.download.bytes, expires: s.download.expires,
-          ...(/^\/[a-z2-7]{8}\/#file=[0-9a-f]{32}$/.test(s.download.locator) && s.download.locator.endsWith(s.download.id) ? { locator: s.download.locator } : {}) } } : {}),
+      ...(privateOffer(s.download,s.bytes)?{download:privateOffer(s.download,s.bytes)}:{}),
       // P424 #142: where a key-like refusal is — the line and a two-character masked hint (never the text)
       ...(Number.isInteger(s.line) && s.line > 0 && s.line < 1e8 && typeof s.hint === 'string' && s.hint.length <= 4 ? { line: s.line, hint: s.hint } : {}) }));
   return { media, skip };

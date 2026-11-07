@@ -23,7 +23,7 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         Prefs.init(ctx)
         if (Prefs.relayUrl == null) return
-        Log.i("JarvisBoot", "${intent.action}: stoppedByUser=${Prefs.stoppedByUser} listening=${Hub.state}")
+        Log.i("AgentJBoot", "${intent.action}: stoppedByUser=${Prefs.stoppedByUser} listening=${Hub.state}")
         if (Prefs.stoppedByUser) {
             // Listening stays off; the reply notifications (ADR-050) need no microphone and may start here.
             if (Prefs.replyNotify) WakeService.replies(ctx.applicationContext) else Notices.stopped(ctx)
@@ -44,7 +44,7 @@ class BootReceiver : BroadcastReceiver() {
  * about five seconds instead of waiting for the owner or for the system's next restart.
  */
 object Revive {
-    private const val TAG = "JarvisRevive"
+    private const val TAG = "AgentJRevive"
     private const val TRIES = 3
     private val main = Handler(Looper.getMainLooper())
 
@@ -92,15 +92,15 @@ class ReviveReceiver : BroadcastReceiver() {
             try {
                 if (am.canScheduleExactAlarms()) am.setExactAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi)
                 else am.setAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi)
-                Log.i("JarvisRevive", "task removed: revive alarm in ${delayMs} ms (exact=${am.canScheduleExactAlarms()})")
-            } catch (e: Exception) { Log.w("JarvisRevive", "alarm: $e") }
+                Log.i("AgentJRevive", "task removed: revive alarm in ${delayMs} ms (exact=${am.canScheduleExactAlarms()})")
+            } catch (e: Exception) { Log.w("AgentJRevive", "alarm: $e") }
         }
     }
 
     override fun onReceive(ctx: Context, intent: Intent) {
         Prefs.init(ctx)
         if (Prefs.relayUrl == null) return
-        Log.i("JarvisRevive", "alarm: listening=${Hub.state}")
+        Log.i("AgentJRevive", "alarm: listening=${Hub.state}")
         if (Hub.on) return
         if (Prefs.stoppedByUser) { WakeService.replies(ctx.applicationContext); return }
         Revive.start(ctx.applicationContext, "swipe", goAsync())

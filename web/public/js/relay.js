@@ -1,10 +1,12 @@
+import {paintRepair,repairOf,replyName} from './repair-actions.js';
+import {waitsForNewRequest,rememberRefusal,waitingText,forgetRefusal,forgetRefusals} from './approval-notice.js';
 import { useShort, phaseText } from './use.js';
 import { renderPage as renderForm, configure as configureForms, forgetAll as forgetForms } from './forms.js';
 import { refreshSpecialVisibility } from './approval-special541.js';
 import * as approval541 from './approval541.js';
 import { approvalById } from './snap.js';
 import { paint as paintApprovalSource572 } from './approval-source572.js';
-import {paint as terminalCommands} from './termcommands.js';
+import {paint as terminalCommands, configure as configureRun} from './termcommands.js';
 import { paintReportActions } from './report-actions.js';
 import {reopenSession, setStuck} from './rescue.js';
 import * as chatheal from './chatheal.js';
@@ -162,6 +164,18 @@ function renderWords(text, pending = false, label = "", waitLine = false, sys = 
   afterWords(robot);
   rdFollow(tx, sys, dataOnly);
 }
+// Shared post-Markdown rendering for the reply card and its full-screen reader.
+const replyDataOnly=p=>p?.source?.k==='friend_report'||!!chanCard(p)||(p?.source?.k==='host'&&!!p.source.text?.trim()&&p.end==='done'&&!p.reply?.trim()&&!p.card&&!p.source.att?.length);
+function enhanceReplySurface(root,p,reader=false){
+ if(!root||!p)return;
+ if(!replyDataOnly(p))linkSlash(root,{run:phoneCmd,fill:text=>appendText(text)},t);
+ (reader?renderReaderMedia:renderMedia)(root,p);
+ renderForm(root,p);
+ wireComponents(root,replyBtn.agentWords(p)&&p.end!=='open',text=>{appendText('\n'+text+'\n');if(reader)closeReader();});
+ replyBtn.paint(root,p,{pages,say:reader?async(words,parent)=>{const ok=await sayReply(words,parent);if(ok)closeReader();return ok;}:sayReply,find:search.find});
+ terminalCommands(root,p);
+ if(p.end!=='open')approval541.reopenButton(root,p,approvalById,approvalOptions());
+}
 // P341 (#19): a host-written system page (k "sys": goal results, notices) quotes commands — "$(…)" / "$HOME" — so it
 // renders Markdown without TeX; the Agent's own replies keep math.
 // P365: an automation's message (k "auto", `agentj notify`) is the owner's own script text — prices and $VARS, no TeX either
@@ -218,7 +232,7 @@ function paintThinking(progress){
   box.replaceChildren(waitRobot());
   if (progress){ const s = document.createElement("span"); s.textContent = progress; box.appendChild(s); }
 }
-onCardsChange(() => { wordsSrc = null; showPage(); if(rdAt){const p=currentPage();if(p){fill(el("rdWords"),rdAt.text,p.source?.k === "friend_report",sysPage(p));renderReaderMedia(el("rdWords"),p);}} });
+onCardsChange(() => { wordsSrc = null; showPage(); if(rdAt&&!rdAt.file){const p=currentPage();if(p){fill(el("rdWords"),rdAt.text,replyDataOnly(p),sysPage(p));enhanceReplySurface(el("rdWords"),p,true);}} });
 onTheme(() => { themeGen++; wordsSrc = null; thinkingSrc = null; showPage(); });
 
 // ---- the reading area scrolls; the page does not ---------------------------------
@@ -674,6 +688,10 @@ function renderPermission(card, p){
   paintTags(p || null);
   approval541.paint(p,approvalOptions());
   paintApprovalSource572(p || null);
+  if(p&&waitsForNewRequest(p.id)){
+    for(const id of ['apprAllow','apprBatch','apprGoalAdd'])el(id).disabled=true;
+    el('askText').textContent=waitingText(p.id,cur?.hostStatus);
+  }
 }
 // P339: the goal card's plain title (null = an older host's card: it renders exactly as before).
 let goalOpen = {id: null, open: false};
@@ -798,6 +816,7 @@ function toggleCmd(){
 /** P561 追加 17: the Agent J host holds no key for this remote (a Face ID card without `fa`). */
 const cardNoKey = (p) => !!(p && p.passkey_required && !p.fa && !p.local_only && !isTV());
 async function apprPost(p, action){
+  if(action!=="deny"&&waitsForNewRequest(p.id))return; // UI-only hold after an explicit refusal; never retry the old card.
   if(action!=="deny"&&cardNoKey(p))return;   // P561 追加 17: nothing to confirm with here — the card already says where
   if(action!=="deny"&&p.passkey_required&&phoneConfirmation(!p.fa))return;
   // A passkey approval waits for the passkey sheet, so only that one stays up until it is signed.
@@ -828,8 +847,11 @@ export function answerRefused(m) {
   if (apprSent.id === m.id) apprSent = {id: null, state: null};
   if (apprOpt && apprOpt.id === m.id) apprOpt = null;
   apprDismissed = null; foldedCard = null;
-  apprFail = {id: m.id, text: t('fr.ask.failed')};
+  const text=rememberRefusal(m.id,m.why,cur?.hostStatus);
+  apprFail = {id:m.id,text};
+  return text;
 }
+export const approvalEnded=id=>forgetRefusal(id);
 // P154 追加 2 (owner, 2026-10-12): on a computer ⌘+Enter (Mac) / Ctrl+Enter = a tap on 批准 — the same apprPost, so the
 // same device signature and passkey check; never a way around them. Only while the card is up; it wins over the text
 // box's Enter-to-send. Esc puts the card away (layers.js). Phones (no fine pointer) show no hint.
@@ -839,7 +861,7 @@ function apprKbd(){
 }
 function apprHotkey(e){
   if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.isComposing || e.repeat) return;
-  if (document.body.dataset.sheet !== "1" || el("apprBtns").hidden || el("apprAllow").hidden || el("apprAllow").disabled || (dialogOpen() && topCard() !== el("sheet"))) return;   // P551: a card above the dialog is the one in front
+  if (document.body.dataset.sheet !== "1" || el("sheet").classList.contains("aj-layer-covered") || el("apprBtns").hidden || el("apprAllow").hidden || el("apprAllow").disabled || (dialogOpen() && topCard() !== el("sheet"))) return;   // P551: a card above the dialog is the one in front
   const p = apprLive();
   if (!p || p.local_only || friendAsk(p)) return;
   e.preventDefault(); e.stopImmediatePropagation();
@@ -1028,6 +1050,7 @@ export function render(s){
   paintUsage(s.usage);
   paintCompacting(s.compacting === true);
   paintSayCancel();                                    // P328: blue → the × stops the turn
+  const repairPage=currentPage();if(repairOf(repairPage))paintCmdx(repairPage);
   if (s.usage && typeof s.usage.context_pct === "number" && !s.compacting) postCompact = false;
   if (lastStatus !== null && s.status !== lastStatus && navigator.vibrate && document.body.dataset.conn === "on"){
     try{ navigator.vibrate(s.status === "waiting" ? [90,60,90] : 35); }catch(_){}
@@ -1580,6 +1603,7 @@ function showPage(){
   paintQFold(p);
   const total = totalPages(), n = total - (ps.length - 1 - pageAt);
   el("pg").textContent = blank && total <= 1 ? "0 / 0" : n + " / " + total;
+  el("agent").textContent = replyName(p,C.agentName());
   el("rmTime").textContent = p.ts ? "· " + hhmm(p.ts) : "";
   el("rmPart").textContent = p.part ? t('r.part', {k: p.part[0], n: p.part[1]}) : "";
   paintUse(p);
@@ -1631,17 +1655,11 @@ function showPage(){
   { const lg = selfheal.loginOf(p); if (lg) selfheal.linkLogin(el("words"), t('p0269.login.btn'), () => openLogin(lg.agent, lg.why)); }   // 0.26.9: `/login` = 「重新登录」
   // 0.26.9 #433 #447 · security C-1: never on a friend's report or an owner-channel page (a stranger's words); a fill tap goes
   // after the owner's draft (appendText), never replacing it
-  if (!noticeOnly && !chan && p.source?.k !== "friend_report") linkSlash(el("words"), {run: phoneCmd, fill: text => appendText(text)}, t);
   setStuck(hist.turns.slice(-6).some(x => { const q = selfheal.queueOf(x); return !!q && (x.end === "open" || x === hist.turns[hist.turns.length - 1]) && selfheal.canEnd(q, selfheal.waitedNow(x.id, q, true)); }));
   paintThinking(visibleReply(p) && !hostWait ? progress : "");
   el("words").classList.toggle("empty", !visibleReply(p));
-  renderMedia(el("words"), p);
-  renderForm(el("words"), p);
-  wireComponents(el("words"), replyBtn.agentWords(p) && p.end !== "open", text => appendText("\n" + text + "\n"));
-  replyBtn.paint(el("words"), p, {pages, say: sayReply, find: search.find});
-  terminalCommands(el("words"), p);
-  if(p.end!=="open")approval541.reopenButton(el("words"),p,approvalById,approvalOptions());   // P368
-  if (rdAt && rdAt.key === shownKey && !rdAt.file) renderReaderMedia(el("rdWords"), p);   // P59: the reader's slots, same Blobs
+  enhanceReplySurface(el("words"),p);
+  if (rdAt && rdAt.key === shownKey && !rdAt.file) enhanceReplySurface(el("rdWords"),p,true);   // P59: the reader's slots, same Blobs
   if (rdOpen()) rdSync();                                                   // P273: the reader follows every jump
   document.body.dataset.approvalReviewPage=p.card?.approval_review||'';
   document.body.dataset.pageOpen = p.end === "open" ? "1" : "0";
@@ -1699,6 +1717,7 @@ function paintCmdx(p){
   const box = el("cmdx"), c = p.card;
   if (paintReportActions(box, p)) return;
   box.replaceChildren();
+  if(paintRepair(box,p,{ready:()=>isReady()&&C.paired(),supported:()=>C.repairSupported?.()===true,run:()=>C.repairConnection?.()})){box.hidden=false;return;}
   if (p.source?.k === 'sys' && c?.recovery === 'restart_session') {
     box.hidden = false;
     const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-reply'); b.type = 'button'; b.className = 'cmdundo';
@@ -2407,8 +2426,8 @@ function openReader(){
   try{ const s = getSelection(); if (s && !s.isCollapsed) s.removeAllRanges(); }catch(_){}
   const max = mainEl.scrollHeight - mainEl.clientHeight;
   rdAt = {key: shownKey, scroll: mainEl.scrollTop, text: tx};
-  fill(el("rdWords"), tx, p.source?.k === "friend_report", sysPage(p));
-  renderReaderMedia(el("rdWords"), p);                 // P59 (ADR-A164): local pictures / files in place, not their Markdown
+  fill(el("rdWords"), tx, replyDataOnly(p), sysPage(p));
+  enhanceReplySurface(el("rdWords"),p,true);                 // P59 (ADR-A164): local pictures / files in place, not their Markdown
   rdHead();
   if (document.activeElement === input) input.blur();
   const rd = el("rd");
@@ -2461,7 +2480,7 @@ async function rdJump(where){
 // unread badge — the same numbers as the message card's header, for the page under the reader.
 function rdHead(){
   const p = currentPage(), rd = el("rd"), u = el("rdUnread"), ou = el("omUnread"), n = +ou.dataset.n || 0;
-  el("rdName").textContent = C.agentName();
+  el("rdName").textContent = replyName(p,C.agentName());
   el("rdTime").textContent = p && p.ts ? hhmm(p.ts) : "";
   el("rdPg").textContent = el("pg").textContent;
   rd.dataset.latest = follow ? "1" : "0";
@@ -2483,7 +2502,7 @@ function rdSync(){
   if (!rdHasText(p)) return;                    // an empty page on the way: the jump that brought us here moves on
   const tx = p.reply.trim();
   rdAt = {key: shownKey, scroll: 0, text: tx};
-  fill(el("rdWords"), tx, p.source?.k === "friend_report", sysPage(p)); renderReaderMedia(el("rdWords"), p);
+  fill(el("rdWords"), tx, replyDataOnly(p), sysPage(p)); enhanceReplySurface(el("rdWords"),p,true);
   el("rdScroll").scrollTop = 0;
 }
 // The footer: the reply card's six icons, cloned once (same glyphs, same order — 阅读 · 朗读 · 转发 · 邮件 · 复制 · 回复,
@@ -2559,7 +2578,7 @@ function closeReader(fromPop){
 function rdFollow(tx, sys = false, dataOnly = false){
   if (!rdAt || rdAt.file || rdAt.key !== shownKey || !tx || tx === rdAt.text) return;
   const sc = el("rdScroll"), top = sc.scrollTop;
-  rdAt.text = tx; fill(el("rdWords"), tx, dataOnly, sys); sc.scrollTop = top;
+  rdAt.text = tx; fill(el("rdWords"), tx, dataOnly, sys);enhanceReplySurface(el("rdWords"),currentPage(),true); sc.scrollTop = top;
 }
 // ---- P573 (#386): a file in the same reader ----------------------------------------------------------------------
 // A Markdown / text / code file the reply sent opens here (media.js → setDocReader), not in a viewer of its own: the same
@@ -3505,6 +3524,8 @@ const saySwitch = () => sayWords(SWITCH_CMD, t('p238.sent'));
 // P368: a one-tap answer in the reply = the owner typing those words and tapping Send (same signed say)
 // P398 (#154): a tap on an older page = a reply to it (the same reply_to / excerpt as 回复), 「回复 #N」 on both sides
 const sayReply = (words, p = null) => sayWords(words, t('p368.sent', {say: words}), p && Number.isInteger(p.id) ? p.id : null);
+// #584: a code block's 「执行」 on a phone (and 「问 Agent」 under its result) — an owner message quoting that reply
+configureRun({say: (text, id) => sayWords(text, t('p584.sent'), Number.isInteger(id) ? id : null), agent: () => (C && C.agentName ? C.agentName() : 'Agent')});
 async function sayWords(text, done, replyTo = null){
   releaseComposer();
   if (C.estopOn()){ toast(t('r.say.stopped'), 3200); return false; }
@@ -4959,6 +4980,7 @@ function histFind(){
  *  flight (cancelled; it never resumes). A transcription still on its way is dropped when it lands (localEpoch). */
 let localEpoch = 0;
 export function forgetLocal(){
+  forgetRefusals();
   localEpoch++;
   histMem = []; histAt = -1;
   forgetKill(); stash = null; hfind = null; fsed.forget();   // P412: the kill ring, Ctrl+S and the full-screen copy too
@@ -5042,6 +5064,7 @@ export function init(ctx){
   el("words").addEventListener("click", copyCodeClick);
   el("words").addEventListener("click", () => { if (wordsSrc === NO_ECHO_SRC) refreshNewest(); });   // P135: 「点此刷新」
   el("rdWords").addEventListener("click", copyCodeClick);
+  el("rdWords").addEventListener("click",e=>{if(rdOpen()&&!rdAt?.file&&e.target.closest("button.fp-link,button.rtag,.slash-command-link,.term-command,#reopen541"))queueMicrotask(()=>{if(rdOpen()&&!rdAt?.file)closeReader();});},true);
   for (const id of ["words", "rdWords"]) el(id).addEventListener("cc:copied", copiedNote);   // P292: the inline code's 「已拷贝」
 
   addEventListener('approval541-locate',e=>approvalOptions().locate(e.detail));

@@ -25,7 +25,7 @@ export function composeMentions(input, getMentions) {
   if(!entries.length&&!cmd){const wasEditing=!editor.hidden;editor.hidden=true;input.classList.remove('workflow-backed');last=text;if(focus&&wasEditing){const at=input.selectionEnd;give(input);input.setSelectionRange(at,at);}return;}
   last=text;editor.replaceChildren();let at=0;
   if(cmd){const chip=document.createElement('span');chip.className='workflow-token cmd-token';chip.contentEditable='false';chip.dataset.mention=cmd;chip.textContent=cmd;editor.append(chip);at=cmd.length;}
-  while(at<text.length){const w=entries.find(w=>text.startsWith(w.text,at));if(w){const pill=document.createElement('span');pill.className='workflow-token';pill.contentEditable='false';pill.dataset.mention=w.text;pill.textContent=w.label;pill.title=w.text;editor.append(pill);at+=w.text.length;}else{let end=at+1;while(end<text.length&&!entries.some(w=>text.startsWith(w.text,end)))end++;editor.append(document.createTextNode(text.slice(at,end)));at=end;}}
+  while(at<text.length){const w=entries.find(w=>text.startsWith(w.text,at));if(w){const pill=document.createElement('span');pill.className='workflow-token';pill.contentEditable='false';pill.dataset.mention=w.text;pill.textContent=w.label;pill.title=w.taskId?w.label:w.text;if(w.taskId)pill.dataset.taskId=w.taskId;editor.append(pill);at+=w.text.length;}else{let end=at+1;while(end<text.length&&!entries.some(w=>text.startsWith(w.text,end)))end++;editor.append(document.createTextNode(text.slice(at,end)));at=end;}}
   editor.hidden=false;input.classList.add('workflow-backed');if(focus&&(inside||!touchComposer())){const at=input.selectionEnd;give(editor);place(at);}
   if(!frame)frame=requestAnimationFrame(watch);
  }

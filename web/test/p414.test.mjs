@@ -204,7 +204,7 @@ test('terminal page: no double-click / double-tap anywhere; Esc + back collapse;
   assert.match(onBang, /if \(m\.why === 'failed'\) \{ toast\(t\('p414\.bangFailed'\), 5000, 'error'\); return; \}/);
   assert.ok(onBang.indexOf("m.why === 'failed'") < onBang.indexOf('restore(b.line)'));
   // the host's 120 s run from the signed resend of a confirmed 「!」 line: the phone's wait is re-armed there
-  assert.match(TERM, /if \(bangSid && S\.bang && S\.bang\.sid === bangSid\) \{ clearTimeout\(S\.bang\.timer\); S\.bang\.timer = setTimeout\(\(\) => bangEnd\(bangSid\), BANG_MS\); \}/);
+  assert.match(TERM, /if \(bangSid && S\.bang && S\.bang\.sid === bangSid\) \{ clearTimeout\(S\.bang\.timer\); S\.bang\.timer = setTimeout\(\(\) => bangLost\(bangSid\), bangRun \? RUN_MS : BANG_MS\); \}/);   // #584: a 「执行」 waits RUN_MS
   // a card that needs the owner brings the collapsed page back (and it goes down again once answered)
   assert.match(TERM, /if \(m\.t === 'term_confirm'\) \{ expand\(true\); return confirmLine\(m\); \}/);
   assert.match(TERM, /if \(m\.t === 'term_sudo'\) \{ expand\(true\); return sudoAsk\(m\); \}/);

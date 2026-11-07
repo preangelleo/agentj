@@ -1,4 +1,4 @@
-"""0.26.10 lane w5-rescue (#484, ADR-0269-w5-rescue): 「紧急修复」's 「重置连接」 and 「重开 AI 会话」 must really recover.
+"""0.26.10 lane w5-rescue (#484, ADR-0269-w5-rescue): 「紧急修复」's 「重置连接」 and 「重启 Agent」 must really recover.
 
 Chairman: 「这个重置连接和这个重开AI对话，到底是在什么样一个执行逻辑？怎么遇到问题从来没管用过？」 Customer (Codex): a turn
 stuck on Stop for ~1 h; /stop ended it at once, the buttons never did; the upgrade restart then waited its full 600 s.
@@ -6,7 +6,7 @@ stuck on Stop for ~1 h; /stop ended it at once, the buttons never did; the upgra
 Real scenarios with the stand-in harnesses (real subprocesses through serve, fenced where bubblewrap works):
 - Codex turn that never ends and ignores turn/interrupt (fakecodex HANG) → 「重置连接」 does what /stop does first: the hung
   app-server Agent J started is ended, the queued owner message reaches the SAME thread, the result says so (< 60 s);
-- the same with 「重开 AI 会话」 (it used to call `_thread()` on a stopped app-server: always failed and dropped the pin);
+- the same with 「重启 Agent」 (it used to call `_thread()` on a stopped app-server: always failed and dropped the pin);
 - Claude turn that never ends (fakeclaude HANG) → reset stops it, the queued message is resumed with --resume;
 - Codex app-server that never answers turn/start (fakecodex NOACK) → the deaf app-server is ended, the next message
   works, the reset's result names it;

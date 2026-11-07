@@ -372,7 +372,7 @@ usage: agentj agent [-h] [--probe] [--dry-run] [--wait WAIT] [--result]
 ### agentj alias
 
 ```text
-短命令 aj（迁移过的Agent J 主机另有旧命令 jarvis）：status · install · remove（同名已存在就不装）/ the short command `aj` (+ `jarvis` on a migrated computer)
+短命令 aj：status · install · remove（同名已存在就不装；旧版兼容见迁移说明）/ the short command `aj` (legacy compatibility: migration guide)
 ```
 
 ```bash
@@ -8154,7 +8154,7 @@ usage: agentj agent [-h] [--probe] [--dry-run] [--wait WAIT] [--result]
 ### agentj alias
 
 ```text
-短命令 aj（迁移过的Agent J 主机另有旧命令 jarvis）：status · install · remove（同名已存在就不装）/ the short command `aj` (+ `jarvis` on a migrated computer)
+短命令 aj：status · install · remove（同名已存在就不装；旧版兼容见迁移说明）/ the short command `aj` (legacy compatibility: migration guide)
 ```
 
 ```bash

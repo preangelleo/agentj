@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agentj.app/schema/agentj-card-1.json",
   "title": "Agent J card (card.json, schemaVersion 1 — phase 1: template cards)",
-  "description": "One card in the phone's logo menu, from card 6 on. Checked by `agentj card validate` (this schema plus the rules it cannot say: reserved ids, credential-looking file names, prompt variables, folder contents). Spec: agentjarvis/docs/specs/AGENTJ-CARDS-SPEC.md.",
+  "description": "One card in the phone's logo menu, from card 6 on. Checked by `agentj card validate` (this schema plus the rules it cannot say: reserved ids, credential-looking file names, prompt variables, folder contents). Spec: https://agentj.app/docs/cards/.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "id", "version", "name", "description", "icon", "accent", "template", "data"],

@@ -995,7 +995,7 @@ class CodexAgent(Agent):
         if isinstance(child, str) and child != self.tid:
             async def dispatch():
                 self._dispatch_request(m)
-            pin = self.__dict__.get("_child_sources", {}).get(child)
+            pin = codex_children.for_request(self, child, p.get("turnId"))
             self._bg(codex_children.run(self, pin, dispatch()))
         else:
             self._dispatch_request(m)
@@ -1329,8 +1329,20 @@ class CodexAgent(Agent):
             self.turn_status = {"id": self.turn_id, "status": "completed"}
             td.set()
 
-    async def interrupt_request(self, p) -> None:
+    async def interrupt_request(self, p, expected_target=None):
         """app-server's own `turn/interrupt`, then ≤ 2 s for `turn/completed` (halt() ends the process tree right after)."""
+        if expected_target is not None:
+            if (not expected_target.live(self) or p is not expected_target.proc or not expected_target.tid
+                    or not expected_target.turn_id or expected_target.done is None or expected_target.done.is_set()):
+                return False
+            params = {"threadId":expected_target.tid,"turnId":expected_target.turn_id}
+            try:
+                await self.call("turn/interrupt",params,3)
+            except (RPCError,ConnectionError,OSError,asyncio.TimeoutError):
+                return False
+            # Native turn/interrupt names that exact old turn. No mutable next-turn
+            # event is set, no queued work is dropped, and no process-wide kill follows.
+            return True
         td = self.turn_done
         if td is None or td.is_set() or not self.tid or not self.turn_id:
             return

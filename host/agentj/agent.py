@@ -810,7 +810,11 @@ class Agent:
         from .privacy import redact
         return clean(redact("\n".join(lines)), 600)
 
-    async def halt(self, clear_queue: bool = True) -> bool:
+    async def halt(self, clear_queue: bool = True, expected_target=None) -> bool:
+
+        if expected_target is not None:
+            if not expected_target.live(self):return False
+            return bool(await self.interrupt_request(expected_target.proc,expected_target=expected_target))
 
         if clear_queue:
             while not self.q.empty():
@@ -1500,7 +1504,7 @@ class ClaudeAgent(Agent):
             for block in message.get("content") or []:
                 if isinstance(block, dict) and block.get("type") == "tool_result":
                     if getattr(self.host, "peers", None) is not None:
-                        self.host.peers.xfer.broker.complete(block.get("tool_use_id"), not block.get("is_error", False), block.get("content"))
+                        self.host.peers.xfer.broker.complete(block.get("tool_use_id"), not block.get("is_error", False), block.get("content"), child=bool(ev.get("parent_tool_use_id")))
         elif t == "result":
             self.replay = False
             self.last_result = ev
