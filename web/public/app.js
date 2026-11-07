@@ -509,7 +509,7 @@ function onApp(m) {
     case 'bots_proposal': bots.proposal(m); return;
     case 'jcard_open': fivePages.pushOpen(m.id, m.at); return;   // P360 (§34): `agentj card open` — go to that card / place
     case 'roster_bind_offer': rosterbind.offer(m).catch(() => {}); return;
-    case 'roster_bind_res': rosterbind.result(m); return;
+    case 'roster_bind_res': rosterbind.result(m); if (m.ok === true) snap.retryPairingPreparation(); return;
     case 'owner_grant_notice': friends.ownerGrantNotice(m); return;
     case 'fr_changed': friends.changed(m); return;   // §17.7: something changed on the computer → the friends page re-reads
     case 'hook_changed': webhooks.changed(); return;   // P366: a webhook changed on the computer → the open Webhook page re-reads

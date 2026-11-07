@@ -1443,6 +1443,8 @@ class PeerService:
                     return False, "phone_required", pid
                 if self.store.get(pid) is None or self.store.is_blocked(pid):
                     return False, "not_friend", pid
+                if self.same_owner.active(pid):
+                    return True, None, pid
                 if self.net is None:
                     self._ensure_net(run=False)
                 if self.st.passkey_of_device(device) and not self.xfer.bound(device):
@@ -1476,6 +1478,8 @@ class PeerService:
                     self.same_owner.consent(pid, False, end='declined')
                 self.same_owner.clear_requests(pid)
                 return True, None, pid
+            if op == "group" and value not in {g["id"] for g in self.store.groups()}:
+                return False, "bad_group", pid
             if op in ("group", "block", "delete") and (self.same_owner.row(pid).get('token') or self.same_owner.row(pid).get('remote')):
                 self.same_owner.consent(pid, False)
                 self.same_owner.clear_requests(pid)

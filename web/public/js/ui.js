@@ -33,13 +33,36 @@ export function notifyOnce(spec, onceKey) {
 }
 // Two placements: centred circle/square for transient status/information; rect inside the reply for execution/actions.
 // Colours and actions retain P318's Noir tokens. Held notices keep ms:0 and can be dismissed with Escape.
-export const CIRCLE_MAX = 10; // half-width display cells: five Chinese glyphs
+// A circle is a layout decision, measured against the rendered font, never a character limit.
 export function circleStatus(text) {
-  const value = String(text ?? '').trim();
-  if(!value||/[\r\n\u2028\u2029]/u.test(value))return false;
-  const parts=typeof Intl.Segmenter==='function'?[...new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(value)].map(x=>x.segment):Array.from(value.normalize('NFC'));
-  const wide=/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Extended_Pictographic}\p{Regional_Indicator}\u3000-\u303f\uff01-\uff60\uffe0-\uffe6]/u;
-  return parts.reduce((n,part)=>n+(wide.test(part)?2:/^[\p{Mark}\u200d\ufe0f]+$/u.test(part)?0:1),0)<=CIRCLE_MAX;
+  return !!String(text ?? '').trim() && !/[\r\n\u2028\u2029]/u.test(String(text));
+}
+export function circleFits(box) {
+  if (!document.fonts || document.fonts.status !== 'loaded' || !circleStatus(box.querySelector('.nt-body')?.textContent)) return false;
+  const probe = box.cloneNode(true);
+  probe.removeAttribute('id'); probe.removeAttribute('role'); probe.setAttribute('aria-hidden', 'true'); probe.inert = true;
+  probe.classList.remove('square', 'on'); probe.classList.add('circle');
+  Object.assign(probe.style, { visibility:'hidden', pointerEvents:'none', left:'-10000px', top:'0', transform:'none', transition:'none', maxHeight:'none' });
+  const col = probe.querySelector('.nt-text'), body = probe.querySelector('.nt-body');
+  Object.assign(col.style, { width:'max-content', maxWidth:'none', flex:'none' });
+  Object.assign(body.style, { whiteSpace:'pre', overflowWrap:'normal' });
+  document.body.appendChild(probe);
+  try {
+    const css = getComputedStyle(probe), font = getComputedStyle(body);
+    if (!document.fonts.check(font.font)) return false;
+    // This hidden probe has transform:none: fractional layout widths cannot be rounded into a false fit.
+    const bounds = probe.getBoundingClientRect(), content = col.getBoundingClientRect();
+    const width = bounds.width - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight);
+    const height = bounds.height - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom);
+    const icon = probe.querySelector('.nt-ico');
+    return width > 0 && content.width <= width && body.getBoundingClientRect().height <= parseFloat(font.lineHeight) + 0.01
+      && content.height + (icon?.clientHeight || 0) + parseFloat(css.rowGap || 0) <= height;
+  } finally { probe.remove(); }
+}
+function sizeCircle(box) {
+  if (!box?._circleWanted) return;
+  const fits = circleFits(box);
+  box.classList.toggle('circle', fits); box.classList.toggle('square', !fits);
 }
 export const NOTIFY_ACCENTS = ['--state', '--emerald-oasis', '--windstorm', '--peachy-feeling', '--magic-carpet'];
 export const FORMATS = Object.freeze({
@@ -119,6 +142,7 @@ export function notify(spec) {
     kids.push(row);
   }
   box.replaceChildren(...kids);
+  box._circleWanted = f.shape === 'circle';
   box.classList.add(f.shape);
   // #556: a visible password / confirmation card owns the stage; its results use a centred rounded card above it.
   const dlg = f.shape === 'rect' && document.querySelector('.ajmodal.dlgcard:not([hidden]):not(.cp-docked),#confirm:not([hidden]):not(.cp-docked)');
@@ -143,6 +167,7 @@ export function notify(spec) {
   box.classList.toggle('aj-notice-command', cmd); box.classList.toggle('act', !!acts.length && f.shape === 'rect');
   box.classList.toggle('media', kids.some((k) => k.classList && k.classList.contains('nt-media')));
   if (ms) delete box.dataset.hold; else box.dataset.hold = '1';
+  sizeCircle(box);
   box.classList.add('on');
   fitNotice(box);
   clearTimeout(box._t);
@@ -159,6 +184,7 @@ export function noticeBounds(height, protectedTop, noticeHeight) {
 function fitNotice(box = el('toast')) {
   if (!box?.classList.contains('on') || !['circle', 'square', 'mail-saved', 'over-dlg'].some(c => box.classList.contains(c))) return;
   if (typeof window.innerHeight !== 'number') return;
+  sizeCircle(box);
   const view = window.visualViewport, height = view?.height || window.innerHeight, offset = view?.offsetTop || 0;
   const protectedRects = ['tools', 'input'].map(el).filter(n => n && !n.closest('[hidden]') && n.getClientRects().length)
     .map(n => n.getBoundingClientRect()).filter(r => r.height && r.top >= offset && r.top < offset + height);
@@ -168,6 +194,9 @@ function fitNotice(box = el('toast')) {
   box.style.setProperty('--aj-notice-max-height', `${bounds.maxHeight}px`);
 }
 if (typeof document !== 'undefined') {
+  document.fonts?.addEventListener('loading', () => fitNotice());
+  document.fonts?.addEventListener('loadingdone', () => fitNotice());
+  if (typeof MutationObserver !== 'undefined') new MutationObserver(() => fitNotice()).observe(document.documentElement, { attributes:true, attributeFilter:['style','class'] });
   addEventListener('resize', () => fitNotice());
   window.visualViewport?.addEventListener('resize', () => fitNotice());
   window.visualViewport?.addEventListener('scroll', () => fitNotice());

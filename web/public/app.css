@@ -4392,3 +4392,6 @@ body[data-conn="off"] .connection-help{display:flex}
 .approval-special541 .special-status0282{font-size:calc(13px*var(--fz)*var(--rs,1));line-height:1.5;margin:4px 0 14px;opacity:.85}
 
 #sheet[data-approval-v="2"] .approval-source572{border:0;padding:0 2px;margin:0 0 10px;color:var(--ink);font-size:calc(13px*var(--fz)*var(--rs,1))}
+
+/* Keep the measured circle diameter in WebKit; text cannot expand it into an oval. */
+.toast.circle{min-width:0}

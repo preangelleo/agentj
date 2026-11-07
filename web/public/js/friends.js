@@ -1,5 +1,6 @@
+import { ensureForCeremony } from './rosterbind.js';
 import { copyButton } from './copycode.js';
-import { S, touch, askDone } from './snap.js';
+import { S, touch, askDone, retryPairingPreparation } from './snap.js';
 // Agent friends (PROTOCOL §17.7, 0.16): the /friends page and the two cards the host puts in the main chat.
 // The page is READ-ONLY for conversations: there is no field that sends text to a friend (the host would refuse it anyway,
 // `fr_send_refused`); the owner speaks to a friend only through the main Agent. What the page can do is what Leo asked for:
@@ -275,15 +276,14 @@ function renderSide() {
   const ul = mk('ul', 'fr-list'); ul.id = 'fr-list';
   let deviceHeading = false, friendHeading = false;
   for (const f of [...data.friends].sort((a,b) => Number(b.sameOwner === 'active') - Number(a.sameOwner === 'active'))) {
-    if (f.sameOwner === 'active' && !deviceHeading) { ul.append(mk('li', 'small', t('fr.myDevices'))); deviceHeading = true; ul.append(devicesItem()); }
-    if (f.sameOwner !== 'active' && deviceHeading && !friendHeading) { ul.append(mk('li', 'small', t('fr.g.friend'))); friendHeading = true; }
+    if (f.sameOwner === 'active' && !deviceHeading) { ul.append(mk('li', 'small', t('p0284.so.devicesHeading'))); deviceHeading = true; ul.append(devicesItem()); }
+    if (f.sameOwner !== 'active' && deviceHeading && !friendHeading) { ul.append(mk('li', 'small', t('p0284.so.friendsHeading'))); friendHeading = true; }
     const li = mk('li');
     const b = mk('button', 'fr-item', undefined, 'aj-friends'); b.type = 'button'; b.dataset.id = f.id;
     if (V.friend === f.id && (V.view === 'chat' || V.view === 'detail')) b.setAttribute('aria-current', 'true');
     const top = mk('span', 'fr-item__top');
     top.append(mk('b', 'fr-item__name', f.name));
-    const g = groupById(f.group);
-    if (g || f.group) top.append(mk('span', 'tag', g ? groupName(g) : f.group));
+    top.append(mk('span', 'tag', t(f.sameOwner === 'active' ? 'p0284.so.ownerLabel' : f.sameOwner === 'pending' ? 'p0284.so.pendingLabel' : 'fr.g.friend')));
     if (f.blocked) top.append(mk('span', 'tag tag-off', t('fr.blocked')));
     top.append(mk('span', 'fr-item__time', when(f.last.ts)));
     if (f.unread) { const d = mk('span', 'fr-dot'); d.setAttribute('aria-label', t('fr.unread', { n: f.unread })); top.append(d); }
@@ -506,6 +506,7 @@ function viewDetail(box) {
   if (f.sameOwner !== 'none') sel.value = 'same-owner';
   sel.addEventListener('change', async () => {
     if (sel.value === 'same-owner' && !await confirmSheet(t('fr.sameOwner'), t('fr.sameOwner.confirm'), t('fr.sameOwner.start'))) { refresh(); return; }
+    if (f.sameOwner === 'active' && sel.value !== 'same-owner' && !await confirmSheet(t('fr.sameOwner'), t('p0284.so.endConfirm'), t('p0284.so.end'))) { refresh(); return; }
     sel.disabled = true;
     const res = await write('fr_set', { friend: f.id, op: 'group', value: sel.value });
     sel.disabled = false;
@@ -1013,7 +1014,12 @@ export function renderAsk(p, ctx) {
       }
       box.append(mk('p', 'small fr-owner-order', t('p417.so.order')));   // #186: one tap here finishes it
       if (st === 'open' && ctx.sign) {
-        box.append(note());
+        if (modern && p.pairing_scope_ok !== true) {
+          box.append(mk('p', 'small', t(p.pairing_bind_needed ? 'p0284.so.bindNeeded' : p.pairing_prepare_failed ? 'p0284.so.notReady' : 'p0284.so.preparing')));
+          box.append(btn('', t(p.pairing_bind_needed ? 'p0284.so.bind' : 'p0284.so.retry'), async () => {
+            await ensureForCeremony(p); retryPairingPreparation();
+          }, 'frOwnerRetry'));
+        }
         const acts = mk('div', 'fr-askbtns');
         const decide = async (on) => {
           if (on && p.pairing_scope_ok === false) return;
@@ -1032,7 +1038,7 @@ export function renderAsk(p, ctx) {
         };
         acts.append(btn('', t('fr.ask.deny'), () => decide(false), 'frOwnerDeny'),
           btn('aj-action--primary', t('fr.sameOwner.confirmAction'), () => decide(true), 'frOwnerAllow'));
-        if (p.pairing_scope_ok === false) acts.querySelector('#frOwnerAllow').disabled = true;
+        if (modern && p.pairing_scope_ok !== true) acts.querySelector('#frOwnerAllow').disabled = true;
         box.append(acts);
       }
       return;

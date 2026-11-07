@@ -10,7 +10,7 @@ import { startFakeHost } from './fakehost.mjs';
 import { launch, newPage, navigate, waitFor, waitState, evaluate, shoot, sleep } from './browser.mjs';
 const OUT = process.env.P574_OUT || fileURLToPath(new URL('../../../reports/qa/p574/web/', import.meta.url));
 mkdirSync(OUT, { recursive: true });
-const web = await startWebServer(); web.url = web.url.replace('127.0.0.1', 'localhost');
+const web = await startWebServer(process.env.P574_PUBLIC_DIR ? {publicDir:process.env.P574_PUBLIC_DIR} : {}); web.url = web.url.replace('127.0.0.1', 'localhost');
 const fake = await startFakeHost(), fakePeer = await startFakeHost(), B = await launch();
 const { ownerConfirmChallenge, verifyBindingAssertion, introductionChallenge } = await import('../public/js/ownergrant.js');
 const NOTICES=JSON.parse(readFileSync(new URL('./fixtures/p574-notices.json',import.meta.url),'utf8'));
@@ -191,7 +191,29 @@ try {
     const scope=JSON.stringify(ends);
     const challenge=await evaluate(p,`import('./proto/wire.js').then(async w=>(await w.sha256hex(new TextEncoder().encode(${JSON.stringify(scope)}))).slice(0,32))`);
     const card={id:randomBytes(16).toString('hex'),tool:'peer_question',summary:'Same owner roster approval',ttl:120,pq:{pairing:true,same_owner:true,friend:'test-peer',name:'Spare host',code:String(BigInt('0x'+challenge)%1000000n).padStart(6,'0'),challenge,pairing_scope:scope}};
-    await fake.ask(card);await waitFor(p,`document.querySelector('#frOwnerAllow')&&!document.querySelector('#frOwnerAllow').disabled`);
+    if (process.env.P0284_SAME_OWNER) {
+      // A legitimate invitation can arrive before this remote finishes its existing-key binding.
+      await evaluate(p, `Promise.all([import('./js/store.js'),import('./js/session.js')]).then(([s,c])=>s.dbDel('owner-roster:'+c.channel()))`);
+      await fake.ask(card);
+      await waitFor(p, `document.querySelector('.fr-owner-code')?.textContent===${JSON.stringify(card.pq.code)}`);
+      check(await evaluate(p, `document.querySelector('#frOwnerAllow').disabled && !!document.querySelector('#frOwnerRetry')`),'unbound remote displays digest-checked comparison and a concrete existing-key recovery action');
+      check(await evaluate(p, `!document.querySelector('#frAsk').innerText.includes('Agent 没说明理由')`),'same-owner invitation omits the misleading absent Agent reason');
+      await shot(p,'390-light-zh-binding-needed');
+      // The binding handler is already exercised above with a real authenticator. Check its successful receipt resumes this card.
+      await evaluate(p, `Promise.all([import('./js/store.js'),import('./js/session.js')]).then(([s,c])=>s.dbPut('owner-roster:'+c.channel(),${JSON.stringify(local)}))`);
+      await fake.send({t:'roster_bind_res',ok:true});
+    } else await fake.ask(card);
+    await waitFor(p,`document.querySelector('#frOwnerAllow')&&!document.querySelector('#frOwnerAllow').disabled`);
+    if (process.env.P0284_SAME_OWNER) {
+      check(true,'successful existing-key binding resumes the same card and enables its original verified confirmation');
+      for (const width of [390,1440]) for (const scheme of ['light','dark']) {
+        await p.send('Emulation.setDeviceMetricsOverride',{width,height:width===390?844:1050,deviceScaleFactor:1,mobile:width===390});
+        await p.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:scheme}]});
+        await evaluate(p, `import('./js/ui.js').then(m=>m.toastOff())`);
+        await shot(p,`${width}-${scheme}-zh-restored`);
+      }
+    }
+
     check(await evaluate(p,`document.querySelector('#frAsk').innerText.includes('Work phone · '+${JSON.stringify(dev)})&&document.querySelector('#frAsk').innerText.includes('Spare tablet · '+${JSON.stringify(local2.dev)})`),'ceremony existing card displays both pinned signing rosters');
     await evaluate(p,`import('./js/ui.js').then(m=>m.toastOff())`);await shot(p,'390-light-zh-ceremony-roster');
     check(await evaluate(p,`import('./js/snap.js').then(s=>{const a=s.S.asks.get(${JSON.stringify(card.id)});return a.pairing_roster.every(r=>r.trusted.length===1)&&a.pairing_roster[0].pending.length===1&&a.pairing_roster.every(r=>r.trusted.every(e=>e.id!==${JSON.stringify(remote.id)}));})`),'fake self-signed extra device remains pending and never enters initial trusted roots');

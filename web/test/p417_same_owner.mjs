@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
 import { startWebServer } from './serve.mjs';
 import { startFakeHost, sampleFriends } from './fakehost.mjs';
 import { launch, newPage, evaluate, navigate, waitFor, waitState, sleep, shoot } from './browser.mjs';
-const out = 'reports/qa/p417-same-owner/'; mkdirSync(out, { recursive: true });
+const out = process.env.P417_OUT || 'reports/qa/p417-same-owner/'; mkdirSync(out, { recursive: true });
 for (const f of readdirSync(out)) if (f.endsWith('.png')) rmSync(out + f);
 const web = await startWebServer({ port: 0, relayCsp: 'ws://127.0.0.1:*' }), fake = await startFakeHost(), br = await launch();
 const failures = []; let checks = 0;
@@ -67,6 +67,17 @@ try {
     check(await mainHas(p, L.done), `${lang}: page flips to 「已是同一个主人」`);
     check(await evaluate(p, `!document.getElementById('fr-so-code')`), `${lang}: code gone once done`);
     writeFileSync(out + `${lang}-starter-done.png`, await shoot(p));
+    // An active relationship must not disappear from an ordinary policy-group change without an explicit owner decision.
+    const beforeRevoke = F.writes.length;
+    const chooseOrdinary = () => evaluate(p, `(()=>{const select=document.getElementById('fr-group');select.value='friend';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    await chooseOrdinary(); await waitFor(p, `!document.getElementById('confirm').hidden`);
+    await evaluate(p, `document.getElementById('confirm-no').click()`);
+    await waitFor(p, `document.getElementById('fr-group')?.value==='same-owner'`);
+    check(F.writes.length===beforeRevoke, `${lang}: cancelled explicit revocation sends no control frame and retains Same owner`);
+    await chooseOrdinary(); await waitFor(p, `!document.getElementById('confirm').hidden`);
+    await evaluate(p, `document.getElementById('confirm-yes').click()`);
+    for(let j=0;j<60&&F.writes.length===beforeRevoke;j++) await sleep(50);
+    check(F.writes.length===beforeRevoke+1&&F.writes.at(-1).sigOk&&F.writes.at(-1).op==='group'&&F.writes.at(-1).value==='friend',`${lang}: explicit owner revocation retains exact original signed group command`);
     // ended rounds say why + next step
     for (const end of ['declined', 'expired', 'ended']) {
       await hostSays({ same_owner: 'none', same_owner_end: end });

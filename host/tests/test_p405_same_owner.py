@@ -69,6 +69,22 @@ class SameOwnerTests(Base):
         self.assertTrue(self.svc.same_owner.active(self.b))
         self.assertTrue(self.remote.same_owner.active(self.a))
 
+    async def test_repeated_same_owner_start_preserves_active_legacy_relation_after_binding(self):
+        await self.confirm()
+        before = self.svc.same_owner.row(self.b)
+        with patch.object(self.svc.xfer, 'my_roster', return_value=[{'new': 'binding'}]):
+            self.assertTrue((await self.choose(self.svc, self.b, self.did, self.dsk))[0])
+        self.assertEqual(self.svc.same_owner.row(self.b), before)
+        self.assertTrue(self.svc.same_owner.active(self.b))
+
+    async def test_invalid_group_write_does_not_end_same_owner(self):
+        await self.confirm()
+        before = self.svc.same_owner.row(self.b)
+        res = await self.svc.write('fr_set', {'friend':self.b,'op':'group','value':'no-such-group'})
+        self.assertEqual(res[:2], (False, 'bad_group'))
+        self.assertEqual(self.svc.same_owner.row(self.b), before)
+        self.assertTrue(self.svc.same_owner.active(self.b))
+
     async def test_unilateral_pending_and_cli_cannot_consent(self):
         res = await self.svc.write('fr_set', {'friend':self.b,'op':'group','value':'same-owner'})
         self.assertEqual(res[1], 'phone_required')
@@ -470,6 +486,13 @@ class SameOwnerTests(Base):
         self.assertRegex(code, r'^\d{6}$')
         self.assertEqual((mine['same_owner'], mine['same_owner_code'], mine['same_owner_wait']), ('pending', code, True))
         self.assertEqual((theirs['same_owner'], theirs['same_owner_code'], theirs['same_owner_wait']), ('pending', code, False))
+        # Reconnect/restart gets the same live comparison card from durable peer questions.
+        snapshot = self.remote.ask_msgs()
+        self.assertEqual(snapshot[-1]['pq']['code'], code)
+        self.assertEqual(self.pairing_asks(self.other)[-1]['pq']['challenge'], snapshot[-1]['pq']['challenge'])
+        self.remote.asks.clear()
+        self.remote.restore_asks()
+        self.assertEqual(self.remote.ask_msgs(), snapshot)
         # one tap on the other side completes it — no second tap on the starting side
         rid = self.remote.ask_msgs()[-1]['id']
         self.assertEqual((await self.choose(self.remote, self.a, self.odid, self.osk, 'confirm'))[:2], (True, None))
@@ -671,7 +694,7 @@ class AdminApprovalTests(__import__('unittest').TestCase):
         src = inspect.getsource(elevate)
         self.assertIn('same_owner_task = provenance.same_owner_source(', src)
         self.assertIn('not same_owner_task and (auto := await self.grants.auto(', src)
-        self.assertIn('None if same_owner_task else self.grants.offer(c)', src)
+        self.assertIn('None if same_owner_task or native_authority is not None else self.grants.offer(c)', src)
 
     def test_same_owner_always_shows_admin_card_even_with_live_grant(self):
         from test_p393_elevate_grant import run, A, REAL

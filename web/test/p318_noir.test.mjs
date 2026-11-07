@@ -96,7 +96,7 @@ test('notifyFormat: kind → accent / icon / ms / shape', async () => {
   assert.equal(notifyFormat({ kind: 'confirm' }).ms, 0, 'confirm holds');
   assert.equal(notifyFormat({ kind: 'info', ms: 6000 }).ms, 6000);
   assert.equal(notifyFormat({ kind: 'success', shape: 'circle', text: '已保存' }).shape, 'circle');
-  assert.equal(notifyFormat({ kind: 'success', shape: 'circle', text: '已保存到Agent J 主机'.repeat(5) }).shape, 'square', 'long A text → centred square');
+  assert.equal(notifyFormat({ kind: 'success', shape: 'circle', text: '已保存到Agent J 主机'.repeat(5) }).shape, 'circle', 'single-line candidate is measured against actual layout by notify');
   assert.equal(notifyFormat({ kind: 'confirm', shape: 'circle', text: 'x', actions: [{ label: 'a', fn() {} }] }).shape, 'rect', 'buttons → rect');
   assert.equal(notifyFormat({ kind: 'error' }).accent, '--peachy-feeling');
   assert.equal(notifyFormat({ kind: 'progress' }).accent, '--state');
@@ -136,7 +136,7 @@ test('notify(): title + text in #toast, kind / shape classes, action button .und
     assert.equal(box.style.props['--nt-accent'], 'var(--emerald-oasis)');
     assert.ok(!box.dataset.hold, 'success is timed');
     notify({ kind: 'success', shape: 'circle', text: '已保存' });
-    assert.ok(box.classList.contains('circle') && !box.classList.contains('rect'));
+    assert.ok(box.classList.contains('square') && !box.classList.contains('rect'), 'without FontFaceSet/layout the conservative fallback is square');
     let hit = 0; toastAction('Deleted', 'Undo', () => { hit++; });
     assert.ok(box.classList.contains('act'));
     const undo = box.children.at(-1).children[0];

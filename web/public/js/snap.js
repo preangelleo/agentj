@@ -12,9 +12,9 @@ import { sanitize as formOf } from './formwire.js';         // P212 (§29)
 import { preauthOffer, faState, whyKey } from './pkrules.js';   // P539
 
 import { elevateChallenge } from './faceid.js';
-import { grantChallenge, verifyPublicGrant, pairingScope, ownerConfirmChallenge } from './ownergrant.js';
+import { grantChallenge, verifyPublicGrant, pairingScope, pairingCode, ownerConfirmChallenge } from './ownergrant.js';
 import { deviceKey, signKey, dbGet } from './store.js';
-import { deviceId, b64u, approvalEnvelopeDigest } from '../proto/wire.js';
+import { deviceId, b64u, approvalEnvelopeDigest, sha256hex } from '../proto/wire.js';
 
 export const S = {
   conn: false,                 // a ready session with the host up
@@ -109,7 +109,12 @@ export function addAsk(m) {
     a.pairing_scope_ok = false;
     const prepare = async () => {
       if (S.asks.get(m.id) !== a) return;
+      if (typeof m.pq.pairing_scope !== 'string' || m.pq.pairing_scope.length > 48000) throw new Error('pairing scope');
+      const digest = (await sha256hex(new TextEncoder().encode(m.pq.pairing_scope))).slice(0, 32);
+      if (digest !== m.pq.challenge || (m.pq.code !== undefined && m.pq.code !== pairingCode(digest))) throw new Error('pairing digest');
+      a.pairing_code = pairingCode(digest);
       const ch = channel(), dev = await deviceId((await deviceKey()).pub), local = await dbGet('owner-roster:' + ch);
+      a.pairing_bind_needed = !local; onChange();
       const roster = await pairingScope(m.pq, b64u((await signKey()).pub), dev, local);
       const target = { friend: m.pq.friend, op: 'owner-confirm-v3', value: m.pq.challenge };
       if (!prepareOwnerConfirm) throw new Error('unconfigured owner confirmation');
@@ -118,14 +123,22 @@ export function addAsk(m) {
       if (S.asks.get(m.id) === a) {
         a.owner_confirm = { obj, ch, challenge, cred: local.id };
         a.pairing_scope_ok = true; a.pairing_roster = roster; a.pairing_code = roster.code; onChange();
-        setTimeout(() => { prepare().catch(() => {}); }, 60000); // keep the signed request fresh while this card stays open
+        clearTimeout(a.pairing_refresh_timer);
+        a.pairing_refresh_timer = setTimeout(() => { prepare().catch(() => {}); }, 60000); // keep the signed request fresh while this card stays open
       }
     };
-    Promise.resolve().then(prepare).catch(() => {});
+    a.prepare_pairing = () => Promise.resolve().then(prepare).catch(() => {
+      if (S.asks.get(m.id) === a) { a.pairing_prepare_failed = true; onChange(); }
+    });
+    a.prepare_pairing();
   }
   S.order.push(m.id);
   onChange();
   return true;                                    // P417: a NEW card (app.js brings it in front of Settings)
+}
+// Re-render the same verified ceremony after the existing key binding completes.
+export function retryPairingPreparation() {
+  for (const a of S.asks.values()) if (a.prepare_pairing && a.pairing_scope_ok !== true) a.prepare_pairing();
 }
 // P396: waiting means an owner action is still needed. A tapped card may stay visible for a receipt/retry.
 export function touch(id) {

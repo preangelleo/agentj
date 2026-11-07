@@ -869,10 +869,8 @@ class Xfer:
             return await h.send_app(session, {"t": "roster_bind_res", "ok": False, "why": "bad_proof"})
         with self.svc.store._edit("roster-via.json", {}) as d:
             d.setdefault(entry["id"], {})["bind"] = entry["bind"]
-        # The old ceremony's list did not include this binding. Never silently reuse its consent.
-        for fid in list(self.svc.store._read("same-owner.json", {})):
-            if self.svc.same_owner.row(fid).get("nonce"):
-                self.svc.same_owner.consent(fid, False, end="ended")
+        # Existing ceremonies retain their signed roster snapshot. Binding only affects future
+        # ceremonies; it neither withdraws consent nor adds a trusted OTG root to an old one.
         self.roster_tick()
         return await h.send_app(session, {"t": "roster_bind_res", "ok": True})
 

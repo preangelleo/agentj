@@ -12,7 +12,7 @@ import shlex
 import signal
 import time
 
-from . import bg, codex_perm, compactprep, danger, humane, slash
+from . import bg, codex_perm, compactprep, danger, humane, slash, codex_children
 from . import agent as _agentmod
 from .agent import LINE_LIMIT, Agent, _signal_tree
 from .slash import Result
@@ -508,7 +508,7 @@ class CodexAgent(Agent):
             super().submit(text)
 
     def _bg(self, coro) -> None:
-        t = asyncio.create_task(coro)
+        t = asyncio.create_task(codex_children.wrap(self, coro))
         self.tasks.add(t)
         t.add_done_callback(self.tasks.discard)
         t.add_done_callback(lambda t: t.cancelled() or t.exception() is None or         # P192 (B13): failures land in host.log
@@ -849,6 +849,7 @@ class CodexAgent(Agent):
             self.host.agent_text(text)
 
     def _on_note(self, method: str, p: dict) -> None:
+        codex_children.note(self, method, p)
         if p.get("threadId") in (None, self.tid) and (method.startswith("item/") or method.startswith("turn/")):
             self._quota_evidence = True
         th = p.get("threadId")
@@ -989,6 +990,17 @@ class CodexAgent(Agent):
 
     # ------------------------------------------------ approvals (server → client requests)
     def _on_request(self, m: dict) -> None:
+        p = m.get("params") or {}
+        child = p.get("threadId")
+        if isinstance(child, str) and child != self.tid:
+            async def dispatch():
+                self._dispatch_request(m)
+            pin = self.__dict__.get("_child_sources", {}).get(child)
+            self._bg(codex_children.run(self, pin, dispatch()))
+        else:
+            self._dispatch_request(m)
+
+    def _dispatch_request(self, m: dict) -> None:
         self._quota_evidence = True  # a tool/approval request proves native acceptance
         method, rid = m["method"], m["id"]
         self.touch()
@@ -1014,7 +1026,7 @@ class CodexAgent(Agent):
             why = beyond_sandbox(self.thread.get("sandbox"), method, "Bash", {"command": inner}, p, None, self.cfg["dir"])
             if why:
                 return self._refuse(rid, "Bash", inp, {"decision": "decline"}, why)
-            if getattr(self.host, "peers", None) is not None and not self.research:
+            if getattr(self.host, "peers", None) is not None and not self.research and not codex_children.is_child(self):
                 self.__dict__.setdefault("secret_native_calls", {})[str(rid)] = p.get("itemId")
                 self.host.peers.xfer.broker.register(p.get("itemId"), "Bash", inp, p.get("cwd") or self.cfg["dir"], raw={"command":inner}, native=(self.tid, p.get("turnId")))
             self._bg(self._decide(rid, "Bash", inp, {"decision": "accept"}, {"decision": "decline"}, batch))
@@ -1175,12 +1187,15 @@ class CodexAgent(Agent):
                     return
             name = harness_tool(tool)
             from .approval_jev import low_risk_pass       # P198: P157 layer 1 — low risk runs without a card, like Claude
-            broker = self.host.peers.xfer.broker if getattr(self.host, "peers", None) is not None and not self.cfg.get("_workflow_ceo") else None
-            r = await broker.execute(name, inp, self.__dict__.get("secret_native_calls", {}).pop(str(rid), None), gone) if broker else None
+            broker = self.host.peers.xfer.broker if getattr(self.host, "peers", None) is not None and not self.cfg.get("_workflow_ceo") and not codex_children.is_child(self) else None
+            from .owner_broker import parse as native_secret_call
+            child_secret = codex_children.is_child(self) and native_secret_call(name, inp, self.cfg['dir']) is not None
+            r = ({"behavior": "deny", "message": "No live native secret-call admission"} if child_secret else
+                 await broker.execute(name, inp, self.__dict__.get("secret_native_calls", {}).pop(str(rid), None), gone) if broker else None)
             r = r if r is not None else ({"behavior": "allow"} if not self.research and low_risk_pass(self.host, self.cfg, name, inp, batch)
                  else await self.host.ask(name, inp, gone, batch=batch, **({"bind": bind} if bind else {}),
                                          **({"background": "task"} if self.cfg.get("_workflow_ceo") else {})))   # P552
-            if r.get("behavior") == "allow":
+            if r.get("behavior") == "allow" and codex_children.active_live(self):
                 ans = yes
             elif isinstance(r.get("message"), str):
                 # Native decline has no reason field and is otherwise presented as "rejected by user".

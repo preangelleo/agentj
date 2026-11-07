@@ -388,7 +388,9 @@ class RemotePair:
     def poll(self,link,results):
         self.seq=max(self.seq+1,int(time.time()*1000))
         body={'v':1,'t':'remote_pair','channel':self.host.channel,'ts':int(time.time()),'seq':self.seq,
-              'enabled':enabled(self.host.st),'online':self.host.relay_up,'unbind_all':True,'results':results}
+              'enabled':enabled(self.host.st),'online':self.host.relay_up,'results':results}
+        # No server advertisement contract is defined for unbind_all yet.
+        # A Host implementation flag is not permission to extend a strict poll schema.
         return cloud.post_json(cloud.api_url(self.host.st,link)+'/v1/host/remote-pair',cloud.envelope(POLL_CONTEXT,body,self.host.sk))
 
     async def run(self):

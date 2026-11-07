@@ -56,7 +56,7 @@
     "scanNoCam": "Camera access was denied or no camera is available. Allow access or paste the pairing link below.",
     "scanStop": "Stop scanning",
     "or": "Or paste the pairing link",
-    "placeholder": "Paste the link that agentj pair --link printed in the terminal (it starts with https://)",
+    "placeholder": "Paste the pairing link (starting with https://)",
     "go": "Pair",
     "badLink": "That link is invalid or has expired. Run `agentj pair` on the Agent J host again.",
     "wiped": "This browser deleted the pairing it had saved on this phone (for example a private tab was closed, or the browser cleared website data). the Agent J host did not remove this phone. Run `agentj pair` on the Agent J host and pair once more. On iPhone, don't use Private Browsing; better, add the page to your Home Screen and open it from the icon.",
@@ -92,7 +92,7 @@
       "s2ios": "Get that link onto this iPhone (AirDrop, or send it to yourself), copy it, paste it into the link box below and tap Pair.",
       "s3": "This device shows a 6-digit safety code: type it into the terminal on the Agent J host and press Enter; if you set an approval passphrase, type that too.",
       "altTitle": "Can’t scan? Use the link",
-      "alt": "Run this command in the Agent J host’s terminal; it prints a pairing link that starts with https://. Copy it onto this device, paste it below, then tap Pair."
+      "alt": "1. On any paired remote, open Settings → Remote management → Add remote, then select Copy pairing link below the QR code. 2. Or run `agentj pair --link` in the host terminal. Send the link to this device, paste it below, and select Start pairing. The link expires in 5 minutes and can only be used once."
     },
     "m3": {
       "title": "Add it in the account dashboard",
@@ -5718,5 +5718,16 @@
   "pkp.reopen": "Review pending",
   "pkp.setupFirstAction": "Set up Face ID on this phone",
   "pkp.passwordNotSet": "The host has no remote pairing password, so first enrollment cannot be verified on this phone yet. Have the owner set the pairing password on the host, then request again; do not repeat enrollment on this phone.",
-  "p0280.scheduler.scanLimited": "The scan is limited in scope and item count; this list may be incomplete."
+  "p0280.scheduler.scanLimited": "The scan is limited in scope and item count; this list may be incomplete.",
+  "p0284.so.bindNeeded": "This remote’s existing passkey needs its security binding. Confirm it first, then compare the numbers.",
+  "p0284.so.notReady": "This invitation could not be verified. Retry; if it still fails, start a new invitation on the other host.",
+  "p0284.so.preparing": "Verifying this invitation and the local passkey…",
+  "p0284.so.bind": "Confirm existing passkey",
+  "p0284.so.retry": "Verify again",
+  "p0284.so.endConfirm": "Changing this policy group ends Same owner with this host. End it now?",
+  "p0284.so.end": "End Same owner",
+  "p0284.so.devicesHeading": "My devices (same owner)",
+  "p0284.so.ownerLabel": "Same owner",
+  "p0284.so.pendingLabel": "Same owner · Pending",
+  "p0284.so.friendsHeading": "Friends"
 }
