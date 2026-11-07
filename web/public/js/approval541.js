@@ -63,6 +63,9 @@ export function updateAnchor(count,folded,open,fallback){
 }
 export async function review(p,op,options=hooks){
  if(!p||!options)return;
+ if(op==='reopen'&&p.review_state==='pending'&&p.state!=='expired'){
+  options.open();return;
+ }
  const result=await approvalReview(p,op,innerWidth<500?'Face ID':'Touch ID');
  if(!result.ok){toast(t('p541.reviewFail'),3500);return;}
  if(op==='question'){options.fold();options.questioned?.();}else if(result.state==='restart_requested'){toast(t('p541.renewWaiting'),3500);options.fold();}else options.open();

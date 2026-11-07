@@ -408,12 +408,7 @@ session.configure({
     return host;
   },
   onReady() {
-    const recovered = recovery574.up(session.peer.recoveryStall);
-    if (recovered) {
-      const facts = t('p574.recovered', {n: recovered.seconds}) + ' ' + (recovered.stallSeconds === null
-        ? t('p574.unknown') : t('p574.stall', {n: recovered.stallSeconds}));
-      toast(facts + (recovered.frequent ? ' ' + t('p574.frequent') : ''), 12000);
-    }
+    recovery574.up(session.peer.recoveryStall); // Reconnection is quiet; waking the phone must not cover its messages.
     backfillPairing().catch(() => { /* only a hint for later */ });
     learnHost().catch(() => { /* only a hint for later */ });
     restoreKind = null; rtRetries = 0; pkTakeover = false;

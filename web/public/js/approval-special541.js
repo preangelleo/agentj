@@ -12,7 +12,7 @@ const records=new Map();let normal='idle';
 const node=(tag,cls,tx)=>{const n=document.createElement(tag);n.className=cls;n.setAttribute('data-aj-owner',/special-(?:question|allow|deny)541/.test(cls)?'aj-action':'aj-auth-card');if(/special-(?:question|allow|deny)541/.test(cls))n.setAttribute('data-aj-action-context','dialog');n.textContent=tx||'';return n;};
 export function attachSpecial(m,c,repaint){
  if(m.approval_v!==2&&m.v!==2)return;
- expired.delete(c.id);Object.assign(c,{review_kind:'special',approval_v:2,envelope:m.envelope,envelope_sha256:m.envelope_sha256,revision:m.revision,review_state:m.review_state||'pending',envelope_verified:false});
+ expired.delete(c.id);Object.assign(c,{review_kind:'special',approval_v:2,envelope:m.envelope,envelope_sha256:m.envelope_sha256,revision:m.revision,review_state:m.review_state||'pending',envelope_verified:false,pickup_uv_allowed:m.pickup_uv_allowed===true});
  c.collapsed=c.review_state==='questioned';records.set(c.id,{c,repaint});
  c.envelopeReady=Promise.resolve().then(async()=>{
   const e=c.envelope;if(!e||e.v!==2||e.request_id!==c.id||e.channel!==channel()||e.revision!==c.revision||!Number.isInteger(e.revision)||e.revision<1)throw new Error('invalid envelope');
@@ -20,7 +20,7 @@ export function attachSpecial(m,c,repaint){
   c.envelope_verified=true;repaint();
  }).catch(()=>{c.envelope_verified=false;repaint();});
 }
-export function canSpecialApprove(c){return c?.approval_v!==2||(c.envelope_verified===true&&c.review_state!=='questioned'&&c.envelope?.source?.verified===true&&c.envelope?.source?.suspicious!==true);}
+export function canSpecialApprove(c){return c?.approval_v!==2||(c.envelope_verified===true&&c.review_state!=='questioned'&&(c.envelope?.source?.verified===true&&c.envelope.source.suspicious!==true||c.pickup_uv_allowed===true&&c.envelope?.special?.tool==='SecretPickup'&&c.envelope.special.pickup_uv_allowed===true&&c.envelope?.source?.channel==='unknown'&&!['unknown_external','external_advice'].includes(c.envelope.source.role)));}
 export function forgetSpecial(id,result){const entry=records.get(id);if(entry&&['expired','timeout'].includes(result)){entry.c.state='expired';entry.c.collapsed=true;expired.set(id,entry);while(expired.size>64)expired.delete(expired.keys().next().value);}else expired.delete(id);records.delete(id);refreshSpecialVisibility();}
 export const specialApprovalById=id=>(records.get(id)||expired.get(id))?.c;
 export function clearSpecialApprovals(){records.clear();expired.clear();refreshSpecialVisibility();}
@@ -35,6 +35,11 @@ export function refreshSpecialVisibility(){
 }
 export async function reviewSpecial(c,op){
  const entry=records.get(c.id)||expired.get(c.id);if(!entry)return;
+ // A local fold changes no request authority or nonce. Showing the pending card
+ // again must not depend on the Agent's current task or rotate its UV challenge.
+ if(op==='reopen'&&records.has(c.id)&&c.review_state==='pending'&&c.deadline>Date.now()){
+  c.collapsed=false;entry.repaint();refreshSpecialVisibility();return;
+ }
  const r=await approvalReview(c,op,innerWidth<500?'Face ID':'Touch ID');
  if(!r.ok){toast(t('p541.reviewFail'),3500);return;}
  if(op==='deny')return;
@@ -57,6 +62,7 @@ export function decorateSpecial(root,c,{title,metadata=[],allow,deny,fold,repain
  if(!ui){
   ui=node('div','special-main541');if(title)title.after(ui);else box.insertBefore(ui,box.firstChild);
   const close=node('button','special-fold541',t('r.sheet.fold'));close.type='button';ui.append(close);
+  ui.append(node('p','special-status0282',t('p541.wait')));
   const warning=node('p','auth-warn541');ui.append(warning);
   const source=node('button','auth-source541');source.type='button';ui.append(source);
   ui.append(node('p','auth-action541'));

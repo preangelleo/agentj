@@ -63,3 +63,30 @@ def descendant(peer, anchor, token):
             return row[0] == token and all(snapshot(p) == evidence for p, evidence in reversed(chain))
         pid = row[2]
     return False
+
+
+def darwin_row(pid):
+    """XNU PROC_PIDTBSDINFO: stable same-user parent/start evidence, no argv or fork.
+
+    Layout: apple-oss-distributions/xnu bsd/sys/proc_info.h, struct proc_bsdinfo.
+    Returns (parent, exact start seconds, compatible lstart token), or None.
+    """
+    if sys.platform != 'darwin' or type(pid) is not int or pid <= 1:
+        return None
+    try:
+        import ctypes
+        import time
+        from .. import shared_hook
+        if shared_hook._LIBPROC is None:
+            shared_hook._LIBPROC = ctypes.CDLL('/usr/lib/libproc.dylib', use_errno=True)
+        buf = ctypes.create_string_buffer(136)
+        if shared_hook._LIBPROC.proc_pidinfo(pid, 3, ctypes.c_uint64(0), buf, 136) != 136:
+            return None
+        status, actual, parent, uid = struct.unpack_from('4I', buf.raw, 4)[0], *struct.unpack_from('3I', buf.raw, 12)
+        real, saved = struct.unpack_from('I', buf.raw, 28)[0], struct.unpack_from('I', buf.raw, 36)[0]
+        sec, usec = struct.unpack_from('2Q', buf.raw, 120)
+        if actual != pid or status in (0, 5) or {uid, real, saved} != {os.getuid()} or not sec or usec >= 1000000:
+            return None
+        return parent, sec + usec / 1000000, time.strftime('%a %b %e %H:%M:%S %Y', time.localtime(sec))
+    except (OSError, AttributeError, TypeError, ValueError, struct.error):
+        return None

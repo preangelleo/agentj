@@ -1,5 +1,5 @@
 {
-  "version": "0.28.1",
-  "zh": "修复审批确认与拒绝无法提交，审批卡标题、引用和理由更清楚，字号一致且不出界；引用和复制保留标签与链接，客服新工单及时推送。",
-  "en": "Fix approval submissions and card layout, preserve tags and links when quoting or copying, and promptly deliver new support tickets."
+  "version": "0.28.2",
+  "zh": "修复日常维护误弹审批和 Mac 本人领取，审批卡可重新展开且不挡输入；恢复连接不弹浮层，耗时仅文字，短提示按长度使用圆形或圆角方形。",
+  "en": "Fix maintenance prompts, Mac secret pickup and folded approvals; preserve the composer, reconnect quietly, and simplify timing and toast shapes."
 }

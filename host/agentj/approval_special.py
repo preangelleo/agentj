@@ -82,6 +82,9 @@ class Adapter:
             self.live_source_digest=review.digest(_current_source(self.host))
             self.live_task_id=_current_task(self.host)
         self.envelope['special'] = {'tool': self.tool, 'fields_sha256': self.input_sha}
+        if self.tool == 'SecretPickup':
+            source = self.envelope['source']
+            self.envelope['special']['pickup_uv_allowed'] = pickup_source_allowed(source)
         self.digest = review.digest(self.envelope)
         self.review_state = self.card['review_state'] = state
         self.card['envelope_sha256'] = self.digest
@@ -124,6 +127,8 @@ class Adapter:
         if not self.visible(session):
             return await refuse('wrong_remote')
         key = self.host.st.sign_key(session.device)
+        if self.tool == 'SecretPickup' and self.card.get('pickup_keys', {}).get(session.device) != key:
+            return await refuse('wrong_remote')
         try:
             message = review.review_message(self.host.channel, session.device, self.rid, op,
                                             obj.get('revision'), eid, obj.get('envelope_sha256'))
@@ -137,7 +142,8 @@ class Adapter:
             return await self.host.send_app(session, self.events[event_key])
         if obj.get('revision') != self.review_revision or obj.get('envelope_sha256') != self.digest:
             return await refuse('stale_revision')
-        if not _context_allows(self,self.host):
+        if not (pickup_context_allows(self.card, self.host) if self.tool == 'SecretPickup' and op != 'renew'
+                else _context_allows(self,self.host)):
             return await refuse('authority_changed')
         if op == 'renew':
             if self.review_state != 'expired' or self.card.get('busy') or not self.terminal:
@@ -227,7 +233,38 @@ def source_allows(card,host):
     if adapter is None:
         return True  # non-review legacy controller retains its own independent authority checks
     source=adapter.envelope['source']
+    if adapter.tool == 'SecretPickup':
+        return pickup_context_allows(card, host)
     return (adapter.card is card and adapter.host is host and not adapter.terminal
             and host.__dict__.get('_approval_special',{}).get(adapter.rid) is adapter
             and source.get('verified') is True and source.get('suspicious') is not True
             and _context_allows(adapter,host))
+
+
+def pickup_context_allows(card, host):
+    """A sealed pickup is owner delivery, never a grant to a tool or an external sender.
+
+    Unknown provenance is shown honestly. Fresh request-bound UV and the original
+    recipient's unchanged approval key remain mandatory in Outbox._check.
+    """
+    adapter = card.get('review_adapter')
+    if adapter is None or adapter.tool != 'SecretPickup':
+        return False
+    source = adapter.envelope['source']
+    owner_or_unknown = pickup_source_allowed(source)
+    return bool(owner_or_unknown and adapter.card is card and adapter.host is host and not adapter.terminal
+                and host.__dict__.get('_approval_special', {}).get(adapter.rid) is adapter
+                and not host.stopped() and host.agent is adapter.review_agent
+                and str(host.hist.epoch) == adapter.envelope['session'])
+
+
+def pickup_source_allowed(source):
+    """Missing provenance and positively identified external taint are distinct."""
+    if source.get('role') in ('unknown_external', 'external_advice') or any(source.get(key) for key in
+            ('material_unknown', 'material_ref', 'trigger_record', 'external_message_id', 'authorization_origin')):
+        return False
+    if source.get('verified') is True and source.get('suspicious') is not True:
+        return True
+    return (source.get('channel') == 'unknown' and source.get('message_id') is None
+            and source.get('root_message_id') is None
+            and (source.get('root') or {}).get('channel') in (None, 'unknown'))

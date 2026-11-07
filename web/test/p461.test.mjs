@@ -2,11 +2,11 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 globalThis.window={};
 const {notifyFormat,circleStatus}=await import('../public/js/ui.js');
-test('P461 circle accepts one status, never a phrase, punctuation, a counter or mixed scripts',()=>{
- for(const text of ['已发送','已复制','保存成功','失败','Sent','Copied','Saved','Failed','Forwarded']){
+test('#0282 circle uses five Chinese or ten half-width display cells',()=>{
+ for(const text of ['已发送','已复制','保存成功','失败','Sent','Copied','Saved','Failed','Forwarded','已完成发送','1234567890','Sent.','已存到J','🙂','a-b','已发送。','é'.repeat(10),'👨‍👩‍👧‍👦'.repeat(5)]){
   assert.equal(circleStatus(text),true,text);assert.equal(notifyFormat({text}).shape,'circle');
  }
- for(const text of ['已保存到电脑','Saved successfully','Copy failed','Sent.','已发送 2 条','已存到J','第一条\n最后条','Sent\nagain','1234','', '🙂','a-b', '已发送。']){
+ for(const text of ['已保存到电脑','Copy failed','Saved successfully','已发送 2 条','第一条\n最后条','Sent\nagain','12345678901','', '👨‍👩‍👧‍👦'.repeat(6),'é'.repeat(11)]){
   assert.equal(circleStatus(text),false,text);
   for(const glance of [false,true])assert.equal(notifyFormat({shape:'circle',text,ms:2200,glance}).shape,'square',text);
  }

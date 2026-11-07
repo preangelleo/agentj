@@ -8,6 +8,7 @@ import hashlib
 import os
 import re
 import secrets
+import sys
 import time
 from pathlib import Path
 
@@ -103,6 +104,8 @@ def _unit(host, peer):
 def _direct_scope(host, peer):
     """Independent harness/new-turn descendants and registered CEOs have host-held roots without Claude hooks."""
     from . import busy_launch, peer_origin
+    if sys.platform == 'darwin':
+        return _darwin_scope(host, peer)
     agent = getattr(host, 'agent', None)
     unit = _unit(host, peer)
     if unit:
@@ -163,7 +166,48 @@ def _direct_scope(host, peer):
             'peer': (peer, table[peer][2]), 'origin': copy.deepcopy(source)}
 
 
+
+def _darwin_scope(host, peer):
+    """Exact current-turn descendants only; an old background child cannot borrow a newer owner."""
+    from .core.process_evidence import darwin_row
+    agent = getattr(host, 'agent', None)
+    session, send = getattr(agent, 'session', None), getattr(agent, 'cur_send', None)
+    if not isinstance(session, dict) or type(peer) is not int:
+        return None
+    desktop = not getattr(agent, 'phone_turn', False)
+    if not desktop and not getattr(agent, 'phone_seen', False):
+        return None
+    source = (host.__dict__.get('_approval_origins', {}).get(getattr(host, 'desktop_turn', None)) if desktop
+              else getattr(send, 'approval_origin', None))
+    try:
+        created = float(source['host_received_monotonic']) if desktop else float(send.created)
+    except (TypeError, ValueError, KeyError, AttributeError):
+        return None
+    anchor = session.get('pid')
+    row = darwin_row(anchor)
+    if _root(source) is None or str(host.hist.epoch) != str(source.get('session')) or not row or session.get('procStart') != row[2]:
+        return None
+    began = time.time() - (time.monotonic() - created)
+    current, chain = peer, []
+    while current != anchor and type(current) is int and current > 1 and len(chain) < 64:
+        if current in {p for p, _ in chain}:
+            return None
+        child = darwin_row(current)
+        if not child or child[1] < began:
+            return None
+        chain.append((current, child))
+        current = child[0]
+    if current != anchor or not chain or darwin_row(anchor) != row or any(darwin_row(p) != v for p, v in reversed(chain)):
+        return None
+    return {'platform': 'darwin', 'kind': 'desktop' if desktop else 'agent', 'desktop': desktop,
+            'desktop_turn': getattr(host, 'desktop_turn', None), 'agent': agent, 'send': send,
+            'anchor': (anchor, row), 'peer': (peer, chain[0][1]), 'origin': copy.deepcopy(source)}
+
 def _scope_live(host, scope, peer):
+    if scope.get('platform') == 'darwin':
+        current = _darwin_scope(host, peer)
+        return current is not None and all(current.get(k) == scope.get(k) for k in
+            ('agent', 'send', 'desktop_turn', 'anchor', 'peer', 'origin'))
     from . import peer_origin
     row = peer_origin._stat(Path('/proc'), peer)
     if not row or scope['peer'] != (peer, row[2]) or str(host.hist.epoch) != str(scope['origin'].get('session')):

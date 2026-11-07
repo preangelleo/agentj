@@ -3236,10 +3236,7 @@ button.aj-dialog-action:disabled{opacity:var(--aj-dialog-action-disabled-opacity
 .rvdlg .rvdone{white-space:pre-line;opacity:1;font-weight:600}
 .rmsum__acts{display:flex;flex-wrap:wrap;gap:var(--space-control);justify-content:flex-end}
 /* P204 (§29): spend & speed — one folded line in the reply header, details on tap; the tool / writing phase while working */
-.rmhd .rmuse{flex:none;min-height:32px;padding:0 2px;border:0;background:none;cursor:pointer;color:var(--ink-soft);
-  text-decoration:underline dotted color-mix(in srgb,currentColor 40%,transparent);text-underline-offset:3px;white-space:nowrap}
-.rmhd .rmuse[aria-expanded="true"]{color:var(--ink)}
-.rmhd .rmuse:focus-visible{outline:2px solid currentColor;outline-offset:2px;border-radius:4px}
+.rmhd .rmuse{flex:none;padding:0 2px;color:var(--ink-soft);white-space:nowrap}
 .rmhd .rmph{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .usebox{margin:0 0 8px;padding:8px 10px;border-radius:10px;background:color-mix(in srgb,var(--ink) 6%,transparent);
   font:400 calc(12px*var(--fz))/1.45 var(--font-body);color:var(--ink-soft)}
@@ -4386,5 +4383,12 @@ body[data-conn="off"] .connection-help{display:flex}
 .srcmeta541>.srcsender541{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .srcmeta541>span:not(.srcsender541){flex-shrink:0;white-space:nowrap}
 .auth-meta541{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* #0282: use the ordinary approval sheet's reading-area boundary, never the composer. */
+.host-stage0282.ajmodal,.host-stage0282#confirm{top:var(--host-stage-top);left:var(--host-stage-left);right:auto;bottom:auto;width:var(--host-stage-width);height:var(--host-stage-height);max-height:var(--host-stage-height);box-sizing:border-box;align-items:end;padding:0;overflow:hidden}
+.host-stage0282.ajmodal>.box{max-height:var(--host-stage-height);width:100%;max-width:none;overflow-y:auto;box-sizing:border-box;border-radius:28px 28px 0 0}
+.host-stage0282#confirm>.sq{max-height:var(--host-stage-height);overflow-y:auto}
+.approval-special541 .elev-kicker{display:none}
+.approval-special541 .special-status0282{font-size:calc(13px*var(--fz)*var(--rs,1));line-height:1.5;margin:4px 0 14px;opacity:.85}
 
 #sheet[data-approval-v="2"] .approval-source572{border:0;padding:0 2px;margin:0 0 10px;color:var(--ink);font-size:calc(13px*var(--fz)*var(--rs,1))}

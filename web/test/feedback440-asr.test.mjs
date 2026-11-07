@@ -47,3 +47,13 @@ test('#440: keyed route changes require the Agent; key card never binds a host s
     await nodes.get('set-asr-save').handlers.click();assert.deepEqual(writes,[]);
   } finally {globalThis.document=previous;}
 });
+
+test('#0282: unavailable remote ASR must not be blamed on silence', () => {
+  const source=readFileSync(new URL('../public/js/relay.js',import.meta.url),'utf8');
+  const fn=source.match(/function asrError\(r\)\{([\s\S]*?)\n\}/);
+  assert.ok(fn,'actual rendered failure mapper exists');
+  const map=Function('r','t',fn[1]),tr=k=>k;
+  assert.equal(map({ok:false,why:'no_speech',notice:'remote_unavailable'},tr),'asr440.remote_unavailable');
+  assert.equal(map({ok:false,why:'no_speech'},tr),'r.asr.noSpeech');
+  assert.equal(map({ok:false,why:'timeout'},tr),'r.asr.timeout');
+});

@@ -176,6 +176,15 @@ export function sync() {
   busy = true;
   try {
     for (const node of document.querySelectorAll(DOCK_SEL)) {
+      // #0282: host action cards share the ordinary sheet's reading-area frame.
+      // Its quota boundary, reply toolbar and composer remain outside this frame.
+      const stage=$('stage'), own=kindOf(node)&&CARDS[kindOf(node)].place===PLACE.OWN;
+      const bounded=node.id!=='sheet'&&own&&shown(node)&&chatInFront();
+      if(bounded){
+        const r=stage.getBoundingClientRect();
+        for(const [key,value] of Object.entries({top:r.top,left:r.left,width:r.width,height:r.height}))node.style.setProperty('--host-stage-'+key,value+'px');
+        if(!node.classList.contains('host-stage0282'))node.classList.add('host-stage0282');
+      }else if(node.classList.contains('host-stage0282'))node.classList.remove('host-stage0282');
       // the sheet's badge is built by initCardPlace (ontop.js calls this pass before the dictionary function is handed over)
       if (node.id !== 'sheet' && shown(node) && kindOf(node)) badge(node);
       if (slot && (node.classList.contains('cp-docked') || (node.id !== 'sheet' && node.parentNode === slot))) undock(node, slot);
@@ -191,6 +200,7 @@ export function initCardPlace(t) {
   if (typeof MutationObserver !== 'undefined') new MutationObserver(go).observe(document.body, { subtree: true, childList: true, attributes: true,
     attributeFilter: ['hidden', 'open', 'class', 'data-view', 'data-sheet'] });
   addEventListener('resize', go);
+  if(typeof ResizeObserver!=='undefined'&&$('stage'))new ResizeObserver(go).observe($('stage'));
   sync();
 }
 

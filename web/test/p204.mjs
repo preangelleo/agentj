@@ -78,20 +78,18 @@ try {
       await withUse(p, USE_API);
       await waitFor(p, shown('rmUse'));
       assert.equal((await text(p, 'rmUse')).trim(), '· 12 s · ≈$0.04');
-      assert.equal(await ev(p, shown('useBox')), false, 'folded by default');
+      assert.equal(await ev(p, `document.getElementById('rmUse').tagName`), 'SPAN', 'elapsed time is plain text');
+      assert.equal(await ev(p, `document.getElementById('rmUse').hasAttribute('tabindex')||document.getElementById('rmUse').hasAttribute('aria-expanded')`), false);
+      assert.equal(await ev(p, `getComputedStyle(document.getElementById('rmUse')).textDecorationLine`), 'none', 'no dotted underline');
       await click(p, '#rmUse');
-      await waitFor(p, shown('useBox'));
-      const box = await text(p, 'useBox');
-      for (const w of ['耗时', '12 s（其中执行工具 4.1 s）', '输入 5.2k · 输出 1.2k · 缓存 15.8k', '151 token/秒', 'claude-opus-5-5', '≈$0.04（按价目表估算）', '不外发'])
-        assert.ok(box.includes(w), `${w} in ${box}`);
-      assert.equal(await ev(p, `document.getElementById('rmUse').getAttribute('aria-expanded')`), 'true');
-      await click(p, '#rmUse');
-      assert.equal(await ev(p, shown('useBox')), false);
+      assert.equal(await ev(p, shown('useBox')), false, 'elapsed-time tap has no effect');
+      assert.equal(await text(p, 'useBox'), '', 'no explanation card is built');
+      writeFileSync(OUT+'use-line-plain.png',await shoot(p));
       await withUse(p, USE_SUB);
       const sub = (await text(p, 'rmUse')).trim();
       assert.equal(sub, '· 48 s · 额度 0.4%');
       await click(p, '#rmUse');
-      assert.ok(!(await text(p, 'useBox')).includes('$'), 'a subscription never shows dollars');
+      assert.equal(await ev(p, shown('useBox')), false, 'subscription elapsed-time tap also has no effect');
       await click(p, '#rmUse');
       await withUse(p, { s: 33, h: 'claude' });
       assert.equal((await text(p, 'rmUse')).trim(), '· 33 s', 'no numbers reported → the time only');

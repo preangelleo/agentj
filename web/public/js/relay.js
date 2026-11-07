@@ -1,4 +1,4 @@
-import { useShort, useRows, phaseText } from './use.js';
+import { useShort, phaseText } from './use.js';
 import { renderPage as renderForm, configure as configureForms, forgetAll as forgetForms } from './forms.js';
 import { refreshSpecialVisibility } from './approval-special541.js';
 import * as approval541 from './approval541.js';
@@ -273,29 +273,16 @@ function paintPhase(p){
   e.hidden = !phaseNow;
   if (phaseNow && document.body.dataset.conn === "on") el("capText").textContent = t('r.capt.working') + " · " + phaseNow;
 }
-// P204 (§29): a finished page's spend & speed — one folded line in the header; a tap shows the details (0.21: process folded,
-// results shown).
-let useOpen = false;
+// A finished page's elapsed-time summary is plain header text; tapping it does nothing.
 function paintUse(p){
   const b = el("rmUse"), box = el("useBox");
   if (!b || !box) return;
   const u = p && p.end !== "open" ? p.use : null;
   b.hidden = !u;
   b.textContent = u ? "· " + useShort(u) : "";
-  b.setAttribute("aria-expanded", useOpen && u ? "true" : "false");
-  box.hidden = !(useOpen && u);
+  box.hidden = true;
   box.replaceChildren();
-  if (!u || !useOpen) return;
-  const dl = document.createElement("dl");
-  for (const [k, v] of useRows(u)){
-    const dt = document.createElement("dt"); dt.textContent = k;
-    const dd = document.createElement("dd"); dd.textContent = v;
-    dl.append(dt, dd);
-  }
-  const note = document.createElement("p"); note.className = "usenote"; note.textContent = t(u.b === "sub" ? 'use.noteSub' : 'use.note');
-  box.append(dl, note);
 }
-function toggleUse(){ useOpen = !useOpen; showPage(); }
 
 function summarize(sum){
   if (sum == null) return {main:"", why:""};
@@ -4550,6 +4537,7 @@ async function transcribe(blob, secs){
   return r && typeof r === "object" ? Object.assign({}, r, {gaps: w.gaps}) : r;
 }
 function asrError(r){
+  if(r.notice==='remote_unavailable')return t('asr440.remote_unavailable');
   const why = r.why || "";
   if (r.ok || why === "no_speech") return t('r.asr.noSpeech');
   return t('r.asr.' + (["not_installed", "off", "broken", "busy", "timeout", "bad_audio", "net", "too_long"].includes(why) ? why : "other"));
@@ -5054,7 +5042,6 @@ export function init(ctx){
   el("words").addEventListener("click", copyCodeClick);
   el("words").addEventListener("click", () => { if (wordsSrc === NO_ECHO_SRC) refreshNewest(); });   // P135: 「点此刷新」
   el("rdWords").addEventListener("click", copyCodeClick);
-  el("rmUse").addEventListener("click", (e) => { e.stopPropagation(); toggleUse(); });   // P204 (§29)
   for (const id of ["words", "rdWords"]) el(id).addEventListener("cc:copied", copiedNote);   // P292: the inline code's 「已拷贝」
 
   addEventListener('approval541-locate',e=>approvalOptions().locate(e.detail));

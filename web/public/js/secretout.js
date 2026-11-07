@@ -187,6 +187,7 @@ function render() {
   clearTimeout(timer);
   if (!c) { root.hidden = true; wipeOpened(); document.body.dataset.sout = '0'; refreshSpecialVisibility(); return; }
   document.body.dataset.sout = '1';
+  root.hidden = false;
   const isOpen = !!opened && opened.id === c.id;
   if (shownId !== c.id || root.dataset.state !== (isOpen ? 'open' : 'closed')) {
     shownId = c.id;

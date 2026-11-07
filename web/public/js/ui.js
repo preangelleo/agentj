@@ -33,11 +33,13 @@ export function notifyOnce(spec, onceKey) {
 }
 // Two placements: centred circle/square for transient status/information; rect inside the reply for execution/actions.
 // Colours and actions retain P318's Noir tokens. Held notices keep ms:0 and can be dismissed with Escape.
-export const CIRCLE_MAX = 4;
-// A single Han status (at most four code points), or one alphabetic word. No punctuation, counters or sentences.
+export const CIRCLE_MAX = 10; // half-width display cells: five Chinese glyphs
 export function circleStatus(text) {
   const value = String(text ?? '').trim();
-  return /^\p{Script=Han}{1,4}$/u.test(value) || /^\p{Script=Latin}+$/u.test(value);
+  if(!value||/[\r\n\u2028\u2029]/u.test(value))return false;
+  const parts=typeof Intl.Segmenter==='function'?[...new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(value)].map(x=>x.segment):Array.from(value.normalize('NFC'));
+  const wide=/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Extended_Pictographic}\p{Regional_Indicator}\u3000-\u303f\uff01-\uff60\uffe0-\uffe6]/u;
+  return parts.reduce((n,part)=>n+(wide.test(part)?2:/^[\p{Mark}\u200d\ufe0f]+$/u.test(part)?0:1),0)<=CIRCLE_MAX;
 }
 export const NOTIFY_ACCENTS = ['--state', '--emerald-oasis', '--windstorm', '--peachy-feeling', '--magic-carpet'];
 export const FORMATS = Object.freeze({

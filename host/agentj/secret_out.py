@@ -142,6 +142,8 @@ class Outbox:
         if len(self.cards) >= MAX_OPEN:
             elevate.wipe(c["value"])
             return {"result": "busy"}
+        # Freeze recipients at minting: later pairing cannot acquire an already sealed value.
+        c['pickup_keys'] = {device: self.st.sign_key(device) for device in approvers if self.st.sign_key(device)}
         c["id"] = secrets.token_hex(16)
         c["nonce"] = secrets.token_hex(16)
         c["digest"] = shown_digest(shown_fields(c))
@@ -172,6 +174,9 @@ class Outbox:
         if pk:
             m["fa"], m["fa_s"] = pk["id"], passkey.pk_state(pk)        # this device's own credential id only
         from . import approval_special
+        m['pickup_uv_allowed'] = bool(s is not None and approval_special.pickup_context_allows(c, self.host)
+            and c.get('pickup_keys', {}).get(s.device) is not None
+            and c['pickup_keys'][s.device] == self.st.sign_key(s.device))
         return approval_special.decorate(c, m)
 
     def open_msgs(self, s) -> list[dict]:
@@ -189,7 +194,9 @@ class Outbox:
         if c is None or time.monotonic() > c["deadline"]:
             self.st.log("sout_refused", id=rid if isinstance(rid, str) else None, device=s.device, reason="unknown")
             return await self.host.send_app(s, {"t": "secret_out_err", "id": rid if isinstance(rid, str) else "", "why": "gone"})
-        if not self.st.sign_key(s.device):          # only an approved device with an approval key (same as F17)
+        if (not self.st.sign_key(s.device) or
+                c.get('pickup_keys', {}).get(s.device) != self.st.sign_key(s.device)):
+            # Only original recipients with unchanged pairing keys may answer this card.
             self.st.log("sout_refused", id=rid, device=s.device, reason="no_key")
             return
         if obj["t"] == "secret_out_decline":

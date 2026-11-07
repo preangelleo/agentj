@@ -1983,7 +1983,10 @@ class Elevator:
             req = json.loads(line)
             if isinstance(req, dict) and req.get("t") in ("sudo", "secret", "secret_out"):
                 from . import bounded_plan, approval_review, provenance, ctl_auth
-                incoming_origin = bounded_plan.caller_origin(self.host, peer)
+                if peer is None and sys.platform == "darwin":
+                    from .core.process_evidence import peer_pid
+                    peer = peer_pid(w)
+                incoming_origin = await asyncio.to_thread(bounded_plan.caller_origin, self.host, peer)
                 if incoming_origin is None and ctl_auth.refusal(peer, os.getpid(), self.host._agent_pids()) is None and ctl_auth.has_tty(peer):
                     turn = self.host.hist_add({"k": "host", "name": "Agent J 主机", "text": "本人在本机终端发起这项受控操作。"}, "", "done")
                     incoming_origin = approval_review.remember(self.host, turn, provenance.terminal())

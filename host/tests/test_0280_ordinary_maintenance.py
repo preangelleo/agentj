@@ -16,6 +16,11 @@ class Maintenance(unittest.IsolatedAsyncioTestCase):
         self.host.ask_ttl=.02
         self.home=Path(self.base.tmp.name)/'home';self.home.mkdir()
         for p in ('bin','.config/systemd/user','.codex','.claude'): (self.home/p).mkdir(parents=True,exist_ok=True)
+        # Starting a timer has an actual installed service/script, rather than
+        # relying on a classifier accepting an unresolvable unit name.
+        (self.home/'bin/tmp-test-reaper').write_text('#!/bin/sh\nfind /tmp -type d -mtime +1\n')
+        (self.home/'.config/systemd/user/tmp-test-reaper.service').write_text('[Service]\nExecStart=%h/bin/tmp-test-reaper\n')
+        (self.home/'.config/systemd/user/tmp-test-reaper.timer').write_text('[Timer]\nOnCalendar=daily\n')
         self.handoff=self.host.st.root/'handoff';self.handoff.mkdir();(self.handoff/'compact.md').write_text('before')
         self.env=patch.dict(os.environ,HOME=str(self.home));self.env.start();self.addCleanup(self.env.stop)
         try:
