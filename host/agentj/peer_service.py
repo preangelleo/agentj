@@ -92,6 +92,29 @@ T = {
 }
 
 
+def friend_daily_summary(row, lang):
+    """Incoming mail and receipts are disjoint; reply outcomes are not additional arrivals."""
+    day = row["day"]
+    def count(key):
+        value = row.get(key)
+        return value if type(value) is int and value >= 0 else 0
+    incoming, receipts, tasks = count("n_in"), count("n_receipt"), count("n_task")
+    auto, ask = count("n_auto"), count("n_ask")
+    if row.get("v") != 2:
+        return (f"{day} 好友旧记录：收到 {incoming} 条；来信与任务回执未分类，是否需回复未知。" if lang == "zh" else
+                f"Friends on {day}: {incoming} legacy arrivals; messages and task receipts were not classified, so reply needs are unknown.")
+    if lang == "zh":
+        parts = [f"{day} 好友消息：真正来信 {incoming} 条", f"任务回执 {receipts} 条（不用回复）", f"需回复任务 {tasks} 条（交主线程处理，完成情况以回报为准）"]
+        if auto: parts.append(f"来信中已代回 {auto} 条")
+        if ask: parts.append(f"来信中 {ask} 条等你决定")
+        if incoming > auto + ask: parts.append(f"其余 {incoming - auto - ask} 条未确认需回复，不推定已处理")
+        return "；".join(parts) + "。"
+    parts = [f"Friends on {day}: {incoming} incoming messages", f"{receipts} task receipts (no reply needed)", f"{tasks} tasks needing a reply (handled in the main thread; completion needs a result)"]
+    if auto: parts.append(f"{auto} incoming messages answered automatically")
+    if ask: parts.append(f"{ask} incoming messages waiting for you")
+    if incoming > auto + ask: parts.append(f"reply needs for the other {incoming - auto - ask} messages are unconfirmed; handling is not assumed")
+    return "; ".join(parts) + "."
+
 @dataclass
 class FriendAsk:
     """A friend card on the phone (friend_request / peer_question): an approval card, not a permission request."""
@@ -514,7 +537,7 @@ class PeerService:
     def _assist_live(self) -> bool:
         a = self._assist()
         try:
-            return bool(a is not None and a.live())
+            return bool(a is not None and (a.live() or a.operator.live_rows()))
         except Exception:  # noqa: BLE001 — no verdict = no grant
             return False
 
@@ -529,6 +552,9 @@ class PeerService:
     def friend_by_mbox(self, mb: str) -> str | None:
         a = self._assist()
         if a is not None:
+            pid = a.operator.by_mbox(mb)
+            if pid:
+                return pid
             with contextlib.suppress(Exception):
                 pid = a.peer_of_mbox(mb)
                 if pid and self.store.get(pid) is None:
@@ -542,6 +568,10 @@ class PeerService:
 
     def friend_keys(self, pid: str):
         a = self._assist()
+        if a is not None:
+            k = a.operator.keys_of(pid)
+            if k:
+                return k
         if a is not None and self.store.get(pid) is None:
             with contextlib.suppress(Exception):
                 k = a.keys_of(pid)
@@ -612,7 +642,23 @@ class PeerService:
         self._open(a)
         self.changed(None)
 
+    def outbound_allowed(self, fid, obj):
+        a = self._assist()
+        t = obj.get("t", "")
+        if t == "assist_term_end":
+            return bool(a and a.g and a.g.get("revoked") and a.g["id"] == obj.get("gid") and fid in a.pinned_ids())
+        if t == "assist_term_event":
+            return bool(a and a.terminal.live() and obj.get("gid") == a.terminal.gid and fid == a.peer_id())
+        if t.startswith("assist_term_"):
+            return bool(a and a.operator.outbound(fid, obj))
+        if t == "assist_ready" and obj.get("scope") == "terminal":
+            return bool(a and a.terminal.live() and obj.get("gid") == a.terminal.gid and fid == a.peer_id())
+        return True
+
     def on_app(self, fid: str, obj: dict) -> None:
+        a = self._assist()
+        if a is not None and a.operator.row_for(fid):
+            return a.operator.on_app(fid, obj)
         if self._assist_peer(fid):           # 0269-w2-assist: signed tasks only, never the friend pipeline
             return self._assist().on_app(fid, obj)
         if not self.store.on:
@@ -764,7 +810,9 @@ class PeerService:
             self.guards.block(fid, mid, 'quota')
             return
         self.store.record_in(fid)
-        self._count("n_in")
+        own = self.same_owner.active(fid)
+        self._count("n_receipt" if m.get("end") is True or (own and m.get("irt")) else
+                    "n_task" if own else "n_in")
         self.threads[fid] = m["thread"]
         if self.host.stopped() and not self.same_owner.active(fid):  # same-owner work is durably queued below
             self.store.hist_add(fid, {"mid": mid, "dir": "in", "text": text, "ts": int(self.clock() * 1000), "s": "held"})
@@ -961,14 +1009,14 @@ class PeerService:
         with self._svc() as d:
             s = d.get("sum") if isinstance(d.get("sum"), dict) else {}
             if s.get("day") != day:
-                if s.get("day") and any(s.get(k) for k in ("n_in", "n_auto", "n_ask")):
-                    note = {k: int(s.get(k) or 0) for k in ("n_in", "n_auto", "n_ask")} | {"day": s["day"]}
-                s = {"day": day, "n_in": 0, "n_auto": 0, "n_ask": 0}
+                if s.get("day") and any(s.get(k) for k in ("n_in", "n_receipt", "n_task", "n_auto", "n_ask")):
+                    note = dict(s)
+                s = {"day": day, "v": 2, "n_in": 0, "n_receipt": 0, "n_task": 0, "n_auto": 0, "n_ask": 0}
             if what:
                 s[what] = int(s.get(what) or 0) + 1
             d["sum"] = s
         if note:
-            self.notice(self.tx("summary", **note))
+            self.notice(friend_daily_summary(note, self.lang))
 
     # ------------------------------------------------------------ friend cards (asks)
     def _fr_summary(self, req: dict) -> str:
@@ -1000,7 +1048,8 @@ class PeerService:
             a.exp = self.clock() + self.store.settings()["relay_pending_seconds"]
             a.summary = reason + "\n" + name + "\n" + text
             a.digest = approvals.shown_digest("peer_question", a.summary)
-        self._count("n_ask")
+        if not pairing and not (m.get("end") is True or (self.same_owner.active(fid) and m.get("irt"))):
+            self._count("n_ask")
         self._save_question(a)
         self._open(a)
 
@@ -1560,7 +1609,7 @@ class PeerService:
             if not thread and self.same_owner.active(fid) and row and row.get("state") in ("pending", "claimed"):
                 thread = row.get("thread")
             if not thread:
-                return {"ok": False, "why": "bad_reply"}
+                return {"ok": False, "why": "bad_reply", "message": "这条可能已回复或已过期；若已回执，请用不带 --reply-to 的 friends tell。 / Reply already used or expired; if acknowledged, use friends tell without --reply-to."}
             reply = {"mid": reply_to, "thread": thread, "relay": row.get("relay") if row else None}
         extra = self.devices.reply_extra(fid, reply_to) if reply is not None else None
         if actions is not None:
@@ -1598,11 +1647,11 @@ class PeerService:
         token = self.same_owner.row(fid).get('token') if latched else None
         if latched:
             if not await self.guards.begin_reply(fid, reply_to):
-                return {"ok": False, "why": "bad_reply"}
+                return {"ok": False, "why": "bad_reply", "message": "这条可能已回复或已过期；若已回执，请用不带 --reply-to 的 friends tell。 / Reply already used or expired; if acknowledged, use friends tell without --reply-to."}
             if (not self.same_owner.active(fid) or self.same_owner.row(fid).get('token') != token
                     or self.host.stopped()):
                 await self.guards.release_reply(fid, reply_to, 'authority_changed')
-                return {"ok": False, "why": "bad_reply"}
+                return {"ok": False, "why": "bad_reply", "message": "这条可能已回复或已过期；若已回执，请用不带 --reply-to 的 friends tell。 / Reply already used or expired; if acknowledged, use friends tell without --reply-to."}
         mid = self._send_pmsg(fid, text, reply, auto=False, end=reply is not None, extra=extra)
         if mid is None:
             if latched:
@@ -1625,15 +1674,18 @@ class PeerService:
         return {"ok": True, "friend": fid, "name": self.store.name_of(fid), "mid": mid, "route": "main" if self.same_owner.active(fid) else "peer"}
 
     async def approve_actions(self, actions, target=None):
-        from . import approvals, provenance
+        from . import approvals, provenance, bounded_plan
         h = self.host
         if (not isinstance(actions, list) or not actions or not isinstance(actions[0], dict)
-                or h.cur_turn is None or provenance.untrusted_turn(h.agent) or (h.task_label is not None or provenance.unattended_turn(h.agent))):
+                or h.cur_turn is None or (provenance.untrusted_turn(h.agent) and not bounded_plan.continuation_allowed(h, actions)) or h.task_label is not None or (provenance.unattended_turn(h.agent) and not bounded_plan.continuation_allowed(h, actions))):
             return {"ok": False, "why": "task_plan"}
+        if all(isinstance(step, dict) and "kind" in step for step in actions):
+            return await bounded_plan.manager(h).approve(actions)
+        h.agent_notice("这件事预计需要你确认 1 次；仅清单内具体动作有效，范围变化时会再请你确认。" if h.lang != "en" else "This task is expected to need one confirmation for the listed exact actions; scope changes will ask again.")
         try:
             first = actions[0]
             result = await h.ask(first["tool"], first["input"], batch=False, grant_info=True,
-                                 task_actions=actions, task_target=target)
+                                 task_actions=actions, task_target=target, _plan_only=True)
         except (KeyError, TypeError, ValueError):
             return {"ok": False, "why": "task_plan"}
         info = result.get("grant_info")
@@ -1643,6 +1695,12 @@ class PeerService:
         if not record or not record.get("task_scope"):
             return {"ok": False, "why": "not_approved"}
         proof = {k: record[k] for k in ("channel", "device", "id", "shown_sha256", "task_scope", "sig", "sk")}
+        if record.get("approval_v") == 2:
+            proof["approval_v"] = 2
+            proof["envelope"] = info["envelope"]
+            if info.get("fa"):
+                proof["fa"] = info["fa"]
+                proof["pk_kind"] = info["kind"]
         return {"ok": True, "proof": proof}
 
     # ------------------------------------------------------------ friends.sock (agentj friends …)
@@ -1674,8 +1732,19 @@ class PeerService:
             req = None
             try:
                 req = json.loads(await asyncio.wait_for(r.readline(), 10))
-                res = (self.xfer.broker.receipt(req) if isinstance(req, dict) and req.get("t") == "tell" and req.get("grant") is not None
-                       else await self.cli(req) if isinstance(req, dict) else {"ok": False, "why": "shape"})
+                if isinstance(req, dict) and req.get("t") in ("approve-actions", "execute-action", "action-recovery"):
+                    from . import bounded_plan, approval_review
+                    from .shared_hook import peer_pid
+                    pid, caller_uid = peer_pid(sock)
+                    origin = bounded_plan.caller_origin(self.host, pid) if caller_uid == os.getuid() else None
+                    if not origin:
+                        res = {"ok": False, "why": "unverified_plan_producer"}
+                    else:
+                        with approval_review.origin_scope(origin):
+                            res = await self.cli(req)
+                else:
+                    res = (self.xfer.broker.receipt(req) if isinstance(req, dict) and req.get("t") == "tell" and req.get("grant") is not None
+                           else await self.cli(req) if isinstance(req, dict) else {"ok": False, "why": "shape"})
             except (ValueError, asyncio.TimeoutError, asyncio.LimitOverrunError):
                 res = {"ok": False, "why": "shape"}
             self.log("friends_cli", kind=str(req.get("t"))[:16] if isinstance(req, dict) else None,
@@ -1760,6 +1829,12 @@ class PeerService:
                     "friend": {"id": fid, **card_view(f.get("card"))}, "items": items, "more": more}
         if t == "approve-actions":
             return await self.approve_actions(req.get("actions"))
+        if t == "action-recovery":
+            from .bounded_plan import manager
+            return await manager(self.host).recovery_view()
+        if t == "execute-action":
+            from .bounded_plan import manager
+            return await manager(self.host).execute(req.get("plan"), req.get("step"))
         if t == "tell":
             return await self.tell(req.get("friend"), req.get("text"), req.get("reply_to"), actions=req.get("actions"), grant=req.get("grant"))
         if t == "say":                       # P426 #170: the main Agent posts in 「我的设备」
@@ -1951,6 +2026,10 @@ def add_parser(sub) -> None:
     t.add_argument("--actions", help="具体动作 JSON 文件 / exact action plan JSON file")
     ap = s.add_parser("approve-actions", help="一次确认当前任务的具体动作 / approve the exact actions of this task once")
     ap.add_argument("actions")
+    s.add_parser("action-recovery", help="查看临时令牌待核对记录（不恢复授权） / view temporary-token recovery metadata without restoring authority")
+    run = s.add_parser("execute-action", help="执行已批准具体计划的一步 / execute one approved exact plan step")
+    run.add_argument("plan")
+    run.add_argument("step", type=int, help="从0开始的步骤 / zero-based step")
     t.add_argument("--grant", help="同主人任务授权单编号 / signed same-owner task grant")
     t.add_argument("--reply-to", help="回复同一个主人任务的消息 ID（避免当成新任务） / task reply id")
     sy = s.add_parser("say", help="在「我的设备」群里说一句；@设备名 / @all 把它交给那台的主 Agent / post in My devices; "
@@ -2018,6 +2097,10 @@ def _req(a) -> dict:
             raise SystemExit("动作清单无效 / invalid action plan") from None
     else:
         actions = None
+    if f == "action-recovery":
+        return {"t": f}
+    if f == "execute-action":
+        return {"t": f, "plan": a.plan, "step": a.step}
     if f == "approve-actions":
         return {"t": f, "actions": actions}
     if f == "tell":
@@ -2113,7 +2196,7 @@ def cmd_friends(a) -> None:
         res["explain"] = bool(getattr(a, "explain", False))
     if not res.get("ok"):
         why = res.get("why")
-        if why == "seat" and isinstance(res.get("message"), str):     # P199: the serve's own words (where to renew / bind)
+        if why in ("seat", "bad_reply") and isinstance(res.get("message"), str):     # P199: the serve's own words (where to renew / bind)
             sys.exit("没成功：" + res["message"])
         sys.exit("没成功：" + WHY_ZH.get(why, str(why)) + (f"（{res['rule']}）" if res.get("rule") else "")
                  + (f"；位置：{where_text(res.get('where'))}" if where_text(res.get("where")) else "")

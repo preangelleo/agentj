@@ -1,0 +1,10 @@
+/* #577 Web-owned table; source order is a compatibility contract. */
+/* ===== tables (scroll inside the wrapper on narrow screens) ===== */
+.aj-table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border);
+  border-radius: var(--r-md); }
+.aj-table { width: 100%; min-width: max(100%, 36rem); border-collapse: collapse; font-size: var(--fs-sm); }
+.aj-table th, .aj-table td { text-align: left; padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border-soft);
+  vertical-align: top; }
+.aj-table th { font-weight: 500; background: var(--surface-2); white-space: nowrap; }
+.aj-table tr:last-child td { border-bottom: 0; }
+.aj-table--nowrap td { white-space: nowrap; }

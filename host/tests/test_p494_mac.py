@@ -119,6 +119,40 @@ class CardEntrypoints(unittest.TestCase):
         self.assertEqual(request.call_args.kwargs['timeout'],8)
         self.assertEqual(request.call_args.args[1]['wait'],1)
 
+    def test_custom_provider_path_arguments_round_trip(self):
+        import shlex
+        for path in ('/fixture/agentj.env',
+                     '/fixture/Owner With Space/Library/Application Support/agentj.env',
+                     "/fixture/Owner's Space/Library/Application Support/agentj.env"):
+            for api in ('openai', 'anthropic'):
+                with self.subTest(path=path, api=api), patch('agentj.service.env_file', return_value=path):
+                    url = "https://fixture.example/owner's endpoint" if "'" in path else "https://fixture.example/v1"
+                    commands = op.next_steps('fixture', 'FIXTURE_API_KEY', url, api, 'model')
+                    argv = shlex.split(commands[0])
+                    self.assertEqual(argv[argv.index('--dest') + 1], f'env:{path}#FIXTURE_API_KEY')
+                    self.assertEqual(argv[argv.index('--verify-url') + 1], url + '/models')
+                    self.assertEqual(argv[argv.index('--verify-header') + 1], op.HEADER[api])
+
+    def test_custom_provider_add_with_spaced_path_opens_card(self):
+        from itertools import product
+        paths = ('/fixture/agentj.env', '/fixture/Owner With Space/Library/Application Support/agentj.env',
+                 "/fixture/Owner's Space/Library/Application Support/agentj.env")
+        for path, dry, as_json in product(paths, (False, True), (False, True)):
+            a = SimpleNamespace(action='add', id='fixture', base_url='https://fixture.example/v1',
+                model=['model'], api='openai', name=None, key_env=None, dry_run=dry,
+                vision=None, max_output=None, context=None, json=as_json)
+            with self.subTest(path=path, dry=dry, json=as_json), patch('agentj.service.env_file', return_value=path), \
+                 patch.object(op, '_load', return_value={}), patch.object(op, '_write') as write, \
+                 patch.object(elevate, 'client_request', return_value={'result':'pending', 'id':'card'}) as request, \
+                 redirect_stdout(io.StringIO()):
+                self.assertEqual(op.cmd(a), 0)
+            self.assertEqual(write.call_count, 0 if dry else 1)
+            self.assertEqual(request.call_count, 0 if dry else 1)
+            if not dry:
+                self.assertEqual(request.call_args.args[1]['dest'], f'env:{path}#FIXTURE_API_KEY')
+                self.assertEqual(request.call_args.args[1]['verify_url'], 'https://fixture.example/v1/models')
+                self.assertEqual(request.call_args.args[1]['name'], 'FIXTURE_API_KEY')
+
     def test_ark_switch_missing_key_opens_card_dry_run_does_not(self):
         for dry in (True,False):
             with patch.object(elevate,'client_request',return_value={'result':'pending','id':'card'}) as request:

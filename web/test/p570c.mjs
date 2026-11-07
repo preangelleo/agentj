@@ -75,7 +75,7 @@ async function openTasks(p) {
 }
 const CARDS = `[...document.querySelectorAll('#tasks-list .task-card')].map((c) => ({ id: c.dataset.id, sys: c.dataset.sys || '',
   tags: [...c.querySelectorAll('.tag')].map((x) => x.textContent),
-  btns: [...c.querySelectorAll('button')].map((b) => ({ t: b.textContent, primary: b.classList.contains('aj-btn--primary'), h: Math.round(b.getBoundingClientRect().height) })) }))`;
+  btns: [...c.querySelectorAll('button')].map((b) => ({ t: b.textContent, primary: b.classList.contains('aj-action--primary'), h: Math.round(b.getBoundingClientRect().height) })) }))`;
 const SHEET = `({ open: !document.getElementById('confirm').hidden, title: document.getElementById('confirm-title').textContent,
   text: document.getElementById('confirm-text').textContent, yes: document.getElementById('confirm-yes').textContent })`;
 const click = (p, id, act) => evaluate(p, `document.querySelector('#tasks-list .task-card[data-id="${id}"] button[data-act="${act}"]').click()`);

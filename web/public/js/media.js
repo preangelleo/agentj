@@ -1,3 +1,4 @@
+import { downloadFile, revokeFile, downloadError } from './private-files.js';
 import { fileDoubleTap, DOUBLE_MS } from './file-gestures.js';
 import { registerLayer } from './layers.js';
 // Media out (PROTOCOL §13, F21, 0.15.2): files, pictures, audio, video, PDFs and generated HTML that the Agent's reply
@@ -145,13 +146,39 @@ export function clearReader() {
   reading = scope();
   closeViewer();
 }
-const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+const mk = (tag, cls, text, owner) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; if (owner) e.setAttribute('data-aj-owner', owner); return e; };
 const mb = (n) => (Math.round(n / MIB * 10) / 10).toFixed(1);
 
 /** The note a refused file leaves on its page. */
 export function skipText(s) {
   const at = s.line ? t('media.skip.at', { line: s.line, hint: s.hint || '' }) : '';   // P424 #142: 「（第 3 行：sk…）」
   return t('media.skip.' + s.why, { name: s.name, mb: mb(s.bytes || 0) }) + at;
+}
+
+const privateLabels = new WeakMap();
+onLang(() => { if(typeof document!=='undefined')for(const box of document.querySelectorAll('[data-private-file]'))privateLabels.get(box)?.(); });
+function skipCard(s) {
+  const box = mk('div', 'mskip', skipText(s));
+  if (!s.download || !peer.privatefiles1) return box;
+  box.dataset.privateFile='1';
+  const label=mk('span'),revoke=mk('button','aj-action aj-action--quiet',undefined,'aj-action','dialog'),button=mk(s.download.locator?'a':'button','aj-action aj-action--quiet',undefined,'aj-action','dialog'),limitation=mk('span');
+  const supported=typeof globalThis.showSaveFilePicker==='function';let revoked=false,progress=null;
+  const paint=()=>{label.textContent=s.name+' · '+t(revoked?'p0280.file.revoked':'p0280.file.card');revoke.textContent=t('p0280.file.revoke');button.textContent=progress===null?t('p0280.file.save'):t('p0280.file.progress',{n:progress});limitation.textContent=' '+t('p0280.file.unsupported');};
+  revoke.type='button';revoke.onclick=async()=>{
+    revoke.disabled=true;
+    try{await revokeFile(s.download);revoked=true;revoke.hidden=true;button.hidden=true;limitation.hidden=true;paint();}
+    catch(error){toast(downloadError(error),6000);revoke.disabled=false;}
+  };
+  box.append(label,revoke);privateLabels.set(box,paint);paint();
+  if(!supported){box.append(limitation);return box;}
+  if(s.download.locator)button.href=s.download.locator;else button.type='button';
+  button.onclick=async event=>{
+    event.preventDefault();if(button.disabled)return;button.disabled=true;button.setAttribute('aria-disabled','true');
+    try{await downloadFile(s.download,s.name,(n,total)=>{progress=Math.floor(100*n/total);paint();});}
+    catch(error){toast(downloadError(error),6000);}
+    finally{button.disabled=false;button.removeAttribute('aria-disabled');progress=null;paint();}
+  };
+  box.append(button);return box;
 }
 
 function strip(words) {
@@ -179,7 +206,7 @@ function fillSlots(words, items, skips, sc) {
       if (label && label !== m.name) s.replaceChildren(mk('span', 'mlabel', label), c); else s.replaceChildren(c);
     } else {
       s.dataset.skip = '1';
-      s.replaceChildren(mk('span', 'mskip', skipText(skips[a.skip])));
+      s.replaceChildren(skipCard(skips[a.skip]));
     }
   });
   return { rest, restSkips };
@@ -226,7 +253,7 @@ export function renderPage(words, p) {
   shown.cards = () => [...words.querySelectorAll('.mcard'), ...box.querySelectorAll('.mcard')];
   const { rest, restSkips } = fillSlots(words, items, skips, shown);
   for (const m of rest) box.appendChild(card(m, false, shown));
-  for (const sk of restSkips) box.appendChild(mk('div', 'mskip', skipText(sk)));
+  for (const sk of restSkips) box.appendChild(skipCard(sk));
   box.hidden = !box.childElementCount;
 }
 
@@ -249,7 +276,7 @@ export function renderReader(words, p) {
   if (!rest.length && !restSkips.length) return;
   const box = mk('div', 'mstrip rdstrip');
   for (const m of rest) box.appendChild(card(m, false, reading));
-  for (const sk of restSkips) box.appendChild(mk('div', 'mskip', skipText(sk)));
+  for (const sk of restSkips) box.appendChild(skipCard(sk));
   words.appendChild(box);
 }
 
@@ -261,7 +288,7 @@ export function renderReader(words, p) {
 // that needs the bytes loads them first. The card itself is focusable: Space (or Enter) = 预览, like Quick Look.
 const CHANNEL = 'Telegram';                // a channel's name is data (like logincard's {channel}), never dictionary text
 function iconBtn(cls, name, label) {
-  const b = mk('button', 'mact ' + cls); b.type = 'button';
+  const b = mk('button', 'mact ' + cls, undefined, 'aj-file'); b.type = 'button';
   b.setAttribute('aria-label', label); b.title = label; b.dataset.state = 'idle';
   b.append(glyph(name), glyph('ok', 'g gok'), mk('i', 'bang', '!'));
   b.lastChild.setAttribute('aria-hidden', 'true');
@@ -281,18 +308,18 @@ function card(m, inline, sc) {
   const c = mk('div', 'mcard' + (inline ? ' inline' : ''));
   c._sc = sc;
   c.dataset.kind = m.kind; c.dataset.state = 'idle'; c.dataset.mid = m.mid; c.dataset.pv = pv;
-  c.tabIndex = 0; c.setAttribute('role', 'group'); c.setAttribute('aria-label', m.name);
+  c.setAttribute('data-aj-owner','aj-file'); c.tabIndex = 0; c.setAttribute('role', 'group'); c.setAttribute('aria-label', m.name);
   const body = mk('div', 'mbody');
-  const status = mk('button', 'mtap', t('media.tapSize', { size: human(m.bytes) }));
+  const status = mk('button', 'mtap', t('media.tapSize', { size: human(m.bytes) }), 'aj-file');
   status.type = 'button';
   body.appendChild(status);
   const foot = mk('div', 'mfoot');
   const meta = mk('div', 'mmeta');
   const icon = glyph('file', 'mico');
   meta.append(icon, mk('span', 'mname', m.name), mk('span', 'msize', human(m.bytes)));
-  const acts = mk('div', 'macts'); acts.setAttribute('role', 'toolbar'); acts.setAttribute('aria-label', m.name);
+  const acts = mk('div', 'macts', undefined, 'aj-file'); acts.setAttribute('role', 'toolbar'); acts.setAttribute('aria-label', m.name);
   const bPv = iconBtn('pv', 'preview', t(m.kind === 'audio' ? 'media.act.preview' : 'media.act.fullscreen'));
-  if (m.kind !== 'audio') bPv.append(mk('span', 'mfullscreen-label', t('media.act.fullscreen')));
+  // 0.26.9 #453: icon only (the chairman: 「那个icon就已经画的很明显了」) — the words stay its aria-label / title
   const bDl = iconBtn('dl', 'download', t('media.act.download'));
   const bSh = iconBtn('sh', 'share', t('media.act.share'));
   const bMail = iconBtn('mail', 'mail', t('media.act.mail'));
@@ -418,7 +445,7 @@ function download(m, c, blob) {
     if (file) { navigator.share({ files: [file], title: m.name }).catch((err) => { if (err && err.name === 'NotAllowedError') toast(t('media.dlAgain'), 2600); }); return; }
   }
   const url = URL.createObjectURL(new Blob([blob], { type: 'application/octet-stream' }));
-  const a = mk('a'); a.href = url; a.download = m.name; a.rel = 'noopener'; a.hidden = true;
+  const a = mk('a', undefined, undefined, 'aj-file'); a.href = url; a.download = m.name; a.rel = 'noopener'; a.hidden = true;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), DL_KEEP_MS);
   toast(t('media.dlStarted', { name: m.name }), 2400);
@@ -443,12 +470,12 @@ function show(m, c, body, blob) {
   c.dataset.state = 'ready';
   if (m.kind === 'image') {
     const img = mk('img'); img.alt = m.name; img.src = url; img.decoding = 'async';
-    img.tabIndex = 0; img.setAttribute('role', 'button');
+    img.setAttribute('data-aj-owner','aj-media'); img.tabIndex = 0; img.setAttribute('role', 'button');
     img.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); want = c; viewImage(url, m.name, c, m); } });
     img.addEventListener('click', (e) => { e.stopPropagation(); want = c; viewImage(url, m.name, c, m); });
     body.replaceChildren(img);
   } else if (m.kind === 'audio' || m.kind === 'video') {
-    const v = mk(m.kind); v.controls = true; v.preload = 'metadata'; v.src = url;
+    const v = mk(m.kind, undefined, undefined, 'aj-media'); v.controls = true; v.preload = 'metadata'; v.src = url;
     if (m.kind === 'video') {
       v.playsInline = true; v.setAttribute('playsinline', '');
       let single = 0;
@@ -519,20 +546,20 @@ function viewerEl() {
   v.setAttribute('role', 'dialog'); v.setAttribute('aria-modal', 'true');
   const bar = mk('div', 'mvbar');
   const title = mk('span', 'mvtitle');
-  const prev = mk('button', 'mvact mvprev', '‹'); prev.type = 'button';
-  const next = mk('button', 'mvact mvnext', '›'); next.type = 'button';
+  const prev = mk('button', 'mvact mvprev', '‹', 'aj-media'); prev.type = 'button';
+  const next = mk('button', 'mvact mvnext', '›', 'aj-media'); next.type = 'button';
   const count = mk('span', 'mvcount'); count.hidden = true;
-  const dl = mk('button', 'mvact mvdl'); dl.type = 'button'; dl.append(glyph('download'));
-  const x = mk('button', 'mview-x', '×'); x.type = 'button';
+  const dl = mk('button', 'mvact mvdl', undefined, 'aj-media'); dl.type = 'button'; dl.append(glyph('download'));
+  const x = mk('button', 'mview-x', '×', 'aj-media'); x.type = 'button';
   bar.append(prev, count, next, title, dl, x);
   const stage = mk('div', 'mstage');
   const note = mk('div', 'mnote');
   const hint = mk('div', 'mvhint'); hint.setAttribute('role', 'status'); hint.setAttribute('aria-live', 'polite');
   // #424: the picture's zoom row under the stage (pictures only; the fitted picture never sits under it)
-  const zbar = mk('div', 'mvzoom'); zbar.setAttribute('role', 'toolbar');
+  const zbar = mk('div', 'mvzoom', undefined, 'aj-media'); zbar.setAttribute('role', 'toolbar');
   const zb = {};
   for (const k of ['zoomOut', 'zoomIn', 'fit', 'actual', 'fullscreen']) {
-    const b = mk('button', 'mvact mvz-' + k); b.type = 'button'; b.dataset.z = k; b.append(glyph(k));
+    const b = mk('button', 'mvact mvz-' + k, undefined, 'aj-media'); b.type = 'button'; b.dataset.z = k; b.append(glyph(k));
     zb[k] = b; zbar.appendChild(b);
   }
   zb.fullscreen.hidden = !(document.fullscreenEnabled || document.webkitFullscreenEnabled);   // iPhone Safari: none for pictures
@@ -771,7 +798,7 @@ function viewPlayer(m, url, c) {
   // Move a loaded inline video: no decoder restart, pause, duplicate audio or lost position.
   const inline = m.kind === 'video' ? c?.querySelector('.mbody video') : null;
   const inlineHeight = inline?.getBoundingClientRect().height;
-  const v = inline || mk(m.kind, 'mplayer');
+  const v = inline || mk(m.kind, 'mplayer', undefined, 'aj-media');
   v.classList.add('mplayer'); v.controls = true;
   if (!inline) { v.src = url; v.preload = 'metadata'; }
   if (inline) {
@@ -787,7 +814,7 @@ function viewPlayer(m, url, c) {
 }
 async function viewDoc(kind, m, blob, c) {
   const V = openViewer(m.name, c, 'doc', m);
-  const box = mk('div', 'mdoc'); box.tabIndex = 0;
+  const box = mk('div', 'mdoc'); box.setAttribute('data-aj-owner','aj-file'); box.tabIndex = 0;
   V.stage.replaceChildren(box);
   if (kind === 'none') { box.dataset.pv = 'none'; box.replaceChildren(unsupported(m, c, blob)); return; }
   try {
@@ -802,11 +829,11 @@ async function viewDoc(kind, m, blob, c) {
 function unsupported(m, c, blob, key = 'media.pv.none') {
   const w = mk('div', 'mpvnone');
   const ic = glyph('file', 'mpvbig');
-  const b = mk('button', 'mtap', t('media.act.download')); b.type = 'button';
+  const b = mk('button', 'mtap', t('media.act.download'), 'aj-file'); b.type = 'button';
   b.addEventListener('click', () => download(m, c, blob));
   w.append(ic, mk('p', 'mpvname', m.name), mk('p', 'mpvnote', t(key)), b);
   if (m.kind === 'pdf') {                               // pdf.js could not draw it: the phone's own PDF viewer still can
-    const a = mk('a', 'mtap', t('media.open')); a.href = urlOf(c, blob); a.target = '_blank'; a.rel = 'noopener noreferrer';
+    const a = mk('a', 'mtap', t('media.open'), 'aj-file'); a.href = urlOf(c, blob); a.target = '_blank'; a.rel = 'noopener noreferrer';
     w.appendChild(a);
   }
   return w;
@@ -922,7 +949,7 @@ function zoomable(stage, img, zb = null) {
 function viewHtml(html, m, c) {
   const name = m.name;
   const V = openViewer(name, c, 'doc', m);
-  const f = document.createElement('iframe');
+  const f = document.createElement('iframe'); f.setAttribute('data-aj-owner','aj-file'); f.setAttribute('data-aj-boundary','opaque-document');
   for (const [k, v] of Object.entries(sandboxAttrs())) f.setAttribute(k, v);
   f.className = 'mframe';
   f.title = name;

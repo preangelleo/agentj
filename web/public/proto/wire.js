@@ -133,9 +133,9 @@ export async function mailAllowMessage(channel, device, id, tool, summary, picks
 }
 // ---------------------------------------------------------------- phone controls (PROTOCOL §8). Mirrors host/agentj/controls.py.
 export const CONTROL_CONTEXT = 'agentjarvis-control-v1';
-export const CONTROL_ACTIONS = ['heartbeat_write', 'security_begin','security_verify','security_retire', 'host_write', 'mem_rm', 'mem_undo', 'estop', 'resume', 'task_on', 'task_off',
+export const CONTROL_ACTIONS = ['native_scheduler_control', 'heartbeat_write', 'security_begin','security_verify','security_retire', 'host_write', 'mem_rm', 'mem_undo', 'estop', 'resume', 'task_on', 'task_off',
   'fr_set', 'pg_set', 'pg_del', 'fr_add', 'fr_discoverable', 'fr_card',          // §17.7 agent friends (0.16)
-  'fr_ctx', 'update', 'bots_write', 'setup_mark', 'pair_new',               // P153: pair_new = a paired remote opens a pairing (§3.3)
+  'fr_ctx', 'update', 'mail_fwd', 'private_file_get', 'private_file_revoke', 'bots_write', 'setup_mark', 'setup_run', 'setup_cancel', 'pair_new',               // P153: pair_new = a paired remote opens a pairing (§3.3)
   'dev_name', 'dev_unbind', 'dev_add', 'dev_confirm',                     // P171 (§24): the phone's 遥控器管理 page                                                         // P115: first-run checklist card                                                                       // P73: a friend's 「补充设定」
   'agent_name',                                                             // P181 (§22.2): rename the Agent from the header
   'cards_get',                                                              // P203 (§29.1): the signed open-cards snapshot (a read)
@@ -152,17 +152,20 @@ export const CONTROL_ACTIONS = ['heartbeat_write', 'security_begin','security_ve
   'forward_set',                                                            // P554: 转发去向, one host setting for every remote
   'task_migrate',                                                           // P570c: 定时任务 → 重新迁移 (id \n tsha, like task_on)
   'auth_rescue',                                                            // 0.26.9 (#464): the chat's 重新登录 — login / code / cancel
-  'assist_grant', 'assist_revoke',                                          // 0.26.9 (#468, CONTRACT §B2): official remote assist
-  'budget_set'];                                                            // 0.26.9 §E3 (#473 ③): day / month budget, {day?, month?}; raising = + fa
+  'assist_grant', 'assist_revoke', 'assist_term_grant',                                          // 0.26.9 (#468, CONTRACT §B2): official remote assist
+  'owner_hosts_set', 'budget_set'];                                                            // 0.26.9 §E3 (#473 ③): day / month budget, {day?, month?}; raising = + fa
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
 export function controlObject(action, o) {
   if (action === 'fr_report_reply') return `${o.resend === true ? 'resend\n' : ''}${o.id}\n${o.text}`;
   if (action === 'fr_report_remark') return `${o.friend}\n${o.name}`;
-  if (action === 'host_write' || action === 'heartbeat_write') return canonicalJson(o);
-  if (action === 'bots_write') return canonicalJson(o.request);
+  if (action === 'native_scheduler_control') return canonicalJson(o);
+  if (action === 'host_write' || action === 'heartbeat_write' || action === 'owner_hosts_set') return canonicalJson(o);
+  if (['bots_write', 'mail_fwd', 'private_file_get', 'private_file_revoke'].includes(action)) return canonicalJson(o.request);
   if (action === 'update') return 'latest';
   if (action === 'cards_get') return 'cards';
   if (action === 'pair_new') return 'start';
+  if (action === 'setup_cancel') return 'cancel';
+  if (action === 'setup_run') return canonicalJson({item:o.item, op:o.op, params:o.params, rev:o.rev});
   if (action === 'setup_mark') return `${o.item}\n${o.choice}\n${o.rev}`;
   if (['security_begin','security_verify','security_retire'].includes(action)) return `${o.epoch}\n${[...o.keep].sort().join('\n')}`;
   if (action === 'dev_name') return `${o.device}\n${o.name}`;
@@ -202,6 +205,7 @@ export function controlObject(action, o) {
   if (action === 'wechat') return `${o.op}\n${o.id}\n${o.code}`;
   // 0.26.9 (#468, CONTRACT §B2): the owner's grant of official remote assist — minutes \n the pinned assist key id \n this
   // seat (key_id + seat come from the host's passkey_required step; the host builds the same text in controls.object_text)
+  if (action === 'assist_term_grant') return `${o.minutes}\n${o.key_id}\n${o.seat}\nterminal`;
   if (action === 'assist_grant') return `${o.minutes}\n${o.key_id}\n${o.seat}`;
   if (action === 'assist_revoke') return 'revoke';                // object {} (only narrows: no Face ID)
   // 0.26.9 §E3 (lane w3-cards): the day / month budget — canonical JSON of the fields sent (only the changed ones), e.g.
@@ -370,11 +374,12 @@ export const ELEVATE_CONTEXT = 'agentjarvis-elevate-v1';
 export const SEAL_CONTEXT = 'agentjarvis-seal-v1';
 /** The texts the card shows, in the order the host hashes them. sudo: cmd, why, effect · secret: name, purpose, dest, verify. */
 export function elevateFields(c) {
-  if (c.kind === 'sudo') return [c.cmd, c.why, c.effect || ''];
-  if (c.kind === 'secret') return [c.name, c.purpose, c.dest, c.verify || '', ...(c.auth ? ['kind','url','code','expires_at','round','rounds'].map(k => String(c.auth[k] ?? '')) : [])];
-  if (c.kind === 'login') return [c.term];               // P408 (§38): the `r` of the pending term_open the password belongs to
+  const bound=fields=>[...fields,...(c.approval_v===2?[c.envelope_sha256]:[])];
+  if (c.kind === 'sudo') return bound([c.cmd, c.why, c.effect || '']);
+  if (c.kind === 'secret') return bound([c.name, c.purpose, c.dest, c.verify || '', ...(c.auth ? ['kind','url','code','expires_at','round','rounds'].map(k => String(c.auth[k] ?? '')) : [])]);
+  if (c.kind === 'login') return bound([c.term]);               // P408 (§38): the `r` of the pending term_open the password belongs to
   // P414 (M4, §38.11): the requesting remote's id, its passkey credential id, its pairing date (unix s), its flags (web, account)
-  if (c.kind === 'vshare') return [c.dev, c.cred, String(c.paired), c.flags.join(',')];
+  if (c.kind === 'vshare') return bound([c.dev, c.cred, String(c.paired), c.flags.join(',')]);
   throw new Error('bad kind');
 }
 /** hex SHA-256 of `context\nkind\n` + one `sha256(field)` line per shown field. */
@@ -627,4 +632,22 @@ export function workflowResumeMessage(o) {
       || !Number.isSafeInteger(o.issued) || !Number.isSafeInteger(o.expires) || o.expires - o.issued !== 120
       || !['channel','device','id','nonce','run_id','run_sha','tsha'].every(k => typeof o[k] === 'string' && o[k].length > 0 && o[k].length <= 256)) throw new Error('shape');
   return enc.encode('agentjarvis-wf-resume-v1\n' + canonicalJson(o));
+}
+
+// #541: display, provenance and bounded plan are signed together; v1 is never a fallback.
+export async function approvalEnvelopeDigest(envelope) {
+  return sha256hex(new TextEncoder().encode(canonicalJson(envelope)));
+}
+export async function approvalV2Message(channel,device,p,decision,picks=[]) {
+  if(p.approval_v!==2||p.envelope_verified!==true||!['allow','deny'].includes(decision))throw new Error('invalid approval envelope');
+  const digest=await approvalEnvelopeDigest(p.envelope);
+  if(digest!==p.envelope_sha256||p.envelope.request_id!==p.id||p.envelope.channel!==channel||p.envelope.revision!==p.revision)throw new Error('approval envelope mismatch');
+  let s=`agentjarvis/approval/v2\n${channel}\n${device}\n${p.id}\n${decision}\n${digest}`;
+  if(p.task_scope)s+='\ntask:'+await sha256hex(new TextEncoder().encode(p.task_scope));
+  if(picks.length)s+='\n'+await sha256hex(new TextEncoder().encode('allow:'+picks.join('\n')));
+  return new TextEncoder().encode(s);
+}
+export function approvalReviewMessage(channel,device,p,op,eventId){
+  if(!['question','reopen','renew','deny'].includes(op)||p.approval_v!==2||p.envelope_verified!==true)throw new Error('invalid review');
+  return new TextEncoder().encode(`agentjarvis/approval-review/v2\n${channel}\n${device}\n${p.id}\n${op}\n${p.revision}\n${eventId}\n${p.envelope_sha256}`);
 }

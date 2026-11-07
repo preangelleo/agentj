@@ -23,6 +23,13 @@ class Trash(unittest.TestCase):
             for cmd in (f'agentj --instance 2 trash -- {target}', f'python3 -m agentj trash -- {target}'):
                 self.assertIn('credentials', danger.classify_shared('Bash', {'command': cmd}).cats, cmd)
 
+    def test_reversible_trash_keeps_permanent_and_secret_floors(self):
+        from agentj import confirm_tier
+        for command in ('agentj trash -- sample.txt', 'gio trash -- sample.txt', 'trash-put sample.txt'):
+            self.assertNotEqual(confirm_tier.agent_requirement('Bash', {'command': command}), 'uv', command)
+        for command in ('trash --empty', 'gio trash --empty', 'rm ~/owner-notes.txt', 'agentj trash ~/.ssh/id_ed25519'):
+            self.assertEqual(confirm_tier.agent_requirement('Bash', {'command': command}), 'uv', command)
+
     def test_linux_exact_argv_and_suppressed_output(self):
         with tempfile.TemporaryDirectory(dir=os.environ.get("TEST_TMP")) as d:
             p = pathlib.Path(d) / '-rf $(touch innocent)'; p.touch()

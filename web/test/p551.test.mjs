@@ -4,7 +4,10 @@
 //  #318 ③ unbinding ANOTHER remote / WeChat asks Face ID (passkey_required → the same signed object + fa; no_passkey said plainly).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync as rawContractRead } from 'node:fs';
+import {resolveDefaults} from '../tools/css-defaults.mjs';
+// #577: preserve this legacy contract's exact appearance/markup assertions; ownership is audited separately.
+const readFileSync = (...args) => { const value=rawContractRead(...args), path=String(args[0]); if(typeof value!=='string') return value; return path.endsWith('.css') ? resolveDefaults(value) : path.endsWith('.html') ? value.replace(/ data-aj-(?:owner|action-context)="[^"]+"/g,'') : value; };
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const css = Object.fromEntries(['app.css', 'menu.css', 'five-pages.css', 'terminal.css', 'cards.css', 'controls.css'].map((f) => [f, read('../public/' + f)]));

@@ -11,6 +11,7 @@ if (!globalThis.crypto) globalThis.crypto = webcrypto;
 globalThis.window ??= globalThis;
 globalThis.addEventListener ??= () => {};
 class El {
+  setAttribute(k,v) { (this.attributes ??= {})[k]=String(v); }
   constructor(tag) { this.tagName = tag.toUpperCase(); this.children = []; this.className = ''; this.textContent = ''; this.dataset = {}; this.hidden = false; }
   append(...k) { this.children.push(...k); }
   replaceChildren(...k) { this.children = k; }

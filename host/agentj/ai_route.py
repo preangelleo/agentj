@@ -253,6 +253,19 @@ def bailian_info() -> dict:
             "harness_options": ["opencode", "qwen"], "terms": bailian.TERMS}
 
 
+def domestic_routes():
+    """Bundled registry facts only; no platform lookup, probe, key read or write."""
+    a, b, k = ark_info(), bailian_info(), data()
+    return [
+        {'id': 'ark', 'name': 'Volcano Ark Agent Plan', 'name_zh': '火山方舟 Agent Plan',
+         'harnesses': a['harness_options'], 'model': a['model'], 'setup': 'agentj provider ark'},
+        {'id': 'bailian', 'name': 'Alibaba Bailian Token Plan', 'name_zh': '阿里百炼 Token Plan',
+         'harnesses': b['harness_options'], 'model': b['model'], 'setup': 'agentj provider bailian'},
+        {'id': 'kimi', 'name': 'Kimi Code', 'name_zh': 'Kimi Code', 'harnesses': ['kimi'], 'model': k['model'],
+         'setup': 'agentj agent switch kimi'},
+    ]
+
+
 def bailian_steps(lang: str) -> list[str]:
     from . import bailian
     b = bailian_info()

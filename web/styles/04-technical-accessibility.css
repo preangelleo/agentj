@@ -1,0 +1,119 @@
+/* #577 Web-owned source; initial cascade preserved. */
+/* ===== focus + motion ===== */
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px;}
+/* owner: aj-account; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-account"]){border-radius:var(--aj-account-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-dialog-action; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-dialog-action"]){border-radius:var(--aj-dialog-action-native-focus-border-radius,var(--r-sm));}
+
+/* owner: aj-file; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-file"]){border-radius:var(--aj-file-native-focus-border-radius,var(--r-sm));}
+
+/* owner: aj-attachment; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-attachment"]){border-radius:var(--aj-attachment-native-focus-border-radius,var(--r-sm));}
+
+/* owner: aj-composer-tool; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-composer-tool"]){border-radius:var(--aj-composer-tool-native-focus-border-radius,var(--r-sm));}
+
+/* owner: aj-content; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-content"]){border-radius:var(--aj-content-native-focus-border-radius,var(--r-sm));}
+
+/* owner: aj-settings-control; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-settings-control"]){border-radius:var(--aj-settings-control-native-focus-border-radius,var(--r-sm));}
+
+/* owner: aj-status; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-status"]){border-radius:var(--aj-status-native-focus-border-radius,var(--r-sm));}
+
+/* owner: aj-action; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-action"]){border-radius:var(--aj-action-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-approval; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-approval"]){border-radius:var(--aj-approval-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-auth-card; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-auth-card"]){border-radius:var(--aj-auth-card-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-bots; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-bots"]){border-radius:var(--aj-bots-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-busy; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-busy"]){border-radius:var(--aj-busy-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-channel; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-channel"]){border-radius:var(--aj-channel-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-choice; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-choice"]){border-radius:var(--aj-choice-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-composer; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-composer"]){border-radius:var(--aj-composer-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-contacts; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-contacts"]){border-radius:var(--aj-contacts-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-dialog; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-dialog"]){border-radius:var(--aj-dialog-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-editor; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-editor"]){border-radius:var(--aj-editor-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-friends; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-friends"]){border-radius:var(--aj-friends-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-header; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-header"]){border-radius:var(--aj-header-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-history; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-history"]){border-radius:var(--aj-history-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-icon-action; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-icon-action"]){border-radius:var(--aj-icon-action-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-inline-component; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-inline-component"]){border-radius:var(--aj-inline-component-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-knowledge; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-knowledge"]){border-radius:var(--aj-knowledge-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-language; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-language"]){border-radius:var(--aj-language-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-media; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-media"]){border-radius:var(--aj-media-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-menu; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-menu"]){border-radius:var(--aj-menu-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-navigation-action; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-navigation-action"]){border-radius:var(--aj-navigation-action-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-notice; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-notice"]){border-radius:var(--aj-notice-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-pairing; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-pairing"]){border-radius:var(--aj-pairing-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-palette; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-palette"]){border-radius:var(--aj-palette-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-passkey; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-passkey"]){border-radius:var(--aj-passkey-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-prose; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-prose"]){border-radius:var(--aj-prose-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-quote; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-quote"]){border-radius:var(--aj-quote-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-reader; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-reader"]){border-radius:var(--aj-reader-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-recording; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-recording"]){border-radius:var(--aj-recording-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-recovery; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-recovery"]){border-radius:var(--aj-recovery-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-remotes; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-remotes"]){border-radius:var(--aj-remotes-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-reply; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-reply"]){border-radius:var(--aj-reply-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-reply-action; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-reply-action"]){border-radius:var(--aj-reply-action-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-rescue; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-rescue"]){border-radius:var(--aj-rescue-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-search; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-search"]){border-radius:var(--aj-search-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-settings; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-settings"]){border-radius:var(--aj-settings-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-setup; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-setup"]){border-radius:var(--aj-setup-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-shell; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-shell"]){border-radius:var(--aj-shell-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-source; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-source"]){border-radius:var(--aj-source-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-suggestion; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-suggestion"]){border-radius:var(--aj-suggestion-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-terminal; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-terminal"]){border-radius:var(--aj-terminal-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-wallet; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-wallet"]){border-radius:var(--aj-wallet-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-wallet-calendar; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-wallet-calendar"]){border-radius:var(--aj-wallet-calendar-native-focus-border-radius,var(--r-sm));}
+/* owner: aj-wallet-color; explicit opt-in, equal initial value */
+:focus-visible:where([data-aj-owner="aj-wallet-color"]){border-radius:var(--aj-wallet-color-native-focus-border-radius,var(--r-sm));}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }

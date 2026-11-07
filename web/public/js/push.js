@@ -30,6 +30,27 @@ function subMsg(sub) {
   const j = sub.toJSON();
   return { t: 'push_sub', endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth };
 }
+// P204 (§9): which kinds this phone wants — 审批 ask · 完成 reply · 告警 security. Kept here (localStorage "aj.pushKinds")
+// and told to the computer after every subscribe; the computer then sends only those (the push itself stays empty).
+export const KINDS = ['ask', 'reply', 'security'];
+const PUSH_KINDS_KEY = 'aj.pushKinds';
+export function kinds() {
+  try {
+    const k = JSON.parse(localStorage.getItem(PUSH_KINDS_KEY) || 'null');
+    if (Array.isArray(k) && k.every((x) => KINDS.includes(x))) return KINDS.filter((x) => k.includes(x));
+  } catch { /* blocked storage / garbage: all of them */ }
+  return KINDS.slice();
+}
+const sendKinds = () => sendApp({ t: 'push_pref', kinds: kinds() }).catch(() => {});
+export async function setKind(kind, on) {
+  if (!KINDS.includes(kind)) return kinds();
+  const k = new Set(kinds());
+  if (on) k.add(kind); else k.delete(kind);
+  const list = KINDS.filter((x) => k.has(x));
+  try { localStorage.setItem(PUSH_KINDS_KEY, JSON.stringify(list)); } catch { /* blocked storage: this session only */ }
+  if (isReady() && pushState === 'on') await sendKinds();
+  return list;
+}
 let pushState = 'none';
 const watchers = [];
 /** Settings (F13) shows the same state: 'none' | 'offer' | 'on' | 'ios' | 'denied' | 'failed'. */
@@ -51,6 +72,7 @@ export async function gotPushKey(k) {
     const sub = await reg.pushManager.getSubscription();
     if (sub && sameKey(sub, key) && Notification.permission === 'granted') {
       await sendApp(subMsg(sub));                    // re-sent on every connect; the host keeps one per device
+      await sendKinds();
       return pushUi('on');
     }
   } catch { /* fall through to the offer */ }
@@ -65,6 +87,7 @@ export async function enablePush() {
     if (sub && !sameKey(sub, pushKey)) { await sub.unsubscribe(); sub = null; }
     sub = sub ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: pushKey });
     await sendApp(subMsg(sub));
+    await sendKinds();
     pushUi('on');
   } catch {
     pushUi('failed');

@@ -8,7 +8,7 @@ import { deflateSync } from 'node:zlib';
 import { startWebServer } from './serve.mjs';
 import { startFakeHost } from './fakehost.mjs';
 import { launch, newPage, navigate, waitFor, waitState, evaluate, shoot, sleep } from './browser.mjs';
-import { buttonAuditSource } from '../../brand/test/button-audit.mjs';
+import { buttonAuditSource } from '../tools/button-audit.mjs';
 
 const out = new URL('../../../reports/qa/p114/web/', import.meta.url); mkdirSync(out, { recursive: true });
 const results = {};
@@ -40,10 +40,10 @@ try {
     // P240: the card rises in; under a loaded full parity run 150 ms was not always enough, so wait for the settled buttons
     // (still asserted ≥ 56 px below — a card whose buttons never reach that times out here instead)
     await sleep(150);
-    await waitFor(p, `[...document.querySelectorAll('#lqr .lqr-acts .aj-btn')].filter(b => !b.hidden).every(b => b.getBoundingClientRect().height >= 56)`, 5000).catch(() => {});
+    await waitFor(p, `[...document.querySelectorAll('#lqr .lqr-acts .aj-action')].filter(b => !b.hidden).every(b => b.getBoundingClientRect().height >= 56)`, 5000).catch(() => {});
     const lay = await evaluate(p, `({over: document.documentElement.scrollWidth > innerWidth + 1, src: document.getElementById('lqr-img').src.slice(0, 22),
-      btns: [...document.querySelectorAll('#lqr .lqr-acts .aj-btn')].filter(b => !b.hidden).map(b => Math.round(b.getBoundingClientRect().height)),
-      fw: [...document.querySelectorAll('#lqr .lqr-acts .aj-btn')].filter(b => !b.hidden).every(b => b.getBoundingClientRect().width > 200),
+      btns: [...document.querySelectorAll('#lqr .lqr-acts .aj-action')].filter(b => !b.hidden).map(b => Math.round(b.getBoundingClientRect().height)),
+      fw: [...document.querySelectorAll('#lqr .lqr-acts .aj-action')].filter(b => !b.hidden).every(b => b.getBoundingClientRect().width > 200),
       title: document.getElementById('lqr-title').textContent, tg: document.getElementById('lqr-tg').textContent})`);
     assert.equal(lay.over, false); assert.equal(lay.src, 'data:image/png;base64,');
     assert.ok(lay.btns.every((x) => x >= 56), 'buttons ≥ 56 px'); assert.ok(lay.fw, 'full width');

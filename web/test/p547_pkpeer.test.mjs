@@ -121,7 +121,7 @@ test('approver: card with name, time, code; 「批准（Face ID）」 runs appro
 
 test('approver: 「拒绝」 = ok:false without Face ID; pk_peer_close puts the card away; a refused assertion brings it back', async () => {
   let h = harness();
-  const ask = { t: 'pk_peer_ask', id: ID, device: 'D', name: 'OPPO', at: 1, exp: 2, code: '111111', fa: 'Y3JlZA', fa_ch: 'AAAA' };
+  const ask = { t: 'pk_peer_ask', id: ID, device: 'D', name: 'OPPO', at: 1_800_000_000, exp: 1_800_000_300, code: '111111', fa: 'Y3JlZA', fa_ch: 'AAAA' };
   P.handle(ask);
   await P.denyTap();
   assert.deepEqual(h.sent, [{ t: 'pk_peer_answer', id: ID, ok: false }]);
@@ -202,4 +202,10 @@ test('P574 existing-key roster introduction never requests creation, replacement
   assert.equal(P._state().req,null);assert.equal(P._state().offer,null);
   const old=harness({res:{t:'timeout'}});
   assert.equal(await P.startRosterIntro(),'fail');assert.equal(old.legacy,0);
+});
+
+test('expired peer request cannot show an approvable card or send an answer', async()=>{
+ const h=harness();P.onAsk({id:ID,name:'Synthetic',at:1,exp:2,code:'111111',fa:'Y3JlZA',fa_ch:'AAAA'});
+ assert.equal(P.currentAsk(),null);await P.approveTap();await P.denyTap();
+ assert.equal(h.approved.length,0);assert.equal(h.sent.length,0);
 });

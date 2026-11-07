@@ -1,0 +1,13 @@
+/* #577 Web-owned disclosure; source order is a compatibility contract. */
+/* ===== <details> disclosure ===== */
+.aj-details { border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-1); }
+.aj-details + .aj-details { margin-top: var(--sp-2); }
+.aj-details > summary { list-style: none; cursor: pointer; min-height: var(--tap); padding: var(--sp-3) var(--sp-4);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); font-weight: 500; }
+.aj-details > summary::-webkit-details-marker { display: none; }
+.aj-details > summary::after { content: ""; flex: 0 0 auto; width: 8px; height: 8px; border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor; transform: rotate(45deg); transition: transform var(--dur) var(--ease); margin-right: 4px; }
+.aj-details[open] > summary::after { transform: rotate(-135deg); }
+.aj-details[open] > summary { border-bottom: 1px dashed var(--border); }
+.aj-details__body { padding: var(--sp-4); }
+.aj-details__body > * + * { margin-top: var(--sp-3); }

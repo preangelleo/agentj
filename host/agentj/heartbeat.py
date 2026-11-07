@@ -28,7 +28,7 @@ DAILY_GRACE = 60 * 60           # s: a daily HH:MM passed before serve started m
 DAILY_RE = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
 NIGHT = (3, 5)                  # local hours of the nightly upgrade window (auto_update)
 TAG = {"zh": "〔Agent J 心跳〕", "en": "[Agent J heartbeat]"}
-SILENT = "〔不回群〕"
+SILENT = "〔静默消息〕"
 
 TEMPLATE = {
     "zh": """# 心跳提示
@@ -38,7 +38,7 @@ TEMPLATE = {
 不要在这里写密码或其他凭据。
 
 醒来以后按顺序做：先用 `agentj card todo due` + `agentj card cal due` 看待办和日程，再看答应主人的事，读回实际报告，接上中途停下的工作。然后按下面清单巡检。
-只报需要主人知道或拍板的事，一两句话；一切正常，最终只回：〔不回群〕
+只报需要主人知道或拍板的事，一两句话；一切正常，最终只回：〔静默消息〕
 """,
     "en": """# Heartbeat Prompt
 
@@ -47,26 +47,26 @@ You or the owner may edit this note in Settings → Heartbeat or with `agentj he
 Never put passwords or other credentials here.
 
 First run `agentj card todo due` + `agentj card cal due` for to-dos and the calendar; review promises, read the actual reports and resume unfinished work. Then follow the checklist below.
-Report only what the owner needs to know or decide, in a sentence or two. When all is well, reply only: 〔不回群〕
+Report only what the owner needs to know or decide, in a sentence or two. When all is well, reply only: 〔静默消息〕
 """,
 }
 
-# P537: one canonical checklist; a custom prompt is never overwritten on upgrade.
+# One canonical checklist; upgrades change only marked blocks, preserving custom text.
 CHECKLIST = {
-    "zh": """<!-- agentj:watchlist v1 -->
+    "zh": """<!-- agentj:watchlist v2 -->
 ## 常驻巡检清单
 忙时也顺手巡检，不必等心跳；从上次心跳以来的记录开始，未处理的旧事也要跟进。
 A. 检查这台 Agent J 主机所有定时任务（Linux 的 systemd timer / cron、macOS 的 launchd / cron、Windows 计划任务）的日志与报告，有无报错、漏跑或报告未交；读实际结果，不只看退出码。
 B. 看看 Agent J 好友的往来，有无卡住的请求、异常或需要你介入的事。
-C. 用 `agentj inbox avatar-log --since 2h` 按时间复核邮件、微信、Telegram 分身与主人的往来和处置结论（可调整起始时间）；有没有该上交却自行处理、处理不理想、挂起无人认领的事。需要就由你补回复或接手，仍遵守原有审批；历史缺失的回复或结论按未知处理，不猜成功。
+C. 邮件、微信、Telegram 主人通道由主线程直接处理；复核主线程的来信、回复与待办，有无漏回、失败或无人认领。`agentj inbox avatar-log --since 2h` 仅供只读复核旧分身历史，不代表当前通道；缺失的回复、送达或结论按未知处理。需要接手时仍遵守现行审批，不恢复旧分身路由。
 <!-- /agentj:watchlist -->
 """,
-    "en": """<!-- agentj:watchlist v1 -->
+    "en": """<!-- agentj:watchlist v2 -->
 ## Standing watchlist
 Check as you work too; do not wait for a heartbeat. Start with records since the last heartbeat and follow up older unresolved work.
 A. Check logs and reports for all scheduled jobs on this Agent J host (Linux systemd timers / cron, macOS launchd / cron, Windows Task Scheduler): errors, missed runs or missing reports. Read actual results, not just exit codes.
 B. Review Agent J friend conversations for stuck requests, unusual events or anything needing your help.
-C. Run `agentj inbox avatar-log --since 2h` to review, in time order, the owner's mail, WeChat and Telegram avatar exchanges and outcomes (adjust the start time as needed). Look for actions that should have been handed over, poor handling and unclaimed requests. Follow up or take over while keeping existing approvals; missing historical replies or outcomes are unknown, never proof of success.
+C. Owner mail, WeChat and Telegram are handled in the main thread. Review its incoming messages, replies and to-dos for missed replies, failures or unclaimed work. `agentj inbox avatar-log --since 2h` is read-only legacy avatar history, not current channel coverage. Missing replies, delivery or outcomes remain unknown. Follow up under current approvals; never restore legacy avatar routes.
 <!-- /agentj:watchlist -->
 """,
 }
@@ -74,14 +74,25 @@ for _lang in TEMPLATE:
     TEMPLATE[_lang] += "\n" + CHECKLIST[_lang]
 
 
+_WATCHLIST = re.compile(r"<!-- agentj:watchlist v[0-9]+ -->.*?<!-- /agentj:watchlist -->", re.S)
+
+
 def has_checklist(text: str, lang: str) -> bool:
-    # P570c: recognise the shipped v1 block after wording changes; never duplicate an owner's existing watchlist.
-    return CHECKLIST[lang] in text or ("<!-- agentj:watchlist v1 -->" in text and "<!-- /agentj:watchlist -->" in text)
+    blocks = list(_WATCHLIST.finditer(text))
+    return len(blocks) == 1 and blocks[0].group() == CHECKLIST[lang].rstrip("\n")
 
 
 def merge_checklist(text: str, lang: str) -> str:
-    """Idempotent append, retaining every byte of the owner's existing instructions."""
-    return text if has_checklist(text, lang) else text + "\n\n" + CHECKLIST[lang]
+    """Migrate canonical blocks in place, preserving all text outside those blocks."""
+    seen = False
+    def replace(match):
+        nonlocal seen
+        if seen:
+            return ""
+        seen = True
+        return CHECKLIST[lang].rstrip("\n")
+    result = _WATCHLIST.sub(replace, text)
+    return result if seen else text + "\n\n" + CHECKLIST[lang]
 
 
 def prompt_view(lang: str) -> dict:
@@ -269,11 +280,19 @@ def update_prompt(target, lang):
 
 
 def ensure_prompt(lang: str = "zh", p: Path | None = None) -> bool:
-    """The default template when heartbeat.md does not exist yet (first start / the wizard). True when written."""
+    """Create a default or migrate marked canonical blocks; leave unmarked custom prompts alone."""
     p = p or prompt_path()
     try:
         with prompt_lock(p):
-            if p.exists() or p.is_symlink():
+            if p.is_symlink():
+                return False
+            if p.exists():
+                got = read_prompt(p)
+                if got and _WATCHLIST.search(got[0]):
+                    merged = merge_checklist(got[0], "en" if lang == "en" else "zh")
+                    if merged != got[0]:
+                        _write_prompt(merged, p)
+                        return True
                 return False
             _write_prompt(TEMPLATE["en" if lang == "en" else "zh"], p)
             return True
@@ -313,6 +332,14 @@ NO_NOTES = {"zh": "没有要报的，不要先写过程说明，直接只回 " +
 
 def phone_label(lang: str) -> str:
     return pick(lang, "心跳检查", "Heartbeat check")
+
+
+CTX_HALF = 0.5          # #449: half the model's window → the main Agent writes its own handoff and compacts when idle
+CTX_MUST = 0.75         # #449 b: still uncompacted at three quarters → once more, marked required
+CTX_ABS_CAP = 400_000   # #449 d: tokens; heartbeat.context_max_tokens overrides (a 1M window is not left to 500k)
+SELF_COMPACT = ("这次心跳就是空闲：按 agentj-handoff 写交接，运行 `agentj capability compact --json`，排队后结束本轮。",
+                " This beat is idle time: write the handoff (agentj-handoff), run `agentj capability compact --json`, end the turn once queued.")
+INVITE_TTL = 1800       # s: a beat's self-compact invite (self_compact.py) expires with the beat's turn or after this
 
 
 class HeartbeatSend(Send):
@@ -369,6 +396,20 @@ class Heartbeat:
         self.usage = Usage(host)
         self.last_checked = {}
         self.last_precheck = None
+        self.ctx_level: str | None = None
+        self.compact_invite: dict | None = None   # #449: {token, key, at} of the beat that asked for a self-compaction
+
+    def take_invite(self, token, key: str, now: float | None = None) -> bool:
+        """#449: consume the one-shot self-compact invite (self_compact.py guard). Same session key, unexpired."""
+        if not self.has_invite(token, key, now):
+            return False
+        self.compact_invite = None
+        return True
+
+    def has_invite(self, token, key: str, now: float | None = None) -> bool:
+        inv, now = self.compact_invite, time.time() if now is None else now
+        return bool(isinstance(inv, dict) and isinstance(token, str) and token and secrets.compare_digest(token, inv["token"])
+                    and inv["key"] == key and 0 <= now - inv["at"] <= INVITE_TTL)
 
     def usage_view(self):
         return self.usage.view()
@@ -441,6 +482,9 @@ class Heartbeat:
             return "no_agent"
         if h.stopped():
             return "stopped"
+        from .capability_pause import paused
+        if paused(h):
+            return 'paused'
         with contextlib.suppress(Exception):
             if a.is_down():
                 return "agent_down"
@@ -531,29 +575,61 @@ class Heartbeat:
                 self.host.st.log("heartbeat_skipped", reason=label, unknown=unknown)
                 self.last_wait = label
             return {"ok": False, "why": label, "unknown": unknown}
-        note = self.context_note(now, d)              # #449: never pauses; >= half the window → one line to the main Agent
+        # #449 final Nov 4 owner decision: context/model never stop beats.
+        # The main model receives the existing private, one-shot compact invite.
+        note = self.context_note(now, d)
+        level = self.ctx_level
         r = self.fire(now, by="daily" if daily and now < self.next_due() else "timer", reasons=reasons, note=note)
         if note and r.get("ok"):
             d = await asyncio.to_thread(self._load)
-            marks = d.get("ctx_notice") if isinstance(d.get("ctx_notice"), dict) else {}
+            field = "ctx_must" if level == "must" else "ctx_notice"
+            marks = d.get(field) if isinstance(d.get(field), dict) else {}
             marks = {k: v for k, v in marks.items() if v == day_of(now)}   # yesterday's markers fall out
             marks[r["key"]] = day_of(now)
-            d["ctx_notice"] = dict(list(marks.items())[-32:])
+            d[field] = dict(list(marks.items())[-32:])
             await asyncio.to_thread(self._save, d)
         return r
 
+    def prewake_guard(self) -> dict | None:
+        """Compatibility seam: context or model cost cannot veto a heartbeat.
+
+        #449 Nov 4 10:03 supersedes the earlier #418/P589 context/cost pause.
+        Existing work discovery, quiet periods, daily budget and authority guards
+        still apply; context_note gives only the main Agent its compact invite.
+        """
+        return None
+
+    def ctx_threshold(self, top: float) -> float:
+        """#449 d: min(half the window, heartbeat.context_max_tokens — default 400k), so a 1M window is not left to 500k."""
+        from . import preferences
+        cap = preferences.get(getattr(self.host, "preferences", None) or {}, "heartbeat.context_max_tokens", CTX_ABS_CAP)
+        cap = cap if type(cap) is int and cap >= 1000 else CTX_ABS_CAP
+        return min(top * CTX_HALF, cap)
+
     def context_note(self, now: float, d: dict) -> str | None:
-        """#449: context used / the model's window from the meter; < 50 % or unknown window → None. At most once per
-        session per day (marker in heartbeat.json). The line rides inside the beat (a system turn), never to the owner."""
+        """#449: context used / the model's window from the meter. Below min(50 %, abs cap) or unknown window → None.
+        At or above it: one line per session per day; at or above 75 % of the window still uncompacted: one more line
+        marked as required, once per session per day (#449 b). Markers live in heartbeat.json; the line rides inside the
+        beat (a system turn), never to the owner. The beat carrying it also carries a one-shot self-compact invite."""
+        self.ctx_level = None
         c = (getattr(self.host, "meter_state", None) or {}).get("ctx")
         used, top = (c.get("used"), c.get("max")) if isinstance(c, dict) else (None, None)
-        if type(used) not in (int, float) or type(top) not in (int, float) or top <= 0 or used < top / 2:
+        if type(used) not in (int, float) or type(top) not in (int, float) or top <= 0 or used < self.ctx_threshold(top):
             return None
+        key = session_key(getattr(self.host, "agent", None))
+        if used >= top * CTX_MUST:
+            marks = d.get("ctx_must")
+            if not (isinstance(marks, dict) and marks.get(key) == day_of(now)):
+                self.ctx_level = "must"
+                return pick(self.lang(), "主机提示（必须）：上下文已用到四分之三，仍未压缩。本轮空闲就自写交接再压缩，不要等系统自动压缩。" + SELF_COMPACT[0],
+                            "Host notice (required): three quarters of the context window is used and it is still not compacted. "
+                            "Write your own handoff and compact in this idle turn; do not wait for the automatic compaction." + SELF_COMPACT[1])
         marks = d.get("ctx_notice")
-        if isinstance(marks, dict) and marks.get(session_key(getattr(self.host, "agent", None))) == day_of(now):
+        if isinstance(marks, dict) and marks.get(key) == day_of(now):
             return None
-        return pick(self.lang(), "主机提示：上下文已用过半。找空闲时自写交接再压缩。",
-                    "Host notice: over half the context window is used. When idle, write your own handoff, then compact.")
+        self.ctx_level = "half"
+        return pick(self.lang(), "主机提示：上下文已用过半。找空闲时自写交接再压缩。" + SELF_COMPACT[0],
+                    "Host notice: over half the context window is used. When idle, write your own handoff, then compact." + SELF_COMPACT[1])
 
     def fire(self, now: float | None = None, by: str = "timer", reasons=None, note=None) -> dict:
         """Queue one beat now (the caller checked wait_reason, or this is `agentj heartbeat now`)."""
@@ -571,6 +647,10 @@ class Heartbeat:
         full = self.seen.get(key) != digest
         idle_min = max(1, int((now - max(self.started, self.last_activity)) // 60))
         body = message(lang, text, digest, full, idle_min)
+        from . import capability_pause
+        pause_note = capability_pause.reminder(h)
+        if pause_note:
+            body += '\n' + pause_note
         if reasons:
             body += "\n" + pick(lang, "主机预检发现：", "Host preflight found: ") + ", ".join(reasons)
         if note:
@@ -595,6 +675,9 @@ class Heartbeat:
                 body += "\n" + g
         page = h.hist_add({"k": "agent", "via": "heartbeat", "text": ""}, "", "open")
         send = HeartbeatSend(page["id"], body, key, digest)
+        if note:                                      # #449: this beat asked for a self-compaction (host-made, one shot)
+            send.compact_invite = secrets.token_urlsafe(16)
+            self.compact_invite = {"token": send.compact_invite, "key": key, "at": now}
         self.inflight = send
         self.seen[key] = digest
         d = self._load()

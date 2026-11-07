@@ -34,7 +34,7 @@ const check = (ok, what) => { results.push({ ok: !!ok, what }); if (CHECK) asser
 const GEO = (sel) => `(()=>{const n=document.querySelector(${J(sel)});if(!n)return null;const r=n.getBoundingClientRect(),slot=document.getElementById('reply-notices'),
   rm=document.getElementById('rm').getBoundingClientRect(),bar=document.getElementById('rmbar').getBoundingClientRect(),comp=document.querySelector('.composer').getBoundingClientRect();
   const hit=document.elementFromPoint(comp.left+comp.width/2,comp.top+Math.min(comp.height/2,30));
-  const q=slot.getBoundingClientRect(),acts=[...n.querySelectorAll('#apprBtns:not([hidden]),.confirm-row,.elev-acts,.gdlg-row,.aj-btn--primary:not([hidden]),button[type=submit]:not([hidden])')].filter(a=>a.getClientRects().length&&!a.closest('[hidden]'));
+  const q=slot.getBoundingClientRect(),acts=[...n.querySelectorAll('#apprBtns:not([hidden]),.confirm-row,.elev-acts,.gdlg-row,.aj-action--primary:not([hidden]),button[type=submit]:not([hidden])')].filter(a=>a.getClientRects().length&&!a.closest('[hidden]'));
   const a=acts[0]?.getBoundingClientRect();
   return {inSlot:slot.contains(n),pos:getComputedStyle(n).position,top:r.top,bottom:r.bottom,h:r.height,rmTop:rm.top,barTop:bar.top,compTop:comp.top,slotTop:q.top,slotBottom:q.bottom,
     actionOnScreen:!a||(a.top>=q.top-1&&a.bottom<=q.bottom+1),

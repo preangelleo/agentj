@@ -21,7 +21,7 @@ run_worker_first = true   # every request goes through worker.ts (host + method 
 
 [vars]
 # Publisher-owned only. Empty means the exact formal handler for every seat.
-PREVIEW_CONFIG = '{"v":1,"seats":{"lwlbelrv":{"bundleSha256":"9e2c50cce1563b3d7dfd5b474b5407c2e6a3d48e5ab29aa1a0c4d4a75b2ef742","manifestSha256":"1380d788275717aa4d98b8db95a7601fcafd42f1228806fde207ec8106cfd9de","combined":"e6af5cb7c3f43fa0866c8c32f313a4d4ca84beba3330d17f85daaf9adb009c7b","hostPublicKey":"VQ-ncUUZJ4gMpaCPbG-1hngYzkzy6sOrII7lZ-fE6kY"}}}'
+PREVIEW_CONFIG = '{"v":1,"seats":{}}'
 WEB_HOST = "m.agentj.app"
 LEGACY_WEB_HOST = "alpha-web.agentjarvis.net"
 RELAY_URL = "wss://relay.agentj.app"

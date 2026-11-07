@@ -266,24 +266,26 @@ class Login:
             return await self._send(s.device, r, {"step": "verifying"})
         await self._start(s, r, target["agent"])
 
-    async def _start(self, s, r, agent) -> None:
+    async def _start(self, s, r, agent, bound_live=None) -> bool:
         from . import controls, provenance
         h, rescue = self.h, self.r
         refuse = ("estop" if controls.estop_state(h.st).get("on") else
                   "unsupported" if agent == "opencode" else
                   "not_main" if rescue.current() != agent else
                   "busy" if self.active or (rescue.flow and rescue.flow.get("stage") not in ("done", "failed")) else None)
+        if bound_live is not None and not bound_live():
+            refuse = "cancelled"
         if refuse:
             h.st.log("auth_login", device=s.device, agent=agent, result="refused", reason=refuse)
             return await self._done(s.device, r, False, refuse, self._say("login." + refuse) if refuse in ("estop", "busy", "not_main") else None)
         self.active = {"device": s.device, "agent": agent, "r": r, "cancel": threading.Event(), "code": None, "shown": {},
-                       "deadline": time.monotonic() + WAIT}
+                       "deadline": time.monotonic() + WAIT, "bound_live": bound_live}
         try:
             with provenance.paired_request(lambda: h._paired_live(s)):
-                ok = await rescue._confirm(agent)
+                ok = await (rescue._confirm(agent, remote=s) if bound_live is not None else rescue._confirm(agent))
         except Exception:  # noqa: BLE001
             ok = False
-        if not ok:
+        if not ok or (bound_live is not None and not bound_live()):
             self.active = None
             h.st.log("auth_login", device=s.device, agent=agent, result="refused", reason="passkey")
             return await self._done(s.device, r, False, "passkey")
@@ -291,15 +293,25 @@ class Login:
         rescue.flow = {"kind": agent, "route": "chat_login", "stage": "starting"}       # no link / code: other phones see a busy row
         rescue.broadcast()
         h.st.log("auth_login", device=s.device, agent=agent, result="start")
-        await self._send(s.device, r, {"step": "starting", "agent": agent})
+        try:
+            await self._send(s.device, r, {"step": "starting", "agent": agent})
+        except BaseException:
+            self.active = None
+            rescue._end(agent, "failed", "cancelled")
+            raise
+        if bound_live is not None and not bound_live():
+            self.active = None
+            rescue._end(agent, "failed", "cancelled")
+            return False
         bg = getattr(h, "_bg", None)
         coro = self._run()
         (bg(coro, "auth_login") if bg else asyncio.ensure_future(coro))
+        return True
 
     def _stop_now(self) -> bool:
         from . import controls
         a = self.active
-        return bool(a and (a["cancel"].is_set() or self.r.cancel.is_set() or controls.estop_state(self.h.st).get("on")
+        return bool(a and ((a.get("bound_live") is not None and not a["bound_live"]()) or a["cancel"].is_set() or self.r.cancel.is_set() or controls.estop_state(self.h.st).get("on")
                            or time.monotonic() > a["deadline"]))
 
     def _stop_why(self) -> str:
@@ -322,7 +334,11 @@ class Login:
             why = res.get("why")
             text = res.get("text") or (self._say("login.ok") if ok else
                                        self._say("login.failed", why=self.r.why(why, h=ar.LABEL[agent], n=", ".join(res.get("names") or ()))))
-            if ok:
+            if ok and res.get("pending_binding"):
+                self.r.flow["account"] = res["account_name"]
+                self.r._end(agent, "added", None)
+                self.h.agent_notice(text)
+            elif ok:
                 self.r.clear(agent)
                 self.r._health_mark(agent, {"ok": True})
                 self.r._end(agent, "recovered", None)
@@ -406,6 +422,8 @@ class Login:
 
     async def _codex(self) -> dict:
         a = self.active
+        if a.get("bound_live") is not None:
+            return await self.r._codex(bound_live=a["bound_live"])
         flow = ar.CodexFlow()
         try:
             url, code, ttl = await asyncio.to_thread(flow.start)
@@ -447,3 +465,106 @@ class Login:
             return {"ok": False, "why": "main_session", "live": bad,
                     "text": self._say("login.main", why=self.r.why("main_session"))}
         return {"ok": True, "route": "device"}
+
+    async def _codex_slot(self) -> dict:
+        """Isolated device login: guarded current-account renewal or new registration; no replay."""
+        from . import accounts
+        a, root = self.active, self.h.st.root
+        expected = accounts.load(root)["harness"]["codex"]
+        expected_active, expected_switched = expected.get("active"), expected.get("switched")
+        iid, flow, registered = None, None, False
+        closed = False
+        def live():
+            return not closed and self.active is a and not self._stop_now()
+        async def worker(fn, *args):
+            # Cancellation waits for this owned operation to observe its stop flag
+            # before cleanup. A to_thread cancellation alone cannot stop its writer.
+            task = asyncio.create_task(asyncio.to_thread(fn, *args))
+            try:
+                return await asyncio.shield(task)
+            except asyncio.CancelledError:
+                a["cancel"].set()
+                try:
+                    await asyncio.shield(task)
+                except Exception:
+                    pass
+                raise
+        try:
+            if not live():
+                return {"ok": False, "why": "cancelled"}
+            def allocate():
+                nonlocal iid
+                iid, slot = accounts.new_codex_slot(root)
+                return iid, slot
+            iid, slot = await worker(allocate)
+            if not live():
+                return {"ok": False, "why": "cancelled"}
+            flow = ar.CodexFlow(home=slot, bound_live=live)
+            url, code, ttl = await worker(flow.start)
+            if not live():
+                return {"ok": False, "why": "cancelled"}
+            left = max(1, int(a["deadline"] - time.monotonic()))
+            flow.expires = min(flow.expires, max(1, left - 30))
+            a["shown"] = {"agent": "codex", "url": url, "code": code,
+                          "expires_at": int(time.time()) + min(ttl, left)}
+            # Also populate the existing Settings AuthRescue device card. The
+            # chat login sheet ignores unsolicited steps while idle; a push alone
+            # would otherwise hide the code for quota-card and text entry points.
+            self.r.flow.update(stage="device", route="device", url=url, code=code,
+                               expires_at=a["shown"]["expires_at"], round=1, rounds=1)
+            self.r.broadcast()
+            self.h.agent_notice("请在手机「设置 → AI 登录救援」查看本次设备码；登录完成后明确选择账号，再发新消息继续。")
+            await self._send(a["device"], a["r"], {"step": "url", **a["shown"]})
+            if not live():
+                return {"ok": False, "why": "cancelled"}
+            res = await worker(flow.wait, a["cancel"])
+            if not live() or res != "ok":
+                return {"ok": False, "why": res if live() else "cancelled"}
+            self.r.flow.update(stage="verifying")
+            self.r.broadcast()
+            await self._send(a["device"], a["r"], {"step": "verifying"})
+            if not live():
+                return {"ok": False, "why": "cancelled"}
+            hc = await worker(ar.health_check, "codex", ar.HEALTH_TIMEOUT, {"CODEX_HOME": str(slot)})
+            if not live() or not hc.get("ok"):
+                return {"ok": False, "why": "cancelled" if not live() else "verify_codex"}
+            verify_account = getattr(a["bound_live"], "verify_account", None)
+            if verify_account is not None:
+                verified = await verify_account()
+                if not live() or not verified:
+                    return {"ok": False, "why": "cancelled"}
+            # The worker checks immediately before the existing registry commit;
+            # CLI writes stayed in the unregistered slot, never active credentials.
+            def commit():
+                if not live():
+                    raise ar.RescueError("cancelled")
+                nonlocal registered
+                item = accounts.renew_from_isolated_slot(root, iid,
+                    expected_active=expected_active, expected_switched=expected_switched, bound_live=live)
+                if item is not None:
+                    return item
+                item = accounts.commit_codex(root, iid, "Codex " + iid, self.r.lang(), bound_live=live)
+                registered = True
+                return item
+            item = await worker(commit)
+            if not live():
+                return {"ok": False, "why": "cancelled"}
+            if item.get("renewed"):
+                from . import quota_refresh
+                agent = self.h.agent
+                if not agent.owns_harness() or not live():
+                    return {"ok": False, "why": "cancelled"}
+                quota_refresh.requalify_request(self.h)
+                agent.request_restart("auth_rescue")
+                return {"ok": True, "route": "device", "live": "NOT_VERIFIED",
+                        "text": "当前账号续登已保存。请发送新消息继续；旧请求不会重放。权益同步 NOT_VERIFIED。"}
+            return {"ok": True, "pending_binding": True, "account_name": "Codex " + iid, "route": "device",
+                    "text": "设备码登录已保存。请在手机账号设置中明确选择该账号，再发送新消息继续。权益同步 NOT_VERIFIED。"}
+        except (ar.RescueError, accounts.AccountError) as e:
+            return {"ok": False, "why": e.args[0]}
+        finally:
+            closed = True
+            if flow is not None:
+                await asyncio.to_thread(flow.close, restore=False)
+            if iid is not None and not registered:
+                await asyncio.to_thread(accounts.discard_slot, root, "codex", iid)

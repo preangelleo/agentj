@@ -41,6 +41,8 @@ CASES_PATH = pathlib.Path(__file__).resolve().parents[1] / "tests" / "privacy_ca
 PLAZA_CRITERIA_PATH = pathlib.Path(__file__).with_name("plaza_criteria.md")
 PLAZA_CASES_PATH = pathlib.Path(__file__).resolve().parents[1] / "tests" / "plaza_cases.json"
 GATES = {"feedback": (CRITERIA_PATH, "feedback_draft", CASES_PATH), "plaza": (PLAZA_CRITERIA_PATH, "plaza_draft", PLAZA_CASES_PATH)}
+GATES["safety"] = (pathlib.Path(__file__).with_name("privacy_safety_criteria.md"),
+                   "safety_candidate", CASES_PATH.with_name("privacy_safety_cases.json"))
 KEY_ENV = "OPENROUTER_API_KEY"
 UA = "agentj (privacy gate)"
 
@@ -78,7 +80,7 @@ _SECRETS: list[tuple[str, re.Pattern, str]] = [
     ("huggingface_token", _re(r"\bhf_[A-Za-z0-9]{30,}"), R),
     ("telegram_bot_token", _re(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b"), R),
     ("agentjarvis_id", _re(r"\baj[ahijmrst]_[A-Za-z0-9_-]{16,}"), R),   # ajm_ = the plaza admin token (P2)
-    ("agentj_access_code", _re(r"\bAJV-[A-Z0-9]{4}-[A-Z0-9]{4}\b", re.I), R),
+    ("agentj_access_code", _re(r"\b(?:AJ|AJI|AJV|AJTST)-[A-Z0-9]{4}-[A-Z0-9]{4}\b(?!-[A-Z0-9])", re.I), R),
     ("agentj_access_code", _re(r"\bAJUP-[A-Z0-9]{5}(?:-[A-Z0-9]{5}){3}\b", re.I), R),
     # review SS-04: more secret shapes the server scan does not know (layer 1 may be stricter than the server, never looser)
     ("mailgun_key", _re(r"\bkey-[0-9a-f]{32}\b"), R),
@@ -358,7 +360,55 @@ def redact_with_report(text: str, host: str | None = None, user: str | None = No
         if new == text:
             break
         text = new
+    if owner:
+        text = _owner_homes(text, hits)
     return text, hits
+
+
+# #439 (11-03: `/home/olares/.ssh` in a reply was shown and copied as `~/.ssh`; run in a root shell, `~` = /root): owner
+# delivery rewrites only THIS computer's own home, and never inside code (``` / ~~~ fences, `inline`) — what the owner
+# copies is what the Agent wrote. Another user's home stays whole. The strict outward filter (feedback, plaza) is unchanged.
+_CODE = re.compile(r"(?ms)^[ \t]*(`{3,}|~{3,})[^\n]*\n.*?(?:^[ \t]*\1[ \t]*$|\Z)|(`+)(?!`)[^\n]+?(?<!`)\2(?!`)")
+_SSH_PUB = re.compile(r"(?:ssh-(?:ed25519|rsa|dss)|ecdsa-sha2-nistp(?:256|384|521)|sk-(?:ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com)[ \t]+$")
+
+
+def _ssh_public_key(m: re.Match) -> bool:
+    tok = m.group(0)
+    return tok.startswith("AAAA") and _SSH_PUB.search(m.string[max(0, m.start() - 48):m.start()]) is not None
+
+
+def _own_homes() -> set[str]:
+    homes = set()
+    for h in (os.environ.get("HOME"), os.path.expanduser("~")):
+        if h and len(h.rstrip("/\\")) > 1:
+            homes.add(h.rstrip("/\\").replace("\\", "/").lower())
+    return homes
+
+
+def _owner_homes(text: str, hits: collections.Counter) -> str:
+    homes = _own_homes()
+    if not homes:
+        return text
+
+    def home(m: re.Match) -> str:
+        base = m.group(0)[:-len(m.group(1))] if m.group(1) else m.group(0)
+        if base.replace("\\", "/").lower() not in homes:
+            return m.group(0)
+        hits["home_path"] += 1
+        return "~/" if m.group(1) else "~"
+
+    out, at = [], 0
+    for c in _CODE.finditer(text):
+        seg = text[at:c.start()]
+        for pat in _HOME_PATHS:
+            seg = pat.sub(home, seg)
+        out += [seg, c.group(0)]
+        at = c.end()
+    seg = text[at:]
+    for pat in _HOME_PATHS:
+        seg = pat.sub(home, seg)
+    out.append(seg)
+    return "".join(out)
 
 
 _LABELLED = frozenset(("credential_assignment", "authorization_header"))
@@ -414,7 +464,7 @@ def credentials(text: str, entropy: bool = True) -> list[tuple[str, str, int, in
         for m in _MNEMONIC.finditer(seg):
             spans.append((base + m.start(2), base + m.end(2), "mnemonic"))
         for m in _ENTROPIC.finditer(seg) if entropy else ():
-            if _public_chain(m.group(0)) or _pathlike(m) or _namelike(m.group(0)):   # P194 / P424: same as the owner mode — a path / name is no credential
+            if _ssh_public_key(m) or _public_chain(m.group(0)) or _pathlike(m) or _namelike(m.group(0)):   # P194 / P424: same as the owner mode — a path / name is no credential
                 continue
             if _entropic(m.group(0)):
                 spans.append((base + m.start(), base + m.end(), "high_entropy"))
@@ -512,8 +562,9 @@ def _one_pass(text: str, host: str | None, user: str | None, hits: collections.C
     if not owner:
         text = _EMAIL.sub(email, text)
 
-    for pat in _HOME_PATHS:
-        text = sub("home_path", pat, lambda m: "~/" if m.group(1) else "~", text)
+    if not owner:                               # #439: owner text — homes are judged once, outside code (_owner_homes)
+        for pat in _HOME_PATHS:
+            text = sub("home_path", pat, lambda m: "~/" if m.group(1) else "~", text)
 
     for kind, name, ph in (("hostname", host, "<host>"), ("username", user, "<user>")):
         for n in _names(name):
@@ -526,6 +577,8 @@ def _one_pass(text: str, host: str | None, user: str | None, hits: collections.C
 
     def entropic(m):
         if owner and _public_chain(m.group(0)):
+            return m.group(0)
+        if owner and _ssh_public_key(m):    # #439: an OpenSSH public key (`ssh-ed25519 AAAA… comment`) is no credential
             return m.group(0)
         if owner and _pathlike(m):          # P194: a local path to the owner's own channel stays whole — the media scan and
             return m.group(0)               # the owner both need it (named key shapes inside it were already taken above)
@@ -548,7 +601,8 @@ def redact(text: str, host: str | None = None, user: str | None = None, paths: b
 
 
 def owner_text(text: str, *, mask_access_codes: bool = False) -> str:
-    """P194 owner delivery: keep contact details, paths, links and access codes; hide credentials.
+    """P194 owner delivery: keep contact details, paths, links and access codes; hide credentials. #439: code is never
+    path-rewritten, only this computer's own home becomes ~ (outside code), OpenSSH public keys stay whole.
     Terminals set mask_access_codes to also hide transferable codes."""
     if mask_access_codes:
         for kind, pat, repl in _SECRETS:
@@ -616,16 +670,32 @@ def urllib_transport(url: str, headers: dict, body: bytes, timeout: float) -> tu
         return e.code, b""
 
 
+def outbound_check(draft, *, gate, env=None, transport=None):
+    """CLI outbound review uses the Host; explicit transports remain an offline test seam."""
+    if transport is not None or env is not None:
+        return layer2(draft, gate=gate, env=env, transport=transport)
+    from .privacy_host import request
+    return request(draft, gate)
+
+
 def layer2(draft, *, threshold: float = THRESHOLD, env=None, transport=None, timeout: float = 20.0,
-           criteria: dict | None = None, gate: str = "feedback") -> Verdict:
+           criteria: dict | None = None, gate: str = "feedback", _host=False) -> Verdict:
     """Jev on the (already layer-1) draft. Never raises: every failure is Verdict(status="unavailable").
     `gate` = "feedback" (privacy_criteria.md, state key feedback_draft) or "plaza" (plaza_criteria.md, plaza_draft)."""
+    from . import fence
+    if not _host and os.environ.get(fence.FENCED_ENV) == '1':
+        from .privacy_host import request
+        return request(draft, gate)
     crit_path, state_key, _ = GATES[gate]
     transport = transport or urllib_transport
     from . import jev
     # #421: env=None must reach jev.resolve as None so it reads the service env file (fresh_environment), as doctor does.
     route = jev.resolve(env=env)
+    if route.mode == "cheap":
+        return Verdict("unavailable", reason="cheap route requires the resident request budget")
     if route.mode == "off":
+        if _host:
+            return Verdict("unavailable", reason="privacy-check/backend_off")
         return Verdict("ok", reason="Jev off: owner confirmed; local redaction only")
     key = route.key
     if not key:
@@ -696,20 +766,32 @@ def load_cases(path: pathlib.Path = CASES_PATH) -> list[dict]:
     return cases
 
 
-def run_eval(cases: list[dict], *, threshold: float = THRESHOLD, env=None, transport=None, out=None, gate: str = "feedback") -> int:
+def run_eval(cases: list[dict], *, threshold: float = THRESHOLD, env=None, transport=None, out=None, gate: str = "feedback",
+             scorer=None, receipt=None, source="unverified") -> int:
     """Each case: layer 1 (no machine identity, so results do not depend on who runs it), then layer 2 → PASS/FAIL.
     0 = all pass · 1 = some failed · 3 = layer 2 unavailable."""
     passed, out = 0, out or sys.stdout
+    counts = dict(tp=0, fn=0, tn=0, fp=0, unavailable=0)
+    if receipt is not None:
+        receipt.update(source=source, activation="NOT_VERIFIED", counts=counts)
+    score_case = scorer or layer2
     crit = load_criteria(GATES[gate][0])
-    print(f"privacy eval ({gate}) · {MODEL} · criteria {crit['version']} · threshold {threshold} · {len(cases)} case(s)", file=out)
+    print(f"privacy eval ({gate}) · {source} · {'candidate scorer' if scorer else 'configured Jev'} · criteria {crit['version']} · threshold {threshold} · {len(cases)} case(s)", file=out)
     for c in cases:
-        v = layer2(redact_draft(c["draft"]), threshold=threshold, env=env, transport=transport, criteria=crit, gate=gate)
-        if v.status == "unavailable":
+        v = score_case(redact_draft(c["draft"]), threshold=threshold, env=env, transport=transport, criteria=crit, gate=gate)
+        if v.status == "unavailable" or type(v.probability) not in (int, float) or not 0 <= v.probability <= 1:
+            counts["unavailable"] += 1
             print(f"layer 2 unavailable: {v.reason}", file=out)
             return 3
         ok = (v.status == "blocked") == (c["expect"] == "leaky")
         passed += ok
+        positive = c["expect"] == "leaky"
+        counts[("tp" if v.status == "blocked" else "fn") if positive else
+               ("fp" if v.status == "blocked" else "tn")] += 1
         print(f"{'PASS' if ok else 'FAIL'}  {c['id']:<28} expect={c['expect']:<5} p={v.probability:.3f} kind={v.kind}", file=out)
+    if receipt is not None:
+        receipt["recall"] = counts["tp"] / (counts["tp"] + counts["fn"]) if counts["tp"] + counts["fn"] else None
+        receipt["false_positive_rate"] = counts["fp"] / (counts["fp"] + counts["tn"]) if counts["fp"] + counts["tn"] else None
     print(f"{passed}/{len(cases)} passed" + (f" · model {v.model}" if cases and v.model else ""), file=out)
     return 0 if passed == len(cases) else 1
 

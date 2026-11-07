@@ -93,7 +93,7 @@ try {
     // 安全: a short confirm; Esc cancels, nothing sent
     await click(p, '[data-set-level="safe"]');
     await waitFor(p, `!document.getElementById('confirm').hidden`);
-    check(!(await ev(p, `document.getElementById('confirm-yes').classList.contains('aj-btn--danger')`)), 'safe confirm is not red ' + name);
+    check(!(await ev(p, `document.getElementById('confirm-yes').classList.contains('aj-action--danger')`)), 'safe confirm is not red ' + name);
     await key(p, 'Escape'); await sleep(250);
     check(!(await confirmOpen(p)) && fake.st.approvalSets.length === 0 && await pressed(p) === 'standard', 'Esc cancels the switch ' + name);
     check(!(await ev(p, `document.getElementById('settings').hidden`)), 'Esc on the confirm leaves Settings open ' + name);
@@ -118,11 +118,11 @@ try {
     check(await pressed(p) === 'standard', 'refused → level unchanged ' + name);
     await key(p, 'Escape'); await sleep(300);   // close Settings
 
-    // the by:"full" auto toast
+    // #562: even the full-access event is audit-only.
+    await ev(p,`import('./js/ui.js').then(m=>m.toastOff())`);
     await fake.send({ t: 'auto', by: 'full', tool: 'Bash', summary: 'rm -rf build/' });
-    await waitFor(p, `document.getElementById('toast').textContent.includes(${JSON.stringify(L('全放行：已自动批准 Bash rm -rf build/', 'Full access: approved Bash rm -rf build/'))})`);
-    check(true, 'auto by:full toast ' + name);
-    await sleep(150);
+    await sleep(200);
+    check(await ev(p,`!document.getElementById('toast').classList.contains('on')`), 'auto by:full stays silent ' + name);
     if (w === 390) writeFileSync(OUT + `5-auto-toast-${name}.png`, await shoot(p, ''));
 
     // the activity page: auto by level_full / goal_nocard and a parked card read as words

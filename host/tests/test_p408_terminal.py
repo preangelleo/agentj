@@ -194,7 +194,7 @@ class Rig(unittest.TestCase):
 
     async def answer_login(self, card, pw, ph=None, s=None):
         ph, s = ph or self.phone, s or self.s
-        digest = elevate.shown_digest("login", [card["term"]])
+        digest = elevate.shown_digest("login", elevate.shown_fields(card))
         aad = elevate.seal_aad(ph.channel, ph.did, card["id"], "login", card["n"], digest)
         epk, ct = elevate.seal(wire.unb64u(card["epk"]), pw.encode(), aad)
         ts = int(time.time() * 1000)
@@ -528,6 +528,8 @@ class Parser(unittest.TestCase):
         end = next(i for i, n in enumerate(main.body) if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call)
                    and isinstance(n.value.func, ast.Attribute) and n.value.func.attr == "parse_args")
         ns = dict(vars(cli))
+        # main initializes args before this slice; these cases build the regular root parser.
+        ns["args"] = []
         exec(compile(ast.Module(body=main.body[start:end], type_ignores=[]), str(cli.__file__), "exec"), ns)
         return ns["p"]
 

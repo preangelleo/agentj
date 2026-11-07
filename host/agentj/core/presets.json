@@ -1,12 +1,13 @@
 {
   "schema": "agentj.core.presets/v1",
-  "_comment": "P359: Agent J Harness model presets (AGENTJ-CORE-SPEC 2.3). Data only; keys are read by NAME from the process environment, never stored here. order = the empty-computer recommendation order (D9: Volcano Ark first at home and abroad). verified = measured end to end by P359 (reports/qa/p359/); unverified rows follow the vendor docs / ark.json and are measured in C6. edit_mode (omp #1): every preset model uses exact-text replacement (Pi's edit) until the M1 edit benchmark says otherwise. roles (omp #2): main / ceo / sub / tiny; fallback = tried in order on 429 / 5xx / an unavailable model. plan = a Coding Plan key: allowed for background CEOs (D15, Leo 10-16), the settings page carries one line about rate limits.",
-  "order": ["ark", "byteplus", "ark-coding-plan", "agentsrelay"],
+  "_comment": "P359: Agent J Harness model presets (AGENTJ-CORE-SPEC 2.3). Data only; keys are read by NAME from the process environment, never stored here. order = the empty-computer recommendation order (D9: Volcano Ark first at home and abroad). verified = measured end to end by P359 (reports/qa/p359/); unverified rows follow the vendor docs / ark.json and are measured in C6. edit_mode (omp #1): every preset model uses exact-text replacement (Pi's edit) until the M1 edit benchmark says otherwise. roles (omp #2): main / ceo / sub / tiny; fallback = tried in order on 429 / 5xx / an unavailable model. plan = a Coding Plan key: allowed for background CEOs (D15, Leo 10-16), the settings page carries one line about rate limits. stream (P431 C1) = SSE streaming for Chat / Anthropic Messages; anthropic-messages providers: auth = x-api-key | bearer, cache = cache_control breakpoints, max_output = max_tokens per model.",
+  "order": ["ark", "byteplus", "ark-coding-plan", "agentsrelay", "agentsrelay-responses", "openai", "anthropic", "bailian-token-plan", "bailian-coding-plan"],
   "providers": {
     "ark": {
       "label": "火山方舟（按量） · Volcano Ark (pay as you go)",
       "protocol": "openai-chat",
       "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+      "stream": true,
       "key_env": "ARK_API_KEY",
       "verified": false,
       "models": {
@@ -22,6 +23,7 @@
       "label": "BytePlus ModelArk",
       "protocol": "openai-chat",
       "base_url": "https://ark.ap-southeast.bytepluses.com/api/v3",
+      "stream": true,
       "key_env": "BYTEPLUS_API_KEY",
       "verified": false,
       "models": {
@@ -35,6 +37,7 @@
       "label": "火山方舟 Coding Plan · Volcano Ark Coding Plan",
       "protocol": "openai-chat",
       "base_url": "https://ark.cn-beijing.volces.com/api/coding/v3",
+      "stream": true,
       "key_env": "ARK_CODING_PLAN_API_KEY",
       "plan": true,
       "verified": false,
@@ -61,6 +64,146 @@
       },
       "roles": {"main": "gpt-5.4", "ceo": "gpt-5.4", "sub": "gpt-5.4-mini", "tiny": "gpt-5.4-mini"},
       "fallback": ["gpt-6.1-sol"]
+    },
+    "agentsrelay-responses": {
+      "label": "AgentsRelay · Responses",
+      "protocol": "openai-responses",
+      "base_url": "https://agentsrelay.net/v1",
+      "key_env": "AGENTSRELAY_OPENAI_KEY",
+      "verified": false,
+      "models": {
+        "gpt-5.4-mini": {
+          "tier": "small",
+          "context": 272000,
+          "edit_mode": "str_replace"
+        },
+        "gpt-5.4": {
+          "tier": "large",
+          "context": 272000,
+          "edit_mode": "str_replace"
+        },
+        "gpt-6.1-sol": {
+          "tier": "large",
+          "context": 272000,
+          "edit_mode": "str_replace"
+        }
+      },
+      "roles": {
+        "main": "gpt-5.4",
+        "ceo": "gpt-5.4",
+        "sub": "gpt-5.4-mini",
+        "tiny": "gpt-5.4-mini"
+      },
+      "fallback": [
+        "gpt-6.1-sol"
+      ]
+    },
+    "openai": {
+      "label": "OpenAI · Responses",
+      "protocol": "openai-responses",
+      "base_url": "https://api.openai.com/v1",
+      "key_env": "OPENAI_API_KEY",
+      "verified": false,
+      "models": {
+        "gpt-5.4-mini": {
+          "tier": "small",
+          "context": 272000,
+          "edit_mode": "str_replace"
+        },
+        "gpt-5.4": {
+          "tier": "large",
+          "context": 272000,
+          "edit_mode": "str_replace"
+        },
+        "gpt-6.1-sol": {
+          "tier": "large",
+          "context": 272000,
+          "edit_mode": "str_replace"
+        }
+      },
+      "roles": {
+        "main": "gpt-5.4",
+        "ceo": "gpt-5.4",
+        "sub": "gpt-5.4-mini",
+        "tiny": "gpt-5.4-mini"
+      },
+      "fallback": [
+        "gpt-6.1-sol"
+      ]
+    },
+    "anthropic": {
+      "label": "Anthropic · Messages",
+      "protocol": "anthropic-messages",
+      "base_url": "https://api.anthropic.com/v1",
+      "key_env": "ANTHROPIC_API_KEY",
+      "auth": "x-api-key",
+      "cache": true,
+      "stream": true,
+      "verified": false,
+      "models": {
+        "claude-opus-5-5": {"tier": "large", "context": 1000000, "edit_mode": "str_replace", "max_output": 64000},
+        "claude-sonnet-5-5": {"tier": "large", "context": 1000000, "edit_mode": "str_replace", "max_output": 64000},
+        "claude-haiku-5-5": {"tier": "small", "context": 1000000, "edit_mode": "str_replace", "max_output": 32000}
+      },
+      "roles": {"main": "claude-opus-5-5", "ceo": "claude-opus-5-5", "sub": "claude-sonnet-5-5", "tiny": "claude-haiku-5-5"},
+      "fallback": ["claude-sonnet-5-5"]
+    },
+    "bailian-token-plan": {
+      "label": "阿里百炼 Token Plan · Alibaba Bailian Token Plan",
+      "protocol": "anthropic-messages",
+      "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic/v1",
+      "key_env": "BAILIAN_TOKEN_PLAN_API_KEY",
+      "auth": "x-api-key",
+      "stream": true,
+      "plan": true,
+      "verified": false,
+      "models": {
+        "qwen3.8-max": {"tier": "large", "context": 983616, "edit_mode": "str_replace", "max_output": 32000},
+        "qwen3.8-flash": {"tier": "small", "context": 983616, "edit_mode": "str_replace", "max_output": 32000},
+        "glm-5.3": {"tier": "large", "context": 204800, "edit_mode": "str_replace", "max_output": 32000}
+      },
+      "roles": {"main": "qwen3.8-max", "ceo": "qwen3.8-max", "sub": "qwen3.8-flash", "tiny": "qwen3.8-flash"},
+      "fallback": ["glm-5.3"]
+    },
+    "bailian-coding-plan": {
+      "label": "阿里百炼 Token Plan（旧名称兼容） · Alibaba Bailian Token Plan (legacy alias)",
+      "protocol": "anthropic-messages",
+      "base_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic/v1",
+      "key_env": "BAILIAN_TOKEN_PLAN_API_KEY",
+      "auth": "x-api-key",
+      "stream": true,
+      "plan": true,
+      "verified": false,
+      "models": {
+        "qwen3.8-max": {
+          "tier": "large",
+          "context": 983616,
+          "edit_mode": "str_replace",
+          "max_output": 32000
+        },
+        "qwen3.8-flash": {
+          "tier": "small",
+          "context": 983616,
+          "edit_mode": "str_replace",
+          "max_output": 32000
+        },
+        "glm-5.3": {
+          "tier": "large",
+          "context": 204800,
+          "edit_mode": "str_replace",
+          "max_output": 32000
+        }
+      },
+      "roles": {
+        "main": "qwen3.8-max",
+        "ceo": "qwen3.8-max",
+        "sub": "qwen3.8-flash",
+        "tiny": "qwen3.8-flash"
+      },
+      "fallback": [
+        "glm-5.3"
+      ],
+      "alias_of": "bailian-token-plan"
     }
   }
 }

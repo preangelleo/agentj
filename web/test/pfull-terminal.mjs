@@ -283,10 +283,16 @@ export async function runP0269Term({ B, web, fake, out = OUT }) {
       check(ins(n0) === 'ls\r', 'typed keys → term_in "ls\\r" ' + tag + JSON.stringify(H.ins.slice(n0)));
       const seqs = H.ins.map((x) => x.seq);
       check(seqs.every((s, i) => s === i + 1) && H.ins.every((x) => x.id === H.id), 'term_in seq 1, 2, 3 … ' + tag + JSON.stringify(seqs));
-      // Esc / Tab on the keyboard inside the terminal → the program; the page stays open
+      // Esc / Tab on the keyboard inside the terminal → the program, even with a visible UI notice.
+      await evaluate(p, `import('./js/ui.js').then(m=>m.toast('Synthetic terminal notice',10000))`);
       n0 = H.ins.length;
       await key(p, 'Escape'); await key(p, 'Tab'); await sleep(150);
       check(ins(n0) === '\x1b\t' && await evaluate(p, `!${$('term')}.hidden && ${$('term-sheetwrap')}.hidden`), 'Esc / Tab inside the terminal go to the program ' + tag + JSON.stringify(ins(n0)));
+      check(await evaluate(p, `document.getElementById('toast').classList.contains('on')`), 'program Escape does not dismiss the UI notice ' + tag);
+      // End this explicit notice fixture through the normal outside-program Escape before later pointer scenarios.
+      await click('term-title'); await key(p, 'Escape');
+      check(await evaluate(p, `!document.getElementById('toast').classList.contains('on') && !document.getElementById('term').hidden`), 'outside-program Escape dismisses the notice without closing terminal ' + tag);
+      await evaluate(p, `document.querySelector('#term-xt .xterm-helper-textarea').focus()`);
       // vim-style full screen + the masked token
       const rows = (await evaluate(p, `document.querySelector('#term-xt .xterm-rows').children.length`));
       await fake.send({ t: 'term_out', id: H.id, seq: 3, d: VIM(rows) });

@@ -6,6 +6,8 @@ Harness — Claude Code / Codex call these with Bash and get exactly what the `d
     agentj order list · status ID · send ID TEXT · stop ID · resume ID [TEXT] · report ID [--section N] · decisions ID
     agentj order standing --dir P [--add LINE] · reconcile
     agentj core models · core ask TEXT [--dir D] [--model M] [--wait]   (a headless main-Agent turn: no phone, so C14)
+    agentj core mcp list · mcp add NAME (--stdio "CMD ARGS" [--env NAME=VALUE]… | --url URL [--key-env NAME]) [--allow TOOL]…
+                    · mcp remove NAME     (P431 C8: add always asks the owner — a phone card through serve, or the terminal)
 
 P359: only outside the fence (the state directory is invisible inside it; the serve-socket path for fenced main Agents is
 C17). Hidden unless AGENTJ_CORE=1.
@@ -43,6 +45,9 @@ def _wait(o: orders.Order, timeout: float) -> None:
 
 
 def cmd_order(a) -> int:
+    from ..fence import inside
+    if inside():
+        return _fenced_order(a)
     _guard()
     act = a.order_cmd
     try:
@@ -85,6 +90,33 @@ def cmd_order(a) -> int:
         return 3
 
 
+def _fenced_order(a) -> int:
+    """Six semantic actions over the existing host socket; never resolve a state directory."""
+    import secrets
+    from ..elevate import client_request, ENV
+    if not enabled() or a.order_cmd not in ("new", "status", "send", "stop", "resume", "report"):
+        print("Error: unavailable fenced order action", file=sys.stderr)
+        return 3
+    args = {"action": a.order_cmd}
+    if a.order_cmd == "new":
+        args.update(project=a.dir, title=a.title, brief=_brief(a), mode=a.mode,
+                    prompt=Path(a.prompt_file).read_text() if a.prompt_file else (a.prompt or ""))
+    else:
+        args["id"] = a.id
+        if a.order_cmd in ("send", "resume") and a.text:
+            args["text"] = " ".join(a.text)
+        if a.order_cmd == "report" and a.section:
+            args["section"] = a.section
+    path = os.environ.get(ENV)
+    if not path:
+        print("Error: host socket unavailable", file=sys.stderr)
+        return 3
+    res = client_request(None, {"t": "core_order", "args": args, "nonce": secrets.token_hex(16)},
+                         timeout=900, path=path)
+    print(json.dumps(res, ensure_ascii=False))
+    return 0 if isinstance(res, dict) and res.get("result") == "ok" else 3
+
+
 async def ask_once(text: str, root: str, model: str | None, wait: bool, environ=None, call=None, st_root=None,
                    out=print) -> dict:
     """A headless main-Agent turn (no serve, no phone: the gate has no approver → C14). With wait: every order this turn
@@ -118,7 +150,7 @@ async def ask_once(text: str, root: str, model: str | None, wait: bool, environ=
     sess = Session(sroot / "core" / "sessions" / f"cli-{int(time.time())}.jsonl")
     subs = SubAgents(preset=preset, root=root, gate=gate, sessions_dir=sess.path.parent, environ=env, call=call,
                      make_toolbox=lambda: Toolbox(root, st=st, fenced=True, environ=env))
-    lp = Loop(preset=preset, system=prompt.system("main", root, preset.tier), specs=prompt.specs("main", preset.tier),
+    lp = Loop(preset=preset, system=prompt.system("main", root, preset.tier, edit_mode=preset.edit_mode), specs=prompt.specs("main", preset.tier, preset.edit_mode),
               gate=gate, toolbox=tb, session=sess, environ=env, call=call, extra={"task": subs, "dispatch": dispatch})
     try:
         r = await lp.run(text)
@@ -137,7 +169,76 @@ async def ask_once(text: str, root: str, model: str | None, wait: bool, environ=
         tb.close()
 
 
+def _mcp_spec(a) -> dict:
+    import shlex
+    allow = list(a.allow or [])
+    if a.url:
+        spec = {"type": "http", "url": a.url, "allow": allow}
+        if a.key_env:
+            spec["key_env"] = a.key_env
+        return spec
+    env = {}
+    for kv in a.env or []:
+        k, sep, v = kv.partition("=")
+        if not sep:
+            raise SystemExit(f"--env wants NAME=VALUE, got {kv!r}")
+        env[k] = v
+    return {"type": "stdio", "command": shlex.split(a.stdio or ""), "env": env, "allow": allow}
+
+
+def cmd_mcp(a) -> int:
+    """Through serve (elevate.sock — also inside the fence): `add` becomes the owner's phone card. Without serve, outside the
+    fence only: the terminal asks the owner (a tty is required: an Agent's non-interactive shell cannot answer)."""
+    if not enabled():
+        sys.exit(f"{LABEL} is off: set AGENTJ_CORE=1 in the service environment (P359 preview). / 未开启。")
+    from . import mcp
+    from ..elevate import client_request
+    from ..fence import inside
+    from ..names import elevate_sock
+    from ..state import State
+    st = State()
+    req = {"t": "core_mcp", "op": a.mcp_cmd}
+    if a.mcp_cmd in ("add", "remove"):
+        req["name"] = a.name
+    if a.mcp_cmd == "add":
+        req["spec"] = _mcp_spec(a)
+    res = client_request(st, req, timeout=900, path=elevate_sock(st))
+    if res.get("result") == "unavailable":
+        if inside():
+            print("✗ Agent J is not running (agentj service status). / Agent J 没在运行。", file=sys.stderr)
+            return 3
+        try:
+            if a.mcp_cmd == "list":
+                servers = mcp.load(st.root)
+                print("\n".join(mcp.describe(n, s) for n, s in sorted(servers.items())) or "(none)")
+                return 0
+            if a.mcp_cmd == "remove":
+                print("ok" if mcp.remove(st.root, a.name) else "none")
+                return 0
+            why = mcp.problems(req["spec"])
+            if why:
+                print("✗ " + "; ".join(why), file=sys.stderr)
+                return 3
+            if not sys.stdin.isatty():
+                print("✗ serve is not running and there is no terminal to ask the owner: not added. / 没有确认，未添加。",
+                      file=sys.stderr)
+                return 3
+            if input(f"Add MCP server {mcp.describe(a.name, req['spec'])}? [y/N] ").strip().lower() not in ("y", "yes"):
+                print("not added")
+                return 1
+            mcp.add(st.root, a.name, req["spec"])
+            print("ok")
+            return 0
+        except mcp.McpError as e:
+            print(f"✗ {e}", file=sys.stderr)
+            return 3
+    print(res.get("text") or res.get("result") + (f" ({res['detail']})" if res.get("detail") else ""))
+    return 0 if res.get("result") in ("ok", "none") else 3
+
+
 def cmd_core(a) -> int:
+    if a.core_cmd == "mcp":
+        return cmd_mcp(a)
     _guard()
     if a.core_cmd == "models":
         from .presets import listing
@@ -187,4 +288,17 @@ def add_parser(sub) -> None:
     k.add_argument("--dir")
     k.add_argument("--model")
     k.add_argument("--wait", action="store_true")
+    mp = cs.add_parser("mcp")
+    ms = mp.add_subparsers(dest="mcp_cmd", required=True)
+    ms.add_parser("list")
+    ma = ms.add_parser("add")
+    ma.add_argument("name")
+    src = ma.add_mutually_exclusive_group(required=True)
+    src.add_argument("--stdio", metavar="CMD")
+    src.add_argument("--url")
+    ma.add_argument("--env", action="append", metavar="NAME=VALUE")
+    ma.add_argument("--key-env", metavar="NAME")
+    ma.add_argument("--allow", action="append", metavar="TOOL")
+    mr = ms.add_parser("remove")
+    mr.add_argument("name")
     c.set_defaults(fn=lambda a: sys.exit(cmd_core(a)))

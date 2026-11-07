@@ -1,6 +1,7 @@
 // P273: static guards — no stylesheet the phone app ships draws a scrollbar (Leo 10-14 19:10), the reader is laid out as
 // header / words / footer on the dialogs' Noir, and its footer clones the reply card's six icons in the card's order.
 import test from 'node:test';
+import vm from 'node:vm';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -55,7 +56,7 @@ test('reader: fixed header + scrolling words + fixed footer, on --dlg-bg', () =>
   assert.match(s, /\.rdsc\{flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;/);
 });
 
-test('reader footer = the reply card icons, card order, 回复 last; copy shows feedback in the reader, reply leaves', () => {
+test('reader footer = the reply card icons, card order, 回复 last; copy exits only on success, reply leaves', () => {
   const js = readFileSync(join(PUB, 'js/relay.js'), 'utf8');
   const html = readFileSync(join(PUB, 'index.html'), 'utf8');
   const bar = html.slice(html.indexOf('id="rmbar"'), html.indexOf('id="rmMore"'));
@@ -66,9 +67,30 @@ test('reader footer = the reply card icons, card order, 回复 last; copy shows 
   assert.deepEqual(acts.map((a) => a[0]), card, 'same order as the card');
   assert.equal(acts.at(-1)[1], 'rdReplyBtn');
   const body = (name) => js.slice(js.indexOf('function ' + name + '('), js.indexOf('\n}', js.indexOf('function ' + name + '(')));
-  assert.match(body('rdCopy'), /copyOut.*rdCopyBtn/, 'copy feedback belongs to the visible reader button');
-  assert.doesNotMatch(body('rdCopy'), /closeReader/, 'copy keeps its feedback visible');
+  assert.match(body('rdCopy'), /await copyOut/, 'wait for the clipboard result');
+  assert.match(body('rdCopy'), /if \(ok && rdOpen\(\) && rdAt === at\) closeReader\(\)/, 'only a successful copy of this same reader exits');
   assert.match(body('rdReply'), /closeReader\(\);\s*startReply\(p\)/, 'leave then quote + focus');
   for (const [id, fn] of [['rdSpeakBtn', 'speakTap'], ['rdFwdBtn', 'forwardTap'], ['rdMailBtn', 'mailTap']])
     assert.match(js, new RegExp(`el\\("${id}"\\)\\.addEventListener\\("click", ${fn}\\)`), id + ' stays in the reader');
+});
+
+// Exercise the asynchronous clipboard boundary: a result belongs to one reader instance.
+test('reader copy closes only its successful current instance', async () => {
+  const js = readFileSync(join(PUB, 'js/relay.js'), 'utf8');
+  const source = js.match(/async function rdCopy\(\)\{[\s\S]*?\n\}/)[0];
+  for (const scenario of ['success','failure','different-reader','already-closed','file']) {
+    let settle, closes=0, open=true;
+    const current={key:'first',...(scenario==='file'?{file:{f:{text:'file body'}}}:{})};
+    const writes=[];
+    const ctx={rdAt:current,currentPage:()=>({reply:'reply body'}),t:k=>k,el:id=>id,
+      rdOpen:()=>open,closeReader:()=>{closes++;open=false;},
+      copyOut:(text,label,button)=>{writes.push({text,button});return new Promise(resolve=>settle=resolve);}};
+    vm.createContext(ctx);vm.runInContext(source,ctx);
+    const pending=ctx.rdCopy();assert.equal(closes,0,'do not leave before the write settles');
+    if(scenario==='different-reader')ctx.rdAt={key:'second'};
+    if(scenario==='already-closed')open=false;
+    settle(scenario!=='failure');await pending;
+    assert.equal(closes,['success','file'].includes(scenario)?1:0,scenario);
+    assert.deepEqual(writes,[{text:scenario==='file'?'file body':'reply body',button:scenario==='file'?'rdfCopy':'rdCopyBtn'}]);
+  }
 });

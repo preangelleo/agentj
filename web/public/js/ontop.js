@@ -31,11 +31,11 @@ export const topCard = () => openCards().at(-1) || null;
 
 function primary(node) {
   if (node.id === 'sheet') {
-    for (const id of ['apprAllow', 'askSend']) { const b = $(id); if (shown(b) && !b.disabled) return b; }
+    for (const id of ['doubt541c', 'apprAllow', 'askSend']) { const b = $(id); if (shown(b) && !b.disabled) return b; }
     for (const box of ['qs', 'frAsk', 'apprBtns']) { const b = $(box)?.querySelector(FOCUSABLE); if (b && shown(b)) return b; }
     return $('sheetClose');
   }
-  const pick = node.querySelector('[autofocus],.aj-btn--primary:not([hidden]):not([disabled]),.aj-btn--danger:not([hidden]):not([disabled])');
+  const pick = node.querySelector('[autofocus],.aj-action--primary:not([hidden]):not([disabled]),.aj-action--danger:not([hidden]):not([disabled])');
   return shown(pick) ? pick : [...node.querySelectorAll(FOCUSABLE)].find(shown) || null;
 }
 function parts(node) {

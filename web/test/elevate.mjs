@@ -244,7 +244,7 @@ try {
       assert.equal(answers().length, 0, 'Enter on an empty / blank field sends nothing (no false)');
       // layout: 保存 alone on its row; 不提供 below it, not side by side
       const geo = await ev(p, `(() => { const a = document.getElementById('elev-allow').getBoundingClientRect(), d = document.getElementById('elev-deny').getBoundingClientRect();
-        return { gap: d.top - a.bottom, sameRow: Math.abs(a.top - d.top) < 4, quiet: document.getElementById('elev-deny').classList.contains('aj-btn--quiet') }; })()`);
+        return { gap: d.top - a.bottom, sameRow: Math.abs(a.top - d.top) < 4, quiet: document.getElementById('elev-deny').classList.contains('aj-action--quiet') }; })()`);
       assert.ok(!geo.sameRow && geo.gap >= 12 && geo.quiet, JSON.stringify(geo));
       writeFileSync(OUT + 'p73-secret-card-zh-phone.png', await shoot(p, 'unused'));
       await ev(p, `document.getElementById('elev-deny').click()`);

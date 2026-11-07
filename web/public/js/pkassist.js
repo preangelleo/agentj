@@ -29,7 +29,7 @@ export function withBio(key, os = textOs()) {
 
 // ---------------------------------------------------------------- painters
 function button(cls, key, fn) {
-  const b = mk('button', 'pkassist__btn' + (cls ? ' ' + cls : ''), t(key));
+  const b = mk('button', 'pkassist__btn' + (cls ? ' ' + cls : ''), t(key), 'aj-passkey');
   b.type = 'button';
   b.dataset.k = key;
   b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
@@ -157,8 +157,8 @@ export function paintPreauth(row, list, items, revoke) {
     const txt = mk('div', 'preauth__txt');
     txt.append(mk('b', '', preauthName(x.action)));
     const when = x.at ? new Date(x.at * 1000).toLocaleDateString(lang() === 'en' ? 'en-GB' : 'zh-CN') : '';
-    txt.append(mk('small', '', [x.name || x.device || t('p539.pre.thisRemote'), when && t('p539.pre.since', { d: when })].filter(Boolean).join(' · ')));
-    const b = mk('button', 'aj-btn aj-btn--sm', t('p539.pre.revoke'));
+    txt.append(mk('small', '', [x.name || x.device || t('p539.pre.thisRemote'), when && t('p539.pre.since', { d: when })].filter(Boolean).join(' · '), 'aj-passkey'));
+    const b = mk('button', 'aj-action aj-action--sm', t('p539.pre.revoke'), 'aj-action', 'dialog');
     b.type = 'button';
     b.addEventListener('click', () => revoke(x));   // {action, device}: only this remote's grant
     li.append(txt, b);

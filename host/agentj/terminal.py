@@ -198,6 +198,9 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             await self.h.send_app(s, {"t": "ctl_res", "r": r, "action": action, "ok": ok, **kw})
 
     def _refusal(self, s, enable: bool = False, resume=None):
+        a = getattr(self.h, "assist", None)
+        if a is not None and getattr(a, "terminal", None) is not None and a.terminal.desk is not None:
+            return "busy", {}
         if self.h.sessions.get(s.cid) is not s or s.state != "ready" or not self.st.is_allowed(s.pub):
             return "device_not_allowed", {}
         if not self.supported():
@@ -326,6 +329,9 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
                 from .elevate import wipe
                 wipe(prf)
             return await self._resume(s, r, pend)
+        from .approval_special import phone_origin
+        pend['approval_origin'] = phone_origin(self.h, s,
+            'terminal_enable' if mode == 'enable' else 'terminal_login', mode)
         self.opening = s.device
         self.h._bg(self._open(s, r, pend, prf, pk), "term_open")
         with contextlib.suppress(Exception):
@@ -426,13 +432,22 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         loop, keep, salt = asyncio.get_running_loop(), {}, pend["salt"]
         sudo, channel, device, st = self.sudo_path(), self.h.channel, s.device, self.st
 
+        login_guard = getattr(self, "login_guard", None)
         def sink(value: bytearray) -> dict:
             from .elevate import run_sudo
+            if login_guard is not None and not login_guard():
+                return {"result": "cancelled"}
             if not sudo:
                 return {"result": "failed", "why": "no_sudo"}
             if store.locked_for(st, device):
                 return {"result": "locked", "secs": store.locked_for(st, device)}
             res = run_sudo(["true"], value, "/", 30, sudo)
+            # Verification can wait outside the event loop while a scoped
+            # assistance grant is revoked/replaced. Recheck BEFORE lock notes,
+            # cached-password persistence or a session-memory copy. Owner Desk
+            # has no such guard and keeps its existing behavior.
+            if login_guard is not None and not login_guard():
+                return {"result": "cancelled"}
             if res.get("result") == "bad_password":
                 lock = store.note(st, device, False)
                 loop.call_soon_threadsafe(self._notice, "网页终端：Agent J 主机登录密码输错了一次" + (f"，已锁定 {lock // 60 + 1} 分钟" if lock else ""),
@@ -443,13 +458,17 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             store.note(st, device, True)
             if enable:
                 store.add_owner_entry(st, device, store.is_web(st, device))
+            if login_guard is not None and not login_guard():
+                return {"result": "cancelled"}
             if mode in ("prf", "local"):
                 store.save(st, channel, device, pk["id"], mode, salt, value, prf if mode == "prf" else None)
             else:
                 keep["pw"] = bytearray(value)
             return {"result": "saved", "receipt": {"name": "login", "dest": "terminal", "length": 0, "verify": "ok"}}
         card = {"kind": "login", "term": r, "only": device, "sink": sink, "cwd": "/"}
-        res = await self.h.elevate.request(card)
+        from .approval_review import origin_scope
+        with origin_scope(pend.get('approval_origin') or {}):
+            res = await self.h.elevate.request(card)
         if res.get("result") == "saved" and "pw" in keep:
             res["_pw"] = keep.pop("pw")
         for v in keep.values():

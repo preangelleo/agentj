@@ -76,6 +76,12 @@ class Rig:
         self.st, self.sent = _state(str(root)), []
         self.host = _host(self.st, self.sent)
         self.host.agent = types.SimpleNamespace(kind="claude", cur_send=None, native_source={"kind":"terminal","role":"owner"})
+        # A source-bound review requires an actual Host-held owner turn, not
+        # merely a mutable agent.native_source dictionary.
+        from agentj import approval_review, provenance
+        turn = self.host.hist.add({'k':'terminal', 'text':'Inspect synthetic system fixture', 'name':'Synthetic owner'}, '', 'open')
+        approval_review.remember(self.host, turn, provenance.terminal())
+        self.host.desktop_turn = turn['id']
         self.ph = enroll(self.st, Phone(self.st))
         self.session = _ready(self.host, self.ph)
         self.host.elevate.sudo = str(fake_sudo(root, PW))

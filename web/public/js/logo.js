@@ -50,11 +50,11 @@ export function paintHeader() {
   if(orb.dataset.v!==state)orb.dataset.v=state;
   if(orb.classList.contains('father-dance')!==!!dancing)orb.classList.toggle('father-dance',!!dancing);
   const sheet=`url("${sheets[state]}")`;
-  if(orb.style.getPropertyValue('--father-sheet')!==sheet)orb.style.setProperty('--father-sheet',sheet);
+  if(orb.style.getPropertyValue('--aj-header-father-sheet')!==sheet)orb.style.setProperty('--aj-header-father-sheet',sheet);
 }
 export function initHeaderLogo() {
   const obs=new MutationObserver(()=>paintHeader());
-  obs.observe(document.body,{attributes:true,attributeFilter:['data-goal-active','data-view','data-five-page','data-conn','data-status','data-kind','data-agent','style','class']});
+  obs.observe(document.body,{attributes:true,attributeFilter:['data-approval-review-page','data-goal-active','data-view','data-five-page','data-conn','data-status','data-kind','data-agent','style','class']});
   const settings=document.getElementById('settings');
   if(settings)obs.observe(settings,{attributes:true,attributeFilter:['hidden']});
   const menuReady=()=>{const menu=document.getElementById('five-menu');if(!menu)return false;

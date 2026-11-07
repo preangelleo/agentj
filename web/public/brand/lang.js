@@ -132,7 +132,7 @@
           sep.className = "aj-lang__sep"; sep.setAttribute("aria-hidden", "true"); sep.textContent = "/";
           node.appendChild(sep);
         }
-        var b = doc.createElement("button");
+        var b = doc.createElement("button"); b.setAttribute("data-aj-owner", "aj-language");
         b.type = "button";
         b.setAttribute("data-aj-lang", l);
         b.setAttribute("lang", LANGS[l]);
@@ -197,7 +197,7 @@
     if (!node.getAttribute("data-aj-ready")) {
       while (node.firstChild) node.removeChild(node.firstChild);
       var id = "aj-lang-menu-" + (++menuSeq);
-      var btn = doc.createElement("button");
+      var btn = doc.createElement("button"); btn.setAttribute("data-aj-owner", "aj-language");
       btn.type = "button";
       btn.className = "aj-lang__button";
       btn.setAttribute("aria-haspopup", "menu");
@@ -213,7 +213,7 @@
       menu.setAttribute("aria-label", MENU_LABEL);
       menu.hidden = true;
       api.langs.forEach(function (l) {
-        var it = doc.createElement("button");
+        var it = doc.createElement("button"); it.setAttribute("data-aj-owner", "aj-language");
         it.type = "button";
         it.className = "aj-lang__item";
         it.setAttribute("role", "menuitemradio");

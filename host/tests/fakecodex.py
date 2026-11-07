@@ -20,6 +20,10 @@ does (the text of the message):
     AUTOCOMPACT [legacy]   Codex's own compaction inside the turn (contextCompaction item, meter → 5000; `legacy` adds
                            thread/compacted too), then "ECHO: …"     (P59)
     SAYSEQ: a ;; b         one agentMessage per piece; all but the last phase "commentary" (P351)
+    HANG                   0.26.10 #484: the turn starts and never ends — turn/interrupt is acknowledged and ignored (only
+                           ending the process ends it)
+    NOACK                  #484: turn/start is never answered and no turn starts (an app-server that cannot take a turn)
+    QUOTA                  #484: the turn fails at once with Codex's used-up usage limit (codexErrorInfo usageLimitExceeded)
     anything else          one agentMessage "ECHO: <text>"
 Every client message and every answer to a server request is logged to FAKE_CX_LOG (JSONL). FAKE_CX_POLICY = the human's
 approval_policy for config/read (JSON); FAKE_CX_THREADS = thread ids that "already exist" (resume); FAKE_CX_SANDBOX = the
@@ -205,7 +209,7 @@ def run_turn(tid, turn, text):
     STATE["interrupt"] = False
     STATE["turn"], STATE["active"] = turn, True
     note("turn/started", {"threadId": tid, "turn": {"id": turn, "status": "inProgress"}})
-    status = "completed"
+    status, error = "completed", None
     if ("（Agent J：" in text or "(Agent J: " in text) and not text.startswith("[agentj:"):
         text = p57_notes(text, lambda ln: log(method="HOST_NOTE", path="", host_note=ln))
     try:
@@ -238,6 +242,12 @@ def run_turn(tid, turn, text):
             r = server_request("mcpServer/elicitation/request", {"threadId": tid, "turnId": turn, "serverName": "x",
                                                                  "message": "fill this", "requestedSchema": {}})
             say(tid, turn, "FORM: " + json.dumps(r, sort_keys=True))
+        elif text.split("\n")[0].strip() == "HANG":                       # #484: never ends, ignores turn/interrupt
+            while True:
+                time.sleep(0.2)
+        elif text.split("\n")[0].strip() == "QUOTA":                      # #484: the usage limit is used up
+            status, error = "failed", {"message": "You've hit your usage limit. Try again at 9:00 PM.",
+                                       "codexErrorInfo": "usageLimitExceeded"}
         elif text.startswith("SLEEP: "):
             t0 = time.time()
             while time.time() - t0 < float(text[7:]):
@@ -272,7 +282,8 @@ def run_turn(tid, turn, text):
     finally:
         with LOCK:
             STATE["active"] = False
-        note("turn/completed", {"threadId": tid, "turn": {"id": turn, "status": status, "items": []}})
+        note("turn/completed", {"threadId": tid, "turn": {"id": turn, "status": status, "items": [],
+                                                         **({"error": error} if error else {})}})
 
 
 SANDBOX = {"read-only": {"type": "readOnly", "networkAccess": False},
@@ -332,6 +343,8 @@ def handle(m):
             THREADS[tid]["model"] = p["model"]
         turn = str(uuid.uuid4())
         text = "".join(x.get("text", "") for x in p.get("input") or [])
+        if text.split("\n")[0].strip() == "NOACK":     # #484: never answered, nothing starts
+            return {"__noreply": True}
         threading.Thread(target=run_turn, args=(tid, turn, text), daemon=True).start()
         return {"turn": {"id": turn, "status": "inProgress", "items": []}}
     if method == "turn/steer" and steer_mode():

@@ -104,7 +104,7 @@ try {
       if (!BEFORE){
         assert.ok(c1.fold && !c1.q && c1.more === 0, tag + ' #35 folded: one row, the five rows hidden');
         assert.ok(Math.abs(c1.foldH - single.qH) <= 1, `${tag} #35 folded row ${c1.foldH} = one quote row ${single.qH}`);
-        assert.match(c1.foldText, lang === 'zh' ? /引用 5 段.*第 1 条回复.*\+4/ : /5 quotes.*\+4/);
+        assert.match(c1.foldText, lang === 'zh' ? /引用 5 条.*第 1 条回复.*\+4/ : /5 quotes.*\+4/);
         await evaluate(p, `document.getElementById('omQuoteFold').click()`); await sleep(150);
         const c2 = await evaluate(p, omq); r.fold.open = c2;
         assert.ok(c2.q && c2.more === 4 && c2.expanded === 'true', tag + ' #35 a tap shows all five');

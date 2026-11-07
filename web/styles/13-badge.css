@@ -1,0 +1,13 @@
+/* #577 Web-owned badge; source order is a compatibility contract. */
+/* ===== badges + status dot ===== */
+.aj-badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: var(--r-pill);
+  border: 1px solid var(--border); font-size: var(--fs-xs); font-weight: 500; line-height: 1.6; color: var(--text-muted);
+  white-space: nowrap; vertical-align: middle; }
+.aj-badge--beta { border-color: var(--accent); color: var(--text); }
+.aj-badge--beta::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.aj-badge--warm { background: var(--c-mellow-marrow); border-color: transparent; color: var(--c-sooty); }
+.aj-badge--info { background: var(--c-peek-a-blue); border-color: transparent; color: var(--c-sooty); }
+.aj-badge--note { background: var(--c-salt); border-color: transparent; color: var(--c-sooty); }
+.aj-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
+.aj-dot--off { background: var(--c-argent); }
+.aj-dot--warn { background: var(--c-peachy-feeling); }

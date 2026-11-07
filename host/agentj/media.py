@@ -279,6 +279,15 @@ def _dot_part(parts: list[str]) -> bool:
     return False
 
 
+PACKAGE = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))   # #481: the installed agentj package
+INTERNAL_NAME = {"zh": "这份资料", "en": "This file"}   # #481: never an internal file name on the page
+
+
+def owner_name(name: str, why: str, lang: str = "zh") -> str:
+    """#481: a skipped reference into Agent J's own folders shows a plain phrase, never its internal file name."""
+    return INTERNAL_NAME["en" if lang == "en" else "zh"] if why == "private" else name
+
+
 def _inside(path: str, root: str) -> bool:
     return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
 
@@ -286,9 +295,16 @@ def _inside(path: str, root: str) -> bool:
 def open_rel(root: str, parts: list[str]) -> int:
     """Open root-relative directories/file with O_NOFOLLOW and O_NONBLOCK; Gone for links or missing components."""
     cloexec = getattr(os, "O_CLOEXEC", 0)
+    d = os.open(os.sep, os.O_RDONLY | os.O_DIRECTORY | cloexec)
     try:
-        d = os.open(root, os.O_RDONLY | os.O_DIRECTORY | cloexec)
+        for name in os.path.abspath(root).split(os.sep):
+            if not name:
+                continue
+            nd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | cloexec, dir_fd=d)
+            os.close(d)
+            d = nd
     except OSError:
+        os.close(d)
         raise Gone("root") from None
     try:
         for name in parts[:-1]:
@@ -404,8 +420,10 @@ def _at(media, why: str) -> dict:
 
 # ------------------------------------------------------------------ the table and the scan
 class Media:
-    def __init__(self, st, workdir: str | None, clock=time.time, cwd=None):
+    def __init__(self, st, workdir: str | None, clock=time.time, cwd=None, generated=None):
         self.st, self.workdir, self.clock = st, workdir, clock
+        self.lang = lambda: "zh"
+        self.generated = generated    # #558: host-bound current native session image folder, never reply text
         self.cwd = cwd                # P424 #64: () → the session's current folder (the Agent's shell may `cd`), or None
         self._tl = threading.local()  # P424 #142: this thread's last secret hit position (`last_where`)
         self.path = st.root / "media.json"
@@ -468,7 +486,29 @@ class Media:
             return None
         return r
 
-    def check(self, ref: Ref, owner: bool = False, root: str | None = None, mask: bool = False) -> tuple[dict | None, str | None]:
+    def generated_root(self) -> str | None:
+        """#558: only the host's current native session folder; no links or credential ancestors.
+        The callback is supplied by serve, never by a message or a model-selected path.
+        A per-account CODEX_HOME may be in state; only this exact image-only child is lent.
+        """
+        if not callable(self.generated):
+            return None
+        try:
+            root = self.generated()
+            if not isinstance(root, str) or not os.path.isabs(root) or "\x00" in root:
+                return None
+            root = os.path.normpath(root)
+            if os.path.realpath(root) != root or not os.path.isdir(root) or os.stat(root).st_uid != os.getuid():
+                return None
+            if any(x.lower() in KEY_DIRS for x in root.split(os.sep)):
+                return None
+            if root == os.sep or _inside(os.path.realpath(os.path.expanduser("~")), root):
+                return None
+            return root
+        except (OSError, ValueError, TypeError):
+            return None
+
+    def check(self, ref: Ref, owner: bool = False, root: str | None = None, mask: bool = False, large: bool = False) -> tuple[dict | None, str | None]:
         """Reference → (record, why), or (None, None) when implicit/nonfile.
     Owner roots include validated current; others use configured root. Credential files keep pickup cards.
     mask=True emits only a private masked copy; transient values leave via last_values, never the record."""
@@ -484,6 +524,10 @@ class Media:
             return None, None
         here = self.current() if owner and not explicit_root else None
         roots = [(root, rroot)] + ([(here, here)] if here and here != rroot else [])
+        generated = self.generated_root() if owner and not explicit_root else None
+        drawn_hit = (generated, generated) if generated and generated not in (rroot, here) else None
+        if drawn_hit:
+            roots.append(drawn_hit)
         p = ref.path
         if p == "~" or p.startswith("~/"):
             p = os.path.expanduser(p)
@@ -499,13 +543,19 @@ class Media:
         if not os.path.lexists(raw):
             return None, (None if quiet else "gone")
         real = os.path.realpath(raw)
+        # A path through the generated tree cannot borrow even an otherwise allowed target via a link.
+        if generated and _inside(raw, generated) and raw != real:
+            return None, "gone"
+        self._tl.generated = generated
         state = os.path.realpath(str(self.st.root))
-        if _inside(real, state):
+        hit = next((x for x in roots if _inside(real, x[1])), None)
+        if _inside(real, PACKAGE) or (_inside(real, state) and (drawn_hit is None or hit is not drawn_hit)):
             return None, "private"
-        hit = next(((g, r) for g, r in roots if _inside(real, r)), None)
         if hit is None:
             return None, (None if quiet else "outside")
         root, rroot = hit
+        if hit is drawn_hit and KINDS.get(os.path.splitext(real)[1].lower(), (None,))[0] != "image":
+            return None, (None if quiet else "outside")
         raw_parts = os.path.relpath(raw, os.path.normpath(root)).split(os.sep) if _inside(raw, os.path.normpath(root)) \
             else raw.split(os.sep)
         parts = os.path.relpath(real, rroot).split(os.sep)
@@ -514,6 +564,8 @@ class Media:
         keyish = _denied(parts, KEY_DIRS) or _denied(raw_parts, KEY_DIRS)
         if not owner and (keyish or _inner(parts) or _inner(raw_parts)):
             return None, ("secret" if keyish else "private")
+        if hit is drawn_hit and (keyish or _inner(parts) or _inner(raw_parts)):
+            return None, "private"
         if keyish and quiet:
             return None, None             # owner: the Agent naming `.env` in passing is not sending it
         ext = os.path.splitext(parts[-1])[1].lower()
@@ -537,7 +589,7 @@ class Media:
                 return None, (None if quiet else "type")
             if not _sniff(mime, ext, os.pread(fd, 8192, 0)):
                 return None, "type"
-            if s.st_size > CAPS[kind]:
+            if s.st_size > CAPS[kind] and not large:
                 return {"name": parts[-1], "bytes": s.st_size}, "too_big"
             if s.st_size == 0:
                 return None, None
@@ -567,7 +619,10 @@ class Media:
             self._checked[version] = sha
             while len(self._checked) > KEEP_N:
                 self._checked.pop(next(iter(self._checked)))
-        return self._rec(parts, mime, kind, s, sha, ref, rroot), None
+        try:
+            return self._rec(parts, mime, kind, s, sha, ref, rroot), None
+        except Gone:
+            return None, "gone"
 
     def _mask(self, fd: int, size: int, sha: str, rec: dict, html: bool) -> dict | None:
         """Store a masked UTF-8 copy of the scanned bytes by its hash; None preserves the key_content refusal."""
@@ -738,11 +793,18 @@ class Media:
         """P424 #142: {"line", "hint"} of the secret this thread's last `check` refused (a masked two-character hint), or None."""
         return getattr(self._tl, "where", None)
 
-    @staticmethod
-    def _rec(parts, mime, kind, s, sha, ref, rroot) -> dict:
-        return {"name": parts[-1][:NAME_MAX], "mime": mime, "kind": kind, "bytes": s.st_size, "sha256": sha,
+    def _rec(self, parts, mime, kind, s, sha, ref, rroot) -> dict:
+        rec = {"name": parts[-1][:NAME_MAX], "mime": mime, "kind": kind, "bytes": s.st_size, "sha256": sha,
                 "ref": ref.text, "root": rroot, "parts": parts, "dev": s.st_dev, "ino": s.st_ino,
-                "mtime": s.st_mtime_ns}
+                "mtime": s.st_mtime_ns, "ctime": s.st_ctime_ns}
+        if rroot == getattr(self._tl, "generated", None):
+            rec["generated"] = True
+            self._persist(rec)  # exact checked image snapshot, never a live capability to an old session/account
+            if not rec.get("blob"):
+                raise Gone("store")
+            if self.generated_root() != rroot:
+                raise Gone("session")
+        return rec
 
     def strict(self, rec: dict) -> str | None:
         """Recheck an owner record for outsider delivery: strict secrets and private folders still refuse."""
@@ -781,8 +843,8 @@ class Media:
                 rec, why = None, None
             values = self.last_values()
             if why:
-                skip = {"name": name, "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {}),
-                        **_at(self, why)}
+                skip = {"name": owner_name(name, why, self.lang()), "why": why,
+                        **({"bytes": rec["bytes"]} if rec and why == "too_big" else {}), **_at(self, why)}
                 skips.append(skip)
                 if why in ("key_file", "key_content") and rec and "sha256" in rec and ref.explicit:
                     keys.append((skip, rec))
@@ -839,7 +901,7 @@ class Media:
             raise Gone("offset")
         fd = _blob_fd(rec)                # P573: the stored copy first — it outlives the source file
         if fd is None:
-            if rec.get("masked") or (rec.get("blob") and self.clock() - rec.get("ts", 0) >= KEEP_SECS):
+            if rec.get("masked") or rec.get("generated") or (rec.get("blob") and self.clock() - rec.get("ts", 0) >= KEEP_SECS):
                 raise Gone("store")       # a masked copy never falls back to the unmasked source
             fd = open_rel(rec["root"], list(rec["parts"]))
             src = True

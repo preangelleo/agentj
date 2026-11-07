@@ -3,7 +3,7 @@ import asyncio
 import re
 import time
 from . import privacy
-from .silent import is_silent
+from .silent import is_silent, strip_markers
 from .wechat_protocol import Media
 
 _FENCE = re.compile(r'^\s*(```|~~~)')
@@ -40,7 +40,7 @@ def _inline(s):
 def plain_text(text):
     """#304: WeChat renders no Markdown — owner-facing text leaves as clean plain text."""
     lines, code = [], None
-    for line in str(text).replace('\r\n', '\n').split('\n'):
+    for line in strip_markers(str(text)).replace('\r\n', '\n').split('\n'):
         m = _FENCE.match(line)
         if code is not None:
             if m and m.group(1) == code and not line.strip().strip(code[0]):
@@ -91,7 +91,7 @@ async def _forward(wc, turn_id, device, *, valid=lambda: True):
         return {'ok': False, 'why': _why(wc) if valid() else 'not_configured'}
     turn = wc.h.hist.get(turn_id) if type(turn_id) is int else None
     text = (turn or {}).get('reply', {}).get('text', '') if turn and turn.get('end') in ('done', 'stopped', 'failed') else ''
-    if not text.strip() or is_silent(text):
+    if not text.strip() or (turn or {}).get("silent") is True or is_silent(text):
         return {'ok': False, 'why': 'not_found'}
     now = time.monotonic()
     if turn_id in wc.fwd_inflight:
@@ -117,8 +117,9 @@ async def _forward(wc, turn_id, device, *, valid=lambda: True):
         await wc.send(api, body if item is None else '', generation, item=item)
         wc.fwd_sent = {k: v for k, v in wc.fwd_sent.items() if now - v < 30}
         wc.fwd_sent[turn_id] = time.monotonic()
-        wc.h.st.log('wechat_forward', device=device, id=turn_id, result='ok')
-        return {'ok': True}
+        files, skips = await _files(wc, api, turn, generation, account, valid)
+        wc.h.st.log('wechat_forward', device=device, id=turn_id, result='ok', files=files, skipped=len(skips))
+        return {'ok': True, **({'files':files} if files else {}), **({'skips':skips} if skips else {})}
     except Exception as e:
         if getattr(e, 'code', None) in ('context_rejected', 'no_context'):   # WeChat refused: message ClawBot first
             # P559: which one, the platform's ret (an integer; 10-27 TB: -2 at 29 h after a 23 h send passed) and the age of the
@@ -132,6 +133,57 @@ async def _forward(wc, turn_id, device, *, valid=lambda: True):
     finally:
         wc.fwd_inflight.discard(turn_id)
         wc.publish()
+
+
+_IMAGES = ('image/jpeg', 'image/png', 'image/gif', 'image/webp')
+
+
+async def _files(wc, api, turn, generation, account, valid):
+    """#483: after the words, each file card of the page (already checked for the owner when the page ended, re-opened and
+    re-hashed here by tg_media.read_checked) as its own WeChat message — pictures as images, everything else (videos too)
+    as a file. Owner's own ClawBot chat only (this forward never picks a recipient). Over WeChat's 25 MiB → skipped with
+    its reason; one failed upload stops the rest (no replay). → (files sent, [{name, why[, bytes]}])."""
+    from . import tg_media
+    from . import media as media_mod
+    from .wechat_protocol import MAX_MEDIA
+    media = getattr(wc.h, 'media', None)
+    sent, skipped = 0, []
+    for it in (turn.get('media') or [])[:media_mod.MAX_ITEMS]:
+        if not isinstance(it, dict) or not isinstance(it.get('mid'), str):
+            continue
+        rec = media.get(it['mid']) if media is not None else None
+        name = str((rec or it).get('name') or 'file')[:128]
+        if rec is None:
+            skipped.append({'name': name, 'why': 'gone'})
+            continue
+        if int(rec.get('bytes') or 0) > MAX_MEDIA:
+            skipped.append({'name': name, 'why': 'too_big', 'bytes': int(rec['bytes'])})
+            continue
+        if not valid() or _why(wc) or generation != wc.store.data['generation'] or wc.store.data['account'] != account:
+            skipped.append({'name': name, 'why': 'stopped'})
+            break
+        try:
+            data = await asyncio.to_thread(tg_media.read_checked, rec)
+        except (media_mod.Gone, OSError):
+            skipped.append({'name': name, 'why': 'gone'})
+            continue
+        if not valid() or _why(wc) or generation != wc.store.data['generation'] or wc.store.data['account'] != account:
+            skipped.append({'name': name, 'why': 'stopped'})
+            break
+        try:
+            spec = {'type': 2} if rec.get('mime') in _IMAGES else {'type': 4, 'file_item': {'file_name': name}}
+            item = await asyncio.to_thread(Media(api).upload, account['ilink_user_id'], spec, data)
+            if not valid() or _why(wc) or generation != wc.store.data['generation'] or wc.store.data['account'] != account:
+                skipped.append({'name': name, 'why': 'stopped'})
+                break
+            await wc.send(api, '', generation, item=item)
+        except Exception:   # noqa: BLE001 — a failed media send is never replayed; the reason is a fixed code
+            skipped.append({'name': name, 'why': 'send_failed'})
+            break
+        finally:
+            data = b''
+        sent += 1
+    return sent, skipped
 
 
 async def on_forward(host, session, rid, turn_id):

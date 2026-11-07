@@ -112,7 +112,7 @@ export async function runP169() {
           check((await evaluate(p, `getComputedStyle(document.querySelector('.send .rocket')).maskImage || getComputedStyle(document.querySelector('.send .rocket')).webkitMaskImage`)).includes('blob:'), 'Send glyph from the theme');
           await waitFor(p, `!${$('busyDots')}.querySelector('i.rb.in')`, 2000);   // the new robots pop in first, then dance
           const r = await robots();
-          check(r.length === 3 && r.every((x) => x.img.includes('blob:') && x.size === '234px 54px' && x.anim === 'rb-dance-18'), 'own robots dance ' + JSON.stringify(r[0]));
+          check(r.length === 3 && r.every((x) => x.img.includes('blob:') && x.size === '234px 54px' && x.anim === 'aj-busy-rb-dance-18'), 'own robots dance ' + JSON.stringify(r[0]));
           check(r.map((x) => x.title).join() === (lang === 'zh' ? '一号,二号,三号' : 'One,Two,Three'), 'robot names from the theme ' + r.map((x) => x.title));
           await evaluate(p, `${$('busyDots')}.click()`);
           await waitFor(p, `!${$('busyDlg')}.hidden`);
@@ -140,7 +140,7 @@ export async function runP169() {
           await waitFor(p, `document.documentElement.dataset.lookStyle==='dots' && ${$('busyDots')}.querySelectorAll('i.bd').length===3`);
           check(await evaluate(p, `${$('busyDots')}.querySelectorAll('i.rb').length`) === 0, 'no robots in dots mode');
           const d = await evaluate(p, `[...${$('busyDots')}.querySelectorAll('i.bd')].map(i=>({c:i.dataset.c,anim:getComputedStyle(i).animationName,w:i.getBoundingClientRect().width,r:getComputedStyle(i).borderRadius}))`);
-          check(d.every((x) => x.anim === 'busy-blink' && x.w === 12 && x.r === '50%') && new Set(d.map((x) => x.c)).size === 3, 'blinking round dots ' + JSON.stringify(d));
+          check(d.every((x) => x.anim === 'aj-busy-busy-blink' && x.w === 12 && x.r === '50%') && new Set(d.map((x) => x.c)).size === 3, 'blinking round dots ' + JSON.stringify(d));
           check(await cssVar('--busy-h0') === '#71bbde', 'factory dot colours');
           await waitFor(p, `${$('orb')}.getAttribute('src')==='brand/img/logo-mark.png'`, 2000); check(true, 'factory dots: official logo again');
           if (scheme === 'light') await save('dots');

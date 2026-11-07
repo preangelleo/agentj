@@ -12,8 +12,8 @@
 .term-log:hover .term-rec,.term-log:focus-visible .term-rec{text-decoration:underline}
 .term-log:focus-visible{outline:2px solid #71bbde;outline-offset:2px}
 .term-rec{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:.75rem;color:#faf9f5}
-.term-rec::before{content:"";width:10px;height:10px;border-radius:50%;background:#f7827e;animation:term-rec 1.6s ease-in-out infinite}
-@keyframes term-rec{50%{opacity:.35}}
+.term-rec::before{content:"";width:10px;height:10px;border-radius:50%;background:#f7827e;animation:aj-terminal-term-rec 1.6s ease-in-out infinite}
+@keyframes aj-terminal-term-rec{50%{opacity:.35}}
 @media (prefers-reduced-motion:reduce){.term-rec::before{animation:none}}
 .term-log[hidden],.term-end[hidden]{display:none}
 .term-left{flex:none;font:500 .8125rem/1 var(--font-mono);font-variant-numeric:tabular-nums;color:rgba(250,249,245,.82)}
@@ -76,8 +76,8 @@
    mouse; past the threshold the page leaves downwards, short of it it springs back. The exit icon (top right) and Esc collapse
    it; the chip above the message box brings it back. No double-click / double-tap gesture anywhere. */
 .term{transition:none;will-change:transform}
-.term:not([hidden]){animation:term-up .2s ease-out}
-@keyframes term-up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
+.term:not([hidden]){animation:aj-terminal-term-up .2s ease-out}
+@keyframes aj-terminal-term-up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
 .term.drag{transition:none;cursor:grabbing}
 .term.spring{transition:transform .38s cubic-bezier(.34,1.56,.64,1)}
 .term.leaving{transition:transform .22s ease-in}

@@ -160,7 +160,7 @@ export async function runP332({ B, web, fake, out = OUT }) {
       await waitFor(p, `${$('rs-reset')}.dataset.state==='fail'`);
       check(await evaluate(p, `${$('rs-reset-msg')}.textContent`) === s.fail, '① failed: 「可能卡死了，试试第 ② 步」 ' + tag);
       check(await evaluate(p, `${$('rs-help')}.hasAttribute('data-hl') && !${$('rs-help')}.hasAttribute('data-dim')`), '② highlighted ' + tag);
-      check(await evaluate(p, `${$('rs-help-go')}.classList.contains('aj-btn--primary')`), '② is now the primary action ' + tag);
+      check(await evaluate(p, `${$('rs-help-go')}.classList.contains('aj-action--primary')`), '② is now the primary action ' + tag);
       await view('set-s-rescue'); await save('4-reset-fail');
       await audit('fail');
 

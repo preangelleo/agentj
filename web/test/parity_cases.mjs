@@ -240,7 +240,8 @@ export async function runCases({ B, web, fake, only }) {
   await C('code-copy', async () => {
     await fake.addTurn({ k: 'agent' }, '```sh\nnpm test\n```');
     await wait(`!!document.querySelector('#words .codeblock .copy')`);
-    ok((await text('#words .codeblock .copy')) === T('r.md.copy'), 'the button label comes from the dictionary');
+    // 0.26.9 #432: the button is the shared copy glyph (no word); its label (from the dictionary) is the aria-label
+    ok(await ev(`document.querySelector('#words .codeblock .copy').getAttribute('aria-label') === ${JSON.stringify(T('r.md.copyAria'))} && !!document.querySelector('#words .codeblock .copy svg')`), 'the button label comes from the dictionary');
     await click('#words .codeblock .copy');
     await wait(`document.querySelector('#words .codeblock .copy').textContent === ${JSON.stringify(T('r.md.copied'))}`);
     ok((await clipboard()) === 'npm test', 'the code is on the clipboard');
@@ -372,7 +373,7 @@ export async function runCases({ B, web, fake, only }) {
     await fake.send({ t: 'status', s: 'working', agent: 'claude', name: 'Wren' });
     await wait(`getComputedStyle(document.querySelector('.thinking')).display === 'flex'`);
   });
-  await C('working-shimmer', async () => { ok((await ev(`getComputedStyle(document.querySelector('.flow')).animationName`)) === 'flow', 'the light runs along the top while working'); });
+  await C('working-shimmer', async () => { ok((await ev(`getComputedStyle(document.querySelector('.flow')).animationName`)) === 'aj-status-flow', 'the light runs along the top while working'); });
   await C('state-colour-screen', async () => {
     const working = await ev(`getComputedStyle(document.getElementById('chromeProbe')).backgroundColor`).then(rgb);
     await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'Wren' });
@@ -416,7 +417,7 @@ export async function runCases({ B, web, fake, only }) {
   await C('compacting-sink', async () => {
     await fake.send({ t: 'status', s: 'compacting', agent: 'claude', name: 'Wren' });
     await wait(`document.getElementById('water').dataset.compacting === '1'`);
-    ok((await ev(`getComputedStyle(document.getElementById('water')).animationName`)) === 'sink', 'the water sinks');
+    ok((await ev(`getComputedStyle(document.getElementById('water')).animationName`)) === 'aj-status-sink', 'the water sinks');
     await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'Wren' });
     await wait(`document.getElementById('water').dataset.compacting === '0'`);
   });
@@ -962,7 +963,7 @@ export async function runCases({ B, web, fake, only }) {
   });
   await C('verb-table', async () => { ok((await text('#sheetTitle')).includes(T('r.verb.Bash')), 'Bash = 运行一条命令'); });
   await C('aj-danger-categories', async () => { ok((await text('#askTags .atag.danger')) === T('ask.cat.delete') && (await text('#askTags .atag.task')) === T('ask.task', { task: '日报' }), 'danger chip + task tag'); });
-  await C('waiting-breathing', async () => { ok((await ev(`getComputedStyle(document.querySelector('.aura')).animationName`)) === 'glow', 'the edges breathe while waiting'); });
+  await C('waiting-breathing', async () => { ok((await ev(`getComputedStyle(document.querySelector('.aura')).animationName`)) === 'aj-status-glow', 'the edges breathe while waiting'); });
   await C('waiting-time', async () => {
     ok(/\d/.test(await text('#askLeft')), 'the countdown: ' + await text('#askLeft'));
     await ev(`(() => { const real = Date.now; Date.now = () => real() + 125000; window.__restoreDate = () => { Date.now = real; }; })()`);
@@ -1017,8 +1018,10 @@ export async function runCases({ B, web, fake, only }) {
     await wait(`document.getElementById('grant-bar').hidden`);
   });
   await C('aj-auto-approve-line', async () => {
+    await ev(`import('./js/ui.js').then(m=>m.toastOff())`);
     await fake.send({ t: 'auto', id: hex(16), tool: 'Bash', summary: 'cat a.csv', grant: hex(16) });
-    await waitToast(T('ask.auto', { tool: 'Bash', summary: 'cat a.csv' }));
+    await sleep(250);
+    ok(await ev(`!document.getElementById('toast').classList.contains('on')`), 'automatic approval is audit-only (#562)');
   });
   const Q = hex(16);
   await C('question-purple', async () => {

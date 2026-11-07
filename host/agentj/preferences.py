@@ -4,7 +4,6 @@ before a CLI reports an applied change. No credentials in this layer. Local TTS 
 """
 from __future__ import annotations
 import argparse
-import copy
 import fcntl
 import json
 import math
@@ -15,17 +14,14 @@ import sys
 import time
 import json5
 from .state import State, _write_private
+from .preference_values import ConfigError, get, put
+from .preference_data import (
+    DATA, SCHEMA, MAX_BYTES, flatten, merge, _PARSED, _cached, defaults,
+    _defaults, _line, _dotted, _undot, ignored, COMPOSER_BUTTONS,
+    composer_order_ok, TOKEN, spans, edit, template, decode,
+)
+from .preference_checks import rows_problem as notify_problem, asr_endpoint
 
-DATA = Path(__file__).with_name('config')
-SCHEMA = json.loads((DATA / 'schema.json').read_text())['keys']
-MAX_BYTES = 48 * 1024
-
-class ConfigError(ValueError):
-    def __init__(self, key, detail, line=1, code=1):
-        self.key, self.detail, self.line, self.code = key, detail, line, code
-        super().__init__(f'line {line}, {key}: {detail}')
-    def result(self):
-        return {'ok':False,'key':self.key,'line':self.line,'error':self.detail,'needs':['human'] if self.code==2 else []}
 
 def path():
     from .instance import current   # P180: instance N ≥ 2 keeps its own preferences in agentj-N/
@@ -54,103 +50,24 @@ def guard(p):
             raise RuntimeError(f'test process refused the real {real}/{rel}: import tests/_hermetic first or set XDG_CONFIG_HOME to a temp dir')
     return p
 
-def get(doc, key, default=None):
-    for p in key.split('.'):
-        if not isinstance(doc,dict) or p not in doc: return default
-        doc=doc[p]
-    return doc
-
-def put(doc,key,value):
-    parts=key.split('.'); at=doc
-    for p in parts[:-1]: at=at.setdefault(p,{})
-    at[parts[-1]]=value
-
-def flatten(doc,prefix=''):
-    for k,v in doc.items():
-        key=f'{prefix}.{k}' if prefix else k
-        if key in SCHEMA or not isinstance(v,dict): yield key,v
-        else: yield from flatten(v,key)
-
-def merge(base,patch):
-    if isinstance(base,dict) and isinstance(patch,dict):
-        out=copy.deepcopy(base)
-        for k,v in patch.items(): out[k]=merge(out.get(k),v)
-        return out
-    if isinstance(base,list) and isinstance(patch,list) and all(isinstance(x,dict) and isinstance(x.get('id'),str) for x in base+patch):
-        out=copy.deepcopy(base)
-        for v in patch:
-            i=next((i for i,x in enumerate(out) if x['id']==v['id']),None)
-            if v.get('disabled') is True:
-                if i is not None: out.pop(i)
-            elif i is None: out.append(copy.deepcopy(v))
-            else: out[i]=merge(out[i],v)
-        return out
-    return copy.deepcopy(patch)
-
-# P331: the pure-Python json5 parser costs ~20 ms per call for defaults.json5 alone on a fast desktop and 6–16 s on a
-# loaded Mac, and effective() runs from several serve loops. The file is still read every time (cheap); the parse is kept,
-# keyed by the exact text, so any change by any writer is seen at once. Callers get a private deep copy.
-_PARSED={}
-
-def _cached(slot,raw,make):
-    hit=_PARSED.get(slot)
-    if hit is None or hit[0]!=raw:
-        try: hit=(raw,True,make(raw))
-        except ConfigError as e: hit=(raw,False,e)
-        _PARSED[slot]=hit
-    if not hit[1]:
-        e=hit[2]; raise ConfigError(e.key,e.detail,e.line,e.code) from None
-    return copy.deepcopy(hit[2])
-
-def defaults():
-    return _cached('defaults',(DATA/'defaults.json5').read_text(),_defaults)
-
-def _defaults(raw):
-    out=json5.loads(raw,allow_duplicate_keys=False)
-    for k,m in SCHEMA.items():
-        if m['tier']=='user' and get(out,k)!=m['default']: raise RuntimeError('schema/default drift: '+k)
-    return out
-
-def _line(raw,key):
-    hits=list(re.finditer(r'["\']?'+re.escape(key.split('.')[-1])+r'["\']?\s*:',raw))
-    return raw.count('\n',0,hits[-1].start())+1 if hits else 1
-
-def _dotted(doc,prefix=''):
-    """P318: the first object key spelled with a '.' (a literal "agent.allow_docker" would alias the nested key: flatten
-    sees one schema key twice, the runtime reads only the nested one) — keys inside a schema value are data, not checked."""
-    for k,v in doc.items():
-        key=f'{prefix}.{k}' if prefix else str(k)
-        if not isinstance(k,str) or '.' in k: return key
-        if key not in SCHEMA and isinstance(v,dict):
-            hit=_dotted(v,key)
-            if hit: return hit
-    return None
-
-def _undot(doc,prefix=''):
-    """P324 upgrade compatibility: a config.json5 written before P318 may hold a literal dotted key ("agent.x": …). The
-    runtime never read those (get() walks nested objects), so they are dropped here — same effect as before, no error at
-    upgrade, and a dropped key can no longer alias a nested one. → (doc without them, their dotted paths)."""
-    out,gone={},[]
-    for k,v in doc.items():
-        key=f'{prefix}.{k}' if prefix else str(k)
-        if not isinstance(k,str) or '.' in k: gone.append(key); continue
-        if key not in SCHEMA and isinstance(v,dict):
-            v,g=_undot(v,key); gone+=g
-        out[k]=v
-    return out,gone
-
-def ignored(raw):
-    """P324: the literal dotted keys parse() drops from this text (names only, for doctor / `agentj config check`)."""
-    try: doc=json5.loads(raw,allow_duplicate_keys=False)
-    except ValueError: return []
-    return _undot(doc)[1] if isinstance(doc,dict) else []
-
-COMPOSER_BUTTONS = ('file', 'image', 'camera', 'mic', 'full')   # P340: the default left-to-right order above the phone's message box
-
-def composer_order_ok(v):
-    # P462: old remotes / archives may still send the original complete four-item permutation.
-    return isinstance(v, list) and all(isinstance(x, str) for x in v) and any(
-        len(v) == len(ids) and sorted(v) == sorted(ids) for ids in (COMPOSER_BUTTONS, COMPOSER_BUTTONS[:-1]))
+def remote_servers_ok(rows):
+    """Display labels only: no remote command, login, credential or path settings."""
+    from .privacy import redact
+    if not isinstance(rows, list) or len(rows) > 32:
+        return False
+    seen = set()
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {'host', 'name'}:
+            return False
+        host, name = row['host'], row['name']
+        if not isinstance(host, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}', host) or host in seen:
+            return False
+        if not isinstance(name, str) or not name.strip() or name != name.strip() or len(name) > 40 or any(ord(c) < 32 or ord(c) == 127 for c in name):
+            return False
+        if redact(name) != name:
+            return False
+        seen.add(host)
+    return True
 
 def validate(doc,raw=''):
     if not isinstance(doc,dict): raise ConfigError('/', 'expected an object')
@@ -174,7 +91,8 @@ def validate(doc,raw=''):
     for lk in ('imessage.vip','imessage.mute'):   # P274: numbers / e-mails / keywords, matched exactly; never names guessed
         lv=get(doc,lk,[])
         if len(lv)>200 or any(not isinstance(x,str) or not x.strip() or len(x)>100 or any(ord(c)<32 for c in x) for x in lv): raise ConfigError(lk,'a list of up to 200 numbers, e-mails or keywords (each 1–100 characters)')
-    from .notify import rows_problem as notify_problem   # P365: [{id, allow}] — the --from names and Agent J tasks' switches
+    if not remote_servers_ok(get(doc, 'ui.remote_servers', [])):
+        raise ConfigError('ui.remote_servers', 'up to 32 unique SSH host names and display labels (1–40 characters); no credentials or paths')
     why = notify_problem(get(doc, 'notify.automations', []))
     if why: raise ConfigError('notify.automations', why, _line(raw, 'notify.automations'))
     cats = get(doc, 'updates.skill_categories', [])
@@ -267,7 +185,6 @@ def validate(doc,raw=''):
     why=bypass_problem(get(out,'proxy.no_proxy',''))
     if why: raise ConfigError('proxy.no_proxy',why,_line(raw,'proxy.no_proxy'))
     # #440: only an endpoint and a key NAME enter preferences, never authentication material.
-    from .voice import asr_endpoint
     endpoint=get(out,'voice.asr.base_url','')
     if endpoint or get(out,'voice.asr.mode')=='custom': asr_endpoint(endpoint)
     if get(out,'voice.asr.mode') in ('custom','cloud') and not get(out,'voice.asr.model'):
@@ -286,12 +203,7 @@ def validate(doc,raw=''):
     return out
 
 def parse(raw):
-    if len(raw.encode())>MAX_BYTES: raise ConfigError('/', 'configuration exceeds 48 KiB')
-    try: doc=json5.loads(raw,allow_duplicate_keys=False)
-    except ValueError as e:
-        # Parser messages can include the bad input (possibly a pasted credential). Do not echo it.
-        m=re.search(r':(\d+)\b',str(e)); raise ConfigError('/','invalid JSON5 syntax (or duplicate key)',int(m[1]) if m else 1) from None
-    if isinstance(doc,dict): doc=_undot(doc)[0]   # P324: pre-P318 dotted keys are ignored (as the runtime always did), not an error
+    doc=decode(raw)
     validate(doc,raw)
     return doc
 
@@ -304,65 +216,6 @@ def effective(st=None):
     _,doc=read(); out=validate(doc)
     if not get(out,'voice.wake_word'): put(out,'voice.wake_word','嘿 '+((st or State()).agent_name() or 'Agent J'))
     return out
-
-# JSON5 structural editor: change only the requested value, leaving other lines/comments intact.
-TOKEN=re.compile(r'\s+|//[^\n]*|/\*[\s\S]*?\*/|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|[{}\[\]:,]|[^\s{}\[\]:,]+')
-def spans(raw):
-    ts=[m for m in TOKEN.finditer(raw) if not m[0].isspace() and not m[0].startswith(('//','/*'))]; vals={}; objects={}; members={}
-    def value(i,p):
-        start=i
-        if ts[i][0]=='{':
-            i+=1; rows=[]
-            while ts[i][0]!='}':
-                ki=i; k=ts[i][0]; k=json5.loads(k) if k.startswith(('"',"'")) else k
-                assert ts[i+1][0]==':'
-                child=p+'.'+k if p else k
-                if '.' in k: child='\0'+child     # P324: a literal dotted key is not the nested key it spells; edit() never targets it
-                i=value(i+2,child); end=i; comma=None
-                if ts[i][0]==',': comma=i; i+=1
-                rows.append((child,ki,end,comma))
-            objects[p]=(ts[start].start(),ts[i].start(),rows)
-            for n,(child,ki,end,comma) in enumerate(rows):
-                a=ts[ki].start(); b=ts[end-1].end()
-                if comma is not None: b=ts[comma].end()
-                elif n and rows[n-1][3] is not None: a=ts[rows[n-1][3]].start()
-                members[child]=(a,b)
-            i+=1
-        elif ts[i][0]=='[':
-            i+=1
-            while ts[i][0]!=']':
-                i=value(i,p+'[]')
-                if ts[i][0]==',': i+=1
-            i+=1
-        else: i+=1
-        vals[p]=(ts[start].start(),ts[i-1].end()); return i
-    value(0,''); return vals,objects,members
-
-def edit(raw,key,value,remove=False):
-    vals,objects,members=spans(raw)
-    if remove:
-        if key not in members: return raw
-        a,b=members[key]; return raw[:a]+raw[b:]
-    encoded=json.dumps(value,ensure_ascii=False)
-    if key in vals:
-        a,b=vals[key]; return raw[:a]+encoded+raw[b:]
-    parent,_,leaf=key.rpartition('.')
-    if parent not in objects:
-        parts=key.split('.'); at=value
-        while parts:
-            leaf=parts.pop(); parent='.'.join(parts)
-            if parent in objects: break
-            at={leaf:at}
-        encoded=json.dumps(at,ensure_ascii=False)
-    _,close,rows=objects[parent]
-    comma='' if not rows or rows[-1][3] is not None else ','
-    return raw[:close]+comma+'\n  '+json.dumps(leaf)+': '+encoded+'\n'+raw[close:]
-
-def template():
-    lines=['// Agent J: pure data. Put only your changes here. Never put API keys in this file.', '// Defaults upgrade independently. Security/approvals/devices are human-only.', '{','  version: 1,']
-    for k,m in SCHEMA.items():
-        lines+=['  // '+k+': '+m['description'], '  // default: '+json.dumps(m['default'],ensure_ascii=False)+'; tier='+m['tier']+'; apply='+m['apply']]
-    return '\n'.join(lines+['}',''])
 
 def ensure():
     p=path(); p.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -534,6 +387,33 @@ def resolve_key(key):
     if len(matches)>1:raise ConfigError(key,'ambiguous alias; use the full key: '+', '.join(matches))
     return matches[0] if matches else key
 
+def model_command(st, action, value=None, *, dry_run=False):
+    """Virtual key: the existing Host state remains the only model owner."""
+    from . import provider_profiles
+    from .names import ServeBusy
+    from .opencode_provider import MODEL_RE, ProviderError
+    cfg = st.agent_config() or {}
+    if action == 'get':
+        return {'ok': True, 'key': 'agent.model', 'value': cfg.get('model'), 'source': 'host-state'}
+    if not cfg:
+        raise ConfigError('agent.model', 'configure an Agent first')
+    model = value if action == 'set' else None
+    if action == 'set' and (not isinstance(model, str) or not MODEL_RE.fullmatch(model)):
+        raise ConfigError('agent.model', 'expected a model ID; use unset to clear')
+    try:
+        result = provider_profiles.selection({'harness': cfg['kind']}, model, write=not dry_run)
+        if not result.get('applicable'):
+            raise ProviderError('agent_kind_changed')
+    except ServeBusy:
+        raise ConfigError('agent.model', 'Host acknowledgement unavailable; inspect the current model before retrying', code=3) from None
+    except ProviderError as error:
+        raise ConfigError('agent.model', str(error), code=3) from None
+    return {'ok': True, 'key': 'agent.model', 'old': cfg.get('model'), 'new': model,
+            'stored': not dry_run, 'applied': False,
+            'needs': [] if dry_run else ['harness restart' if result.get('running') else 'start serve'],
+            'storage': 'host-state', **result}
+
+
 def command(args):
     p=argparse.ArgumentParser(prog='agentj config')
     p.add_argument('action',nargs='?',default='path',choices=['path','keys','get','show','set','unset','validate','diff','reset','history','rollback','apply','explain','migrate'])
@@ -541,7 +421,9 @@ def command(args):
     a=p.parse_args(args); st=State()
     try:
         a.key=resolve_key(a.key)
-        if a.action=='path': result={'ok':True,'path':str(path())}
+        if a.key == 'agent.model' and a.action in ('get', 'set', 'unset', 'reset'):
+            result = model_command(st, a.action, a.value, dry_run=a.dry_run)
+        elif a.action=='path': result={'ok':True,'path':str(path())}
         elif a.action=='keys': result={'ok':True,'keys':{k:m for k,m in SCHEMA.items() if a.search.lower() in (k+' '+m['description']+' '+' '.join(m['aliases'])).lower()}}
         elif a.action=='explain': result={'ok':True,'key':a.key,**SCHEMA[a.key]}
         elif a.action=='validate':
@@ -549,7 +431,9 @@ def command(args):
             if ignored(raw): result['ignored']=ignored(raw)   # P324: pre-P318 dotted keys, never read; nest them to use them
         elif a.action in ('show','get','diff'):
             raw,doc=read(); out=effective(st)
-            if a.action=='show': result={'ok':True,'effective':out,'sources':{k:'user' if get(doc,k) is not None else m['tier'] if m['tier']!='user' else 'default' for k,m in SCHEMA.items()}}
+            if a.action=='show':
+                put(out, 'agent.model', (st.agent_config() or {}).get('model'))
+                result={'ok':True,'effective':out,'sources':{k:'user' if get(doc,k) is not None else m['tier'] if m['tier']!='user' else 'default' for k,m in SCHEMA.items()}}
             elif a.action=='get':
                 if a.key not in SCHEMA: raise ConfigError(a.key,'unknown key')
                 result={'ok':True,'key':a.key,'value':get(out,a.key,SCHEMA[a.key]['default']),'source':'user' if get(doc,a.key) is not None else SCHEMA[a.key]['tier'] if SCHEMA[a.key]['tier']!='user' else 'default'}

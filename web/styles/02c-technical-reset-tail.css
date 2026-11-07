@@ -1,0 +1,6 @@
+img, svg, video, canvas, picture { display: block; max-width: 100%; height: auto; }
+input, button, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+h1, h2, h3, h4, h5, h6, p, ul, ol, dl, figure, blockquote, pre { margin: 0; }
+:where(ul, ol)[role="list"], .aj-plain-list { list-style: none; padding: 0; }
+[hidden] { display: none !important; }

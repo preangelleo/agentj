@@ -1,0 +1,176 @@
+{
+ "name": "event-signup",
+ "mode": "light",
+ "title": {
+  "zh": "活动报名",
+  "en": "Event sign-up"
+ },
+ "about": {
+  "zh": "报名一场活动：参加方式、想听的场次、人数、饮食。",
+  "en": "Sign up for an event: how, which sessions, how many, dietary needs."
+ },
+ "vars": {
+  "event": {
+   "label": {
+    "zh": "活动名",
+    "en": "Event name"
+   },
+   "required": true
+  },
+  "when": {
+   "label": {
+    "zh": "时间地点",
+    "en": "When and where"
+   }
+  },
+  "talk1": {
+   "label": {
+    "zh": "场次 1",
+    "en": "Session 1"
+   },
+   "required": true
+  },
+  "talk2": {
+   "label": {
+    "zh": "场次 2",
+    "en": "Session 2"
+   },
+   "required": true
+  },
+  "talk3": {
+   "label": {
+    "zh": "场次 3",
+    "en": "Session 3"
+   },
+   "required": true
+  }
+ },
+ "fill": [
+  "options.talks",
+  "drop",
+  "title",
+  "intro"
+ ],
+ "form": {
+  "title": "{{event}}",
+  "intro": "{{when}}",
+  "questions": [
+   {
+    "id": "mode",
+    "type": "single",
+    "label": {
+     "zh": "参加方式",
+     "en": "How will you join?"
+    },
+    "required": true,
+    "keep": true,
+    "options": [
+     {
+      "value": "onsite",
+      "label": {
+       "zh": "现场",
+       "en": "In person"
+      }
+     },
+     {
+      "value": "online",
+      "label": {
+       "zh": "线上",
+       "en": "Online"
+      }
+     },
+     {
+      "value": "no",
+      "label": {
+       "zh": "这次不去",
+       "en": "Not this time"
+      }
+     }
+    ]
+   },
+   {
+    "id": "talks",
+    "type": "multi",
+    "label": {
+     "zh": "想听哪几场？",
+     "en": "Which sessions?"
+    },
+    "max": 3,
+    "show_if": {
+     "q": "mode",
+     "in": [
+      "onsite",
+      "online"
+     ]
+    },
+    "options": [
+     {
+      "value": "t1",
+      "label": {
+       "zh": "{{talk1}}",
+       "en": "{{talk1}}"
+      }
+     },
+     {
+      "value": "t2",
+      "label": {
+       "zh": "{{talk2}}",
+       "en": "{{talk2}}"
+      }
+     },
+     {
+      "value": "t3",
+      "label": {
+       "zh": "{{talk3}}",
+       "en": "{{talk3}}"
+      }
+     }
+    ]
+   },
+   {
+    "id": "people",
+    "type": "number",
+    "label": {
+     "zh": "一共几个人（含你）",
+     "en": "How many people (including you)?"
+    },
+    "min": 1,
+    "max": 10,
+    "default": 1,
+    "show_if": {
+     "q": "mode",
+     "eq": "onsite"
+    }
+   },
+   {
+    "id": "diet",
+    "type": "text",
+    "label": {
+     "zh": "饮食禁忌（可选）",
+     "en": "Dietary needs (optional)"
+    },
+    "max_length": 120,
+    "show_if": {
+     "q": "mode",
+     "eq": "onsite"
+    }
+   }
+  ]
+ },
+ "example": {
+  "zh": {
+   "event": "AI 产品沙龙 · 第 12 期",
+   "when": "10 月 25 日（周六）14:00 · 静安",
+   "talk1": "AI 产品定价",
+   "talk2": "增长复盘",
+   "talk3": "出海合规"
+  },
+  "en": {
+   "event": "AI Product Salon · No. 12",
+   "when": "Sat 25 Oct, 14:00 · Jing'an",
+   "talk1": "Pricing AI products",
+   "talk2": "A growth post-mortem",
+   "talk3": "Compliance abroad"
+  }
+ }
+}

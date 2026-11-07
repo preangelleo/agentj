@@ -26,7 +26,6 @@ import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
-import android.widget.Toast
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -195,13 +194,16 @@ class StatusActivity : Activity() {
             setOnFocusChangeListener { v, has -> if (has && Prefs.relayUrl != null && text.toString() == masked(Prefs.relayUrl!!)) (v as EditText).setText("") }
         }
         col.addView(addr)
+        // #556: validation belongs to its field and remains readable until corrected.
+        val addressError = line(14f).apply { visibility = View.GONE }
         col.addView(button("保存并打开 Agent J") {
             val raw = addr.text.toString().trim()
             if (raw.isEmpty() || raw == Prefs.relayUrl?.let { masked(it) }) { openMain(); return@button }
             val u = Uri.parse(raw)
             if (u.scheme != "https" && !(BuildConfig.DEBUG && u.scheme == "http") || u.host.isNullOrEmpty()) {
-                Toast.makeText(this, "要一个 https:// 开头的完整网址", Toast.LENGTH_LONG).show(); return@button
+                addressError.text = "要一个 https:// 开头的完整网址"; addressError.visibility = View.VISIBLE; return@button
             }
+            addressError.visibility = View.GONE
             Prefs.relayUrl = raw
             addr.setText(masked(raw))
             openMain()

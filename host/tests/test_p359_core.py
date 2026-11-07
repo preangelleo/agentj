@@ -1088,6 +1088,10 @@ class Dispatch(Tmp):
         self.assertEqual(hows, ["started"] * 3 + ["queued"], "D12: three CEOs at a time")
         self.assertEqual(os_[3].state(), "queued")
         self.assertEqual(dispatcher.stop(os_[0], grace=1), "stopped", "O7: hard stop after the grace")
+        # SIGKILL delivery is asynchronous; keep the original liveness assertion after a bounded wait.
+        until = time.monotonic() + 1
+        while dispatcher.alive(os_[0]) and time.monotonic() < until:
+            time.sleep(0.01)
         self.assertFalse(dispatcher.alive(os_[0]))
         self.assertEqual(dispatcher.drain(self.st, self.env), [os_[3].id], "a freed slot starts the queued order")
         for o in os_[1:]:

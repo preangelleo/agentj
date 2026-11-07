@@ -1,0 +1,5 @@
+/* #577 Web-owned hero; source order is a compatibility contract. */
+/* ===== hero ===== */
+.aj-hero { padding-block: clamp(3rem, 2rem + 5vw, 6.5rem) clamp(2rem, 1.5rem + 3vw, 4rem); }
+.aj-hero > * + * { margin-top: var(--sp-4); }
+.aj-hero__actions { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-6); }

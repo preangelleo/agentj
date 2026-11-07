@@ -10,7 +10,7 @@
 //              批准）」 starts pk_peer_req · with a key: Face ID → the prompt masked, 「复制」 = the full prompt, three steps,
 //              「撤销」 = signed seat_transfer_cancel · the row's state line + 「撤销」 from seat_xfer_state
 //   host_moved a bad one is ignored · a good one → first the sheet 「席位已转到新主机「名」（HH:MM）。让这台遥控器切过去吗？」:
-//              「留在这里」 changes nothing (and the same move is not asked again on this page; a reload asks again) ·
+//              「留在这里」 changes nothing (and the same move is not asked again, not after a reload either — 0.26.9 #434) ·
 //              「切过去」 → the stored pairing points at the new host and the page is ready there ·
 //              an unreachable one (after 「切过去」) → 「扫码配对新主机」 → the pairing screen
 // Shots (masked code only, no address bar) → reports/qa/p547/shots/. Usage: node web/test/p547.mjs
@@ -288,12 +288,19 @@ async function moved(p, tag) {
   await fake.send(move);                               // the old host says it again (e.g. after a reconnect)
   await sleep(600);
   ok(await evaluate(p, `document.getElementById('confirm').hidden`), tag + ' the same move is not asked again on this page');
-  // a reload asks again; 「切过去」 follows it
+  // 0.26.9 #434: 「留在这里」 is kept in the stored pairing — a reload does not ask the same move again
+  { const load = p.waitFor('Page.loadEventFired'); await p.send('Page.reload'); await load; }
+  await waitState(p, 'ready', 15000); await sleep(300);
+  await fake.send(move);
+  await sleep(800);
+  ok(await evaluate(p, `document.getElementById('confirm').hidden`) && (await rec(p)).channel === before.channel, tag + ' after a reload the stayed move is not asked again (#434)');
+  // with that answer gone from the record (a newer pairing state), the sheet comes again; 「切过去」 follows it
+  await evaluate(p, `import('./js/store.js').then(async (s) => { const h = await s.dbGet('host'); delete h.moveStayed; await s.dbPut('host', h); })`);
   { const load = p.waitFor('Page.loadEventFired'); await p.send('Page.reload'); await load; }
   await waitState(p, 'ready', 15000); await sleep(300);
   await fake.send(move);
   await waitFor(p, sheet, 5000);
-  ok((await rec(p)).channel === before.channel, tag + ' after a reload the sheet comes again, still unswitched');
+  ok((await rec(p)).channel === before.channel, tag + ' without the stored answer the sheet comes again, still unswitched');
   await click(p, '#confirm-yes');
   await waitFor(p, `(document.getElementById('toast')?.textContent || '').includes('Mac mini')`, 5000);
   await snap(p, tag, '10-host-moved-toast', true);

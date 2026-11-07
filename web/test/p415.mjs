@@ -51,12 +51,12 @@ try{for(const width of [390,1280])for(const lang of ['zh','en']){
    await ev(p,`import('./js/five-pages.js').then(m=>m.openTarget('${id}'))`);await waitFor(p,`document.querySelector('.jc-body[data-card=${id}] .jc-action')`);
    await ev(p,"document.querySelector('.jc-action[data-act=add]').click()");await waitFor(p,"document.querySelector('dialog[open] textarea')");
    if(id==='notes') {
-    await ev(p,"document.querySelector('dialog textarea').value='secret-fixture'");await key(p,'Enter',{code:'Enter',meta:true});await sleep(150);
+    await ev(p,"document.querySelector('.jc-dialog[open] textarea').value='secret-fixture'");await key(p,'Enter',{code:'Enter',meta:true});await sleep(150);
     check(await ev(p,"document.querySelector('dialog[open] textarea').value==='secret-fixture'"),'refused save retains draft');
    }
    writeFileSync(out+`dialog-${id}-${width}-${lang}.png`,await shoot(p));
-   await ev(p,"document.querySelector('dialog textarea').value='';Object.defineProperty(navigator,'clipboard',{configurable:true,value:{readText:async()=> 'clipboard memo'}});document.querySelector('dialog button').click()");await sleep(30);
-   check(await ev(p,"document.querySelector('dialog textarea').value==='clipboard memo'"),'one tap clipboard');
+   await ev(p,"document.querySelector('.jc-dialog[open] textarea').value='';Object.defineProperty(navigator,'clipboard',{configurable:true,value:{readText:async()=> 'clipboard memo'}});document.querySelector('.jc-dialog[open] button').click()");await sleep(30);
+   check(await ev(p,"document.querySelector('.jc-dialog[open] textarea').value==='clipboard memo'"),'one tap clipboard');
    await key(p,'Enter',{code:'Enter',ctrl:true});await waitFor(p,"!document.querySelector('.jc-dialog')");
    check(mutations.at(-1).op==='add'&&mutations.at(-1).id===id,'direct add channel');check(fake.st.says.length===3,'no agent message for direct save');
    await sleep(100);await ev(p,`import('./js/five-pages.js').then(m=>m.openTarget('${id}'))`);await sleep(150);

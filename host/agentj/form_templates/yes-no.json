@@ -1,0 +1,80 @@
+{
+ "name": "yes-no",
+ "mode": "light",
+ "title": {
+  "zh": "批不批",
+  "en": "Yes or no"
+ },
+ "about": {
+  "zh": "一件事要主人点头：同意 / 不同意，可附一句备注。",
+  "en": "One thing needs a nod: yes / no, with an optional note."
+ },
+ "vars": {
+  "question": {
+   "label": {
+    "zh": "要批的事",
+    "en": "What to approve"
+   },
+   "required": true
+  },
+  "context": {
+   "label": {
+    "zh": "一句背景",
+    "en": "One line of context"
+   }
+  }
+ },
+ "fill": [
+  "recommend.ok",
+  "drop",
+  "title"
+ ],
+ "form": {
+  "title": "{{question}}",
+  "intro": "{{context}}",
+  "questions": [
+   {
+    "id": "ok",
+    "type": "buttons",
+    "label": "{{question}}",
+    "required": true,
+    "keep": true,
+    "options": [
+     {
+      "value": "yes",
+      "label": {
+       "zh": "同意",
+       "en": "Yes"
+      }
+     },
+     {
+      "value": "no",
+      "label": {
+       "zh": "不同意",
+       "en": "No"
+      }
+     }
+    ]
+   },
+   {
+    "id": "note",
+    "type": "text",
+    "label": {
+     "zh": "备注（可选）",
+     "en": "A note (optional)"
+    },
+    "max_length": 200
+   }
+  ]
+ },
+ "example": {
+  "zh": {
+   "question": "下周一把旧服务器下线？",
+   "context": "流量已全部切到新集群 7 天，没有报错。"
+  },
+  "en": {
+   "question": "Retire the old server next Monday?",
+   "context": "All traffic has been on the new cluster for 7 days with no errors."
+  }
+ }
+}

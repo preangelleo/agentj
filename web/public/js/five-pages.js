@@ -4,6 +4,7 @@ import {focusDraft} from './composer-focus.js';
 import {request, done, peer, isReady, ask1} from './session.js';
 import {registerLayer} from './layers.js';
 import {composeMentions} from './workflow-compose.js';
+import {mentions as busyMentions} from './busy.js';   // 0.26.9 #430: a background task put in the composer from its row's @
 import {fitAbove} from './fit.js';
 import {settleRobots} from './robot-color.js';
 import {RelayMD} from './md.js';
@@ -11,6 +12,8 @@ import {t, lang, onLang} from './t.js';
 import * as jc from './jcards.js';   // P360: Agent J Cards — deck cards 6+ and their pages
 import * as PF from './pagefind.js';
 import * as CK from './cardkeys.js';
+import * as friendsCard from './friends.js';
+import * as supportCard from './bots.js';
 import * as terminalCard from './termhook.js';   // P412 #176: Alt+Shift + a letter of the card's English title opens it
 import * as SH from './skillhealth.js';   // P426 #181-3: skill health on the 技能 page
 import {signedWrite} from './controls.js';   // P426 S6: 「归档」/「恢复」 are signed phone controls
@@ -34,8 +37,8 @@ let H, pic=null, current='chat', busy=false, epoch=0, filter='all', selected=nul
 // P363 (#70): findQ = the page's own search (top-right magnifier, / , Ctrl+K); pinned = the workflow a link opened, first and open
 let findQ='', pinned=null, pinScroll=false;
 const $=id=>document.getElementById(id);
-const names=()=>[['chat',t('p244.fivepages1'),'◌'],['workflows',t('p244.fivepages2'),'⌘'],['skills',t('p244.fivepages3'),'✧'],['memory',t('p244.fivepages4'),'◇'],['agentj','Agent J','△'],...(terminalCard.state() !== 'none' ? [['terminal',t('p408.title'),'⌘']] : [])];
-function node(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
+const names=()=>[['chat',t('p244.fivepages1'),'◌'],['workflows',t('p244.fivepages2'),'⌘'],['skills',t('p244.fivepages3'),'✧'],['memory',t('p244.fivepages4'),'◇'],['agentj','Agent J','△'],['friends',t('p0280.friends'),'◇'],['bots',t('p0280.bots'),'◇'],...(terminalCard.state() !== 'none' ? [['terminal',t('p408.title'),'⌘']] : [])];
+function node(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;n.setAttribute('data-aj-owner', 'aj-knowledge'); return n;}
 function button(text,fn,cls='fp-action'){const n=node('button',text,cls);n.type='button';n.onclick=fn;return n;}
 function icon(key){const ns='http://www.w3.org/2000/svg',s=document.createElementNS(ns,'svg');s.setAttribute('viewBox','0 0 24 24');s.setAttribute('class','fp-line-icon');s.setAttribute('aria-hidden','true');s.setAttribute('fill','none');s.setAttribute('stroke','currentColor');s.setAttribute('stroke-width','1.7');s.setAttribute('stroke-linecap','round');s.setAttribute('stroke-linejoin','round');
  const paths={chat:'M5 4h14v12H9l-4 4V4z',workflows:'M12 4v6M5 10h14M5 10v6M19 10v6M9 4h6M2 16h6v5H2zM16 16h6v5h-6z',skills:'m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z',memory:'M6 4h12v16H6zM9 8h6M9 12h6M9 16h4',lock:'M7 10V7a5 5 0 0 1 10 0v3M5 10h14v11H5zM12 14v3',back:'M15 5l-7 7 7 7',reload:'M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5',doc:'M8.6 4.4H5.8a.8.8 0 0 0-.8.8v16a.8.8 0 0 0 .8.8h12.4a.8.8 0 0 0 .8-.8v-16a.8.8 0 0 0-.8-.8h-2.8M8.6 3.4h1.9a1.5 1.5 0 0 1 3 0h1.9v3.2H8.6zM7.9 10.3l2.6 2.6M10.5 10.3l-2.6 2.6M13.2 10.6h3.3M13.2 12.7h3.3M7.8 17.4l1.3 1.3 2.4-2.6M13.2 16.4h3.3M13.2 18.5h3.3',all:'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',global:'M12 2a10 10 0 1 0 0 20 10 10 0 1 0 0-20M2 12h20M12 2c-6 6-6 14 0 20M12 2c6 6 6 14 0 20',terminal:'M4 4h16v16H4zM7 8l4 4-4 4M13 16h4',local:'M3 11l9-8 9 8M6 10v11h12V10M10 21v-7h4v7'};
@@ -62,7 +65,7 @@ export function refresh(){
  if(!r){busy=false;return;} timer=setTimeout(()=>finish(true),15000);
 }
 export function go(page,folder,at){
- if(!H)return;if(page==='terminal'){closeMenu();terminalCard.enter();return;}if(page!==current||folder)dropFind();current=page;selected=folder||null;anchor=at||null;pinned=page==='workflows'&&folder||null;pinScroll=!!pinned;closeMenu();closeDetail();
+ if(!H)return;if(page==='friends'||page==='bots'){closeMenu();if(page==='friends')friendsCard.open('list');else supportCard.open();return;}if(page==='terminal'){closeMenu();terminalCard.enter();return;}if(page!==current||folder)dropFind();current=page;selected=folder||null;anchor=at||null;pinned=page==='workflows'&&folder||null;pinScroll=!!pinned;closeMenu();closeDetail();
  $('srchBtn')?.setAttribute('aria-label',t(page==='chat'?'r.find.btn':'p363.find'));
  $('five-page').hidden=page==='chat';document.body.dataset.fivePage=page;place();$('five-page').scrollTop=0;
  if(page==='chat'){H.chat();arm();return;}H.chat();render();if(page!=='card')refresh();arm();
@@ -76,7 +79,7 @@ function buildDeck(focus){const e=$('five-menu'),was=document.activeElement?.clo
   const head=node('div',undefined,'fp-menu-head');
   if(key==='agentj'){const img=node('img');img.src='assets/five-robot.png';img.alt='';head.append(img);}else head.append(globalIcon(key));
   head.append(node('span',[current===key&&t('p244.fivepages5'),menuCount(key)].filter(Boolean).join(' · '),'fp-current'));
-  b.append(head,node('h2',title),node('p',[t('p244.fivepages6'),t('p244.fivepages7'),t('p244.fivepages8'),t('p244.fivepages9'),t('p244.fivepages10'),t('terminal.cardNote')][i]));deck.append(b);
+  b.append(head,node('h2',title),node('p',[t('p244.fivepages6'),t('p244.fivepages7'),t('p244.fivepages8'),t('p244.fivepages9'),t('p244.fivepages10'),t('p0280.friendsNote'),t('p0280.botsNote'),t('terminal.cardNote')][i]));deck.append(b);
  }
  // P360: the owner's cards stack below the five (Apple Wallet: one fixed peek and card size, cards.css — the deck scrolls)
  const mine=jc.deck();mine.forEach((c,j)=>deck.append(jc.deckCard(c,names().length+j,()=>go('card',c.id))));deck.style.setProperty('--fp-n',String(names().length+mine.length));deck.dataset.n=String(names().length+mine.length);
@@ -84,7 +87,7 @@ function buildDeck(focus){const e=$('five-menu'),was=document.activeElement?.clo
 }
 // P412 #176: the cards' keys (cardkeys.js). The title shows its letter underlined; a Chinese title, or a digit, gets a small
 // key chip instead (hidden on touch-only screens). Again on the open card, or Esc, goes back to the chat.
-const SYS_EN={workflows:'Workflows',skills:'Skills',memory:'Memory',agentj:'Agent J',terminal:'Terminal'};
+const SYS_EN={workflows:'Workflows',skills:'Skills',memory:'Memory',agentj:'Agent J',terminal:'Terminal',friends:'Friends',bots:'Customer service'};
 function keyCards(){return [...jc.deck().map(c=>({key:'card:'+c.id,en:c.name&&typeof c.name==='object'?c.name.en:String(c.name||''),id:c.id,title:jc.nameOf(c)})),...names().slice(1).map(([k,title])=>({key:k,en:SYS_EN[k],id:k,title}))];}
 /** [{key, title, letter, combo}] — the cards that have a key, as the shortcut sheet lists them. */
 export function cardKeys(){const list=keyCards(),a=CK.assign(list);return list.filter(c=>a.has(c.key)).map(c=>({key:c.key,title:c.title,letter:a.get(c.key),combo:CK.comboOf(a.get(c.key))}));}
@@ -220,7 +223,7 @@ export function plusCard(){if(current==='card'&&jc.cards().some(c=>c.id===select
 // P360 (Leo 10-17: 「首先是定位某个卡片，其次是卡片上的某个位置」): one internal address form for everything the phone opens —
 // skill/<name> · workflow/<folder> · doc/[<folder>/]<file>.md · card/<id>[#<anchor>] · page/<page> (host jcards.JLINK_RE).
 // A card's links, `agentj card open` (§34 jcard_open) and card addresses / @mentions in messages all land here.
-const SYS=['chat','workflows','skills','memory','agentj'];
+const SYS=['chat','workflows','skills','memory','agentj','friends','bots'];
 const sysNames=()=>names().map(x=>x[1]);
 export function openTarget(id,at){if(!H||typeof id!=='string')return;const a=typeof at==='string'&&jc.ANCHOR.test(at)?at:null;
  if(id==='cards'){go('chat');if($('five-menu').hidden)toggleMenu();return;}if(SYS.includes(id)){go(id);return;}if(jc.ID.test(id))go('card',id,a);}
@@ -327,7 +330,7 @@ export function init(h){H=h;$('cardPlus')?.addEventListener('click',plusCard);
  // P363 (#70): / on a five page opens (or focuses) its search, as on the shortcut sheet — never from a field
  addEventListener('keydown',e=>{if(e.key!=='/'||e.ctrlKey||e.metaKey||e.altKey||e.isComposing||page.hidden||current==='chat'||!sheet.hidden||!menu.hidden)return;const g=e.target;if(g&&(g.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(g.tagName)))return;e.preventDefault();e.stopImmediatePropagation();if(fbox.hidden)find();else fbox.querySelector('input').focus();},true);
  // P360: @ also names the owner's cards (chip 「@记事本」, the message carries 「@记事本（card/notes）」 for the Agent)
- const input=$('input');composer=composeMentions(input,()=>[...(pic?.items.filter(w=>w.wdb).map(w=>({text:mentionText(w),label:mentionLabel(w)}))||[]),...(jc.available()?jc.mentions(sysNames()).map(m=>({text:m.text,label:m.label})):[])]);let options=[],at=null,index=0;
+ const input=$('input');composer=composeMentions(input,()=>[...(pic?.items.filter(w=>w.wdb).map(w=>({text:mentionText(w),label:mentionLabel(w)}))||[]),...(jc.available()?jc.mentions(sysNames()).map(m=>({text:m.text,label:m.label})):[]),...busyMentions()]);let options=[],at=null,index=0;
  function suggestions(){at=mentionAt(input.value,input.selectionStart);if(!at||(!pic&&!jc.available())){pop.hidden=true;return;}const q=at.query.toLowerCase();
   options=[...(pic?pic.items.filter(w=>w.wdb&&`${w.folder} ${w.ceo} ${w.company} ${w.py||''}`.toLowerCase().includes(q)):[]),
    ...(jc.available()?jc.mentions(sysNames()).filter(m=>`${jc.nameOf(m.c)} ${m.c.id}`.toLowerCase().includes(q)):[])].slice(0,20);index=0;paint();}

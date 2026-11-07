@@ -8,7 +8,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { startWebServer } from './serve.mjs';
 import { startFakeHost } from './fakehost.mjs';
 import { launch, newPage, navigate, waitFor, waitState, evaluate, shoot, sleep } from './browser.mjs';
-import { buttonAuditSource } from '../../brand/test/button-audit.mjs';
+import { buttonAuditSource } from '../tools/button-audit.mjs';
 
 const out = new URL('../../../reports/qa/p411/web/', import.meta.url); mkdirSync(out, { recursive: true });
 const results = {};
@@ -52,11 +52,11 @@ try {
       await fake.send(mk(id));
       await waitFor(p, `!!document.getElementById('hlp') && !document.getElementById('hlp').hidden && document.getElementById('hlp-img').complete`, 8000);
       await sleep(200);
-      await waitFor(p, `[...document.querySelectorAll('#hlp .hlp-acts .aj-btn, #hlp .hlp-form .aj-btn')].filter(b => b.offsetParent).every(b => b.getBoundingClientRect().height >= 56)`, 5000).catch(() => {});
+      await waitFor(p, `[...document.querySelectorAll('#hlp .hlp-acts .aj-action, #hlp .hlp-form .aj-action')].filter(b => b.offsetParent).every(b => b.getBoundingClientRect().height >= 56)`, 5000).catch(() => {});
       const lay = await evaluate(p, `({over: document.documentElement.scrollWidth > innerWidth + 1, src: document.getElementById('hlp-img').src.slice(0, 22),
         kind: document.getElementById('hlp').dataset.kind, left: document.getElementById('hlp-left').textContent,
         form: !document.getElementById('hlp-form').hidden, img: document.getElementById('hlp-img').getBoundingClientRect().width,
-        btns: [...document.querySelectorAll('#hlp .hlp-acts .aj-btn, #hlp .hlp-form .aj-btn')].filter(b => b.offsetParent).map(b => Math.round(b.getBoundingClientRect().height)),
+        btns: [...document.querySelectorAll('#hlp .hlp-acts .aj-action, #hlp .hlp-form .aj-action')].filter(b => b.offsetParent).map(b => Math.round(b.getBoundingClientRect().height)),
         kicker: document.getElementById('hlp-kicker').textContent})`);
       assert.equal(lay.over, false); assert.equal(lay.src, 'data:image/png;base64,'); assert.equal(lay.kind, kind);
       assert.ok(lay.btns.length && lay.btns.every((x) => x >= 56), 'buttons ≥ 56 px ' + lay.btns);

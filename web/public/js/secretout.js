@@ -1,3 +1,4 @@
+import { attachSpecial, canSpecialApprove, decorateSpecial, forgetSpecial, refreshSpecialVisibility, reviewSpecial } from './approval-special541.js';
 import { paintScope } from './cardplace.js';   // 0.26.9 #472 ②: class + why the task scope does not cover it
 import { copyButton } from './copycode.js';
 import { paintPk, faState, errName } from './pkassist.js';   // P539: no own passkey here · why a passkey tap failed
@@ -37,23 +38,23 @@ function build() {
   root.id = 'sout'; root.hidden = true;
   // P142 (A16): a layer — ESC = 「完成」 once opened (the value is wiped), else the card's 「不需要了」; shortcuts stay off
   registerLayer({ element: () => root, open: () => !!root && !root.hidden, rank: TOP_RANK, fallback: () => document.getElementById('input') || document.getElementById('setBtn'),
-    close: () => { if (previewUI?.close()) return; const d = $('sout-done'); (d && !d.hidden ? d : $('sout-decline'))?.click(); } });
+    close: () => { if (previewUI?.close()) return; if(!opened&&cards.get(shownId)?.approval_v===2){const c=cards.get(shownId);c.collapsed=true;render();return;} const d = $('sout-done'); (d && !d.hidden ? d : $('sout-decline'))?.click(); } });
   root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'sout-title');
   const box = mk('div', 'box');
-  const node = (tag, id, cls) => { const n = mk(tag, cls); n.id = id; return n; };
+  const node = (tag, id, cls) => { const n = mk(tag, cls, undefined, cls?.split(/\s+/).includes('aj-action') ? 'aj-action' : 'aj-auth-card', 'dialog'); n.id = id; return n; };
   const val = node('div', 'sout-value', 'sout-value');
   val.hidden = true;
   previewUI = createSecretPreview(root, val, copyValue);
   const mask = node('p', 'sout-mask', 'sout-mask');
   const main = mk('div', 'ajrow sout-main');
-  const open = node('button', 'sout-open', 'aj-btn aj-btn--primary'); open.type = 'button';
-  const setup = node('button', 'sout-setup', 'aj-btn aj-btn--primary'); setup.type = 'button'; setup.hidden = true;
-  const copy = node('button', 'sout-copy', 'aj-btn aj-btn--primary'); copy.type = 'button'; copy.hidden = true;
-  const dl = node('button', 'sout-download', 'aj-btn'); dl.type = 'button'; dl.hidden = true;
-  const fin = node('button', 'sout-done', 'aj-btn'); fin.type = 'button'; fin.hidden = true;
+  const open = node('button', 'sout-open', 'aj-action aj-action--primary'); open.type = 'button';
+  const setup = node('button', 'sout-setup', 'aj-action aj-action--primary'); setup.type = 'button'; setup.hidden = true;
+  const copy = node('button', 'sout-copy', 'aj-action aj-action--primary'); copy.type = 'button'; copy.hidden = true;
+  const dl = node('button', 'sout-download', 'aj-action'); dl.type = 'button'; dl.hidden = true;
+  const fin = node('button', 'sout-done', 'aj-action'); fin.type = 'button'; fin.hidden = true;
   main.append(open, setup, copy, dl, fin);
   // 「不要了」 is a quiet text button on its own line, away from the main action
-  const decline = node('button', 'sout-decline', 'aj-btn aj-btn--quiet sout-decline'); decline.type = 'button';
+  const decline = node('button', 'sout-decline', 'aj-action aj-action--quiet sout-decline'); decline.type = 'button';
   box.append(node('p', 'sout-kicker', 'elev-kicker'), node('h2', 'sout-title'), node('p', 'sout-scope', 'cp-scope'), node('dl', 'sout-rows', 'elev-rows'), mask, val,
     node('p', 'sout-note', 'elev-note'), node('p', 'sout-left', 'elev-left'), main, node('div', 'sout-pk', 'pkassist'), decline);
   root.appendChild(box);
@@ -80,10 +81,11 @@ export function add(m) {
     filename: str(m.filename ?? '', 128), size: Number.isInteger(m.size) && m.size >= 0 ? m.size : null,
     deadline: Date.now() + (Number.isInteger(m.ttl) && m.ttl >= 0 && m.ttl <= 600 ? m.ttl : 600) * 1000 };
   if (!c.name || c.purpose === null || c.filename === null || c.size === null) return;
+  attachSpecial(m,c,render);
   if (typeof m.fa === 'string' && m.fa.length > 0 && m.fa.length <= 1400) {
     c.fa = m.fa;
     c.fa_s = faState(m.fa_s);   // P539
-    (async () => { c.faCh = await elevateChallenge(channel(), await myDeviceId(), c.id, KIND, c.n, await shownDigest(shownFields(c))); })()
+    (async () => { await c.envelopeReady; c.faCh = await elevateChallenge(channel(), await myDeviceId(), c.id, KIND, c.n, await shownDigest(shownFields(c))); })()
       .catch(() => { c.faCh = null; });
   }
   const old = cards.get(m.id);
@@ -124,6 +126,7 @@ export function value(m) {
 
 /** The card ended everywhere (§18 `secret_out_done`): picked (by this or another phone) / expired / declined / stopped / gone. */
 export function done(m) {
+  forgetSpecial(m.id,m.result);
   const c = cards.get(m.id);
   if (!c) return;
   if (opened && opened.id === m.id && m.result === 'picked') { c.picked = true; render(); return; }   // keep showing until 完成
@@ -156,6 +159,7 @@ export function clear({ keepOpened = false } = {}) {
   const going = keepOpened && !keep && shownId ? cards.get(shownId) : null;
   if (!keep) wipeOpened();
   if (going && (busy || going.sending)) { cards.clear(); cards.set(going.id, going); return; }
+  for(const id of cards.keys())forgetSpecial(id);
   cards.clear(); busy = false;
   if (keep) { cards.set(keep.id, keep); render(); return; }
   shownId = null;
@@ -179,9 +183,9 @@ function row(dl, label, value) {
 }
 function render() {
   build();
-  const c = (opened && cards.get(opened.id)) || cards.values().next().value;
+  const c = (opened && cards.get(opened.id)) || [...cards.values()].find(c=>!c.collapsed);
   clearTimeout(timer);
-  if (!c) { root.hidden = true; wipeOpened(); document.body.dataset.sout = '0'; return; }
+  if (!c) { root.hidden = true; wipeOpened(); document.body.dataset.sout = '0'; refreshSpecialVisibility(); return; }
   document.body.dataset.sout = '1';
   const isOpen = !!opened && opened.id === c.id;
   if (shownId !== c.id || root.dataset.state !== (isOpen ? 'open' : 'closed')) {
@@ -215,6 +219,7 @@ function render() {
   $('sout-decline').disabled = busy;
   paintPk($('sout-pk'), c.fa && !isOpen && !busy ? { fa: c.fa_s, err: c.faErr || null, retry: () => openCard() } : {});   // P539
   paintLeft(c, isOpen);
+  decorateSpecial(root,c,{title:$('sout-title'),metadata:[$('sout-scope'),$('sout-rows'),$('sout-note')],allow:$('sout-open'),deny:$('sout-decline'),opened:isOpen,repaint:render,fold:()=>{root.hidden=true;render();}});
 }
 function paintLeft(c, isOpen) {
   if (isOpen) { $('sout-left').textContent = t('sout.picked'); return; }
@@ -226,7 +231,7 @@ function paintLeft(c, isOpen) {
 /** 「用 Face ID 查看」: the system sheet straight from the tap (iOS gesture rule), then the request; no value is sent by us. */
 async function openCard() {
   const c = cards.get(shownId);
-  if (!c || opened) return;
+  if (!c || opened || !canSpecialApprove(c)) return;
   if (busy || c.sending) { toast(t(c.sending ? 'p566.handing' : 'p566.busy'), 3000); return; }   // P566 (#354): never a silent tap
   if ((!c.fa || !canAssert()) && phoneConfirmation(!c.fa)) return;
   if (!c.fa) { toast(t('sout.noPasskey'), 4200); return; }
@@ -258,6 +263,7 @@ async function openCard() {
 async function declineCard() {
   const c = cards.get(shownId);
   if (!c || busy || opened) return;
+  if(c.approval_v===2){await reviewSpecial(c,'deny');return;}
   const g = gen();
   if (!g) { toast(t('elev.net'), 3000); return; }
   busy = true; render();
@@ -271,7 +277,7 @@ async function copyValue(e) {
 function download() {
   if (!opened || !opened.bytes) return;
   const url = URL.createObjectURL(new Blob([opened.bytes], { type: 'application/octet-stream' }));
-  const a = mk('a');
+  const a = mk('a', undefined, undefined, 'aj-auth-card');
   a.href = url; a.download = opened.filename; a.rel = 'noopener';
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30000);

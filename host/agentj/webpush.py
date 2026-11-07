@@ -140,6 +140,20 @@ def parse_sub(obj: dict) -> dict | None:
     return {"endpoint": ep, "p256dh": p, "auth": a}
 
 
+def parse_kinds(obj) -> list | None:
+    """Return this device's validated categories; an empty list disables all."""
+    kinds = obj.get("kinds") if isinstance(obj, dict) else None
+    if (not isinstance(kinds, list) or len(kinds) > len(KINDS)
+            or not all(isinstance(k, str) for k in kinds) or set(kinds) - set(KINDS)):
+        return None
+    return [k for k in KINDS if k in kinds]
+
+
+def wants(sub: dict, kind: str) -> bool:
+    kinds = sub.get("kinds")
+    return kind in kinds if isinstance(kinds, list) else True
+
+
 def load_subs(st) -> dict:
     try:
         d = json.loads(st.push_path.read_text())

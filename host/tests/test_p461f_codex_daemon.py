@@ -246,7 +246,8 @@ class DaemonHeldTurn(Base):
         self.assertTrue(a.cleared)
 
     async def test_clear_on_a_live_daemon_turn_is_still_refused(self):
-        path = self.rollout()
+        # A live turn is fresh; OLD deliberately models the separate stale-healing cases.
+        path = self.rollout(mtime=None)
         self.daemon(path, 'active')
         a = self.agent()
         a.rollout, a.rollout_sid = path, SID
@@ -380,10 +381,12 @@ class CmdDetect(unittest.IsolatedAsyncioTestCase):
         h.send_app = AsyncMock()
         h._cmdrun_detecting = True
         h._send_ready = types.MethodType(Host._send_ready, h)
-        with patch('agentj.cmdrun.available_commands', return_value=['doctor']):
+        with patch('agentj.cmdrun.available_commands', return_value=['doctor']), \
+                patch('agentj.cmdrun.command_harnesses', return_value=[]) as facts:
             await Host._detect_terminal_commands(h)
+        facts.assert_called_once_with(detect=True)
         h.send_app.assert_awaited_once()
-        self.assertEqual(h.send_app.await_args.args[1], {'t': 'cmds_state', 'names': ['doctor']})
+        self.assertEqual(h.send_app.await_args.args[1], {'t': 'cmds_state', 'names': ['doctor'], 'harnesses': []})
         self.assertFalse(h._cmdrun_detecting)
 
 

@@ -237,6 +237,8 @@ class Remotes:
             h._pair_finish(old, {"ev": "replaced"})
             if cid is not None and cid in h.sessions:
                 await h.close_cid(cid, "pair_replaced")
+        if getattr(h, '_unbinding_all', False) or not h.st.is_allowed(s.pub):
+            return 'gone', {}
         p = Pairing(secrets.token_bytes(16), secrets.token_bytes(32), time.time() + PAIR_TTL, time.monotonic() + PAIR_TTL, None)
         p.phone = s.device
         p.rv = target.get("rv")

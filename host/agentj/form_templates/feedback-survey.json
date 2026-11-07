@@ -1,0 +1,282 @@
+{
+ "name": "feedback-survey",
+ "mode": "deep",
+ "title": {
+  "zh": "反馈调研",
+  "en": "Feedback survey"
+ },
+ "about": {
+  "zh": "一次收齐评分、排序、开放题和截图。",
+  "en": "Ratings, a ranking, open questions and screenshots in one go."
+ },
+ "vars": {
+  "product": {
+   "label": {
+    "zh": "产品名",
+    "en": "Product"
+   },
+   "required": true
+  },
+  "f1": {
+   "label": {
+    "zh": "功能 1",
+    "en": "Feature 1"
+   },
+   "required": true
+  },
+  "f2": {
+   "label": {
+    "zh": "功能 2",
+    "en": "Feature 2"
+   },
+   "required": true
+  },
+  "f3": {
+   "label": {
+    "zh": "功能 3",
+    "en": "Feature 3"
+   },
+   "required": true
+  },
+  "f4": {
+   "label": {
+    "zh": "功能 4",
+    "en": "Feature 4"
+   },
+   "required": true
+  }
+ },
+ "fill": [
+  "drop",
+  "title",
+  "options.rank"
+ ],
+ "form": {
+  "title": {
+   "zh": "{{product}} · 使用反馈",
+   "en": "{{product}} · feedback"
+  },
+  "sections": [
+   {
+    "id": "score",
+    "title": {
+     "zh": "打分",
+     "en": "Scores"
+    },
+    "questions": [
+     {
+      "id": "overall",
+      "type": "rating",
+      "label": {
+       "zh": "整体满意度",
+       "en": "Overall satisfaction"
+      },
+      "required": true,
+      "keep": true
+     },
+     {
+      "id": "nps",
+      "type": "slider",
+      "label": {
+       "zh": "会推荐给朋友吗？",
+       "en": "Would you recommend it?"
+      },
+      "min": 0,
+      "max": 10,
+      "step": 1,
+      "labels": [
+       {
+        "zh": "绝不",
+        "en": "Never"
+       },
+       {
+        "zh": "一定",
+        "en": "Definitely"
+       }
+      ]
+     },
+     {
+      "id": "use",
+      "type": "buttons",
+      "label": {
+       "zh": "多久用一次？",
+       "en": "How often do you use it?"
+      },
+      "options": [
+       {
+        "value": "daily",
+        "label": {
+         "zh": "每天",
+         "en": "Daily"
+        }
+       },
+       {
+        "value": "weekly",
+        "label": {
+         "zh": "每周",
+         "en": "Weekly"
+        }
+       },
+       {
+        "value": "rare",
+        "label": {
+         "zh": "很少",
+         "en": "Rarely"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "what",
+    "title": {
+     "zh": "哪些重要",
+     "en": "What matters"
+    },
+    "questions": [
+     {
+      "id": "rank",
+      "type": "rank",
+      "label": {
+       "zh": "把这几项按重要程度排序",
+       "en": "Rank these by importance"
+      },
+      "options": [
+       {
+        "value": "f1",
+        "label": {
+         "zh": "{{f1}}",
+         "en": "{{f1}}"
+        }
+       },
+       {
+        "value": "f2",
+        "label": {
+         "zh": "{{f2}}",
+         "en": "{{f2}}"
+        }
+       },
+       {
+        "value": "f3",
+        "label": {
+         "zh": "{{f3}}",
+         "en": "{{f3}}"
+        }
+       },
+       {
+        "value": "f4",
+        "label": {
+         "zh": "{{f4}}",
+         "en": "{{f4}}"
+        }
+       }
+      ]
+     },
+     {
+      "id": "missing",
+      "type": "longtext",
+      "label": {
+       "zh": "最想要但还没有的",
+       "en": "What you want most that isn't there"
+      },
+      "max_length": 1000
+     }
+    ]
+   },
+   {
+    "id": "issues",
+    "title": {
+     "zh": "问题",
+     "en": "Problems"
+    },
+    "questions": [
+     {
+      "id": "bug",
+      "type": "single",
+      "label": {
+       "zh": "最近遇到过问题吗？",
+       "en": "Any problems lately?"
+      },
+      "options": [
+       {
+        "value": "no",
+        "label": {
+         "zh": "没有",
+         "en": "No"
+        }
+       },
+       {
+        "value": "minor",
+        "label": {
+         "zh": "小问题",
+         "en": "Minor ones"
+        }
+       },
+       {
+        "value": "major",
+        "label": {
+         "zh": "严重问题",
+         "en": "Serious ones"
+        }
+       }
+      ]
+     },
+     {
+      "id": "bug_what",
+      "type": "longtext",
+      "label": {
+       "zh": "说说发生了什么",
+       "en": "What happened?"
+      },
+      "max_length": 2000,
+      "show_if": {
+       "q": "bug",
+       "in": [
+        "minor",
+        "major"
+       ]
+      }
+     },
+     {
+      "id": "shots",
+      "type": "file",
+      "label": {
+       "zh": "截图或录屏（可选）",
+       "en": "Screenshots or recordings (optional)"
+      },
+      "accept": [
+       "image",
+       "video",
+       "file"
+      ],
+      "max_files": 5,
+      "show_if": {
+       "q": "bug",
+       "in": [
+        "minor",
+        "major"
+       ]
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "example": {
+  "zh": {
+   "product": "Agent J",
+   "f1": "速度",
+   "f2": "语音",
+   "f3": "手机审批",
+   "f4": "网页报告"
+  },
+  "en": {
+   "product": "Agent J",
+   "f1": "Speed",
+   "f2": "Voice",
+   "f3": "Approvals on the phone",
+   "f4": "Web reports"
+  }
+ }
+}

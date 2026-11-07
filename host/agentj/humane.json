@@ -4,6 +4,7 @@
   "limits": {"zh": 40, "en": 110},
   "periods": {"morning": [5, 11], "afternoon": [11, 18], "evening": [18, 23]},
   "lines": {
+    "migration.urls_failed": {"zh": "Agent J：旧网址没能替换（{kind}），照常使用", "en": "could not update the old addresses（{kind}）"},
     "plaza.install.no_device": {"zh": "没有安装：这台主机还没有配对遥控器，卡发不出；先配对再请求。", "en": "NOT INSTALLED: no remote is paired with this host, so no card can go out. Pair one, then ask again."},
     "plaza.install.estop": {"zh": "没有安装：Agent J 已急停，没有发卡；恢复后再请求。", "en": "NOT INSTALLED: Agent J is stopped (emergency stop); no card was sent. Resume, then ask again."},
     "plaza.install.serve_stop": {"zh": "没有安装：Agent J 正在停止或重启，卡已撤回；稍后再请求。", "en": "NOT INSTALLED: Agent J is stopping or restarting; the card was withdrawn. Ask again shortly."},

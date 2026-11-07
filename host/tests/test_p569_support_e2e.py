@@ -29,7 +29,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from agentj import cloud, elevate, feedback, field_tools, host_diagnostics as hd, layout_diag, names, reconnect, support, voice, wire
+from agentj import cloud, elevate, feedback, field_tools, host_diagnostics as hd, layout_diag, names, reconnect, support, tasks, voice, wire
 from agentj.state import State
 
 AJ = Path(__file__).resolve().parents[2]
@@ -158,10 +158,29 @@ class OfficialReplyReachesIsolatedAgent(unittest.IsolatedAsyncioTestCase):
         self.env = patch.dict(os.environ, {"NO_PROXY": "127.0.0.1,localhost", "no_proxy": "127.0.0.1,localhost"})
         self.env.start()
         # Jev (layer 2) is an external call: offline here; layer 1 still runs for real.
-        self.jev = patch.object(support.privacy, "layer2", return_value=SimpleNamespace(status="ok"))
-        self.jev.start()
-        self.el = elevate.Elevator(SimpleNamespace(st=self.st, preferences={}, agent=SimpleNamespace(native_source={'kind':'terminal','role':'owner'})))
+        self.jev = patch.object(support.privacy, "layer2", return_value=support.privacy.Verdict(status="ok"))
+        self.jev_mock=self.jev.start()
+        # The current privacy broker pins a real native process ancestry and a
+        # host-held transcript origin; a requested source label cannot grant it.
+        from agentj import approval_review, peer_origin, provenance
+        proc = peer_origin._stat(Path('/proc'), os.getpid())
+        host = SimpleNamespace(st=self.st, preferences={}, hist=SimpleNamespace(epoch=1),
+                               desktop_turn=1, stopped=lambda: False,
+                               agent_notice=lambda message: None,
+                               agent=SimpleNamespace(native_source=provenance.terminal(),
+                                                     session={'pid': os.getpid(), 'procStart': proc[2]}))
+        from agentj.history import History
+        host.hist=History(self.st,on=False)
+        host.hist_add=host.hist.add
+        owner=host.hist.add({'k':'terminal','text':'Synthetic owner support request'},'', 'done')
+        host.desktop_turn=owner['id']
+        approval_review.remember(host,owner,provenance.terminal())
+        self.el = elevate.Elevator(host)
         await self.el.start()
+        # Linux process start times have jiffy precision. A new child must begin
+        # strictly after the remembered owner input, not within its same tick.
+        from agentj import busy_launch
+        await asyncio.sleep(2 / busy_launch.HZ)
 
     async def asyncTearDown(self):
         await self.el.stop()
@@ -183,6 +202,14 @@ class OfficialReplyReachesIsolatedAgent(unittest.IsolatedAsyncioTestCase):
     async def test_feedback_then_official_reply_then_support_thread_shows_it(self):
         for mode in MODES:
             with self.subTest(mode=mode):
+                # Each mode is a new native owner request, not authority inherited
+                # from the preceding mode's external support reply.
+                from agentj import approval_review,provenance,busy_launch
+                host=self.el.host
+                owner=host.hist.add({'k':'terminal','text':'New synthetic owner support request'},'','done')
+                host.desktop_turn=owner['id']
+                approval_review.remember(host,owner,provenance.terminal())
+                await asyncio.sleep(2 / busy_launch.HZ)
                 # skill feedback-to-agentj-father: `agentj support feedback "<redacted draft>" --wait 0` → exit 5 + ticket id
                 rc, out, err = await self.agent(mode, "feedback", f"Reply never shows up ({mode})", "--wait", "0")
                 self.assertEqual(rc, support.EXIT_PENDING, (out, err))
@@ -202,6 +229,25 @@ class OfficialReplyReachesIsolatedAgent(unittest.IsolatedAsyncioTestCase):
                 rc, out, err = await self.agent(mode, "list")
                 self.assertEqual(rc, 0, (out, err))
                 self.assertIn(tid, out)
+
+    async def test_unknown_original_peer_context_cannot_review_or_send(self):
+        host=self.el.host
+        host.desktop_turn=-1  # no Host-held owner input for this actual child
+        self.jev_mock.reset_mock()
+        rc,out,err=await self.agent('claude','feedback','Synthetic denied request','--wait','0')
+        self.assertEqual(rc,support.EXIT_UNAVAILABLE,(out,err))
+        self.jev_mock.assert_not_called()
+        self.assertFalse(self.worker.threads)
+
+    async def test_task_change_during_fixed_review_cannot_send(self):
+        host=self.el.host
+        def changed(*args,**kwargs):
+            host.desktop_turn=-1
+            return support.privacy.Verdict(status='ok')
+        with patch.object(support.privacy,'layer2',side_effect=changed):
+            rc,out,err=await self.agent('claude','feedback','Synthetic stale request','--wait','0')
+        self.assertEqual(rc,support.EXIT_UNAVAILABLE,(out,err))
+        self.assertFalse(self.worker.threads)
 
     async def test_ask_waits_and_reads_the_reply_written_meanwhile(self):
         """identity core: `agentj support ask "<question>" --attach-doctor` waits for the answer through the same path."""
@@ -245,6 +291,8 @@ class EveryOpBindsItsTarget(unittest.TestCase):
         "feedback_replies": ({"as_json": True}, (feedback, "run_replies", 0)),
         # Source recovery (2684d013f): devices is read through the selected host; instance 1 is pinned below.
         "devices": ({"as_json": True, "selected_instance": 1}, (names, "ctl_call", {"ok": True, "sessions": []})),
+        # 0.26.9 #467: the fenced `agentj tasks list`, read from serve's own state (fixed projection)
+        "tasks_list": ({"as_json": True}, (tasks, "rows", [])),
     }
 
     def test_cases_cover_every_allowed_op(self):

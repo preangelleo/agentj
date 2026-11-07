@@ -159,7 +159,7 @@ function mount(host, cb) {
   /** The extra-keys bar: touch screens and narrow windows (the page's CSS decides); every key ≥ 44 px. */
   bar = mk('div', 'term-xkeys'); bar.id = 'term-xkeys'; bar.setAttribute('role', 'group');
   for (const k of BAR) {
-    const b = mk('button', 'term-key term-xkey', k.label); b.type = 'button'; b.id = 'term-x-' + k.id; b.dataset.k = k.id;
+    const b = mk('button', 'term-key term-xkey', k.label, 'aj-terminal'); b.type = 'button'; b.id = 'term-x-' + k.id; b.dataset.k = k.id;
     if (k.mod) { b.dataset.mod = k.mod; b.setAttribute('aria-pressed', 'false'); }
     b.addEventListener('pointerdown', (e) => { if (e.pointerType !== 'mouse') e.preventDefault(); });   // keep the soft keyboard where it is
     b.addEventListener('click', async (e) => {

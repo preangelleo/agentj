@@ -40,7 +40,8 @@ HANDOFF = f'已转给 {agent_label(None)}，请回 Agent J 网页跟它确认'
 
 # P557: an image request that reaches the main conversation is drawn with the owner's Codex (subscription), not a paid service
 DRAW_HINT = ('Image requests: draw with headless `codex exec` (its own image tool, inside the owner\'s subscription) and send the '
-             'image back; a per-use paid image service is spending and needs the owner\'s yes first.\n')
+             'image back. Copy the generated image into the current working folder first, then reference that copy in your reply; '
+             'never ask to widen file access. A per-use paid image service is spending and needs the owner\'s yes first.\n')
 
 
 # P559: the drawer's own text (a fresh headless `codex exec` turn) — draw at once, no exploring first (the 17:04 turn spent its
@@ -109,7 +110,7 @@ def poll_error(e):
 
 def error_hint(code, lang='zh'):
     words = {
-        'state_unwritable': ('消息没能写进工作文件夹。macOS 请移出下载、桌面、文稿或 iCloud，再运行 agentj service restart。', 'Messages could not be saved. On macOS move the work folder out of Downloads, Desktop, Documents or iCloud, then run agentj service restart.'),
+        'state_unwritable': ('消息没能写进工作文件夹。macOS 请移出下载、桌面、文稿或 iCloud，再运行 `agentj service restart`。', 'Messages could not be saved. On macOS move the work folder out of Downloads, Desktop, Documents or iCloud, then run `agentj service restart`.'),
         'connection_reset': ('微信连接被重置，请检查网络和系统代理。', 'WeChat connection reset; check the network and system proxy.'),
         'proxy_dropped': ('微信长连接被断开，请检查系统代理。', 'WeChat long polling was disconnected; check the system proxy.'),
         'binding_taken_over': ('已被另一台 Agent J 主机接管；本机已停止轮询。请在需要使用的 Agent J 主机上重新连接微信。', 'Another Agent J host took over; polling stopped here. Reconnect WeChat on the host you want to use.'),
@@ -261,6 +262,8 @@ class WeChat:
         self.model = model or self.sessions.turn
         self.qr = None
         self.login_task = None
+        self.setup_deadline = None
+        self.setup_id = None
         self.cards = {}
         self.card_tasks = set()
         self.error = self.store.data.get("binding_error")
@@ -310,6 +313,9 @@ class WeChat:
         if self.qr:
             # QR is ephemeral pairing material, only on local tty / encrypted ready device.
             out['qr'] = {k: self.qr[k] for k in ('id', 'img', 'status')}
+            # Total setup window, NOT the provider QR lifetime. Monotonic clock avoids wall-clock jumps.
+            if self.setup_deadline is not None:
+                out['setup'] = {'id': self.setup_id, 'remaining_seconds': max(0, self.setup_deadline - time.monotonic())}
             if terminal:
                 out['qr']['content'] = self.qr['content']
         return out
@@ -334,7 +340,8 @@ class WeChat:
         api = self.api_factory()
         generation = self.store.data['generation']
         try:
-            deadline = time.monotonic() + 600
+            deadline = self.setup_deadline = time.monotonic() + 600
+            self.setup_id = secrets.token_hex(16)
             base, code = BASE, None
             while time.monotonic() < deadline and not self.h.stopped() and not self.closed:
                 if generation != self.store.data['generation']:
@@ -396,6 +403,7 @@ class WeChat:
             self.error = 'login_failed'
         finally:
             self.qr = None
+            self.setup_deadline = self.setup_id = None
             self.publish()
 
     async def unbind(self):
@@ -664,9 +672,18 @@ class WeChat:
                 name = str(detail.get('file_name') or ('attachment.' + {2:'jpg',3:'silk',4:'bin',5:'mp4'}[typ]))[:128]
                 mime = mimetypes.guess_type(name)[0] or 'application/octet-stream'
                 if typ == 2:
+                    from .channel_native import image_type
+                    mime = 'image/gif' if data[:6] in (b'GIF87a', b'GIF89a') else image_type(data)
+                    if not mime:
+                        self.store.count('ignored_invalid_image')
+                        self.h.st.log('wechat_image_in', result='invalid_type')
+                        return
+                    name = os.path.splitext(name)[0] + {'image/png':'.png', 'image/jpeg':'.jpg', 'image/webp':'.webp', 'image/gif':'.gif'}[mime]
                     input_images.append(data)
                 path = await asyncio.to_thread(self.store.place, wd, data, name, mime)
                 paths.append(path)
+                if typ == 2:
+                    self.h.st.log('wechat_image_in', result='stored', bytes=len(data), mime=mime)
                 placed.append((path, name, mime, len(data), typ))
                 if typ == 3 and isinstance(detail.get('text'), str):
                     text.append(detail['text'][:12000])
@@ -771,24 +788,32 @@ class WeChat:
         r['state'] = 'replied'        # before any I/O: never answered twice
         self.store.save()
         text = (turn.get('reply') or {}).get('text', '')
+        from .silent import MARKER
+        if turn.get('silent') is True:
+            text = MARKER
         failed = turn.get('end') in ('failed', 'stopped')
         task = asyncio.get_running_loop().create_task(self.answer_main(r, text, failed))
         self.card_tasks.add(task)
         task.add_done_callback(self.card_tasks.discard)
 
     async def answer_main(self, r, text, failed):
-        from .silent import is_silent
+        from .silent import is_silent, strip_markers
         from . import owner_channels as oc
         generation = self.store.data['generation']
         if r.get('generation') != generation or not self.store.data['account'] or self.h.stopped():
             return
         lang = oc.lang_of(self.h)
-        if is_silent(text) or not str(text or '').strip():
+        if is_silent(text):
+            r['outcome'] = 'silent'
+            self.store.save()
+            return
+        if not str(text or '').strip():
             if not failed:
                 r['outcome'] = 'silent'
                 self.store.save()
                 return
             text = ('这一轮没有完成，请在 Agent J 网页查看。' if lang != 'en' else 'This turn did not complete. Check Agent J Web App.')
+        text = strip_markers(text)
         named, files, _paths, keys = await asyncio.to_thread(attachments, self.h, text)
         text = await self.owner_out(text)      # P573: keys → pickup cards + placeholders; the answer itself is delivered
         reply = public_reply(text, named, lang, files)

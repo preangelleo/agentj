@@ -1,0 +1,58 @@
+/* #577 Web-owned header; source order is a compatibility contract. */
+/* ===== header (shares the page background; dashed salt whisper-seam below) ===== */
+.aj-header { position: relative; z-index: 20; background: var(--bg); border-bottom: 1.5px dashed var(--seam); }
+.aj-header__inner {   padding: var(--sp-2) var(--gutter);
+  min-height: 64px; display: flex; align-items: center; gap: var(--sp-4); }
+.aj-brand { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--tap);
+  color: var(--text); text-decoration: none; flex: 0 0 auto; }
+.aj-brand img { width: 32px; height: 32px; image-rendering: pixelated; }
+.aj-brand__name { font-family: var(--font-title); font-weight: 700; font-size: 1.125rem; letter-spacing: -0.01em; white-space: nowrap; }
+.aj-brand:hover { text-decoration: none; }
+.aj-menu { flex: 1 1 auto; display: flex; justify-content: flex-start; min-width: 0; }
+.aj-menu > summary { list-style: none; }
+.aj-menu > summary::-webkit-details-marker { display: none; }
+.aj-menu__button { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
+  min-width: var(--tap); min-height: var(--tap); padding: 0 var(--sp-3); border: 1px solid var(--quiet-border);
+  border-radius: var(--r-md); background: var(--quiet-bg); color: var(--quiet-fg); cursor: pointer; font-size: var(--fs-sm); }
+.aj-menu__icon { width: 18px; height: 12px; position: relative; border-block: 2px solid currentColor; }
+.aj-menu__icon::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 2px solid currentColor; transform: translateY(-50%); }
+.aj-nav { display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; }
+.aj-nav a { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 var(--sp-3);
+  border-radius: var(--r-md); color: var(--text); text-decoration: none; font-size: var(--fs-sm); font-weight: 500; }
+.aj-nav a:hover { background: var(--surface-2); }
+.aj-nav a[aria-current="page"] { box-shadow: inset 0 -2px 0 var(--accent); border-radius: 0; }
+.aj-nav__cta { display: none !important; }
+.aj-header__end { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; flex: 0 0 auto; }
+
+/* desktop: menu always open, its button hidden (ui.js opens it; ::details-content covers no-JS where supported) */
+@media (min-width: 721px) {
+  .aj-menu[open] > summary { display: none; }
+  @supports selector(::details-content) {
+    .aj-menu > summary { display: none; }
+    .aj-menu::details-content { display: contents; content-visibility: visible; }
+  }
+}
+/* mobile ≤ 720 px: brand · lang · menu button; nav drops down as a full-width panel */
+@media (max-width: 720px) {
+  .aj-header__inner { gap: var(--sp-2); }
+  .aj-menu { order: 3; flex: 0 0 auto; }
+  .aj-header__end { order: 2; }
+  .aj-header__cta { display: none !important; }
+  .aj-nav { position: absolute; left: 0; right: 0; top: 100%; flex-direction: column; align-items: stretch; gap: 0;
+    padding: var(--sp-2) var(--gutter) var(--sp-4); background: var(--bg); border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow-2); }
+  .aj-nav a { min-height: 48px; font-size: var(--fs-md); border-bottom: 1px dashed var(--seam); border-radius: 0; }
+  .aj-nav a[aria-current="page"] { box-shadow: none; border-left: 3px solid var(--accent); padding-inline-start: calc(var(--sp-3) - 3px); }
+  .aj-nav__cta { display: inline-flex !important; margin-top: var(--sp-3); justify-content: center; }
+  .aj-nav a.aj-nav__cta, .aj-nav a.aj-nav__cta:hover { color: var(--primary-fg); background: var(--primary-bg);
+    border: 1px solid var(--primary-bg); border-radius: var(--r-md); }
+  .aj-menu[open] .aj-menu__button { background: var(--primary-bg); color: var(--primary-fg); border-color: var(--primary-bg); }
+}
+@media (max-width: 480px) {
+  .aj-menu__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .aj-menu__button { padding: 0; width: var(--tap); }
+  .aj-header .aj-lang--pair button { min-width: var(--tap); padding: 0 4px; }
+  .aj-header .aj-lang--pair [aria-pressed="true"]::after { display: none; }
+  .aj-header .aj-lang--pair .aj-lang__sep { display: none; }
+}
+@media (max-width: 400px) { .aj-brand__name { font-size: 1rem; } .aj-header__inner .aj-badge { display: none; } }

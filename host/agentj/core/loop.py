@@ -5,7 +5,7 @@ Step boundary (12.2 / O4 / O7): before every model call the loop reads `control`
 a stop or a spent budget (wall clock / tokens, 12.9 「先判后调模型」) gets ONE last call without tools that must write the
 (partial) report, so there is always a report. Tool calls of one step run in parallel when all are read-only or `task`
 (Pi), else in order. Old tool outputs are trimmed when the conversation nears the model's window (deepseek-harness result
-trimming; summary compaction is C5). Tool output is scanned for credentials (privacy.credentials) before the model sees it.
+trimming); still too big → a summary compaction (compact.py, P431 C5), and once more after a context-overflow error. Tool output is scanned for credentials (privacy.credentials) before the model sees it.
 
 `task` (12.1 sub-agent; omp #3): an isolated child loop with its own toolbox and session file, at most `max_parallel` at a
 time per CEO, no `task` / `dispatch` of its own (D11), the same gate (order-wide refusals, C14) with the host-built origin
@@ -20,7 +20,7 @@ import re
 import time
 from pathlib import Path
 
-from . import llm, prompt
+from . import compact as compaction, llm, prompt
 from .tools import READ_ONLY
 
 SUB_MAX = 2000
@@ -36,6 +36,15 @@ TASK_SPEC = {"type": "function", "function": {
         "prompt": {"type": "string", "description": "Complete instructions; it sees nothing else"},
         "output_schema": {"type": "object", "description": "Optional JSON Schema for its final JSON"}},
         "required": ["description", "prompt"]}}}
+
+
+def _replay(m: dict, r: dict) -> dict:
+    """Keep what only the producing model may get back: Responses output items (C9), Anthropic content blocks (C1)."""
+    if r.get("response_items"):
+        m.update(_response_items=r["response_items"], _response_model=r["model"])
+    if r.get("anthropic_blocks"):
+        m.update(_anthropic_blocks=r["anthropic_blocks"], _anthropic_model=r["model"])
+    return m
 
 
 def _redact(text: str) -> str:
@@ -61,7 +70,8 @@ def _cap(text: str, limit_tokens: int, where: str) -> str:
 class Loop:
     def __init__(self, *, preset, system: str, specs: list[dict], gate, toolbox=None, session=None, environ=None,
                  call=None, max_steps: int = 80, budget_tokens: int | None = None, deadline: float | None = None,
-                 inbox=None, control=None, on_event=None, extra=None, who: str | None = None):
+                 inbox=None, control=None, on_event=None, extra=None, who: str | None = None, on_delta=None,
+                 auto_compact: bool = True, on_compact=None, mcp=None):
         self.preset, self.system, self.specs, self.gate, self.toolbox = preset, system, specs, gate, toolbox
         self.session, self.environ, self.call = session, environ, call or (lambda *a, **k: llm.chat(*a, **k))
         self.max_steps, self.budget_tokens, self.deadline = max_steps, budget_tokens, deadline
@@ -69,7 +79,11 @@ class Loop:
         self.on_event = on_event or (lambda *a, **k: None)
         self.extra = extra or {}
         self.who = who
+        self.on_delta = on_delta              # C1: called per streamed event (the adapter's stall watch)
+        self.auto_compact, self.on_compact = auto_compact, on_compact     # C5: on_compact(summary text, files)
+        self.mcp = mcp                        # C8: the session's mcp.Hub (calls run here, after the gate)
         self.usage = {"input": 0, "output": 0}
+        self.last_input = 0
         self.msgs: list[dict] = session.load() if session else []
 
     # ------------------------------------------------------------------ messages
@@ -81,9 +95,12 @@ class Loop:
     def _wire(self) -> list[dict]:
         return [{"role": "system", "content": self.system}] + self.msgs
 
+    def _limit(self) -> int:
+        return max(8000, self.preset.context - compaction.RESERVE)
+
     def _trim(self) -> None:
-        limit = max(8000, self.preset.context - 16000)
-        size = lambda: prompt.tokens(self.system) + sum(prompt.tokens(json.dumps(m, ensure_ascii=False)) for m in self.msgs)
+        limit = self._limit()
+        size = lambda: compaction.size(self.system, self.msgs)
         if size() <= limit:
             return
         for m in self.msgs[:-TRIM_KEEP]:
@@ -92,15 +109,64 @@ class Loop:
                 if size() <= limit:
                     return
 
+    async def compact(self, instructions: str = "") -> dict | None:
+        """Summarize all but the recent tail (compact.py). → {before, after, kept, files, text} | None (nothing to cut)."""
+        i = compaction.cut(self.msgs, min(compaction.KEEP, self._limit() // 2))   # a small window keeps less
+        if i <= 0:
+            return None
+        old, tail = self.msgs[:i], self.msgs[i:]
+        before = compaction.size(self.system, self.msgs)
+        files = compaction.files_touched(old)
+        body = compaction.transcript(old, int(self.preset.context * compaction.INPUT_MAX_SHARE))
+        ask = [{"role": "system", "content": compaction.SYSTEM},
+               {"role": "user", "content": (f"Extra instructions from the owner: {instructions}\n\n" if instructions else "")
+                + "Transcript:\n\n" + body}]
+        r = await asyncio.to_thread(self.call, self.preset, ask, None, environ=self.environ)
+        self._count(r)
+        text = _redact(r.get("text") or "").strip()
+        if not text:
+            return None
+        where = str(self.session.path) if self.session else "the session log"
+        summary = compaction.summary_message(text, files, where)
+        self.msgs = [summary] + tail
+        if self.session:
+            self.session.compact(summary, len(tail))
+        self.on_event("compacted", who=self.who, kept=len(tail))
+        if self.on_compact:
+            try:
+                self.on_compact(text, files)
+            except Exception:  # noqa: BLE001 — the handover file is a copy; the session already holds the summary
+                pass
+        return {"before": before, "after": compaction.size(self.system, self.msgs), "kept": len(tail), "files": files,
+                "text": text}
+
     def spent(self) -> int:
         return self.usage["input"] + self.usage["output"]
 
-    async def _model(self, tools: bool = True) -> dict:
-        self._trim()
-        r = await asyncio.to_thread(self.call, self.preset, self._wire(), self.specs if tools else None, environ=self.environ)
+    def _count(self, r: dict) -> None:
+        self.last_input = r["usage"]["input"]       # the provider's own count of the last prompt (the context meter)
         self.usage["input"] += r["usage"]["input"]
         self.usage["output"] += r["usage"]["output"]
+        if self.session:
+            self.session.add_usage(r.get("model") or self.preset.name, r["usage"]["input"], r["usage"]["output"])
+
+    async def _call(self, tools: bool) -> dict:
+        kw = {"on_delta": self.on_delta} if self.on_delta and getattr(self.preset, "stream", False) else {}
+        r = await asyncio.to_thread(self.call, self.preset, self._wire(), self.specs if tools else None, environ=self.environ,
+                                    **kw)
+        self._count(r)
         return r
+
+    async def _model(self, tools: bool = True) -> dict:
+        self._trim()
+        if self.auto_compact and compaction.size(self.system, self.msgs) > self._limit():
+            await self.compact()
+        try:
+            return await self._call(tools)
+        except llm.LLMError as e:
+            if e.kind != "context" or not self.auto_compact or not await self.compact():
+                raise
+            return await self._call(tools)          # one retry on the compacted conversation
 
     # ------------------------------------------------------------------ tools
     async def _one(self, c: dict) -> str:
@@ -115,10 +181,14 @@ class Loop:
                 return await self.extra[name](args)
             except Exception as e:  # noqa: BLE001
                 return f"Error: {type(e).__name__}"
+        if name.startswith("mcp__") and not (self.mcp is not None and self.mcp.owns(name)):
+            return f"Error: unknown tool {name}."
         ok, why = await self.gate.check(name, args, self.who)
         if not ok:
             self.on_event("refused", tool=name, who=self.who)
             return "Refused: " + why
+        if self.mcp is not None and self.mcp.owns(name):
+            return _redact(await asyncio.to_thread(self.mcp.call, name, args))
         if self.toolbox is None:
             return "Error: no toolbox in this session."
         ok, out = await asyncio.to_thread(self.toolbox.call, name, args)
@@ -133,7 +203,7 @@ class Loop:
     async def _final(self, note: str, reason: str) -> dict:
         self._add({"role": "user", "content": note})
         r = await self._model(tools=False)
-        self._add({"role": "assistant", "content": r["text"]})
+        self._add(_replay({"role": "assistant", "content": r["text"]}, r))
         return {"text": r["text"], "reason": reason, "usage": dict(self.usage)}
 
     async def run(self, text: str | None) -> dict:
@@ -153,7 +223,7 @@ class Loop:
                 self._add({"role": "user", "content": f"〔追加 #{n}〕{body}"})
                 self.on_event("appended", n=n, who=self.who)
             r = await self._model()
-            m = {"role": "assistant", "content": r["text"] or None}
+            m = _replay({"role": "assistant", "content": r["text"] or None}, r)
             if r.get("reasoning"):
                 m["reasoning_content"] = r["reasoning"]
             if r["tool_calls"]:
@@ -206,7 +276,7 @@ class SubAgents:
                 p = for_role(self.preset, "sub")
                 text = body + (f"\n\nOutput schema (end with one JSON object matching it):\n{json.dumps(schema)}" if schema else "")
                 sess = Session(self.sessions_dir / f"sub-{n}.jsonl")
-                lp = Loop(preset=p, system=prompt.system("sub", self.root, p.tier), specs=prompt.specs("sub", p.tier),
+                lp = Loop(preset=p, system=prompt.system("sub", self.root, p.tier, edit_mode=p.edit_mode), specs=prompt.specs("sub", p.tier, p.edit_mode),
                           gate=self.gate, toolbox=tb, session=sess, environ=self.environ, call=self.call,
                           budget_tokens=self.budget_tokens, deadline=self.deadline, control=self.control,
                           on_event=self.on_event, who=who, max_steps=40)

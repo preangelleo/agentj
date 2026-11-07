@@ -10,6 +10,8 @@ FAKE_CLAUDE_USER_SETTINGS (a settings.json path: permissions.allow, e.g. "Bash(r
   ASK: <json questions>  → AskUserQuestion through the permission tool (PROTOCOL §10.7); replies "ANSWERS: <answers>
                            (input kept)" on allow, "DENIED: <message>" on deny
   SLOW                   → reply after 1.5 s
+  HANG                   → 0.26.10 #484: the turn never ends (stdin is not read again, so an interrupt is never seen;
+                           only ending the process ends it)
   LONG                   → one 9 000-character reply (the host must split it, never truncate)
   CRASH                  → exit 3 mid-turn (the host restarts with --resume)
   [agentj 定时任务 … (a scheduled task's prompt) → runs its lines RUN: <cmd> / SLEEP: <s> / SAY: <text> in order
@@ -251,6 +253,9 @@ for line in sys.stdin:
         out({"type": "result", "subtype": "success", "is_error": False, "local_command": "cost", "session_id": sid,
              "result": "Total cost:            $0.0123\nUsage by model:\n    claude-fake-1:  10 input, 62 output ($0.0123)"})
         continue
+    if isinstance(text, str) and text.split("\n")[0].strip() == "HANG":     # #484: a turn that never ends
+        while True:
+            time.sleep(0.2)
     if text.startswith("[agentj 定时任务"):       # a scheduled task run: its RUN.md is a tiny script for this stand-in
         for ln in text.splitlines():
             if ln.startswith("RUN: "):

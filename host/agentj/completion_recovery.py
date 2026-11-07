@@ -376,7 +376,8 @@ class Book:
                     {'id':k, 'task_id':v.get('task_id'), 'state':v.get('state'), 'original_error':v.get('original_error'),
                      'recovery_point':v.get('recovery_point'), 'report_available':bool(v.get('report_sha256')),
                      'artifact':v.get('artifact'), 'report_sha256':v.get('report_sha256'), 'exit_code':v.get('exit_code'), 'created_at':v.get('created_at'),
-                     'settled':v.get('settled') or v.get('quiet')}
+                     'settled':v.get('settled') or v.get('quiet'), 'task_label':v.get('task_label'),
+                     'tool':(v.get('action') or {}).get('tool')}
                     for k,v in self.rows.items() if v.get('binding') == self.binding() and (v.get('state') == 'awaiting_owner_verification' or v.get('settled'))] + [
                     {'id':k, 'task_id':v.get('task_id'), 'state':'awaiting_owner_verification', 'recovery_point':'capacity_wait', 'report_available':False}
                     for k,v in self.overflow()]}
@@ -399,7 +400,76 @@ class Book:
             row['state'] = 'reading'
             self.save()
             return {'result':'reconciled', 'id':key, 'task_id':row['task_id'], 'original_error':row.get('original_error'),
-                    'report':text, 'action_replayed':False}
+                    'report':text, 'task_label':row.get('task_label'), 'action_replayed':False}
+
+
+# ---- 0.26.9 #446 (ADR-0269-w4-web, own block): the owner reads plain words, never the result JSON -------------------------
+_WHY = {
+    'zh': {'paired_owner_required': '要在已配对的遥控器上发这个命令。', 'binding_changed': '这条结果属于另一个工作目录或频道，已经不能读取。',
+           'already_reconciled': '这条已经核对过了，不用再看。', 'reconcile_only': '这条没有可读的报告，不用你处理。',
+           'report_changed_or_unavailable': '报告文件已经变了或读不到，没法确认是当时那一份，所以没有显示。',
+           'delivery_unconfirmed': '没能确认手机收到，稍后再点一次。', 'corrupt_state': '后台结果记录读不懂，已原样保留；可以在主机上运行 agentj doctor。',
+           'shape': '命令格式不对。'},
+    'en': {'paired_owner_required': 'Send this from a paired remote.', 'binding_changed': 'This result belongs to another work folder or channel and can no longer be read.',
+           'already_reconciled': 'Already checked; nothing more to read.', 'reconcile_only': 'There is no report to read; nothing for you to do.',
+           'report_changed_or_unavailable': 'The report file changed or cannot be read, so it is not shown (it might not be the original).',
+           'delivery_unconfirmed': 'Could not confirm the phone got it; tap again in a moment.', 'corrupt_state': 'The background-result record is unreadable and was kept as is; run agentj doctor on the host.',
+           'shape': 'The command was not understood.'},
+}
+
+
+def _when(ts, zh):
+    if not isinstance(ts, (int, float)) or ts <= 0:
+        return ''
+    return time.strftime('%m-%d %H:%M', time.localtime(ts))
+
+
+def _label(item, zh):
+    lab = item.get('task_label')
+    if isinstance(lab, str) and lab.strip():
+        return privacy.redact(lab.strip()[:60]).replace(' / ', '/')
+    tid = item.get('task_id')
+    if isinstance(tid, int):
+        return ('第 %d 条消息那一轮' if zh else 'the turn of message %d') % tid
+    return '一件后台活' if zh else 'a background job'
+
+
+def human(result, lang='zh'):
+    """`recover()` / `owner_command()` → the Markdown the owner reads (who, when, one-line result, whether he must act)."""
+    zh = lang != 'en'
+    r = result if isinstance(result, dict) else {}
+    if r.get('result') == 'reconciled':
+        head = ('后台结果 · %s：原操作没有重做，下面是当时留下的报告。' if zh else 'Background result · %s: nothing was replayed; this is the report it left.') % _label(r, zh)
+        return head + '\n\n---\n\n' + str(r.get('report') or '')
+    if isinstance(r.get('items'), list):
+        items = r['items']
+        if not items:
+            return '没有要你核对的后台结果。' if zh else 'No background results wait for you.'
+        read = [i for i in items if i.get('report_available') and i.get('state') == 'awaiting_owner_verification' and not i.get('settled')]
+        quiet = [i for i in items if i not in read]
+        out = [('%d 条后台结果。' % len(items) if zh else '%d background results. ' % len(items))
+               + (('其中 %d 条有报告可看，点「读报告」；其余都不用你处理。' % len(read) if read else '都不用你处理，原操作都没有重做。') if zh else
+                  ('%d have a report: tap Read; the rest need nothing from you.' % len(read) if read else 'None needs anything from you; nothing was replayed.'))]
+        for n, i in enumerate(read[:16], 1):
+            out.append('%d. %s · %s · %s [%s](reply:/recover-background %s)' % (
+                n, _label(i, zh), _when(i.get('created_at'), zh) or '—', '有报告' if zh else 'report kept', '读报告' if zh else 'Read', i['id']))
+        if quiet:
+            out.append('')
+            out.append(('不用你处理（%d 条）：' if zh else 'Nothing to do (%d):') % len(quiet))
+            for i in quiet[:8]:
+                line = '- %s · %s' % (_label(i, zh), _when(i.get('created_at'), zh) or '—')
+                if i.get('tool'):
+                    line += (' · 当时被拦下的 %s 没有重做，要做直接跟 Agent 说' if zh else ' · the blocked %s was not replayed; ask the Agent if you still want it') % privacy.redact(str(i['tool'])[:40])
+                elif i.get('settled'):
+                    line += ' · 已汇报过' if zh else ' · already reported'
+                else:
+                    line += ' · 已结束' if zh else ' · finished'
+                out.append(line)
+            if len(quiet) > 8:
+                out.append(('- 还有 %d 条，同样不用处理' if zh else '- %d more, same') % (len(quiet) - 8))
+        return '\n'.join(out)
+    why = r.get('why') or 'shape'
+    return _WHY['zh' if zh else 'en'].get(why, _WHY['zh' if zh else 'en']['shape'])
 
 
 async def owner_command(host, session, text):

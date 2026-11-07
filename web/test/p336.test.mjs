@@ -26,9 +26,9 @@ test('rows hidden by default and shown only for keys in host.signed_prefs', () =
   assert.match(settings, /el\('set-gnc-row'\)\.hidden = !paired \|\| !signedKey\('approval\.goal_nocard'\)/);
 });
 
-test('full access confirm is red; auto by:"full" toast; activity words; rejected reason', () => {
+test('full access confirm is red; auto by:"full" audit-only; activity words; rejected reason', () => {
   assert.match(settings, /confirmSheet\(title, text, yes, full\)/);
-  assert.match(controls, /m\.by === 'full' \? 'p336\.autoFull'/);
+  assert.match(controls, /export function showAuto\(_m\) \{\}/, '#562 automatic approvals are silent');
   assert.match(controls, /'parked'\]/);
   assert.match(controls, /'replay', 'rejected'/);
   for (const [d, words] of [[zh, ['疑似被攻击', '定时任务', '直到你切回来', '花钱', '改价']], [en, ['suspected attacks', 'scheduled tasks', 'until you switch back', 'spending money', 'price changes']]]) {

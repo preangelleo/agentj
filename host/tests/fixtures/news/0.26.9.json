@@ -1,0 +1,9 @@
+{
+  "version": "0.26.9",
+  "items": [
+    {"zh": {"what": "派活时会按每天还能用多少额度自动选 Claude 或 Codex，并说出具体数字。", "action": ""},
+     "en": {"what": "Dispatch now picks Claude or Codex by how much quota is left per day, with the exact numbers.", "action": ""}},
+    {"zh": {"what": "心跳不再因为上下文长而停下；主 Agent 会自己写交接再压缩。", "action": "不用做什么。"},
+     "en": {"what": "Heartbeats no longer stop for long context; the main Agent writes its own handoff and compacts.", "action": "Nothing to do."}}
+  ]
+}

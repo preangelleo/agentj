@@ -32,6 +32,10 @@ Only you (the main Agent) speak; there is no button for this. Reply in the owner
    quota reminders (and marks them given, so the heartbeat will not repeat them). Each one goes into the brief with 1–3
    concrete big-job suggestions from the owner's workflows and to-dos (see agentj-heartbeat, 〔额度提醒〕). Nothing due →
    say nothing about quota. A harness Agent J cannot read is skipped, never guessed.
+   Codex Full reset credits are read for every registered account. For a credit expiring within 7 days, name its account
+   and exact expiry, suggest heavier use now and redemption the day before expiry; the same credit is not repeated across
+   days or by heartbeat. No automatic redemption. / Codex 主号和备用号都查；7 天内到期的券转告账号和日期，建议这几天多用、
+   到期前一天用券重置。同券跨天和心跳不重复提醒，不自动兑换。
 6. **Today's automations (optional).** When all needed sites are ready, ask once: 「要运行今天已经启用的自动化吗？」 / "Run today's
    enabled automations?" If the owner already asked for that in this message, do it without asking again — only within
    automations already enabled and authorized, after checking today's reports so nothing runs twice. New workflows or new

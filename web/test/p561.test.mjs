@@ -6,7 +6,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync as rawContractRead } from 'node:fs';
+import {resolveDefaults} from '../tools/css-defaults.mjs';
+// #577: preserve this legacy contract's exact appearance/markup assertions; ownership is audited separately.
+const readFileSync = (...args) => { const value=rawContractRead(...args), path=String(args[0]); if(typeof value!=='string') return value; return path.endsWith('.css') ? resolveDefaults(value) : path.endsWith('.html') ? value.replace(/ data-aj-(?:owner|action-context)="[^"]+"/g,'') : value; };
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 globalThis.window ??= globalThis;
@@ -192,8 +195,8 @@ test('get() asks with the transports create() reported (Google Password Manager 
 test('Settings layout: words on top, the button under them, left-aligned (static)', () => {
   const css = read('../public/app.css');
   assert.match(css, /#settings \.pkrow\{display:grid;grid-template-columns:auto minmax\(0,1fr\)/);
-  assert.match(css, /#settings \.pkrow>\.aj-btn\{grid-column:2;justify-self:start\}/);
-  assert.match(css, /#settings \.setrow>\.aj-btn--sm\{grid-column:1 \/ -1;justify-self:start;order:1\}/);
+  assert.match(css, /#settings \.pkrow>\.aj-action\{grid-column:2;justify-self:start\}/);
+  assert.match(css, /#settings \.setrow>\.aj-action--sm\{grid-column:1 \/ -1;justify-self:start;order:1\}/);
   assert.match(css, /#settings \.preauth__item\{flex-direction:column;align-items:flex-start\}/);
 });
 

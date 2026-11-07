@@ -18,13 +18,24 @@ import { SVG } from './icons.js';
 let H = { setupFaceId: () => {}, say: () => {} };
 export function configure(h) {
   H = { ...H, ...h };
-  el('set-seat-xfer')?.addEventListener('click', () => start());
+  el('set-seat-xfer')?.addEventListener('click', () => (away && !st ? awaySheet() : start()));
   el('set-seat-xfer-cancel')?.addEventListener('click', () => cancel());
   onLang(() => { paintRow(); if (root && !root.hidden) paint(); });
 }
 
 // ---------------------------------------------------------------- the row: state from the host
 let st = null;                                       // {state, expires_at} | null (no answer: an older host)
+// 0.26.9 #434 (董事长 11-03: 「设置菜单里的转移席位我怎么都找不到」, the old host was the one that broke): with the host
+// offline the row no longer hides — it says the host is offline, and a tap explains the account page's transfer instead.
+let away = false;
+export const ACCOUNT_URL = 'https://agentj.app/account/';
+/** Settings opened while the host is not connected. */
+export function offline() { away = true; paintRow(); }
+async function awaySheet() {
+  if (await confirmSheet(t('sxf.row'), t('p0269w4.sxf.awayText'), t('set.accountOpen'), false, t('p0269w4.sxf.awayNo'))) {
+    try { window.open(ACCOUNT_URL, '_blank', 'noopener'); } catch { /* blocked: the Settings account link is right there */ }
+  }
+}
 export const _state = () => st && { ...st };
 const TOKEN = /\baj[th]_[A-Za-z0-9_-]{20,64}\b/g;   // P576: the host mints ajh_ (seat_transfer.PREFIX), never ajt_
 /** ajh_••••…末 4 位 (the code's own prefix, like the host's mask) — what a screenshot of the panel may show. */
@@ -45,8 +56,8 @@ export function refresh() {
   return new Promise((resolve) => {
     let timer = 0;
     const r = request({ t: 'seat_xfer_state' }, (m) => {
-      if (m.t === 'offline') { clearTimeout(timer); done(r); return resolve(null); }
-      clearTimeout(timer); done(r);
+      if (m.t === 'offline') { clearTimeout(timer); done(r); away = true; paintRow(); return resolve(null); }
+      clearTimeout(timer); done(r); away = false;
       st = typeof m.state === 'string' ? { state: m.state, expires_at: m.expires_at ?? null } : null;
       paintRow(); resolve(st);
     });
@@ -64,12 +75,13 @@ export function onState(m) {
 function paintRow() {
   const row = el('set-seat-xfer');
   if (!row) return;
-  row.hidden = !st;
+  row.hidden = !st && !away;
   const line = el('set-seat-xfer-state'), cancelBtn = el('set-seat-xfer-cancel');
   const issued = !!st && st.state === 'issued';
   const moved = !!st && (st.state === 'bound' || st.state === 'moved');
-  line.hidden = !issued && !moved;
-  line.textContent = issued ? t('sxf.issued', { time: until(st.expires_at) }) : moved ? t('sxf.bound') : '';
+  const off = !st && away;
+  line.hidden = !issued && !moved && !off;
+  line.textContent = issued ? t('sxf.issued', { time: until(st.expires_at) }) : moved ? t('sxf.bound') : off ? t('p0269w4.sxf.away') : '';
   cancelBtn.hidden = !issued;
   const acts = el('set-seat-xfer-acts');
   if (acts) acts.hidden = !issued;
@@ -165,27 +177,27 @@ function paint() {
   if (!P) return;
   const r = build();
   const box = mk('div', 'box');
-  const title = mk('h2', '', t('sxf.resultTitle')); title.id = 'sxf-title';
+  const title = mk('h2', '', t('sxf.resultTitle'), 'aj-passkey'); title.id = 'sxf-title';
   const exp = until(P.exp);
   const lead = mk('p', 'sxf-lead', exp ? t('sxf.resultLead', { time: exp }) : t('sxf.resultLeadNoTime'));
   const pr = mk('div', 'sxf-prompt'); pr.id = 'sxf-prompt';
   pr.textContent = shown ? promptText() : maskPrompt(promptText(), P.token);
   pr.dataset.masked = shown ? '0' : '1';
   const tools = mk('div', 'ajrow sxf-tools');
-  const eye = mk('button', 'aj-btn aj-btn--quiet sxf-eye'); eye.type = 'button'; eye.id = 'sxf-eye';
+  const eye = mk('button', 'aj-action aj-action--quiet sxf-eye', undefined, 'aj-action', 'dialog'); eye.type = 'button'; eye.id = 'sxf-eye';
   eye.setAttribute('aria-pressed', String(shown));
   eye.append(eyeIcon(shown), mk('span', '', t(shown ? 'sxf.hide' : 'sxf.show')));
   eye.addEventListener('click', () => { shown = !shown; paint(); });
-  const copy = mk('button', 'aj-btn aj-btn--primary sxf-copy'); copy.type = 'button'; copy.id = 'sxf-copy'; copy.textContent = t('ar.copy');
+  const copy = mk('button', 'aj-action aj-action--primary sxf-copy', undefined, 'aj-action', 'dialog'); copy.type = 'button'; copy.id = 'sxf-copy'; copy.textContent = t('ar.copy');
   copy.addEventListener('click', () => copyButton(promptText(), copy));   // the whole prompt, the code unmasked
   tools.append(copy, eye);
-  const how = mk('h3', 'sxf-how', t('sxf.howTitle'));
+  const how = mk('h3', 'sxf-how', t('sxf.howTitle'), 'aj-passkey');
   const ol = mk('ol', 'sxf-steps'); ol.id = 'sxf-steps';
   for (const k of ['sxf.step1', 'sxf.step2', 'sxf.step3']) ol.append(mk('li', '', t(k)));
   const acts = mk('div', 'ajrow sxf-acts');
-  const undo = mk('button', 'aj-btn aj-btn--quiet sxf-undo'); undo.type = 'button'; undo.id = 'sxf-undo'; undo.textContent = t('sxf.cancelBtn');
+  const undo = mk('button', 'aj-action aj-action--quiet sxf-undo', undefined, 'aj-action', 'dialog'); undo.type = 'button'; undo.id = 'sxf-undo'; undo.textContent = t('sxf.cancelBtn');
   undo.addEventListener('click', () => cancel());
-  const fin = mk('button', 'aj-btn aj-btn--primary'); fin.type = 'button'; fin.id = 'sxf-done'; fin.textContent = t('sxf.done');
+  const fin = mk('button', 'aj-action aj-action--primary', undefined, 'aj-action', 'dialog'); fin.type = 'button'; fin.id = 'sxf-done'; fin.textContent = t('sxf.done');
   fin.addEventListener('click', () => close());
   acts.append(fin, undo);
   box.append(mk('p', 'elev-kicker', t('sxf.kicker')), title, lead, pr, tools, how, ol, mk('p', 'elev-note', t('sxf.undoNote')), acts);

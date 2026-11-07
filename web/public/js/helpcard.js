@@ -27,7 +27,7 @@ function build() {
     close: () => { if (root.classList.contains('zoom')) { root.classList.remove('zoom'); return; } $('hlp-later')?.click(); } });
   root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'hlp-title');
   const box = mk('div', 'box');
-  const node = (tag, id, cls) => { const n = mk(tag, cls); n.id = id; return n; };
+  const node = (tag, id, cls) => { const n = mk(tag, cls, undefined, cls?.split(/\s+/).includes('aj-action') ? 'aj-action' : 'aj-auth-card', 'dialog'); n.id = id; return n; };
   const frame = node('div', 'hlp-frame', 'hlp-frame');
   const img = node('img', 'hlp-img', 'hlp-img');
   img.decoding = 'async'; img.draggable = true;
@@ -38,14 +38,14 @@ function build() {
   const input = node('input', 'hlp-input', 'aj-input hlp-input');
   input.type = 'text'; input.maxLength = ANSWER_MAX; input.autocomplete = 'one-time-code'; input.spellcheck = false;
   input.setAttribute('autocapitalize', 'off'); label.htmlFor = 'hlp-input';
-  const send = node('button', 'hlp-send', 'aj-btn aj-btn--primary'); send.type = 'submit';
+  const send = node('button', 'hlp-send', 'aj-action aj-action--primary'); send.type = 'submit';
   form.append(label, input, send);
   form.addEventListener('submit', (e) => { e.preventDefault(); answer(); });
   input.addEventListener('input', () => { send.disabled = busy || !input.value.trim(); });
   const acts = mk('div', 'hlp-acts');
-  const done = node('button', 'hlp-done', 'aj-btn aj-btn--primary'); done.type = 'button';
+  const done = node('button', 'hlp-done', 'aj-action aj-action--primary'); done.type = 'button';
   acts.append(done);
-  const later = node('button', 'hlp-later', 'aj-btn aj-btn--quiet hlp-later'); later.type = 'button';
+  const later = node('button', 'hlp-later', 'aj-action aj-action--quiet hlp-later'); later.type = 'button';
   box.append(node('p', 'hlp-kicker', 'elev-kicker'), node('h2', 'hlp-title'), node('p', 'hlp-text', 'hlp-text'), frame,
     node('p', 'hlp-left', 'elev-left'), node('p', 'hlp-note', 'elev-note'), form, acts, node('p', 'hlp-privacy', 'elev-note hlp-privacy'),
     later, node('p', 'hlp-more', 'elev-note hlp-more'));
@@ -132,7 +132,7 @@ function render() {
   $('hlp-input').disabled = busy;
   $('hlp-done').textContent = t(c.kind === 'qr' ? 'p411.doneQr' : 'p411.done');
   $('hlp-done').disabled = busy;
-  $('hlp-done').classList.toggle('aj-btn--primary', !typed);
+  $('hlp-done').classList.toggle('aj-action--primary', !typed);
   $('hlp-later').textContent = t('p411.later');
   $('hlp-later').disabled = busy;
   $('hlp-privacy').textContent = t('p411.privacy');

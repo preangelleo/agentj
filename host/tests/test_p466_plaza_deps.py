@@ -156,6 +156,12 @@ class HostTask(unittest.TestCase):
         t = hi.HostRequest("test_allow_installs_with_one_card_and_receipt")
         t.setUp()
         self.addCleanup(t.doCleanups)
+        # This positive install request originates in an actual host-held owner turn.
+        from agentj import approval_review, provenance
+        t.host.desktop_turn = 1
+        approval_review.remember(t.host, {'id': 1, 'ts': int(__import__('time').time()*1000),
+                                         'src': {'k': 'terminal', 'text': 'Install the synthetic package'}},
+                                 provenance.terminal())
         need_sandbox(self)
         t.add_skill(manifest={"install": {"skill_dir_name": "demo-skill", "post_install": [], "verify": f"{FAKE} --x"},
                               "permissions": {}})

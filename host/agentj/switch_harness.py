@@ -40,8 +40,10 @@ _MODEL_MISSING = re.compile(r"model ?not ?found|modelnotfound", re.I)
 
 REASON = {
     "zh": {"ambiguous_install": "{x} 有多个安装；设置 AGENTJ_CLAUDE_BIN 或用 mise / asdf 选定版本", "not_installed": "{x} 没有安装", "not_supported": "{x} 暂不支持",
-           "native_timeout": "{x} 60 秒内没有回答（多半是没登录、token 失效，或网络 / 代理不通）",
-           "native_failed": "{x} 没能完成一次调用（多半是没登录或 token 失效）", "call_failed": "{x} 没能完成一次调用（多半是没登录或 token 失效）",
+           "native_timeout": "{x} 60 秒内没有回答，具体原因未确认",
+           "native_failed": "{x} 没能完成一次调用，具体原因未确认", "call_failed": "{x} 没能完成一次调用，具体原因未确认",
+           "network": "{x} 的网络连接失败", "region": "{x} 不支持当前地区",
+           "auth": "{x} 的登录或密钥验证失败", "access": "{x} 拒绝访问，尚未确认是地区还是账户权限问题",
            "empty_probe_reply": "{x} 回了空话", "provider_unavailable": "{x} 配置的模型服务不可用",
            "model_missing": "{x} 找不到所选的模型（服务商没配置，或模型名写错）——不是登录或 Key 的问题。下一步：在遥控器「模型和 API Key」换一个能用的模型再切",
            "invalid_native_config": "{x} 的配置文件有问题", "invalid_provider": "{x} 配置的模型服务地址不合规",
@@ -62,9 +64,11 @@ REASON = {
            "owner_session": "设置里指定的 {x} server 里没有指定的会话（agent.shared_session_id）",
            "busy": "上一个切换 / 扫描任务还没结束，等它结束再试", "too_soon": "刚扫描过，{x} 秒后再试"},
     "en": {"ambiguous_install": "{x} has multiple installs; set AGENTJ_CLAUDE_BIN or select a version with mise / asdf", "not_installed": "{x} is not installed", "not_supported": "{x} is not supported yet",
-           "native_timeout": "{x} did not answer within 60 s (usually not signed in, an expired token, or no network / proxy)",
-           "native_failed": "{x} could not complete a call (usually not signed in or an expired token)",
-           "call_failed": "{x} could not complete a call (usually not signed in or an expired token)",
+           "native_timeout": "{x} did not answer within 60 s; the cause is unconfirmed",
+           "native_failed": "{x} could not complete a call; the cause is unconfirmed",
+           "call_failed": "{x} could not complete a call; the cause is unconfirmed",
+           "network": "{x} could not connect to the network", "region": "{x} does not support this region",
+           "auth": "{x} sign-in or key verification failed", "access": "{x} denied access; region or account permissions are unconfirmed",
            "empty_probe_reply": "{x} replied with nothing", "provider_unavailable": "{x}'s configured model service is unavailable",
            "model_missing": "{x} cannot find the selected model (its provider is not set up, or the model name is wrong) — not a "
                             "sign-in or key problem. Next: pick a working model in Models & API keys on the remote, then switch again",
@@ -218,6 +222,9 @@ def reason_text(code: str, target: str, lang: str = "zh", detail: str | None = N
             return hint.format(x=LABEL.get(target, target), store=store)
         code = "native_failed"
     out = t.get(code, t["call_failed"]).format(x=LABEL.get(target, target))
+    if code in ('network', 'region'):
+        from .startup_help import domestic_note
+        out += '\n' + domestic_note(l)
     if code == "quota_exhausted":
         out += QUOTA_WHERE.get(target, {}).get(l, "")
     if detail in DETAIL[l]:
@@ -721,6 +728,9 @@ def request(st, target: str | None, model: str | None = None, dry_run: bool = Fa
     if rec["status"] == "probe_ok":
         return {"ok": True, "dry_run": True, **base}
     if rec["status"] in ("failed", "rolled_back"):
+        if target == 'opencode' and rec.get('reason') == 'not_installed':
+            from . import opencode_install
+            return {'ok':False, 'reason':'not_installed', **base, 'install_action':opencode_install.offer(st)}
         return {"ok": False, "reason": rec.get("reason") or "call_failed", **base}
     return {"ok": True, "scheduled": True, **base}
 
@@ -1386,6 +1396,9 @@ def _say(r: dict, lang: str) -> str:
     if r.get("ark_plan_fix"):
         from .ark_plan_fix import guidance
         return _say({k:v for k,v in r.items() if k != "ark_plan_fix"}, lang) + "\n" + guidance(r["ark_plan_fix"], lang)
+    if r.get('reason') == 'not_installed' and r.get('target') == 'opencode':
+        from . import opencode_install
+        return opencode_install.install_text(lang, native_only=True)
     T, F = LABEL.get(r.get("target"), r.get("target")), LABEL.get(r.get("from") or "", r.get("from") or "")
     if r.get("ok") and r.get("privacy"):        # P298: a free model whose provider keeps / trains on the conversation
         return _say({k: v for k, v in r.items() if k != "privacy"}, lang) + "\n" + r["privacy"]

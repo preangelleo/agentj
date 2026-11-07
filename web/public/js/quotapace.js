@@ -10,30 +10,30 @@ export const STEP_S = { weekly: DAY_S, '5h': 3600 };          // the unit the ow
 export const TIGHT_PCT = 80, EMPTY_PCT = 90;
 
 /** {period, elapsed, left, step, steps, frac} for a window resetting at `reset` (unix s), or null when that is unknown or
- *  does not fit the window (already passed, or further away than one period + 10 min of clock skew). */
-export function cycle(window, reset, nowMs = Date.now()) {
+ *  does not fit the window (already passed, or further away than one period). */
+export function cycle(window, reset, nowMs = Date.now(), observedAt = null) {
   const period = PERIOD_S[window];
-  if (!period || typeof reset !== 'number' || !Number.isFinite(reset) || reset <= 0) return null;
+  if (!Number.isFinite(nowMs) || nowMs <= 0 || !period || typeof reset !== 'number' || !Number.isFinite(reset) || reset <= 0) return null;
   const now = nowMs / 1000, left = reset - now;
-  if (left <= 0 || left > period + 600) return null;
+  if (left <= 0 || left > period) return null;
+  if (observedAt != null && (!Number.isFinite(observedAt) || observedAt < reset - period || observedAt > now || now - observedAt > 300)) return null;
   const elapsed = Math.max(0, period - left), unit = STEP_S[window], steps = Math.round(period / unit);
   return { period, elapsed, left: Math.min(left, period), step: Math.min(steps, Math.floor(elapsed / unit) + 1), steps,
            frac: Math.min(1, elapsed / period) };
 }
 
-/** The share an even pace allows by the end of the current step (day N of 7 → N/7, hour N of 5 → N/5), in %. Comparing
- *  against the shown 「第 N 天」 keeps the rule the owner can check by eye and does not flash at the very start of a cycle. */
-export const allowedPct = (c) => (c ? (c.step / c.steps) * 100 : null);
+/** Actual elapsed share of the known reset window, in percent. */
+export const allowedPct = (c) => (c && Number.isFinite(c.frac) && c.frac >= 0 && c.frac < 1 ? c.frac * 100 : null);
 
 /** Faster than the even pace? null when the cycle is unknown. */
 export function fast(pct, c) {
   const a = allowedPct(c);
-  return a == null || !Number.isFinite(pct) ? null : pct > a + 1e-9;
+  return a == null || !Number.isFinite(pct) || pct < 0 || pct > 100 || c.elapsed <= 0 ? null : pct > a + 1e-9;
 }
 
 /** '' (no glow) | 'fast' | 'tight' (≥ 80 %) | 'empty' (≥ 90 %); the amount wins over the pace. */
 export function tier(pct, c, { pace = true } = {}) {
-  if (!Number.isFinite(pct)) return '';
+  if (!Number.isFinite(pct) || pct < 0 || pct > 100) return '';
   if (pct >= EMPTY_PCT) return 'empty';
   if (pct >= TIGHT_PCT) return 'tight';
   return pace && fast(pct, c) ? 'fast' : '';
@@ -42,7 +42,7 @@ export function tier(pct, c, { pace = true } = {}) {
 /** At this pace: {atReset: % used when it resets} or {emptyIn: seconds until 100 % (before the reset)}; null when the
  *  cycle is unknown, nothing is used yet, or under an hour of it has passed (too little to extrapolate from). */
 export function projection(pct, c) {
-  if (!c || !Number.isFinite(pct) || pct <= 0 || c.elapsed < 3600) return null;
+  if (!c || !Number.isFinite(pct) || pct <= 0 || pct > 100 || c.elapsed < 3600) return null;
   const rate = pct / c.elapsed;                              // % per second
   const atReset = pct + rate * c.left;
   if (atReset < 100 || pct >= 100) return { atReset: Math.min(100, Math.round(atReset)) };

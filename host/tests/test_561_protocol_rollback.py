@@ -8,7 +8,8 @@ import asyncio
 import subprocess,json
 from pathlib import Path
 from types import SimpleNamespace
-from agentj import approvals, wire
+from unittest import mock
+from agentj import approvals, wire, approval_review, provenance
 from test_l1 import Flows, Phone, _host, _ready
 
 
@@ -18,6 +19,9 @@ class LegacyWebProtocol(Flows):
         host = _host(self.st, self.sent)
         s = _ready(host, ph)
         host.agent = SimpleNamespace(kind='claude', status='idle', cur_send=SimpleNamespace(source={'kind':'phone','role':'owner'}))
+        with mock.patch.object(host,'hist_emit'):
+            turn=host.hist_add({'k':'phone','dev':ph.did,'name':'Owner','text':'Synthetic paired owner protocol request.'},'', 'done')
+        host.agent.cur_send.approval_origin=approval_review.remember(host,turn,provenance.phone())
         host.ask_ttl = 3
         return ph, host, s
 

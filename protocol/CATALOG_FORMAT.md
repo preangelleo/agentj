@@ -125,3 +125,42 @@ workflows/<name>/                  # type = workflow
 6. **批准凭证由平台落盘**：工作流里的 `approve --by <称呼>`（如 content-channel-pipeline 的 `approval.json`）只能核对传入的称呼，证明不了是董事长本人操作。平台在手机上完成 `publish` 批准后，应把批准人、时间和批准时的成品哈希写入（或签名）该任务的批准文件；agent 自己运行 `approve` 只能作为没有平台时的兜底。
 7. **`install.verify` 运行环境**：解包后、渲染前，在断网、无凭据、临时 HOME 的环境里跑；返回 0 才算安装成功。
 
+
+## 0.28 preparation metadata (feedback #332)
+
+Skill/workflow manifests may declare
+`"initialization_schema": "initialization.schema.json"`. Legacy packages without
+the field remain supported. The file is covered by the existing manifest hashes
+and package signature, with a 64 KiB maximum; no remote schema references.
+This implementation accepts a **closed subset** of the initialization draft,
+not arbitrary draft-07 code or the draft's suggested shell/secret commands:
+
+- Root: `$schema` (draft-07), `type: "object"`, `properties`, `required`,
+  `additionalProperties: false`, `x-capabilities` (1–24).
+- Each capability: `id`, `stage_zh`, boolean `required`, `providers` (1–8),
+  `if_missing_zh`, `degrade_zh`, `adapter` (null or an existing
+  `references/*.md#anchor` document; required for multiple providers).
+- Each provider: fixed Host `id`, optional `name_zh`, boolean
+  `default/manual/fallback`, `env/cli/fonts` lists of `{name, optional?}`
+  (env also permits boolean `secret`), and `config` property names.
+- Providers currently registered: anthropic, openai, agentsrelay, ark, bailian,
+  kimi, deepseek, google, elevenlabs, local, manual, custom. Registered
+  providers accept only their Host-fixed variable names. Custom/manual permit
+  legal non-startup variable names for reporting; they have no automatic key action.
+- Config properties are bounded string/boolean/integer enums, optional enum default
+  and description. They are preparation metadata, never written into real config.
+  Unknown fields, commands, destinations, verification URLs, imports, references,
+  unsafe adapters, duplicate keys/IDs and secret-looking strings are refused.
+
+Presence checks never return values or tails. Existing fixed service-key storage
+is the only key destination; a button invokes the existing encrypted owner key
+card and its UV approval. Installation approval does not approve a key, account,
+network call or dependency command. Package descriptions remain inert text.
+Local CLI/font presence can establish local readiness. A cloud key's presence
+does not establish service/plan/model availability. Manual/config/account/cloud
+facts remain explicitly unknown; optional missing stages show degradation.
+The successful signed install sends a structured card only to its approving live
+paired owner; terminal installation prints the same JSON receipt.
+Workflow metadata is retained under `documentation/initialization.schema.json`.
+An optional human `INITIALIZATION.md` is copied alongside it. No bundled skill
+directories are added.

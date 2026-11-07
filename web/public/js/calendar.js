@@ -2,7 +2,7 @@
 import {ask1} from './session.js';
 import {t,locale} from './t.js';
 import {attach,setFlash,flashLine,syncStrip,conflictList,tags,undoText} from './calsync.js';
-const n=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
+const n=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;e.setAttribute('data-aj-owner', 'aj-wallet-calendar'); return e;};
 const b=(text,fn)=>{const e=n('button',text,'fp-action');e.type='button';e.onclick=fn;return e;};
 export const dayKey=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 export function monthDays(year,month){const first=new Date(year,month,1,12);first.setDate(1-first.getDay());return Array.from({length:42},(_,i)=>{const d=new Date(first);d.setDate(d.getDate()+i);return d;});}

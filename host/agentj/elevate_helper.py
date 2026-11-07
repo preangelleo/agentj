@@ -147,7 +147,13 @@ def main():
         fail("shape")
     if abs(time.time() * 1000 - ts) > 120000:
         fail("stale")
-    digest = _h("\n".join([CONTEXT, "sudo", _h(shlex.join(argv)), _h(why), _h(effect)]))
+    fields = [shlex.join(argv), why, effect]
+    if 'envelope_sha256' in req:
+        extra = req['envelope_sha256']
+        if not isinstance(extra, str) or not re.fullmatch(r'[0-9a-f]{64}', extra):
+            fail('envelope')
+        fields.append(extra)
+    digest = _h("\n".join([CONTEXT, "sudo"] + [_h(value) for value in fields]))
     msg = "\n".join([CONTEXT, req["channel"], req["device"], req["id"], "sudo", "allow", n, str(ts), digest, "-"]).encode()
     if not ed25519_verify(pub, msg, unb64u(req["sig"])):
         fail("signature")
@@ -251,6 +257,8 @@ def status() -> dict:
         for p in (HELPER, KEYS):
             if os.lstat(p).st_uid != 0:
                 return out
+        if pathlib.Path(HELPER).read_bytes() != HELPER_SOURCE.encode():
+            return {**out, 'why': 'update_required'}
         d = json.loads(pathlib.Path(KEYS).read_text())
         out.update(installed=True, devices=sorted(d.get("devices") or {}), channel=d.get("channel"))
     except (OSError, ValueError):

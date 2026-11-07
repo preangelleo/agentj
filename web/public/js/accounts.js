@@ -4,7 +4,8 @@
 // slot — the flow card itself is drawn by authrescue.js into #acct-flow. The view carries names, methods and quota readings
 // only (never a token or a path). Everything is textContent.
 import { t } from './t.js';
-import { el, mk, toast } from './ui.js';
+import { resetCreditText } from './reset-credits.js';
+import { el, mk, toast, notify } from './ui.js';
 import { ask1, isReady } from './session.js';
 import * as authrescue from './authrescue.js';
 
@@ -18,11 +19,12 @@ let view = null;          // the host's last acct view
 let form = null;          // {harness, id?} — the name field open for a new account (no id) or a rename
 let adding = null;        // {harness, name, seen} — a login flow for a new account is running
 let poll = null, loadId = 0, watching = false;
+let addGeneration = 0;   // monotonic even after an attempt ends (adding returns to null)
 let deleting = '';        // the id whose removal waits for the owner's answer on the host's confirmation card
 
 const tw = (k, fb) => { const s = t(k); return s === k ? (fb || '') : s; };
 function say(s, danger = false) { const m = el('acct-msg'); if (m) { m.textContent = s || ''; m.classList.toggle('ardanger', !!danger); } }
-function whyText(why) { return tw('acct.why.' + why, tw('ar.why.' + why, t('acct.failed'))); }
+function whyText(why) { if (why === 'same_account') return t('acct.sameAccountHelp'); if (why === 'unregistered_login') return t('acct.loginMismatchHelp'); return tw('acct.why.' + why, tw('ar.why.' + why, t('acct.failed'))); }
 
 /** Name rules shared with the host: trimmed, 1–24 characters, unique (case-insensitive) within the harness. → '' or an i18n key. */
 export function nameProblem(name, items = [], exceptId = '') {
@@ -48,7 +50,9 @@ export function quotaText(q, active) {
 
 async function call(obj, ms = 15000) {
   if (!isReady()) { say(t('set.offline'), true); return null; }
+  const owner = loadId;
   const m = await ask1(obj, 'acct_res', ms);
+  if (owner !== loadId) return null;   // closing/reopening invalidates an older page response
   if (m.t !== 'acct_res') { say(m.t === 'timeout' ? t('acct.noAnswer') : t('set.offline'), true); return null; }
   if (m.view && typeof m.view === 'object') { view = m.view; render(); }
   if (!m.ok) say(whyText(m.why), true);
@@ -62,8 +66,9 @@ export async function load() {
   const m = await call({ t: 'acct_get' });
   if (id !== loadId) return;
   if (m && m.ok) say('');
-  // a login flow already running (from here or 登录救援) shows on this page too
-  if (isReady()) ask1({ t: 'auth_get', check: false }, 'auth_res', 15000).then((r) => { if (id === loadId && r?.t === 'auth_res') authrescue.onPush(r); });
+  // Resume the account-owned flow; authrescue keeps rescue and account destinations separate.
+  const attempt = adding, generation = addGeneration;   // a pre-add snapshot cannot finish a newer same-name attempt
+  if (isReady()) ask1({ t: 'auth_get', check: false }, 'auth_res', 15000).then((r) => { if (id === loadId && generation === addGeneration && adding === attempt && r?.t === 'auth_res') authrescue.onPush(r); });
 }
 export function close() { ++loadId; stop(); form = null; }
 /** Settings' Esc / Back (layers.js owns Esc in the capture phase): an open name field is put away first → true. */
@@ -78,32 +83,38 @@ function stop() { clearInterval(poll); poll = null; }
 function watchFlow() {
   if (watching) return; watching = true;
   authrescue.watch((v) => {
-    if (!adding) return;
+    if (!adding?.accepted) return;
     const f = v && v.flow;
-    if (f && f.kind === adding.harness) adding.seen = true;
-    const ended = adding.seen && (!f || f.kind !== adding.harness || f.stage === 'done' || f.stage === 'failed');
+    const account = typeof f?.account === 'string' ? f.account : f?.account?.name;
+    const own = f?.kind === adding.harness && account === adding.name;
+    if (own) adding.seen = true;
+    const ended = own && adding.seen && (f.stage === 'done' || f.stage === 'failed');
     if (!ended) return;
-    const ok = !f || f.stage === 'done', name = adding.name;
+    const ok = f.stage === 'done', name = adding.name;
     adding = null; stop(); render();
-    if (ok) { toast(t('acct.added', { name })); call({ t: 'acct_get' }); }
+    notify({kind: ok ? 'success' : 'warn', shape:'rect', text: ok ? t('acct.added', {name}) : (f.why || t('ar.failed')), ms: authrescue.END_MS});
+    if (ok) call({ t: 'acct_get' });   // Only this accepted account flow owns its one timed result notice.
   });
 }
 
 async function startAdd(harness, route, name) {
   form = null;
   if (!isReady()) { render(); say(t('set.offline'), true); return; }
-  adding = { harness, name, seen: false }; render();   // 添加账号 stays off while this login runs
+  ++addGeneration;
+  const attempt = adding = { harness, name, seen: false, accepted: false }; render();   // 添加账号 stays off while this login runs
   say(t('ar.confirm'));
   clearInterval(poll);
   poll = setInterval(() => {
-    if (document.hidden || !isReady()) return;
-    ask1({ t: 'auth_get', check: false }, 'auth_res', 15000).then((r) => { if (r?.t === 'auth_res') authrescue.onPush(r); });
+    if (document.hidden || !isReady() || !attempt.accepted) return;
+    ask1({ t: 'auth_get', check: false }, 'auth_res', 15000).then((r) => { if (adding === attempt && r?.t === 'auth_res') authrescue.onPush(r); });
   }, 5000);
   const m = await ask1({ t: 'auth_start', kind: harness, route, account: { name } }, 'auth_res', LONG);
+  if (adding !== attempt) return;   // a terminal push or newer attempt already owns the result
   if (m.t !== 'auth_res') { adding = null; stop(); render(); say(m.t === 'timeout' ? t('ar.timeout') : t('set.offline'), true); return; }
+  attempt.accepted = !!m.ok;
   if (m.view && typeof m.view === 'object') authrescue.onPush(m);
   if (!m.ok) { adding = null; stop(); render(); say(whyText(m.why), true); return; }
-  say(t('ar.started'));
+  if (adding === attempt) say(t('ar.started'));
 }
 
 async function use(harness, it) {
@@ -129,8 +140,8 @@ function conflictNames() {
 }
 
 function btn(label, cls, fn) {
-  const b = document.createElement('button');
-  b.type = 'button'; b.className = 'aj-btn aj-btn--sm' + (cls ? ' ' + cls : ''); b.textContent = label;
+  const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-action'); b.setAttribute('data-aj-action-context','dialog');
+  b.type = 'button'; b.className = 'aj-action aj-action--sm' + (cls ? ' ' + cls : ''); b.textContent = label;
   b.addEventListener('click', fn);
   return b;
 }
@@ -140,10 +151,10 @@ const note = (text, cls) => mk('p', 'setnote' + (cls ? ' ' + cls : ''), text);
 function nameForm(harness, label, route, items, it) {
   const box = mk('div', 'acctform');
   const id = 'acct-name-' + harness + (it ? '-' + it.id : '');
-  const lab = mk('label', 'setlab', t(it ? 'acct.renameLab' : 'acct.nameLab')); lab.htmlFor = id;
-  const input = document.createElement('input');
+  const lab = mk('label', 'setlab', t(it ? 'acct.renameLab' : 'p0269w4.nameLab')); lab.htmlFor = id;   // #452: a name for the NEW account
+  const input = document.createElement('input'); input.setAttribute('data-aj-owner', 'aj-account');
   input.id = id; input.type = 'text'; input.className = 'aj-input'; input.autocomplete = 'off'; input.spellcheck = false;
-  input.maxLength = NAME_MAX * 2; input.value = it ? it.name : '';
+  input.maxLength = NAME_MAX * 2; input.value = it ? it.name : spareName(items);   // 0.26.9 #452: 「备用 1」 ready to go
   input.placeholder = t(harness === 'claude' ? 'acct.namePhClaude' : 'acct.namePh');
   const err = mk('p', 'setnote ardanger acctform__err'); err.setAttribute('role', 'alert'); err.hidden = true;
   const go = () => {
@@ -155,7 +166,7 @@ function nameForm(harness, label, route, items, it) {
   input.addEventListener('input', () => { err.hidden = true; });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); go(); } });   // Esc = escape() via the Settings layer
   const p = mk('p', 'mailbtns');
-  p.append(btn(it ? t('acct.save') : t('acct.next', { h: label }), 'aj-btn--primary', go), btn(t('ar.cancel'), '', cancel));
+  p.append(btn(it ? t('acct.save') : t('acct.next', { h: label }), 'aj-action--primary', go), btn(t('ar.cancel'), '', cancel));
   box.append(lab, input, err);
   if (!it) box.append(note(t(harness === 'claude' ? 'acct.addNoteClaude' : 'acct.addNoteCodex')), note(t('acct.noOverwrite')));
   box.append(p);
@@ -163,6 +174,20 @@ function nameForm(harness, label, route, items, it) {
   return box;
 }
 
+/** 0.26.9 #452: the first free 「备用 N」 / "Backup N" (never the name of an account already saved). */
+export function spareName(items = []) {
+  const taken = new Set(items.map((it) => String(it.name || '').trim().toLowerCase()));
+  for (let n = 1; n <= ITEMS_MAX + 1; n++) { const name = t('p0269w4.spare', { n: String(n) }); if (!taken.has(name.toLowerCase())) return name; }
+  return '';
+}
+/** 0.26.9 #452: nothing saved yet — the login in use is listed at once as 「当前」 (view.in_use: method + quota, read-only). */
+function inUseRow(use) {
+  const li = mk('li', 'acctrow acctinuse'); li.dataset.active = '1';
+  const head = mk('div', 'arhead');
+  head.append(mk('b', 'acctname', t('p0269w4.inUseName')), mk('span', 'archip acctcur', t('acct.current')));
+  li.append(head, note(t(METHOD[use.method] || 'acct.mOther') + ' · ' + quotaText(use.quota, true), 'acctmeta'), note(t('p0269w4.inUseNote'), 'acctinusenote'));
+  return li;
+}
 function itemRow(harness, label, route, h, it) {
   const active = it.id === h.active;
   const li = mk('li', 'acctrow'); li.dataset.id = it.id; if (active) li.dataset.active = '1';
@@ -171,17 +196,18 @@ function itemRow(harness, label, route, h, it) {
   if (active) head.append(mk('span', 'archip acctcur', t('acct.current')));
   li.append(head);
   li.append(note(t(METHOD[it.method] || 'acct.mOther') + ' · ' + quotaText(it.quota, active), 'acctmeta'));
+  if (harness === 'codex') li.append(note(resetCreditText(it.reset_credits ?? it.quota?.reset_credits), 'acctcredits'));
   if (form && form.harness === harness && form.id === it.id) { li.append(nameForm(harness, label, route, h.items, it)); return li; }
   const p = mk('p', 'mailbtns');
   // CEO 11-03: an ANTHROPIC_* variable overrides Claude's account → 设为当前 greyed, the reason (names only) right below it
   const blocked = harness === 'claude' && !active ? conflictNames() : [];
   if (!active) {
-    const u = btn(t('acct.use'), 'aj-btn--primary acctuse', () => use(harness, it));
+    const u = btn(t('acct.use'), 'aj-action--primary acctuse', () => use(harness, it));
     if (blocked.length) { u.disabled = true; u.setAttribute('aria-describedby', 'acct-cf-' + it.id); }
     p.append(u);
   }
   p.append(btn(t('acct.rename'), 'acctren', () => { form = { harness, id: it.id }; say(''); render(); }));
-  const del = btn(t('acct.del'), 'aj-btn--danger acctdel', () => remove(harness, it));
+  const del = btn(t('acct.del'), 'aj-action--danger acctdel', () => remove(harness, it));
   if (active) { del.disabled = true; del.setAttribute('aria-describedby', 'acct-delnote-' + harness); }
   else if (deleting) del.disabled = true;
   p.append(del);
@@ -198,7 +224,8 @@ function harnessCard([harness, label, route]) {
   const box = mk('div', 'setrow arrow acctgrp'); box.dataset.kind = harness;
   const head = mk('div', 'arhead'); head.append(mk('b', '', label));
   box.append(head);
-  if (!items.length) box.append(note(t('acct.none')));
+  if (!items.length && !view.primary && h.in_use && typeof h.in_use === 'object') { const ul = mk('ul', 'acctlist'); ul.append(inUseRow(h.in_use)); box.append(ul); }
+  else if (!items.length) box.append(note(t('acct.none')));
   else {
     const ul = mk('ul', 'acctlist');
     for (const it of items) ul.append(itemRow(harness, label, route, { ...h, items }, it));
@@ -207,7 +234,7 @@ function harnessCard([harness, label, route]) {
   if (form && form.harness === harness && !form.id) box.append(nameForm(harness, label, route, items));
   else {
     const p = mk('p', 'mailbtns');
-    const add = btn(t('acct.add'), 'acctadd', () => { form = { harness }; say(''); render(); });
+    const add = btn(t(items.length || h.in_use || view.primary?.[harness]?.state === 'in' ? 'p0269w4.addAnother' : 'acct.add'), 'acctadd', () => { form = { harness }; say(''); render(); });   // #452: another account, not a re-login
     if (items.length >= ITEMS_MAX || adding) add.disabled = true;
     p.append(add); box.append(p);
     if (items.length >= ITEMS_MAX) box.append(note(t('acct.full', { n: String(ITEMS_MAX) })));

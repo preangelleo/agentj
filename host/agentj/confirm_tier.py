@@ -127,7 +127,7 @@ def _owner_delete(command: str, items, workdir) -> bool:
     """Does this shell command delete the owner's data? Only plain file removals whose every target is scratch are not."""
     import re
     from . import danger
-    rules = {r for c, r, _w in items if c == "delete"}
+    rules = {r for c, r, _w in items if c == "delete" and r != "delete.trash"}
     if not rules:
         return False
     if rules <= _RECOVERABLE_GIT and _only_refs(command):
@@ -209,6 +209,8 @@ def harness_keeps(tool: str, tool_input=None, *, env=None, workdir=None):
         return "delete"
     name, inp = ("Bash", {"command": text}) if shell else (tool, inp)
     if shell:
+        if danger.unresolved_execution(name, inp):
+            return "delete"                         # compatibility UV floor; Host.ask must refuse, even after UV
         for command in danger.lex(text):
             for s in danger.unwrap(command):
                 if s.name == "agentj" and s.args[:1] in _SEAT_CLI:

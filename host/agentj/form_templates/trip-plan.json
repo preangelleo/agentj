@@ -1,0 +1,257 @@
+{
+ "name": "trip-plan",
+ "mode": "deep",
+ "title": {
+  "zh": "出行偏好",
+  "en": "Trip preferences"
+ },
+ "about": {
+  "zh": "订之前先问：日期、预算、住宿、节奏、忌讳。",
+  "en": "Before booking: dates, budget, stay, pace, no-gos."
+ },
+ "vars": {
+  "place": {
+   "label": {
+    "zh": "目的地",
+    "en": "Destination"
+   },
+   "required": true
+  },
+  "currency": {
+   "label": {
+    "zh": "货币单位",
+    "en": "Currency"
+   },
+   "default": "元"
+  }
+ },
+ "fill": [
+  "default.budget",
+  "drop",
+  "title"
+ ],
+ "form": {
+  "title": {
+   "zh": "出行 · {{place}}",
+   "en": "Trip · {{place}}"
+  },
+  "sections": [
+   {
+    "id": "when",
+    "title": {
+     "zh": "时间与预算",
+     "en": "Dates and budget"
+    },
+    "questions": [
+     {
+      "id": "start",
+      "type": "date",
+      "label": {
+       "zh": "出发",
+       "en": "Leave on"
+      },
+      "required": true,
+      "keep": true
+     },
+     {
+      "id": "end",
+      "type": "date",
+      "label": {
+       "zh": "返回",
+       "en": "Back on"
+      },
+      "required": true
+     },
+     {
+      "id": "budget",
+      "type": "slider",
+      "label": {
+       "zh": "总预算",
+       "en": "Total budget"
+      },
+      "min": 1000,
+      "max": 50000,
+      "step": 1000,
+      "unit": "{{currency}}",
+      "default": 10000
+     }
+    ]
+   },
+   {
+    "id": "stay",
+    "title": {
+     "zh": "住与行",
+     "en": "Stay and travel"
+    },
+    "questions": [
+     {
+      "id": "hotel",
+      "type": "single",
+      "label": {
+       "zh": "住哪类",
+       "en": "Where to stay"
+      },
+      "options": [
+       {
+        "value": "budget",
+        "label": {
+         "zh": "经济型",
+         "en": "Budget"
+        }
+       },
+       {
+        "value": "mid",
+        "label": {
+         "zh": "舒适型",
+         "en": "Comfortable"
+        }
+       },
+       {
+        "value": "lux",
+        "label": {
+         "zh": "高档",
+         "en": "Upscale"
+        }
+       },
+       {
+        "value": "bnb",
+        "label": {
+         "zh": "民宿",
+         "en": "Guesthouse"
+        }
+       }
+      ]
+     },
+     {
+      "id": "move",
+      "type": "multi",
+      "label": {
+       "zh": "怎么去",
+       "en": "Getting there"
+      },
+      "options": [
+       {
+        "value": "flight",
+        "label": {
+         "zh": "飞机",
+         "en": "Flight"
+        }
+       },
+       {
+        "value": "train",
+        "label": {
+         "zh": "高铁",
+         "en": "Train"
+        }
+       },
+       {
+        "value": "car",
+        "label": {
+         "zh": "自驾",
+         "en": "Drive"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "style",
+    "title": {
+     "zh": "节奏",
+     "en": "Pace"
+    },
+    "questions": [
+     {
+      "id": "pace",
+      "type": "buttons",
+      "label": {
+       "zh": "节奏",
+       "en": "Pace"
+      },
+      "options": [
+       {
+        "value": "slow",
+        "label": {
+         "zh": "慢慢逛",
+         "en": "Slow"
+        }
+       },
+       {
+        "value": "mix",
+        "label": {
+         "zh": "张弛有度",
+         "en": "Balanced"
+        }
+       },
+       {
+        "value": "full",
+        "label": {
+         "zh": "排满",
+         "en": "Packed"
+        }
+       }
+      ]
+     },
+     {
+      "id": "likes",
+      "type": "rank",
+      "label": {
+       "zh": "最想要的体验（排序）",
+       "en": "What you want most (rank)"
+      },
+      "options": [
+       {
+        "value": "food",
+        "label": {
+         "zh": "美食",
+         "en": "Food"
+        }
+       },
+       {
+        "value": "nature",
+        "label": {
+         "zh": "自然风景",
+         "en": "Nature"
+        }
+       },
+       {
+        "value": "culture",
+        "label": {
+         "zh": "人文历史",
+         "en": "Culture"
+        }
+       },
+       {
+        "value": "shop",
+        "label": {
+         "zh": "购物",
+         "en": "Shopping"
+        }
+       }
+      ]
+     },
+     {
+      "id": "nogo",
+      "type": "longtext",
+      "label": {
+       "zh": "忌讳 / 不想要的",
+       "en": "No-gos"
+      },
+      "max_length": 600
+     }
+    ]
+   }
+  ]
+ },
+ "example": {
+  "zh": {
+   "place": "京都",
+   "currency": "元"
+  },
+  "en": {
+   "place": "Kyoto",
+   "currency": "USD"
+  }
+ }
+}

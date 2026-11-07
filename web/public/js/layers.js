@@ -26,7 +26,10 @@ function sync(){
  }
 }
 export function registerLayer({element,open,close,fallback,trigger,trap=true,rank=0,preserveOutsideFocus=false}){
- const l={element,open,close,fallback,trigger,trap,rank,preserveOutsideFocus,on:false};layers.push(l);sync();return l;
+ const l={element,open,close,fallback,trigger,trap,rank,preserveOutsideFocus,on:false};
+ // One-shot native editors release their closures after closing. Existing persistent layers need no change.
+ l.dispose=()=>{const at=layers.indexOf(l);if(at>=0)layers.splice(at,1);};
+ layers.push(l);sync();return l;
 }
 export function initLayers({onEscape}={}){
  document.addEventListener('click',e=>{lastTarget=e.target.closest?.(focusable)||document.activeElement;clickFocus=document.activeElement;setTimeout(()=>{clickFocus=undefined;});},true);
@@ -36,6 +39,9 @@ export function initLayers({onEscape}={}){
   if(e.key!=='Escape'&&e.key!=='Tab')lastTarget=document.activeElement;
   sync();const top=layers.filter(l=>l.on).sort((a,b)=>b.rank-a.rank||b.order-a.order)[0];
   if(!top)return;
+  // Native showModal() is above ordinary page layers and owns its cancel/focus trap.
+  const native=document.activeElement?.closest?.('dialog[open]');
+  if(native&&!top.element()?.contains(native))return;
   if(e.key==='Escape'&&!e.isComposing){e.preventDefault();e.stopImmediatePropagation();onEscape?.();top.close();sync();return;}
   if(e.key==='Tab'&&top.trap){
    const box=top.element(),items=[...box.querySelectorAll(focusable)].filter(e=>visible(e)&&e.tabIndex>=0);

@@ -95,7 +95,7 @@ async function run() {
         assert.match(await evaluate(p, `${$('setup-where')}.textContent`), lang === 'zh' ? /^在Agent J 主机上做 · / : /^On the Agent J host · /);
         assert.match(await evaluate(p, `${$('setup-fact')}.textContent`), /9222/);
         assert.match(await evaluate(p, `${$('setup-src')}.textContent`), /9222/);
-        assert.equal(await evaluate(p, `document.querySelector('#setup-main .setup-actions .aj-btn').id`), 'setup-adopt-browser', tag + ' adopt first');
+        assert.equal(await evaluate(p, `document.querySelector('#setup-main .setup-actions .aj-action').id`), 'setup-adopt-browser', tag + ' adopt first');
         assert.equal(await evaluate(p, `!!${$('setup-install-browser')} && !!${$('setup-unused')} && !!${$('setup-later')}`), true, tag);
         assert.equal(await evaluate(p, `document.querySelectorAll('#setup-main .setup-row').length`), FIX.items.length, tag + ' every row listed');
         assert.equal(await evaluate(p, `document.querySelectorAll('#setup-main .setup-row .setup-tag').length > 0`), true, tag + ' where-tags');
@@ -110,7 +110,7 @@ async function run() {
         await waitFor(p, `${$('setup-main')}.dataset.revision === '${FIX.revision + 2}'`);
         assert.deepEqual(marks, [{ item: 'browser', choice: 'adopt_browser', rev: FIX.revision, ok: true }], tag);
         assert.match(await evaluate(p, `${$('setup-fact')}.textContent`), /9222/);
-        assert.equal(await evaluate(p, `document.querySelector('#setup-main .setup-actions .aj-btn').id`), 'setup-open-login', tag);
+        assert.equal(await evaluate(p, `document.querySelector('#setup-main .setup-actions .aj-action').id`), 'setup-open-login', tag);
         assert.match(await evaluate(p, `${$('setup-src')}.textContent`), lang === 'zh' ? /你已有的浏览器（端口 9222）/ : /your own browser \(port 9222\)/);
         writeFileSync(resolve(OUT, `adopted-${tag}.png`), await shoot(p, ''));
         // 4. ← back to chat: the banner is there; ✕ hides it at once and tells the host; the chat still sends

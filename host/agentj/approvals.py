@@ -60,11 +60,14 @@ def allow_add_line(addrs) -> str:
 
 
 def verify(sign_pub: bytes, sig: bytes, channel: str, device: str, rid: str, decision: str, digest_hex: str,
-           scope: str | None = None, allow_add: list | None = None, *, task_scope: str | None = None) -> bool:
+           scope: str | None = None, allow_add: list | None = None, *, task_scope: str | None = None, approval_v: int | None = None) -> bool:
     if len(sign_pub) != 32 or len(sig) != 64:
         return False
     try:
         msg = signed_message(channel, device, rid, decision, digest_hex, scope, task_scope=task_scope)
+        if approval_v == 2:
+            from .approval_review import CONTEXT as REVIEW_CONTEXT
+            msg = msg.replace((CONTEXT + "\n").encode(), (REVIEW_CONTEXT + "\n").encode(), 1)
         if allow_add:
             if decision != "allow":
                 return False
@@ -82,7 +85,7 @@ def input_digest(tool_input) -> str:
 def record(st, *, rid: str, agent: str, tool: str, input_sha256: str, shown_sha256: str, decision: str, reason: str,
            device: str | None = None, sign_pub: bytes | None = None, sig: bytes | None = None, cats: list | None = None,
            scope: str | None = None, grant: str | None = None, auto: str = "batch", control: dict | None = None,
-           scope_sha256: str | None = None, fa: dict | None = None, task_scope: str | None = None, task_action: dict | None = None, task_id: str | None = None, peer_proof: dict | None = None, task_uv: bool | None = None, policy: str | None = None) -> dict:
+           scope_sha256: str | None = None, fa: dict | None = None, task_scope: str | None = None, task_action: dict | None = None, task_id: str | None = None, peer_proof: dict | None = None, task_uv: bool | None = None, policy: str | None = None, approval_v: int | None = None, order_origin: str | None = None) -> dict:
     """Append metadata only (0600): signed device/control decisions and their exact-scope automatic children.
     task_uv records the actual local requirement; task_scope signs the authorization ceiling. Never log tool input.
     fa contains assertion hashes only. The cloud cannot read this log.
@@ -90,6 +93,10 @@ def record(st, *, rid: str, agent: str, tool: str, input_sha256: str, shown_sha2
     rec = {"ts": int(time.time()), "id": rid, "channel": st.config()["channel"], "agent": agent, "tool": tool,
            "input_sha256": input_sha256, "shown_sha256": shown_sha256, "decision": decision, "reason": reason,
            "device": device, "sk": wire.b64u(sign_pub) if sign_pub else None, "sig": wire.b64u(sig) if sig else None}
+    if order_origin is not None:
+        rec["order_origin"] = str(order_origin)[:600]
+    if approval_v is not None:
+        rec["approval_v"] = approval_v
     if task_uv is not None:
         rec["task_uv"] = task_uv
     if policy is not None:                  # 0269-w3-policy: the default policy row (approval_policy.ROWS) that decided
@@ -383,7 +390,7 @@ def check_record(st, r: dict, index: dict | None = None) -> str:
                      and action["input_sha256"] == r.get("input_sha256")
                      and action["class"][1] == sorted(r.get("cats", [])) and r["ts"] <= scope["expires"])
             return "auto" if valid and verify(wire.unb64u(proof["sk"]), wire.unb64u(proof["sig"]), proof["channel"],
-                        proof["device"], proof["id"], "allow", proof["shown_sha256"], task_scope=proof["task_scope"]) else "bad"
+                        proof["device"], proof["id"], "allow", proof["shown_sha256"], task_scope=proof["task_scope"], approval_v=proof.get("approval_v")) else "bad"
         except (ValueError, TypeError, KeyError, IndexError, AttributeError):
             return "bad"
     if r.get("reason") == "task_grant":
@@ -425,11 +432,17 @@ def check_record(st, r: dict, index: dict | None = None) -> str:
     try:
         msg = signed_message(str(r.get("channel")), str(r.get("device")), str(r.get("id")), str(r.get("decision")),
                              str(r.get("shown_sha256")), task_scope=r.get("task_scope"))
+        if r.get("approval_v") == 2:
+            from .approval_review import CONTEXT as REVIEW_CONTEXT
+            msg = msg.replace((CONTEXT + "\n").encode(), (REVIEW_CONTEXT + "\n").encode(), 1)
         if r.get("decision") == "allow" and isinstance(r.get("scope_sha256"), str):
             msg += ("\n" + r["scope_sha256"]).encode()     # P71 friend_request: the group line (§17.7)
     except ValueError:                                  # allow_batch: the scope line is its hash, kept in the log
         msg = (f"{CONTEXT}\n{r.get('channel')}\n{r.get('device')}\n{r.get('id')}\nallow_batch\n{r.get('shown_sha256')}\n"
                f"{r.get('scope_sha256')}").encode() if r.get("decision") == "allow_batch" else b""
+    if r.get("approval_v") == 2 and msg.startswith((CONTEXT + "\n").encode()):
+        from .approval_review import CONTEXT as REVIEW_CONTEXT
+        msg = msg.replace((CONTEXT + "\n").encode(), (REVIEW_CONTEXT + "\n").encode(), 1)
     try:
         if len(sk) != 32 or len(sig) != 64 or not msg:
             return "bad"

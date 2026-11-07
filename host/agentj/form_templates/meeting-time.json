@@ -1,0 +1,151 @@
+{
+ "name": "meeting-time",
+ "mode": "light",
+ "title": {
+  "zh": "约时间",
+  "en": "Find a time"
+ },
+ "about": {
+  "zh": "给 3–5 个时段让主人多选，再选时长。",
+  "en": "Offer 3–5 slots to pick from, plus a length."
+ },
+ "vars": {
+  "topic": {
+   "label": {
+    "zh": "约什么",
+    "en": "What for"
+   },
+   "required": true
+  },
+  "slot1": {
+   "label": {
+    "zh": "时段 1",
+    "en": "Slot 1"
+   },
+   "required": true
+  },
+  "slot2": {
+   "label": {
+    "zh": "时段 2",
+    "en": "Slot 2"
+   },
+   "required": true
+  },
+  "slot3": {
+   "label": {
+    "zh": "时段 3",
+    "en": "Slot 3"
+   },
+   "required": true
+  }
+ },
+ "fill": [
+  "options.slots",
+  "options.len",
+  "recommend.len",
+  "title"
+ ],
+ "form": {
+  "title": "{{topic}}",
+  "questions": [
+   {
+    "id": "slots",
+    "type": "multi",
+    "label": {
+     "zh": "哪些时间可以？（可多选）",
+     "en": "Which times work? (pick any)"
+    },
+    "required": true,
+    "keep": true,
+    "options": [
+     {
+      "value": "s1",
+      "label": {
+       "zh": "{{slot1}}",
+       "en": "{{slot1}}"
+      }
+     },
+     {
+      "value": "s2",
+      "label": {
+       "zh": "{{slot2}}",
+       "en": "{{slot2}}"
+      }
+     },
+     {
+      "value": "s3",
+      "label": {
+       "zh": "{{slot3}}",
+       "en": "{{slot3}}"
+      }
+     },
+     {
+      "value": "none",
+      "label": {
+       "zh": "都不行",
+       "en": "None of these"
+      }
+     }
+    ]
+   },
+   {
+    "id": "len",
+    "type": "buttons",
+    "label": {
+     "zh": "多长？",
+     "en": "How long?"
+    },
+    "options": [
+     {
+      "value": "30",
+      "label": {
+       "zh": "30 分钟",
+       "en": "30 min"
+      }
+     },
+     {
+      "value": "60",
+      "label": {
+       "zh": "1 小时",
+       "en": "1 hour"
+      }
+     },
+     {
+      "value": "90",
+      "label": {
+       "zh": "1.5 小时",
+       "en": "1.5 hours"
+      }
+     }
+    ]
+   },
+   {
+    "id": "alt",
+    "type": "text",
+    "label": {
+     "zh": "都不行的话，你方便的时间",
+     "en": "If none, when suits you?"
+    },
+    "max_length": 120,
+    "show_if": {
+     "q": "slots",
+     "eq": "none"
+    }
+   }
+  ]
+ },
+ "example": {
+  "zh": {
+   "topic": "和设计师过一遍新版首页",
+   "slot1": "周二 10:00",
+   "slot2": "周三 15:00",
+   "slot3": "周四 20:00"
+  },
+  "en": {
+   "topic": "Walk through the new homepage with the designer",
+   "slot1": "Tue 10:00",
+   "slot2": "Wed 15:00",
+   "slot3": "Thu 20:00"
+  }
+ }
+}

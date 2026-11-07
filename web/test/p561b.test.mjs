@@ -138,9 +138,9 @@ test('the no-key card: words on top (line + note), 「去设置」 · 「拒绝�
   const [line, note] = box.children;
   assert.equal(line.dataset.k, 'p561.card.noKey');
   assert.equal(note.dataset.k, 'p561.card.elsewhere');
-  const html = read('../public/index.html');
+  const html = read('../public/index.html').replace(/ data-aj-action-context="[^"]+"/g,'');
   const row = html.slice(html.indexOf('<div class="apprbtns" id="apprBtns"'), html.indexOf('</div>', html.indexOf('<div class="apprbtns" id="apprBtns"')));
-  assert.match(row, /<button class="apprallow apprgo" id="apprGo" type="button" hidden><span class="lbl" data-i18n="p561\.pk\.go">去设置<\/span><\/button>\s*<button class="apprdeny" id="apprDeny"/, '去设置 in 批准\'s slot, before 拒绝');
+  assert.match(row, /<button class="apprallow apprgo" id="apprGo" type="button" hidden data-aj-owner="aj-approval"><span class="lbl" data-i18n="p561\.pk\.go">去设置<\/span><\/button>\s*<button class="apprdeny" id="apprDeny"/, '去设置 in 批准\'s slot, before 拒绝');
   const rl = read('../public/js/relay.js');
   assert.match(rl, /if \(goShown && !apprBusy\) el\("askState"\)\.before\(el\("apprPk"\)\); else el\("apprBtns"\)\.after\(el\("apprPk"\)\);/, 'the words move above the button row');
   assert.match(rl, /el\("apprGo"\)\.hidden = !goShown;/);
@@ -152,10 +152,10 @@ test('the no-key card: words on top (line + note), 「去设置」 · 「拒绝�
 });
 
 test('one setup entry: the terminal row points up (scrollToPkRow), no button of its own; Settings opens and the row lights up', () => {
-  const html = read('../public/index.html');
+  const html = read('../public/index.html').replace(/ data-aj-action-context="[^"]+"/g,'');
   const term = html.slice(html.indexOf('<div id="set-term-pk"'), html.indexOf('</div>', html.indexOf('<div id="set-term-pk"')) + 6);
   assert.match(term, /id="set-term-faceid" class="setlink pkgo" data-i18n="p561\.pk\.goUp"/);
-  assert.doesNotMatch(term, /aj-btn|phoneEnv\.setup|p417\.nopk/);
+  assert.doesNotMatch(term, /aj-action|phoneEnv\.setup|p417\.nopk/);
   assert.match(read('../public/js/termhook.js'), /el\('set-term-faceid'\)\?\.addEventListener\('click', \(\) => scrollToPkRow\(\)\)/);
   const pk = read('../public/js/pkassist.js');
   assert.match(pk, /export function scrollToPkRow\(\)/);
@@ -192,5 +192,12 @@ test('P561 追加 17: a remote without its own key shows no 「用 Face ID 确�
   const relay = read('../public/js/relay.js');
   assert.match(relay, /p && p\.passkey_required && \(p\.tool === "SandboxOnce" \|\| !cardNoKey\(p\)\) \? t\(p\.tool === "SandboxOnce" \? "ask\.sandboxTitle" : "p336\.faTitle"\)/, 'sheet title (the sandbox card keeps 「沙箱不可用」)');
   assert.match(relay, /else if \(item\.passkey_required && \(item\.tool === "SandboxOnce" \|\| !cardNoKey\(item\)\)\) \{/, 'tag: the category chips instead');
-  assert.match(relay, /\n    else if \(item\.passkey_required\) \{\}\n    else if \(item\.goal !== "grant"/, 'never the low-risk tag');
+  const start=relay.indexOf('else if (item.passkey_required) {}');
+  const end=relay.indexOf('\n  }\n  if (item && item.task)',start);
+  assert.ok(start>=0&&end>start,'the no-key tag branch is present');
+  const tags=item=>{const out=[];new Function('item','document','box','t',relay.slice(start,end).replace(/^else /,''))(item,{createElement:()=>({})},{appendChild:n=>out.push(n)},k=>k);return out;};
+  assert.deepEqual(tags({passkey_required:true,learn:true}),[],'a no-key card is neither biometric, skill nor low-risk');
+  assert.deepEqual(tags({passkey_required:true}),[],'never the low-risk tag');
+  assert.equal(tags({learn:true})[0].textContent,'ask.learn','skill proposals retain their own tag');
+  assert.equal(tags({})[0].textContent,'ask.low','negative control executes the ordinary low-risk branch');
 });

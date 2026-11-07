@@ -1,4 +1,10 @@
-"""0.26.9 #468 (CONTRACT §B3, ADR-0269-w2-assist, PROTOCOL §41): official remote assist = signed TASKS, never a terminal.
+"""Official assistance: legacy signed tasks (§41), plus explicitly scoped official PTY (§41.1).
+
+The following task-only contract remains the default. Terminal authority requires the separate
+assist_term_grant UV action and is implemented in assist_terminal/assist_operator, never inferred
+from a task lease.
+
+0.26.9 legacy task scope (CONTRACT §B3, ADR-0269-w2-assist, PROTOCOL §41): signed TASKS, never a terminal.
 
 The owner grants N minutes (15 / 30 / 60, default 30) with Face ID on a paired phone (`assist_grant`, two steps like
 `term_open`). While that grant is live, and only then, the official Agent J Father peer — identified ONLY by a pinned
@@ -42,7 +48,7 @@ from . import assist_keys, peer_guard, wire
 from .compose import Send
 
 CAP = "assist1"
-PHONE_TYPES = ("assist_grant", "assist_revoke")
+PHONE_TYPES = ("assist_grant", "assist_revoke", "assist_term_grant", "assist_term_answer", "assist_log", "assist_discover_retry")
 MINUTES = (15, 30, 60)
 DEFAULT_MINUTES = 30
 NONCE_S = 120                 # a step-1 challenge lives this long
@@ -173,12 +179,61 @@ def audit(st, ev: str, **kw) -> None:
     """One line of the owner's local audit (0600). The task text is kept here — the owner's own machine — and nowhere else."""
     rec = {"ts": int(time.time()), "ev": ev, **{k: v for k, v in kw.items() if v is not None}}
     _mkdir(st)
-    st.append_private(dir_of(st) / "log.jsonl", json.dumps(rec, ensure_ascii=False))
+    data = (json.dumps(rec, ensure_ascii=False) + "\n").encode()
+    fd = os.open(dir_of(st) / "log.jsonl", os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        while data:
+            n = os.write(fd, data)
+            if n <= 0:
+                raise OSError("short assist audit write")
+            data = data[n:]
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def prune_reports(st, now: float) -> None:
+    """Delete only validated, expired reports owned by this feature.
+
+    Corrupt/future/foreign/mismatched files and symlinks are preserved. Runtime
+    callers serialize this with report writes under Assist.glock; no filesystem
+    paths are taken from the report contents.
+    """
+    import stat
+    d = dir_of(st)
+    if d.is_symlink():
+        return
+    try:
+        candidates = list(d.iterdir())
+    except OSError:
+        return
+    for p in candidates:
+        match = re.fullmatch(r"report-([0-9a-f]{24})\.json", p.name)
+        if p.name != "report.json" and match is None:
+            continue
+        try:
+            before = p.lstat()
+            if not stat.S_ISREG(before.st_mode) or before.st_size > 256 * 1024:
+                continue
+            report = json.loads(p.read_text(encoding="utf-8"))
+            if (not isinstance(report, dict) or not isinstance(report.get("id"), str)
+                    or not _GID.fullmatch(report["id"]) or (match and report["id"] != match.group(1))
+                    or report.get("result") != "session_ended" or type(report.get("ended_at")) is not int
+                    or not 0 < report["ended_at"] <= now or now - report["ended_at"] <= LOG_DAYS * 86400):
+                continue
+            after = p.lstat()
+            if (before.st_dev, before.st_ino, before.st_mtime_ns, before.st_size) != \
+                    (after.st_dev, after.st_ino, after.st_mtime_ns, after.st_size):
+                continue
+            p.unlink()
+        except (OSError, ValueError, UnicodeDecodeError):
+            continue
 
 
 def prune_log(st, now: float | None = None) -> None:
     p = dir_of(st) / "log.jsonl"
     now = time.time() if now is None else now
+    prune_reports(st, now)
     try:
         lines = p.read_text().splitlines()
     except OSError:
@@ -237,6 +292,10 @@ class AssistSend(Send):
 class Assist:
     def __init__(self, host, clock=time.time):
         self.h, self.st, self.clock = host, host.st, clock
+        from .assist_terminal import Terminal
+        self.terminal = Terminal(self)
+        from .assist_operator import Operator
+        self.operator = Operator(self)
         self.g = read_grant(self.st)
         self.revoked = read_revoked(self.st)
         self._rv_mtime = self._revoke_mtime()
@@ -316,6 +375,8 @@ class Assist:
         now = self.clock() if now is None else now
         if g.get("revoked"):
             return "revoked"
+        if g.get("scope") == "terminal" and (self.terminal.gid != g["id"] or self.terminal.owner is None):
+            return "host_restarted"
         if self._cli_revoked(g["id"]):
             return "revoked"
         if self.h.stopped():
@@ -372,7 +433,7 @@ class Assist:
         if not g:
             return {"t": "assist_state", "active": False, "until": 0, "tasks": []}
         tasks = [{"id": t["id"], "state": t["state"]} for t in self.tasks.values() if t["gid"] == g["id"]][-SHOW_TASKS:]
-        return {"t": "assist_state", "active": True, "until": g["until"], "id": g["id"], "key_id": g["key_id"], "tasks": tasks}
+        return {"t": "assist_state", "active": True, "until": g["until"], "id": g["id"], "key_id": g["key_id"], "scope": g.get("scope", "tasks"), "discovery": self.terminal.discovery if g.get("scope") == "terminal" else None, "tasks": tasks}
 
     def _broadcast(self, obj: dict) -> None:
         with contextlib.suppress(Exception):
@@ -409,6 +470,7 @@ class Assist:
         if not getattr(s, "p33", False):
             return
         await self.h.send_app(s, self.state_msg())
+        await self.terminal.observer(s)
         g = self.live()
         if g:
             for t in [t for t in self.tasks.values() if t["gid"] == g["id"]][-SHOW_TASKS:]:
@@ -418,6 +480,8 @@ class Assist:
     def refusal(self, device: str) -> str | None:
         if self.h.stopped():
             return "estop"
+        if self.ending:
+            return "busy"
         if not self.available() or self.seat() is None:
             return "unavailable"
         if not self.st.passkey_of_device(device):
@@ -426,10 +490,36 @@ class Assist:
 
     async def on_phone(self, s, t: str, obj: dict) -> None:
         r = obj.get("r")
+        if t == "assist_term_answer":
+            allowed = self.terminal.live() and s is self.terminal.owner and obj.get("gid") == self.terminal.gid
+            if allowed:
+                await self.terminal.answer(s, obj)
+            if wire.is_rid(r):
+                await self._res(s, r, t, bool(allowed), **({} if allowed else {"why": "not_owner"}))
+            return
         if not wire.is_rid(r):
             return
-        if t == "assist_grant":
+        if t in ("assist_grant", "assist_term_grant"):
             return await self._grant(s, r, obj)
+        if t == "assist_term_answer":
+            allowed = self.terminal.live() and s is self.terminal.owner and obj.get("gid") == self.terminal.gid
+            if allowed:
+                await self.terminal.answer(s, obj)
+            if wire.is_rid(r):
+                await self._res(s, r, t, bool(allowed), **({} if allowed else {"why": "not_owner"}))
+            return
+        if t == "assist_discover_retry":
+            allowed = self.terminal.live() and s is self.terminal.owner
+            if allowed and time.monotonic() - self.terminal.discovery_retry_at >= 15:
+                self.terminal.discovery_retry_at = time.monotonic()
+                invite = self.operator.invitation()
+                if invite is not None:
+                    self.terminal.discovery = "publishing"
+                    self.broadcast_state()
+                    self._bg(self.operator.publish(invite))
+            return await self._res(s, r, t, bool(allowed), **({} if allowed else {"why": "not_owner"}))
+        if t == "assist_log":
+            return await self.terminal.log(s, obj)
         if t == "assist_revoke":
             return await self._revoke(s, r, obj)
 
@@ -439,7 +529,11 @@ class Assist:
 
     async def _grant(self, s, r, obj) -> None:
         from . import controls, passkey
-        action = "assist_grant"
+        action = "assist_term_grant" if obj.get("t") == "assist_term_grant" else "assist_grant"
+        terminal_scope = action == "assist_term_grant"
+        from .assist_terminal import grant_digest
+        def digest(kid, seat):
+            return grant_digest(kid, seat, minutes) if terminal_scope else uv_digest(kid, seat)
         minutes = obj.get("minutes", DEFAULT_MINUTES)
         if type(minutes) is not int or minutes not in MINUTES:
             return await self._res(s, r, action, False, why="shape")
@@ -458,18 +552,22 @@ class Assist:
             if len(self.pending) >= 16:
                 return await self._res(s, r, action, False, why="busy")
             n = secrets.token_hex(16)
-            self.pending[n] = {"device": s.device, "at": now, "key_id": k["id"], "seat": seat}
-            ch = passkey.elevate_challenge(self.h.channel, s.device, n, action, n, uv_digest(k["id"], seat))
+            self.pending[n] = {"device": s.device, "at": now, "key_id": k["id"], "seat": seat,
+                               "action": action, "minutes": minutes}
+            ch = passkey.elevate_challenge(self.h.channel, s.device, n, action, n, digest(k["id"], seat))
             return await self._res(s, r, action, False, why="passkey_required", n=n, fa=pk["id"], fa_s=passkey.pk_state(pk),
                                    fa_ch=wire.b64u(ch), key_id=k["id"], seat=seat)
         n = obj.get("n")
         pend = self.pending.pop(n, None) if isinstance(n, str) else None
         target = {"minutes": minutes, "key_id": (pend or {}).get("key_id", ""), "seat": (pend or {}).get("seat", "")}
+        if terminal_scope:
+            target["scope"] = "terminal"
         if pend is None or pend["device"] != s.device:
             why = "replay" if isinstance(n, str) and _HEX32.fullmatch(n) else "shape"
         elif self.clock() - pend["at"] > NONCE_S:
             why = "stale"
-        elif pend["key_id"] != k["id"] or pend["seat"] != seat:
+        elif pend["key_id"] != k["id"] or pend["seat"] != seat or pend.get("action", "assist_grant") != action or \
+                (terminal_scope and pend.get("minutes") != minutes):
             why = "stale"
         else:
             why = controls.check(self.st, self.h.nonces, self.h.channel, s.device, obj, action, target)
@@ -478,7 +576,7 @@ class Assist:
                 f = passkey.approval_fields(obj.get("fa"))
                 if f["id"] != pk["id"]:
                     raise passkey.PasskeyError("bad", "credential")
-                ch = passkey.elevate_challenge(self.h.channel, s.device, n, action, n, uv_digest(pend["key_id"], pend["seat"]))
+                ch = passkey.elevate_challenge(self.h.channel, s.device, n, action, n, digest(pend["key_id"], pend["seat"]))
                 self.st.passkey_count(s.device, pk["id"], passkey.verify_assertion(pk, f, ch))
             except (passkey.PasskeyError, ValueError, TypeError, KeyError):
                 why = "passkey_failed"
@@ -495,12 +593,17 @@ class Assist:
             return await self._res(s, r, action, False, why=why)
         now = int(self.clock())
         g = {"v": 1, "id": secrets.token_hex(12), "key_id": pend["key_id"], "seat": pend["seat"], "granted_by": s.device,
-             "minutes": minutes, "not_before": now, "until": now + minutes * 60, "seq": 0}
+             "minutes": minutes, "not_before": now, "until": now + minutes * 60, "seq": 0,
+             **({"scope": "terminal"} if terminal_scope else {})}
         try:
             await asyncio.to_thread(self._write_locked, g)
         except OSError:
             return await self._res(s, r, action, False, why="io")
         self.g, self.tasks = g, OrderedDict()
+        if terminal_scope:
+            self.terminal.bind(s, g["id"])
+            if not await self.terminal.record("grant", minutes=minutes, key_id=g["key_id"], seat=g["seat"]):
+                return await self._res(s, r, action, False, why="audit")
         with contextlib.suppress(Exception):
             controls.log(self.st, action=action, device=s.device, result="ok", obj=target, sig=obj.get("sig"), n=n, ts=obj.get("ts"),
                          extra={"grant": g["id"], "minutes": minutes})
@@ -511,12 +614,23 @@ class Assist:
         self.broadcast_state()
         self.notice("grant", minutes=minutes)
         hhmm = time.strftime("%H:%M", time.localtime(g["until"]))
+        if terminal_scope:
+            self.h.agent_notice("已授权官方完整终端协助；你可旁观并随时收回，危险命令仍由你确认。 / Official full terminal assistance authorised; watch live and revoke any time. Dangerous shell commands still need your confirmation.")
+        else:
+            self._task_grant_notice(hhmm)
+        await self._apply_peers()
+        if terminal_scope:
+            invite = self.operator.invitation()
+            if invite is not None:
+                await self.h.send_app(s, {"t": "assist_invite", "gid": g["id"], "invite": invite})
+                self._bg(self.operator.publish(invite))
+
+    def _task_grant_notice(self, hhmm):
         with contextlib.suppress(Exception):
             self.h.agent_notice(("已授权 Agent J 官方远程协助到 " + hhmm + "：官方只能发任务文字给你的 Agent，敏感操作照常要你批准；随时可在横幅里收回。")
                                 if self.lang == "zh" else
                                 ("Agent J official remote assist is allowed until " + hhmm + ": it can only send task text to your "
                                  "Agent; sensitive steps still need your approval. Take it back any time from the banner."))
-        await self._apply_peers()
 
     async def _revoke(self, s, r, obj) -> None:
         from . import controls
@@ -546,6 +660,9 @@ class Assist:
             with contextlib.suppress(OSError):
                 await asyncio.to_thread(self._write_locked, g)
             await self._stop_tasks(g["id"])
+            if g.get("scope") == "terminal":
+                await self.terminal.end(why)
+                self._bg(self.operator.revoke_published(g["id"]))
             aid = None
             k = assist_keys.by_id(g["key_id"], self.clock()) or next(
                 (x for x in assist_keys.load(0) if x["id"] == g["key_id"]), None)
@@ -553,6 +670,9 @@ class Assist:
                 aid = peer_aid(k)
             net = getattr(getattr(self.h, "peers", None), "net", None)
             if aid and net is not None:
+                if g.get("scope") == "terminal":
+                    with contextlib.suppress(Exception):
+                        await net.send_assist_end(aid, g["id"], why)
                 with contextlib.suppress(Exception):
                     net.drop_peer(aid)
             self.log("assist_end", id=g["id"], reason=why)
@@ -591,6 +711,10 @@ class Assist:
             with contextlib.suppress(Exception):
                 await peers.apply()
 
+    def _prune(self):
+        with self.glock:
+            prune_log(self.st, self.clock())
+
     async def loop(self) -> None:
         """Expiry / CLI revoke / unpair / seat change / e-stop end the grant even when nobody sends anything."""
         while True:
@@ -602,7 +726,7 @@ class Assist:
                         await self.end(why)
                 if self.clock() - self._pruned > 86400:
                     self._pruned = self.clock()
-                    await asyncio.to_thread(prune_log, self.st)
+                    await asyncio.to_thread(self._prune)
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # noqa: BLE001 — the sweep never takes serve down
@@ -624,6 +748,10 @@ class Assist:
             return self.refuse("no_grant", t)
         if t == "assist_hello":
             return self._hello(fid, g, obj)
+        if t.startswith("assist_term_"):
+            return self.terminal.accept(fid, obj)
+        if g.get("scope") == "terminal":
+            return self.refuse("terminal_scope", t)
         if t == "pack":                      # the helper's receipt for a result we sent
             return None
         if t != "pmsg":
@@ -663,7 +791,7 @@ class Assist:
                 and _ed_ok(k["ed25519"], obj.get("sig"), hello_message(me, ts))):
             return self.refuse("bad_hello", "assist_hello")
         self.log("assist_hello", id=g["id"])
-        self._send(fid, {"t": "assist_ready", "gid": g["id"], "seat": g["seat"], "until": g["until"], "seq": g.get("seq", 0)})
+        self._send(fid, {"t": "assist_ready", "gid": g["id"], "seat": g["seat"], "until": g["until"], "seq": g.get("seq", 0), **({"scope": "terminal"} if g.get("scope") == "terminal" else {})})
 
     def _send(self, fid: str, obj: dict) -> bool:
         peers = getattr(self.h, "peers", None)
@@ -786,13 +914,21 @@ class Assist:
 def add_parser(sub) -> None:
     p = sub.add_parser("assist", help="Agent J 官方远程协助：status 查看 · log 留档 · revoke 收回（授权只能在手机上用 Face ID）/ "
                        "official remote assist: status · log · revoke (granting is Face ID on the phone only)")
-    p.add_argument("action", choices=["status", "log", "revoke"])
+    p.add_argument("action", choices=["status", "log", "revoke", "invite", "import", "list", "open", "input", "close"])
+    p.add_argument("session", nargs="?", help="official session grant id / 官方会话授权编号")
+    p.add_argument("--file", default="-", help="public invitation JSON file, or stdin (-)")
     p.add_argument("--lines", type=int, default=50, help="log：最后几行（1–2000）/ the last N lines")
+    p.add_argument("--summary", help="official repair conclusion, customer-visible and redacted")
+    p.add_argument("--diagnosis", help="official diagnosis, distinct from host audit facts")
+    p.add_argument("--verification", help="official verification statement; never implies host-verified success")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_assist)
 
 
 def cmd_assist(a) -> None:
+    if a.action in ("invite", "import", "list", "open", "input", "close"):
+        from .assist_operator import cmd
+        return cmd(a)
     import sys
     from .state import State
     st = State()

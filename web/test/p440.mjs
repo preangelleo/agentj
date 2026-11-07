@@ -37,8 +37,9 @@ try {
    await fake.send({t:'auto',tool:'Bash',summary:'systemctl status backup',by:'jev'});
    // Invoke the real handler too: old hosts use differing message names; this is a UI fixture.
    await evaluate(p,`import('./js/controls.js').then(m=>m.showAuto({tool:'Bash',summary:'systemctl status backup',by:'jev'}))`);
-   await waitFor(p,`document.getElementById('toast').classList.contains('on')`);
-   if(!before)await check('toast','auto-approval');await screenshot('auto-approval');
+   if(before)await waitFor(p,`document.getElementById('toast').classList.contains('on')`);
+   else { await new Promise(r=>setTimeout(r,200));assert.equal(await evaluate(p,`document.getElementById('toast').classList.contains('on')`),false,'automatic approvals stay silent (#562)'); }
+   await screenshot('auto-approval');
    await evaluate(p,`import('./js/ui.js').then(m=>m.notify({kind:'confirm',text:'Command completed',actions:[{label:'Undo',fn(){}}],ms:60000}))`);
    if(!before)await check('toast','action-result');await screenshot('action-result');
    await evaluate(p,`import('./js/ui.js').then(m=>m.notify({kind:'success',shape:'circle',text:'${lang==='zh'?'已复制':'Copied'}',ms:60000}))`);

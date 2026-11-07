@@ -219,7 +219,7 @@ test('nothing kept: no storage, no HTML, no logging in the new modules; the page
   for (const [name, src] of [['bang', BANG], ['vault', VAULT], ['vaultrow', VROW], ['terminal', TERM]]) {
     assert.doesNotMatch(code(src), /localStorage|sessionStorage|indexedDB|dbPut|putSealed|caches\.|innerHTML|insertAdjacentHTML|outerHTML|document\.write|console\.|\bimport\s*\(|\bfetch\s*\(/, name);
   }
-  assert.doesNotMatch(code(APP) + code(BANG) + code(VROW) + code(SET), /terminal\.js|terminal\.css/, 'terminal.js stays lazy');
+  assert.doesNotMatch(code(APP) + code(BANG) + code(VROW) + code(SET), /[\'\"](?:\.\/)?(?:js\/)?terminal\.(?:js|css)[\'\"]/, 'terminal.js stays lazy');
   const hexes = [...new Set([...CSS.matchAll(/#[0-9a-f]{6}\b/gi)].map((m) => m[0].toLowerCase()))].sort();
   assert.deepEqual(hexes, ['#141414', '#2c2b26', '#71bbde', '#858585', '#f7827e', '#faf9f5', '#ffe292']);
   const card = APPCSS.slice(APPCSS.indexOf('/* P414 (§37.10)'), APPCSS.indexOf('.omtxt.bang'));

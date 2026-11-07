@@ -2,7 +2,7 @@
 import VERSION from '../version.js';
 import {t,onLang} from './t.js';
 import {registerLayer} from './layers.js';
-import {notifyOnce} from './ui.js';
+import {notifyOnce,toastOff} from './ui.js';
 export function compareVersion(a,b){
  const parse=v=>typeof v==='string'&&/^(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?$/.exec(v);
  const x=parse(a),y=parse(b);if(!x||!y)return null;
@@ -22,7 +22,7 @@ export async function readWebVersion(){
  const manifest=JSON.parse(raw);
  return manifest.v===1&&compareVersion(manifest.version,manifest.version)===0?manifest.version:null;
 }
-let hostVersion=null,webVersion=null,dismissed=null,refresh=null;
+let hostVersion=null,webVersion=null,dismissed=null,refresh=null,webChecked=false;
 // P240 (Leo 10-13 23:13, a Huawei host updated by hand before batch B): a refresh only helps when the page it fetches is newer.
 // The dialog offers what version.json serves (`webVersion`), never what the host runs: a host ahead of every page that can be
 // fetched gets one quiet line under the header (ver.later_line) instead of a dialog whose 刷新 reloads the same page forever.
@@ -48,6 +48,7 @@ export function followsHost(current,host,web,triedTo){
 }
 let guards={blocked:()=>true,save:async()=>{}}, lastInput=Date.now(), refreshing=false, composing=false;
 const IDLE_MS=10000, DONE_KEY='aj.verUpdated';
+export const LATER_MS=10000;   // #451: 「稍后上线」 = the shared notice, once per host version (notifyOnce 'aj.verLaterSeen.<version>')
 const autoTarget=()=>followsHost(VERSION.version,hostVersion,webVersion,refreshedTo())?webVersion:null;
 function idle(){return !document.hidden && !composing && Date.now()-lastInput>=IDLE_MS && !guards.blocked();}
 async function follow(){
@@ -87,8 +88,12 @@ function render(){
   if(updated===VERSION.version){
    notifyOnce({kind:'success',shape:'rect',text:t('ver.updated',{v:VERSION.version}),ms:3000},'aj.verUpdatedSeen.'+VERSION.version);
   }
-  line.hidden=!later||!box.hidden;
-  line.textContent=later?t('ver.later_line'):'';
+  // 0.26.9 #451 (chairman 11-04 10:52: 「这个通知消息栏一直没有自己消失……没办法取消」): no resident line — the shared notice,
+  // 10 seconds, with 关闭, once per host version on this device; the page still follows by itself when the new web page is out.
+  line.hidden=true; line.textContent='';
+  if(later&&box.hidden&&hostVersion&&webChecked){   // only once version.json was read: B may already be out
+   notifyOnce({kind:'info',shape:'rect',text:t('ver.later_line'),ms:LATER_MS,actions:[{label:t('p0269w4.close'),fn:()=>toastOff()}]},'aj.verLaterSeen.'+hostVersion);
+  }
  }
 }
 // A new host version: read version.json first, then decide (never a dialog on the host's word alone).
@@ -108,7 +113,7 @@ export function initVersionNotice(refreshApp, inputGuards){
  document.getElementById('version-notice').addEventListener('click',e=>{if(e.target===e.currentTarget)close();});   // outside the square = later
  registerLayer({element:()=>document.getElementById('version-notice'),open:()=>!document.getElementById('version-notice').hidden,close,fallback:()=>document.getElementById('setBtn'),trap:false,rank:-10,preserveOutsideFocus:true});
  onLang(render);render();
- check=async()=>{try{webVersion=await readWebVersion();render();}catch{/* Offline/old metadata: no false update warning. */}};
+ check=async()=>{try{webVersion=await readWebVersion();}catch{/* Offline/old metadata: no false update warning. */}webChecked=true;render();};
  check();setInterval(()=>{if(!document.hidden)check();},300000);
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)check();});
 }

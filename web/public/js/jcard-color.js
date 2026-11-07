@@ -21,7 +21,7 @@ export function hsv(hex) { const [r,g,b]=hex.slice(1).match(/../g).map(x=>parseI
 export function fromHsv(h,s,v) { const f=n=>{const k=(n+h/60)%6;return v-v*s*Math.max(0,Math.min(k,4-k,1));};return '#'+[5,3,1].map(n=>Math.round(f(n)*255).toString(16).padStart(2,'0')).join(''); }
 /** The palette, kept as the picker's 「推荐」 row (the owner may still choose any colour). */
 export const RECOMMENDED=[...SYSTEM,'#141414','#f7827e','#fcbe7c','#ffe292','#b7e396','#78dedc','#71bbde','#d1a7e8','#f0aad4','#dbb293','#e3dacc','#ebc9b7','#c7dedc'];
-function node(tag,text,cls) { const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(cls)el.className=cls;return el; }
+function node(tag,text,cls) { const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(cls)el.className=cls;el.setAttribute('data-aj-owner', 'aj-wallet-color'); return el; }
 function button(text,fn,cls) { const b=node('button',text,cls);b.type='button';b.onclick=fn;return b; }
 /** Hidden geometric hot spot within the card, with no extra visible control. */
 // @ix app.card_color

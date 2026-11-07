@@ -43,6 +43,7 @@ ACTIONS += ("agent_name",)          # P181 (§22.2): long-press the Agent's name
 ACTIONS += ("cards_get",)           # P203 (§29.1): the signed read of every open card (a snapshot, changes nothing)
 ACTIONS += ("mail_allow",)          # P207 (§25): the address book adds an address to the e-mail channel's allowlist (P170)
 ACTIONS += ("reset", "rescue_do")    # P332 (§33): 紧急修复 — ① reset the connection · a whitelisted repair action (reset.py)
+ACTIONS += ("event_write",)  # fixed subscription scope, reviewed/enabled and acknowledgment set
 ACTIONS += ("heartbeat_write",)  # P537: paired owner prompt edits
 ACTIONS += ("approval_set",)        # P336 (§8): the approval level / goal-without-card switch (approval_level.py)
 ACTIONS += ("cmd_run",)             # P361 (§34): Settings 「执行」 — one whitelisted command name (cmdrun.RUN_CMDS)
@@ -60,9 +61,13 @@ ACTIONS += ("seat_transfer", "seat_transfer_cancel")   # P547: move the seat to 
 ACTIONS += ("task_migrate",)        # P570c: 「重新迁移」 on the 定时任务 page (sysmigrate.phone)
 ACTIONS += ("forward_set",)         # P554: the forward button's destination (ui.forward_destination), shared by every remote
 ACTIONS += ("keys_op",)
-ACTIONS += ("assist_grant", "assist_revoke")   # 0269-w2-assist (§41): official remote assist grant (+ Face ID) · revoke (assist.py)
+ACTIONS += ("assist_grant", "assist_revoke", "assist_term_grant")   # 0269-w2-assist (§41): official remote assist grant (+ Face ID) · revoke (assist.py)
 ACTIONS += ("budget_set",)          # 0269-w3-policy (§42): the owner's day / month budget — raising needs Face ID (budget.py)
 ACTIONS += ("auth_rescue",)         # 0269-login: 「重新登录」 under a reply — login / code / cancel (login_flow.py)
+ACTIONS += ("mail_fwd", "private_file_get", "private_file_revoke")  # #324: explicit owner forward, all original parameters signed
+ACTIONS += ("owner_hosts_set",)  # feedback400: paired owner SSH table, every change + UV
+ACTIONS += ("setup_run", "setup_cancel")  # isolated fixed-schema installation namespace
+ACTIONS += ("native_scheduler_control",)
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -104,14 +109,21 @@ def object_text(action: str, obj: dict) -> str:
     assist_grant : minutes \n pinned assist key id \n seat id          assist_revoke : "revoke"   (0269-w2-assist, §41)
     (a missing / null text field is "", as wire.js `?? ''`)
     """
+    if action == "native_scheduler_control":
+        return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     if action == "fr_report_reply":
         return ("resend\n" if obj.get("resend") is True else "") + f"{obj['id']}\n{obj['text']}"
     if action == "fr_report_remark":
         return f"{obj['friend']}\n{obj['name']}"
-    if action in ("host_write", "heartbeat_write"):
+    if action in ("host_write", "heartbeat_write", "event_write", "owner_hosts_set"):
         return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    if action == "bots_write":
+    if action in ("bots_write", "mail_fwd", "private_file_get", "private_file_revoke"):
         return json.dumps(obj["request"], sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    if action == "setup_cancel":
+        return "cancel"
+    if action == "setup_run":
+        target = {k: obj[k] for k in ("item", "op", "params", "rev")}
+        return json.dumps(target, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     if action == "setup_mark":       # item id \n choice (selected | unused | later | start_exit) \n checklist revision
         return f"{obj['item']}\n{obj['choice']}\n{int(obj['rev'])}"
     if action == "update":
@@ -197,6 +209,8 @@ def object_text(action: str, obj: dict) -> str:
         return f"{obj['op']}\n{obj['id']}\n{obj['code']}"
     if action == "keys_op":
         return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    if action == "assist_term_grant":
+        return f"{int(obj['minutes'])}\n{obj['key_id']}\n{obj['seat']}\nterminal"
     if action == "assist_grant":     # 0269-w2-assist (§41): minutes \n key id \n seat (key id + seat from the host's step 1)
         return f"{int(obj['minutes'])}\n{obj['key_id']}\n{obj['seat']}"
     if action == "assist_revoke":    # object {} — only narrows (no Face ID)

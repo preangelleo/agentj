@@ -297,6 +297,25 @@ def question_card(qs) -> list | None:
     return card if card is not None and len(card) == len(qs) else None
 
 
+# P204: Codex items that are a tool at work → the label the phone shows while it runs
+CODEX_TOOL_ITEMS = {"commandExecution": "Bash", "fileChange": "Edit", "mcpToolCall": "tool", "dynamicToolCall": "tool",
+                    "webSearch": "WebSearch", "imageView": "Image"}
+
+CODEX_NOT_OUTPUT = ("userMessage", "reasoning")
+
+
+def codex_output(method: str, p: dict) -> bool:
+    """P230: is this app-server notification (already known to be on our thread) the model's own output? The first
+    `item/agentMessage/delta`, or an item started / completed that is not the owner's message or reasoning (agentMessage,
+    commandExecution, fileChange, mcpToolCall, webSearch …)."""
+    if method == "item/agentMessage/delta":
+        return True
+    if method in ("item/started", "item/completed"):
+        it = p.get("item") if isinstance(p.get("item"), dict) else {}
+        return it.get("type") in ("agentMessage", "commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch", "imageView")
+    return False
+
+
 class RPCError(Exception):
     def __init__(self, err):
         super().__init__(json.dumps(err, ensure_ascii=False)[:4000])
@@ -456,7 +475,7 @@ class CodexAgent(Agent):
             if fn:
                 fn()
         super().fail_notice(notice)
-        if kind == "usage":                     # P314: a used-up usage limit → continue by itself after the reset
+        if kind == "usage" and not getattr(self, "_quota_no_replay", False):  # P314: a used-up usage limit → continue by itself after the reset
             from . import quota_resume
             with contextlib.suppress(Exception):
                 quota_resume.main_hit(self, "codex", text)
@@ -525,6 +544,7 @@ class CodexAgent(Agent):
     def initialize_capabilities(self): return {}
 
     async def _spawn(self) -> bool:
+        self.image_home = None  # #558: an old process/account cannot lend its generated folder
         if not _agentmod._bin("AGENTJ_CODEX_BIN", "codex"):
             self.failed_start = True
             from .startup_help import guidance
@@ -555,6 +575,8 @@ class CodexAgent(Agent):
             from .startup_help import guidance
             self.fail_notice(guidance("codex", "launch", getattr(self.host, "lang", "zh")))
             return False
+        from .peer_session import _codex_home
+        self.image_home = os.path.realpath(_codex_home(env))  # actual successful child launch, never UI/account guesses
         from . import workflow_mail
         workflow_mail.pin_current(p)
         self.failed_start, self.err_tail, self.tid, self.thread = False, "", None, {}
@@ -690,6 +712,9 @@ class CodexAgent(Agent):
         with contextlib.suppress(RPCError, ConnectionError, OSError, asyncio.TimeoutError):   # the quota meters, once
             res = await self.call("account/rateLimits/read", {}, 20)
             r = (res or {}).get("rateLimits") if isinstance(res, dict) else None
+            if self.persist and isinstance(res, dict):
+                from .codex_reset_credits import normalize
+                self.meter(reset_credits=normalize(res, time.time()))
             if isinstance(r, dict):
                 self.rate = r
                 self.rate_meter(r)
@@ -824,11 +849,21 @@ class CodexAgent(Agent):
             self.host.agent_text(text)
 
     def _on_note(self, method: str, p: dict) -> None:
+        if p.get("threadId") in (None, self.tid) and (method.startswith("item/") or method.startswith("turn/")):
+            self._quota_evidence = True
         th = p.get("threadId")
         self.touch()                       # P219: the app-server is making progress (stall watch)
+        if th is not None and th == getattr(self, "tid", None) and getattr(self, "collect", None) is None and not getattr(self, "quiet", False) and codex_output(method, p):
+            self.first_output()
         self.last_note = time.monotonic()
         if method == "item/started" or method == "item/completed":
             it = p.get("item") if isinstance(p.get("item"), dict) else {}
+            if th == self.tid:
+                tool = CODEX_TOOL_ITEMS.get(it.get("type"))
+                if tool and method == "item/started":
+                    self.use_phase("tool", it.get("tool") if tool == "tool" else tool)
+                elif tool or it.get("type") in ("agentMessage", "reasoning"):
+                    self.use_phase("gen")
             if th == self.tid and isinstance(it.get("id"), str):
                 open_items = self.__dict__.setdefault("open_items", set())
                 if method == "item/started":
@@ -866,6 +901,7 @@ class CodexAgent(Agent):
             if hb is not None:
                 hb.usage.codex_base = (self.usage or {}).get('total')
             self.usage = None
+            self.use_base = getattr(self, "use_total", None) if getattr(self, "use_tid", None) == self.tid else None
             if not self.research and self.persist:
                 self.meter(ctx=None)  # a new turn/model must not retain an old percentage
             t = p.get("turn") if isinstance(p.get("turn"), dict) else {}
@@ -892,14 +928,22 @@ class CodexAgent(Agent):
                 tail = ("\n" + json.dumps(info, ensure_ascii=False)[:500] if isinstance(info, (str, dict)) and info else "") + \
                        ("\n" + clean(more, 1000) if isinstance(more, str) and more.strip() else "")
                 why = "Codex 这一轮没有正常完成" + (f"：{clean(m, 4000)}" if isinstance(m, str) and m else "。") + tail
-                if getattr(self, "rate_retry", False) is None and self.failure(why)[0] == "rate":
-                    self.rate_retry = why          # P309: a momentary limit — turn() retries once before telling the phone
-                else:
-                    self.fail_notice(why)
+                # #398: turn/completed proves acceptance. Even a rate/quota failure
+                # may have side effects; never submit another turn on its behalf.
+                self.rate_retry = False
+                self._quota_completed = info in ("usageLimitExceeded", "usage_limit_reached")
+                self.fail_notice(why)
             if self.turn_done:
                 self.turn_done.set()
         elif method == "thread/tokenUsage/updated" and th == self.tid:
             self.usage = p["tokenUsage"] if isinstance(p.get("tokenUsage"), dict) else {}
+            if isinstance(self.usage.get("total"), dict):
+                from . import usage as use_mod
+                measured = use_mod.tokens_codex(self.usage["total"])
+                if getattr(self, "use_base", None) is None:
+                    self.use_base = use_mod.sub_tokens(measured, use_mod.tokens_codex(self.usage.get("last")))
+                self.use_total, self.use_tid = measured, self.tid
+                self.use_put("codex:" + str(self.turn_id or ""), use_mod.sub_tokens(measured, self.use_base), None, self.cur_model())
             from .heartbeat_check import sample
             total, last = self.usage.get('total') or {}, self.usage.get('last') or {}
             hb = getattr(getattr(self, 'host', None), 'heartbeat', None)
@@ -945,6 +989,7 @@ class CodexAgent(Agent):
 
     # ------------------------------------------------ approvals (server → client requests)
     def _on_request(self, m: dict) -> None:
+        self._quota_evidence = True  # a tool/approval request proves native acceptance
         method, rid = m["method"], m["id"]
         self.touch()
         p = m.get("params") if isinstance(m.get("params"), dict) else {}
@@ -998,7 +1043,7 @@ class CodexAgent(Agent):
         elif method in ("execCommandApproval", "applyPatchApproval"):     # legacy v1 shapes: never sent to a v2 client
             self._answer(rid, {"decision": "denied"})
             if not self.research:
-                self.local_only("Codex 使用旧审批协议，请在 Agent J 主机更新 Codex 并运行 agentj service restart 后重试。 / Codex used the legacy approval protocol. Update Codex on the Agent J host, run agentj service restart and retry.")
+                self.local_only("Codex 使用旧审批协议，已拒绝。已配对且主机在线时，可在手机网页终端（Web Terminal）更新 Codex，运行 `agentj service restart` 后重试。 / Codex used the legacy approval protocol; denied. With a paired phone and the host online, update Codex in the phone Web Terminal, run `agentj service restart` and retry.")
         elif method == "mcpServer/elicitation/request" and p.get("threadId") == self.tid \
                 and (ap := mcp_tool_approval(p, self.__dict__.get("mcp_open"))) is not None:
             # P539 (#300): Codex asks an MCP tool call's approval as an empty-form elicitation — a plain yes / no: the normal
@@ -1167,6 +1212,7 @@ class CodexAgent(Agent):
             self.host.st.log("agent_reminder_fail", agent=self.kind, error=type(e).__name__)
 
     async def turn(self, text: str) -> None:
+        self._quota_no_replay = True  # #398: even quota_resume must require a new owner message
         if not await self._ready():
             return
         if self.persist and not self.cfg.get("_workflow_ceo"):
@@ -1191,21 +1237,45 @@ class CodexAgent(Agent):
             params["effort"] = self.cfg["effort"]
         elif not review and rev and isinstance(rev.get("effort"), str):
             params["effort"] = rev["effort"]
+        self._quota_evidence = False
+        self._quota_completed = False
+        from . import quota_refresh
         try:
-            r = await self.deliver(lambda: self.call(method, params))    # §10.2: turn/start sent = delivered
+            r = await self.deliver(lambda: quota_refresh.start(self, method, params))    # §10.2: turn/start sent = delivered
             self.revert = None
             self.busy_selected = {} if review else {
                 "model": params.get("model") or self.thread.get("model"),
                 "effort": params.get("effort") or self.thread.get("reasoningEffort")}
+        except asyncio.CancelledError:
+            self.turn_done.set()
+            raise
         except (RPCError, ConnectionError, OSError, asyncio.TimeoutError) as e:
             self.rate_retry = False
+            self.turn_done.set()
+            if isinstance(e, asyncio.TimeoutError) and not self.halting:
+                # 0.26.10 #484: an app-server that never answers turn/start takes no turn — end the one Agent J started
+                # (never anyone else's), so the next message gets a fresh one; the rescue buttons name it (noack_at)
+                self.noack_at = time.time()
+                self.host.st.log("codex_turn_noack", agent=self.kind)
+                if self.proc is not None:
+                    await self._kill(self.proc)
             if not self.halting:
+                if isinstance(e, RPCError) and quota_refresh.rejected(e):
+                    quota_refresh.offer_phone(self)
                 self.fail_notice(f"Codex 没有接这条消息（{clean(str(e), 4000) or type(e).__name__}）。")
             return
         t = (r or {}).get("turn") if isinstance(r, dict) else None
         if isinstance(t, dict) and isinstance(t.get("id"), str):
             self.turn_id = t["id"]
         await self.await_turn()
+        if getattr(self, '_quota_completed', False):
+            self._quota_completed = False
+            # The notification callback only records evidence. Refresh once here,
+            # after acceptance has settled; never turn/start or automatic continue.
+            verified = await quota_refresh.refresh(self)
+            if not self.halting:
+                self.fail_notice("已重新读取登录与额度状态；请在手机明确发送下一条消息继续。"
+                                 if verified else "权益同步 NOT_VERIFIED；可在手机登录卡完成设备码验证，再明确发送新消息。")
         why, self.rate_retry = self.rate_retry, False
         if isinstance(why, str) and not review:
             await self._retry_rate(why)
@@ -1213,28 +1283,11 @@ class CodexAgent(Agent):
     RATE_RETRY_WAIT = 8.0
 
     async def _retry_rate(self, why: str) -> None:
-        self.host.st.log("agent_rate_retry", agent=self.kind)
-        await asyncio.sleep(self.RATE_RETRY_WAIT)
-        if self.halting or self.proc is None or self.turn_proc is not self.proc:
-            self.rate_retried = True
-            try:
-                if not self.halting:
-                    self.fail_notice(why)
-            finally:
-                self.rate_retried = False
-            return
-        self.turn_done, self.turn_id, self.turn_status = asyncio.Event(), None, {}
-        self.tail_reset()
-        self.rate_retried = True
-        try:
-            await self.call("turn/start", {"threadId": self.tid, "input": [{"type": "text", "text": RATE_RETRY_TEXT,
-                                                                            "text_elements": []}]})
-            await self.await_turn()
-        except (RPCError, ConnectionError, OSError, asyncio.TimeoutError):
-            if not self.halting:
-                self.fail_notice(why)
-        finally:
-            self.rate_retried, self.rate_retry = False, False
+        # Compatibility entry for old callers: acceptance/outcome cannot be proven
+        # absent here. A new owner message is required; never replay or "continue".
+        self.rate_retry = False
+        if not self.halting:
+            self.fail_notice(why)
 
     def tail_reset(self) -> None:
         self.open_items.clear()
@@ -1272,6 +1325,8 @@ class CodexAgent(Agent):
             await asyncio.wait_for(td.wait(), 2)
 
     async def stop(self) -> None:
+        self._quota_stop = getattr(self, "_quota_stop", 0) + 1
+        self.image_home = None
         await super().stop()
         p = self.proc
         if p:
@@ -1411,7 +1466,7 @@ class CodexAgent(Agent):
         if not arg:
             for m in models:
                 m["cur"] = m["id"] == cur
-            return Result(f"当前模型：{cur or '默认'}。" + ("点一个切换（之后的对话都用它）：" if models else "Codex 没有给出可选列表。"),
+            return Result(f"Codex · 当前模型：{cur or '默认'}。" + ("点一个切换（之后的对话都用它）：" if models else "Codex 没有给出可选列表。"),
                           "ok", models=models[:40])
         if not slash.MODEL_RE.match(arg) or (models and arg not in {m["id"] for m in models}):
             return Result(f"没有这个模型：{clean_line(arg, 100)}", "error")

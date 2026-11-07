@@ -136,3 +136,29 @@ Existing Lotion opacity is permitted for secondary text. Component shapes, contr
 borders and backgrounds retain their colours. Mermaid SVG images receive a text-only
 local override only for this container; reader and other-page diagrams keep their theme.
 Evidence: `test/p477.mjs`, `reports/qa/p477/index.html`; exact 13:02:24 JST synthetic 11-format demonstration.
+
+## #556 transient notice placement (2026-11-06)
+
+The composer text field and its five-icon toolbar are a protected area. A transient message must never enter from or
+float over that area, including while a password, passkey, confirmation or recovery card is open. This supersedes the
+P565/P566 bottom-position exceptions. Keep the existing three forms:
+
+- A short status uses the centred circle; a sentence uses the centred rounded square/card.
+- Execution/results/actions use the flat strip inside the reply card. On a non-chat page, or while a centred card covers
+  the reply, use a centred rounded card above the active dialog, retaining the existing page owner in the DOM.
+- Field validation remains beside its field and persists until corrected; it is not a transient message.
+
+`ui.js` fits floating notices above the actual visible `#tools`/`#input` bounds and refits on draft growth, visual viewport
+changes and rotation. Long notices scroll inside their rounded card. Escape dismisses the notice before the underlying
+card; focus, typed passwords, signing, UV and host authority do not change. Action buttons keep the #542
+`aj-btn aj-btn--quiet` component. Noir/Lotion and existing semantic accents remain unchanged.
+
+Dashboard uses its existing rounded `.msg` card at the centre, dismissible by tap/Escape. Android routes notices only to
+the configured same-origin WebView's shared notice; an unready/foreign page uses a centred rounded native card. URL
+validation on Android's status page stays beside the field. Legacy relay PWA centres its existing notice and preserves
+its existing undo component; it has no #542 brand stylesheet and this change adds no button.
+
+The L0 `notice-placement-source` and `web-unit`'s `feedback556.test.mjs` reject physical/logical bottom anchoring,
+bottom inset shorthands and direct native Toast/Snackbar bypasses. `feedback556-phone` measures actual composer/icon
+non-overlap at 390/1440, in both themes, with an open sudo card and a long draft/small viewport. Restoring the old bottom
+style is a negative control. The historical P556 approval-tier test and `p556-phone` remain byte-for-byte unchanged.

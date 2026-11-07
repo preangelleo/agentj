@@ -16,10 +16,12 @@ import json
 import os
 import re
 import socket
+import time
+import copy
 from pathlib import Path
 
 from .. import bg
-from . import orders
+from . import orders, process_evidence
 
 SOCK = "ask.sock"
 WHO_MAX = 80
@@ -33,6 +35,7 @@ def origin(meta: dict, who: str | None) -> str:
     par = meta.get("parent") or {}
     head = {"owner_turn": "主 Agent", "cli": "主 Agent", "task": "定时任务", "goal": "目标模式", "bot": "机器人"}.get(
         par.get("kind") or meta.get("origin"), "主 Agent")
+    head = {'system': 'Host 系统通知', 'same_host': '同机会话'}.get(par.get('source_class'), head)
     chain = f"{head} › {meta.get('ceo', 'CEO')}（{meta.get('project_name', '?')}）· {meta.get('id')}"
     if who:
         w = re.sub(r"[\x00-\x1f]", " ", str(who))
@@ -43,14 +46,9 @@ def origin(meta: dict, who: str | None) -> str:
 
 
 def _peer_pid(w) -> int | None:
-    """Linux SO_PEERCRED: the pid of the process on the other end (None where the OS has no such call)."""
-    try:
-        import struct
-        s = w.get_extra_info("socket")
-        cred = s.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
-        return struct.unpack("3i", cred)[0]
-    except (AttributeError, OSError, TypeError):
-        return None
+    """Kernel-authenticated Unix peer PID, or None (never token-only admission)."""
+    return process_evidence.peer_pid(w)
+
 
 
 class Server:
@@ -80,6 +78,7 @@ class Server:
 
     async def on_conn(self, r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
         gone: dict[int, asyncio.Future] = {}
+        seen = set()
         try:
             hello = json.loads((await r.readline()) or b"null")
             meta = self._admit(hello, _peer_pid(w))
@@ -92,7 +91,10 @@ class Server:
                 m = json.loads(line)
                 if not isinstance(m, dict) or type(m.get("id")) is not int:
                     continue
-                if m.get("t") == "ask" and m["id"] not in gone:
+                if m.get('t') == 'cancel' and m['id'] in gone:
+                    if not gone[m['id']].done(): gone[m['id']].set_result(True)
+                if m.get("t") == "ask" and m["id"] not in seen and len(seen) < 4096:
+                    seen.add(m["id"])
                     gone[m["id"]] = asyncio.get_running_loop().create_future()
                     bg.spawn(self._one(w, m, meta, gone), "order_ask")
         except (ValueError, ConnectionError, asyncio.LimitOverrunError):
@@ -117,9 +119,36 @@ class Server:
             return None
         if not tok or not hmac.compare_digest(str(hello.get("token", "")).encode(), tok.encode()) or o.result():
             return None
-        if peer is not None and peer != pid:
+        if not process_evidence.peer_capable() or peer != pid:
             return None
-        return o.meta
+        from ..codex_procs import start_token
+        start = start_token(pid)
+        if not process_evidence.descendant(peer, pid, start):
+            return None
+        meta = copy.deepcopy(o.meta)
+        meta['_binding'] = {'pid': pid, 'start': start, 'token': tok,
+                            'execution': self._generation(o)}
+        return meta
+
+    @staticmethod
+    def _generation(o):
+        p = o.path / 'execution.json'
+        return json.loads(p.read_text()).get('generation') if p.exists() else None
+
+    def _live(self, meta):
+        from ..codex_procs import start_token
+        from . import dispatcher
+        try:
+            o = orders.get(meta['id'], self.st_root)
+            b = meta['_binding']
+            return (not dispatcher.paused(self.st_root) and not o.result() and o.control() != 'stop'
+                    and b['start'] is not None and start_token(b['pid']) == b['start']
+                    and process_evidence.descendant(b['pid'], b['pid'], b['start'])
+                    and int((o.path / 'pid').read_text()) == b['pid']
+                    and (o.path / '.ask_token').read_text().strip() == b['token']
+                    and self._generation(o) == b['execution'])
+        except (orders.OrderError, OSError, ValueError, KeyError, TypeError):
+            return False
 
     async def _one(self, w, m, meta, gone) -> None:
         ans = {"behavior": "deny", "message": "请求无效，已拒绝。"}
@@ -127,8 +156,22 @@ class Server:
             tool, inp = m.get("tool"), m.get("input")
             if isinstance(tool, str) and isinstance(inp, dict):
                 # P552 (#325 ②): an order is background work — no card but the four ③ kinds (Host.ask `background`)
-                ans = await self.ask(tool[:64], inp, gone.get(m["id"]), origin=origin(meta, m.get("who")), batch=False,
-                                     background="order")
+                if self._live(meta):
+                    pending = asyncio.create_task(self.ask(tool[:64], inp, gone.get(m["id"]),
+                        origin=origin(meta, m.get("who")), batch=False, background="order"))
+                    try:
+                        until = time.monotonic() + 900
+                        while not pending.done():
+                            if not self._live(meta) or gone[m['id']].done() or time.monotonic() >= until:
+                                break
+                            await asyncio.wait({pending}, timeout=.05)
+                        if pending.done() and self._live(meta) and not gone[m['id']].done():
+                            ans = pending.result()
+                    finally:
+                        if not pending.done():
+                            pending.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await pending
         except Exception:  # noqa: BLE001 — fail closed
             ans = {"behavior": "deny", "message": "批准通道出错：默认拒绝。"}
         finally:
@@ -181,14 +224,21 @@ class Client:
             return {"behavior": "deny", "message": "批准通道没有连上：默认拒绝。"}
         self.n += 1
         f = asyncio.get_running_loop().create_future()
-        self.wait[self.n] = f
-        self.w.write((json.dumps({"t": "ask", "id": self.n, "tool": tool, "input": tool_input, "who": who},
+        rid = self.n
+        self.wait[rid] = f
+        self.w.write((json.dumps({"t": "ask", "id": rid, "tool": tool, "input": tool_input, "who": who},
                                  ensure_ascii=False) + "\n").encode())
         await self.w.drain()
         try:
             return await asyncio.wait_for(f, self.timeout)
         except asyncio.TimeoutError:
             return {"behavior": "deny", "message": "等待批准超时：默认拒绝。"}
+        finally:
+            self.wait.pop(rid, None)
+            if not f.done() or f.cancelled():
+                with contextlib.suppress(OSError, ConnectionError):
+                    self.w.write((json.dumps({'t': 'cancel', 'id': rid}) + '\n').encode())
+                    await self.w.drain()
 
     async def close(self):
         if self.w:

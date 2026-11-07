@@ -88,7 +88,7 @@ test('「看实时画面」 is a read-only task feed: nothing terminal-shaped, n
   assert.match(APP, /if \(m\.assist === true && typeof m\.t === 'string' && m\.t\.startsWith\('term_'\)\) return;/, 'assist terminal frames never reach the owner\'s terminal');
   assert.ok(APP.indexOf("m.assist === true && typeof m.t === 'string'") < APP.indexOf("case 'term_out':"), 'dropped before the terminal routing');
   assert.match(APP, /case 'assist_state': assist\.onState\(m\); return;/);
-  assert.match(APP, /case 'assist_notice': assist\.onNotice\(m\); return;/);
+  assert.match(APP, /case 'assist_notice': assistTerminal\.onNotice\(m\); assist\.onNotice\(m\); return;/);
   assert.match(APP, /case 'assist_task': assist\.onTask\(m\); return;/);
   assert.match(c, /if \(!x \|\| !S\.active\) return;/, 'no grant, no task in the feed');
   assert.doesNotMatch(c, /request\(\{ t: WIRE\.task|sendApp|signedWrite\(WIRE\.task/, 'the feed never sends anything');

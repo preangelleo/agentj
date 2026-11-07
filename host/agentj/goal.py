@@ -52,7 +52,8 @@ class GoalError(Exception):
         self.why, self.detail = why, detail
 
     def out(self) -> dict:
-        return {"result": "refused", "why": self.why, "detail": self.detail}
+        return {"result": "refused", "why": self.why, "detail": self.detail,
+                **({"reason": self.why} if self.why == "no_device" else {})}
 
 
 # ------------------------------------------------------------------ proposal
@@ -123,17 +124,35 @@ def validate(prop, now: float | None = None) -> dict:
     now = time.time() if now is None else now
     if not isinstance(prop, dict):
         raise GoalError("shape", "one JSON object")
-    unknown = set(prop) - {"goal", "acceptance", "deadline", "grants", "lang"}
+    unknown = set(prop) - {"goal", "acceptance", "deadline", "grants", "lang", "escape_after"}
     if unknown:
         raise GoalError("shape", "unknown keys: " + ", ".join(sorted(unknown))[:200])
     goal = _text(prop.get("goal"), 500, "goal")
     acc = prop.get("acceptance") or []
     if not isinstance(acc, list) or len(acc) > MAX_ACCEPT:
         raise GoalError("shape", f"acceptance: at most {MAX_ACCEPT} lines")
-    acc = [_text(a, 200, "acceptance") for a in acc]
+    normalized = []
+    for a in acc:
+        if isinstance(a, dict):
+            if set(a) != {'text', 'check'}:
+                raise GoalError('shape', 'acceptance: text/check only')
+            from .acceptance import command
+            try:
+                check = command(a['check'])
+            except ValueError:
+                raise GoalError('shape', 'acceptance.check') from None
+            normalized.append({'text': _text(a['text'], 200, 'acceptance'), 'check': check})
+        else:
+            normalized.append(_text(a, 200, 'acceptance'))
+    acc = normalized
     out = check_grants(prop.get("grants") or [], MAX_GRANTS)
     from .taskspec import secret_like
     norm = {"goal": goal, "acceptance": acc, "deadline": parse_deadline(prop.get("deadline"), now), "grants": out}
+    if 'escape_after' in prop:
+        value = prop['escape_after']
+        if type(value) is not int or not 60 <= value <= 86400:
+            raise GoalError('shape', 'escape_after: 60..86400 seconds')
+        norm['escape_after'] = value
     if secret_like(json.dumps(norm, ensure_ascii=False)):
         raise GoalError("secret", "a goal must not hold a credential")
     return norm
@@ -223,7 +242,11 @@ def card_text(g: dict, lang: str = "zh") -> str:
     lines = [("🎯 Goal mode — one approval for the whole goal" if en else "🎯 目标模式 · 开工授权（一次签名）"),
              ("Goal: " if en else "目标：") + g["goal"]]
     for a in g["acceptance"]:
-        lines.append(("✓ Done when: " if en else "✓ 验收：") + a)
+        lines.append(("✓ Done when: " if en else "✓ 验收：") + (a['text'] if isinstance(a, dict) else a))
+        if isinstance(a, dict):
+            lines.append('  check: ' + a['check'])
+    if 'escape_after' in g:
+        lines.append('escape_after: ' + str(g['escape_after']) + 's')
     lines.append(("Until: " if en else "截止：") + _when(g["deadline"]))
     if g["grants"]:
         lines.append("Pre-approved (no card while the goal runs):" if en else "预先放行（目标期内不再弹卡，全部记日志）：")
@@ -239,7 +262,7 @@ def card_text(g: dict, lang: str = "zh") -> str:
 
 
 def digest(g: dict) -> str:
-    return hashlib.sha256(json.dumps({k: g[k] for k in ("goal", "acceptance", "deadline", "grants")}, sort_keys=True,
+    return hashlib.sha256(json.dumps({k: g[k] for k in ("goal", "acceptance", "deadline", "grants", "escape_after") if k in g}, sort_keys=True,
                                      ensure_ascii=False).encode()).hexdigest()
 
 
@@ -1342,6 +1365,20 @@ def auto_secs() -> float:
     return max(0.05, min(AUTO_S, v))
 
 
+def refusal_result(ans: dict, gid: str, stopped: bool = False) -> dict:
+    """Keep policy failures distinct from a signed owner's decision."""
+    raw = ans.get("reason") or "unverified_grant"
+    reason = {"group_source": "source_denied", "owner_grant_scope": "source_denied",
+              "device": "owner_declined", "offline": "no_device"}.get(raw, raw)
+    if stopped:
+        reason = "stopped"
+    result = {"result": "declined", "id": gid, "reason": reason}
+    if reason == "source_denied":
+        result["detail"] = ("来源未绑定：请从已配对主人会话发起，或按现有来源绑定/任务授权流程重新授权；"
+                            "Source not bound: use the paired owner session or existing source-binding/task-grant flow.")
+    return result
+
+
 class Goals:
     """The one goal of this host: proposal → signed card → active → ended (+ the result card)."""
 
@@ -1390,6 +1427,40 @@ class Goals:
     def check(self) -> None:
         """End a goal that stopped being live (deadline, phone unpaired). Cheap: one small file read."""
         d = load(self.st)
+        if d and is_live(self.st, d) and not d.get('escape_prompted'):
+            last = max([d.get('started', 0)] + [m.get('at', 0) for m in d.get('milestones', [])])
+            agent = getattr(self.host, 'agent', None)
+            for at in getattr(self.host, 'turn_at', ()):
+                if type(at) in (int, float):
+                    last = max(last, at)
+            board = getattr(self.host, 'busy', None)
+            scope = getattr(agent, 'busy_scope', None)
+            if board is not None and callable(scope):
+                row = board.mem.get(scope(), {})
+                at = row.get('activity_at')
+                if type(at) in (int, float):
+                    last = max(last, at)
+            # Existing decision stream is activity; signed completion conditions remain untouched.
+            directory = (getattr(agent, 'cfg', None) or {}).get('dir')
+            if directory:
+                from .acceptance import regular, head
+                current_head = head(directory)
+                if current_head and d.get('escape_head') != current_head:
+                    # First observation establishes a baseline, later commits count as actual activity.
+                    if d.get('escape_head'):
+                        d['escape_activity_at'] = time.time()
+                    d['escape_head'] = current_head
+                    save(self.st, d)
+                try:
+                    last = max(last, regular(directory, 'reports/decisions.jsonl').stat().st_mtime)
+                except (OSError, ValueError):
+                    pass
+            last = max(last, d.get('escape_activity_at', 0))
+            if time.time() - last >= d.get('escape_after', 7200):
+                d['escape_prompted'] = int(time.time())
+                save(self.st, d)
+                self.host.agent_notice('目标长时间没有进展：请停在安全点，写清卡在哪里；已签验收条件保持不变。')
+                self.st.log('goal_escape', id=d['id'])
         if not d or d.get("state") != "active" or is_live(self.st, d):
             return
         gone = sk_sha(self.st.sign_key(str((d.get("grant") or {}).get("device")))) != (d.get("grant") or {}).get("sk_sha")
@@ -1536,10 +1607,11 @@ class Goals:
                 return {"result": "gone", "id": gid}
             info = ans.get("grant_info") or {}
             if ans.get("behavior") != "allow" or not info.get("device") or h.stopped():
-                cur.update(state="declined", ended_at=int(time.time()))
+                refusal = refusal_result(ans, gid, h.stopped())
+                cur.update(state="declined", reason=refusal["reason"], ended_at=int(time.time()))
                 save(self.st, cur)
-                self.host.activity("goal_declined", text=g["goal"][:120])
-                return {"result": "declined", "id": gid}
+                self.host.activity("goal_declined", text=g["goal"][:120], reason=refusal["reason"])
+                return refusal_result(ans, gid, h.stopped())
             cur.update(state="active", started=int(time.time()),
                        grant={"rid": info.get("rid"), "device": info["device"], "sk_sha": sk_sha(info.get("sign_pub"))})
             save(self.st, cur)
@@ -1564,16 +1636,16 @@ class Goals:
             if h.agent is not None and not h.stopped():
                 from .capability import ReadBackSend
                 en = self.lang() == "en"
-                note = (f"[Agent J system note, not the owner's words] Your goal card: {res['result']}. "
-                        + ("Start the work now." if res["result"] == "active" else "Nothing was granted; ask the owner.")) if en else \
-                    (f"〔Agent J 系统提示，不是主人说的话〕你的目标授权卡结果：{res['result']}。"
-                     + ("现在开工。" if res["result"] == "active" else "没有任何授权，先问主人。"))
+                note = (f"[Agent J system note, not the owner's words] Your goal card: {res['result']}; reason: {res.get('reason', 'approved')}. "
+                        + ("Start the work now." if res["result"] == "active" else res.get("detail", "Nothing was granted; inspect the reason before retrying."))) if en else \
+                    (f"〔Agent J 系统提示，不是主人说的话〕你的目标授权卡结果：{res['result']}，原因：{res.get('reason', 'approved')}。"
+                     + ("现在开工。" if res["result"] == "active" else res.get("detail", "尚未授权，请按返回原因处理。")))
                 try:
                     h.agent.submit(ReadBackSend(note))
                 except Exception:  # noqa: BLE001
                     pass
         task.add_done_callback(told)
-        return {"result": "shown", "id": gid, "ttl": int(5 * h.ask_ttl)}
+        return {"result": "pending", "id": gid, "ttl": int(5 * h.ask_ttl)}
 
     def _start(self, d: dict, g: dict, pre: dict, text: str) -> dict:
         """P336: start a proposal at once under the signed switch: approvals.log `reason: goal_preauth` (grant = the
@@ -1621,6 +1693,8 @@ class Goals:
         from .taskspec import secret_like
         if secret_like(json.dumps(norm, ensure_ascii=False)):
             raise GoalError("secret", "a grant must not hold a credential")
+        if not h._approvers():
+            raise GoalError("no_device", "no paired phone that can sign")
         gid, lang = d["id"], self.lang()
         text = grant_card_text(d, norm, lang)
         dg = hashlib.sha256(json.dumps(norm, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
@@ -1637,7 +1711,7 @@ class Goals:
             cur = self.current()
             if ans.get("behavior") != "allow" or not info.get("device") or h.stopped() or not cur or cur.get("id") != gid:
                 self.host.activity("goal_grant_declined", text="; ".join(g["what"] for g in norm)[:120])
-                return {"result": "declined", "id": gid}
+                return refusal_result(ans, gid, h.stopped())
             if not self.add_grants(norm, info.get("parent_grant") if info.get("inherited") else info.get("rid"), info["device"], "level_harness" if info.get("inherited") else "card", gid=gid):
                 return {"result": "refused", "why": "too_many", "detail": f"at most {MAX_ALL_GRANTS} grants"}
             en = lang == "en"
@@ -1648,8 +1722,15 @@ class Goals:
         if wait:
             return await card()
         task = asyncio.ensure_future(card())
-        task.add_done_callback(lambda t: None if t.cancelled() else t.exception())
-        return {"result": "shown", "id": gid, "ttl": int(5 * h.ask_ttl)}
+        def told(t):
+            if t.cancelled() or t.exception() is not None:
+                return
+            res = t.result()
+            # A UI notice, never a new autonomous model turn.
+            h.agent_notice("Goal grant / 目标追加授权：" + res["result"] + "; " +
+                           res.get("reason", "approved") + ". " + res.get("detail", ""))
+        task.add_done_callback(told)
+        return {"result": "pending", "id": gid, "ttl": int(5 * h.ask_ttl)}
 
     # ---------------------------------------------------------- capability.sock requests (t: goal_*)
     async def handle(self, req: dict) -> dict:
@@ -1677,6 +1758,22 @@ class Goals:
                     raise GoalError("shape", "--summary: up to 500 characters")
                 if not self.current():
                     raise GoalError("no_goal", "no goal is running")
+                if how == 'achieved':
+                    from . import acceptance
+                    import asyncio
+                    before = self.current()
+                    items = before.get('acceptance') or []
+                    if any(isinstance(a, dict) and a.get('check') for a in items):
+                        agent = getattr(self.host, 'agent', None)
+                        directory = (getattr(agent, 'cfg', None) or {}).get('dir')
+                        if not directory:
+                            raise GoalError('acceptance_failed', 'research work directory unavailable')
+                        result = await asyncio.to_thread(acceptance.check, directory, items, rerun=True)
+                        now = self.current()
+                        if not now or now['id'] != before['id'] or digest(now) != digest(before):
+                            raise GoalError('changed', 'goal changed during acceptance')
+                        if result['result'] != 'ok':
+                            return {'result': 'refused', 'why': 'acceptance_failed', 'checks': result}
                 self.end(how, summary, by="agent")
                 return {"result": "ended", "how": how}
             if t == "goal_progress":

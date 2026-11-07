@@ -1,5 +1,5 @@
 // #116 + #112 (browser, fake host): the sudo card offers a 10-minute toggle naming the program and its fixed options, OFF by
-// default (an answer without it carries no grant); switched on, the answer carries the class hash and signs it; the bar shows 「收回授权」 and sends elev_revoke; an auto-run is announced; a shell /
+// default (an answer without it carries no grant); switched on, the answer carries the class hash and signs it; the bar shows 「收回授权」 and sends elev_revoke; an auto-run stays silent; a shell /
 // interpreter (red) card never offers the window, shows Executing after submit and closes on its result.
 import assert from 'node:assert/strict';
 import {mkdirSync,writeFileSync} from 'node:fs';
@@ -55,11 +55,13 @@ for(const lang of ['zh','en']) for(const theme of ['light','dark']) for(const wi
   await waitFor(p,`document.getElementById('elev-grant')?.hidden===false`);
   assert.match(await evaluate(p,`document.getElementById('elev-grant-text').textContent`),lang==='zh'?/gzip 只读命令不再询问.*还剩 10 分钟/:/read-only gzip.*10 min left/);
   assert.equal(await evaluate(p,`document.getElementById('elev-grant-revoke').textContent`),lang==='zh'?'收回授权':'Revoke');
-  // 3. A command that ran under it: announced, no card.
+  // 3. A command that ran under it: audit-only, no notice or card (#562).
+  await evaluate(p,`import('./js/ui.js').then(m=>m.toastOff())`);
   await fake.send({t:'elev_auto',id:'c'.repeat(32),g:'0123456789abcdef',exe:'gzip',result:'done',code:0,left:540});
-  await waitFor(p,`document.getElementById('toast').textContent.includes(${JSON.stringify(lang==='zh'?'已按 10 分钟授权自动执行：gzip':'Ran automatically under your 10-minute approval: gzip')})`);
+  await new Promise(r=>setTimeout(r,200));
+  assert.equal(await evaluate(p,`document.getElementById('toast').classList.contains('on')`),false,'auto execution stays silent');
   assert.equal(await evaluate(p,`document.getElementById('elev').hidden`),true);
-  assert.ok(await evaluate(p,`(()=>{const b=document.getElementById('elev-grant-revoke').getBoundingClientRect();return document.getElementById('elev-grant-revoke').contains(document.elementFromPoint(b.x+b.width/2,b.y+b.height/2))})()`),'the revoke button stays tappable while the notice shows');
+  assert.ok(await evaluate(p,`(()=>{const b=document.getElementById('elev-grant-revoke').getBoundingClientRect();return document.getElementById('elev-grant-revoke').contains(document.elementFromPoint(b.x+b.width/2,b.y+b.height/2))})()`),'the revoke button stays tappable after silent execution');
   writeFileSync(`${out}/web-${lang}-${theme}-${width}-grant.png`,await shoot(p,''));
   // 4. Revoke.
   await evaluate(p,`document.getElementById('elev-grant-revoke').click()`);

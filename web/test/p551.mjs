@@ -219,7 +219,7 @@ try {
       // P559 naming: headless Chromium is Linux (touch → Android family) → Touch ID; Face ID only on iPhone / iPad
       check(txt.includes(L('密钥外发', 'sending a key out')) && txt.includes(L('仍要 Touch ID', 'still need Touch ID')) && txt.includes(L('设置了 Touch ID 的设备上切换', 'Touch ID set up can switch')), 'confirm text = note + Touch ID sign note ' + name);
       check(await ev(p, `document.getElementById('confirm-yes').textContent`) === L('改成全放行', 'Switch to Full access'), 'yes label ' + name);
-      check(await ev(p, `document.getElementById('confirm-yes').classList.contains('aj-btn--danger')`), 'the switch reads as dangerous ' + name);
+      check(await ev(p, `document.getElementById('confirm-yes').classList.contains('aj-action--danger')`), 'the switch reads as dangerous ' + name);
       check(await ev(p, TOP('#confirm .box', '#confirm-yes')) && await ev(p, `document.activeElement.id==='confirm-yes'`), 'confirm over Settings, focused ' + name);
       await press(p, '#confirm-yes', touch);
       await waitFor(p, `document.getElementById('toast').classList.contains('on') && document.getElementById('toast').textContent.includes(${J(L('还没有设置 Touch ID', 'no Touch ID'))})`);

@@ -1,3 +1,4 @@
+import { attachSpecial, canSpecialApprove, decorateSpecial, forgetSpecial, refreshSpecialVisibility } from './approval-special541.js';
 import { authOf, paintAuth } from './authcard.js';
 import {phoneConfirmation} from './tvremote.js';
 // F17 (PROTOCOL §11): the sudo card and the secret card. The Agent asked for an admin password (to run one exact command)
@@ -57,7 +58,7 @@ function build() {
   root.setAttribute('aria-labelledby', 'elev-title');
   const form = mk('form', 'box');
   form.id = 'elev-form'; form.autocomplete = 'off'; form.noValidate = true;
-  const node = (tag, id, cls) => { const n = mk(tag, cls); n.id = id; return n; };
+  const node = (tag, id, cls) => { const n = mk(tag, cls, undefined, cls?.split(/\s+/).includes('aj-action') ? 'aj-action' : 'aj-auth-card', 'dialog'); n.id = id; return n; };
   const input = node('input', 'elev-input', 'elev-input');
   Object.assign(input, { type: 'password', autocomplete: 'off', spellcheck: false });
   for (const [k, v] of [['autocapitalize', 'off'], ['autocorrect', 'off'], ['enterkeyhint', 'done']]) input.setAttribute(k, v);
@@ -70,7 +71,7 @@ function build() {
   // P566 (#354): why the last 保存 / 同意 did not go through, on the card itself (never only a notice behind the card's scrim)
   const err = node('p', 'elev-err', 'elev-bad elev-err'); err.hidden = true; err.setAttribute('role', 'alert');
   // P414: 「用 Face ID 填入电脑密码」 first (the typed field below it is the second way), 「用 Face ID 记住」 under the field
-  const vault = node('button', 'elev-vault', 'aj-btn aj-btn--primary elev-vault'); vault.type = 'button'; vault.hidden = true;
+  const vault = node('button', 'elev-vault', 'aj-action aj-action--primary elev-vault'); vault.type = 'button'; vault.hidden = true;
   const stale = node('p', 'elev-stale', 'elev-bad'); stale.hidden = true;
   const saveOpt = node('label', 'elev-save-opt', 'elev-grant-opt elev-save-opt'); saveOpt.hidden = true;
   const saveBox = node('input', 'elev-save-on', 'elev-grant-on'); saveBox.type = 'checkbox';
@@ -78,9 +79,9 @@ function build() {
   // P73 (ADR-A180): the main action alone on its row; 「拒绝 / 不提供」 a quiet text button on its own line under it, so a
   // thumb aiming at 「保存到Agent J 主机」 cannot land on it. The keyboard's Enter / 完成 key only ever submits.
   const acts = mk('div', 'ajrow confirm-row elev-acts');
-  const allow = node('button', 'elev-allow', 'aj-btn aj-btn--primary'); allow.type = 'submit';
+  const allow = node('button', 'elev-allow', 'aj-action aj-action--primary'); allow.type = 'submit';
   acts.append(allow);
-  const deny = node('button', 'elev-deny', 'aj-btn aj-btn--quiet elev-deny'); deny.type = 'button';
+  const deny = node('button', 'elev-deny', 'aj-action aj-action--quiet elev-deny'); deny.type = 'button';
   // #116: the 10-minute toggle, off by default, shown only when the host offers it for this exact command format
   const opt = node('label', 'elev-grant-opt', 'elev-grant-opt'); opt.hidden = true;
   const box = node('input', 'elev-grant-on', 'elev-grant-on'); box.type = 'checkbox';
@@ -153,12 +154,14 @@ export function add(m) {
   }
   const signed = c.kind === 'sudo' ? c.why : c.kind === 'secret' ? c.purpose : '';
   c.reason = typeof m.reason === 'string' && m.reason.trim() === signed.trim() ? signed.trim() : '';
+  attachSpecial(m,c,render);
   // ADR-A163: this device saved a passkey (F20) → 「同意」 needs Face ID. The host names our own credential id; the challenge
   // (card id + this arming's nonce + what is shown) is made now, so the tap can go straight to the system sheet.
   if (m.state !== 'running' && typeof m.fa === 'string' && m.fa.length > 0 && m.fa.length <= 1400) {
     c.fa = m.fa;
     c.fa_s = ['local', 'borrowed', 'unknown'].includes(m.fa_s) ? m.fa_s : null;   // P539: does this remote hold that passkey itself (= pkrules faState, inline: test/p414_contract_phone.mjs runs add() from source)
     (async () => {
+      await c.envelopeReady;
       const digest = await elevateDigest(c.kind, elevateFields(c));
       c.faCh = await elevateChallenge(channel(), await myDeviceId(), c.id, c.kind, c.n, digest);
     })().catch(() => { c.faCh = null; });
@@ -215,6 +218,7 @@ const RESULT = { done: 'elev.r.done', saved: 'elev.r.saved', denied: 'elev.r.den
   stopped: 'elev.r.stopped', locked: 'elev.r.locked', bad_password: 'elev.r.badPassword', failed: 'elev.r.failed' };
 /** The card ended (§11 `elev_done`). */
 export function done(m) {
+  forgetSpecial(m.id,m.result);
   if (completed.has(m.id)) return;
   const c = cards.get(m.id);
   completed.add(m.id);
@@ -286,6 +290,7 @@ function expire(c) {
 export function clear() {
   clearTimeout(recoveryTimer); recoveryTimer = 0;
   grants([]);
+  for(const id of cards.keys())forgetSpecial(id);
   completed.clear(); cards.clear(); shownId = null; busy = false; finished = null; panelOpen = false;
   if (runEl) paintRun();
   if (root) { $('elev-input').value = ''; root.hidden = true; }
@@ -329,7 +334,7 @@ function render() {
   const c = [...cards.values()].find((x) => !x.started && !x.collapsed);   // P406: running / collapsed ones live in the strip
   clearTimeout(timer);
   paintRun();
-  if (!c) { root.hidden = true; $('elev-auth').replaceChildren(); $('elev-input').value = ''; document.body.dataset.elev = '0'; shownId = null; return; }
+  if (!c) { root.hidden = true; $('elev-auth').replaceChildren(); $('elev-input').value = ''; document.body.dataset.elev = '0'; shownId = null; refreshSpecialVisibility(); return; }
   document.body.dataset.elev = '1';
   if (shownId !== c.id) {
     shownId = c.id; busy = false;
@@ -377,7 +382,7 @@ function render() {
     // `stale` re-arm (has 0) brings the field back
     if (!nopw) { $('elev-label').hidden = useV; $('elev-input').hidden = useV; }
     $('elev-allow').hidden = useV;
-    $('elev-allow').classList.toggle('aj-btn--primary', !useV);
+    $('elev-allow').classList.toggle('aj-action--primary', !useV);
     if (useV) $('elev-label').textContent = t('p414.e.orType');
     const save = offerSave(c);
     $('elev-save-opt').hidden = !save; $('elev-save-on').checked = save;
@@ -409,6 +414,7 @@ function render() {
   paintLeft(c);
   paintPkFor(c);
   paintErr(c);
+  decorateSpecial(root,c,{title:$('elev-title'),metadata:[$('elev-scope'),$('elev-rows'),$('elev-note')],allow:useVault(c)?$('elev-vault'):$('elev-allow'),deny:$('elev-deny'),repaint:render,fold:collapse});
 }
 /** P539: under 「同意」 — the quiet line when this remote has no passkey of its own, or why the last tap failed + 再试一次. */
 function paintPkFor(c) {
@@ -450,7 +456,7 @@ function paintLeft(c) {
 function askDeny() {
   const c = cards.get(shownId);
   if (!c || busy || c.running) return;
-  if (c.kind === 'secret' && Date.now() > denyArmed) {
+  if (c.kind === 'secret' && c.approval_v!==2 && Date.now() > denyArmed) {
     denyArmed = Date.now() + 4000;
     $('elev-deny').textContent = t('elev.secret.cancelSure');
     setTimeout(() => { if (Date.now() >= denyArmed && cards.get(shownId) === c) { denyArmed = 0; $('elev-deny').textContent = t('elev.secret.cancel'); } }, 4100);
@@ -463,7 +469,7 @@ function askDeny() {
 /** `how` (P414): 'vault' = 「用 Face ID 填入电脑密码」 (no field). A `vshare` card's 「同意」 is the same Face ID + PRF. */
 async function decide(ok, how) {
   let c = cards.get(shownId);
-  if (!c) return;
+  if (!c || ok && !canSpecialApprove(c)) return;
   // P566 (#354, elevate.js:413): a tap while the last one is still under way says so (was: nothing at all)
   if (busy || c.running || c.sending) { toast(t(c.sending ? 'p566.handing' : 'p566.busy'), 3000); return; }
   if (Date.now() >= c.deadline) { expire(c); return; }   // P566 (#357): never sent to be refused in silence
@@ -588,7 +594,7 @@ function bar() {
   grantBar = mk('div', 'elev-grant'); grantBar.id = 'elev-grant'; grantBar.hidden = true;
   grantBar.setAttribute('role', 'status');
   const text = mk('span', 'elev-grant-text'); text.id = 'elev-grant-text';
-  const btn = mk('button', 'aj-btn aj-btn--quiet elev-grant-revoke'); btn.id = 'elev-grant-revoke'; btn.type = 'button';
+  const btn = mk('button', 'aj-action aj-action--quiet elev-grant-revoke', undefined, 'aj-action'); btn.id = 'elev-grant-revoke'; btn.type = 'button';
   btn.addEventListener('click', () => revokeAll());
   grantBar.append(text, btn);
   replyNotice(grantBar);
@@ -626,13 +632,13 @@ async function revokeAll() {
     toast(t('elevGrant.revoked'), 3600);
   } catch { toast(t('elev.fail'), 3000); }
 }
-/** `elev_auto`: a command ran under an approval, without a card. */
+/** `elev_auto`: audit-only execution under an existing approval (#562), never an owner action. */
 export function auto(m) {
   if (typeof m?.id !== 'string' || !/^[0-9a-f]{32}$/.test(m.id) || completed.has(m.id) || typeof m.exe !== 'string') return;
   completed.add(m.id);
   if (completed.size > 100) completed.delete(completed.values().next().value);
-  const fail = m.result !== 'done' || (Number.isInteger(m.code) && m.code !== 0);
-  notify({ kind: fail ? 'error' : 'info', text: t(fail ? 'elevGrant.autoFail' : 'elevGrant.autoRan', { exe: m.exe.slice(0, 64) }), ms: 3600, shape: 'rect' });
+  // Keep completion deduplication; successes and failures stay in the host's record.
+  // A new request requiring owner action arrives separately as an `elev` card.
 }
 
 // P406 #173 (PROTOCOL §11.2): collapse never declines. A collapsed card, a command that runs and a just-finished result live in
@@ -661,16 +667,16 @@ function runBar() {
   runEl = mk('div', 'elev-run'); runEl.id = 'elev-run'; runEl.hidden = true;
   runEl.setAttribute('role', 'status');
   const panel = mk('div', 'elev-run-panel'); panel.id = 'elev-run-panel'; panel.hidden = true;
-  const out = mk('pre', 'elev-run-out'); out.id = 'elev-run-out'; out.tabIndex = 0;
+  const out = mk('pre', 'elev-run-out'); out.id = 'elev-run-out'; out.setAttribute('data-aj-owner','aj-recovery'); out.tabIndex = 0;
   const note = mk('p', 'elev-run-note'); note.id = 'elev-run-note';
   panel.append(copyable(out, { variant: 'block', click: false }), note);   // P292: the masked output can be copied (⧉)
   const row = mk('div', 'elev-run-row');
-  const main = mk('button', 'elev-run-main'); main.id = 'elev-run-main'; main.type = 'button';
+  const main = mk('button', 'elev-run-main', undefined, 'aj-recovery'); main.id = 'elev-run-main'; main.type = 'button';
   const text = mk('span', 'elev-run-text'); text.id = 'elev-run-text';
   const ch = mk('span', 'elev-run-ch'); ch.append(chevron());
   main.append(mk('span', 'elev-run-dot'), text, ch);
-  const stop = mk('button', 'aj-btn aj-btn--quiet elev-run-stop'); stop.id = 'elev-run-stop'; stop.type = 'button';
-  const x = mk('button', 'aj-btn aj-btn--quiet elev-run-x'); x.id = 'elev-run-x'; x.type = 'button';
+  const stop = mk('button', 'aj-action aj-action--quiet elev-run-stop', undefined, 'aj-action'); stop.id = 'elev-run-stop'; stop.type = 'button';
+  const x = mk('button', 'aj-action aj-action--quiet elev-run-x', undefined, 'aj-action'); x.id = 'elev-run-x'; x.type = 'button';
   row.append(main, stop, x);
   runEl.append(panel, row);
   main.addEventListener('click', () => tapRun());
@@ -697,7 +703,7 @@ function paintOut(text) {
 function paintRun() {
   const b = runBar();
   clearTimeout(runTimer);
-  const list = [...cards.values()].filter((c) => c.started || c.collapsed);
+  const list = [...cards.values()].filter((c) => c.started || c.collapsed && c.approval_v!==2);
   const it = list.find((c) => c.collapsed && !c.running) || list.find((c) => c.started) || list[0] || null;
   const fin = !it && finished && (panelOpen && runShown === finished.id || Date.now() < finished.until) ? finished : null;
   if (!it && !fin) { b.hidden = true; panelOpen = false; runShown = null; document.body.dataset.elevrun = '0'; return; }

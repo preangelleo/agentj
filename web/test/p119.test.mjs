@@ -37,3 +37,23 @@ test('removed or unfocusable opener uses the visible owner fallback',()=>{
  f.ctx.api.registerLayer({element:()=>box,open:()=>open,close:()=>{open=false;},fallback:()=>fallback});
  f.key('Escape');assert.equal(f.document.activeElement,fallback);
 });
+
+test('an unregistered native modal keeps Escape and Tab above its parent layer',()=>{
+ const f=fixture(),outer=f.node('outer'),native=f.node('native-dialog'),input=f.node('native-input');let closed=0;
+ input.closest=sel=>sel==='dialog[open]'?native:null;
+ f.ctx.api.registerLayer({element:()=>outer,open:()=>true,close:()=>closed++,rank:10});input.focus();
+ assert.equal(f.key('Escape').prevented,undefined);assert.equal(closed,0);
+ assert.equal(f.key('Tab').prevented,undefined);
+});
+test('a registered native modal still runs its own explicit close action',()=>{
+ const f=fixture(),native=f.node('native-dialog'),input=f.node('native-input');let closed=0;
+ input.closest=sel=>sel==='dialog[open]'?native:null;native.children=[input];
+ f.ctx.api.registerLayer({element:()=>native,open:()=>closed===0,close:()=>closed++,rank:60});input.focus();
+ assert.equal(f.key('Escape').prevented,true);assert.equal(closed,1);
+});
+
+test('a disposed transient layer releases keyboard ownership, idempotently',()=>{
+ const f=fixture(),box=f.node('one-shot');let closed=0;
+ const layer=f.ctx.api.registerLayer({element:()=>box,open:()=>true,close:()=>closed++});
+ layer.dispose();layer.dispose();assert.equal(f.key('Escape').prevented,undefined);assert.equal(closed,0);
+});

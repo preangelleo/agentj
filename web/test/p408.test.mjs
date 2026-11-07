@@ -4,6 +4,7 @@
 // HTML); the page module stays out of the first screen (loaded by termhook.js as a module script); the row sits in 安全 and
 // cannot switch the terminal on. Rendering and the real flow: p408.mjs (real browser, real Noise, virtual authenticator).
 import { test } from 'node:test';
+import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as wire from '../../protocol/wire.js';
@@ -79,7 +80,19 @@ test('§38 signed object texts = the host (controls.py object_text), in both wir
   assert.match(controlsPy, /if action == "term_line":[^\n]*\n\s+return f"\{obj\['id'\]\}\\n\{obj\['line'\]\}"/);
   assert.match(controlsPy, /if action == "term_sudo":[^\n]*\n\s+return f"\{obj\['id'\]\}\\n\{obj\['rid'\]\}"/);
   assert.match(controlsPy, /if action == "term_forget":[^\n]*\n\s+return "forget"/);
-  assert.match(elevatePy, /if card\["kind"\] == "login":\n\s+return \[card\["term"\]\]/, 'host hashes the same login field');
+  // Execute the pure host field function: a refactor from return to fields must
+  // preserve legacy bytes, while #541 adds only the envelope digest for v2.
+  const py = spawnSync('python3', ['-c', `import ast,json,sys
+src=ast.parse(sys.stdin.read())
+fn=next(n for n in src.body if isinstance(n,ast.FunctionDef) and n.name=='shown_fields')
+ns={};exec(compile(ast.Module(body=[fn],type_ignores=[]),'<shown_fields>','exec'),ns)
+print(json.dumps([ns['shown_fields'](c) for c in [{'kind':'login','term':'abcd'},{'kind':'login','term':'abcd','envelope_sha256':'e'*64}]]))`], {input:elevatePy,encoding:'utf8'});
+  assert.equal(py.status,0,py.stderr);
+  const [legacyFields,v2Fields]=JSON.parse(py.stdout);
+  for(const w of [wire,pageWire]) {
+    assert.deepEqual(w.elevateFields({kind:'login',term:'abcd'}),legacyFields);
+    assert.deepEqual(w.elevateFields({kind:'login',term:'abcd',approval_v:2,envelope_sha256:'e'.repeat(64)}),v2Fields);
+  }
   const msg = new TextDecoder().decode(await wire.controlMessage('C'.repeat(22), 'D'.repeat(22), 'term_open', 'a'.repeat(32), 1, { mode: 'line' }));
   assert.match(msg, /^agentjarvis-control-v1\nC{22}\nD{22}\nterm_open\na{32}\n1\n[0-9a-f]{64}$/);
   assert.match(TERM, /signCtl\('term_open', obj, c\.n\)/, 'the host nonce from step 1');
@@ -131,12 +144,12 @@ test('the terminal keeps nothing: no storage, no history data, no HTML, no loggi
 });
 
 test('lazy: the page module and its CSS stay out of the first screen; routing; the login card never reaches the chat', () => {
-  assert.doesNotMatch(code(APP) + code(SET) + code(CMD), /terminal\.js|terminal\.css/);
+  assert.doesNotMatch(code(APP) + code(SET) + code(CMD), /[\'\"](?:\.\/)?(?:js\/)?terminal\.(?:js|css)[\'\"]/);
   assert.doesNotMatch(HTML, /(?:src|href)="[^"]*terminal\.(js|css)/);
   assert.match(HOOK, /s\.type = 'module'; s\.src = new URL\('\.\/terminal\.js', import\.meta\.url\)\.href;/);
   assert.match(TERM, /l\.href = new URL\('\.\.\/terminal\.css', import\.meta\.url\)\.href;/);
-  assert.match(APP, /case 'elev': if \(m\.kind === 'login'\) termhook\.msg\(m\); else elevate\.add\(m\); return;/);
-  assert.match(APP, /case 'term_out': case 'term_confirm': case 'term_sudo': case 'term_close': termhook\.msg\(m\); return;/);
+  assert.match(APP, /case 'elev': if \(m\.kind === 'login' && m\.assist_gid\) \{ assistTerminal\.onElev\(m\); return; \} if \(m\.kind === 'login'\) termhook\.msg\(m\); else elevate\.add\(m\); return;/);
+  assert.match(APP, /case 'term_prefill_res': case 'term_out': case 'term_confirm': case 'term_sudo': case 'term_close': termhook\.msg\(m\); return;/);
   assert.match(TERM, /if \(S\.phase !== 'opening' \|\| !S\.r2 \|\| m\.term !== S\.r2 \|\| m\.state === 'running'\) return;/, 'only this device\'s own pending open');
   // colours: the closed palette only
   const hexes = [...new Set([...CSS.matchAll(/#[0-9a-f]{6}\b/gi)].map((m) => m[0].toLowerCase()))].sort();

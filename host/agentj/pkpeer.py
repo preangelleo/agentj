@@ -5,7 +5,9 @@ Developer reference: documentation/notes/P0263-HOST-REFERENCE.md#pkpeer.
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
+import json
 import secrets
 import time
 
@@ -37,9 +39,13 @@ def digest(device: str, name: str, code_: str, sign_pub: str = "", roster: bool 
 
 
 class Req:
-    __slots__ = ("id", "device", "name", "code", "digest", "at", "exp", "state", "by", "timer", "x", "via", "sign_pub", "intro")
+    __slots__ = ("id", "device", "name", "code", "digest", "at", "exp", "state", "by", "timer", "x", "via", "sign_pub", "intro", "scope", "target", "target_pk", "approver", "seals", "bootstrap", "binding")
 
     def __init__(self, rid, device, name, code_, now, x="", sign_pub="", intro=False):
+        self.scope = self.target = self.target_pk = self.approver = None
+        self.seals = {}
+        self.bootstrap = False
+        self.binding = None
         self.intro = intro
         self.id, self.device, self.name, self.code = rid, device, name, code_
         self.x, self.via, self.sign_pub = x, None, sign_pub       # P574: D's X25519 key; the approver's assertion (owner_grant.via_ok checks it)
@@ -68,6 +74,7 @@ class Desk:
 
     def _drop(self, r: Req) -> None:
         self.reqs.pop(r.id, None)
+        r.seals.clear()
         if r.timer is not None and r.timer is not asyncio.current_task():
             r.timer.cancel()
 
@@ -77,7 +84,7 @@ class Desk:
 
     def _ready(self, s) -> bool:
         h = self.host
-        return h.sessions.get(s.cid) is s and s.state == "ready" and s.p33 and h.st.is_allowed(s.pub)
+        return h.sessions.get(s.cid) is s and s.state == "ready" and s.device == wire.device_id(s.pub) and h.st.is_allowed(s.pub)
 
     def _eligible(self, did: str) -> bool:
         """Review minor 4: a device approves only with a key IT registered (`dev` == its id; a legacy record without `dev`
@@ -96,9 +103,42 @@ class Desk:
         mine = self._pk_id(did)
         return [d for d in self.host.st.devices() if d != did and (k := self._pk_id(d)) and k != mine]
 
+    def _scope(self):
+        h = self.host
+        from . import cloud
+        link = cloud.read_cloud(h.st) or {}
+        seat = (link.get('host_id'), (link.get('tenant') or {}).get('slug'), link.get('linked_at'))
+        return (h.channel, h.kp.pub, str(h.hist.epoch), h.agent, seat)
+
+    def _binding(self, r):
+        return (r.id, r.device, r.x, r.sign_pub, r.name, r.code, r.digest, r.at, r.exp, r.intro, r.target_pk)
+
+    def _valid(self, r):
+        h = self.host
+        return (self.reqs.get(r.id) is r and r.exp > self.clock()
+                and not h.stopped() and not getattr(h, '_unbinding_all', False)
+                and r.binding == self._binding(r) and r.scope == self._scope() and r.target is not None and self._ready(r.target)
+                and r.target.device == r.device and wire.b64u(r.target.pub) == r.x
+                and wire.b64u(h.st.sign_key(r.device) or b'') == r.sign_pub
+                and h.st.passkey_of_device(r.device) == r.target_pk
+                and (r.approver is None or (self._ready(r.approver[0])
+                     and h.st.passkey_of_device(r.approver[0].device) == r.approver[1]
+                     and r.approver[0].device == r.approver[2] and r.approver[0].pub == r.approver[3]
+                     and h.st.sign_key(r.approver[2]) == r.approver[4]))
+                and (not r.bootstrap or not any(h.st.passkey_of_device(d) for d in h.st.devices())))
+
+    def _recipient(self, s, r):
+        # Delivery is not authority: a paired phone without a PK still sees the request.
+        return self._ready(s) and s.device != r.device
+
+    def _bootstrap_ok(self, s, r):
+        # Strict first enrollment only. Any existing UV root rules out password downgrade.
+        return (self._recipient(s, r) and not r.intro and not r.target_pk
+                and not any(self.host.st.passkey_of_device(d) for d in self.host.st.devices()))
+
     def direct_ok(self, did: str) -> bool:
         """Model §2 (review M1): a direct (unapproved) pk_offer only while no OTHER listed device holds a key."""
-        return not self.keyed_others(did)
+        return not self.keyed_others(did) and not any(x.device != did for x in self._sessions())
 
     def _sessions(self, did: str | None = None):
         return [x for x in list(self.host.sessions.values()) if self._ready(x) and (did is None or x.device == did)]
@@ -106,12 +146,31 @@ class Desk:
     def ask_msg(self, s, r: Req) -> dict:
         h = self.host
         ch = passkey.elevate_challenge(h.channel, s.device, r.id, KIND, r.id, r.digest)
-        return {"t": "pk_peer_ask", "id": r.id, "device": r.device, "name": r.name, "at": r.at, "exp": r.exp, "code": r.code,
+        r.seals = {cid: seal for cid, seal in r.seals.items() if h.sessions.get(cid) is seal[0]}
+        extra = {}
+        if not self._approver(s, r):
+            extra = {"needs_setup": True}
+            if self._bootstrap_ok(s, r):
+                from . import gate
+                from .elevate import X25519PrivateKey, _raw_pub
+                if gate.is_set(h.st):
+                    seal = r.seals.get(s.cid)
+                    if seal is None or seal[0] is not s:
+                        priv = X25519PrivateKey.generate()
+                        nonce = wire.b64u(secrets.token_bytes(32))
+                        bound = [h.channel, wire.b64u(h.kp.pub), str(h.hist.epoch), r.id,
+                                 r.device, r.x, r.sign_pub, s.device, r.exp, nonce, list(r.scope[-1])]
+                        dg = hashlib.sha256(json.dumps(bound, separators=(',', ':')).encode()).hexdigest()
+                        seal = r.seals[s.cid] = (s, priv, nonce, dg, s.device, s.pub, h.st.sign_key(s.device))
+                    extra.update(bootstrap=True, epk=wire.b64u(_raw_pub(seal[1])), n=seal[2], digest=seal[3])
+                else:
+                    extra["bootstrap_unavailable"] = True
+        return {**extra, "t": "pk_peer_ask", "id": r.id, "device": r.device, "name": r.name, "at": r.at, "exp": r.exp, "code": r.code,
                 **({"roster": True} if r.intro else {}), "sign_pub": r.sign_pub, "fa": self._pk_id(s.device), "fa_ch": wire.b64u(ch)}
 
     async def _close(self, r: Req, skip=None) -> None:
         for x in self._sessions():
-            if x is not skip and x.device != r.device and self._pk_id(x.device):
+            if x is not skip and x.device != r.device and self._recipient(x, r):
                 await self.host.send_app(x, {"t": "pk_peer_close", "id": r.id})
 
     async def _to_d(self, r: Req, msg: dict) -> None:
@@ -119,6 +178,8 @@ class Desk:
             await self.host.send_app(x, msg)
 
     async def _offer(self, r: Req) -> None:
+        if not self._valid(r):
+            return
         if r.intro:
             pk = self.host.st.passkey_of_device(r.device)
             if pk and r.via and self.host.peers is not None and self.host.peers.xfer.bound(r.device):
@@ -150,7 +211,7 @@ class Desk:
     def approved(self, device: str, rid) -> bool:
         """Did THIS host mark request `rid` approved for `device` (and is it still valid, not yet used)?"""
         r = self.reqs.get(rid) if isinstance(rid, str) else None
-        return bool(r) and r.device == device and r.state == "approved" and r.exp > self.clock()
+        return bool(r) and r.device == device and r.state == "approved" and self._valid(r)
 
     def via_of(self, rid: str) -> dict | None:
         """P574: the approving remote's assertion for request `rid` (None: approved at the terminal, or gone)."""
@@ -165,12 +226,10 @@ class Desk:
 
     async def on_ready(self, s) -> None:
         """A device came back within the TTL: an approver sees the open cards, D its approved offer."""
-        if not s.p33:
-            return
         for r in self._live():
-            if r.state == "open" and self._approver(s, r):
+            if r.state == "open" and self._valid(r) and self._recipient(s, r):
                 await self.host.send_app(s, self.ask_msg(s, r))
-            elif r.state == "approved" and s.device == r.device:
+            elif r.state == "approved" and s.device == r.device and self._valid(r):
                 await self.host.send_app(s, {"t": "pk_peer_done", "id": r.id, "ok": True, "by": r.by})
                 await self.host._pk_offer(s, peer=r.id)
 
@@ -250,6 +309,10 @@ class Desk:
         if not self.nobody_else(r.device):
             h.st.log("pk_peer", device="host", result="refused", reason="approver_exists", id=r.id)
             return {"ok": False, "error": "approver_exists"}
+        if not self._valid(r) or r.state != "open":
+            return {"ok": False, "error": "expired"}
+        r.state, r.by = "approved", HOST_BY
+        r.seals.clear()
         try:
             approvals.record(h.st, rid=r.id, agent="terminal", tool=KIND, input_sha256=r.digest, shown_sha256=r.digest,
                              decision="allow", reason=KIND, device="host-terminal")
@@ -259,7 +322,8 @@ class Desk:
         h.activity("decision", by=pick(h.lang, "Agent J 主机终端", "Agent J host terminal"), result="allow",
                    tool=pick(h.lang, "在 Agent J 主机上批准设置 Face ID", "Face ID set-up approved on the Agent J host"), text=r.name)
         await self._close(r)
-        r.state, r.by, r.exp = "approved", HOST_BY, int(self.clock()) + PEER_TTL
+        if not self._valid(r):
+            return {"ok": False, "error": "expired"}
         self._arm(r)
         await self._offer(r)
         when = time.strftime("%Y-%m-%d %H:%M")
@@ -295,19 +359,27 @@ class Desk:
         if not wire.is_rid(rid):
             return
         res = {"t": "pk_peer_res", "r": rid}
+        if not self._ready(s) or h.stopped() or getattr(h, '_unbinding_all', False):
+            return await h.send_app(s, {**res, "ok": False, "why": "gone"})
         intro = obj.get("roster") is True
         if intro and (h.peers is None or not h.peers.xfer.bound(s.device)):
             return await h.send_app(s, {**res, "ok":False, "why":"roster_binding_required"})
         mine = self._pk_id(s.device)
         others = self.keyed_others(s.device)
-        if not others and not mine:
+        if not others and not mine and self.direct_ok(s.device):
             await h.send_app(s, {**res, "ok": True, "mode": "direct"})
             return await h._pk_offer(s)
         # P555: nobody can approve (D holds the only key but it failed here, or every other key was restored onto its
         # record) → the request still opens; the owner approves it at the Agent J host's terminal (host_approve)
         live = self._live()
         r = next((x for x in live if x.device == s.device and x.intro == intro), None)
+        if r is not None and not self._valid(r):
+            self._drop(r)
+            await self._close(r)
+            r = None
         if r is None:
+            if not self._ready(s) or h.stopped() or getattr(h, '_unbinding_all', False):
+                return
             now = self.clock()
             hits = [t for t in self.hits.get(s.device, []) if now - t < RATE_WINDOW]
             self.hits[s.device] = hits
@@ -319,13 +391,17 @@ class Desk:
             name = clean_label(h._dev_label(s.device)) or s.device
             new = secrets.token_bytes(16)
             r = Req(wire.b64u(new), s.device, name, code(wire.b64u(new), s.device, wire.b64u(s.pub)), now, wire.b64u(s.pub), wire.b64u(h.st.sign_key(s.device) or b""), intro)
+            r.scope, r.target = self._scope(), s
+            r.target_pk = copy.deepcopy(h.st.passkey_of_device(s.device))
+            r.binding = copy.deepcopy(self._binding(r))
             self.reqs[r.id] = r
             self._arm(r)
             h.st.log("pk_peer", device=s.device, result="asked", id=r.id)
             for x in self._sessions():
-                if self._approver(x, r):
+                if self._recipient(x, r):
                     await h.send_app(x, self.ask_msg(x, r))
-        online = len({x.device for x in self._sessions() if self._approver(x, r)})
+            h.push_notify("security")
+        online = len({x.device for x in self._sessions() if self._recipient(x, r)})
         await h.send_app(s, {**res, "ok": True, "mode": "peer", "id": r.id, "code": r.code, "exp": r.exp, "online": online,
                              **({"host": 1} if self.nobody_else(s.device) else {})})   # P555: only then the terminal way
         if r.state == "approved":
@@ -335,7 +411,15 @@ class Desk:
     async def _answer(self, s, r: Req, obj: dict) -> None:
         h = self.host
         reply = {"t": "pk_peer_answer_res", "id": r.id}
-        if r.state != "open" or not self._approver(s, r):
+        if not self._valid(r) or r.state != "open" or not self._recipient(s, r):
+            return await h.send_app(s, {**reply, "ok": False, "why": "gone"})
+        if obj.get('ok') is not True:
+            r.approver = (s, copy.deepcopy(h.st.passkey_of_device(s.device)), s.device, s.pub, h.st.sign_key(s.device))
+            return await self._finish_answer(s, r, False, reply, None)
+        bootstrap = obj.get("bootstrap") is True
+        if bootstrap:
+            return await self._bootstrap_answer(s, r, obj)
+        if not self._approver(s, r):
             return await h.send_app(s, {**reply, "ok": False, "why": "gone" if r.state != "open" else "not_approver"})
         ok = obj.get("ok") is True
         pk = h.st.passkey_of_device(s.device)
@@ -356,6 +440,54 @@ class Desk:
             # an already trusted remote's Face ID approved this device before it trusts the device's new key
             r.via = {"cred": f["id"], "dev": s.device, "channel": h.channel, "rid": r.id, "device": r.device, "name": r.name,
                      "x": r.x, "sign_pub": r.sign_pub, "roster": r.intro, "cd": wire.b64u(f["cd"]), "ad": wire.b64u(f["ad"]), "sig": wire.b64u(f["sig"])}
+        r.approver = (s, copy.deepcopy(h.st.passkey_of_device(s.device)), s.device, s.pub, h.st.sign_key(s.device))
+        return await self._finish_answer(s, r, ok, reply, fa)
+
+    async def _bootstrap_answer(self, s, r, obj):
+        from . import gate
+        from .elevate import open_sealed, seal_aad, wipe
+        h = self.host
+        reply = {"t": "pk_peer_answer_res", "id": r.id}
+        seal = r.seals.pop(s.cid, None)  # one use even on authentication failure
+        if not self._bootstrap_ok(s, r) or not seal or seal[0] is not s:
+            return await h.send_app(s, {**reply, "ok": False, "why": "not_approver"})
+        if not h.pk_guard.attempt():
+            return await h.send_app(s, {**reply, "ok": False, "why": "rate"})
+        value = None
+        why = None
+        try:
+            value = open_sealed(seal[1], passkey.b64(obj.get('epk'), 32, 'epk'), passkey.b64(obj.get('ct'), 1100, 'ct'),
+                                seal_aad(h.channel, s.device, r.id, 'pk_bootstrap', seal[2], seal[3]))
+            if not 1 <= len(value) <= gate.MAX_LEN * 4 or len(value.decode("utf-8")) > gate.MAX_LEN:
+                raise ValueError('length')
+            # Same persisted pairing-password failure ledger; no new password store.
+            await asyncio.to_thread(gate.verify, h.st, value.decode('utf-8'))
+        except gate.GateError as e:
+            why = e.reason
+        except (ValueError, TypeError, UnicodeError):
+            why = 'bad_seal'
+        finally:
+            if value is not None:
+                wipe(value)
+        # The verification yields: all authority and object bindings must still hold.
+        if not self._valid(r) or r.state != 'open' or not self._ready(s) or not self._bootstrap_ok(s, r) or (s.device, s.pub, h.st.sign_key(s.device)) != seal[4:]:
+            return await h.send_app(s, {**reply, "ok": False, "why": "gone"})
+        if why:
+            h.st.log('pk_peer', device=s.device, result='refused', reason=why, id=r.id)
+            await h.send_app(s, {**reply, 'ok': False, 'why': why})
+            if self._valid(r) and r.state == 'open' and self._ready(s):
+                await h.send_app(s, self.ask_msg(s, r))
+            return
+        r.approver, r.bootstrap = (s, None, s.device, s.pub, h.st.sign_key(s.device)), True
+        return await self._finish_answer(s, r, True, reply, None)
+
+    async def _finish_answer(self, s, r, ok, reply, fa):
+        h = self.host
+        if not self._valid(r) or r.state != 'open':
+            return await h.send_app(s, {**reply, 'ok': False, 'why': 'gone'})
+        # Reserve the decision before the first await; never extend the original deadline.
+        r.state, r.by = ('approved' if ok else 'denied'), clean_label(s.name or s.device)[:64]
+        r.seals.clear()
         by = s.name or h._dname(s.device) or s.device
         try:
             approvals.record(h.st, rid=r.id, agent="phone", tool=KIND, input_sha256=r.digest, shown_sha256=r.digest,
@@ -369,7 +501,9 @@ class Desk:
         await self._close(r, skip=s)
         when = time.strftime("%Y-%m-%d %H:%M")
         if ok:
-            r.state, r.by, r.exp = "approved", clean_label(by)[:64], int(self.clock()) + PEER_TTL
+            if not self._valid(r):
+                self._drop(r)
+                return
             self._arm(r)
             await self._offer(r)
             text = pick(h.lang, f"遥控器「{by}」批准「{r.name}」在本机设置 Face ID / 指纹 · {when}",

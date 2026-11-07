@@ -56,5 +56,27 @@
       "Agent J卡",
       "Agent J card"
     ]
+  },
+  {
+    "id": "friends",
+    "name": {
+      "zh": "好友",
+      "en": "Friends"
+    },
+    "aliases": [
+      "好友卡",
+      "Friends card"
+    ]
+  },
+  {
+    "id": "bots",
+    "name": {
+      "zh": "客服",
+      "en": "Customer service"
+    },
+    "aliases": [
+      "客服卡",
+      "Customer service card"
+    ]
   }
 ]

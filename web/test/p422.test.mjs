@@ -38,7 +38,7 @@ test('P422 non-iOS keeps Sooty; P459m iOS delegates fixed Noir document chrome',
 });
 test('P422 pull and hold share draft-preserving refresh, no wheel or mouse gesture handler',()=>{
  const a=read('app.js').toString();assert.match(a,/initPullRefresh\(\$\('main'\), \{blocked:relay.refreshBlocked,refresh:guardedRefresh\}\)/);
- assert.match(a,/await relay.saveDraft\(\).*relay.refreshBlocked\(\)/);
+ assert.match(a,/await relay.saveDraft\(\).*relay.refreshBlocked\(\{allowSettings\}\)/);
  const p=read('js/pull-refresh.js').toString();assert.ok(p.includes('main.scrollTop>0'));assert.ok(p.includes('distance>=72'));assert.ok(p.includes("touchcancel"));
  assert.doesNotMatch(p,/addEventListener\(['"](?:wheel|mouse|pointer)/);
 });

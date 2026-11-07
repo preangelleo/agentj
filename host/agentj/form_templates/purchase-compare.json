@@ -1,0 +1,207 @@
+{
+ "name": "purchase-compare",
+ "mode": "light",
+ "title": {
+  "zh": "买哪个",
+  "en": "Which to buy"
+ },
+ "about": {
+  "zh": "候选对比 + 预算 + 最看重的点。",
+  "en": "Compare candidates, set a budget, say what matters most."
+ },
+ "vars": {
+  "item": {
+   "label": {
+    "zh": "买什么",
+    "en": "What to buy"
+   },
+   "required": true
+  },
+  "context": {
+   "label": {
+    "zh": "一句背景",
+    "en": "Context"
+   }
+  },
+  "a": {
+   "label": {
+    "zh": "候选 A",
+    "en": "Candidate A"
+   },
+   "required": true
+  },
+  "a_note": {
+   "label": {
+    "zh": "A 价格 / 特点",
+    "en": "A price / note"
+   }
+  },
+  "b": {
+   "label": {
+    "zh": "候选 B",
+    "en": "Candidate B"
+   },
+   "required": true
+  },
+  "b_note": {
+   "label": {
+    "zh": "B 价格 / 特点",
+    "en": "B price / note"
+   }
+  },
+  "c": {
+   "label": {
+    "zh": "候选 C",
+    "en": "Candidate C"
+   },
+   "required": true
+  },
+  "c_note": {
+   "label": {
+    "zh": "C 价格 / 特点",
+    "en": "C price / note"
+   }
+  },
+  "unit": {
+   "label": {
+    "zh": "货币单位",
+    "en": "Currency"
+   },
+   "default": "元"
+  }
+ },
+ "fill": [
+  "recommend.pick",
+  "default.budget",
+  "drop",
+  "title"
+ ],
+ "form": {
+  "title": "{{item}}",
+  "intro": "{{context}}",
+  "questions": [
+   {
+    "id": "pick",
+    "type": "single",
+    "label": {
+     "zh": "选哪个？",
+     "en": "Which one?"
+    },
+    "required": true,
+    "keep": true,
+    "other": true,
+    "options": [
+     {
+      "value": "a",
+      "label": {
+       "zh": "{{a}}",
+       "en": "{{a}}"
+      },
+      "hint": {
+       "zh": "{{a_note}}",
+       "en": "{{a_note}}"
+      }
+     },
+     {
+      "value": "b",
+      "label": {
+       "zh": "{{b}}",
+       "en": "{{b}}"
+      },
+      "hint": {
+       "zh": "{{b_note}}",
+       "en": "{{b_note}}"
+      }
+     },
+     {
+      "value": "c",
+      "label": {
+       "zh": "{{c}}",
+       "en": "{{c}}"
+      },
+      "hint": {
+       "zh": "{{c_note}}",
+       "en": "{{c_note}}"
+      }
+     }
+    ]
+   },
+   {
+    "id": "budget",
+    "type": "slider",
+    "label": {
+     "zh": "预算上限",
+     "en": "Budget cap"
+    },
+    "min": 0,
+    "max": 20000,
+    "step": 500,
+    "unit": "{{unit}}",
+    "default": 8000
+   },
+   {
+    "id": "care",
+    "type": "multi",
+    "label": {
+     "zh": "最看重（最多 2 个）",
+     "en": "What matters most (up to 2)"
+    },
+    "max": 2,
+    "options": [
+     {
+      "value": "price",
+      "label": {
+       "zh": "价格",
+       "en": "Price"
+      }
+     },
+     {
+      "value": "quality",
+      "label": {
+       "zh": "品质",
+       "en": "Quality"
+      }
+     },
+     {
+      "value": "speed",
+      "label": {
+       "zh": "到货快",
+       "en": "Fast delivery"
+      }
+     },
+     {
+      "value": "service",
+      "label": {
+       "zh": "售后",
+       "en": "After-sales"
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "example": {
+  "zh": {
+   "item": "办公室的新显示器",
+   "context": "已按 27 寸、4K 筛过。",
+   "a": "显示器 A",
+   "a_note": "色准好，最贵",
+   "b": "显示器 B",
+   "b_note": "性价比最高",
+   "c": "显示器 C",
+   "c_note": "设计向，接口最全",
+   "unit": "元"
+  },
+  "en": {
+   "item": "A new office monitor",
+   "context": "Already filtered for 27-inch 4K.",
+   "a": "Monitor A",
+   "a_note": "accurate colour, the dearest",
+   "b": "Monitor B",
+   "b_note": "best value",
+   "c": "Monitor C",
+   "c_note": "for designers, most ports",
+   "unit": "USD"
+  }
+ }
+}

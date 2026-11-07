@@ -1,0 +1,4 @@
+/* #577 Web-owned composition-utilities; source order is a compatibility contract. */
+/* ===== small utilities (no inline style= needed under a strict CSP) ===== */
+.aj-mt-3 { margin-top: var(--sp-3); } .aj-mt-4 { margin-top: var(--sp-4); } .aj-mt-5 { margin-top: var(--sp-5); } .aj-mt-6 { margin-top: var(--sp-6); }
+.aj-center { text-align: center; }

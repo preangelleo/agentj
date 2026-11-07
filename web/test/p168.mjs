@@ -188,7 +188,7 @@ export async function runP168() {
           check(await evaluate(p, `${$('offTitle')}.textContent`) === s.reconnecting, 'title reconnecting ' + tag);
           const prog = await evaluate(p, `${$('offProg')}.textContent`);
           check(s.attempt.test(prog), `the real attempt count (${prog}) ${tag}`);
-          check(await evaluate(p, `getComputedStyle(document.querySelector('#offDlg .off-icon svg')).animationName`) === 'off-pulse', 'the icon pulses ' + tag);
+          check(await evaluate(p, `getComputedStyle(document.querySelector('#offDlg .off-icon svg')).animationName`) === 'aj-recovery-off-pulse', 'the icon pulses ' + tag);
           await save('reconnecting');
           await p.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }, { name: 'prefers-color-scheme', value: theme }] });
           check(await evaluate(p, `getComputedStyle(document.querySelector('#offDlg .off-icon svg')).animationName`) === 'none', 'reduced motion: no pulse ' + tag);

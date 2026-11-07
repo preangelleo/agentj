@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
-const html = read('../public/index.html'), menu = read('../public/menu.css'), relay = read('../public/js/relay.js');
+const html = read('../public/index.html').replace(/ data-aj-(?:owner|action-context)="[^"]+"/g,''), menu = read('../public/menu.css'), relay = read('../public/js/relay.js');
 const ix = JSON.parse(read('../interactions.json'));
 const zh = JSON.parse(read('../i18n/web.zh.json')), en = JSON.parse(read('../i18n/web.en.json'));
 

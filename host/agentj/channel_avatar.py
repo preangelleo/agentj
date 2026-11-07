@@ -75,9 +75,11 @@ def attachments(host, text):
     if not media or not getattr(media, 'workdir', None) or not isinstance(text, str):
         return [], [], [], keys
     try:
-        items, _skips = tg_media.collect(media, text, keys, True)   # P573: a key in a text file → masked copy + value cards
+        items, skips = tg_media.collect(media, text, keys, True)   # P573: a key in a text file → masked copy + value cards
     except Exception:   # noqa: BLE001 — no attachment is the old behaviour, never a lost reply
         return [], [], [], keys
+    if skips:
+        host.st.log("channel_attachments", result="skipped", count=len(skips), why=skips[0]["why"])
     images, files, paths, total = [], [], [], 0
     for rec in items[:FILES_MAX]:
         try:

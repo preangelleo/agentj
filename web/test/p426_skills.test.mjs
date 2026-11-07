@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 class El {
+  setAttribute(k,v) { (this.attributes ??= {})[k]=String(v); }
   constructor(tag) { this.tagName = tag.toUpperCase(); this.kids = []; this.dataset = {}; this.className = ''; this.disabled = false; this.onclick = null; this._t = null; }
   append(...ns) { for (const n of ns) this.kids.push(typeof n === 'string' ? text(n) : n); }
   get textContent() { return this._t !== null ? this._t : this.kids.map((k) => k.textContent).join(''); }

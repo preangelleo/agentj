@@ -33,7 +33,6 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import android.window.OnBackInvokedDispatcher
 
 /**
@@ -244,6 +243,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        noticeDialog?.dismiss()
         if (::web.isInitialized) { (web.parent as? ViewGroup)?.removeView(web); web.destroy() }
         super.onDestroy()
     }
@@ -909,7 +909,45 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_SHORT).show()
+    // #556: use the page's shared notice; an unready WebView gets a centred rounded card.
+    private var noticeDialog: android.app.Dialog? = null
+    private fun toast(s: String) {
+        if (isFinishing || isDestroyed) return
+        if (::web.isInitialized && originOf(web.url ?: "") == origin) {
+            val text = org.json.JSONObject.quote(s)
+            web.evaluateJavascript("Boolean(window.relayNative?.notice?.($text))") { shown ->
+                if (shown != "true") centredNotice(s)
+            }
+        } else centredNotice(s)
+    }
+    private fun centredNotice(s: String) {
+        if (isFinishing || isDestroyed) return
+        noticeDialog?.dismiss()
+        val dialog = android.app.Dialog(this)
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+        val label = TextView(this).apply {
+            text = s; textSize = 16f; gravity = Gravity.CENTER
+            setTextColor(Color.parseColor("#FAF9F5"))
+            setPadding(dp(24), dp(24), dp(24), dp(24))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(Color.parseColor("#2C2B26")); cornerRadius = dp(20).toFloat()
+            }
+            setOnClickListener { dialog.dismiss() }
+        }
+        dialog.setContentView(android.widget.ScrollView(this).apply { addView(label) })
+        dialog.setCanceledOnTouchOutside(true)
+        dialog.setOnKeyListener { _, code, _ ->
+            if (code == android.view.KeyEvent.KEYCODE_ESCAPE) { dialog.dismiss(); true } else false
+        }
+        dialog.show()
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setGravity(Gravity.CENTER)
+            setLayout(minOf(resources.displayMetrics.widthPixels - dp(32), dp(560)), ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        noticeDialog = dialog
+        main.postDelayed({ if (dialog.isShowing) dialog.dismiss() }, 3600)
+    }
 }
 
 /** scheme://host[:port], lower-cased; "" when it is not an http(s) URL. */

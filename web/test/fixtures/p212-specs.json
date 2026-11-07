@@ -1,0 +1,1068 @@
+{
+ "decide-3.zh": {
+  "schema": "agentj.form/v1",
+  "lang": "zh",
+  "title": "首页先做哪个版本？",
+  "intro": "三个方向都能在周五前上线。",
+  "sections": [
+   {
+    "id": "main",
+    "questions": [
+     {
+      "id": "choice",
+      "type": "buttons",
+      "label": "首页先做哪个版本？",
+      "required": true,
+      "options": [
+       {
+        "value": "a",
+        "label": "简洁版",
+        "hint": "最快，2 天"
+       },
+       {
+        "value": "b",
+        "label": "带视频版",
+        "hint": "转化高，要 4 天"
+       },
+       {
+        "value": "c",
+        "label": "先不改",
+        "hint": "零成本，数据不变"
+       }
+      ],
+      "rec": "a"
+     }
+    ]
+   }
+  ],
+  "mode": "light",
+  "tap": true,
+  "n": 1
+ },
+ "event-signup.zh": {
+  "schema": "agentj.form/v1",
+  "lang": "zh",
+  "title": "AI 产品沙龙 · 第 12 期",
+  "intro": "10 月 25 日（周六）14:00 · 静安",
+  "sections": [
+   {
+    "id": "main",
+    "questions": [
+     {
+      "id": "mode",
+      "type": "single",
+      "label": "参加方式",
+      "required": true,
+      "options": [
+       {
+        "value": "onsite",
+        "label": "现场"
+       },
+       {
+        "value": "online",
+        "label": "线上"
+       },
+       {
+        "value": "no",
+        "label": "这次不去"
+       }
+      ]
+     },
+     {
+      "id": "talks",
+      "type": "multi",
+      "label": "想听哪几场？",
+      "options": [
+       {
+        "value": "t1",
+        "label": "AI 产品定价"
+       },
+       {
+        "value": "t2",
+        "label": "增长复盘"
+       },
+       {
+        "value": "t3",
+        "label": "出海合规"
+       }
+      ],
+      "min": 0,
+      "max": 3,
+      "show_if": {
+       "q": "mode",
+       "in": [
+        "onsite",
+        "online"
+       ]
+      }
+     },
+     {
+      "id": "people",
+      "type": "number",
+      "label": "一共几个人（含你）",
+      "min": 1,
+      "max": 10,
+      "show_if": {
+       "q": "mode",
+       "eq": "onsite"
+      },
+      "default": 1
+     },
+     {
+      "id": "diet",
+      "type": "text",
+      "label": "饮食禁忌（可选）",
+      "max_length": 120,
+      "show_if": {
+       "q": "mode",
+       "eq": "onsite"
+      }
+     }
+    ]
+   }
+  ],
+  "mode": "light",
+  "n": 4
+ },
+ "grill-startup.zh": {
+  "schema": "agentj.form/v1",
+  "lang": "zh",
+  "title": "项目启动拷问 · 宠物店在线预约",
+  "intro": "每题都有我的推荐（黄底），同意就不用改；「不确定」永远可以选——我会把它记成要验证的假设。",
+  "sections": [
+   {
+    "id": "user",
+    "questions": [
+     {
+      "id": "who",
+      "type": "single",
+      "label": "第一批用户是谁？",
+      "required": true,
+      "options": [
+       {
+        "value": "u1",
+        "label": "社区宠物店店主"
+       },
+       {
+        "value": "u2",
+        "label": "上门洗护师"
+       },
+       {
+        "value": "unsure",
+        "label": "不确定"
+       }
+      ],
+      "other": true,
+      "rec": "u1"
+     },
+     {
+      "id": "now",
+      "type": "longtext",
+      "label": "他们现在怎么解决这个问题？",
+      "required": true,
+      "max_length": 1000
+     },
+     {
+      "id": "freq",
+      "type": "buttons",
+      "label": "多久痛一次？",
+      "options": [
+       {
+        "value": "daily",
+        "label": "每天"
+       },
+       {
+        "value": "weekly",
+        "label": "每周"
+       },
+       {
+        "value": "rare",
+        "label": "偶尔"
+       }
+      ],
+      "rec": "weekly"
+     },
+     {
+      "id": "reach",
+      "type": "single",
+      "label": "你能直接找到 10 个这样的人吗？",
+      "options": [
+       {
+        "value": "yes",
+        "label": "能，现在就能"
+       },
+       {
+        "value": "some",
+        "label": "能找到几个"
+       },
+       {
+        "value": "no",
+        "label": "不能"
+       }
+      ],
+      "rec": "some"
+     }
+    ],
+    "title": "用户",
+    "intro": "先定是谁在痛。"
+   },
+   {
+    "id": "value",
+    "questions": [
+     {
+      "id": "promise",
+      "type": "text",
+      "label": "一句话：用了它，用户得到什么？",
+      "required": true,
+      "max_length": 200
+     },
+     {
+      "id": "pain",
+      "type": "slider",
+      "label": "不用它，用户有多痛？",
+      "min": 1,
+      "max": 10,
+      "step": 1,
+      "labels": [
+       "无所谓",
+       "非解决不可"
+      ],
+      "default": 6,
+      "rec": 7
+     },
+     {
+      "id": "alt",
+      "type": "rank",
+      "label": "用户最可能的替代选择（最像的放最上）",
+      "options": [
+       {
+        "value": "diy",
+        "label": "自己动手 / Excel"
+       },
+       {
+        "value": "competitor",
+        "label": "现成产品"
+       },
+       {
+        "value": "nothing",
+        "label": "忍着不管"
+       }
+      ]
+     }
+    ],
+    "title": "价值"
+   },
+   {
+    "id": "money",
+    "questions": [
+     {
+      "id": "model",
+      "type": "single",
+      "label": "怎么收钱？",
+      "required": true,
+      "options": [
+       {
+        "value": "sub",
+        "label": "订阅"
+       },
+       {
+        "value": "once",
+        "label": "一次性"
+       },
+       {
+        "value": "commission",
+        "label": "抽成"
+       },
+       {
+        "value": "unsure",
+        "label": "不确定"
+       }
+      ],
+      "other": true,
+      "rec": "sub"
+     },
+     {
+      "id": "price",
+      "type": "number",
+      "label": "第一版定价（每月 / 每单）",
+      "min": 0,
+      "unit": "元"
+     },
+     {
+      "id": "first10",
+      "type": "longtext",
+      "label": "前 10 个付费用户从哪来？",
+      "max_length": 1000
+     }
+    ],
+    "title": "赚钱"
+   },
+   {
+    "id": "scope",
+    "questions": [
+     {
+      "id": "core",
+      "type": "longtext",
+      "label": "第一版只做哪一件事？",
+      "required": true,
+      "max_length": 600
+     },
+     {
+      "id": "weeks",
+      "type": "slider",
+      "label": "几周内上线？",
+      "min": 1,
+      "max": 12,
+      "step": 1,
+      "unit": "周",
+      "default": 4,
+      "rec": 4
+     },
+     {
+      "id": "skip",
+      "type": "multi",
+      "label": "第一版先不做（勾上的都砍掉）",
+      "options": [
+       {
+        "value": "login",
+        "label": "账号体系"
+       },
+       {
+        "value": "pay",
+        "label": "在线支付"
+       },
+       {
+        "value": "app",
+        "label": "手机 App"
+       },
+       {
+        "value": "admin",
+        "label": "后台管理"
+       },
+       {
+        "value": "i18n",
+        "label": "多语言"
+       }
+      ],
+      "min": 0,
+      "max": 5,
+      "rec": [
+       "login",
+       "app",
+       "admin",
+       "i18n"
+      ]
+     }
+    ],
+    "title": "第一版"
+   },
+   {
+    "id": "risk",
+    "questions": [
+     {
+      "id": "kill",
+      "type": "longtext",
+      "label": "什么情况会让这件事失败？",
+      "required": true,
+      "max_length": 1000
+     },
+     {
+      "id": "test",
+      "type": "text",
+      "label": "最便宜的验证办法",
+      "max_length": 300
+     },
+     {
+      "id": "disagree",
+      "type": "longtext",
+      "label": "上面哪一条推荐，你其实不同意？",
+      "hint": "一路「同意」往往是还没想；挑一条说说。",
+      "max_length": 600
+     },
+     {
+      "id": "proof",
+      "type": "file",
+      "label": "用户聊天截图、录音或调研材料（可选）",
+      "accept": [
+       "image",
+       "audio",
+       "file"
+      ],
+      "max_files": 5
+     }
+    ],
+    "title": "风险"
+   }
+  ],
+  "preselect": true,
+  "mode": "deep",
+  "n": 17
+ },
+ "bug-report.zh": {
+  "schema": "agentj.form/v1",
+  "lang": "zh",
+  "title": "Bug · 手机审批页",
+  "sections": [
+   {
+    "id": "what",
+    "questions": [
+     {
+      "id": "steps",
+      "type": "longtext",
+      "label": "怎么复现（一步一行）",
+      "required": true,
+      "max_length": 3000
+     },
+     {
+      "id": "expected",
+      "type": "text",
+      "label": "本来应该",
+      "required": true,
+      "max_length": 300
+     },
+     {
+      "id": "actual",
+      "type": "text",
+      "label": "实际却",
+      "required": true,
+      "max_length": 300
+     }
+    ],
+    "title": "发生了什么"
+   },
+   {
+    "id": "how",
+    "questions": [
+     {
+      "id": "freq",
+      "type": "buttons",
+      "label": "多常出现？",
+      "options": [
+       {
+        "value": "always",
+        "label": "每次"
+       },
+       {
+        "value": "often",
+        "label": "经常"
+       },
+       {
+        "value": "once",
+        "label": "只一次"
+       }
+      ]
+     },
+     {
+      "id": "sev",
+      "type": "single",
+      "label": "影响",
+      "options": [
+       {
+        "value": "block",
+        "label": "完全用不了"
+       },
+       {
+        "value": "work",
+        "label": "能绕过去"
+       },
+       {
+        "value": "cosmetic",
+        "label": "只是不好看"
+       }
+      ]
+     },
+     {
+      "id": "when",
+      "type": "datetime",
+      "label": "最近一次发生在"
+     },
+     {
+      "id": "device",
+      "type": "dropdown",
+      "label": "在哪台设备上",
+      "options": [
+       {
+        "value": "iphone",
+        "label": "iPhone"
+       },
+       {
+        "value": "android",
+        "label": "安卓手机"
+       },
+       {
+        "value": "ipad",
+        "label": "iPad / 平板"
+       },
+       {
+        "value": "mac",
+        "label": "Mac"
+       },
+       {
+        "value": "windows",
+        "label": "Windows 电脑"
+       },
+       {
+        "value": "linux",
+        "label": "Linux"
+       }
+      ]
+     }
+    ],
+    "title": "多严重"
+   },
+   {
+    "id": "proof",
+    "questions": [
+     {
+      "id": "shots",
+      "type": "file",
+      "label": "截图、录屏或语音说明",
+      "accept": [
+       "image",
+       "audio",
+       "video",
+       "file"
+      ],
+      "max_files": 5
+     }
+    ],
+    "title": "证据"
+   }
+  ],
+  "mode": "deep",
+  "n": 8
+ },
+ "decide-3.en": {
+  "schema": "agentj.form/v1",
+  "lang": "en",
+  "title": "Which homepage version first?",
+  "intro": "All three can ship by Friday.",
+  "sections": [
+   {
+    "id": "main",
+    "questions": [
+     {
+      "id": "choice",
+      "type": "buttons",
+      "label": "Which homepage version first?",
+      "required": true,
+      "options": [
+       {
+        "value": "a",
+        "label": "Minimal",
+        "hint": "Fastest, 2 days"
+       },
+       {
+        "value": "b",
+        "label": "With video",
+        "hint": "Converts better, 4 days"
+       },
+       {
+        "value": "c",
+        "label": "Leave it",
+        "hint": "Costs nothing, numbers stay"
+       }
+      ],
+      "rec": "a"
+     }
+    ]
+   }
+  ],
+  "mode": "light",
+  "tap": true,
+  "n": 1
+ },
+ "event-signup.en": {
+  "schema": "agentj.form/v1",
+  "lang": "en",
+  "title": "AI Product Salon · No. 12",
+  "intro": "Sat 25 Oct, 14:00 · Jing'an",
+  "sections": [
+   {
+    "id": "main",
+    "questions": [
+     {
+      "id": "mode",
+      "type": "single",
+      "label": "How will you join?",
+      "required": true,
+      "options": [
+       {
+        "value": "onsite",
+        "label": "In person"
+       },
+       {
+        "value": "online",
+        "label": "Online"
+       },
+       {
+        "value": "no",
+        "label": "Not this time"
+       }
+      ]
+     },
+     {
+      "id": "talks",
+      "type": "multi",
+      "label": "Which sessions?",
+      "options": [
+       {
+        "value": "t1",
+        "label": "Pricing AI products"
+       },
+       {
+        "value": "t2",
+        "label": "A growth post-mortem"
+       },
+       {
+        "value": "t3",
+        "label": "Compliance abroad"
+       }
+      ],
+      "min": 0,
+      "max": 3,
+      "show_if": {
+       "q": "mode",
+       "in": [
+        "onsite",
+        "online"
+       ]
+      }
+     },
+     {
+      "id": "people",
+      "type": "number",
+      "label": "How many people (including you)?",
+      "min": 1,
+      "max": 10,
+      "show_if": {
+       "q": "mode",
+       "eq": "onsite"
+      },
+      "default": 1
+     },
+     {
+      "id": "diet",
+      "type": "text",
+      "label": "Dietary needs (optional)",
+      "max_length": 120,
+      "show_if": {
+       "q": "mode",
+       "eq": "onsite"
+      }
+     }
+    ]
+   }
+  ],
+  "mode": "light",
+  "n": 4
+ },
+ "grill-startup.en": {
+  "schema": "agentj.form/v1",
+  "lang": "en",
+  "title": "Kick-off grilling · Pet-shop online booking",
+  "intro": "Each question carries my recommendation (yellow); agree and leave it. “Not sure” is always fine — it becomes an assumption to test.",
+  "sections": [
+   {
+    "id": "user",
+    "questions": [
+     {
+      "id": "who",
+      "type": "single",
+      "label": "Who are the first users?",
+      "required": true,
+      "options": [
+       {
+        "value": "u1",
+        "label": "Neighbourhood pet-shop owners"
+       },
+       {
+        "value": "u2",
+        "label": "Mobile groomers"
+       },
+       {
+        "value": "unsure",
+        "label": "Not sure"
+       }
+      ],
+      "other": true,
+      "rec": "u1"
+     },
+     {
+      "id": "now",
+      "type": "longtext",
+      "label": "How do they solve it today?",
+      "required": true,
+      "max_length": 1000
+     },
+     {
+      "id": "freq",
+      "type": "buttons",
+      "label": "How often does it hurt?",
+      "options": [
+       {
+        "value": "daily",
+        "label": "Daily"
+       },
+       {
+        "value": "weekly",
+        "label": "Weekly"
+       },
+       {
+        "value": "rare",
+        "label": "Rarely"
+       }
+      ],
+      "rec": "weekly"
+     },
+     {
+      "id": "reach",
+      "type": "single",
+      "label": "Can you reach 10 of them directly?",
+      "options": [
+       {
+        "value": "yes",
+        "label": "Yes, today"
+       },
+       {
+        "value": "some",
+        "label": "A few"
+       },
+       {
+        "value": "no",
+        "label": "No"
+       }
+      ],
+      "rec": "some"
+     }
+    ],
+    "title": "Users",
+    "intro": "Who is in pain, first."
+   },
+   {
+    "id": "value",
+    "questions": [
+     {
+      "id": "promise",
+      "type": "text",
+      "label": "In one line: what do users get?",
+      "required": true,
+      "max_length": 200
+     },
+     {
+      "id": "pain",
+      "type": "slider",
+      "label": "How much does it hurt without it?",
+      "min": 1,
+      "max": 10,
+      "step": 1,
+      "labels": [
+       "Meh",
+       "Must fix"
+      ],
+      "default": 6,
+      "rec": 7
+     },
+     {
+      "id": "alt",
+      "type": "rank",
+      "label": "Their likeliest alternatives (closest first)",
+      "options": [
+       {
+        "value": "diy",
+        "label": "DIY / spreadsheets"
+       },
+       {
+        "value": "competitor",
+        "label": "An existing product"
+       },
+       {
+        "value": "nothing",
+        "label": "Live with it"
+       }
+      ]
+     }
+    ],
+    "title": "Value"
+   },
+   {
+    "id": "money",
+    "questions": [
+     {
+      "id": "model",
+      "type": "single",
+      "label": "How does it make money?",
+      "required": true,
+      "options": [
+       {
+        "value": "sub",
+        "label": "Subscription"
+       },
+       {
+        "value": "once",
+        "label": "One-off"
+       },
+       {
+        "value": "commission",
+        "label": "Commission"
+       },
+       {
+        "value": "unsure",
+        "label": "Not sure"
+       }
+      ],
+      "other": true,
+      "rec": "sub"
+     },
+     {
+      "id": "price",
+      "type": "number",
+      "label": "First price (per month / per order)",
+      "min": 0,
+      "unit": "USD"
+     },
+     {
+      "id": "first10",
+      "type": "longtext",
+      "label": "Where do the first 10 paying users come from?",
+      "max_length": 1000
+     }
+    ],
+    "title": "Money"
+   },
+   {
+    "id": "scope",
+    "questions": [
+     {
+      "id": "core",
+      "type": "longtext",
+      "label": "The ONE thing version one does",
+      "required": true,
+      "max_length": 600
+     },
+     {
+      "id": "weeks",
+      "type": "slider",
+      "label": "Live within how many weeks?",
+      "min": 1,
+      "max": 12,
+      "step": 1,
+      "unit": "weeks",
+      "default": 4,
+      "rec": 4
+     },
+     {
+      "id": "skip",
+      "type": "multi",
+      "label": "Not in version one (tick to cut)",
+      "options": [
+       {
+        "value": "login",
+        "label": "Accounts"
+       },
+       {
+        "value": "pay",
+        "label": "Online payment"
+       },
+       {
+        "value": "app",
+        "label": "Mobile app"
+       },
+       {
+        "value": "admin",
+        "label": "Admin panel"
+       },
+       {
+        "value": "i18n",
+        "label": "Multiple languages"
+       }
+      ],
+      "min": 0,
+      "max": 5,
+      "rec": [
+       "login",
+       "app",
+       "admin",
+       "i18n"
+      ]
+     }
+    ],
+    "title": "First version"
+   },
+   {
+    "id": "risk",
+    "questions": [
+     {
+      "id": "kill",
+      "type": "longtext",
+      "label": "What would kill this?",
+      "required": true,
+      "max_length": 1000
+     },
+     {
+      "id": "test",
+      "type": "text",
+      "label": "The cheapest way to test it",
+      "max_length": 300
+     },
+     {
+      "id": "disagree",
+      "type": "longtext",
+      "label": "Which recommendation above do you actually disagree with?",
+      "hint": "Agreeing with everything usually means not thinking yet — pick one.",
+      "max_length": 600
+     },
+     {
+      "id": "proof",
+      "type": "file",
+      "label": "User chat screenshots, recordings or research (optional)",
+      "accept": [
+       "image",
+       "audio",
+       "file"
+      ],
+      "max_files": 5
+     }
+    ],
+    "title": "Risks"
+   }
+  ],
+  "preselect": true,
+  "mode": "deep",
+  "n": 17
+ },
+ "bug-report.en": {
+  "schema": "agentj.form/v1",
+  "lang": "en",
+  "title": "Bug · Phone approval page",
+  "sections": [
+   {
+    "id": "what",
+    "questions": [
+     {
+      "id": "steps",
+      "type": "longtext",
+      "label": "How to reproduce (one step per line)",
+      "required": true,
+      "max_length": 3000
+     },
+     {
+      "id": "expected",
+      "type": "text",
+      "label": "Expected",
+      "required": true,
+      "max_length": 300
+     },
+     {
+      "id": "actual",
+      "type": "text",
+      "label": "Actual",
+      "required": true,
+      "max_length": 300
+     }
+    ],
+    "title": "What happened"
+   },
+   {
+    "id": "how",
+    "questions": [
+     {
+      "id": "freq",
+      "type": "buttons",
+      "label": "How often?",
+      "options": [
+       {
+        "value": "always",
+        "label": "Every time"
+       },
+       {
+        "value": "often",
+        "label": "Often"
+       },
+       {
+        "value": "once",
+        "label": "Once"
+       }
+      ]
+     },
+     {
+      "id": "sev",
+      "type": "single",
+      "label": "Impact",
+      "options": [
+       {
+        "value": "block",
+        "label": "Can't use it"
+       },
+       {
+        "value": "work",
+        "label": "There's a workaround"
+       },
+       {
+        "value": "cosmetic",
+        "label": "Cosmetic"
+       }
+      ]
+     },
+     {
+      "id": "when",
+      "type": "datetime",
+      "label": "Last seen at"
+     },
+     {
+      "id": "device",
+      "type": "dropdown",
+      "label": "On which device",
+      "options": [
+       {
+        "value": "iphone",
+        "label": "iPhone"
+       },
+       {
+        "value": "android",
+        "label": "Android phone"
+       },
+       {
+        "value": "ipad",
+        "label": "iPad / tablet"
+       },
+       {
+        "value": "mac",
+        "label": "Mac"
+       },
+       {
+        "value": "windows",
+        "label": "Windows PC"
+       },
+       {
+        "value": "linux",
+        "label": "Linux"
+       }
+      ]
+     }
+    ],
+    "title": "How bad"
+   },
+   {
+    "id": "proof",
+    "questions": [
+     {
+      "id": "shots",
+      "type": "file",
+      "label": "Screenshots, a recording or a voice note",
+      "accept": [
+       "image",
+       "audio",
+       "video",
+       "file"
+      ],
+      "max_files": 5
+     }
+    ],
+    "title": "Evidence"
+   }
+  ],
+  "mode": "deep",
+  "n": 8
+ }
+}

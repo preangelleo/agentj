@@ -23,7 +23,8 @@ class ReadMark:
     @staticmethod
     def visible(turn) -> bool:
         text = (turn or {}).get("reply", {}).get("text", "")
-        return isinstance(text, str) and bool(text.strip()) and text.strip() != "〔不回群〕"
+        from .silent import is_silent
+        return (turn or {}).get("silent") is not True and isinstance(text, str) and bool(text.strip()) and not is_silent(text)
 
     def seed(self, hist) -> None:
         """P321: everything already in the history counts as read; a failed write keeps it for this run only."""

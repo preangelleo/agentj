@@ -291,13 +291,18 @@ def selection(c, model=None, write=False):
     st=State()
     result=ctl_call(st,{'cmd':'provider_model','kind':c['harness'],'write':write,'model':model},10)
     if result is not None:
-        if not result.get('ok'):raise ProviderError('host_provider_selection_unavailable')
-        return result
+        if not result.get('ok'):raise ProviderError('host_provider_selection_unavailable: '+str(result.get('error','unknown')))
+        return {**result, 'running': True}
     cfg=st.agent_config() or {}
     applicable=cfg.get('kind')==c['harness']
     previous=cfg.get('model')
-    if applicable and write:st.set_agent_model(model)
-    return {'ok':True,'applicable':applicable,'model':previous}
+    if model is not None and c['harness'] == 'opencode':
+        from .opencode_provider import validate_model
+        from .provider_runtime import configured
+        validate_model(model, configured())
+    if applicable and write and not st.set_agent_model(model, expected=cfg):
+        raise ProviderError('agent_model_changed')
+    return {'ok':True,'applicable':applicable,'model':previous,'running':False}
 
 
 def use(pid, verify=probe):
@@ -379,7 +384,11 @@ def execute(spec):
     except Exception as e:
         reason=str(e) if isinstance(e,ProviderError) else type(e).__name__
         band=e.key_length_hint if isinstance(e,ProbeError) else None
-        return {'ok':False,'reason':reason,**({'key_length_hint':band,**key_hint_text(band)} if band else {})}
+        from .startup_help import category, domestic_note
+        failure = category(reason)
+        return {'ok':False,'reason':reason,'failure_category':failure,
+                **({'help':domestic_note()} if failure in ('network','region') else {}),
+                **({'key_length_hint':band,**key_hint_text(band)} if band else {})}
 
 
 def command(args):

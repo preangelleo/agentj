@@ -5,7 +5,7 @@ import vm from 'node:vm';
 const src=readFileSync(new URL('../public/js/relay.js',import.meta.url),'utf8');
 const block=src.slice(src.indexOf('function asrBlock(a){'),src.indexOf('function setOm(open){'));
 function render(a){
-  const context={document:{createElement(tag){return {tag,children:[],style:{},textContent:'',append(...nodes){this.children.push(...nodes)},appendChild(node){this.children.push(node)}}}},t:key=>({'asr440.local_fallback':'Recovered locally','p363.asrTitle':'Transcript','p363.asrFailTitle':'Transcription failed'}[key]||key),asrWhy:()=>''};
+  const context={document:{createElement(tag){return {tag,children:[],style:{},textContent:'',attributes:{},setAttribute(k,v){this.attributes[k]=String(v)},append(...nodes){this.children.push(...nodes)},appendChild(node){this.children.push(node)}}}},t:key=>({'asr440.local_fallback':'Recovered locally','p363.asrTitle':'Transcript','p363.asrFailTitle':'Transcription failed'}[key]||key),asrWhy:()=>''};
   vm.createContext(context);vm.runInContext(block,context);return context.asrBlock(a);
 }
 test('long voice recovery notice remains in the always-visible transcript summary',()=>{

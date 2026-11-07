@@ -23,11 +23,11 @@ try {
  await page.waitForFunction(()=>document.getElementById('five-menu')?.hidden===false);
  await page.waitForFunction(()=>document.getElementById('orb').classList.contains('father-dance'));
  const style=await page.evaluate(()=>{const c=getComputedStyle(document.getElementById('orb'));return {name:c.animationName,dur:c.animationDuration,tr:c.transitionDuration};});
- assert.equal(style.name,'father-dance');assert.equal(style.dur,'2.4s');
+ assert.equal(style.name,'aj-header-father-dance');assert.equal(style.dur,'2.4s');
  assert.ok(style.tr.split(',').every(x=>parseFloat(x)===0),'no background transition while dancing: '+style.tr);
  // pause the dance and read the drawn position at many points inside each frame (away from the 0.024 ms seams)
  const sample=()=>page.evaluate(async(FRAME)=>{
-   const a=document.getAnimations().find(x=>x.animationName==='father-dance');a.pause();const o=document.getElementById('orb');const r=[];
+   const a=document.getAnimations().find(x=>x.animationName==='aj-header-father-dance');a.pause();const o=document.getElementById('orb');const r=[];
    for(let i=0;i<12;i++)for(const f of [0.02,0.25,0.5,0.75,0.98]){a.currentTime=(i+f)*FRAME*1000;r.push([i,f,parseFloat(getComputedStyle(o).backgroundPositionX)]);}
    a.play();return r;},FRAME);
  for(const [mode,setup] of [['css',null],['linear',()=>page.addStyleTag({content:'#orb.father-dance{animation-timing-function:linear!important}'})]]){
@@ -36,7 +36,7 @@ try {
    console.log(`P342 dance ${mode}: 12 frames × 5 points, whole 32px frames`);
  }
  // pixels: within a frame the robot does not move; frame captures for the report
- const shot=async(t)=>{await page.evaluate((t)=>{const a=document.getAnimations().find(x=>x.animationName==='father-dance');a.pause();a.currentTime=t;},t);return page.locator('#orb').screenshot();};
+ const shot=async(t)=>{await page.evaluate((t)=>{const a=document.getAnimations().find(x=>x.animationName==='aj-header-father-dance');a.pause();a.currentTime=t;},t);return page.locator('#orb').screenshot();};
  const frames=[];
  for(let i=0;i<12;i++){
    const [a,b,c]=[await shot((i+0.05)*FRAME*1000),await shot((i+0.5)*FRAME*1000),await shot((i+0.95)*FRAME*1000)];
@@ -44,7 +44,7 @@ try {
    frames.push(b);
  }
  assert.ok(new Set(frames.map(f=>f.toString('base64'))).size>=6,'the 12 frames are different poses');
- await page.evaluate(()=>document.getAnimations().find(x=>x.animationName==='father-dance')?.play());
+ await page.evaluate(()=>document.getAnimations().find(x=>x.animationName==='aj-header-father-dance')?.play());
  await page.screenshot({path:new URL('dance-webkit-menu.png',out).pathname});
  assert.deepEqual(errors,[]);
  await ctx.close();console.log('P342 dance WebKit PASS');

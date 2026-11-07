@@ -454,11 +454,13 @@ def _rmtree_at(dfd: int, name: str, depth: int = 0) -> None:
         os.rmdir(name, dir_fd=dfd)
 
 
-def commit_codex(root, iid: str, name, lang: str = "zh") -> dict:
+def commit_codex(root, iid: str, name, lang: str = "zh", *, bound_live=None) -> dict:
     """After the slot's login and live check: register it. Same ChatGPT account as one already here → refused (two
     slots of one account would invalidate each other's rotating refresh token)."""
     with _locked(root):
         try:
+            if bound_live is not None and not bound_live():
+                raise AccountError("cancelled")
             n = check_new(root, "codex", name, lang)
             fd = _open_dir(root, (DIR, "codex", iid), create=False)
             try:
@@ -479,8 +481,58 @@ def commit_codex(root, iid: str, name, lang: str = "zh") -> dict:
         item = {"id": iid, "name": n, "method": "device", "added": int(time.time()), "last_quota": None,
                 **({"fp": fp} if fp else {})}
         d["harness"]["codex"]["items"].append(item)
+        if bound_live is not None and not bound_live():
+            raise AccountError("cancelled")
         _save(root, d)
     return public(item)
+
+
+def renew_from_isolated_slot(root, iid: str, *, expected_active, expected_switched, bound_live) -> dict | None:
+    """Explicit owned renewal only. Different known FP returns None for ordinary registration.
+
+    Keep the switch generation: identity/selection did not change. The caller must
+    still check its binding after awaiting this operation; no other binding is adopted.
+    No nested lock, OAuth parsing outside this boundary, or duplicate registration.
+    """
+    with _locked(root):
+        d = load(root)
+        def guard():
+            current = load(root)["harness"]["codex"]
+            return (callable(bound_live) and bound_live() and current.get("active") == expected_active
+                    and current.get("switched") == expected_switched)
+        if not guard():
+            raise AccountError("cancelled")
+        it = find(d, "codex", expected_active)
+        if not isinstance(iid, str) or not ID_RE.fullmatch(iid) or find(d, "codex", iid):
+            raise AccountError("not_found")
+        fd = _open_dir(root, (DIR, "codex", iid), create=False)
+        try:
+            data = _read_at(fd, "auth.json")
+        finally:
+            os.close(fd)
+        fp = codex_fp(data)
+        if not fp:
+            raise AccountError("slot_missing")
+        unregistered = it is None
+        if unregistered:
+            # Ordinary single-account installs need not have opened Accounts.
+            # Keep that registry absent/empty; use the isolated slot only as the
+            # guarded temporary second copy through the existing switch writer.
+            hd = d["harness"]["codex"]
+            if expected_active is not None or hd["items"]:
+                raise AccountError("not_found")
+            native_fp = codex_fp(_codex_current(codex_home()))
+            if not native_fp:
+                raise AccountError("unsupported_store")
+            it = {"id": iid, "name": "Codex", "fp": native_fp}
+        if not it.get("fp"):
+            raise AccountError("slot_missing")
+        if fp != it["fp"]:
+            return None
+        result = _switch_codex(root, d, it, it, bound_live=guard, renewal_data=data)
+        if not result.get("ok"):
+            raise AccountError(result["why"])
+        return {"ok": True, "renewed": True, "name": it["name"], "id": None if unregistered else it["id"]}
 
 
 def on_rescue_token(root, tok) -> None:
@@ -498,6 +550,33 @@ def on_rescue_token(root, tok) -> None:
             os.close(fd)
         it["method"], it["minted"] = "token", time.strftime("%Y-%m-%d")
         _save(root, d)
+
+
+def on_codex_rescue(root) -> bool:
+    """Only after our official login + successful live check. Refresh its matching registered slot.
+
+    Ordinary switch never trusts a changed live JWT to select a different outgoing slot (F2).
+    Unknown identities are not assigned to an existing account or automatically registered.
+    """
+    with _locked(root):
+        d = load(root)
+        hd = d["harness"]["codex"]
+        if not hd["items"]:
+            return False
+        cur = _codex_current(codex_home())
+        fp = codex_fp(cur)
+        matches = [i for i in hd["items"] if fp and i.get("fp") == fp]
+        if len(matches) != 1:
+            return False
+        it = matches[0]
+        fd = _open_dir(root, (DIR, "codex", it["id"]), create=False)
+        try:
+            _write_at(fd, "auth.json", cur)
+        finally:
+            os.close(fd)
+        hd["active"], hd["switched"] = it["id"], round(time.time(), 3)
+        _save(root, d)
+    return True
 
 
 # ------------------------------------------------------------------ quota per account
@@ -522,12 +601,22 @@ def view(root) -> dict:
     """The phone's / CLI's list: no token, no path, no fingerprint."""
     d = load(root)
     out = {}
+    from . import codex_reset_credits
+    native = codex_reset_credits.read_accounts(root, d["harness"])
     for h in HARNESSES:
         hd = d["harness"][h]
         rows = []
         for it in hd["items"]:
             q = snapshot(root, h, hd.get("switched")) if it["id"] == hd["active"] else it.get("last_quota")
-            rows.append(public(it, q))
+            row = public(it, q)
+            if h == "codex":
+                result = native.get(it["id"]) or {}
+                row["reset_credits"] = result.get("reset_credits", codex_reset_credits.unknown())
+                reading = result.get("reading")
+                if reading:
+                    row["quota"] = {"pct": reading["used_pct"], "window": "week", "at": reading["source_at"],
+                                    "reset_at": reading["reset_at"], "source": "app_server"}
+            rows.append(row)
         out[h] = {"active": hd["active"], "items": rows}
     try:
         from . import auth_rescue
@@ -566,6 +655,13 @@ def switch_sync(root, h: str, ref) -> dict:
             return {"ok": False, "why": "not_found"}
         hd = d["harness"][h]
         if hd["active"] == it["id"]:
+            if h == "codex":
+                cur = _codex_current(codex_home())
+                if _codex_unsupported(codex_home(), cur is not None):
+                    return {"ok": False, "why": "unsupported_store"}
+                fp = codex_fp(cur)
+                if not fp or fp != it.get("fp"):
+                    return {"ok": False, "why": "unregistered_login"}
             return {"ok": True, "same": True, "to": it["id"], "name": it["name"]}
         old = next((i for i in hd["items"] if i["id"] == hd["active"]), None)
         snap = snapshot(root, h, hd.get("switched"))
@@ -633,7 +729,7 @@ def _switch_claude(root, it: dict) -> dict:
     return {"ok": True}
 
 
-def _switch_codex(root, d: dict, it: dict, old: dict | None) -> dict:
+def _switch_codex(root, d: dict, it: dict, old: dict | None, *, bound_live=None, renewal_data=None) -> dict:
     home = codex_home()
     try:
         hfd = os.open(str(home), os.O_RDONLY | os.O_DIRECTORY)
@@ -644,6 +740,43 @@ def _switch_codex(root, d: dict, it: dict, old: dict | None) -> dict:
         cur = _read_at(hfd, "auth.json")
         if _codex_unsupported(home, cur is not None):
             return {"ok": False, "why": "unsupported_store"}
+        def guard():
+            if bound_live is not None and not bound_live():
+                raise AccountError("cancelled")
+        if renewal_data is not None:
+            if not callable(bound_live):
+                raise AccountError("cancelled")
+            # Same account only, with both original copies present. Never save the
+            # outgoing native copy over the newly renewed credential.
+            fp = it.get("fp")
+            if old is not it or not fp or codex_fp(cur) != fp or codex_fp(renewal_data) != fp:
+                return {"ok": False, "why": "unregistered_login"}
+            sfd = _open_dir(root, (DIR, "codex", it["id"]), create=False)
+            try:
+                previous = _read_at(sfd, "auth.json")
+                if codex_fp(previous) != fp:
+                    return {"ok": False, "why": "slot_missing"}
+                guard()
+                _write_at(hfd, "auth.json", renewal_data)
+                written = os.stat("auth.json", dir_fd=hfd, follow_symlinks=False)
+                version = lambda st: (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+                try:
+                    guard()
+                    _write_at(sfd, "auth.json", renewal_data)
+                except BaseException:
+                    # Only compensate our own still-current write. Another writer's
+                    # replacement (even identical bytes) is never rolled back.
+                    try:
+                        current = os.stat("auth.json", dir_fd=hfd, follow_symlinks=False)
+                        ours = version(current) == version(written) and _read_at(hfd, "auth.json") == renewal_data
+                    except OSError:
+                        ours = False
+                    if ours:
+                        _write_at(hfd, "auth.json", cur)
+                    raise
+            finally:
+                os.close(sfd)
+            return {"ok": True}
         if cur:
             # F2: the rotated live copy goes back only into the outgoing slot, only when it is that account's
             fp, ofp = codex_fp(cur), (old or {}).get("fp")
@@ -651,6 +784,7 @@ def _switch_codex(root, d: dict, it: dict, old: dict | None) -> dict:
                 return {"ok": False, "why": "unregistered_login"}
             sfd = _open_dir(root, (DIR, "codex", old["id"]))
             try:
+                guard()
                 _write_at(sfd, "auth.json", cur)
             finally:
                 os.close(sfd)
@@ -662,6 +796,7 @@ def _switch_codex(root, d: dict, it: dict, old: dict | None) -> dict:
             os.close(sfd)
         if not data:
             return {"ok": False, "why": "slot_missing"}
+        guard()
         _write_at(hfd, "auth.json", data)
         data = None
         return {"ok": True}
@@ -714,16 +849,16 @@ def remove_sync(root, h: str, ref) -> dict:
 # ------------------------------------------------------------------ serve side (phone wire + heartbeat.sock)
 WHY = {"zh": {"not_found": "没有这个账号", "conflict": "环境里有优先级更高的凭据：{n}（先去掉它）", "active": "这是正在用的账号，先切到别的再删",
               "slot_missing": "这个账号的凭据不见了，请删掉后重新登记", "unsupported_store": "Codex 把登录存在系统钥匙串里，多账号切换暂不支持",
-              "unregistered_login": "Codex 当前登录的账号没有登记过，先把它登记一下再切换（agentj account add codex <名字>）",
+              "unregistered_login": "Codex 当前登录与登记的在用账号不一致。先到 AI 登录救援重新登录已登记的账号，再切换",
               "bad_name": "名字 1–24 个字", "name_taken": "这个名字已经有了", "full": "每个 AI 最多 8 个账号",
-              "same_account": "这是已经登记过的同一个 Codex 账号", "io": "写入失败", "untrusted_turn": "这条消息不是主人发的，不能改账号",
+              "same_account": "你刚登录的是已登记的 Codex 账号。请在授权网页切换到要新增的另一个 ChatGPT 账号，再添加", "io": "写入失败", "untrusted_turn": "这条消息不是主人发的，不能改账号",
               "denied": "主人没有同意", "serve_not_running": "Agent J 没在运行", "unsupported": "不支持", "unsafe": "账号文件夹不安全（符号链接 / 权限）"},
        "en": {"not_found": "no such account", "conflict": "a higher-priority credential is set: {n} (remove it first)",
               "active": "this account is in use — switch to another one first", "slot_missing": "this account's credential is gone; remove and add it again",
               "unsupported_store": "Codex keeps its login in the system keyring; switching accounts is not supported there",
-              "unregistered_login": "the Codex login in use was never added; add it first (agentj account add codex <name>)",
+              "unregistered_login": "The current Codex login differs from the registered account in use. Use AI login rescue to sign in to a saved account, then switch again",
               "bad_name": "names are 1–24 characters", "name_taken": "that name is taken", "full": "at most 8 accounts per AI",
-              "same_account": "that Codex account is already added", "io": "could not write", "untrusted_turn": "not the owner's message: accounts unchanged",
+              "same_account": "The ChatGPT account you just signed in to is already added. Switch to the other ChatGPT account on the authorization page, then add it again", "io": "could not write", "untrusted_turn": "not the owner's message: accounts unchanged",
               "denied": "the owner did not allow it", "serve_not_running": "Agent J is not running", "unsupported": "unsupported",
               "unsafe": "the accounts folder is unsafe (symlink / permissions)"}}
 
@@ -748,7 +883,11 @@ async def use(host, h: str, ref, device=None, untrusted=False) -> dict:
         res = {"ok": False, "why": e.args[0]}
     except OSError:
         res = {"ok": False, "why": "io"}
-    if not res.get("ok") or res.get("same"):
+    if not res.get("ok"):
+        with contextlib.suppress(Exception):
+            host.st.log("account", harness=h, op="use", device=device, status="failed", reason=res.get("why"))
+        return res
+    if res.get("same"):
         return res
     _log(host, h, "use", device, res.get("name", ""), "untrusted" if untrusted else None)
     a = getattr(host, "agent", None)
@@ -810,7 +949,7 @@ def remove_summary(h: str, name: str, lang: str) -> str:
 async def confirm_card(host, h: str, name: str) -> bool:
     lang = "en" if getattr(host, "lang", "zh") == "en" else "zh"
     try:
-        res = await host.ask("AuthRescue", {"summary": remove_summary(h, name, lang)}, batch=False, always_ask=True)
+        res = await host.ask("AuthRescue", {"summary": remove_summary(h, name, lang)}, batch=False, always_ask=True, _host_card=True)
     except Exception:  # noqa: BLE001
         return False
     return isinstance(res, dict) and res.get("behavior") == "allow"

@@ -182,8 +182,10 @@ async function onFrame(s, data) {
 function rcField() { const rc = reconnectReason(); return rc ? { rc } : {}; }
 
 function readCaps(m) {
+  peer.recoveryStall = m.recovery_stall || null;
   peer.wfresume1 = Array.isArray(m.caps) && m.caps.includes('wfresume1');
   peer.friendreport1 = Array.isArray(m.caps) && m.caps.includes('friendreport1');
+  peer.privatefiles1 = Array.isArray(m.caps) && m.caps.includes('privatefiles1');
   peer.mailuv1 = Array.isArray(m.caps) && m.caps.includes('mailuv1');
   peer.wf1 = Array.isArray(m.caps) && m.caps.includes('wf1');
   peer.jpalette1 = Array.isArray(m.caps) && m.caps.includes('jpalette1'); // P420 global palette library
@@ -211,6 +213,7 @@ function readCaps(m) {
   peer.upg1 = peer.p33 && Array.isArray(m.caps) && m.caps.includes('upg1');     // P203 (§29.2): upgrade impact + card
   peer.mq = peer.p33 && Array.isArray(m.caps) && m.caps.includes('mq5');        // P286 (§10.6): ≤ 5 quotes in one say
   peer.ss = peer.p33 && Array.isArray(m.caps) && m.caps.includes('ss1');        // P398 (§10.2): answers say_sync
+  peer.assist_term1 = peer.p33 && Array.isArray(m.caps) && m.caps.includes('assist_term1');
   peer.assist1 = peer.p33 && Array.isArray(m.caps) && m.caps.includes('assist1');   // 0.26.9 #468 (§B2): official remote assist (js/assist.js)
   Object.assign(peer, hostKind(m));                   // P287: what the offline line says if this computer goes away
   peer.rescue = m.mode === 'rescue';                  // P332 (§33): the rescue watchdog answers instead of Agent J

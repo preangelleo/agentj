@@ -57,11 +57,11 @@ export function fillText(node, str) {
     const part = document.createDocumentFragment(); let at = 0;
     for (const m of p.matchAll(/https:\/\/(?:m\.)?agentj\.app\/[A-Za-z0-9_/?#=&.%:-]*/g)) {
       part.append(document.createTextNode(p.slice(at, m.index)));
-      const a = document.createElement('a'); a.className = 'hint__link'; a.href = m[0]; a.textContent = m[0];
+      const a = document.createElement('a'); a.setAttribute('data-aj-owner', 'aj-prose'); a.className = 'hint__link'; a.href = m[0]; a.textContent = m[0];
       a.target = '_blank'; a.rel = 'noopener noreferrer'; part.append(a); at = m.index + m[0].length;
     }
     part.append(document.createTextNode(p.slice(at))); return part;
-  } const c = document.createElement('code'); c.textContent = p; return copyable(c, { label: 'set.copy' }); }));
+  } const c = document.createElement('code'); c.setAttribute('data-aj-owner','aj-prose'); c.textContent = p; return copyable(c, { label: 'set.copy' }); }));
 }
 /** Static markup: [data-i18n] text and [data-i18n-attr] attributes. */
 export function applyStatic(root = document) {

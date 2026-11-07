@@ -26,8 +26,10 @@ import platform
 import re
 import secrets
 import shutil
+import signal
 import subprocess
 import time
+from types import SimpleNamespace as NS
 
 from . import controls, wire
 from .text import pick
@@ -90,6 +92,44 @@ HEAL = {   # 0269: end_turn / takeover — (run, ok) and the failures
     "fail": ("还没恢复，请再点一次「接管卡住的会话」，或试「请 Agent J Father 远程帮忙」。",
              "Not recovered yet; tap Take over again, or try Ask Agent J Father for remote help."),
 }
+
+
+# 0.26.10 #484 (ADR-0269-w5-rescue): every repair button first does what /stop does (serve.stop_turn: the adapter's own
+# interrupt, then only the process Agent J started), and its last line says what is still wrong when no button can fix it.
+UNSTICK = {
+    "run": ("正在停下卡住的这一轮（和 /stop 一样）…", "Stopping the stuck turn (same as /stop)…"),
+    "ok": ("卡住的这一轮已停下，排队的消息会接着发给 AI。", "The stuck turn is stopped; queued messages go on to the AI."),
+    "interrupted": ("这一轮已按「停下」结束（AI 自己收了尾），排队的消息会接着发。",
+                    "The turn ended on the stop request (the AI wrapped up itself); queued messages go on."),
+    "children": ("这一轮卡在一个停不下来的命令上，Agent J 只结束了那个命令，这一轮已收尾，排队的消息会接着发。",
+                 "The turn was stuck on a command that would not stop; Agent J ended only that command, the turn wrapped "
+                 "up, and queued messages go on."),
+    "released": ("Agent J 主机上 Codex 的那一轮早就不动了（很久没有任何进展，也没在等批准），不再等它，您的消息接着发。",
+                 "The Codex turn on the Agent J host had made no progress for a long time and was not waiting for an approval; "
+                 "Agent J stopped waiting for it and your message goes on."),
+    "desktop_live": ("Agent J 主机上您自己打开的 Codex（终端或桌面版）正在跑一轮，Agent J 不会关掉它。等它跑完，或在 Agent J 主机上"
+                     "按 Esc 停下、关掉那个 codex 终端，您的消息就会发出。",
+                     "Codex that you opened yourself on the Agent J host (terminal or desktop app) is running a turn; Agent J "
+                     "never closes it. When it finishes, or after you press Esc there or close that codex terminal, your "
+                     "message goes out."),
+    "fail": ("这一轮没停下来。请点「接管卡住的会话」。", "The turn did not stop. Tap Take over the stuck session."),
+}
+QUOTA = {   # the AI service says no: no button here changes that (#484: never promise it)
+    "rate_limit": ("连接和 AI 会话都正常，但 {name} 的用量额度用完了，重置和重开都帮不了。{when}也可以点顶部的模型名换一个模型。",
+                   "The connection and the AI session are fine, but {name}'s usage limit is used up; resetting or reopening "
+                   "cannot change that. {when}You can also tap the model name at the top to pick another model."),
+    "balance": ("连接和 AI 会话都正常，但 {name} 的余额或额度不够了，重置和重开都帮不了。充值后重发，或点顶部的模型名换一个模型。",
+                "The connection and the AI session are fine, but {name}'s balance or credit has run out; resetting or "
+                "reopening cannot change that. Top up and resend, or tap the model name at the top to pick another model."),
+    "when_at": ("额度 {at} 恢复，到时 Agent J 会自动接着做。", "It resets at {at}, and Agent J then continues by itself. "),
+    "when": ("等额度恢复后重发。", "Resend after it resets. "),
+}
+NOACK = ("Codex 没有接收新消息（它的后台程序对新的一轮没有任何回应）。Agent J 已关掉自己启动的那个 Codex 后台程序，下一条消息会换一个新的。",
+         "Codex did not take the new message (its background program never answered the new turn). Agent J closed the Codex "
+         "background program it had started; the next message gets a new one.")
+NOACK_NEXT = ("如果下一条还是这样，在 Agent J 主机终端运行 agentj doctor。", "If the next one does the same, run agentj doctor on the Agent J host.")
+UNSTICK_WAIT = 3.0       # s for the turn to end after the /stop step (the adapter's halt already waited for its process)
+SOFT_WAIT = 5.0          # s for the harness to end the turn itself after its soft interrupt / after its tool children ended
 
 
 def clean_offer(offer) -> list:
@@ -264,6 +304,192 @@ async def new_session(host) -> dict:
     return {"ok": True, **({"old_session": old} if old else {})}
 
 
+def _desktop_waiting(a) -> bool:
+    return bool(getattr(a, "desktop_wait", False)) and not getattr(a, "phone_turn", False) and hasattr(a, "release_stuck")
+
+
+async def desktop_dead(a) -> bool | None:
+    """The shared-Codex desktop turn a phone message waits behind is dead (turn_heal.desktop_stuck); None = cannot say."""
+    from . import turn_heal
+    path = getattr(a, "wait_path", None) or getattr(a, "rollout", None)
+    if path is None:
+        return None
+    sid = getattr(a, "wait_sid", None) or getattr(a, "rollout_sid", None) or (getattr(a, "cfg", None) or {}).get("shared_session_id")
+    own = getattr(a, "_own_pids", lambda: ())()
+    try:
+        return bool(await asyncio.to_thread(turn_heal.desktop_stuck, path, own, sid))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+async def unstick(h, device, sleep=asyncio.sleep, clock=time.monotonic) -> dict:
+    """#484: before a repair step, do what /stop does — never wait behind the running turn. → {"ran": bool, "how"?, "ok"?,
+    "why"?}. A phone message waiting behind a dead desktop turn (shared Codex) is let through (release_stuck, L-6 kept by
+    wait_desktop); a live desktop turn in the owner's own Codex is never touched ("desktop_live"); our own turn → serve's
+    stop_turn (the adapter's interrupt, then only the process Agent J started); still busy → turn_heal takeover."""
+    a = getattr(h, "agent", None)
+    if a is None:
+        return {"ran": False}
+    if _desktop_waiting(a):
+        dead = await desktop_dead(a)
+        if not dead:
+            h.st.log("rescue_unstick", agent=a.kind, result="desktop_live")
+            return {"ran": True, "ok": False, "why": "desktop_live"}
+        a.release_stuck()
+        end = clock() + 10
+        while getattr(a, "desktop_wait", False) and clock() < end:
+            await sleep(0.2)
+        h.st.log("rescue_unstick", agent=a.kind, result="released")
+        return {"ran": True, "ok": True, "how": "released"}
+    if getattr(a, "status", None) not in ("working", "compacting"):
+        return {"ran": False}
+    heal = getattr(h, "turn_heal", None)
+    ends0 = getattr(heal, "ends", 0)
+
+    def ended():
+        b = getattr(h, "agent", None)
+        return b is not a or getattr(heal, "ends", 0) != ends0 or getattr(a, "status", None) not in ("working", "compacting")
+
+    async def settle(secs):
+        end = clock() + secs
+        while not ended() and clock() < end:
+            await sleep(0.1)
+        return ended()
+
+    from .agent import Agent
+    if type(a).halt is Agent.halt:
+        # RESEARCH-infinity ① (ADR-0269-w5-rescue): ① the harness's own soft interrupt (Codex turn/interrupt, Claude control
+        # interrupt) — it counts only when the harness itself ends the turn (turn_done is never forced here);
+        # ② only that turn's tool children (started by its harness after the turn began, ours by the parent chain);
+        # ③ /stop: the app-server / process Agent J started. The next message resumes the same conversation.
+        with contextlib.suppress(Exception):
+            await a.interrupt_request(getattr(a, "proc", None))
+        if await settle(SOFT_WAIT):
+            h.st.log("rescue_unstick", agent=a.kind, result="interrupted")
+            return {"ran": True, "ok": True, "how": "interrupted"}
+        if await _stop_turn_children(h, a) and await settle(SOFT_WAIT):
+            h.st.log("rescue_unstick", agent=a.kind, result="children")
+            return {"ran": True, "ok": True, "how": "children"}
+    await h.stop_turn(device or "owner", answered=True)          # exactly /stop (serve.stop_turn)
+    if await settle(UNSTICK_WAIT):
+        h.st.log("rescue_unstick", agent=a.kind, result="stopped")
+        return {"ran": True, "ok": True, "how": "stopped"}
+    if heal is None:
+        return {"ran": True, "ok": False, "why": "not_stopped"}
+    res = await heal.heal(device or "owner", None, action="takeover")
+    h.st.log("rescue_unstick", agent=a.kind, result="takeover_" + ("ok" if res.get("ok") else str(res.get("why") or "failed")))
+    if res.get("ok") or ended():
+        return {"ran": True, "ok": True, "how": "takeover"}
+    return {"ran": True, "ok": False, "why": res.get("why") or "not_stopped"}
+
+
+async def _stop_turn_children(h, a) -> int:
+    """SIGTERM the running turn's tool children only (turn_heal.turn_children of the harness Agent J started, each checked by
+    may_stop and re-checked by signal_same) → how many were signalled. Never the harness itself, never a foreign process."""
+    from . import turn_heal
+    p = getattr(a, "proc", None)
+    if p is None or getattr(p, "returncode", 0) is not None:
+        return 0
+    if not getattr(h, "turn_t0", None):
+        return 0      # security #484 note 1: no known turn start → 「this turn's children」 would include older background work
+    try:
+        rows = await asyncio.to_thread(turn_heal.proc_rows)
+        since = turn_heal.TurnHeal._turn_t0(NS(h=h))
+        n = 0
+        for pid in turn_heal.turn_children([p.pid], since, rows):
+            start = (rows.get(pid) or (None, None))[1]
+            if not isinstance(start, (int, float)) or start < since:
+                continue  # Unknown or pre-turn children are never repair targets.
+            if turn_heal.may_stop(h.st, pid, rows=rows) and turn_heal.signal_same(pid, rows.get(pid), signal.SIGTERM):
+                n += 1
+        return n
+    except Exception:  # noqa: BLE001 — falls through to the /stop step
+        return 0
+
+
+def quota_state(h) -> dict | None:
+    """The last turn ended on the AI service's limit (auth_rescue's classified signal, set during or after that turn's
+    start) → {"cls", "name", "at"?}; None otherwise."""
+    a = getattr(h, "agent", None)
+    ar = getattr(h, "auth_rescue", None)
+    if a is None or ar is None:
+        return None
+    rec = (getattr(ar, "state", None) or {}).get(a.kind)
+    if not isinstance(rec, dict) or rec.get("cls") not in ("rate_limit", "balance"):
+        return None
+    started = (getattr(h, "turn_at", None) or (0.0,))[0] or 0.0
+    if not isinstance(rec.get("at"), (int, float)) or rec["at"] < started - 2:
+        return None
+    from .auth_rescue import LABEL
+    out = {"cls": rec["cls"], "name": LABEL.get(a.kind, a.kind)}
+    hit = getattr(a, "limit_hit", None)
+    if isinstance(hit, dict) and isinstance(hit.get("at"), (int, float)) and hit["at"] > time.time():
+        out["at"] = hit["at"]
+    return out
+
+
+def quota_text(q: dict, lang: str) -> str:
+    when = (_t(lang, QUOTA["when_at"]).format(at=time.strftime("%H:%M", time.localtime(q["at"]))) if q.get("at")
+            else _t(lang, QUOTA["when"]))
+    return _t(lang, QUOTA[q["cls"]]).format(name=q["name"], when=when)
+
+
+def noack_text(h, lang: str) -> str | None:
+    """The adapter's last turn/start was never answered (CodexAgent.noack_at, after that turn's start) → the plain line,
+    with the Codex CLI / daemon version fix when they differ (doctor's check_codex_daemon)."""
+    a = getattr(h, "agent", None)
+    at = getattr(a, "noack_at", None)
+    started = (getattr(h, "turn_at", None) or (0.0,))[0] or 0.0
+    if not isinstance(at, (int, float)) or at < started - 2:
+        return None
+    return _t(lang, NOACK) + (" " if lang == "en" else "") + (codex_fix(h, lang) or _t(lang, NOACK_NEXT))
+
+
+def codex_fix(h, lang: str) -> str | None:
+    """doctor's check_codex_daemon fix line (the Codex CLI Agent J starts and the owner's shared daemon differ), in the
+    owner's language; None when they match or it cannot say. Read-only (one `initialize` / the release link)."""
+    with contextlib.suppress(Exception):
+        from . import doctor, service
+        row = doctor.check_codex_daemon(h.st, service.status())
+        if row and row.get("status") == doctor.WARN and row.get("hint"):
+            zh, _, en = row["hint"].partition(" / ")
+            return en if lang == "en" and en else zh
+    return None
+
+
+def unstick_key(un: dict) -> str:
+    if un.get("ok"):
+        return un["how"] if un.get("how") in ("released", "interrupted", "children") else "ok"
+    return "desktop_live" if un.get("why") == "desktop_live" else "fail"
+
+
+async def after_text(h, un: dict, text: str, lang: str) -> tuple[str, str | None]:
+    """The repair's last words: what the /stop step did, the step's own result, then what no button can fix. → (text, why).
+    why: desktop_live · foreign · not_stopped · quota · noack (None = nothing left that the owner must act on)."""
+    lines, why = [], None
+    if un.get("ran"):
+        key = unstick_key(un)
+        line = HEAL["foreign"] if un.get("why") == "foreign" else UNSTICK[key]
+        lines.append(_t(lang, line))
+        if not un.get("ok"):
+            why = "desktop_live" if un.get("why") == "desktop_live" else "foreign" if un.get("why") == "foreign" else "not_stopped"
+        if why == "desktop_live":
+            fix = await asyncio.to_thread(codex_fix, h, lang)
+            if fix:
+                lines.append(fix)
+    if text:
+        lines.append(text)
+    q = quota_state(h)
+    if q:
+        lines.append(quota_text(q, lang))
+        why = why or "quota"
+    na = await asyncio.to_thread(noack_text, h, lang)
+    if na:
+        lines.append(na)
+        why = why or "noack"
+    return "\n".join(lines), why
+
+
 class HostOps:
     """The ladder's steps against a live serve Host."""
 
@@ -394,12 +620,31 @@ class Desk:
         async def finish(res):
             await h._send_p33(lambda s: {"t": "reset_done", "r": r, "flow": flow, **res})
 
+        un = {"ran": False}
+
+        async def finish_told(res):
+            """#484: every reset / reopen result ends with what the /stop step did and what no button can fix."""
+            text, why = await after_text(h, un, res.get("text") or "", lang)
+            res = {**res, "text": text}
+            if why and why != "noack":
+                res.update(ok=False, why=why)
+            await finish(res)
+
         ops = HostOps(h, device)
         try:
             if flow == "restart_session":
                 from . import phone_restart
+                a0 = h.agent
+                release = False
+                if a0 is not None and _desktop_waiting(a0):
+                    release = bool(await desktop_dead(a0))
+                    un = {"ran": True, "ok": True, "how": "released"} if release else {"ran": True, "ok": False, "why": "desktop_live"}
+                elif a0 is not None and getattr(a0, "status", None) in ("working", "compacting"):
+                    un = {"ran": True, "ok": True, "how": "stopped"}      # the reopen ends that process: a /stop and more
                 await emit(1, "run", pick(lang, "正在重开 AI 会话…", "Reopening the AI session…"))
-                res = await phone_restart.run(h)
+                res = await phone_restart.run(h, release=release)
+                if not res.get("ok") and un.get("ran") and un.get("ok"):
+                    un = {"ran": False}
                 text = pick(lang, "AI 会话已重开，可以继续聊天，不需要到 Agent J 主机前。", "The AI session is ready. Continue chatting without going to the computer.") if res.get("ok") else pick(lang, "没能重开 AI 会话，请试「请 Agent J Father 远程帮忙」。", "Could not reopen the AI session. Try Ask Agent J Father for remote help.")
                 if res.get("new"):
                     text = pick(lang, "原会话没能恢复，已开新会话并接好手机；之前的对话保存着，不需要到 Agent J 主机前。", "The old session could not resume. A new session is connected to your phone; the old conversation is kept. No need to go to the computer.")
@@ -408,14 +653,21 @@ class Desk:
                     live = await claude_live.after_reopen(h)
                     text += ("\n" + live) if live else ""
                 await emit(1, "ok" if res.get("ok") else "fail", text)
-                await finish({**res, "step": 1, "text": text})
+                await finish_told({**res, "step": 1, "text": text})
             elif flow in ("end_turn", "takeover"):
                 await self._heal(device, flow, emit, finish, ops, lang)
             elif flow in ("reset", "reconnect", "new_session", "restart"):
-                if flow in ("reset", "new_session") and getattr(h, "turn_heal", None) is not None:
-                    await h.turn_heal.preempt(device, flow)      # 0269: never wait behind the running turn
+                if flow in ("reset", "new_session"):         # #484: what /stop does, first — never wait behind the turn
+                    a0 = h.agent
+                    if a0 is not None and (_desktop_waiting(a0) or getattr(a0, "status", None) in ("working", "compacting")):
+                        await emit(1, "run", _t(lang, UNSTICK["run"]))
+                        un = await unstick(h, device)
+                        line = HEAL["foreign"] if un.get("why") == "foreign" else UNSTICK[unstick_key(un)]
+                        await emit(1, "ok" if un.get("ok") else "fail", _t(lang, line), un.get("why"))
                 steps = {"reset": (1, 2, 3, 4), "reconnect": (1, 2), "new_session": (3,), "restart": (4,)}[flow]
-                await ladder(ops, emit, finish, lang, steps)
+                if flow == "reset" and un.get("ran") and not un.get("ok"):
+                    steps = (1, 2)      # a turn that would not stop: a new conversation / restart would not fix it either
+                await ladder(ops, emit, finish_told if flow in ("reset", "new_session") else finish, lang, steps)
             elif flow in ("linger", "rollback"):
                 await emit(1, "run", action_text_run(flow, lang))
                 res = await asyncio.to_thread(run_linger if flow == "linger" else run_rollback, h.st)

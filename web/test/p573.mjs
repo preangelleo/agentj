@@ -137,10 +137,12 @@ try {
       check(await ev(p, `!!document.querySelector('#rdWords table') && !!document.querySelector('#rdWords .codeblock') && !!document.querySelector('#rdWords a[href^="https://example.com"]')`), `${sfx}: same md.js rendering (table, code block, link)`);
       const hd = await ev(p, `(() => { const b = document.getElementById('rdfDl').getBoundingClientRect(); return { w: b.width, h: b.height, right: innerWidth - b.right, text: document.getElementById('rdfDl').textContent.replace(/[!\\s]/g, '') }; })()`);
       check(hd.w >= 44 && hd.h >= 44 && hd.right < 24 && hd.text === '', `${sfx}: 下载 is an icon (44 px target) in the top-right corner, no text`);
+      const toolbarSelection = await ev(p, `(() => { const n = document.getElementById('rdFileActs'), s = getComputedStyle(n); return { owner: n.getAttribute('data-aj-owner'), userSelect: s.userSelect, webkitUserSelect: s.webkitUserSelect }; })()`);
+      check(toolbarSelection.owner === 'aj-reader' && toolbarSelection.userSelect === 'none' && toolbarSelection.webkitUserSelect === 'none', `${sfx}: file toolbar keeps explicit reader ownership and nonselectable chrome: ${JSON.stringify(toolbarSelection)}`);
       const ids = await ev(p, `[...document.querySelectorAll('#rdFileActs .act')].filter((b) => !b.hidden).map((b) => b.id)`);
       check(ids.includes('rdfRead') && ids.includes('rdfCopy') && ids.includes('rdfReply') && ids.at(-1) === 'rdfReply', `${sfx}: footer = the reply card's icons, 回复 in the corner: ${ids}`);
       check(await ev(p, `document.getElementById('rdActs').hidden && getComputedStyle(document.getElementById('rd')).backgroundColor === getComputedStyle(document.getElementById('rd')).backgroundColor`), `${sfx}: the reply's own toolbar steps aside`);
-      check(await ev(p, `!document.querySelector('#rd button.aj-btn')`), `${sfx}: no text button in the reader`);
+      check(await ev(p, `!document.querySelector('#rd button.aj-action')`), `${sfx}: no text button in the reader`);
     }
     // 2. a new message arrives while it is open: it stays (after) — the viewer used to close (before)
     // a repaint = the words refilled: mark the rendered nodes and see that the same ones are still there (code highlighting is
@@ -315,7 +317,7 @@ try {
       }
       await sleep(500);
     };
-    // host `task_grant`: one small line above the buttons; `auto` by: 'task' = its own toast
+    // host `task_grant`: one small line above the buttons; `auto` by: 'task' = audit-only (#562)
     const tg = lang === 'en' ? 'Approving lets this task run the same kind of step again without asking.' : '批准后，本任务后面的同类步骤不再问。';
     let id = await ask({ batch: 'Bash：ls', batch_max: 20, batch_secs: 600, task_grant: tg });
     check(await ev(p, `(() => { const n = document.getElementById('apprTask'); return !!n && !n.hidden && n.textContent === ${JSON.stringify(tg)} && n.nextElementSibling === document.getElementById('apprBtns'); })()`), `${sfx} task_grant: the note above the buttons`);
@@ -337,8 +339,10 @@ try {
     await press('#apprDeny');
     check(fake.st.answers.length === n + 1 && fake.st.answers.at(-1).ok === false, `${sfx} tap: 拒绝 one tap`);
     await fake.askDone(id, 'deny'); await sleep(600);
+    await ev(p, `import('./js/ui.js').then(m=>m.toastOff())`);
     await fake.send({ t: 'auto', by: 'task', tool: 'Bash', summary: 'ls -la ~/reports' });
-    await waitFor(p, `/${lang === 'en' ? "this task's grant" : '本任务的授权'}/.test(document.body.innerText)`, 4000).then(() => check(true, ''), () => check(false, `${sfx} auto by task: the toast names the task grant`));
+    await sleep(200);
+    check(await ev(p, `!document.getElementById('toast').classList.contains('on')`), `${sfx} automatic task approval stays silent (#562)`);
     id = await ask({ batch: 'Bash：ls' });
     check(await ev(p, `!document.getElementById('apprTask') || document.getElementById('apprTask').hidden`), `${sfx} task_grant: absent = no line`);
     await fake.askDone(id, 'deny'); await sleep(600);

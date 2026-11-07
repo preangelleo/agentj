@@ -183,10 +183,11 @@ def _write(st, name: str, data: bytes) -> None:
 
 
 def blank_config() -> dict:
+    from .mail_triage import blank
     return {"enabled": False, "preset": "", "address": "", "username": "",
             "imap": {"host": "", "port": 993, "security": "ssl"}, "smtp": {"host": "", "port": 465, "security": "ssl"},
             "poll_minutes": POLL_DEFAULT, "auth": "standard", "auth_servid": "", "allow": [], "reply_per_hour": REPLY_PER_HOUR,
-            "generation": "", "mark_processed_read": True}
+            "generation": "", "mark_processed_read": True, "triage": blank()}
 
 
 def read_config(st) -> dict:
@@ -406,6 +407,8 @@ def validate(cfg) -> dict:
         allow.append({"addr": addr, "role": role, **({"name": name} if name else {}),
                       **({"subdomains": row["subdomains"]} if "subdomains" in row else {})})
     out["allow"] = allow
+    from .mail_triage import validate as validate_triage
+    out["triage"] = validate_triage(out["triage"])
     if not isinstance(out["generation"], str) or len(out["generation"]) > 64:
         raise MailError("shape")
     if out["enabled"] and not (out["address"] and out["imap"]["host"] and out["smtp"]["host"]):
@@ -438,6 +441,8 @@ def guess_preset(address: str) -> str:
 def widening(old: dict, new: dict) -> list[str]:
     """See ARCHITECTURE."""
     out = []
+    if old.get("triage") != new.get("triage"):
+        out.append("triage")
     before = {r["addr"].lower(): r["role"] for r in old.get("allow", [])}
     for r in new.get("allow", []):
         was = before.get(r["addr"].lower())
@@ -552,8 +557,38 @@ def mark(cfg: dict, kind: str) -> str:
     return f"{kind}; o=" + hashlib.sha256(b"aj:" + str(cfg.get("address", "")).lower().encode()).hexdigest()[:12]
 
 
+def signed_service_notice(msg) -> bool:
+    """Recognized owner-tapped service reply format, still untrusted until strict sender authentication.
+
+    Headers are correlation metadata, never authorization to send or execute commands.
+    Unknown/legacy Agent J formats stay closed; same-mailbox copies stay own.
+    """
+    task = str(msg.get("X-AgentJ-Task", ""))
+    return (len(msg.get_all(MARK, [])) == 1
+            and re.fullmatch(r"owner-reply-v1; o=[0-9a-f]{12}", str(msg.get(MARK, ""))) is not None
+            and len(msg.get_all("X-AgentJ-Task", [])) == 1 and re.fullmatch(r"[0-9a-f]{32}", task) is not None
+            and msg.get("X-AgentJ-Direction") == "service-to-customer"
+            and len(msg.get_all("X-AgentJ-Direction", [])) == 1
+            and msg.get("In-Reply-To") == f"<aj-task-{task}@agentj.invalid>"
+            and len(msg.get_all("In-Reply-To", [])) == 1
+            and bool(msg_id(msg)))
+
+
+def build_service_reply(cfg, to, text, request):
+    """Called only after the existing bots_write owner signature and handoff checks."""
+    task = hashlib.sha256(str(request).encode()).hexdigest()[:32]
+    msg = build_notes(cfg, to, "Customer service / 客服", text, "Agent J")
+    msg.replace_header(MARK, mark(cfg, "owner-reply-v1"))
+    msg["X-AgentJ-Task"] = task
+    msg["X-AgentJ-Direction"] = "service-to-customer"
+    msg["In-Reply-To"] = f"<aj-task-{task}@agentj.invalid>"
+    return msg
+
+
 def is_automatic(msg, cfg=None) -> str | None:
     v = str(msg.get(MARK) or "").strip()
+    if signed_service_notice(msg) and not v.endswith(mark(cfg or {}, "")):
+        return "signed_service_reply"
     if v and ("o=" not in v or v.endswith(mark(cfg or {}, "")) or str(msg.get("Auto-Submitted", "no")).strip().lower() != "no"):
         return "own"
     auto = str(msg.get("Auto-Submitted", "")).strip().lower()
@@ -612,7 +647,7 @@ def judge(msg, cfg: dict, seen: list[str], raw: bytes = b"") -> Verdict:
         return Verdict(ok=False, reason="bad", detail="from", addr=None, role=None, auth=None)
     if row is None:
         return Verdict(ok=False, reason="not_allowed", detail="", addr=addr, role=None, auth=None)
-    passed, how = authenticate(msg, addr, "strict" if row["addr"].startswith("@") else cfg["auth"], cfg.get("auth_servid") or "")
+    passed, how = authenticate(msg, addr, "strict" if why == "signed_service_reply" or row["addr"].startswith("@") else cfg["auth"], cfg.get("auth_servid") or "")
     if not passed and how == "no_results" and cfg.get("address") and _same(addr, cfg["address"]):
         how = "self"        # the mailbox wrote to itself: providers add no check results to internal mail (Gmail, real test)
     if not passed:
@@ -1356,6 +1391,8 @@ class Mail:
         self.error = None
         self.recovering = True
         self.expects: dict[str, Expect] = {}      # P206 A: waiting windows (memory only; bodies never reach a file)
+        from .mail_triage import Triage
+        self.triage = Triage(self)
         self.delivered: dict[str, tuple] = {}     # P565: id → (uidvalidity, uid) of notices handed to the Agent (trash only these)
 
     # ---------------- helpers
@@ -1409,7 +1446,7 @@ class Mail:
             self.note(L["pw_lost"].format(why=L["pw_why"][why]))
         return None
 
-    def view(self) -> dict:
+    def view(self, include_external: bool = False) -> dict:
         """See ARCHITECTURE."""
         cfg, s = read_config(self.st), read_state(self.st)
         c = s["counts"] if s["counts"].get("day") == _day() else {}
@@ -1417,7 +1454,7 @@ class Mail:
                 "password_state": secret_status(self.st, cfg["address"]) if cfg["address"] else "absent", "has_password": bool(cfg["address"]) and has_secret(self.st, cfg["address"]),
                 "last_check": s["last_check"], "last_ok": s["last_ok"], "error": s["last_error"],
                 "today": {k: v for k, v in c.items() if k != "day"}, "blocked": s["blocked"][-KEEP_BLOCKED:],
-                "auth_sample": s.get("auth_seen"), "presets": preset_list(self.lang()),
+                "auth_sample": s.get("auth_seen"), "presets": preset_list(self.lang()), "triage": self.triage.view() if include_external else self.triage.status_view(),
                 "expects": [e.public() for e in sorted(self.expects.values(), key=lambda e: e.started)][-10:]}
 
     def status_view(self) -> dict:
@@ -1425,7 +1462,7 @@ class Mail:
         return {"enabled": cfg["enabled"], "configured": bool(cfg["address"]) and has_secret(self.st, cfg["address"]),
                 "ok": s["last_error"] is None and s["last_ok"] is not None,
                 "last_check_age_s": None if not s["last_check"] else int(time.time() - s["last_check"]),
-                "allow": len(cfg["allow"]), "expect_active": sum(e.status == "waiting" for e in self.expects.values())}
+                "triage": self.triage.status_view(), "allow": len(cfg["allow"]), "expect_active": sum(e.status == "waiting" for e in self.expects.values())}
 
     # ---------------- the loop
     async def run(self) -> None:
@@ -1517,12 +1554,14 @@ class Mail:
         msg = email.message_from_bytes(raw, policy=email.policy.default)
         v = judge(msg, cfg, s["seen"], raw)
         if not v.ok:
+            if v.reason == "auto" and v.detail == "own" and msg.get(MARK):
+                self.log("service_hold", detail="系统回执、自己的副本或旧版未知格式：已保留邮件，不自动执行或回复 / Receipt, own copy or unknown legacy format retained; no automatic action or reply")
             # Own automatic mail is deliberately not delivered. Only an authenticated allowlisted sender is processed.
             row = allow_row(cfg["allow"], v.addr) if v.addr else None
             if v.reason == "auto" and row and authenticate(msg, v.addr, "strict" if row["addr"].startswith("@") else cfg["auth"], cfg.get("auth_servid") or "")[0]:
                 await self._mark_processed(cfg, s["uidvalidity"], uid, id_hash(msg_id(msg), raw[:2048]))
             return done(v.reason, v.addr, v.detail)
-        if v.role == "owner" and (why := owner_request(msg, cfg, s, v.addr)):
+        if v.role == "owner" and v.notice != "signed_service_reply" and (why := owner_request(msg, cfg, s, v.addr)):
             # Recorded no-action conclusion: no model, attachments, phone turn or reply route.
             s["seen"] = (s["seen"] + [id_hash(msg_id(msg), raw[:2048])])[-KEEP_IDS:]
             save_state(self.st, s)
@@ -1571,7 +1610,7 @@ class Mail:
         from . import inbox, provenance
         from .privacy import owner_text, redact
         from .text import clean
-        if v.role == "owner" and owner_request(msg, cfg, read_state(self.st), v.addr):
+        if v.role == "owner" and v.notice != "signed_service_reply" and owner_request(msg, cfg, read_state(self.st), v.addr):
             return False
         lang = self.lang()
         subject = decode_subject(msg)
@@ -1630,12 +1669,30 @@ class Mail:
         text = head + "\n" + provenance.body(text, source)
         # The configuration may have changed while the attachments were written: re-check before the Agent sees anything.
         now = read_config(self.st)
-        if (v.role == "owner" and owner_request(msg, now, read_state(self.st), v.addr)) or not now["enabled"] or not ((current := allow_row(now["allow"], v.addr)) and current["role"] == v.role) or (
+        if (getattr(v, "notice", None) == "signed_service_reply" and not authenticate(msg, v.addr, "strict", now.get("auth_servid") or "")[0]) or (v.role == "owner" and getattr(v, "notice", None) != "signed_service_reply" and owner_request(msg, now, read_state(self.st), v.addr)) or not now["enabled"] or not ((current := allow_row(now["allow"], v.addr)) and current["role"] == v.role) or (
                 current["addr"].startswith("@") and (v.auth not in ("dmarc", "dkim") or
                 not authenticate(msg, v.addr, "strict", now.get("auth_servid") or "")[0])):
             for p in paths:
                 inbox.unlink_placed(p)
             return False
+        # Fixed event subscriptions use the existing sender verdict and thread ancestry.
+        # No route means ordinary mail behavior is retained. Matching routes consume the
+        # event even when record-only/expired; they must not fall through to a model wake.
+        from .subscriptions import router as event_router
+        events = event_router(self.host)
+        refs = str(msg.get("References", "") or "").split() + str(msg.get("In-Reply-To", "") or "").split()
+        subscribed = [r["scope"]["thread"] for r in events.view()["routes"].values()
+                      if r["scope"]["source"] == "mail" and r["scope"]["sender"] == v.addr
+                      and r["scope"]["thread"] in refs + [msg_id(msg)]] if not notice else []
+        if subscribed and not notice:  # Existing authenticated operational/security notices keep their direct lane.
+            try:
+                event_result = await events.ingest({"source": "mail", "kind": "mail.thread", "thread": subscribed[0],
+                                     "sender": v.addr, "id": msg_id(msg), "text": text},
+                                    mail_authenticated=v.auth in VERIFIED)
+            finally:
+                for p in paths:
+                    inbox.unlink_placed(p)
+            return event_result.get("ok") is True
         from .owner_channels import mail_draw      # P562 (#336 / #337): owner mail → the drawer or the main conversation
         drawn = await mail_draw(self.host, words, subject) if v.role == "owner" and v.auth in VERIFIED and not blobs and not fwds and not notice else None
         if drawn is False:
@@ -1676,12 +1733,13 @@ class Mail:
         if str(tid) not in read_state(self.st)["routes"]:
             return
         text = (turn.get("reply") or {}).get("text", "")
-        task = asyncio.get_running_loop().create_task(self.reply(tid, text))
+        from .silent import MARKER
+        task = asyncio.get_running_loop().create_task(self.reply(tid, MARKER if turn.get("silent") is True else text))
         self.sending.add(task)
         task.add_done_callback(self.sending.discard)
 
     async def reply(self, tid, text: str) -> str:
-        from .silent import is_silent
+        from .silent import is_silent, strip_markers
         from .privacy import redact
         s = read_state(self.st)
         route = s["routes"].get(str(tid))
@@ -1703,6 +1761,7 @@ class Mail:
             return await drop("archive")
         if not text or is_silent(text):
             return await drop("silent")
+        text = strip_markers(text)
         row = allow_row(cfg["allow"], route["to"])
         if not cfg["enabled"] or row is None or route.get("gen") != cfg["generation"]:
             return await drop("not_allowed")             # only allowlisted addresses, and only the account that received it
@@ -2075,6 +2134,7 @@ class Mail:
                 s3 = read_state(self.st); s3["pw_state"] = "absent"; save_state(self.st, s3)   # noqa: E702 — asked for next
             forget_secret(self.st)
         self.wake.set()
+        self.triage.wake.set()
         return cfg
 
     async def secret_card(self, *, recover: bool = True, only: str | None = None) -> dict:

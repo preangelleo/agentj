@@ -121,7 +121,7 @@ try {
       await evaluate(p, `document.querySelector('#acct-list [data-kind=claude] .acctadd').click()`);
       await waitFor(p, `!!document.querySelector('#acct-list [data-kind=claude] .acctform input')`);
       assert.ok((await evaluate(p, `document.querySelector('#acct-list [data-kind=claude] .acctform').textContent`)).includes(s.noOver));
-      const submit = (v) => evaluate(p, `(()=>{const f=document.querySelector('#acct-list [data-kind=claude] .acctform');const i=f.querySelector('input');i.value=${JSON.stringify(v)};f.querySelector('.aj-btn--primary').click()})()`);
+      const submit = (v) => evaluate(p, `(()=>{const f=document.querySelector('#acct-list [data-kind=claude] .acctform');const i=f.querySelector('input');i.value=${JSON.stringify(v)};f.querySelector('.aj-action--primary').click()})()`);
       await submit('   ');
       await waitFor(p, `!document.querySelector('#acct-list [data-kind=claude] .acctform__err').hidden`);
       assert.ok((await evaluate(p, `document.querySelector('#acct-list .acctform__err').textContent`)).includes(s.empty));

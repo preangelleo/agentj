@@ -142,6 +142,19 @@ def _owner_host(st, sent):
     return host
 
 
+def _review_owner_host(st, sent):
+    """Legacy wire-positive cases explicitly supply a real host-held owner turn."""
+    host = _owner_host(st, sent)
+    # Current review envelopes resolve host-held native transcript origins;
+    # the actor alone is deliberately insufficient for provenance.
+    from agentj import approval_review, provenance
+    host.desktop_turn = 1
+    approval_review.remember(host, {'id': 1, 'ts': int(time.time() * 1000),
+                                   'src': {'k': 'terminal', 'text': 'Synthetic owner terminal request'}},
+                             provenance.terminal())
+    return host
+
+
 def _ready(host, phone: Phone, cid=11):
     s = serve.Session(cid=cid, provenance={"kind": "phone", "role": "owner"}, state="ready", device=phone.did, name="手机", pub=phone.pub)
     phone.policy_host = host
@@ -316,7 +329,7 @@ class Flows(unittest.TestCase):
 
     def test_signed_allow_returns_the_input_unchanged_and_is_logged(self):
         ph = Phone(self.st, with_passkey=True)  # Bash UV uses a real fixture assertion
-        host = _host(self.st, self.sent)
+        host = _review_owner_host(self.st, self.sent)
         s = _ready(host, ph)
         inp = {"command": f"echo {MARK}", "description": "d"}
 
@@ -351,7 +364,7 @@ class Flows(unittest.TestCase):
         session — none decides; the request is denied when its time is up."""
         ph = Phone(self.st)
         nokey = Phone(self.st, "旧手机", with_key=False)
-        host = _host(self.st, self.sent)
+        host = _review_owner_host(self.st, self.sent)
         s = _ready(host, ph)
         s2 = _ready(host, nokey, cid=12)
         stranger = Phone(self.st, "陌生")
@@ -416,7 +429,7 @@ class Flows(unittest.TestCase):
 
     def test_approvals_verify_detects_a_forged_line(self):
         ph = Phone(self.st, with_passkey=True)  # Bash UV uses a real fixture assertion
-        host = _host(self.st, self.sent)
+        host = _review_owner_host(self.st, self.sent)
         s = _ready(host, ph)
 
         async def script(ask):
@@ -445,9 +458,9 @@ class Flows(unittest.TestCase):
             return n
         n = asyncio.run(go())
         to_b = [o for c, o in self.sent[:n] if c == 12]
-        self.assertEqual([o["t"] for o in to_b], ["status", "estop_state", "push_key", "msg", "msg"])
-        self.assertEqual((to_b[3]["from"], to_b[3]["name"]), ("device", "A"))
-        self.assertEqual(to_b[4]["from"], "agent")
+        self.assertEqual([o["t"] for o in to_b], ["status", "call_capability", "estop_state", "push_key", "msg", "msg"])
+        self.assertEqual((to_b[4]["from"], to_b[4]["name"]), ("device", "A"))
+        self.assertEqual(to_b[5]["from"], "agent")
         to_a = [o for c, o in self.sent[n:] if c == 11]
         self.assertEqual([o.get("seq") for o in to_a if o["t"] == "msg"], [2])
         self.assertEqual(to_a[0], {"t": "status", "s": "none", "agent": None, "name": None, "goal_active": False})

@@ -418,7 +418,7 @@ class ClaudeFlow:
 
 # ------------------------------------------------------------------ Codex: device code
 class CodexFlow:
-    def __init__(self, home: Path | None = None):
+    def __init__(self, home: Path | None = None, bound_live=None):
         """home: #427 a new account's own CODEX_HOME slot (the login in use is never touched); None = $CODEX_HOME."""
         self.proc: subprocess.Popen | None = None
         self.url = self.code = None
@@ -426,9 +426,14 @@ class CodexFlow:
         self.backup: bytes | None = None
         self.out = ""
         self.slot = Path(home) if home is not None else None
+        self.bound_live = bound_live
         self.auth = (self.slot or Path(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex"))) / "auth.json"
 
     def start(self) -> tuple[str, str, int]:
+        # A guarded CLI must write only a fresh slot: polling cannot fence an
+        # external process writing the active auth file.
+        if self.bound_live is not None and (self.slot is None or not self.bound_live()):
+            raise RescueError("cancelled")
         exe = binary("codex")
         if not exe:
             raise RescueError("no_binary")
@@ -441,11 +446,16 @@ class CodexFlow:
         env["NO_COLOR"] = "1"
         if self.slot is not None:
             env["CODEX_HOME"] = str(self.slot)
+        if self.bound_live is not None and not self.bound_live():
+            raise RescueError("cancelled")
         self.proc = subprocess.Popen([exe, "login", "--device-auth"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, env=env, start_new_session=True, cwd=tempfile.gettempdir())
         os.set_blocking(self.proc.stdout.fileno(), False)
         end = time.monotonic() + URL_WAIT
         while time.monotonic() < end:
+            if self.bound_live is not None and not self.bound_live():
+                self.close(restore=True)
+                raise RescueError("cancelled")
             self._read(.3)
             txt = plain(self.out)
             u, c = CODEX_URL_RE.search(txt), CODEX_CODE_RE.search(txt)
@@ -494,7 +504,8 @@ class CodexFlow:
         """→ "ok" | "timeout" | "failed" | "device_disabled" | "cancelled". Restores the previous auth.json unless "ok"."""
         end = time.monotonic() + self.expires + 30
         while time.monotonic() < end:
-            if cancel is not None and cancel.is_set():
+            if ((cancel is not None and cancel.is_set())
+                    or (self.bound_live is not None and not self.bound_live())):
                 self.close(restore=True)
                 return "cancelled"
             self._read(.5)
@@ -502,6 +513,9 @@ class CodexFlow:
             if rc is not None:
                 self._read(.1)
                 if rc == 0:
+                    if self.bound_live is not None and not self.bound_live():
+                        self.close(restore=True)
+                        return "cancelled"
                     self.close(restore=False, keep=True)     # P288: the backup stays until the live check passed
                     return "ok"
                 why = "device_disabled" if re.search(r"device[^\n]{0,60}(not enabled|disabled|enable)", plain(self.out), re.I) else "failed"
@@ -1200,7 +1214,7 @@ class Rescue:
                 return {"ok": False, "why": e.args[0]}
         if kind == "opencode":
             return await self._opencode(remote=remote)
-        ok = await self._confirm(kind, name)
+        ok = await self._confirm(kind, name, remote=remote)
         if not ok:
             return {"ok": False, "why": "passkey"}
         self.cancel.clear()
@@ -1216,24 +1230,29 @@ class Rescue:
         (bg(coro(), "auth_rescue") if bg else asyncio.ensure_future(coro()))
         return {"ok": True}
 
-    async def _confirm(self, kind: str, account: str | None = None) -> bool:
+    async def _confirm(self, kind: str, account: str | None = None, *, remote=None) -> bool:
+        from . import auth_settings_uv
+        scoped = remote is not None and getattr(self.host, "_paired_live", lambda _:False)(remote)
+        if scoped and auth_settings_uv.reuse(self.host, remote, "add" if account else "login"):
+            return True
         ask = getattr(self.host, "ask", None)
         if ask is None:
             return False
         try:
-            res = await ask("AuthRescue", {"summary": self._summary(kind, account)}, batch=False, always_ask=True)   # P573: one button
+            summary = self._summary(kind, account)
+            if scoped:
+                summary += "\n" + auth_settings_uv.note(self.lang())
+            res = await ask("AuthRescue", {"summary": summary}, batch=False, always_ask=True, _host_card=True,
+                            **({"_settings_session": remote, "only": remote.device, "require_passkey": True} if scoped else {}))   # P573: one button
         except Exception:  # noqa: BLE001
             return False
         return isinstance(res, dict) and res.get("behavior") == "allow"
 
     def _summary(self, kind: str, account: str | None = None) -> str:
-        if account:
+        if account:      # 0.26.9 #452: one plain sentence — a NEW account, the one in use is not touched
             if self.lang() == "en":
-                return (f"Add a {LABEL[kind]} account 「{account}」.\nAgent J runs the official login command on the Agent J host and "
-                        "shows you its link / code; sign in with the NEW account. The account in use is not touched; the new "
-                        "sign-in is stored only on the Agent J host (0600). The owner confirms on a paired remote.")
-            return (f"登记新的 {LABEL[kind]} 账号「{account}」。\nAgent J 会在这台Agent J 主机上运行官方登录命令，把授权链接 / 设备码给你，"
-                    "请用要新增的那个账号登录。正在用的账号不受影响；新凭据只存在这台Agent J 主机上（0600）。需主人在已配对的遥控器上确认。")
+                return f"Add another {LABEL[kind]} account “{account}”: sign in with a different account; the one in use is not affected."
+            return f"添加另一个 {LABEL[kind]} 账号「{account}」：请用另一个账号登录，现在这个不受影响。"
         if self.lang() == "en":
             return (self.t("confirm_title", h=LABEL[kind]) + ".\nAgent J runs the official login command on the Agent J host "
                     "and shows you its link / code. The new credential is stored only on the Agent J host (0600). The owner confirms on a paired remote.")
@@ -1246,14 +1265,22 @@ class Rescue:
         self.flow = {"kind": kind, "route": (self.flow or {}).get("route"),
                      "stage": "done" if result in ("recovered", "added") else "failed",
                      **({"account": acct} if acct else {}), **({"why": self.why(why, **extra.pop("fmt", {}))} if why else {})}
-        self.last[kind] = {"result": result, "at": int(time.time()), **({"why": why} if why else {}), **extra}
+        if not acct:  # #568: adding an account owns flow.account, never the login-rescue history
+            self.last[kind] = {"result": result, "at": int(time.time()), **({"why": why} if why else {}), **extra}
         try:
             self.host.st.log("auth_rescue_end", agent=kind, status=result, reason=why)
         except Exception:  # noqa: BLE001
             pass
         self.broadcast()
 
-    async def _codex(self):
+    async def _codex(self, bound_live=None):
+        if bound_live is not None:
+            # Existing phone Login owns the isolated slot, UI and final commit.
+            # Never put the legacy active-file writer behind a polling wrapper.
+            active = self.login.active
+            if active is None or active.get("bound_live") is not bound_live or not bound_live():
+                return {"ok": False, "why": "cancelled"}
+            return await self.login._codex_slot()
         if self.flow.get("account"):
             return await self._codex_account(self.flow["account"])
         flow = CodexFlow()
@@ -1273,6 +1300,13 @@ class Rescue:
         if not hc["ok"]:
             await asyncio.to_thread(flow.restore)
             return self._end("codex", "failed", "quota" if hc.get("cls") in ("balance", "rate_limit") else "verify_codex")
+        # #568: a verified official renewal must not leave the registry pointing at stale
+        # rotating credentials, or at the previous account after an explicit rescue login.
+        from . import accounts
+        try:
+            await asyncio.to_thread(accounts.on_codex_rescue, self.host.st.root)
+        except (accounts.AccountError, OSError):
+            return self._end("codex", "partial", "io")
         self._health_mark("codex", hc)
         await self.recover("codex")
 
@@ -1509,7 +1543,7 @@ class Rescue:
         ps = [k for k in provider_runtime.configured() if provider_runtime.key_name(k)]
         if not ps:
             return {"ok": False, "why": "unsupported"}
-        ok = await self._confirm("opencode")
+        ok = await self._confirm("opencode", remote=remote)
         if not ok:
             return {"ok": False, "why": "passkey"}
         bg = getattr(self.host, "_bg", None)
@@ -1518,6 +1552,8 @@ class Rescue:
         return {"ok": True, "provider": ps[0]}
 
     async def cancel_flow(self) -> dict:
+        from . import auth_settings_uv
+        auth_settings_uv.clear(self.host)
         self.cancel.set()
         if self.flow and self.flow.get("stage") not in ("done", "failed"):
             self._end(self.flow["kind"], "failed", "cancelled")

@@ -9,7 +9,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 
-const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
+import {resolveDefaults} from '../tools/css-defaults.mjs';
+const read = (p) => { const text = readFileSync(new URL(p, import.meta.url), 'utf8'); return p.endsWith('.css') ? resolveDefaults(text) : p.endsWith('.html') ? text.replace(/ data-aj-(?:owner|action-context)="[^"]+"/g,'') : text; };
 const html = read('../public/index.html'), menuCss = read('../public/menu.css'), appCss = read('../public/app.css');
 const ix = JSON.parse(read('../interactions.json'));
 const entry = (id) => ix.entries.find((e) => e.id === id);
@@ -49,7 +50,7 @@ test('a phone shows no key; an entry without a key shows nothing', () => {
   assert.equal(K.comboOf('app.stop_all'), 'Alt+Shift+S');
   assert.equal(K.comboOf('nope.none', [['nope.none', [], 1]]), '', 'an entry without a key shows nothing');
   assert.equal(K.comboOf('app.upgrade_host'), entry('app.upgrade_host').keys[0].combo, 'gen.js = interactions.json');
-  assert.match(html, /id="set-estop" class="aj-btn"><span data-i18n="p435\.estop">[^<]+<\/span><kbd class="setkbd" data-ix-key="app\.stop_all" hidden><\/kbd><\/button>/);
+  assert.match(html, /id="set-estop" class="aj-action"><span data-i18n="p435\.estop">[^<]+<\/span><kbd class="setkbd" data-ix-key="app\.stop_all" hidden><\/kbd><\/button>/);
   assert.match(html, /<span id="set-hostupg-how" data-ix-key="app\.upgrade_host"><\/span>/);
 });
 
@@ -79,7 +80,7 @@ test('本机文件访问 has the list icon and chevron', () => {
 
 test('rescue cards: spacing tokens between words and buttons', () => {
   assert.match(menuCss, /#settings \.rscard>\*\+\.rsacts\{margin-top:var\(--ui-space-content\)\}/);
-  assert.match(menuCss, /#settings #layout-diag-card>\.aj-btn\+\.setnote\{margin-top:var\(--ui-space-control\)\}/);
+  assert.match(menuCss, /#settings #layout-diag-card>\.aj-action\+\.setnote\{margin-top:var\(--ui-space-control\)\}/);
 });
 
 // the design system lives in agentjarvis/brand/; the public export ships web/ alone, with the same bytes under public/brand/

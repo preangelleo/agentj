@@ -190,8 +190,9 @@ def identity(d: str) -> dict:
             heading = _plain(re.sub(r"^#\s*(IDENTITY|身份)?\s*[—–:：-]*\s*", "", ln, flags=re.I))
         elif first_para is None and ln.strip() and not ln.startswith(("#", ">", "-", "*", "|")):
             first_para = ln.strip()
-    if "ceo" not in out and heading and len(heading) <= 40:
-        out["ceo"] = heading
+    named = re.search(r"我是\s*\*\*([^*\n]{1,40})\*\*", body)
+    if named:
+        out["ceo"] = named.group(1)
     if "one" not in out and first_para:
         out["one"] = first_para
     try:
@@ -210,7 +211,8 @@ def identity(d: str) -> dict:
 def roster(root: str) -> list[list[str]]:
     """The working root's ROLES.md table rows (cells, markdown stripped)."""
     rows = []
-    for ln in _head(os.path.join(root, "documentation", "ROLES.md"), 65536).split("\n"):
+    path = _safe_file(root, "documentation/ROLES.md")
+    for ln in (_head(path, 65536) if path else "").split("\n"):
         if ln.strip().startswith("|") and not re.match(r"^\s*\|[\s:|-]+\|\s*$", ln):
             rows.append([_plain(c) for c in ln.strip().strip("|").split("|")])
     return rows
@@ -245,6 +247,8 @@ def _agents(d: str) -> tuple[list, int]:
     out, hidden = {}, 0
     for sub, ext in ((".claude/agents", ".md"), (".codex/agents", ".toml")):
         base = os.path.join(d, sub)
+        if not _inside(os.path.realpath(base), os.path.realpath(d)):
+            continue
         try:
             names = sorted(n for n in os.listdir(base) if n.endswith(ext) and not n.startswith("."))
         except OSError:
@@ -279,6 +283,8 @@ def staff_count(d: str) -> int:
 def _docs(d: str) -> tuple[list, dict, int]:
     """([{name, title}], {name: real path}, hidden) of d/documentation/*.md."""
     out, paths, hidden = [], {}, 0
+    if not _inside(os.path.realpath(os.path.join(d, "documentation")), os.path.realpath(d)):
+        return out, paths, hidden
     try:
         names = sorted(n for n in os.listdir(os.path.join(d, "documentation")) if n.endswith(".md") and not n.startswith("."))
     except OSError:
@@ -297,6 +303,8 @@ def _docs(d: str) -> tuple[list, dict, int]:
 def skill_dir(base: str, scope: str, folder: str | None, root_of: str | None, skip=()) -> tuple[list, int]:
     """[S + private "_path"] for base/*/SKILL.md; root_of = the folder a local skill must stay inside."""
     out, hidden = [], 0
+    if root_of and not _inside(os.path.realpath(base), os.path.realpath(root_of)):
+        return out, hidden
     try:
         names = sorted(os.listdir(base))
     except OSError:
@@ -415,6 +423,9 @@ def _folder_entries(root: str, protected: list[str]) -> list[str]:
         it = sorted(os.scandir(root), key=lambda e: e.name)
     except OSError:
         return out
+    seen_real = set()
+    # Prefer a real folder to its compatibility aliases, regardless of lexical order.
+    it.sort(key=lambda e: (e.is_symlink(), e.name))
     for e in it:
         n = e.name
         if n.startswith(".") or n in SKIP or CRED.search(n):
@@ -427,6 +438,8 @@ def _folder_entries(root: str, protected: list[str]) -> list[str]:
             elif not e.is_dir():
                 continue
             real = os.path.realpath(e.path)
+            if not _inside(real, root) or real == root or real in seen_real:
+                continue
             if any(_inside(real, p) or _inside(p, real) for p in protected):
                 continue
             with os.scandir(e.path) as it2:      # P276: peek, never list a huge folder whole
@@ -435,6 +448,7 @@ def _folder_entries(root: str, protected: list[str]) -> list[str]:
             continue
         if kids and len(kids) <= PEEK and all(k.startswith(".env") for k in kids):
             continue
+        seen_real.add(real)
         out.append(n)
         if len(out) >= MAX_FOLDERS:
             break
@@ -445,6 +459,8 @@ def _sig(d: str) -> tuple:
     entries = []
     for sub in ("documentation", ".claude/agents", ".codex/agents", ".claude/skills", ".agents/skills"):
         base = Path(d) / sub
+        if not _inside(os.path.realpath(base), os.path.realpath(d)):
+            continue
         try:
             for p in sorted(base.iterdir()):
                 if not p.name.startswith(".") and not CRED.search(p.name):
@@ -465,7 +481,6 @@ def scan_folder(root: str, name: str, rows) -> dict:
     w: dict = {"folder": name, "wdb": wdb}
     if wdb:
         meta = identity(d)
-        meta.pop("ceo", None)
         w.update(meta)
         w.update(_from_roster(rows, name))
     agents, h1 = _agents(d)

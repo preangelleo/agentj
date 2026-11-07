@@ -213,10 +213,10 @@ def mismatch_text(cli: str, daemon: str, zh: bool) -> tuple[str, str]:
     """(what, fix) for doctor: the CLI Agent J runs and the shared daemon are different Codex versions."""
     if zh:
         return (f"Codex 版本不一致：命令行 {cli}，后台服务（app-server daemon）{daemon}",
-                "Agent J 主机终端运行 `codex app-server daemon stop` 结束后台服务（下次用到时会按命令行版本重启；"
+                "在手机的网页终端运行 `codex app-server daemon stop` 结束后台服务（下次用到时会按命令行版本重启；"
                 "先确认终端里的 codex 没有在回答），或把 Codex 命令行升级到同一版本，然后 `agentj service restart`")
     return (f"Codex versions differ: CLI {cli}, background service (app-server daemon) {daemon}",
-            "on the Agent J host run `codex app-server daemon stop` (it restarts on next use; check no terminal codex is "
+            "in Web Terminal on your phone run `codex app-server daemon stop` (it restarts on next use; check no terminal codex is "
             "mid-answer first), or upgrade the Codex CLI to the same version, then `agentj service restart`")
 
 

@@ -49,7 +49,7 @@ test('P251 final metadata mismatch cancels reload; web-first deployment remains 
 });
 
 const relaySrc=readFileSync(new URL('../public/js/relay.js',import.meta.url),'utf8');
-const blockedSource=relaySrc.match(/export function refreshBlocked\(\)\{[\s\S]*?\n\}/)[0].replace('export ','');
+const blockedSource=relaySrc.match(/export function refreshBlocked\([^\n]*\)\{[\s\S]*?\n\}/)[0].replace('export ','');
 test('P251 refresh guard protects recording, sends, attachments, selections, approval holds and card editing',()=>{
  const base={C:{connected:()=>true},ptt:false,asrBusy:false,sending:false,atts:[],quotes:[],askBusy:false,apprBusy:false,apprHold:false,
   askState:()=> 'closed',askSel:{id:null,picks:[]},cur:null,input:{},document:{querySelectorAll:()=>[],activeElement:null},getComputedStyle:()=>({visibility:'visible'})};

@@ -2,13 +2,16 @@
 // check interval; 「设置授权码」 opens the host's sealed secret card (the code never travels in these messages); 「测试连接」
 // and 「立即检查」 run on the computer. Everything here is inside the Noise session; addresses are shown with textContent only.
 import { mailServers } from './mail-servers.js';
-import { t } from './t.js';
+import { t, lang } from './t.js';
+import { renderTriage } from './mail-triage.js';
 import { el, toast, notify } from './ui.js';
 import { signed } from './controls.js';
 import { ask1, isReady, peer } from './session.js';
 
 let view = null;          // the host's last `mail_res.view`
 let busy = false;
+let testedConnection = null;
+const connectionKey = () => JSON.stringify([cfg().address, cfg().username, cfg().imap, cfg().smtp, cfg().auth]);
 const ADDR = /^[A-Za-z0-9._%+'=-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 
 function say(s) { el('mail-msg').textContent = s || ''; }
@@ -61,6 +64,8 @@ function render(form = true) {
   el('mail-auth-off').hidden = c.auth !== 'off';
   renderPresetNote();
   }
+  el('mail-enable-next').hidden = c.enabled || testedConnection !== connectionKey() || !c.address;
+  el('mail-enable-next').disabled = busy;
   el('mail-key').textContent = t(view.has_password ? 'mail.passwordSet' : 'mail.key');
   // status
   const parts = [];
@@ -75,6 +80,7 @@ function render(form = true) {
   el('mail-today').textContent = t('mail.today', { ok: d.delivered || 0, out: d.not_allowed || 0, auth: d.auth || 0, auto: d.auto || 0, sent: d.reply_sent || 0 });
   // P206: `agentj mail expect` windows (the Agent waiting for one sign-up mail) — shown only once used today
   if (d.expect) el('mail-today').textContent += ' · ' + t('mail.todayExpect', { found: d.expect_found || 0, timeout: d.expect_timeout || 0, rejected: d.expect_rejected || 0 });
+  renderTriage(view, save, lang() === 'en', busy, form);
   // sender-check sample from the last connection test
   const smp = view.auth_sample;
   el('mail-sample').textContent = !smp || !smp.checked ? '' : smp.with_results
@@ -89,16 +95,16 @@ function render(form = true) {
   el('mail-allow').replaceChildren(...(c.allow || []).map((r) => {
     const li = document.createElement('li');
     const a = document.createElement('span'); a.textContent = r.addr + (r.name ? ' · ' + r.name : '');
-    const role = document.createElement('select'); role.className = 'aj-select mail-role';
+    const role = document.createElement('select'); role.setAttribute('data-aj-owner', 'aj-channel'); role.className = 'aj-select mail-role';
     role.setAttribute('aria-label', t('p579.mailRole', {a: r.addr}));
     for (const value of ['owner', 'guest']) { const o = document.createElement('option'); o.value = value; o.textContent = t(value === 'guest' ? 'p579.chipGuest' : 'p579.chipOwner'); role.append(o); }
     role.value = r.role === 'guest' ? 'guest' : 'owner';
     role.disabled = busy || r.addr.startsWith('@');
     role.addEventListener('change', () => save({allow: (cfg().allow || []).map(x => x.addr === r.addr ? {...x, role: role.value} : x)}));
-    const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'setlink setdanger'; rm.textContent = t('mail.remove');
+    const rm = document.createElement('button'); rm.setAttribute('data-aj-owner', 'aj-channel'); rm.type = 'button'; rm.className = 'setlink setdanger'; rm.textContent = t('mail.remove');
     rm.addEventListener('click', () => save({ allow: (cfg().allow || []).filter((x) => x.addr !== r.addr) }));
     li.append(a);
-    if (r.subdomains) { const note = document.createElement('small'); note.textContent = t('p567.subdomains'); a.append(document.createElement('br'), note); }
+    if (r.subdomains) { const note = document.createElement('small'); note.setAttribute('data-aj-owner','aj-channel'); note.textContent = t('p567.subdomains'); a.append(document.createElement('br'), note); }
     li.append(rm, role);
     return li;
   }));
@@ -109,10 +115,10 @@ function render(form = true) {
   el('mail-blocked').replaceChildren(...bl.map((b) => {
     const li = document.createElement('li');
     const a = document.createElement('span'); a.textContent = String(b.addr || '').slice(0, 120);
-    const w = document.createElement('small'); w.textContent = why(b.why);
+    const w = document.createElement('small'); w.setAttribute('data-aj-owner','aj-channel'); w.textContent = why(b.why);
     li.append(a, w);
     if (String(b.why).startsWith('not_allowed') && !(cfg().allow || []).some((x) => x.addr.toLowerCase() === String(b.addr).toLowerCase())) {
-      const add = document.createElement('button'); add.type = 'button'; add.className = 'setlink'; add.textContent = t('mail.addThis');
+      const add = document.createElement('button'); add.setAttribute('data-aj-owner', 'aj-channel'); add.type = 'button'; add.className = 'setlink'; add.textContent = t('mail.addThis');
       add.addEventListener('click', () => save({ allow: [...(cfg().allow || []), { addr: b.addr, role: 'guest' }] }));
       li.append(add);
     }
@@ -186,6 +192,7 @@ export function configure() {
     if (changed && !await save(f)) return;
     busy = true; render(false); say(t('mail.keyOpen'));
     const m = await call({ t: 'mail_key' }, 660000);
+    testedConnection = m?.ok && m.verify === 'ok' ? connectionKey() : null;
     busy = false; render();
     if (m?.ok && m.verify === 'ok') notify({ kind: 'success', shape: 'circle', text: t('mail.passwordSaved'), ms: 2400 });
     if (m) say(m.ok ? t(m.verify === 'fail' ? 'mail.testFail' : 'mail.testOk', {why: why(m.detail)}) : t('mail.keyFail', {why: why(m.why)}));
@@ -193,6 +200,7 @@ export function configure() {
   el('mail-test').addEventListener('click', async () => {
     busy = true; render(); say(t('mail.testing'));
     const m = await call({ t: 'mail_test' }, 90000);
+    testedConnection = m?.ok ? connectionKey() : null;
     busy = false; render();
     if (m) say(m.ok ? t('mail.testOk') : t('mail.testFail', { why: why(m.why) }));
   });
@@ -204,6 +212,7 @@ export function configure() {
     if (m) say(m.ok ? (c && c.baseline ? t('mail.checkBase') : t('mail.checkOk', { n: (c && c.delivered) || 0, m: (c && c.new) || 0 }))
       : t('mail.testFail', { why: why(m.why) }));
   });
+  el('mail-enable-next').addEventListener('click', () => save({ enabled: true }));
   el('mail-on').addEventListener('click', () => save({ enabled: !cfg().enabled }));
   el('mail-pin').addEventListener('click', () => { const s = view && view.auth_sample; if (s && s.servid) save({ auth_servid: s.servid }); });
   el('mail-add-addr').addEventListener('input', () => {

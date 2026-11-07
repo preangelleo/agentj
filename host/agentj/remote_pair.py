@@ -24,7 +24,7 @@ CONTEXT = 'agentj-remote-pair-v1'
 POLL_CONTEXT = 'agentj-remote-pair-poll-v1'
 MAX_SKEW = 300000   # ms; = the account service's envelope window (hostapi MAX_SKEW_S)
 FIELDS = {'v','id','host','account','seat','channel','op','browser','device','handshake','created_at','expires_at','target'}
-OPS = ('start','inspect','approve','owner_status','resume','task_on','device_name','cancel','pass_hello','pass_start')
+OPS = ('start','inspect','approve','owner_status','resume','task_on','device_name','cancel','pass_hello','pass_start','unbind_all')
 PASS_CONTEXT = 'agentj-remote-pass-v1'
 PASS_TTL = 120000   # ms a pass_hello key stays usable
 PASS_KEYS = 4       # at most this many outstanding pass_hello keys
@@ -74,6 +74,12 @@ def check_request(env, st, now=None, keys=None):
         if not isinstance(target,dict) or set(target)!={'device','name'} or not isinstance(target['device'],str) or not cloud._DEVICE_ID.fullmatch(target['device']): return None,None
         name=target['name']
         if not isinstance(name,str) or not 1<=len(name.strip())<=64 or any(ord(c)<32 or ord(c)==127 for c in name): return None,None
+    elif q['op']=='unbind_all':
+        if not isinstance(target,dict) or set(target)!={'devices'}: return None,None
+        ids=target['devices']
+        if (not isinstance(ids,list) or len(ids)>64 or
+                not all(isinstance(d,str) and cloud._DEVICE_ID.fullmatch(d) for d in ids) or
+                ids!=sorted(set(ids))): return None,None
     elif q['op']=='pass_start':
         if not isinstance(target,dict) or set(target)!={'nonce','epk','iv','data'} or not all(isinstance(target[k],str) for k in target): return None,None
         try:
@@ -167,6 +173,8 @@ class RemotePair:
             self.reply(q,{"status":"offline"}); return
         if not self.allowed(q): self.reply(q,{'status':'disabled'}); return
         if not h.relay_up: self.reply(q,{'status':'offline'}); return
+        if q['op']=='unbind_all':
+            await self.unbind_all(q); return
         if q['op']=='pass_hello':
             self.reply(q,self.pass_hello()); return
         if q['op']=='pass_start':
@@ -228,6 +236,8 @@ class RemotePair:
             # reload or an error); a terminal `agentj pair` or a phone mid-pairing is never replaced silently.
             if not (p.remote and p.cid is None): self.reply(q,self.busy(p)); return
             h._pair_finish(p,{'ev':'replaced'}); h.st.log('remote_pair_takeover',request=q['id'])
+        if not self.allowed(q) or getattr(h,'_unbinding_all',False):
+            self.reply(q,{'status':'gone'}); return
         from .serve import Pairing
         ttl=min(300,(q['expires_at']-self.now_ms())/1000)
         p=Pairing(secrets.token_bytes(16),secrets.token_bytes(32),time.time()+ttl,time.monotonic()+ttl,None,remote=q)
@@ -237,6 +247,66 @@ class RemotePair:
         h.pairing=p; p.timer=asyncio.create_task(h._expire_pairing(p))
         self.reply(q,{'status':'link','link':link,'qr':svg,'expires':int(p.expires),'cancel':True})
         h.st.log('remote_pair_begin',request=q['id'])
+
+    def invalidate_pairings(self):
+        """Close authority in memory before any cleanup hook, disk operation or await."""
+        h=self.host
+        h._pairing_epoch=getattr(h,'_pairing_epoch',0)+1
+        self.waiting=None; self.pass_keys.clear(); h.pk_offers.clear()
+        p=h.pairing; h.pairing=None
+        sessions=dict(h.sessions); h.sessions.clear()
+        for s in sessions.values():
+            if s.timer and s.timer is not asyncio.current_task(): s.timer.cancel()
+        if p: h._pair_finish(p,{'ev':'denied','reason':'unbound_all'})
+        # _detach pops before calling its hooks. All other sessions are already absent,
+        # so even a failed hook cannot leave a pending grant or old ready socket alive.
+        for cid,s in sessions.items():
+            h.sessions[cid]=s
+            h._detach(cid,{'ev':'denied','reason':'unbound_all'})
+        return list(sessions)
+
+    def unbind_settled(self,mutation):
+        # A cancelled waiter cannot cancel a running disk thread. Keep admission shut
+        # until it settles; a stopped event loop has no live pairing service to reopen.
+        try:
+            mutation.result()
+        except BaseException:
+            pass
+        try:
+            self.invalidate_pairings()
+        finally:
+            self.host._unbinding_all=False
+
+    async def unbind_all(self,q):
+        """#560: no rolling re-pair; every reviewed old pairing loses access."""
+        h=self.host
+        if getattr(h,'_unbinding_all',False): self.reply(q,{'status':'denied'}); return
+        h._unbinding_all=True; mutation=None
+        try:
+            try:
+                mutation=asyncio.create_task(asyncio.to_thread(h.st.remove_all_devices,q['target']['devices'],max(self.now_ms(),q['created_at']+1)))
+                victims=await asyncio.shield(mutation)
+            except BaseException:
+                # The journal/allowlist may already be durable. Retire old QR/password
+                # seeds even when a later write/audit failed, preserving the original error.
+                try: self.invalidate_pairings()
+                except Exception: pass
+                if mutation is not None and not mutation.done():
+                    mutation.add_done_callback(self.unbind_settled)
+                raise
+            if victims is None: self.reply(q,{'status':'changed'}); return
+            sockets=self.invalidate_pairings()
+            for did in victims: await h._drop_device(did,'unbound_all',True)
+            for cid in sockets: await h._notify_close(cid)
+            await h.remotes.changed()
+            digest=hashlib.sha256(json.dumps(q['target'],sort_keys=True).encode()).hexdigest()
+            approvals.record(h.st,rid=q['id'],agent='account',tool='unbind_all',input_sha256=digest,
+                             shown_sha256=digest,decision='allow',reason='account_passkey',device='account')
+            activity.record(h.st,'decision',device='account',summary='unbind_all / account passkey',request=q['id'])
+            h.st.log('account_owner_approval',request=q['id'],action='unbind_all',result='ok',count=len(victims))
+            self.reply(q,{'status':'unbound_all','count':len(victims)})
+        finally:
+            if mutation is None or mutation.done(): h._unbinding_all=False
 
     def pass_hello(self):
         """P221: whether a remote pairing password is set here (and its lock), plus a fresh one-use key to seal it to."""
@@ -318,7 +388,7 @@ class RemotePair:
     def poll(self,link,results):
         self.seq=max(self.seq+1,int(time.time()*1000))
         body={'v':1,'t':'remote_pair','channel':self.host.channel,'ts':int(time.time()),'seq':self.seq,
-              'enabled':enabled(self.host.st),'online':self.host.relay_up,'results':results}
+              'enabled':enabled(self.host.st),'online':self.host.relay_up,'unbind_all':True,'results':results}
         return cloud.post_json(cloud.api_url(self.host.st,link)+'/v1/host/remote-pair',cloud.envelope(POLL_CONTEXT,body,self.host.sk))
 
     async def run(self):

@@ -1,0 +1,11 @@
+/* #577 Web-owned content-card; source order is a compatibility contract. */
+/* ===== cards ===== */
+.aj-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-lg);
+  padding: clamp(1.125rem, 0.9rem + 1vw, 1.75rem); min-width: 0; }
+.aj-card--2 { background: var(--surface-2); border-color: transparent; }
+.aj-card > :where([data-aj-card-slot]) + :where([data-aj-card-slot]) { margin-top: var(--space-content); }
+.aj-card__title { font-family: var(--font-title); font-weight: 700; font-size: var(--fs-lg); line-height: var(--lh-tight); }
+.aj-card__icon { width: 40px; height: 40px; border-radius: var(--r-md); background: var(--surface-2);
+  display: inline-grid; place-items: center; font-size: 1.25rem; }
+a.aj-card { display: block; color: inherit; text-decoration: none; transition: border-color var(--dur) var(--ease); }
+a.aj-card:hover { border-color: var(--text-muted); }

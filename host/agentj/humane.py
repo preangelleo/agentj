@@ -26,7 +26,7 @@ def title(prefs=None, lang="zh") -> str:
     """The owner's form of address: owner.address (trimmed, one line, ≤ 16 chars) or the language default."""
     t = ""
     if isinstance(prefs, dict):
-        from . import preferences
+        from . import preference_values as preferences
         t = preferences.get(prefs, "owner.address", "") or ""
     t = " ".join(str(t).split())[:TITLE_MAX] if isinstance(t, str) else ""
     return t or DATA["default_title"][_lang(lang)]

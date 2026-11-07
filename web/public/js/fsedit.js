@@ -134,7 +134,7 @@ function paintCmds() {
   cmdShown = matches(cmdQ.value);
   cmdAt = Math.min(cmdAt, Math.max(0, cmdShown.length - 1));
   cmdList.replaceChildren(...cmdShown.map(([cmd, why, , st], i) => {
-    const b = document.createElement('button');
+    const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-editor');
     b.type = 'button'; b.tabIndex = -1; b.dataset.i = String(i); b.id = 'fsCmd' + i;
     b.setAttribute('role', 'option'); b.setAttribute('aria-selected', i === cmdAt ? 'true' : 'false');
     if (st === 'none') { b.classList.add('tui'); b.setAttribute('aria-disabled', 'true'); }
@@ -312,7 +312,7 @@ function corner(name, fallback) {
 export function openText(opts) {
   if (!composer || isOpen()) return false;
   opener = opts.trigger || document.activeElement;
-  const box = document.createElement('textarea'); box.value = opts.value || '';
+  const box = document.createElement('textarea'); box.setAttribute('data-aj-owner', 'aj-editor'); box.value = opts.value || '';
   cfg = {...composer, input:box, maxText:() => opts.maxLength || 16000, touch:composer.touch};
   options = {save:opts.save || (() => true), ...opts};
   restoreButtons();

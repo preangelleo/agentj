@@ -3,7 +3,7 @@
 // scroll it) minus the status-bar safe area. Used by the @ list and the / list.
 let probe=null;
 export function safeTop(){
- if(!probe){probe=document.createElement('div');probe.style.cssText='position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px)';document.body.append(probe);}
+ if(!probe){probe=document.createElement('div');probe.setAttribute('data-aj-owner','aj-shell');probe.style.cssText='position:fixed;top:0;left:0;width:0;height:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px)';document.body.append(probe);}
  return parseFloat(getComputedStyle(probe).paddingTop)||0;
 }
 // the top edge (in the same coordinates as getBoundingClientRect) a list may reach

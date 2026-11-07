@@ -19,9 +19,13 @@
 #five-menu{overflow-y:auto}
 .fp-menu-deck{position:relative;box-sizing:border-box;max-width:none;width:100%;margin:0;padding:0;
   height:calc(var(--jc-deck-pad) * 2 + var(--jc-peek) * (var(--fp-n,5) - 1) + var(--jc-card-h))}
-.fp-menu-card,.fp-menu-card.jc-card{box-sizing:border-box;left:var(--fp-left,var(--rg,16px));right:auto;
+.fp-menu-card{box-sizing:border-box;left:var(--fp-left,var(--rg,16px));right:auto;
   width:min(calc(100vw - 2 * var(--fp-left,var(--rg,16px))),var(--jc-card-w));height:var(--jc-card-h);
   top:calc(var(--jc-deck-pad) + var(--fp-i) * var(--jc-peek));padding:0;border-radius:20px}
+.fp-menu-card.jc-card{box-sizing:border-box;left:var(--fp-left,var(--rg,16px));right:auto;
+  width:min(calc(100vw - 2 * var(--fp-left,var(--rg,16px))),var(--jc-card-w));height:var(--jc-card-h);
+  top:calc(var(--jc-deck-pad) + var(--fp-i) * var(--jc-peek));padding:0;border-radius:20px}
+
 .fp-menu-card.jc-card{background:var(--jc-fill);color:var(--jc-ink)}
 .fp-menu-card.jc-accent-noir{box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--c-lotion) 32%,transparent)}   /* Noir on the Noir canvas keeps an edge */
 /* the title strip: icon · title · (the system cards' count) in one row, centred in the peek */
@@ -29,11 +33,17 @@
   display:flex;align-items:center;justify-content:flex-start;gap:12px}
 .fp-menu-card .fp-menu-head>:is(svg,img){flex:none;width:28px;height:28px}
 .fp-menu-card .fp-current{margin-left:auto;flex:none;white-space:nowrap}
-.fp-menu-card h2,.jc-card .jc-name{position:absolute;left:60px;right:20px;top:calc((var(--jc-peek) - 28px) / 2);margin:0;
+.fp-menu-card h2{position:absolute;left:60px;right:20px;top:calc((var(--jc-peek) - 28px) / 2);margin:0;
   font:700 18px/28px var(--font-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jc-card .jc-name{position:absolute;left:60px;right:20px;top:calc((var(--jc-peek) - 28px) / 2);margin:0;
+  font:700 18px/28px var(--font-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
 .fp-menu-card:has(.fp-current:not(:empty)) h2{right:132px}
-.fp-menu-card p,.jc-card .jc-desc{position:absolute;left:20px;right:20px;top:calc(var(--jc-peek) + 12px);margin:0;
+.fp-menu-card p{position:absolute;left:20px;right:20px;top:calc(var(--jc-peek) + 12px);margin:0;
   font-size:15px;line-height:1.45;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden}
+.jc-card .jc-desc{position:absolute;left:20px;right:20px;top:calc(var(--jc-peek) + 12px);margin:0;
+  font-size:15px;line-height:1.45;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden}
+
 /* a covered card shows its strip only (its description would sit under the next card anyway) */
 .fp-menu-card:not(:last-child) p{visibility:hidden}
 .fp-menu-card.jc-card:focus-visible{outline:2px solid var(--jc-ink);outline-offset:-6px}
@@ -151,3 +161,38 @@
 .jc-body[data-card="notes"] .jc-note-title{display:block;font-size:1rem;font-weight:700;margin:0 0 10px;white-space:pre-wrap}
 .jc-body[data-card="notes"] .jc-note-date{display:block;font-size:.8rem;color:var(--c-lotion);opacity:.72;margin-top:12px}
 .jc-dialog[data-note-fields="1"]>input{box-sizing:border-box;width:100%;min-height:44px;margin-bottom:16px;border-radius:12px;padding:12px 14px;font:inherit;color:var(--c-lotion);background:var(--c-sooty);border:1px solid var(--c-black-mana)}
+
+/* #369 late navigation/action instances: exact 447 declarations, private Wallet role. */
+.jc-auto-control{border:0;border-radius:24px;background:var(--c-shield);color:var(--c-lotion);min-height:44px;padding:12px 20px;font:600 15px var(--font-body);cursor:pointer;margin:12px 0}
+.jc-auto-nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.fp-org .jc-auto-control{margin:8px 0 4px}
+.fp-bar .jc-auto-nav{margin:0;padding:0 0 var(--ui-space-control);gap:var(--ui-space-btn)}
+#five-detail .jc-auto-control{margin:var(--ui-space-control) var(--ui-space-btn) var(--ui-space-control) 0}
+.fp-card .jc-auto-nav{gap:var(--ui-space-btn);margin:var(--ui-space-control) 0}
+.jc-dialog-actions .jc-auto-control{margin:0;padding:12px 18px}
+.jc-dialog-actions .jc-auto-control{background:var(--c-salt);color:var(--c-sooty)}
+.jc-dialog-actions .jc-auto-control:disabled{opacity:.4;cursor:not-allowed}
+.jc-calendar .jc-auto-control{min-height:44px}
+.jc-cal-sync-row>.jc-auto-control{margin:0}
+.jc-cal-sync-row>.jc-auto-control:disabled{opacity:.6}
+.jc-cal-flash .jc-auto-control,.jc-cal-conflict .jc-auto-control{margin:0}
+
+/* Exact 447 metadata/command-link appearance, with local semantic actor roots. */
+.rm #words .slash-command-link{-webkit-text-fill-color:var(--lotion)}
+.jc-auto-meta{opacity:.75}
+.slash-command-link{display:inline;min-height:0;padding:0;border:0;background:transparent;font-size:inherit;font-family:inherit;font-weight:700;color:#ffe292;text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:3px;cursor:pointer}
+.om .slash-command-link,.fp-prose .slash-command-link{color:var(--c-sooty);text-decoration-color:#fcbe7c}
+.fp-prose .slash-command-link{color:inherit}
+.jc-auto-meta{color:var(--menu-muted);opacity:1}
+.fp-card .jc-auto-meta{color:var(--c-noir)}
+.fp-prose .slash-command-link{color:var(--menu-text)}
+.fp-summary .jc-auto-meta{margin:2px 0;font-size:13px}
+.fp-org .jc-auto-meta{margin:0;font-size:13px;line-height:1.5}
+#five-body>.jc-auto-meta{margin:0 0 var(--ui-space-control);line-height:var(--ui-leading)}
+:is(#words,#rdWords,.fp-prose) .slash-command-link,:is(#words,#rdWords,.fp-prose) .slash-command-link *{
+  user-select:text;-webkit-user-select:text;-webkit-touch-callout:default;
+}
+.slash-command-link{position:relative;overflow-wrap:anywhere}
+.slash-command-link::after{content:"";position:absolute;left:calc(-1 * var(--sp-1));right:calc(-1 * var(--sp-1));top:50%;height:var(--ui-tap,44px);transform:translateY(-50%)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .rm #words .slash-command-link{-webkit-text-fill-color:var(--c-banana-republic)}}
+:root[data-theme="dark"] .rm #words .slash-command-link{-webkit-text-fill-color:var(--c-banana-republic)}

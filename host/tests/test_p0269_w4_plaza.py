@@ -171,6 +171,12 @@ class OneLine(unittest.TestCase):
         t = hi.HostRequest("test_allow_installs_with_one_card_and_receipt")
         t.setUp()
         self.addCleanup(t.doCleanups)
+        # This positive install request originates in an actual host-held owner turn.
+        from agentj import approval_review, provenance
+        t.host.desktop_turn = 1
+        approval_review.remember(t.host, {'id': 1, 'ts': int(__import__('time').time()*1000),
+                                         'src': {'k': 'terminal', 'text': 'Install the synthetic package'}},
+                                 provenance.terminal())
         t466.need_sandbox(self)
         rows, updates = [], []
         t.host.agent_notice = lambda text, **kw: rows.append(text) or len(rows)

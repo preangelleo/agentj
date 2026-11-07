@@ -42,7 +42,7 @@ const SPACING=`(sel,MIN=8)=>{const bad=[],seen=new Set();const vis=e=>{const r=e
   if(line(e,'Top')){const edge=r.top+parseFloat(s.borderTopWidth);for(const q of texts(e)){const d=q.top-edge;if(d<MIN&&q.top>=r.top-1){const k=name(e)+' top';if(!seen.has(k)){seen.add(k);bad.push(k+' '+d.toFixed(1)+'px');}}}
    const prev=e.previousElementSibling;if(prev&&vis(prev))for(const q of texts(prev)){const d=r.top-q.bottom;if(d<MIN&&q.left<r.right&&q.right>r.left){const k=name(prev)+' → '+name(e)+' line';if(!seen.has(k)){seen.add(k);bad.push(k+' '+d.toFixed(1)+'px');}}}}
  }
- for(const box of document.querySelectorAll(sel)){const groups=new Map();for(const b of box.querySelectorAll('button,.aj-btn,[role=button]')){if(!vis(b)||getComputedStyle(b).position==='absolute'||getComputedStyle(b).position==='fixed')continue;const p=b.parentElement;if(!groups.has(p))groups.set(p,[]);groups.get(p).push(b);}
+ for(const box of document.querySelectorAll(sel)){const groups=new Map();for(const b of box.querySelectorAll('button,.aj-action,[role=button]')){if(!vis(b)||getComputedStyle(b).position==='absolute'||getComputedStyle(b).position==='fixed')continue;const p=b.parentElement;if(!groups.has(p))groups.set(p,[]);groups.get(p).push(b);}
   for(const bs of groups.values())for(let i=0;i<bs.length;i++)for(let j=i+1;j<bs.length;j++){const a=bs[i].getBoundingClientRect(),c=bs[j].getBoundingClientRect();
    const vo=Math.min(a.bottom,c.bottom)-Math.max(a.top,c.top),ho=Math.min(a.right,c.right)-Math.max(a.left,c.left);
    const gap=vo>4?Math.max(c.left-a.right,a.left-c.right):ho>4?Math.max(c.top-a.bottom,a.top-c.bottom):99;

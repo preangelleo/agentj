@@ -98,7 +98,50 @@ def item(key: str, who, kind: str, label="", lk=None, since=None, pid=None, sess
     return d
 
 
-META_LIMITS = {"harness": 32, "model": 100, "effort": 24, "cwd": 400, "workflow": 80, "role": 80, "parent": 80}
+META_LIMITS = {"harness": 32, "model": 100, "effort": 24, "cwd": 400, "workflow": 80, "role": 80, "parent": 80, "where": 40}
+
+
+# ---- 0.26.9 #444 (ADR-0269-w4-web, own block): where a background command runs, and wait loops are not workers ---------
+_SSH_ARG = set("bcDEeFIiJLlmOoPpQRSWw")          # ssh options that take a value
+_WAIT_LOOP = re.compile(r"^\s*(?:until|while)\b[\s\S]*\bsleep\b")
+
+
+def remote_of(cmd, aliases=()) -> str | None:
+    """The machine a shell command runs on when it is sent away: `olares-run …` → "Olares", `ssh [opts] <alias> …` → the ssh
+    alias (user@ dropped). A bare IP address is never shown (→ "ssh"). None = this computer."""
+    import shlex
+    if not isinstance(cmd, str) or not cmd.strip():
+        return None
+    if re.search(r"(?:^|[\s;&|(])(?:\S*/)?olares-run\b", cmd):
+        return next((r["name"] for r in aliases if r.get("host") == "olares-run"), "Olares")
+    m = re.search(r"(?:^|[\s;&|(])(?:\S*/)?ssh\s+(.*)", cmd)
+    if not m:
+        return None
+    try:
+        words = shlex.split(m.group(1).split("\n", 1)[0])
+    except ValueError:
+        words = m.group(1).split()
+    skip = False
+    for w in words:
+        if skip:
+            skip = False
+            continue
+        if w.startswith("-"):
+            skip = len(w) == 2 and w[1] in _SSH_ARG
+            continue
+        host = w.rsplit("@", 1)[-1]
+        label = next((r["name"] for r in aliases if r.get("host") == host.strip("[]")), None)
+        if label:
+            return clean(label, 40)
+        if re.fullmatch(r"[\d.]+|[0-9a-fA-F:]+:[0-9a-fA-F:]*|\[.*\]", host):
+            return "ssh"
+        return clean(host, 40) if re.fullmatch(r"[A-Za-z][\w.-]{0,39}", host) else "ssh"
+    return None
+
+
+def wait_loop(cmd) -> bool:
+    """`until grep -q … ; do sleep 5; done` — an Agent polling for something, not a worker: never a 「临时助理」 robot."""
+    return isinstance(cmd, str) and bool(_WAIT_LOOP.match(cmd))
 
 
 def task_meta(meta):
@@ -123,15 +166,29 @@ def sys_load(getloadavg=getattr(os, "getloadavg", None), cpus=os.cpu_count) -> f
 
 
 
-def busy_dir(root) -> Path:
+def _guard_test_root(root) -> Path:
+    path = Path(root)
+    if os.environ.get("AGENTJ_TEST") == "1" or "unittest.runner" in sys.modules or "pytest" in sys.modules:
+        try:
+            import pwd
+            home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+        except (ImportError, KeyError):
+            home = Path(os.environ.get("USERPROFILE") or os.path.expanduser("~"))
+        try:
+            relative = path.resolve().relative_to((home / ".local/state").resolve())
+        except ValueError:
+            return path
+        if relative.parts and (re.fullmatch(r"agentj(?:-[0-9]+)?", relative.parts[0]) or relative.parts[0] == "agentjarvis-alpha"):
+            raise RuntimeError("test process refused real Agent J busy state; use an isolated state root")
+    return path
 
-    return Path(root) / "busy"
+
+def busy_dir(root) -> Path:
+    return _guard_test_root(root) / "busy"
 
 
 def items_dir(root) -> Path:
-
-
-    return Path(root) / "agentperm" / "busy"
+    return _guard_test_root(root) / "agentperm" / "busy"
 
 
 def _safe(key: str) -> str:
@@ -191,6 +248,12 @@ def read_items(root, now: float | None = None) -> list[dict]:
             it = item(it["key"], it.get("who"), it.get("kind"), it.get("label", ""), it.get("lk"), it.get("since"),
                       it.get("pid"), it.get("session"), it.get("ns"), it.get("report"), **task_meta(it))
             it.update(restart_meta(raw))
+            if raw.get("status") in ("queued", "running", "stalled"):
+                it["status"] = raw["status"]
+            if raw.get("status") == "stalled":
+                it["stall_action"] = "notify-owner"
+                if type(raw.get("stalled_at")) in (int, float):
+                    it["stalled_at"] = raw["stalled_at"]
             it["self_reported"] = True
             it["_ctime"] = p.stat().st_ctime        # hotfix #455 R2-S1: kernel-set, judged at first sight, never kept
             if isinstance(raw.get("proc_start"), str):
@@ -693,13 +756,39 @@ def current_unit():
         return None
 
 
+def delivery_status(it, code):
+    """Evidence only: report contents never become authority or receipt text."""
+    if not it.get("report"):
+        return {}
+    result = {"delivery": "unfinished", "delivery_reason": "exit_not_successful"}
+    if type(code) is not int or code != 0:
+        return result
+    path = Path(it["report"])
+    if not path.is_absolute():
+        path = Path(it.get("cwd") or os.getcwd()) / path
+    try:
+        info = path.lstat()
+        valid = (stat.S_ISREG(info.st_mode) and info.st_size > 0
+                 and (not it.get("delivery_started", it.get("started"))
+                      or info.st_mtime >= it.get("delivery_started", it.get("started")))
+                 and not any(parent.is_symlink() for parent in path.parents))
+    except OSError:
+        valid = False
+    return {"delivery": "delivered" if valid else "unfinished",
+            "delivery_reason": "report_present" if valid else "report_missing_or_empty"}
+
+
 # P262: completion receipts are local metadata, never argv or report contents.
 def write_finished(root, it, code):
     d = items_dir(root) / "finished"
     d.mkdir(mode=0o700, parents=True, exist_ok=True)
     from .state import _write_private
+    from .privacy import redact
+    it = dict(it)
+    if isinstance(it.get("log_tail"), str):
+        it["log_tail"] = redact(it["log_tail"], paths=True)[-2048:]
     _write_private(d / (_safe(it["key"]) + ".json"),
-                   json.dumps({**it, "ended": time.time(), "exit_code": code}, ensure_ascii=False).encode())
+                   json.dumps({**it, **delivery_status(it, code), "ended": time.time(), "exit_code": code}, ensure_ascii=False).encode())
 
 
 def finished_items(root):
@@ -713,8 +802,14 @@ def finished_items(root):
             v = json.loads(p.read_text())
             if not isinstance(v, dict) or not isinstance(v.get("key"), str):
                 continue
-            it = item(v["key"], v.get("who"), v.get("kind"), v.get("label"), since=v.get("since"), report=v.get("report"))
+            it = item(v["key"], v.get("who"), v.get("kind"), v.get("label"), lk=v.get("lk"), since=v.get("since"), session=v.get("session"), report=v.get("report"), **task_meta(v))
             it.update(restart_meta(v))
+            if v.get("delivery") in ("delivered", "unfinished"):
+                it["delivery"] = v["delivery"]
+                it["delivery_reason"] = clean(v.get("delivery_reason"), 80)
+            if isinstance(v.get("log_tail"), str):
+                from .privacy import redact
+                it["log_tail"] = redact(v["log_tail"], paths=True)[-2048:]
             it["ended"] = v.get("ended") if isinstance(v.get("ended"), (int, float)) else time.time()
             it["exit_code"] = v.get("exit_code") if type(v.get("exit_code")) is int else None
             out.append(it)
@@ -1043,11 +1138,15 @@ class Board:
             self.start(key, who_of(role), "temp", t.get("description") or role, session=f"{scope}:{sid}",
                        harness="claude", role=role or None, late=late)
         else:                                  # "shell" (run_in_background Bash) and anything newer: labelled by its description
+            if typ == "shell" and wait_loop(t.get("command")):
+                return key  # polling is part of the Agent turn, never a worker/result
             label = t.get("description")
             if not (isinstance(label, str) and label.strip()) and isinstance(t.get("command"), str):
                 from .privacy import redact    # a bare command line may carry a token: scrubbed before it is a label
                 label = redact(clean(t["command"], 4 * LABEL_MAX), paths=True)
-            self.start(key, None, "temp", label or typ, session=f"{scope}:{sid}", harness="claude", role=typ, late=late)
+            where = remote_of(t.get("command"), getattr(self, "remote_aliases", lambda:[])())
+            self.start(key, None, "temp", label or typ, session=f"{scope}:{sid}", harness="claude", role=typ, late=late,
+                       **({"where": where} if where else {}))
         self.mark_bg(key)
         self.native_status(key, "running")
         return key
@@ -1561,6 +1660,8 @@ def detail_of(v: dict, last: dict | None, run=subprocess.run) -> dict:
     src = v["key"].split(":", 1)[0]
     d["src"] = ("unit" if src == "unit" else "file" if src in ("cli", "run") else "workflow" if src == "wf"
                 else "codex" if src.endswith("codex") else "opencode" if src.endswith("opencode") else "claude")
+    if v.get("where"):
+        d["where"] = red(v["where"])
     if last:
         d["last"] = {"text": red(last["text"]), "at": last["at"]}
     if v.get("cmd"):
@@ -1641,6 +1742,27 @@ def capacity(running: int = 0, cores: int | None = None, load: float | None = -1
             "advice_zh": (f"机器空，可再起 {more} 条" if more else "机器紧，新活先排队，等手上的完成再起"),
             "advice_en": (f"room for {more} more" if more else "busy: queue new work until something finishes")}
 
+
+
+def wait_capacity(stop, path=None, interval=LOAD_EVERY):
+    """Queue against observed resources. Signals and busy stop cancel before exec."""
+    announced = False
+    while not stop.is_set():
+        if path is not None and not path.exists():
+            return False
+        running = 0
+        if path is not None:
+            running = sum(v.get("status") in ("running", "stalled") for v in read_items(path.parents[2]))
+        available = capacity(running=running)["can_start"]
+        if available > 0:
+            from .busy_dispatch import reserve_capacity
+            if path is None or reserve_capacity(path, available):
+                return not stop.is_set()
+        if not announced:
+            print("机器紧，等待资源；可取消 / queued for resources; cancellable", file=sys.stderr)
+            announced = True
+        stop.wait(interval)
+    return False
 
 
 def _root(a):
@@ -1756,17 +1878,44 @@ def cmd_busy(a) -> int:
         if not cmd:
             print("用法 / usage: agentj busy run --who 掌枢 --label 发布收尾 -- <command…>", file=sys.stderr)
             return 2
+        from .busy_dispatch import reject_bypass
+        try:
+            reject_bypass(cmd)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         key = "run:" + uuid.uuid4().hex[:12]
+        token = getattr(a, "launch_token", None)
+        if token is not None and not re.fullmatch(r"run:[a-f0-9]{12}", token):
+            return 2
+        if getattr(a, "detach", False):
+            from .busy_dispatch import detach
+            try:
+                return detach(root, a, cmd, key)
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+                print(f"agentj busy: {exc}", file=sys.stderr)
+                return 1
+        from .busy_dispatch import write_probe
+        try:
+            write_probe(os.getcwd())
+        except OSError:
+            print("工作目录不可写，未启动 / work directory write probe failed; not started", file=sys.stderr)
+            return 1
         path = None
         try:
             print("派新任务前先运行 agentj quota --pick（内容创作加 --task content，Agent J 开发加 --task agentj）/ Check dispatch quota first", file=sys.stderr)
             it = item(key, a.who, a.kind, a.label, pid=os.getpid(), ns=pidns(), report=a.report, cwd=os.getcwd(), **task_meta({k:v for k,v in vars(a).items() if k != "cwd"}))
             it.update(started=time.time(), restart_label=hashlib.sha256(a.label.encode()).hexdigest() if a.label else None,
                       unit=current_unit())
-            it = {**it, **restart_meta(it)}
+            it = {**it, **restart_meta(it), "status": "queued"}
             path = write_item(root, it)
-        except OSError as e:              # e.g. no state dir: the work still runs, only unseen on the phone
-            print(f"agentj busy: 手机上不会显示这件事 / not shown on the phone ({e.__class__.__name__})", file=sys.stderr)
+            if token:
+                from .state import _write_private
+                _write_private(items_dir(root) / (".ack-" + _safe(token)),
+                               json.dumps({"key": key, "pid": os.getpid()}).encode())
+        except OSError as e:              # never launch work that cannot be registered
+            print(f"agentj busy: 登记失败，未启动 / registration failed; not started ({e.__class__.__name__})", file=sys.stderr)
+            return 1
         if path is not None:
             from . import names
             from .state import State
@@ -1783,31 +1932,62 @@ def cmd_busy(a) -> int:
         child = None
         terminated = False
         previous_term = signal.getsignal(signal.SIGTERM)
+        previous_int = signal.getsignal(signal.SIGINT)
 
         def terminate(signum, frame):
             nonlocal terminated
             terminated = True
+            stop.set()
             if child is not None:
                 with contextlib.suppress(ProcessLookupError):
-                    child.terminate()
+                    if child.poll() is None:
+                        os.killpg(child.pid, signal.SIGTERM)
         signal.signal(signal.SIGTERM, terminate)
+        signal.signal(signal.SIGINT, terminate)
         try:
+            if not wait_capacity(stop, path):
+                code = 130 if not terminated else 143
+                return code
+            it.update(json.loads(path.read_text()))
             from . import binaries, peer_origin
             n = peer_origin.pin_name(cmd)   # #455 F3 B pin: a dispatched harness runs from its read-only install folder
-            child = subprocess.Popen(cmd, env=binaries.pinned(n) if n else None)
+            from .resource_policy import work_argv
+            env = dict(binaries.pinned(n) if n else os.environ)
+            env["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"
+            print("busy: Nice>=10 CPUWeight=20 (where supported); sandbox/approval=native unchanged; no bypass", file=sys.stderr)
+            it["delivery_started"] = time.time()
+            child = subprocess.Popen(work_argv(cmd), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+            from .busy_probe import start_id
+            it.update(child_pid=child.pid, child_start=start_id(child.pid), status="running")
+            with contextlib.suppress(OSError):
+                write_item(root, it)
             if terminated:
                 child.terminate()
-            code = child.wait()
+            from .busy_dispatch import supervise
+
+            def update_progress(meta):
+                it.update(meta)
+                with contextlib.suppress(OSError):
+                    write_item(root, it)
+
+            options = {"managed": getattr(a, "managed", False)}
+            watched = list(getattr(a, "watch", []) or [])
+            if getattr(a, "watch_git", False):
+                watched.append(str(Path.cwd() / ".git"))
+            if watched:
+                options["watch"] = watched[:16]
+            code, tail = supervise(child, os.getcwd(), update_progress, **options)
+            it["log_tail"] = tail
             return code
         except OSError as e:
             print(e, file=sys.stderr)
             return 127
         finally:
             signal.signal(signal.SIGTERM, previous_term)
+            signal.signal(signal.SIGINT, previous_int)
             stop.set()
             if path is not None:
                 with contextlib.suppress(OSError, ValueError, subprocess.SubprocessError):
-                    it = json.loads(path.read_text())
                     if terminated or code == -signal.SIGTERM:
                         if terminated:
                             it["stop_signal"] = signal.SIGTERM
@@ -1845,6 +2025,11 @@ def add_parser(sub) -> None:
             x.add_argument("--key", default="", help="稍后 stop 用的名字 / the name to stop it with")
             x.add_argument("--pid", type=int, default=None, help="这个进程结束就自动撤下 / removed when this pid ends")
         else:
+            x.add_argument("--watch", action="append", default=[], help="explicit bounded directory metadata progress")
+            x.add_argument("--watch-git", action="store_true", help="watch working directory .git metadata only")
+            x.add_argument("--detach", action="store_true", help="一次性托管并登记 / managed one-shot background run")
+            x.add_argument("--launch-token", default=None, help=argparse.SUPPRESS)
+            x.add_argument("--managed", action="store_true", help=argparse.SUPPRESS)
             x.add_argument("command", nargs=argparse.REMAINDER)
     x = ps.add_parser("delegate", help="把外部数据交已登记 CEO 无工具诊断，自动运行并在主机留报告 / tool-free registered CEO diagnosis")
     x.add_argument("--workflow", help="已登记工作流目录名 / registered workflow folder")

@@ -472,6 +472,24 @@ class PeerNet:
             self.hs_next.pop(mb, None)
             self.hs_fail.pop(mb, None)
 
+    async def send_assist_end(self, peer_id: str, gid: str, reason: str) -> bool:
+        """Best-effort metadata-only end on an existing KK; never queued after revoke.
+
+        No body/replay/handshake creation. The application policy must explicitly
+        approve this exact end marker. Normal stop-everything still suppresses it.
+        """
+        if self._stopped or not isinstance(gid, str) or not re.fullmatch(r"[0-9a-f]{24}", gid):
+            return False
+        obj = {"t": "assist_term_end", "gid": gid, "reason": reason[:40]}
+        guard = getattr(self.cb, "outbound_allowed", None)
+        if guard is None or not guard(peer_id, obj):
+            return False
+        mb = mbox_of(peer_id)
+        s = self.kk.get(mb)
+        if s is None or not s.live or s.pending:
+            return False
+        return await self._tx(mb, K_DATA, s.sid, s.send.encrypt(b"", _pad(obj)))
+
     def stopped(self, on: bool) -> None:
         self._stopped = bool(on)
         if not on:
@@ -902,6 +920,10 @@ class PeerNet:
 
     async def _send_row(self, s: _Sess, r, now: float) -> bool:
         obj = json.loads(r["obj"])
+        guard = getattr(self.cb, "outbound_allowed", None)
+        if guard is not None and not guard(r["peer"], obj):
+            self.db.execute("DELETE FROM outbox WHERE id=?", (r["id"],))
+            return True
         if s.pending and obj.get("t") != "pack":
             return False
         ct = s.send.encrypt(b"", _pad(obj))

@@ -617,13 +617,19 @@ class RealBrowser(unittest.IsolatedAsyncioTestCase):
         # "I scanned it" before the scan is not success
         with patch.object(State, "sign_key", return_value=b"k" * 32):
             await lc.on_phone(Sess("dev1"), {"t": "login_qr_check", "id": res["id"], "n": card["n"]})
-        self.assertEqual(host.sent[-1], {"t": "login_qr_state", "id": res["id"], "state": "waiting"})
+        # 0.26.9 #470: the tap runs the trusted check; still on the sign-in page + signed out → says why
+        self.assertEqual(host.sent[-1], {"t": "login_qr_state", "id": res["id"], "state": "waiting", "why": "other_browser"})
         self.fx.scanned = True
         end = time.monotonic() + 90            # watcher (2 s) + the full trusted probe (5 s stable); slow under parallel gates
-        while lc.cards and time.monotonic() < end:
+        # _end removes the card before scheduling its completion delivery.
+        # Observe the actual event, not that earlier in-memory transition.
+        def completions():
+            return [m for m in host.sent if m.get("t") == "login_qr_done" and m.get("id") == res["id"]]
+        while not completions() and time.monotonic() < end:
             await asyncio.sleep(0.5)
+        done = completions()
+        self.assertTrue(done, "Timed out waiting for this QR card login_qr_done delivery")
         self.assertFalse(lc.cards)
-        done = [m for m in host.sent if m.get("t") == "login_qr_done"]
         self.assertEqual(done[-1]["result"], "done")
         self.assertEqual({x["site"]: x["status"] for x in bs.summary(self.st)}["fixture"], "logged_in")
         self.assertTrue(any("已登录" in h for h in host.hist))

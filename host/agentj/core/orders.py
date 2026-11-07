@@ -212,7 +212,7 @@ class Order:
             raise OrderError("default_not_an_option")
         gid = "g" + secrets.token_hex(3)
         _append(self.path / "gates.jsonl", {"id": gid, "question": question[:300], "options": options[:6], "default": default,
-                                            "deadline": round(time.time() + 60 * deadline_min), "answer": None})
+                                            "deadline": int(time.time() + 60 * deadline_min), "answer": None})
         return gid
 
     def denied(self) -> set[str]:
@@ -273,7 +273,7 @@ def create(*, project: str, prompt_text: str, brief: dict, title: str, parent: d
     if allowed_roots is not None and not any(proj == os.path.realpath(r) or proj.startswith(os.path.realpath(r) + os.sep)
                                              for r in allowed_roots):
         raise OrderError("project_not_allowed", proj)
-    if mode not in MODES or origin not in ORIGINS or harness not in ("core",):
+    if mode not in MODES or origin not in ORIGINS or harness not in ("core", "claude", "codex"):
         raise OrderError("bad_field")
     miss = brief_problems(brief, mode)
     if miss:
@@ -386,7 +386,9 @@ DISPATCH_SPEC = {"type": "function", "function": {
                    "resume (optional text) · report (head; section=N reads part N).",
     "parameters": {"type": "object", "properties": {
         "action": {"type": "string", "enum": ["new", "status", "send", "stop", "resume", "report"]},
+        "harness": {"type": "string", "enum": ["core", "claude", "codex"]},
         "id": {"type": "string"}, "project": {"type": "string"}, "title": {"type": "string"},
+        "gate": {"type": "string"}, "answer": {"type": "string"},
         "prompt": {"type": "string"}, "text": {"type": "string"}, "brief": {"type": "object"},
         "grants": {"type": "object"}, "mode": {"type": "string", "enum": ["work", "research"]}, "section": {"type": "integer"}},
         "required": ["action"]}}}

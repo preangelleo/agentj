@@ -50,6 +50,8 @@ AGENT_DESC = {
     "zh": {"feedback-to-agentj-father": "反馈给 Agent J Father", "switch-harness": "换底层 harness（Claude Code / Codex / OpenCode）：交给主 Agent，先检查、能用才切"},
     "en": {"feedback-to-agentj-father": "Feedback to Agent J Father", "switch-harness": "Switch the harness (Claude Code / Codex / OpenCode): your main Agent checks first, switches only if it works"},
 }
+AGENT_DESC["zh"]["learn"] = "把对话做法沉淀成技能；手机确认完整 diff 后才写入"
+AGENT_DESC["en"]["learn"] = "Distil this conversation into a skill; confirm the full diff before writing"
 AGENT_GROUP = {"zh": "主 Agent", "en": "Main Agent"}
 
 

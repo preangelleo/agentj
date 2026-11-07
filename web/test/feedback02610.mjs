@@ -24,7 +24,7 @@ try {
    check(await ev(p,`import('./js/microphone.js').then(async m=>{const mic=m.createMicrophone({getUserMedia:()=>navigator.mediaDevices.getUserMedia({audio:true}),visible:()=>true});for(let i=0;i<5;i++){const lease=await mic.acquire(),rec=new MediaRecorder(lease.stream),chunks=[];rec.ondataavailable=e=>chunks.push(e.data);const done=new Promise(resolve=>rec.onstop=resolve);rec.start();await new Promise(resolve=>setTimeout(resolve,160));rec.stop();lease.release();await done;if(!chunks.some(b=>b.size>0)||lease.stream.getTracks().some(t=>t.readyState!=='ended'))return false;}return true;})`),'five actual MediaRecorder takes yield bytes and release every track');
    await fake.send({t:'status',s:'working',goal_active:true});
    await waitFor(p,`document.getElementById('orb').classList.contains('father-dance')`);
-   check(await ev(p,`getComputedStyle(document.getElementById('orb')).animationName==='father-dance'`),'active goal reuses same animation');
+   check(await ev(p,`getComputedStyle(document.getElementById('orb')).animationName==='aj-header-father-dance'`),'active goal reuses same animation');
    await fake.send({t:'status',s:'idle',goal_active:false});
    await waitFor(p,`!document.getElementById('orb').classList.contains('father-dance')`);checks++;
    await ev(p,`import('./js/settings.js').then(m=>m.open())`);

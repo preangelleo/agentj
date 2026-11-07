@@ -110,6 +110,8 @@ class VshareDesk:
             self.st.log("control_refused", device=s.device, action="vault_share", reason=why)
             self._log("vault_share", s.device, "refused:" + why, TARGET, sig=obj.get("sig"), n=n, ts=obj.get("ts"))
             return await self._res(s, r, "vault_share", False, why=why)
+        from .approval_special import phone_origin
+        pend['approval_origin'] = phone_origin(self.h, s, 'vault_share')
         self.h._bg(self._vshare(s, r, pend, prf, pk), "vault_share")   # its finally releases `sharing`
         self._log("vault_share", s.device, "start", TARGET, sig=obj.get("sig"), n=n, ts=obj.get("ts"))
         with contextlib.suppress(Exception):
@@ -152,7 +154,9 @@ class VshareDesk:
                 card = {"kind": "vshare", "dev": me, "name": name, "cred": pk["id"],
                         "paired": int(pa) if isinstance(pa, (int, float)) and not isinstance(pa, bool) else 0,
                         "flags": self._vshare_flags(me), "only": peers, "sink": sink}
-                res = await self.h.elevate.request(card)
+                from .approval_review import origin_scope
+                with origin_scope(pend.get('approval_origin') or {}):
+                    res = await self.h.elevate.request(card)
                 rs = res.get("result")
                 why = None if rs == "saved" else {"denied": "denied", "timeout": "timeout", "stopped": "estop"}.get(
                     rs, "estop" if self.h.stopped() else "failed")

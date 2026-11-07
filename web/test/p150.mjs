@@ -81,7 +81,7 @@ export async function runP150({ anim = false } = {}) {
               const cs = await evaluate(p, `[...${$('busyDots')}.querySelectorAll('i.rb:not(.bye)')].map(i=>getComputedStyle(i).getPropertyValue('--h').trim())`);
               check(new Set(cs).size === n, `distinct colours ${cs}`);
               await waitFor(p, `!${$('busyDots')}.querySelector('i.rb.in')`, 2000);   // a new robot pops in first, then dances
-              check(await evaluate(p, `getComputedStyle(${$('busyDots')}.querySelector('i.rb')).animationName`) === 'rb-dance-18', 'dances (P154 追加 10: robots)');
+              check(await evaluate(p, `getComputedStyle(${$('busyDots')}.querySelector('i.rb')).animationName`) === 'aj-busy-rb-dance-18', 'dances (P154 追加 10: robots)');
               check(/[0-9]/.test(await evaluate(p, `${$('busyDots')}.getAttribute('aria-label')`)), 'dots are labelled');
               await freeze(n === 1 ? 0 : 600); await save(`${color}-${n}`); await play();
             }

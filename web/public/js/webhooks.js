@@ -162,7 +162,7 @@ async function copyUrl(h, button) {
 }
 
 function btn(label, cls, fn) {
-  const b = mk('button', 'aj-btn aj-btn--sm ' + cls, label); b.type = 'button'; b.disabled = busy;
+  const b = mk('button', 'aj-action aj-action--sm ' + cls, label, 'aj-action', 'dialog'); b.type = 'button'; b.disabled = busy;
   b.addEventListener('click', fn);
   return b;
 }
@@ -185,7 +185,7 @@ function row(h, ended) {
     acts.append(btn(t(h.enabled ? 'p366.pause' : 'p366.resume'), 'whtoggle', () => setOp(h, h.enabled ? 'pause' : 'resume')));
     acts.append(btn(t('p366.copyUrl'), 'whcopy', e => copyUrl(h, e.currentTarget)));
   }
-  acts.append(btn(t('p366.revoke'), 'aj-btn--danger whrevoke', () => revoke(h)));
+  acts.append(btn(t('p366.revoke'), 'aj-action--danger whrevoke', () => revoke(h)));
   li.append(acts);
   return li;
 }
@@ -202,15 +202,15 @@ function draw(status) {
     const { live, ended } = sortHooks(S.hooks);
     if (!live.length && !ended.length) kids.push(mk('p', 'setnote whempty', t('p366.empty')));
     if (live.length) {
-      kids.push(mk('h3', 'setg', t('p366.live')));
+      kids.push(mk('h3', 'setg', t('p366.live'), 'aj-channel'));
       const ul = mk('ul', 'whlist whlist--live'); for (const h of live) ul.append(row(h, false)); kids.push(ul);
     }
     if (ended.length) {
-      kids.push(mk('h3', 'setg', t('p366.ended')));
+      kids.push(mk('h3', 'setg', t('p366.ended'), 'aj-channel'));
       const ul = mk('ul', 'whlist whlist--ended'); for (const h of ended) ul.append(row(h, true)); kids.push(ul);
     }
     if (S.recent.length) {
-      kids.push(mk('h3', 'setg', t('p366.recent')));
+      kids.push(mk('h3', 'setg', t('p366.recent'), 'aj-channel'));
       const names = new Map(S.hooks.map((h) => [h.id, h.name]));
       const ul = mk('ul', 'whlist whrecent');
       for (const d of S.recent) {

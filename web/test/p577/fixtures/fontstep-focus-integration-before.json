@@ -1,0 +1,26 @@
+{
+  "label": "integration pre-680 c478 (Root late business retained)",
+  "sourceCommit": "c478bf0f71f9366695861de12f5cc594d243ccb6",
+  "sourcePath": "web/public/menu.css",
+  "sourceBlob": "df1e87158666baf07a389af3198b5d72e60a7f09",
+  "sourceSha256": "224579336ae5fbef05f3668fcad6d8755da8be1ea84390d33ac9a13d60dc848b",
+  "rulesSha256": "4292ed2b64e81526006529534000fa6c113856044f851b882b3810901eec8009",
+  "scope": "Independent integration before fixture; does not replace or re-label the original source7 pure-refactor evidence.",
+  "rules": [
+    {
+      "head": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible",
+      "body": "outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));",
+      "context": []
+    },
+    {
+      "head": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible",
+      "body": "outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));",
+      "context": []
+    },
+    {
+      "head": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible",
+      "body": "outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));",
+      "context": []
+    }
+  ]
+}

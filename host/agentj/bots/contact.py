@@ -63,7 +63,8 @@ async def signed_send(manager,req):
     if problems(text,c):raise BotError('safety_refused')
     cfg=mail.read_config(manager.host.st)
     if not cfg['enabled']:raise BotError('mail_required')
-    msg=mail.build_notes(cfg,[target['email']],'Customer service / 客服',text,'Agent J')
+    msg=(mail.build_notes(cfg,[target['email']],'Customer service / 客服',text,'Agent J') if code_mail
+         else mail.build_service_reply(cfg,[target['email']],text,row['request']))
     # P551 (#318): the owner's signed tap sends the owner's own text (or the fixed code mail) — ② reversible, no card
     if mail.read_config(manager.host.st)!=cfg:raise BotError('stale')
     password=mail.load_secret(manager.host.st,cfg['address'])

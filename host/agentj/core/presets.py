@@ -37,6 +37,10 @@ class Preset:
     plan: bool = False
     replay_reasoning: bool = False
     fallback: tuple = field(default_factory=tuple)
+    stream: bool = False              # C1: SSE streaming (Chat / Anthropic Messages); Responses stays whole
+    auth: str = "bearer"              # anthropic-messages: "x-api-key" (Anthropic) or "bearer" (compatible gateways)
+    cache: bool = False               # anthropic-messages: cache_control on the system prompt and the tool list
+    max_output: int | None = None     # anthropic-messages: max_tokens (required by the protocol)
 
     @property
     def name(self) -> str:
@@ -73,7 +77,9 @@ def resolve(spec: str | None, role: str = "main", environ=None) -> Preset:
     return Preset(provider=prov, model=model, base_url=p["base_url"], key_env=p["key_env"], protocol=p["protocol"],
                   tier=m.get("tier", "large"), context=int(m.get("context", 131072)), edit_mode=m.get("edit_mode", "str_replace"),
                   plan=bool(p.get("plan")), replay_reasoning=bool(m.get("replay_reasoning")),
-                  fallback=tuple(x for x in p.get("fallback", ()) if x != model and x in p["models"]))
+                  fallback=tuple(x for x in p.get("fallback", ()) if x != model and x in p["models"]),
+                  stream=bool(p.get("stream")), auth=p.get("auth", "bearer"), cache=bool(p.get("cache")),
+                  max_output=int(m["max_output"]) if m.get("max_output") else None)
 
 
 def for_role(base: Preset, role: str) -> Preset:

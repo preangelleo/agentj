@@ -1,0 +1,73 @@
+{
+  "sourceCombined": "15a950814f4794e4b382eaaddf8f592fde3a9a1a33146c647392f5806ad46ab7",
+  "app": [
+    {
+      "head": ".rd button",
+      "body": "-webkit-appearance:none;appearance:none;-webkit-tap-highlight-color:transparent;border:0;background:none;color:var(--dlg-fg);\n  padding:0;cursor:pointer;touch-action:manipulation;font:inherit",
+      "context": []
+    },
+    {
+      "head": ".rd button:focus-visible",
+      "body": "outline:2px solid var(--dlg-fg);outline-offset:1px",
+      "context": []
+    },
+    {
+      "head": ".bots-tabs button,.bots-row button,.bots-field input",
+      "body": "min-height:56px",
+      "context": []
+    },
+    {
+      "head": ".bots-row button",
+      "body": "width:var(--aj-bots-width,100%);display:var(--aj-bots-display,block);margin:var(--aj-bots-margin,.5rem 0)",
+      "context": [
+        "@media(max-width:600px)"
+      ]
+    },
+    {
+      "head": ".bots-row button",
+      "body": "width:var(--aj-bots-width,100%);display:var(--aj-bots-display,block);margin:var(--aj-bots-margin,.5rem 0)",
+      "context": [
+        "@media(max-width:600px)"
+      ]
+    },
+    {
+      "head": ".bots-row button",
+      "body": "width:var(--aj-bots-width,100%);display:var(--aj-bots-display,block);margin:var(--aj-bots-margin,.5rem 0)",
+      "context": [
+        "@media(max-width:600px)"
+      ]
+    },
+    {
+      "head": ".gdlg-row button",
+      "body": "flex:1;min-height:48px;padding:0 var(--space-control);border-radius:999px;border:1.5px solid currentColor;background:none;\n  color:inherit;font:600 calc(15px*var(--fz))/1 var(--font-body);cursor:pointer",
+      "context": []
+    },
+    {
+      "head": ".gdlg-row button.go",
+      "body": "background:var(--dfg);color:var(--dbg);border-color:var(--dfg)",
+      "context": []
+    },
+    {
+      "head": ".gdlg-row button:focus-visible",
+      "body": "outline:2px solid var(--dfg);outline-offset:3px",
+      "context": []
+    },
+    {
+      "head": ".gdlg-row button:disabled",
+      "body": "opacity:.4;cursor:default",
+      "context": []
+    },
+    {
+      "head": ".ct-dlg input:focus-visible,.ct-dlg textarea:focus-visible,.ct-dlg button:focus-visible,.ct-dlg summary:focus-visible",
+      "body": "outline:2px solid var(--dfg);outline-offset:2px",
+      "context": []
+    }
+  ],
+  "base": [
+    {
+      "head": ".aj-flow.aj-flow > :is(button,.aj-action) + :is(button,.aj-action)",
+      "body": " margin-block-start:var(--space-control); ",
+      "context": []
+    }
+  ]
+}

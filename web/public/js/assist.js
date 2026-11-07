@@ -257,7 +257,7 @@ function viewRoot() {
   v = mk('section', 'asview'); v.id = 'assist-view'; v.hidden = true;
   v.setAttribute('role', 'dialog'); v.setAttribute('aria-modal', 'true'); v.setAttribute('aria-labelledby', 'assist-view-h');
   const head = mk('header', 'asview__head');
-  const h = mk('h2', 'asview__title'); h.id = 'assist-view-h';
+  const h = mk('h2', 'asview__title', undefined, 'aj-rescue'); h.id = 'assist-view-h';
   const left = mk('p', 'asview__left'); left.id = 'assist-view-left'; left.setAttribute('role', 'status');
   const titles = mk('div', 'asview__titles'); titles.append(h, left);
   const rv = btn('assist-view-revoke', '', 'asbtn asbtn--revoke', revoke);
@@ -281,7 +281,7 @@ function icon(paths, cls = '') {
   for (const d of paths) { const p = document.createElementNS(SVG, 'path'); p.setAttribute('d', d); svg.append(p); }
   return svg;
 }
-function btn(id, label, cls, fn) { const b = mk('button', cls, label); b.type = 'button'; b.id = id; b.addEventListener('click', fn); return b; }
+function btn(id, label, cls, fn) { const b = mk('button', cls, label, cls?.split(/\s+/).includes('aj-action') ? 'aj-action' : 'aj-rescue', cls?.split(/\s+/).includes('aj-action') ? 'dialog' : undefined); b.type = 'button'; b.id = id; b.addEventListener('click', fn); return b; }
 export function openView() {
   if (!S.active) return;
   const v = viewRoot();
@@ -394,13 +394,13 @@ export function paintCard(body) {
   if (!box) { box = mk('div', 'rsassist'); box.id = 'rs-assist'; box.setAttribute('role', 'group'); box.setAttribute('aria-labelledby', 'rs-assist-h'); }
   if (box.parentElement !== body || body.lastElementChild !== box) body.append(box);
   const parts = [];
-  const h = mk('h5', 'rsassist__h', t('p0269.assist.title')); h.id = 'rs-assist-h'; parts.push(h);
+  const h = mk('h5', 'rsassist__h', t('p0269.assist.title'), 'aj-rescue'); h.id = 'rs-assist-h'; parts.push(h);
   if (S.active) {
     const p = mk('p', 'rsmsg rsassist__on', t('p0269.assist.onLine', { n: Math.max(1, minutesLeft(S.until)) })); p.id = 'rs-assist-on'; p.setAttribute('role', 'status');
-    const rv = btn('rs-assist-revoke', revoking ? t('p0269.assist.revoking') : t('p0269.assist.revoke'), 'aj-btn', revoke); rv.disabled = revoking;
-    parts.push(p, acts(btn('rs-assist-view', t('p0269.assist.view'), 'aj-btn aj-btn--primary', openView), rv));
+    const rv = btn('rs-assist-revoke', revoking ? t('p0269.assist.revoking') : t('p0269.assist.revoke'), 'aj-action', revoke); rv.disabled = revoking;
+    parts.push(p, acts(btn('rs-assist-view', t('p0269.assist.view'), 'aj-action aj-action--primary', openView), rv));
   } else if (!G.open) {
-    parts.push(mk('p', 'rsnote', t('p0269.assist.lead')), acts(btn('rs-assist-go', t('p0269.assist.go'), 'aj-btn', openPanel)));
+    parts.push(mk('p', 'rsnote', t('p0269.assist.lead')), acts(btn('rs-assist-go', t('p0269.assist.go'), 'aj-action', openPanel)));
   } else {
     const ul = mk('ul', 'rsassist__list'); ul.id = 'rs-assist-list';
     for (const k of ['what', 'rules', 'ask', 'see', 'back', 'long']) { const li = mk('li', '', t('p0269.assist.x.' + k)); li.dataset.k = k; ul.append(li); }
@@ -415,10 +415,10 @@ export function paintCard(body) {
     }
     parts.push(lab, chips);
     const yesLabel = G.phase === 'fetch' ? t('p408.preparing') : busy ? t('p0269.assist.granting') : t('p0269.assist.yes', { n: G.minutes });
-    const yes = btn('rs-assist-yes', yesLabel, 'aj-btn aj-btn--primary', () => (G.phase === 'fail' ? fetchChallenge() : grantYes()));
+    const yes = btn('rs-assist-yes', yesLabel, 'aj-action aj-action--primary', () => (G.phase === 'fail' ? fetchChallenge() : grantYes()));
     yes.disabled = busy || G.phase === 'fetch' || (G.phase === 'fail' && G.why === 'no_passkey');
     if (G.phase === 'fail') yes.textContent = t('p332.again');
-    const no = btn('rs-assist-cancel', t('sheet.cancel'), 'aj-btn', closePanel); no.disabled = G.phase === 'sending';
+    const no = btn('rs-assist-cancel', t('sheet.cancel'), 'aj-action', closePanel); no.disabled = G.phase === 'sending';
     parts.push(acts(yes, no));
     if (G.why) { const m = mk('p', 'rsmsg rsfail', whyText(G.why)); m.id = 'rs-assist-msg'; m.setAttribute('role', 'status'); parts.push(m); }
   }

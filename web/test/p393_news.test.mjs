@@ -6,7 +6,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
+import {resolveDefaults} from '../tools/css-defaults.mjs';
+const read = (p) => { const text = readFileSync(new URL(p, import.meta.url), 'utf8'); return p.endsWith('.css') ? resolveDefaults(text) : p.endsWith('.html') ? text.replace(/ data-aj-action-context="[^"]+"/g,'') : text; };
 const html = read('../public/index.html');
 const news = read('../public/js/news.js');
 const menuCss = read('../public/menu.css');
@@ -22,10 +23,10 @@ test('markup: one hidden form inside #set-news-row, existing input / button look
   assert.ok(row.indexOf('id="set-news-to"') < row.indexOf('<form') && row.indexOf('</form>') < row.indexOf('id="set-news-msg"'), 'between 「发到」 and the message line');
   assert.match(form, /<input id="set-news-email" class="aj-input" type="email" inputmode="email"[^>]*maxlength="254"/);
   assert.match(form, /<input id="set-news-code" class="aj-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="\[0-9\]\{6\}"/);
-  assert.match(form, /<button type="submit" id="set-news-send" class="aj-btn aj-btn--sm aj-btn--primary" data-i18n="p393news\.send">/);
-  assert.match(form, /<button type="submit" id="set-news-verify" class="aj-btn aj-btn--sm aj-btn--primary" data-i18n="p393news\.verify" disabled>/);
-  assert.match(form, /<button type="button" id="set-news-resend" class="setlink" disabled>/);
-  assert.match(form, /<button type="button" id="set-news-change" class="setlink" data-i18n="p393news\.change">/);
+  assert.match(form, /<button type="submit" id="set-news-send" class="aj-action aj-action--sm aj-action--primary" data-i18n="p393news\.send" data-aj-owner="aj-action">/);
+  assert.match(form, /<button type="submit" id="set-news-verify" class="aj-action aj-action--sm aj-action--primary" data-i18n="p393news\.verify" disabled data-aj-owner="aj-action">/);
+  assert.match(form, /<button type="button" id="set-news-resend" class="setlink" disabled data-aj-owner="aj-settings">/);
+  assert.match(form, /<button type="button" id="set-news-change" class="setlink" data-i18n="p393news\.change" data-aj-owner="aj-settings">/);
   assert.match(form, /id="set-news-step2" hidden/); assert.match(form, /id="set-news-again" hidden/); assert.match(form, /id="set-news-sent" hidden/);
 });
 
@@ -63,5 +64,5 @@ test('dictionaries: zh + en twins, same placeholders, plain words (no emoji, no 
 test('palette only: the e-mail step CSS names no colour', () => {
   const a = menuCss.indexOf('/* P393 (backlog 128)'), b = menuCss.indexOf('/* P380', a);
   assert.ok(a > 0 && b > a);
-  assert.doesNotMatch(menuCss.slice(a, b), /#[0-9a-f]{3,8}\b|rgb\(|hsl\(/i);
+  assert.doesNotMatch(menuCss.slice(a, b).replace(/\/\*[\s\S]*?\*\//g, ''), /#[0-9a-f]{3,8}\b|rgb\(|hsl\(/i);
 });

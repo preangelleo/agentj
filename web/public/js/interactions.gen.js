@@ -68,6 +68,12 @@ export const ROWS = [
   ["app.mcp_rotate",[],1],
   ["app.mcp_revoke",[],1],
   ["app.mcp_copy",[],1],
+  ["app.assist_terminal_grant",[],1],
+  ["app.assist_terminal_view",[],1],
+  ["app.assist_terminal_stop",[],1],
+  ["app.assist_terminal_log",[],1],
+  ["app.assist_terminal_discover_retry",[],1],
+  ["app.assist_terminal_log_earlier",[],1],
   ["keys.search",[["/","press"],["Mod+K","press"]],1],
   ["keys.search_close",[["Escape","press"]],1],
   ["compose.focus",[["i","press"],["Escape","press"]],1],
@@ -123,6 +129,14 @@ export const ROWS = [
   ["search.close",[["Escape","press"]],1],
   ["appr.approve",[["Mod+Enter","press"]],1],
   ["appr.fold",[["Escape","press"]],1],
+  ["appr.question",[],1],
+  ["appr.source",[],1],
+  ["appr.details",[],1],
+  ["appr.details_full",[],1],
+  ["appr.reopen",[],1],
+  ["appr.heartbeat",[],1],
+  ["appr.assist_terminal_answer",[],1],
+  ["appr.assist_terminal_login",[],1],
 ];
 /** match key → [id, repeat]: a plain key is KeyboardEvent.key; Alt (+Shift) is "alt:" / "alt+shift:" + KeyboardEvent.code. */
 export const KEYMAP = {

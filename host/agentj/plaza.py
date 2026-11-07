@@ -364,7 +364,7 @@ def run_publish(kind: str, *, title: str | None, body_file: str, target: str | N
             print(f"之后查看回复 / read answers later: agentj plaza show {rid}", file=out)
         return EXIT_OK
 
-    v = privacy.layer2(draft, env=env, transport=transport, gate="plaza")
+    v = privacy.outbound_check(draft, env=env, transport=transport, gate="plaza")
     print("=" * 8 + " 将公开发到广场的确切文本 — 所有付费客户的 Agent 与员工都能看到 / the EXACT text that would be PUBLISHED to every "
           "customer's Agents and staff " + "=" * 8, file=out)
     if kind == "post":

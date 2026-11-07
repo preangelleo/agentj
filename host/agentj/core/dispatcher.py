@@ -429,7 +429,24 @@ def _env_names(o: Order, environ) -> list[str]:
     return [n for n in names if environ.get(n) and not SECRETISH.search(n)]
 
 
+def set_paused(st_root, paused: bool) -> None:
+    """Host-only global admission latch, invisible in every Agent fence."""
+    path = orders.root(st_root) / '.paused'
+    if paused:
+        orders._mk(path.parent)
+        orders._write(path, 'paused')
+    else:
+        path.unlink(missing_ok=True)
+
+
+def paused(st_root=None) -> bool:
+    return (orders.root(st_root) / '.paused').exists()
+
+
 def launch(o: Order, **kw) -> str:
+    raise OrderError("pending_owner_decision")
+
+def experimental_launch(o: Order, **kw) -> str:
     with _claim(o):
         pending = _launch_unlocked(o, **kw)
     return pending.finish() if isinstance(pending, _Pending) else pending
@@ -437,6 +454,8 @@ def launch(o: Order, **kw) -> str:
 
 def _launch_unlocked(o: Order, *, environ=None, st_root=None, run=subprocess.run, popen=subprocess.Popen):
     """Start (or queue) the order's CEO. → 'started' | 'queued'."""
+    if paused(st_root):
+        raise OrderError("stopped")
     env = dict(os.environ if environ is None else environ)
     env["AGENTJ_ORDER_ID"] = o.id
     if st_root is not None:
@@ -621,6 +640,11 @@ def stop(o: Order, *, grace: float | None = None, run=subprocess.run) -> str:
 
 
 def resume(o: Order, text: str | None = None, **kw) -> str:
+    raise OrderError("pending_owner_decision")
+
+def experimental_resume(o: Order, text: str | None = None, **kw) -> str:
+    if paused(kw.get("st_root")):
+        raise OrderError("stopped")
     with _claim(o):
         pending = _resume_unlocked(o, text, **kw)
     return pending.finish() if isinstance(pending, _Pending) else pending
@@ -640,6 +664,9 @@ def _resume_unlocked(o: Order, text: str | None = None, *, environ=None, st_root
     prev = o.result()
     if prev:
         hist = o.path / "history.jsonl"
+        if o.report():
+            archive = orders._mk(o.path / "history-reports")
+            orders._write(archive / (str(time.time_ns()) + ".md"), o.report())
         orders._append(hist, prev)
         (o.path / "result.json").unlink(missing_ok=True)
     o.set_control(None)
@@ -662,6 +689,8 @@ def reconcile(st_root=None) -> list[str]:
 
 def drain(st_root=None, environ=None, **kw) -> list[str]:
     """Start queued orders whose blockers are over, while there is room."""
+    if paused(st_root):
+        return []
     started = []
     for o in orders.all_orders(st_root):
         if o.state() != "queued":
@@ -681,6 +710,10 @@ def tool(args: dict, *, parent: dict, allowed_roots, st_root=None, environ=None,
          origin: str = "owner_turn", fence: bool = True, danger_extra: list | None = None) -> str:
     """The main Agent's one tool, six actions (12.5). Returns short text for the model (12.8 budgets)."""
     act = args.get("action")
+    if act in ("new", "resume"):
+        return "Error: pending_owner_decision"
+    if paused(st_root) and act in ("new", "resume"):
+        return "Error: stopped"
     try:
         if act == "new":
             brief = args.get("brief") if isinstance(args.get("brief"), dict) else {}

@@ -1,6 +1,20 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
  "keys": {
+  "agent.model": {
+   "type": "string",
+   "default": null,
+   "description": "Current model; config get/set/unset uses existing Host state, never a JSON5 override / 当前模型，沿现有 Host 路径读写",
+   "aliases": [
+      "agent model",
+    "当前模型"
+   ],
+   "tier": "human",
+   "apply": "reload",
+   "verify": "agentj config get agent.model",
+   "since": "0.28",
+   "storage": "host-state"
+},
   "version": {
    "type": "integer",
    "default": 1,
@@ -193,7 +207,8 @@
    "enum": [
     "openai",
     "elevenlabs",
-    "command"
+    "command",
+    "volcengine"
    ]
   },
   "voice.tts.model": {
@@ -210,7 +225,8 @@
    "since": "0.12",
    "maxLength": 160,
    "providerDefaults": {
-    "elevenlabs": "eleven_v4"
+    "elevenlabs": "eleven_v4",
+    "volcengine": "seed-tts-2.0"
    }
   },
   "voice.tts.key_env": {
@@ -227,7 +243,8 @@
    "since": "0.12",
    "pattern": "^[A-Z][A-Z0-9_]{0,79}$",
    "providerDefaults": {
-    "elevenlabs": "ELEVENLABS_API_KEY"
+    "elevenlabs": "ELEVENLABS_API_KEY",
+    "volcengine": "VOLCENGINE_TTS_ACCESS_KEY"
    }
   },
   "voice.speak_replies": {
@@ -1494,23 +1511,28 @@
    "since": "0.23.0"
   },
   "jev.mode": {
-   "type": "string",
-   "default": "",
-   "description": "Jev safety route; empty prompts setup; off requires signed owner confirmation / Jev 审核来源；关闭须主人签名",
-   "aliases": [
-    "Jev 审核模式",
-    "Jev review mode"
-   ],
-   "tier": "user",
-   "apply": "hot",
-   "verify": "agentj onboarding --json",
-   "since": "0.24",
-   "enum": [
-    "",
-    "typesafe",
-    "openrouter",
-    "off"
-   ]
+    "type": "string",
+    "default": "",
+    "description": "Jev safety route; empty prompts setup; off requires signed owner confirmation / Jev 审核来源；关闭须主人签名",
+    "aliases": [
+      "Jev 审核模式",
+      "Jev review mode"
+    ],
+    "tier": "user",
+    "apply": "hot",
+    "verify": "agentj onboarding --json",
+    "since": "0.24",
+    "pattern": "(?:|typesafe|openrouter|off|cheap:[0-9a-f]{64})",
+    "patternHint": "Jev route or owner-reviewed cheap settings digest"
+  },
+  "jev.cheap": {
+    "aliases": ["廉价安全审核候选", "cheap security review candidate"],
+    "type": "object",
+    "default": {},
+    "description": "Inactive candidate: model (existing provider/model), max_output (1–800), threshold, evaluation (real source/model/threshold/source_sha256 and Jev/cheap counts). Requires phone review + signed jev.mode digest with owner UV; synthetic never qualifies. / 候选配置不自动启用，须真实对比和主人手机本人确认。",
+    "tier": "user",
+    "apply": "hot",
+    "since": "0.28.0"
   },
   "skills.stale_days": {
    "type": "integer",
@@ -1652,6 +1674,89 @@
    "apply": "hot",
    "verify": "agentj config validate --json",
    "since": "0.26.10"
-  }
+  },
+  "ui.remote_servers": {
+   "type": "array",
+   "default": [],
+   "description": "Remote task display names; no remote access configuration / 远程任务的机器别名；不设置连接或凭据",
+   "aliases": [
+    "remote server names",
+    "远程服务器别名"
+   ],
+   "tier": "user",
+   "apply": "hot",
+   "verify": "agentj config validate --json",
+   "since": "0.28"
+  },
+   "voice.tts.app_id": {
+    "type": "string",
+    "default": "",
+    "description": "Volcengine App ID (not a secret; the access key stays in an environment variable) / 火山引擎 App ID（不是密钥；Access Key 只放环境变量）",
+    "aliases": [
+     "volcengine app id",
+     "火山 App ID",
+     "voice tts app id"
+    ],
+    "tier": "user",
+    "apply": "hot",
+    "verify": "agentj voice status",
+    "since": "0.21",
+    "maxLength": 40,
+    "pattern": "^[A-Za-z0-9_-]{0,40}$",
+    "patternHint": "a plain App ID (letters, digits, - or _)"
+   },
+   "voice.tts.spoken": {
+    "type": "string",
+    "default": "auto",
+    "description": "Rewrite a reply into a short spoken script before reading it: auto = on for a local model or a cloud voice, off for the free system voice / 播报前改写成精简口语稿：auto = 本机模型和第三方声音开、系统自带声音关",
+    "aliases": [
+     "口语化",
+     "spoken",
+     "voice tts spoken",
+     "播报口语化"
+    ],
+    "tier": "user",
+    "apply": "hot",
+    "verify": "agentj voice status",
+    "since": "0.21",
+    "enum": [
+     "auto",
+     "on",
+     "off"
+    ]
+   },
+   "voice.tts.spoken_model": {
+    "type": "string",
+    "default": "mid",
+    "description": "Model for the spoken rewrite: mid = the AI tool's mid-tier model (Claude Code: Sonnet), or a model ID / 口语化用的模型：mid = 当前 AI 工具的中档模型（Claude Code 用 Sonnet），或填模型 ID",
+    "aliases": [
+     "口语化模型",
+     "spoken model",
+     "voice tts spoken model"
+    ],
+    "tier": "user",
+    "apply": "hot",
+    "verify": "agentj voice status",
+    "since": "0.21",
+    "maxLength": 100,
+    "pattern": "^[A-Za-z0-9._:/@\\[\\]-]{1,100}$",
+    "patternHint": "mid or a model ID"
+   },
+   "voice.tts.spoken_max_chars": {
+    "type": "integer",
+    "default": 400,
+    "minimum": 80,
+    "maximum": 2000,
+    "description": "Longest spoken script, in characters / 口语稿最多多少字",
+    "aliases": [
+     "口语稿长度",
+     "spoken length",
+     "voice tts spoken max chars"
+    ],
+    "tier": "user",
+    "apply": "hot",
+    "verify": "agentj voice status",
+    "since": "0.21"
+   }
  }
 }

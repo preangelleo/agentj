@@ -5,7 +5,7 @@ import {t} from './t.js';
 import {valid,generate,contrast,DIRECTIONS} from './palette-color.js';
 let generation=0;
 export function resetPalettes(){generation++;}
-const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
+const node=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;e.setAttribute('data-aj-owner', 'aj-palette'); return e;};
 const button=(text,fn)=>{const e=node('button',text,'jc-chip');e.type='button';e.onclick=fn;return e;};
 export function mountPalette({seed='#827dbd',onChoose=null,embedded=false}={}) {
   const box=node('section',undefined,'jp-palette');

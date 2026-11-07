@@ -1,6 +1,9 @@
+import { REMOTE_NAMES, renderRemoteNames } from './remote-names.js';
 import {watchSettings} from './text-editor.js';
 import * as heartbeatPrompt from './heartbeat-prompt.js';
 import { keysSet } from './api.js';
+import { menu as harnessMenu } from './api.js';
+import { renderHarnessCommands } from './harness-commands.js';
 import { ASR_KEYS, renderAsr, bindAsr } from './asr-settings.js';
 import { copyButton } from './copycode.js';
 // F13 · P171 · Settings (the top-right gear, `s`, ⌘, / Ctrl+,): ONE full-screen page for everything — the ≡ menu is gone and
@@ -89,10 +92,19 @@ function renderJev() {
   const mode = hostInfo?.jev?.mode || '';
   el('set-jev-mode-row').hidden = !H.paired() || !signedKey('jev.mode');
   tgl('set-jev-enabled', mode !== 'off');
+  let cheapButton = document.getElementById('set-jev-cheap-review');
+  if (!cheapButton) {
+    cheapButton = document.createElement('button'); cheapButton.id = 'set-jev-cheap-review';
+    cheapButton.setAttribute('data-aj-owner','aj-action');cheapButton.setAttribute('data-aj-action-context','dialog');cheapButton.type = 'button'; cheapButton.className = 'aj-action';
+    el('set-jev-mode-row').append(cheapButton);
+    cheapButton.onclick = () => approvalSet('jev.mode', hostInfo?.jev?.candidate);
+  }
+  cheapButton.hidden = !hostInfo?.jev?.candidate;
+  cheapButton.textContent = t('p0280.cheapReview');
   el('set-jev-source').value = ['typesafe', 'openrouter'].includes(mode) ? mode : 'typesafe';
   el('set-jev-source').disabled = mode === 'off';
-  el('set-jev-current').textContent = t('p409.current', { mode: mode === 'off' ? t('p409.off') : mode === 'typesafe' ? 'TypeSafe' : mode === 'openrouter' ? 'OpenRouter' : t('p409.choose') });
-  const needs = mode !== 'off' && hostInfo?.jev?.ready !== true;
+  el('set-jev-current').textContent = t('p409.current', { mode: mode === 'cheap' ? t('p0280.cheapMode') : mode === 'off' ? t('p409.off') : mode === 'typesafe' ? 'TypeSafe' : mode === 'openrouter' ? 'OpenRouter' : t('p409.choose') });
+  const needs = mode !== 'off' && mode !== 'cheap' && hostInfo?.jev?.ready !== true;
   const keyButton = el('set-jev-key');
   keyButton.hidden = !needs;
   keyButton.textContent = t('p527.fill', { provider: el('set-jev-source').value === 'openrouter' ? 'OpenRouter' : 'TypeSafe' });
@@ -183,7 +195,7 @@ async function onA2hs() {
 
 // ---------------------------------------------------------------- host preferences (pref_set)
 export const PREF_KEYS = ['appearance.language', 'appearance.theme', 'voice.speak_replies', 'voice.wake_enabled', 'agent.high_risk_warnings', 'agent.session_mode', 'agent.isolation', 'agent.allow_docker'];
-PREF_KEYS.push(...ASR_KEYS);
+PREF_KEYS.push(...ASR_KEYS, REMOTE_NAMES);
 PREF_KEYS.push('updates.mode', 'heartbeat.enabled', 'heartbeat.interval_minutes', 'approval.jev_threshold', 'approval.goal_auto', 'quota.auto_switch');
 PREF_KEYS.push('updates.auto_install');                 // P203: half of the 升级方式 (自动 = install when idle) choice
 PREF_KEYS.push(...imsg.PREF_KEYS);       // P274: the iMessage card's parameters (host lists them only on a Mac)
@@ -289,6 +301,9 @@ function renderPush() {
   b.hidden = !['on', 'offer', 'failed'].includes(st) || !push.pushSupported();
   b.textContent = t(st === 'on' ? 'set.pushDisable' : 'set.pushEnable');
   b.dataset.act = st === 'on' ? 'off' : 'on';
+  const ks = push.kinds();                     // P204: the categories, only while alerts are on
+  el('set-push-kinds').hidden = st !== 'on' || !push.pushSupported();
+  for (const k of document.querySelectorAll('[data-push-kind]')) k.setAttribute('aria-checked', String(ks.includes(k.dataset.pushKind)));
 }
 /** P207 §3: a two-way switch — aria-checked = the RIGHT option; its two labels say which side is which (bold = current). */
 function twoWay(id, right) {
@@ -353,13 +368,14 @@ export async function faceIdStep(res, txt = {}) {
 /** confirm → signed approval_set → ctl_res; ok = follow at once (the `preferences` broadcast confirms), else say why. */
 async function approvalSet(key, value) {
   const jev = key === 'jev.mode';
+  const cheap = jev && String(value).startsWith('cheap:');
   const harness = key === 'approval.level' && (value === 'harness' || value === 'full');
   if (harness) value = 'harness';                  // P552: one switch — a re-confirmation of a released `full` signs `harness`
-  const full = (jev && value === 'off') || harness, goal = key === 'approval.goal_nocard';
+  const full = (jev && (value === 'off' || cheap)) || harness, goal = key === 'approval.goal_nocard';
   const name = goal ? t('p336.goal') : harness ? t('p551.harnessName') : t('p336.' + value);
-  const title = jev ? t(value === 'off' ? 'p409.offTitle' : 'p409.onTitle') : goal ? t(value ? 'p336.goalOnTitle' : 'p336.goalOffTitle') : t('p336.confirmTitle', { name });
-  const text = jev ? t('p409.note') : harness ? t('p336.note.harness') + ' ' + t('p551.harnessSign') : full ? t('p336.fullText') : goal ? t(value ? 'p336.goalOnText' : 'p336.goalOffText') : t('p336.note.' + value) + ' ' + t('p336.signNote');
-  const yes = jev ? t(value === 'off' ? 'p409.offYes' : 'p409.onYes') : goal ? t(value ? 'p336.turnOn' : 'p336.turnOff') : harness ? t('p551.harnessYes') : full ? t('p336.fullYes') : t('p336.switch');
+  const title = cheap ? t('p0280.cheapTitle') : jev ? t(value === 'off' ? 'p409.offTitle' : 'p409.onTitle') : goal ? t(value ? 'p336.goalOnTitle' : 'p336.goalOffTitle') : t('p336.confirmTitle', { name });
+  const text = cheap ? JSON.stringify(prefs?.jev?.cheap, null, 2) + '\n' + t('p0280.cheapNote') : jev ? t('p409.note') : harness ? t('p336.note.harness') + ' ' + t('p551.harnessSign') : full ? t('p336.fullText') : goal ? t(value ? 'p336.goalOnText' : 'p336.goalOffText') : t('p336.note.' + value) + ' ' + t('p336.signNote');
+  const yes = cheap ? t('p0280.cheapYes') : jev ? t(value === 'off' ? 'p409.offYes' : 'p409.onYes') : goal ? t(value ? 'p336.turnOn' : 'p336.turnOff') : harness ? t('p551.harnessYes') : full ? t('p336.fullYes') : t('p336.switch');
   if (!await confirmSheet(title, text, yes, full)) { if (jev) render(); return; }
   if (!isReady()) { say(t('set.offline')); return; }
   say(t('set.saving'), true);
@@ -367,7 +383,7 @@ async function approvalSet(key, value) {
   if (m.why === 'cancel') { say(''); render(); return; }
   if (m.ok) {
     if (prefs) { const [a, b] = key.split('.'); prefs[a] = { ...(prefs[a] || {}), [b]: value }; }
-    if (jev && hostInfo) hostInfo.jev = { ...(hostInfo.jev || {}), mode: value, ready: hostInfo.jev?.mode === value && hostInfo.jev?.ready === true };
+    if (jev && hostInfo) hostInfo.jev = { ...(hostInfo.jev || {}), mode: cheap ? 'cheap' : value, ready: hostInfo.jev?.mode === value && hostInfo.jev?.ready === true };
     if (!jev && eff()) hostInfo.approval = { ...hostInfo.approval, [key === 'approval.level' ? 'level' : 'goal_nocard']: value };
     notify({ kind: 'success', shape: 'circle', text: t('set.saved') });
   } else {
@@ -378,7 +394,7 @@ async function approvalSet(key, value) {
     else toast(m.why === 'passkey_failed' ? whyText(m.why) : t('p336.fail', { why: whyText(m.why) }), 4000);
   }
   render();
-  if (jev && m.ok && value !== 'off' && hostInfo?.jev?.ready !== true) await openJevKey();
+  if (jev && !cheap && m.ok && value !== 'off' && hostInfo?.jev?.ready !== true) await openJevKey();
 }
 async function openJevKey() {
   const name = el('set-jev-source').value === 'openrouter' ? 'OPENROUTER_API_KEY' : 'TYPESAFE_API_KEY';
@@ -436,6 +452,7 @@ export function render() {
   for (const b of document.querySelectorAll('[data-set-theme]')) b.setAttribute('aria-pressed', String(b.dataset.setTheme === theme));
   tgl('set-speak', pget('voice.speak_replies', false) === true);
   tgl('set-wake', pget('voice.wake_enabled', false) === true);
+  renderRemoteNames(pget(REMOTE_NAMES, []), prefSettable(REMOTE_NAMES), setPref);
   renderAsr({ get: pget, paired: H.paired(), settable: prefSettable, t });
   renderFont();
   renderSfx();
@@ -509,9 +526,9 @@ export function deviceInfo(id) {
   return { id, name: s(d.name), label: s(d.label) || s(d.name), named_by: d.named_by === 'owner' ? 'owner' : 'device', self_name: s(d.self_name) };
 }
 /** app.js: every `preferences` message from the host (value + the host ≥ 0.15 `host` block). */
-export function setRunCmds(names) {
+export function setRunCmds(names, harnesses) {
   if (!Array.isArray(names)) return;
-  hostInfo = {...(hostInfo || {}), run_cmds:names};
+  hostInfo = {...(hostInfo || {}), run_cmds:names, ...(Array.isArray(harnesses) ? {run_harnesses:harnesses} : {})};
   cmdrun.render(hostInfo);
 }
 export function setPrefs(value, host) {
@@ -575,6 +592,13 @@ export function open(page = 'main', add = false) {
   say('');
   if (!noPrefSet) hideCmd();
   render();
+  const nativeBox = el('harness-commands');
+  if (nativeBox) {
+    nativeBox.replaceChildren(); nativeBox.hidden = true;
+    harnessMenu().then(menu => {
+      if (isOpen()) renderHarnessCommands(nativeBox, menu, cmd => H.nativeCommand?.(cmd), document.documentElement.lang || 'zh');
+    }).catch(() => {});
+  }
   wechat.refresh();   // P554
   const box = el('settings');
   box.hidden = false; box.dataset.modalOpen = '1';
@@ -598,6 +622,7 @@ export function open(page = 'main', add = false) {
   if (page === 'remotes' && H.paired()) showSub('remotes', add);
   else if (H.paired() && isReady()) remotes.refresh().then(renderRemotesRow);   // 已用 N / 10 from the computer itself
   if (H.paired() && isReady()) seatxfer.refresh();   // P547: the row shows once the host answers (an older host: hidden)
+  else if (H.paired()) seatxfer.offline();          // 0.26.9 #434: host offline → the row stays findable and says where to go
   if (H.paired()) news.load();   // P374: one news_get per opening (the account may have changed it in between)
   if (H.paired() && isReady()) sendApp({ t: 'preauth_list' }).catch(() => {});   // P539: the host answers `preauth`
   rescue.foldEnded();            // P393: earlier repair results open as one line each (their log under 「详情」)
@@ -681,7 +706,7 @@ function jump(id) {
   markSection(id);
   jumpedAt = performance.now();       // the smooth scroll that follows must not re-mark another section
   const h = target.querySelector('h3');
-  if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
+  if (h) { h.setAttribute('data-aj-owner','aj-settings'); h.tabIndex = -1; h.focus({ preventScroll: true }); }
 }
 let jumpedAt = -1e9;
 function followScroll() {          // the side navigation marks the section at the top of the scrolled area
@@ -810,6 +835,13 @@ export function configure(hooks) {
     renderPush();
   });
   push.onChange(() => { if (isOpen()) renderPush(); });
+  for (const k of document.querySelectorAll('[data-push-kind]')) {
+    k.addEventListener('click', async () => {
+      const list = await push.setKind(k.dataset.pushKind, k.getAttribute('aria-checked') !== 'true');
+      renderPush();
+      if (!list.length) say(t('set.pushKindsNone'));
+    });
+  }
   el('connection-refresh').addEventListener('click', () => refreshApp());
   el('set-refresh').addEventListener('click', () => refreshApp());   // @ix app.refresh_web
   el('set-a2hs').addEventListener('click', onA2hs);
@@ -935,14 +967,14 @@ export function subItems(query) {
 function flashRow(row, q) {
   row.scrollIntoView({ block: 'center' });
   row.classList.remove('set-found'); void row.offsetWidth; row.classList.add('set-found');
-  if (!row.matches('button, a, input, [tabindex]')) row.tabIndex = -1;
+  if (!row.matches('button, a, input, [tabindex]')) { row.setAttribute('data-aj-owner','aj-settings'); row.tabIndex = -1; }
   row.focus({ preventScroll: true });
   if (q && !pagefind.isOpen()) pagefind.mark(row, q);
   setTimeout(() => { row.classList.remove('set-found'); if (pagefind.markedIn() === row) pagefind.clearMarks(); }, 2400);
 }
 function hitButton(where, label, go) {
-  const b = document.createElement('button'); b.type = 'button'; b.className = 'setnav set-hit';
-  const w = document.createElement('small'); w.textContent = where;
+  const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-settings'); b.type = 'button'; b.className = 'setnav set-hit';
+  const w = document.createElement('small'); w.setAttribute('data-aj-owner','aj-search'); w.textContent = where;
   const l = document.createElement('b'); l.textContent = label;
   const col = document.createElement('span'); col.append(l, w);
   b.append(col); b.addEventListener('click', go);

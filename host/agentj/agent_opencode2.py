@@ -109,6 +109,10 @@ def form_questions(form: dict) -> tuple[list | None, list]:
     return (raw or None), keys
 
 
+def opencode2_output(t) -> bool:
+    return isinstance(t, str) and (t.startswith(("session.text.", "session.tool.")) or t in ("permission.asked", "form.created"))
+
+
 class OpenCodeV2Agent(OpenCodeAgent):
     EVENT_PATH = "/api/event"
     v2 = True
@@ -212,6 +216,8 @@ class OpenCodeV2Agent(OpenCodeAgent):
         kid = p.get("sessionID") in self.children           # P426: a sub-agent's session (parentID = ours)
         if mine:
             self.touch()                   # P219: progress on our session (stall watch)
+        if mine and getattr(self, "collect", None) is None and not getattr(self, "quiet", False) and opencode2_output(t):
+            self.first_output()
         if mine and isinstance(t, str) and t.startswith("session."):
             self.turn_progress = time.monotonic()
         if t == "session.created":
@@ -243,6 +249,13 @@ class OpenCodeV2Agent(OpenCodeAgent):
         elif t == "session.step.ended" and mine:
             if isinstance(p.get("tokens"), dict):
                 self.step_tokens = p["tokens"]
+                from . import usage as use_mod
+                self.steps_seen = getattr(self, "steps_seen", 0) + 1
+                key = ("step:" + str(p["assistantMessageID"]) + ":" + str(p["ordinal"])
+                       if p.get("assistantMessageID") is not None and p.get("ordinal") is not None
+                       else f"step:{self.steps_seen}")
+                self.use_put(key, use_mod.tokens_opencode(p["tokens"]), p.get("cost"), self.cfg.get("model"))
+                self.phase("gen")
                 from .heartbeat_check import sample
                 tok = self.step_tokens
                 cache = tok.get('cache') or {}

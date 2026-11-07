@@ -55,7 +55,7 @@ export function openHot() {
 export function closeHot() { el('hotMenu').hidden = true; picked = null; }
 
 function row(cmd, desc, data) {
-  const b = document.createElement('button');
+  const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-menu');
   b.type = 'button'; b.setAttribute('role', 'option');
   Object.assign(b.dataset, data);
   const n = document.createElement('b'); n.textContent = cmd;

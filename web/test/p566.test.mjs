@@ -4,7 +4,10 @@
 // The browser legs (real page, fake host, socket dropped mid-get()) are web/test/p566.mjs.
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync as rawContractRead } from 'node:fs';
+import {resolveDefaults} from '../tools/css-defaults.mjs';
+// #577: preserve this legacy contract's exact appearance/markup assertions; ownership is audited separately.
+const readFileSync = (...args) => { const value=rawContractRead(...args), path=String(args[0]); if(typeof value!=='string') return value; return path.endsWith('.css') ? resolveDefaults(value) : path.endsWith('.html') ? value.replace(/ data-aj-(?:owner|action-context)="[^"]+"/g,'') : value; };
 
 const K = await import('../public/js/pkhandin.js');
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
@@ -161,7 +164,7 @@ test('#350 WrongSeatKey reads as such (nothing marked)', async () => {
 // ---------------------------------------------------------------- #346: Settings 「测试一下」 · 「重新设置」
 test('#346 「已设好」 has 测试一下 + 重新设置 (no unpairing); 测试一下 only with a host check challenge', async () => {
   const html = read('../public/index.html'), app = read('../public/app.js');
-  assert.match(html, /<span class="pkrow__acts" id="set-pk-acts" hidden><button type="button" id="set-pk-test" class="aj-btn aj-btn--sm" data-i18n="p566\.pk\.test">测试一下<\/button><button type="button" id="set-pk-reset" class="aj-btn aj-btn--sm" data-i18n="p561\.pk\.reset">重新设置<\/button><\/span>/);
+  assert.match(html, /<span class="pkrow__acts" id="set-pk-acts" hidden><button type="button" id="set-pk-test" class="aj-action aj-action--sm" data-i18n="p566\.pk\.test">测试一下<\/button><button type="button" id="set-pk-reset" class="aj-action aj-action--sm" data-i18n="p561\.pk\.reset">重新设置<\/button><\/span>/);
   assert.match(app, /\$\('set-pk-test'\)\.addEventListener\('click', \(\) => testFaceId\(\)\);/);
   assert.match(app, /\$\('set-pk-reset'\)\.addEventListener\('click', \(\) => \{ setupFaceId\(\)\.catch\(\(\) => \{\}\); \}\);/);
   assert.match(app, /const chk = \(s === 'unknown' \|\| s === 'local'\) && typeof m\.fa === 'string'/);
@@ -182,7 +185,7 @@ test('#346 「已设好」 has 测试一下 + 重新设置 (no unpairing); 测�
 // ---------------------------------------------------------------- the 「保存」 button on a dialog card
 test('a dialog card\'s primary button keeps Salt on hover / focus in both themes (was Noir = its label colour)', () => {
   const css = read('../public/app.css');
-  assert.match(css, /\.ajmodal\.dlgcard \.aj-btn--primary:hover,\.ajmodal\.dlgcard \.aj-btn--primary:focus\{background:var\(--c-salt\);border-color:var\(--c-salt\);color:var\(--primary-fg\)\}/);
+  assert.match(css, /\.ajmodal\.dlgcard \.aj-action--primary:hover,\.ajmodal\.dlgcard \.aj-action--primary:focus\{background:var\(--c-salt\);border-color:var\(--c-salt\);color:var\(--primary-fg\)\}/);
   const pal = read('../public/brand/palette.css');
   assert.match(pal, /--c-salt: #f0eee6;/, 'the palette itself is unchanged');
   assert.match(pal, /--c-noir: #2c2b26;/);

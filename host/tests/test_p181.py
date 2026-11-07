@@ -178,6 +178,9 @@ class Serve(unittest.TestCase):
         n = []
 
         class Fake:
+            def __init__(self, **kwargs):
+                pass
+
             def sample(self):
                 n.append(1)
                 return {"cpu": 0.25, "mem": 0.5, "gpu": None, "disk": {"free": 0.5, "free_gb": 9.0, "busy": 0.1}, "net": {"rx": 10, "tx": 20}}

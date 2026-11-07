@@ -29,6 +29,7 @@ export const DONE_MS = 1500;
 const BARE_MS = 900;
 const states = new WeakMap();
 let installed = false, live = null;
+const gestures = new WeakMap(), activeGestures = new Map();
 let notifyCopy = () => {};
 export function configureCopyNotice(fn) { notifyCopy = fn; }
 
@@ -44,7 +45,7 @@ function glyph(doc) {
 }
 function relabel(b) { if (b.dataset.done) return; const l = label(b.dataset.ccLabel || 'ar.copy'); b.setAttribute('aria-label', l); b.title = l; }
 function makeButton(doc, key) {
-  const b = doc.createElement('button');
+  const b = doc.createElement('button'); b.setAttribute('data-aj-owner', 'aj-prose');
   b.type = 'button'; b.className = 'cc-btn'; b.dataset.ccLabel = key || 'ar.copy';
   b.appendChild(glyph(doc)); relabel(b);
   return b;
@@ -181,6 +182,8 @@ function onClick(e) {
   if (!n || n.getAttribute('data-cc-click') === '0') return;
   const inner = tg.closest('a, button, input, textarea, select, [contenteditable="true"]');
   if (inner && (n.contains(inner) || inner.contains(n))) return;   // a code inside a link stays a link
+  const gesture = gestures.get(n);
+  if (gesture && (gesture.moved || performance.now() - gesture.at > 450)) return;
   if (selecting(n.ownerDocument)) return;                        // the press selected text: that is the owner's copy
   copyFrom(n).catch(() => {});
 }
@@ -190,6 +193,30 @@ export function install(doc = typeof document !== 'undefined' ? document : null)
   if (installed || !doc || !doc.addEventListener) return;
   installed = true;
   doc.addEventListener('click', onClick);
+  // Reading gestures never become a clipboard write, even if the OS did not create a selection.
+  doc.addEventListener('pointerdown', e => {
+    const n = e.target.closest?.('[' + ATTR + ']');
+    if (n && !e.target.closest('a,button,input,textarea,select')) {
+      const g = {at: performance.now(), x: e.clientX, y: e.clientY, moved: false};
+      gestures.set(n, g); activeGestures.set(e.pointerId, g);
+    }
+  }, true);
+  doc.addEventListener('pointermove', e => {
+    const g = activeGestures.get(e.pointerId);
+    if (g && Math.hypot(e.clientX - g.x, e.clientY - g.y) > 8) g.moved = true;
+  }, true);
+  doc.addEventListener('pointerup', e => { activeGestures.delete(e.pointerId); }, true);
+  doc.addEventListener('pointercancel', e => {
+    const g = activeGestures.get(e.pointerId); if (g) g.moved = true;
+    activeGestures.delete(e.pointerId);
+  }, true);
+  // #545: bare short fields retain native selection and gain the usual keyboard activation.
+  doc.addEventListener('keydown', e => {
+    if (!['Enter', ' '].includes(e.key) || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+    const n = e.target.closest?.('[data-cc-field],code[data-cc="bare"]');
+    if (!n || n.closest('a,button,input,textarea,select,[contenteditable="true"]') || selecting(doc)) return;
+    e.preventDefault(); copyFrom(n).catch(() => {});
+  });
   onLang(() => {
     for (const b of doc.querySelectorAll('.cc-btn')) relabel(b);
     for (const n of doc.querySelectorAll('[' + ATTR + ']:not([' + ATTR + '="ext"]):not([data-cc-click="0"])')) if (n.getAttribute(ATTR) !== 'bare') n.title = label('r.md.tapCopy');

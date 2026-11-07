@@ -807,3 +807,68 @@ This additive `p33` Noise application message grants only a short web-resource n
 - The browser additionally signs UTF-8 `"agentj/web-preview/device/v1\n" || message` under its existing nonextractable Ed25519 key. The Worker verifies both signatures against the device public key in the message and the publisher-pinned host key, exact configured seat/origin/candidate manifest and absolute expiry. It atomically consumes the issued nonce once before setting a Secure/HttpOnly/SameSite=Strict cookie scoped to `/<seat>/`. The cookie identifies the verified lease; it cannot choose a candidate independently of server configuration.
 
 Each candidate-resource request checks the current publisher pointer and proof expiry. Renewal needs a fresh nonce and a new live-host proof, so revocation prevents renewal; an already issued lease may remain valid for at most sixty seconds. Previously downloaded code is not recalled. Public `version.json` hashes are integrity metadata, not a claim that all web code has a separate publisher digital signature. The preview's content hash and “Preview / 预览” labels remain visible, with the same CSP/SRI protections as the formal page and a fixed additional bootstrap SRI.
+
+### #555 terminal command registry metadata (2026-11-06)
+
+The paired `preferences.host` block additionally exposes `run_harnesses`, an ordered array of
+`{name,label,installed,logged_in}` derived from `harness.SUPPORTED` and `harness.LABEL`. The initial installed/logged_in
+values are null (unknown); background local detection updates those booleans or nulls in `cmds_state.harnesses` beside
+the existing `names` array. Neither projection includes paths, credential hints or native diagnostic text. All supported
+`switch_<name>` identifiers remain in `run_cmds` even when uninstalled or not logged in. The host's fixed argv and actual
+switch target validation remain authoritative; this read-only enumeration grants no command execution. The webpage
+generates switch rows from the registry metadata; diagnostic rows retain the existing fixed table. Older clients may
+ignore the additional field.
+
+### #468 official-assist public discovery (0.27.0 candidate)
+
+`DASHBOARD_API.md` §#468 freezes the discovery interface. Customer host POST `/v1/host/assist/publish` is its ordinary host
+signature under `agentj-host-assist-publish-v1`, inner `{v:1,t:"assist_publish",channel,ts,invite}`; revoke uses context
+`agentj-host-assist-revoke-v1`, `{v:1,t:"assist_revoke",channel,ts,gid}`. `invite` contains only the public signed fields from
+`assist_operator.invitation`, never shell/output/password/device material. Both signature layers and bound usable seat are
+verified. Unknown fields are rejected. TTL <=3600s and <=official pin expiry; revoke is permanent through that grant window,
+including revoke-before-async-publish. Cloud list never replaces the live customer-host grant check.
+
+Official POST `/v1/assist/list` exact `{v:1,key_id,ts,nonce,sig}` uses the pinned official PeerKeys Ed25519 identity. Signature
+bytes = UTF-8 `agentj-assist-discovery-v1\n` followed by compact canonical/sorted JSON of `{v,key_id,ts,nonce}`. Unix seconds
+±120s and32-lowercase-hex nonce-once; valid list response `{ok:true,invites:[...]}` is limited128 metadata rows. New root,
+account, command or access authority cannot be smuggled through discovery. Host validates signed invites and establishes
+fresh Noise/hello before opening; no client pairing credential crosses the discovery service.
+
+### §41.1 — official terminal assistance (#468, 2026-11-06)
+
+- Capability `assist_term1`; paired customer `assist_term_grant` uses the existing two-step host nonce/UV contract,
+  target `{minutes,key_id,seat,scope:"terminal"}`. Control object text is minutes/key_id/seat/terminal separated by newline;
+  UV digest is SHA256(`assist_term_grant\n<key_id>\n<seat>\n<minutes>\nterminal`). Old task grant is unchanged.
+- Official KK app frames `assist_term_open|in|resize|close` carry gid/seat/seq/ts and a pinned Ed25519 signature. Signed bytes:
+  UTF8(`agentj-assist-terminal-v1\n`) + canonical JSON of every frame field excluding sig. open/resize have cols/rows;
+  in has d, optional reply=true only for the existing strict terminal-report whitelist. close may carry bounded
+  summary/diagnosis/verification statements. All actions persist sequence before effect, with grant/seat/time/pin checks.
+- Customer receives `assist_term_event{gid,event:<existing terminal frame>}`. term_ready supplies id/fa/cols/rows/expires_at;
+  term_out retains monotonically increasing seq; term_resize supplies actual rows/cols. Only the original granting paired
+  session can send `assist_term_answer{r,gid,obj:<term_line|term_confirm_no|term_sudo_ok|term_sudo_no>}`. Existing per-command
+  signature, nonce and UV/PRF requirements are retained; response is ctl_res action assist_term_answer. Trusted first-login
+  `elev{kind:"login",assist_gid,term}` is customer-only and uses normal sealed/signed elev_answer, not an official peer frame.
+- Helper gets term_ready/out/resize/close only, never fa/epk/pct/pepk or confirmation/password material. Metadata-only
+  `assist_term_end{gid,reason}` may be sent immediately over an existing KK during teardown, then peer/outbox are dropped.
+- `assist_state` adds scope and discovery (publishing/ready/failed); `assist_discover_retry{r}` only republishes the same
+  public invitation, at most every15seconds. `assist_notice{what:discoverable|discover_failed}` reports publication outcome.
+- Customer `assist_log{r}` returns assist_log_res{r,entries,report}, bounded64KiB tail/200records. On end, customer receives
+  assist_report{gid,report}; report persists customer-local by grant. No report or output is published to Dashboard.
+- Invitation is public, bounded4096B, {v:1,scope:"terminal",gid,seat,key_id,not_before,until,aid,x25519,ed25519,sig}; sig is
+  customer's Ed25519 over UTF8(`agentj-assist-invite-v1\n`) + canonical JSON excluding sig. Import requires derived aid,
+  signature, ≤60min duration and local possession of the specified pinned official identity. A live hello still governs use.
+- Cloud discovery publish/revoke and official signed-list metadata contracts are implemented in Dashboard assist routes;
+  discovery remains advisory and cannot mint/revive a local customer grant.
+
+#### §41.1 audit pagination and reauthorization
+
+`assist_log{r,gid?,cursor?}` returns `{t:"assist_log_res",r,gid,entries,report,next_cursor,more,why?}`. Missing gid selects the
+current/latest local grant. A next_cursor is an opaque string for strictly earlier data; more=false has next_cursor=null.
+Each page reads≤64KiB, returns≤200 records filtered by exact gid, and accepts no paths. why=bad_cursor rejects malformed or
+cross-grant cursors; why=pruned rejects a changed inode or disappeared/truncated source. A client must explicitly restart
+from latest after prune; the server never silently resets an invalid cursor. A page may contain zero selected-grant records
+while more=true, allowing traversal over other grants without disclosing them.
+
+Official local registries retain authenticated end tombstones only until the original invitation expiry. After an end marker,
+read/input/open for that old gid return ended, and a fresh customer grant on the same Agent identity is independent immediately.
+Display/ready/end processing and queued input guards bind exact gid as well as the customer peer identity.

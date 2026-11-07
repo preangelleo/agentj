@@ -40,8 +40,8 @@ function build() {
   root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'lgs-title');
   const box = mk('div', 'box');
   const head = mk('div', 'lgs-head');
-  const h = mk('h2'); h.id = 'lgs-title';
-  const x = mk('button', 'menuicon lgs-x', '×'); x.type = 'button'; x.id = 'lgs-x';
+  const h = mk('h2', undefined, undefined, 'aj-auth-card'); h.id = 'lgs-title';
+  const x = mk('button', 'menuicon lgs-x', '×', 'aj-auth-card'); x.type = 'button'; x.id = 'lgs-x';
   x.addEventListener('click', close);
   head.append(h, x);
   const body = mk('div', 'lgs-body'); body.id = 'lgs-body'; body.setAttribute('aria-live', 'polite');
@@ -64,7 +64,7 @@ export function open(agent, why = 'not_logged_in') {
   root.hidden = false;
   paint();
   if (!same && agent !== 'opencode') start();
-  (root.querySelector('#lgs-code') || root.querySelector('.lgs-acts .aj-btn--primary') || root.querySelector('#lgs-x'))?.focus({ preventScroll: true });
+  (root.querySelector('#lgs-code') || root.querySelector('.lgs-acts .aj-action--primary') || root.querySelector('#lgs-x'))?.focus({ preventScroll: true });
 }
 export function close() {
   if (!root || root.hidden) return;
@@ -148,7 +148,7 @@ function fail(text, why = '') {
 
 // ---------------------------------------------------------------- painting
 function btn(id, label, cls, fn) {
-  const b = mk('button', 'aj-btn ' + (cls || ''), label); b.type = 'button'; if (id) b.id = id;
+  const b = mk('button', 'aj-action ' + (cls || ''), label, 'aj-action', 'dialog'); b.type = 'button'; if (id) b.id = id;
   b.addEventListener('click', fn); return b;
 }
 const p = (text, cls, id) => { const n = mk('p', 'lgs-line ' + (cls || ''), text); if (id) n.id = id; return n; };
@@ -173,12 +173,12 @@ export function paint() {
   const parts = [];
   if (S.st !== 'ok') parts.push(p(t('p0269.login.why.' + (S.why || 'not_logged_in'), { agent: name }), 'lgs-why', 'lgs-why'));
   if (S.agent === 'opencode') {
-    parts.push(p(t('p0269.login.opencode'), '', 'lgs-msg'), acts(btn('lgs-other', t('p0269.login.other'), 'aj-btn--primary', () => { close(); hooks.openAuth?.(); })));
+    parts.push(p(t('p0269.login.opencode'), '', 'lgs-msg'), acts(btn('lgs-other', t('p0269.login.other'), 'aj-action--primary', () => { close(); hooks.openAuth?.(); })));
   } else if (S.st === 'run') {
     parts.push(bar(1), p(S.text || t('p0269.login.starting'), 'lgs-now', 'lgs-now'));
   } else if (S.st === 'url') {
     parts.push(p(t('p0269.login.step1'), 'lgs-step'));
-    const a = mk('a', 'aj-btn aj-btn--primary lgs-open', t('p0269.login.open'));
+    const a = mk('a', 'aj-action aj-action--primary lgs-open', t('p0269.login.open'), 'aj-action', 'dialog');
     a.id = 'lgs-open'; a.href = S.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
     parts.push(acts(a, btn('lgs-copy', t('p0269.login.copyLink'), '', () => copyNow(S.url))));
     if (S.code) {
@@ -190,11 +190,11 @@ export function paint() {
     }
     if (S.paste) {
       parts.push(p(t(S.code ? 'p0269.login.step3paste' : 'p0269.login.step2paste'), 'lgs-step'));
-      const f = mk('input', 'lgs-code'); f.id = 'lgs-code'; f.type = 'text'; f.autocomplete = 'off'; f.spellcheck = false;
+      const f = mk('input', 'lgs-code', undefined, 'aj-auth-card'); f.id = 'lgs-code'; f.type = 'text'; f.autocomplete = 'off'; f.spellcheck = false;
       f.setAttribute('autocapitalize', 'off'); f.setAttribute('autocorrect', 'off'); f.setAttribute('enterkeyhint', 'send');
       f.placeholder = t('p0269.login.paste'); f.setAttribute('aria-label', t('p0269.login.paste')); f.maxLength = 4096;
       f.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submit(); } });
-      parts.push(f, p('', 'lgs-note', 'lgs-note'), acts(btn('lgs-submit', t('p0269.login.submit'), 'aj-btn--primary', submit)));
+      parts.push(f, p('', 'lgs-note', 'lgs-note'), acts(btn('lgs-submit', t('p0269.login.submit'), 'aj-action--primary', submit)));
     }
     if (S.text) parts.push(p(S.text, S.text === t('p0269.login.badCode') ? 'lgs-host lgs-fail' : 'lgs-host', 'lgs-host'));
   } else if (S.st === 'check') {
@@ -203,7 +203,7 @@ export function paint() {
     parts.push(p(t('p0269.login.done'), 'rsok lgs-ok', 'lgs-msg'));
   } else if (S.st === 'fail') {
     parts.push(p(S.fail ? t('p0269.login.fail', { why: S.fail }) : t('p0269.login.failPlain'), 'rsfail lgs-fail', 'lgs-msg'),
-      acts(btn('lgs-again', t('p332.again'), 'aj-btn--primary', start), other()));
+      acts(btn('lgs-again', t('p332.again'), 'aj-action--primary', start), other()));
   }
   root.querySelector('#lgs-body').replaceChildren(...parts);
 }

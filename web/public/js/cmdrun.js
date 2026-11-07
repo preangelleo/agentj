@@ -20,26 +20,36 @@ import { usable as termUsable, state as termState } from './termhook.js';   // P
 const READ_CMDS = new Set(['doctor']);
 export const CMDS = { doctor: 'doctor', reconnect: 'doctor --reconnect', status: 'status', service_status: 'service status',
   rescue_status: 'rescue status', update_check: 'update check' };
-for (const h of ['claude','codex','opencode','kimi','qwen','dsh']) CMDS['switch_' + h] = 'agent switch ' + h + ' --force';
+// #555: switch names come only from the host's registry-backed whitelist.
+const SWITCH_NAME = /^switch_([a-z][a-z0-9_-]{0,31})$/;
+let harnesses = new Map();
 const line = (name) => 'agentj ' + CMDS[name];
-let H = { setupFaceId() {}, openTerminal() {} }, names = [], R = null, term = false;   // R: the last run {name, st: run|done|fail, code, out, cut, why}
+let H = { setupFaceId() {}, openTerminal() {}, showChat() {} }, names = [], R = null, term = false;   // R: the last run {name, st: run|done|fail, code, out, cut, why}
 
 export function configure(h) { H = { ...H, ...h }; onLang(paint); }
 /** settings.js render(): the host block decides which rows exist (an older host: the card stays hidden). */
 export const supports = (name) => names.includes(name);
 export function render(info) {
-  const list = info && Array.isArray(info.run_cmds) ? info.run_cmds.filter((n) => typeof n === 'string' && Object.hasOwn(CMDS, n)) : [];
-  if (list.join() !== names.join() || term !== termUsable()) { names = list; term = termUsable(); paint(); }
+  const metadata = info && Array.isArray(info.run_harnesses) ? info.run_harnesses : [];
+  harnesses = new Map(metadata.filter((h) => h && typeof h.name === 'string' && SWITCH_NAME.test('switch_' + h.name))
+    .map((h) => [h.name, h]));
+  const list = info && Array.isArray(info.run_cmds) ? [...new Set(info.run_cmds.filter((n) => {
+    if (typeof n !== 'string') return false;
+    const match = n.match(SWITCH_NAME);
+    if (match) CMDS[n] = 'agent switch ' + match[1] + ' --force';
+    return Object.hasOwn(CMDS, n);
+  }))] : [];
+  names = list; term = termUsable(); paint();
 }
 function row(name) {
   const li = mk('li', 'rscmd'); li.dataset.cmd = name;
-  const main = mk('div', 'rscmdmain'), code = mk('code', '', line(name));
+  const main = mk('div', 'rscmdmain'), code = mk('code', '', line(name), 'aj-rescue');
   main.append(copyable(code, { variant: 'inline' }));
-  const meta = mk('div', 'rscmdmeta'), note = mk('small', '', t('p361.cmd.' + name));
+  const meta = mk('div', 'rscmdmeta'), note = mk('small', '', SWITCH_NAME.test(name) ? t('p555.switchNote', { name: String(harnesses.get(name.slice(7))?.label || name.slice(7)).slice(0, 64) }) : t('p361.cmd.' + name), 'aj-rescue');
   if (name === 'reconnect') note.append(' · ' + t('p438.recommended'));
-  const acts = mk('div', 'rmbar rscmdacts');
+  const acts = mk('div', 'rscmdbar rscmdacts', undefined, 'aj-rescue');
   const icon = (cls, label, shape) => {
-    const b = mk('button', 'act ' + cls); b.type = 'button';
+    const b = mk('button', 'rscmdact ' + cls, undefined, 'aj-rescue'); b.type = 'button';
     b.setAttribute('aria-label', label); b.title = label; b.append(glyph(shape));
     longPress(b, () => toast(label, 4000));
     return b;
@@ -63,7 +73,7 @@ function result() {
   if (R.st === 'run') return [head, mk('p', 'rsnow', t('p361.running'))];
   const out = [head];
   const bar = mk('div', 'rscmdstatus');
-  const close = mk('button', 'menuicon rscmdclose', '×'); close.type = 'button'; close.id = 'rs-cmd-close';
+  const close = mk('button', 'menuicon rscmdclose', '×', 'aj-rescue'); close.type = 'button'; close.id = 'rs-cmd-close';
   close.setAttribute('aria-label', t('p380.closeResult')); close.title = t('p380.closeResult');
   close.addEventListener('click', () => { const name = R.name; R = null; paint(); el('rs-cmd-' + name)?.focus(); });
   if (R.why === 'restored') bar.append(mk('p', 'rsok', t('p392.restored')));   // P393: the 「连不上」 of a tap made offline turns green
@@ -79,11 +89,11 @@ function result() {
   }
   if (R.fold) {                        // P393: Settings opened again — one line; the output stays under 「详情」
     if (!R.out) return out;
-    const d = mk('details', 'rsmore'); d.id = 'rs-cmd-log'; d.append(mk('summary', '', t('p332.details')));
-    const pre = mk('pre', 'rsout', R.out); pre.id = 'rs-cmd-out-text'; pre.tabIndex = 0; d.append(copyable(pre, { variant: 'block', click: false }));
+    const d = mk('details', 'rsmore'); d.id = 'rs-cmd-log'; d.append(mk('summary', '', t('p332.details'), 'aj-rescue'));
+    const pre = mk('pre', 'rsout', R.out, 'aj-rescue'); pre.id = 'rs-cmd-out-text'; pre.setAttribute('data-aj-owner','aj-rescue'); pre.tabIndex = 0; d.append(copyable(pre, { variant: 'block', click: false }));
     out.push(d); return out;
   }
-  if (R.out) { const pre = mk('pre', 'rsout', R.out); pre.id = 'rs-cmd-out-text'; pre.tabIndex = 0; out.push(copyable(pre, { variant: 'block', click: false })); }
+  if (R.out) { const pre = mk('pre', 'rsout', R.out, 'aj-rescue'); pre.id = 'rs-cmd-out-text'; pre.setAttribute('data-aj-owner','aj-rescue'); pre.tabIndex = 0; out.push(copyable(pre, { variant: 'block', click: false })); }
   if (R.cut) out.push(mk('p', 'rsnote', t('p361.cut')));
   if (R.out) out.push(mk('p', 'rsnote', t('p361.masked')));
   return out;
@@ -118,7 +128,10 @@ export async function run(name) {
   R = { name, st: 'ask' };
   if (!isReady()) { R = { name, st: 'fail', why: 'offline', hm: new Date().toTimeString().slice(0, 5) }; return paint(); }
   paint();
-  const m = await signedWriteFa('cmd_run', { cmd: name }, { t: 'cmd_run', cmd: name }, faceId);
+  const pending = signedWriteFa('cmd_run', { cmd: name }, { t: 'cmd_run', cmd: name }, faceId);
+  // Return immediately so the existing switch progress, introduction and rollback page are visible.
+  if (SWITCH_NAME.test(name)) H.showChat();
+  const m = await pending;
   if (m.why === 'cancel') { R = null; return paint(); }
   const str = (v) => (typeof v === 'string' ? v.slice(0, 20000) : '');
   // the link dropped while the computer ran it (doctor --reconnect may restart Agent J there): say so, not a bare failure
@@ -128,7 +141,9 @@ export async function run(name) {
   if (m.why === 'no_passkey' && phoneConfirmation(true)) { paint(); return; }
   if (m.why === 'no_passkey') toastAction(t('p361.why.no_passkey'), t('pkp.setupHere'), () => H.setupFaceId(), 8000);
   paint();
-  el('rs-cmd-out')?.scrollIntoView({ block: 'nearest' });
+  if (SWITCH_NAME.test(name)) {
+    if (!m.ok || R.code !== 0) toast(t('p555.switchFailed', { why: !m.ok ? whyText(R.why) || t('p361.failed') : t('p361.fail', { code: R.code }) }), 8000);
+  } else el('rs-cmd-out')?.scrollIntoView({ block: 'nearest' });
 }
 /** P393 · settings.js open(): an ended result opens folded to one line (× still closes it). */
 export function foldEnded() { if (R && (R.st === 'done' || R.st === 'fail') && !R.fold) { R.fold = true; paint(); } }

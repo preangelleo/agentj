@@ -7,8 +7,9 @@ lines — and `<state>/history/meta.json` {epoch, next_id, undo}. `history off` 
 (epoch = the serve start time, so a phone never mixes two runs).
 
 A turn: {"id", "ts" (ms), "src": Src, "reply": {"text", "part"?: [k, N], "pre"?}, "end": open|done|stopped|failed, "card"?, "login"? (0269: {agent, why}),
-"media"?, "media_skip"? (F21, PROTOCOL §13: files the finished reply shows — media.py)}.
-Src = {"k": phone|host|agent|sys|task|cmd|telegram|auto|friend_report, "dev"?, "name"?, "text", "quote"?, "att"?, "local"?, "via"? (agent only, P132: loop|task)}. The reply of a turn = every
+"media"?, "media_skip"? (F21, PROTOCOL §13: files the finished reply shows — media.py), "use"? (P204, §29: the turn's
+spend & speed — usage.py)}.
+Src = {"k": phone|host|agent|sys|task|cmd|telegram|auto|friend_report|support, "dev"?, "name"?, "text", "quote"?, "att"?, "local"?, "via"? (agent only, P132: loop|task)}. The reply of a turn = every
 finished reply text of that Agent turn joined by a blank line — results only, never tool calls; a reply over PART_MAX UTF-16
 units continues on the next page (`part`), nothing is truncated.
 
@@ -35,7 +36,7 @@ PAGE_MAX = 50
 PAGE_BYTES = 2 * 1024 * 1024
 FILE_MAX = 32 * 1024 * 1024  # current.jsonl is compacted once it passes this many bytes (P33-C06), as well as COMPACT_AT lines
 KEEP_BYTES = 16 * 1024 * 1024  # what compaction (and memory) keeps: the newest turns up to KEEP and up to this many JSON bytes
-SRC_KINDS = ("phone", "host", "agent", "sys", "task", "cmd", "telegram", "auto", "friend_report")   # P365 auto: `agentj notify`
+SRC_KINDS = ("phone", "host", "agent", "sys", "task", "cmd", "telegram", "auto", "friend_report", "support")   # #541 support: untrusted external advice
 ENDS = ("open", "done", "stopped", "failed")
 SEP = "\n\n"
 
@@ -202,11 +203,17 @@ class History:
         self.fbytes = len(data)
 
     # ------------------------------------------------------------ turns
-    def add(self, src: dict, reply: str = "", end: str = "open", card: dict | None = None, ts: int | None = None) -> dict:
+    def add(self, src: dict, reply: str = "", end: str = "open", card: dict | None = None, ts: int | None = None,
+            form: dict | None = None) -> dict:
         t = {"id": self.next_id, "ts": int(ts if ts is not None else time.time() * 1000), "src": src,
              "reply": {"text": reply}, "end": end}
+        from .silent import is_silent
+        if is_silent(reply):
+            t["silent"] = True
         if card:
             t["card"] = card
+        if form:                               # P212 (§29): the form this page carries (forms.view)
+            t["form"] = form
         self.next_id += 1
         self.turns[t["id"]] = t
         self._save_meta()
@@ -219,7 +226,8 @@ class History:
 
     def update(self, tid: int, *, append: str | None = None, end: str | None = None, card: dict | None = None,
                text: str | None = None, media: tuple | None = None, pre: str | None = None,
-               att_asr: dict | None = None, login: dict | None = None) -> list[dict]:
+               att_asr: dict | None = None, login: dict | None = None, use: dict | None = None,
+               form: dict | None = None) -> list[dict]:
         """Change one turn; returns every turn that changed (an append past PART_MAX adds a continuation page and renumbers
         the parts), the last one being where the next append goes. [] when the id is gone. text = replace the reply (a
         command's interim line → its result). pre (P351) = the process notes a silent turn folds away ("" drops them)."""
@@ -227,6 +235,15 @@ class History:
         if t is None:
             return []
         changed = [t]
+        first = t
+        from .silent import is_silent
+        final = text if text is not None else append
+        silent_final = is_silent(final) if final is not None else None
+        old_ids = next((list(ids) for ids in self.parts.values() if tid in ids), [tid])
+        if text is not None and silent_final and _units(text) > PART_MAX:
+            t["reply"]["silent_raw"] = text  # local original survives the text= replacement cap
+        elif text is not None:
+            t["reply"].pop("silent_raw", None)
         if att_asr:                            # P363 (#72): {attachment index: transcript result} onto the owner's own page
             att = t["src"].get("att") if isinstance(t.get("src"), dict) else None
             for i, a in att_asr.items():
@@ -258,11 +275,25 @@ class History:
                 changed = [self.turns[i] for i in ids]
                 t, tid = nt, nt["id"]
             t["reply"]["text"] = joined
+        if silent_final is not None:
+            affected = {x["id"]: x for x in [*(self.turns[i] for i in old_ids), *changed]}
+            for x in affected.values():
+                if silent_final:
+                    x["silent"] = True
+                else:
+                    x.pop("silent", None)
+            changed = list(affected.values())
         if end in ENDS:
             for x in changed:
                 x["end"] = end
         if card is not None:
             t["card"] = card
+        if use is not None:
+            t["use"] = use
+        if form is not None:
+            first["form"] = form
+            if first not in changed:
+                changed.insert(0, first)
         if login is not None:                  # 0269-login: {agent, why} — the page draws 「重新登录」 under this reply
             t["login"] = login
         if media is not None:                  # F21 (§13): (media, media_skip) of a finished page — set as a whole

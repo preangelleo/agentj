@@ -1,6 +1,6 @@
 // Factory defaults; put only your changes in the user override file.
 {
-  "jev": {"mode": ""},
+  "jev": {"mode": "", "cheap": {}},
   "updates": {"auto_install": true, "mode": "auto", "report_failures": true, "skill_categories": []},
   "agent": {
     // Empty preserves existing work folder; fresh init defaults to ~/coding.
@@ -68,6 +68,14 @@
       // Local argv, no shell; stdin text and {output} WAV. No inline credentials.
       "command": [],
       "command_timeout": 60,
+      // Volcengine App ID (not a secret) / 火山引擎 App ID（不是密钥）
+      "app_id": "",
+      // Spoken rewrite before reading: auto | on | off / 播报前口语化
+      "spoken": "auto",
+      // mid = the AI tool's mid-tier model, or a model ID / 口语化模型
+      "spoken_model": "mid",
+      // Longest spoken script in characters / 口语稿最长字数
+      "spoken_max_chars": 400,
     },
     // Automatically read completed replies / 自动朗读完成的回复; default=false
     "speak_replies": false,
@@ -154,6 +162,7 @@
   "ui":
   {
     // Command or skill the hot key runs / 回复卡左下角快捷技能键; default="web-page-report"
+    "remote_servers": [],
     "card_hot_action": "web-page-report",
     // P340: the four buttons above the message box, left to right (each once) / 输入框上方四个按钮的顺序; default=["file","image","camera","mic"]
     "composer_buttons": ["file", "image", "camera", "mic", "full"],

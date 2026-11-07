@@ -9,6 +9,8 @@ channel = refused, with a sentence the model can act on.
     4  danger list (danger.classify on the Claude-shaped call): low risk → runs; a hit → the owner's card
     5  no approval channel (no phone link): a card cannot be shown → refused; and C14 (omp #10124): a session without that
        channel never runs code at all — `bash` is refused even when it looks harmless
+    MCP (P431 C8): `mcp__<server>__<tool>` — a card for every call unless the owner listed the tool (mcp.json `allow`);
+       research runs only listed tools; refusals are order-wide; never classified by the server's own annotations
 The card itself is serve's Host.ask (origin = the chain the HOST built, never model text); allow returns the input unchanged.
 """
 from __future__ import annotations
@@ -54,13 +56,14 @@ class Gate:
     denied: the order-wide set of refused step digests (shared by the CEO and all its sub-agents; persisted by the caller)."""
 
     def __init__(self, root: str, approver=None, *, research: bool = False, scope_write=None, denied: set | None = None,
-                 stopped=None, extra=None, on_denied=None):
+                 stopped=None, extra=None, on_denied=None, mcp_allowed=None):
         self.root = os.path.realpath(root)
         self.approver, self.research = approver, research
         self.scope = [s for s in (scope_write or []) if isinstance(s, str) and s.strip()]
         self.denied = denied if denied is not None else set()
         self.stopped = stopped or (lambda: False)
         self.extra, self.on_denied = extra, on_denied
+        self.mcp_allowed = mcp_allowed or (lambda name: False)      # the session's mcp.Hub.allowed
 
     def _in_scope(self, full: str) -> bool:
         if not self.scope:
@@ -88,6 +91,10 @@ class Gate:
     async def _check(self, name, args, who):
         if self.stopped():
             return False, "Stopped by the owner: nothing more runs. Write your report now."
+        if name == "apply_patch" and isinstance(args, dict):
+            return await self._patch(args, who)
+        if name.startswith("mcp__") and isinstance(args, dict):
+            return await self._mcp(name, args, who)
         if name not in CLAUDE or not isinstance(args, dict):
             return False, f"Unknown tool {name}."
         tool, inp = claude_shape(name, args, self.root)
@@ -113,6 +120,55 @@ class Gate:
         if self.approver is None:
             return False, "This step needs the owner's approval and no approval channel is connected: refused."
         ans = await self.approver(tool, inp, who)
+        if isinstance(ans, dict) and ans.get("behavior") == "allow":
+            return True, ""
+        self.denied.add(d)
+        if self.on_denied:
+            self.on_denied(d)
+        msg = ans.get("message") if isinstance(ans, dict) else None
+        return False, (msg or "The owner refused this step.") + " Do not retry it in another way; report it."
+
+    async def _patch(self, args, who):
+        from .patch import parse, paths
+        changes = parse(args.get("patch"))
+        if self.research:
+            return False, "This is a research (read-only) task: patches cannot run."
+        effects = []
+        for tool, path in paths(changes):
+            full = str(resolve(self.root, path))
+            if not self._in_scope(full):
+                return False, f"{path} is outside this order's write scope."
+            effects.append((tool, {"file_path": full, "patch": args["patch"]}))
+        d = digest("apply_patch", args)
+        if d in self.denied:
+            return False, "The owner already refused this patch in this order. Do not retry it."
+        for tool, inp in effects:
+            if not danger.classify(tool, inp, self.extra).danger:
+                continue
+            if self.approver is None:
+                return False, "This patch needs the owner's approval and no approval channel is connected: refused."
+            ans = await self.approver(tool, inp, who)
+            if isinstance(ans, dict) and ans.get("behavior") == "allow":
+                continue
+            self.denied.add(d)
+            if self.on_denied:
+                self.on_denied(d)
+            return False, "The owner refused this patch. Do not retry it in another way; report it."
+        return True, ""
+
+    async def _mcp(self, name, args, who):
+        listed = bool(self.mcp_allowed(name))
+        if self.research and not listed:
+            return False, ("This is a research (read-only) task: only MCP tools the owner listed as allowed run. "
+                           "Do not try another way.")
+        d = digest(name, args)
+        if d in self.denied:
+            return False, "The owner already refused exactly this step in this order. Do not retry it; report it."
+        if listed:
+            return True, ""
+        if self.approver is None:
+            return False, "This MCP call needs the owner's approval and no approval channel is connected: refused."
+        ans = await self.approver(name, args, who)
         if isinstance(ans, dict) and ans.get("behavior") == "allow":
             return True, ""
         self.denied.add(d)

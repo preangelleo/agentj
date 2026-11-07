@@ -18,14 +18,13 @@ import stat
 import time
 
 from . import media, privacy, wire
+from .preference_checks import NAME_RE, ROWS_MAX, rows_problem
 
-NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 TASK_PREFIX = "task."
 TEXT_MAX = wire.MAX_TEXT
 TITLE_MAX = 64
 FILES_MAX = 4
 FILE_MAX = 20 * 1024 * 1024
-ROWS_MAX = 100
 RATE = 6
 RATE_ALL = 30                    # posts a minute from all sources together
 RATE_WINDOW = 60.0
@@ -42,29 +41,14 @@ class Refused(Exception):
 
 
 # ------------------------------------------------------------------ the switches (preferences: notify.*)
-def rows_problem(rows) -> str | None:
-    """notify.automations validation (preferences.validate)."""
-    if not isinstance(rows, list) or len(rows) > ROWS_MAX:
-        return f"a list of up to {ROWS_MAX} entries"
-    seen = set()
-    for r in rows:
-        if not isinstance(r, dict) or set(r) - {"id", "allow"} or type(r.get("allow")) is not bool:
-            return 'each entry is {"id": "<name>", "allow": true|false}'
-        rid = r.get("id")
-        if not isinstance(rid, str) or not NAME_RE.fullmatch(rid) or rid in seen:
-            return "each id unique: letters, digits, . _ - (1–64, starting with a letter or digit)"
-        seen.add(rid)
-    return None
-
-
 def rows(prefs) -> list[dict]:
-    from . import preferences
+    from . import preference_values as preferences
     v = preferences.get(prefs or {}, "notify.automations", []) or []
     return [r for r in v if isinstance(r, dict) and isinstance(r.get("id"), str) and type(r.get("allow")) is bool]
 
 
 def enabled(prefs) -> bool:
-    from . import preferences
+    from . import preference_values as preferences
     return preferences.get(prefs or {}, "notify.enabled", True) is not False
 
 
@@ -321,7 +305,7 @@ async def post(host, req: dict, uid) -> dict:
 
 
 # ------------------------------------------------------------------ the main Agent sees it too (追加 2; P366 widens)
-SILENT = "〔不回群〕"
+SILENT = "〔静默消息〕"
 
 
 def agent_text(lang: str, name: str, title: str, text: str, paths: list) -> str:
@@ -350,7 +334,7 @@ def agent_text(lang: str, name: str, title: str, text: str, paths: list) -> str:
 
 
 def hand_to_agent(host, name: str, title: str, text: str, paths: list) -> str:
-    """Queue the post for the main Agent (one turn; its page is `via: auto`, silent when the reply is 〔不回群〕).
+    """Queue the post for the main Agent (one turn; its page is `via: auto`, silent when the reply is 〔静默消息〕).
     → "queued" | "no_agent" | "failed". Never blocks the phone's page."""
     a = getattr(host, "agent", None)
     if a is None or not callable(getattr(a, "submit", None)):

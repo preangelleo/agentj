@@ -22,7 +22,7 @@ import {computerBrowser} from './termhook.js';
 import { channel } from './session.js';
 import * as api from './api.js';
 import { t, lang, onLang } from './t.js';
-import { mk, toast, toastAction, notify, toastOff, confirmSheet } from './ui.js';
+import { mk, toast, toastAction, notify, toastOff, confirmSheet, pageCopy } from './ui.js';
 import { SVG } from './icons.js';
 import { registerLayer } from './layers.js';
 import { elevateChallenge, approve, canAssert, keysDigest } from './faceid.js';
@@ -194,12 +194,12 @@ export async function load(box) {
 }
 function status(text) {
   let p = root && root.parentElement && root.parentElement.querySelector('#keys-status');
-  if (!p && root) { p = mk('p', 'keys-status'); p.id = 'keys-status'; p.setAttribute('role', 'status'); root.after(p); }
+  if (!p && root) { p = pageCopy(mk('p', 'keys-status', undefined, 'aj-account')); p.id = 'keys-status'; p.setAttribute('role', 'status'); root.after(p); }
   if (p) { p.textContent = text; p.hidden = !text; }
 }
 
 function iconBtn(op, r, vendor) {
-  const b = mk('button', 'kbtn kbtn--' + op); b.type = 'button';
+  const b = mk('button', 'kbtn kbtn--' + op, undefined, 'aj-account'); b.type = 'button';
   const lab = t('p352.' + op);
   b.setAttribute('aria-label', lab + ' ' + r.name); b.title = lab; b.dataset.op = op; b.dataset.name = r.name;
   b.appendChild(keyGlyph(op === 'set' ? 'add' : op));
@@ -233,9 +233,9 @@ function rowNode(r, vendor) {
   main.append(top);
   if (r.type !== 'oauth' && vendor) {
     const info = PLAN_COPY[r.name];
-    main.append(mk('p','keys-desc',t(info?'p417.key.'+info[1]:r.type==='sub'?'p417.key.subHint':'p417.key.apiHint')));
-    const link=mk('a','keys-help',t('p417.key.get'));link.href=info?info[2]:'https://agentj.app/docs/models/';link.target='_blank';link.rel='noopener noreferrer';main.append(link);
-    const details=mk('details','keys-details');details.append(mk('summary','',t('p417.key.details')),nameNode(r.name));main.append(details);
+    main.append(pageCopy(mk('p','keys-desc',t(info?'p417.key.'+info[1]:r.type==='sub'?'p417.key.subHint':'p417.key.apiHint'), 'aj-account')));
+    const link=mk('a','keys-help',t('p417.key.get'), 'aj-account');link.href=info?info[2]:'https://agentj.app/docs/models/';link.target='_blank';link.rel='noopener noreferrer';main.append(link);
+    const details=mk('details','keys-details');details.append(mk('summary','',t('p417.key.details'), 'aj-account'),nameNode(r.name));main.append(details);
   }
   const st = mk('div', 'kstate');
   if (r.type === 'oauth') { st.textContent = t(r.state === 'in' ? 'p352.signedIn' : 'p352.signedOut'); st.dataset.on = r.state === 'in' ? '1' : '0'; }
@@ -248,15 +248,15 @@ function rowNode(r, vendor) {
   for (const f of r.found || []) main.append(foundLine(r, f, vendor));
   if (r.set && CHECKABLE.has(r.name)) {
     const box = mk('div','keys-correction');
-    const check = mk('button','aj-btn',t('p450.check')); check.type='button'; check.disabled=busy;
+    const check = mk('button','aj-action',t('p450.check'), 'aj-action'); check.type='button'; check.disabled=busy;
     check.addEventListener('click', () => checkRow(r.name)); box.append(check);
     const result = checks.get(r.name);
     if (result?.offer) {
       const title = PLAN_COPY[result.target];
-      box.append(mk('p','keys-desc',t('p450.mismatch',{plan:title ? t('p417.key.'+title[0]) : result.target})));
-      const move=mk('button','aj-btn',t('p450.move')); move.type='button'; move.disabled=busy;
+      box.append(pageCopy(mk('p','keys-desc',t('p450.mismatch',{plan:title ? t('p417.key.'+title[0]) : result.target}), 'aj-account')));
+      const move=mk('button','aj-action',t('p450.move'), 'aj-action'); move.type='button'; move.disabled=busy;
       move.addEventListener('click',()=>writeSetup('move',result.offer)); box.append(move);
-    } else if (result) box.append(mk('p','keys-desc',t(result.valid?'p450.valid':'p450.unknown')));
+    } else if (result) box.append(pageCopy(mk('p','keys-desc',t(result.valid?'p450.valid':'p450.unknown'), 'aj-account')));
     main.append(box);
   }
   if (pkErr && pkErr.name === r.name) {   // P539: why the passkey tap failed + 再试一次 (from the tap) + 在本机设置通行密钥
@@ -294,7 +294,7 @@ function foundLine(r, f, vendor) {
   if (f.live) txt.append(mk('span', 'kuse', t('p352.inUse')));
   d.append(txt);
   if (!r.set && f.fp) {
-    const b = mk('button', 'aj-btn kimp', t('p362.import')); b.type = 'button';
+    const b = mk('button', 'aj-action kimp', t('p362.import'), 'aj-action'); b.type = 'button';
     b.dataset.name = r.name; b.dataset.src = f.src;
     b.setAttribute('aria-label', t('p362.import') + ' ' + r.name);
     b.addEventListener('click', () => importKey(r, f));
@@ -305,7 +305,7 @@ function foundLine(r, f, vendor) {
 /** P362: where the host looked, and why a place was skipped; a hint to add more files when none is registered. */
 function sourcesNode() {
   const box = mk('section', 'ksrc');
-  box.append(mk('h3', 'ksrc-h', t('p362.scanned')));
+  box.append(mk('h3', 'ksrc-h', t('p362.scanned'), 'aj-account'));
   const ul = mk('ul', 'ksrc-l');
   for (const x of S.src) {
     const li = mk('li', 'ksrc-i'); li.dataset.kind = x.kind;
@@ -316,24 +316,24 @@ function sourcesNode() {
   }
   if (!S.src.length) ul.append(mk('li', 'ksrc-i', t('p362.none')));
   box.append(ul);
-  if (!S.src.some((x) => x.kind === 'file')) box.append(mk('p', 'ksrc-hint', t('p362.moreHint')));
+  if (!S.src.some((x) => x.kind === 'file')) box.append(pageCopy(mk('p', 'ksrc-hint', t('p362.moreHint'), 'aj-account')));
   return box;
 }
 function draw() {
   if (!root || !S) return;
   const kids = [];
   if (S.routing) kids.push(routingNode(S.routing));
-  kids.push(mk('h2', 'keys-h', t('p352.base')));
+  kids.push(mk('h2', 'keys-h', t('p352.base'), 'aj-account'));
   for (const v of S.base) {
     const card = mk('section', 'kvendor'); card.dataset.vendor = v.id;
-    card.append(mk('h3', 'kvendor-h', label(v.name)));
+    card.append(mk('h3', 'kvendor-h', label(v.name), 'aj-account'));
     const ul = mk('ul', 'klist');
     for (const r of v.rows) ul.append(rowNode(r, label(v.name)));
     card.append(ul); kids.push(card);
   }
   const head = mk('div', 'keys-h keys-h--third');
-  head.append(mk('h2', '', t('p352.third')));
-  const add = mk('button', 'kbtn kbtn--add'); add.type = 'button'; add.id = 'keys-add';
+  head.append(mk('h2', '', t('p352.third'), 'aj-account'));
+  const add = mk('button', 'kbtn kbtn--add', undefined, 'aj-account'); add.type = 'button'; add.id = 'keys-add';
   add.setAttribute('aria-label', t('p352.addKey')); add.title = t('p352.addKey');
   add.append(keyGlyph('add')); add.addEventListener('click', () => openAdd());
   head.append(add); kids.push(head);
@@ -341,7 +341,7 @@ function draw() {
   card.append(buildAdd());
   const ul = mk('ul', 'klist');
   for (const r of S.third) ul.append(rowNode(r, null));
-  if (!S.third.length) card.append(mk('p', 'kempty', t('p352.thirdEmpty')));
+  if (!S.third.length) card.append(pageCopy(mk('p', 'kempty', t('p352.thirdEmpty'), 'aj-account')));
   card.append(ul); kids.push(card);
   kids.push(sourcesNode());
   root.replaceChildren(...kids);
@@ -355,15 +355,15 @@ export function routingRole(role, translate = t) {
 }
 function routingNode(v) {
   const box=mk('section','kvendor'); box.dataset.providerRouting='1';
-  box.append(mk('h3','kvendor-h',t('p450.routes')),mk('p','keys-desc',t('p450.main',{model:v.main})));
-  for (const r of v.rows) box.append(mk('p','keys-desc',routingRole(r.role)+' · '+(r.model || t('p450.auto'))));
-  box.append(mk('p','keys-desc',t(v.effective ? 'p450.effectiveScope' : 'p450.scope')));
+  box.append(mk('h3','kvendor-h',t('p450.routes'), 'aj-account'),pageCopy(mk('p','keys-desc',t('p450.main',{model:v.main}), 'aj-account')));
+  for (const r of v.rows) box.append(pageCopy(mk('p','keys-desc',routingRole(r.role)+' · '+(r.model || t('p450.auto')), 'aj-account')));
+  box.append(pageCopy(mk('p','keys-desc',t(v.effective ? 'p450.effectiveScope' : 'p450.scope'), 'aj-account')));
   if (v.different) {
-    box.append(mk('p','keys-desc',t('p450.different')));
+    box.append(pageCopy(mk('p','keys-desc',t('p450.different'), 'aj-account')));
     if (v.writable && v.stamp) {
-      const b=mk('button','aj-btn',t('p450.unify')); b.type='button'; b.disabled=busy;
+      const b=mk('button','aj-action',t('p450.unify'), 'aj-action'); b.type='button'; b.disabled=busy;
       b.addEventListener('click',()=>writeSetup('unify','UNIFY_'+v.stamp)); box.append(b);
-    } else box.append(mk('p','keys-desc',t('p450.external')));
+    } else box.append(pageCopy(mk('p','keys-desc',t('p450.external'), 'aj-account')));
   }
   return box;
 }
@@ -390,11 +390,11 @@ async function writeSetup(op,name) {
 function buildAdd() {
   const f = mk('form', 'kadd'); f.hidden = !addForm?.open; f.noValidate = true;
   const lab = mk('label', 'kadd-l', t('p352.addName'));
-  const inp = mk('input', 'kadd-i'); inp.id = 'keys-add-name'; inp.autocomplete = 'off'; inp.spellcheck = false; inp.maxLength = NAME_MAX;
+  const inp = mk('input', 'kadd-i', undefined, 'aj-account'); inp.id = 'keys-add-name'; inp.autocomplete = 'off'; inp.spellcheck = false; inp.maxLength = NAME_MAX;
   inp.setAttribute('autocapitalize', 'characters'); inp.placeholder = 'ELEVENLABS_API_KEY'; lab.htmlFor = inp.id;
   if (addForm?.value) inp.value = addForm.value;
-  const go = mk('button', 'aj-btn aj-btn--primary kadd-go', t('p352.addGo')); go.type = 'submit';
-  const err = mk('p', 'kadd-err'); err.setAttribute('role', 'status'); err.hidden = true;
+  const go = mk('button', 'aj-action aj-action--primary kadd-go', t('p352.addGo'), 'aj-action'); go.type = 'submit';
+  const err = pageCopy(mk('p', 'kadd-err', undefined, 'aj-account')); err.setAttribute('role', 'status'); err.hidden = true;
   const line = mk('div', 'kadd-row'); line.append(inp, go);
   f.append(lab, line, err);
   inp.addEventListener('input', () => { if (addForm) addForm.value = inp.value; err.hidden = true; });
@@ -525,7 +525,7 @@ async function importKey(r, f) {
   let opt = null;
   if (x && x.kind !== 'systemd') {
     opt = mk('label', 'kimp-opt');
-    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = 'kimp-comment';
+    const cb = document.createElement('input'); cb.setAttribute('data-aj-owner', 'aj-account'); cb.type = 'checkbox'; cb.id = 'kimp-comment';
     opt.append(cb, mk('span', '', t('p362.importComment', { src: label })));
   }
   let faP = null, keep = true;

@@ -12,7 +12,7 @@
    the command list (≡), keyboard shortcuts, silent history, 「这个网页版有多安全」, and the pages a Settings row opens
    (models, memory, records, tasks, friends, bots, first-run checklist). Inside a menu the global semantic tokens
    (--bg --text --surface-* --border --primary-* --quiet-* --danger* --accent --focus …) are re-bound to the menu layer,
-   so every shared component (.aj-btn, .seg, .tgl, .setrow …) turns into its menu form without a second rule set.
+   so every shared component (.aj-action, .seg, .tgl, .setrow …) turns into its menu form without a second rule set.
    Confirmations and danger questions stay the ONE global centred card (#confirm = the P150 gdlg shell). */
 
 :root{
@@ -83,8 +83,102 @@
   --menu-line:color-mix(in srgb,var(--menu-text) 16%,transparent);--menu-muted:color-mix(in srgb,var(--menu-text) 72%,transparent);
   --menu-chip:color-mix(in srgb,var(--menu-text) 9%,transparent);--menu-press:color-mix(in srgb,var(--menu-text) 14%,transparent)}
 
-/* ---- the menu scope: global tokens re-bound to the menu layer ------------------------------------------------------ */
-.menupage,.cmdsheet,#settings,#sug,#five-page,#five-detail,   /* P299: the five menu pages are menu pages too */
+.menupage{
+  color-scheme:dark;
+  --bg:var(--menu-bg); --surface-1:var(--menu-panel); --surface-2:var(--menu-chip);
+  --text:var(--menu-text); --text-muted:var(--menu-muted); --text-subtitle:var(--menu-muted);
+  --border:var(--menu-line); --border-soft:var(--menu-line); --seam:var(--menu-line); --link:var(--menu-accent);
+  --primary-bg:var(--menu-text); --primary-fg:var(--menu-bg);
+  --quiet-bg:transparent; --quiet-fg:var(--menu-text); --quiet-border:color-mix(in srgb,var(--menu-text) 42%,transparent);
+  --danger:var(--menu-danger); --danger-bg:transparent;
+  --accent:var(--menu-accent); --focus:var(--menu-accent); --code-bg:var(--menu-chip);
+  --callout-info:color-mix(in srgb,var(--menu-accent) 18%,var(--menu-bg)); --callout-note:color-mix(in srgb,var(--c-banana-republic) 16%,var(--menu-bg));
+  --callout-warm:color-mix(in srgb,var(--c-peachy-feeling) 18%,var(--menu-bg)); --callout-fg:var(--menu-text);
+  /* relay's chat roles, for the parts of a menu that came from relay (command list, shortcuts, silent history) */
+  --pg:var(--menu-bg); --ink:var(--menu-text); --ink-soft:var(--menu-muted); --surface:var(--menu-chip); --raised:var(--menu-panel);
+  --line:var(--menu-line); --btn-strong-bg:var(--menu-text); --btn-strong-ink:var(--menu-bg);
+  color:var(--menu-text);
+}
+.cmdsheet{
+  color-scheme:dark;
+  --bg:var(--menu-bg); --surface-1:var(--menu-panel); --surface-2:var(--menu-chip);
+  --text:var(--menu-text); --text-muted:var(--menu-muted); --text-subtitle:var(--menu-muted);
+  --border:var(--menu-line); --border-soft:var(--menu-line); --seam:var(--menu-line); --link:var(--menu-accent);
+  --primary-bg:var(--menu-text); --primary-fg:var(--menu-bg);
+  --quiet-bg:transparent; --quiet-fg:var(--menu-text); --quiet-border:color-mix(in srgb,var(--menu-text) 42%,transparent);
+  --danger:var(--menu-danger); --danger-bg:transparent;
+  --accent:var(--menu-accent); --focus:var(--menu-accent); --code-bg:var(--menu-chip);
+  --callout-info:color-mix(in srgb,var(--menu-accent) 18%,var(--menu-bg)); --callout-note:color-mix(in srgb,var(--c-banana-republic) 16%,var(--menu-bg));
+  --callout-warm:color-mix(in srgb,var(--c-peachy-feeling) 18%,var(--menu-bg)); --callout-fg:var(--menu-text);
+  /* relay's chat roles, for the parts of a menu that came from relay (command list, shortcuts, silent history) */
+  --pg:var(--menu-bg); --ink:var(--menu-text); --ink-soft:var(--menu-muted); --surface:var(--menu-chip); --raised:var(--menu-panel);
+  --line:var(--menu-line); --btn-strong-bg:var(--menu-text); --btn-strong-ink:var(--menu-bg);
+  color:var(--menu-text);
+}
+#settings{
+  color-scheme:dark;
+  --bg:var(--menu-bg); --surface-1:var(--menu-panel); --surface-2:var(--menu-chip);
+  --text:var(--menu-text); --text-muted:var(--menu-muted); --text-subtitle:var(--menu-muted);
+  --border:var(--menu-line); --border-soft:var(--menu-line); --seam:var(--menu-line); --link:var(--menu-accent);
+  --primary-bg:var(--menu-text); --primary-fg:var(--menu-bg);
+  --quiet-bg:transparent; --quiet-fg:var(--menu-text); --quiet-border:color-mix(in srgb,var(--menu-text) 42%,transparent);
+  --danger:var(--menu-danger); --danger-bg:transparent;
+  --accent:var(--menu-accent); --focus:var(--menu-accent); --code-bg:var(--menu-chip);
+  --callout-info:color-mix(in srgb,var(--menu-accent) 18%,var(--menu-bg)); --callout-note:color-mix(in srgb,var(--c-banana-republic) 16%,var(--menu-bg));
+  --callout-warm:color-mix(in srgb,var(--c-peachy-feeling) 18%,var(--menu-bg)); --callout-fg:var(--menu-text);
+  /* relay's chat roles, for the parts of a menu that came from relay (command list, shortcuts, silent history) */
+  --pg:var(--menu-bg); --ink:var(--menu-text); --ink-soft:var(--menu-muted); --surface:var(--menu-chip); --raised:var(--menu-panel);
+  --line:var(--menu-line); --btn-strong-bg:var(--menu-text); --btn-strong-ink:var(--menu-bg);
+  color:var(--menu-text);
+}
+#sug{
+  color-scheme:dark;
+  --bg:var(--menu-bg); --surface-1:var(--menu-panel); --surface-2:var(--menu-chip);
+  --text:var(--menu-text); --text-muted:var(--menu-muted); --text-subtitle:var(--menu-muted);
+  --border:var(--menu-line); --border-soft:var(--menu-line); --seam:var(--menu-line); --link:var(--menu-accent);
+  --primary-bg:var(--menu-text); --primary-fg:var(--menu-bg);
+  --quiet-bg:transparent; --quiet-fg:var(--menu-text); --quiet-border:color-mix(in srgb,var(--menu-text) 42%,transparent);
+  --danger:var(--menu-danger); --danger-bg:transparent;
+  --accent:var(--menu-accent); --focus:var(--menu-accent); --code-bg:var(--menu-chip);
+  --callout-info:color-mix(in srgb,var(--menu-accent) 18%,var(--menu-bg)); --callout-note:color-mix(in srgb,var(--c-banana-republic) 16%,var(--menu-bg));
+  --callout-warm:color-mix(in srgb,var(--c-peachy-feeling) 18%,var(--menu-bg)); --callout-fg:var(--menu-text);
+  /* relay's chat roles, for the parts of a menu that came from relay (command list, shortcuts, silent history) */
+  --pg:var(--menu-bg); --ink:var(--menu-text); --ink-soft:var(--menu-muted); --surface:var(--menu-chip); --raised:var(--menu-panel);
+  --line:var(--menu-line); --btn-strong-bg:var(--menu-text); --btn-strong-ink:var(--menu-bg);
+  color:var(--menu-text);
+}
+#five-page{
+  color-scheme:dark;
+  --bg:var(--menu-bg); --surface-1:var(--menu-panel); --surface-2:var(--menu-chip);
+  --text:var(--menu-text); --text-muted:var(--menu-muted); --text-subtitle:var(--menu-muted);
+  --border:var(--menu-line); --border-soft:var(--menu-line); --seam:var(--menu-line); --link:var(--menu-accent);
+  --primary-bg:var(--menu-text); --primary-fg:var(--menu-bg);
+  --quiet-bg:transparent; --quiet-fg:var(--menu-text); --quiet-border:color-mix(in srgb,var(--menu-text) 42%,transparent);
+  --danger:var(--menu-danger); --danger-bg:transparent;
+  --accent:var(--menu-accent); --focus:var(--menu-accent); --code-bg:var(--menu-chip);
+  --callout-info:color-mix(in srgb,var(--menu-accent) 18%,var(--menu-bg)); --callout-note:color-mix(in srgb,var(--c-banana-republic) 16%,var(--menu-bg));
+  --callout-warm:color-mix(in srgb,var(--c-peachy-feeling) 18%,var(--menu-bg)); --callout-fg:var(--menu-text);
+  /* relay's chat roles, for the parts of a menu that came from relay (command list, shortcuts, silent history) */
+  --pg:var(--menu-bg); --ink:var(--menu-text); --ink-soft:var(--menu-muted); --surface:var(--menu-chip); --raised:var(--menu-panel);
+  --line:var(--menu-line); --btn-strong-bg:var(--menu-text); --btn-strong-ink:var(--menu-bg);
+  color:var(--menu-text);
+}
+#five-detail{
+  color-scheme:dark;
+  --bg:var(--menu-bg); --surface-1:var(--menu-panel); --surface-2:var(--menu-chip);
+  --text:var(--menu-text); --text-muted:var(--menu-muted); --text-subtitle:var(--menu-muted);
+  --border:var(--menu-line); --border-soft:var(--menu-line); --seam:var(--menu-line); --link:var(--menu-accent);
+  --primary-bg:var(--menu-text); --primary-fg:var(--menu-bg);
+  --quiet-bg:transparent; --quiet-fg:var(--menu-text); --quiet-border:color-mix(in srgb,var(--menu-text) 42%,transparent);
+  --danger:var(--menu-danger); --danger-bg:transparent;
+  --accent:var(--menu-accent); --focus:var(--menu-accent); --code-bg:var(--menu-chip);
+  --callout-info:color-mix(in srgb,var(--menu-accent) 18%,var(--menu-bg)); --callout-note:color-mix(in srgb,var(--c-banana-republic) 16%,var(--menu-bg));
+  --callout-warm:color-mix(in srgb,var(--c-peachy-feeling) 18%,var(--menu-bg)); --callout-fg:var(--menu-text);
+  /* relay's chat roles, for the parts of a menu that came from relay (command list, shortcuts, silent history) */
+  --pg:var(--menu-bg); --ink:var(--menu-text); --ink-soft:var(--menu-muted); --surface:var(--menu-chip); --raised:var(--menu-panel);
+  --line:var(--menu-line); --btn-strong-bg:var(--menu-text); --btn-strong-ink:var(--menu-bg);
+  color:var(--menu-text);
+}
 body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]){
   color-scheme:dark;
   --bg:var(--menu-bg); --surface-1:var(--menu-panel); --surface-2:var(--menu-chip);
@@ -101,15 +195,18 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
   --line:var(--menu-line); --btn-strong-bg:var(--menu-text); --btn-strong-ink:var(--menu-bg);
   color:var(--menu-text);
 }
+
 body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]),
 body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]) .ajpages{background:var(--menu-bg)}
 
 /* ---- the page shell: full screen over everything, follows the visual viewport (keyboard) ---------------------------- */
 .menupage{position:fixed;left:0;right:0;top:var(--vvtop,0px);height:var(--vvh,100dvh);z-index:46;display:flex;flex-direction:column;
   padding:env(safe-area-inset-top) 0 0;background:var(--menu-bg);color:var(--menu-text);font:400 var(--ui-fs-small)/1.5 var(--font-body);
-  overflow:hidden;backdrop-filter:none;-webkit-backdrop-filter:none;animation:menu-in var(--ui-dur) var(--ui-ease) both}
+  overflow:hidden;backdrop-filter:none;-webkit-backdrop-filter:none;animation:aj-menu-menu-in var(--ui-dur) var(--ui-ease) both}
 .menupage[hidden]{display:none}
-@keyframes menu-in{from{opacity:0}to{opacity:1}}
+@keyframes aj-menu-menu-in{from{opacity:0}to{opacity:1}}
+@keyframes aj-dialog-menu-in{from{opacity:0}to{opacity:1}}
+@keyframes aj-search-menu-in{from{opacity:0}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){.menupage{animation:none}}
 #badge-panel.menupage{z-index:47}          /* opened from Settings (45): above it; confirmation cards (P551 --z-confirm) above all */
 .composer:has(.cmdmenu:not([hidden])){z-index:44}   /* the command list; shortcuts / silent history (46) open above it */
@@ -120,18 +217,18 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
    the 5-hour bar and whose height is at most 60 % of the visible viewport. relay.js placeSheet() sets --sheet-bottom /
    --sheet-left / --sheet-w / --sheet-max from the bar and the tool row; pull-down at the list's top drags it shut. ----------- */
 .cmdmenu{position:fixed;left:0;right:0;top:var(--vvtop,0px);height:var(--vvh,100dvh);z-index:44;padding-top:env(safe-area-inset-top);box-sizing:border-box;
-  background:color-mix(in srgb,var(--c-sooty) 28%,transparent);animation:menu-in var(--ui-dur) var(--ui-ease) both;
+  background:color-mix(in srgb,var(--c-sooty) 28%,transparent);animation:aj-menu-menu-in var(--ui-dur) var(--ui-ease) both;
   overscroll-behavior:contain;-webkit-tap-highlight-color:transparent}
 .cmdmenu[hidden]{display:none}
 .cmdsheet{position:absolute;bottom:var(--sheet-bottom,96px);left:var(--sheet-left,var(--sp-2));width:var(--sheet-w,calc(100% - 2 * var(--sp-2)));
   max-height:var(--sheet-max,60vh);display:flex;flex-direction:column;overflow:hidden;touch-action:pan-y;
   background:var(--menu-bg);color:var(--menu-text);border:1px solid var(--menu-line);border-radius:var(--ui-radius-panel);
   box-shadow:0 -12px 32px color-mix(in srgb,#000 32%,transparent);font:400 var(--ui-fs-small)/1.5 var(--font-body);
-  transform-origin:bottom left;animation:sheet-in var(--ui-dur) var(--ui-ease) both}
+  transform-origin:bottom left;animation:aj-menu-sheet-in var(--ui-dur) var(--ui-ease) both}
 .cmdsheet[data-drag]{animation:none;transition:none}
 .cmdsheet[data-drag="off"]{transition:transform var(--ui-dur) var(--ui-ease),opacity var(--ui-dur) var(--ui-ease);transform:translateY(110%);opacity:0}
 .cmdsheet[data-drag="back"]{transition:transform var(--ui-dur) var(--ui-ease);transform:none}
-@keyframes sheet-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes aj-menu-sheet-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.cmdmenu,.cmdsheet{animation:none}}
 .cmdgrab{flex:none;align-self:center;width:36px;height:4px;margin:var(--sp-2) 0 0;border-radius:var(--ui-radius-pill);background:var(--menu-line)}
 .cmdsheet .menuhead{min-height:52px;padding:0 var(--ui-space-content);border-bottom:1px solid var(--menu-line)}
@@ -159,7 +256,7 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .hotsheet .menulist .hotreset>b{font-family:var(--font-body);font-weight:600}
 .hotsheet .hotnone{margin:0;padding:var(--ui-space-content) var(--menu-pad);color:var(--menu-muted)}
 .hotask{flex:none;padding:var(--ui-space-control) var(--ui-space-content) var(--ui-space-content);border-top:1px solid var(--menu-line);background:var(--menu-panel);
-  animation:sheet-in var(--ui-dur) var(--ui-ease) both}
+  animation:aj-menu-sheet-in var(--ui-dur) var(--ui-ease) both}
 .hotask[hidden]{display:none}
 .hotask p{margin:0}
 .hotask .t{font:600 var(--ui-fs-body)/1.4 var(--font-body);color:var(--menu-text)}
@@ -199,13 +296,538 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .menuicon[hidden]{display:none}
 .menuicon:hover{background:var(--menu-chip)}
 .menuicon:active{background:var(--menu-press)}
-.menuicon svg,.menupage .mi,#settings .mi,#settings .chev,.cmdmenu .mi svg{width:var(--ui-icon);height:var(--ui-icon);flex:none}
-:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-btn,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):focus-visible{
-  outline:var(--ui-focus-w) solid var(--menu-accent);outline-offset:var(--ui-focus-gap)}
+.menuicon svg{width:var(--ui-icon);height:var(--ui-icon);flex:none}
+.menupage .mi{width:var(--ui-icon);height:var(--ui-icon);flex:none}
+#settings .mi{width:var(--ui-icon);height:var(--ui-icon);flex:none}
+#settings .chev{width:var(--ui-icon);height:var(--ui-icon);flex:none}
+.cmdmenu .mi svg{width:var(--ui-icon);height:var(--ui-icon);flex:none}
+
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.menuicon):focus-visible{outline:var(--aj-menu-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-menu-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.aj-action):focus-visible{outline:var(--aj-action-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-action-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.seg button):focus-visible{outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.setnav):focus-visible{outline:var(--aj-settings-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.setside .setsidebtn):focus-visible{outline:var(--aj-settings-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.tgl):focus-visible{outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.setswitch):focus-visible{outline:var(--aj-settings-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.setcopy):focus-visible{outline:var(--aj-settings-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.setlink):focus-visible{outline:var(--aj-settings-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible:where([data-aj-owner="aj-settings-control"]){outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible:where([data-aj-owner="aj-settings"]){outline:var(--aj-settings-fontstep-focus-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-fontstep-focus-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.sfxvol>button):focus-visible{outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.cueplay):focus-visible{outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.menulist button):focus-visible{outline:var(--aj-menu-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-menu-layout-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-account composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-account"] ){outline:var(--aj-account-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-account-composition-outline-offset,var(--ui-focus-gap));}
+/* owner: aj-dialog-action; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-dialog-action"] ){outline:var(--aj-dialog-action-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-dialog-action-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-attachment; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-attachment"] ){outline:var(--aj-attachment-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-attachment-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-composer-tool; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-composer-tool"] ){outline:var(--aj-composer-tool-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-composer-tool-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-content; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-content"] ){outline:var(--aj-content-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-content-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-file; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-file"] ){outline:var(--aj-file-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-file-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-settings-control; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-settings-control"] ){outline:var(--aj-settings-control-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-status; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-status"] ){outline:var(--aj-status-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-status-composition-outline-offset,var(--ui-focus-gap));}
+
+
+/* Native aj-action composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-action"] ){outline:var(--aj-action-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-action-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-approval composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-approval"] ){outline:var(--aj-approval-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-approval-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-auth-card composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-auth-card"] ){outline:var(--aj-auth-card-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-auth-card-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-bots composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-bots"] ){outline:var(--aj-bots-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-bots-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-busy composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-busy"] ){outline:var(--aj-busy-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-busy-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-channel composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-channel"] ){outline:var(--aj-channel-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-channel-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-choice composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-choice"] ){outline:var(--aj-choice-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-choice-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-composer composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-composer"] ){outline:var(--aj-composer-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-composer-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-contacts composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-contacts"] ){outline:var(--aj-contacts-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-contacts-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-dialog composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-dialog"] ){outline:var(--aj-dialog-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-dialog-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-editor composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-editor"] ){outline:var(--aj-editor-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-editor-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-friends composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-friends"] ){outline:var(--aj-friends-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-friends-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-header composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-header"] ){outline:var(--aj-header-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-header-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-history composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-history"] ){outline:var(--aj-history-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-history-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-icon-action composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-icon-action"] ){outline:var(--aj-icon-action-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-icon-action-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-inline-component composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-inline-component"] ){outline:var(--aj-inline-component-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-inline-component-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-knowledge composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-knowledge"] ){outline:var(--aj-knowledge-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-knowledge-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-language composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-language"] ){outline:var(--aj-language-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-language-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-media composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-media"] ){outline:var(--aj-media-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-media-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-menu composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-menu"] ){outline:var(--aj-menu-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-menu-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-navigation-action composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-navigation-action"] ){outline:var(--aj-navigation-action-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-navigation-action-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-notice composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-notice"] ){outline:var(--aj-notice-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-notice-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-pairing composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-pairing"] ){outline:var(--aj-pairing-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-pairing-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-palette composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-palette"] ){outline:var(--aj-palette-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-palette-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-passkey composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-passkey"] ){outline:var(--aj-passkey-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-passkey-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-prose composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-prose"] ){outline:var(--aj-prose-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-prose-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-quote composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-quote"] ){outline:var(--aj-quote-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-quote-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-reader composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-reader"] ){outline:var(--aj-reader-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-reader-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-recording composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-recording"] ){outline:var(--aj-recording-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-recording-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-recovery composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-recovery"] ){outline:var(--aj-recovery-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-recovery-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-remotes composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-remotes"] ){outline:var(--aj-remotes-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-remotes-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-reply composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-reply"] ){outline:var(--aj-reply-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-reply-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-reply-action composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-reply-action"] ){outline:var(--aj-reply-action-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-reply-action-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-rescue composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-rescue"] ){outline:var(--aj-rescue-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-rescue-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-search composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-search"] ){outline:var(--aj-search-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-search-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-settings composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-settings"] ){outline:var(--aj-settings-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-setup composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-setup"] ){outline:var(--aj-setup-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-setup-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-shell composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-shell"] ){outline:var(--aj-shell-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-shell-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-source composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-source"] ){outline:var(--aj-source-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-source-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-suggestion composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-suggestion"] ){outline:var(--aj-suggestion-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-suggestion-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-terminal composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-terminal"] ){outline:var(--aj-terminal-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-terminal-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-wallet composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-wallet"] ){outline:var(--aj-wallet-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-wallet-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-wallet-calendar composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-wallet-calendar"] ){outline:var(--aj-wallet-calendar-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-wallet-calendar-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-wallet-color composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-wallet-color"] ){outline:var(--aj-wallet-color-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-wallet-color-composition-outline-offset,var(--ui-focus-gap));}
+
+
+/* #577 aj-icon-action: independent equal initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.menuicon):focus-visible{outline:var(--aj-menu-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-menu-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.aj-icon-action):focus-visible{outline:var(--aj-icon-action-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-icon-action-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.seg button):focus-visible{outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.setnav):focus-visible{outline:var(--aj-settings-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.setside .setsidebtn):focus-visible{outline:var(--aj-settings-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.tgl):focus-visible{outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.setswitch):focus-visible{outline:var(--aj-settings-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.setcopy):focus-visible{outline:var(--aj-settings-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.setlink):focus-visible{outline:var(--aj-settings-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible:where([data-aj-owner="aj-settings-control"]){outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible:where([data-aj-owner="aj-settings"]){outline:var(--aj-settings-fontstep-focus-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-fontstep-focus-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.sfxvol>button):focus-visible{outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.cueplay):focus-visible{outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.menulist button):focus-visible{outline:var(--aj-menu-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-menu-layout-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-account composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-account"] ){outline:var(--aj-account-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-account-composition-outline-offset,var(--ui-focus-gap));}
+/* owner: aj-dialog-action; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-dialog-action"] ){outline:var(--aj-dialog-action-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-dialog-action-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-attachment; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-attachment"] ){outline:var(--aj-attachment-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-attachment-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-composer-tool; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-composer-tool"] ){outline:var(--aj-composer-tool-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-composer-tool-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-content; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-content"] ){outline:var(--aj-content-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-content-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-file; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-file"] ){outline:var(--aj-file-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-file-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-settings-control; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-settings-control"] ){outline:var(--aj-settings-control-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-status; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-status"] ){outline:var(--aj-status-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-status-composition-outline-offset,var(--ui-focus-gap));}
+
+
+/* Native aj-action composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-action"] ){outline:var(--aj-action-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-action-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-approval composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-approval"] ){outline:var(--aj-approval-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-approval-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-auth-card composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-auth-card"] ){outline:var(--aj-auth-card-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-auth-card-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-bots composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-bots"] ){outline:var(--aj-bots-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-bots-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-busy composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-busy"] ){outline:var(--aj-busy-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-busy-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-channel composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-channel"] ){outline:var(--aj-channel-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-channel-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-choice composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-choice"] ){outline:var(--aj-choice-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-choice-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-composer composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-composer"] ){outline:var(--aj-composer-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-composer-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-contacts composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-contacts"] ){outline:var(--aj-contacts-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-contacts-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-dialog composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-dialog"] ){outline:var(--aj-dialog-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-dialog-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-editor composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-editor"] ){outline:var(--aj-editor-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-editor-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-friends composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-friends"] ){outline:var(--aj-friends-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-friends-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-header composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-header"] ){outline:var(--aj-header-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-header-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-history composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-history"] ){outline:var(--aj-history-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-history-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-icon-action composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-icon-action"] ){outline:var(--aj-icon-action-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-icon-action-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-inline-component composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-inline-component"] ){outline:var(--aj-inline-component-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-inline-component-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-knowledge composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-knowledge"] ){outline:var(--aj-knowledge-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-knowledge-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-language composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-language"] ){outline:var(--aj-language-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-language-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-media composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-media"] ){outline:var(--aj-media-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-media-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-menu composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-menu"] ){outline:var(--aj-menu-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-menu-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-navigation-action composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-navigation-action"] ){outline:var(--aj-navigation-action-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-navigation-action-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-notice composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-notice"] ){outline:var(--aj-notice-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-notice-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-pairing composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-pairing"] ){outline:var(--aj-pairing-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-pairing-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-palette composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-palette"] ){outline:var(--aj-palette-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-palette-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-passkey composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-passkey"] ){outline:var(--aj-passkey-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-passkey-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-prose composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-prose"] ){outline:var(--aj-prose-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-prose-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-quote composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-quote"] ){outline:var(--aj-quote-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-quote-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-reader composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-reader"] ){outline:var(--aj-reader-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-reader-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-recording composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-recording"] ){outline:var(--aj-recording-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-recording-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-recovery composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-recovery"] ){outline:var(--aj-recovery-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-recovery-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-remotes composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-remotes"] ){outline:var(--aj-remotes-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-remotes-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-reply composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-reply"] ){outline:var(--aj-reply-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-reply-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-reply-action composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-reply-action"] ){outline:var(--aj-reply-action-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-reply-action-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-rescue composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-rescue"] ){outline:var(--aj-rescue-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-rescue-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-search composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-search"] ){outline:var(--aj-search-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-search-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-settings composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-settings"] ){outline:var(--aj-settings-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-setup composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-setup"] ){outline:var(--aj-setup-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-setup-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-shell composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-shell"] ){outline:var(--aj-shell-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-shell-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-source composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-source"] ){outline:var(--aj-source-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-source-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-suggestion composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-suggestion"] ){outline:var(--aj-suggestion-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-suggestion-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-terminal composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-terminal"] ){outline:var(--aj-terminal-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-terminal-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-wallet composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-wallet"] ){outline:var(--aj-wallet-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-wallet-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-wallet-calendar composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-wallet-calendar"] ){outline:var(--aj-wallet-calendar-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-wallet-calendar-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-wallet-color composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-wallet-color"] ){outline:var(--aj-wallet-color-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-wallet-color-composition-outline-offset,var(--ui-focus-gap));}
+
+
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.menuicon):focus-visible{outline:var(--aj-menu-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-menu-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.aj-navigation-action):focus-visible{outline:var(--aj-navigation-action-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-navigation-action-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.seg button):focus-visible{outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.setnav):focus-visible{outline:var(--aj-settings-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.setside .setsidebtn):focus-visible{outline:var(--aj-settings-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.tgl):focus-visible{outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.setswitch):focus-visible{outline:var(--aj-settings-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.setcopy):focus-visible{outline:var(--aj-settings-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.setlink):focus-visible{outline:var(--aj-settings-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible:where([data-aj-owner="aj-settings-control"]){outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible:where([data-aj-owner="aj-settings"]){outline:var(--aj-settings-fontstep-focus-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-fontstep-focus-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.sfxvol>button):focus-visible{outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.cueplay):focus-visible{outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));}
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.menulist button):focus-visible{outline:var(--aj-menu-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-menu-layout-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-account composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-account"] ){outline:var(--aj-account-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-account-composition-outline-offset,var(--ui-focus-gap));}
+/* owner: aj-dialog-action; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-dialog-action"] ){outline:var(--aj-dialog-action-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-dialog-action-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-attachment; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-attachment"] ){outline:var(--aj-attachment-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-attachment-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-composer-tool; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-composer-tool"] ){outline:var(--aj-composer-tool-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-composer-tool-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-content; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-content"] ){outline:var(--aj-content-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-content-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-file; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-file"] ){outline:var(--aj-file-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-file-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-settings-control; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-settings-control"] ){outline:var(--aj-settings-control-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-composition-outline-offset,var(--ui-focus-gap));}
+
+/* owner: aj-status; explicit opt-in, equal initial value */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-status"] ){outline:var(--aj-status-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-status-composition-outline-offset,var(--ui-focus-gap));}
+
+
+/* Native aj-action composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-action"] ){outline:var(--aj-action-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-action-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-approval composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-approval"] ){outline:var(--aj-approval-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-approval-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-auth-card composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-auth-card"] ){outline:var(--aj-auth-card-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-auth-card-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-bots composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-bots"] ){outline:var(--aj-bots-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-bots-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-busy composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-busy"] ){outline:var(--aj-busy-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-busy-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-channel composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-channel"] ){outline:var(--aj-channel-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-channel-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-choice composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-choice"] ){outline:var(--aj-choice-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-choice-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-composer composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-composer"] ){outline:var(--aj-composer-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-composer-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-contacts composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-contacts"] ){outline:var(--aj-contacts-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-contacts-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-dialog composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-dialog"] ){outline:var(--aj-dialog-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-dialog-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-editor composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-editor"] ){outline:var(--aj-editor-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-editor-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-friends composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-friends"] ){outline:var(--aj-friends-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-friends-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-header composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-header"] ){outline:var(--aj-header-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-header-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-history composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-history"] ){outline:var(--aj-history-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-history-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-icon-action composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-icon-action"] ){outline:var(--aj-icon-action-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-icon-action-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-inline-component composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-inline-component"] ){outline:var(--aj-inline-component-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-inline-component-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-knowledge composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-knowledge"] ){outline:var(--aj-knowledge-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-knowledge-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-language composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-language"] ){outline:var(--aj-language-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-language-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-media composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-media"] ){outline:var(--aj-media-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-media-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-menu composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-menu"] ){outline:var(--aj-menu-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-menu-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-navigation-action composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-navigation-action"] ){outline:var(--aj-navigation-action-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-navigation-action-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-notice composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-notice"] ){outline:var(--aj-notice-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-notice-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-pairing composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-pairing"] ){outline:var(--aj-pairing-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-pairing-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-palette composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-palette"] ){outline:var(--aj-palette-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-palette-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-passkey composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-passkey"] ){outline:var(--aj-passkey-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-passkey-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-prose composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-prose"] ){outline:var(--aj-prose-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-prose-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-quote composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-quote"] ){outline:var(--aj-quote-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-quote-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-reader composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-reader"] ){outline:var(--aj-reader-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-reader-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-recording composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-recording"] ){outline:var(--aj-recording-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-recording-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-recovery composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-recovery"] ){outline:var(--aj-recovery-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-recovery-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-remotes composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-remotes"] ){outline:var(--aj-remotes-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-remotes-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-reply composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-reply"] ){outline:var(--aj-reply-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-reply-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-reply-action composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-reply-action"] ){outline:var(--aj-reply-action-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-reply-action-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-rescue composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-rescue"] ){outline:var(--aj-rescue-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-rescue-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-search composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-search"] ){outline:var(--aj-search-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-search-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-settings composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-settings"] ){outline:var(--aj-settings-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-setup composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-setup"] ){outline:var(--aj-setup-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-setup-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-shell composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-shell"] ){outline:var(--aj-shell-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-shell-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-source composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-source"] ){outline:var(--aj-source-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-source-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-suggestion composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-suggestion"] ){outline:var(--aj-suggestion-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-suggestion-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-terminal composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-terminal"] ){outline:var(--aj-terminal-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-terminal-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-wallet composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-wallet"] ){outline:var(--aj-wallet-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-wallet-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-wallet-calendar composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-wallet-calendar"] ){outline:var(--aj-wallet-calendar-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-wallet-calendar-composition-outline-offset,var(--ui-focus-gap));}
+
+/* Native aj-wallet-color composition: independently owned initial contract. */
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(summary):focus-visible:where([data-aj-owner="aj-wallet-color"] ){outline:var(--aj-wallet-color-composition-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-wallet-color-composition-outline-offset,var(--ui-focus-gap));}
+
+
+
 kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(--menu-muted)}
 
 /* ---- panels and group labels ------------------------------------------------------------------------------------- */
-.menucard,#settings .setcard{padding:var(--menu-pad);border:1px solid var(--menu-line);border-radius:var(--ui-radius-panel);background:var(--menu-panel);color:var(--menu-text)}
+.menucard{padding:var(--menu-pad);border:1px solid var(--menu-line);border-radius:var(--ui-radius-panel);background:var(--menu-panel);color:var(--menu-text)}
+#settings .setcard{padding:var(--menu-pad);border:1px solid var(--menu-line);border-radius:var(--ui-radius-panel);background:var(--menu-panel);color:var(--menu-text)}
+
 .menucard>.setg,.menucard>h3.setg{margin:0 0 var(--sp-2)}
 #settings .setg,.menupage .setg{color:var(--menu-muted);font:600 var(--ui-fs-caption)/1.4 var(--font-body);letter-spacing:.06em;text-transform:uppercase}
 
@@ -214,6 +836,10 @@ kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(-
 #settings .setnav>.mi{color:var(--menu-text);opacity:.9}
 #settings .setnav b{font:600 var(--ui-fs-body)/1.3 var(--font-body)}
 #settings .setnav small{color:var(--menu-muted);font-size:var(--ui-fs-small)}
+/* #468c: move complete phrases together; a long phrase still fits narrow/large-text screens. */
+#settings .setnav small>.setnote-part{display:inline-block;max-width:100%;vertical-align:top;text-wrap:balance}
+/* Keep English word separators inside phrase boxes visible instead of collapsing their trailing spaces. */
+html:lang(en) #settings .setnav small>.setnote-part{white-space:break-spaces}
 #settings .setnav .chev{width:18px;height:18px;color:var(--menu-muted)}
 #settings .setnav:hover{background:linear-gradient(var(--menu-chip),var(--menu-chip)) no-repeat;background-size:calc(100% + 2 * var(--sp-2)) 100%;background-position:center}
 #settings .setrow{min-height:var(--menu-row-2);border-bottom-color:var(--menu-line)}
@@ -227,19 +853,60 @@ kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(-
 @media (max-width:899px){ #settings .setside .mi{display:none} }
 
 /* ---- buttons: ONE shape (pill, 44 px, 24 px sides); primary = Lotion fill, secondary = outline, danger = red outline -- */
-:is(.menupage,#settings,.ajpages) .aj-btn{min-height:var(--ui-btn-h);padding:0 var(--ui-btn-px);border-radius:var(--ui-radius-pill);font:500 var(--ui-fs-body)/1.2 var(--font-body)}
-:is(.menupage,#settings,.ajpages) .aj-btn--sm{padding:0 var(--sp-4);font-size:var(--ui-fs-small)}
-:is(.menupage,#settings,.ajpages) .aj-btn:not(.aj-btn--primary):not(.aj-btn--danger):not(.aj-btn--quiet):hover{background:var(--menu-chip);border-color:var(--menu-text)}
-:is(.menupage,#settings,.ajpages) .aj-btn--primary:hover{background:var(--c-salt);border-color:var(--c-salt);color:var(--menu-bg)}
-:is(.menupage,#settings,.ajpages) .aj-btn--danger{background:transparent;color:var(--menu-danger);border-color:var(--menu-danger)}
-:is(.menupage,#settings,.ajpages) .aj-btn--danger:hover{background:var(--menu-danger);color:var(--menu-on-accent)}
+:is(.menupage,#settings,.ajpages) .aj-action{min-height:var(--aj-action-min-height,var(--ui-btn-h));padding:var(--aj-action-padding,0 var(--ui-btn-px));border-radius:var(--aj-action-border-radius,var(--ui-radius-pill));font:var(--aj-action-font,500 var(--ui-fs-body)/1.2 var(--font-body))}
+/* #577 aj-icon-action: independent equal initial contract. */
+:is(.menupage,#settings,.ajpages) .aj-icon-action{min-height:var(--aj-icon-action-min-height,var(--ui-btn-h));padding:var(--aj-icon-action-padding,0 var(--ui-btn-px));border-radius:var(--aj-icon-action-border-radius,var(--ui-radius-pill));font:var(--aj-icon-action-font,500 var(--ui-fs-body)/1.2 var(--font-body))}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+:is(.menupage,#settings,.ajpages) .aj-navigation-action{min-height:var(--aj-navigation-action-min-height,var(--ui-btn-h));padding:var(--aj-navigation-action-padding,0 var(--ui-btn-px));border-radius:var(--aj-navigation-action-border-radius,var(--ui-radius-pill));font:var(--aj-navigation-action-font,500 var(--ui-fs-body)/1.2 var(--font-body))}
+
+:is(.menupage,#settings,.ajpages) .aj-action--sm{padding:var(--aj-action-sm-padding,0 var(--sp-4));font-size:var(--aj-action-sm-font-size,var(--ui-fs-small))}
+/* #577 aj-icon-action: independent equal initial contract. */
+:is(.menupage,#settings,.ajpages) .aj-icon-action--sm{padding:var(--aj-icon-action-sm-padding,0 var(--sp-4));font-size:var(--aj-icon-action-sm-font-size,var(--ui-fs-small))}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+:is(.menupage,#settings,.ajpages) .aj-navigation-action--sm{padding:var(--aj-navigation-action-sm-padding,0 var(--sp-4));font-size:var(--aj-navigation-action-sm-font-size,var(--ui-fs-small))}
+
+:is(.menupage,#settings,.ajpages) .aj-action:not(.aj-action--primary):not(.aj-action--danger):not(.aj-action--quiet):hover{background:var(--aj-action-quiet-hover-background,var(--menu-chip));border-color:var(--aj-action-quiet-hover-border-color,var(--menu-text))}
+/* #577 aj-icon-action: independent equal initial contract. */
+:is(.menupage,#settings,.ajpages) .aj-icon-action:not(.aj-icon-action--primary):not(.aj-icon-action--danger):not(.aj-icon-action--quiet):hover{background:var(--aj-icon-action-quiet-hover-background,var(--menu-chip));border-color:var(--aj-icon-action-quiet-hover-border-color,var(--menu-text))}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+:is(.menupage,#settings,.ajpages) .aj-navigation-action:not(.aj-navigation-action--primary):not(.aj-navigation-action--danger):not(.aj-navigation-action--quiet):hover{background:var(--aj-navigation-action-quiet-hover-background,var(--menu-chip));border-color:var(--aj-navigation-action-quiet-hover-border-color,var(--menu-text))}
+
+:is(.menupage,#settings,.ajpages) .aj-action--primary:hover{background:var(--aj-action-primary-hover-background,var(--c-salt));border-color:var(--aj-action-primary-hover-border-color,var(--c-salt));color:var(--aj-action-primary-hover-color,var(--menu-bg))}
+/* #577 aj-icon-action: independent equal initial contract. */
+:is(.menupage,#settings,.ajpages) .aj-icon-action--primary:hover{background:var(--aj-icon-action-primary-hover-background,var(--c-salt));border-color:var(--aj-icon-action-primary-hover-border-color,var(--c-salt));color:var(--aj-icon-action-primary-hover-color,var(--menu-bg))}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+:is(.menupage,#settings,.ajpages) .aj-navigation-action--primary:hover{background:var(--aj-navigation-action-primary-hover-background,var(--c-salt));border-color:var(--aj-navigation-action-primary-hover-border-color,var(--c-salt));color:var(--aj-navigation-action-primary-hover-color,var(--menu-bg))}
+
+:is(.menupage,#settings,.ajpages) .aj-action--danger{background:var(--aj-action-danger-background,transparent);color:var(--aj-action-danger-color,var(--menu-danger));border-color:var(--aj-action-danger-border-color,var(--menu-danger))}
+/* #577 aj-icon-action: independent equal initial contract. */
+:is(.menupage,#settings,.ajpages) .aj-icon-action--danger{background:var(--aj-icon-action-danger-background,transparent);color:var(--aj-icon-action-danger-color,var(--menu-danger));border-color:var(--aj-icon-action-danger-border-color,var(--menu-danger))}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+:is(.menupage,#settings,.ajpages) .aj-navigation-action--danger{background:var(--aj-navigation-action-danger-background,transparent);color:var(--aj-navigation-action-danger-color,var(--menu-danger));border-color:var(--aj-navigation-action-danger-border-color,var(--menu-danger))}
+
+:is(.menupage,#settings,.ajpages) .aj-action--danger:hover{background:var(--aj-action-danger-hover-background,var(--menu-danger));color:var(--aj-action-danger-hover-color,var(--menu-on-accent))}
+/* #577 aj-icon-action: independent equal initial contract. */
+:is(.menupage,#settings,.ajpages) .aj-icon-action--danger:hover{background:var(--aj-icon-action-danger-hover-background,var(--menu-danger));color:var(--aj-icon-action-danger-hover-color,var(--menu-on-accent))}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+:is(.menupage,#settings,.ajpages) .aj-navigation-action--danger:hover{background:var(--aj-navigation-action-danger-hover-background,var(--menu-danger));color:var(--aj-navigation-action-danger-hover-color,var(--menu-on-accent))}
+
 #settings .setcopy,#settings button.setval.setwide{min-height:var(--ui-btn-h);border-radius:var(--ui-radius-pill);background:transparent;
   border:1px solid var(--quiet-border);color:var(--menu-text)}
 #settings .setcopy:hover,#settings button.setval.setwide:hover{background:var(--menu-chip);border-color:var(--menu-text)}
 #settings .setlinks a,#settings .setlink{color:var(--menu-text)}
 /* filled icon buttons inside rows (text size −/+, mute): the header's icon button with the chip fill */
-#settings .fontstep>.setstep,#settings .sfxvol>.setstep,#settings .cueplay{width:var(--ui-icon-btn);height:var(--ui-icon-btn);
+#settings .fontstep>.setstep{width:var(--ui-icon-btn);height:var(--ui-icon-btn);
   border-radius:var(--ui-radius-control);background:var(--menu-chip);color:var(--menu-text)}
+#settings .sfxvol>.setstep{width:var(--ui-icon-btn);height:var(--ui-icon-btn);
+  border-radius:var(--ui-radius-control);background:var(--menu-chip);color:var(--menu-text)}
+#settings .cueplay{width:var(--ui-icon-btn);height:var(--ui-icon-btn);
+  border-radius:var(--ui-radius-control);background:var(--menu-chip);color:var(--menu-text)}
+
 #settings .fontstep svg,#settings .sfxvol svg,#settings .cueplay svg{width:var(--ui-icon);height:var(--ui-icon)}
 
 /* ---- pickers and switches ------------------------------------------------------------------------------------------ */
@@ -247,10 +914,18 @@ kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(-
 #settings .seg button{color:var(--menu-text)}
 #settings .seg button+button{border-left-color:var(--quiet-border)}
 #settings .seg button[aria-pressed="true"]{background:var(--menu-text);color:var(--menu-bg)}
-#settings .tgl i,#settings .setswitch::before{background:var(--c-black-mana)}
-#settings .tgl i::after,#settings .setswitch::after{background:var(--menu-text);box-shadow:none}
-#settings .tgl[aria-checked="true"] i,#settings .setswitch[aria-checked="true"]::before{background:var(--menu-accent)}
-#settings .tgl[aria-checked="true"] i::after,#settings .setswitch[aria-checked="true"]::after{background:var(--menu-on-accent)}
+#settings .tgl i{background:var(--c-black-mana)}
+#settings .setswitch::before{background:var(--c-black-mana)}
+
+#settings .tgl i::after{background:var(--menu-text);box-shadow:none}
+#settings .setswitch::after{background:var(--menu-text);box-shadow:none}
+
+#settings .tgl[aria-checked="true"] i{background:var(--menu-accent)}
+#settings .setswitch[aria-checked="true"]::before{background:var(--menu-accent)}
+
+#settings .tgl[aria-checked="true"] i::after{background:var(--menu-on-accent)}
+#settings .setswitch[aria-checked="true"]::after{background:var(--menu-on-accent)}
+
 #settings .sfxvol input[type=range]{accent-color:var(--menu-accent)}
 #settings .rmmeter{background:var(--menu-chip)}
 #settings .rmmeter i{background:var(--menu-accent)}
@@ -283,7 +958,9 @@ kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(-
 .menulist button.iconrow>b.mi{display:grid;place-items:center}
 .menulist button.iconrow>span{font:500 var(--ui-fs-body)/1.3 var(--font-body);color:var(--menu-text)}
 .menulist .estopitem,.menulist .estopitem>span{color:var(--menu-danger)}
-.menulist .keysentry,.menulist .clipentry{display:none}
+.menulist .keysentry{display:none}
+.menulist .clipentry{display:none}
+
 @media (any-hover:hover){ .menulist .keysentry{display:grid} }
 @media (any-pointer:coarse){ .menulist .clipentry{display:grid} }
 
@@ -330,7 +1007,7 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 /* P207 追加 1: the --dlg-* tokens (app.css, end) — one Noir card in light and dark, a theme repaints it via --dlg-bg */
 .ajconfirm{--dbg:var(--dlg-bg);--dfg:var(--dlg-fg);background:var(--dlg-scrim);backdrop-filter:blur(var(--dlg-blur));-webkit-backdrop-filter:blur(var(--dlg-blur))}
 .ajconfirm .box{width:min(88vw,360px);padding:26px 22px 18px;border-radius:var(--dlg-radius);background:var(--dbg);color:var(--dfg);text-align:center;
-  box-shadow:var(--dlg-shadow);animation:menu-in var(--dlg-dur) var(--re) both}   /* fade only: no scale, the geometry is final at once */
+  box-shadow:var(--dlg-shadow);animation:aj-dialog-menu-in var(--dlg-dur) var(--re) both}   /* fade only: no scale, the geometry is final at once */
 .ajconfirm h2{font:600 var(--dlg-fs-title)/1.3 var(--font-title)}
 .ajconfirm p{color:inherit;opacity:.8}
 #confirm[data-kind="upg"] #confirm-text{white-space:pre-line;text-align:left}   /* P203: the upgrade card's list */
@@ -344,10 +1021,36 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 #confirm[data-kind="sxf"] ol.sxf-list{counter-reset:sxf}
 #confirm[data-kind="sxf"] ol.sxf-list li{counter-increment:sxf;padding-left:1.4em}
 #confirm[data-kind="sxf"] ol.sxf-list li::before{content:counter(sxf) ".";left:0}
-.ajconfirm .confirm-row .aj-btn{min-height:48px;border-radius:var(--ui-radius-pill);border:1.5px solid currentColor;background:none;color:inherit}
-.ajconfirm .confirm-row .aj-btn--primary{background:var(--dfg);color:var(--dbg);border-color:var(--dfg)}
-.ajconfirm .confirm-row .aj-btn--danger{background:var(--strawberry-field);color:var(--c-sooty);border-color:var(--strawberry-field)}
-.ajconfirm .confirm-row .aj-btn:focus-visible{outline:2px solid var(--dfg);outline-offset:3px}
+.ajconfirm .confirm-row .aj-action{min-height:var(--aj-action-min-height,48px);border-radius:var(--aj-action-border-radius,var(--ui-radius-pill));border:var(--aj-action-border,1.5px solid currentColor);background:var(--aj-action-background,none);color:var(--aj-action-color,inherit)}
+/* #577 aj-icon-action: independent equal initial contract. */
+.ajconfirm .confirm-row .aj-icon-action{min-height:var(--aj-icon-action-min-height,48px);border-radius:var(--aj-icon-action-border-radius,var(--ui-radius-pill));;background:var(--aj-icon-action-background,none);color:var(--aj-icon-action-color,inherit)}
+/* Explicit border contract; other icon actions stay frameless. */
+.ajconfirm .confirm-row .aj-icon-action--framed{border:var(--aj-icon-action-border,1.5px solid currentColor);}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+.ajconfirm .confirm-row .aj-navigation-action{min-height:var(--aj-navigation-action-min-height,48px);border-radius:var(--aj-navigation-action-border-radius,var(--ui-radius-pill));border:var(--aj-navigation-action-border,1.5px solid currentColor);background:var(--aj-navigation-action-background,none);color:var(--aj-navigation-action-color,inherit)}
+
+.ajconfirm .confirm-row .aj-action--primary{background:var(--aj-action-primary-background,var(--dfg));color:var(--aj-action-primary-color,var(--dbg));border-color:var(--aj-action-primary-border-color,var(--dfg))}
+/* #577 aj-icon-action: independent equal initial contract. */
+.ajconfirm .confirm-row .aj-icon-action--primary{background:var(--aj-icon-action-primary-background,var(--dfg));color:var(--aj-icon-action-primary-color,var(--dbg));border-color:var(--aj-icon-action-primary-border-color,var(--dfg))}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+.ajconfirm .confirm-row .aj-navigation-action--primary{background:var(--aj-navigation-action-primary-background,var(--dfg));color:var(--aj-navigation-action-primary-color,var(--dbg));border-color:var(--aj-navigation-action-primary-border-color,var(--dfg))}
+
+.ajconfirm .confirm-row .aj-action--danger{background:var(--aj-action-danger-background,var(--strawberry-field));color:var(--aj-action-danger-color,var(--c-sooty));border-color:var(--aj-action-danger-border-color,var(--strawberry-field))}
+/* #577 aj-icon-action: independent equal initial contract. */
+.ajconfirm .confirm-row .aj-icon-action--danger{background:var(--aj-icon-action-danger-background,var(--strawberry-field));color:var(--aj-icon-action-danger-color,var(--c-sooty));border-color:var(--aj-icon-action-danger-border-color,var(--strawberry-field))}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+.ajconfirm .confirm-row .aj-navigation-action--danger{background:var(--aj-navigation-action-danger-background,var(--strawberry-field));color:var(--aj-navigation-action-danger-color,var(--c-sooty));border-color:var(--aj-navigation-action-danger-border-color,var(--strawberry-field))}
+
+.ajconfirm .confirm-row .aj-action:focus-visible{outline:var(--aj-action-focus-visible-outline,2px solid var(--dfg));outline-offset:var(--aj-action-focus-visible-outline-offset,3px)}
+/* #577 aj-icon-action: independent equal initial contract. */
+.ajconfirm .confirm-row .aj-icon-action:focus-visible{outline:var(--aj-icon-action-focus-visible-outline,2px solid var(--dfg));outline-offset:var(--aj-icon-action-focus-visible-outline-offset,3px)}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+.ajconfirm .confirm-row .aj-navigation-action:focus-visible{outline:var(--aj-navigation-action-focus-visible-outline,2px solid var(--dfg));outline-offset:var(--aj-navigation-action-focus-visible-outline-offset,3px)}
+
 
 /* ---- P188 · 搜索聊天记录: a dark centred card over the chat (owner: 「在中间黑色的弹窗里显示……像 Google 一样的搜索窗口」) -------
    The one menu surface that is NOT full screen: the chat stays visible around it, so the jump back to a page reads as one motion.
@@ -356,7 +1059,7 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .top .srchbtn[aria-expanded="true"],body[data-srch="1"] .top .srchbtn{background:var(--surface)}
 .srch{position:fixed;left:0;right:0;top:var(--vvtop,0px);height:var(--vvh,100dvh);z-index:46;display:grid;place-items:start center;
   padding:max(var(--ui-space-section),env(safe-area-inset-top)) var(--ui-space-content) var(--ui-space-content);
-  background:rgb(20 20 20 / .46);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:menu-in var(--ui-dur) var(--ui-ease) both}
+  background:rgb(20 20 20 / .46);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);animation:aj-search-menu-in var(--ui-dur) var(--ui-ease) both}
 .srch[hidden]{display:none}
 .srcard{color-scheme:dark;width:min(100%,40rem);max-height:100%;min-height:0;display:flex;flex-direction:column;
   border:1px solid var(--menu-line);border-radius:var(--ui-radius-panel);background:var(--menu-bg);color:var(--menu-text);
@@ -397,14 +1100,26 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .srsnip mark,.srmark{background:color-mix(in srgb,var(--menu-accent) 34%,transparent);color:inherit;border-radius:3px;padding:0 1px}
 .srsnip mark{color:var(--menu-text);font-weight:600}
 /* the page a hit opened flashes once (the deck's two cards) */
-.srflash{animation:sr-flash 1.6s var(--ui-ease) both}
-@keyframes sr-flash{0%,60%{box-shadow:0 0 0 3px var(--menu-accent),0 0 24px color-mix(in srgb,var(--menu-accent) 60%,transparent)}100%{box-shadow:0 0 0 0 transparent}}
+.srflash{animation:aj-search-sr-flash 1.6s var(--ui-ease) both}
+@keyframes aj-search-sr-flash{0%,60%{box-shadow:0 0 0 3px var(--menu-accent),0 0 24px color-mix(in srgb,var(--menu-accent) 60%,transparent)}100%{box-shadow:0 0 0 0 transparent}}
 @media (prefers-reduced-motion:reduce){.srch{animation:none}.srflash{animation:none;box-shadow:0 0 0 3px var(--menu-accent)}}
 
 /* ---- P207 §3 · the Settings UI batch (owner 2026-10-13) ----------------------------------------------------------------
    (b) 「整个 menu 里边的字体有点偏大……再稍微调小一点」: every menu page one step smaller (body 16 → 15, notes 15 → 13 …). The
        --ui-* steps are re-declared here because a custom property resolves where it is declared (:root), not where it is used. */
-.menupage,#settings,body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]) .ajpages{
+.menupage{
+  --fs-xs:0.75rem; --fs-sm:0.8125rem; --fs-md:0.9375rem;
+  --fs-lg:clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem); --fs-xl:clamp(1.25rem, 1.125rem + 0.6vw, 1.5rem);
+  --ui-fs-caption:var(--fs-xs); --ui-fs-small:var(--fs-sm); --ui-fs-body:var(--fs-md);
+  --ui-fs-title-3:var(--fs-md); --ui-fs-title-2:var(--fs-lg); --ui-fs-title-1:var(--fs-xl);
+  --menu-title-1:var(--ui-fs-title-1); --menu-title-2:var(--ui-fs-title-2); --menu-title-3:var(--ui-fs-title-3)}
+#settings{
+  --fs-xs:0.75rem; --fs-sm:0.8125rem; --fs-md:0.9375rem;
+  --fs-lg:clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem); --fs-xl:clamp(1.25rem, 1.125rem + 0.6vw, 1.5rem);
+  --ui-fs-caption:var(--fs-xs); --ui-fs-small:var(--fs-sm); --ui-fs-body:var(--fs-md);
+  --ui-fs-title-3:var(--fs-md); --ui-fs-title-2:var(--fs-lg); --ui-fs-title-1:var(--fs-xl);
+  --menu-title-1:var(--ui-fs-title-1); --menu-title-2:var(--ui-fs-title-2); --menu-title-3:var(--ui-fs-title-3)}
+body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]) .ajpages{
   --fs-xs:0.75rem; --fs-sm:0.8125rem; --fs-md:0.9375rem;
   --fs-lg:clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem); --fs-xl:clamp(1.25rem, 1.125rem + 0.6vw, 1.5rem);
   --ui-fs-caption:var(--fs-xs); --ui-fs-small:var(--fs-sm); --ui-fs-body:var(--fs-md);
@@ -519,21 +1234,25 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .keys-site-link{display:inline-flex;align-items:center;min-height:var(--menu-row-3);min-width:var(--menu-row-3)}
 /* P264: the real header controls move into the non-scrolling Settings header (one set of handlers / IDs). */
 .set-actions{display:flex;align-items:center;gap:var(--ui-space-control);margin-left:auto}
-#set-actions .bulb{position:static;flex:none;color:var(--menu-text);background:transparent}
-#set-actions .bulb svg{width:24px;height:24px}
+#settings #set-actions .bulb{position:static;flex:none;padding:0;color:var(--menu-text);background:transparent}
+/* The remote-count badge remains anchored after the settings button moves into this toolbar. */
+#settings #set-actions #setBtn{position:relative}
+#set-actions .bulb svg{width:24px;height:24px;flex:none}
 .sethead{flex:none}
 .set-find{flex:none;padding:var(--sp-3);background:var(--menu-bg);max-height:45%;overflow:auto}
 .set-find[hidden]{display:none}
 #set-find-input{width:100%;min-height:var(--ui-tap);background:var(--menu-card);color:var(--menu-text);border:1px solid var(--menu-line)}
-.set-found{outline:2px solid var(--menu-accent);outline-offset:-2px;animation:set-found 2.4s ease-out}
+.set-found{outline:2px solid var(--menu-accent);outline-offset:-2px;animation:aj-settings-set-found 2.4s ease-out}
 @media (prefers-reduced-motion:reduce){.set-found{animation:none}}
-@keyframes set-found{0%,40%{background-color:color-mix(in srgb,var(--menu-accent) 22%,transparent)}100%{background-color:transparent}}
+@keyframes aj-settings-set-found{0%,40%{background-color:color-mix(in srgb,var(--menu-accent) 22%,transparent)}100%{background-color:transparent}}
 /* P393: the Settings search filters the page itself — rows / sections that do not match step aside while the field has words */
 #set-main[data-find] [data-find-out]{display:none!important}
 #set-find-results .set-hit{min-height:var(--ui-tap)}
 .setup-assist{display:flex;align-items:center;justify-content:center;gap:var(--ui-space-control);width:100%;min-height:64px;padding:var(--sp-3);background:var(--ui-action-bg);color:var(--ui-action-fg);border:0;border-radius:var(--ui-radius-control);font:inherit;font-weight:700;cursor:pointer}
 /* P340: the robot on the green action = on its Lotion disc (as in the header orb), never green on green */
-.setup-assist img,.setimsg .imsg-assist img{flex:none;box-sizing:border-box;width:40px;height:40px;padding:4px;background:var(--ui-mark-disc);border-radius:50%;object-fit:contain;image-rendering:pixelated}
+.setup-assist img{flex:none;box-sizing:border-box;width:40px;height:40px;padding:4px;background:var(--ui-mark-disc);border-radius:50%;object-fit:contain;image-rendering:pixelated}
+.setimsg .imsg-assist img{flex:none;box-sizing:border-box;width:40px;height:40px;padding:4px;background:var(--ui-mark-disc);border-radius:50%;object-fit:contain;image-rendering:pixelated}
+
 
 #set-actions .bulb{margin:0;width:var(--ui-icon-btn);height:var(--ui-icon-btn)}
 
@@ -565,7 +1284,13 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #set-accts .acctname{overflow-wrap:anywhere}
 #set-accts .acctcur{color:var(--menu-accent);border-color:var(--menu-accent)}
 #set-accts .acctmeta{font-variant-numeric:tabular-nums}
-#set-accts .aj-btn:disabled{opacity:.55;cursor:not-allowed}
+#set-accts .aj-action:disabled{opacity:var(--aj-action-disabled-opacity,.55);cursor:var(--aj-action-disabled-cursor,not-allowed)}
+/* #577 aj-icon-action: independent equal initial contract. */
+#set-accts .aj-icon-action:disabled{opacity:var(--aj-icon-action-disabled-opacity,.55);cursor:var(--aj-icon-action-disabled-cursor,not-allowed)}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+#set-accts .aj-navigation-action:disabled{opacity:var(--aj-navigation-action-disabled-opacity,.55);cursor:var(--aj-navigation-action-disabled-cursor,not-allowed)}
+
 #set-accts .acctform{display:flex;flex-direction:column;gap:var(--ui-space-control)}
 #set-accts .acctform>*{margin:0}
 #set-accts .acctform .aj-input{font-size:max(16px,var(--ui-fs-body));max-width:24rem}
@@ -620,7 +1345,13 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #settings .rsbody>*{margin:var(--ui-space-control) 0 0}
 #settings .rsbody p{line-height:var(--ui-leading)}
 #settings .rsacts{display:flex;flex-wrap:wrap;gap:var(--ui-space-btn)}
-#settings .rsacts .aj-btn{min-height:var(--ui-btn-h);padding-inline:var(--ui-btn-px)}
+#settings .rsacts .aj-action{min-height:var(--aj-action-min-height,var(--ui-btn-h));padding-inline:var(--aj-action-padding-inline,var(--ui-btn-px))}
+/* #577 aj-icon-action: independent equal initial contract. */
+#settings .rsacts .aj-icon-action{min-height:var(--aj-icon-action-min-height,var(--ui-btn-h));padding-inline:var(--aj-icon-action-padding-inline,var(--ui-btn-px))}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+#settings .rsacts .aj-navigation-action{min-height:var(--aj-navigation-action-min-height,var(--ui-btn-h));padding-inline:var(--aj-navigation-action-padding-inline,var(--ui-btn-px))}
+
 /* P561 追加 16 (董事长 10-28 「…和下面的按钮之间没有 margin」): a card's words never touch the buttons under them (重启服务, 重开 AI
    会话, 方舟) — text ↔ the actions under it = --ui-space-content (DESIGN_TOKENS); inside .rsbody the --ui-space-control step stays */
 #settings .rscard>*+.rsacts{margin-top:var(--ui-space-content)}
@@ -629,13 +1360,19 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #settings .setkbd,#settings #set-hostupg-how kbd{display:inline-block;min-width:1.7em;padding:0 var(--sp-1);border:1px solid var(--menu-line);
   border-bottom-width:2px;border-radius:6px;background:var(--menu-chip);color:var(--menu-text);font:500 .86em/1.5 var(--font-mono);text-align:center}
 #settings .setkbd[hidden]{display:none}
-#settings .aj-btn>.setkbd{margin-inline-start:var(--ui-space-control);color:inherit;background:transparent;border-color:currentColor}
+#settings .aj-action>.setkbd{margin-inline-start:var(--aj-settings-setkbd-margin-inline-start,var(--ui-space-control));color:var(--aj-settings-setkbd-color,inherit);background:var(--aj-settings-setkbd-background,transparent);border-color:var(--aj-settings-setkbd-border-color,currentColor)}
+/* #577 aj-icon-action: independent equal initial contract. */
+#settings .aj-icon-action>.setkbd{margin-inline-start:var(--aj-settings-setkbd-margin-inline-start,var(--ui-space-control));color:var(--aj-settings-setkbd-color,inherit);background:var(--aj-settings-setkbd-background,transparent);border-color:var(--aj-settings-setkbd-border-color,currentColor)}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+#settings .aj-navigation-action>.setkbd{margin-inline-start:var(--aj-settings-setkbd-margin-inline-start,var(--ui-space-control));color:var(--aj-settings-setkbd-color,inherit);background:var(--aj-settings-setkbd-background,transparent);border-color:var(--aj-settings-setkbd-border-color,currentColor)}
+
 #settings .rslive{display:flex;flex-direction:column;gap:var(--ui-space-control)}
 #settings .rslive>*{margin:0}
 #settings .rsbar{height:6px;border-radius:var(--ui-radius-pill);background:var(--menu-press);overflow:hidden}
 #settings .rsbar i{display:block;height:100%;width:var(--p,10%);border-radius:inherit;background:var(--menu-accent);transition:width .4s var(--ui-ease)}
-#settings .rscard[data-state="run"] .rsbar i{animation:rs-breathe 1.6s ease-in-out infinite}
-@keyframes rs-breathe{50%{opacity:.55}}
+#settings .rscard[data-state="run"] .rsbar i{animation:aj-rescue-rs-breathe 1.6s ease-in-out infinite}
+@keyframes aj-rescue-rs-breathe{50%{opacity:.55}}
 @media (prefers-reduced-motion:reduce){#settings .rscard[data-state="run"] .rsbar i{animation:none;transition:none}}
 #settings .rsnow{font-weight:600}
 #settings .rsok{font:600 var(--ui-fs-title-2)/1.3 var(--font-body)}
@@ -644,7 +1381,7 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #settings .rssteps{list-style:none;padding:0;display:flex;flex-direction:column;gap:var(--sp-2)}
 #settings .rssteps li{display:flex;align-items:baseline;gap:var(--ui-space-control);line-height:var(--ui-leading)}
 #settings .rssteps li::before{content:"";flex:none;width:10px;height:10px;border-radius:50%;border:1.5px solid var(--menu-muted);transform:translateY(1px)}
-#settings .rssteps li[data-state="run"]::before{border-color:var(--menu-accent);background:var(--menu-accent);animation:rs-breathe 1.6s ease-in-out infinite}
+#settings .rssteps li[data-state="run"]::before{border-color:var(--menu-accent);background:var(--menu-accent);animation:aj-rescue-rs-breathe 1.6s ease-in-out infinite}
 #settings .rssteps li[data-state="ok"]::before{border-color:var(--emerald-oasis);background:var(--emerald-oasis)}
 #settings .rssteps li[data-state="fail"]::before{border-color:var(--menu-danger);background:var(--menu-danger)}
 @media (prefers-reduced-motion:reduce){#settings .rssteps li::before{animation:none}}
@@ -666,8 +1403,20 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #settings .rsoffer{padding-top:var(--ui-space-line);border-top:1px dashed var(--menu-line);display:flex;flex-direction:column;gap:var(--ui-space-control)}
 #settings .rsoffer>*,#settings .rsoffitem>*,#settings .rsoffres>*{margin:0}
 #settings .rsoffitem{display:flex;flex-direction:column;align-items:flex-start;gap:var(--sp-1)}
-#settings .rsoffitem .aj-btn{min-height:var(--ui-btn-h);padding-inline:var(--ui-btn-px);max-width:100%;white-space:normal;text-align:start}
-#settings .rsoffitem .aj-btn:disabled{opacity:.55;cursor:default}
+#settings .rsoffitem .aj-action{min-height:var(--aj-action-min-height,var(--ui-btn-h));padding-inline:var(--aj-action-padding-inline,var(--ui-btn-px));max-width:var(--aj-action-max-width,100%);white-space:var(--aj-action-white-space,normal);text-align:var(--aj-action-text-align,start)}
+/* #577 aj-icon-action: independent equal initial contract. */
+#settings .rsoffitem .aj-icon-action{min-height:var(--aj-icon-action-min-height,var(--ui-btn-h));padding-inline:var(--aj-icon-action-padding-inline,var(--ui-btn-px));max-width:var(--aj-icon-action-max-width,100%);white-space:var(--aj-icon-action-white-space,normal);text-align:var(--aj-icon-action-text-align,start)}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+#settings .rsoffitem .aj-navigation-action{min-height:var(--aj-navigation-action-min-height,var(--ui-btn-h));padding-inline:var(--aj-navigation-action-padding-inline,var(--ui-btn-px));max-width:var(--aj-navigation-action-max-width,100%);white-space:var(--aj-navigation-action-white-space,normal);text-align:var(--aj-navigation-action-text-align,start)}
+
+#settings .rsoffitem .aj-action:disabled{opacity:var(--aj-action-disabled-opacity,.55);cursor:var(--aj-action-disabled-cursor,default)}
+/* #577 aj-icon-action: independent equal initial contract. */
+#settings .rsoffitem .aj-icon-action:disabled{opacity:var(--aj-icon-action-disabled-opacity,.55);cursor:var(--aj-icon-action-disabled-cursor,default)}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+#settings .rsoffitem .aj-navigation-action:disabled{opacity:var(--aj-navigation-action-disabled-opacity,.55);cursor:var(--aj-navigation-action-disabled-cursor,default)}
+
 #settings .rsoffres{display:flex;flex-direction:column;gap:var(--ui-space-control)}
 /* ② before ① has failed: dimmed, still a normal button */
 #settings .rscard[data-dim]{background:transparent;border-style:dashed}
@@ -680,8 +1429,20 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
   --menu-muted:var(--c-lotion);--menu-line:color-mix(in srgb,var(--c-lotion) 40%,transparent);--menu-text:var(--c-lotion);
   --primary-bg:var(--c-sooty);--primary-fg:var(--c-lotion);--text:var(--c-lotion);--quiet-border:var(--c-lotion);--border:var(--c-lotion);
   --code-bg:color-mix(in srgb,var(--c-sooty) 20%,transparent);--menu-chip:color-mix(in srgb,var(--c-sooty) 20%,transparent)}
-#settings .rscard[data-state="ok"] .aj-btn:not(.aj-btn--primary){background:transparent;color:var(--c-lotion);border-color:var(--c-lotion)}
-#settings .rscard[data-state="ok"] .aj-btn--primary:hover{background:var(--c-noir);border-color:var(--c-noir)}
+#settings .rscard[data-state="ok"] .aj-action:not(.aj-action--primary){background:var(--aj-action-primary-background,transparent);color:var(--aj-action-primary-color,var(--c-lotion));border-color:var(--aj-action-primary-border-color,var(--c-lotion))}
+/* #577 aj-icon-action: independent equal initial contract. */
+#settings .rscard[data-state="ok"] .aj-icon-action:not(.aj-icon-action--primary){background:var(--aj-icon-action-primary-background,transparent);color:var(--aj-icon-action-primary-color,var(--c-lotion));border-color:var(--aj-icon-action-primary-border-color,var(--c-lotion))}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+#settings .rscard[data-state="ok"] .aj-navigation-action:not(.aj-navigation-action--primary){background:var(--aj-navigation-action-primary-background,transparent);color:var(--aj-navigation-action-primary-color,var(--c-lotion));border-color:var(--aj-navigation-action-primary-border-color,var(--c-lotion))}
+
+#settings .rscard[data-state="ok"] .aj-action--primary:hover{background:var(--aj-action-primary-hover-background,var(--c-noir));border-color:var(--aj-action-primary-hover-border-color,var(--c-noir))}
+/* #577 aj-icon-action: independent equal initial contract. */
+#settings .rscard[data-state="ok"] .aj-icon-action--primary:hover{background:var(--aj-icon-action-primary-hover-background,var(--c-noir));border-color:var(--aj-icon-action-primary-hover-border-color,var(--c-noir))}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+#settings .rscard[data-state="ok"] .aj-navigation-action--primary:hover{background:var(--aj-navigation-action-primary-hover-background,var(--c-noir));border-color:var(--aj-navigation-action-primary-hover-border-color,var(--c-noir))}
+
 #settings .rsmode{padding:var(--ui-space-line) var(--ui-space-control);border-radius:var(--ui-radius-control);background:var(--menu-chip);
   border-left:3px solid var(--menu-danger)}
 /* P361: Agent J 主机上的命令 — one row per whitelisted command (code + note, 「执行」 on the right), one result block under the list */
@@ -694,8 +1455,8 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #settings .rscmdmeta>small{flex:1;min-width:0;color:var(--menu-muted);font-size:var(--ui-fs-small);line-height:var(--ui-leading)}
 /* Same glyph, colour, target and glyph spacing as the reply card; no separate action band. */
 #settings .rscmdacts{flex:none;height:44px;padding:0;background:none;overflow:visible}
-#settings .rscmdacts .act{margin-bottom:0}
-#settings .rscmdacts .act[aria-disabled=true]{opacity:.35;cursor:default;background:none}
+#settings .rscmdacts .rscmdact{margin-bottom:0}
+#settings .rscmdacts .rscmdact[aria-disabled=true]{opacity:.35;cursor:default;background:none}
 #settings .setrow>.setacts{grid-column:1 / -1}
 #settings .setterm-last{color:var(--menu-text);font-weight:600}
 #settings .rscmdres{margin-top:var(--ui-space-control);display:flex;flex-direction:column;gap:var(--ui-space-control)}
@@ -815,7 +1576,13 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #set-news-row .newsmail[hidden],#set-news-row .newsmail [hidden]{display:none}
 #set-news-row .newsmail__row{display:flex;align-items:center;gap:var(--ui-space-control);margin:0}
 #set-news-row .newsmail__row .aj-input{flex:1 1 auto;min-width:0;max-width:24rem;font-size:max(16px,var(--ui-fs-body))}
-#set-news-row .newsmail__row .aj-btn{flex:none;min-height:var(--ui-tap)}
+#set-news-row .newsmail__row .aj-action{flex:var(--aj-action-flex,none);min-height:var(--aj-action-min-height,var(--ui-tap))}
+/* #577 aj-icon-action: independent equal initial contract. */
+#set-news-row .newsmail__row .aj-icon-action{flex:var(--aj-icon-action-flex,none);min-height:var(--aj-icon-action-min-height,var(--ui-tap))}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+#set-news-row .newsmail__row .aj-navigation-action{flex:var(--aj-navigation-action-flex,none);min-height:var(--aj-navigation-action-min-height,var(--ui-tap))}
+
 #set-news-row #set-news-code{max-width:16rem;font-variant-numeric:tabular-nums}
 #set-news-row #set-news-code:not(:placeholder-shown){letter-spacing:.2em}
 #set-news-row .newsmail__again{gap:0 var(--ui-space-control)}
@@ -828,7 +1595,13 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 /* P385: standalone restart action keeps the rescue card spacing and readable success text. */
 #settings #rs-restart{margin-block:var(--ui-space-control)}
 #settings #rs-restart[data-state="ok"]{color:var(--c-sooty);--menu-muted:var(--c-sooty);--menu-text:var(--c-sooty);--text:var(--c-sooty)}
-#settings #rs-restart[data-state="ok"] .aj-btn{color:var(--c-sooty);border-color:var(--c-sooty)}
+#settings #rs-restart[data-state="ok"] .aj-action{color:var(--aj-action-color,var(--c-sooty));border-color:var(--aj-action-border-color,var(--c-sooty))}
+/* #577 aj-icon-action: independent equal initial contract. */
+#settings #rs-restart[data-state="ok"] .aj-icon-action{color:var(--aj-icon-action-color,var(--c-sooty));border-color:var(--aj-icon-action-border-color,var(--c-sooty))}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+#settings #rs-restart[data-state="ok"] .aj-navigation-action{color:var(--aj-navigation-action-color,var(--c-sooty));border-color:var(--aj-navigation-action-border-color,var(--c-sooty))}
+
 
 /* P392: palette Emerald Oasis / Strawberry Red; dot remains visible in the fixed header. */
 .setconnection{display:flex;align-items:center;gap:6px;font-size:12px;line-height:1.3;max-width:160px;color:var(--c-strawberry-field)}
@@ -847,18 +1620,72 @@ body:has(#settings:not([hidden])) .toast:is(.circle,.square){position:fixed;z-in
 #settings .rsnext code{overflow-wrap:anywhere}
 
 /* P485: only the ten named controls and the official Notebook add action. */
-html:root :is(#quoteDlgDel,#quoteDlgJump,#ctm-e-del,#ctm-e-save,#phone-env-copy,#rv-refresh,#set-refresh,#mail-add,#rm-add,#rm-copy),
 #five-page .jc-body[data-card="notes"] .jc-actions > [data-act="add"] {
   display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
   width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
 }
-html:root :is(#quoteDlgDel,#quoteDlgJump,#ctm-e-del,#ctm-e-save,#phone-env-copy,#rv-refresh,#set-refresh,#mail-add,#rm-add,#rm-copy) > svg,
 #five-page .jc-body[data-card="notes"] .jc-actions > [data-act="add"] > svg {width:21px;height:21px;flex:none}
+html:root #quoteDlgDel{
+  display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
+  width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
+}
+html:root #quoteDlgJump{
+  display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
+  width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
+}
+html:root #ctm-e-del{
+  display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
+  width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
+}
+html:root #ctm-e-save{
+  display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
+  width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
+}
+html:root #phone-env-copy{
+  display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
+  width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
+}
+html:root #rv-refresh{
+  display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
+  width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
+}
+html:root #mail-add{
+  display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
+  width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
+}
+html:root #rm-add{
+  display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
+  width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
+}
+html:root #rm-copy{
+  display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
+  width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
+}
+#five-page .jc-body[data-card="notes"] .jc-actions > [data-act="add"]{
+  display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
+  width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
+}
+html:root #quoteDlgDel > svg{width:21px;height:21px;flex:none}
+html:root #quoteDlgJump > svg{width:21px;height:21px;flex:none}
+html:root #ctm-e-del > svg{width:21px;height:21px;flex:none}
+html:root #ctm-e-save > svg{width:21px;height:21px;flex:none}
+html:root #phone-env-copy > svg{width:21px;height:21px;flex:none}
+html:root #rv-refresh > svg{width:21px;height:21px;flex:none}
+html:root #mail-add > svg{width:21px;height:21px;flex:none}
+html:root #rm-add > svg{width:21px;height:21px;flex:none}
+html:root #rm-copy > svg{width:21px;height:21px;flex:none}
+#five-page .jc-body[data-card="notes"] .jc-actions > [data-act="add"] > svg{width:21px;height:21px;flex:none}
 
 /* P527: standalone rescue cards need the same breathing room as list cards. */
 #settings #layout-diag-card{margin-top:var(--ui-space-content)}
 /* P561 追加 16: 「发送画面诊断」's note sits under the button — a note right under a button = --ui-space-control */
-#settings #layout-diag-card>.aj-btn+.setnote{margin-top:var(--ui-space-control)}
+#settings #layout-diag-card>.aj-action+.setnote{margin-top:var(--aj-settings-setnote-margin-top,var(--ui-space-control))}
+/* #577 aj-icon-action: independent equal initial contract. */
+#settings #layout-diag-card>.aj-icon-action+.setnote{margin-top:var(--aj-settings-setnote-margin-top,var(--ui-space-control))}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+#settings #layout-diag-card>.aj-navigation-action+.setnote{margin-top:var(--aj-settings-setnote-margin-top,var(--ui-space-control))}
+
 
 /* P537: full-width prompt actions under the idle schedule. */
 #settings .sethb-prompt{grid-column:1 / -1;display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-width:0}
@@ -889,7 +1716,13 @@ html:root :is(#quoteDlgDel,#quoteDlgJump,#ctm-e-del,#ctm-e-save,#phone-env-copy,
 #settings .rsassist__chip[aria-checked="true"]{background:var(--menu-accent);border-color:var(--menu-accent);color:var(--menu-on-accent);font-weight:600}
 #settings .rsassist__chip:disabled{opacity:.55;cursor:default}
 #settings .rsassist__chip:focus-visible{outline:2px solid var(--menu-accent);outline-offset:2px}
-#settings .rsassist .rsacts .aj-btn:disabled{opacity:.55;cursor:default}
+#settings .rsassist .rsacts .aj-action:disabled{opacity:var(--aj-action-disabled-opacity,.55);cursor:var(--aj-action-disabled-cursor,default)}
+/* #577 aj-icon-action: independent equal initial contract. */
+#settings .rsassist .rsacts .aj-icon-action:disabled{opacity:var(--aj-icon-action-disabled-opacity,.55);cursor:var(--aj-icon-action-disabled-cursor,default)}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+#settings .rsassist .rsacts .aj-navigation-action:disabled{opacity:var(--aj-navigation-action-disabled-opacity,.55);cursor:var(--aj-navigation-action-disabled-cursor,default)}
+
 #settings .rsassist__on{font-weight:600}
 .asbanner{position:relative;z-index:4;flex-shrink:0;align-self:center;width:max-content;margin:var(--sp-2) auto 0;
   display:flex;align-items:center;gap:var(--sp-1);max-width:100%;box-sizing:border-box;padding:var(--sp-1);
@@ -899,7 +1732,9 @@ html:root :is(#quoteDlgDel,#quoteDlgJump,#ctm-e-del,#ctm-e-save,#phone-env-copy,
 .asbanner--float{display:none;position:fixed;z-index:95;left:50%;transform:translateX(-50%);margin:0;max-width:calc(100% - 2 * var(--ui-space-content,16px));
   bottom:calc(env(safe-area-inset-bottom,0px) + var(--ui-space-content,16px))}
 body:has(:is(#settings,#badge-panel,#silent,#keys,#rd,#fsEd):not([hidden])) .asbanner--float:not([hidden]){display:flex}
-body[data-assist] .setpage .box.setbox,body[data-assist] .menupage{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 76px)}
+body[data-assist] .setpage .box.setbox{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 76px)}
+body[data-assist] .menupage{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 76px)}
+
 .asbanner[hidden],.asview[hidden]{display:none}
 .asbanner__go{flex:1 1 auto;display:flex;align-items:center;gap:var(--sp-2);min-height:44px;min-width:0;padding:0 var(--sp-3);border:0;border-radius:var(--ui-radius-pill,999px);
   background:transparent;color:inherit;font:600 calc(14px*var(--fz,1))/1.25 var(--font-body);text-align:start;cursor:pointer;font-variant-numeric:tabular-nums}
@@ -961,7 +1796,7 @@ body[data-assist-view]{overflow:hidden}
 
 /* Feedback #515: named decisions under the doctor result, outside terminal command rows. */
 #settings .rscmdskills .rscmdacts{gap:var(--ui-space-control);justify-content:flex-start}
-#settings .rscmdskills .act{width:auto;min-width:44px;padding-inline:12px;white-space:nowrap}
+#settings .rscmdskills .rscmdact{width:auto;min-width:44px;padding-inline:12px;white-space:nowrap}
 #settings .rscmdskills code{overflow-wrap:anywhere}
 /* #517: shared settings section rhythm, also for sections rendered after pairing.
    First headings use card padding; every subsequent heading has a full section gap. */
@@ -974,3 +1809,20 @@ body[data-assist-view]{overflow:hidden}
 #settings .aj-range{min-height:var(--ui-tap);accent-color:var(--menu-accent)}
 #settings .aj-check-input{min-height:var(--ui-tap);accent-color:var(--menu-accent);cursor:pointer}
 #settings .aj-file{max-width:100%;color:var(--menu-text);font:inherit}
+
+/* #576 keeps only the explicitly requested #542 labelled refresh button. */
+#settings #set-refresh{justify-self:start;max-width:100%;width:auto;flex:none}
+#settings #set-refresh>svg{width:21px;height:21px;flex:none}
+
+/* #400: settings fields reuse brand inputs/actions; the owner-host section owns only its layout. */
+#settings .owner-hosts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--ui-space-control);min-width:0;padding-block:var(--ui-space-content)}
+#settings .owner-hosts[hidden]{display:none}
+#settings .owner-hosts>:is(h3,p,div,form){grid-column:1/-1;min-width:0;margin:0}
+#settings .owner-hosts__item{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--ui-space-control);min-width:0;padding-block:var(--ui-space-control)}
+#settings .owner-hosts__item>:is(p,.cc){grid-column:1/-1;min-width:0;overflow-wrap:anywhere}
+#settings #owner-hosts-form{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--ui-space-control)}
+#settings #owner-hosts-form[hidden]{display:none}
+#settings #owner-hosts-form label{display:grid;gap:var(--sp-1);min-width:0}
+#settings #owner-hosts-form input{width:100%;min-width:0;box-sizing:border-box}
+#settings #owner-hosts-form>button{grid-column:1/-1}
+@media(min-width:700px){#settings #owner-hosts-form{grid-template-columns:repeat(2,minmax(0,1fr))}}

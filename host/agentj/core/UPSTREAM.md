@@ -15,3 +15,5 @@ commit with the latest on these paths only.
 | orders.py preflight, blocked-by, root-cause hash | EricTechPro/super-board | criteria only (spec §14) | — | MIT |
 
 Not used: Crush (FSL) — not one line; Claude Agent SDK — not open source.
+
+P429 `patch.py`: independently implemented strict subset of the published Codex apply-patch grammar (Add/Update/Delete/Move, exact contexts, EOF). Reference: https://github.com/openai/codex/blob/main/codex-rs/apply-patch/src/parser.rs (Apache-2.0); no source copied. No heredoc wrappers, environment IDs or fuzzy whitespace matching.

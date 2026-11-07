@@ -15,10 +15,10 @@ addEventListener('popstate', e => handlePop?.(e), true);
 export function createSecretPreview(root, container, copy) {
   const bar = mk('div', 'sout-preview-bar');
   // P573 (#386): full screen, 返回 and 复制 are thin icons in the top-right corner (as the reader's), never text buttons
-  const back = mk('button', 'ajicon sout-ic'); back.id = 'sout-back'; back.type = 'button'; back.hidden = true; back.append(glyph('close'));
+  const back = mk('button', 'ajicon sout-ic', undefined, 'aj-auth-card'); back.id = 'sout-back'; back.type = 'button'; back.hidden = true; back.append(glyph('close'));
   // P555: ⛶ is an icon — no border, inside the content box's top-right corner
-  const expand = mk('button', 'ajicon sout-expand', '⛶'); expand.id = 'sout-expand'; expand.type = 'button'; expand.hidden = true;
-  const fullCopy = mk('button', 'ajicon sout-ic'); fullCopy.id = 'sout-full-copy'; fullCopy.type = 'button'; fullCopy.hidden = true; fullCopy.append(glyph('copy'));
+  const expand = mk('button', 'ajicon sout-expand', '⛶', 'aj-auth-card'); expand.id = 'sout-expand'; expand.type = 'button'; expand.hidden = true;
+  const fullCopy = mk('button', 'ajicon sout-ic', undefined, 'aj-auth-card'); fullCopy.id = 'sout-full-copy'; fullCopy.type = 'button'; fullCopy.hidden = true; fullCopy.append(glyph('copy'));
   const content = mk('div', 'sout-content'); content.id = 'sout-content';
   bar.append(fullCopy, back, expand); container.append(bar, content);
   let full = false, pushed = false, pendingPop = false;
@@ -75,7 +75,7 @@ export function createSecretPreview(root, container, copy) {
         content.appendChild(RelayMD.toDOM(RelayMD.parse(text)));
         RelayMD.parse('');                 // discard the Markdown parser's transient source cache
       }
-      else content.appendChild(copyable(mk('pre', 'mono', text), { variant: 'ext', btn: root.querySelector('#sout-copy') }));
+      else content.appendChild(copyable(mk('pre', 'mono', text, 'aj-auth-card'), { variant: 'ext', btn: root.querySelector('#sout-copy') }));
       expand.hidden = false;
     },
     note(text) { content.appendChild(mk('p', 'elev-note', text)); }

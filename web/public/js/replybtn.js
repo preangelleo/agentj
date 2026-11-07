@@ -57,7 +57,7 @@ function upgrade(root, ownerRoot = root) {
   const spans = [...root.querySelectorAll('span.rlink[data-say]')].filter((s) => !skipped(s, root));
   const out = [], groups = new Map();
   for (const s of spans.slice(0, GROUP_MAX)) {
-    const say = s.dataset.say, b = document.createElement('button');
+    const say = s.dataset.say, b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-reply-action');
     const item = s.closest('li'), block = item || s.closest('p') || root;
     const line = item ? 0 : [...block.querySelectorAll('br')].filter(br => br.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING).length;
     let lines = groups.get(block); if (!lines) { lines = new Map(); groups.set(block, lines); }
@@ -66,7 +66,7 @@ function upgrade(root, ownerRoot = root) {
     b.type = 'button'; b.className = 'rbtn'; b.dataset.say = say;
     b.textContent = s.textContent;                   // the label as plain words (no link / chip nested in a button)
     const shown = b.textContent.replace(/\s+/g, ' ').trim();
-    if (shown !== say) { const x = document.createElement('small'); x.className = 'rbtn-say'; x.textContent = say; b.append(x); }   // the words that go, when the label differs
+    if (shown !== say) { const x = document.createElement('small'); x.setAttribute('data-aj-owner','aj-reply-action'); x.className = 'rbtn-say'; x.textContent = say; b.append(x); }   // the words that go, when the label differs
     b.addEventListener('click', (e) => { e.stopPropagation(); tap(ownerRoot, b); });
     s.replaceWith(b); out.push(b);
   }
@@ -119,7 +119,7 @@ function tags(root, find) {
       if (HEX(tag)) continue;
       const start = m.index + m[1].length;
       f.append(s.slice(at, start));
-      const b = document.createElement('button');
+      const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-reply-action');
       // P417: P415 pasted the reply-group lines here (s is a string, `groups` is upgrade()-local) → TypeError on every #tag.
       // Tag buttons only run find(); they carry no reply-group state, so no data-group.
       b.type = 'button'; b.className = 'rtag'; b.textContent = '#' + tag + m[3]; b.dataset.tag = tag;

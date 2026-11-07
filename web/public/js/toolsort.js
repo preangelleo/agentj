@@ -42,7 +42,7 @@ export function render() {
   if (picked && !o.includes(picked)) picked = null;
   const items = o.map((id, i) => {
     const li = document.createElement('li');
-    const b = document.createElement('button');
+    const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-settings-control');
     b.type = 'button'; b.className = 'tschip'; b.dataset.tool = id;
     b.setAttribute('aria-label', chipLabel(id, i, o.length));
     b.setAttribute('aria-pressed', String(picked === id));

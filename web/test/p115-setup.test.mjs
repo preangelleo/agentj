@@ -3,12 +3,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { webcrypto } from 'node:crypto';
+import {resolveDefaults} from '../tools/css-defaults.mjs';
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 const wire = await import('../../protocol/wire.js');
 const SRC = readFileSync(new URL('../public/js/setup.js', import.meta.url), 'utf8');
 const APP = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-const CSS = readFileSync(new URL('../public/app.css', import.meta.url), 'utf8');
+const CSS = resolveDefaults(readFileSync(new URL('../public/app.css', import.meta.url), 'utf8'));
 const FIX = JSON.parse(readFileSync(new URL('./fixtures/p115-setup.json', import.meta.url), 'utf8'));
 const hex = (u) => Buffer.from(u).toString('hex');
 
@@ -48,7 +49,7 @@ test('setup card renders host snapshot and signs owner choices', async () => {
   assert.ok(!/copy\(/.test(SRC), 'no inline strings');
   assert.match(SRC, /mark\(i\.id, 'later'\)/);
   // touch targets
-  assert.match(CSS, /\.setup-actions \.aj-btn\{[^}]*min-height:56px/);
+  assert.match(CSS, /\.setup-actions \.aj-action\{[^}]*min-height:56px/);
   // the fixture is a real host snapshot: 30 items, six groups, titles in both languages, no ids of devices or paths
   assert.equal(FIX.items.length, 30);
   assert.deepEqual(FIX.groups.map((g) => g.id), ['core', 'machine', 'browser', 'google', 'privacy', 'optional']);

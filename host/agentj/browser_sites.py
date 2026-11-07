@@ -172,6 +172,17 @@ def classify(url: str, rule: dict) -> str:
     return "none"
 
 
+def login_state(url: str, rule: dict) -> str:
+    """#470: the LOGIN TAB's page — classify() plus "landing" (a template's landing_url: where a finished sign-in lands,
+    e.g. bilibili's www home after a QR scan). Landing only triggers the trusted check(); it never means signed in."""
+    c = classify(url, rule)
+    if c in ("in", "error"):
+        return c
+    if any(re.search(p, url) for p in rule.get("landing_url", [])):
+        return "landing"
+    return c
+
+
 def _rule(rec: dict) -> dict | None:
     t = templates().get(rec.get("template"))
     if t:

@@ -47,6 +47,9 @@ SPECS = {
                         "region of the original file; merge nearby changes into one edit.",
                 {"path": _S, "edits": {"type": "array", "items": {"type": "object", "properties": {"oldText": _S, "newText": _S},
                                                                   "required": ["oldText", "newText"]}}}, ["path", "edits"]),
+    "apply_patch": _fn("apply_patch", "Apply a Codex patch: *** Begin Patch, Add/Update/Delete File, optional Move to, "
+                       "@@ exact context, +/-/space lines, *** End Patch. Paths relative to project; no fuzzy matching.",
+                       {"patch": _S}, ["patch"]),
     "bash": _fn("bash", f"Run a bash command in the project folder; stdout+stderr, last {MAX_LINES} lines / "
                         f"{MAX_BYTES // 1024}KB. No stdin. Default timeout {BASH_TIMEOUT}s.",
                 {"command": _S, "timeout": _d(_N, "Seconds")}, ["command"]),
@@ -57,7 +60,7 @@ SPECS = {
     "ls": _fn("ls", "List a folder (sorted, '/' after folders, dotfiles included), max 500 entries.", {"path": _S}, []),
 }
 READ_ONLY = ("read", "grep", "find", "ls")
-WRITES = ("write", "edit")
+WRITES = ("write", "edit", "apply_patch")
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", ".mypy_cache", ".pytest_cache"}
 
 
@@ -240,7 +243,12 @@ def t_ls(root, path=None, **_):
     return "\n".join(names) or "(empty)"
 
 
-RUN = {"read": t_read, "write": t_write, "edit": t_edit, "bash": t_bash, "grep": t_grep, "find": t_find, "ls": t_ls}
+def t_apply_patch(root, patch, **_):
+    from .patch import apply
+    return apply(root, patch)
+
+
+RUN = {"apply_patch": t_apply_patch, "read": t_read, "write": t_write, "edit": t_edit, "bash": t_bash, "grep": t_grep, "find": t_find, "ls": t_ls}
 
 
 def run(root: str, name: str, args: dict) -> str:

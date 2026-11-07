@@ -1065,6 +1065,8 @@ class SharedCodexAgent(CodexAgent):
         except Stopped:
             pass
         except (ValueError,RPCError,OSError) as error:
+            if isinstance(error, asyncio.TimeoutError) and not self.halting:
+                self.noack_at = time.time()     # #484: turn/start never answered (the finally ends our own app-server)
             reason=brief(error)
             self.note('shared_refused', reason)
             zh, en = REASONS.get(reason, (None, None))

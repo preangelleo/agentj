@@ -199,8 +199,11 @@ def proof_of(otg: dict, info: dict) -> dict:
     fa = info.get("fa")
     if not isinstance(fa, dict) or not info.get("summary") or not info.get("channel") or not isinstance(info.get("sig"), str):
         raise GrantError("no_passkey", "the allow carried no Face ID assertion")
-    return {"tool": TOOL, "summary": info["summary"], "channel": info["channel"], "device": info["device"],
+    out = {"tool": TOOL, "summary": info["summary"], "channel": info["channel"], "device": info["device"],
             "rid": info["rid"], "kind": info["kind"], "sig":info["sig"], "fa": {k: fa[k] for k in ("id", "cd", "ad", "sig")}}
+    if info.get("approval_v") == 2:
+        out.update(approval_v=2, envelope=info.get("envelope"))
+    return out
 
 
 def shown_ok(otg: dict, summary) -> bool:
@@ -212,7 +215,7 @@ def verify(otg: dict, proof, roster: list, now: float | None = None) -> dict:
 
     from .approvals import shown_digest, signed_message
     check(otg, now)
-    if not isinstance(proof, dict) or set(proof) != {"tool", "summary", "channel", "device", "rid", "kind", "sig", "fa"}:
+    if not isinstance(proof, dict) or set(proof) not in ({"tool", "summary", "channel", "device", "rid", "kind", "sig", "fa"}, {"tool", "summary", "channel", "device", "rid", "kind", "sig", "fa", "approval_v", "envelope"}):
         raise GrantError("bad_proof", "shape")
     if proof["tool"] != TOOL or proof.get("kind") not in ("sandbox", "perm") or not shown_ok(otg, proof["summary"]):
         raise GrantError("bad_proof", "shown text")
@@ -229,10 +232,19 @@ def verify(otg: dict, proof, roster: list, now: float | None = None) -> dict:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         if entry.get("dev") != proof["device"]:
             raise ValueError("device")
-        Ed25519PublicKey.from_public_bytes(wire.unb64u(entry["sign_pub"])).verify(wire.unb64u(proof["sig"]),
-            signed_message(proof["channel"], proof["device"], proof["rid"], "allow", shown_digest(TOOL,proof["summary"])))
-        ch = passkey.elevate_challenge(proof["channel"], proof["device"], proof["rid"], proof["kind"], proof["rid"],
-                                       shown_digest(TOOL, proof["summary"]))
+        shown = shown_digest(TOOL, proof["summary"])
+        message = signed_message(proof["channel"], proof["device"], proof["rid"], "allow", shown)
+        if proof.get("approval_v") == 2:
+            from . import approval_review
+            envelope = proof.get("envelope")
+            if (not isinstance(envelope, dict) or envelope.get("v") != 2
+                    or envelope.get("request_id") != proof["rid"] or envelope.get("channel") != proof["channel"]
+                    or envelope.get("details") != approval_review.safe_text(proof["summary"], 24000)):
+                raise ValueError("display")
+            shown = approval_review.digest(envelope)
+            message = approval_review.decision_message(proof["channel"], proof["device"], proof["rid"], "allow", shown)
+        Ed25519PublicKey.from_public_bytes(wire.unb64u(entry["sign_pub"])).verify(wire.unb64u(proof["sig"]), message)
+        ch = passkey.elevate_challenge(proof["channel"], proof["device"], proof["rid"], proof["kind"], proof["rid"], shown)
         passkey.verify_assertion({k: entry.get(k) for k in ("alg", "spki", "rp")}, f, ch)
     except Exception:
         raise GrantError("bad_proof", "assertion") from None

@@ -157,6 +157,10 @@ def provider_error_reason(name, data, connected=None, provider=None, set_up=None
         return "quota_window"
     if code == 402 or (code in (403, 429) and any(x in detail for x in _QUOTA)):
         return "balance"
+    # An explicit model/endpoint 404 is not evidence of an invalid credential,
+    # even when the native connected-provider cache has not caught up.
+    if code == 404:
+        return 'model_missing' if provider and isinstance(set_up, (list, set, frozenset, tuple)) and provider not in set_up else 'model'
     reason = ("login" if code == 401 or "auth" in lname or "key" in lname
               else "access" if code == 403 else "rate_limit" if code == 429
               else "model" if code == 404 or "modelnotfound" in lname or "model not found" in detail or "modelnotfound" in detail
@@ -269,14 +273,18 @@ def startup_help(error: str, *, slow=False, lang='zh') -> str:
     else:
         status = 'OpenCode 启动已超过 30 秒，仍在等待。' if slow else 'OpenCode 未能启动；这条消息尚未交给它。'
         repair = '\n\n在主机检查：\n```sh\nagentj doctor\n```\n修好后重启：\n```sh\nagentj service restart\n```'
+    if any(word in text for word in ('fetch failed', 'enotfound', 'econnrefused', 'econnreset')):
+        from .startup_help import domestic_note
+        repair += '\n' + domestic_note(lang)
     return status + cause + repair
 
 
 def split_model(m: str | None) -> dict | None:
-    if not m or "/" not in m:
+    from .opencode_provider import ID_RE, MODEL_RE
+    if not isinstance(m, str) or "/" not in m:
         return None
     p, mid = m.split("/", 1)
-    return {"providerID": p, "modelID": mid} if p and mid else None
+    return {"providerID": p, "modelID": mid} if ID_RE.fullmatch(p) and MODEL_RE.fullmatch(mid) else None
 
 
 # ---------------------------------------------------------------- what the phone sees for a request
@@ -342,6 +350,22 @@ def to_tool(req: dict, root: str) -> tuple[str, dict]:
 
 
 # ---------------------------------------------------------------- a minimal HTTP/1.1 client (loopback only, stdlib)
+def opencode_output(t, p: dict, sid: str) -> bool:
+    """P230: is this OpenCode `/event` the model's own output on session `sid`? A `message.part.updated` with a `tool` part, or
+    an assistant `text` part (it carries `time.start`; the owner's own text part does not), not synthetic / ignored; or a
+    `permission.asked` (a tool step that asks first). Reasoning parts are not output."""
+    if t == "permission.asked":
+        return p.get("sessionID") == sid
+    if t != "message.part.updated":
+        return False
+    part = p.get("part") if isinstance(p.get("part"), dict) else {}
+    if part.get("sessionID") != sid or part.get("synthetic") or part.get("ignored"):
+        return False
+    if part.get("type") == "tool":
+        return True
+    return part.get("type") == "text" and isinstance(part.get("time"), dict) and bool(part["time"].get("start"))
+
+
 class HTTPError(Exception):
     pass
 
@@ -566,6 +590,9 @@ class OpenCodeAgent(Agent):
         if reason in ("balance", "quota_window", "rate_limit"):
             from .provider_setup import limit_note
             return limit_note(model, clean_line(self.cfg.get("model") or "?", 160), data or {}, self.cfg.get("language", "en"))
+        if reason in ('network', 'region'):
+            from .startup_help import domestic_note
+            text += '\n' + domestic_note(self.cfg.get('language', 'en'))
         return text
 
     def _recover_model(self, reason, pid) -> bool:
@@ -1282,6 +1309,8 @@ class OpenCodeAgent(Agent):
             if reason in ("balance", "quota_window", "rate_limit"):
                 self.host.agent_notice(limit_note(error_model(data), self.cfg.get("model") or "?", data, self.cfg.get("language", "en")))
             return
+        if getattr(self, "sid", None) is not None and getattr(self, "collect", None) is None and not getattr(self, "quiet", False) and opencode_output(t, p, self.sid):
+            self.first_output()
         if t == "permission.asked":
             self._on_perm(p)
         elif t == "permission.replied":
@@ -1298,6 +1327,9 @@ class OpenCodeAgent(Agent):
                 self.host.peers.xfer.broker.complete(part.get("callID"), state.get("status") == "completed", state.get("output"))
             self._tool_dir(p.get("part"))
             self._text_part(p.get("part"))
+            self._use_part(p.get("part"))
+        elif t == "message.updated":
+            self._use_msg(p.get("info"))
         elif t == "session.error" and p.get("sessionID") in (self.sid, None):
             err = p.get("error") if isinstance(p.get("error"), dict) else {}
             if err.get("name") != "MessageAbortedError":
@@ -1471,6 +1503,28 @@ class OpenCodeAgent(Agent):
         if isinstance(req.get("sessionID"), str):
             self.__dict__.setdefault("perm_sid", {})[rid] = req["sessionID"]    # P426: answered on its own session (v2)
         self._bg(self._decide(rid, req, gone))
+
+    def _use_part(self, part) -> None:
+        """P204 (§29): a tool part of ours running → "tool"; finished / a text part → "gen"."""
+        if not isinstance(part, dict) or part.get("sessionID") != self.sid:
+            return
+        if part.get("type") == "tool":
+            st = part.get("state") if isinstance(part.get("state"), dict) else {}
+            if st.get("status") in ("pending", "running"):
+                self.use_phase("tool", part.get("tool") if isinstance(part.get("tool"), str) else "tool")
+            elif st.get("status") in ("completed", "error"):
+                self.use_phase("gen")
+        elif part.get("type") == "text":
+            self.use_phase("gen")
+
+    def _use_msg(self, info) -> None:
+        """P204 (§29): each assistant message of ours carries its own tokens and cost; the last value per id counts."""
+        if not isinstance(info, dict) or info.get("sessionID") != self.sid or info.get("role") != "assistant" \
+                or not isinstance(info.get("id"), str) or not isinstance(info.get("tokens"), dict):
+            return
+        from . import usage as use_mod
+        model = info.get("modelID") if isinstance(info.get("modelID"), str) else self.cfg.get("model")
+        self.use_put("msg:" + info["id"][:64], use_mod.tokens_opencode(info["tokens"]), info.get("cost"), model)
 
     def _tool_dir(self, part) -> None:
         if not isinstance(part, dict) or part.get("type") != "tool" or not isinstance(part.get("callID"), str):
@@ -1847,6 +1901,15 @@ class OpenCodeAgent(Agent):
         """OpenCode: the model rides on every prompt_async ("provider/model"); no effort until a probe proves the field."""
         if model is not None and not split_model(model):
             return "unknown_model"
+        if model is not None:
+            from .provider_runtime import configured
+            known = set(configured()) | set(getattr(self, 'config_providers', [])) | set(getattr(self, 'connected_at_start', None) or [])
+            known |= {m['id'].split('/', 1)[0] for m in getattr(self, 'usable_models', []) if isinstance(m.get('id'), str) and '/' in m['id']}
+            from .opencode_provider import validate_model, ProviderError
+            try:
+                validate_model(model, known)
+            except ProviderError as error:
+                return str(error)
         previous = self.cur_model()
         why = await super().apply_model(model, effort, default)
         if why is None and self.cur_model() != previous:
@@ -2152,10 +2215,16 @@ class OpenCodeAgent(Agent):
         if not arg:
             for m in models:
                 m["cur"] = m["id"] == cur
-            return Result(f"当前模型：{cur or '默认'}。" + ("点一个切换（之后的对话都用它）：" if models else "OpenCode 没有给出可选列表。"),
+            return Result(f"OpenCode · 当前模型：{cur or '默认'}。" + ("点一个切换（之后的对话都用它）：" if models else "OpenCode 没有给出可选列表。"),
                           models=models[:40])
         if not split_model(arg) or not slash.MODEL_RE.match(arg) or (models and arg not in {m["id"] for m in models}):
             return Result(f"没有这个模型：{clean_line(arg, 100)}（写成「服务商/模型」）", "error")
+        from .provider_runtime import configured
+        known = set(configured()) | set(getattr(self, 'config_providers', [])) | set(self.connected_at_start or [])
+        known |= {p for p in prov.get('connected', []) if isinstance(p, str)}
+        known |= {m.split('/', 1)[0] for m in prov.get('anonymous_models', []) if isinstance(m, str) and '/' in m}
+        if split_model(arg)['providerID'] not in known:
+            return Result('model_missing：服务商未配置，请在「模型和 API Key」选择已配置的服务商。', 'error', models=self._usable_models()[:40])
         self.host.set_model(arg)
         self.meter(model=arg, model_name=self.model_name(arg))
         from .opencode_free import privacy_note

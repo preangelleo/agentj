@@ -51,6 +51,7 @@ async def run(order_id: str, st_root=None, environ=None, call=None, fenced: bool
     from .. import busy
     from ..state import State
     from .askbridge import Client
+    from . import mcp
     from .loop import Loop, SubAgents
     from .pipeline import Gate
     from .presets import resolve
@@ -70,7 +71,7 @@ async def run(order_id: str, st_root=None, environ=None, call=None, fenced: bool
     item_key = f"order:{o.id}"
     try:
         busy.write_item(st.root, busy.item(item_key, m["ceo"], "ceo", m["title"], pid=os.getpid(), ns=busy.pidns(),
-                                           report=str(o.path / "report.md"), lk="dispatch", harness="core",
+                                           report=str(o.path / "report.md"), lk="dispatch", harness=m["harness"],
                                            model=m.get("model") or "", cwd=m["project"]))
     except OSError:
         pass
@@ -78,72 +79,82 @@ async def run(order_id: str, st_root=None, environ=None, call=None, fenced: bool
     usage = {"input": 0, "output": 0}
     client = Client(o, st_root)
     boxes = []
+    hub = None
     try:
-        preset = resolve(m.get("model"), "ceo", env)
-        if not preset.key(env):
-            raise llm.LLMError("auth", None, "no key")
         linked = await client.connect()
         o.event("approval_link", ok=linked)
-        denied = o.denied()
-        stopped = lambda: o.control() == "stop"
-        extra = m.get("danger_extra")       # P359 review M2: the owner's extra danger rules reach the CEO too
-        if extra is None:
-            try:
-                extra = (st.agent_config() or {}).get("danger_extra")
-            except Exception:  # noqa: BLE001
-                extra = None
-        gate = Gate(m["project"], client if linked else None, research=m["mode"] == "research", extra=extra,
-                    scope_write=(m["brief"].get("scope") or {}).get("write"), denied=denied, stopped=stopped,
-                    on_denied=o.add_denied)
-        # P359 review M3: the order says (the parent session's own isolation choice); no environment opt-out
-        fence_on = fenced if fenced is not None else m.get("fence", True) is not False
+        if m['harness'] in ('claude', 'codex'):
+            from . import native_order
+            r = await native_order.run(o, client, st_root, opening(o, resume) + ('\n\nPrevious report (data):\n' + o.report() if resume else '') + '\n\n' + HEAD_FIX)
+            text, code, ab, usage = r['text'], r['code'], r['reason'], r['usage']
+        else:
+            preset = resolve(m.get("model"), "ceo", env)
+            if not preset.key(env):
+                raise llm.LLMError("auth", None, "no key")
+            denied = o.denied()
+            stopped = lambda: o.control() == "stop"
+            extra = m.get("danger_extra")       # P359 review M2: the owner's extra danger rules reach the CEO too
+            if extra is None:
+                try:
+                    extra = (st.agent_config() or {}).get("danger_extra")
+                except Exception:  # noqa: BLE001
+                    extra = None
+            # P359 review M3: the order says (the parent session's own isolation choice); no environment opt-out
+            fence_on = fenced if fenced is not None else m.get("fence", True) is not False
+            if preset.tier != "small":           # P431 C8: the owner's MCP servers, rooted at this project
+                hub = await asyncio.to_thread(mcp.Hub.for_session, st.root, m["project"], st=st, fenced=fence_on, environ=env)
+            mcp_specs = await asyncio.to_thread(mcp.offered, hub, preset.tier)
+            gate = Gate(m["project"], client if linked else None, research=m["mode"] == "research", extra=extra,
+                        scope_write=(m["brief"].get("scope") or {}).get("write"), denied=denied, stopped=stopped,
+                        on_denied=o.add_denied, mcp_allowed=hub.allowed if hub else None)
 
-        def make_toolbox():
-            tb = Toolbox(m["project"], st=st, fenced=fence_on, environ=env)
-            boxes.append(tb)
-            return tb
+            def make_toolbox():
+                tb = Toolbox(m["project"], st=st, fenced=fence_on, environ=env)
+                boxes.append(tb)
+                return tb
 
-        tb = await asyncio.to_thread(make_toolbox)
-        seen = o.delivered()
+            tb = await asyncio.to_thread(make_toolbox)
+            seen = o.delivered()
 
-        def inbox():
-            out = []
-            for n, body in o.inbox_all():
-                if n not in seen:
+            def inbox():
+                out = []
+                for n, body in o.inbox_all():
+                    if n not in seen:
+                        seen.add(n)
+                        out.append((n, body))
+                return out
+            if resume is not None:              # a resume re-pastes every appended instruction in the opening: mark delivered
+                for n, _ in o.inbox_all():
                     seen.add(n)
-                    out.append((n, body))
-            return out
-        if resume is not None:              # a resume re-pastes every appended instruction in the opening: mark delivered
-            for n, _ in o.inbox_all():
-                seen.add(n)
 
-        def on_event(ev, **kw):
-            o.event(ev, **{k: v for k, v in kw.items() if v is not None})
-        origin = None                       # the CEO's own asks: serve adds the chain; sub-agents add their suffix
-        subs = SubAgents(preset=preset, root=m["project"], gate=gate, make_toolbox=make_toolbox,
-                         sessions_dir=o.path / "sessions", environ=env, call=call, max_parallel=m["budget"]["subagents"],
-                         budget_tokens=m["budget"].get("tokens"), deadline=deadline, control=o.control,
-                         on_event=on_event, origin="")
+            def on_event(ev, **kw):
+                o.event(ev, **{k: v for k, v in kw.items() if v is not None})
+            origin = None                       # the CEO's own asks: serve adds the chain; sub-agents add their suffix
+            subs = SubAgents(preset=preset, root=m["project"], gate=gate, make_toolbox=make_toolbox,
+                             sessions_dir=o.path / "sessions", environ=env, call=call, max_parallel=m["budget"]["subagents"],
+                             budget_tokens=m["budget"].get("tokens"), deadline=deadline, control=o.control,
+                             on_event=on_event, origin="")
 
-        async def decide(args):
-            o.decide("work", str(args.get("decision", "")), str(args.get("why", "")), str(args.get("evidence", "")))
-            return "logged"
-        sess = Session(o.path / "sessions" / "ceo.jsonl")
-        lp = Loop(preset=preset, system=prompt.system("ceo", m["project"], preset.tier), specs=prompt.specs("ceo", preset.tier),
-                  gate=gate, toolbox=tb, session=sess, environ=env, call=call, budget_tokens=m["budget"].get("tokens"),
-                  deadline=deadline, inbox=inbox, control=o.control, on_event=on_event,
-                  extra={"task": subs, "decide": decide}, who=origin)
-        first = opening(o, resume) if resume is not None or not sess.load() else \
-            "〔续跑〕The previous run of this order was interrupted. Continue from where you are."
-        r = await lp.run(first)
-        text = r["text"] or ""
-        if r["reason"] in ("stopped", "budget"):
-            ab = r["reason"]
-        if not orders.parse_head(text)["complete"]:
-            r2 = await lp._final(HEAD_FIX, r["reason"])
-            if orders.parse_head(r2["text"])["complete"] or not text:
-                text = r2["text"] or text
-        usage = {"input": lp.usage["input"] + subs.usage["input"], "output": lp.usage["output"] + subs.usage["output"]}
+            async def decide(args):
+                o.decide("work", str(args.get("decision", "")), str(args.get("why", "")), str(args.get("evidence", "")))
+                return "logged"
+            sess = Session(o.path / "sessions" / "ceo.jsonl")
+            lp = Loop(preset=preset, system=prompt.system("ceo", m["project"], preset.tier, edit_mode=preset.edit_mode),
+                      specs=prompt.specs("ceo", preset.tier, preset.edit_mode) + mcp_specs, mcp=hub,
+                      gate=gate, toolbox=tb, session=sess, environ=env, call=call, budget_tokens=m["budget"].get("tokens"),
+                      deadline=deadline, inbox=inbox, control=o.control, on_event=on_event,
+                      extra={"task": subs, "decide": decide}, who=origin)
+            first = opening(o, resume) if resume is not None or not sess.load() else \
+                "〔续跑〕The previous run of this order was interrupted. Continue from where you are."
+            r = await lp.run(first)
+            text = r["text"] or ""
+            if r["reason"] in ("stopped", "budget"):
+                ab = r["reason"]
+            if not orders.parse_head(text)["complete"]:
+                r2 = await lp._final(HEAD_FIX, r["reason"])
+                if orders.parse_head(r2["text"])["complete"] or not text:
+                    text = r2["text"] or text
+            usage = {"input": lp.usage["input"] + subs.usage["input"], "output": lp.usage["output"] + subs.usage["output"]}
     except llm.LLMError as e:
         code, kind = 2, e.kind
         o.event("model_error", kind=e.kind, status=e.status)
@@ -154,6 +165,8 @@ async def run(order_id: str, st_root=None, environ=None, call=None, fenced: bool
         await client.close()
         for b in boxes:
             await asyncio.to_thread(b.close)
+        if hub is not None:
+            await asyncio.to_thread(hub.close)
     if text:
         orders._write(o.path / "report.md", text)
     head = orders.parse_head(o.report() if text else "")

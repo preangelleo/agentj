@@ -1,0 +1,126 @@
+{
+ "name": "decide-3",
+ "mode": "light",
+ "title": {
+  "zh": "三选一决策",
+  "en": "Pick one of three"
+ },
+ "about": {
+  "zh": "要主人在三个方案里挑一个：每个一句利弊，标一个推荐。点一下就交。",
+  "en": "The owner picks one of three options, each with a one-line trade-off and one recommended. One tap submits."
+ },
+ "vars": {
+  "question": {
+   "label": {
+    "zh": "要决定的问题",
+    "en": "The question"
+   },
+   "required": true
+  },
+  "context": {
+   "label": {
+    "zh": "一句背景（可选）",
+    "en": "One line of context (optional)"
+   }
+  },
+  "a": {
+   "label": {
+    "zh": "方案 A",
+    "en": "Option A"
+   },
+   "required": true
+  },
+  "a_why": {
+   "label": {
+    "zh": "A 的利弊",
+    "en": "A's trade-off"
+   }
+  },
+  "b": {
+   "label": {
+    "zh": "方案 B",
+    "en": "Option B"
+   },
+   "required": true
+  },
+  "b_why": {
+   "label": {
+    "zh": "B 的利弊",
+    "en": "B's trade-off"
+   }
+  },
+  "c": {
+   "label": {
+    "zh": "方案 C",
+    "en": "Option C"
+   },
+   "required": true
+  },
+  "c_why": {
+   "label": {
+    "zh": "C 的利弊",
+    "en": "C's trade-off"
+   }
+  }
+ },
+ "fill": [
+  "recommend.choice",
+  "options.choice",
+  "title"
+ ],
+ "form": {
+  "title": "{{question}}",
+  "intro": "{{context}}",
+  "questions": [
+   {
+    "id": "choice",
+    "type": "buttons",
+    "label": "{{question}}",
+    "required": true,
+    "keep": true,
+    "options": [
+     {
+      "value": "a",
+      "label": "{{a}}",
+      "hint": "{{a_why}}"
+     },
+     {
+      "value": "b",
+      "label": "{{b}}",
+      "hint": "{{b_why}}"
+     },
+     {
+      "value": "c",
+      "label": "{{c}}",
+      "hint": "{{c_why}}"
+     }
+    ]
+   }
+  ],
+  "recommend": {
+   "choice": "a"
+  }
+ },
+ "example": {
+  "zh": {
+   "question": "首页先做哪个版本？",
+   "context": "三个方向都能在周五前上线。",
+   "a": "简洁版",
+   "a_why": "最快，2 天",
+   "b": "带视频版",
+   "b_why": "转化高，要 4 天",
+   "c": "先不改",
+   "c_why": "零成本，数据不变"
+  },
+  "en": {
+   "question": "Which homepage version first?",
+   "context": "All three can ship by Friday.",
+   "a": "Minimal",
+   "a_why": "Fastest, 2 days",
+   "b": "With video",
+   "b_why": "Converts better, 4 days",
+   "c": "Leave it",
+   "c_why": "Costs nothing, numbers stay"
+  }
+ }
+}

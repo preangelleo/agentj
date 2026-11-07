@@ -1,0 +1,157 @@
+{
+ "name": "weekly-report",
+ "mode": "deep",
+ "title": {
+  "zh": "周报",
+  "en": "Weekly report"
+ },
+ "about": {
+  "zh": "完成 / 进行中 / 卡点 / 下周计划 / 需要的帮助，加一个心情分。",
+  "en": "Done / in progress / blocked / next week / help needed, plus a mood score."
+ },
+ "vars": {
+  "week": {
+   "label": {
+    "zh": "哪一周",
+    "en": "Which week"
+   },
+   "required": true
+  }
+ },
+ "fill": [
+  "drop",
+  "title"
+ ],
+ "form": {
+  "title": {
+   "zh": "周报 · {{week}}",
+   "en": "Weekly report · {{week}}"
+  },
+  "sections": [
+   {
+    "id": "done",
+    "title": {
+     "zh": "这周",
+     "en": "This week"
+    },
+    "questions": [
+     {
+      "id": "done",
+      "type": "longtext",
+      "label": {
+       "zh": "完成了什么",
+       "en": "What got done"
+      },
+      "required": true,
+      "keep": true,
+      "max_length": 3000
+     },
+     {
+      "id": "doing",
+      "type": "longtext",
+      "label": {
+       "zh": "还在进行中",
+       "en": "Still in progress"
+      },
+      "max_length": 2000
+     }
+    ]
+   },
+   {
+    "id": "block",
+    "title": {
+     "zh": "卡点",
+     "en": "Blockers"
+    },
+    "questions": [
+     {
+      "id": "blocked",
+      "type": "buttons",
+      "label": {
+       "zh": "有卡住的事吗？",
+       "en": "Anything blocked?"
+      },
+      "options": [
+       {
+        "value": "no",
+        "label": {
+         "zh": "没有",
+         "en": "No"
+        }
+       },
+       {
+        "value": "yes",
+        "label": {
+         "zh": "有",
+         "en": "Yes"
+        }
+       }
+      ]
+     },
+     {
+      "id": "blocker",
+      "type": "longtext",
+      "label": {
+       "zh": "卡在哪、需要谁",
+       "en": "Where, and who's needed"
+      },
+      "max_length": 2000,
+      "show_if": {
+       "q": "blocked",
+       "eq": "yes"
+      }
+     }
+    ]
+   },
+   {
+    "id": "next",
+    "title": {
+     "zh": "下周",
+     "en": "Next week"
+    },
+    "questions": [
+     {
+      "id": "plan",
+      "type": "longtext",
+      "label": {
+       "zh": "下周计划",
+       "en": "Plan for next week"
+      },
+      "required": true,
+      "max_length": 2000
+     },
+     {
+      "id": "mood",
+      "type": "rating",
+      "label": {
+       "zh": "这周感觉如何",
+       "en": "How did the week feel?"
+      }
+     },
+     {
+      "id": "files",
+      "type": "file",
+      "label": {
+       "zh": "附件（可选）",
+       "en": "Attachments (optional)"
+      },
+      "accept": [
+       "image",
+       "audio",
+       "file"
+      ],
+      "max_files": 5
+     }
+    ]
+   }
+  ]
+ },
+ "example": {
+  "zh": {
+   "week": "第 42 周"
+  },
+  "en": {
+   "week": "Week 42"
+  }
+ }
+}

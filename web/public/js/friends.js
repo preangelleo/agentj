@@ -14,11 +14,11 @@ import { myDeviceId } from './api.js';
 import { signedWrite, commandFa, whyText } from './controls.js';
 import { qrSvg } from './qr.js';
 import { t, locale, fillText } from './t.js';
-import { el, mk, toast, notify, confirmSheet } from './ui.js';
+import { el, mk, toast, notify, confirmSheet, pageCopy } from './ui.js';
 import { approve as passkeyApprove } from './faceid.js';
 import { copyable } from './copycode.js';   // P292
 import { mentionAt } from './five-pages.js';   // P426 #170: the same @ detection as the main chat's mentions
-const cmdNote = (cls, key) => { const p = mk('p', cls); fillText(p, t(key)); return p; };   // P292: `agentj friends on` as code + ⧉
+const cmdNote = (cls, key) => { const p = pageCopy(mk('p', cls, undefined, 'aj-friends')); fillText(p, t(key)); return p; };   // P292: `agentj friends on` as code + ⧉
 
 let H = { openPanel: () => {}, agentName: () => 'Agent J' };
 export function configure(h) { H = { ...H, ...h }; }
@@ -43,7 +43,7 @@ const int = (v) => (Number.isInteger(v) ? v : null);
 const q = (s) => t('fr.quote', { s });
 const shortId = (id) => (typeof id === 'string' && id.length > 12 ? id.slice(0, 7) + '…' + id.slice(-4) : String(id ?? ''));
 function btn(cls, text, on, id) {
-  const b = mk('button', 'aj-btn ' + (cls || ''), text); b.type = 'button';
+  const b = mk('button', 'aj-action ' + (cls || ''), text, 'aj-action'); b.type = 'button';
   if (id) b.id = id;
   if (on) b.addEventListener('click', on);
   return b;
@@ -249,7 +249,7 @@ function title() {
 /** P426 #170: the 「我的设备」 group's own row at the top of 「我的设备」. */
 function devicesItem() {
   const li = mk('li');
-  const b = mk('button', 'fr-item fr-item--group'); b.type = 'button'; b.id = 'fr-open-devices';
+  const b = mk('button', 'fr-item fr-item--group', undefined, 'aj-friends'); b.type = 'button'; b.id = 'fr-open-devices';
   if (V.view === 'devices') b.setAttribute('aria-current', 'true');
   const d = data.devices || { n: 0, unread: 0, last: null };
   const top = mk('span', 'fr-item__top');
@@ -266,9 +266,9 @@ function devicesItem() {
 function renderSide() {
   const box = el('fr-side'); box.replaceChildren();
   const acts = mk('div', 'fr-acts');
-  acts.append(btn('aj-btn--sm', t('fr.card.btn'), () => go('card'), 'fr-open-card'),
-    btn('aj-btn--primary aj-btn--sm', t('fr.add.btn'), () => go('add'), 'fr-open-add'),
-    btn('aj-btn--sm', t('fr.groups.btn'), () => go('groups'), 'fr-open-groups'));
+  acts.append(btn('aj-action--sm', t('fr.card.btn'), () => go('card'), 'fr-open-card'),
+    btn('aj-action--primary aj-action--sm', t('fr.add.btn'), () => go('add'), 'fr-open-add'),
+    btn('aj-action--sm', t('fr.groups.btn'), () => go('groups'), 'fr-open-groups'));
   box.append(acts);
   if (!data) return;
   if (!data.me.on) box.append(cmdNote('note fr-off', 'fr.off'));
@@ -278,7 +278,7 @@ function renderSide() {
     if (f.sameOwner === 'active' && !deviceHeading) { ul.append(mk('li', 'small', t('fr.myDevices'))); deviceHeading = true; ul.append(devicesItem()); }
     if (f.sameOwner !== 'active' && deviceHeading && !friendHeading) { ul.append(mk('li', 'small', t('fr.g.friend'))); friendHeading = true; }
     const li = mk('li');
-    const b = mk('button', 'fr-item'); b.type = 'button'; b.dataset.id = f.id;
+    const b = mk('button', 'fr-item', undefined, 'aj-friends'); b.type = 'button'; b.dataset.id = f.id;
     if (V.friend === f.id && (V.view === 'chat' || V.view === 'detail')) b.setAttribute('aria-current', 'true');
     const top = mk('span', 'fr-item__top');
     top.append(mk('b', 'fr-item__name', f.name));
@@ -293,9 +293,9 @@ function renderSide() {
     li.append(b); ul.append(li);
   }
   box.append(ul);
-  if (!data.friends.length) box.append(mk('p', 'small fr-empty', t('fr.empty')));
+  if (!data.friends.length) box.append(pageCopy(mk('p', 'small fr-empty', t('fr.empty'), 'aj-friends')));
   if (data.pending.length) {
-    box.append(mk('h2', 'fr-h', t('fr.pending', { n: data.pending.length })));
+    box.append(mk('h2', 'fr-h', t('fr.pending', { n: data.pending.length }), 'aj-friends'));
     const pl = mk('ul', 'fr-pending'); pl.id = 'fr-pending';
     for (const p of data.pending) {
       const li = mk('li', 'fr-pend');
@@ -306,7 +306,7 @@ function renderSide() {
     }
     box.append(pl);
   }
-  if (data.global && data.global.limit != null) box.append(mk('p', 'small fr-global', t('fr.global', { used: num(data.global.used), limit: num(data.global.limit) })));
+  if (data.global && data.global.limit != null) box.append(pageCopy(mk('p', 'small fr-global', t('fr.global', { used: num(data.global.used), limit: num(data.global.limit) }), 'aj-friends')));
 }
 
 const FORM_VIEWS = ['add', 'card', 'group'];
@@ -330,7 +330,7 @@ function renderMain(force = true) {
     case 'groups': return viewGroups(box);
     case 'group': return viewGroup(box);
     case 'devices': return viewDevices(box);
-    default: box.append(mk('p', 'small fr-pick', data.friends.length ? t('fr.pick') : t('fr.empty')));
+    default: box.append(pageCopy(mk('p', 'small fr-pick', data.friends.length ? t('fr.pick') : t('fr.empty'), 'aj-friends')));
   }
 }
 
@@ -338,14 +338,14 @@ function renderMain(force = true) {
 const S_KNOWN = ['pending', 'sent', 'got', 'replied', 'undelivered', 'queued_for_owner', 'limited', 'withheld', 'silent', 'blocked', 'report_pending'];
 function viewChat(box) {
   const f = friendOf(V.friend);
-  if (!f) { box.append(mk('p', 'small', t('fr.gone'))); return; }
+  if (!f) { box.append(pageCopy(mk('p', 'small', t('fr.gone'), 'aj-friends'))); return; }
   const head = mk('div', 'fr-chathead');
-  head.append(mk('p', 'fr-pair', t('fr.chat.pair', { me: H.agentName(), name: f.name })));
-  if (usage) head.append(mk('p', 'small fr-today', t('fr.chat.today', { n: usage.used.msg.day, nmax: usage.limits.msg.day == null ? t('fr.u.nolimit') : usage.limits.msg.day,
-    tok: num(usage.used.tok.day), tmax: usage.limits.tok.day == null ? t('fr.u.nolimit') : num(usage.limits.tok.day) })));
-  head.append(btn('aj-btn--sm', t('fr.chat.detail'), () => go('detail', f.id), 'fr-open-detail'));
+  head.append(pageCopy(mk('p', 'fr-pair', t('fr.chat.pair', { me: H.agentName(), name: f.name }), 'aj-friends')));
+  if (usage) head.append(pageCopy(mk('p', 'small fr-today', t('fr.chat.today', { n: usage.used.msg.day, nmax: usage.limits.msg.day == null ? t('fr.u.nolimit') : usage.limits.msg.day,
+    tok: num(usage.used.tok.day), tmax: usage.limits.tok.day == null ? t('fr.u.nolimit') : num(usage.limits.tok.day) }), 'aj-friends')));
+  head.append(btn('aj-action--sm', t('fr.chat.detail'), () => go('detail', f.id), 'fr-open-detail'));
   box.append(head);
-  if (hist.more) box.append(btn('aj-btn--sm fr-older', t('fr.chat.older'), () => loadHist(false), 'fr-older'));
+  if (hist.more) box.append(btn('aj-action--sm fr-older', t('fr.chat.older'), () => loadHist(false), 'fr-older'));
   const ul = mk('ul', 'fr-msgs'); ul.id = 'fr-msgs';
   for (const x of hist.items) {
     const li = mk('li', 'fr-msg fr-msg--' + x.dir);
@@ -353,16 +353,16 @@ function viewChat(box) {
     const meta = [x.dir === 'in' ? f.name : H.agentName(), when(x.ts)];
     if (x.dir === 'out') meta.push(x.auto ? t('fr.s.auto') : t('fr.s.owner'));
     if (S_KNOWN.includes(x.s)) meta.push(t('fr.s.' + x.s));
-    li.append(mk('p', 'fr-msg__meta small', meta.filter(Boolean).join(' · ')), mk('p', 'fr-msg__text', x.text));
-    if (x.s === 'blocked') li.append(mk('p', 'small fr-blocked-reason', t('p392.friendBlocked')));
+    li.append(pageCopy(mk('p', 'fr-msg__meta small', meta.filter(Boolean).join(' · '), 'aj-friends')), pageCopy(mk('p', 'fr-msg__text', x.text, 'aj-friends')));
+    if (x.s === 'blocked') li.append(pageCopy(mk('p', 'small fr-blocked-reason', t('p392.friendBlocked'), 'aj-friends')));
     if (x.s === 'blocked' || x.s === 'undelivered' || x.s === 'withheld') li.classList.add('fr-msg--bad');
     ul.append(li);
   }
   box.append(ul);
-  if (!hist.items.length) box.append(mk('p', 'small fr-empty', hist.loading ? t('fr.loading') : t('fr.chat.none')));
+  if (!hist.items.length) box.append(pageCopy(mk('p', 'small fr-empty', hist.loading ? t('fr.loading') : t('fr.chat.none'), 'aj-friends')));
   const lock = mk('div', 'fr-lock');
-  lock.append(mk('p', 'small', t('fr.chat.lock', { me: H.agentName() })),
-    btn('aj-btn--sm', t('fr.chat.tell', { me: H.agentName() }), () => tellAgent(f.name), 'fr-tell'));
+  lock.append(pageCopy(mk('p', 'small', t('fr.chat.lock', { me: H.agentName() }), 'aj-friends')),
+    btn('aj-action--sm', t('fr.chat.tell', { me: H.agentName() }), () => tellAgent(f.name), 'fr-tell'));
   box.append(lock);
 }
 // ---- 「我的设备」: the owner's own devices as one group chat (P426 #170)
@@ -375,8 +375,8 @@ function gMessages() {
     const from = x.self ? t('fr.dev.thisOne', { name: x.name }) : x.name;
     const meta = [from, x.by === 'phone' ? t('fr.dev.byPhone') : t('fr.dev.byAgent'), when(x.ts)];
     if (x.kind === 'reply') meta.push(t('fr.dev.reply'));
-    li.append(mk('p', 'fr-msg__meta small fr-gfrom', meta.filter(Boolean).join(' · ')), mk('p', 'fr-msg__text', x.text));
-    if (x.to.length && x.kind !== 'reply') li.append(mk('p', 'small fr-gto', t('fr.dev.to', { names: x.to.map((m) => m.name).join(listSep()) })));
+    li.append(pageCopy(mk('p', 'fr-msg__meta small fr-gfrom', meta.filter(Boolean).join(' · '), 'aj-friends')), pageCopy(mk('p', 'fr-msg__text', x.text, 'aj-friends')));
+    if (x.to.length && x.kind !== 'reply') li.append(pageCopy(mk('p', 'small fr-gto', t('fr.dev.to', { names: x.to.map((m) => m.name).join(listSep()) }), 'aj-friends')));
     ul.append(li);
   }
   return ul;
@@ -384,24 +384,24 @@ function gMessages() {
 function viewDevices(box) {
   const head = mk('div', 'fr-chathead');
   const names = [glog.me ? t('fr.dev.thisOne', { name: glog.me.name }) : null, ...glog.members.map((m) => m.name)].filter(Boolean);
-  head.append(mk('p', 'fr-pair', t('fr.dev.members', { names: names.join(listSep()) || '—' })), mk('p', 'small', t('fr.dev.hint')));
+  head.append(pageCopy(mk('p', 'fr-pair', t('fr.dev.members', { names: names.join(listSep()) || '—' }), 'aj-friends')), pageCopy(mk('p', 'small', t('fr.dev.hint'), 'aj-friends')));
   box.append(head);
   box.append(gMessages());
-  if (!glog.items.length) box.append(mk('p', 'small fr-empty', glog.loading ? t('fr.loading') : t('fr.dev.none')));
-  if (!(data.devices && data.devices.n) && !glog.members.length) { box.append(mk('p', 'small fr-empty', t('fr.dev.empty'))); return; }
+  if (!glog.items.length) box.append(pageCopy(mk('p', 'small fr-empty', glog.loading ? t('fr.loading') : t('fr.dev.none'), 'aj-friends')));
+  if (!(data.devices && data.devices.n) && !glog.members.length) { box.append(pageCopy(mk('p', 'small fr-empty', t('fr.dev.empty'), 'aj-friends'))); return; }
   const form = mk('div', 'fr-gcompose');
-  const ta = mk('textarea', 'aj-textarea fr-gsay'); ta.id = 'fr-gsay'; ta.rows = 2; ta.placeholder = t('fr.dev.ph');
+  const ta = mk('textarea', 'aj-textarea fr-gsay', undefined, 'aj-friends'); ta.id = 'fr-gsay'; ta.rows = 2; ta.placeholder = t('fr.dev.ph');
   ta.setAttribute('aria-autocomplete', 'list'); ta.setAttribute('aria-controls', 'fr-gmentions');
   ta.value = gDraft;
   const pop = mk('div', 'fr-gmentions'); pop.id = 'fr-gmentions'; pop.hidden = true; pop.setAttribute('role', 'listbox');
   pop.addEventListener('mousedown', (e) => e.preventDefault());
-  const send = btn('aj-btn--primary', t('fr.dev.send'), null, 'fr-gsay-send');
+  const send = btn('aj-action--primary', t('fr.dev.send'), null, 'fr-gsay-send');
   let options = [], at = null, index = 0;
   const all = () => [...glog.members.map((m) => ({ text: '@' + m.name, label: m.name })), { text: '@' + t('fr.dev.allWord'), label: t('fr.dev.all') }];
   const paint = () => {
     pop.replaceChildren();
     options.forEach((o, i) => {
-      const b = mk('button', 'fp-mention fr-gmention', o.label); b.type = 'button'; b.addEventListener('click', () => choose(i));
+      const b = mk('button', 'fp-mention fr-gmention', o.label, 'aj-friends'); b.type = 'button'; b.addEventListener('click', () => choose(i));
       b.setAttribute('role', 'option'); b.setAttribute('aria-selected', String(i === index));
       pop.append(b);
     });
@@ -441,7 +441,7 @@ function viewDevices(box) {
   });
   form.append(fieldLabel(t('fr.dev.label'), ta), pop, ta);
   rowIn(form).append(send);
-  box.append(form, mk('p', 'small fr-ghint', t('fr.dev.scope')));
+  box.append(form, pageCopy(mk('p', 'small fr-ghint', t('fr.dev.scope'), 'aj-friends')));
   check();
 }
 /** 「我来说」 / the conversation's button: back to the main chat, the field prefilled 「告诉 <name>：」 (the owner finishes it). */
@@ -462,36 +462,36 @@ export function tellAgent(name) {
 function sameOwnerState(box, f) {
   const so = mk('section', 'fr-so'); so.id = 'fr-so';
   if (f.sameOwner === 'active') {
-    so.append(mk('p', 'fr-so__state', t('p417.so.done')), mk('p', 'small', t('p417.so.undo')));
+    so.append(pageCopy(mk('p', 'fr-so__state', t('p417.so.done'), 'aj-friends')), pageCopy(mk('p', 'small', t('p417.so.undo'), 'aj-friends')));
   } else if (f.sameOwner === 'pending' && f.soCode === null) {
-    so.append(mk('p', 'small', t('fr.sameOwner.pending')));              // a host that does not send the code yet
+    so.append(pageCopy(mk('p', 'small', t('fr.sameOwner.pending'), 'aj-friends')));              // a host that does not send the code yet
   } else if (f.sameOwner === 'pending') {
     const verified = [...S.asks.values()].find(a => a.pq?.friend === f.id && a.pairing_scope_ok === true);
     const code = verified?.pairing_code || f.soCode;
-    if (code) { const c = mk('p', 'fr-owner-code', code); c.id = 'fr-so-code'; c.setAttribute('aria-label', t('p417.so.codeLabel') + ' ' + code.split('').join(' ')); so.append(c);
-      if (!verified) so.append(mk('p', 'small', t('p574.referenceCode')));
+    if (code) { const c = pageCopy(mk('p', 'fr-owner-code', code, 'aj-friends')); c.id = 'fr-so-code'; c.setAttribute('aria-label', t('p417.so.codeLabel') + ' ' + code.split('').join(' ')); so.append(c);
+      if (!verified) so.append(pageCopy(mk('p', 'small', t('p574.referenceCode'), 'aj-friends')));
     }
-    if (f.soWait) so.append(mk('p', 'fr-so__state', t('p417.so.wait')), mk('p', 'small', t(f.soCode ? 'p417.so.waitHint' : 'p417.so.reaching')));
-    else so.append(mk('p', 'fr-so__state', t('p417.so.yourTurn')), mk('p', 'small', t('p417.so.onCard')));
+    if (f.soWait) so.append(pageCopy(mk('p', 'fr-so__state', t('p417.so.wait'), 'aj-friends')), pageCopy(mk('p', 'small', t(f.soCode ? 'p417.so.waitHint' : 'p417.so.reaching'), 'aj-friends')));
+    else so.append(pageCopy(mk('p', 'fr-so__state', t('p417.so.yourTurn'), 'aj-friends')), pageCopy(mk('p', 'small', t('p417.so.onCard'), 'aj-friends')));
   } else if (f.soEnd) {
-    so.append(mk('p', 'small', t('p417.so.end.' + f.soEnd)));
+    so.append(pageCopy(mk('p', 'small', t('p417.so.end.' + f.soEnd), 'aj-friends')));
   } else return;
   so.setAttribute('role', 'status');
   box.append(so);
 }
 function viewDetail(box) {
   const f = friendOf(V.friend);
-  if (!f) { box.append(mk('p', 'small', t('fr.gone'))); return; }
+  if (!f) { box.append(pageCopy(mk('p', 'small', t('fr.gone'), 'aj-friends'))); return; }
   const card = mk('section', 'fr-cardbox');
-  card.append(mk('p', 'fr-cardbox__name', f.owner ? t('fr.nameOwner', { name: f.name, owner: f.owner }) : f.name),
-    mk('p', 'fr-id small', f.id));
-  if (f.intro) card.append(mk('p', 'small', f.intro));
+  card.append(pageCopy(mk('p', 'fr-cardbox__name', f.owner ? t('fr.nameOwner', { name: f.name, owner: f.owner }) : f.name, 'aj-friends')),
+    pageCopy(mk('p', 'fr-id small', f.id, 'aj-friends')));
+  if (f.intro) card.append(pageCopy(mk('p', 'small', f.intro, 'aj-friends')));
   box.append(card);
   if (peer.friendreport1) {
     const row = mk('label', 'fr-row'); row.append(mk('span', 'fr-row__label', t('p498.remark')));
-    const input = mk('input', 'aj-input'); input.maxLength = 80; input.value = f.remark;
+    const input = mk('input', 'aj-input', undefined, 'aj-friends'); input.maxLength = 80; input.value = f.remark;
     input.setAttribute('aria-label', t('p498.remark')); row.append(input);
-    const save = btn('aj-btn--sm', t('p498.saveRemark'), async () => {
+    const save = btn('aj-action--sm', t('p498.saveRemark'), async () => {
       const target = {friend:f.id, name:input.value};
       const res = await signedWrite('fr_report_remark', target, {t:'fr_report_remark', ...target});
       toast(t(res.ok ? 'p498.remarkSaved' : 'p498.refused'), 3200);
@@ -516,7 +516,7 @@ function viewDetail(box) {
   box.append(row);
   sameOwnerState(box, f);
   const hold = mk('label', 'fr-row');
-  const toggle = mk('input'); toggle.type = 'checkbox'; toggle.id = 'fr-hold-for-owner'; toggle.checked = f.holdForOwner;
+  const toggle = mk('input', undefined, undefined, 'aj-friends'); toggle.type = 'checkbox'; toggle.id = 'fr-hold-for-owner'; toggle.checked = f.holdForOwner;
   toggle.addEventListener('change', async () => {
     toggle.disabled = true;
     const res = await write('fr_set', { friend: f.id, op: 'hold-for-owner', value: toggle.checked ? 'on' : 'off' });
@@ -526,10 +526,10 @@ function viewDetail(box) {
     refresh();
   });
   hold.append(mk('span', 'fr-row__label', t('fr.hold.label')), toggle);
-  box.append(hold, mk('p', 'small', t('fr.hold.hint')));
+  box.append(hold, pageCopy(mk('p', 'small', t('fr.hold.hint'), 'aj-friends')));
   // usage
-  box.append(mk('h2', 'fr-h', t('fr.u.title')));
-  if (!usage) box.append(mk('p', 'small', t('fr.loading')));
+  box.append(mk('h2', 'fr-h', t('fr.u.title'), 'aj-friends'));
+  if (!usage) box.append(pageCopy(mk('p', 'small', t('fr.loading'), 'aj-friends')));
   else {
     // one row per window (每分钟 / 每小时 / 今天 / 本月), columns 条数 · tokens: fits a 360 px phone
     const tb = mk('table', 'fr-usage'); tb.id = 'fr-usage';
@@ -550,8 +550,8 @@ function viewDetail(box) {
     }
     tb.append(body);
     const wrap = mk('div', 'fr-usage-wrap'); wrap.append(tb); box.append(wrap);
-    box.append(mk('p', 'small', t('fr.u.blocked', { n: usage.blocked })));
-    if (!usage.tokSource) box.append(mk('p', 'small fr-tok-none', t('fr.u.noTok')));
+    box.append(pageCopy(mk('p', 'small', t('fr.u.blocked', { n: usage.blocked }), 'aj-friends')));
+    if (!usage.tokSource) box.append(pageCopy(mk('p', 'small fr-tok-none', t('fr.u.noTok'), 'aj-friends')));
   }
   ctxSection(box, f);
   const acts = mk('div', 'ajrow');
@@ -562,14 +562,14 @@ function viewDetail(box) {
 // P73 (ADR-A176): 「补充设定」 — the owner's own notes for this friend's peer session (signed fr_ctx, ≤ 4000 characters). Not a
 // message: nothing here reaches the friend; it is the last layer of the peer session's prompt from the next message on.
 function ctxSection(box, f) {
-  box.append(mk('h2', 'fr-h', t('fr.ctx.title')));
-  box.append(mk('p', 'small fr-ctx-hint', t('fr.ctx.hint')));
-  const ta = mk('textarea', 'aj-textarea fr-ctx'); ta.id = 'fr-ctx'; ta.rows = 5; ta.placeholder = t('fr.ctx.ph');
+  box.append(mk('h2', 'fr-h', t('fr.ctx.title'), 'aj-friends'));
+  box.append(pageCopy(mk('p', 'small fr-ctx-hint', t('fr.ctx.hint'), 'aj-friends')));
+  const ta = mk('textarea', 'aj-textarea fr-ctx', undefined, 'aj-friends'); ta.id = 'fr-ctx'; ta.rows = 5; ta.placeholder = t('fr.ctx.ph');
   const loaded = ctxText.friend === f.id && ctxText.text !== null;
   ta.value = ctxDraft.friend === f.id && ctxDraft.text !== null ? ctxDraft.text : loaded ? ctxText.text : '';
   ta.disabled = !loaded;
-  const count = mk('p', 'small fr-count'); count.id = 'fr-ctx-count';
-  const save = btn('aj-btn--primary', t('fr.ctx.save'), null, 'fr-ctx-save');
+  const count = pageCopy(mk('p', 'small fr-count', undefined, 'aj-friends')); count.id = 'fr-ctx-count';
+  const save = btn('aj-action--primary', t('fr.ctx.save'), null, 'fr-ctx-save');
   const check = () => {
     const n = cps(ta.value);
     count.textContent = t('fr.ctx.count', { n, max: FRIEND_CTX_MAX });
@@ -591,7 +591,7 @@ function ctxSection(box, f) {
   check();
 }
 function groupSelect(value, id) {
-  const sel = mk('select', 'aj-select'); if (id) sel.id = id;
+  const sel = mk('select', 'aj-select', undefined, 'aj-friends'); if (id) sel.id = id;
   const gs = data ? data.groups : [];
   for (const g of gs) { const o = mk('option', '', groupName(g)); o.value = g.id; sel.append(o); }
   if (!gs.some((g) => g.id === value) && value) { const o = mk('option', '', value); o.value = value; sel.append(o); }
@@ -618,22 +618,22 @@ function viewCard(box) {
   const me = data.me;
   if (!me.on) box.append(cmdNote('note fr-off', 'fr.off'));
   const card = mk('section', 'fr-cardbox fr-mycard');
-  card.append(mk('p', 'fr-cardbox__name', me.card.name || H.agentName()));
-  if (me.card.owner || me.card.intro) card.append(mk('p', 'small', [me.card.owner && t('fr.ownerIs', { owner: me.card.owner }), me.card.intro].filter(Boolean).join(' · ')));
-  const idp = mk('p', 'fr-bigid', me.id || '—'); idp.id = 'fr-my-id';
+  card.append(pageCopy(mk('p', 'fr-cardbox__name', me.card.name || H.agentName(), 'aj-friends')));
+  if (me.card.owner || me.card.intro) card.append(pageCopy(mk('p', 'small', [me.card.owner && t('fr.ownerIs', { owner: me.card.owner }), me.card.intro].filter(Boolean).join(' · '), 'aj-friends')));
+  const idp = pageCopy(mk('p', 'fr-bigid', me.id || '—', 'aj-friends')); idp.id = 'fr-my-id';
   card.append(idp);
   const link = parseAgentId(me.id) ? friendLink(me.id) : '';
   const acts = mk('div', 'ajrow');
-  acts.append(btn('aj-btn--sm', t('fr.card.copy'), e => copy(me.id, e.currentTarget), 'fr-copy-id'),
-    btn('aj-btn--sm', t('fr.card.share'), () => share(link), 'fr-share'));
+  acts.append(btn('aj-action--sm', t('fr.card.copy'), e => copy(me.id, e.currentTarget), 'fr-copy-id'),
+    btn('aj-action--sm', t('fr.card.share'), () => share(link), 'fr-share'));
   card.append(acts);
   const svg = link ? qrSvg(link, t('fr.card.qrAria')) : null;
-  if (svg) { const qr = mk('div', 'fr-qr'); qr.id = 'fr-qr'; qr.append(svg); card.append(qr, mk('p', 'small', t('fr.card.qrHint'))); }
+  if (svg) { const qr = mk('div', 'fr-qr'); qr.id = 'fr-qr'; qr.append(svg); card.append(qr, pageCopy(mk('p', 'small', t('fr.card.qrHint'), 'aj-friends'))); }
   box.append(card);
   // allow others to add me
   const sw = mk('div', 'fr-row');
   const lab = mk('span', 'fr-row__label', t('fr.card.discoverable'));
-  const tg = mk('button', 'tgl'); tg.type = 'button'; tg.id = 'fr-discoverable'; tg.setAttribute('role', 'switch');
+  const tg = mk('button', 'tgl', undefined, 'aj-friends'); tg.type = 'button'; tg.id = 'fr-discoverable'; tg.setAttribute('role', 'switch');
   tg.setAttribute('aria-checked', String(me.discoverable)); tg.setAttribute('aria-label', t('fr.card.discoverable')); tg.append(mk('i'));
   tg.addEventListener('click', async () => {
     const on = tg.getAttribute('aria-checked') !== 'true';
@@ -644,13 +644,13 @@ function viewCard(box) {
     toast(res.ok ? t(on ? 'fr.card.discOn' : 'fr.card.discOff') : t('fr.fail', { why: why(res.why) }), 3000);
   });
   sw.append(lab, tg);
-  box.append(sw, mk('p', 'small', t('fr.card.discHint')));
+  box.append(sw, pageCopy(mk('p', 'small', t('fr.card.discHint'), 'aj-friends')));
   // owner display name + intro (shown to a friend only after both owners agreed)
-  box.append(mk('h2', 'fr-h', t('fr.card.edit')));
-  const owner = mk('input', 'aj-input'); owner.id = 'fr-owner'; owner.maxLength = 32; owner.value = me.card.owner; owner.autocomplete = 'off';
-  const intro = mk('textarea', 'aj-textarea fr-intro'); intro.id = 'fr-intro'; intro.maxLength = 140; intro.value = me.card.intro; intro.rows = 2;
-  box.append(fieldLabel(t('fr.card.owner'), owner), owner, mk('p', 'small', t('fr.card.ownerHint')), fieldLabel(t('fr.card.intro'), intro), intro);
-  rowIn(box).append(btn('aj-btn--primary', t('fr.save'), async (e) => {
+  box.append(mk('h2', 'fr-h', t('fr.card.edit'), 'aj-friends'));
+  const owner = mk('input', 'aj-input', undefined, 'aj-friends'); owner.id = 'fr-owner'; owner.maxLength = 32; owner.value = me.card.owner; owner.autocomplete = 'off';
+  const intro = mk('textarea', 'aj-textarea fr-intro', undefined, 'aj-friends'); intro.id = 'fr-intro'; intro.maxLength = 140; intro.value = me.card.intro; intro.rows = 2;
+  box.append(fieldLabel(t('fr.card.owner'), owner), owner, pageCopy(mk('p', 'small', t('fr.card.ownerHint'), 'aj-friends')), fieldLabel(t('fr.card.intro'), intro), intro);
+  rowIn(box).append(btn('aj-action--primary', t('fr.save'), async (e) => {
     const b = e.currentTarget; b.disabled = true;
     const o = { owner: owner.value.trim().slice(0, 32), intro: intro.value.replace(/\s+/g, ' ').trim().slice(0, 140) };
     const res = await write('fr_card', o);
@@ -672,19 +672,19 @@ async function share(link) {
 function viewAdd(box) {
   if (V.sent) {
     const ok = mk('section', 'fr-sent'); ok.id = 'fr-sent';
-    ok.append(mk('p', 'fr-sent__title', t('fr.add.sent')), mk('p', 'small', t('fr.add.sentText')));
+    ok.append(pageCopy(mk('p', 'fr-sent__title', t('fr.add.sent'), 'aj-friends')), pageCopy(mk('p', 'small', t('fr.add.sentText'), 'aj-friends')));
     box.append(ok);
     rowIn(box).append(btn('', t('fr.add.backList'), () => go('list'), 'fr-sent-back'));
     return;
   }
   if (!data.me.on) box.append(cmdNote('note fr-off', 'fr.off'));
-  const id = mk('input', 'aj-input fr-idin'); id.id = 'fr-add-id'; id.autocomplete = 'off'; id.spellcheck = false;
+  const id = mk('input', 'aj-input fr-idin', undefined, 'aj-friends'); id.id = 'fr-add-id'; id.autocomplete = 'off'; id.spellcheck = false;
   id.setAttribute('autocapitalize', 'characters'); id.placeholder = 'AJ-XXXX-XXXX-XXXX-XXXX'; id.maxLength = 40; id.value = V.addId;
-  const hint = mk('p', 'small fr-idhint'); hint.id = 'fr-add-hint'; hint.setAttribute('aria-live', 'polite');
-  const note = mk('textarea', 'aj-textarea fr-note'); note.id = 'fr-add-note'; note.maxLength = 280; note.rows = 3; note.value = V.addNote || '';
+  const hint = pageCopy(mk('p', 'small fr-idhint', undefined, 'aj-friends')); hint.id = 'fr-add-hint'; hint.setAttribute('aria-live', 'polite');
+  const note = mk('textarea', 'aj-textarea fr-note', undefined, 'aj-friends'); note.id = 'fr-add-note'; note.maxLength = 280; note.rows = 3; note.value = V.addNote || '';
   note.placeholder = t('fr.add.notePh');
-  const count = mk('p', 'small fr-count');
-  const go1 = btn('aj-btn--primary', t('fr.add.send'), null, 'fr-add-go');
+  const count = pageCopy(mk('p', 'small fr-count', undefined, 'aj-friends'));
+  const go1 = btn('aj-action--primary', t('fr.add.send'), null, 'fr-add-go');
   const check = () => {
     const p = parseAgentId(id.value);
     const typed = id.value.replace(/[\s-]/g, '').length;
@@ -704,7 +704,7 @@ function viewAdd(box) {
   });
   box.append(fieldLabel(t('fr.add.id'), id), id, hint, fieldLabel(t('fr.add.note'), note), note, count);
   rowIn(box).append(go1);
-  box.append(mk('p', 'small', t('fr.add.explain')));
+  box.append(pageCopy(mk('p', 'small', t('fr.add.explain'), 'aj-friends')));
   check();
 }
 
@@ -770,11 +770,11 @@ export function openFromCmd(o) {
 
 // ---- policy groups
 function viewGroups(box) {
-  box.append(mk('p', 'small', t('fr.groups.intro')));
+  box.append(pageCopy(mk('p', 'small', t('fr.groups.intro'), 'aj-friends')));
   const ul = mk('ul', 'fr-groups'); ul.id = 'fr-groups';
   for (const g of data.groups) {
     const li = mk('li');
-    const b = mk('button', 'fr-gitem'); b.type = 'button'; b.dataset.id = g.id;
+    const b = mk('button', 'fr-gitem', undefined, 'aj-friends'); b.type = 'button'; b.dataset.id = g.id;
     const top = mk('span', 'fr-item__top');
     top.append(mk('b', '', groupName(g)));
     if (g.builtin) top.append(mk('span', 'tag', t('fr.g.builtin')));
@@ -790,53 +790,53 @@ function viewGroups(box) {
 const lim = (v) => (v == null ? t('fr.u.nolimit') : String(v));
 function viewGroup(box) {
   const base = V.group ? groupById(V.group) : null;
-  if (V.group && !base) { box.append(mk('p', 'small', t('fr.gone'))); return; }
+  if (V.group && !base) { box.append(pageCopy(mk('p', 'small', t('fr.gone'), 'aj-friends'))); return; }
   const tpl = base || groupById('default') || normGroup({ id: 'default', limits: {}, auto: {} });
   const g = JSON.parse(JSON.stringify(tpl));
   const fields = {};
   const numIn = (key, value, label, extra = '') => {
-    const i = mk('input', 'aj-input fr-num'); i.id = 'fr-g-' + key; i.type = 'text'; i.inputMode = 'numeric'; i.autocomplete = 'off';
+    const i = mk('input', 'aj-input fr-num', undefined, 'aj-friends'); i.id = 'fr-g-' + key; i.type = 'text'; i.inputMode = 'numeric'; i.autocomplete = 'off';
     i.value = value == null ? '' : String(value); i.placeholder = extra || t('fr.u.nolimit');
     fields[key] = i;
     const row = mk('div', 'fr-numrow'); row.append(fieldLabel(label, i), i);
     return row;
   };
-  const name = mk('input', 'aj-input'); name.id = 'fr-g-name'; name.maxLength = 32; name.value = base ? groupName(base) : ''; name.disabled = !!(base && base.builtin);
+  const name = mk('input', 'aj-input', undefined, 'aj-friends'); name.id = 'fr-g-name'; name.maxLength = 32; name.value = base ? groupName(base) : ''; name.disabled = !!(base && base.builtin);
   box.append(fieldLabel(t('fr.group.name'), name), name);
-  const sec = (title) => { box.append(mk('h2', 'fr-h', title)); const d = mk('div', 'fr-grid'); box.append(d); return d; };
+  const sec = (title) => { box.append(mk('h2', 'fr-h', title, 'aj-friends')); const d = mk('div', 'fr-grid'); box.append(d); return d; };
   const m1 = sec(t('fr.group.msg'));
   m1.append(numIn('msg_min', g.limits.msg.min, t('fr.u.w.min')), numIn('msg_day', g.limits.msg.day, t('fr.u.w.day')), numIn('msg_month', g.limits.msg.month, t('fr.u.w.month')));
   const t1 = sec(t('fr.group.tok'));
   t1.append(numIn('tok_day', g.limits.tok.day, t('fr.u.w.day')), numIn('tok_month', g.limits.tok.month, t('fr.u.w.month')));
-  box.append(mk('h2', 'fr-h', t('fr.group.auto')));
+  box.append(mk('h2', 'fr-h', t('fr.group.auto'), 'aj-friends'));
   const seg = mk('div', 'seg fr-mode'); seg.id = 'fr-g-mode'; seg.setAttribute('role', 'group');
   let mode = g.auto.mode;
   for (const m of ['off', 'scoped', 'all']) {
-    const b = mk('button', '', t('fr.g.auto.' + m)); b.type = 'button'; b.dataset.mode = m;
+    const b = mk('button', '', t('fr.g.auto.' + m), 'aj-friends'); b.type = 'button'; b.dataset.mode = m;
     b.setAttribute('aria-pressed', String(m === mode));
     b.addEventListener('click', () => { mode = m; for (const x of seg.children) x.setAttribute('aria-pressed', String(x.dataset.mode === m)); });
     seg.append(b);
   }
   box.append(seg);
   const topics = (key, list, label, hint) => {
-    const ta = mk('textarea', 'aj-textarea fr-topics'); ta.id = 'fr-g-' + key; ta.rows = 3; ta.value = list.join('\n');
+    const ta = mk('textarea', 'aj-textarea fr-topics', undefined, 'aj-friends'); ta.id = 'fr-g-' + key; ta.rows = 3; ta.value = list.join('\n');
     fields[key] = ta;
-    box.append(fieldLabel(label, ta), ta, mk('p', 'small', hint));
+    box.append(fieldLabel(label, ta), ta, pageCopy(mk('p', 'small', hint, 'aj-friends')));
   };
   topics('allow', g.auto.allow, t('fr.group.allow'), t('fr.group.allowHint'));
   topics('ask', g.auto.ask, t('fr.group.ask'), t('fr.group.askHint'));
   const more = mk('details', 'fr-more'); more.id = 'fr-g-more';
-  more.append(mk('summary', '', t('fr.group.more')));
+  more.append(mk('summary', '', t('fr.group.more'), 'aj-friends'));
   const m2 = mk('div', 'fr-grid');
   m2.append(numIn('msg_hour', g.limits.msg.hour, t('fr.group.msgHour')), numIn('tok_min', g.limits.tok.min, t('fr.group.tokMin')),
     numIn('tok_hour', g.limits.tok.hour, t('fr.group.tokHour')), numIn('min_interval_s', g.limits.min_interval_s, t('fr.group.interval')),
     numIn('max_len', g.limits.max_len, t('fr.group.maxLen')), numIn('max_auto_rounds', g.auto.max_auto_rounds, t('fr.group.rounds'), '1–100'));
   more.append(m2);
   box.append(more);
-  const err = mk('p', 'error small'); err.id = 'fr-g-err'; err.hidden = true;
+  const err = pageCopy(mk('p', 'error small', undefined, 'aj-friends')); err.id = 'fr-g-err'; err.hidden = true;
   box.append(err);
   const acts = mk('div', 'ajrow');
-  acts.append(btn('aj-btn--primary', t('fr.save'), async (e) => {
+  acts.append(btn('aj-action--primary', t('fr.save'), async (e) => {
     const out = collectGroup(base, name.value, mode, fields);
     if (typeof out === 'string') { err.textContent = out; err.hidden = false; return; }
     err.hidden = true;
@@ -849,7 +849,7 @@ function viewGroup(box) {
   }, 'fr-g-save'));
   if (base && !base.builtin) acts.append(btn('fr-danger', t('fr.group.delete'), () => deleteGroup(base), 'fr-g-delete'));
   box.append(acts);
-  if (base && base.builtin) box.append(mk('p', 'small', t('fr.group.builtinHint')));
+  if (base && base.builtin) box.append(pageCopy(mk('p', 'small', t('fr.group.builtinHint'), 'aj-friends')));
 }
 /** The form → a §17.9 Group object, or the message to show. Empty number = no limit (null). */
 function collectGroup(base, nameText, mode, f) {
@@ -972,12 +972,12 @@ export function renderAsk(p, ctx) {
       if (f.intro) card.append(mk('p', 'small', f.intro));
       if (f.id) card.append(mk('p', 'fr-id small', f.id));
       if (f.note) card.append(mk('p', 'fr-askcard__note', t('fr.ask.note', { note: f.note })));
-    } else card.append(copyable(mk('pre', 'fr-askcard__raw', p.summary), { click: false }));   // P292
+    } else card.append(copyable(mk('pre', 'fr-askcard__raw', p.summary, 'aj-friends'), { click: false }));   // P292
     box.append(card);
     if (st === 'open' && ctx.sign) {
       const row = mk('label', 'fr-row');
       row.append(mk('span', 'fr-row__label', t('fr.ask.group')));
-      const sel = mk('select', 'aj-select'); sel.id = 'frAskGroup';
+      const sel = mk('select', 'aj-select', undefined, 'aj-friends'); sel.id = 'frAskGroup';
       const gs = f && f.groups.length ? f.groups : [{ id: 'default', name: '' }];
       for (const g of gs) { const o = mk('option', '', BUILTIN.includes(g.id) ? t('fr.g.' + g.id) : g.name || g.id); o.value = g.id; sel.append(o); }
       sel.value = pickedGroup.get(p.id) || (gs.some((g) => g.id === 'friend') ? 'friend' : gs[0].id);
@@ -986,8 +986,8 @@ export function renderAsk(p, ctx) {
       box.append(row, mk('p', 'small', t('fr.ask.groupHint')));
       // P73: 「同意」 may carry this friend's 「补充设定」 (optional; signed with the answer, editable later in the details)
       const more = mk('details', 'fr-askctx'); more.id = 'frAskCtxBox';
-      more.append(mk('summary', '', t('fr.ask.ctx')));
-      const cta = mk('textarea', 'aj-textarea fr-ctx'); cta.id = 'frAskCtx'; cta.rows = 3; cta.placeholder = t('fr.ctx.ph');
+      more.append(mk('summary', '', t('fr.ask.ctx'), 'aj-friends'));
+      const cta = mk('textarea', 'aj-textarea fr-ctx', undefined, 'aj-friends'); cta.id = 'frAskCtx'; cta.rows = 3; cta.placeholder = t('fr.ctx.ph');
       cta.value = pickedCtx.get(p.id) || '';
       if (cta.value) more.open = true;
       cta.addEventListener('input', () => pickedCtx.set(p.id, cta.value));
@@ -996,7 +996,7 @@ export function renderAsk(p, ctx) {
       box.append(note());
       const acts = mk('div', 'fr-askbtns');
       acts.append(btn('', t('fr.ask.deny'), () => answerFriend(p, false, null, ctx), 'frAskDeny'),
-        btn('aj-btn--primary', t('fr.ask.allow'), () => answerFriend(p, true, sel.value, ctx, cta.value), 'frAskAllow'));
+        btn('aj-action--primary', t('fr.ask.allow'), () => answerFriend(p, true, sel.value, ctx, cta.value), 'frAskAllow'));
       box.append(acts);
       box.append(mk('p', 'small fr-askfoot', t('fr.ask.foot')));
     }
@@ -1031,7 +1031,7 @@ export function renderAsk(p, ctx) {
           if (!res.ok) { pairingRefused(p, res.why); ctx.repaint(); }
         };
         acts.append(btn('', t('fr.ask.deny'), () => decide(false), 'frOwnerDeny'),
-          btn('aj-btn--primary', t('fr.sameOwner.confirmAction'), () => decide(true), 'frOwnerAllow'));
+          btn('aj-action--primary', t('fr.sameOwner.confirmAction'), () => decide(true), 'frOwnerAllow'));
         if (p.pairing_scope_ok === false) acts.querySelector('#frOwnerAllow').disabled = true;
         box.append(acts);
       }
@@ -1044,7 +1044,7 @@ export function renderAsk(p, ctx) {
         box.append(note());
         const acts = mk('div', 'fr-askbtns');
         acts.append(btn('', t('fr.ask.deny'), () => answerQuestion(p, 'deny', x, ctx), 'frHoldDeny'),
-          btn('aj-btn--primary', t('fr.hold.allow'), () => answerQuestion(p, 'allow', x, ctx), 'frHoldAllow'));
+          btn('aj-action--primary', t('fr.hold.allow'), () => answerQuestion(p, 'allow', x, ctx), 'frHoldAllow'));
         box.append(acts);
       }
       return;
@@ -1054,12 +1054,12 @@ export function renderAsk(p, ctx) {
     if (x.text) card.append(mk('p', 'fr-askcard__note', q(x.text)));
     card.append(mk('p', 'small', t('fr.q.draft')));
     card.append(mk('p', 'fr-askcard__draft', x.draft ? q(x.draft) : t('fr.q.noDraft')));
-    if (!p.pq) card.append(copyable(mk('pre', 'fr-askcard__raw', p.summary), { click: false }));   // P292
+    if (!p.pq) card.append(copyable(mk('pre', 'fr-askcard__raw', p.summary, 'aj-friends'), { click: false }));   // P292
     box.append(card);
     if (st === 'open' && ctx.sign) {
       box.append(note());
       const acts = mk('div', 'fr-askbtns fr-askbtns--3');
-      const send = btn('aj-btn--primary', t('fr.q.send'), () => answerQuestion(p, 'allow', x, ctx), 'frQSend');
+      const send = btn('aj-action--primary', t('fr.q.send'), () => answerQuestion(p, 'allow', x, ctx), 'frQSend');
 
       acts.append(send, btn('', t('fr.q.skip'), () => answerQuestion(p, 'deny', x, ctx), 'frQSkip'),
         btn('', t('fr.q.tell'), () => answerQuestion(p, 'tell', x, ctx), 'frQTell'));

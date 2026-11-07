@@ -345,7 +345,7 @@ def configured_harness(agentj, *, run=command, prompt=input):
         if gemini:
             try:
                 if run([gemini, '--version'], timeout=15, env=probe_env).strip():
-                    print('Agent J 主 Agent 暂不支持 Gemini，请再登录 Codex / Claude Code / OpenCode 之一或用 AgentsRelay。 / Agent J does not yet support Gemini as the main Agent. Sign in to Codex / Claude Code / OpenCode, or use AgentsRelay.')
+                    print('Agent J 主 Agent 暂不支持 Gemini CLI；要用 Gemini 模型，运行 curl -fsSL https://agentj.app/install.sh | bash -s -- --gemini（OpenCode + 你自己的 Google Cloud key），或登录 Codex / Claude Code / OpenCode、用 AgentsRelay。 / Gemini CLI is not a main Agent; for Gemini models run the install command with --gemini (OpenCode + your own Google Cloud key), or sign in to Codex / Claude Code / OpenCode, or use AgentsRelay.')
             except InstallError:
                 pass
         return None

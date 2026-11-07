@@ -1,0 +1,72 @@
+{
+  "voice.tts.app_id": {
+    "type": "string",
+    "default": "",
+    "description": "Volcengine App ID (not a secret; the access key stays in an environment variable) / 火山引擎 App ID（不是密钥；Access Key 只放环境变量）",
+    "aliases": [
+      "volcengine app id",
+      "火山 App ID",
+      "voice tts app id"
+    ],
+    "tier": "user",
+    "apply": "hot",
+    "verify": "agentj voice status",
+    "since": "0.21",
+    "maxLength": 40,
+    "pattern": "^[A-Za-z0-9_-]{0,40}$",
+    "patternHint": "a plain App ID (letters, digits, - or _)"
+  },
+  "voice.tts.spoken": {
+    "type": "string",
+    "default": "auto",
+    "description": "Rewrite a reply into a short spoken script before reading it: auto = on for a local model or a cloud voice, off for the free system voice / 播报前改写成精简口语稿：auto = 本机模型和第三方声音开、系统自带声音关",
+    "aliases": [
+      "口语化",
+      "spoken",
+      "voice tts spoken",
+      "播报口语化"
+    ],
+    "tier": "user",
+    "apply": "hot",
+    "verify": "agentj voice status",
+    "since": "0.21",
+    "enum": [
+      "auto",
+      "on",
+      "off"
+    ]
+  },
+  "voice.tts.spoken_model": {
+    "type": "string",
+    "default": "mid",
+    "description": "Model for the spoken rewrite: mid = the AI tool's mid-tier model (Claude Code: Sonnet), or a model ID / 口语化用的模型：mid = 当前 AI 工具的中档模型（Claude Code 用 Sonnet），或填模型 ID",
+    "aliases": [
+      "口语化模型",
+      "spoken model",
+      "voice tts spoken model"
+    ],
+    "tier": "user",
+    "apply": "hot",
+    "verify": "agentj voice status",
+    "since": "0.21",
+    "maxLength": 100,
+    "pattern": "^[A-Za-z0-9._:/@\\[\\]-]{1,100}$",
+    "patternHint": "mid or a model ID"
+  },
+  "voice.tts.spoken_max_chars": {
+    "type": "integer",
+    "default": 400,
+    "minimum": 80,
+    "maximum": 2000,
+    "description": "Longest spoken script, in characters / 口语稿最多多少字",
+    "aliases": [
+      "口语稿长度",
+      "spoken length",
+      "voice tts spoken max chars"
+    ],
+    "tier": "user",
+    "apply": "hot",
+    "verify": "agentj voice status",
+    "since": "0.21"
+  }
+}

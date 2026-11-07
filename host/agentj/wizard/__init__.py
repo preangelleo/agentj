@@ -334,6 +334,21 @@ def core_reference(lang: str | None = None) -> str:
     return CORE_REF + "\n" + text + "\n<!-- /agentj:main-core -->\n"
 
 
+def merge_core_reference(current: bytes, reference: bytes) -> bytes:
+    """Replace complete historical blocks in place; preserve all bytes outside markers."""
+    pattern = re.compile(rb"<!-- agentj:main-core v[0-9]+ -->.*?<!-- /agentj:main-core -->", re.S)
+    reference = reference.strip(b"\n")
+    found = False
+    def replace(match):
+        nonlocal found
+        if found:
+            return b""
+        found = True
+        return reference
+    merged = pattern.sub(replace, current)
+    return merged if found else current + (b"\n" if current.endswith(b"\n") else b"\n\n") + reference + b"\n"
+
+
 # P149 (core v10): the main Agent records the owner's delegation boundary here, one line per decision type.
 DELEGATION_SECTION = {
     "zh": "\n## 放权规则\n\n董事长说「这种不用问我」「这类你定」「以后不用报」或「这种要先问我」时，按决策类型记一条："
@@ -559,9 +574,11 @@ def _ensure_docs_rule(root: Path, m: dict, rels: list[str], blk: bytes) -> list[
         cur = _read_regular(path)
         new = docsrule.merged(cur, docsrule.extract(blk) or blk)
         current = new if new is not None else cur
-        if current is not None and CORE_REF.encode() not in current:
+        if current is not None:
             reference = blk.split(docsrule.BEGIN.encode(), 1)[0].strip()
-            new = current.rstrip(b"\n") + b"\n\n" + reference + b"\n"
+            merged = merge_core_reference(current, reference)
+            if merged != current:
+                new = merged
         if new is None:
             out.append({"path": rel, "status": "unchanged"})
             continue
@@ -774,8 +791,7 @@ def apply(root: Path, staging: Path) -> list[dict]:
     files = add_codex_mirrors(_staged(staging))
     for rel in ENTRY_FILES:     # PROMPT-29 C-5: a generated entry file keeps the "look it up first" block (the one on disk, else both languages)
         if rel in files:
-            if CORE_REF.encode() not in files[rel]:
-                files[rel] += b"\n" + core_reference().encode()
+            files[rel] = merge_core_reference(files[rel], core_reference().encode())
             on_disk = None if (root / rel).is_symlink() else docsrule.extract(_read_regular(root / rel))
             files[rel] = docsrule.merged(files[rel], on_disk or docsrule.block().encode()) or files[rel]
     hits = secret_hits(files, root)

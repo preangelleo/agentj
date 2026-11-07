@@ -122,9 +122,10 @@ test('review M2: host_moved never switches silently — 「切过去」 / 「留
   const ask = body.indexOf("confirmSheet(t('hmv.askTitle'), t('hmv.ask', {"), put = body.indexOf("dbPut('host', movedRecord(h, mv))");
   assert.ok(ask > 0 && put > ask, 'the sheet comes before the stored pairing is touched');
   assert.match(body, /t\('hmv\.go'\), false, t\('hmv\.stay'\)\)/);
-  assert.match(body, /if \(!go\) \{ moveStayed\.add\(key\); return; \}/, '「留在这里」 changes nothing');
+  // 0.26.9 #434: 「留在这里」 changes nothing of the pairing — it only remembers the answer (withStay: moveStayed), so a reload does not ask again
+  assert.ok(body.includes('if (!go) { moveStayed.add(key); await updHost((h) => h && h.channel === h0.channel && withStay(h, key)).catch(() => {}); return; }'), '「留在这里」 changes nothing but the remembered answer');
   // P550 (P545 × P547): a seat's page writes the move into the new seat's page instead (copyToSeat + this page's movedTo)
-  const stay = body.indexOf('if (!go) { moveStayed.add(key); return; }');
+  const stay = body.indexOf('if (!go) { moveStayed.add(key); await updHost((h) => h && h.channel === h0.channel && withStay(h, key)).catch(() => {}); return; }');
   const writes = [...body.matchAll(/dbPut\(|copyToSeat\(|ticketQueue\(/g)].map((x) => x.index);
   assert.equal((body.match(/dbPut\(/g) || []).length, 2, 'writes: the moved record, or (seat page) movedTo');
   assert.ok(stay > ask && writes.length >= 4 && writes.every((i) => i > stay), 'every write after 「切过去」');

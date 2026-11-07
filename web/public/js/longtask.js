@@ -86,7 +86,7 @@ export const isOpen = () => (!!root && !root.hidden) || (!!caps && !caps.hidden)
 
 function section(box, title, cls) {
   const s = mk('section', 'lt-sec ' + (cls || ''));
-  if (title) s.appendChild(mk('h3', 'lt-h', title));
+  if (title) s.appendChild(mk('h3', 'lt-h', title, 'aj-setup'));
   box.appendChild(s);
   return s;
 }
@@ -94,7 +94,7 @@ function choiceInput(item, spec) {
   const wrap = mk('div', 'lt-input');
   const cur = picks.get(item.id);
   if (spec.type === 'text') {
-    const i = mk('textarea', 'lt-text');
+    const i = mk('textarea', 'lt-text', undefined, 'aj-setup');
     i.id = 'lt-in-' + item.id;
     i.rows = 2; i.maxLength = 500;
     i.value = typeof cur === 'string' ? cur : (typeof spec.default === 'string' ? spec.default : '');
@@ -108,7 +108,7 @@ function choiceInput(item, spec) {
   let sel = multi ? (Array.isArray(cur) ? cur : (Array.isArray(spec.default) ? spec.default.slice() : [])) : (typeof cur === 'string' ? cur : (typeof spec.default === 'string' ? spec.default : ''));
   picks.set(item.id, sel);
   for (const o of spec.options) {
-    const b = mk('button', 'lt-opt', o);
+    const b = mk('button', 'lt-opt', o, 'aj-choice');
     b.type = 'button';
     const on = () => (multi ? sel.includes(o) : sel === o);
     b.setAttribute('aria-pressed', on() ? 'true' : 'false');
@@ -162,7 +162,7 @@ function render() {
     box.replaceChildren();
     const b = c.brief || {};
     box.appendChild(mk('p', 'lt-kicker', t('lt.kicker')));
-    const h = mk('h2', 'lt-title', loc(b.title) || b.goal || '');
+    const h = mk('h2', 'lt-title', loc(b.title) || b.goal || '', 'aj-setup');
     h.id = 'lt-title';
     box.appendChild(h);
     const what = section(box, t('lt.what'));
@@ -185,7 +185,7 @@ function render() {
     }
     if (c.card.optional.length) {
       const det = mk('details', 'lt-sec lt-opt-sec');
-      det.appendChild(mk('summary', '', t('lt.optional', { n: c.card.optional.length })));
+      det.appendChild(mk('summary', '', t('lt.optional', { n: c.card.optional.length }), 'aj-setup'));
       for (const it of c.card.optional) itemRow(det, it);
       box.appendChild(det);
     }
@@ -197,17 +197,17 @@ function render() {
     ul.appendChild(mk('li', 'lt-safe', t('lt.clause.safe')));
     clauses.appendChild(ul);
     const full = mk('details', 'lt-sec lt-full');
-    full.appendChild(mk('summary', '', t('lt.fullBrief')));
+    full.appendChild(mk('summary', '', t('lt.fullBrief'), 'aj-setup'));
     const fl = mk('ul', 'lt-list');
     for (const a of b.acceptance || []) fl.appendChild(mk('li', '', t('lt.full.accept', { text: a })));
     for (const r of b.red_lines || []) fl.appendChild(mk('li', '', t('lt.full.red', { text: r })));
     full.appendChild(fl);
     box.appendChild(full);
     box.appendChild(mk('p', 'lt-left', ''));
-    const go = mk('button', 'aj-btn aj-btn--primary lt-go', t(b.confirm || c.enable ? 'lt.go' : 'lt.goShort'));
+    const go = mk('button', 'aj-action aj-action--primary lt-go', t(b.confirm || c.enable ? 'lt.go' : 'lt.goShort'), 'aj-action', 'dialog');
     go.type = 'button'; go.id = 'lt-go';
     go.addEventListener('click', () => decide('submit'));
-    const back = mk('button', 'aj-btn aj-btn--quiet lt-back', t('lt.back'));
+    const back = mk('button', 'aj-action aj-action--quiet lt-back', t('lt.back'), 'aj-action', 'dialog');
     back.type = 'button'; back.id = 'lt-back';
     back.addEventListener('click', () => decide('cancel'));
     box.append(go, back);
@@ -308,7 +308,7 @@ function paintCaps() {
   buildCaps();
   const box = caps.querySelector('#lt-caps-box');
   box.replaceChildren();
-  const h = mk('h2', 'lt-title', t('lt.caps.title'));
+  const h = mk('h2', 'lt-title', t('lt.caps.title'), 'aj-setup');
   h.id = 'lt-caps-title';
   box.appendChild(h);
   const items = capsMsg.items;
@@ -316,7 +316,7 @@ function paintCaps() {
   box.appendChild(mk('p', 'lt-goal', t('lt.caps.sum', { ready, setup: items.length - ready })));
   const bar = mk('div', 'lt-filter');
   for (const f of ['all', 'ready', 'setup']) {
-    const b = mk('button', 'lt-opt', t('lt.caps.f.' + f));
+    const b = mk('button', 'lt-opt', t('lt.caps.f.' + f), 'aj-choice');
     b.type = 'button';
     b.setAttribute('aria-pressed', capsFilter === f ? 'true' : 'false');
     b.addEventListener('click', () => { capsFilter = f; paintCaps(); });
@@ -328,7 +328,7 @@ function paintCaps() {
     if (capsFilter === 'ready' && !READY(it.status)) continue;
     if (capsFilter === 'setup' && READY(it.status)) continue;
     const det = mk('details', 'lt-cap');
-    const sum = mk('summary', '');
+    const sum = mk('summary', '', undefined, 'aj-setup');
     sum.append(mk('span', 'lt-badge lt-badge--' + (READY(it.status) ? 'ready' : it.status === 'stale' ? 'unverified' : 'missing'),
       t(READY(it.status) ? 'lt.st.ready' : it.status === 'stale' ? 'lt.st.stale' : 'lt.st.setup')), document.createTextNode(' ' + loc(it.title)));
     det.appendChild(sum);
@@ -338,7 +338,7 @@ function paintCaps() {
     list.appendChild(det);
   }
   box.appendChild(list);
-  const close = mk('button', 'aj-btn aj-btn--primary lt-go', t('lt.caps.close'));
+  const close = mk('button', 'aj-action aj-action--primary lt-go', t('lt.caps.close'), 'aj-action', 'dialog');
   close.type = 'button';
   close.addEventListener('click', () => { caps.hidden = true; capsMsg = null; });
   box.appendChild(close);

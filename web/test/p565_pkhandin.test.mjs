@@ -123,9 +123,8 @@ test('words: zh / en, the {bio} word, no trial wording', () => {
   assert.match(zh['p565.pk.handedIn'], /^已设好/);
 });
 
-test('a centred notice sits below an open dialog (never over its text and buttons)', () => {
+test('#556 supersedes the old bottom notice under an open dialog', () => {
   const css = read('../public/app.css');
-  const rule = /body:has\(\.ajmodal\.dlgcard:not\(\[hidden\]\):not\(\.cp-docked\),#confirm:not\(\[hidden\]\):not\(\.cp-docked\)\) \.toast:is\(\.circle,\.square\)\{top:auto;bottom:/;
-  assert.match(css, rule);
-  assert.match(css, /body:has\(\.ajmodal\.dlgcard:not\(\[hidden\]\):not\(\.cp-docked\),#confirm:not\(\[hidden\]\):not\(\.cp-docked\)\) \.toast:is\(\.circle,\.square\)\.on\{transform:translate\(-50%,0\)\}/);
+  assert.doesNotMatch(css, /body:has\([^{}]+\) \.toast:is\(\.circle,\.square\)\{top:auto;bottom:/);
+  assert.match(css, /\.toast:is\(\.circle,\.square,\.mail-saved\)\{top:var\(--nt-center-y,50%\);bottom:auto;/);
 });

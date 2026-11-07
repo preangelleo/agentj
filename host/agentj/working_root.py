@@ -1,7 +1,6 @@
 """Working-root selection. Existing data is never moved or overwritten."""
 from pathlib import Path
 import os
-from . import preferences
 
 
 def protected_macos(root, *, platform=None, home=None):
@@ -23,6 +22,7 @@ MACOS_HINT = ("macOS 会拦截后台服务访问下载、桌面、文稿和 iClo
 
 
 def candidates(st=None):
+    from . import preferences
     found = []
     stored = preferences.get(preferences.effective(st), "agent.working_root", "")
     old = st.config().get("agent", {}).get("dir") if st and st.exists() else None
@@ -36,19 +36,24 @@ def candidates(st=None):
 
 
 def select(st, specified=None, interactive=False):
-    existing = candidates(st)
-    stored = preferences.get(preferences.effective(st), "agent.working_root", "")
-    old = st.config().get("agent", {}).get("dir") if st.exists() else None
-    choice = specified or stored or old or "~/coding"
-    if interactive and not specified:
-        print("工作根目录 / Working root (new workflows become one child folder each):")
-        for p in existing:
-            print("  " + p)
-        choice = input(f"确认或输入目录 / Confirm or enter path [{choice}]: ").strip() or choice
+    if specified:
+        choice = specified
+    else:
+        from . import preferences
+        stored = preferences.get(preferences.effective(st), "agent.working_root", "")
+        old = st.config().get("agent", {}).get("dir") if st.exists() else None
+        choice = stored or old or "~/coding"
+        if interactive:
+            print("工作根目录 / Working root (new workflows become one child folder each):")
+            for p in candidates(st):
+                print("  " + p)
+            choice = input(f"确认或输入目录 / Confirm or enter path [{choice}]: ").strip() or choice
     root = Path(choice).expanduser()
     if not root.is_absolute():
         raise ValueError("working root must be an absolute path or ~/path")
     root = root.resolve()
+    if root == Path.home().resolve():
+        raise ValueError("不能使用用户主目录根；请重新选择 ~/coding 等工作目录。 / Home root is unsafe; select a work folder such as ~/coding. Existing files and configuration have not been moved or changed.")
     from .fence import protected_paths
     for value in protected_paths(st):
         p = Path(value).resolve()
@@ -62,6 +67,7 @@ def select(st, specified=None, interactive=False):
 
 
 def record(st, root):
+    from . import preferences
     root.mkdir(parents=True, exist_ok=True)
     raw, _ = preferences.read()
     raw = preferences.edit(raw, "agent.working_root", str(root))

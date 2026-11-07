@@ -82,7 +82,7 @@ export async function runP132({B,web,fake,out='reports/qa/p132',rec=parityRecord
    await waitFor(p,`${$('pgCorner')}.dataset.unread==='1' && ${$('pg')}.textContent==='4 / 6'`);
    assert.equal(await evaluate(p,`${$('om')}.dataset.header`),'1');
    assert.match(await evaluate(p,`${$('pgLatest')}.getAttribute('aria-label')`),s.flash);
-   assert.equal(await evaluate(p,`getComputedStyle(${$('pg')}).animationName`),'new-message-pulse');
+   assert.equal(await evaluate(p,`getComputedStyle(${$('pg')}).animationName`),'aj-source-new-message-pulse');
    assert.equal(await evaluate(p,`getComputedStyle(${$('pg')}).borderTopColor`),'rgba(250, 249, 245, 0.6)','P150 (P154 追加 7: .45 → .6): the flashing capsule ring is a light Lotion veil, not near-black');
    await sleep(150);await save('header-unread');
    await touch(p,'pgLatest');                                       // a single tap on the flashing capsule = to the newest

@@ -136,12 +136,17 @@ async def prepare(a, sid):
     if a.kind == 'opencode':
         if not await a._spawn():
             raise ValueError('native connection failed')
-    fn = {'claude': '_ensure', 'codex': '_thread', 'opencode': '_session_ok'}[a.kind]
+    # #484: Codex's `_ready` (spawn the app-server Agent J owns, then resume the thread) — `_thread` alone wrote to the
+    # stopped app-server, so every reopen of a Codex session failed and dropped the conversation pin
+    fn = {'claude': '_ensure', 'codex': '_ready', 'opencode': '_session_ok'}[a.kind]
     if not await getattr(a, fn)():
         raise ValueError('native resume failed')
 
 
-async def run(host):
+async def run(host, release=False):
+    """release (#484): the shared-Codex desktop turn the phone's message waits behind was judged dead (reset.desktop_dead);
+    the reopened actor delivers past it instead of waiting again. Queued and not-yet-delivered owner messages follow the
+    reopened actor (never dropped: #484 「排队的消息接着发」); a message the harness already has is not sent twice."""
     if host.stopped():
         return {'ok': False, 'why': 'estop'}
     old = host.agent
@@ -154,33 +159,46 @@ async def run(host):
     if old.kind == 'claude' and cfg.get('session_mode') == 'shared':
         flags = profile(old, sid)
         await end_selected(old)
+    dead = None
+    if release:
+        path = getattr(old, 'wait_path', None) or getattr(old, 'rollout', None)
+        try:
+            dead = (str(path), path.stat().st_size) if path is not None else None
+        except OSError:
+            dead = None
     old.halting = True
     current = getattr(old, 'cur_send', None)
     queue = getattr(old, 'q', None)
     # Includes the message picked from q but still waiting for transcription (not yet cur_send).
     pending = [x for x in getattr(getattr(host, 'sends', None), 'items', {}).values()
                if getattr(x, 'state', None) == 'pending']
-    dropped = set()
-    def drop(item):
-        if id(item) not in dropped:
-            host.queue_dropped(item)
-            dropped.add(id(item))
     if queue is not None:
+        queued = set()
         while not queue.empty():
-            drop(queue.get_nowait())
+            queued.add(id(item := queue.get_nowait()))
+            pending.append(item)
+        pending = [x for x in pending if id(x) in queued or getattr(x, 'state', None) == 'pending']
     await old.stop()  # cancels the current actor and releases its turn lock; only owned native processes are killed
-    for item in pending:
-        if item.state == 'pending':
-            drop(item)
     if current is not None:
-        # A delivered/uncertain write must never be reported as "cancelled before delivery".
-        if getattr(current, 'state', None) == 'pending':
-            drop(current)
+        # A delivered/uncertain write is never sent again; one the harness never got goes first in the reopened queue.
+        if getattr(current, 'state', None) == 'pending' and all(x is not current for x in pending):
+            pending.insert(0, current)
         if getattr(host, 'cur_turn', None) == getattr(current, 'turn', None):
             host.agent_turn_end()
+    if queue is not None:
+        later = []
+        while not queue.empty():                 # arrivals while the old actor stopped come after the earlier ones
+            later.append(queue.get_nowait())
+        seen = set()
+        for item in pending + later:
+            if id(item) not in seen and getattr(item, 'state', None) != 'cancelled':
+                seen.add(id(item))
+                queue.put_nowait(item)
     def replacement(activate=False):
         a = agent.make(host, cfg)
         a._phone_restart_flags = flags
+        if dead is not None and hasattr(a, 'dead_turn'):
+            a.dead_turn = dead       # #484: wait_desktop delivers past the dead desktop turn (same rollout, same size)
         if queue is not None:
             a.q = queue  # arrivals during reopening follow the replacement, not the stopped actor
         host.agent = a

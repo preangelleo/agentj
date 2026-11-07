@@ -273,7 +273,7 @@ export async function runP154() {
             const r = await evaluate(p, `[...${$('busyDots')}.querySelectorAll('i.rb')].map(i=>{const cs=getComputedStyle(i),b=i.getBoundingClientRect();
               return {h:b.height,w:b.width,img:cs.backgroundImage,ir:cs.imageRendering,an:cs.animationName,d:cs.animationDelay,y:cs.backgroundPositionY,c:+i.dataset.c,r:+i.dataset.r}})`);
             check(r.every((x) => x.h === 18 && x.w === 18 && /robots-18\.png/.test(x.img) && x.ir === 'pixelated'), `18 px robots from the 18×18 sheet, pixelated ${JSON.stringify(r[0])}`);
-            check(r.every((x) => x.an === 'rb-dance-18') && new Set(r.map((x) => x.d)).size === 3, 'dancing, out of step');
+            check(r.every((x) => x.an === 'aj-busy-rb-dance-18') && new Set(r.map((x) => x.d)).size === 3, 'dancing, out of step');
             check(r.every((x) => x.r === x.c && x.y === -x.r * 18 + 'px'), 'each wears its worker colour (robot = c while free; sprite row = robot)');
             check(!/tengen/.test(JSON.stringify(r)), 'only the original robots');
             // crisp: every pixel of a still robot is a sprite colour or the card behind it — no smoothing, at this DPR
@@ -298,18 +298,18 @@ export async function runP154() {
             await waitFor(p, `${$('busyDots')}.querySelectorAll('i.rb').length===4`);
             check(await evaluate(p, `(()=>{const l=[...${$('busyDots')}.querySelectorAll('i.rb')];return l.slice(0,3).every((i,k)=>i.dataset.mark==='m'+k) && l[3].classList.contains('in') && !l[3].dataset.mark})()`), 'the new one pops in, the rest keep dancing');
             // P207 追加 4: it dances while it pops, and a pop whose animationend never comes (window hidden) still ends
-            check(await evaluate(p, `getComputedStyle(${$('busyDots')}.querySelectorAll('i.rb')[3]).animationName`) === 'rb-dance-18, rb-pop', 'dances underneath the pop');
+            check(await evaluate(p, `getComputedStyle(${$('busyDots')}.querySelectorAll('i.rb')[3]).animationName`) === 'aj-busy-rb-dance-18, aj-busy-rb-pop', 'dances underneath the pop');
             await fake.send({ t: 'busy', by: NAME, tasks: [...mk(4), ...mk(1, 9)] });
             await waitFor(p, `${$('busyDots')}.querySelectorAll('i.rb').length===5`);
-            await evaluate(p, `document.getAnimations().filter(a=>a.animationName==='rb-pop').forEach(a=>a.pause())`);
+            await evaluate(p, `document.getAnimations().filter(a=>a.animationName==='aj-busy-rb-pop').forEach(a=>a.pause())`);
             await sleep(900);
-            check(await evaluate(p, `(()=>{const i=${$('busyDots')}.querySelectorAll('i.rb')[4];return !i.classList.contains('in') && getComputedStyle(i).animationName==='rb-dance-18'})()`), 'a lost animationend never leaves a robot standing still');
+            check(await evaluate(p, `(()=>{const i=${$('busyDots')}.querySelectorAll('i.rb')[4];return !i.classList.contains('in') && getComputedStyle(i).animationName==='aj-busy-rb-dance-18'})()`), 'a lost animationend never leaves a robot standing still');
             await fake.send({ t: 'busy', by: NAME, tasks: mk(4) });
             await waitFor(p, `${$('busyDots')}.querySelectorAll('i.rb').length===4 && !${$('busyDots')}.querySelector('.bye')`, 4000);
             // a finished worker bows (the 13th frame) and floats away, then its slot closes
             await fake.send({ t: 'busy', by: NAME, tasks: mk(4).filter((x) => x.id !== 'r1') });
             await waitFor(p, `${$('busyDots')}.querySelector('i.rb.bye')`);
-            check(await evaluate(p, `(()=>{const b=${$('busyDots')}.querySelector('i.rb.bye');return b.dataset.mark==='m1' && getComputedStyle(b).backgroundPositionX==='-216px' && getComputedStyle(b).animationName==='rb-bow'})()`), 'the finished one bows');
+            check(await evaluate(p, `(()=>{const b=${$('busyDots')}.querySelector('i.rb.bye');return b.dataset.mark==='m1' && getComputedStyle(b).backgroundPositionX==='-216px' && getComputedStyle(b).animationName==='aj-busy-rb-bow'})()`), 'the finished one bows');
             await waitFor(p, `${$('busyDots')}.querySelectorAll('i.rb').length===3 && !${$('busyDots')}.querySelector('.bye')`, 4000);
             check(await evaluate(p, `[...${$('busyDots')}.querySelectorAll('i.rb')].map(i=>i.dataset.mark||'new').join()`) === 'm0,m2,new', 'the rest close up');
             // six at 390 px: right of the time, inside the card
@@ -330,7 +330,7 @@ export async function runP154() {
             await waitFor(p, `!${$('busyDlg')}.hidden`);
             const big = await evaluate(p, `[...document.querySelectorAll('#busyBig i.rb')].map(i=>{const cs=getComputedStyle(i),b={width:i.offsetWidth,height:i.offsetHeight};return [b.width,b.height,/robots-12\\.png/.test(cs.backgroundImage),cs.backgroundSize,cs.animationName].join()})`);
             check(big.length === 3 && big.every((x) => x === '24,24,true,312px 384px,rb-dance-24'), `24 px robots in the dialog ${big[0]}`);
-            check(await evaluate(p, `[...document.querySelectorAll('#busyList li > i.rb')].every(i=>i.offsetHeight===24 && getComputedStyle(i).animationName==='rb-dance-24')`), '追加 11: a 24 px robot leads each row');
+            check(await evaluate(p, `[...document.querySelectorAll('#busyList li > i.rb')].every(i=>i.offsetHeight===24 && getComputedStyle(i).animationName==='aj-busy-rb-dance-24')`), '追加 11: a 24 px robot leads each row');
             await evaluate(p, `document.getAnimations().forEach(a=>{a.pause();a.currentTime=1000})`);
             writeFileSync(join(OUT, `${lang}-${theme}-robots-dialog.png`), await shoot(p, ''));
             await evaluate(p, `document.getAnimations().forEach(a=>a.play())`);
@@ -521,7 +521,7 @@ export async function runP154() {
               await fake.send({ t: 'busy', by: 'AgentJ-Father', tasks: [], load: v });
               await waitFor(p, `${$('loadLine')}.dataset.load===${JSON.stringify(String(Math.min(1, v)))}`);
               const a = await after();
-              check(a.d === 'block' && a.n === 'll-slide' && a.dur === dur, `load ${v} → one way ${dur} ` + JSON.stringify(a));
+              check(a.d === 'block' && a.n === 'aj-busy-ll-slide' && a.dur === dur, `load ${v} → one way ${dur} ` + JSON.stringify(a));
             }
             await sleep(200);
             const ln = await box(p, '#loadLine'), ag = await box(p, '#agent'), tm = await box(p, '#rmTime'), wd = await box(p, '#words');

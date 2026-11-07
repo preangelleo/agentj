@@ -26,7 +26,7 @@ export function paint(root, page) {
     if (quote && quote !== root) continue;
     const cmd = command(pre.querySelector('code')?.textContent, pre.dataset.lang);
     if (!cmd) continue;
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'term-command';
+    const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-terminal'); b.type = 'button'; b.className = 'term-command';
     const risk = dangerous(cmd); b.classList.toggle('term-command--danger', risk);
     b.textContent = t('terminal.execute'); b.title = t(risk ? 'terminal.danger' : 'terminal.draft');
     b.setAttribute('aria-label', b.textContent + ' · ' + b.title);

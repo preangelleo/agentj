@@ -23,7 +23,7 @@ export function keyTokens(id, { rows = ROWS, keyboard = hasKeyboard(), mac = isM
 }
 function kbds(tokens) {
   const f = document.createDocumentFragment();
-  tokens.forEach((tok, i) => { if (i) f.append('+'); const k = document.createElement('kbd'); k.textContent = tok; f.append(k); });
+  tokens.forEach((tok, i) => { if (i) f.append('+'); const k = document.createElement('kbd'); k.setAttribute('data-aj-owner','aj-settings-control'); k.textContent = tok; f.append(k); });
   return f;
 }
 export function paint() {

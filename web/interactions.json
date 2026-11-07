@@ -2478,6 +2478,144 @@
       "gesture_en": "Tap put away"
     },
     {
+      "id": "appr.question",
+      "since": "0.28.0",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": "#doubt541c",
+        "zh": "我有疑问",
+        "en": "I have a question"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "询问这张审批卡的来源和范围，不批准操作",
+      "en": "Ask the main agent to explain this approval without approving it",
+      "gesture_zh": "点我有疑问",
+      "gesture_en": "Tap I have a question",
+      "nokey": "点击该控件"
+    },
+    {
+      "id": "appr.source",
+      "since": "0.28.0",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": "#source541",
+        "zh": "审批来源消息",
+        "en": "Approval source message"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "跳到原始消息并高亮，审批卡收起",
+      "en": "Locate and highlight the original message while folding the approval",
+      "gesture_zh": "点审批来源消息",
+      "gesture_en": "Tap Approval source message",
+      "nokey": "点击该控件"
+    },
+    {
+      "id": "appr.details",
+      "since": "0.28.0",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": "#details541>summary",
+        "zh": "命令详情",
+        "en": "Command details"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "展开或收起命令详情",
+      "en": "Expand or fold command details",
+      "gesture_zh": "点命令详情",
+      "gesture_en": "Tap Command details",
+      "nokey": "点击该控件"
+    },
+    {
+      "id": "appr.details_full",
+      "since": "0.28.0",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": "#detailsFull541",
+        "zh": "全屏查看命令",
+        "en": "View command full screen"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "全屏查看安全脱敏的命令详情",
+      "en": "View redacted command details full screen",
+      "gesture_zh": "点全屏查看命令",
+      "gesture_en": "Tap View command full screen",
+      "nokey": "点击该控件"
+    },
+    {
+      "id": "appr.reopen",
+      "since": "0.28.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#reopen541",
+        "zh": "重新弹出，我来审批",
+        "en": "Reopen for my approval"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "重新核对并打开原审批卡，仍须本人确认",
+      "en": "Recheck and reopen the original card; identity confirmation is still required",
+      "gesture_zh": "点重新弹出，我来审批",
+      "gesture_en": "Tap Reopen for my approval",
+      "nokey": "点击该控件"
+    },
+    {
+      "id": "appr.heartbeat",
+      "since": "0.28.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#pending541",
+        "zh": "待审批心跳点",
+        "en": "Pending approval heartbeat"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "打开收起的待审批卡",
+      "en": "Open the pending approval you put away",
+      "gesture_zh": "点待审批心跳点",
+      "gesture_en": "Tap Pending approval heartbeat",
+      "nokey": "点击该控件"
+    },
+    {
       "id": "app.pages_menu",
       "since": "0.21.0",
       "impl": "table",
@@ -3355,6 +3493,190 @@
       "gesture_zh": "点复制连接地址",
       "gesture_en": "Tap Copy connection URL",
       "nokey": "Infrequent settings action; use standard form keyboard navigation"
+    },
+    {
+      "id": "app.assist_terminal_grant",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-grant",
+        "zh": "官方终端协助授权",
+        "en": "Official terminal assistance consent"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "准备并授权官方终端协助",
+      "en": "Prepare and authorize official terminal assistance",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Owner confirmation requires an explicit click"
+    },
+    {
+      "id": "app.assist_terminal_view",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-open",
+        "zh": "官方终端旁观",
+        "en": "Official terminal observer"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "打开只读终端旁观画面",
+      "en": "Open the read-only terminal observer",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Owner confirmation requires an explicit click"
+    },
+    {
+      "id": "app.assist_terminal_stop",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-stop, #ast-banner-stop, #ast-float-stop, #ast-card-stop",
+        "zh": "终止官方协助",
+        "en": "End official assistance"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "立即终止当前官方协助",
+      "en": "End the current official assistance session",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Owner confirmation requires an explicit click"
+    },
+    {
+      "id": "app.assist_terminal_log",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-log",
+        "zh": "官方协助日志",
+        "en": "Official assistance activity log"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "查看操作日志和修复报告",
+      "en": "View the activity log and repair report",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Owner confirmation requires an explicit click"
+    },
+    {
+      "id": "app.assist_terminal_discover_retry",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-discovery-retry, #ast-card-retry",
+        "zh": "重试通知官方协助",
+        "en": "Retry the official assistance notification"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "重试将已授权会话通知给官方",
+      "en": "Retry notifying support of the authorized session",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Owner confirmation requires an explicit click"
+    },
+    {
+      "id": "app.assist_terminal_log_earlier",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-log-earlier",
+        "zh": "官方协助更早日志",
+        "en": "Earlier official assistance log records"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "查看当前协助更早的一页操作记录",
+      "en": "View the previous page of activity for this assistance session",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Read-only log page control"
+    },
+    {
+      "id": "appr.assist_terminal_answer",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-yes, #ast-no",
+        "zh": "官方协助操作确认",
+        "en": "Official assistance operation confirmation"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "批准或拒绝官方请求的操作",
+      "en": "Approve or deny the helper’s requested operation",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Owner confirmation requires an explicit click"
+    },
+    {
+      "id": "appr.assist_terminal_login",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-login-yes, #ast-login-no",
+        "zh": "官方协助电脑密码确认",
+        "en": "Computer password confirmation for official assistance"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "确认或取消本次 Agent J 主机登录密码验证",
+      "en": "Confirm or cancel this Agent J host login password verification",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Owner confirmation requires an explicit click"
     }
   ]
 }

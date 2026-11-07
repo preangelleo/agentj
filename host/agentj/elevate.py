@@ -99,16 +99,17 @@ def _h(s: str) -> str:
 def shown_fields(card: dict) -> list[str]:
 
     if card["kind"] == "sudo":
-        return [card["cmd"], card["why"], card.get("effect") or ""]
-    if card["kind"] == "login":
-        return [card["term"]]
-    if card["kind"] == "vshare":
-        return [card["dev"], card["cred"], str(card["paired"]), ",".join(card["flags"])]
-    fields = [card["name"], card["purpose"], card["dest"], card.get("verify") or ""]
-    if card.get("auth"):
+        fields = [card["cmd"], card["why"], card.get("effect") or ""]
+    elif card["kind"] == "login":
+        fields = [card["term"]]
+    elif card["kind"] == "vshare":
+        fields = [card["dev"], card["cred"], str(card["paired"]), ",".join(card["flags"])]
+    else:
+        fields = [card["name"], card["purpose"], card["dest"], card.get("verify") or ""]
+    if card.get("auth") and card['kind'] not in ('sudo', 'login', 'vshare'):
         a = card["auth"]
         fields += [str(a.get(k, "")) for k in ("kind", "url", "code", "expires_at", "round", "rounds")]
-    return fields
+    return fields + ([card['envelope_sha256']] if card.get('envelope_sha256') else [])
 
 
 def shown_digest(kind: str, fields: list[str]) -> str:
@@ -230,6 +231,9 @@ def norm_sudo(req: dict) -> dict:
             not all(isinstance(a, str) and a and "\x00" not in a and len(a) <= 4096 for a in argv):
         raise Refused("shape", "argv: 1–256 non-empty strings")
     cmd = shlex.join(argv)
+    from .approval_review import safe_text
+    if safe_text(cmd, 24000) != cmd:
+        raise Refused("inline_credentials", "Use a managed credential reference, not a literal secret in command arguments.")
     if len(cmd) > 2000 or wire.text_problem(cmd.replace("\n", " ").replace("\t", " "), 2000):
         raise Refused("shape", "the command is too long to show on a phone (≤ 2000 characters)")
     cwd = req.get("cwd") or "/"
@@ -245,7 +249,8 @@ def norm_sudo(req: dict) -> dict:
     why = _text(req.get("why"), 300, required=True, field="why")
     if why_problem(why, cmd):
         raise Refused("why", WHY_DETAIL)
-    effect = _text(req.get("effect"), 300, required=False, field="effect")
+    why = safe_text(why, 300)
+    effect = safe_text(_text(req.get("effect"), 300, required=False, field="effect"), 300)
     if local_auth_risk():
         effect = (effect[:50] + "\n" + "本机 sudo 启用了生物验证，可能弹 Touch ID；此命令将拒绝执行。请在Agent J 主机前关闭 sudo Touch ID，见 /docs/keep-awake/。 / Local sudo biometrics may open Touch ID. Command will be refused; disable sudo Touch ID locally first. See /docs/keep-awake/.").strip()
     return {"kind": "sudo", "argv": list(argv), "cmd": cmd, "cwd": cwd, "timeout": timeout,
@@ -499,7 +504,7 @@ class _PasswordWatch:
 
 
 def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo: str | None = None, cancel=None,
-             watch=None) -> dict:
+             watch=None, *, _verify_only=False) -> dict:
 
     if local_auth_risk():
         return {"result": "failed", "why": "local_auth_required", "code": None, "stdout": "", "stderr": "", "truncated": False,
@@ -516,7 +521,8 @@ def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo:
     buf[:len(password)] = password
     buf[-1] = 0x0A
     try:
-        p = subprocess.Popen([sudo, "-S", "-k", "-p", marker, "--", *argv], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        p = subprocess.Popen([sudo, "-S", "-k", "-p", marker, *(["-v"] if _verify_only else ["--", *argv])],
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE, cwd=cwd, env=env, start_new_session=True)
     except OSError:
         wipe(buf)
@@ -552,6 +558,21 @@ def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo:
     e, t2 = _cap(err)
     return {"result": "done", "code": p.returncode, "stdout": o, "stderr": e, "truncated": overflow or t1 or t2,
             "prompts": prompts}
+
+
+
+def verify_sudo_password(password, cwd, timeout, sudo=None, cancel=None) -> str | None:
+    """Verify a requested save after NOPASSWD, without running the command again.
+
+    sudo -k -v ignores and does not update cached credentials. Some policies also
+    waive authentication for -v: success without exactly one prompt is NOT proof.
+    Only a fixed classification escapes this function, never validation output.
+    """
+    res = run_sudo([], password, cwd, min(timeout, 15), sudo, cancel, _verify_only=True)
+    if res.get("result") == "done" and res.get("code") == 0:
+        return None if res.get("prompts") == 1 else "verify:unverified"
+    return {"bad_password": "verify:bad_password", "timeout": "verify:timeout",
+            "no_sudo": "verify:unavailable"}.get(res.get("result"), "verify:failed")
 
 
 
@@ -806,6 +827,8 @@ class Elevator:
         self.bg: set[asyncio.Task] = set()
         self.completed: dict[str, dict] = {}
         self.secret_waiters: dict[str, int] = {}
+        self.review_requests: set[asyncio.Task] = set()
+        self.review_operations: dict[str, dict] = {}
         self.server = None
         self.sudo = None
         self.helper_status = None
@@ -850,6 +873,9 @@ class Elevator:
             if c.get("cancel") is not None:
                 c["cancel"].set()
         self.grants.clear("gone")
+        self.cancel_all('gone')
+        if self.review_requests:
+            await asyncio.gather(*list(self.review_requests), return_exceptions=True)
         if self.bg:
             await asyncio.gather(*list(self.bg), return_exceptions=True)
         self.cancel_all("gone")
@@ -896,6 +922,8 @@ class Elevator:
                 m["stale"] = 1
         elif c["kind"] == "login":
             m["term"] = c["term"]
+            if isinstance(c.get("assist_gid"), str):
+                m["assist_gid"] = c["assist_gid"]
         elif c["kind"] == "vshare":
             m.update(dev=c["dev"], name=c["name"], cred=c["cred"], paired=c["paired"], flags=list(c["flags"]), tries=1)
             v = self._vault_view(c, s.device if s is not None else None)
@@ -918,7 +946,8 @@ class Elevator:
         pk = self.st.passkey_of_device(s.device) if s is not None and s.device else None
         if pk:
             m["fa"], m["fa_s"] = pk["id"], passkey.pk_state(pk)
-        return m
+        from . import approval_special
+        return approval_special.decorate(c, m)
 
     async def _to_phones(self, obj_fn, only=None) -> None:
         if not only:
@@ -1016,6 +1045,9 @@ class Elevator:
 
     def _finish(self, c: dict, result: dict) -> None:
         if not c["fut"].done():
+            adapter = c.get('review_adapter')
+            if adapter is not None and result.get('result') != 'retry':
+                adapter.ended(result.get('result'))
             c["fut"].set_result(result)
 
     def cancel_all(self, result: str) -> None:
@@ -1029,13 +1061,88 @@ class Elevator:
             self.help.end_all(result)
             self.contacts.end_all(result)
 
+    async def request_native_scheduler(self, authority) -> dict:
+        from . import native_scheduler_control as native
+        if type(authority) is not native._NativePlan or authority.host is not self.host:
+            raise Refused('native_authority')
+        authority.live()
+        english = getattr(self.host, 'lang', 'zh') == 'en'
+        restoring = authority.target['op'] == 'restore'
+        operation = ('Restore' if restoring else 'Disable') if english else ('恢复' if restoring else '停用')
+        card = {'kind':'sudo', 'argv':['native-scheduler-fixed-plan'],
+                'cmd':operation + (' system scheduled task ' if english else '系统定时任务 ') + authority.target['id'],
+                'why':('Confirm the host administrator password for this task.' if english else '确认主机管理员密码以操作这个任务。'),
+                'effect':('Only this task’s schedule changes. Disabling keeps the task and can be reversed.' if english
+                          else '只改这个任务的调度，停用不删除，可恢复。'),
+                'cwd':'/', 'timeout':120, 'only':authority.session.device,
+                '_native_scheduler_nonce':authority.nonce,
+                '_native_scheduler_plan_digest':authority.digest,
+                '_native_scheduler_bootstrap_digest':authority.bootstrap_digest}
+        authority.request_card = card
+        return await self.request(card)
+
+    def _native_plan(self, card):
+        from . import native_scheduler_control as native
+        nonce = card.get('_native_scheduler_nonce')
+        authority = self.host.__dict__.get('_native_scheduler_plans', {}).get(nonce)
+        if type(authority) is native._NativePlan and authority.host is self.host and authority.card is card:
+            return authority
+        return None
+
+    def _source_allows(self, card):
+        from . import approval_special
+        if '_native_scheduler_nonce' not in card:
+            return approval_special.source_allows(card, self.host)
+        authority = self._native_plan(card)
+        try:
+            if authority is None or not authority.live():
+                return False
+            adapter = card.get('review_adapter')
+            if adapter is None:
+                return True
+            source = adapter.envelope['source']
+            return (adapter.card is card and adapter.host is self.host and not adapter.terminal
+                    and self.host.__dict__.get('_approval_special', {}).get(adapter.rid) is adapter
+                    and source.get('verified') is True and source.get('suspicious') is not True)
+        except Exception:
+            return False
+
     async def request(self, card: dict, gone: asyncio.Future | None = None, on_card=None) -> dict:
+        from . import approval_review
+        operation = approval_review.digest({'card': card, 'origin': approval_review.snapshot(self.host)}) if card.get('kind') in ('sudo', 'secret') else None
+        old = self.review_operations.get(operation) if operation else None
+        if old is not None and old.get('review_detached'):
+            if old['fut'].done():
+                result = old['fut'].result()
+                return {'result': result.get('result'), 'id': old['id'], 'already_requested': True}
+            return {'result': 'questioned', 'id': old['id'], 'not_executed': True}
+        pause = asyncio.get_running_loop().create_future()
+        worker = asyncio.create_task(self._request_impl(card, gone, on_card, pause, operation))
+        self.review_requests.add(worker)
+        worker.add_done_callback(self.review_requests.discard)
+        try:
+            done, _ = await asyncio.wait((worker, pause), return_when=asyncio.FIRST_COMPLETED)
+            if worker in done:
+                return await worker
+            return {'result': 'questioned', 'id': pause.result(), 'not_executed': True,
+                    'detail': 'The card remains pending. Explain in the main thread; do not repeat the operation.'}
+        except asyncio.CancelledError:
+            worker.cancel()
+            raise
+
+    async def _request_impl(self, card, gone, on_card, review_pause, operation) -> dict:
 
         if self.host.stopped():
             return {"result": "stopped"}
+        native_authority = None
+        if '_native_scheduler_nonce' in card:
+            native_authority = self.host.__dict__.get('_native_scheduler_plans', {}).get(card['_native_scheduler_nonce'])
+            if native_authority is None or getattr(native_authority, 'request_card', None) is not card:
+                return {'result':'failed', 'why':'native_authority'}
+            native_authority.live()
         from . import provenance
         unattended = provenance.unattended_turn(getattr(self.host, "agent", None))
-        if card["kind"] not in ("login", "vshare") and provenance.untrusted_turn(getattr(self.host, "agent", None)) \
+        if native_authority is None and card["kind"] not in ("login", "vshare") and provenance.untrusted_turn(getattr(self.host, "agent", None)) \
                 and not provenance.delegated_turn(getattr(self.host, "agent", None)) and not unattended:
             audit(self.st, None, kind=card.get("kind"), result="group_source", reason="group_source")
             recovery = getattr(getattr(self.host, 'background_done', None), 'recovery', None)
@@ -1051,15 +1158,38 @@ class Elevator:
             audit(self.st, None, kind=card.get("kind"), result="no_device", reason="no_device")
             return {"result": "no_device"}
         same_owner_task = provenance.same_owner_source(getattr(self.host, "agent", None)) or bool(unattended)
-        if card["kind"] == "sudo" and not same_owner_task and (auto := await self.grants.auto(card, gone)) is not None:
+        if card["kind"] == "sudo" and native_authority is None and not same_owner_task and (auto := await self.grants.auto(card, gone)) is not None:
             return auto
         c = dict(card, id=secrets.token_hex(16), fails=0, fut=asyncio.get_running_loop().create_future())
+        if native_authority is not None:
+            native_authority.card = c
+            from .native_scheduler_control import digest as native_digest
+            native_authority.card_binding = native_digest({k:c.get(k) for k in ('id','argv','cmd','why','effect','only','_native_scheduler_nonce','_native_scheduler_plan_digest','_native_scheduler_bootstrap_digest')})
         if c["kind"] == "sudo":
-            c["helper"] = [] if interpreter_command(c["argv"]) else self.helper_devices()
+            c["helper"] = [] if native_authority is not None or interpreter_command(c["argv"]) else self.helper_devices()
             from .elevate_grant import scope_of
-            c["scope"], c["grant"] = scope_of(self.host), None if same_owner_task else self.grants.offer(c)
+            c["scope"], c["grant"] = scope_of(self.host), None if same_owner_task or native_authority is not None else self.grants.offer(c)
         c["digest"] = shown_digest(c["kind"], shown_fields(c))
         self._arm(c)
+        if c['kind'] in ('sudo', 'secret', 'login', 'vshare'):
+            from . import approval_special
+            if c['kind'] in ('sudo', 'secret'):
+                c['review_pause'] = review_pause
+            def rotate():
+                deadline = c['deadline']
+                self._arm(c)
+                c['deadline'] = deadline
+            tool = {'sudo': 'AdminCommand', 'secret': 'SecretInput', 'login': 'TerminalUnlock', 'vshare': 'PasswordShare'}[c['kind']]
+            action = c.get('why') or c.get('purpose') or c.get('name') or ('解锁网页终端' if c['kind'] == 'login' else '允许这台设备使用保存的 Agent J 主机登录密码')
+            approval_special.attach(self.host, c, tool=tool, action=action, fields=shown_fields(c),
+                render=lambda session: self.card_msg(c, session), rotate=rotate,
+                finish=lambda result: self._finish(c, {'result': result}),
+                refresh=lambda: c.update(digest=shown_digest(c['kind'], shown_fields(c))),
+                visible=lambda session: self._sees(c, session))
+            if operation:
+                self.review_operations[operation] = c
+                while len(self.review_operations) > 64:
+                    self.review_operations.pop(next(iter(self.review_operations)))
         self.cards[c["id"]] = c
         self.st.log("elev_card", id=c["id"], kind=c["kind"])
         if c["kind"] == "secret":
@@ -1085,7 +1215,7 @@ class Elevator:
             await self._deliver_card(lambda s: self.card_msg(c, s), only, c["id"])
             while True:
                 self._remind_card(c)
-                waits = [c["fut"]] + ([gone] if gone is not None else [])
+                waits = [c["fut"]] + ([gone] if gone is not None and not c.get('review_detached') else [])
                 left = c["deadline"] - time.monotonic()
                 await asyncio.wait(waits, timeout=min(1.0, max(0.0, left)), return_when=asyncio.FIRST_COMPLETED)
                 if c["fut"].done():
@@ -1095,7 +1225,7 @@ class Elevator:
                         await self._deliver_card(lambda s: self.card_msg(c, s), only, c["id"])
                         continue
                     break
-                if gone is not None and gone.done() and not c.get("busy"):
+                if gone is not None and gone.done() and not c.get("busy") and not c.get('review_detached'):
                     res = {"result": "gone"}
                     break
                 if time.monotonic() >= c["deadline"] and not c.get("busy"):
@@ -1114,6 +1244,8 @@ class Elevator:
         finally:
             self.cards.pop(c["id"], None)
             c.pop("priv", None)
+        if c.get('review_adapter') is not None:
+            c['review_adapter'].ended(res['result'])
         if c["kind"] == "secret" and res.get("result") == "saved" and not res.get("elsewhere") and \
                 (res.get("receipt") or {}).get("verify") != "fail":
             self._saved_elsewhere(c, res)
@@ -1223,6 +1355,8 @@ class Elevator:
                       grant_sha256=obj.get("grant") if ok else None,
                       passkey="uv" if ok and self.st.passkey_of_device(s.device) else None)
         if not ok:
+            if c.get('review_adapter') is not None:
+                c['review_adapter'].denied()
             audit(self.st, c, result="denied", reason="device", **signed)
             return self._finish(c, {"result": "denied", "_logged": True})
         c["busy"] = True
@@ -1325,6 +1459,7 @@ class Elevator:
               sig=obj["sig"], n=obj["n"], sig_ts=obj["ts"], decision="stop", channel=self.host.channel)
 
     async def _execute(self, c, s, obj, signed, nonce, priv) -> None:
+        from . import approval_special
         progress = asyncio.create_task(self._progress(c))
         worker = asyncio.create_task(self._execute_approved(c, s, obj, signed, nonce, priv))
         try:
@@ -1335,6 +1470,11 @@ class Elevator:
 
                 await worker
                 raise
+        except approval_special.AuthorityChanged:
+            c['cancel'].set()
+            c['busy']=False
+            audit(self.st,c,result='unknown',reason='authority_changed',**signed)
+            self._finish(c,{'result':'unknown','why':'authority_changed','_logged':True})
         except Exception:
             c["busy"] = False
             audit(self.st, c, result="failed", reason="execution", **signed)
@@ -1345,14 +1485,28 @@ class Elevator:
                 await progress
 
     async def _execute_approved(self, c, s, obj, signed, nonce, priv) -> None:
+        from . import approval_special
+        approval_key=wire.unb64u(signed['sk'])
+        def ensure_live():
+            if (c.get('revoked') or self.host.stopped() or c['cancel'].is_set()
+                    or self.host.sessions.get(s.cid) is not s or self.st.sign_key(s.device)!=approval_key
+                    or not self.st.is_allowed(s.pub) or not self._source_allows(c)):
+                raise approval_special.AuthorityChanged()
+        c['_approval_execution_guard']=ensure_live
+        ensure_live()
         if c.get('revoked') or not self.st.is_allowed(s.pub):
             c['busy']=False
             return self._finish(c, {'result':'denied'})
         if "ct" not in obj:
+            if '_native_scheduler_nonce' in c:
+                raise approval_special.AuthorityChanged()
             from . import elevate_helper
             req = {"channel": self.host.channel, "device": s.device, "id": c["id"], "n": nonce, "ts": obj["ts"], "sig": obj["sig"],
                    "argv": c["argv"], "why": c["why"], "effect": c.get("effect") or "", "cwd": c["cwd"]}
+            if c.get('envelope_sha256'):
+                req['envelope_sha256'] = c['envelope_sha256']
             res = await asyncio.to_thread(elevate_helper.run, req, c["timeout"], self.sudo, self.helper_cmd, c["cancel"])
+            ensure_live()
             if c.get("stop_by") and res.get("result") == "timeout":
                 res["result"] = "stopped"
             audit(self.st, c, result=res["result"], reason="helper", code=res.get("code"), **signed)
@@ -1385,6 +1539,11 @@ class Elevator:
                                               vv.get("vn"))
             finally:
                 wipe(value)
+            try:ensure_live()
+            except approval_special.AuthorityChanged:
+                if got is not None:wipe(got[1])
+                wipe(save_prf)
+                raise
             if got is None:
                 c.setdefault("no_vault", set()).add(s.device)
                 c["busy"] = False
@@ -1400,20 +1559,38 @@ class Elevator:
         keep = bytearray(value) if c.get("want_grant") and c["kind"] == "sudo" else None
         res = None
         try:
+            ensure_live()
             if c["kind"] == "sudo":
-                res = await asyncio.to_thread(run_sudo, c["argv"], value, c["cwd"], c["timeout"], self.sudo, c["cancel"],
-                                              c.get("live"))
+                native_authority = self._native_plan(c)
+                if '_native_scheduler_nonce' in c:
+                    if native_authority is None:
+                        raise approval_special.AuthorityChanged()
+                    res = await native_authority.execute(self, c, value)
+                else:
+                    res = await asyncio.to_thread(run_sudo, c["argv"], value, c["cwd"], c["timeout"], self.sudo, c["cancel"],
+                                                  c.get("live"))
+                ensure_live()
                 why = None   # 0.26.9 #482: a requested save that is not kept is logged (names only), never silent
-                if save_prf is not None and res.get("result") == "done" and res.get("prompts") == 1 and vv.get("save"):
+                verified = res.get("prompts") == 1
+                if save_prf is not None and res.get("result") == "done" and res.get("prompts") == 0 and vv.get("save"):
+                    try:
+                        why = await asyncio.to_thread(verify_sudo_password, value, c["cwd"], c["timeout"], self.sudo, c["cancel"])
+                    except Exception:
+                        why = "verify:error"  # no exception text or validation output reaches receipts/logs
+                    ensure_live()
+                    verified = why is None
+                if save_prf is not None and res.get("result") == "done" and verified and vv.get("save"):
                     from . import term_vault
                     pk = self.st.passkey_of_device(s.device)
-                    why = "no_passkey" if not pk else "temporary" if self._temporary(s.device) else None
+                    why = "revoked" if c.get("revoked") or c["cancel"].is_set() or not self.st.is_allowed(s.pub) else \
+                        "no_passkey" if not pk else "temporary" if self._temporary(s.device) else None
                     if why is None:
                         p1, p2 = term_vault.split_prf(save_prf)
                         try:
                             try:
                                 await asyncio.to_thread(term_vault.create, self.st, self.host.channel, s.device, pk["id"],
                                                         "prf", vv["save"], value, p1)
+                                ensure_live()
                                 res["saved"] = 1
                             except (OSError, ValueError) as e:
                                 why = "store:" + type(e).__name__
@@ -1421,15 +1598,22 @@ class Elevator:
                             wipe(p1)
                             wipe(p2)
                 elif save_prf is not None and res.get("result") == "done":
-                    why = "unverified" if res.get("prompts") != 1 else "no_salt"
+                    why = why or ("unverified" if not verified else "no_salt")
                 if why:
                     self.st.log("vault_save", id=c["id"], device=s.device, result="not_saved", why=why)
             elif c["kind"] == "vshare":
                 res = await asyncio.to_thread(c["sink"], value, s.device, vv.get("vn"))
+                ensure_live()
             else:
                 res = await asyncio.to_thread(self._save, c, value)
+                ensure_live()
                 if res.get("result") == "saved":
                     await self._reload_saved_env(c, res)
+                    ensure_live()
+        except approval_special.AuthorityChanged:
+            wipe(keep)
+            keep=None
+            raise
         finally:
             wipe(value)
             wipe(save_prf)
@@ -1489,6 +1673,11 @@ class Elevator:
         self._finish(c, res)
 
     def _check(self, s, c: dict, obj: dict) -> str | None:
+        from . import approval_special
+        if obj.get('ok') is True and not self._source_allows(c):
+            return 'unverified_trigger'
+        if not approval_special.pending(c) and obj.get('ok') is not False:
+            return 'questioned'
         ok, n, ts, sig = obj.get("ok"), obj.get("n"), obj.get("ts"), obj.get("sig")
         if not isinstance(ok, bool) or not isinstance(n, str) or not isinstance(sig, str) or len(sig) > 100 \
                 or type(ts) is not int:
@@ -1592,6 +1781,14 @@ class Elevator:
             self.st.log("secret_env_reload", result="failed")
 
     def _save(self, c: dict, value: bytearray) -> dict:
+        from . import approval_special
+        def ensure_source():
+            if c.get('review_adapter') is not None:
+                guard=c.get('_approval_execution_guard')
+                if not callable(guard):raise approval_special.AuthorityChanged()
+                guard()
+            if not self._source_allows(c):raise approval_special.AuthorityChanged()
+        ensure_source()
         if len(value) > MAX_VALUE:
             return {"result": "failed", "why": "value"}
         if callable(c.get("sink")):
@@ -1604,6 +1801,7 @@ class Elevator:
             verified = verify_secret(c, value)
             if verified.get('verify') != 'ok':
                 return {'result': 'failed', 'why': 'verify', 'detail': verified.get('detail', ''), **_key_hint(c, value)}
+        ensure_source()
         try:
             write_secret(c["dest_spec"], value)
         except Refused as e:
@@ -1773,6 +1971,7 @@ class Elevator:
         gone = asyncio.get_running_loop().create_future()
         watch = None
         peer = None
+        origin_token = None
         try:
             sock = w.get_extra_info("socket")
             if sock is not None and hasattr(socket, "SO_PEERCRED"):
@@ -1782,6 +1981,13 @@ class Elevator:
                     return
             line = await asyncio.wait_for(r.readline(), 10)
             req = json.loads(line)
+            if isinstance(req, dict) and req.get("t") in ("sudo", "secret", "secret_out"):
+                from . import bounded_plan, approval_review, provenance, ctl_auth
+                incoming_origin = bounded_plan.caller_origin(self.host, peer)
+                if incoming_origin is None and ctl_auth.refusal(peer, os.getpid(), self.host._agent_pids()) is None and ctl_auth.has_tty(peer):
+                    turn = self.host.hist_add({"k": "host", "name": "Agent J 主机", "text": "本人在本机终端发起这项受控操作。"}, "", "done")
+                    incoming_origin = approval_review.remember(self.host, turn, provenance.terminal())
+                origin_token = approval_review.ORIGIN.set(incoming_origin or {})
             if isinstance(req, dict) and req.get("t") == "keep_awake":
                 from . import keep_awake
                 if req.get("action") not in ("status", "on", "off") or req.get("power") not in ("ac", "battery", "all") or type(req.get("dry_run")) is not bool \
@@ -1813,6 +2019,13 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
+            if isinstance(req, dict) and req.get("t") == "privacy_check":
+                from . import privacy_host
+                res = await privacy_host.handle(self.host, req, peer_pid=peer)
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
             if isinstance(req, dict) and req.get("t") == "report_local":
                 from . import report_host
                 res = (await asyncio.to_thread(report_host.execute, req) if peer is not None
@@ -1822,13 +2035,19 @@ class Elevator:
                 w.close()
                 return
             if isinstance(req, dict) and req.get("t") == "host_diagnostics":
-                from . import host_diagnostics, approval_level, provenance
+                from . import host_diagnostics, approval_level, provenance, approval_material, privacy_host
                 external_send = req.get("op") in ("support", "feedback_send") and (
                     provenance.owner_grant_required(getattr(self.host, "agent", None)) or (
                         provenance.untrusted_turn(getattr(self.host, "agent", None))
                         and not approval_level.autonomous(self.host)))
-                res = ({"exit": 1, "output": "External data cannot authorize support or feedback sending.\n"} if external_send
-                       else await asyncio.to_thread(host_diagnostics.execute, self.st, req))
+                why = host_diagnostics.caller_refusal(req, sock, self.host)
+                if why:
+                    res = host_diagnostics.refused(why)
+                else:
+                    with approval_material.capture(self.host, peer, req) as captured, privacy_host.broker_scope(self.host, peer):
+                        res = ({"exit": 1, "output": "External data cannot authorize support or feedback sending.\n"} if external_send
+                               else await asyncio.to_thread(host_diagnostics.execute, self.st, req))
+                    res = approval_material.finish_capture(self.host, captured, peer, req, res)
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
                 await w.drain()
                 w.close()
@@ -2023,6 +2242,16 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
+            if isinstance(req, dict) and req.get("t") == "form":
+                # P212 (§29): `agentj ask` — the form store lives outside the Agent fence; the host re-validates the form,
+                # puts it on the page and answers at once (the owner's answers arrive later as their own message).
+                # Same-UID socket evidence is required, never a request-supplied identity.
+                res = (await self.host.forms.agent(req) if peer is not None else
+                       {"ok": False, "result": "refused", "why": "peer_unverified"})
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
             if isinstance(req, dict) and req.get("t") in ("contacts", "mail_send"):
 
 
@@ -2035,6 +2264,12 @@ class Elevator:
                     res = await self.contacts.card(req, early if req.get("early") is True else None)
                 else:
                     res = await self.contacts.agent(req)
+            elif isinstance(req, dict) and req.get("t") in ("core_mcp", "core_order"):
+                # Harness owner-controlled requests use the existing authenticated host socket.
+                from .core import hostside
+                from .core.process_evidence import peer_pid
+                core_peer = peer_pid(w)
+                res = await hostside.handle(self.host, req, peer=core_peer)
             elif isinstance(req, dict) and req.get("t") == "secret_out":
                 res = await self.out.send(req)
             elif isinstance(req, dict) and req.get("t") == "browser_login":
@@ -2134,6 +2369,9 @@ class Elevator:
         except (OSError, ConnectionError):
             return
         finally:
+            if origin_token is not None:
+                from .approval_review import ORIGIN
+                ORIGIN.reset(origin_token)
             if watch:
                 watch.cancel()
         with contextlib.suppress(OSError, ConnectionError):
@@ -2189,6 +2427,7 @@ def client_request(st, req: dict, timeout: float = CMD_TIMEOUT_MAX + 400, on_car
 
 
 MSG = {
+    "questioned": "主人对这张卡有疑问，操作尚未执行，原卡仍在等待。请在主线程解释，不要重新发起或重复执行。/ The owner questioned this card. Nothing has run; the original card remains pending. Explain in the main thread; do not repeat the request or operation.",
     "denied": "手机上拒绝了。/ Declined on the phone.",
     "timeout": "手机上没人处理，卡片已过期。/ Nobody answered on the phone; the card expired.",
     "gone": "命令提前结束，卡片已撤回（sudo 卡要这条命令一直等到手机处理）。请用 10 分钟的 shell 超时重新运行。/ The command ended "

@@ -40,7 +40,7 @@ test('readings: measured time and the stale mark travel to the bar and the usage
   assert.deepEqual(w.map((x) => [x.window, x.at, !!x.stale]), [['weekly', at, true], ['5h', at, false]]);
   assert.deepEqual(quotaWindows({ week_pct: 5 }).map((x) => Object.keys(x).sort()), [['pct', 'window']], 'unknown time: nothing added');
   const { quotaRows } = await import('../public/js/usagedlg.js');
-  const node = (tag) => ({ tag, style: { setProperty() {} }, dataset: {}, kids: [], classList: { add() {} },
+  const node = (tag) => ({ tag, style: { setProperty() {} }, dataset: {}, attributes: {}, setAttribute(k,v) { this.attributes[k]=String(v); }, kids: [], classList: { add() {} },
     append(...k) { this.kids.push(...k); } });
   const had = document.createElement;
   document.createElement = node;

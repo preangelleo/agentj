@@ -26,18 +26,18 @@ test('P303 cycle: day N of 7 from the reset time; 5 h → hour N of 5', () => {
 
 test('P303 cycle: no / bad / passed / too-far reset time → null (graceful degradation)', () => {
   for (const r of [undefined, null, NaN, 0, -5, 'x', now - 1, now + 7 * DAY_S + 3600]) assert.equal(cycle('weekly', r, NOW), null, String(r));
-  assert.ok(cycle('weekly', now + 7 * DAY_S + 300, NOW), '5 min of clock skew is tolerated');
+  assert.equal(cycle('weekly', now + 7 * DAY_S + 300, NOW), null, 'a reset beyond this cycle is unknown, even within five minutes');
   assert.equal(cycle('daily', now + 3600, NOW), null, 'only weekly / 5h have a known period');
   assert.equal(allowedPct(null), null); assert.equal(fast(50, null), null);
 });
 
-test('P303 expected use = shown day N / 7 (≈ 14 %/day); over it = fast', () => {
+test('P303 expected use = actual elapsed fraction of the cycle; over it = fast', () => {
   const d1 = cycle('weekly', weekAt(0.3), NOW), d3 = cycle('weekly', weekAt(2.2), NOW);
-  assert.ok(Math.abs(allowedPct(d1) - 100 / 7) < 1e-9);
-  assert.ok(Math.abs(allowedPct(d3) - 300 / 7) < 1e-9);
-  assert.equal(fast(14, d1), false); assert.equal(fast(15, d1), true);
-  assert.equal(fast(42, d3), false); assert.equal(fast(43, d3), true);
-  assert.equal(fast(8, d1), false, 'the owner\'s screenshot: 8 % on day 1 is fine');
+  assert.ok(Math.abs(allowedPct(d1) - 0.3 * 100 / 7) < 1e-9);
+  assert.ok(Math.abs(allowedPct(d3) - 2.2 * 100 / 7) < 1e-9);
+  assert.equal(fast(4, d1), false); assert.equal(fast(5, d1), true);
+  assert.equal(fast(31, d3), false); assert.equal(fast(32, d3), true);
+  assert.equal(fast(8, d1), true, '8% after only 0.3 day exceeds the elapsed share; the displayed day does not set the threshold');
 });
 
 test('P303 tiers: none / fast / tight ≥ 80 / empty ≥ 90; the amount wins over the pace; 5h has no pace tier', () => {

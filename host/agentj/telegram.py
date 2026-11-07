@@ -300,8 +300,9 @@ class Telegram:
         if not p.get(self.host.preferences,'telegram.forward',True) or not self.enabled() or not cfg:return {'ok':False,'why':'not_configured'}
         turn=self.host.hist.get(turn_id) if type(turn_id) is int else None
         text=(turn or {}).get('reply',{}).get('text','') if turn and turn.get('end') in ('done','stopped','failed') else ''
-        from .silent import is_silent
-        if not text.strip() or is_silent(text):return {'ok':False,'why':'not_found'}
+        from .silent import is_silent, strip_markers
+        if not text.strip() or (turn or {}).get('silent') is True or is_silent(text):return {'ok':False,'why':'not_found'}
+        text = strip_markers(text)
         now=time.monotonic()
         if turn_id in self.fwd_inflight:return {'ok':False,'why':'in_flight'}
         if now-self.fwd_sent.get(turn_id,-1e9)<FWD_REPEAT:return {'ok':False,'why':'recently_sent'}
@@ -522,14 +523,16 @@ class Telegram:
                 if chat_id != enrolled['owner_id'] and not self.group(chat_id,uid):return
             else:
                 chat_id, uid = enrolled['owner_id'], enrolled['owner_id']
-            queued=self.queue_reply(enrolled,tid,chat_id,uid,turn.get('reply',{}).get('text',''))
+            from .silent import MARKER
+            queued=self.queue_reply(enrolled,tid,chat_id,uid,MARKER if turn.get('silent') is True else turn.get('reply',{}).get('text',''))
         finally:
             if type(tid) is int and enrolled is not None:tg_cursor.outbox_set(self.root,tid,'queued' if queued else None)
 
     def queue_reply(self,enrolled,tid,chat_id,uid,text):
         """One owed reply → the send queue (owner: text + the files it shows; group: filtered text only). False = nothing owed."""
-        from .silent import is_silent
+        from .silent import is_silent, strip_markers
         if not text or is_silent(text):return False
+        text = strip_markers(text)
         from .privacy import redact
         owner = chat_id == enrolled['owner_id']
         raw, text = text, redact(text)
@@ -580,11 +583,12 @@ class Telegram:
             page=hist.get(r['turn']) if hist else None
             mine=page is not None and page.get('src',{}).get('k')=='telegram' and page.get('src',{}).get('dev')==r['dev']
             if mine and (r['state']=='queued' or (r['state']=='awaiting' and page.get('end')=='done')):
-                text=page.get('reply',{}).get('text','')
+                from .silent import MARKER
+                text=MARKER if page.get('silent') is True else page.get('reply',{}).get('text','')
                 if self.queue_reply(cfg,r['turn'],r['chat'],r['uid'],text):
                     tg_cursor.outbox_put(self.root,r['turn'],r['chat'],r['uid'],r['dev'],r.get('gen'),'queued')
                     self.host.st.log('telegram_resend',id=r['turn'],reason=r['state']);continue
-                from .silent import is_silent
+                from .silent import is_silent, strip_markers
                 if text and is_silent(text):continue
             self.host.st.log('telegram_uncertain',id=r['turn'],reason=r['state'])
             if owner:notes+=1

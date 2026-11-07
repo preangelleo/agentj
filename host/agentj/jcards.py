@@ -46,7 +46,7 @@ SUBCOMMANDS = ("list", "validate", "apply", "on", "off", "remove", "export", "op
 OFFICIAL = ("notes", "todo", "automation", "calendar", "official-palette", "files", "obsidian")
 DEFAULT_OFF = ("official-palette", "files", "obsidian")
 PLANNED = ()
-SYSTEM = ("chat", "workflows", "skills", "memory", "agentj")   # the five system cards of the logo menu
+SYSTEM = ("chat", "workflows", "skills", "memory", "agentj", "friends", "bots")   # built-in same-origin pages in the official logo-card registry
 PAGE_IDS = ("cards", "settings")         # the card wall and Settings: page names, never a card id (card/<id> must stay unambiguous)
 RESERVED_PREFIX = ("agentj-", "official-")
 TEMPLATES = {"notes": ("md", "txt"), "checklist": ("json",)}
@@ -768,7 +768,7 @@ def _act(c: dict, a: dict, lang: str, root, item: dict | None = None) -> dict:
             **({"draft": True} if a.get("draft") else {})}
 
 
-def phone_get(root, cid, lang: str = "zh", agent_cfg=None) -> dict:
+def phone_get(root, cid, lang: str = "zh", agent_cfg=None, automation_page=0) -> dict:
     """§34 jcard_get: one card's data, read now, plus every button with its finished chat message."""
     from . import privacy
     lang = lang if lang in ("zh", "en") else "zh"
@@ -790,7 +790,7 @@ def phone_get(root, cid, lang: str = "zh", agent_cfg=None) -> dict:
         return {"ok": True, "id": cid, "template": "files", "actions": [], "links": [], "anchors": [], "plus": d.get("plus") or PLUS_DEFAULT}
     if cid == "automation":
         from . import jcards_data
-        return {"ok": True, "id": cid, "template": "automation", "items": jcards_data.automations(root, agent_cfg, lang), "actions": [], "links": [], "anchors": [], "plus": "agentj-automation"}
+        return {"ok": True, "id": cid, "template": "automation", **jcards_data.automation_page(root, agent_cfg, lang, automation_page), "actions": [], "links": [], "anchors": [], "plus": "agentj-automation"}
     res = {"ok": True, "id": c["id"], "template": d["template"], "path": data_where(root, c),
            "actions": [_act(c, a, lang, root) for a in d.get("actions", [])],
            "plus": d.get("plus") or PLUS_DEFAULT,

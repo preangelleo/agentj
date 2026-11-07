@@ -1,0 +1,128 @@
+[
+  {
+    "selector": "#busyDots,.busy-one,.busy-more",
+    "owners": [
+      "aj-busy"
+    ],
+    "evidence": "public/js/busy.js; component-19"
+  },
+  {
+    "selector": "#omQuoteFold,#qbJump,#qbX,.qc .qs,.qc .qw,.qc .qcx,.qc .aj-quote-summary",
+    "owners": [
+      "aj-quote"
+    ],
+    "evidence": "public/js/relay.js:1858,1970; component-09"
+  },
+  {
+    "selector": "#sheet .opt,#sheet .qmore,#sheet .qfree input,#sheet .qfree textarea",
+    "owners": [
+      "aj-choice"
+    ],
+    "evidence": "public/js/relay.js question renderer; component-16"
+  },
+  {
+    "selector": "#rdClose,#rdPlay,#rdCopy,#rdFsBtn,#rd .rdpg button,#rd .rdacts button",
+    "owners": [
+      "aj-reader"
+    ],
+    "evidence": "public/index.html:1649; component-10"
+  },
+  {
+    "selector": "#tray .chip .x",
+    "owners": [
+      "aj-attachment"
+    ],
+    "evidence": "public/js/relay.js:2828; component-13"
+  },
+  {
+    "selector": "#menu button,#hotMenu button",
+    "owners": [
+      "aj-menu"
+    ],
+    "evidence": "public/js/relay.js menu/hotkey renderers; component-21/22"
+  },
+  {
+    "selector": "#sug button",
+    "owners": [
+      "aj-suggestion"
+    ],
+    "evidence": "public/js/relay.js suggestion renderer; component-22"
+  },
+  {
+    "selector": "#fsEd button,#fsEd textarea",
+    "owners": [
+      "aj-editor"
+    ],
+    "evidence": "public/js/fsedit.js; component-34"
+  },
+  {
+    "selector": "#ptt button",
+    "owners": [
+      "aj-recording"
+    ],
+    "evidence": "public/index.html:1621; component-15"
+  },
+  {
+    "selector": ".mview .mvbar button,.mview video[controls],.mview audio[controls]",
+    "owners": [
+      "aj-media"
+    ],
+    "evidence": "public/js/media.js viewer toolbar and native player hosts; nested file-document tools retain their own namespace"
+  },
+  {
+    "selector": "#apprAllow,#apprDeny,#apprAllowBatch",
+    "owners": [
+      "aj-approval"
+    ],
+    "evidence": "public/index.html approval sheet; component-17"
+  },
+  {
+    "selector": "#term button,#term input,#term pre[tabindex]",
+    "owners": [
+      "aj-terminal"
+    ],
+    "evidence": "public/js/terminal.js; component-33"
+  },
+  {
+    "selector": "#rmTop,#rmPart,.rmtop,.rmpart",
+    "owners": [
+      "aj-reply"
+    ],
+    "evidence": "public/index.html:359-360; frozen reply header/pagination, not remote management"
+  },
+  {
+    "selector": ".mview .mdoc .mpvtabs button,.mview iframe",
+    "owners": [
+      "aj-file"
+    ],
+    "evidence": "public/js/preview.js document table/sheet tabs and opaque document focus host; nested file renderer is not media navigation"
+  },
+  {
+    "selector": ".reply-component button,.reply-component input,.reply-component select",
+    "owners": [
+      "aj-inline-component"
+    ],
+    "evidence": "public/js/components.js bounded agentj renderer: confirm/form draft-only controls; same semantic factory, no tag-based generic button skin"
+  },
+  {
+    "selector": "#workflow-compose",
+    "owners": [
+      "aj-composer"
+    ],
+    "evidence": "public/js/workflow-compose.js:6 actual contenteditable mention/command editor"
+  },
+  {
+    "selector": "#cam button",
+    "owners": [
+      "aj-recording"
+    ],
+    "evidence": "index.html camera preview actions; parent semantic review camera capture device UI"
+  },
+  {
+    "selector": ".gdlg-row>button",
+    "owners": [
+      "aj-dialog-action"
+    ],
+    "evidence": "Direct modal footer close/confirmation controls from index.html 21 static buttons plus contacts.js four dynamic forward/contact-card controls (25 total); distinct from busy entity buttons, contacts fields and nested content controls. CEO semantic decision, 2026-11-07."
+  }
+]

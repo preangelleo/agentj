@@ -50,7 +50,7 @@ def _table():
         # P551 (#318): mail, calendar edits and same-owner changes can be taken back or corrected — reversible. The table
         # below is the Agent's floor; an owner's own tap on a paired remote is the instruction itself (confirm_tier.py).
         (HOLD, ("file.trash", "settings.write", "memory.restore", "mail.send", "calendar.write", "publish")),
-        (UV, ("file.delete", "payment", "device.pair", "device.revoke")),
+        (UV, ("file.delete", "payment", "device.pair", "device.revoke", "plan.bounded")),
         # P573 (#386 ⑤, chairman 10-29): Face ID only for ① money ② a real key / password shown on the front end ③ an
         # unrecoverable deletion (+ the trust roots). Reading a key for the Agent, writing .env / credentials, Computer Use
         # (P539) and admin tools (the sandbox launch, the web terminal card, plaza installs, code the lexer cannot read) are
@@ -93,6 +93,7 @@ def decision(layer, action):
 # their existing individual signed-card/UV executors; a table lookup never grants
 # execution or replaces signature, nonce, target, TTL or final-executor checks.
 HOST_TOOLS = MappingProxyType({
+    "AgentJBoundedPlan": "plan.bounded",
     "pair_device": "device.pair", "SandboxOnce": "admin", "AuthRescue": "secrets.read",
     "DoomLoop": "settings.write", "task": "agent.dispatch", "AskUserQuestion": "settings.write",
     "AgentJHook": "settings.write", "AgentJTerminal": "admin",
@@ -337,6 +338,11 @@ def main_requirement(tool, tool_input=None, *, env=None, cwd=None):
         # Agent J's credential executor are sensitive even with harmless operands.
         for command in danger.lex(str(inp["command"])):
             for simple in danger.unwrap(command):
+                if re.fullmatch(r"python[0-9.]*|node|deno|bun", simple.name):
+                    from . import approval_policy
+                    for index, arg in enumerate(simple.args[:-1]):
+                        if arg in ("-c", "-e", "--eval") and approval_policy.shows_secret(danger.executable_text(simple.args[index+1])):
+                            return "uv"  # actual inline program, including interpreter options; never a harness prompt
                 if "elevated" in simple.flags or simple.name in ("sudo", "su", "doas", "run0", "pkexec"):
                     floor = "hold"       # P573: sudo is one button (the admin password card stays); its content decides more
                 if simple.name == "agentj" and simple.args[:1] in (["revoke"], ["unlink"]):
@@ -358,14 +364,21 @@ def main_requirement(tool, tool_input=None, *, env=None, cwd=None):
                 return "uv"              # ③ a file deleted / the Agent's own hook or approval file rewritten
             if danger.cred_path(path):
                 floor = "hold" if floor == "allow" else floor   # P573: a credential file written: one button
+    from . import routine_uv
+    if floor not in ("uv", "deny") and routine_uv.proven_routine(tool, tool_input, env=env, cwd=cwd):
+        return floor
     verdict = danger.classify(name, inp, env=env)
     shared = danger.classify_shared(name, inp, cwd=cwd, env=env)
     cats = set(verdict.cats) | set(shared.cats)
     # Actual credential access and writes to our approval/state boundary must
     # reach Host.ask even when the shared guard would otherwise return early.
     from . import approval_level
-    if "credentials" in shared.cats or approval_level.harness_floor(name, inp, shared):
+    floor_reason = approval_level.harness_floor(name, inp, shared)
+    if "credentials" in shared.cats or floor_reason not in (None, "injection"):
         return "uv"
+    # 11-07 owner rule: opaque downloaded code is not by itself one of the
+    # four UV effects. Keep its ordinary confirmation and existing #488 denial;
+    # never grant permission or reinterpret unknown execution as credentials.
     if {"cred.hooks", "cred.service", "service.restart"} & (set(verdict.rules) | set(shared.rules)):
         return "uv"                      # P573 (e): the Agent rewriting its own hook / approval settings — never below Face ID
     if cats:

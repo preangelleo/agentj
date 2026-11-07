@@ -49,11 +49,11 @@ function row(c) {
   const li = mk('li');
   li.dataset.id = c.id;
   const own = c.id === OWNER_ID;
-  const main = mk('button', 'ctm-main'); main.type = 'button';
+  const main = mk('button', 'ctm-main', undefined, 'aj-contacts'); main.type = 'button';
   const av = mk('i', 'ctm-av'); av.textContent = (c.letter || (c.name || '?').trim().charAt(0) || '?').toUpperCase().slice(0, 1);
   const txt = mk('span', 'ctm-txt');
   const nm = mk('b'); nm.textContent = (c.name || first(c.nicks) || first(emailsOf(c)) || first(phonesOf(c)) || '—') + (own ? ' · ' + t('p207set.ct.me') : '');
-  const sub = mk('small'); sub.textContent = [...emailsOf(c), ...phonesOf(c)].slice(0, 2).join(' · ') || t('p207set.ct.noWay');
+  const sub = mk('small', undefined, undefined, 'aj-contacts'); sub.textContent = [...emailsOf(c), ...phonesOf(c)].slice(0, 2).join(' · ') || t('p207set.ct.noWay');
   txt.append(nm, sub);
   main.append(av, txt);
   main.setAttribute('aria-label', t(own ? 'set.owner' : 'p207set.ct.edit') + '：' + nm.textContent);
@@ -62,7 +62,7 @@ function row(c) {
   const addr = first(emailsOf(c));
   if (addr) {
     const on = allowed(addr);
-    const b = mk('button', 'menuicon ctm-allow'); b.type = 'button';
+    const b = mk('button', 'menuicon ctm-allow', undefined, 'aj-contacts'); b.type = 'button';
     b.append(mailIcon(on));
     const label = t(on ? 'p207set.ct.allowed' : 'p207set.ct.allow');
     b.setAttribute('aria-label', label + '：' + addr); b.title = label;
@@ -159,7 +159,7 @@ async function exportAll() {
   const m = await ask1({ t: 'ct_export', fmt: 'vcf' }, 'ct_res', 20000);
   if (m.t !== 'ct_res' || !m.ok || typeof m.text !== 'string') { say(m.t === 'timeout' ? t('ct.timeout') : t('p207set.ct.exportFail')); return; }
   const url = URL.createObjectURL(new Blob([m.text], { type: 'text/vcard;charset=utf-8' }));
-  const a = mk('a'); a.href = url; a.download = 'agentj-contacts.vcf'; a.hidden = true;
+  const a = mk('a', undefined, undefined, 'aj-contacts'); a.href = url; a.download = 'agentj-contacts.vcf'; a.hidden = true;
   document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30000);
   say(t('p207set.ct.exported', { n: Number(m.count) || 0 }));

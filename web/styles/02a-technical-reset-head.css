@@ -1,0 +1,4 @@
+/* #577 Web-owned technical-reset; source order is a compatibility contract. */
+/* ===== reset ===== */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; hanging-punctuation: first last; }

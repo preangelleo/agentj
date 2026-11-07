@@ -20,7 +20,7 @@ order: 17
 
 ## 一键安装
 
-先在下面对应系统中装好 curl。脚本询问装哪些工具，再用短超时探测官方服务连通性，不发送用户数据。能连通默认原生登录；连不通推荐 AgentsRelay，使用另一条服务入口。你可以改选，也可用 `--relay` / `--no-relay` 指定。连通不代表所在地区或账号一定可用。默认备份并合并全权限配置，开着全权限时脚本会打印警告；`--no-full-access` 保留默认审批。`--dry-run` 不下载、不写文件。macOS 和 Ubuntu/Debian/WSL2 支持自动安装。
+先在下面对应系统中装好 curl。脚本询问装哪些工具，再用短超时探测官方服务连通性，不发送用户数据。能连通默认原生登录；连不通推荐 AgentsRelay，使用另一条服务入口。你可以改选，也可用 `--relay` / `--no-relay` 指定。连通不代表所在地区或账号一定可用。默认备份并合并全权限配置，开着全权限时脚本会打印警告；`--no-full-access` 保留默认审批。`--dry-run` 不下载、不写文件。macOS 和 Ubuntu/Debian/WSL2 支持自动安装。 在香港又不想买中转：加 `--gemini`，用你自己的 Google Cloud key，见[用 Google Gemini](#gemini)。
 
 
 ```bash
@@ -855,6 +855,32 @@ claude --dangerously-skip-permissions
 
 
 [Claude Code 官方指南](https://code.claude.com/docs/en/setup)
+
+## 用 API key 接 Google Gemini {#gemini}
+
+通过 OpenCode 使用你自己的 Gemini API key。这条路线不使用 Gemini CLI、Gemini App 订阅或 Antigravity。key 只在你自己的终端隐藏输入，不要发到聊天里。
+
+| 所在地区或网络 | API key 路线 |
+|---|---|
+| Google AI Studio 支持的地区 | 在 [AI Studio](https://aistudio.google.com/apikey) 创建 Gemini API key，先确认 Google 当前的地区限制和结算要求。 |
+| 香港 | 使用绑定服务账号的 Google Cloud Vertex AI API key。AI Studio key 可能返回「User location is not supported」。 |
+| 大陆或其它连不上 Google 的网络 | 先确认网络可达；连通不代表账号和地区获准使用。连不上时选择其它受支持的 AI 路线。 |
+
+Vertex AI 路线：在 [Google Cloud](https://console.cloud.google.com/) 创建项目，开通结算并启用 Vertex AI API，创建具有「Vertex AI 用户」角色的服务账号；创建 API key 时勾选「通过服务账号验证 API 调用」，绑定该服务账号，并限制为所需 API。AI Studio 路线则在受支持地区使用其 API key 页面。使用前查看 Google 当前价格，并设置结算预算提醒。
+
+```bash
+curl -fsSL https://agentj.app/install.sh | bash -s -- --gemini
+```
+
+交互安装时选择 Google Gemini（选项 7）；跳过和免费模型保留原编号。只准备 OpenCode、不装 Agent J：
+
+```bash
+curl -fsSL https://agentj.app/setup-agents.sh | bash -s -- --gemini
+```
+
+隐藏输入后先检查 Vertex AI；未绑定服务账号的 key 还会检查 AI Studio。模型必须返回非空回复，才保存 key、安装 CLI；失败三次便停止。简短提示分别说明 key 无效、地区不支持、API 未启用、角色不足、结算、配额、网络及空回复。HTTP 连通不等于模型调用成功。
+
+key 保存在 OpenCode 的私有 `auth.json`；服务商和模型选择写入 `opencode.json`，保留其它服务商。目标路径含符号链接或已有 JSONC 时须手动设置。历史默认模型为 `gemini/gemini-3.8-flash`，另有 `gemini-3.1-pro-preview`；实际模型可用性、账号资格和当前价格须向 Google 确认。本次源码补合没有调用真实 Google 服务作验收。
 
 ## 安装 Gemini CLI {#gemini-cli}
 

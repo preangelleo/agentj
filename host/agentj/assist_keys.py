@@ -1,8 +1,8 @@
 """0.26.9 (#468, ADR-0269-assist): the pinned official remote-assist keys (public halves only).
 
 `assets/assist_keys.json` ships inside the signed host package; nothing here reads the network. An entry is usable only with
-both public keys (32 bytes each, b64url) and `not_after` in the future. The shipped file is a placeholder (key ceremony
-pending — CEO): with it no static key is ever accepted.
+both public keys (32 bytes each, b64url) and `not_after` in the future. The shipped file contains only the public halves of the explicitly authorized official host.
+An empty/expired pin set disables remote assistance; no network-provided root is adopted.
 
 Test-only override: `AGENTJ_ASSIST_KEYS_TEST=<file>` replaces the list ONLY when all hold — `AGENTJ_TEST=1` (tests/_hermetic.py)
 AND this module runs from a source checkout (`host/pyproject.toml` beside the package; an installed wheel never has it).
@@ -73,7 +73,7 @@ def by_id(kid: str, now: float | None = None) -> dict | None:
 
 
 def placeholder() -> bool:
-    """The shipped asset still has no key (the ceremony has not happened)."""
+    """Whether the shipped asset has no validly encoded public pin (an empty build stays off)."""
     try:
         d = json.loads(ASSET.read_text(encoding="utf-8"))
         return not any(_b32(e.get("x25519")) for e in d.get("keys", []) if isinstance(e, dict))

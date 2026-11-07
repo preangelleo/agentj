@@ -20,7 +20,7 @@ export function paintMailPassword(c, label, input, rows) {
   for (const raw of c.purpose.match(/https:\/\/[^\s]+/g) || []) {
     let u; try { u = new URL(raw); } catch { continue; }
     if (!OFFICIAL.has(u.hostname) || u.username || u.password) continue;
-    const dd = document.createElement('dd'), a = document.createElement('a');
+    const dd = document.createElement('dd'), a = document.createElement('a'); a.setAttribute('data-aj-owner', 'aj-channel');
     if (!official) {
       const dt = document.createElement('dt'); dt.textContent = t('mail.official'); rows.append(dt); official = true;
     }
@@ -30,7 +30,7 @@ export function paintMailPassword(c, label, input, rows) {
   }
   const serverText = lines.filter(line => /^(IMAP|SMTP):/.test(line)).join('\n');
   if (!serverText) return true;
-  const details = document.createElement('details'), summary = document.createElement('summary'), servers = document.createElement('p');
+  const details = document.createElement('details'), summary = document.createElement('summary'), servers = document.createElement('p'); summary.setAttribute('data-aj-owner', 'aj-channel');
   summary.textContent = t('mail.adv'); servers.textContent = serverText;
   details.append(summary, servers); const serverRow = document.createElement('dd'); serverRow.append(details); rows.append(serverRow);
   return true;

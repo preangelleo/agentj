@@ -1,0 +1,590 @@
+/* #577 Web-owned source; initial cascade preserved. */
+/* P87: shared action-group contract; icon toolbars remain compact. */
+/* owner: aj-account; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-account"]),.aj-action:where([data-aj-owner="aj-account"]),[role="tab"]:where([data-aj-owner="aj-account"]){white-space:var(--aj-account-native-white-space,nowrap);}
+/* owner: aj-dialog-action; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-dialog-action"]),.aj-action:where([data-aj-owner="aj-dialog-action"]),[role="tab"]:where([data-aj-owner="aj-dialog-action"]){white-space:var(--aj-dialog-action-native-white-space,nowrap);}
+
+/* owner: aj-file; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-file"]),.aj-action:where([data-aj-owner="aj-file"]),[role="tab"]:where([data-aj-owner="aj-file"]){white-space:var(--aj-file-native-white-space,nowrap);}
+
+/* owner: aj-attachment; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-attachment"]),.aj-action:where([data-aj-owner="aj-attachment"]),[role="tab"]:where([data-aj-owner="aj-attachment"]){white-space:var(--aj-attachment-native-white-space,nowrap);}
+
+/* owner: aj-composer-tool; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-composer-tool"]),.aj-action:where([data-aj-owner="aj-composer-tool"]),[role="tab"]:where([data-aj-owner="aj-composer-tool"]){white-space:var(--aj-composer-tool-native-white-space,nowrap);}
+
+/* owner: aj-content; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-content"]),.aj-action:where([data-aj-owner="aj-content"]),[role="tab"]:where([data-aj-owner="aj-content"]){white-space:var(--aj-content-native-white-space,nowrap);}
+
+/* owner: aj-settings-control; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-settings-control"]),.aj-action:where([data-aj-owner="aj-settings-control"]),[role="tab"]:where([data-aj-owner="aj-settings-control"]){white-space:var(--aj-settings-control-native-white-space,nowrap);}
+
+/* owner: aj-status; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-status"]),.aj-action:where([data-aj-owner="aj-status"]),[role="tab"]:where([data-aj-owner="aj-status"]){white-space:var(--aj-status-native-white-space,nowrap);}
+
+/* owner: aj-action; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-action"]),.aj-action:where([data-aj-owner="aj-action"]),[role="tab"]:where([data-aj-owner="aj-action"]){white-space:var(--aj-action-native-white-space,nowrap);}
+/* owner: aj-approval; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-approval"]),.aj-action:where([data-aj-owner="aj-approval"]),[role="tab"]:where([data-aj-owner="aj-approval"]){white-space:var(--aj-approval-native-white-space,nowrap);}
+/* owner: aj-auth-card; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-auth-card"]),.aj-action:where([data-aj-owner="aj-auth-card"]),[role="tab"]:where([data-aj-owner="aj-auth-card"]){white-space:var(--aj-auth-card-native-white-space,nowrap);}
+/* owner: aj-bots; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-bots"]),.aj-action:where([data-aj-owner="aj-bots"]),[role="tab"]:where([data-aj-owner="aj-bots"]){white-space:var(--aj-bots-native-white-space,nowrap);}
+/* owner: aj-busy; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-busy"]),.aj-action:where([data-aj-owner="aj-busy"]),[role="tab"]:where([data-aj-owner="aj-busy"]){white-space:var(--aj-busy-native-white-space,nowrap);}
+/* owner: aj-channel; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-channel"]),.aj-action:where([data-aj-owner="aj-channel"]),[role="tab"]:where([data-aj-owner="aj-channel"]){white-space:var(--aj-channel-native-white-space,nowrap);}
+/* owner: aj-choice; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-choice"]),.aj-action:where([data-aj-owner="aj-choice"]),[role="tab"]:where([data-aj-owner="aj-choice"]){white-space:var(--aj-choice-native-white-space,nowrap);}
+/* owner: aj-composer; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-composer"]),.aj-action:where([data-aj-owner="aj-composer"]),[role="tab"]:where([data-aj-owner="aj-composer"]){white-space:var(--aj-composer-native-white-space,nowrap);}
+/* owner: aj-contacts; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-contacts"]),.aj-action:where([data-aj-owner="aj-contacts"]),[role="tab"]:where([data-aj-owner="aj-contacts"]){white-space:var(--aj-contacts-native-white-space,nowrap);}
+/* owner: aj-dialog; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-dialog"]),.aj-action:where([data-aj-owner="aj-dialog"]),[role="tab"]:where([data-aj-owner="aj-dialog"]){white-space:var(--aj-dialog-native-white-space,nowrap);}
+/* owner: aj-editor; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-editor"]),.aj-action:where([data-aj-owner="aj-editor"]),[role="tab"]:where([data-aj-owner="aj-editor"]){white-space:var(--aj-editor-native-white-space,nowrap);}
+/* owner: aj-friends; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-friends"]),.aj-action:where([data-aj-owner="aj-friends"]),[role="tab"]:where([data-aj-owner="aj-friends"]){white-space:var(--aj-friends-native-white-space,nowrap);}
+/* owner: aj-header; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-header"]),.aj-action:where([data-aj-owner="aj-header"]),[role="tab"]:where([data-aj-owner="aj-header"]){white-space:var(--aj-header-native-white-space,nowrap);}
+/* owner: aj-history; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-history"]),.aj-action:where([data-aj-owner="aj-history"]),[role="tab"]:where([data-aj-owner="aj-history"]){white-space:var(--aj-history-native-white-space,nowrap);}
+/* owner: aj-icon-action; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-icon-action"]),.aj-action:where([data-aj-owner="aj-icon-action"]),[role="tab"]:where([data-aj-owner="aj-icon-action"]){white-space:var(--aj-icon-action-native-white-space,nowrap);}
+/* owner: aj-inline-component; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-inline-component"]),.aj-action:where([data-aj-owner="aj-inline-component"]),[role="tab"]:where([data-aj-owner="aj-inline-component"]){white-space:var(--aj-inline-component-native-white-space,nowrap);}
+/* owner: aj-knowledge; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-knowledge"]),.aj-action:where([data-aj-owner="aj-knowledge"]),[role="tab"]:where([data-aj-owner="aj-knowledge"]){white-space:var(--aj-knowledge-native-white-space,nowrap);}
+/* owner: aj-language; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-language"]),.aj-action:where([data-aj-owner="aj-language"]),[role="tab"]:where([data-aj-owner="aj-language"]){white-space:var(--aj-language-native-white-space,nowrap);}
+/* owner: aj-media; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-media"]),.aj-action:where([data-aj-owner="aj-media"]),[role="tab"]:where([data-aj-owner="aj-media"]){white-space:var(--aj-media-native-white-space,nowrap);}
+/* owner: aj-menu; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-menu"]),.aj-action:where([data-aj-owner="aj-menu"]),[role="tab"]:where([data-aj-owner="aj-menu"]){white-space:var(--aj-menu-native-white-space,nowrap);}
+/* owner: aj-navigation-action; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-navigation-action"]),.aj-action:where([data-aj-owner="aj-navigation-action"]),[role="tab"]:where([data-aj-owner="aj-navigation-action"]){white-space:var(--aj-navigation-action-native-white-space,nowrap);}
+/* owner: aj-notice; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-notice"]),.aj-action:where([data-aj-owner="aj-notice"]),[role="tab"]:where([data-aj-owner="aj-notice"]){white-space:var(--aj-notice-native-white-space,nowrap);}
+/* owner: aj-pairing; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-pairing"]),.aj-action:where([data-aj-owner="aj-pairing"]),[role="tab"]:where([data-aj-owner="aj-pairing"]){white-space:var(--aj-pairing-native-white-space,nowrap);}
+/* owner: aj-palette; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-palette"]),.aj-action:where([data-aj-owner="aj-palette"]),[role="tab"]:where([data-aj-owner="aj-palette"]){white-space:var(--aj-palette-native-white-space,nowrap);}
+/* owner: aj-passkey; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-passkey"]),.aj-action:where([data-aj-owner="aj-passkey"]),[role="tab"]:where([data-aj-owner="aj-passkey"]){white-space:var(--aj-passkey-native-white-space,nowrap);}
+/* owner: aj-prose; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-prose"]),.aj-action:where([data-aj-owner="aj-prose"]),[role="tab"]:where([data-aj-owner="aj-prose"]){white-space:var(--aj-prose-native-white-space,nowrap);}
+/* owner: aj-quote; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-quote"]),.aj-action:where([data-aj-owner="aj-quote"]),[role="tab"]:where([data-aj-owner="aj-quote"]){white-space:var(--aj-quote-native-white-space,nowrap);}
+/* owner: aj-reader; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-reader"]),.aj-action:where([data-aj-owner="aj-reader"]),[role="tab"]:where([data-aj-owner="aj-reader"]){white-space:var(--aj-reader-native-white-space,nowrap);}
+/* owner: aj-recording; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-recording"]),.aj-action:where([data-aj-owner="aj-recording"]),[role="tab"]:where([data-aj-owner="aj-recording"]){white-space:var(--aj-recording-native-white-space,nowrap);}
+/* owner: aj-recovery; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-recovery"]),.aj-action:where([data-aj-owner="aj-recovery"]),[role="tab"]:where([data-aj-owner="aj-recovery"]){white-space:var(--aj-recovery-native-white-space,nowrap);}
+/* owner: aj-remotes; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-remotes"]),.aj-action:where([data-aj-owner="aj-remotes"]),[role="tab"]:where([data-aj-owner="aj-remotes"]){white-space:var(--aj-remotes-native-white-space,nowrap);}
+/* owner: aj-reply; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-reply"]),.aj-action:where([data-aj-owner="aj-reply"]),[role="tab"]:where([data-aj-owner="aj-reply"]){white-space:var(--aj-reply-native-white-space,nowrap);}
+/* owner: aj-reply-action; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-reply-action"]),.aj-action:where([data-aj-owner="aj-reply-action"]),[role="tab"]:where([data-aj-owner="aj-reply-action"]){white-space:var(--aj-reply-action-native-white-space,nowrap);}
+/* owner: aj-rescue; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-rescue"]),.aj-action:where([data-aj-owner="aj-rescue"]),[role="tab"]:where([data-aj-owner="aj-rescue"]){white-space:var(--aj-rescue-native-white-space,nowrap);}
+/* owner: aj-search; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-search"]),.aj-action:where([data-aj-owner="aj-search"]),[role="tab"]:where([data-aj-owner="aj-search"]){white-space:var(--aj-search-native-white-space,nowrap);}
+/* owner: aj-settings; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-settings"]),.aj-action:where([data-aj-owner="aj-settings"]),[role="tab"]:where([data-aj-owner="aj-settings"]){white-space:var(--aj-settings-native-white-space,nowrap);}
+/* owner: aj-setup; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-setup"]),.aj-action:where([data-aj-owner="aj-setup"]),[role="tab"]:where([data-aj-owner="aj-setup"]){white-space:var(--aj-setup-native-white-space,nowrap);}
+/* owner: aj-shell; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-shell"]),.aj-action:where([data-aj-owner="aj-shell"]),[role="tab"]:where([data-aj-owner="aj-shell"]){white-space:var(--aj-shell-native-white-space,nowrap);}
+/* owner: aj-source; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-source"]),.aj-action:where([data-aj-owner="aj-source"]),[role="tab"]:where([data-aj-owner="aj-source"]){white-space:var(--aj-source-native-white-space,nowrap);}
+/* owner: aj-suggestion; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-suggestion"]),.aj-action:where([data-aj-owner="aj-suggestion"]),[role="tab"]:where([data-aj-owner="aj-suggestion"]){white-space:var(--aj-suggestion-native-white-space,nowrap);}
+/* owner: aj-terminal; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-terminal"]),.aj-action:where([data-aj-owner="aj-terminal"]),[role="tab"]:where([data-aj-owner="aj-terminal"]){white-space:var(--aj-terminal-native-white-space,nowrap);}
+/* owner: aj-wallet; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-wallet"]),.aj-action:where([data-aj-owner="aj-wallet"]),[role="tab"]:where([data-aj-owner="aj-wallet"]){white-space:var(--aj-wallet-native-white-space,nowrap);}
+/* owner: aj-wallet-calendar; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-wallet-calendar"]),.aj-action:where([data-aj-owner="aj-wallet-calendar"]),[role="tab"]:where([data-aj-owner="aj-wallet-calendar"]){white-space:var(--aj-wallet-calendar-native-white-space,nowrap);}
+/* owner: aj-wallet-color; explicit opt-in, equal initial value */
+button:where([data-aj-owner="aj-wallet-color"]),.aj-action:where([data-aj-owner="aj-wallet-color"]),[role="tab"]:where([data-aj-owner="aj-wallet-color"]){white-space:var(--aj-wallet-color-native-white-space,nowrap);}
+.aj-actions { display:flex; flex-wrap:wrap; gap:var(--space-control); }
+@media (max-width: 600px) {
+  /* P203: :not([hidden]) — the !important used to show a finished card's hidden 批准 / 拒绝 row on phones */
+  .aj-actions:not([hidden]){display:var(--aj-action-layout-display,flex) !important;flex-direction:var(--aj-action-layout-flex-direction,column) !important;align-items:var(--aj-action-layout-align-items,stretch) !important;flex-wrap:var(--aj-action-layout-flex-wrap,nowrap) !important;width:var(--aj-action-layout-width,100%);gap:var(--aj-action-layout-gap,var(--space-control));}
+.aj-hero__actions:not([hidden]){
+    display:flex !important; flex-direction:column !important; align-items:stretch !important;
+    flex-wrap:nowrap !important; width:100%; gap:var(--space-control);
+  }
+.actions:not([hidden]){
+    display:flex !important; flex-direction:column !important; align-items:stretch !important;
+    flex-wrap:nowrap !important; width:100%; gap:var(--space-control);
+  }
+.site-os-tabs:not([hidden]){
+    display:flex !important; flex-direction:column !important; align-items:stretch !important;
+    flex-wrap:nowrap !important; width:100%; gap:var(--space-control);
+  }
+.btn-row:not([hidden]){
+    display:flex !important; flex-direction:column !important; align-items:stretch !important;
+    flex-wrap:nowrap !important; width:100%; gap:var(--space-control);
+  }
+.li-actions:not([hidden]){
+    display:flex !important; flex-direction:column !important; align-items:stretch !important;
+    flex-wrap:nowrap !important; width:100%; gap:var(--space-control);
+  }
+.plaza-tabs:not([hidden]){
+    display:flex !important; flex-direction:column !important; align-items:stretch !important;
+    flex-wrap:nowrap !important; width:100%; gap:var(--space-control);
+  }
+.fr-askbtns:not([hidden]){display:var(--aj-friends-layout-display,flex) !important;flex-direction:var(--aj-friends-layout-flex-direction,column) !important;align-items:var(--aj-friends-layout-align-items,stretch) !important;flex-wrap:var(--aj-friends-layout-flex-wrap,nowrap) !important;width:var(--aj-friends-layout-width,100%);gap:var(--aj-friends-layout-gap,var(--space-control));}
+.apprbtns:not([hidden]){display:var(--aj-approval-layout-display,flex) !important;flex-direction:var(--aj-approval-layout-flex-direction,column) !important;align-items:var(--aj-approval-layout-align-items,stretch) !important;flex-wrap:var(--aj-approval-layout-flex-wrap,nowrap) !important;width:var(--aj-approval-layout-width,100%);gap:var(--aj-approval-layout-gap,var(--space-control));}
+.seg:not([hidden]){display:var(--aj-settings-control-layout-display,flex) !important;flex-direction:var(--aj-settings-control-layout-flex-direction,column) !important;align-items:var(--aj-settings-control-layout-align-items,stretch) !important;flex-wrap:var(--aj-settings-control-layout-flex-wrap,nowrap) !important;width:var(--aj-settings-control-layout-width,100%);gap:var(--aj-settings-control-layout-gap,var(--space-control));}
+
+
+/* Native aj-account composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-account"] ){flex:var(--aj-account-composition-flex,0 0 auto) !important;width:var(--aj-account-composition-width,100%) !important;max-width:var(--aj-account-composition-max-width,100%);min-width:var(--aj-account-composition-min-width,0) !important;box-sizing:var(--aj-account-composition-box-sizing,border-box);white-space:var(--aj-account-composition-white-space,nowrap);}
+/* owner: aj-dialog-action; explicit opt-in, equal initial value */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-dialog-action"] ){flex:var(--aj-dialog-action-composition-flex,0 0 auto) !important;width:var(--aj-dialog-action-composition-width,100%) !important;max-width:var(--aj-dialog-action-composition-max-width,100%);min-width:var(--aj-dialog-action-composition-min-width,0) !important;box-sizing:var(--aj-dialog-action-composition-box-sizing,border-box);white-space:var(--aj-dialog-action-composition-white-space,nowrap);}
+
+/* owner: aj-attachment; explicit opt-in, equal initial value */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-attachment"] ){flex:var(--aj-attachment-composition-flex,0 0 auto) !important;width:var(--aj-attachment-composition-width,100%) !important;max-width:var(--aj-attachment-composition-max-width,100%);min-width:var(--aj-attachment-composition-min-width,0) !important;box-sizing:var(--aj-attachment-composition-box-sizing,border-box);white-space:var(--aj-attachment-composition-white-space,nowrap);}
+
+/* owner: aj-composer-tool; explicit opt-in, equal initial value */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-composer-tool"] ){flex:var(--aj-composer-tool-composition-flex,0 0 auto) !important;width:var(--aj-composer-tool-composition-width,100%) !important;max-width:var(--aj-composer-tool-composition-max-width,100%);min-width:var(--aj-composer-tool-composition-min-width,0) !important;box-sizing:var(--aj-composer-tool-composition-box-sizing,border-box);white-space:var(--aj-composer-tool-composition-white-space,nowrap);}
+
+/* owner: aj-content; explicit opt-in, equal initial value */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-content"] ){flex:var(--aj-content-composition-flex,0 0 auto) !important;width:var(--aj-content-composition-width,100%) !important;max-width:var(--aj-content-composition-max-width,100%);min-width:var(--aj-content-composition-min-width,0) !important;box-sizing:var(--aj-content-composition-box-sizing,border-box);white-space:var(--aj-content-composition-white-space,nowrap);}
+
+/* owner: aj-file; explicit opt-in, equal initial value */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-file"] ){flex:var(--aj-file-composition-flex,0 0 auto) !important;width:var(--aj-file-composition-width,100%) !important;max-width:var(--aj-file-composition-max-width,100%);min-width:var(--aj-file-composition-min-width,0) !important;box-sizing:var(--aj-file-composition-box-sizing,border-box);white-space:var(--aj-file-composition-white-space,nowrap);}
+
+/* owner: aj-settings-control; explicit opt-in, equal initial value */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-settings-control"] ){flex:var(--aj-settings-control-composition-flex,0 0 auto) !important;width:var(--aj-settings-control-composition-width,100%) !important;max-width:var(--aj-settings-control-composition-max-width,100%);min-width:var(--aj-settings-control-composition-min-width,0) !important;box-sizing:var(--aj-settings-control-composition-box-sizing,border-box);white-space:var(--aj-settings-control-composition-white-space,nowrap);}
+
+/* owner: aj-status; explicit opt-in, equal initial value */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-status"] ){flex:var(--aj-status-composition-flex,0 0 auto) !important;width:var(--aj-status-composition-width,100%) !important;max-width:var(--aj-status-composition-max-width,100%);min-width:var(--aj-status-composition-min-width,0) !important;box-sizing:var(--aj-status-composition-box-sizing,border-box);white-space:var(--aj-status-composition-white-space,nowrap);}
+
+
+/* Native aj-action composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-action"] ){flex:var(--aj-action-composition-flex,0 0 auto) !important;width:var(--aj-action-composition-width,100%) !important;max-width:var(--aj-action-composition-max-width,100%);min-width:var(--aj-action-composition-min-width,0) !important;box-sizing:var(--aj-action-composition-box-sizing,border-box);white-space:var(--aj-action-composition-white-space,nowrap);}
+
+/* Native aj-approval composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-approval"] ){flex:var(--aj-approval-composition-flex,0 0 auto) !important;width:var(--aj-approval-composition-width,100%) !important;max-width:var(--aj-approval-composition-max-width,100%);min-width:var(--aj-approval-composition-min-width,0) !important;box-sizing:var(--aj-approval-composition-box-sizing,border-box);white-space:var(--aj-approval-composition-white-space,nowrap);}
+
+/* Native aj-auth-card composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-auth-card"] ){flex:var(--aj-auth-card-composition-flex,0 0 auto) !important;width:var(--aj-auth-card-composition-width,100%) !important;max-width:var(--aj-auth-card-composition-max-width,100%);min-width:var(--aj-auth-card-composition-min-width,0) !important;box-sizing:var(--aj-auth-card-composition-box-sizing,border-box);white-space:var(--aj-auth-card-composition-white-space,nowrap);}
+
+/* Native aj-bots composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-bots"] ){flex:var(--aj-bots-composition-flex,0 0 auto) !important;width:var(--aj-bots-composition-width,100%) !important;max-width:var(--aj-bots-composition-max-width,100%);min-width:var(--aj-bots-composition-min-width,0) !important;box-sizing:var(--aj-bots-composition-box-sizing,border-box);white-space:var(--aj-bots-composition-white-space,nowrap);}
+
+/* Native aj-busy composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-busy"] ){flex:var(--aj-busy-composition-flex,0 0 auto) !important;width:var(--aj-busy-composition-width,100%) !important;max-width:var(--aj-busy-composition-max-width,100%);min-width:var(--aj-busy-composition-min-width,0) !important;box-sizing:var(--aj-busy-composition-box-sizing,border-box);white-space:var(--aj-busy-composition-white-space,nowrap);}
+
+/* Native aj-channel composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-channel"] ){flex:var(--aj-channel-composition-flex,0 0 auto) !important;width:var(--aj-channel-composition-width,100%) !important;max-width:var(--aj-channel-composition-max-width,100%);min-width:var(--aj-channel-composition-min-width,0) !important;box-sizing:var(--aj-channel-composition-box-sizing,border-box);white-space:var(--aj-channel-composition-white-space,nowrap);}
+
+/* Native aj-choice composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-choice"] ){flex:var(--aj-choice-composition-flex,0 0 auto) !important;width:var(--aj-choice-composition-width,100%) !important;max-width:var(--aj-choice-composition-max-width,100%);min-width:var(--aj-choice-composition-min-width,0) !important;box-sizing:var(--aj-choice-composition-box-sizing,border-box);white-space:var(--aj-choice-composition-white-space,nowrap);}
+
+/* Native aj-composer composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-composer"] ){flex:var(--aj-composer-composition-flex,0 0 auto) !important;width:var(--aj-composer-composition-width,100%) !important;max-width:var(--aj-composer-composition-max-width,100%);min-width:var(--aj-composer-composition-min-width,0) !important;box-sizing:var(--aj-composer-composition-box-sizing,border-box);white-space:var(--aj-composer-composition-white-space,nowrap);}
+
+/* Native aj-contacts composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-contacts"] ){flex:var(--aj-contacts-composition-flex,0 0 auto) !important;width:var(--aj-contacts-composition-width,100%) !important;max-width:var(--aj-contacts-composition-max-width,100%);min-width:var(--aj-contacts-composition-min-width,0) !important;box-sizing:var(--aj-contacts-composition-box-sizing,border-box);white-space:var(--aj-contacts-composition-white-space,nowrap);}
+
+/* Native aj-dialog composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-dialog"] ){flex:var(--aj-dialog-composition-flex,0 0 auto) !important;width:var(--aj-dialog-composition-width,100%) !important;max-width:var(--aj-dialog-composition-max-width,100%);min-width:var(--aj-dialog-composition-min-width,0) !important;box-sizing:var(--aj-dialog-composition-box-sizing,border-box);white-space:var(--aj-dialog-composition-white-space,nowrap);}
+
+/* Native aj-editor composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-editor"] ){flex:var(--aj-editor-composition-flex,0 0 auto) !important;width:var(--aj-editor-composition-width,100%) !important;max-width:var(--aj-editor-composition-max-width,100%);min-width:var(--aj-editor-composition-min-width,0) !important;box-sizing:var(--aj-editor-composition-box-sizing,border-box);white-space:var(--aj-editor-composition-white-space,nowrap);}
+
+/* Native aj-friends composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-friends"] ){flex:var(--aj-friends-composition-flex,0 0 auto) !important;width:var(--aj-friends-composition-width,100%) !important;max-width:var(--aj-friends-composition-max-width,100%);min-width:var(--aj-friends-composition-min-width,0) !important;box-sizing:var(--aj-friends-composition-box-sizing,border-box);white-space:var(--aj-friends-composition-white-space,nowrap);}
+
+/* Native aj-header composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-header"] ){flex:var(--aj-header-composition-flex,0 0 auto) !important;width:var(--aj-header-composition-width,100%) !important;max-width:var(--aj-header-composition-max-width,100%);min-width:var(--aj-header-composition-min-width,0) !important;box-sizing:var(--aj-header-composition-box-sizing,border-box);white-space:var(--aj-header-composition-white-space,nowrap);}
+
+/* Native aj-history composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-history"] ){flex:var(--aj-history-composition-flex,0 0 auto) !important;width:var(--aj-history-composition-width,100%) !important;max-width:var(--aj-history-composition-max-width,100%);min-width:var(--aj-history-composition-min-width,0) !important;box-sizing:var(--aj-history-composition-box-sizing,border-box);white-space:var(--aj-history-composition-white-space,nowrap);}
+
+/* Native aj-icon-action composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-icon-action"] ){flex:var(--aj-icon-action-composition-flex,0 0 auto) !important;width:var(--aj-icon-action-composition-width,100%) !important;max-width:var(--aj-icon-action-composition-max-width,100%);min-width:var(--aj-icon-action-composition-min-width,0) !important;box-sizing:var(--aj-icon-action-composition-box-sizing,border-box);white-space:var(--aj-icon-action-composition-white-space,nowrap);}
+
+/* Native aj-inline-component composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-inline-component"] ){flex:var(--aj-inline-component-composition-flex,0 0 auto) !important;width:var(--aj-inline-component-composition-width,100%) !important;max-width:var(--aj-inline-component-composition-max-width,100%);min-width:var(--aj-inline-component-composition-min-width,0) !important;box-sizing:var(--aj-inline-component-composition-box-sizing,border-box);white-space:var(--aj-inline-component-composition-white-space,nowrap);}
+
+/* Native aj-knowledge composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-knowledge"] ){flex:var(--aj-knowledge-composition-flex,0 0 auto) !important;width:var(--aj-knowledge-composition-width,100%) !important;max-width:var(--aj-knowledge-composition-max-width,100%);min-width:var(--aj-knowledge-composition-min-width,0) !important;box-sizing:var(--aj-knowledge-composition-box-sizing,border-box);white-space:var(--aj-knowledge-composition-white-space,nowrap);}
+
+/* Native aj-language composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-language"] ){flex:var(--aj-language-composition-flex,0 0 auto) !important;width:var(--aj-language-composition-width,100%) !important;max-width:var(--aj-language-composition-max-width,100%);min-width:var(--aj-language-composition-min-width,0) !important;box-sizing:var(--aj-language-composition-box-sizing,border-box);white-space:var(--aj-language-composition-white-space,nowrap);}
+
+/* Native aj-media composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-media"] ){flex:var(--aj-media-composition-flex,0 0 auto) !important;width:var(--aj-media-composition-width,100%) !important;max-width:var(--aj-media-composition-max-width,100%);min-width:var(--aj-media-composition-min-width,0) !important;box-sizing:var(--aj-media-composition-box-sizing,border-box);white-space:var(--aj-media-composition-white-space,nowrap);}
+
+/* Native aj-menu composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-menu"] ){flex:var(--aj-menu-composition-flex,0 0 auto) !important;width:var(--aj-menu-composition-width,100%) !important;max-width:var(--aj-menu-composition-max-width,100%);min-width:var(--aj-menu-composition-min-width,0) !important;box-sizing:var(--aj-menu-composition-box-sizing,border-box);white-space:var(--aj-menu-composition-white-space,nowrap);}
+
+/* Native aj-navigation-action composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-navigation-action"] ){flex:var(--aj-navigation-action-composition-flex,0 0 auto) !important;width:var(--aj-navigation-action-composition-width,100%) !important;max-width:var(--aj-navigation-action-composition-max-width,100%);min-width:var(--aj-navigation-action-composition-min-width,0) !important;box-sizing:var(--aj-navigation-action-composition-box-sizing,border-box);white-space:var(--aj-navigation-action-composition-white-space,nowrap);}
+
+/* Native aj-notice composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-notice"] ){flex:var(--aj-notice-composition-flex,0 0 auto) !important;width:var(--aj-notice-composition-width,100%) !important;max-width:var(--aj-notice-composition-max-width,100%);min-width:var(--aj-notice-composition-min-width,0) !important;box-sizing:var(--aj-notice-composition-box-sizing,border-box);white-space:var(--aj-notice-composition-white-space,nowrap);}
+
+/* Native aj-pairing composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-pairing"] ){flex:var(--aj-pairing-composition-flex,0 0 auto) !important;width:var(--aj-pairing-composition-width,100%) !important;max-width:var(--aj-pairing-composition-max-width,100%);min-width:var(--aj-pairing-composition-min-width,0) !important;box-sizing:var(--aj-pairing-composition-box-sizing,border-box);white-space:var(--aj-pairing-composition-white-space,nowrap);}
+
+/* Native aj-palette composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-palette"] ){flex:var(--aj-palette-composition-flex,0 0 auto) !important;width:var(--aj-palette-composition-width,100%) !important;max-width:var(--aj-palette-composition-max-width,100%);min-width:var(--aj-palette-composition-min-width,0) !important;box-sizing:var(--aj-palette-composition-box-sizing,border-box);white-space:var(--aj-palette-composition-white-space,nowrap);}
+
+/* Native aj-passkey composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-passkey"] ){flex:var(--aj-passkey-composition-flex,0 0 auto) !important;width:var(--aj-passkey-composition-width,100%) !important;max-width:var(--aj-passkey-composition-max-width,100%);min-width:var(--aj-passkey-composition-min-width,0) !important;box-sizing:var(--aj-passkey-composition-box-sizing,border-box);white-space:var(--aj-passkey-composition-white-space,nowrap);}
+
+/* Native aj-prose composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-prose"] ){flex:var(--aj-prose-composition-flex,0 0 auto) !important;width:var(--aj-prose-composition-width,100%) !important;max-width:var(--aj-prose-composition-max-width,100%);min-width:var(--aj-prose-composition-min-width,0) !important;box-sizing:var(--aj-prose-composition-box-sizing,border-box);white-space:var(--aj-prose-composition-white-space,nowrap);}
+
+/* Native aj-quote composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-quote"] ){flex:var(--aj-quote-composition-flex,0 0 auto) !important;width:var(--aj-quote-composition-width,100%) !important;max-width:var(--aj-quote-composition-max-width,100%);min-width:var(--aj-quote-composition-min-width,0) !important;box-sizing:var(--aj-quote-composition-box-sizing,border-box);white-space:var(--aj-quote-composition-white-space,nowrap);}
+
+/* Native aj-reader composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-reader"] ){flex:var(--aj-reader-composition-flex,0 0 auto) !important;width:var(--aj-reader-composition-width,100%) !important;max-width:var(--aj-reader-composition-max-width,100%);min-width:var(--aj-reader-composition-min-width,0) !important;box-sizing:var(--aj-reader-composition-box-sizing,border-box);white-space:var(--aj-reader-composition-white-space,nowrap);}
+
+/* Native aj-recording composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-recording"] ){flex:var(--aj-recording-composition-flex,0 0 auto) !important;width:var(--aj-recording-composition-width,100%) !important;max-width:var(--aj-recording-composition-max-width,100%);min-width:var(--aj-recording-composition-min-width,0) !important;box-sizing:var(--aj-recording-composition-box-sizing,border-box);white-space:var(--aj-recording-composition-white-space,nowrap);}
+
+/* Native aj-recovery composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-recovery"] ){flex:var(--aj-recovery-composition-flex,0 0 auto) !important;width:var(--aj-recovery-composition-width,100%) !important;max-width:var(--aj-recovery-composition-max-width,100%);min-width:var(--aj-recovery-composition-min-width,0) !important;box-sizing:var(--aj-recovery-composition-box-sizing,border-box);white-space:var(--aj-recovery-composition-white-space,nowrap);}
+
+/* Native aj-remotes composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-remotes"] ){flex:var(--aj-remotes-composition-flex,0 0 auto) !important;width:var(--aj-remotes-composition-width,100%) !important;max-width:var(--aj-remotes-composition-max-width,100%);min-width:var(--aj-remotes-composition-min-width,0) !important;box-sizing:var(--aj-remotes-composition-box-sizing,border-box);white-space:var(--aj-remotes-composition-white-space,nowrap);}
+
+/* Native aj-reply composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-reply"] ){flex:var(--aj-reply-composition-flex,0 0 auto) !important;width:var(--aj-reply-composition-width,100%) !important;max-width:var(--aj-reply-composition-max-width,100%);min-width:var(--aj-reply-composition-min-width,0) !important;box-sizing:var(--aj-reply-composition-box-sizing,border-box);white-space:var(--aj-reply-composition-white-space,nowrap);}
+
+/* Native aj-reply-action composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-reply-action"] ){flex:var(--aj-reply-action-composition-flex,0 0 auto) !important;width:var(--aj-reply-action-composition-width,100%) !important;max-width:var(--aj-reply-action-composition-max-width,100%);min-width:var(--aj-reply-action-composition-min-width,0) !important;box-sizing:var(--aj-reply-action-composition-box-sizing,border-box);white-space:var(--aj-reply-action-composition-white-space,nowrap);}
+
+/* Native aj-rescue composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-rescue"] ){flex:var(--aj-rescue-composition-flex,0 0 auto) !important;width:var(--aj-rescue-composition-width,100%) !important;max-width:var(--aj-rescue-composition-max-width,100%);min-width:var(--aj-rescue-composition-min-width,0) !important;box-sizing:var(--aj-rescue-composition-box-sizing,border-box);white-space:var(--aj-rescue-composition-white-space,nowrap);}
+
+/* Native aj-search composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-search"] ){flex:var(--aj-search-composition-flex,0 0 auto) !important;width:var(--aj-search-composition-width,100%) !important;max-width:var(--aj-search-composition-max-width,100%);min-width:var(--aj-search-composition-min-width,0) !important;box-sizing:var(--aj-search-composition-box-sizing,border-box);white-space:var(--aj-search-composition-white-space,nowrap);}
+
+/* Native aj-settings composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-settings"] ){flex:var(--aj-settings-composition-flex,0 0 auto) !important;width:var(--aj-settings-composition-width,100%) !important;max-width:var(--aj-settings-composition-max-width,100%);min-width:var(--aj-settings-composition-min-width,0) !important;box-sizing:var(--aj-settings-composition-box-sizing,border-box);white-space:var(--aj-settings-composition-white-space,nowrap);}
+
+/* Native aj-setup composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-setup"] ){flex:var(--aj-setup-composition-flex,0 0 auto) !important;width:var(--aj-setup-composition-width,100%) !important;max-width:var(--aj-setup-composition-max-width,100%);min-width:var(--aj-setup-composition-min-width,0) !important;box-sizing:var(--aj-setup-composition-box-sizing,border-box);white-space:var(--aj-setup-composition-white-space,nowrap);}
+
+/* Native aj-shell composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-shell"] ){flex:var(--aj-shell-composition-flex,0 0 auto) !important;width:var(--aj-shell-composition-width,100%) !important;max-width:var(--aj-shell-composition-max-width,100%);min-width:var(--aj-shell-composition-min-width,0) !important;box-sizing:var(--aj-shell-composition-box-sizing,border-box);white-space:var(--aj-shell-composition-white-space,nowrap);}
+
+/* Native aj-source composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-source"] ){flex:var(--aj-source-composition-flex,0 0 auto) !important;width:var(--aj-source-composition-width,100%) !important;max-width:var(--aj-source-composition-max-width,100%);min-width:var(--aj-source-composition-min-width,0) !important;box-sizing:var(--aj-source-composition-box-sizing,border-box);white-space:var(--aj-source-composition-white-space,nowrap);}
+
+/* Native aj-suggestion composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-suggestion"] ){flex:var(--aj-suggestion-composition-flex,0 0 auto) !important;width:var(--aj-suggestion-composition-width,100%) !important;max-width:var(--aj-suggestion-composition-max-width,100%);min-width:var(--aj-suggestion-composition-min-width,0) !important;box-sizing:var(--aj-suggestion-composition-box-sizing,border-box);white-space:var(--aj-suggestion-composition-white-space,nowrap);}
+
+/* Native aj-terminal composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-terminal"] ){flex:var(--aj-terminal-composition-flex,0 0 auto) !important;width:var(--aj-terminal-composition-width,100%) !important;max-width:var(--aj-terminal-composition-max-width,100%);min-width:var(--aj-terminal-composition-min-width,0) !important;box-sizing:var(--aj-terminal-composition-box-sizing,border-box);white-space:var(--aj-terminal-composition-white-space,nowrap);}
+
+/* Native aj-wallet composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-wallet"] ){flex:var(--aj-wallet-composition-flex,0 0 auto) !important;width:var(--aj-wallet-composition-width,100%) !important;max-width:var(--aj-wallet-composition-max-width,100%);min-width:var(--aj-wallet-composition-min-width,0) !important;box-sizing:var(--aj-wallet-composition-box-sizing,border-box);white-space:var(--aj-wallet-composition-white-space,nowrap);}
+
+/* Native aj-wallet-calendar composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-wallet-calendar"] ){flex:var(--aj-wallet-calendar-composition-flex,0 0 auto) !important;width:var(--aj-wallet-calendar-composition-width,100%) !important;max-width:var(--aj-wallet-calendar-composition-max-width,100%);min-width:var(--aj-wallet-calendar-composition-min-width,0) !important;box-sizing:var(--aj-wallet-calendar-composition-box-sizing,border-box);white-space:var(--aj-wallet-calendar-composition-white-space,nowrap);}
+
+/* Native aj-wallet-color composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(button):where([data-aj-owner="aj-wallet-color"] ){flex:var(--aj-wallet-color-composition-flex,0 0 auto) !important;width:var(--aj-wallet-color-composition-width,100%) !important;max-width:var(--aj-wallet-color-composition-max-width,100%);min-width:var(--aj-wallet-color-composition-min-width,0) !important;box-sizing:var(--aj-wallet-color-composition-box-sizing,border-box);white-space:var(--aj-wallet-color-composition-white-space,nowrap);}
+
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where(.aj-action){flex:var(--aj-action-layout-flex,0 0 auto) !important;width:var(--aj-action-layout-width,100%) !important;max-width:var(--aj-action-layout-max-width,100%);min-width:var(--aj-action-layout-min-width,0) !important;box-sizing:var(--aj-action-layout-box-sizing,border-box);white-space:var(--aj-action-layout-white-space,nowrap);}
+
+/* Native aj-account composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-account"] ){flex:var(--aj-account-composition-flex,0 0 auto) !important;width:var(--aj-account-composition-width,100%) !important;max-width:var(--aj-account-composition-max-width,100%);min-width:var(--aj-account-composition-min-width,0) !important;box-sizing:var(--aj-account-composition-box-sizing,border-box);white-space:var(--aj-account-composition-white-space,nowrap);}
+/* owner: aj-dialog-action; explicit opt-in, equal initial value */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-dialog-action"] ){flex:var(--aj-dialog-action-composition-flex,0 0 auto) !important;width:var(--aj-dialog-action-composition-width,100%) !important;max-width:var(--aj-dialog-action-composition-max-width,100%);min-width:var(--aj-dialog-action-composition-min-width,0) !important;box-sizing:var(--aj-dialog-action-composition-box-sizing,border-box);white-space:var(--aj-dialog-action-composition-white-space,nowrap);}
+
+/* owner: aj-attachment; explicit opt-in, equal initial value */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-attachment"] ){flex:var(--aj-attachment-composition-flex,0 0 auto) !important;width:var(--aj-attachment-composition-width,100%) !important;max-width:var(--aj-attachment-composition-max-width,100%);min-width:var(--aj-attachment-composition-min-width,0) !important;box-sizing:var(--aj-attachment-composition-box-sizing,border-box);white-space:var(--aj-attachment-composition-white-space,nowrap);}
+
+/* owner: aj-composer-tool; explicit opt-in, equal initial value */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-composer-tool"] ){flex:var(--aj-composer-tool-composition-flex,0 0 auto) !important;width:var(--aj-composer-tool-composition-width,100%) !important;max-width:var(--aj-composer-tool-composition-max-width,100%);min-width:var(--aj-composer-tool-composition-min-width,0) !important;box-sizing:var(--aj-composer-tool-composition-box-sizing,border-box);white-space:var(--aj-composer-tool-composition-white-space,nowrap);}
+
+/* owner: aj-content; explicit opt-in, equal initial value */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-content"] ){flex:var(--aj-content-composition-flex,0 0 auto) !important;width:var(--aj-content-composition-width,100%) !important;max-width:var(--aj-content-composition-max-width,100%);min-width:var(--aj-content-composition-min-width,0) !important;box-sizing:var(--aj-content-composition-box-sizing,border-box);white-space:var(--aj-content-composition-white-space,nowrap);}
+
+/* owner: aj-file; explicit opt-in, equal initial value */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-file"] ){flex:var(--aj-file-composition-flex,0 0 auto) !important;width:var(--aj-file-composition-width,100%) !important;max-width:var(--aj-file-composition-max-width,100%);min-width:var(--aj-file-composition-min-width,0) !important;box-sizing:var(--aj-file-composition-box-sizing,border-box);white-space:var(--aj-file-composition-white-space,nowrap);}
+
+/* owner: aj-settings-control; explicit opt-in, equal initial value */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-settings-control"] ){flex:var(--aj-settings-control-composition-flex,0 0 auto) !important;width:var(--aj-settings-control-composition-width,100%) !important;max-width:var(--aj-settings-control-composition-max-width,100%);min-width:var(--aj-settings-control-composition-min-width,0) !important;box-sizing:var(--aj-settings-control-composition-box-sizing,border-box);white-space:var(--aj-settings-control-composition-white-space,nowrap);}
+
+/* owner: aj-status; explicit opt-in, equal initial value */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-status"] ){flex:var(--aj-status-composition-flex,0 0 auto) !important;width:var(--aj-status-composition-width,100%) !important;max-width:var(--aj-status-composition-max-width,100%);min-width:var(--aj-status-composition-min-width,0) !important;box-sizing:var(--aj-status-composition-box-sizing,border-box);white-space:var(--aj-status-composition-white-space,nowrap);}
+
+
+/* Native aj-action composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-action"] ){flex:var(--aj-action-composition-flex,0 0 auto) !important;width:var(--aj-action-composition-width,100%) !important;max-width:var(--aj-action-composition-max-width,100%);min-width:var(--aj-action-composition-min-width,0) !important;box-sizing:var(--aj-action-composition-box-sizing,border-box);white-space:var(--aj-action-composition-white-space,nowrap);}
+
+/* Native aj-approval composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-approval"] ){flex:var(--aj-approval-composition-flex,0 0 auto) !important;width:var(--aj-approval-composition-width,100%) !important;max-width:var(--aj-approval-composition-max-width,100%);min-width:var(--aj-approval-composition-min-width,0) !important;box-sizing:var(--aj-approval-composition-box-sizing,border-box);white-space:var(--aj-approval-composition-white-space,nowrap);}
+
+/* Native aj-auth-card composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-auth-card"] ){flex:var(--aj-auth-card-composition-flex,0 0 auto) !important;width:var(--aj-auth-card-composition-width,100%) !important;max-width:var(--aj-auth-card-composition-max-width,100%);min-width:var(--aj-auth-card-composition-min-width,0) !important;box-sizing:var(--aj-auth-card-composition-box-sizing,border-box);white-space:var(--aj-auth-card-composition-white-space,nowrap);}
+
+/* Native aj-bots composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-bots"] ){flex:var(--aj-bots-composition-flex,0 0 auto) !important;width:var(--aj-bots-composition-width,100%) !important;max-width:var(--aj-bots-composition-max-width,100%);min-width:var(--aj-bots-composition-min-width,0) !important;box-sizing:var(--aj-bots-composition-box-sizing,border-box);white-space:var(--aj-bots-composition-white-space,nowrap);}
+
+/* Native aj-busy composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-busy"] ){flex:var(--aj-busy-composition-flex,0 0 auto) !important;width:var(--aj-busy-composition-width,100%) !important;max-width:var(--aj-busy-composition-max-width,100%);min-width:var(--aj-busy-composition-min-width,0) !important;box-sizing:var(--aj-busy-composition-box-sizing,border-box);white-space:var(--aj-busy-composition-white-space,nowrap);}
+
+/* Native aj-channel composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-channel"] ){flex:var(--aj-channel-composition-flex,0 0 auto) !important;width:var(--aj-channel-composition-width,100%) !important;max-width:var(--aj-channel-composition-max-width,100%);min-width:var(--aj-channel-composition-min-width,0) !important;box-sizing:var(--aj-channel-composition-box-sizing,border-box);white-space:var(--aj-channel-composition-white-space,nowrap);}
+
+/* Native aj-choice composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-choice"] ){flex:var(--aj-choice-composition-flex,0 0 auto) !important;width:var(--aj-choice-composition-width,100%) !important;max-width:var(--aj-choice-composition-max-width,100%);min-width:var(--aj-choice-composition-min-width,0) !important;box-sizing:var(--aj-choice-composition-box-sizing,border-box);white-space:var(--aj-choice-composition-white-space,nowrap);}
+
+/* Native aj-composer composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-composer"] ){flex:var(--aj-composer-composition-flex,0 0 auto) !important;width:var(--aj-composer-composition-width,100%) !important;max-width:var(--aj-composer-composition-max-width,100%);min-width:var(--aj-composer-composition-min-width,0) !important;box-sizing:var(--aj-composer-composition-box-sizing,border-box);white-space:var(--aj-composer-composition-white-space,nowrap);}
+
+/* Native aj-contacts composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-contacts"] ){flex:var(--aj-contacts-composition-flex,0 0 auto) !important;width:var(--aj-contacts-composition-width,100%) !important;max-width:var(--aj-contacts-composition-max-width,100%);min-width:var(--aj-contacts-composition-min-width,0) !important;box-sizing:var(--aj-contacts-composition-box-sizing,border-box);white-space:var(--aj-contacts-composition-white-space,nowrap);}
+
+/* Native aj-dialog composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-dialog"] ){flex:var(--aj-dialog-composition-flex,0 0 auto) !important;width:var(--aj-dialog-composition-width,100%) !important;max-width:var(--aj-dialog-composition-max-width,100%);min-width:var(--aj-dialog-composition-min-width,0) !important;box-sizing:var(--aj-dialog-composition-box-sizing,border-box);white-space:var(--aj-dialog-composition-white-space,nowrap);}
+
+/* Native aj-editor composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-editor"] ){flex:var(--aj-editor-composition-flex,0 0 auto) !important;width:var(--aj-editor-composition-width,100%) !important;max-width:var(--aj-editor-composition-max-width,100%);min-width:var(--aj-editor-composition-min-width,0) !important;box-sizing:var(--aj-editor-composition-box-sizing,border-box);white-space:var(--aj-editor-composition-white-space,nowrap);}
+
+/* Native aj-friends composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-friends"] ){flex:var(--aj-friends-composition-flex,0 0 auto) !important;width:var(--aj-friends-composition-width,100%) !important;max-width:var(--aj-friends-composition-max-width,100%);min-width:var(--aj-friends-composition-min-width,0) !important;box-sizing:var(--aj-friends-composition-box-sizing,border-box);white-space:var(--aj-friends-composition-white-space,nowrap);}
+
+/* Native aj-header composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-header"] ){flex:var(--aj-header-composition-flex,0 0 auto) !important;width:var(--aj-header-composition-width,100%) !important;max-width:var(--aj-header-composition-max-width,100%);min-width:var(--aj-header-composition-min-width,0) !important;box-sizing:var(--aj-header-composition-box-sizing,border-box);white-space:var(--aj-header-composition-white-space,nowrap);}
+
+/* Native aj-history composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-history"] ){flex:var(--aj-history-composition-flex,0 0 auto) !important;width:var(--aj-history-composition-width,100%) !important;max-width:var(--aj-history-composition-max-width,100%);min-width:var(--aj-history-composition-min-width,0) !important;box-sizing:var(--aj-history-composition-box-sizing,border-box);white-space:var(--aj-history-composition-white-space,nowrap);}
+
+/* Native aj-icon-action composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-icon-action"] ){flex:var(--aj-icon-action-composition-flex,0 0 auto) !important;width:var(--aj-icon-action-composition-width,100%) !important;max-width:var(--aj-icon-action-composition-max-width,100%);min-width:var(--aj-icon-action-composition-min-width,0) !important;box-sizing:var(--aj-icon-action-composition-box-sizing,border-box);white-space:var(--aj-icon-action-composition-white-space,nowrap);}
+
+/* Native aj-inline-component composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-inline-component"] ){flex:var(--aj-inline-component-composition-flex,0 0 auto) !important;width:var(--aj-inline-component-composition-width,100%) !important;max-width:var(--aj-inline-component-composition-max-width,100%);min-width:var(--aj-inline-component-composition-min-width,0) !important;box-sizing:var(--aj-inline-component-composition-box-sizing,border-box);white-space:var(--aj-inline-component-composition-white-space,nowrap);}
+
+/* Native aj-knowledge composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-knowledge"] ){flex:var(--aj-knowledge-composition-flex,0 0 auto) !important;width:var(--aj-knowledge-composition-width,100%) !important;max-width:var(--aj-knowledge-composition-max-width,100%);min-width:var(--aj-knowledge-composition-min-width,0) !important;box-sizing:var(--aj-knowledge-composition-box-sizing,border-box);white-space:var(--aj-knowledge-composition-white-space,nowrap);}
+
+/* Native aj-language composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-language"] ){flex:var(--aj-language-composition-flex,0 0 auto) !important;width:var(--aj-language-composition-width,100%) !important;max-width:var(--aj-language-composition-max-width,100%);min-width:var(--aj-language-composition-min-width,0) !important;box-sizing:var(--aj-language-composition-box-sizing,border-box);white-space:var(--aj-language-composition-white-space,nowrap);}
+
+/* Native aj-media composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-media"] ){flex:var(--aj-media-composition-flex,0 0 auto) !important;width:var(--aj-media-composition-width,100%) !important;max-width:var(--aj-media-composition-max-width,100%);min-width:var(--aj-media-composition-min-width,0) !important;box-sizing:var(--aj-media-composition-box-sizing,border-box);white-space:var(--aj-media-composition-white-space,nowrap);}
+
+/* Native aj-menu composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-menu"] ){flex:var(--aj-menu-composition-flex,0 0 auto) !important;width:var(--aj-menu-composition-width,100%) !important;max-width:var(--aj-menu-composition-max-width,100%);min-width:var(--aj-menu-composition-min-width,0) !important;box-sizing:var(--aj-menu-composition-box-sizing,border-box);white-space:var(--aj-menu-composition-white-space,nowrap);}
+
+/* Native aj-navigation-action composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-navigation-action"] ){flex:var(--aj-navigation-action-composition-flex,0 0 auto) !important;width:var(--aj-navigation-action-composition-width,100%) !important;max-width:var(--aj-navigation-action-composition-max-width,100%);min-width:var(--aj-navigation-action-composition-min-width,0) !important;box-sizing:var(--aj-navigation-action-composition-box-sizing,border-box);white-space:var(--aj-navigation-action-composition-white-space,nowrap);}
+
+/* Native aj-notice composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-notice"] ){flex:var(--aj-notice-composition-flex,0 0 auto) !important;width:var(--aj-notice-composition-width,100%) !important;max-width:var(--aj-notice-composition-max-width,100%);min-width:var(--aj-notice-composition-min-width,0) !important;box-sizing:var(--aj-notice-composition-box-sizing,border-box);white-space:var(--aj-notice-composition-white-space,nowrap);}
+
+/* Native aj-pairing composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-pairing"] ){flex:var(--aj-pairing-composition-flex,0 0 auto) !important;width:var(--aj-pairing-composition-width,100%) !important;max-width:var(--aj-pairing-composition-max-width,100%);min-width:var(--aj-pairing-composition-min-width,0) !important;box-sizing:var(--aj-pairing-composition-box-sizing,border-box);white-space:var(--aj-pairing-composition-white-space,nowrap);}
+
+/* Native aj-palette composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-palette"] ){flex:var(--aj-palette-composition-flex,0 0 auto) !important;width:var(--aj-palette-composition-width,100%) !important;max-width:var(--aj-palette-composition-max-width,100%);min-width:var(--aj-palette-composition-min-width,0) !important;box-sizing:var(--aj-palette-composition-box-sizing,border-box);white-space:var(--aj-palette-composition-white-space,nowrap);}
+
+/* Native aj-passkey composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-passkey"] ){flex:var(--aj-passkey-composition-flex,0 0 auto) !important;width:var(--aj-passkey-composition-width,100%) !important;max-width:var(--aj-passkey-composition-max-width,100%);min-width:var(--aj-passkey-composition-min-width,0) !important;box-sizing:var(--aj-passkey-composition-box-sizing,border-box);white-space:var(--aj-passkey-composition-white-space,nowrap);}
+
+/* Native aj-prose composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-prose"] ){flex:var(--aj-prose-composition-flex,0 0 auto) !important;width:var(--aj-prose-composition-width,100%) !important;max-width:var(--aj-prose-composition-max-width,100%);min-width:var(--aj-prose-composition-min-width,0) !important;box-sizing:var(--aj-prose-composition-box-sizing,border-box);white-space:var(--aj-prose-composition-white-space,nowrap);}
+
+/* Native aj-quote composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-quote"] ){flex:var(--aj-quote-composition-flex,0 0 auto) !important;width:var(--aj-quote-composition-width,100%) !important;max-width:var(--aj-quote-composition-max-width,100%);min-width:var(--aj-quote-composition-min-width,0) !important;box-sizing:var(--aj-quote-composition-box-sizing,border-box);white-space:var(--aj-quote-composition-white-space,nowrap);}
+
+/* Native aj-reader composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-reader"] ){flex:var(--aj-reader-composition-flex,0 0 auto) !important;width:var(--aj-reader-composition-width,100%) !important;max-width:var(--aj-reader-composition-max-width,100%);min-width:var(--aj-reader-composition-min-width,0) !important;box-sizing:var(--aj-reader-composition-box-sizing,border-box);white-space:var(--aj-reader-composition-white-space,nowrap);}
+
+/* Native aj-recording composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-recording"] ){flex:var(--aj-recording-composition-flex,0 0 auto) !important;width:var(--aj-recording-composition-width,100%) !important;max-width:var(--aj-recording-composition-max-width,100%);min-width:var(--aj-recording-composition-min-width,0) !important;box-sizing:var(--aj-recording-composition-box-sizing,border-box);white-space:var(--aj-recording-composition-white-space,nowrap);}
+
+/* Native aj-recovery composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-recovery"] ){flex:var(--aj-recovery-composition-flex,0 0 auto) !important;width:var(--aj-recovery-composition-width,100%) !important;max-width:var(--aj-recovery-composition-max-width,100%);min-width:var(--aj-recovery-composition-min-width,0) !important;box-sizing:var(--aj-recovery-composition-box-sizing,border-box);white-space:var(--aj-recovery-composition-white-space,nowrap);}
+
+/* Native aj-remotes composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-remotes"] ){flex:var(--aj-remotes-composition-flex,0 0 auto) !important;width:var(--aj-remotes-composition-width,100%) !important;max-width:var(--aj-remotes-composition-max-width,100%);min-width:var(--aj-remotes-composition-min-width,0) !important;box-sizing:var(--aj-remotes-composition-box-sizing,border-box);white-space:var(--aj-remotes-composition-white-space,nowrap);}
+
+/* Native aj-reply composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-reply"] ){flex:var(--aj-reply-composition-flex,0 0 auto) !important;width:var(--aj-reply-composition-width,100%) !important;max-width:var(--aj-reply-composition-max-width,100%);min-width:var(--aj-reply-composition-min-width,0) !important;box-sizing:var(--aj-reply-composition-box-sizing,border-box);white-space:var(--aj-reply-composition-white-space,nowrap);}
+
+/* Native aj-reply-action composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-reply-action"] ){flex:var(--aj-reply-action-composition-flex,0 0 auto) !important;width:var(--aj-reply-action-composition-width,100%) !important;max-width:var(--aj-reply-action-composition-max-width,100%);min-width:var(--aj-reply-action-composition-min-width,0) !important;box-sizing:var(--aj-reply-action-composition-box-sizing,border-box);white-space:var(--aj-reply-action-composition-white-space,nowrap);}
+
+/* Native aj-rescue composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-rescue"] ){flex:var(--aj-rescue-composition-flex,0 0 auto) !important;width:var(--aj-rescue-composition-width,100%) !important;max-width:var(--aj-rescue-composition-max-width,100%);min-width:var(--aj-rescue-composition-min-width,0) !important;box-sizing:var(--aj-rescue-composition-box-sizing,border-box);white-space:var(--aj-rescue-composition-white-space,nowrap);}
+
+/* Native aj-search composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-search"] ){flex:var(--aj-search-composition-flex,0 0 auto) !important;width:var(--aj-search-composition-width,100%) !important;max-width:var(--aj-search-composition-max-width,100%);min-width:var(--aj-search-composition-min-width,0) !important;box-sizing:var(--aj-search-composition-box-sizing,border-box);white-space:var(--aj-search-composition-white-space,nowrap);}
+
+/* Native aj-settings composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-settings"] ){flex:var(--aj-settings-composition-flex,0 0 auto) !important;width:var(--aj-settings-composition-width,100%) !important;max-width:var(--aj-settings-composition-max-width,100%);min-width:var(--aj-settings-composition-min-width,0) !important;box-sizing:var(--aj-settings-composition-box-sizing,border-box);white-space:var(--aj-settings-composition-white-space,nowrap);}
+
+/* Native aj-setup composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-setup"] ){flex:var(--aj-setup-composition-flex,0 0 auto) !important;width:var(--aj-setup-composition-width,100%) !important;max-width:var(--aj-setup-composition-max-width,100%);min-width:var(--aj-setup-composition-min-width,0) !important;box-sizing:var(--aj-setup-composition-box-sizing,border-box);white-space:var(--aj-setup-composition-white-space,nowrap);}
+
+/* Native aj-shell composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-shell"] ){flex:var(--aj-shell-composition-flex,0 0 auto) !important;width:var(--aj-shell-composition-width,100%) !important;max-width:var(--aj-shell-composition-max-width,100%);min-width:var(--aj-shell-composition-min-width,0) !important;box-sizing:var(--aj-shell-composition-box-sizing,border-box);white-space:var(--aj-shell-composition-white-space,nowrap);}
+
+/* Native aj-source composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-source"] ){flex:var(--aj-source-composition-flex,0 0 auto) !important;width:var(--aj-source-composition-width,100%) !important;max-width:var(--aj-source-composition-max-width,100%);min-width:var(--aj-source-composition-min-width,0) !important;box-sizing:var(--aj-source-composition-box-sizing,border-box);white-space:var(--aj-source-composition-white-space,nowrap);}
+
+/* Native aj-suggestion composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-suggestion"] ){flex:var(--aj-suggestion-composition-flex,0 0 auto) !important;width:var(--aj-suggestion-composition-width,100%) !important;max-width:var(--aj-suggestion-composition-max-width,100%);min-width:var(--aj-suggestion-composition-min-width,0) !important;box-sizing:var(--aj-suggestion-composition-box-sizing,border-box);white-space:var(--aj-suggestion-composition-white-space,nowrap);}
+
+/* Native aj-terminal composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-terminal"] ){flex:var(--aj-terminal-composition-flex,0 0 auto) !important;width:var(--aj-terminal-composition-width,100%) !important;max-width:var(--aj-terminal-composition-max-width,100%);min-width:var(--aj-terminal-composition-min-width,0) !important;box-sizing:var(--aj-terminal-composition-box-sizing,border-box);white-space:var(--aj-terminal-composition-white-space,nowrap);}
+
+/* Native aj-wallet composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-wallet"] ){flex:var(--aj-wallet-composition-flex,0 0 auto) !important;width:var(--aj-wallet-composition-width,100%) !important;max-width:var(--aj-wallet-composition-max-width,100%);min-width:var(--aj-wallet-composition-min-width,0) !important;box-sizing:var(--aj-wallet-composition-box-sizing,border-box);white-space:var(--aj-wallet-composition-white-space,nowrap);}
+
+/* Native aj-wallet-calendar composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-wallet-calendar"] ){flex:var(--aj-wallet-calendar-composition-flex,0 0 auto) !important;width:var(--aj-wallet-calendar-composition-width,100%) !important;max-width:var(--aj-wallet-calendar-composition-max-width,100%);min-width:var(--aj-wallet-calendar-composition-min-width,0) !important;box-sizing:var(--aj-wallet-calendar-composition-box-sizing,border-box);white-space:var(--aj-wallet-calendar-composition-white-space,nowrap);}
+
+/* Native aj-wallet-color composition: independently owned initial contract. */
+:is(.aj-actions, .aj-hero__actions, .actions, .site-os-tabs, .btn-row, .li-actions,
+      .plaza-tabs, .fr-askbtns, .apprbtns, .seg) > :is(button, .aj-action, [role="tab"]):where([role="tab"]):where([data-aj-owner="aj-wallet-color"] ){flex:var(--aj-wallet-color-composition-flex,0 0 auto) !important;width:var(--aj-wallet-color-composition-width,100%) !important;max-width:var(--aj-wallet-color-composition-max-width,100%);min-width:var(--aj-wallet-color-composition-min-width,0) !important;box-sizing:var(--aj-wallet-color-composition-box-sizing,border-box);white-space:var(--aj-wallet-color-composition-white-space,nowrap);}
+
+
+}
+
+/* P119 shared vertical rhythm. aj-flow applies to content containers, never icon internals,
+   segmented controls or the chat pager. Hidden siblings do not consume a slot. */
+.aj-flow.aj-flow > :not([hidden]) ~ :not([hidden]) { margin-block-start:var(--space-content); }
+.aj-flow.aj-flow > :is(button,.aj-action) + :is(button,.aj-action):where([data-aj-owner="aj-bots"]) { margin-block-start:var(--aj-bots-flow-adjacent-action-gap,var(--space-control)); }
+.aj-flow.aj-flow > :is(button,.aj-action) + :is(button,.aj-action):where([data-aj-owner="aj-friends"]) { margin-block-start:var(--aj-friends-flow-adjacent-action-gap,var(--space-control)); }
+.aj-flow.aj-flow > :is(button,.aj-action) + :is(button,.aj-action):where([data-aj-owner="aj-action"]) { margin-block-start:var(--aj-action-flow-adjacent-action-gap,var(--space-control)); }
+.aj-flow.aj-flow > :is(h2,h3,h4,.aj-actions) { margin-block-start:var(--space-section); }
+.aj-flow.aj-flow > :is(h1,h2,h3,h4) + :not([hidden]) { margin-block-start:var(--space-content); }
+.aj-actions{gap:var(--aj-action-layout-gap,var(--space-control));}
+.aj-row{ gap:var(--space-control); }
+.aj-hero__actions{ gap:var(--space-control); }
+.confirm-row{ gap:var(--space-control); }
+.fr-acts{gap:var(--aj-friends-layout-gap,var(--space-control));}
+.ajrow{ gap:var(--space-control); }
+.model-options{ gap:var(--space-control); }
+
+.aj-card + .aj-card { margin-block-start:var(--space-section); }
+/* P369 (#81) 「一行里第一张总被抬高」: the sibling rhythm rules (`.aj-card + .aj-card` above, `.ajmodal li+li`, `* + *`) are
+   for STACKED blocks, but they also match the items of a row grid, where every item but the first gets the margin and the
+   first stands taller. A row is spaced by its own gap, so its items never take a block-start margin — every row container
+   is listed here, one place (brand/test/row-audit.mjs reports a row that is missing). */
+:is(.aj-rowset, .site-cards, .toolsort) > * { margin-block-start:0 !important; }

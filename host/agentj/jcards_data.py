@@ -216,30 +216,123 @@ def automations(root=None, cfg=None, lang='zh'):
     """Reuse existing native scanner plus Agent J task catalogue. No parallel registry or inferred models."""
     from . import systasks
     deadline = time.monotonic() + 6
+    spent = {}
     def run(argv):
-        left = deadline - time.monotonic()
-        return _run(argv, min(2, left)) if left > 0 else ''
-    native = systasks.scan(run=run)
+        # A busy manager cannot spend the whole tool budget before later families.
+        family = (argv[0], '--user' in argv if argv[0] == 'systemctl' else False)
+        started = time.monotonic()
+        left = min(deadline - started, 1.5 - spent.get(family, 0))
+        if left <= 0:
+            return ''
+        try:
+            return _run(argv, min(2, left))
+        finally:
+            spent[family] = spent.get(family, 0) + time.monotonic() - started
+    native = systasks.scan(run=run, aggregate=True)
+    controller = None
+    if root is not None:
+        from .native_scheduler_control import Controller, Backend
+        from .state import State
+        controller = Controller(State(root), Backend(run=run))
+        # restore_rows has a legacy global MAX slice. Ask only for its bounded
+        # recovery rows, then merge without discarding later scanned families.
+        recovery = controller.restore_rows([])
+        key = lambda r: (r['src'], r.get('scope', 'user'), r.get('control_id', r['id']))
+        recovered = {key(r) for r in recovery}
+        native = recovery + [r for r in native if key(r) not in recovered]
     out, counts = [], {}
     for row in native:
         # Cron's scanner ids can repeat for the same executable: include schedule + occurrence.
-        basis = str(row['id']) if row['src'] != 'cron' else hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest()[:20]
-        base = row['src'] + ':' + basis
+        basis = str(row['control_id']) if row.get('control_id') else str(row['id']) if row['src'] != 'cron' else hashlib.sha256(json.dumps(row, sort_keys=True).encode()).hexdigest()[:20]
+        base = row['src'] + ':' + row.get('scope', 'user') + ':' + basis
         counts[base] = counts.get(base, 0) + 1
         unique = _safe_job_name(base + (f'-{counts[base]}' if row['src'] == 'cron' or counts[base] > 1 else ''))
         schedule = [{'k': x.get('k'), 'v': privacy.redact(str(x.get('v', '')), owner=True) if isinstance(x.get('v'), str) else x.get('v')} for x in row.get('when', []) if isinstance(x, dict)]
         out.append({'id': unique, 'name': unique, 'source': row['src'], 'schedule': schedule,
                     'when': schedule, 'repeat': schedule, 'next': row.get('next') or row.get('next_s'), 'harness': None, 'model': None,
                     'description': privacy.redact(row.get('name', ''), owner=True) or None,
+                    'scope': row.get('scope', 'user'), 'owner': row.get('owner', 'unknown'),
+                    'execution': privacy.redact(row['execution'], owner=True) if isinstance(row.get('execution'), str) and re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.@:-]*\.service', row['execution']) else '[masked]', 'last': row.get('last') or row.get('last_s'),
+                    'last_result': row.get('last_result', 'unknown'), 'state': row.get('state'),
+                    'visibility': row.get('visibility', 'visible'),
+                    'control': _native_control(controller, row),
                     'prompt': '/agentj-automation @' + unique})
     if root is not None and cfg:
-        from . import tasks
+        from . import tasks, sysmigrate
         from .state import State
-        for row in tasks.rows(State(root), cfg.get('dir')):
-            unique = _safe_job_name('agentj:' + row['id'])
+        state = State(root)
+        try:
+            migrated = sysmigrate.migrated(state)
+        except (OSError, ValueError, TypeError):
+            migrated = None  # Unresolved migration state cannot offer an enable button.
+        for row in tasks.rows(state, cfg.get('dir')):
+            base = 'agentj:' + row['id']
+            counts[base] = counts.get(base, 0) + 1
+            unique = _safe_job_name(base + (f'-{counts[base]}' if counts[base] > 1 else ''))
             out.append({'id': unique, 'name': unique, 'source': 'agentj', 'schedule': row.get('schedule'),
                         'repeat': row.get('schedule'), 'next': row.get('next'), 'harness': privacy.redact(str(cfg['kind']), owner=True) if cfg.get('kind') else None,
+                        'owner': 'AgentJ', 'last_result': (row.get('last') or {}).get('status', 'unknown'), 'last': (row.get('last') or {}).get('at'),
                         'model': privacy.redact(str(cfg['model']), owner=True) if cfg.get('model') else None, 'enabled': row.get('enabled'), 'tz': row.get('tz'),
                         'description': privacy.redact(row['title'].get(lang) or row['title'].get('en') or '', owner=True),
+                        'control': _task_control(row, migrated),
+                        'scope': 'Agent J task scheduler',
                         'prompt': '/agentj-automation @' + unique})
-    return _owner_metadata(out[:cards.ITEMS_MAX])
+    return _owner_metadata(out)
+
+
+def _native_control(controller, row):
+    if row['src'] not in ('systemd', 'launchd', 'schtasks', 'cron', 'cron-system', 'anacron'):
+        return {'supported': False, 'reason': 'read_only'}
+    if (controller and row.get('scope') in ('user', 'system', 'all-users')
+            and privacy.redact(row['id'], owner=True) == row['id']):
+        control = controller.describe(row)
+    else:
+        control = row.get('control', {'supported': False, 'reason': 'read_only'})
+    if control.get('target', {}).get('kind') == 'agentj-task':
+        return {'supported': False, 'reason': 'invalid_target'}
+    return control
+
+
+def _task_control(row, migrated):
+    """Projection only: existing signed task_set remains the sole Agent J route."""
+    tid, tsha = row.get('id'), row.get('tsha')
+    reason = ('unresolved' if migrated is None else
+              'migrated' if isinstance(tid, str) and tid in migrated else
+              'invalid_contract' if row.get('problems') or not isinstance(tid, str)
+              or not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,39}', tid)
+              or not isinstance(tsha, str) or not re.fullmatch(r'[0-9a-f]{64}', tsha)
+              or type(row.get('enabled')) is not bool else
+              'stale_contract' if row.get('stale') else
+              'uncertain' if row.get('uncertain') else None)
+    if reason:
+        return {'supported': False, 'reason': reason}
+    return {'supported': True, 'target': {'kind': 'agentj-task', 'id': tid,
+                                        'tsha': tsha, 'enabled': row['enabled']}}
+
+
+def automation_page(root=None, cfg=None, lang='zh', page=0):
+    """Read-only bounded page over the current native + Agent J scan."""
+    if type(page) is not int or page < 0:
+        return {'ok': False, 'why': 'bad_automation_page'}
+    from . import wire
+    items = automations(root, cfg, lang)
+    # Count limits alone are insufficient: 200 normal native rows exceed p33.
+    # Reserve the unchanged response envelope, request id and pagination metadata;
+    # measure with the actual compact UTF-8 wire encoder, never character counts.
+    budget = wire.MAX_JSON_P33 - 2048
+    groups, used = [[]], 2
+    for item in items:
+        size = len(wire.dumps(item))
+        if size + 2 > budget:
+            return {'ok': False, 'why': 'automation_row_too_large'}
+        separator = bool(groups[-1])
+        if len(groups[-1]) >= cards.ITEMS_MAX or used + size + separator > budget:
+            groups.append([])
+            used, separator = 2, False
+        groups[-1].append(item)
+        used += size + separator
+    pagination = {'page': page, 'total': len(items), 'page_size': cards.ITEMS_MAX,
+                  'pages': len(groups), 'scan_limited': True}
+    if page >= len(groups):
+        return {'ok': False, 'why': 'bad_automation_page', 'pagination': pagination}
+    return {'ok': True, 'items': groups[page], 'pagination': pagination}

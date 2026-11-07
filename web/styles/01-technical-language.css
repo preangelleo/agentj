@@ -1,0 +1,4 @@
+/* #577 Web-owned technical-language; source order is a compatibility contract. */
+/* ===== bilingual visibility (lang.js sets html[data-lang]); no JS → zh only ===== */
+html:not([data-lang="en"]) [data-l="en"],
+html[data-lang="en"] [data-l="zh"] { display: none !important; }

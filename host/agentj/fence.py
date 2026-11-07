@@ -75,6 +75,22 @@ def inside(environ=None) -> bool:
     return False
 
 
+# #467 (ADR-0269-w4-fence): the one answer of a fenced `agentj` command that needs the host's state directory. Inside the
+# fence that directory is an empty mount (Linux) or denied (macOS): "not initialised / no Agent / no tasks" there misled an
+# Agent into "the host was wiped" (tickets st_am7… / st_lbQ…). Never suggests init or re-pairing.
+HIDDEN_STATE = ("在 Agent 的隔离环境里看不到主机状态（这里的状态目录是空的），这不代表任务、配对或设置丢了，不用重新初始化或重新配对。"
+                "{also}只读查看：agentj status、agentj tasks list、agentj devices（由主机回答）；要改设置，请主人在手机上操作，"
+                "或在 Agent J 主机终端（隔离外）运行这条命令。 / The host's state is hidden inside the Agent's isolation (its folder "
+                "is empty here); that does not mean tasks, pairing or settings are lost, and nothing needs re-initialising or "
+                "re-pairing. Read-only: agentj status, agentj tasks list, agentj devices (answered by the host); to change "
+                "settings, ask the owner on the phone or run this command in a terminal on the Agent J host (outside the fence).")
+
+
+def hidden_state(also: str = "") -> str:
+    """#467: honest fenced replacement for every "not initialised" / "no Agent" answer (bilingual, one line)."""
+    return HIDDEN_STATE.format(also=also)
+
+
 def _real(p: str) -> str:
     return os.path.realpath(os.path.expanduser(p))
 

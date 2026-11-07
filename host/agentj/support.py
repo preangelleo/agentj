@@ -88,9 +88,13 @@ class Channel:
             # inside the signed body and POSTs to the bare path (0.15.x put them in `?after=&wait=` → refused_url, never read)
             inner = {"v": 1, "t": "support_thread", "channel": cloud.channel_of(self.st), "ts": int(self.now()), "thread": thread,
                      "after": after, "wait": wait}
-            return self.post(self.base + path, cloud.envelope(CTX_THREAD, inner, self.st.signing_key()), timeout=wait + 15, max_response=MAX_RESPONSE)
-        q = "?" + urllib.parse.urlencode({"after": after, "wait": wait})
-        return bearer_call("GET", self.base + path + q, self.install_id, None, timeout=wait + 15)
+            result = self.post(self.base + path, cloud.envelope(CTX_THREAD, inner, self.st.signing_key()), timeout=wait + 15, max_response=MAX_RESPONSE)
+        else:
+            q = "?" + urllib.parse.urlencode({"after": after, "wait": wait})
+            result = bearer_call("GET", self.base + path + q, self.install_id, None, timeout=wait + 15)
+        from . import approval_material
+        approval_material.observed_response(thread, *result)
+        return result
 
 
 def bearer_call(method: str, url: str, token: str, body: dict | None, timeout: float = 40) -> tuple[int, dict]:
@@ -234,6 +238,7 @@ def prepare(body: str, attach: str | None, *, identity=None) -> tuple[dict, dict
 
 # ------------------------------------------------------------------ rendering (answers are DATA)
 def render(view: dict, *, mine_too: bool = False) -> str:
+    from .approval_review import safe_text
     t = view.get("thread") if isinstance(view.get("thread"), dict) else {}
     tid = t.get("id") if isinstance(t.get("id"), str) and _THREAD.fullmatch(t["id"]) else "?"
     status = clean_line(str(t.get("status", "?")), 20)
@@ -247,7 +252,10 @@ def render(view: dict, *, mine_too: bool = False) -> str:
             continue
         shown += 1
         out.append(f"{META}{AUTHORS[author]} · {clean_line(str(m.get('created_at', '')), 30)}")
-        out += [TEXT + line for line in escape_data(str(m.get("body", ""))).split("\n")]
+        raw_body = str(m.get("body", ""))
+        body = safe_text(raw_body, MAX_TEXT)
+        if len(raw_body) > MAX_TEXT:body += "\n[内容超限已截断 / content truncated]"
+        out += [TEXT + line for line in escape_data(body).split("\n")]
     if not shown:
         out.append(f"{META}（还没有回复 / no answer yet）")
     out.append(FENCE_CLOSE)
@@ -317,7 +325,7 @@ def run_send(kind: str, text: str, *, thread: str | None = None, attach_doctor=F
         raise SupportError("脱敏后正文是空的 / nothing left after redaction")
     # #475: fixed-vocabulary upgrade metadata needs no Jev judgement (nothing free-form, no attachment); everything else does
     v = (privacy.Verdict("metadata_only", reason="fixed upgrade metadata") if metadata_only else
-         privacy.layer2(draft, env=env, transport=transport, gate="feedback"))
+         privacy.outbound_check(draft, env=env, transport=transport, gate="feedback"))
     if v.status == "blocked" and v.kind in ("credential", None):
         print(f"NOT SENT — layer 2 (Jev) flagged it: {v.reason}; most likely {v.kind or '?'} ({privacy.kind_text(v.kind)}). "
               "Remove that and run again. / 没发出：第 2 层判定仍含隐私，请删掉后重发。", file=out)

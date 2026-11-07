@@ -1,3 +1,4 @@
+import { useOf } from './useof.js';
 // App messages → relay's snapshot (the object relay's render(s) was written for: status, kind, card, ask, approval,
 // usage, switch, compacting, history). relay received the whole snapshot from GET /state + SSE; Agent J receives
 // separate end-to-end messages (§8, §10), and this module folds them into the same shape so the ported page logic stays.
@@ -7,11 +8,13 @@ import { carry as selfhealCarry } from './selfheal.js';
 import { assistCarry } from './assistsrc.js';   // 0.26.9 #468 (§B3): a turn an official remote assist task started
 import { channel, peer, request, done as reqDone } from './session.js';
 import { sanitize as mediaOf } from './mediawire.js';   // F21 (§13)
+import { sanitize as formOf } from './formwire.js';         // P212 (§29)
 import { preauthOffer, faState, whyKey } from './pkrules.js';   // P539
 
-import { grantChallenge, pairingScope, ownerConfirmChallenge } from './ownergrant.js';
+import { elevateChallenge } from './faceid.js';
+import { grantChallenge, verifyPublicGrant, pairingScope, ownerConfirmChallenge } from './ownergrant.js';
 import { deviceKey, signKey, dbGet } from './store.js';
-import { deviceId, b64u } from '../proto/wire.js';
+import { deviceId, b64u, approvalEnvelopeDigest } from '../proto/wire.js';
 
 export const S = {
   conn: false,                 // a ready session with the host up
@@ -46,8 +49,10 @@ export function goalWords(m) {
   return { goal_who: oneLine(m.goal_who, 60), goal_what: oneLine(m.goal_what, 160), goal_add: add };
 }
 export function addAsk(m) {
+  if(m.approval_v!==undefined&&m.approval_v!==2||Number(m.minimum_approval_protocol)>2)return false;
   if (typeof m.id !== 'string' || !/^[0-9a-f]{32}$/.test(m.id) || typeof m.tool !== 'string' || typeof m.summary !== 'string') return;
-  if (S.asks.has(m.id)) return false;
+  const existing=S.asks.get(m.id);
+  if(existing){if(m.approval_v!==2||Number(m.revision)<=existing.revision)return false;S.asks.delete(m.id);S.order=S.order.filter(id=>id!==m.id);}
   // §17.7 friend requests wait up to 7 days; tolerate an old host's 24h question deadline.
   const maxTtl = m.tool === 'friend_request' ? 604800 : ['peer_question','wechat_confirm'].includes(m.tool) ? 86400 : 600;
   const ttl = Number.isInteger(m.ttl) && m.ttl >= 0 && m.ttl <= maxTtl ? m.ttl : 120;
@@ -56,8 +61,11 @@ export function addAsk(m) {
   S.asks.set(m.id, { id: m.id, kind: 'permission', tool: m.tool.slice(0, 64), summary: m.summary, cats, why: typeof m.why === 'string' ? m.why.slice(0, 200) : '',
     why_en: typeof m.why_en === 'string' ? m.why_en.slice(0, 200) : '', cred: m.cred === 'read' ? 'read' : '',   // P128: one language; 查看 vs 改
     passkey_required: m.passkey_required === true, fa: typeof m.fa === 'string' ? m.fa : '', fa_ch: typeof m.fa_ch === 'string' ? m.fa_ch : '',
+    pk_kind:typeof m.pk_kind==='string'?m.pk_kind:'',
     scope, batch_max: Number.isInteger(m.batch_max) ? m.batch_max : 20, batch_secs: Number.isInteger(m.batch_secs) ? m.batch_secs : 600,
     task: typeof m.task === 'string' ? m.task.slice(0, 80) : '',
+    learn: m.learn === "proposal",
+    host_tool: m.host_tool === true,   // 0.26.9 w4-web C-2: the host's own card (AuthRescue), not a harness tool's name
     cls: oneLine(m.cls, 60), why_scope: oneLine(m.why_scope, 300),   // 0.26.9 #472 ②: the card's class + why the task scope does not cover it (optional)
     reason: typeof m.reason === 'string' ? m.reason : null,   // P572: the Agent's reason ("" = none given; absent = an older host)
     // P573: this task's later steps of the same class will not ask again (host note; shown under the card, not signed)
@@ -69,9 +77,26 @@ export function addAsk(m) {
     goal: ['auto', 'hold', 'attack', 'grant'].includes(m.goal) ? m.goal : '', goal_why: typeof m.goal_why === 'string' ? m.goal_why.slice(0, 120) : '',   // P158
     ...goalWords(m),                                                                                                       // P339
     at: nowS(), deadline: Date.now() + ttl * 1000, state: 'open', final_at: null, touched: S.touched.has(m.id),
+    approval_invalid: (m.approval_v !== undefined && m.approval_v !== 2) || (m.approval_v !== 2 && (m.envelope !== undefined || m.envelope_sha256 !== undefined)) || Number(m.minimum_approval_protocol) > 2 || (Number(m.minimum_approval_protocol) > 1 && m.approval_v !== 2),
+    ...(m.approval_v === 2 ? {approval_v:2,envelope:structuredClone(m.envelope),envelope_sha256:m.envelope_sha256,revision:m.revision,envelope_verified:false,review_state:m.review_state||'pending'} : {}),
     ...(m.tool === 'friend_request' && m.fr && typeof m.fr === 'object' ? { fr: m.fr } : {}),     // display-only copies (friends.js)
     ...(m.tool === 'peer_question' && m.pq && typeof m.pq === 'object' ? { pq: m.pq } : {}) });
-  if (m.tool === 'agentj secret grant' && m.passkey_required) {
+  if (m.approval_v === 2) {
+    const a = S.asks.get(m.id), e = a.envelope;
+    Promise.resolve().then(async () => {
+      if (!e || e.v !== 2 || e.request_id !== m.id || e.channel !== channel() || e.revision !== m.revision || !Number.isInteger(e.revision) || e.revision < 1 || typeof e.nonce !== 'string') throw Error('envelope');
+      if (e.details !== m.summary || typeof e.source !== 'object' || !e.source || typeof e.action !== 'string') throw Error('display');
+      if ((e.controls?.batch || null) !== (m.batch || null) || (e.controls?.goal_add || null) !== (m.goal_add || null) || JSON.stringify(e.controls?.allow_offer || []) !== JSON.stringify(m.allow_offer || [])) throw Error('controls');
+      const digest = await approvalEnvelopeDigest(e);
+      if (digest !== m.envelope_sha256) throw Error('digest');
+      if (m.passkey_required && m.fa && (!m.pk_kind || b64u(await elevateChallenge(channel(),await deviceId((await deviceKey()).pub),m.id,m.pk_kind,m.id,digest)) !== (m.envelope_fa_ch ?? m.fa_ch))) throw Error('challenge');
+      if (S.asks.get(m.id) === a) { if (m.passkey_required && m.fa) a.fa_ch = m.envelope_fa_ch ?? m.fa_ch; a.envelope_verified = true; onChange(); }
+    }).catch(() => {});
+  }
+  if (m.tool === 'agentj secret grant' && m.approval_v===2 && m.passkey_required){
+    const a=S.asks.get(m.id);a.owner_grant=m.owner_grant;a.owner_grant_verified=false;Promise.resolve().then(()=>verifyPublicGrant(m)).then(()=>{if(S.asks.get(m.id)===a){a.owner_grant_verified=true;onChange();}}).catch(()=>{});
+  }
+  if (m.tool === 'agentj secret grant' && m.approval_v!==2 && m.passkey_required) {
     const a = S.asks.get(m.id), ch = channel();
     a.owner_grant = m.owner_grant; a.owner_grant_verified = false;
     a.fa_ch = ''; // P574: the assertion must cover the shown authorization, never an opaque host challenge.
@@ -191,6 +216,9 @@ export function setStatus(m) {
   S.agent = ['claude', 'codex', 'opencode'].includes(m.agent) ? m.agent : null;
   S.kind = m.kind === 'question' ? 'question' : null;
   S.tg = m.tg === 'down';                 // P129: the host's Telegram channel is down (status area line, app.js renderTg)
+  // P204 (§29): while working, a tool at work (「执行工具中 · Bash」) or the model writing (「生成中」)
+  S.ph = S.status === 'working' && ['tool', 'gen'].includes(m.ph) ? m.ph : null;
+  S.tool = S.ph === 'tool' && typeof m.tool === 'string' ? m.tool.replace(/[\u0000-\u001f]/g, ' ').slice(0, 40) : null;
   if (!peer.p33 && S.status === 'idle') endSynth();
   onChange();
 }
@@ -205,6 +233,7 @@ function usage() {
   return { heartbeat_usage: m.heartbeat_usage && typeof m.heartbeat_usage === 'object' ? m.heartbeat_usage : null, source: 'meter', shared_follow: m.shared_follow && ['claude','codex','opencode'].includes(m.shared_follow.agent) && typeof m.shared_follow.id === 'string' && /^[a-f0-9]{32}$/.test(m.shared_follow.id) ? {agent:m.shared_follow.agent,id:m.shared_follow.id} : null, shared_writer: m.shared_writer && typeof m.shared_writer === 'object' ? Object.fromEntries(['zh','en'].filter(l => typeof m.shared_writer[l] === 'string').map(l => [l, m.shared_writer[l].slice(0, 600)])) : null, shared_status: ['following','desktop_writer'].includes(m.shared_status) ? m.shared_status : null, model: typeof m.model_name === 'string' && m.model_name ? m.model_name.slice(0, 64) : (typeof m.model === 'string' ? m.model : null),
     model_id: typeof m.model === 'string' ? m.model : null, effort: typeof m.effort === 'string' ? m.effort.slice(0, 16) : null,
     ...(Array.isArray(m.quota_windows) ? {quota_windows:m.quota_windows} : {}),
+    ...(m.reset_credits && typeof m.reset_credits === 'object' ? {reset_credits:m.reset_credits} : {}),
     context_used:m.ctx?.used, context_limit:m.ctx?.max,
     week_pct: pct(m.week), five_hour_pct: pct(m.h5), context_pct: ctx, h5_reset: m.h5 && m.h5.reset, week_reset: m.week && m.week.reset,
     // P433 (#196): when each reading was measured (the host stamps `at`; a status-line reading has source_at) and whether a
@@ -242,6 +271,7 @@ export function snapshot() {
     approval: it && it.kind === 'permission' ? it : S.lastAsk,
     ask: it && it.kind === 'question' ? it : S.lastQ,
     usage: usage(), switch: swCat(), compacting: S.conn && S.status === 'compacting',
+    phase: S.conn && S.ph ? { ph: S.ph, tool: S.tool } : null,
     history: { count: S.hist.count, last_id: S.hist.last, epoch: S.hist.epoch, first_id: S.hist.first },
     estop: S.estop,
   };
@@ -285,15 +315,20 @@ export function toPage(t) {
     id: t.id, ts: typeof t.ts === 'number' ? t.ts / 1000 : null,
     source: { k, ...(k === 'sys' && ['wsl', 'loop'].includes(src.guide) ? { guide: src.guide } : {}), dev: typeof src.dev === 'string' ? src.dev : null, name: typeof src.name === 'string' ? src.name.slice(0, 64) : '',
       text: typeof src.text !== 'string' ? '' : k === 'telegram' ? src.text.replace(TG_SOURCE_LINE, '') : src.text, quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}), ...(k === 'agent' && ['loop', 'task', 'quota', 'auto', 'hook'].includes(src.via) ? {via: src.via} : {}), ...(k === 'task' && src.via === 'same-owner' ? {via: src.via} : {}),
+      ...(src.form && typeof src.form.id === "string" ? {form: {id: src.form.id.slice(0, 18), title: String(src.form.title || "").slice(0, 80)}} : {}),
       ...assistCarry(src),   // 0.26.9 #468: k = official_assist (+ the task id) whichever way the host wrote it
       ...(k === 'phone' && src.term && typeof src.term === 'object' ? { term: src.term } : {}) },   // P414 (§37.12): a 「!」 line's result (js/bang.js termOf)
     reply: typeof reply.text === 'string' ? dropReplacement(reply.text) : '',
+    silent: t.silent === true,
+    silent_reply: t.silent === true && typeof reply.pre === "string" ? dropReplacement(reply.pre) : "",
     part: Array.isArray(reply.part) && reply.part.length === 2 ? reply.part.map(Number) : null,
     ...(typeof reply.pre === 'string' && reply.pre ? { pre: dropReplacement(reply.pre) } : {}),   // P351: a silent turn's notes
     end: ['open', 'done', 'stopped', 'failed'].includes(t.end) ? t.end : 'done',
     card: t.card && typeof t.card === 'object' ? t.card : null,
     ...selfhealCarry(t),   // 0.26.9 (CONTRACT §C): `login` / `waited_s` / `stuck` a host put on the turn instead of its card
     ...((m) => ({ media: m.media, mediaSkip: m.skip }))(mediaOf(t)),   // F21: files the reply shows (§13)
+    use: useOf(t.use),
+    form: formOf(t.form),                                                // P212 (§29): the form this page carries
   };
 }
 export function setMeta(m) {
@@ -399,3 +434,16 @@ export function synthMsg(m, myDev) {
 /** This phone said something to an old host (it does not echo live). */
 export function synthSaid(text, myDev) { endSynth(); synthPush({ k: 'phone', dev: myDev, text }, ''); }
 export function synthReset() { S.synth = { turns: [], next: S.synth.next }; S.hist.count = 0; S.hist.first = 0; }
+
+export function replaceApproval(m){
+ const old=S.asks.get(m.id);if(old?.approval_v===2&&Number(m.revision)<=old.revision)return false;
+ if(old){S.asks.delete(m.id);S.order=S.order.filter(id=>id!==m.id);}
+ return addAsk(m);
+}
+export function approvalQuestioned(m){
+ const a=S.asks.get(m.id);if(!a||a.approval_v!==2)return;
+ if(m.ask)replaceApproval(m.ask);
+ const fresh=S.asks.get(m.id);fresh.review_state='questioned';fresh.touched=true;
+ onChange();
+}
+export const approvalById=id=>S.asks.get(id)||(S.lastAsk?.id===id?S.lastAsk:null);

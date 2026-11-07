@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "verdict": "OWNER_ACCEPTED",
+  "version": "0.28.0",
+  "authority": [
+    {
+      "original": ".jarvis/INCOMING-0280-from-jarvis-1215-RELEASE.md",
+      "file": "web/test/visual-owner-policy/1215-RELEASE.md",
+      "sha256": "8ac6dccb13f948d9a7bcfa4cbb1fd4567bdd6a3554311867c58f424da2ea2881"
+    },
+    {
+      "original": ".jarvis/INCOMING-0280-from-jarvis-1135.md",
+      "file": "web/test/visual-owner-policy/1135.md",
+      "sha256": "1810c8d90ca4ade329277eb8d3b14010d4e213edc658f96c897fc75312b69e90"
+    }
+  ],
+  "actualCaptureCommit": "a451256d13f90d36cd6ed345c69441752c71cb22",
+  "badgeFixCommit": "a6571db65a0bd4db38d17599c0ffc8d052ccffa2",
+  "normalBuildCommit": "4c9bed84386401b295bfb60aa17c3e7118085791",
+  "currentPublicTree": "70d7a074dc8f8f97d82a623eb96fac9fe98be449",
+  "currentPublicCombined": "39c925118a723c3c40a4c3ea42bcf0a8d407209e313b5ad192d21ca67cbf5847",
+  "pixelVerdictUnchanged": "FAIL",
+  "N10": "cancelled-by-owner-1215-and-1135",
+  "formalAttribution": "post-release-not-blocking",
+  "targetedScreens": [
+    "1440-dark-en-settings-auth-badge-after.png",
+    "390-light-zh-settings-auth-badge-after.png"
+  ],
+  "originalEvidence": {
+    "publish-visual.json": "b6f2c89e6870f687d635278805df1ec941515ffbdd1c95e5c800d5e05e083b9d",
+    "diff/result.json": "0fc4994983efcdb4a9e253daec5c4f8b9fe36a29e5057d7221c45e07dbb56567",
+    "../run.log": "09416e1c13de55acc7281744fdaa1014bc73b81751e68c327e88e22d7732d065"
+  },
+  "directedFixes": [
+    {
+      "commit": "a6571db65a0bd4db38d17599c0ffc8d052ccffa2",
+      "requirement": "1135 explicit badge regression correction",
+      "paths": [
+        "menu.css"
+      ],
+      "evidence": "before RED and after390/834/1440 GREEN: /var/tmp/0280-settings-badge-{before-red,after-green}.log"
+    },
+    {
+      "commit": "4c9bed84386401b295bfb60aa17c3e7118085791",
+      "requirement": "feedback370 native border-left follows radius;1135 directed genuine-regression repair",
+      "paths": [
+        "brand/base.css"
+      ],
+      "evidence": "/var/tmp/0280-callout-final-targeted2.log:17targeted PASS, original2RED and old web-owned1RED; source colors/content positions preserved"
+    }
+  ]
+}

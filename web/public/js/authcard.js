@@ -20,9 +20,9 @@ export function paintAuth(box, a) {
   if (!a) return;
   const p = document.createElement('p'); p.textContent = t('p332.auth.wait') + ' · ' + t('ar.urlStep1');
   const actions = document.createElement('p'); actions.className = 'mailbtns';
-  const link = document.createElement('a'); link.href = a.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
-  link.className = 'aj-btn aj-btn--primary'; link.textContent = t('ar.openLink');
-  const copy = document.createElement('button'); copy.type = 'button'; copy.className = 'aj-btn'; copy.textContent = t('ar.copy');
+  const link = document.createElement('a'); link.setAttribute('data-aj-owner', 'aj-action'); link.setAttribute('data-aj-action-context','dialog'); link.href = a.url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+  link.className = 'aj-action aj-action--primary'; link.textContent = t('ar.openLink');
+  const copy = document.createElement('button'); copy.setAttribute('data-aj-owner', 'aj-action'); copy.setAttribute('data-aj-action-context','dialog'); copy.type = 'button'; copy.className = 'aj-action'; copy.textContent = t('ar.copy');
   const result = document.createElement('span'); result.setAttribute('role','status');
   copy.addEventListener('click', async () => { result.textContent = t(await copyNow(a.url) ? 'ar.copied' : 'r.copy.fail'); });
   actions.append(link, copy, result); box.append(p, actions);

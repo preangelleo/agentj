@@ -201,7 +201,7 @@ try {
           const v = (n) => cs.getPropertyValue(n).trim();
           const rows = [...document.querySelectorAll('#set-main .setnav')].filter((e) => !e.hidden).map((e) => Math.round(e.getBoundingClientRect().height));
           const icons = [...document.querySelectorAll('#settings .menuicon svg, #settings svg.mi')].filter((e) => e.getClientRects().length).map((e) => Math.round(e.getBoundingClientRect().width));
-          const btns = [...document.querySelectorAll('#settings .aj-btn')].filter((e) => e.getClientRects().length).map((e) => Math.round(e.getBoundingClientRect().height));
+          const btns = [...document.querySelectorAll('#settings .aj-action')].filter((e) => e.getClientRects().length).map((e) => Math.round(e.getBoundingClientRect().height));
           return { row1: v('--menu-row-1'), row2: v('--menu-row-2'), icon: v('--ui-icon'), rows, icons, btns };
         })()`);
         assert.equal(m.row2, '56px');

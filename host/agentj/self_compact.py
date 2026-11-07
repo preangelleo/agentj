@@ -3,6 +3,9 @@
 No target, command text or approval answer is accepted. The peer must descend from
 the currently served process, have owner provenance and have written a fresh handoff.
 The existing command queue runs it after this turn; the caller never waits for itself.
+#449: a heartbeat beat that carried the host's own context notice (>= half the window) holds a one-shot invite; during
+that beat the same request is accepted without an owner turn (still: own process tree, fresh handoff, not stopped,
+not an untrusted or delegated turn). The invite is consumed when the queued compaction runs.
 """
 from __future__ import annotations
 import asyncio
@@ -78,6 +81,30 @@ def turn_source(agent):
     return getattr(agent, 'out_src', getattr(agent, 'pending_source', _UNKNOWN))
 
 
+def heartbeat_invite(host, agent):
+    """#449: the token of the current beat's self-compact invite, if the host issued one for this session; else None."""
+    send = getattr(agent, 'cur_send', None)
+    hb = getattr(host, 'heartbeat', None)
+    try:
+        from .heartbeat import HeartbeatSend, session_key
+    except Exception:  # noqa: BLE001
+        return None
+    token = getattr(send, 'compact_invite', None)
+    if type(send) is not HeartbeatSend or hb is None or not hb.has_invite(token, session_key(agent)):
+        return None
+    # A beat is a host-written system turn (never an owner turn). Its source must still be exactly that — no paired,
+    # task or request scope ranking it as someone else's, no delegated turn, no untrusted shared-terminal input.
+    if provenance.turn_source(agent).get('kind') != 'system' or provenance.delegated_turn(agent):
+        return None
+    req = provenance._REQUEST.get()
+    if req is not provenance._UNSET and provenance.normalize(req).get('kind') not in ('system', 'phone', 'terminal'):
+        return None
+    fn = getattr(agent, 'untrusted', None)
+    if callable(fn) and fn():
+        return None
+    return token
+
+
 def owner_channel(src):
     if not isinstance(src, dict):
         return False
@@ -93,6 +120,16 @@ def guard(agent, cmd):
     if agent.host.agent is not agent or marker(agent) != expected or not fresh(agent):
         agent.host.st.log('self_compact', result='stale')
         return Result(detail(agent.host, 'stale'), 'refused')
+    invite = data.get('self_compact_invite')
+    if invite is not None:                     # #449: host-invited from a heartbeat beat; one shot
+        from .heartbeat import session_key
+        hb = getattr(agent.host, 'heartbeat', None)
+        if agent.host.stopped():
+            return Result(detail(agent.host, 'stopped'), 'refused')
+        if hb is None or not hb.take_invite(invite, session_key(agent)):
+            agent.host.st.log('self_compact', result='stale')
+            return Result(detail(agent.host, 'stale'), 'refused')
+        return None
     src = turn_source(agent)
     actor = agent
     if getattr(agent, 'cur_send', None) is None and not hasattr(agent, 'out_src') and (src is _UNKNOWN or src is None):
@@ -129,7 +166,8 @@ async def enqueue(host, req, pid):
     if host.stopped():
         return refused('stopped')
     src = turn_source(agent)
-    if not owner_channel(src) or provenance.untrusted_turn(agent) or provenance.delegated_turn(agent):
+    invite = heartbeat_invite(host, agent)
+    if invite is None and (not owner_channel(src) or provenance.untrusted_turn(agent) or provenance.delegated_turn(agent)):
         return refused('source')
     if not fresh(agent):
         return refused('handoff')
@@ -137,6 +175,9 @@ async def enqueue(host, req, pid):
     if pending:
         return {'result':'queued', 'detail':detail(host, 'queued')}
     turn = host.cmd_turn(None, 'compact')
-    agent.submit(Cmd('compact', '', 'Agent J', turn, data={'self_compact':marker(agent), 'self_compact_source':provenance.normalize(src)}))
-    host.st.log('self_compact', result='queued')
+    data = {'self_compact':marker(agent), 'self_compact_source':provenance.normalize(src)}
+    if invite is not None:
+        data['self_compact_invite'] = invite
+    agent.submit(Cmd('compact', '', 'Agent J', turn, data=data))
+    host.st.log('self_compact', result='queued', **({'by': 'heartbeat'} if invite is not None else {}))
     return {'result':'queued', 'detail':detail(host, 'queued')}

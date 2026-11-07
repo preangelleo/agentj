@@ -1,0 +1,15 @@
+/* #577 Web-owned composition-layout; source order is a compatibility contract. */
+/* ===== layout ===== */
+.aj-container { width: 100%;   padding-inline: var(--gutter); }
+.aj-section { padding-block: clamp(2.5rem, 1.5rem + 4vw, 5rem); }
+.aj-section + .aj-section { border-top: 1px dashed var(--seam); }
+.aj-stack > * + * { margin-top: var(--sp-4); }
+.aj-row { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: center; }
+.aj-grid { display: grid; gap: var(--sp-6) var(--sp-5); grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
+.aj-grid--2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); }
+.aj-grid--3 { grid-template-columns: 1fr; }
+@media (min-width: 720px) { .aj-grid--3 { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1040px) { .aj-grid--3 { grid-template-columns: repeat(3, 1fr); } }
+.aj-skip { position: absolute; left: var(--sp-3); top: -100px; z-index: 100; background: var(--primary-bg);
+  color: var(--primary-fg); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-md); }
+.aj-skip:focus { top: var(--sp-3); }

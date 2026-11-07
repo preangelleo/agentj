@@ -42,7 +42,7 @@ export async function runP281() {
   const results = [];
   const check = (ok, label) => { assert.ok(ok, label); checks++; };
   const robotOk = (b, where, tag) => {
-    check(b && b.anim === 'wb-dance' && b.img, `${where}: a dancing factory robot ${tag} ${JSON.stringify(b)}`);
+    check(b && b.anim === 'aj-busy-wb-dance' && b.img, `${where}: a dancing factory robot ${tag} ${JSON.stringify(b)}`);
     check(Math.abs(b.h - 1.3 * b.fs) <= 1.5, `${where}: robot ${b.h}px ≈ 1.3 × text ${b.fs}px ${tag}`);
   };
   try {

@@ -20,7 +20,7 @@ test('P75 panel load-earlier stops on a silent row, even after a batch of normal
  const run=fixture([{epoch:0,first_id:1,turns:[{id:50,reply:'middle'}]},{epoch:0,first_id:1,turns:[{id:1,reply:'〔不回群〕'}]}]);
  vm.runInContext(src.slice(src.indexOf('async function moreSilent()'),src.indexOf('\nconst dialogOpen')),run.ctx);
  run('var silentBusy=false');await run('moreSilent()');
- assert.equal(run('hist.turns.filter(t=>isSilent(t.reply)).length'),1);assert.equal(run('silentBusy'),false);
+ assert.equal(run('hist.turns.filter(t=>silentTurn(t)).length'),1);assert.equal(run('silentBusy'),false);
 });
 test('P75 stale old epoch cannot repopulate a cleared session',async()=>{
  const run=fixture([{epoch:1,first_id:1,turns:[{id:1,reply:'〔不回群〕'}]}]);

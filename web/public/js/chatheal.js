@@ -20,7 +20,7 @@ let endPage = null;                 // the page whose 「强制结束这一轮�
 let repaint = null;
 onChange(() => { if (endPage !== null && repaint) repaint(); });
 
-const button = (cls, text, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'cmdundo ' + cls; b.textContent = text; b.addEventListener('click', fn); return b; };
+const button = (cls, text, fn) => { const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-recovery'); b.type = 'button'; b.className = 'cmdundo ' + cls; b.textContent = text; b.addEventListener('click', fn); return b; };
 
 function liveQueue(p, H) {
   const own = !!H.queuedTurn?.(p.id);

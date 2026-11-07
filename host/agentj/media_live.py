@@ -61,6 +61,23 @@ async def scan(host, tid, row):
             return
         if generation != row['generation']:
             continue
+        if page.get('end') != 'open' and any(x.get('why') == 'too_big' for x in skips):
+            # Only server-resolved explicit references become download offers; phone never sends a path.
+            for ref in media.refs(text):
+                if not ref.explicit:
+                    continue
+                name = ref.path.rsplit('/', 1)[-1]
+                skip = next((x for x in skips if x.get('why') == 'too_big' and x.get('name') == name), None)
+                if skip is None:
+                    continue
+                try:
+                    card = await asyncio.to_thread(host.private_files.offer, row['scanner'], ref, turn=tid)
+                    if host.hist.get(tid) is not page:
+                        return
+                    if card:
+                        skip['download'] = card
+                except (OSError, ValueError, media.Gone):
+                    pass  # keep the honest existing too_big note
         if keys:
             from . import owner_route
             fresh = [pair for pair in keys if pair[1].get('sha256') not in row['keys']]

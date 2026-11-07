@@ -5,6 +5,7 @@
 // P303 (owner 2026-10-15): as wide as the input-message card, as tall as its content; a 「重置周期」 bar (day N of 7, how long
 // until the reset, when), a line under each quota (pace, projection), the used part of a bar Peek-a-Blue when it runs ahead
 // of the even pace, Mellow Marrow at ≥ 80 %, Peachy Feeling at ≥ 90 % (js/quotapace.js decides).
+import { resetCreditText } from './reset-credits.js';
 import { registerLayer } from './layers.js';
 import { t, lang, onLang } from './t.js';
 import { el, mk } from './ui.js';
@@ -29,7 +30,7 @@ function row(label, pct, text, glow, sub) {
     const v = mk('b'); v.textContent = text || '—'; v.style.textAlign = 'left';
     li.append(v);
   }
-  if (sub && sub.length) { const s = mk('small', 'usub'); s.textContent = sub.join(' · '); li.append(s); }
+  if (sub && sub.length) { const s = mk('small', 'usub', undefined, 'aj-status'); s.textContent = sub.join(' · '); li.append(s); }
   return li;
 }
 
@@ -50,7 +51,7 @@ const hhmm = (at) => { const d = new Date(at * 1000); return String(d.getHours()
 
 /** One quota window → its row + (weekly with a known reset) the 「重置周期」 row right under it. */
 export function quotaRows(w, now = Date.now()) {
-  const c = cycle(w.window, w.reset, now);
+  const c = w.stale || w.expired ? null : cycle(w.window, w.reset, now, w.at);
   const glow = tier(w.pct, c, { pace: w.window === 'weekly' });
   const sub = [];
   if (glow === 'empty') sub.push(t('p303.empty'));
@@ -80,6 +81,7 @@ function paint() {
   if (!d) return;
   const list = el('usageList');
   const rows = d.windows.flatMap((w) => quotaRows(w));
+  if (d.reset_credits) rows.push(row(t('p563.label'), null, resetCreditText(d.reset_credits)));
   if (typeof d.ctx === 'number') rows.push(row(t('p207set.usage.ctx'), d.ctx, null, tier(d.ctx, null, { pace: false })));
   else if (d.ctxText) rows.push(row(t('p207set.usage.ctx'), null, d.ctxText));
   if (d.heartbeat) {
@@ -90,7 +92,7 @@ function paint() {
   }
   list.replaceChildren(...rows);
   el('usageNone').hidden = !!d.source;
-  list.hidden = !d.source && !d.heartbeat;
+  list.hidden = !d.source && !d.heartbeat && !d.reset_credits;
   el('usageAge').textContent = d.source && d.age != null ? t('r.usage.age', { s: Math.round(d.age) }) : '';
 }
 

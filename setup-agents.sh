@@ -4,10 +4,10 @@ set -euo pipefail
 set +x
 umask 077
 PAGE=https://agentj.app/docs/setup-agents/
-DRY=0 FULL=1 ALIASES=1 AGENTJ=ask RELAY=ask SELECT='' REGISTRY=${npm_config_registry:-${NPM_CONFIG_REGISTRY:-https://registry.npmjs.org}}
+DRY=0 FULL=1 ALIASES=1 AGENTJ=ask RELAY=ask GEMINI=0 SELECT='' REGISTRY=${npm_config_registry:-${NPM_CONFIG_REGISTRY:-https://registry.npmjs.org}}
 STEP=dependencies
 trap 'printf "Step failed. Manual instructions: %s#%s\n" "$PAGE" "$STEP" >&2' ERR
-usage() { printf '%s\n' 'Usage: bash setup-agents.sh [--cli opencode,codex,claude,gemini] [--dry-run] [--no-full-access] [--relay|--no-relay] [--mirror] [--no-aliases] [--with-agentj|--no-agentj]'; }
+usage() { printf '%s\n' 'Usage: bash setup-agents.sh [--cli opencode,codex,claude,gemini] [--dry-run] [--no-full-access] [--relay|--no-relay|--gemini] [--mirror] [--no-aliases] [--with-agentj|--no-agentj]'; }
 while (($#)); do
   case "$1" in
     --cli) SELECT=${2:?Missing CLI list}; shift ;;
@@ -15,6 +15,7 @@ while (($#)); do
     --no-full-access) FULL=0 ;;
     --relay) RELAY=yes ;;
     --no-relay) RELAY=no ;;
+    --gemini) GEMINI=1 ;;
     --no-aliases) ALIASES=0 ;;
     --with-agentj) AGENTJ=yes ;;
     --no-agentj) AGENTJ=no ;;
@@ -38,6 +39,13 @@ for cli in curl git node npm python3 opencode codex claude gemini; do
 done
 has_tty() { ( : </dev/tty ) 2>/dev/null; }
 ask() { has_tty || { printf 'No terminal: use --cli and --no-relay.\n' >&2; exit 2; }; printf '%s ' "$1" >/dev/tty; IFS= read -r REPLY </dev/tty; }
+# P235: --gemini = OpenCode with the owner's own paid Google key (Vertex AI on Google Cloud: works in Hong Kong, where the
+# AI Studio Gemini API and Agents Relay's official upstreams refuse). No relay; the key is checked by a real call first.
+if ((GEMINI)); then
+  [[ $RELAY != yes ]] || { printf -- '--gemini and --relay are two different routes: choose one.\n' >&2; exit 2; }
+  RELAY=no; [[ -n $SELECT ]] || SELECT=opencode
+  [[ ,$SELECT, == *,opencode,* ]] || { printf -- '--gemini runs on OpenCode: include opencode in --cli.\n' >&2; exit 2; }
+fi
 if [[ -z $SELECT ]]; then
   if has_tty && ! ((DRY)); then ask 'Choose CLI names, comma separated [opencode,codex]:'; SELECT=${REPLY:-opencode,codex}; else SELECT=opencode,codex; fi
 fi
@@ -55,6 +63,7 @@ if ((DRY)); then
   printf 'PLAN: install missing CLIs: %s; user-owned npm prefix; PATH before bashrc early-return\n' "$SELECT"
   printf 'PLAN: full-access=%s; back up and merge configs, 0600, refuse symlinks/JSONC; Gemini launcher only when explicitly selected; personal login discontinued, paid Gemini API key required\n' "$FULL"
   printf 'PLAN: relay=%s; probe official services; official AgentsRelay --paste --only --no-launch verifies real model BEFORE CLI install, 3 attempts; Gemini unsupported\n' "$RELAY"
+  ((GEMINI == 0)) || printf 'PLAN: gemini: hidden key prompt; real Vertex AI call (global endpoint, gemini-3.8-flash; AI Studio key accepted where Google serves it) BEFORE CLI install, 3 attempts; key only in OpenCode auth.json (0600); provider gemini + default model in opencode.json\n'
   printf 'PLAN: npm/Node timeout -> automatic npmmirror fallback; official/mirror SHA512 match, Node SHA256 from official nodejs.org required (mirror sums never trusted); platform binaries + help + ripgrep self-check\n'
   printf 'PLAN: aliases=%s (selected tools only; gx requires explicit gemini selection); agentj=%s; no tty -> next-step instructions, no prompt\n' "$ALIASES" "$AGENTJ"
   exit 0
@@ -94,6 +103,116 @@ if [[ $OS == Linux ]] && { ! command -v bwrap >/dev/null 2>&1 || ! command -v so
   else
     printf 'Agent isolation needs bubblewrap and socat. Run: sudo apt-get install -y bubblewrap socat (Fedora: sudo dnf install -y bubblewrap socat; Arch: sudo pacman -S bubblewrap socat). See %s#isolation\n' "$PAGE"
   fi
+fi
+STEP=gemini
+if ((GEMINI)); then
+  has_tty || { printf 'No terminal: the Google key is entered only in your own terminal. Rerun --gemini there.\n'; exit 2; }
+  printf 'Google Gemini: paste your Google Cloud API key (Vertex AI, bound to a service account). Steps and prices: %s#gemini\n' "$PAGE"
+  printf 'Google Gemini：粘贴你在 Google Cloud 建的 API key（绑定服务账号的那种），只在这里粘贴，不显示。步骤和费用见上面的网址。\n'
+  python3 - <<'GEMINI_SETUP' || { printf 'Gemini key not verified; nothing installed. 怎么办：按 %s#gemini 检查 key 后重跑。\n' "$PAGE"; exit 1; }
+import getpass, json, os, pathlib, re, subprocess, sys, tempfile
+# The key: read hidden from the terminal, sent only to Google (curl reads its header from stdin, never argv), stored only
+# in OpenCode's own credential file. Google's answer is classified into one line; its body is never printed.
+VERTEX = 'https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3.8-flash:generateContent'
+STUDIO = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent'
+BODY = json.dumps({'contents': [{'role': 'user', 'parts': [{'text': 'Reply with one word: ok'}]}]})
+def call(url, key):
+    with tempfile.TemporaryDirectory() as d:
+        out = os.path.join(d, 'out'); body = os.path.join(d, 'body')
+        pathlib.Path(body).write_text(BODY)
+        try:
+            r = subprocess.run(['curl', '--disable', '--proto', '=https', '--max-filesize', '1048576', '-sS', '--connect-timeout', '10', '--max-time', '90', '-o', out,
+                                '-w', '%{http_code}', '-H', 'content-type: application/json', '--data-binary', '@' + body,
+                                '--config', '-', url], input='header = "x-goog-api-key: ' + key + '"\n',
+                               capture_output=True, text=True, timeout=120)
+        except (OSError, subprocess.TimeoutExpired):
+            return 0, {}
+        try: doc = json.loads(pathlib.Path(out).read_text())
+        except (OSError, ValueError): doc = {}
+        code = int(r.stdout.strip() or 0) if r.stdout.strip().isdigit() else 0
+        return code, doc if isinstance(doc, dict) else {}
+def text(doc):
+    try: return ''.join(p.get('text', '') for p in doc['candidates'][0]['content']['parts'] if isinstance(p, dict) and not p.get('thought'))
+    except (KeyError, IndexError, TypeError): return ''
+def why(doc):
+    e = doc.get('error') if isinstance(doc.get('error'), dict) else {}
+    reasons = ' '.join(str(d.get('reason', '')) for d in e.get('details', []) if isinstance(d, dict))
+    return str(e.get('status', '')), reasons, str(e.get('message', ''))
+HELP = {
+ 'network': '连不上 Google（大陆的网络到不了 Google；香港可以）。 / Google is unreachable from this network.',
+ 'invalid': 'key 不对：重新复制完整的 key（通常以 AIza 开头）。 / The key is not valid: copy the whole key again.',
+ 'unbound': '这把 key 没有绑定服务账号：在 Google Cloud 建 key 时勾选「通过服务账号验证 API 调用」。 / Create the key with "Authenticate API calls through a service account".',
+ 'studio_region': '这是 AI Studio 的 Gemini API key，Google 不对香港 / 大陆开放它：改用 Google Cloud（Vertex AI）的 key。 / An AI Studio key is not served in your region: use a Google Cloud (Vertex AI) key.',
+ 'disabled': '项目里还没启用 Vertex AI API（或没开结算）：在 Google Cloud 控制台启用后等 1–2 分钟再试。 / Enable the Vertex AI API and billing in the project.',
+ 'role': '服务账号没有调用 Gemini 的权限：给它加「Vertex AI 用户」角色，等 1–2 分钟再试。 / Give the service account the Vertex AI User role, wait a minute.',
+ 'billing': '结算没开通或余额不足：在 Google Cloud 开通结算账户。 / Billing is not active.',
+ 'quota': 'key 有效，但额度用完或请求太快：等一会儿，或在 Google Cloud 提高配额。 / Valid key, but quota is exhausted.',
+ 'empty': 'Gemini 回了空回复：稍后重试。 / Gemini returned an empty reply; try again.',
+ 'other': 'Google 拒绝了这次调用：按帮助页逐项检查。 / Google refused the call; check the help page.',
+}
+def classify(code, doc):
+    status, reasons, msg = why(doc)
+    if code == 0: return 'network'
+    if code == 200: return 'ok' if text(doc).strip() else 'empty'
+    if 'API_KEY_INVALID' in reasons or 'API key not valid' in msg: return 'invalid'
+    if code == 401 and 'API keys are not supported' in msg: return 'unbound'
+    if 'User location is not supported' in msg: return 'studio_region'
+    if 'SERVICE_DISABLED' in reasons or 'has not been used in project' in msg: return 'disabled'
+    if 'BILLING' in reasons.upper() or 'billing' in msg.lower(): return 'billing'
+    if code == 429 or status == 'RESOURCE_EXHAUSTED': return 'quota'
+    if code == 403 and ('aiplatform.endpoints.predict' in msg or status == 'PERMISSION_DENIED'): return 'role'
+    return 'other'
+kind = None
+for attempt in range(3):
+    try: raw = getpass.getpass('Google Cloud API key (hidden): ')
+    except (EOFError, KeyboardInterrupt): sys.exit(1)
+    m = re.fullmatch(r'[A-Za-z0-9._-]{20,}', (raw or '').strip()); key = m.group(0) if m else ''; raw = ''
+    if not key:
+        print(HELP['invalid']); continue
+    print('正在用这把 key 真实调用一次 Gemini 3.8 Flash… / Making one real Gemini 3.8 Flash call…')
+    verdict = classify(*call(VERTEX, key))
+    if verdict == 'ok': kind = 'vertex'; break
+    if verdict == 'unbound':   # maybe an AI Studio key: usable only where Google serves that API
+        studio = classify(*call(STUDIO, key))
+        if studio == 'ok': kind = 'studio'; break
+        verdict = studio if studio in ('studio_region', 'quota', 'billing') else verdict
+    print('✗ ' + HELP[verdict])
+    key = ''
+if not kind: sys.exit(1)
+home = pathlib.Path.home()
+def safe_path(p):
+    if any(part.is_symlink() for part in (p, *p.parents)):
+        raise SystemExit('Refusing symlinked OpenCode file')
+def secure_write(p, data):
+    safe_path(p)
+    safe_path(p.with_name(p.name + '.agentj-bak'))
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if p.exists(): (p.with_name(p.name + '.agentj-bak')).write_bytes(p.read_bytes()); os.chmod(p.with_name(p.name + '.agentj-bak'), 0o600)
+    fd, tmp = tempfile.mkstemp(dir=p.parent, prefix='.' + p.name + '.')
+    with os.fdopen(fd, 'w') as f: f.write(data)
+    os.chmod(tmp, 0o600); os.replace(tmp, p)
+def load(p):
+    safe_path(p)
+    safe_path(p.with_name(p.name + '.agentj-bak'))
+    if not p.exists(): return {}
+    doc = json.loads(p.read_text() or '{}')
+    if not isinstance(doc, dict): raise SystemExit('Expected a JSON object in ' + str(p))
+    return doc
+data = pathlib.Path(os.environ.get('XDG_DATA_HOME') or home / '.local/share') / 'opencode/auth.json'
+conf = pathlib.Path(os.environ.get('XDG_CONFIG_HOME') or home / '.config') / 'opencode/opencode.json'
+if conf.with_suffix('.jsonc').exists(): raise SystemExit('OpenCode JSONC exists; add the gemini provider manually (see the help page)')
+cfg = load(conf)
+auth = load(data); auth['gemini'] = {'type': 'api', 'key': key}; key = ''
+secure_write(data, json.dumps(auth, indent=2) + '\n'); auth = None
+cfg.setdefault('$schema', 'https://opencode.ai/config.json')
+prov = cfg.get('provider') if isinstance(cfg.get('provider'), dict) else {}
+prov['gemini'] = {'npm': '@ai-sdk/google-vertex' if kind == 'vertex' else '@ai-sdk/google',
+                  'name': 'Google Gemini' + (' (Vertex AI)' if kind == 'vertex' else ' (AI Studio)'),
+                  'models': {'gemini-3.8-flash': {'name': 'Gemini 3.8 Flash'}, 'gemini-3.1-pro-preview': {'name': 'Gemini 3.1 Pro (preview)'}}}
+cfg['provider'] = prov; cfg['model'] = 'gemini/gemini-3.8-flash'
+secure_write(conf, json.dumps(cfg, ensure_ascii=False, indent=2) + '\n')
+print('✓ Gemini 真实回复了。key 只存在 OpenCode 自己的凭据文件里（0600），模型 gemini/gemini-3.8-flash。 / Gemini answered; key stored only in OpenCode auth.json.')
+GEMINI_SETUP
 fi
 STEP=agentsrelay
 RELAY_OK=0

@@ -22,6 +22,7 @@ import { signed } from './controls.js';
 import { t, fillText, onLang } from './t.js';
 import { el, mk, confirmSheet } from './ui.js';
 import * as authrescue from './authrescue.js';
+import * as assistTerminal from './assist-terminal.js';
 import * as assist from './assist.js';   // 0.26.9 #468 (§B2): ② gains 「请 Agent J 官方远程协助」
 import { registerLayer } from './layers.js';
 
@@ -153,9 +154,9 @@ function finish(flow, m) {
 }
 
 // ---------------------------------------------------------------- painting
-const node = (tag, cls, text) => mk(tag, cls, text);
+const node = (tag, cls, text) => mk(tag, cls, text, cls?.split(/\s+/).includes('aj-action') ? 'aj-action' : 'aj-rescue', 'dialog');
 function btn(id, label, cls, fn) {
-  const b = node('button', 'aj-btn ' + (cls || ''), label);
+  const b = node('button', 'aj-action ' + (cls || ''), label);
   b.type = 'button'; b.id = id; b.addEventListener('click', fn);
   return b;
 }
@@ -179,7 +180,7 @@ function whyText(why) {
 }
 function helperLine(id) {
   const p = node('p', 'rshelper'); p.id = id;
-  const a = node('a', 'hint__link', tx('p375.help'));
+  const a = mk('a', 'hint__link', tx('p375.help'), 'aj-prose');
   a.href = 'https://agentj.app/docs/reconnect-help/' + (lang() === 'en' ? '?lang=en' : '');
   a.target = '_blank'; a.rel = 'noopener noreferrer'; p.append(a); return p;
 }
@@ -249,7 +250,7 @@ function foldLater(flow) {
   F.foldTimer = setTimeout(() => { F.foldTimer = 0; if (F.st === 'ok' || F.st === 'fail') { F.fold = true; paint(); } }, FOLD_MS);
 }
 function acts(...bs) { const p = node('div', 'rsacts'); p.append(...bs.filter(Boolean)); return p; }
-const backBtn = (flow) => btn('rs-' + flow + '-chat', tx('p332.backChat'), 'aj-btn--primary', () => H.toChat());
+const backBtn = (flow) => btn('rs-' + flow + '-chat', tx('p332.backChat'), 'aj-action--primary', () => H.toChat());
 
 function paintReset() {
   const card = el('rs-reset'), body = el('rs-reset-body');
@@ -279,7 +280,7 @@ function paintReset() {
     if (F.why === 'offline' || F.why === 'unavailable') parts.push(helperLine('rs-reset-helper'));
     parts.push(acts(btn('rs-reset-go', tx('p332.again'), '', () => start('reset'))));
   }
-  if (F.st === 'idle') parts.push(acts(btn('rs-reset-go', tx('p332.reset.go'), 'aj-btn--primary', () => start('reset'))));
+  if (F.st === 'idle') parts.push(acts(btn('rs-reset-go', tx('p332.reset.go'), 'aj-action--primary', () => start('reset'))));
   const d = F.st === 'idle' ? null : details(F, F.why && !['timeout', 'failed'].includes(F.why) ? ['why: ' + F.why] : []);
   if (d) parts.push(d);
   body.replaceChildren(...parts);
@@ -330,10 +331,10 @@ function paintHelp() {
   if (F.st === 'idle' && S.askFirst) {
     const box = node('div', 'rsask'); box.id = 'rs-help-ask'; box.setAttribute('role', 'group');
     box.append(node('p', 'rsmsg', tx('p332.help.first')),
-      acts(btn('rs-help-first', tx('p332.help.tryFirst'), 'aj-btn--primary', () => { S.askFirst = false; paint(); start('reset'); el('rs-reset')?.scrollIntoView({ block: 'nearest' }); }),
+      acts(btn('rs-help-first', tx('p332.help.tryFirst'), 'aj-action--primary', () => { S.askFirst = false; paint(); start('reset'); el('rs-reset')?.scrollIntoView({ block: 'nearest' }); }),
         btn('rs-help-anyway', tx('p332.help.anyway'), '', () => start('help'))));
     parts.push(box);
-  } else if (F.st === 'idle') parts.push(acts(btn('rs-help-go', tx('p332.help.go'), S.failedOnce ? 'aj-btn--primary' : '', askHelp)));
+  } else if (F.st === 'idle') parts.push(acts(btn('rs-help-go', tx('p332.help.go'), S.failedOnce ? 'aj-action--primary' : '', askHelp)));
   const off = F.st === 'run' ? null : offerBox(F, O);
   if (off) parts.push(off);
   const d = F.st === 'idle' ? null : details(F, [...(F.why && !['timeout', 'failed'].includes(F.why) ? ['why: ' + F.why] : []), ...O.details,
@@ -475,7 +476,7 @@ function paintRestart() {
   card.replaceChildren(node('h4', 'rstitle', tx('p385.restart.go')), node('small', 'rsnote', tx('p438.recommended')), note, acts(go, clear), status, clearStatus);
 }
 export function paint() {
-  paintReset(); paintHelp(); assist.paintCard(el('rs-help-body')); paintAuth(); paintMode(); paintRestart(); paintSession(); paintTakeover(); paintArk();
+  paintReset(); paintHelp(); assist.paintCard(el('rs-help-body')); assistTerminal.paintCard(el('rs-help-body')); paintAuth(); paintMode(); paintRestart(); paintSession(); paintTakeover(); paintArk();
   const block = el('set-s-rescue');
   if (block && !el('rs-detail-help')) block.append(helperLine('rs-detail-help'));
   const sup = el('rs-support-box');   // P400: 在线客服 (index.html) stays the block's last line, under the cards painted here
@@ -517,7 +518,7 @@ export function onReady() {
   }
   refreshArk();
   paintMode();
-  assist.paintCard(el('rs-help-body'));   // 0.26.9 #468: the step follows this host's `assist1` cap
+  assist.paintCard(el('rs-help-body')); assistTerminal.paintCard(el('rs-help-body'));   // 0.26.9 #468: the step follows this host's `assist1` cap
 }
 /** P393 (app.js): the link has been unreachable for the full five seconds: a tap that was waiting for it says why now. */
 export function onLinkDown() { for (const flow of FLOWS) if (S[flow].st === 'run' && S[flow].wait) finish(flow, { ok: false, why: 'offline' }); }
@@ -592,7 +593,7 @@ function paintTakeover() {
     if (!known && F.text) parts.push(node('p', 'rsmsg', F.text));
     parts.push(acts(go(tx('p332.again'), '')));
   }
-  if (F.st === 'idle') parts.push(acts(go(tx('p0269.take.title'), S.stuck ? 'aj-btn--primary' : '')));
+  if (F.st === 'idle') parts.push(acts(go(tx('p0269.take.title'), S.stuck ? 'aj-action--primary' : '')));
   card.replaceChildren(...parts);
 }
 

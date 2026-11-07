@@ -11,7 +11,7 @@
 #five-menu{z-index:40;background:transparent;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);overflow:hidden}.fp-menu-deck{position:relative;height:100%;padding:16px;margin:0}.fp-menu-card{position:absolute;left:16px;right:16px;top:calc(16px + var(--fp-i)*min(120px, (100dvh - 320px)/4));height:220px;border:0;border-radius:24px;padding:24px;text-align:left;color:var(--c-lotion);cursor:pointer;font-family:var(--font-body)}.fp-menu-card:nth-child(1){--fp-i:0}.fp-menu-card:nth-child(2){--fp-i:1}.fp-menu-card:nth-child(3){--fp-i:2}.fp-menu-card:nth-child(4){--fp-i:3}.fp-menu-card:nth-child(5){--fp-i:4}.fp-dark-0{background:#629887}.fp-dark-1{background:#6a9bcc}.fp-dark-2{background:#827dbd}.fp-dark-3{background:#d97757}.fp-dark-4{background:#2c2b26}.fp-menu-head{display:flex;justify-content:space-between;align-items:center}.fp-icon{font-size:32px}.fp-menu-head img{width:36px;height:36px}.fp-current{font-size:13px;opacity:.75}.fp-menu-card h2{font-size:26px;margin:12px 0 6px}.fp-menu-card p{font-size:15px;margin:0}.fp-menu-card:focus-visible{outline:2px solid var(--c-lotion);outline-offset:-6px}
 #five-detail{z-index:43;padding:24px max(16px,calc((100% - 720px)/2)) 80px;inset:72px 0 0}.fp-prose{overflow-wrap:anywhere;line-height:1.7}.fp-prose pre{overflow:auto}.fp-prose h1{font-size:26px}
 #five-mentions{position:fixed;left:16px;right:16px;bottom:calc(124px + env(safe-area-inset-bottom));z-index:42;max-height:300px;overflow:auto;background:var(--c-lotion);color:var(--c-sooty);border:1px dashed var(--c-black-mana);border-radius:20px;padding:8px}.fp-mention{display:flex;align-items:center;gap:12px;width:100%;min-height:52px;background:transparent;color:inherit;border:0;text-align:left;padding:8px 12px;font:inherit;cursor:pointer}.fp-mention[aria-selected=true]{background:#c7dedc;border-radius:12px}
-.fp-robot{flex:none;display:inline-block;width:24px;height:24px;background-image:url('assets/robots-12.png');background-size:312px 384px;background-repeat:no-repeat;image-rendering:pixelated}.fp-robot.working{animation:fp-dance 1s steps(12) infinite}@keyframes fp-dance{to{background-position-x:-288px}}
+.fp-robot{flex:none;display:inline-block;width:24px;height:24px;background-image:url('assets/robots-12.png');background-size:312px 384px;background-repeat:no-repeat;image-rendering:pixelated}.fp-robot.working{animation:aj-knowledge-fp-dance 1s steps(12) infinite}@keyframes aj-knowledge-fp-dance{to{background-position-x:-288px}}
 .fp-link{display:inline;min-height:0;padding:0;border:0;background:transparent;font-size:inherit;font-family:inherit;font-weight:700;color:#ffe292;text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:3px;cursor:pointer}.fp-link-person{color:#f8daec}.fp-link-doc{color:#c4f0f0}.fp-link-skill{color:#ebd8f5}.om .fp-link,.fp-prose .fp-link{color:var(--c-sooty);text-decoration-color:#fcbe7c}
 
 .om{margin:0 12px;padding-bottom:20px}.rm{margin-top:-12px}
@@ -22,19 +22,20 @@
 
 /* P244 RESUME 1: spacious two-tab robot card; transparent containers, text vendor marks. */
 #busyDlg .sq{width:min(900px,calc(100vw - 32px));height:auto;aspect-ratio:auto;max-height:calc(100dvh - 48px);padding:24px;overflow:auto}
-#busyDlg .busy-big{background:transparent;border:1px dashed var(--c-black-mana);border-radius:16px;padding:12px;min-height:48px}
-.busy-tabs{display:flex;gap:8px;align-self:stretch;margin:12px 0}
-.busy-tabs button{flex:1;min-height:48px;border:1px solid var(--c-last-straw);border-radius:24px;background:transparent;color:inherit;font:600 15px var(--font-body);cursor:pointer}
-.busy-tabs button[aria-selected=true]{background:var(--c-shield);color:var(--c-lotion)}
-#busyList[hidden],#busyWorkflow[hidden]{display:none}
+#busyDlg .busy-big{background:var(--aj-busy-busy-big-background,transparent);border:var(--aj-busy-busy-big-border,1px dashed var(--c-black-mana));border-radius:var(--aj-busy-busy-big-border-radius,16px);padding:var(--aj-busy-busy-big-padding,12px);min-height:var(--aj-busy-busy-big-min-height,48px)}
+.busy-tabs{display:var(--aj-busy-busy-tabs-display,flex);gap:var(--aj-busy-busy-tabs-gap,8px);align-self:var(--aj-busy-busy-tabs-align-self,stretch);margin:var(--aj-busy-busy-tabs-margin,12px 0)}
+.busy-tabs button{flex:var(--aj-busy-busy-tabs-flex,1);min-height:var(--aj-busy-busy-tabs-min-height,48px);border:var(--aj-busy-busy-tabs-border,1px solid var(--c-last-straw));border-radius:var(--aj-busy-busy-tabs-border-radius,24px);background:var(--aj-busy-busy-tabs-background,transparent);color:var(--aj-busy-busy-tabs-color,inherit);font:var(--aj-busy-busy-tabs-font,600 15px var(--font-body));cursor:var(--aj-busy-busy-tabs-cursor,pointer)}
+.busy-tabs button[aria-selected=true]{background:var(--aj-busy-busy-tabs-background,var(--c-shield));color:var(--aj-busy-busy-tabs-color,var(--c-lotion))}
+#busyList[hidden]{display:none}
+#busyWorkflow[hidden]{display:none}
 #busyList li{grid-template-columns:24px minmax(64px,.7fr) minmax(0,2.4fr);min-height:64px;gap:12px;border-bottom:1px dashed var(--c-black-mana);border-radius:0}
 #busyList span{white-space:nowrap;opacity:1}
-.busy-identity{display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere;font-size:calc(12px*var(--fz))}.busy-identity small{font:inherit}
-#busyWorkflow{align-self:stretch;text-align:left}.busy-org{padding:16px;margin:12px 0;background:transparent;border:1px dashed var(--c-black-mana);border-radius:16px}.busy-org h3{margin:0 0 12px;font-size:17px}.busy-org-root{font-size:13px}
-.busy-org-person{display:grid;grid-template-columns:24px 1fr;gap:8px 12px;width:100%;padding:12px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.busy-org-person small{grid-column:2;font-size:12px}
-@media(max-width:600px){#busyDlg .sq{padding:20px 16px}#busyList li{grid-template-columns:24px 72px minmax(0,1fr);gap:8px}.busy-identity{grid-column:3}#busyList li>span{grid-column:3;grid-row:auto}}
+.busy-identity{display:var(--aj-busy-busy-identity-display,flex);flex-direction:var(--aj-busy-busy-identity-flex-direction,column);gap:var(--aj-busy-busy-identity-gap,4px);overflow-wrap:var(--aj-busy-busy-identity-overflow-wrap,anywhere);font-size:var(--aj-busy-busy-identity-font-size,calc(12px*var(--fz)))}.busy-identity small{font:var(--aj-busy-busy-identity-font,inherit)}
+#busyWorkflow{align-self:stretch;text-align:left}.busy-org{padding:var(--aj-busy-busy-org-padding,16px);margin:var(--aj-busy-busy-org-margin,12px 0);background:var(--aj-busy-busy-org-background,transparent);border:var(--aj-busy-busy-org-border,1px dashed var(--c-black-mana));border-radius:var(--aj-busy-busy-org-border-radius,16px)}.busy-org h3{margin:var(--aj-busy-busy-org-margin,0 0 12px);font-size:var(--aj-busy-busy-org-font-size,17px)}.busy-org-root{font-size:var(--aj-busy-busy-org-root-font-size,13px)}
+.busy-org-person{display:var(--aj-busy-person-display,grid);grid-template-columns:var(--aj-busy-person-grid-template-columns,24px 1fr);gap:var(--aj-busy-person-gap,8px 12px);width:var(--aj-busy-person-width,100%);padding:var(--aj-busy-person-padding,12px);border:var(--aj-busy-person-border,0);background:var(--aj-busy-person-background,transparent);color:var(--aj-busy-person-color,inherit);font:var(--aj-busy-person-font,inherit);text-align:var(--aj-busy-person-text-align,left);cursor:var(--aj-busy-person-cursor,pointer)}.busy-org-person small{grid-column:var(--aj-busy-person-grid-column,2);font-size:var(--aj-busy-person-font-size,12px)}
+@media(max-width:600px){#busyDlg .sq{padding:20px 16px}#busyList li{grid-template-columns:24px 72px minmax(0,1fr);gap:8px}.busy-identity{grid-column:var(--aj-busy-busy-identity-grid-column,3)}#busyList li>span{grid-column:3;grid-row:auto}}
 
-.busy-vendor:empty{display:none}.busy-vendor img{display:block;width:64px;height:16px;object-fit:contain;object-position:left center}.busy-vendor{font-size:11px}
+.busy-vendor:empty{display:var(--aj-busy-busy-vendor-display,none)}.busy-vendor img{display:var(--aj-busy-busy-vendor-display,block);width:var(--aj-busy-busy-vendor-width,64px);height:var(--aj-busy-busy-vendor-height,16px);object-fit:var(--aj-busy-busy-vendor-object-fit,contain);object-position:var(--aj-busy-busy-vendor-object-position,left center)}.busy-vendor{font-size:var(--aj-busy-busy-vendor-font-size,11px)}
 
 .workflow-backed{display:none!important}#workflow-compose{white-space:pre-wrap;overflow-wrap:anywhere;min-height:44px;max-height:180px;overflow:auto;outline:none;padding:10px 12px;font:inherit;color:inherit;line-height:1.45;width:100%}#workflow-compose[hidden]{display:none}.workflow-token{display:inline;font-weight:700;color:var(--c-sooty);text-decoration:underline;text-decoration-color:#fcbe7c;text-decoration-thickness:2.5px;text-underline-offset:3px;white-space:nowrap;user-select:all}
 
@@ -47,10 +48,10 @@
 .fp-card-head{padding-right:0}.fp-card[data-folder] .fp-card-head{padding-right:44px}.fp-card-title{flex:1;min-width:0;overflow-wrap:anywhere}.fp-tab{display:flex;align-items:center;gap:8px}.fp-category-icon{width:28px;height:28px;padding:5px;border-radius:50%;color:#faf9f5}.fp-category-all{background:#ffe292}.fp-category-global{background:#71bbde}.fp-category-local{background:#d97757}
 
 /* P250: licensed logo geometry, rendered in the closed palette; the originals remain unchanged. */
-.busy-vendor:has(img){position:relative;display:block;width:64px;height:16px}
-.busy-vendor img{opacity:0}.busy-palette-mark{position:absolute;inset:0;width:64px;height:16px}
-.busy-vendor-fallback{position:absolute;inset:0;line-height:16px;color:var(--c-lotion)}
-.busy-vendor[data-palette=ready] .busy-vendor-fallback{display:none}
+.busy-vendor:has(img){position:var(--aj-busy-busy-vendor-position,relative);display:var(--aj-busy-busy-vendor-display,block);width:var(--aj-busy-busy-vendor-width,64px);height:var(--aj-busy-busy-vendor-height,16px)}
+.busy-vendor img{opacity:var(--aj-busy-busy-vendor-opacity,0)}.busy-palette-mark{position:var(--aj-busy-busy-palette-mark-position,absolute);inset:var(--aj-busy-busy-palette-mark-inset,0);width:var(--aj-busy-busy-palette-mark-width,64px);height:var(--aj-busy-busy-palette-mark-height,16px)}
+.busy-vendor-fallback{position:var(--aj-busy-busy-vendor-fallback-position,absolute);inset:var(--aj-busy-busy-vendor-fallback-inset,0);line-height:var(--aj-busy-busy-vendor-fallback-line-height,16px);color:var(--aj-busy-busy-vendor-fallback-color,var(--c-lotion))}
+.busy-vendor[data-palette=ready] .busy-vendor-fallback{display:var(--aj-busy-busy-vendor-fallback-display,none)}
 
 /* P299 (owner 2026-10-15 on iPhone: 「至少颜色，底色，还有 bug」, then 「统一用 Noir……白色字体……header 和 footer 也换过来」):
    every page but the chat is a menu page — Noir canvas, Noir header, Lotion text and line icons, in light / dark /
@@ -174,6 +175,14 @@ body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hi
 /* P515: secondary text directly below the task label at every width; normal wrapping. */
 #busyList li>i{grid-column:1;grid-row:1}#busyList li>b{grid-column:2;grid-row:1}
 #busyList li>span{grid-column:3;grid-row:1;white-space:normal;overflow-wrap:anywhere;overflow:visible;text-overflow:clip}
-#busyList .busy-identity{--danger:var(--c-strawberry-field);grid-column:3;grid-row:2;background:none;color:var(--text-subtitle);border:0;padding:0;text-align:left;min-width:0;white-space:normal;line-height:1.45}
-#busyList .busy-identity .error{margin:0}
-.busy-provenance{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+#busyList .busy-identity{--danger:var(--c-strawberry-field);grid-column:var(--aj-busy-busy-identity-grid-column,3);grid-row:var(--aj-busy-busy-identity-grid-row,2);background:var(--aj-busy-busy-identity-background,none);color:var(--aj-busy-busy-identity-color,var(--text-subtitle));border:var(--aj-busy-busy-identity-border,0);padding:var(--aj-busy-busy-identity-padding,0);text-align:var(--aj-busy-busy-identity-text-align,left);min-width:var(--aj-busy-busy-identity-min-width,0);white-space:var(--aj-busy-busy-identity-white-space,normal);line-height:var(--aj-busy-busy-identity-line-height,1.45)}
+#busyList .busy-identity .error{margin:var(--aj-busy-error-margin,0)}
+.busy-provenance{font-size:var(--aj-busy-busy-provenance-font-size,13px);line-height:var(--aj-busy-busy-provenance-line-height,1.5);overflow-wrap:var(--aj-busy-busy-provenance-overflow-wrap,anywhere)}
+/* 0.26.9 #430: each background task row ends in an @ (44 px, the dialog's text colour): mention that task in the composer */
+#busyList li:has(>.busy-at){grid-template-columns:24px 5.5em minmax(0,1fr) 44px}
+@media(max-width:600px){#busyList li:has(>.busy-at){grid-template-columns:24px 72px minmax(0,1fr) 44px}}
+#busyList .busy-at{grid-column:4;grid-row:1/span 2;align-self:center;width:44px;height:44px;margin:0;padding:0;border:0;border-radius:12px;
+  background:none;color:inherit;display:grid;place-items:center;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#busyList .busy-at svg{width:20px;height:20px;pointer-events:none}
+#busyList .busy-at:hover,#busyList .busy-at:active{background:color-mix(in srgb,currentColor 10%,transparent)}
+#busyList .busy-at:focus-visible{outline:2px solid currentColor;outline-offset:-4px}

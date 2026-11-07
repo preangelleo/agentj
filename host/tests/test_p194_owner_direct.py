@@ -349,15 +349,18 @@ class GalleryPaths(unittest.TestCase):
         for f in (privacy.owner_text, shared.public_text, shared_state.redact.scrub_message):
             out = f(text)
             self.assertNotIn("<redacted>", out, f)
-            self.assertEqual(out, text.replace("/home/someone/", "~/"), f)
+            self.assertEqual(out, text, f)   # #439: another user's home stays whole (only this computer's own home → ~)
         strict = privacy.redact(text)                           # the outward filter is unchanged — and this was the bug
         self.assertIn("~<redacted>.webp", strict)
         self.assertIn("~<redacted>.html", strict)
         self.assertEqual(privacy.credentials(text), [], "a path is not a credential")
 
     def test_owner_path_keeps_its_uuid_but_a_key_inside_still_goes(self):
+        from unittest import mock
         p = "/home/u/proj/sessions/9fK2xQ7LmA3vR8tY1wZ5cB6nD0pE4hJ/report.html"
-        self.assertEqual(privacy.owner_text(p), "~/proj/sessions/9fK2xQ7LmA3vR8tY1wZ5cB6nD0pE4hJ/report.html")
+        with mock.patch.dict("os.environ", {"HOME": "/home/u"}):   # #439: only this computer's own home becomes ~
+            self.assertEqual(privacy.owner_text(p), "~/proj/sessions/9fK2xQ7LmA3vR8tY1wZ5cB6nD0pE4hJ/report.html")
+        self.assertEqual(privacy.owner_text(p.replace("/home/u", "/home/other")), p.replace("/home/u", "/home/other"))
         self.assertNotIn(KEY, privacy.owner_text(f"/home/u/x/{KEY}/a.txt"))
 
     def test_media_scan_offers_all_17_and_says_why_otherwise(self):

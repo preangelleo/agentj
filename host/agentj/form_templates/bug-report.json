@@ -1,0 +1,238 @@
+{
+ "name": "bug-report",
+ "mode": "deep",
+ "title": {
+  "zh": "Bug 报告",
+  "en": "Bug report"
+ },
+ "about": {
+  "zh": "复现步骤、期望 / 实际、频率、设备、截图录屏。",
+  "en": "Steps, expected / actual, frequency, device, screenshots or recordings."
+ },
+ "vars": {
+  "area": {
+   "label": {
+    "zh": "出问题的地方",
+    "en": "Where it broke"
+   },
+   "required": true
+  }
+ },
+ "fill": [
+  "drop",
+  "title",
+  "options.device"
+ ],
+ "form": {
+  "title": {
+   "zh": "Bug · {{area}}",
+   "en": "Bug · {{area}}"
+  },
+  "sections": [
+   {
+    "id": "what",
+    "title": {
+     "zh": "发生了什么",
+     "en": "What happened"
+    },
+    "questions": [
+     {
+      "id": "steps",
+      "type": "longtext",
+      "label": {
+       "zh": "怎么复现（一步一行）",
+       "en": "How to reproduce (one step per line)"
+      },
+      "required": true,
+      "keep": true,
+      "max_length": 3000
+     },
+     {
+      "id": "expected",
+      "type": "text",
+      "label": {
+       "zh": "本来应该",
+       "en": "Expected"
+      },
+      "required": true,
+      "max_length": 300
+     },
+     {
+      "id": "actual",
+      "type": "text",
+      "label": {
+       "zh": "实际却",
+       "en": "Actual"
+      },
+      "required": true,
+      "max_length": 300
+     }
+    ]
+   },
+   {
+    "id": "how",
+    "title": {
+     "zh": "多严重",
+     "en": "How bad"
+    },
+    "questions": [
+     {
+      "id": "freq",
+      "type": "buttons",
+      "label": {
+       "zh": "多常出现？",
+       "en": "How often?"
+      },
+      "options": [
+       {
+        "value": "always",
+        "label": {
+         "zh": "每次",
+         "en": "Every time"
+        }
+       },
+       {
+        "value": "often",
+        "label": {
+         "zh": "经常",
+         "en": "Often"
+        }
+       },
+       {
+        "value": "once",
+        "label": {
+         "zh": "只一次",
+         "en": "Once"
+        }
+       }
+      ]
+     },
+     {
+      "id": "sev",
+      "type": "single",
+      "label": {
+       "zh": "影响",
+       "en": "Impact"
+      },
+      "options": [
+       {
+        "value": "block",
+        "label": {
+         "zh": "完全用不了",
+         "en": "Can't use it"
+        }
+       },
+       {
+        "value": "work",
+        "label": {
+         "zh": "能绕过去",
+         "en": "There's a workaround"
+        }
+       },
+       {
+        "value": "cosmetic",
+        "label": {
+         "zh": "只是不好看",
+         "en": "Cosmetic"
+        }
+       }
+      ]
+     },
+     {
+      "id": "when",
+      "type": "datetime",
+      "label": {
+       "zh": "最近一次发生在",
+       "en": "Last seen at"
+      }
+     },
+     {
+      "id": "device",
+      "type": "dropdown",
+      "label": {
+       "zh": "在哪台设备上",
+       "en": "On which device"
+      },
+      "other": false,
+      "options": [
+       {
+        "value": "iphone",
+        "label": {
+         "zh": "iPhone",
+         "en": "iPhone"
+        }
+       },
+       {
+        "value": "android",
+        "label": {
+         "zh": "安卓手机",
+         "en": "Android phone"
+        }
+       },
+       {
+        "value": "ipad",
+        "label": {
+         "zh": "iPad / 平板",
+         "en": "iPad / tablet"
+        }
+       },
+       {
+        "value": "mac",
+        "label": {
+         "zh": "Mac",
+         "en": "Mac"
+        }
+       },
+       {
+        "value": "windows",
+        "label": {
+         "zh": "Windows 电脑",
+         "en": "Windows PC"
+        }
+       },
+       {
+        "value": "linux",
+        "label": {
+         "zh": "Linux",
+         "en": "Linux"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "proof",
+    "title": {
+     "zh": "证据",
+     "en": "Evidence"
+    },
+    "questions": [
+     {
+      "id": "shots",
+      "type": "file",
+      "label": {
+       "zh": "截图、录屏或语音说明",
+       "en": "Screenshots, a recording or a voice note"
+      },
+      "accept": [
+       "image",
+       "video",
+       "audio",
+       "file"
+      ],
+      "max_files": 5
+     }
+    ]
+   }
+  ]
+ },
+ "example": {
+  "zh": {
+   "area": "手机审批页"
+  },
+  "en": {
+   "area": "Phone approval page"
+  }
+ }
+}

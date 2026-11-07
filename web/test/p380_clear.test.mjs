@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const source=readFileSync(new URL('../public/js/relay.js',import.meta.url),'utf8');
 const fn=source.slice(source.indexOf('function paintCmdx(p)'),source.indexOf('function setOm(open)'));
-function node(tag){return {tag,children:[],open:false,dataset:{},append(...xs){this.children.push(...xs);},appendChild(x){this.children.push(x);},replaceChildren(){this.children=[];},addEventListener(k,f){this[k]=f;}};}
+function node(tag){return {tag,children:[],open:false,dataset:{},attributes:{},setAttribute(k,v){this.attributes[k]=String(v);},append(...xs){this.children.push(...xs);},appendChild(x){this.children.push(x);},replaceChildren(){this.children=[];},addEventListener(k,f){this[k]=f;}};}
 function render(p){
  const box=node('div'),wired=[],slashes=[];
  const ctx=vm.createContext({paintReportActions:()=>false,el:()=>box,C:{myDev:()=>'owner',api:{slash:(...a)=>slashes.push(a)}},t:k=>k,hist:{turns:[p]},

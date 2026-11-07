@@ -1,0 +1,1303 @@
+{
+  "schemaVersion": 1,
+  "scope": "Exact source-reviewed composition roles, never descendant actor defaults",
+  "entries": [
+    {
+      "id": "composition-1",
+      "role": "aj-layout-row",
+      "file": "styles/05-composition-layout.css",
+      "selector": ".aj-row",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "4acb07a71fd03a005323cc41b175fdc7e724b5518f93c3126a89ecff1f53bef7",
+      "sourceReview": "#577 reviewed original rule 1",
+      "producerEvidence": [
+        {
+          "file": "styles/05-composition-layout.css",
+          "purpose": "Authored dormant named layout, no current explicit HTML/JS class producer. Preserve exact source only; not an observed consumer."
+        }
+      ],
+      "consumerStatus": "dormant-no-explicit-producer"
+    },
+    {
+      "id": "composition-2",
+      "role": "aj-layout-hero",
+      "file": "styles/19-hero.css",
+      "selector": ".aj-hero__actions",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "7dc8545b06a6b9c957d2b76d41ca1ed6cfcd2a3e939023f8e68ff9fe1599453b",
+      "sourceReview": "#577 reviewed original rule 2",
+      "producerEvidence": [
+        {
+          "file": "styles/19-hero.css",
+          "purpose": "Authored dormant named layout, no current explicit HTML/JS class producer. Preserve exact source only; not an observed consumer."
+        }
+      ],
+      "consumerStatus": "dormant-no-explicit-producer"
+    },
+    {
+      "id": "composition-3",
+      "role": "aj-layout-hero",
+      "file": "styles/20-composition-rhythm.css",
+      "selector": ".aj-hero__actions:not([hidden])",
+      "context": [
+        "@media (max-width: 600px)"
+      ],
+      "occurrence": 0,
+      "bodySha256": "8c9b01155ba5669b10e59b8f2b4d25ef03d447adacc2ceb49b6f54ef7c4cd263",
+      "sourceReview": "#577 reviewed original rule 3",
+      "producerEvidence": [
+        {
+          "file": "styles/20-composition-rhythm.css",
+          "purpose": "Authored dormant named layout, no current explicit HTML/JS class producer. Preserve exact source only; not an observed consumer."
+        }
+      ],
+      "consumerStatus": "dormant-no-explicit-producer"
+    },
+    {
+      "id": "composition-4",
+      "role": "aj-layout-row",
+      "file": "styles/20-composition-rhythm.css",
+      "selector": ".actions:not([hidden])",
+      "context": [
+        "@media (max-width: 600px)"
+      ],
+      "occurrence": 0,
+      "bodySha256": "8c9b01155ba5669b10e59b8f2b4d25ef03d447adacc2ceb49b6f54ef7c4cd263",
+      "sourceReview": "#577 reviewed original rule 4",
+      "producerEvidence": [
+        {
+          "file": "styles/20-composition-rhythm.css",
+          "purpose": "Authored dormant named layout, no current explicit HTML/JS class producer. Preserve exact source only; not an observed consumer."
+        }
+      ],
+      "consumerStatus": "dormant-no-explicit-producer"
+    },
+    {
+      "id": "composition-5",
+      "role": "aj-layout-row",
+      "file": "styles/20-composition-rhythm.css",
+      "selector": ".site-os-tabs:not([hidden])",
+      "context": [
+        "@media (max-width: 600px)"
+      ],
+      "occurrence": 0,
+      "bodySha256": "8c9b01155ba5669b10e59b8f2b4d25ef03d447adacc2ceb49b6f54ef7c4cd263",
+      "sourceReview": "#577 reviewed original rule 5",
+      "producerEvidence": [
+        {
+          "file": "styles/20-composition-rhythm.css",
+          "purpose": "Authored dormant named layout, no current explicit HTML/JS class producer. Preserve exact source only; not an observed consumer."
+        }
+      ],
+      "consumerStatus": "dormant-no-explicit-producer"
+    },
+    {
+      "id": "composition-6",
+      "role": "aj-layout-row",
+      "file": "styles/20-composition-rhythm.css",
+      "selector": ".btn-row:not([hidden])",
+      "context": [
+        "@media (max-width: 600px)"
+      ],
+      "occurrence": 0,
+      "bodySha256": "8c9b01155ba5669b10e59b8f2b4d25ef03d447adacc2ceb49b6f54ef7c4cd263",
+      "sourceReview": "#577 reviewed original rule 6",
+      "producerEvidence": [
+        {
+          "file": "styles/20-composition-rhythm.css",
+          "purpose": "Authored dormant named layout, no current explicit HTML/JS class producer. Preserve exact source only; not an observed consumer."
+        }
+      ],
+      "consumerStatus": "dormant-no-explicit-producer"
+    },
+    {
+      "id": "composition-7",
+      "role": "aj-layout-row",
+      "file": "styles/20-composition-rhythm.css",
+      "selector": ".li-actions:not([hidden])",
+      "context": [
+        "@media (max-width: 600px)"
+      ],
+      "occurrence": 0,
+      "bodySha256": "8c9b01155ba5669b10e59b8f2b4d25ef03d447adacc2ceb49b6f54ef7c4cd263",
+      "sourceReview": "#577 reviewed original rule 7",
+      "producerEvidence": [
+        {
+          "file": "styles/20-composition-rhythm.css",
+          "purpose": "Authored dormant named layout, no current explicit HTML/JS class producer. Preserve exact source only; not an observed consumer."
+        }
+      ],
+      "consumerStatus": "dormant-no-explicit-producer"
+    },
+    {
+      "id": "composition-8",
+      "role": "aj-layout-row",
+      "file": "styles/20-composition-rhythm.css",
+      "selector": ".plaza-tabs:not([hidden])",
+      "context": [
+        "@media (max-width: 600px)"
+      ],
+      "occurrence": 0,
+      "bodySha256": "8c9b01155ba5669b10e59b8f2b4d25ef03d447adacc2ceb49b6f54ef7c4cd263",
+      "sourceReview": "#577 reviewed original rule 8",
+      "producerEvidence": [
+        {
+          "file": "styles/20-composition-rhythm.css",
+          "purpose": "Authored dormant named layout, no current explicit HTML/JS class producer. Preserve exact source only; not an observed consumer."
+        }
+      ],
+      "consumerStatus": "dormant-no-explicit-producer"
+    },
+    {
+      "id": "composition-9",
+      "role": "aj-layout-flow",
+      "file": "styles/20-composition-rhythm.css",
+      "selector": ".aj-flow.aj-flow > :not([hidden]) ~ :not([hidden])",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "7eb10e66b9309d9a1ee6833cacc5e523592ae6e0a121e2419b295e7b8430e290",
+      "sourceReview": "#577 reviewed original rule 9",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 517,
+          "purpose": "row：技能确认的取消/绑定按钮排列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 555,
+          "purpose": "row：composer输入、文件及发送的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1633,
+          "purpose": "row：拍照、重拍、使用照片、文件、取消的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 622,
+          "purpose": "aj-flow：配对页纵向节奏"
+        },
+        {
+          "file": "public/index.html",
+          "line": 790,
+          "purpose": "aj-flow：bot内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 798,
+          "purpose": "aj-flow：好友内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1604,
+          "purpose": "ajrow confirm-row：确认框动作行"
+        },
+        {
+          "file": "public/js/elevate.js",
+          "line": 80,
+          "purpose": "ajrow confirm-row elev-acts：管理员卡动作行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 727,
+          "purpose": "sub-head：模型/API标题和返回键的布局壳"
+        },
+        {
+          "file": "public/index.html",
+          "line": 793,
+          "purpose": "sub-head：好友页标题和返回键的布局壳"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-10",
+      "role": "aj-layout-flow",
+      "file": "styles/20-composition-rhythm.css",
+      "selector": ".aj-flow.aj-flow > :is(h1,h2,h3,h4) + :not([hidden])",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "7eb10e66b9309d9a1ee6833cacc5e523592ae6e0a121e2419b295e7b8430e290",
+      "sourceReview": "#577 reviewed original rule 10",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 517,
+          "purpose": "row：技能确认的取消/绑定按钮排列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 555,
+          "purpose": "row：composer输入、文件及发送的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1633,
+          "purpose": "row：拍照、重拍、使用照片、文件、取消的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 622,
+          "purpose": "aj-flow：配对页纵向节奏"
+        },
+        {
+          "file": "public/index.html",
+          "line": 790,
+          "purpose": "aj-flow：bot内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 798,
+          "purpose": "aj-flow：好友内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1604,
+          "purpose": "ajrow confirm-row：确认框动作行"
+        },
+        {
+          "file": "public/js/elevate.js",
+          "line": 80,
+          "purpose": "ajrow confirm-row elev-acts：管理员卡动作行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 727,
+          "purpose": "sub-head：模型/API标题和返回键的布局壳"
+        },
+        {
+          "file": "public/index.html",
+          "line": 793,
+          "purpose": "sub-head：好友页标题和返回键的布局壳"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-11",
+      "role": "aj-layout-row",
+      "file": "styles/20-composition-rhythm.css",
+      "selector": ".aj-row",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "c6171d64cfd9c9bcf7e66c4d28739f638f02161d1996fe79a9f2857f5ecee704",
+      "sourceReview": "#577 reviewed original rule 11",
+      "producerEvidence": [
+        {
+          "file": "styles/20-composition-rhythm.css",
+          "purpose": "Authored dormant named layout, no current explicit HTML/JS class producer. Preserve exact source only; not an observed consumer."
+        }
+      ],
+      "consumerStatus": "dormant-no-explicit-producer"
+    },
+    {
+      "id": "composition-12",
+      "role": "aj-layout-hero",
+      "file": "styles/20-composition-rhythm.css",
+      "selector": ".aj-hero__actions",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "c6171d64cfd9c9bcf7e66c4d28739f638f02161d1996fe79a9f2857f5ecee704",
+      "sourceReview": "#577 reviewed original rule 12",
+      "producerEvidence": [
+        {
+          "file": "styles/20-composition-rhythm.css",
+          "purpose": "Authored dormant named layout, no current explicit HTML/JS class producer. Preserve exact source only; not an observed consumer."
+        }
+      ],
+      "consumerStatus": "dormant-no-explicit-producer"
+    },
+    {
+      "id": "composition-13",
+      "role": "aj-layout-row",
+      "file": "styles/20-composition-rhythm.css",
+      "selector": ".confirm-row",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "c6171d64cfd9c9bcf7e66c4d28739f638f02161d1996fe79a9f2857f5ecee704",
+      "sourceReview": "#577 reviewed original rule 13",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 517,
+          "purpose": "row：技能确认的取消/绑定按钮排列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 555,
+          "purpose": "row：composer输入、文件及发送的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1633,
+          "purpose": "row：拍照、重拍、使用照片、文件、取消的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 622,
+          "purpose": "aj-flow：配对页纵向节奏"
+        },
+        {
+          "file": "public/index.html",
+          "line": 790,
+          "purpose": "aj-flow：bot内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 798,
+          "purpose": "aj-flow：好友内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1604,
+          "purpose": "ajrow confirm-row：确认框动作行"
+        },
+        {
+          "file": "public/js/elevate.js",
+          "line": 80,
+          "purpose": "ajrow confirm-row elev-acts：管理员卡动作行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 727,
+          "purpose": "sub-head：模型/API标题和返回键的布局壳"
+        },
+        {
+          "file": "public/index.html",
+          "line": 793,
+          "purpose": "sub-head：好友页标题和返回键的布局壳"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-14",
+      "role": "aj-layout-row",
+      "file": "styles/20-composition-rhythm.css",
+      "selector": ".ajrow",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "c6171d64cfd9c9bcf7e66c4d28739f638f02161d1996fe79a9f2857f5ecee704",
+      "sourceReview": "#577 reviewed original rule 14",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 517,
+          "purpose": "row：技能确认的取消/绑定按钮排列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 555,
+          "purpose": "row：composer输入、文件及发送的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1633,
+          "purpose": "row：拍照、重拍、使用照片、文件、取消的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 622,
+          "purpose": "aj-flow：配对页纵向节奏"
+        },
+        {
+          "file": "public/index.html",
+          "line": 790,
+          "purpose": "aj-flow：bot内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 798,
+          "purpose": "aj-flow：好友内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1604,
+          "purpose": "ajrow confirm-row：确认框动作行"
+        },
+        {
+          "file": "public/js/elevate.js",
+          "line": 80,
+          "purpose": "ajrow confirm-row elev-acts：管理员卡动作行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 727,
+          "purpose": "sub-head：模型/API标题和返回键的布局壳"
+        },
+        {
+          "file": "public/index.html",
+          "line": 793,
+          "purpose": "sub-head：好友页标题和返回键的布局壳"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-16",
+      "role": "aj-layout-row",
+      "file": "public/app.css",
+      "selector": ".row",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "dc6364887af7d40560c32fa7481350873e1b9f78343d9a7f8827693d97a17204",
+      "sourceReview": "#577 reviewed original rule 16",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 517,
+          "purpose": "row：技能确认的取消/绑定按钮排列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 555,
+          "purpose": "row：composer输入、文件及发送的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1633,
+          "purpose": "row：拍照、重拍、使用照片、文件、取消的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 622,
+          "purpose": "aj-flow：配对页纵向节奏"
+        },
+        {
+          "file": "public/index.html",
+          "line": 790,
+          "purpose": "aj-flow：bot内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 798,
+          "purpose": "aj-flow：好友内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1604,
+          "purpose": "ajrow confirm-row：确认框动作行"
+        },
+        {
+          "file": "public/js/elevate.js",
+          "line": 80,
+          "purpose": "ajrow confirm-row elev-acts：管理员卡动作行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 727,
+          "purpose": "sub-head：模型/API标题和返回键的布局壳"
+        },
+        {
+          "file": "public/index.html",
+          "line": 793,
+          "purpose": "sub-head：好友页标题和返回键的布局壳"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-30",
+      "role": "aj-layout-row",
+      "file": "public/app.css",
+      "selector": ".confirm-row",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "520b9205d9191d181b8a456d648b9e6fa99914e252b10dd829f70f54aeaa2163",
+      "sourceReview": "#577 reviewed original rule 30",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 517,
+          "purpose": "row：技能确认的取消/绑定按钮排列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 555,
+          "purpose": "row：composer输入、文件及发送的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1633,
+          "purpose": "row：拍照、重拍、使用照片、文件、取消的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 622,
+          "purpose": "aj-flow：配对页纵向节奏"
+        },
+        {
+          "file": "public/index.html",
+          "line": 790,
+          "purpose": "aj-flow：bot内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 798,
+          "purpose": "aj-flow：好友内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1604,
+          "purpose": "ajrow confirm-row：确认框动作行"
+        },
+        {
+          "file": "public/js/elevate.js",
+          "line": 80,
+          "purpose": "ajrow confirm-row elev-acts：管理员卡动作行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 727,
+          "purpose": "sub-head：模型/API标题和返回键的布局壳"
+        },
+        {
+          "file": "public/index.html",
+          "line": 793,
+          "purpose": "sub-head：好友页标题和返回键的布局壳"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-37",
+      "role": "aj-layout-row",
+      "file": "public/app.css",
+      "selector": ".ajrow",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "beefa76cfda384ff6b2d2043b8297b01a865a69e0706f4f7189ec34393afa8a1",
+      "sourceReview": "#577 reviewed original rule 37",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 517,
+          "purpose": "row：技能确认的取消/绑定按钮排列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 555,
+          "purpose": "row：composer输入、文件及发送的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1633,
+          "purpose": "row：拍照、重拍、使用照片、文件、取消的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 622,
+          "purpose": "aj-flow：配对页纵向节奏"
+        },
+        {
+          "file": "public/index.html",
+          "line": 790,
+          "purpose": "aj-flow：bot内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 798,
+          "purpose": "aj-flow：好友内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1604,
+          "purpose": "ajrow confirm-row：确认框动作行"
+        },
+        {
+          "file": "public/js/elevate.js",
+          "line": 80,
+          "purpose": "ajrow confirm-row elev-acts：管理员卡动作行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 727,
+          "purpose": "sub-head：模型/API标题和返回键的布局壳"
+        },
+        {
+          "file": "public/index.html",
+          "line": 793,
+          "purpose": "sub-head：好友页标题和返回键的布局壳"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-40",
+      "role": "aj-layout-subhead",
+      "file": "public/app.css",
+      "selector": ".sub-head",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "216b810c0ce65368c4ecf8695d372647d649e36ee1343c8d32ae84d3385a797d",
+      "sourceReview": "#577 reviewed original rule 40",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 517,
+          "purpose": "row：技能确认的取消/绑定按钮排列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 555,
+          "purpose": "row：composer输入、文件及发送的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1633,
+          "purpose": "row：拍照、重拍、使用照片、文件、取消的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 622,
+          "purpose": "aj-flow：配对页纵向节奏"
+        },
+        {
+          "file": "public/index.html",
+          "line": 790,
+          "purpose": "aj-flow：bot内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 798,
+          "purpose": "aj-flow：好友内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1604,
+          "purpose": "ajrow confirm-row：确认框动作行"
+        },
+        {
+          "file": "public/js/elevate.js",
+          "line": 80,
+          "purpose": "ajrow confirm-row elev-acts：管理员卡动作行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 727,
+          "purpose": "sub-head：模型/API标题和返回键的布局壳"
+        },
+        {
+          "file": "public/index.html",
+          "line": 793,
+          "purpose": "sub-head：好友页标题和返回键的布局壳"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-48",
+      "role": "aj-layout-row",
+      "file": "public/app.css",
+      "selector": ".ajpages .ajrow",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "c6171d64cfd9c9bcf7e66c4d28739f638f02161d1996fe79a9f2857f5ecee704",
+      "sourceReview": "#577 reviewed original rule 48",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 517,
+          "purpose": "row：技能确认的取消/绑定按钮排列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 555,
+          "purpose": "row：composer输入、文件及发送的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1633,
+          "purpose": "row：拍照、重拍、使用照片、文件、取消的布局行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 622,
+          "purpose": "aj-flow：配对页纵向节奏"
+        },
+        {
+          "file": "public/index.html",
+          "line": 790,
+          "purpose": "aj-flow：bot内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 798,
+          "purpose": "aj-flow：好友内容列"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1604,
+          "purpose": "ajrow confirm-row：确认框动作行"
+        },
+        {
+          "file": "public/js/elevate.js",
+          "line": 80,
+          "purpose": "ajrow confirm-row elev-acts：管理员卡动作行"
+        },
+        {
+          "file": "public/index.html",
+          "line": 727,
+          "purpose": "sub-head：模型/API标题和返回键的布局壳"
+        },
+        {
+          "file": "public/index.html",
+          "line": 793,
+          "purpose": "sub-head：好友页标题和返回键的布局壳"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-18",
+      "role": "aj-request-sheet",
+      "file": "public/app.css",
+      "selector": ".pendtag",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "91e0a0d4576624c2ac458a90bf185da932d07cdb0deebab38c8db95658eca822",
+      "sourceReview": "#577 reviewed original rule 18",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 431,
+          "purpose": "ask为sheet标题栏"
+        },
+        {
+          "file": "public/index.html",
+          "line": 469,
+          "purpose": "pendTag待处理折叠入口"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 444,
+          "purpose": "折叠状态控制待处理入口"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 457,
+          "purpose": "question/permission采用同一pendTag，仅文案不同"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 459,
+          "purpose": "ask标题分别显示回答/批准请求"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-19",
+      "role": "aj-request-sheet",
+      "file": "public/app.css",
+      "selector": ".pendtag[hidden]",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "2b067e969876fafa34c77f959f8239a52d46aae679d63b62b202182f8420e1aa",
+      "sourceReview": "#577 reviewed original rule 19",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 431,
+          "purpose": "ask为sheet标题栏"
+        },
+        {
+          "file": "public/index.html",
+          "line": 469,
+          "purpose": "pendTag待处理折叠入口"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 444,
+          "purpose": "折叠状态控制待处理入口"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 457,
+          "purpose": "question/permission采用同一pendTag，仅文案不同"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 459,
+          "purpose": "ask标题分别显示回答/批准请求"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-20",
+      "role": "aj-request-sheet",
+      "file": "public/app.css",
+      "selector": ".ask",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "ef1072a4e1b09ce4f267c288c8920c646daedc9325516430773fe376403d384f",
+      "sourceReview": "#577 reviewed original rule 20",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 431,
+          "purpose": "ask为sheet标题栏"
+        },
+        {
+          "file": "public/index.html",
+          "line": 469,
+          "purpose": "pendTag待处理折叠入口"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 444,
+          "purpose": "折叠状态控制待处理入口"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 457,
+          "purpose": "question/permission采用同一pendTag，仅文案不同"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 459,
+          "purpose": "ask标题分别显示回答/批准请求"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-34",
+      "role": "aj-supporting-text",
+      "file": "public/app.css",
+      "selector": ".small",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "7db21dff14b2477af6b76c408f2ba39b8955fce2f8c5f556c5de3342979bcd12",
+      "sourceReview": "#577 reviewed original rule 34",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 608,
+          "purpose": "安装主屏幕提示"
+        },
+        {
+          "file": "public/index.html",
+          "line": 755,
+          "purpose": "记忆说明"
+        },
+        {
+          "file": "public/index.html",
+          "line": 795,
+          "purpose": "好友状态"
+        },
+        {
+          "file": "public/index.html",
+          "line": 838,
+          "purpose": "版本hash核对说明"
+        },
+        {
+          "file": "public/js/bots.js",
+          "line": 29,
+          "purpose": "bot隐私/说明"
+        },
+        {
+          "file": "public/js/controls.js",
+          "line": 182,
+          "purpose": "记忆来源路径"
+        },
+        {
+          "file": "public/js/controls.js",
+          "line": 411,
+          "purpose": "error small任务问题"
+        },
+        {
+          "file": "public/js/friends.js",
+          "line": 836,
+          "purpose": "error small好友表单失败"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-38",
+      "role": "aj-guidance-callout",
+      "file": "public/app.css",
+      "selector": ".note",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "a0ae19c9739ea28c2bd40479171689b1596c116bf1c5d5985ed326c45e053f18",
+      "sourceReview": "#577 reviewed original rule 38",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 614,
+          "purpose": "phone-env：环境引导aside"
+        },
+        {
+          "file": "public/index.html",
+          "line": 627,
+          "purpose": "pair-wiped：浏览器本地数据已清除说明"
+        },
+        {
+          "file": "public/index.html",
+          "line": 628,
+          "purpose": "pair-rv：另一设备配对提示"
+        },
+        {
+          "file": "public/index.html",
+          "line": 629,
+          "purpose": "pair-friends：好友页先配对"
+        },
+        {
+          "file": "public/index.html",
+          "line": 667,
+          "purpose": "pair-iphone：iPhone先添加到主屏幕"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-39",
+      "role": "aj-guidance-callout",
+      "file": "public/app.css",
+      "selector": ".note>p",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "873f5404cf82b8b2440551de08b35bda858787952317a8449b1595bd0bd9b260",
+      "sourceReview": "#577 reviewed original rule 39",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 614,
+          "purpose": "phone-env：环境引导aside"
+        },
+        {
+          "file": "public/index.html",
+          "line": 627,
+          "purpose": "pair-wiped：浏览器本地数据已清除说明"
+        },
+        {
+          "file": "public/index.html",
+          "line": 628,
+          "purpose": "pair-rv：另一设备配对提示"
+        },
+        {
+          "file": "public/index.html",
+          "line": 629,
+          "purpose": "pair-friends：好友页先配对"
+        },
+        {
+          "file": "public/index.html",
+          "line": 667,
+          "purpose": "pair-iphone：iPhone先添加到主屏幕"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-46",
+      "role": "aj-shared-status",
+      "file": "public/app.css",
+      "selector": ".shared-status:not([hidden])",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "b8568b1876c570c55336bbc4e548724b6742686d8cf05b2c04eb38cdd02e0982",
+      "sourceReview": "#577 reviewed original rule 46",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 302,
+          "purpose": "shared-status固定状态节点"
+        },
+        {
+          "file": "public/index.html",
+          "line": 304,
+          "purpose": "version-later固定版本提示"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 962,
+          "purpose": "desktop_writer只读状态填充与显隐"
+        },
+        {
+          "file": "public/js/version-notice.js",
+          "line": 83,
+          "purpose": "版本状态处理"
+        },
+        {
+          "file": "public/js/ui.js",
+          "line": 86,
+          "purpose": "replyNotice重新挂载这两节点"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-47",
+      "role": "aj-version-status",
+      "file": "public/app.css",
+      "selector": ".ver-later:not([hidden])",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "e02730150b74d9b559e2c2e98fb16136dbc911f83da507c89db4d022dba127f7",
+      "sourceReview": "#577 reviewed original rule 47",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 302,
+          "purpose": "shared-status固定状态节点"
+        },
+        {
+          "file": "public/index.html",
+          "line": 304,
+          "purpose": "version-later固定版本提示"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 962,
+          "purpose": "desktop_writer只读状态填充与显隐"
+        },
+        {
+          "file": "public/js/version-notice.js",
+          "line": 83,
+          "purpose": "版本状态处理"
+        },
+        {
+          "file": "public/js/ui.js",
+          "line": 86,
+          "purpose": "replyNotice重新挂载这两节点"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-52",
+      "role": "aj-copy-decoration",
+      "file": "public/app.css",
+      "selector": ".cc",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "df29768c869b18a8e031690b4080e978e5977c78ba41590bd3f41462d97348b0",
+      "sourceReview": "#577 reviewed original rule 52",
+      "producerEvidence": [
+        {
+          "file": "public/js/copycode.js",
+          "line": 54,
+          "purpose": "copyable唯一幂等入口，接code/pre/dd"
+        },
+        {
+          "file": "public/js/copycode.js",
+          "line": 71,
+          "purpose": "cc/cc--block wrapper创建"
+        },
+        {
+          "file": "public/js/copycode.js",
+          "line": 181,
+          "purpose": "data-cc点击流程"
+        },
+        {
+          "file": "public/index.html",
+          "line": 442,
+          "purpose": "审批pre data-cc ext，owner approval"
+        },
+        {
+          "file": "public/js/bang.js",
+          "line": 83,
+          "purpose": "terminal pre传copyable，仍terminal内容"
+        },
+        {
+          "file": "public/js/md.js",
+          "line": 1,
+          "purpose": "正文代码渲染调用copy协议"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-53",
+      "role": "aj-copy-decoration",
+      "file": "public/app.css",
+      "selector": ".cc>code",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "664339472f2c09e644b5f4561e80ea1aa80c38214ceb8fe1559f8c55fd10500a",
+      "sourceReview": "#577 reviewed original rule 53",
+      "producerEvidence": [
+        {
+          "file": "public/js/copycode.js",
+          "line": 54,
+          "purpose": "copyable唯一幂等入口，接code/pre/dd"
+        },
+        {
+          "file": "public/js/copycode.js",
+          "line": 71,
+          "purpose": "cc/cc--block wrapper创建"
+        },
+        {
+          "file": "public/js/copycode.js",
+          "line": 181,
+          "purpose": "data-cc点击流程"
+        },
+        {
+          "file": "public/index.html",
+          "line": 442,
+          "purpose": "审批pre data-cc ext，owner approval"
+        },
+        {
+          "file": "public/js/bang.js",
+          "line": 83,
+          "purpose": "terminal pre传copyable，仍terminal内容"
+        },
+        {
+          "file": "public/js/md.js",
+          "line": 1,
+          "purpose": "正文代码渲染调用copy协议"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-54",
+      "role": "aj-copy-decoration",
+      "file": "public/app.css",
+      "selector": "[data-cc].copied:not(.icode)",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "bd5a317101b92bc70bb358ba7f27d1b79eade20ca18d1dfbc057002b5f60e575",
+      "sourceReview": "#577 reviewed original rule 54",
+      "producerEvidence": [
+        {
+          "file": "public/js/copycode.js",
+          "line": 54,
+          "purpose": "copyable唯一幂等入口，接code/pre/dd"
+        },
+        {
+          "file": "public/js/copycode.js",
+          "line": 71,
+          "purpose": "cc/cc--block wrapper创建"
+        },
+        {
+          "file": "public/js/copycode.js",
+          "line": 181,
+          "purpose": "data-cc点击流程"
+        },
+        {
+          "file": "public/index.html",
+          "line": 442,
+          "purpose": "审批pre data-cc ext，owner approval"
+        },
+        {
+          "file": "public/js/bang.js",
+          "line": 83,
+          "purpose": "terminal pre传copyable，仍terminal内容"
+        },
+        {
+          "file": "public/js/md.js",
+          "line": 1,
+          "purpose": "正文代码渲染调用copy协议"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-57",
+      "role": "aj-host-provenance",
+      "file": "public/app.css",
+      "selector": ".cp-host",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "6969121f0579e20ca06d52887be87bd74ae09bb9b6536d5079667480f64e7017",
+      "sourceReview": "#577 reviewed original rule 57",
+      "producerEvidence": [
+        {
+          "file": "public/js/cardplace.js",
+          "line": 127,
+          "purpose": "固定SHIELD path"
+        },
+        {
+          "file": "public/js/cardplace.js",
+          "line": 128,
+          "purpose": "badge入口，先归真实frame"
+        },
+        {
+          "file": "public/js/cardplace.js",
+          "line": 134,
+          "purpose": "固定p.cp-host生成；从不来自reply Markdown"
+        },
+        {
+          "file": "public/js/cardplace.js",
+          "line": 137,
+          "purpose": "i18n p0269c.fromHost固定文案"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "composition-58",
+      "role": "aj-host-provenance",
+      "file": "public/app.css",
+      "selector": ".cp-host svg",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "2d390bf2dfbcaba167db0199ef08a3720f83c011a8f82944034002f318f9e17c",
+      "sourceReview": "#577 reviewed original rule 58",
+      "producerEvidence": [
+        {
+          "file": "public/js/cardplace.js",
+          "line": 127,
+          "purpose": "固定SHIELD path"
+        },
+        {
+          "file": "public/js/cardplace.js",
+          "line": 128,
+          "purpose": "badge入口，先归真实frame"
+        },
+        {
+          "file": "public/js/cardplace.js",
+          "line": 134,
+          "purpose": "固定p.cp-host生成；从不来自reply Markdown"
+        },
+        {
+          "file": "public/js/cardplace.js",
+          "line": 137,
+          "purpose": "i18n p0269c.fromHost固定文案"
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    },
+    {
+      "id": "late-terminal-banner-space",
+      "role": "aj-terminal-banner-space",
+      "file": "public/assist-terminal.css",
+      "selector": "body[data-assist-terminal] .setpage .box.setbox,body[data-assist-terminal] .menupage",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "2cd42d5150c9b9473d4ed6891d54df565a46c41a791d2f520be0ed4e0e17d7f8",
+      "sourceReview": "Read current terminal state.active banner producer and retained 447 reservation rule; no actor inference for settings/menu descendants.",
+      "producerEvidence": [
+        {
+          "file": "public/js/assist-terminal.js",
+          "purpose": "render() toggles body data-assist-terminal and paints the floating banner; same pre577 safe-area padding."
+        }
+      ],
+      "consumerStatus": "source-reviewed-existing-producer"
+    }
+  ],
+  "sourceBindings": {
+    "styles/05-composition-layout.css": "48a0f2d6bb2e599a19ab5904606212932ccaaae29f1dacd67a68e8eb92e790ae",
+    "styles/19-hero.css": "0e945eb51f97b7e117d24d9af66b7ad7ceffa79428321770972e46f9a1d8fa3b",
+    "styles/20-composition-rhythm.css": "eef8954791dbdfd0a29e02de76a7ff35c08f091f3d45b208496f52c1558eb56d",
+    "public/index.html": "3df32b00d92465d9303b41f04bb701500838d09074dd39bb15b9efac9893375c",
+    "public/js/elevate.js": "7b873373a1e7b712a46f60c5d576088403221dbd77d5f5d886ec3e669d8c21ea",
+    "public/js/relay.js": "a6c99bf9aa3c6c68599d432f094231e75d5c6621dc1a9f0953433011591d7bbf",
+    "public/js/bots.js": "0c8b487e619459b73da06d53d67a747d43ea19d1ace8a3b56beb6bcc129e6f02",
+    "public/js/controls.js": "9d5390820561605b234716c20949ecf5f71232b7afca8853562cc7097a2ebbf8",
+    "public/js/friends.js": "2d163c669ff0b65da6b1e2309ec80ce686c22a8ca0f25aa54d187568447d0861",
+    "public/js/version-notice.js": "90ac0b2bbe98d6c3146899996731e948d51d671aba17fafddf9933df37e868bb",
+    "public/js/ui.js": "b3d39636e06ab926e9edcae9a4f697bad3d568a227dc988f61ca310de52b7748",
+    "public/js/copycode.js": "1f37adefc4fe9d30825e6e345ff93cbd71ffd56804564888891f2db17bbb63db",
+    "public/js/bang.js": "7d6af4c80e22f5d3957a97baddd5a20b0f3d677e56be57313d742c6351d39d6a",
+    "public/js/md.js": "1a1f0eea6053c9a783d1da26907761f7038d4229e543c4b6f514951815727409",
+    "public/js/cardplace.js": "f674254caf8724806b79dcd363541f89de804df8436c214f3da9b5e44724311c"
+  }
+}

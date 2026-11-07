@@ -299,5 +299,5 @@ export async function getSealed(name) { try { return await unseal(await dbGet(na
 /** Unpair / revoke: the drafts, the input history, the offline queue (0.15.2, outbox.js), the search pages (P188, search.js) and the key that sealed them go. */
 export async function wipeLocal() {
   localKey = null; wipes++;
-  for (const k of ['draft', 'ihist', 'outbox', 'srch', 'local']) { try { await dbDel(k); } catch { /* nothing stored */ } }
+  for (const k of ['draft', 'ihist', 'outbox', 'srch', 'forms', 'local']) { try { await dbDel(k); } catch { /* nothing stored */ } }
 }

@@ -112,7 +112,10 @@ class Keys(unittest.TestCase):
             self.assertEqual([k["id"] for k in assist_keys.load()], ["assist-test-1"])
             self.assertEqual(assist_keys.current()["x25519"], self.k.x_pub)
         with mock.patch.dict(os.environ, {assist_keys.TEST_ENV: str(self.file), "AGENTJ_TEST": "0"}):
+            # The shipped public pin is expired/off at the present release date;
+            # raw asset entries must not be mistaken for usable keys.
             self.assertEqual(assist_keys.load(), [])
+            self.assertTrue(assist_keys.placeholder())
 
     def test_expired_entry_dropped(self):
         f = _keyfile(self.tmp.name, [("assist-old", self.k)], not_after=int(time.time()) - 5)
@@ -159,7 +162,8 @@ class _KeyEnv:
         self.addCleanup(p.stop)
 
     def unpin(self):
-        os.environ.pop(assist_keys.TEST_ENV, None)
+        self.keyfile.write_text(json.dumps({"v": 1, "keys": []}))
+        os.environ[assist_keys.TEST_ENV] = str(self.keyfile)
 
 
 # ---------------------------------------------------------------- 2. the grant (real serve.Host, real WebAuthn assertion)

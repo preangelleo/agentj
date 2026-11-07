@@ -4,7 +4,8 @@ export function auditSettings(root = document.getElementById('settings')) {
   const visible = e => !!e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
   const ident = e => e.id || e.outerHTML.slice(0,160);
   const buttonComponents = {
-    'aj-btn': () => true,
+    'aj-action': () => true,
+    'aj-icon-action': e => ['mail-add','rm-add','rm-copy'].includes(e.id),
     'act': e => !!e.closest('.rmbar.rscmdacts'),
     'bulb': e => !!e.closest('#set-actions'),
     'cc-btn': e => !!e.closest('.cc') || !!e._ccFor,
@@ -30,7 +31,7 @@ export function auditSettings(root = document.getElementById('settings')) {
     else ok = e.classList.contains('aj-input') || (e.classList.contains('rmcode') && !!e.closest('.rmadd'));
     if (!ok) errors.push(`shared-component: ${ident(e)}`);
     const cs = getComputedStyle(e);
-    if (visible(e) && e.matches('.aj-input,.aj-select,.aj-textarea,.aj-btn') && parseFloat(cs.borderRadius) <= 0) errors.push(`square-control: ${ident(e)}`);
+    if (visible(e) && e.matches('.aj-input,.aj-select,.aj-textarea,.aj-action,.aj-icon-action') && parseFloat(cs.borderRadius) <= 0) errors.push(`square-control: ${ident(e)}`);
     controls.push({id:ident(e),component:e.className,visible:visible(e),radius:cs.borderRadius});
   }
   for (const h of root.querySelectorAll('h3,h4,.setg')) {

@@ -4,12 +4,14 @@ No credentials, terminal input, native-session clearing, or arbitrary checkout e
 The manager owns a restartable worker independently of the serve cgroup.
 """
 from __future__ import annotations
+import contextlib
 import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import subprocess
 import sys
 import time
@@ -80,12 +82,58 @@ def _touch(st, now=None):
 
 def busy(host):
     a = host.agent
+    return bool((a and (a.status != 'idle' or (getattr(a, 'q', None) and not a.q.empty()))) or _others_busy(host))
+
+
+def _others_busy(host):
+    """Everything busy() waits for except the main Agent's turn and queue."""
     ps = getattr(host.peers, 'sessions', None)
-    return bool((a and (a.status != 'idle' or (getattr(a, 'q', None) and not a.q.empty()))) or host._open_question() or any(not a.fut.done() for a in host.asks.values())
+    return bool(host._open_question() or any(not a.fut.done() for a in host.asks.values())
                 or host.scheduler.current_id or host.elevate.cards
                 or getattr(getattr(host, 'bots', None), 'phone_tasks', None)
                 or (ps and (ps.active or ps._procs))
                 or (host.peers and (getattr(host.peers, 'jobs', None) or getattr(host.peers, 'asks', None))))
+
+
+RESTART_WAIT_TEXT = ('已安装，等当前任务结束后重启（最多 10 分钟）。',
+                     'Installed. Agent J restarts when the current task ends (at most 10 minutes).')
+
+
+def restart_ready(host):
+    """0.26.10 #484 (Avon: the upgrade restart waited its full 600 s on a turn that never ended): the upgrade recovery
+    worker's idle check. → (ready, why). Never waits on the turn that launched this upgrade (`agentj update apply` from the
+    Agent's own turn, or the owner's signed /update during a turn — serve.upgrade_turn = that turn's start), nor on a turn
+    the watchdog judges stuck (turn_heal: no event for 5 min, a dead desktop turn); still waits for cards, tasks, friends,
+    and for every owner message not yet delivered (queued, or waiting behind the turn): behind a stuck turn → 'stuck_queued'
+    — serve runs `deliver_before_restart` (the watchdog's own heal), so the message reaches the harness before the restart
+    (security #484 note 3: a restart never drops it)."""
+    if not busy(host):
+        return True, None
+    if _others_busy(host):
+        return False, 'busy'
+    a = host.agent
+    cur = getattr(a, 'cur_send', None) if a is not None else None
+    waiting = bool(a is not None and getattr(a, 'q', None) is not None and not a.q.empty()) or \
+        (cur is not None and getattr(cur, 'state', None) == 'pending')
+    heal = getattr(host, 'turn_heal', None)
+    with contextlib.suppress(Exception):
+        if heal is not None and heal.view().get('stuck'):
+            return (False, 'stuck_queued') if waiting else (True, 'stuck_turn')
+    t0 = getattr(host, 'turn_t0', None)
+    if t0 and getattr(host, 'upgrade_turn', None) == t0 and not waiting:
+        return True, 'launching_turn'
+    return False, 'turn'
+
+
+async def deliver_before_restart(host) -> bool:
+    """'stuck_queued': the turn watchdog's own heal (interrupt → the harness Agent J started → resume the same conversation;
+    the queue is kept, proof = the queued message reached the harness). Never during the stop switch, never twice at
+    once. → True when the queued message was delivered."""
+    heal = getattr(host, 'turn_heal', None)
+    if heal is None or host.stopped() or getattr(heal, 'healing', False):
+        return False
+    res = await heal.heal('watchdog', 'upgrade_queued')
+    return bool(res.get('ok'))
 
 
 SOON = 900   # P203: a scheduled task due within 15 minutes is on the upgrade card's list
@@ -410,6 +458,12 @@ def install_commands(info, wheel):
         return [Command([update.installer_binary('uv'), 'tool', 'install', '--force', str(wheel)], install_env(info))]
     if info['kind'] == 'pipx':
         return [[update.installer_binary('pipx'), 'install', '--force', str(wheel)]]
+    # Plain venvs made by uv need not contain pip. Install into this exact
+    # interpreter; manual/nightly updates and rollback share this planner.
+    uv = shutil.which('uv')
+    if uv:
+        return [[uv, 'pip', 'install', '--python', str(Path(info['where'])/'bin/python'),
+                 '--no-deps', '--reinstall', str(wheel)]]
     return [[str(Path(info['where'])/'bin/python'), '-m', 'pip', 'install', '--no-deps', '--force-reinstall', str(wheel)]]
 
 

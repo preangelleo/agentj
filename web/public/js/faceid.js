@@ -327,7 +327,7 @@ export function approve(challenge, credId, where = false, st = own) {
 export const SECRET_OUT_CTX = 'agentjarvis-secret-out-v1';
 export const SECRET_OUT_KIND = 'secret_out';
 /** What the card shows before Face ID, in the host's order: name, purpose, text|file, file name, size (bytes). */
-export const secretOutFields = (c) => [c.name, c.purpose || '', c.kind, c.filename || '', String(c.size)];
+export const secretOutFields = (c) => [c.name, c.purpose || '', c.kind, c.filename || '', String(c.size), ...(c.approval_v===2?[c.envelope_sha256]:[])];
 const hexOf = (u) => Array.from(u, (b) => b.toString(16).padStart(2, '0')).join('');
 /** hex SHA-256(ctx \n kind \n one hex sha256(field) line per field). */
 export async function secretOutDigest(fields) {

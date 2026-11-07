@@ -31,7 +31,7 @@ WHITELIST = ("clear", "compact", "model", "context", "cost", "usage", "status", 
 ALIAS = {"new": "clear"}
 INTERNAL = ("undo_clear",)                      # the phone's 「撤销清空」 button (never typed)
 # P155: not run by the host — always handed to the main Agent (any harness), rewritten by switch_harness.agent_text
-AGENT_CMDS = ("switch-harness", "feedback-to-agentj-father")
+AGENT_CMDS = ("switch-harness", "feedback-to-agentj-father", "learn")
 LABEL = {"clear": "清空", "compact": "压缩", "model": "换模型", "context": "上下文", "cost": "花费", "usage": "用量",
          "status": "状态", "help": "帮助", "stop": "停止", "undo_clear": "撤销清空", "skill": "技能", "refused": "命令", "goal": "目标", "reload": "重新加载",
          "reset": "重置连接"}   # P332 (§33)
@@ -40,6 +40,7 @@ _CMD = re.compile(r"^/([A-Za-z][\w:.-]{0,63})(?:[ \t]+(.*))?$", re.S)
 MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\[\]@+-]{0,99}$")
 # P529: plain Markdown list; the phone upgrades only the host's refused card.
 PHONE_COMMANDS = (
+    ("learn", "沉淀对话做法为技能（确认完整 diff 后写入）", "Distil this conversation into a skill (confirm the full diff)"),
     ('clear', '开新对话（先确认）', 'Start a new conversation (asks first)'),
     ('new', '开新对话，同 /clear', 'Start a new conversation, like /clear'),
     ('compact', '压缩上下文', 'Compact the context'),

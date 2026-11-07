@@ -302,6 +302,11 @@ class Delivery(_Svc):
         session = _ready(host, phone)
         host.agent = SimpleNamespace(kind='codex', native_source=None, status='idle')
         host.agent_cfg = {'dir':str(self.work),'kind':'codex'}
+        from agentj import approval_review
+        turn=host.hist_add({'k':'phone','dev':phone.did,'name':'Workflow owner',
+                           'text':'Synthetic paired owner workflow-mail grant request.'},'', 'done')
+        host.agent.cur_send=SimpleNamespace(source=provenance.phone(),
+            approval_origin=approval_review.remember(host,turn,provenance.phone()))
         pending = asyncio.create_task(host.ask(wm.TOOL, {'summary':wm.shown(core)}, batch=False,
             grant_info=True, always_ask=True, require_passkey=True,
             _company_proposal=policy_registry.HOST_CARD))

@@ -62,7 +62,7 @@ try {
           nos: cards.map((c) => c.querySelector('.pm__no').textContent),
           titles: cards.map((c) => c.querySelector('h2').textContent),
           steps: cards.map((c) => c.querySelectorAll('ol.steps > li').length),
-          primaries: cards.map((c) => [...c.querySelectorAll('.aj-btn--primary')].filter(vis).length),
+          primaries: cards.map((c) => [...c.querySelectorAll('.aj-action--primary')].filter(vis).length),
           ph: document.getElementById('pair-link').placeholder,
           cmd: document.getElementById('pm-cmd').textContent,
           cmdLink: document.getElementById('pm-cmd-link').textContent,

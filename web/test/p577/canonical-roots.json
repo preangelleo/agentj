@@ -1,0 +1,277 @@
+[
+  {
+    "selector": "#silentList,#silentMore",
+    "owner": "aj-history",
+    "evidence": "js/relay.js:4409 renderSilent reads hist.turns, separate content under the menu shell"
+  },
+  {
+    "selector": ".aj-lang",
+    "owner": "aj-language",
+    "evidence": "brand/lang.js; component-03"
+  },
+  {
+    "selector": "#busyDots,.busy-one,.busy-more,#busyDlg,#loadDlg",
+    "owner": "aj-busy",
+    "evidence": "js/busy.js:228,488,517; component-19"
+  },
+  {
+    "selector": "#qbar,.qbar,.omq,.omqfold,#omQuoteMore,#quoteDlg",
+    "owner": "aj-quote",
+    "evidence": "js/relay.js:1450,1858,1970; component-09"
+  },
+  {
+    "selector": "#sheet .qs,#sheet .qfree,#sheet .opt,#sheet .qmore",
+    "owner": "aj-choice",
+    "evidence": "js/relay.js question renderer; component-16"
+  },
+  {
+    "selector": "#sheet",
+    "owner": "$sheet",
+    "evidence": "js/relay.js:415-460; sheet.dataset.card q/question = choice, otherwise approval"
+  },
+  {
+    "selector": "#ptt,.ptt",
+    "owner": "aj-recording",
+    "evidence": "index.html:1615; component-15"
+  },
+  {
+    "selector": ".mview,#mstrip",
+    "owner": "aj-media",
+    "evidence": "js/media.js:518; component-14"
+  },
+  {
+    "selector": ".mcard,.mslot",
+    "owner": "aj-file",
+    "evidence": "js/media.js render file/media cards; component-14"
+  },
+  {
+    "selector": "#tray,.tray,.chip,.omatt,.omchip",
+    "owner": "aj-attachment",
+    "evidence": "js/relay.js:1674,2823; component-13"
+  },
+  {
+    "selector": "#elev,#sout,#lqr,.elev,.secret,.lqr,.lgs",
+    "owner": "aj-auth-card",
+    "evidence": "js/elevate.js/loginqr.js/secretout.js; component-18"
+  },
+  {
+    "selector": "#pkp,.pkp,#sxf,.sxf,.pkassist",
+    "owner": "aj-passkey",
+    "evidence": "js/pkpeer.js:258; js/seatxfer.js:151; component-36"
+  },
+  {
+    "selector": "#fsEd,.fsed",
+    "owner": "aj-editor",
+    "evidence": "js/fsedit.js; component-34"
+  },
+  {
+    "selector": "#term,.term,.term-sheet,.termchip",
+    "owner": "aj-terminal",
+    "evidence": "js/terminal.js:79; component-33"
+  },
+  {
+    "selector": ".codeblock,.tablewrap,.words,.fp-prose",
+    "owner": "aj-prose",
+    "evidence": "js/md.js/render.js shared prose renderer; component-08"
+  },
+  {
+    "selector": "#rd,.rd",
+    "owner": "aj-reader",
+    "evidence": "index.html:1649; component-10"
+  },
+  {
+    "selector": "#rm,.rm",
+    "owner": "aj-reply",
+    "evidence": "index.html:356; component-07"
+  },
+  {
+    "selector": "#om,.om",
+    "owner": "aj-source",
+    "evidence": "index.html:332; component-06"
+  },
+  {
+    "selector": ".tools",
+    "owner": "aj-composer-tool",
+    "evidence": "index.html composer toolbar; component-12"
+  },
+  {
+    "selector": ".composer,#msg",
+    "owner": "aj-composer",
+    "evidence": "index.html composer; component-11"
+  },
+  {
+    "selector": "#srch,.srch,.srhit,.pfind,.set-find",
+    "owner": "aj-search",
+    "evidence": "js/search.js/pagefind.js; component-25"
+  },
+  {
+    "selector": "#menu,#hotMenu,.menupage,.menucard,.menulist,#badge-panel",
+    "owner": "aj-menu",
+    "evidence": "js/relay.js menu, js/hotkey.js; component-21/22"
+  },
+  {
+    "selector": "#sug,.sug",
+    "owner": "aj-suggestion",
+    "evidence": "js/relay.js suggestion renderer; component-22"
+  },
+  {
+    "selector": "#friends-view,.fr-item,.fr-msg,.fr-askcard",
+    "owner": "aj-friends",
+    "evidence": "js/friends.js:252; component-28"
+  },
+  {
+    "selector": "#bots-view,.bots-field,.bots-tabs",
+    "owner": "aj-bots",
+    "evidence": "js/bots.js; component-29"
+  },
+  {
+    "selector": "#mem-view,#act-view,#tasks-view,.mem-src,.act-item,.task-card,.task-item",
+    "owner": "aj-history",
+    "evidence": "js/controls.js:175,283,308; component-30"
+  },
+  {
+    "selector": ".jc-cal-dialog,.jc-cal-grid,.jc-calendar",
+    "owner": "aj-wallet-calendar",
+    "evidence": "js/calendar.js; component-32"
+  },
+  {
+    "selector": ".jc-body,.jc-card,.jc-entry,.jc-list,.jc-color-dialog",
+    "owner": "aj-wallet",
+    "evidence": "js/jcards.js; component-32"
+  },
+  {
+    "selector": "#five-page,.fp-card",
+    "owner": "aj-knowledge",
+    "evidence": "js/five-pages.js; component-31"
+  },
+  {
+    "selector": "#setup-view,.setup-row,.setup-banner,.seatpick,.lt-opt",
+    "owner": "aj-setup",
+    "evidence": "js/setup.js; component-35"
+  },
+  {
+    "selector": "#set-contacts,#ctmEdit,.ct-person,.ct-field,.ct-form,[class^=ctm-],[class*=\" ctm-\"]",
+    "owner": "aj-contacts",
+    "evidence": "js/contacts.js/ctmanage.js; component-37"
+  },
+  {
+    "selector": "#set-remotes,.rmitem,.rmmeter,.rmqr",
+    "owner": "aj-remotes",
+    "evidence": "js/remotes.js:133; component-38; excludes reply rm/rmtop/rmpart"
+  },
+  {
+    "selector": "#set-mail,#set-imessage,#set-notify,#set-hooks,.mailf,.whrow,.ntfrow,.newsmail,.setimsg,.setntf",
+    "owner": "aj-channel",
+    "evidence": "js/mail.js/webhooks.js/ntf.js; component-39"
+  },
+  {
+    "selector": ".rscard,.rsassist,.rscmdres,#set-s-rescue",
+    "owner": "aj-rescue",
+    "evidence": "js/rescue.js; component-26"
+  },
+  {
+    "selector": "#set-accts,.acctrow,.krow,.kimp",
+    "owner": "aj-account",
+    "evidence": "js/accounts.js/keys.js; component-27"
+  },
+  {
+    "selector": ".segrow,.fontstep,.setsegment,.setswitch,.twoway",
+    "owner": "aj-settings-control",
+    "evidence": "index.html:1024; component-24"
+  },
+  {
+    "selector": "#settings,.setcard,.setmain",
+    "owner": "aj-settings",
+    "evidence": "index.html:848; component-23"
+  },
+  {
+    "selector": "#offDlg,.offdlg,.asbanner,.estop-banner,.grant-bar,.connection-help,.session-help",
+    "owner": "aj-recovery",
+    "evidence": "js/offline-card.js/controls.js; component-40"
+  },
+  {
+    "selector": "#toast,.toast,#reply-notices",
+    "owner": "aj-notice",
+    "evidence": "js/ui.js:75-88; component-20"
+  },
+  {
+    "selector": ".gdlg,.ajmodal,#confirm",
+    "owner": "aj-dialog",
+    "evidence": "js/ui.js:161; component-20; exact specialized roots take priority"
+  },
+  {
+    "selector": ".water,.aura,.flow,.meter",
+    "owner": "aj-status",
+    "evidence": "index.html background/status; component-05"
+  },
+  {
+    "selector": ".top,.orb,.top .meta",
+    "owner": "aj-header",
+    "evidence": "index.html:263; component-04"
+  },
+  {
+    "selector": "#pair-view,#sas-view,#scan-view,.pm",
+    "owner": "aj-pairing",
+    "evidence": "index.html:622,714,733; pairing/camera UI"
+  },
+  {
+    "selector": "#a2hs,#phone-env",
+    "owner": "aj-pairing",
+    "evidence": "index.html onboarding/install hint and phone browser environment guidance before pairing; CEO semantic review 2026-11-07"
+  },
+  {
+    "selector": "#models-view",
+    "owner": "aj-account",
+    "evidence": "index.html models page; js/models.js account/model picker; component-27"
+  },
+  {
+    "selector": "#revoked-view,#error-view",
+    "owner": "aj-recovery",
+    "evidence": "index.html removed-device/protocol error views and recovery explanation; component-40"
+  },
+  {
+    "selector": "#cam",
+    "owner": "aj-recording",
+    "evidence": "index.html camera preview/actions; relay camera capture uses same recording device UI family; CEO semantic review"
+  },
+  {
+    "selector": "#dropzone",
+    "owner": "aj-attachment",
+    "evidence": "index.html drop target; relay attachment drag/drop input; component-13"
+  },
+  {
+    "selector": "#stage,#deck,#pages",
+    "owner": "aj-shell",
+    "evidence": "index.html composition containers only; nested semantic roots override, no body blanket fallback"
+  },
+  {
+    "selector": ".scrim",
+    "owner": "aj-dialog",
+    "evidence": "index.html modal backdrop technical element within stage; component-20"
+  },
+  {
+    "selector": "#pendTag",
+    "owner": "aj-approval",
+    "evidence": "index.html pending permission indicator and its dot; component-17"
+  },
+  {
+    "selector": "#why",
+    "owner": "aj-approval",
+    "evidence": "index.html:446 inside #sheet; relay.js:536 approval why, question branch hides it at451; independent actual-use verification"
+  },
+  {
+    "selector": "#rmbar,#rmIcons,.rmbar:not(.rscmdacts)",
+    "owner": "aj-reply-action",
+    "evidence": "index.html:378 actual reply toolbar (not whole .rm); before rescue .rmbar.rscmdacts is explicitly excluded; reader .rdacts independently reader"
+  },
+  {
+    "selector": ".rscmdacts,.rscmdbar,.rscmdact",
+    "owner": "aj-rescue",
+    "evidence": "js/cmdrun.js:40 command rescue output action toolbar; old .rmbar.rscmdacts shares reply skin but actual purpose is rescue"
+  },
+  {
+    "selector": ".gdlg-row>button",
+    "owner": "aj-dialog-action",
+    "evidence": "Exact direct dialog footer action; independent HTML purpose list in research/dialog-footer-source-evidence.json. No #busyDlg button blanket rule."
+  }
+]

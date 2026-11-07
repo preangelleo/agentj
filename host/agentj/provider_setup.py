@@ -160,7 +160,10 @@ def _verify(name, value):
     else:
         return False
     # Ark plan servers sometimes lack a model-list route. No native call / paid fallback for a key-row check.
-    return _models(url, value) == 200
+    status = _models(url, value)
+    # A missing /models route, transient service error or unknown response does
+    # not establish a bad key. Never fall back to a billable/native request.
+    return True if status == 200 else False if status == 401 else None
 
 
 def check_key(host, source, *, verify=None):
@@ -171,12 +174,16 @@ def check_key(host, source, *, verify=None):
     if not value:
         return {'ok': False, 'why': 'missing'}
     test = verify or _verify
-    if source != LEGACY and test(source, value):
-        return {'ok': True, 'valid': True}
+    if source != LEGACY:
+        verified = test(source, value)
+        if verified is True:
+            return {'ok': True, 'valid': True, 'verification': 'verified'}
+        if verified is None:
+            return {'ok': True, 'valid': None, 'verification': 'unverified'}
     group = GROUPS[1] if source == LEGACY else next(g for g in GROUPS if source in g)
     targets = [n for n in group if n != source and test(n, value)]
     if len(targets) != 1:
-        return {'ok': True, 'valid': False}  # network / no route / ambiguous is never a plan diagnosis
+        return {'ok': True, 'valid': False, 'verification': 'unverified'}  # no route / ambiguous is never a plan diagnosis
     offers = getattr(host, '_provider_row_offers', {})
     offers = {k: v for k, v in offers.items() if 0 <= time.time() - v['at'] < TTL}
     if len(offers) >= 16:

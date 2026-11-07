@@ -15,7 +15,7 @@ const normalize=s=>ids.reduce((s,id)=>s.replace(new RegExp('<button\\b[^>]*\\bid
 assert.equal(reverseApprovedHTML(readFileSync('web/public/js/jcards.js','utf8'),'d2b1fd1b3','js/jcards.js').replace(/^    if \(id === 'notes'\) \{ add\.replaceChildren\(document\.querySelector\('#rm-add > svg'\)\.cloneNode\(true\)\);[^\n]*\n/m,''),old('js/jcards.js'),'all other card code byte-identical');
 // P523 reverses only the exact approved P517/P518/P519 additions; P513 settings rearrangement is chairman-approved on 2026-10-25; reverse its exact source delta too.
 // P489 LIVE added this exact diagnostic card after P485; all other non-icon HTML must still match.
-const p489LiveCard="            <div class=\"rscard\">\n              <button type=\"button\" id=\"layout-diag-send\" class=\"aj-btn\" data-i18n=\"p489.send\">发送画面诊断</button>\n              <p class=\"setnote\" data-i18n=\"p489.note\">画面有色带或错位时点一下。只把尺寸、颜色和用量发到你的 Agent J 主机，不含聊天内容。</p>\n              <p class=\"setnote\" id=\"layout-diag-result\" role=\"status\" aria-live=\"polite\"></p>\n            </div>\n";
+const p489LiveCard="            <div class=\"rscard\">\n              <button type=\"button\" id=\"layout-diag-send\" class=\"aj-action\" data-i18n=\"p489.send\">发送画面诊断</button>\n              <p class=\"setnote\" data-i18n=\"p489.note\">画面有色带或错位时点一下。只把尺寸、颜色和用量发到你的 Agent J 主机，不含聊天内容。</p>\n              <p class=\"setnote\" id=\"layout-diag-result\" role=\"status\" aria-live=\"polite\"></p>\n            </div>\n";
 // P526/P527 exact approved additions; retain every historical comparator below.
 // P550 (0.25.13): reverse this release's approved integrations, newest first, back to the 0.25.12a1 bytes.
 const R0_25_13={'index.html':['b8b1bc225','ab1682bd5','494290281','e90f9d6b3','0e23aca0f','d8d22150f'],'app.css':['320f6a8fb','b8b1bc225','ab1682bd5','3c6c2f2d3','494290281','498dfe49f','e90f9d6b3','ad52fcb4d','0e23aca0f','d8d22150f','90213571d'],'menu.css':['b8b1bc225','0e23aca0f']};
@@ -23,7 +23,7 @@ const back=(f)=>R0_25_13[f].reduce((t,r)=>reverseApprovedHTML(t,r,f),readFileSyn
 let html=back('index.html');
 const diagnostic='            <div class="rscard" id="layout-diag-card">';
 assert.equal(html.split(diagnostic).length,2);html=html.replace(diagnostic,'            <div class="rscard">');
-const jevButton='              <button type="button" id="set-jev-key" class="aj-btn" hidden></button>\n';
+const jevButton='              <button type="button" id="set-jev-key" class="aj-action" hidden></button>\n';
 assert.equal(html.split(jevButton).length,2);html=html.replace(jevButton,'');
 html=reverseApprovedHTML(html,'2231d6c4a');
 assert.equal(html.split(p489LiveCard).length,2,'exactly one approved P489 diagnostic card');

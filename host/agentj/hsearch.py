@@ -30,7 +30,7 @@ _WS = re.compile(r"[ \t\n\r\f\v]+")
 _LEAD = re.compile(r"^[ \t\n\r\f\v]+")
 _TAIL = re.compile(r"[ \t\n\r\f\v]+$")
 _TG_LINE = re.compile(r"^Telegram owner private chat\.\n")
-SILENT = "\u3014\u4e0d\u56de\u7fa4\u3015"
+from .silent import MARKER as SILENT
 
 # trad, simp, trad, simp … — byte-identical to protocol/search.js T2S (tests/test_p188_search.py checks)
 T2S = (
@@ -199,12 +199,13 @@ def snippet(raw: str, ts: list[str]) -> str:
 
 
 def visible(turn: dict) -> bool:
-    """The pages the phone shows (relay.js visiblePage): not a withdrawn send, not a silent 〔不回群〕 reply."""
+    """The pages the phone shows (relay.js visiblePage): not a withdrawn send, not a silent 〔静默消息〕 reply."""
     card = turn.get("card") if isinstance(turn.get("card"), dict) else {}
     if card.get("withdrawn") is True:
         return False
     rep = fields_of({}, turn.get("reply"))["reply"]
-    return rep.strip() != SILENT
+    from .silent import is_silent
+    return turn.get("silent") is not True and not is_silent(rep)
 
 
 def search(turns, q: str, sort: str = "score", limit: int = HITS_MAX) -> tuple[list[dict], int]:

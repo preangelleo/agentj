@@ -39,6 +39,8 @@ ESCALATE = 10
 PROOF_WAIT = 120
 TICK = 15
 COOLDOWN = 600           # s between two automatic heals
+DEAD_IDLE = 600          # 0.26.10 #484: a desktop turn whose rollout is quiet this long (no tool child, no pending approval)
+                         # is dead even when the owner's daemon still reports it active (Avon: CLI/daemon version mismatch)
 ACTIONS = ("end_turn", "takeover")
 
 
@@ -238,12 +240,19 @@ def desktop_facts(path, skip=(), sid=None) -> dict | None:
     return {"idle": idle, "roots": roots, "children": kids, "asking": asking, "live": live}
 
 
+def dead_facts(f) -> bool:
+    """#484 on desktop_facts' answer: never with a tool child of its holders or a pending approval / question / unanswered
+    tool call (security L-6); dead when quiet ≥ STUCK_IDLE and the owner's daemon does not report it active, or quiet ≥
+    DEAD_IDLE whatever the daemon says (a daemon that keeps saying "active" for ten silent minutes is not proof)."""
+    if not f or f["children"] or f.get("asking", True):
+        return False
+    return f["idle"] >= DEAD_IDLE or (f["idle"] >= STUCK_IDLE and not f.get("live", True))
+
+
 def desktop_stuck(path, skip=(), sid=None) -> bool:
-    """A shared rollout's open turn may be treated as ended: quiet ≥ STUCK_IDLE, no tool child of its holders, no pending
-    approval / question / unanswered tool call in it (security L-6), and the owner's daemon does not report it active."""
-    f = desktop_facts(path, skip, sid)
-    return (bool(f) and f["idle"] >= STUCK_IDLE and not f["children"] and not f.get("asking", True)
-            and not f.get("live", True))
+    """A shared rollout's open turn may be treated as ended (dead_facts): for /stop, the reset buttons, the watchdog and the
+    upgrade restart's idle wait alike."""
+    return dead_facts(desktop_facts(path, skip, sid))
 
 
 # ------------------------------------------------------------------ the rule
@@ -324,8 +333,10 @@ class TurnHeal:
             f = desktop_facts(path, skip=getattr(a, "_own_pids", lambda: ())(), sid=sid)
             if f is None:
                 return {"busy": True, "waited_s": waited, "stuck": False, "desktop": True}
-            # merge ruling: the daemon's live "active" outranks silence — no automatic heal of another app's turn
-            idle, kids, asking = f["idle"], f["children"], asking or f.get("asking", True) or f.get("live", True)
+            # merge ruling: the daemon's live "active" outranks silence — no automatic heal of another app's turn —
+            # until DEAD_IDLE (#484: ten silent minutes with no tool child and no approval is a dead turn)
+            idle, kids = f["idle"], f["children"]
+            asking = asking or f.get("asking", True) or (f.get("live", True) and f["idle"] < DEAD_IDLE)
         else:
             # an adapter that never reported an event (shared Claude reads a transcript) is never judged by silence
             ev = getattr(a, "event_at", None) if getattr(a, "ever_touched", False) is True else None

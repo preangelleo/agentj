@@ -10,7 +10,7 @@ function render(p,turns){
  const box={children:[],replaceChildren(){this.children=[];},appendChild(b){this.children.push(b);}};
  const slashes=[];
  const ctx=vm.createContext({paintReportActions:()=>false,el:()=>box,C:{myDev:()=>'owner',api:{slash:(...a)=>slashes.push(a)}},t:k=>k,hist:{turns},
-   document:{createElement:tag=>({tag,dataset:{},addEventListener(k,f){this.click=f;}})},sendApp:()=>Promise.resolve(),p});
+   document:{createElement:tag=>({tag,dataset:{},attributes:{},setAttribute(k,v){this.attributes[k]=String(v);},addEventListener(k,f){this.click=f;}})},sendApp:()=>Promise.resolve(),p});
  vm.runInContext(fn+'; paintCmdx(p);',ctx);return {box,slashes};
 }
 const clear={id:5,end:'done',source:{k:'cmd',dev:'owner'},source:{k:'cmd'},card:{cmd:'clear',undo:true}};

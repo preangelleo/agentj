@@ -56,6 +56,9 @@ def validate(s,value):
     return value
 
 def definition(raw,domains):
+    if isinstance(raw,dict) and raw.get('kind')=='script':
+        from .script_tools import definition as script_definition
+        return script_definition(raw,domains)
     keys={'name','description','level','enabled','method','url','parameters','visitor_bindings','auth','timeout','visitor_limit','daily_limit','response_fields','response_chars'}
     if not isinstance(raw,dict) or set(raw)-keys:raise BotError('invalid_tool')
     d={'level':'read','enabled':False,'timeout':10,'visitor_limit':10,'daily_limit':100,'response_chars':4000,'visitor_bindings':{},'auth':None,**raw}
@@ -99,11 +102,15 @@ class ToolRegistry:
         if d['name']!=name:raise BotError('invalid_tool')
         return d
     def save(self,raw):
-        d=definition(raw,self.store.get(self.bid)['outbound_domains']);atomic(self.root/'tools'/(d['name']+'.json'),canonical(d).encode());return d
+        d=definition(raw,self.store.get(self.bid)['outbound_domains'])
+        if d.get('kind')=='script':
+            raise BotError('script_pending_owner_decision')
+        atomic(self.root/'tools'/(d['name']+'.json'),canonical(d).encode());return d
     def listing(self):return [self.load(p.stem) for p in sorted((self.root/'tools').glob('*.json'))]
     def offered(self):
         offered=[]
         for d in self.listing():
+            if d.get('kind')=='script':continue  # 0342: adapter scope awaits owner decision
             if not d['enabled']:continue
             # Identity is injected from the authenticated visitor record, never requested from the model.
             bound=set(d['visitor_bindings'])
@@ -113,6 +120,7 @@ class ToolRegistry:
         return offered
     def prepare(self,vid,name,args):
         d=self.load(name)
+        if d.get('kind')=='script':raise BotError('script_pending_owner_decision')
         if not d['enabled']:raise BotError('tool_disabled')
         if policy_registry.decision('support',policy_registry.company_action(d))=='deny':raise BotError('unknown_tool')
         if not isinstance(args,dict):raise BotError('invalid_args')
@@ -147,6 +155,7 @@ class ToolRegistry:
             own=self.store.db.execute('SELECT calls FROM tool_calls WHERE bot=? AND visitor=? AND tool=? AND day=?',(self.bid,vid,name,day)).fetchone()
             if count>=d['daily_limit'] or own and own[0]>=d['visitor_limit']:raise BotError('tool_limit')
             self.store.db.execute('INSERT INTO tool_calls VALUES(?,?,?,?,1) ON CONFLICT(bot,visitor,tool,day) DO UPDATE SET calls=calls+1',(self.bid,vid,name,day))
+        if d.get('kind')=='script':return d,args,None,{},None,[]
         url=d['url']
         for k,v in args.items():url=url.replace('{'+k+'}',quote(str(v),safe=''))
         if '{' in url or '}' in url:raise BotError('missing_url_arg')
@@ -168,21 +177,28 @@ class ToolRegistry:
                     value=value[field]
                 # Structured values cannot smuggle undeclared nested fields.
                 if isinstance(value,(str,int,float,bool)) or value is None:selected[path]=value
-            out=canonical(selected)[:d['response_chars']]
-            if d['auth'] and secret in out:raise BotError('secret_in_response')
+            out=canonical(selected)
+            if d.get('auth') and secret in out:raise BotError('secret_in_response')
+            out=privacy.redact(out)[:d['response_chars']]
             self.store.event(self.bid,vid,'tool','ok');return out
         except BotError:self.store.event(self.bid,vid,'tool','refused');raise
 
     def execute(self,vid,rid,name,args,approval_id=None):
         d,args,url,headers,secret,domains=self._request(vid,rid,name,args,approval_id)
         try:
-            raw=self.transport(url,d['method'],args if d['method']!='GET' else None,headers,timeout=d['timeout'],domains=domains)
+            if d.get('kind')=='script':
+                from .script_tools import execute
+                raw=execute(d,args)
+            else:raw=self.transport(url,d['method'],args if d['method']!='GET' else None,headers,timeout=d['timeout'],domains=domains)
         except BotError:self.store.event(self.bid,vid,'tool','refused');raise
         return self._result(vid,d,raw,secret)
     async def execute_async(self,vid,rid,name,args,approval_id=None):
-        # SQLite and authorization stay on the host loop. Only bounded HTTPS runs in a thread.
+        # SQLite and authorization stay on the host loop. Bounded HTTPS or the isolated script runs in a thread.
         d,args,url,headers,secret,domains=self._request(vid,rid,name,args,approval_id)
         try:
-            raw=await asyncio.to_thread(self.transport,url,d['method'],args if d['method']!='GET' else None,headers,timeout=d['timeout'],domains=domains)
+            if d.get('kind')=='script':
+                from .script_tools import execute
+                raw=await asyncio.to_thread(execute,d,args)
+            else:raw=await asyncio.to_thread(self.transport,url,d['method'],args if d['method']!='GET' else None,headers,timeout=d['timeout'],domains=domains)
         except BotError:self.store.event(self.bid,vid,'tool','refused');raise
         return self._result(vid,d,raw,secret)

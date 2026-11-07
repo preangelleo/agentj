@@ -84,7 +84,7 @@ const AUDIT = `(() => {
     if (e.type !== 'range' && (r.height < 43.5 || r.width < 43.5)) small.push((e.id || e.className || e.tagName) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height));
   }
   for (const row of box.querySelectorAll('.setacts')) {
-    const bs = [...row.children].filter((b) => b.matches('button, .aj-btn') && vis(b)).map((b) => b.getBoundingClientRect());
+    const bs = [...row.children].filter((b) => b.matches('button, .aj-action') && vis(b)).map((b) => b.getBoundingClientRect());
     for (let i = 1; i < bs.length; i++) {
       const a = bs[i - 1], b = bs[i];
       const sameLine = Math.abs(a.top - b.top) < 4;
@@ -203,7 +203,7 @@ try {
       // unbind another remote: a destructive confirm, then signed
       await click(p, '#rm-list .rmitem[data-id="Ab4Tq7Wz9Lm3Xc8P"] [data-act="unbind"]');
       await waitFor(p, `!document.getElementById('confirm').hidden`);
-      assert.equal(await ev(p, `document.getElementById('confirm-yes').classList.contains('aj-btn--danger')`), true, 'unbind reads as destructive');
+      assert.equal(await ev(p, `document.getElementById('confirm-yes').classList.contains('aj-action--danger')`), true, 'unbind reads as destructive');
       assert.match(await ev(p, `document.getElementById('confirm-title').textContent`), /华为 MatePad/);
       await click(p, '#confirm-no');
       assert.equal(fake.st.remotes.items.length, 4, 'cancel = nothing sent');

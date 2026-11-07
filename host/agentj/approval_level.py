@@ -57,7 +57,7 @@ def level(prefs, st=None) -> str:
     """The level in force. `harness` counts only with `st` and a live signed switch to it (signed_value): a value written any
     other way (an edited config file, the terminal) reads as standard. safe / standard need no signature (safe only asks
     more). P552: a signed `full` is in force as `harness` (MERGED)."""
-    from . import preferences
+    from . import preference_values as preferences
     v = preferences.get(prefs or {}, KEY, DEFAULT)
     v = v if v in LEVELS else DEFAULT
     if v in SIGNED and (st is None or signed_value(st, KEY) != v):
@@ -67,13 +67,13 @@ def level(prefs, st=None) -> str:
 
 def unsigned_full(prefs, st) -> bool:
     """The configuration says full / harness but it is not in force (then standard applies; the owner is told once)."""
-    from . import preferences
+    from . import preference_values as preferences
     v = preferences.get(prefs or {}, KEY, DEFAULT)
     return v in SIGNED and signed_value(st, KEY) != v
 
 
 def goal_nocard(prefs) -> bool:
-    from . import preferences
+    from . import preference_values as preferences
     return preferences.get(prefs or {}, GOAL_KEY, False) is True
 
 
@@ -85,7 +85,7 @@ def follow_harness(prefs, st) -> bool:
 def shared_mode(prefs, st=None) -> str:
     """The shared-session classifier mode: `safe` under the safe level, `native` (the harness's own prompts only) under the
     signed harness level, else agent.approvals (standard | strict | native)."""
-    from . import preferences
+    from . import preference_values as preferences
     if level(prefs) == "safe":
         return "safe"
     if st is not None and follow_harness(prefs, st):
@@ -261,7 +261,7 @@ def why_unsigned(st, key: str, value) -> str | None:
 def unsigned(prefs, st) -> list:
     """P552: the switches the configuration turns on that are not in force — [{key, value, why, device}] (value: what a
     re-confirmation signs, `full` already as `harness`). [] = everything in the configuration is in force."""
-    from . import preferences
+    from . import preference_values as preferences
     out = []
     v = preferences.get(prefs or {}, KEY, DEFAULT)
     if v in SIGNED:
@@ -421,7 +421,9 @@ def full_access_keep(tool: str, tool_input, verdict, *, env=None, workdir=None,
     not a UV floor. The host's real request requirement and existing key / money /
     destructive / trust-root floors remain authoritative.
     """
-    from . import confirm_tier, policy_registry
+    from . import confirm_tier, policy_registry, routine_uv
+    if not require_passkey and requirement != "deny" and routine_uv.proven_routine(tool, tool_input, env=env, cwd=workdir):
+        return None
     if requirement is None:
         requirement = policy_registry.main_requirement(tool, tool_input, env=env, cwd=workdir)
     if requirement == "deny":
@@ -444,7 +446,10 @@ def full_access_keep(tool: str, tool_input, verdict, *, env=None, workdir=None,
         floor = harness_floor(canonical, normalized, verdict)
     except Exception:  # noqa: BLE001 — retain the existing fail-closed safety floor
         return "credentials"
-    return next((why for why in (keep, floor) if why in confirm_tier.HARNESS_KINDS + FLOOR_FACE), None)
+    sensitive = next((why for why in (keep, floor) if why in confirm_tier.HARNESS_KINDS + FLOOR_FACE), None)
+    if sensitive is not None:
+        return sensitive
+    return "injection" if floor == "injection" else None  # ordinary card, not a standing Full grant
 
 
 WHY = {"zh": {"missing": "没有在已配对的遥控器上确认过", "changed": "确认记录和当前设置对不上",

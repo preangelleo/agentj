@@ -1,0 +1,15 @@
+/* #577 Web-owned notice; source order is a compatibility contract. */
+/* ===== callouts — P214 scheme A, ONE look for every notice (note / info / warm / danger alike) =====
+   Solid palette fill + a 4 px bar on the left (palette.css --callout-*); the title is Milky Waves in dark. A warning or an
+   error never changes the fill: it only puts a small Peachy Feeling dot before its title (or first line). */
+.aj-callout { border-radius: var(--r-md); border-left: 4px solid var(--callout-bar); padding: var(--sp-4) var(--sp-5);
+  background: var(--callout-bg); color: var(--callout-fg); }
+.aj-callout > * + * { margin-top: var(--sp-2); }
+.aj-callout__title, .aj-callout > :is(h2, h3, h4), .aj-callout > p:first-child > strong:first-child { font-weight: 700; color: var(--callout-title); }
+.aj-callout--warm, .aj-callout--note, .aj-callout--info, .aj-callout--danger { background: var(--callout-bg); color: var(--callout-fg); }
+:is(.aj-callout--warm, .aj-callout--danger):is(p, span)::before,
+:is(.aj-callout--warm, .aj-callout--danger) > :first-child::before { content: ""; display: inline-block; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--callout-dot); margin-inline-end: 0.5em; vertical-align: 0.1em; }
+.aj-callout a { color: inherit; }
+/* on a level-2 surface (Salt / Noir) the box steps to the page canvas (Lotion / Sooty): same bar, never fill-on-fill */
+.aj-card--2 { --callout-bg: var(--bg); }

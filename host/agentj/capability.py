@@ -511,11 +511,15 @@ def summary(reg: dict, lang: str = "zh") -> list[dict]:
 # ------------------------------------------------------------------ brief / report contracts
 def scope_of(brief: dict) -> dict:
     """What the owner decides (a change here needs a new confirmation; everything else is a technical detail)."""
-    return {"goal": brief.get("goal"), "acceptance": [{"id": a.get("id"), "criterion": a.get("criterion")}
+    value = {"goal": brief.get("goal"), "acceptance": [{"id": a.get("id"), "criterion": a.get("criterion"),
+                                                      **({'check':a['check']} if 'check' in a else {})}
                                                       for a in brief.get("acceptance") or [] if isinstance(a, dict)],
             "capabilities": sorted(c.get("id") for c in brief.get("capabilities") or [] if isinstance(c, dict) and c.get("required")),
             "red_lines": brief.get("red_lines"), "deliverables": brief.get("deliverables"), "plan": brief.get("plan"),
             "workflow_id": brief.get("workflow_id"), "task_id": brief.get("task_id")}
+    if (brief.get('failure_policy') or {}).get('retry_limit', 0):
+        value['execution_policy'] = {'retry_limit': brief['failure_policy']['retry_limit']}
+    return value
 
 
 def scope_digest(brief: dict) -> str:
@@ -787,7 +791,8 @@ def plan_card(st, cfg: dict | None, wf: str, asks: list[dict], *, adapters: dict
     probs = ltschema.problems("preflight", pf)
     if probs:
         raise CapError("invalid", probs[0])
-    brief_view = {"goal": b["goal"], "acceptance": [a["criterion"] for a in b["acceptance"]], "red_lines": b["red_lines"],
+    brief_view = {"goal": b["goal"], "acceptance": [a["criterion"] + ('\nResearch check: ' + a['check'] if a.get('check') else '')
+                                                   for a in b["acceptance"]], "red_lines": b["red_lines"],
                   "deliverables": [{"path": d["path"], "format": d["format"], "audience": d["audience"]} for d in b["deliverables"]],
                   "plan": b["plan"], "workflow": wf, "title": (e["task"] or {}).get("title"),
                   "schedule": (e["task"] or {}).get("schedule"), "tz": (e["task"] or {}).get("tz"),
@@ -922,7 +927,7 @@ def brief_allows(scope: dict | None, tool: str, tool_input, dangerous: bool) -> 
 
 
 _HOST_MEDIATED = re.compile(r"(?:cd [A-Za-z0-9_./~-]{1,300} ?(?:;|&&) ?)?"
-                            r"agentj capability (?:list|sync|check|show|prepare|result|dispatch|digest|report-check)"
+                            r"agentj capability (?:list|sync|check|show|prepare|result|dispatch|digest|report-check|pause|resume|verify)"
                             r"(?: [A-Za-z0-9_./=:@-]{1,200}){0,8}" + r"(?: 2>&1)?(?: \| grep -v [^\s|;&$`'\"<>()\\]{1,40})?")
 
 
@@ -936,6 +941,8 @@ _GOAL_CMD = re.compile(r"(?:cd [A-Za-z0-9_./~-]{1,300} ?(?:;|&&) ?)?agentj goal 
                        r"(?: (?:[A-Za-z0-9_./=:@-]{1,200}|'[^'\n]{1,500}'|[^\s'\"`$\\|;&<>(){}*?\[\]#!~]{1,120})){0,16}(?: 2>&1)?")
 
 
+_LEARN_CMD = re.compile(_GOAL_CMD.pattern.replace("agentj goal", "agentj learn").replace("propose|status|progress|done|stop|grant", "draft|propose|status|discard"))
+
 def staging_write(root: str | None, tool: str, tool_input) -> bool:
     """A main-Agent write into `<root>/.agentj/wizard-staging/` is inert (nothing reads it until `agentj wizard apply`, which
     validates every file and never overwrites what the owner changed): no card for it."""
@@ -944,9 +951,11 @@ def staging_write(root: str | None, tool: str, tool_input) -> bool:
     fp = tool_input.get("file_path")
     if not isinstance(fp, str) or not fp or str(tool_input.get("new_string") or "").startswith("files: "):
         return False
-    base = os.path.realpath(os.path.join(root, ".agentj", "wizard-staging"))
     real = os.path.realpath(fp if os.path.isabs(fp) else os.path.join(root, fp))
-    return real.startswith(base + os.sep)
+    base = os.path.realpath(os.path.join(root, ".agentj", "wizard-staging"))
+    learn_base = os.path.realpath(os.path.join(root, ".agentj", "learn-staging"))
+    rel = os.path.relpath(real, learn_base).split(os.sep)
+    return real.startswith(base + os.sep) or (len(rel) >= 3 and re.fullmatch(r"[a-z0-9]{12}", rel[0]) is not None and rel[1] == "skill")
 
 
 def goal_cli(tool: str, tool_input) -> bool:
@@ -967,7 +976,7 @@ def host_mediated(tool: str, tool_input) -> bool:
         return False
     cmd = tool_input.get("command")
     return isinstance(cmd, str) and bool(_HOST_MEDIATED.fullmatch(cmd.strip()) or _WIZARD_READ.fullmatch(cmd.strip())
-                                         or _GOAL_CMD.fullmatch(cmd.strip()))
+                                         or _GOAL_CMD.fullmatch(cmd.strip()) or _LEARN_CMD.fullmatch(cmd.strip()))
 
 
 # ------------------------------------------------------------------ serve side
@@ -1437,6 +1446,10 @@ class Capabilities:
                 from . import self_compact, shared_hook
                 pid, _uid = shared_hook.peer_pid(sock)
                 res = await self_compact.enqueue(self.host, req, pid)
+            elif req.get('t') in ('capability_pause', 'capability_resume'):
+                from . import capability_pause, shared_hook
+                pid, _uid = shared_hook.peer_pid(sock)
+                res = capability_pause.handle(self.host, req, pid)
             else:
                 res = await self.handle(req)
         except CapError as e:
@@ -1452,8 +1465,46 @@ class Capabilities:
 
     async def handle(self, req: dict) -> dict:
         t = req.get("t")
+        if t in ('acceptance_check', 'acceptance_verify'):
+            from . import tasks, acceptance
+            wf = req.get('workflow')
+            if not isinstance(wf, str) or not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,39}', wf):
+                raise CapError('shape', 'workflow')
+            e = tasks.find(working_root(self.cfg()), wf)
+            b, probs = load_brief(e['dir'])
+            if not b or probs:
+                raise CapError('invalid', 'brief.json')
+            if t == 'acceptance_verify':
+                return ({'result':'skipped', 'why':'default_disabled'} if not req.get('reviewer') else
+                        {'result':'unavailable', 'why':'review_backend_unavailable'})
+            rec = tasks.load(self.st).get('last', {}).get(wf, {})
+            since = rec.get('started_at')
+            if type(since) not in (int, float) or not rec.get('run_id') or rec.get('tsha') != e['tsha']:
+                raise CapError('not_ready', 'No host-bound run start; cannot certify evidence freshness')
+            code, detail = report_check(e['dir'], b, brief_raw(e['dir']), req.get('verdict'), since)
+            if code != 'ok':
+                return {'result':code, 'detail':detail}
+            report = json.loads(_regular(pathlib.Path(e['dir']) / 'reports/report.json'))
+            artifacts = list(dict.fromkeys([*report['artifacts'], 'reports/report.json']))
+            result = await asyncio.to_thread(acceptance.check, e['dir'], b['acceptance'], artifacts, since,
+                                             rerun=True, repository_root=working_root(self.cfg()))
+            # A changed brief or run invalidates the entire receipt.
+            if (brief_raw(e['dir']) != e['brief_bytes']
+                    or tasks.load(self.st).get('last', {}).get(wf, {}).get('run_id') != rec['run_id']):
+                return {'result':'changed'}
+            result.update(run_id=rec['run_id'], brief_digest=brief_digest(e['brief_bytes']))
+            with _locked(self.st):
+                receipts = _read(self.st, 'acceptance-checks.json', {})
+                receipts[wf] = result
+                _write(self.st, 'acceptance-checks.json', receipts)
+            return result
+        if isinstance(t, str) and t.startswith("event_"):
+            from .subscriptions import router
+            return await router(self.host).handle(req)
         if isinstance(t, str) and t.startswith("goal_") and getattr(self.host, "goals", None) is not None:
             return await self.host.goals.handle(req)     # P158: `agentj goal …` shares this socket (reachable in the fence)
+        if isinstance(t, str) and t.startswith("learn_") and getattr(self.host, "learner", None) is not None:
+            return await self.host.learner.handle(req)   # P204: `agentj learn …` (/learn) shares it too
         if t == "list":
             reg = await asyncio.to_thread(sync, self.st, self.cfg(), probe=False)
             return {"result": "list", "revision": reg["revision"], "items": summary(reg)}
@@ -1584,7 +1635,28 @@ def _print(res: dict, as_json: bool) -> int:
 
 
 def cmd_capability(a) -> int:
+    if a.cap_cmd in ('pause', 'resume', 'verify'):
+        sub = a.cap_cmd
+        req = ({'t':'acceptance_verify', 'workflow':a.workflow, 'reviewer':a.reviewer} if sub == 'verify'
+               else {'t':'capability_' + sub, 'reason':getattr(a, 'reason', None)})
+        return _print(client(req) or {'result':'unavailable','why':'no_serve'}, a.json)
     sub = a.cap_cmd
+    if sub in ("event-propose", "event-ingest", "event-status", "event-detail", "event-history"):
+        req = {"t": sub.replace("-", "_")}
+        if sub in ("event-propose", "event-ingest"):
+            try:
+                if len(a.data) > 128 * 1024:
+                    raise ValueError("too_large")
+                req["scope" if sub == "event-propose" else "event"] = json.loads(a.data)
+            except ValueError:
+                return _print({"result": "refused", "why": "shape"}, a.json)
+        if sub == "event-detail":
+            req["key"] = a.key
+        if sub == "event-history":
+            req["after"] = a.after
+        res = client(req) or {"ok": False, "reason": "no_serve"}
+        _print(res, a.json)
+        return 0 if res.get("ok") else 2
     if sub == "digest":
         d = pathlib.Path(a.dir or ".").expanduser()
         wf = d / a.workflow if a.workflow else d
@@ -1604,6 +1676,9 @@ def cmd_capability(a) -> int:
         b, probs = load_brief(wf)
         if b is None or probs:
             return _print({"result": "refused", "why": "invalid", "detail": probs[0] if probs else "brief.json"}, a.json)
+        if a.rerun:
+            result = client({'t':'acceptance_check', 'workflow':a.workflow or wf.name, 'verdict':a.verdict}, timeout=20*600+30)
+            return _print(result or {'result':'unavailable','why':'no_serve'}, a.json)
         code, detail = report_check(wf, b, brief_raw(wf), a.verdict)
         return _print({"result": code, "detail": detail}, a.json)
     if sub == "compact":
@@ -1659,6 +1734,15 @@ def add_parser(sub) -> None:
     p = sub.add_parser("capability", help="长程任务：能力清单 list · sync · check · show，开工卡 prepare · result，派单 dispatch，"
                                          "digest · report-check / long tasks: capability inventory, opening card, dispatch")
     ps = p.add_subparsers(dest="cap_cmd", required=True)
+    for command in ("event-propose", "event-ingest", "event-status", "event-detail", "event-history"):
+        x = ps.add_parser(command, help="外部事件：默认只记录；启用需已配对主人签名 / external events: record-only until paired-owner approval")
+        x.add_argument("--json", action="store_true")
+        if command in ("event-propose", "event-ingest"):
+            x.add_argument("--data", required=True, help="fixed-schema JSON, never permissions")
+        if command == "event-detail":
+            x.add_argument("--key", required=True)
+        if command == "event-history":
+            x.add_argument("--after", default="")
     x = ps.add_parser("compact", help="写好交接后给本主会话排入压缩 / queue compaction for this main conversation after writing its handoff")
     x.add_argument("--json", action="store_true")
     x = ps.add_parser("list", help="能力清单（不重新检查）/ the inventory")
@@ -1687,8 +1771,17 @@ def add_parser(sub) -> None:
     x.add_argument("--dir", help="工作根目录或工作流目录（默认当前目录）")
     x.add_argument("--json", action="store_true")
     x = ps.add_parser("report-check", help="检查 CEO 报告 / check reports/report.json")
+    x.add_argument('--rerun', action='store_true', help='Host-bound read-only research acceptance checks')
     x.add_argument("--workflow", help="工作流文件夹名（相对 --dir）")
     x.add_argument("--dir", help="工作根目录或工作流目录（默认当前目录）")
     x.add_argument("--verdict", choices=["ok", "attention", "fail"])
     x.add_argument("--json", action="store_true")
+    for action in ('pause', 'resume'):
+        x = ps.add_parser(action, help='Own-session safe handoff / resume')
+        x.add_argument('--reason')
+        x.add_argument('--json', action='store_true')
+    x = ps.add_parser('verify', help='Optional second-family review (disabled by default)')
+    x.add_argument('--workflow', required=True)
+    x.add_argument('--reviewer', choices=['auto','claude','codex','opencode'])
+    x.add_argument('--json', action='store_true')
     p.set_defaults(fn=cmd_capability)

@@ -1389,10 +1389,10 @@ def status() -> dict:
 
 def token_hint(n: str) -> str:
     f = tilde(env_file(n))
-    return ("Agent J 主机上的服务没有 Claude 登录：在Agent J 主机终端运行 `claude` 并 /login 一次（macOS 存进钥匙串），"
+    return ("Agent J 主机上的服务没有 Claude 登录：先从手机「设置 → 紧急修复 → AI 登录救援」重新登录；需要命令排障时，在网页终端运行 `claude` 并 /login 一次（macOS 存进钥匙串），"
             "或运行 `claude setup-token` 后自己写入服务专用 env 文件 " + f + "（chmod 600，"
             "CLAUDE_CODE_OAUTH_TOKEN=<token>），再运行 `agentj service restart`。不要把 token 发到聊天里。 / "
-            "the Agent J host's service has no Claude login. Run `claude` and /login in a computer terminal "
+            "the Agent J host's service has no Claude login. Open AI login rescue in Settings → Emergency repair on your phone. For commands, use Web Terminal on your phone: run `claude` and /login "
             "(Keychain on macOS), or run `claude setup-token` and write CLAUDE_CODE_OAUTH_TOKEN=<token> "
             "to the service env file " + f + " yourself (chmod 600), then `agentj service restart`. "
             "Never paste the token into chat.")

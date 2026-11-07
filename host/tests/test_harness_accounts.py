@@ -445,7 +445,7 @@ class Rescue(Base, unittest.IsolatedAsyncioTestCase):
         (self.tmp / "cx" / "auth.json").chmod(0o600)
         self.host.agent = _Agent("codex")
         self.assertEqual(await self.r.start("codex", "device", account={"name": "备用"}), {"ok": True})
-        self.assertIn("登记新的 Codex 账号「备用」", self.host.asks[0][1])
+        self.assertEqual("添加另一个 Codex 账号「备用」：请用另一个账号登录，现在这个不受影响。", self.host.asks[0][1])
         await self.drain()
         self.assertEqual(self.r.view()["flow"]["stage"], "done", self.r.view()["flow"])
         self.assertEqual(self.r.view()["flow"]["account"], "备用")

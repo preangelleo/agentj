@@ -42,7 +42,7 @@ function build() {
   pop.hidden = true;
   val = document.createElement('output');
   val.className = 'vv';
-  range = document.createElement('input');
+  range = document.createElement('input'); range.setAttribute('data-aj-owner', 'aj-composer');
   Object.assign(range, { type: 'range', min: '0', max: '100', step: '5' });
   const vi = document.createElement('span');
   vi.className = 'vi';

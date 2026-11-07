@@ -689,6 +689,12 @@ App messages (all inside §3 transport messages):
   Agent J — 有一个请求等你批准**, nothing else, and focuses the page on tap.
 - **What the push service (Google / Apple / Mozilla) sees**: that a push for this subscription was sent, when, its constant size,
   its urgency, the host's IP (or its proxy's) and the host's VAPID public key. Never text, never which kind.
+- **Kinds per device (P204, 0.21).** `{"t":"push_pref","kinds":[…]}` (a subset of `"ask"` 审批 · `"reply"` 完成 · `"security"`
+  告警; strict: anything else is refused and logged) is stored with that device's entry in `push.json` and kept across every
+  re-sent `push_sub`; a device without a choice gets every kind (as before). The page keeps its choice (localStorage
+  `aj.pushKinds`) and re-sends it after every subscribe; Settings → 锁屏提醒 shows three switches while alerts are on. A turn
+  whose whole final reply is 〔不回群〕 sets no reply push (it is silent everywhere); a scheduled run's page still pushes `reply`.
+  The push itself is unchanged: an empty, constant-size signal; the page fetches everything over §3 after it opens.
 
 ## 10. Relay parity (PROMPT-33): Agent J = a superset of relay
 Leo's rule (2026-10-03): everything his own phone product *relay* (`pwa/`, `bridge/`) does, Agent J's phone does too — built on
@@ -1144,6 +1150,16 @@ Only authenticated paired p33 sessions receive `preferences {value,problem}`. Va
 
 `tts_get {r:<id22>,id:<completed turn>}` accepts only completed reply text, no arbitrary input/provider URL. Host uses its configured local engine or own-key fixed cloud provider. Response `tts_chunk {r,i,data:<base64>}` is ordered 24KiB chunks, capped at 8MiB total; `tts_end {r,ok,bytes,mime:"audio/wav"}` finalizes, or a redacted why fails. All travel inside Noise, with per-chunk session/allowlist checks. Client binds synthesis to session generation and discards out-of-order, oversized or stale audio. Revoke stops further delivery. Synthesized plaintext stays at endpoints/provider; ciphertext can cross the blind relay.
 
+**§10.14a Spoken script (P208, 0.21).** Before a local model (`host` + `command`) or a cloud voice reads a reply, the host
+rewrites it into a short spoken script in the reply's language with the owner's own harness (mid-tier model, tool-less, fenced
+like a peer turn; cached per reply + language + model + limit under `<state>/voice/spoken/`); a failed rewrite reads the
+reply's plain words. `voice.tts.spoken` = `auto` (on for local model / cloud, off for phone and OS voices) | `on` | `off`.
+With the phone's own voices and `spoken = on` the phone asks `tts_script {r:<id22>,id:<completed turn>}` → `tts_script_res
+{r, ok, text?:≤ 8000, spoken?, why?:not_ready|busy|engine}` and reads `text`; no answer within 130 s or `ok:false` → it
+reads the reply itself. Same checks as `tts_get` (paired ready session, completed turn, one at a time); a host without
+`tts_script` simply never answers. Each host-side reading appends one local usage line (kind `voice`: seconds, rewrite
+tokens, characters, dollars when known); nothing leaves the computer.
+
 Telegram is a separate opt-in vendor-readable channel, not a Noise approval session. Owner-private text has src.k=telegram; no Telegram sender can sign an approval or become a paired device. Enrollment is human-only and keys remain local. Groups, media, albums (one turn per media_group_id), owner → family → proxy order, supergroup migration, the owner's / family command menus and owner-only local commands (`telegram.owner_commands`, answered by the owner's own program, never the model) are in place (P49, P59, P118).
 
 ### 10.16 Settings from the phone — `pref_set` / `pref_res` (C6 / A1, 0.15)
@@ -1188,6 +1204,42 @@ may widen the allowlist directly; the same change from inside an Agent (`agentj 
 an owner claim) becomes an approval card (`agentj mail`, the changes listed) and applies only when allowed.
 
 P256: `mail_key` continues to open the same sealed §11 secret card as `agentj mail password` (no password fields in `mail_*`). Provider-specific label, steps, official URLs and server summary are in its signed `purpose` (up to 2000 characters for the host-generated mail card). Gmail display spaces are removed on the host only. Host saves encrypted first and runs a read-only test; final `mail_res` additionally has `verify: "ok" | "fail"` and a fixed safe `detail` reason. `ok:true` means saved even when verification failed. No message is sent by the test. Existing pairing, signature, passkey, nonce and seal rules apply unchanged.
+
+#### P206B recovery: opt-in stranger-mail triage (source candidate)
+
+`mail_set.cfg.triage` is a complete nested strategy object, saved through the existing exact signed `mail_set`
+target/digest/nonce and passkey policy. Agent/control-socket changes retain the existing always-ask card and stale-before/after
+check. No new control verb, identity, permission or secret transport is added. Omitted strategy defaults to
+`{preset:"allowlist_only",provider:"",model:"",every_minutes:30,per_hour:30,usd_per_day:0,usd_per_call:0.01,actions:{…}}`.
+Presets are `allowlist_only` (no fetch/provider), `rules` (free only), `assistant` and `support` (both read-only).
+The latter two require an explicit separate profile ID and model; `main`/native fallback is forbidden. A profile is selected
+from existing owner-managed profiles; this feature does not create profiles or collect keys. Enabling a model with a zero
+budget still cannot call it. `every_minutes` is 10–360; `per_hour` is 1–200; daily estimated budget is 0–20 USD;
+`usd_per_call` is an explicit conservative reservation estimate, 0.0001–20 USD. Reservations persist before calls, including
+failed calls. These are estimates and do not guarantee a provider's billed-dollar cap. No provider is invoked by default.
+
+`actions` has exactly `ad, signup, question, bug, feature, business, complaint, billing, unsure, other`, each mapped to
+`archive|ignore|digest|review|draft`. Default ad is archive, question is draft, and the rest review. Archive/ignore are local
+receipts only; digest is a local grouping, not a scheduled notification. All actions preserve the original mailbox, flags,
+labels and attachments. Drafts are suggestions only. No SMTP, automatic reply, rescue-to-main or owner authority exists.
+Unknown strategy fields, including legacy auto-reply settings, fail closed. Free expect-window matches are signup/review;
+automatic bulk is ad; expect continues to own its separate authenticated intake. No registration body enters a model by this rule.
+
+The triage loop has its own UID/UIDVALIDITY and account-generation/destination scope in host-local `mail/triage.json`.
+It reuses EXAMINE/BODY.PEEK intake, main sent/seen identities, exact/domain allowlist matching and the existing owner
+To/recipient/thread rule before any model call. A fresh mailbox/epoch baselines at the current UID; it does not backfill.
+The main lane continues to own allowlisted messages and #513/#543 admission/completion; stranger triage never creates a
+main-session turn, attachment extraction, reply route or Seen receipt. Model input contains only bounded redacted mail
+text and attachment names; no tools or owner context. Model output remains `source:"external_email",trusted:false`, even
+when it claims authority. Parse/tool/provider failures retain the cursor; the third model failure becomes unsure/review.
+An interrupted pre-call receipt becomes unsure/review without replaying a possibly billed call. Caps pause the cursor.
+Dedup receipts are not evicted: 3000 ledger entries pause admission for explicit future retention work.
+
+Paired ready/allowlisted `mail_res.view.triage` includes fixed status/counts, estimated reservations and external item
+previews (up to 20, 24 KiB encoded total; draft preview up to 1000 characters; `items_more` reports omitted records).
+The existing mail page renders these as labelled untrusted text only. `mail_status` and Agent diagnostics receive status
+and counts without item subjects, summaries, drafts or original bodies. Original body viewing and triage sending are not
+exposed by this candidate. No frozen skill, version, release artifact or authorization floor changes.
 
 ### 10.20a Daily AI News — `news_get` · `news_set` · `news_email` · `news_verify` / `news_res` (P374 · P393 #128)
 
@@ -2495,6 +2547,100 @@ attachment names (`src.att[].name`) and the reply (`reply.text`). Silent (〔不
   "srch"`, AES-GCM, key `local`), bound to this computer (`hostId`) and epoch; a new epoch (`/clear`), unpair, re-pair and a
   revocation empty it (`wipeLocal`).
 - CLI: `agentj history search <words…> [--time] [--json]` runs the same search on the computer.
+
+## 29. Forms in the reply card — 快选 / Quick Pick and 深聊卡 / Deep Dive (P212, host 0.21, ADR-P212)
+
+The Agent asks the owner with a form instead of a string of typed questions. One JSON schema (`agentj.form/v1`, host
+`forms.normalize`) for both kinds; the Agent sends it with `agentj ask` (alias `agentj form`) over `elevate.sock`
+`{"t":"form","op":"send"|"list"|"show"|"cancel", …}`; the store is `<state>/forms/<id>.json` (0600, dir 0700), id
+`f_<16 hex>`. Refused: a stopped host, a group member's / guest's turn (`provenance.untrusted_turn`), a malformed form (the
+reason names the field), credential-shaped text anywhere in it (`privacy.credentials`), any `password` type (none exists).
+
+**Kinds.** `mode` light | deep | auto (default auto). Light = one section, ≤ 5 answerable questions, no `file` / `rank`,
+≤ 1 `longtext`, ≤ 12 KB normalised; otherwise deep (the CLI says why). A light form whose only answerable question is
+`single` / `buttons` without 「其他」 carries `tap: true`. Light never pre-selects; deep pre-fills recommendations when
+`preselect: true`. Validity 7 days (light) / 14 days (deep), `ttl` 1 h – 30 d.
+
+**On the page.** The form rides the turn it was sent in (`cur_turn` while that page is open and has no form; otherwise a new
+agent page): `turn.form = {id, mode, title, n, state: open|answered|expired|cancelled, exp (ms), secs, tap?, spec? (light
+only), files?, at?, by?, rows? ([[label, answer text, recommended?]], answered)}`; every change of state is a new
+`hist_turn` of that page (history keeps `form` on the page it was sent with, never on a continuation part).
+
+| direction | message |
+|---|---|
+| device → host | `{"t":"form_get","r","id"}` → `{"t":"form_res","r","ok","id","state","spec","exp","draft"?,"rows"?,"at"?,"by"?}` · `{"t":"form_res","r","ok":false,"why":"gone"}` |
+| device → host | `{"t":"form_draft","id","answers","other"?,"sec"?}` → `{"t":"form_draft_res","id","ok","at"?,"why"?}` (open forms only; answers checked as a draft: nothing required, no files; ≤ 64 KB) |
+| device → host | `say` (§10.2) + `"form":{"id","answers":{qid: value},"other"?:{qid: text}}`, `att` = every file answer's blob id |
+
+- **Values**: single / buttons / dropdown → an option `value` (or `"_other"` with `other[qid]`); multi → values within
+  `min`–`max`; text / longtext → text (pattern email / phone / url); number / slider → a number in range; date `YYYY-MM-DD`,
+  time `HH:MM`, datetime `YYYY-MM-DDTHH:MM`; rating → 1 … `scale`; rank → every option value once; file → blob ids of this
+  say (≤ `max_files`; every `att` id must belong to exactly one file answer).
+- **`show_if`** (declarative only): `{"q": <earlier id>, "eq"|"ne"|"in"|"not_in"|"gt"|"lt"|"answered": …}`, combined with
+  `{"all": […]}` / `{"any": […]}` (≤ 3 deep). A hidden question is neither checked nor sent. Host `forms.holds` and phone
+  `formwire.holds` / `check` agree on `protocol/vectors/forms.json`.
+- **A submission** is checked again on the host against the stored form before its attachments are claimed: refused with
+  `say_res {ok:false, why:"form_gone"|"form_expired"|"form_answered"|"form_cancelled"|"form_required"|"form_answer"|"form_shape", detail?}`.
+  Accepted: the record turns `answered` before anything can yield (first submission wins), the answer JSON
+  (`agentj.form-answer/v1`) is placed in the Agent's inbox, the form's page is updated, and the say goes on as the owner's
+  own message whose text the HOST writes (`〔表单回复 · <id> · 快选|深聊卡 · <title> · n/N 题〕`, one line per answer, the
+  answer-file path) — the owner's page carries `src.form = {id, title}`. It is not signed and grants nothing (like any say).
+- **Withdraw**: `say_cancel` of a queued answer re-opens the form (`state: open`); its attachments are staged again.
+- host.log: `form_sent` / `form_answered` / `form_refused` / `form_cancel` / `form_reopen` with id, kind and counts — never text.
+
+## 29. Spend & speed — 花费与速度 (P204, 0.21, ADR-P204)
+
+What one turn or background task took, from the numbers the harness itself reports — never estimated where the harness gives
+the figure, never shown where nothing was reported (「—」). Process folded, result shown: one small line on the page header.
+
+- **Sources.** Claude Code: each stream `result` gives `usage` for that turn (input / output / cache read / cache creation) and
+  `total_cost_usd`, which adds up over the process — the turn's dollars are the difference from the previous `result` of the
+  same process (measured 2026-10-13); the model is the turn's last non-synthetic assistant `message.model`. Codex app-server:
+  `thread/tokenUsage/updated` `total` minus the total at `turn/started` (`inputTokens` includes `cachedInputTokens`;
+  reasoning counts as output); no dollars. OpenCode v2: every `session.step.ended` `tokens` (+ `cost`); v1: every assistant
+  `message.updated` `info.tokens` / `info.cost`, last value per message id. A scheduled run: the run's own `result` (Claude)
+  or its throw-away adapter's numbers; it never touches the chat turn.
+- **Billing.** A login whose harness reports the 5-hour window (`meter` `h5`) is a subscription: the page shows the share of
+  that window the turn used (`q`, percentage points = `h5.pct` after − before; nothing if the window reset), never dollars.
+  Otherwise dollars are shown only when reported by the harness. Missing or partially reported spend stays unknown;
+  no automatic price-table estimate is recorded. Historical `est` fields remain readable for backward compatibility.
+- **Page.** A finished history page may carry `"use": {"s": seconds, "h": harness, "b"?: "api"|"sub", "m"?: model, "i"?, "o"?,
+  "cr"?, "cw"?: tokens, "usd"?, "est"?, "q"?, "tps"?: output tokens per second of writing time, "tool_s"?: seconds a tool ran}`
+  (§10.5 `hist_turn`; a scheduled run's page too). A turn the harness reported no numbers for (e.g. a shared session) carries
+  `{"s", "h"}` only and shows its time alone; it is not logged. The phone shows `「12 s · ≈$0.04」` / `「48 s · 额度 0.4%」` next to the time and
+  the details on a tap; an open page shows nothing.
+- **Tool vs writing.** While `s` is `working`, `status` may carry `"ph": "tool"|"gen"` and `"tool"` (a tool name ≤ 40, never its
+  input): 「执行工具中 · Bash」 / 「生成中」. At most one change per 0.4 s reaches the phones, the last one always.
+- **Today.** The load card's `res` (§22.1) carries `"use": {n, s, i, o, cr, cw, usd, est, q, sub, no_usd}` (today, this
+  computer); `busy_info.item.use` = a workflow robot's last run.
+- **Log.** `<state>/usage/YYYY-MM-DD.jsonl` (dir 0700, files 0600, 400 days, ≤ 4 MiB a day): one line per turn / task with the
+  same fields. `agentj usage [--days N | --week] [--json]` sums it (chat turns and background tasks apart); `agentj usage
+  prices` prints the table. **Nothing of it leaves the computer** except inside §3 to the owner's own paired remotes.
+
+## 30. /learn — distil a skill, written after the owner's yes (P204, 0.21, ADR-P204)
+
+- The phone's `/learn [note]` goes to the main Agent rewritten (`learn.agent_words`, never starting with "/"), pointing at the
+  existing command-skill conventions. `slash.AGENT_CMDS` lists it; the menu shows it under 主 Agent.
+- `agentj learn draft|propose|discard|status` talks to serve over capability.sock (`t: learn_*`; reachable in the fence; the CLI
+  follows existing execution admission; no new CLI exemption is added). `draft` makes `<Agent dir>/.agentj/learn-staging/<id>/` with `context.md`
+  (the note + the latest ≤ 30 pages, marked as data) and an empty `skill/`. Staging writes follow existing workspace
+  authorization. One draft at a time.
+- `propose <id> --name <n> [--summary …] [--plaza] [--no-wait]`: the host reads `skill/` (≤ 12 UTF-8 files, ≤ 64 KiB each,
+  ≤ 256 KiB, no symlink / hidden path, `SKILL.md` front matter `name: <n>` + `description:`, no credential — privacy layer 1
+  in owner mode), compares with `<skills root>/<n>/` (Claude `~/.claude/skills`, Codex `~/.agents/skills`, OpenCode
+  `~/.config/opencode/skills`), and opens ONE approval (`tool: "agentj learn"`, `batch` off, never a goal tier or Jev, ttl
+  5 × ask_ttl). Its summary = the card text: head (name, new / change, document / command skill), the target, every file
+  `[new|~|=] path +a -d · sha256 <12 hex>`, then the whole unified diff — a change whose card would pass 16 000 characters
+  is refused (`too_long`), so nothing written is ever off the card; files and the summary with bidi overrides / isolates,
+  zero-width characters, a BOM or C0 controls other than tab / newline are refused (`hidden_characters`). The phone signs that
+  text (§5), shows the tag 「技能提案 · 你确认后才写入」 and colours + / − lines; the `ask` message carries
+  `"learn":"proposal"`. Allow → the host writes the bytes it held since `propose` (never re-read), atomically per file,
+  inside the target's real folder only (a symlinked
+  sub-folder is refused; temp files O_EXCL | O_NOFOLLOW), an existing file keeps its mode, a new script is 0755, nothing
+  installed is deleted; then the staging folder goes. Deny / timeout → nothing is
+  written. Identical content → no card (`same`).
+- `--plaza`: after it is installed the Agent offers it through the existing plaza publish flow (two privacy layers, its own
+  preview and digest the owner confirms); /learn itself never publishes.
 
 ## 29. Open-cards snapshot and the upgrade confirmation card (P203, host 0.20.2, ADR-P203)
 
@@ -4227,3 +4373,68 @@ This additive `p33` Noise application message grants only a short web-resource n
 - The browser additionally signs UTF-8 `"agentj/web-preview/device/v1\n" || message` under its existing nonextractable Ed25519 key. The Worker verifies both signatures against the device public key in the message and the publisher-pinned host key, exact configured seat/origin/candidate manifest and absolute expiry. It atomically consumes the issued nonce once before setting a Secure/HttpOnly/SameSite=Strict cookie scoped to `/<seat>/`. The cookie identifies the verified lease; it cannot choose a candidate independently of server configuration.
 
 Each candidate-resource request checks the current publisher pointer and proof expiry. Renewal needs a fresh nonce and a new live-host proof, so revocation prevents renewal; an already issued lease may remain valid for at most sixty seconds. Previously downloaded code is not recalled. Public `version.json` hashes are integrity metadata, not a claim that all web code has a separate publisher digital signature. The preview's content hash and “Preview / 预览” labels remain visible, with the same CSP/SRI protections as the formal page and a fixed additional bootstrap SRI.
+
+### #555 terminal command registry metadata (2026-11-06)
+
+The paired `preferences.host` block additionally exposes `run_harnesses`, an ordered array of
+`{name,label,installed,logged_in}` derived from `harness.SUPPORTED` and `harness.LABEL`. The initial installed/logged_in
+values are null (unknown); background local detection updates those booleans or nulls in `cmds_state.harnesses` beside
+the existing `names` array. Neither projection includes paths, credential hints or native diagnostic text. All supported
+`switch_<name>` identifiers remain in `run_cmds` even when uninstalled or not logged in. The host's fixed argv and actual
+switch target validation remain authoritative; this read-only enumeration grants no command execution. The webpage
+generates switch rows from the registry metadata; diagnostic rows retain the existing fixed table. Older clients may
+ignore the additional field.
+
+### #468 official-assist public discovery (0.27.0 candidate)
+
+`DASHBOARD_API.md` §#468 freezes the discovery interface. Customer host POST `/v1/host/assist/publish` is its ordinary host
+signature under `agentj-host-assist-publish-v1`, inner `{v:1,t:"assist_publish",channel,ts,invite}`; revoke uses context
+`agentj-host-assist-revoke-v1`, `{v:1,t:"assist_revoke",channel,ts,gid}`. `invite` contains only the public signed fields from
+`assist_operator.invitation`, never shell/output/password/device material. Both signature layers and bound usable seat are
+verified. Unknown fields are rejected. TTL <=3600s and <=official pin expiry; revoke is permanent through that grant window,
+including revoke-before-async-publish. Cloud list never replaces the live customer-host grant check.
+
+Official POST `/v1/assist/list` exact `{v:1,key_id,ts,nonce,sig}` uses the pinned official PeerKeys Ed25519 identity. Signature
+bytes = UTF-8 `agentj-assist-discovery-v1\n` followed by compact canonical/sorted JSON of `{v,key_id,ts,nonce}`. Unix seconds
+±120s and32-lowercase-hex nonce-once; valid list response `{ok:true,invites:[...]}` is limited128 metadata rows. New root,
+account, command or access authority cannot be smuggled through discovery. Host validates signed invites and establishes
+fresh Noise/hello before opening; no client pairing credential crosses the discovery service.
+
+### §41.1 — official terminal assistance (#468, 2026-11-06)
+
+- Capability `assist_term1`; paired customer `assist_term_grant` uses the existing two-step host nonce/UV contract,
+  target `{minutes,key_id,seat,scope:"terminal"}`. Control object text is minutes/key_id/seat/terminal separated by newline;
+  UV digest is SHA256(`assist_term_grant\n<key_id>\n<seat>\n<minutes>\nterminal`). Old task grant is unchanged.
+- Official KK app frames `assist_term_open|in|resize|close` carry gid/seat/seq/ts and a pinned Ed25519 signature. Signed bytes:
+  UTF8(`agentj-assist-terminal-v1\n`) + canonical JSON of every frame field excluding sig. open/resize have cols/rows;
+  in has d, optional reply=true only for the existing strict terminal-report whitelist. close may carry bounded
+  summary/diagnosis/verification statements. All actions persist sequence before effect, with grant/seat/time/pin checks.
+- Customer receives `assist_term_event{gid,event:<existing terminal frame>}`. term_ready supplies id/fa/cols/rows/expires_at;
+  term_out retains monotonically increasing seq; term_resize supplies actual rows/cols. Only the original granting paired
+  session can send `assist_term_answer{r,gid,obj:<term_line|term_confirm_no|term_sudo_ok|term_sudo_no>}`. Existing per-command
+  signature, nonce and UV/PRF requirements are retained; response is ctl_res action assist_term_answer. Trusted first-login
+  `elev{kind:"login",assist_gid,term}` is customer-only and uses normal sealed/signed elev_answer, not an official peer frame.
+- Helper gets term_ready/out/resize/close only, never fa/epk/pct/pepk or confirmation/password material. Metadata-only
+  `assist_term_end{gid,reason}` may be sent immediately over an existing KK during teardown, then peer/outbox are dropped.
+- `assist_state` adds scope and discovery (publishing/ready/failed); `assist_discover_retry{r}` only republishes the same
+  public invitation, at most every15seconds. `assist_notice{what:discoverable|discover_failed}` reports publication outcome.
+- Customer `assist_log{r}` returns assist_log_res{r,entries,report}, bounded64KiB tail/200records. On end, customer receives
+  assist_report{gid,report}; report persists customer-local by grant. No report or output is published to Dashboard.
+- Invitation is public, bounded4096B, {v:1,scope:"terminal",gid,seat,key_id,not_before,until,aid,x25519,ed25519,sig}; sig is
+  customer's Ed25519 over UTF8(`agentj-assist-invite-v1\n`) + canonical JSON excluding sig. Import requires derived aid,
+  signature, ≤60min duration and local possession of the specified pinned official identity. A live hello still governs use.
+- Cloud discovery publish/revoke and official signed-list metadata contracts are implemented in Dashboard assist routes;
+  discovery remains advisory and cannot mint/revive a local customer grant.
+
+#### §41.1 audit pagination and reauthorization
+
+`assist_log{r,gid?,cursor?}` returns `{t:"assist_log_res",r,gid,entries,report,next_cursor,more,why?}`. Missing gid selects the
+current/latest local grant. A next_cursor is an opaque string for strictly earlier data; more=false has next_cursor=null.
+Each page reads≤64KiB, returns≤200 records filtered by exact gid, and accepts no paths. why=bad_cursor rejects malformed or
+cross-grant cursors; why=pruned rejects a changed inode or disappeared/truncated source. A client must explicitly restart
+from latest after prune; the server never silently resets an invalid cursor. A page may contain zero selected-grant records
+while more=true, allowing traversal over other grants without disclosing them.
+
+Official local registries retain authenticated end tombstones only until the original invitation expiry. After an end marker,
+read/input/open for that old gid return ended, and a fresh customer grant on the same Agent identity is independent immediately.
+Display/ready/end processing and queued input guards bind exact gid as well as the customer peer identity.

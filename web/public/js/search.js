@@ -184,7 +184,7 @@ function hl(node, text, ts) {
   }
 }
 function row(h, ts) {
-  const b = document.createElement('button');
+  const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-search');
   b.type = 'button'; b.className = 'srhit'; b.dataset.id = String(h.id); b.dataset.local = h.local ? '1' : '0';
   b.setAttribute('role', 'option');
   const meta = document.createElement('span'); meta.className = 'srmeta';

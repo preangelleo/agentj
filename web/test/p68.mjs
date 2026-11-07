@@ -18,11 +18,12 @@ try {
  await waitFor(p,`!!document.querySelector('#silentList details summary')`);
  assert.equal(await evaluate(p,`document.querySelector('#silentList details').open`),false);
  await evaluate(p,`document.querySelector('#silentList summary').click()`);
- assert.equal(await evaluate(p,`document.querySelector('#silentList details').open && document.querySelector('#silentList .rep').textContent.includes('〔不回群〕')`),true);
+ assert.equal(await evaluate(p,`document.querySelector('#silentList details').open`),true);
+ assert.equal(await evaluate(p,`document.querySelector('#silentList .rep').textContent.includes('〔不回群〕')`),false);
  writeFileSync(new URL('silent-expanded.png',out),await shoot(p,''));
  await evaluate(p,`document.getElementById('silentClose').click()`);
- await fake.addTurn({k:'host',text:'mixed'},'answer 〔不回群〕');
- await waitFor(p,`document.getElementById('words').textContent.includes('answer 〔不回群〕')`);
+ await fake.addTurn({k:'host',text:'mixed'},'answer 〔静默消息〕 middle');
+ await waitFor(p,`document.getElementById('words').textContent.includes('answer  middle')`);
  await fake.clearHistory();await sleep(150);await fake.addTurn({k:'agent'},'〔不回群〕');await sleep(350);
  assert.equal(await evaluate(p,`document.getElementById('words').textContent.includes('〔不回群〕')`),false);
  assert.deepEqual(p.problems,[]);results['silent-history']='pass';console.log('PASS silent-history');

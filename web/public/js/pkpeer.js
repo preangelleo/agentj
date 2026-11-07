@@ -14,7 +14,7 @@
 import { t, locale, onLang, fillText } from './t.js';
 import { mk, toast, notify } from './ui.js';
 import { registerLayer } from './layers.js';
-import { unb64u, b64u } from '../proto/wire.js';
+import { unb64u, b64u, sealValue } from '../proto/wire.js';
 import { keyPlatform } from './phone-env.js';
 
 export const ID = /^[A-Za-z0-9_-]{16,43}$/;          // the host's request id (b64u of 16 bytes = 22 chars)
@@ -39,7 +39,14 @@ export function _reset() { clearTimeout(S.timer); Object.assign(S, { req: null, 
 const cleanName = (v) => (typeof v === 'string' ? v.replace(/[\p{Cc}\p{Cf}]/gu, '').trim().slice(0, 64) : '') || t('pkp.unnamed');
 
 function show(spec) { S.shown = spec.mode; (view || domView()).show(spec); }
-function hide() { S.shown = null; (view || domView()).hide(); }
+function hide() {
+  S.shown = null;
+  root?.querySelectorAll('input[type="password"]').forEach(input => { input.value = ''; });
+  (view || domView()).hide();
+  if ([...S.asks.values()].some(a => !a.sent && (!a.exp || a.exp * 1000 > H.now())))
+    notify({ kind: 'confirm', text: t('pkp.pending'), ms: 0,
+      actions: [{ label: t('pkp.reopen'), fn: reopenPending }] });
+}
 
 /** 「设置 Face ID」 / a card's 「在本机设置 Face ID」 (app.js setupFaceId): ask the host which way this device goes.
  *  → 'direct' | 'peer' | 'legacy' | 'fail' | 'busy' | 'unsupported'. */
@@ -165,12 +172,12 @@ export function saved(ok) {
 // ---------------------------------------------------------------- approver
 /** host → a remote that holds a key: another device of the owner asks. */
 export function onAsk(m) {
-  if (!m || !ID.test(String(m.id || '')) || !CODE.test(String(m.code ?? '')) || typeof m.fa !== 'string' || typeof m.fa_ch !== 'string') return false;
+  if (!m || !ID.test(String(m.id || '')) || !CODE.test(String(m.code ?? '')) || (m.needs_setup !== true && typeof m.fa !== 'string') || typeof m.fa_ch !== 'string') return false;
   let ch; try { ch = unb64u(m.fa_ch); } catch { return false; }
   if (!ch.length) return false;
-  const a = { id: m.id, name: cleanName(m.name), at: Number(m.at) || 0, exp: Number(m.exp) || 0, code: String(m.code), roster: m.roster === true, fa: m.fa, ch };
+  const a = { id: m.id, name: cleanName(m.name), at: Number(m.at) || 0, exp: Number(m.exp) || 0, code: String(m.code), roster: m.roster === true, fa: m.fa, ch, needsSetup: m.needs_setup === true, bootstrap: m.bootstrap === true && m.needs_setup === true && m.roster !== true, bootstrapUnavailable: m.bootstrap_unavailable === true, epk: m.epk, n: m.n, digest: m.digest };
   S.asks.set(m.id, a);
-  if (m.sign_pub) { // P574: bind the introduced Ed25519 key, before showing an approvable card (no await in the tap).
+  if (m.sign_pub && !a.needsSetup) { // P574: bind the introduced Ed25519 key, before showing an approvable card (no await in the tap).
     a.ch = null;
     Promise.resolve().then(() => H.prepareAsk(m)).then((prepared) => {
       if (S.asks.get(m.id) === a && b64u(prepared) === m.fa_ch) { a.ch = prepared; paintAsk(); }
@@ -181,15 +188,15 @@ export function onAsk(m) {
 }
 function paintAsk() {
   if (S.shown && S.shown !== 'ask') return;           // the requester's own sheet first (the two never meet on one device)
-  const a = [...S.asks.values()].find((x) => !x.sent && x.ch);
+  const a = [...S.asks.values()].find((x) => !x.sent && x.ch && (!x.exp || x.exp * 1000 > H.now()));
   if (!a) { if (S.shown === 'ask') hide(); return; }
-  show({ mode: 'ask', id: a.id, name: a.name, ...(a.roster ? { roster: true } : {}), at: a.at, code: a.code, can: H.canAssert() });
+  show({ mode: 'ask', id: a.id, name: a.name, ...(a.roster ? { roster: true } : {}), at: a.at, code: a.code, can: !a.needsSetup && H.canAssert(), ...(a.needsSetup ? { needsSetup: true, bootstrap: a.bootstrap, ...(a.bootstrapUnavailable ? {bootstrapUnavailable: true} : {}) } : {}) });
 }
-export const currentAsk = () => (S.shown === 'ask' ? [...S.asks.values()].find((x) => !x.sent && x.ch) || null : null);
+export const currentAsk = () => (S.shown === 'ask' ? [...S.asks.values()].find((x) => !x.sent && x.ch && (!x.exp || x.exp * 1000 > H.now())) || null : null);
 /** 「批准（Face ID）」: the assertion starts synchronously inside the tap (iOS gesture rule). */
 export function approveTap() {
   const a = currentAsk();
-  if (!a) return null;
+  if (!a || a.needsSetup || (a.exp && a.exp * 1000 <= H.now())) return null;
   let p;
   try { p = H.approve(a.ch, a.fa); } catch (e) { p = Promise.reject(e); }
   return Promise.resolve(p).then(async (fa) => {
@@ -206,10 +213,30 @@ export function onAnswerRes(m) {
     if (a && a.sent) notify({ kind: 'success', text: t('pkp.approveSent'), ms: 3000 });
     return;
   }
+  if (a && ['wrong', 'locked', 'bad_seal', 'not_set'].includes(m.why)) { a.sent = false; toast(t('pkp.bootstrapFail'), 5000); paintAsk(); return; }
   if (a && m.why === 'passkey_failed') { a.sent = false; toast(t('pkp.approveFail'), 5000); paintAsk(); return; }
   if (a) { S.asks.delete(m.id); if (S.shown === 'ask') hide(); paintAsk(); }
   toast(t('pkp.answerGone'), 4000);
 }
+/** Controlled input only: the value never enters chat, tool input, or a retry queue. */
+export async function bootstrapTap(input) {
+  const a = currentAsk();
+  if (!a || !a.bootstrap || (a.exp && a.exp * 1000 <= H.now())) { input.value = ''; return; }
+  const value = new TextEncoder().encode(input.value);
+  input.value = '';
+  a.sent = true;
+  try {
+    const channel = H.channel(), device = await H.device();
+    const sealed = await sealValue(unb64u(a.epk), value, channel, device, a.id, 'pk_bootstrap', a.n, a.digest);
+    if (S.asks.get(a.id) !== a || (a.exp && a.exp * 1000 <= H.now()) || H.channel() !== channel) return;
+    // Direct send: sealed bootstrap proofs must never be handed in across a new session.
+    await H.sendBootstrap({ t: 'pk_peer_answer', id: a.id, ok: true, bootstrap: true, epk: b64u(sealed.epk), ct: b64u(sealed.ct) });
+    hide();
+  } catch { a.sent = false; toast(t('pkp.bootstrapFail'), 5000); paintAsk(); }
+  finally { value.fill(0); }
+}
+export function reopenPending() { if (S.shown !== 'wait') { hide(); paintAsk(); } }
+
 export function denyTap() {
   const a = currentAsk();
   if (!a) return null;
@@ -243,7 +270,7 @@ function when(sec) {
   try { return new Date(sec * 1000).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
 }
 function btn(id, cls, key, fn) {
-  const b = mk('button', 'aj-btn ' + cls); b.type = 'button'; b.id = id; b.textContent = t(key); b.dataset.k = key;
+  const b = mk('button', 'aj-action ' + cls, undefined, 'aj-action', 'dialog'); b.type = 'button'; b.id = id; b.textContent = t(key); b.dataset.k = key;
   b.addEventListener('click', fn);
   return b;
 }
@@ -270,7 +297,7 @@ function paint() {
   const r = build(), s = spec;
   const box = mk('div', 'box');
   const kick = mk('p', 'elev-kicker', t(s.mode === 'ask' ? 'pkp.askKicker' : 'pkp.kicker'));
-  const title = mk('h2', '', ''); title.id = 'pkp-title';
+  const title = mk('h2', '', '', 'aj-passkey'); title.id = 'pkp-title';
   const kids = [kick, title];
   const codeRow = (code) => { const d = mk('div', 'pkp-code'); d.id = 'pkp-code'; d.append(mk('span', 'pkp-code-l', t('pkp.codeLabel')), mk('b', 'pkp-code-v', code)); return d; };
   const row = mk('div', 'ajrow pkp-acts');
@@ -285,7 +312,7 @@ function paint() {
       kids.push(cmd);
     }
     kids.push(mk('p', 'elev-note', t('pkp.eachOwn') + ' ' + t('pkp.where.' + s.where)));
-    row.append(btn('pkp-cancel', 'aj-btn--quiet', 'sheet.cancel', () => cancelWait()));
+    row.append(btn('pkp-cancel', 'aj-action--quiet', 'sheet.cancel', () => cancelWait()));
   } else if (s.mode === 'approved') {
     title.textContent = t(s.err ? 'p561.save.failTitle' : 'pkp.approvedTitle');
     if (s.err) {                                       // P561 追加 11: the system made no key — say so plainly, the approval stands
@@ -295,26 +322,34 @@ function paint() {
       kids.push(mk('p', 'pkp-text', s.by ? t('pkp.approvedBy', { by: s.by }) : t('pkp.approvedText')));
       kids.push(mk('p', 'elev-note', t('pkp.eachOwn') + ' ' + t('pkp.where.' + keyPlatform(H.ua(), H.touch()))));
     }
-    row.append(btn('pkp-save', 'aj-btn--primary', s.err ? 'p539.fail.retry' : 'pk.save', () => saveTap()), btn('pkp-later', 'aj-btn--quiet', 'pk.later', () => { S.offer = null; S.req = null; hide(); }));
+    row.append(btn('pkp-save', 'aj-action--primary', s.err ? 'p539.fail.retry' : 'pk.save', () => saveTap()), btn('pkp-later', 'aj-action--quiet', 'pk.later', () => { S.offer = null; S.req = null; hide(); }));
   } else if (s.mode === 'result') {
     title.textContent = t('pkp.r.' + s.why + '.title');
     kids.push(mk('p', 'pkp-text', t('pkp.r.' + s.why)));
-    row.append(btn('pkp-ok', 'aj-btn--primary', 'pkp.ok', () => closeResult()));
+    row.append(btn('pkp-ok', 'aj-action--primary', 'pkp.ok', () => closeResult()));
   } else if (s.mode === 'ask') {
     title.textContent = t(s.roster ? 'p574.introTitle' : 'pkp.askTitle', { name: s.name });
     const at = when(s.at);
     if (at) kids.push(mk('p', 'elev-note pkp-at', t('pkp.askAt', { time: at })));
     kids.push(codeRow(s.code), mk('p', 'pkp-text', t(s.roster ? 'p574.introText' : 'pkp.askText')));
-    if (!s.can) kids.push(mk('p', 'elev-note', t('pkp.noAssert')));
-    const ok = btn('pkp-approve', 'aj-btn--primary', 'pkp.approve', () => approveTap());
+    if (s.needsSetup) kids.push(mk('p', 'elev-note', t(s.bootstrapUnavailable ? 'pkp.passwordNotSet' : s.bootstrap ? 'pkp.bootstrapText' : 'pkp.setupFirst')));
+    else if (!s.can) kids.push(mk('p', 'elev-note', t('pkp.noAssert')));
+    if (s.bootstrap) {
+      const input = mk('input', 'aj-input', undefined, 'aj-passkey'); input.type = 'password'; input.autocomplete = 'off';
+      input.maxLength = 256; input.setAttribute('aria-label', t('pkp.pairPassword'));
+      kids.push(input);
+      row.append(btn('pkp-bootstrap', 'aj-action--primary', 'pkp.bootstrapApprove', () => bootstrapTap(input)));
+    }
+    if (s.needsSetup && !s.bootstrap && !s.bootstrapUnavailable) row.append(btn('pkp-setup-first', 'aj-action--quiet', 'pkp.setupFirstAction', () => { hide(); (H.restart || startPeerSetup)(); }));
+    const ok = btn('pkp-approve', 'aj-action--primary', 'pkp.approve', () => approveTap());
     ok.hidden = !s.can;
-    row.append(ok, btn('pkp-deny', 'aj-btn--quiet', 'pkp.deny', () => denyTap()));
+    row.append(ok, btn('pkp-deny', 'aj-action--quiet', 'pkp.deny', () => denyTap()));
   }
   kids.push(row);
   box.append(...kids);
   r.replaceChildren(box);
   r.dataset.mode = s.mode;
   r.hidden = false;
-  (r.querySelector('.aj-btn--primary:not([hidden])') || r.querySelector('.aj-btn'))?.focus({ preventScroll: true });
+  (r.querySelector('.aj-action--primary:not([hidden])') || r.querySelector('.aj-action'))?.focus({ preventScroll: true });
 }
 onLang(() => { if (root && !root.hidden) paint(); });

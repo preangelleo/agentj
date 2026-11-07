@@ -6,7 +6,10 @@
 // barred classes (.aj-callout, .aj-nav), so it is not scanned here.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync as rawContractRead, existsSync } from 'node:fs';
+import {resolveDefaults} from '../tools/css-defaults.mjs';
+// #577: preserve this legacy contract's exact appearance/markup assertions; ownership is audited separately.
+const readFileSync = (...args) => { const value=rawContractRead(...args), path=String(args[0]); if(typeof value!=='string') return value; return path.endsWith('.css') ? resolveDefaults(value) : path.endsWith('.html') ? value.replace(/ data-aj-(?:owner|action-context)="[^"]+"/g,'') : value; };
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 const FILES = {
@@ -53,7 +56,7 @@ const BARS = [
   ['app.css', '.qc', null, 'composer quote chip'],
   ['app.css', '.words blockquote', null, 'reply markdown quote'],
   ['app.css', '.setup-act', null, 'first-run setup action note'],
-  ['app.css', '.sheet.danger .cmd', '.cmd', 'danger approval command'],
+  ['app.css', '.sheet.danger .aj-approval-command', '.aj-approval-command', 'danger approval command'],
   ['app.css', '.slashmenu.sug button[aria-selected="true"]', null, 'type-ahead selected row'],
   ['app.css', '.fr-gmentions .fp-mention[aria-selected=true]', '.fr-gmentions .fp-mention', 'group mention selected row'],
   ['app.css', '.setside .setsidebtn[aria-current="true"]', '.setside .setsidebtn', 'settings side nav current'],
@@ -134,7 +137,7 @@ test('P569: the bars keep their colours', () => {
     ['app.css', '.qc', 'var(--qc,var(--src-leo))'],
     ['app.css', '.words blockquote', 'var(--md-mark)'],
     ['app.css', '.setup-act', 'var(--state)'],
-    ['app.css', '.sheet.danger .cmd', 'var(--lotion)'],
+    ['app.css', '.sheet.danger .aj-approval-command', 'var(--lotion)'],
     ['app.css', '.slashmenu.sug button[aria-selected="true"]', 'var(--ink)'],
     ['app.css', '.fr-gmentions .fp-mention[aria-selected=true]', 'var(--text)'],
     ['app.css', '.setside .setsidebtn[aria-current="true"]', 'var(--accent)'],
@@ -156,9 +159,16 @@ test('P569: the bars keep their colours', () => {
 });
 
 test('P569: notice stacks keep the left border (they reset only top / right / bottom)', () => {
-  const p = props('app.css', '.reply-notices>:is(.toast,.elev-run,.elev-grant,.setup-banner,.estop-banner,.share-notice,.shared-status,.ver-later,.grant-bar)');
-  assert.ok(!('border' in p) && !('border-left' in p), 'no full border reset');
-  assert.equal(p['border-block'], '0'); assert.equal(p['border-right'], '0');
+  const children=['.toast','.elev-run','.elev-grant','.setup-banner','.estop-banner','.share-notice','.shared-status','.ver-later','.grant-bar'];
+  const grouped='.reply-notices>:is('+children.join(',')+')';
+  // The original grouped contract may be spelled as independent owner rules.
+  // Every original child still must preserve its left bar; a missing branch fails.
+  const hasGroup=R['app.css'].some(r=>r.sel===grouped);
+  for(const child of children){
+    const p=props('app.css',hasGroup?grouped:'.reply-notices>'+child);
+    assert.ok(!('border' in p) && !('border-left' in p), child+': no full or left border reset');
+    assert.equal(p['border-block'], '0',child);assert.equal(p['border-right'], '0',child);
+  }
   const fold = props('app.css', '.omqfold');
   assert.ok(!('border' in fold) && !('border-left' in fold), '.omqfold keeps .omq\'s bar');
   // the round ✓ notice has no bar

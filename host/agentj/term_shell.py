@@ -125,7 +125,7 @@ def shell_env(base: dict, drop: set) -> dict:
 
 def local_ok(h) -> bool:
     """`local` cache mode: only while the Agent is fenced AND independent (H2, N2)."""
-    from . import preferences
+    from . import preference_values as preferences
     p, a = getattr(h, "preferences", None) or {}, getattr(h, "agent_cfg", None) or {}
     return preferences.get(p, "agent.isolation", True) is not False and a.get("fence", True) is not False and \
         preferences.get(p, "agent.session_mode", "independent") != "shared" and a.get("session_mode", "independent") != "shared"

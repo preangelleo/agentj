@@ -4,7 +4,10 @@
 // direct site link in the card): its 「打开紧急恢复」 opens 紧急修复, whose last line is 在线客服.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync as rawContractRead } from 'node:fs';
+import {resolveDefaults} from '../tools/css-defaults.mjs';
+// #577: preserve this legacy contract's exact appearance/markup assertions; ownership is audited separately.
+const readFileSync = (...args) => { const value=rawContractRead(...args), path=String(args[0]); if(typeof value!=='string') return value; return path.endsWith('.css') ? resolveDefaults(value) : path.endsWith('.html') ? value.replace(/ data-aj-(?:owner|action-context)="[^"]+"/g,'') : value; };
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const HTML = read('../public/index.html');
 const SRC = JSON.parse(read('../i18n/web.zh.src.json')), ZH = JSON.parse(read('../i18n/web.zh.json')), EN = JSON.parse(read('../i18n/web.en.json'));

@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "scope": "Exact reviewed dynamic setter sites, not a generic JS AST or arbitrary property permission",
+  "entries": [
+    {
+      "path": "js/pageshot.js",
+      "line": 42,
+      "sourceSha256": "a4f57a45cd78b977c896c210643fcd3564582b852f8a75e25f944f4b182b8e0b",
+      "kind": "detached-computed-style-copy",
+      "purpose": "copy() forwards identical computed prop/value into a detached redacted SVG clone; snapshotSVG serializes rather than mutating live source DOM.",
+      "tokenNames": []
+    },
+    {
+      "path": "js/pageshot.js",
+      "line": 63,
+      "sourceSha256": "a4f57a45cd78b977c896c210643fcd3564582b852f8a75e25f944f4b182b8e0b",
+      "kind": "detached-computed-style-copy",
+      "purpose": "copy() forwards identical computed prop/value into a detached redacted SVG clone; snapshotSVG serializes rather than mutating live source DOM.",
+      "tokenNames": []
+    },
+    {
+      "path": "js/theme.js",
+      "line": 85,
+      "sourceSha256": "c76c4f6552c712107c00ea1dde45fd4d570e0d48646aa2effbd1dad60518cf6e",
+      "kind": "finite-theme-vars",
+      "purpose": "prop(k,v) is reached only by sanitize color maps, send mask and bounded0..8 dot palette generators; source checks actual finite producer map.",
+      "tokenNames": [
+        "--busy-h0",
+        "--busy-h1",
+        "--busy-h2",
+        "--busy-h3",
+        "--busy-h4",
+        "--busy-h5",
+        "--busy-h6",
+        "--busy-h7",
+        "--busy-h8",
+        "--busy-l0",
+        "--busy-l1",
+        "--busy-l2",
+        "--busy-l3",
+        "--busy-l4",
+        "--busy-l5",
+        "--busy-l6",
+        "--busy-l7",
+        "--busy-l8",
+        "--c-idle",
+        "--c-offline",
+        "--c-question",
+        "--c-waiting",
+        "--c-working",
+        "--dlg-bg",
+        "--menu-accent",
+        "--menu-bg",
+        "--menu-line",
+        "--menu-panel",
+        "--menu-text",
+        "--send-mask",
+        "--src-agent",
+        "--src-cmd",
+        "--src-dev",
+        "--src-host",
+        "--src-leo",
+        "--src-sys",
+        "--src-task"
+      ]
+    }
+  ]
+}

@@ -384,6 +384,16 @@ class Resumer:
     def pending(self, scope: str = "main") -> dict | None:
         return self.items.get(scope)
 
+    def _needs_owner_message(self, scope: str, harness: str) -> bool:
+        # #398: old persisted main-Codex timers do not prove a request was never
+        # accepted. Retire only this recovery record, never admission/replay ledgers.
+        if scope != "main" or harness != "codex":
+            return False
+        self.drop(scope, "owner_required")
+        self._notice(scope, None, "Codex quota recovery needs a new message from you; the old request will not replay automatically."
+                     if self.lang() == "en" else "Codex 额度恢复后，请你发一条新消息继续；旧请求不会自动重放。")
+        return True
+
     # ---- marking
     def hit(self, scope: str, harness: str, at: float | None, title: str | None = None, frm_resume: str | None = None,
             to: str | None = None, task: dict | None = None, limit: str | None = None,
@@ -393,6 +403,8 @@ class Resumer:
         (the newest one the harness reported wins; a hit without a time takes the one already known). `stale` = the phone's
         readings that said otherwise (named as out of date in the notice); Claude's notice ends with the free-reset hint."""
         self.load()
+        if self._needs_owner_message(scope, harness):
+            return None
         lang = self.lang()
         name = NAMES.get(harness, harness)
         old = self.items.get(scope)
@@ -496,7 +508,8 @@ class Resumer:
         """Serve start: re-arm what survived; a chat record made on another harness fires at once (the owner switched)."""
         self.load()
         for scope in list(self.items):
-            self._arm(scope)
+            if not self._needs_owner_message(scope, self.items[scope]["harness"]):
+                self._arm(scope)
 
     def _arm(self, scope: str) -> None:
         old = self.timers.pop(scope, None)
@@ -546,6 +559,8 @@ class Resumer:
         rec = self.items.get(scope)
         if rec is None:
             return "gone"
+        if self._needs_owner_message(scope, rec["harness"]):
+            return "owner_required"
         stopped = getattr(self.host, "stopped", None)
         if callable(stopped) and stopped():
             self.drop(scope, "stopped")

@@ -1,0 +1,270 @@
+{
+ "name": "content-brief",
+ "mode": "deep",
+ "title": {
+  "zh": "选题简报",
+  "en": "Content brief"
+ },
+ "about": {
+  "zh": "文章 / 视频动笔前：受众、角度、口吻、长度、参考。",
+  "en": "Before writing an article or video: audience, angle, tone, length, references."
+ },
+ "vars": {
+  "topic": {
+   "label": {
+    "zh": "选题",
+    "en": "Topic"
+   },
+   "required": true
+  }
+ },
+ "fill": [
+  "recommend.*",
+  "drop",
+  "title"
+ ],
+ "form": {
+  "title": {
+   "zh": "选题 · {{topic}}",
+   "en": "Brief · {{topic}}"
+  },
+  "preselect": true,
+  "sections": [
+   {
+    "id": "who",
+    "title": {
+     "zh": "写给谁",
+     "en": "For whom"
+    },
+    "questions": [
+     {
+      "id": "audience",
+      "type": "single",
+      "label": {
+       "zh": "主要读者",
+       "en": "Main audience"
+      },
+      "required": true,
+      "keep": true,
+      "other": true,
+      "options": [
+       {
+        "value": "new",
+        "label": {
+         "zh": "新手",
+         "en": "Beginners"
+        }
+       },
+       {
+        "value": "pro",
+        "label": {
+         "zh": "从业者",
+         "en": "Practitioners"
+        }
+       },
+       {
+        "value": "boss",
+        "label": {
+         "zh": "决策者",
+         "en": "Decision makers"
+        }
+       }
+      ]
+     },
+     {
+      "id": "takeaway",
+      "type": "text",
+      "label": {
+       "zh": "读完记住哪一句？",
+       "en": "The one line they should remember"
+      },
+      "required": true,
+      "max_length": 200
+     }
+    ]
+   },
+   {
+    "id": "how",
+    "title": {
+     "zh": "怎么写",
+     "en": "How"
+    },
+    "questions": [
+     {
+      "id": "angle",
+      "type": "single",
+      "label": {
+       "zh": "角度",
+       "en": "Angle"
+      },
+      "options": [
+       {
+        "value": "story",
+        "label": {
+         "zh": "讲故事",
+         "en": "A story"
+        }
+       },
+       {
+        "value": "howto",
+        "label": {
+         "zh": "教程",
+         "en": "A how-to"
+        }
+       },
+       {
+        "value": "opinion",
+        "label": {
+         "zh": "观点",
+         "en": "An opinion"
+        }
+       },
+       {
+        "value": "data",
+        "label": {
+         "zh": "数据分析",
+         "en": "Data"
+        }
+       }
+      ]
+     },
+     {
+      "id": "tone",
+      "type": "slider",
+      "label": {
+       "zh": "口吻",
+       "en": "Tone"
+      },
+      "min": 1,
+      "max": 5,
+      "step": 1,
+      "labels": [
+       {
+        "zh": "轻松",
+        "en": "Casual"
+       },
+       {
+        "zh": "严肃",
+        "en": "Formal"
+       }
+      ],
+      "default": 2
+     },
+     {
+      "id": "length",
+      "type": "buttons",
+      "label": {
+       "zh": "长度",
+       "en": "Length"
+      },
+      "options": [
+       {
+        "value": "short",
+        "label": {
+         "zh": "短（3 分钟）",
+         "en": "Short (3 min)"
+        }
+       },
+       {
+        "value": "mid",
+        "label": {
+         "zh": "中（8 分钟）",
+         "en": "Medium (8 min)"
+        }
+       },
+       {
+        "value": "long",
+        "label": {
+         "zh": "长（15 分钟+）",
+         "en": "Long (15 min+)"
+        }
+       }
+      ]
+     },
+     {
+      "id": "channel",
+      "type": "multi",
+      "label": {
+       "zh": "发在哪",
+       "en": "Where it goes"
+      },
+      "options": [
+       {
+        "value": "wechat",
+        "label": {
+         "zh": "公众号",
+         "en": "WeChat"
+        }
+       },
+       {
+        "value": "video",
+        "label": {
+         "zh": "视频号 / 抖音",
+         "en": "Short video"
+        }
+       },
+       {
+        "value": "blog",
+        "label": {
+         "zh": "博客",
+         "en": "Blog"
+        }
+       },
+       {
+        "value": "x",
+        "label": {
+         "zh": "X / 微博",
+         "en": "X / Weibo"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "refs",
+    "title": {
+     "zh": "参考",
+     "en": "References"
+    },
+    "questions": [
+     {
+      "id": "ref",
+      "type": "longtext",
+      "label": {
+       "zh": "参考链接或想法",
+       "en": "Reference links or notes"
+      },
+      "max_length": 2000
+     },
+     {
+      "id": "ref_files",
+      "type": "file",
+      "label": {
+       "zh": "参考图或语音（可选）",
+       "en": "Reference images or a voice note (optional)"
+      },
+      "accept": [
+       "image",
+       "audio"
+      ],
+      "max_files": 3
+     }
+    ]
+   }
+  ],
+  "recommend": {
+   "audience": "pro",
+   "angle": "howto",
+   "length": "mid"
+  }
+ },
+ "example": {
+  "zh": {
+   "topic": "小团队怎么用 AI 写周报"
+  },
+  "en": {
+   "topic": "How small teams write weekly reports with AI"
+  }
+ }
+}

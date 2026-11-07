@@ -147,7 +147,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding,usage,learn,form} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -570,14 +570,23 @@ agentj assist --help
 ```
 
 ```text
-usage: agentj assist [-h] [--lines LINES] [--json] {status,log,revoke}
+usage: agentj assist [-h] [--file FILE] [--lines LINES] [--summary SUMMARY]
+                     [--diagnosis DIAGNOSIS] [--verification VERIFICATION]
+                     [--json]
+                     {status,log,revoke,invite,import,list,open,input,close}
+                     [session]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `log`, `revoke` | `` |
+| `action` | `null` | true | `status`, `log`, `revoke`, `invite`, `import`, `list`, `open`, `input`, `close` | `` |
+| `session` | `null` | false | — | `official session grant id / 官方会话授权编号` |
+| `--file` | `"-"` | false | — | `public invitation JSON file, or stdin (-)` |
 | `--lines` | `50` | false | — | `log：最后几行（1–2000）/ the last N lines` |
+| `--summary` | `null` | false | — | `official repair conclusion, customer-visible and redacted` |
+| `--diagnosis` | `null` | false | — | `official diagnosis, distinct from host audit facts` |
+| `--verification` | `null` | false | — | `official verification statement; never implies host-verified success` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj automation
@@ -1381,6 +1390,7 @@ agentj busy run --help
 usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
                        [--report REPORT] [--harness HARNESS] [--model MODEL]
                        [--workflow WORKFLOW] [--role ROLE] [--parent PARENT]
+                       [--watch WATCH] [--watch-git] [--detach]
                        ...
 ```
 
@@ -1396,6 +1406,11 @@ usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
 | `--workflow` | `null` | false | — | `self-reported display metadata (not detection): workflow` |
 | `--role` | `null` | false | — | `self-reported display metadata (not detection): role` |
 | `--parent` | `null` | false | — | `self-reported display metadata (not detection): parent` |
+| `--watch` | `[]` | false | — | `explicit bounded directory metadata progress` |
+| `--watch-git` | `false` | false | — | `watch working directory .git metadata only` |
+| `--detach` | `false` | false | — | `managed one-shot background run` |
+| `--launch-token` | `null` | false | — | `internal option (hidden from --help)` |
+| `--managed` | `false` | false | — | `internal option (hidden from --help)` |
 | `command` | `null` | false | — | `` |
 
 ### agentj busy show
@@ -1482,7 +1497,7 @@ agentj capability --help
 
 ```text
 usage: agentj capability [-h]
-                         {compact,list,sync,check,show,prepare,result,dispatch,digest,report-check} ...
+                         {event-propose,event-ingest,event-status,event-detail,event-history,compact,list,sync,check,show,prepare,result,dispatch,digest,report-check,pause,resume,verify} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -1570,6 +1585,105 @@ usage: agentj capability dispatch [-h] --workflow WORKFLOW [--json]
 | `--workflow` | `null` | true | — | `` |
 | `--json` | `false` | false | — | `` |
 
+### agentj capability event-detail
+
+```text
+external events: record-only until paired-owner approval
+```
+
+```bash
+agentj capability event-detail --help
+```
+
+```text
+usage: agentj capability event-detail [-h] [--json] --key KEY
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+| `--key` | `null` | true | — | `` |
+
+### agentj capability event-history
+
+```text
+external events: record-only until paired-owner approval
+```
+
+```bash
+agentj capability event-history --help
+```
+
+```text
+usage: agentj capability event-history [-h] [--json] [--after AFTER]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+| `--after` | `""` | false | — | `` |
+
+### agentj capability event-ingest
+
+```text
+external events: record-only until paired-owner approval
+```
+
+```bash
+agentj capability event-ingest --help
+```
+
+```text
+usage: agentj capability event-ingest [-h] [--json] --data DATA
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+| `--data` | `null` | true | — | `fixed-schema JSON, never permissions` |
+
+### agentj capability event-propose
+
+```text
+external events: record-only until paired-owner approval
+```
+
+```bash
+agentj capability event-propose --help
+```
+
+```text
+usage: agentj capability event-propose [-h] [--json] --data DATA
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+| `--data` | `null` | true | — | `fixed-schema JSON, never permissions` |
+
+### agentj capability event-status
+
+```text
+external events: record-only until paired-owner approval
+```
+
+```bash
+agentj capability event-status --help
+```
+
+```text
+usage: agentj capability event-status [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
 ### agentj capability list
 
 ```text
@@ -1587,6 +1701,26 @@ usage: agentj capability list [-h] [--json]
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability pause
+
+```text
+resume
+```
+
+```bash
+agentj capability pause --help
+```
+
+```text
+usage: agentj capability pause [-h] [--reason REASON] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--reason` | `null` | false | — | `` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj capability prepare
@@ -1622,13 +1756,15 @@ agentj capability report-check --help
 ```
 
 ```text
-usage: agentj capability report-check [-h] [--workflow WORKFLOW] [--dir DIR]
+usage: agentj capability report-check [-h] [--rerun] [--workflow WORKFLOW]
+                                      [--dir DIR]
                                       [--verdict {ok,attention,fail}] [--json]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--rerun` | `false` | false | — | `Host-bound read-only research acceptance checks` |
 | `--workflow` | `null` | false | — | `工作流文件夹名（相对 --dir）` |
 | `--dir` | `null` | false | — | `工作根目录或工作流目录（默认当前目录）` |
 | `--verdict` | `null` | false | `ok`, `attention`, `fail` | `` |
@@ -1653,6 +1789,26 @@ usage: agentj capability result [-h] [--wait] [--json] card
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `card` | `null` | true | — | `` |
 | `--wait` | `false` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability resume
+
+```text
+resume
+```
+
+```bash
+agentj capability resume --help
+```
+
+```text
+usage: agentj capability resume [-h] [--reason REASON] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--reason` | `null` | false | — | `` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj capability show
@@ -1692,6 +1848,29 @@ usage: agentj capability sync [-h] [--force] [--json]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--force` | `false` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability verify
+
+```text
+Optional second-family review (disabled by default)
+```
+
+```bash
+agentj capability verify --help
+```
+
+```text
+usage: agentj capability verify [-h] --workflow WORKFLOW
+                                [--reviewer {auto,claude,codex,opencode}]
+                                [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--workflow` | `null` | true | — | `` |
+| `--reviewer` | `null` | false | `auto`, `claude`, `codex`, `opencode` | `` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj card
@@ -1972,7 +2151,7 @@ usage: agentj card open [-h] [--at ANCHOR] [--json] id
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `id` | `null` | true | — | `a card id, or a system page: chat · workflows · skills · memory · agentj · cards` |
+| `id` | `null` | true | — | `a card id, or a system page: chat · workflows · skills · memory · agentj · friends · bots · cards` |
 | `--at` | `null` | false | — | `actions / links）/ a place in the card` |
 | `--json` | `false` | false | — | `machine-readable output` |
 
@@ -2604,7 +2783,7 @@ agentj doctor --help
 ```
 
 ```text
-usage: agentj doctor [-h] [--json] [--read-only] [--offline]
+usage: agentj doctor [-h] [--json] [--latency] [--read-only] [--offline]
                      [--isolation-only] [--post-upgrade] [--upgrade-only]
                      [--reconnect] [--session SESSION]
 ```
@@ -2613,6 +2792,7 @@ usage: agentj doctor [-h] [--json] [--read-only] [--offline]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `machine-readable (paths shown with ~)` |
+| `--latency` | `false` | false | — | `recorded metadata only` |
 | `--read-only` | `false` | false | — | `inspect only; no installation, repair or reconnect` |
 | `--offline` | `false` | false | — | `skip the network checks` |
 | `--isolation-only` | `false` | false | — | `isolation preflight only, no user state or network` |
@@ -2834,6 +3014,38 @@ usage: agentj files status [-h]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 
+### agentj form
+
+```text
+= agentj ask
+```
+
+```bash
+agentj form --help
+```
+
+```text
+usage: agentj form [-h] [--file FILE] [--template TEMPLATE] [--fill FILL]
+                   [--set SET] [--mode {auto,light,deep}] [--ttl TTL] [--en]
+                   [--json]
+                   [{send,templates,template,validate,list,show,cancel}]
+                   [target]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `"send"` | false | `send`, `templates`, `template`, `validate`, `list`, `show`, `cancel` | `` |
+| `target` | `null` | false | — | `cancel：表单 id` |
+| `--file` | `null` | false | — | `the form JSON (- = stdin)` |
+| `--template` | `null` | false | — | `use a template` |
+| `--fill` | `null` | false | — | `the template's fill JSON` |
+| `--set` | `null` | false | — | `name=value (repeatable)` |
+| `--mode` | `"auto"` | false | `auto`, `light`, `deep` | `` |
+| `--ttl` | `null` | false | — | `validity, e.g. 12h / 7d` |
+| `--en` | `false` | false | — | `English messages` |
+| `--json` | `false` | false | — | `` |
+
 ### agentj friends
 
 ```text
@@ -2846,7 +3058,26 @@ agentj friends --help
 
 ```text
 usage: agentj friends [-h] [--json]
-                      {relay-policy,cancel,asks,id,card,add,list,requests,reports,status,pick,pick-rules,history,tell,approve-actions,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
+                      {relay-policy,cancel,asks,id,card,add,list,requests,reports,status,pick,pick-rules,history,tell,approve-actions,action-recovery,execute-action,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `machine-readable output` |
+
+### agentj friends action-recovery
+
+```text
+view temporary-token recovery metadata without restoring authority
+```
+
+```bash
+agentj friends action-recovery --help
+```
+
+```text
+usage: agentj friends action-recovery [-h] [--json]
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -3046,6 +3277,27 @@ usage: agentj friends discoverable [-h] [--json] {on,off}
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `machine-readable output` |
 | `on` | `null` | true | `on`, `off` | `` |
+
+### agentj friends execute-action
+
+```text
+execute one approved exact plan step
+```
+
+```bash
+agentj friends execute-action --help
+```
+
+```text
+usage: agentj friends execute-action [-h] [--json] plan step
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `machine-readable output` |
+| `plan` | `null` | true | — | `` |
+| `step` | `null` | true | — | `zero-based step` |
 
 ### agentj friends group
 
@@ -4634,6 +4886,110 @@ usage: agentj label [-h] [text ...]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `text` | `null` | false | — | `` |
 
+### agentj learn
+
+```text
+/learn：把这次对话的做法沉淀成技能（手机确认 diff 后才写入）/ distil a skill, written after the owner confirms
+```
+
+```bash
+agentj learn --help
+```
+
+```text
+usage: agentj learn [-h] {draft,propose,discard,status} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj learn discard
+
+```text
+drop the draft
+```
+
+```bash
+agentj learn discard --help
+```
+
+```text
+usage: agentj learn discard [-h] [--json] [id]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj learn draft
+
+```text
+建暂存目录 + context.md（主人附加的话 + 最近几页对话）/ staging folder + context
+```
+
+```bash
+agentj learn draft --help
+```
+
+```text
+usage: agentj learn draft [-h] [--pages PAGES] [--json] [note ...]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `note` | `null` | false | — | `the owner's note` |
+| `--pages` | `30` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj learn propose
+
+```text
+one diff card on the phone
+```
+
+```bash
+agentj learn propose --help
+```
+
+```text
+usage: agentj learn propose [-h] --name NAME [--summary SUMMARY] [--plaza]
+                            [--no-wait] [--json]
+                            id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `` |
+| `--name` | `null` | true | — | `技能名（小写、数字、-）/ the skill's folder name` |
+| `--summary` | `null` | false | — | `one line: what it does` |
+| `--plaza` | `false` | false | — | `the owner wants to offer it to the plaza` |
+| `--no-wait` | `false` | false | — | `不等主人确认就返回（结果之后作为系统提示送回）/ return at once` |
+| `--json` | `false` | false | — | `` |
+
+### agentj learn status
+
+```text
+draft and card state
+```
+
+```bash
+agentj learn status --help
+```
+
+```text
+usage: agentj learn status [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
 ### agentj local-model
 
 ```text
@@ -4872,7 +5228,8 @@ agentj news --help
 ```
 
 ```text
-usage: agentj news [-h] [--json] [{status,on,off,email,verify}] [arg ...]
+usage: agentj news [-h] [--json] [--version [X]]
+                   [{status,on,off,email,verify}] [arg ...]
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -4881,6 +5238,7 @@ usage: agentj news [-h] [--json] [{status,on,off,email,verify}] [arg ...]
 | `mode` | `"status"` | false | `status`, `on`, `off`, `email`, `verify` | `` |
 | `args` | `null` | false | — | `email <address>; verify <address> <code>` |
 | `--json` | `false` | false | — | `machine-readable output` |
+| `--version` | `null` | false | — | `the owner-facing release note of the installed version (or X)` |
 
 ### agentj notify
 
@@ -4929,6 +5287,50 @@ usage: agentj onboarding [-h] [--json]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
+
+### agentj owner-hosts
+
+```text
+
+```
+
+```bash
+agentj owner-hosts --help
+```
+
+```text
+usage: agentj owner-hosts [-h] {commands} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj owner-hosts commands
+
+```text
+
+```
+
+```bash
+agentj owner-hosts commands --help
+```
+
+```text
+usage: agentj owner-hosts commands [-h] [--json] [--remote REMOTE |
+                                   --source SOURCE]
+                                   [--destination DESTINATION]
+                                   [alias]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `alias` | `null` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+| `--remote` | `null` | false | — | `` |
+| `--source` | `null` | false | — | `` |
+| `--destination` | `null` | false | — | `` |
 
 ### agentj pair
 
@@ -6229,7 +6631,7 @@ agentj setup checklist --help
 ```
 
 ```text
-usage: agentj setup checklist [-h] [--resume | --check |
+usage: agentj setup checklist [-h] [--guide | --resume | --check |
                               --item {seat,harness,desktop,phone,passkey,admin,phonepermissions,sudo,awake,service,updates,network,browser,gmail,youtube,bili,douyin,wechat,sites,google,keyring,files,macfiles,fda,accessibility,automation,screen,hardware,wx,tg,mail,botkey,exit} |
                               --open | --close] [--json]
 ```
@@ -6237,6 +6639,7 @@ usage: agentj setup checklist [-h] [--resume | --check |
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--guide` | `false` | false | — | `local owner next step, read-only` |
 | `--resume` | `false` | false | — | `start or continue and show the card` |
 | `--check` | `false` | false | — | `live read-only re-check` |
 | `--item` | `null` | false | `seat`, `harness`, `desktop`, `phone`, `passkey`, `admin`, `phonepermissions`, `sudo`, `awake`, `service`, `updates`, `network`, `browser`, `gmail`, `youtube`, `bili`, `douyin`, `wechat`, `sites`, `google`, `keyring`, `files`, `macfiles`, `fda`, `accessibility`, `automation`, `screen`, `hardware`, `wx`, `tg`, `mail`, `botkey`, `exit` | `只复查这一项（网站项会真去查一次登录）/ re-check one item` |
@@ -7016,6 +7419,38 @@ usage: agentj update [-h] [--yes] [--json] [--authorization AJUP-…]
 | `--from-email` | `null` | false | — | `the whole upgrade email (file, or - for stdin): code and target version are read from it` |
 | `--version` | `null` | false | — | `目标版本（缺省：邮件里的目标版本，或公开仓库的最新版）/ target version (default: the email's, or the latest)` |
 
+### agentj usage
+
+```text
+spend and speed of turns and background tasks (local only) / 花费与速度
+```
+
+```bash
+agentj usage --help
+```
+
+```text
+usage: agentj usage [-h] [--days DAYS] [--week] [--json] [--lang {zh,en}]
+                    [--in INPUT] [--out OUTPUT] [--cache-read CACHE_READ]
+                    [--cache-write CACHE_WRITE] [--remove]
+                    [{prices,price}] [model]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `null` | false | `prices`, `price` | `prices = show the price table; price = set one row` |
+| `model` | `null` | false | — | `model id (for price)` |
+| `--days` | `1` | false | — | `` |
+| `--week` | `false` | false | — | `the last 7 days` |
+| `--json` | `false` | false | — | `` |
+| `--lang` | `null` | false | `zh`, `en` | `` |
+| `--in` | `null` | false | — | `` |
+| `--out` | `null` | false | — | `` |
+| `--cache-read` | `null` | false | — | `` |
+| `--cache-write` | `null` | false | — | `` |
+| `--remove` | `false` | false | — | `drop the owner's row for this model` |
+
 ### agentj voice
 
 ```text
@@ -7494,7 +7929,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding,usage,learn,form} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -7917,14 +8352,23 @@ agentj assist --help
 ```
 
 ```text
-usage: agentj assist [-h] [--lines LINES] [--json] {status,log,revoke}
+usage: agentj assist [-h] [--file FILE] [--lines LINES] [--summary SUMMARY]
+                     [--diagnosis DIAGNOSIS] [--verification VERIFICATION]
+                     [--json]
+                     {status,log,revoke,invite,import,list,open,input,close}
+                     [session]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `log`, `revoke` | `` |
+| `action` | `null` | true | `status`, `log`, `revoke`, `invite`, `import`, `list`, `open`, `input`, `close` | `` |
+| `session` | `null` | false | — | `official session grant id / 官方会话授权编号` |
+| `--file` | `"-"` | false | — | `public invitation JSON file, or stdin (-)` |
 | `--lines` | `50` | false | — | `log：最后几行（1–2000）/ the last N lines` |
+| `--summary` | `null` | false | — | `official repair conclusion, customer-visible and redacted` |
+| `--diagnosis` | `null` | false | — | `official diagnosis, distinct from host audit facts` |
+| `--verification` | `null` | false | — | `official verification statement; never implies host-verified success` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj automation
@@ -8728,6 +9172,7 @@ agentj busy run --help
 usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
                        [--report REPORT] [--harness HARNESS] [--model MODEL]
                        [--workflow WORKFLOW] [--role ROLE] [--parent PARENT]
+                       [--watch WATCH] [--watch-git] [--detach]
                        ...
 ```
 
@@ -8743,6 +9188,11 @@ usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
 | `--workflow` | `null` | false | — | `self-reported display metadata (not detection): workflow` |
 | `--role` | `null` | false | — | `self-reported display metadata (not detection): role` |
 | `--parent` | `null` | false | — | `self-reported display metadata (not detection): parent` |
+| `--watch` | `[]` | false | — | `explicit bounded directory metadata progress` |
+| `--watch-git` | `false` | false | — | `watch working directory .git metadata only` |
+| `--detach` | `false` | false | — | `一次性托管并登记` |
+| `--launch-token` | `null` | false | — | `内部参数（--help 隐藏）` |
+| `--managed` | `false` | false | — | `内部参数（--help 隐藏）` |
 | `command` | `null` | false | — | `` |
 
 ### agentj busy show
@@ -8829,7 +9279,7 @@ agentj capability --help
 
 ```text
 usage: agentj capability [-h]
-                         {compact,list,sync,check,show,prepare,result,dispatch,digest,report-check} ...
+                         {event-propose,event-ingest,event-status,event-detail,event-history,compact,list,sync,check,show,prepare,result,dispatch,digest,report-check,pause,resume,verify} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -8917,6 +9367,105 @@ usage: agentj capability dispatch [-h] --workflow WORKFLOW [--json]
 | `--workflow` | `null` | true | — | `` |
 | `--json` | `false` | false | — | `` |
 
+### agentj capability event-detail
+
+```text
+外部事件：默认只记录；启用需已配对主人签名
+```
+
+```bash
+agentj capability event-detail --help
+```
+
+```text
+usage: agentj capability event-detail [-h] [--json] --key KEY
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+| `--key` | `null` | true | — | `` |
+
+### agentj capability event-history
+
+```text
+外部事件：默认只记录；启用需已配对主人签名
+```
+
+```bash
+agentj capability event-history --help
+```
+
+```text
+usage: agentj capability event-history [-h] [--json] [--after AFTER]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+| `--after` | `""` | false | — | `` |
+
+### agentj capability event-ingest
+
+```text
+外部事件：默认只记录；启用需已配对主人签名
+```
+
+```bash
+agentj capability event-ingest --help
+```
+
+```text
+usage: agentj capability event-ingest [-h] [--json] --data DATA
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+| `--data` | `null` | true | — | `fixed-schema JSON, never permissions` |
+
+### agentj capability event-propose
+
+```text
+外部事件：默认只记录；启用需已配对主人签名
+```
+
+```bash
+agentj capability event-propose --help
+```
+
+```text
+usage: agentj capability event-propose [-h] [--json] --data DATA
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+| `--data` | `null` | true | — | `fixed-schema JSON, never permissions` |
+
+### agentj capability event-status
+
+```text
+外部事件：默认只记录；启用需已配对主人签名
+```
+
+```bash
+agentj capability event-status --help
+```
+
+```text
+usage: agentj capability event-status [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
 ### agentj capability list
 
 ```text
@@ -8934,6 +9483,26 @@ usage: agentj capability list [-h] [--json]
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability pause
+
+```text
+Own-session safe handoff
+```
+
+```bash
+agentj capability pause --help
+```
+
+```text
+usage: agentj capability pause [-h] [--reason REASON] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--reason` | `null` | false | — | `` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj capability prepare
@@ -8969,13 +9538,15 @@ agentj capability report-check --help
 ```
 
 ```text
-usage: agentj capability report-check [-h] [--workflow WORKFLOW] [--dir DIR]
+usage: agentj capability report-check [-h] [--rerun] [--workflow WORKFLOW]
+                                      [--dir DIR]
                                       [--verdict {ok,attention,fail}] [--json]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--rerun` | `false` | false | — | `Host-bound read-only research acceptance checks` |
 | `--workflow` | `null` | false | — | `工作流文件夹名（相对 --dir）` |
 | `--dir` | `null` | false | — | `工作根目录或工作流目录（默认当前目录）` |
 | `--verdict` | `null` | false | `ok`, `attention`, `fail` | `` |
@@ -9000,6 +9571,26 @@ usage: agentj capability result [-h] [--wait] [--json] card
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `card` | `null` | true | — | `` |
 | `--wait` | `false` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability resume
+
+```text
+Own-session safe handoff
+```
+
+```bash
+agentj capability resume --help
+```
+
+```text
+usage: agentj capability resume [-h] [--reason REASON] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--reason` | `null` | false | — | `` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj capability show
@@ -9039,6 +9630,29 @@ usage: agentj capability sync [-h] [--force] [--json]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--force` | `false` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability verify
+
+```text
+Optional second-family review (disabled by default)
+```
+
+```bash
+agentj capability verify --help
+```
+
+```text
+usage: agentj capability verify [-h] --workflow WORKFLOW
+                                [--reviewer {auto,claude,codex,opencode}]
+                                [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--workflow` | `null` | true | — | `` |
+| `--reviewer` | `null` | false | `auto`, `claude`, `codex`, `opencode` | `` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj card
@@ -9951,7 +10565,7 @@ agentj doctor --help
 ```
 
 ```text
-usage: agentj doctor [-h] [--json] [--read-only] [--offline]
+usage: agentj doctor [-h] [--json] [--latency] [--read-only] [--offline]
                      [--isolation-only] [--post-upgrade] [--upgrade-only]
                      [--reconnect] [--session SESSION]
 ```
@@ -9960,6 +10574,7 @@ usage: agentj doctor [-h] [--json] [--read-only] [--offline]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `机器可读` |
+| `--latency` | `false` | false | — | `仅历史响应元数据；未知保持未知` |
 | `--read-only` | `false` | false | — | `仅报告，不安装、修复或重连` |
 | `--offline` | `false` | false | — | `跳过网络检查` |
 | `--isolation-only` | `false` | false | — | `仅隔离预检：不读用户状态、不联网` |
@@ -10181,6 +10796,38 @@ usage: agentj files status [-h]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 
+### agentj form
+
+```text
+= agentj ask
+```
+
+```bash
+agentj form --help
+```
+
+```text
+usage: agentj form [-h] [--file FILE] [--template TEMPLATE] [--fill FILL]
+                   [--set SET] [--mode {auto,light,deep}] [--ttl TTL] [--en]
+                   [--json]
+                   [{send,templates,template,validate,list,show,cancel}]
+                   [target]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `"send"` | false | `send`, `templates`, `template`, `validate`, `list`, `show`, `cancel` | `` |
+| `target` | `null` | false | — | `template：模板名 · show` |
+| `--file` | `null` | false | — | `表单 JSON（- = 标准输入）` |
+| `--template` | `null` | false | — | `套用模板` |
+| `--fill` | `null` | false | — | `模板的填充 JSON` |
+| `--set` | `null` | false | — | `模板变量 名=值（可多次）` |
+| `--mode` | `"auto"` | false | `auto`, `light`, `deep` | `` |
+| `--ttl` | `null` | false | — | `有效期，如 12h / 7d（1 小时–30 天）` |
+| `--en` | `false` | false | — | `English messages` |
+| `--json` | `false` | false | — | `` |
+
 ### agentj friends
 
 ```text
@@ -10193,7 +10840,26 @@ agentj friends --help
 
 ```text
 usage: agentj friends [-h] [--json]
-                      {relay-policy,cancel,asks,id,card,add,list,requests,reports,status,pick,pick-rules,history,tell,approve-actions,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
+                      {relay-policy,cancel,asks,id,card,add,list,requests,reports,status,pick,pick-rules,history,tell,approve-actions,action-recovery,execute-action,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `机器可读输出` |
+
+### agentj friends action-recovery
+
+```text
+查看临时令牌待核对记录（不恢复授权）
+```
+
+```bash
+agentj friends action-recovery --help
+```
+
+```text
+usage: agentj friends action-recovery [-h] [--json]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -10393,6 +11059,27 @@ usage: agentj friends discoverable [-h] [--json] {on,off}
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `机器可读输出` |
 | `on` | `null` | true | `on`, `off` | `` |
+
+### agentj friends execute-action
+
+```text
+执行已批准具体计划的一步
+```
+
+```bash
+agentj friends execute-action --help
+```
+
+```text
+usage: agentj friends execute-action [-h] [--json] plan step
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `机器可读输出` |
+| `plan` | `null` | true | — | `` |
+| `step` | `null` | true | — | `从0开始的步骤` |
 
 ### agentj friends group
 
@@ -11981,6 +12668,110 @@ usage: agentj label [-h] [text ...]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `text` | `null` | false | — | `` |
 
+### agentj learn
+
+```text
+/learn：把这次对话的做法沉淀成技能（手机确认 diff 后才写入）/ distil a skill, written after the owner confirms
+```
+
+```bash
+agentj learn --help
+```
+
+```text
+usage: agentj learn [-h] {draft,propose,discard,status} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj learn discard
+
+```text
+丢弃暂存的草稿
+```
+
+```bash
+agentj learn discard --help
+```
+
+```text
+usage: agentj learn discard [-h] [--json] [id]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj learn draft
+
+```text
+建暂存目录 + context.md（主人附加的话 + 最近几页对话）/ staging folder + context
+```
+
+```bash
+agentj learn draft --help
+```
+
+```text
+usage: agentj learn draft [-h] [--pages PAGES] [--json] [note ...]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `note` | `null` | false | — | `主人附加的话` |
+| `--pages` | `30` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+
+### agentj learn propose
+
+```text
+把暂存的技能做成一张 diff 卡发到手机
+```
+
+```bash
+agentj learn propose --help
+```
+
+```text
+usage: agentj learn propose [-h] --name NAME [--summary SUMMARY] [--plaza]
+                            [--no-wait] [--json]
+                            id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `` |
+| `--name` | `null` | true | — | `技能名（小写、数字、-）/ the skill's folder name` |
+| `--summary` | `null` | false | — | `一句话说明它做什么` |
+| `--plaza` | `false` | false | — | `主人想装好后投稿到广场` |
+| `--no-wait` | `false` | false | — | `不等主人确认就返回（结果之后作为系统提示送回）/ return at once` |
+| `--json` | `false` | false | — | `` |
+
+### agentj learn status
+
+```text
+有没有草稿、卡是否在手机上
+```
+
+```bash
+agentj learn status --help
+```
+
+```text
+usage: agentj learn status [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
 ### agentj local-model
 
 ```text
@@ -12219,7 +13010,8 @@ agentj news --help
 ```
 
 ```text
-usage: agentj news [-h] [--json] [{status,on,off,email,verify}] [arg ...]
+usage: agentj news [-h] [--json] [--version [X]]
+                   [{status,on,off,email,verify}] [arg ...]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -12228,6 +13020,7 @@ usage: agentj news [-h] [--json] [{status,on,off,email,verify}] [arg ...]
 | `mode` | `"status"` | false | `status`, `on`, `off`, `email`, `verify` | `` |
 | `args` | `null` | false | — | `email <邮箱>；verify <邮箱> <验证码>` |
 | `--json` | `false` | false | — | `机器可读输出` |
+| `--version` | `null` | false | — | `#481 这一版（或 X 版）面向主人的更新说明，不加版本号 = 已装的版本` |
 
 ### agentj notify
 
@@ -12276,6 +13069,50 @@ usage: agentj onboarding [-h] [--json]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
+
+### agentj owner-hosts
+
+```text
+
+```
+
+```bash
+agentj owner-hosts --help
+```
+
+```text
+usage: agentj owner-hosts [-h] {commands} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj owner-hosts commands
+
+```text
+
+```
+
+```bash
+agentj owner-hosts commands --help
+```
+
+```text
+usage: agentj owner-hosts commands [-h] [--json] [--remote REMOTE |
+                                   --source SOURCE]
+                                   [--destination DESTINATION]
+                                   [alias]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `alias` | `null` | false | — | `` |
+| `--json` | `false` | false | — | `` |
+| `--remote` | `null` | false | — | `` |
+| `--source` | `null` | false | — | `` |
+| `--destination` | `null` | false | — | `` |
 
 ### agentj pair
 
@@ -13576,7 +14413,7 @@ agentj setup checklist --help
 ```
 
 ```text
-usage: agentj setup checklist [-h] [--resume | --check |
+usage: agentj setup checklist [-h] [--guide | --resume | --check |
                               --item {seat,harness,desktop,phone,passkey,admin,phonepermissions,sudo,awake,service,updates,network,browser,gmail,youtube,bili,douyin,wechat,sites,google,keyring,files,macfiles,fda,accessibility,automation,screen,hardware,wx,tg,mail,botkey,exit} |
                               --open | --close] [--json]
 ```
@@ -13584,6 +14421,7 @@ usage: agentj setup checklist [-h] [--resume | --check |
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--guide` | `false` | false | — | `本机主人逐项指引，只读` |
 | `--resume` | `false` | false | — | `开始或继续，并把卡片发到手机` |
 | `--check` | `false` | false | — | `实时只读复查` |
 | `--item` | `null` | false | `seat`, `harness`, `desktop`, `phone`, `passkey`, `admin`, `phonepermissions`, `sudo`, `awake`, `service`, `updates`, `network`, `browser`, `gmail`, `youtube`, `bili`, `douyin`, `wechat`, `sites`, `google`, `keyring`, `files`, `macfiles`, `fda`, `accessibility`, `automation`, `screen`, `hardware`, `wx`, `tg`, `mail`, `botkey`, `exit` | `只复查这一项（网站项会真去查一次登录）/ re-check one item` |
@@ -14362,6 +15200,38 @@ usage: agentj update [-h] [--yes] [--json] [--authorization AJUP-…]
 | `--authorization` | `null` | false | — | `主人升级邮件里的授权码` |
 | `--from-email` | `null` | false | — | `整封升级邮件（文件或 - 读标准输入）：从中找授权码和目标版本` |
 | `--version` | `null` | false | — | `目标版本（缺省：邮件里的目标版本，或公开仓库的最新版）/ target version (default: the email's, or the latest)` |
+
+### agentj usage
+
+```text
+spend and speed of turns and background tasks (local only) / 花费与速度
+```
+
+```bash
+agentj usage --help
+```
+
+```text
+usage: agentj usage [-h] [--days DAYS] [--week] [--json] [--lang {zh,en}]
+                    [--in INPUT] [--out OUTPUT] [--cache-read CACHE_READ]
+                    [--cache-write CACHE_WRITE] [--remove]
+                    [{prices,price}] [model]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `null` | false | `prices`, `price` | `prices = show the price table; price = set one row` |
+| `model` | `null` | false | — | `model id (for price)` |
+| `--days` | `1` | false | — | `` |
+| `--week` | `false` | false | — | `the last 7 days` |
+| `--json` | `false` | false | — | `` |
+| `--lang` | `null` | false | `zh`, `en` | `` |
+| `--in` | `null` | false | — | `` |
+| `--out` | `null` | false | — | `` |
+| `--cache-read` | `null` | false | — | `` |
+| `--cache-write` | `null` | false | — | `` |
+| `--remove` | `false` | false | — | `drop the owner's row for this model` |
 
 ### agentj voice
 

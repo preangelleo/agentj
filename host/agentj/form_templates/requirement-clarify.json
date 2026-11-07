@@ -1,0 +1,282 @@
+{
+ "name": "requirement-clarify",
+ "mode": "deep",
+ "title": {
+  "zh": "需求澄清",
+  "en": "Clarify a request"
+ },
+ "about": {
+  "zh": "动手前把目标、用户、验收、范围、期限和参考图问清楚。",
+  "en": "Before starting: goal, users, acceptance, scope, deadline and references."
+ },
+ "vars": {
+  "project": {
+   "label": {
+    "zh": "项目名",
+    "en": "Project"
+   },
+   "required": true
+  }
+ },
+ "fill": [
+  "title",
+  "intro",
+  "drop",
+  "recommend.*"
+ ],
+ "form": {
+  "title": "{{project}}",
+  "intro": {
+   "zh": "几分钟填完，我按你的答案开工；不确定的选「不确定」。",
+   "en": "A few minutes; I start from your answers. Not sure? Pick “Not sure”."
+  },
+  "preselect": true,
+  "sections": [
+   {
+    "id": "goal",
+    "title": {
+     "zh": "目标",
+     "en": "Goal"
+    },
+    "questions": [
+     {
+      "id": "outcome",
+      "type": "longtext",
+      "label": {
+       "zh": "做完以后，什么变了？",
+       "en": "When it's done, what has changed?"
+      },
+      "required": true,
+      "keep": true,
+      "max_length": 1000
+     },
+     {
+      "id": "why_now",
+      "type": "single",
+      "label": {
+       "zh": "为什么是现在？",
+       "en": "Why now?"
+      },
+      "options": [
+       {
+        "value": "deadline",
+        "label": {
+         "zh": "有截止日期",
+         "en": "There's a deadline"
+        }
+       },
+       {
+        "value": "pain",
+        "label": {
+         "zh": "现在很痛",
+         "en": "It hurts now"
+        }
+       },
+       {
+        "value": "chance",
+        "label": {
+         "zh": "机会窗口",
+         "en": "A window of opportunity"
+        }
+       },
+       {
+        "value": "unsure",
+        "label": {
+         "zh": "不确定",
+         "en": "Not sure"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "users",
+    "title": {
+     "zh": "给谁用",
+     "en": "Who it's for"
+    },
+    "questions": [
+     {
+      "id": "who",
+      "type": "multi",
+      "label": {
+       "zh": "主要用户",
+       "en": "Main users"
+      },
+      "required": true,
+      "other": true,
+      "options": [
+       {
+        "value": "me",
+        "label": {
+         "zh": "我自己",
+         "en": "Me"
+        }
+       },
+       {
+        "value": "team",
+        "label": {
+         "zh": "团队",
+         "en": "My team"
+        }
+       },
+       {
+        "value": "customers",
+        "label": {
+         "zh": "客户",
+         "en": "Customers"
+        }
+       },
+       {
+        "value": "public",
+        "label": {
+         "zh": "公众",
+         "en": "The public"
+        }
+       }
+      ]
+     },
+     {
+      "id": "skill",
+      "type": "slider",
+      "label": {
+       "zh": "他们多懂技术？",
+       "en": "How technical are they?"
+      },
+      "min": 1,
+      "max": 5,
+      "step": 1,
+      "labels": [
+       {
+        "zh": "完全不懂",
+        "en": "Not at all"
+       },
+       {
+        "zh": "工程师",
+        "en": "Engineers"
+       }
+      ],
+      "default": 2
+     }
+    ]
+   },
+   {
+    "id": "done",
+    "title": {
+     "zh": "怎样算做完",
+     "en": "What “done” means"
+    },
+    "questions": [
+     {
+      "id": "must",
+      "type": "longtext",
+      "label": {
+       "zh": "必须有的 3 件事",
+       "en": "Three must-haves"
+      },
+      "required": true,
+      "max_length": 1000
+     },
+     {
+      "id": "not",
+      "type": "longtext",
+      "label": {
+       "zh": "这次明确不做的",
+       "en": "Explicitly out of scope"
+      },
+      "max_length": 1000
+     }
+    ]
+   },
+   {
+    "id": "time",
+    "title": {
+     "zh": "时间与预算",
+     "en": "Time and budget"
+    },
+    "questions": [
+     {
+      "id": "deadline",
+      "type": "date",
+      "label": {
+       "zh": "最晚什么时候要？",
+       "en": "Latest date?"
+      }
+     },
+     {
+      "id": "priority",
+      "type": "rank",
+      "label": {
+       "zh": "排个序：最重要的放最上",
+       "en": "Rank: most important first"
+      },
+      "options": [
+       {
+        "value": "speed",
+        "label": {
+         "zh": "快",
+         "en": "Speed"
+        }
+       },
+       {
+        "value": "quality",
+        "label": {
+         "zh": "好",
+         "en": "Quality"
+        }
+       },
+       {
+        "value": "cost",
+        "label": {
+         "zh": "省",
+         "en": "Cost"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "refs",
+    "title": {
+     "zh": "参考",
+     "en": "References"
+    },
+    "questions": [
+     {
+      "id": "examples",
+      "type": "file",
+      "label": {
+       "zh": "参考图、截图或录音（可选）",
+       "en": "Reference images, screenshots or voice notes (optional)"
+      },
+      "accept": [
+       "image",
+       "audio",
+       "file"
+      ],
+      "max_files": 5
+     },
+     {
+      "id": "links",
+      "type": "longtext",
+      "label": {
+       "zh": "参考链接（可选）",
+       "en": "Reference links (optional)"
+      },
+      "max_length": 1000
+     }
+    ]
+   }
+  ]
+ },
+ "example": {
+  "zh": {
+   "project": "公司官网改版"
+  },
+  "en": {
+   "project": "Company website redesign"
+  }
+ }
+}

@@ -465,7 +465,7 @@ class SameOwner:
     def task_proof(self, fid, data):
         from . import approvals, wire
         proof = data.get("task_proof")
-        if not isinstance(proof, dict) or not self.active(fid):
+        if not isinstance(proof, dict) or proof.get("approval_v") != 2 or not self.active(fid):
             return None
         try:
             if not isinstance(proof.get("task_scope"), str) or len(proof["task_scope"]) > 12000:
@@ -473,17 +473,39 @@ class SameOwner:
             scope = json.loads(proof["task_scope"])
             target = scope["target"]
             if (type(scope.get("uv")) is not bool or not isinstance(scope["actions"], list)
-                    or not 1 <= len(scope["actions"]) <= 20 or not isinstance(scope["task"], str)
-                    or not 0 < scope["expires"] - self.svc.clock() <= 1800
+                    or not 1 <= len(scope["actions"]) <= 12 or not isinstance(scope["task"], str)
+                    or not 0 < scope["expires"] - self.svc.clock() <= 600
                     or target != {"sender": fid, "receiver": self.svc.keys.id,
                                   "relationship": self.challenge(fid),
                                   "text_sha256": hashlib.sha256(data["text"].encode()).hexdigest()}
                     or proof["sk"] != self.row(fid).get("remote_pub")):
                 return None
+            if proof.get("approval_v") == 2:
+                from . import approval_review
+                envelope = proof.get("envelope")
+                if (not isinstance(envelope, dict) or envelope.get("request_id") != proof["id"]
+                        or envelope.get("channel") != proof["channel"]
+                        or approval_review.digest(envelope) != proof["shown_sha256"]
+                        or envelope.get("plan", {}).get("actions") != scope["actions"]):
+                    return None
             if not approvals.verify(wire.unb64u(proof["sk"]), wire.unb64u(proof["sig"]), proof["channel"],
                                     proof["device"], proof["id"], "allow", proof["shown_sha256"],
-                                    task_scope=proof["task_scope"]):
+                                    task_scope=proof["task_scope"], approval_v=proof.get("approval_v")):
                 return None
+            if scope["uv"]:
+                from . import passkey, owner_grant
+                try:
+                    assertion = passkey.approval_fields(proof.get("fa"))
+                    entry = next((e for e in self.row(fid).get("remote_roster", [])
+                                  if e.get("id") == assertion["id"] and e.get("dev") == proof["device"]
+                                  and e.get("sign_pub") == proof["sk"] and owner_grant.binding_ok(e)), None)
+                    if entry is None or proof.get("pk_kind") not in ("sandbox", "perm"):
+                        return None
+                    challenge = passkey.elevate_challenge(proof["channel"], proof["device"], proof["id"],
+                                                         proof["pk_kind"], proof["id"], proof["shown_sha256"])
+                    passkey.verify_assertion(entry, assertion, challenge)
+                except (ValueError, TypeError, KeyError, passkey.PasskeyError):
+                    return None
             return proof
         except (ValueError, TypeError, KeyError):
             return None
@@ -512,8 +534,22 @@ class SameOwner:
         proof = getattr(send, "action_proof", None)
         if not proof or self.task_proof(send.fid, send.data) != proof:
             return None
+        scope = json.loads(proof["task_scope"])
+        # A source machine's inode/path absence proves nothing about the receiving machine's objects.
+        # Until a target-host owned preparation receipt is signed, require this host's fresh UV.
+        if scope.get("object_bindings"):
+            return None
         action = {"tool": tool, "input_sha256": approvals.input_digest(inp), "class": cls}
-        return proof if action in json.loads(proof["task_scope"])["actions"] else None
+        if action not in scope["actions"]:
+            return None
+        key = approvals.input_digest(action)
+        used = getattr(send, "_action_steps_used", None)
+        if used is None:
+            used = send._action_steps_used = set()
+        if key in used:
+            return None
+        used.add(key)
+        return proof
 
     async def retry(self):
         """Only durable pending requests may be re-admitted, never claimed/uncertain execution."""
@@ -680,6 +716,12 @@ class SameOwner:
         otg = [] if approved or is_reply else svc.xfer.live_for(fid, data.get('otg'), data.get('mid'))
         send = ForwardSend(self, fid, r.get('token'), page['id'], body, data, approved, payload, otg)
         send.action_proof = action_proof
+        if action_proof and action_proof.get("approval_v") == 2:
+            import copy
+            origin = copy.deepcopy(action_proof["envelope"]["source"])
+            origin["chain"] = (origin.get("chain", []) + [{"kind": "same_owner", "id": fid}])[-16:]
+            origin["task_record"] = "same-owner:" + action_proof["id"]
+            send.approval_origin = origin
         if not agent and (approved or is_reply):
             svc.host.hist_update(page['id'], text=('暂时无法办理：主 Agent 未连接。' if zh else 'Cannot start: the main Agent is disconnected.'), end='failed')
             return svc.guards.block(fid, key, 'main_unavailable')

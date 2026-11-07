@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs';
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const ix = JSON.parse(read('../interactions.json'));
 const G = await import('../public/js/interactions.gen.js');
-const html = read('../public/index.html'), relay = read('../public/js/relay.js'), controls = read('../public/js/controls.js'), app = read('../public/app.js');
+const html = read('../public/index.html').replace(/ data-aj-(?:owner|action-context)="[^"]+"/g,''), relay = read('../public/js/relay.js'), controls = read('../public/js/controls.js'), app = read('../public/app.js');
 
 globalThis.window ??= globalThis;
 globalThis.navigator ??= { platform: 'Linux x86_64', userAgent: 'node' };
@@ -64,7 +64,7 @@ test('the key runs the button\'s own handler, and that handler asks first', () =
 });
 
 test('the Settings button shows the table key, per platform', () => {
-  assert.match(html, /id="set-estop" class="aj-btn"><span data-i18n="p435\.estop">[^<]+<\/span><kbd class="setkbd" data-ix-key="app\.stop_all" hidden><\/kbd><\/button>/);
+  assert.match(html, /id="set-estop" class="aj-action"><span data-i18n="p435\.estop">[^<]+<\/span><kbd class="setkbd" data-ix-key="app\.stop_all" hidden><\/kbd><\/button>/);
   assert.equal(K.comboOf('app.stop_all'), 'Alt+Shift+S');
   assert.deepEqual(K.keyTokens('app.stop_all', { keyboard: true, mac: false }), ['Alt', 'Shift', 'S']);
   assert.deepEqual(K.keyTokens('app.stop_all', { keyboard: true, mac: true }), ['⌥', 'Shift', 'S']);

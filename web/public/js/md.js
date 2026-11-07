@@ -6,6 +6,7 @@
 // after 20 000 (the rest becomes one text node), so rendering cost stays linear in the input; P33-C08: links are https:,
 // http: or mailto: only, open with rel="noopener noreferrer", and a link whose words are not its address shows the real
 // host after them (small, .lhost): a link whose words say bank.com but which goes to evil.example reads "bank.com (evil.example)".
+import { SVG } from './icons.js';   // 0.26.9 #432: the code block's copy glyph
 const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", image: "image", tapCopy: "Click to copy", details: "Details" } };
 // md.js — a small, safe Markdown subset for the agent's words (M1.5-pwa-md-ptt).
 //
@@ -52,10 +53,18 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
   // Only absolute http(s) and mailto:<one plain address>. Everything else (javascript:, data:, vbscript:,
   // file:, relative paths that would resolve against the secret base) is text.
   const MAILTO = /^mailto:[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/i;
+  // Mail query parameters are never actions: only the one decoded address can become a copy value.
+  function mailHref(raw) {
+    if (typeof raw !== "string" || !/^mailto:/i.test(raw)) return null;
+    let addr = raw.slice(7).split(/[?#]/, 1)[0];
+    try { addr = decodeURIComponent(addr); } catch (_) { return null; }
+    return MAILTO.test("mailto:" + addr) ? "mailto:" + addr : null;
+  }
   function safeHref(raw) {
     if (typeof raw !== "string") return null;
     const s = raw.replace(/[\u0000-\x20\u007f-\u009f]/g, "");
-    if (MAILTO.test(s)) return "mailto:" + s.slice(7);
+    // Preserve the link-navigation allowlist: mail headers are not allowed destinations.
+    if (!/[?#]/.test(s) && /^mailto:/i.test(s)) return mailHref(s);
     if (!/^https?:\/\//i.test(s)) return null;
     let u;
     try { u = new URL(s); } catch (_) { return null; }
@@ -83,6 +92,16 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     v = (v || String(label || "")).trim();
     if (!v || Array.from(v).length > REPLY_MAX || /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(v) || /^[/\uff0f]/.test(v)) return null;
     return v;
+  }
+  // 0.26.9 #447: [查看待核对的后台结果](reply:/recover-background) — a one-tap Agent J command. Only an ASCII "/name" + optional
+  // one-line argument; the label stays the words shown. md.js only marks it (<span class="rcmd" data-cmd>); slashlink.js
+  // decides on the page whether the name is a phone command (a link) or stays the label as text.
+  function replyCmd(raw) {
+    if (typeof raw !== "string" || !/^reply:/i.test(raw)) return null;
+    let v = raw.slice(6);
+    try { v = decodeURIComponent(v); } catch (_) { /* keep it as written */ }
+    v = v.trim();
+    return /^\/[a-z][a-z0-9-]{0,39}(?: [\x21-\x7e]{1,80})?$/.test(v) ? v : null;
   }
   // The destination a reader should see next to the words: the host (the address for mailto:), or null when the words
   // already are that address (a bare URL, an autolink, a link whose words are its own address, a mailto: showing its address).
@@ -315,12 +334,14 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
         const L = linkPossible ? tryLink(s, img ? i + 1 : i) : null;
         if (!L || (inLink && !img)) { buf += ch; i++; continue; }
         const dest = L.dest.replace(/\\([!-\/:-@\[-`{-~])/g, "$1");
-        const href = safeHref(dest);
+        const href = safeHref(dest) || mailHref(dest);
         flush();
         // F21 (§13): an image of a local file → a slot media.js fills with the file the computer sent (the source text
         // stays inside it until then, and for good when nothing was sent); never fetched from the path itself
         const rp = !img && !inLink && !href ? replyRef(dest, flatText(parseInline(L.label, depth + 1, true))) : null;
+        const rc = !rp && !img && !inLink && !href ? replyCmd(dest) : null;
         if (rp) out.push({ tag: "rlink", say: rp, children: parseInline(L.label, depth + 1, true) });
+        else if (rc) out.push({ tag: "rcmd", cmd: rc, children: L.label.trim() ? parseInline(L.label, depth + 1, true) : [text(rc)] });
         else if (!href && img && localRef(dest)) out.push({ tag: "mslot", ref: localRef(dest), children: [text(s.slice(i, L.end))] });
         // P59 (ADR-A164): a link to a local file too — media.js puts the file's card there (label kept as words); the
         // source text stays when the computer sent nothing for it
@@ -332,7 +353,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
       }
       if (ch === "<") {
         const m = /^<(https?:\/\/[^\s<>]+)>/i.exec(s.slice(i, i + 4000));
-        const href = m && safeHref(m[1]);
+        const href = m && (safeHref(m[1]) || mailHref(m[1]));
         if (href && !inLink) { flush(); out.push({ tag: "a", attrs: { href }, children: [text(m[1])] }); i += m[0].length; continue; }
         buf += ch; i++; continue;
       }
@@ -442,11 +463,13 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     return node([rest, ...lines.slice(i + 1, k), last.slice(0, -close.length)].join("\n"), k + 1);
   }
 
-  function parseBlocks(lines, depth) {
+  function parseBlocks(lines, depth, ranges) {
     const out = [];
     const mc = {};                                   // P57: mathBlock's scan caches for these lines
     let i = 0;
     while (i < lines.length) {
+      const start = i, count = out.length;
+      try {
       const line = lines[i];
       if (RE.blank.test(line)) { i++; continue; }
 
@@ -542,6 +565,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
         para.push(lines[i].trim()); i++;
       }
       out.push({ tag: "p", children: parseInline(para.join("\n"), depth) });
+      } finally { if (ranges && out.length > count) ranges.push({start, end: i, count: out.length - count, cells: cellBudget, work: linkWork}); }
     }
     return out;
   }
@@ -609,6 +633,81 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     return out;
   }
 
+  // A stream owns only its source/tree and metadata. Never send source to diagnostics.
+  // Keep the final top-level block AND the last nonblank region mutable: a later
+  // math closer/table delimiter can reinterpret earlier lines in that region.
+  function stream(parent, doc, opts) {
+    let source = "", identity, offset = 0, fixed = [], trees = [], nodes = [], budget = {left: MAX_NODES};
+    let prefixCells = MAX_CELLS, prefixWork = 0, saturated = false;
+    const metrics = {updates: 0, parsedUnits: 0, fullUnits: 0, resets: 0};
+    function update(raw, key, finish = false) {
+      const next = String(raw || "").replace(/\r\n?/g, "\n").replace(/\u0000/g, "�");
+      const reset = key !== identity || !next.startsWith(source);
+      if (reset) {
+        offset = 0; fixed = []; prefixCells = MAX_CELLS; prefixWork = 0; metrics.resets++; identity = key;
+      }
+      metrics.updates++; metrics.fullUnits += next.length;
+      // Oversized input uses the full parser's exact plain-text tail policy.
+      const full = finish || next.length > MAX_INPUT || saturated;
+      const base = full ? 0 : offset, tail = next.slice(base);
+      metrics.parsedUnits += tail.length;
+      let parsed, ranges = [], lines = tail.split("\n").map(detab);
+      if (full) parsed = parse(next, opts);
+      else {
+        noMath = !!opts && opts.math === false;
+        cellBudget = prefixCells; linkWork = prefixWork; clearCodeCache();
+        try { parsed = parseBlocks(lines, 0, ranges); }
+        finally { clearCodeCache(); noMath = false; }
+      }
+      const all = full ? parsed : fixed.concat(parsed);
+      // Compare semantic trees, not DOM (which lazy renderers may have upgraded).
+      let keep = full || reset || saturated ? 0 : fixed.length;
+      while (!reset && !saturated && keep < all.length && keep < trees.length && JSON.stringify(all[keep]) === JSON.stringify(trees[keep])) keep++;
+      if (keep === 0) budget = {left: MAX_NODES};
+      else budget = {...nodes[keep - 1].budget};
+      for (let i = nodes.length - 1; i >= keep; i--) for (const n of nodes[i].dom) n.remove();
+      nodes.length = keep;
+      saturated = false;
+      for (let i = keep; i < all.length; i++) {
+        if (budget.left <= 0) {
+          const frag = toDOM(all.slice(i), doc, undefined, budget), dom = Array.from(frag.childNodes);
+          parent.appendChild(frag); nodes.push({dom, budget: {...budget}}); saturated = true; break;
+        }
+        const frag = toDOM([all[i]], doc, undefined, budget), dom = Array.from(frag.childNodes);
+        parent.appendChild(frag); nodes.push({dom, budget: {...budget}});
+      }
+      trees = all; source = next;
+      if (!full && ranges.length) {
+        const last = ranges[ranges.length - 1];
+        let region = lines.length - 1;
+        while (region > 0 && !RE.blank.test(lines[region - 1])) region--;
+        const cut = Math.min(last.start, region);
+        let n = 0;
+        for (const r of ranges) if (r.end <= cut) n += r.count;
+        // Only advance at an actual parser boundary, including loose lists.
+        const boundary = ranges.find(r => r.start >= cut);
+        if (boundary && n) {
+          offset = base + tail.split("\n").slice(0, boundary.start).reduce((sum, l) => sum + l.length + 1, 0);
+          fixed = all.slice(0, fixed.length + n);
+          const committed = ranges.filter(r => r.end <= cut).at(-1);
+          prefixCells = committed.cells; prefixWork = committed.work;
+        }
+      }
+      return metrics;
+    }
+    // Synchronous, trusted decorators may replace a top-level code wrapper
+    // with a component. Adopt those nodes so later tail removal owns them too.
+    function adopt() {
+      const children = Array.from(parent.childNodes);
+      let at = 0;
+      for (const group of nodes) {
+        const count = group.dom.length;
+        group.dom = children.slice(at, at + count); at += count;
+      }
+    }
+    return {update, adopt, metrics};
+  }
+
   // ------------------------------------------------------------------ DOM
   // The second wall: whatever parse() produced, only these tags and these
   // attributes (with these values) can reach the document.
@@ -622,14 +721,33 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     td: { class: v => /^al-[cr]$/.test(v) ? v : null },
   };
 
+  // The same strokes as copycode.js glyph(): two sheets (cc-g0) and the tick its feedback swaps in (cc-ok).
+  function copyGlyph(doc) {
+    const NS = SVG, s = doc.createElementNS(NS, "svg");
+    for (const [k, v] of [["viewBox", "0 0 24 24"], ["fill", "none"], ["stroke", "currentColor"], ["stroke-width", "1.9"],
+      ["stroke-linecap", "round"], ["stroke-linejoin", "round"], ["aria-hidden", "true"]]) s.setAttribute(k, v);
+    for (const [tag, a] of [["rect", { class: "cc-g0", x: "8.5", y: "8.5", width: "11.5", height: "11.5", rx: "2.5" }],
+      ["path", { class: "cc-g0", d: "M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5" }],
+      ["path", { class: "cc-ok", d: "M5 12.5l4.5 4.5L19 7.5" }]]) {
+      const e = doc.createElementNS(NS, tag);
+      for (const k in a) e.setAttribute(k, a[k]);
+      s.appendChild(e);
+    }
+    return s;
+  }
+
   function codeBlock(node, doc) {
     const wrap = doc.createElement("div");
     wrap.className = "codeblock";
-    const btn = doc.createElement("button");
+    const btn = doc.createElement("button"); btn.setAttribute('data-aj-owner', 'aj-prose');
     btn.type = "button";
     btn.className = "copy";
     btn.setAttribute("aria-label", LABELS.copyAria);
-    btn.textContent = LABELS.copy;
+    // 0.26.9 #432 (owner 11-03: 「Copy的Icon大家一看也都能看懂，就不用写文字了……Icon不分语言」): the shared copy glyph
+    // (copycode.js, the reply card's ⧉), no word; the label stays in aria-label / title, in the page's language.
+    btn.title = LABELS.copyAria;
+    if (doc.createElementNS) btn.appendChild(copyGlyph(doc));
+    else btn.textContent = LABELS.copy;               // a DOM without SVG (unit-test stand-ins): the word, as before
     // The button lives in a bar above the code, never on top of it.
     const bar = doc.createElement("div");
     bar.className = "bar";
@@ -640,8 +758,8 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
       bar.appendChild(lab);
     }
     bar.appendChild(btn);
-    const pre = doc.createElement("pre");
-    const code = doc.createElement("code");
+    const pre = doc.createElement("pre"); pre.setAttribute('data-aj-owner','aj-prose');
+    const code = doc.createElement("code"); code.setAttribute('data-aj-owner','aj-prose');
     code.setAttribute("data-cc", "ext");             // P292 copycode.js: a click on the code presses this block's 拷贝
     code.textContent = String(node.code == null ? "" : node.code);
     // P57 marks for render.js: ```mermaid → .mermaid-src (still a code block: copy, and the fallback); any other
@@ -660,7 +778,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
   function detailsBlock(node, doc) {
     const d = doc.createElement("details");
     d.className = "mddetails";
-    const s = doc.createElement("summary");
+    const s = doc.createElement("summary"); s.setAttribute('data-aj-owner', 'aj-prose');
     s.textContent = LABELS.details;
     d.appendChild(s);
     d.appendChild(codeBlock({ tag: "pre", lang: "", code: node.code }, doc));
@@ -718,6 +836,14 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
         parent.appendChild(sp);
         continue;
       }
+      if (n.tag === "rcmd") {                        // 0.26.9 #447: <span class="rcmd" data-cmd="/name arg"> + the label
+        const sp = doc.createElement("span");
+        sp.className = "rcmd";
+        sp.setAttribute("data-cmd", String(n.cmd == null ? "" : n.cmd).slice(0, 128));
+        toDOM(n.children, doc, sp, budget);
+        parent.appendChild(sp);
+        continue;
+      }
       if (n.tag === "mslot") {                       // F21: <span class="mslot" data-ref="…"> + the source text
         const sp = doc.createElement("span");
         sp.className = "mslot";
@@ -734,7 +860,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
       // An <a> whose href does not pass is never created: it becomes a <span>.
       const href = n.tag === "a" ? safeHref(String((n.attrs || {}).href)) : null;
       const tag = n.tag === "a" && !href ? "span" : n.tag;
-      const el = doc.createElement(tag);
+      const el = doc.createElement(tag); el.setAttribute('data-aj-owner', 'aj-prose');
       const allowed = ATTRS[tag] || {};
       for (const [k, v] of Object.entries(n.attrs || {})) {
         const ok = allowed[k] && allowed[k](String(v));
@@ -743,14 +869,17 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
       if (tag === "a") { el.setAttribute("target", "_blank"); el.setAttribute("rel", "noopener noreferrer"); }
       // P154: inline `code` (a code block's <code> is made in codeBlock) — one click copies it; P292: through copycode.js
       // (data-cc="bare": no icon inside the reply's prose, the shade flashes, relay.js says 「已拷贝」 on cc:copied).
-      if (tag === "code") { el.className = "icode"; el.setAttribute("title", LABELS.tapCopy); el.setAttribute("data-cc", "bare"); }
+      if (tag === "code") { el.className = "icode"; if (!budget.inLink) { el.tabIndex = 0; el.setAttribute("role", "button"); } el.setAttribute("title", LABELS.tapCopy); el.setAttribute("data-cc", "bare"); }
       if (n.tag === "table") {
         const scroll = doc.createElement("div");
         scroll.className = "tablewrap";
         scroll.appendChild(el);
         parent.appendChild(scroll);
       } else parent.appendChild(el);
+      const wasInLink = budget.inLink;
+      if (tag === "a") budget.inLink = true;
       if (n.children) toDOM(n.children, doc, el, budget);
+      budget.inLink = wasInLink;
       if (tag === "a") {                             // P33-C08: the real destination, when the words say something else
         const where = shownTarget(href, el.textContent);
         if (where) {
@@ -771,7 +900,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
   // inside a user gesture. Resolves true/false; never throws.
   function legacyCopy(t, doc) {
     doc = doc || document;
-    const ta = doc.createElement("textarea");
+    const ta = doc.createElement("textarea"); ta.setAttribute('data-aj-owner', 'aj-prose');
     ta.value = t;
     ta.setAttribute("readonly", "");
     ta.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px";
@@ -798,7 +927,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     return legacyCopy(t, doc);
   }
 
-  root.RelayMD = { parse, parseInline: (s) => { linkWork = 0; cellBudget = MAX_CELLS; clearCodeCache(); const out = parseInline(s); clearCodeCache(); return out; }, toDOM, safeHref, localRef, replyRef, REPLY_MAX, shownTarget, copyText, legacyCopy, LABELS,
+  root.RelayMD = { stream, parse, parseInline: (s) => { linkWork = 0; cellBudget = MAX_CELLS; clearCodeCache(); const out = parseInline(s); clearCodeCache(); return out; }, toDOM, safeHref, mailHref, localRef, replyRef, replyCmd, REPLY_MAX, shownTarget, copyText, legacyCopy, LABELS,
     LIMITS: { MAX_INPUT, MAX_COLS, MAX_ROWS, MAX_CELLS, MAX_NODES, MAX_CODE_HL, MAX_TEX, MAX_MERMAID } };
 })(MOD);
 export const RelayMD = MOD.RelayMD;

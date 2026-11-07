@@ -36,15 +36,15 @@ export function paintReportActions(box, page) {
   box.hidden = false;
   const unknown = ids.some(id => report.states?.[id] === 'reply_unknown');
   if (unknown) box.append(mk('span', '', t('p498.replyUnknown')));
-  const toggle = mk('button', 'cmdundo p505-report-action', t(unknown ? 'p498.resend' : 'p498.reply'));
+  const toggle = mk('button', 'cmdundo p505-report-action', t(unknown ? 'p498.resend' : 'p498.reply'), 'aj-friends');
   toggle.type = 'button';
   const form = mk('form', 'p498-reply'); form.hidden = true;
-  const input = mk('textarea', 'aj-input'); input.maxLength = 2000; input.rows = 3;
+  const input = mk('textarea', 'aj-input', undefined, 'aj-friends'); input.maxLength = 2000; input.rows = 3;
   input.setAttribute('aria-label', t('p498.replyText')); input.placeholder = t('p498.replyText');
-  const select = mk('select', 'aj-input'); select.setAttribute('aria-label', t('p498.chooseReport'));
+  const select = mk('select', 'aj-input', undefined, 'aj-friends'); select.setAttribute('aria-label', t('p498.chooseReport'));
   for (const id of ids) { const option = mk('option', '', String(valid.indexOf(id) + 1)); option.value = id; select.append(option); }
   select.hidden = valid.length === 1;
-  const send = mk('button', 'aj-btn aj-btn--sm p505-report-action', t('p498.send')); send.type = 'submit';
+  const send = mk('button', 'aj-action aj-action--sm p505-report-action', t('p498.send'), 'aj-action'); send.type = 'submit';
   toggle.addEventListener('click', () => { form.hidden = !form.hidden; if (!form.hidden) input.focus(); });
   form.addEventListener('submit', async event => {
     event.preventDefault();

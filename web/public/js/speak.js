@@ -3,7 +3,7 @@
 // network voices — e.g. desktop Chrome's "Google …" ones — would send the text to their vendor, so they are never used).
 // Markdown is reduced to its words (code blocks skipped). Play / pause / stop on the same button, state per turn id.
 import { RelayMD } from './md.js';
-import { speechAudio } from './api.js';
+import { speechAudio, speechScript } from './api.js';
 let prefs={};
 export function configureSpeech(value){prefs=value||{};}
 export const speechPreferences=()=>prefs;
@@ -14,6 +14,13 @@ export const speechFailureWhy = (error) => {
   if (why==='timeout') return 'network';
   return ['novoice','empty','unsupported','engine','missing_key','provider_rejected','provider_busy','provider_unavailable','network','busy','not_ready'].includes(why)?why:'engine';
 };
+
+/** P208: does this reading go through the spoken rewrite? auto = only for a local model / cloud voice (never the free phone path). */
+export function spokenOn(p = prefs) {
+  const s = p.tts?.spoken;
+  if (s === 'on' || s === 'off') return s === 'on';
+  return p.tts?.mode === 'cloud' || (p.tts?.mode === 'host' && p.tts?.provider === 'command');
+}
 
 export const supported = () => typeof window.speechSynthesis === 'object' && typeof window.SpeechSynthesisUtterance === 'function';
 
@@ -116,12 +123,18 @@ export class Speaker {
     if (this.id === id && this.st === 'playing') { ss.pause(); this.set(id, 'paused'); return; }
     if (this.id === id && this.st === 'paused') { ss.resume(); this.set(id, 'playing'); return; }
     this.stop();
-    const text = speakText(md);
+    let text = speakText(md);
     if (!text) { this.onState(id, 'failed', 'empty'); return; }
-    const lang = langOf(text);
     this.id = id; this.st = 'gen';
     this.onState(id, 'gen');
     const gen = ++this.gen;
+    // P208: spoken = on with the phone's own voices → the computer's spoken script (cached there); no answer → the reply itself
+    if (spokenOn() && id !== null && !String(id).startsWith('notification-')) {
+      const script = await speechScript(id);
+      if (gen !== this.gen) return;
+      if (script) text = script;
+    }
+    const lang = langOf(text);
     if(!(ss.getVoices()||[]).length) await waitForVoices();
     if(gen!==this.gen) return;
     const voice = localVoice(lang);

@@ -1,0 +1,8 @@
+/* #577 Web-owned steps; source order is a compatibility contract. */
+/* ===== step list ===== */
+.aj-steps { list-style: none; padding: 0; counter-reset: aj-step; display: grid; gap: var(--sp-4); }
+.aj-steps > li { counter-increment: aj-step; position: relative; padding-left: 3rem; min-height: 2rem; }
+.aj-steps > li::before { content: counter(aj-step); position: absolute; left: 0; top: 0; width: 2rem; height: 2rem;
+  border-radius: 50%; display: grid; place-items: center; font-family: var(--font-title); font-weight: 700; font-size: var(--fs-sm);
+  background: var(--primary-bg); color: var(--primary-fg); }
+.aj-steps > li > strong:first-child { display: block; }

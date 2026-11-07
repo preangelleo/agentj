@@ -113,7 +113,7 @@ test('render: header, live rows in order with plain words, pending / paused stat
   // pending: 「等你批准」, only 撤销
   const pend = rowOf(R, id('C'));
   assert.equal(pend.find('whchip--pending')[0].textContent, '等你批准');
-  assert.deepEqual(pend.find('aj-btn').map((b) => b.textContent), ['撤销']);
+  assert.deepEqual(pend.find('aj-action').map((b) => b.textContent), ['撤销']);
   assert.equal(pend.find('whkind')[0].textContent, '服务器告警 · 常驻 · 密钥校验 → 你');
   // resident Stripe: no chip, plain words, last delivery + count, three actions
   const stripe = rowOf(R, id('B'));
@@ -121,7 +121,7 @@ test('render: header, live rows in order with plain words, pending / paused stat
   assert.equal(stripe.find('whkind')[0].textContent, 'Stripe · 常驻 · Stripe 签名 → 主 Agent');
   assert.equal(stripe.find('whexp').length, 0, 'resident: no expiry line');
   assert.match(stripe.find('whlast')[0].textContent, /^最近一次：.+ · 送达 · 共 2 条$/);
-  assert.deepEqual(stripe.find('aj-btn').map((b) => b.textContent), ['暂停', '复制地址', '撤销']);
+  assert.deepEqual(stripe.find('aj-action').map((b) => b.textContent), ['暂停', '复制地址', '撤销']);
   // once: expiry; never delivered
   const once = rowOf(R, id('A'));
   assert.match(once.find('whkind')[0].textContent, /^完成回调 · 一次性 · 签名校验 → 主 Agent$/);
@@ -138,7 +138,7 @@ test('render: header, live rows in order with plain words, pending / paused stat
   assert.equal(ended.length, 1);
   assert.ok(ended[0].className.includes('whrow--ended'));
   assert.equal(ended[0].find('whchip')[0].textContent, '已用完');
-  assert.equal(ended[0].find('aj-btn').length, 0);
+  assert.equal(ended[0].find('aj-action').length, 0);
   assert.ok(!rowOf(R, id('F')));
   // recent: newest first, names looked up, verdicts in words, an unknown hook named as removed
   const del = R.find('whdel');

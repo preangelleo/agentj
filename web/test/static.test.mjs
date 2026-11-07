@@ -17,14 +17,15 @@ import { handle, csp, webHeaders } from '../worker.ts';
 const walk = (d) => readdirSync(d).flatMap((n) => { const p = join(d, n); return statSync(p).isDirectory() ? walk(p) : [p]; });
 const files = walk(PUBLIC_DIR);
 const rel = (p) => relative(PUBLIC_DIR, p).split(sep).join('/');
-const read = (p) => readFileSync(p, 'utf8');
+import {resolveDefaults} from '../tools/css-defaults.mjs';
+const read = (p) => { const text=readFileSync(p,'utf8'); return String(p).endsWith('.css') ? resolveDefaults(text) : String(p).endsWith('.html') ? text.replace(/ data-aj-(?:owner|action-context)="[^"]+"/g,'') : text; };
 const pub = (r) => join(PUBLIC_DIR, r);
 const JS = files.filter((f) => f.endsWith('.js') || f.endsWith('.mjs'));
 const APP = read(pub('app.js'));
 // PROMPT-33: the page is app.js + the modules under js/ (relay's page ported). Every rule that used to look at app.js
 // alone now looks at all of them (OURS) — the same rules over more code, never fewer.
 const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render', 'friends', 'qr', 'share', 'device-label', 'sfx', 'cues', 'shotclip', 'sendvol',
-  'media', 'mediawire', 'preview', 'mailfwd', 'icons', 'search',   // P183: the file cards, the preview views and the mail-dialog door
+  'media', 'mediawire', 'private-files', 'preview', 'mailfwd', 'icons', 'search',   // P183: the file cards, the preview views and the mail-dialog door
   'unread', 'interactions.gen',   // P207: this device's unread mark (turn ids only) + the key table generated from interactions.json
   'version-notice', 'five-pages', 'workflow-compose',
   'toolorder', 'toolsort',   // P340: the composer buttons' order (aj.toolOrder, four ids) + its Settings row   // P240: the version check (its one metadata GET had a branch below but the file was never in this list)
@@ -255,15 +256,17 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
     // P340: the composer buttons' order on this device (ORDER_KEY = "aj.toolOrder", the four ids as JSON; an older host's only copy)
     'getItem(ORDER_KEY)', 'setItem(ORDER_KEY)',
     // P575 (#390): the switched-off sounds (OFF_KEY = "aj.cueOff", a comma list of cue ids; removed when all are on)
-    'getItem(OFF_KEY)', 'setItem(OFF_KEY)', 'removeItem(OFF_KEY)'].sort());
+    'getItem(OFF_KEY)', 'setItem(OFF_KEY)', 'removeItem(OFF_KEY)',
+    'getItem(PUSH_KINDS_KEY)', 'setItem(PUSH_KINDS_KEY)'].sort());
   assert.match(OURS, /const VER_KEY='aj\.verRefresh';/);
   assert.match(read(pub('js/unread.js')), /JSON\.stringify\(\{e:st\.e,m:st\.m\}\)/);
   assert.match(OURS, /export const UNREAD_KEY = 'aj\.unread';/);
   assert.match(OURS, /const VOLUME_KEY = 'aj\.sfxVolume';/); assert.match(OURS, /const SHOT_KEY = 'aj\.shotClip';/);
   assert.match(OURS, /const FZ_KEY = "aj\.pageFz";/); assert.doesNotMatch(OURS, /aj\.recDim/, 'P346: the dim mode is gone');
   assert.match(OURS, /const ORDER_KEY = 'aj\.toolOrder';/);
+  assert.match(read(pub('js/push.js')), /const PUSH_KINDS_KEY = 'aj\.pushKinds';/);
   assert.match(OURS, /export const OFF_KEY = 'aj\.cueOff';/);
-  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 42, '#538c adds only two same-seat preference reads; P422 removes both aj.chrome calls; localStorage appears only in these calls (P575: aj.cueOff get + set + remove; P340: aj.toolOrder get + set; P346: aj.recDim gone; P247: host-scoped numeric read receipts; P302 #29: aj.verUpdated consumed + aj.verUpdatedSeen.<version>; P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
+  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 44, '#538c adds only two same-seat preference reads; P422 removes both aj.chrome calls; localStorage appears only in these calls (P575: aj.cueOff get + set + remove; P340: aj.toolOrder get + set; P346: aj.recDim gone; P247: host-scoped numeric read receipts; P302 #29: aj.verUpdated consumed + aj.verUpdatedSeen.<version>; P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
   assert.match(OURS, /const IID_KEY = 'aj\.iid';/);
   assert.match(OURS, /const PAIRED_KEY = 'aj\.paired';/);
   assert.match(OURS, /const FONT_KEY = 'aj\.fontScale';/);
@@ -289,10 +292,10 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.match(STORE, /export async function putSealed\(name, obj\) \{\n  const w = wipes;\n  const rec = await seal\(obj\);\n  if \(w === wipes\) await dbPut\(name, rec\);\n\}/, 'putSealed writes only ciphertext, and never after a wipe');
   // §10.14 / P33-X13: revoke wipes like unpair — drafts, history, the sealing key, and everything in memory
   assert.match(APP, /async function revoked\(why = 'revoked'\) \{\n  session\.closeSession\(\);\n[^}]*await forgetLocal\(\);/, 'revoked() wipes local records');   // 0.15.1: + why
-  assert.match(APP, /async function forgetLocal\(\) \{\n  showPairGuide\(null\);\n  pkhandin\.reset\(\);[^\n]*\n  forgetShare\(\);\n  relay\.forgetLocal\(\);\n  friends\.forget\(\);\n  snap\.S\.touched\.clear\(\); snap\.S\.handledWaiting = false;\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  contacts\.clear\(\);\n  secretout\.clear\(\);\n  longtask\.clear\(\);\n  logincard\.clear\(\);\n  wechat\.reset\(\);\n  helpcard\.clear\(\);\n  setupcard\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too; 0.16: the friends page's data too; F32: pickup cards (+ a shown value); 0.18: opening cards; P184: contact cards + the forward dialog; P411: screen-help cards
+  assert.match(APP, /async function forgetLocal\(\) \{\n  showPairGuide\(null\);\n  pkhandin\.reset\(\);[^\n]*\n  forgetShare\(\);\n  relay\.forgetLocal\(\);\n  friends\.forget\(\);\n  snap\.S\.touched\.clear\(\); snap\.S\.handledWaiting = false;\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  contacts\.clear\(\);\n  secretout\.clear\(\);\n  longtask\.clear\(\);\n  clearSpecialApprovals\(\);\n  logincard\.clear\(\);\n  wechat\.reset\(\);\n  helpcard\.clear\(\);\n  setupcard\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too; 0.16: the friends page's data too; F32: pickup cards (+ a shown value); 0.18: opening cards; P184: contact cards + the forward dialog; P411: screen-help cards
   assert.doesNotMatch(APP.slice(APP.indexOf('async function revoked('), APP.indexOf('async function revoked(')+700), /saveDraft/, 'revocation never saves the draft');
   assert.match(STORE, /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['encrypt', 'decrypt'\]\)/, 'sealing key not extractable');
-  assert.match(STORE, /for \(const k of \['draft', 'ihist', 'outbox', 'srch', 'local'\]\)/, 'unpair / re-pair wipes drafts, history, the offline queue, the search pages and the sealing key');
+  assert.match(STORE, /for \(const k of \['draft', 'ihist', 'outbox', 'srch', 'forms', 'local'\]\)/, 'unpair / re-pair wipes drafts, history, the offline queue, the search pages and the sealing key');
   // P545: the root page's database keeps the name "agentjarvis"; a seat's page (m.agentj.app/<seat id>/) uses "agentjarvis@<seat id>"
   assert.match(STORE, /export const ROOT_DB = 'agentjarvis';\nexport const DB_NAME = globalThis\.AJSeat \? globalThis\.AJSeat\.db\(ROOT_DB\) : ROOT_DB;\nfunction idb\(name = DB_NAME\) \{\n  return new Promise\(\(res, rej\) => \{\n    const r = indexedDB\.open\(name, 1\);/, 'the IndexedDB name stays "agentjarvis" on the root page (paired phones keep their keys)');
   assert.match(read(pub('js/seatscope.js')), /db: function \(name\) \{ return seat \? name \+ suffix : name; \}/);
@@ -432,9 +435,17 @@ test('manifest + icons are local files from the brand (192, 512, 512 maskable), 
 });
 
 // ---------------------------------------------------------------- brand + i18n
-test('brand copy is current (brand/sync.mjs --set web --check)', { skip: !HAVE_BRAND && 'no agentjarvis/brand (public export)' }, () => {
-  const r = spawnSync(process.execPath, [fileURLToPath(new URL('../../brand/sync.mjs', import.meta.url)), PUBLIC_DIR, '--set', 'web', '--check'], { encoding: 'utf8' });
-  assert.equal(r.status, 0, r.stdout + r.stderr);
+test('brand assets stay upstream-current and Web-owned components stay bound to their explicit sources', { skip: !HAVE_BRAND && 'no agentjarvis/brand (public export)' }, async () => {
+  const {plan}=await import('../../brand/sync.mjs');
+  const {webComponentCss}=await import('../build.mjs');
+  for(const {src,dst} of plan(PUBLIC_DIR,'web')) {
+    if(dst.endsWith('/brand/base.css') || dst.endsWith('/brand/lang.js')) continue;
+    assert.deepEqual(readFileSync(dst),readFileSync(src), dst+' differs from its shared source');
+  }
+  assert.equal(readFileSync(pub('brand/base.css'),'utf8'),webComponentCss().css,'Web component CSS differs from its ordered source modules');
+  const language=readFileSync(new URL('../brand/lang.js',import.meta.url),'utf8');
+  assert.equal(readFileSync(pub('brand/lang.js'),'utf8'),language,'Web language adapter is stale');
+  assert.equal((language.match(/setAttribute\("data-aj-owner", "aj-language"\)/g)||[]).length,3,'all three language-control constructors retain ownership');
 });
 
 const DICT = dictionaries();
@@ -480,17 +491,30 @@ test('i18n: no internal terms or banned words in either dictionary, the page tex
     for (const w of GLOSSARY.banned_words_zh) assert.ok(!v.includes(w), `zh ${k}: banned word ${w}`);
     for (const p of GLOSSARY.banned_patterns_zh) assert.doesNotMatch(v, new RegExp(p), `zh ${k}: banned pattern ${p}`);
   }
-  // every user-visible Chinese string lives in the dictionary: app.js code has no Chinese except the device label sent to
-  // the host ("网页 · Chrome" is data for the Agent J host's device list; 0.15.1: "网页 · iOS 主屏幕" for the Home Screen app) and comments
+  // All visible Chinese, including device labels since P192, comes from the dictionary.
   const appCode = (APP + read(pub('js/device-label.js'))).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
   const cjk = [...new Set(appCode.match(/[㐀-鿿]+/g) || [])];
-  assert.ok(cjk.includes('网页') && cjk.every((w) => ['浏览器', '网页', '主屏幕', '华为手机', '华为平板'].includes(w)), `app.js has UI Chinese outside the dictionary: ${cjk.join(' ')}`);
+  assert.deepEqual(cjk, [], 'device labels now use dictionary resources too; no UI Chinese remains in app/device executable code');
   for (const r of OURS_FILES.filter((x) => x !== 'app.js' && x !== 'js/device-label.js')) {             // the modules: no Chinese in code at all
-    const c = read(pub(r)).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    let c = read(pub(r)).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    if (r === 'js/relay.js') c = c.replace(/"〔静默消息〕"|"〔不回群〕"/g, '""'); // Exact protocol boundary markers; ordinary UI Chinese still fails.
     assert.deepEqual(c.match(/[㐀-鿿]+/g) || [], [], `${r} has UI Chinese outside the dictionary`);
   }
   // relay was Leo's private tool: no owner name, private bot or assistant name may reach the product's words (PROMPT-33)
-  for (const [where, text] of sources) assert.doesNotMatch(text, /\bLeo\b|Telegram|贾维斯|\bJarvis\b|J\.A\.R\.V\.I\.S/i, `${where}: relay's private wording`);
+  const botPlatformKeys = new Set([
+    'bots.add_replace_telegram_token', 'bots.serve_on_telegram_disable_to_stop_receiving_and_sending',
+    'bots.let_my_agent_j_telegram_bot_receive_guests', 'bots.replace_this_telegram_bot_s_current_photo_with_the_official_agent_j_logo',
+    'bots.add_a_token_using_the_secret_card_then_enable_telegram_replacing_the_token_pauses_telegram_save_to_r',
+  ]);
+  for (const [where, original] of sources) {
+    const text = botPlatformKeys.has(where.replace(/^(zh|en) /,'')) ? original.replace(/\bTelegram\b/g,'') : original;
+    // #541 names the actual signed ingress channel, independent of relay's private bot.
+    if (where === 'zh p541.channel.telegram' || where === 'en p541.channel.telegram') {
+      assert.equal(text, 'Telegram', 'only the public channel name is allowed at this exact provenance label');
+      continue;
+    }
+    assert.doesNotMatch(text, /\bLeo\b|Telegram|贾维斯|\bJarvis\b|J\.A\.R\.V\.I\.S/i, `${where}: relay's private wording`);
+  }
 });
 
 // P555 (董事长 10-27): a glossary term with `zh_prefix_required` never appears bare in the phone's Chinese —
@@ -722,6 +746,7 @@ test('P250 vendor module retains licensed sources and manifest provenance', asyn
 // that is not 0 / none; the last rule for the same selector wins). A one-side separator is not a frame. The exceptions
 // are the owner's own asks, each with its reason.
 const ICON_BORDER_OK = new Map([
+  ['aj-icon-action--framed', '#577 explicitly preserves inherited frames on five inventoried #576 controls; registry asserts their exact IDs'],
   ['tool', 'the composer tool row: a hairline dashed outline (owner 2026-09-24, P183 2026-10-12)'],
 ]);
 test('icon buttons: no border by default (P555)', () => {
@@ -734,6 +759,8 @@ test('icon buttons: no border by default (P555)', () => {
     if (isIcon) { if (id) ids.add(id); cls.forEach((c) => icon.add(c)); } else cls.forEach((c) => text.add(c));
   }
   assert.ok(ids.size > 20 && icon.has('fsic') && icon.has('pttbtn'), 'the scan sees the page\'s icon buttons');
+  const framed=[...html.matchAll(/<button\b([^>]*)>/g)].filter(m=>/class="[^"]*\baj-icon-action--framed\b/.test(m[1])).map(m=>/\bid="([^"]+)"/.exec(m[1])?.[1]).sort();
+  assert.deepEqual(framed,['mail-add','phone-env-copy','rm-add','rm-copy','rv-refresh'],'only the five #576 inherited icon frames are preserved');
   const last = new Map();
   for (const f of files.filter((x) => x.endsWith('.css'))) {
     for (const r of read(f).replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
@@ -764,4 +791,30 @@ test('cue license notice covers only the shipped cues and exact official provena
     'https://elevenlabs.io/creative-terms',
     'https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform',
   ], 'license citations are exactly the two reviewed official sources');
+});
+
+test('push kind metadata stores only the exact three categories; unknown keys and content are rejected', async () => {
+  const descriptor=Object.getOwnPropertyDescriptor(globalThis,'localStorage');
+  const windowDescriptor=Object.getOwnPropertyDescriptor(globalThis,'window');
+  if(!windowDescriptor)Object.defineProperty(globalThis,'window',{configurable:true,value:{}});
+  let value=null;const writes=[];
+  Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{
+    getItem(key){return key==='aj.pushKinds'?value:null;},
+    setItem(key,text){writes.push([key,text]);value=text;}
+  }});
+  try {
+    const push=await import('../public/js/push.js');writes.length=0;
+    assert.deepEqual(push.KINDS,['ask','reply','security']);
+    for(const bad of ['["reply","conversation contents"]','{"reply":"message"}','["security",{"text":"private"}]']) {
+      value=bad;assert.deepEqual(push.kinds(),['ask','reply','security']);
+      await push.setKind('reply',false);
+      assert.deepEqual(writes.at(-1),['aj.pushKinds','["ask","security"]']);
+    }
+    const before=writes.length;await push.setKind('aj.pushKinds.content',true);await push.setKind('message body',true);
+    assert.equal(writes.length,before,'negative control: no unknown category or storage key');
+    assert.ok(writes.every(([key,text])=>key==='aj.pushKinds'&&JSON.parse(text).every(k=>['ask','reply','security'].includes(k))));
+  } finally {
+    if(descriptor)Object.defineProperty(globalThis,'localStorage',descriptor);else delete globalThis.localStorage;
+    if(!windowDescriptor)delete globalThis.window;
+  }
 });

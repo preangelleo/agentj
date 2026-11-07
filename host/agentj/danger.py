@@ -7,6 +7,7 @@ import json
 import os
 import posixpath
 import re
+import shlex
 import stat
 import sys
 from dataclasses import dataclass, field
@@ -409,6 +410,7 @@ _WRAP_ARG = {
     "parallel": {"-j", "-n", "-I", "-S", "--jobs", "-a", "--arg-file"},
     "npx": {"-p", "--package", "-c", "--call"}, "pnpx": {"-p", "--package"}, "bunx": {"-p", "--package"},
     "uvx": {"--from", "--with", "-p", "--python", "--with-requirements"}, "dotenv": {"-e", "-c", "-v"},
+    "runuser": {"-u", "--user", "-g", "--group", "-G", "--supplementary-group", "-w", "--whitelist-environment"},   # #488
     "busybox": set(), "then": set(), "do": set(), "else": set(), "elif": set(), "if": set(), "while": set(),
     "until": set(), "!": set(), "time!": set(),
 }
@@ -478,10 +480,43 @@ def unwrap(cmd: Cmd, depth: int = 0) -> list[Simple]:
                 k += 2 if rest[k] in ("--with", "--from", "-p", "--python", "--package", "--env-file") else 1
             words = rest[k:]
             continue
+        # #488: busy run executes its tail; metadata commands do not.
+        aj = words[1:] if name == "agentj" else None
+        if name in ("python", "python3", "pypy", "pypy3") and words[1:3] == ["-m", "agentj"]:
+            aj = words[3:]
+        if aj is not None:
+            if aj[:1] == ["--instance"]:
+                aj = aj[2:]
+            elif aj and aj[0].startswith("--instance="):
+                aj = aj[1:]
+            if aj[:2] == ["busy", "run"]:
+                rest, k = aj[2:], 0
+                vals = {"--label", "--who", "--kind", "--report", "--harness", "--model", "--workflow", "--role", "--parent"}
+                while k < len(rest) and rest[k].startswith("-"):
+                    w = rest[k]
+                    if w == "--":
+                        k += 1
+                        break
+                    if w in ("--help", "-h"):
+                        return out
+                    if w in vals and k + 1 < len(rest):
+                        k += 2
+                    elif "=" in w and w.split("=", 1)[0] in vals:
+                        k += 1
+                    else:
+                        return out + [Simple(_DEEP, [], [], [], flags)]
+                if k >= len(rest):
+                    return out + [Simple(_DEEP, [], [], [], flags)]
+                words = rest[k:]
+                flags.add("wrapped")
+                continue
         if name == "systemd-run" and "--user" in words[1:]:
             out.append(Simple(name, words[1:], list(words), list(cmd.redirs), set(flags)))
+        if name == "runuser" and not any(w in ("-u", "--user") or w.startswith("--user=") for w in words[1:]):
+            words = ["su"] + words[1:]
+            continue
         if name in _WRAP_ARG:
-            if name in ("sudo", "doas", "run0", "pkexec"):
+            if name in ("sudo", "doas", "run0", "pkexec", "runuser"):
                 flags.add("elevated")
             flags.add("wrapped")
             opts, rest = _WRAP_ARG[name], words[1:]
@@ -490,6 +525,14 @@ def unwrap(cmd: Cmd, depth: int = 0) -> list[Simple]:
                 w = rest[k]
                 if name == "env" and _ASSIGN.match(w):
                     k += 1
+                elif name == "env" and (w in ("-S", "--split-string") or w.startswith(("-S", "--split-string="))):
+                    val = rest[k + 1] if w in ("-S", "--split-string") and k + 1 < len(rest) else \
+                        w.split("=", 1)[1] if w.startswith("--") else w[2:]
+                    try:                                     # #488: env -S "CMD ARGS" runs CMD
+                        split = shlex.split(val)
+                    except ValueError:
+                        split = [_DEEP]                      # unreadable → fail closed
+                    rest = rest[:k] + split + rest[k + (2 if w in ("-S", "--split-string") else 1):]
                 elif w == "--":
                     k += 1
                     break
@@ -570,10 +613,26 @@ def unwrap(cmd: Cmd, depth: int = 0) -> list[Simple]:
             flags.add("ansi_name")               # P137: the command name was written as $'\x72m' …
         out.append(Simple(name, words[1:], words, list(cmd.redirs), flags, list(cmd.ins)))
         return out
+    if words:
+        out.append(Simple(_DEEP, [], [], [], flags))
     return out
 
 
 # ================================================================ rules
+def unresolved_execution(tool: str, tool_input=None) -> bool:
+    """A launcher parse exhausted its bound or could not read its executed tail.
+
+    This is a refusal signal, not an effect that an approval can authorize.
+    """
+    inp = tool_input if isinstance(tool_input, dict) else {}
+    operation = tool.split("__")[-1] if isinstance(tool, str) else ""
+    if operation not in ("Bash", "exec_command", "shell_command", "execute_command", "bash", "Monitor"):
+        return False
+    raw = inp.get("command", inp.get("cmd", ""))
+    text = shlex.join(str(w) for w in raw) if isinstance(raw, list) else str(raw)
+    return any(s.name == _DEEP for c in lex(text) for s in unwrap(c))
+
+
 _CRED_DIRS = re.compile(
     r"(^|/)(\.ssh|\.aws|\.gnupg|\.azure|\.password-store|\.kube|\.config/gh|\.config/gcloud|\.config/op|\.config/rclone|"
     r"\.terraform\.d|\.cargo|\.gem|\.docker|Library/Keychains|\.local/share/keyrings|\.wrangler/config|\.config/hub|"
@@ -1171,16 +1230,25 @@ def _simple(sc: Simple, hits: _Hits, depth: int, text: str) -> None:
         else:
             break
     if native_name and native_args[:1] == ["trash"]:
-        hits.add("delete", "delete.agentj_trash", "移入系统废纸篓 / move to system trash")
+        hits.add("delete", "delete.trash", "移入废纸篓：可恢复")
         for path in native_args[1:]:
             _write_hit(hits, path, "移入废纸篓")
-    if name in ("rm", "rmdir", "unlink", "shred", "srm", "wipe", "trash", "trash-put", "trash-rm", "trash-empty", "rmtrash",
+    if name in ("rm", "rmdir", "unlink", "shred", "srm", "wipe", "trash-rm", "trash-empty",
                 "del", "erase", "rd", "Remove-Item", "wipefs", "sfdisk", "fdisk", "parted", "blkdiscard") or name.startswith(
             "mkfs"):
         hits.add("delete", f"delete.{'rm' if name in ('rm', 'rmdir', 'unlink') else name.replace('.', '_')}",
                  f"{name}：删除文件 / 数据" if not name.startswith("mkfs") else "格式化磁盘")
-    if name == "gio" and low[:1] in (["trash"], ["remove"]):
-        hits.add("delete", "delete.gio", "gio trash / remove：删除文件")
+    trash_args = args[1:] if name == "gio" and low[:1] == ["trash"] else args
+    recoverable_trash = name in ("trash", "trash-put", "rmtrash") or name == "gio" and low[:1] == ["trash"]
+    if recoverable_trash:
+        hits.add("delete", "delete.trash", "移入废纸篓：可恢复")
+        # Trash is reversible; empty/remove operations still destroy the owner's data.
+        if any(a in ("-e", "--empty", "--force-empty", "--rm") for a in trash_args):
+            hits.add("delete", "delete.trash_empty", "清空废纸篓：永久删除文件")
+        for path in _positionals(trash_args):
+            _write_hit(hits, path, "移入废纸篓")
+    if name == "gio" and low[:1] == ["remove"]:
+        hits.add("delete", "delete.gio", "gio remove：永久删除文件")
     if name == "find" and any(a in ("-delete",) for a in args):
         hits.add("delete", "delete.find", "find -delete：删除找到的文件")
     if name == "truncate":
@@ -2631,6 +2699,8 @@ def _shared_cred_read(command: str, cwd: str | None = None) -> tuple[str, str] |
         w = [x for x in c.words if not _ASSIGN.match(x)]
         if not (w and _base(w[0]) in _ENV_DUMP and not any(not a.startswith("-") and "=" not in a for a in w[1:])):
             continue
+        if _base(w[0]) == "env" and (inner := unwrap(c)) and not any(s.name in _ENV_DUMP for s in inner):
+            continue                                      # env executing a program is not an environment dump
         if [o for o in c.outs if o not in ("/dev/stdout", "/dev/stderr", "/dev/tty")]:
             continue                                      # redirected to a file: not shown on screen
         nxt = cmds[idx + 1] if idx + 1 < len(cmds) else None

@@ -178,7 +178,7 @@ class Chat(Base):
         self.assertEqual(r.fire("main"), "busy", "never sent while a card waits: it could be answered by the wrong turn")
 
     def test_unknown_reset_schedules_nothing(self):
-        self.assertIsNone(self.host.quota_resume.hit("main", "codex", None))
+        self.assertIsNone(self.host.quota_resume.hit("main", "claude", None))
         self.assertEqual(self.host.quota_resume.items, {})
         self.assertIn("没给重置时间", self.host.notes[-1])
 
@@ -457,3 +457,37 @@ class Tasks(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class CodexSavedMain398(Base):
+    def legacy(self):
+        rec={'id':'legacy-codex','harness':'codex','at':time.time()-2*H,'created':time.time()-3*H}
+        self.host.quota_resume.items={'main':rec,'task:kept':{'id':'task-kept','harness':'codex','at':time.time()+H}}
+        self.host.quota_resume._save()
+        return rec
+
+    def test_restart_drops_old_codex_main_without_new_turn(self):
+        self.legacy()
+        h=self.make_host();h.agent.kind='codex'
+        with patch.object(h.quota_resume,'_arm') as arm:
+            h.quota_resume.start()
+        self.assertEqual(h.agent.got,[])
+        self.assertNotIn('main',h.quota_resume.items)
+        self.assertIn('task:kept',h.quota_resume.items)
+        arm.assert_called_once_with('task:kept')
+        self.assertNotIn('main',self.saved())
+        self.assertIn('新消息',h.notes[-1])
+
+    def test_direct_fire_cannot_bypass_restart_guard(self):
+        rec=self.legacy();r=self.host.quota_resume
+        self.assertEqual(r.fire('main'),'owner_required')
+        self.assertEqual(self.host.agent.got,[])
+        self.assertNotIn('main',r.fired)
+        self.assertNotIn('main',self.saved())
+
+    def test_new_codex_main_hit_does_not_schedule_an_unaccepted_replay(self):
+        r=self.host.quota_resume
+        for at in [None,time.time()+H]:
+            self.assertIsNone(r.hit('main','codex',at))
+        self.assertEqual(r.items,{})
+        self.assertEqual(self.host.agent.got,[])
+        self.assertIn('新消息',self.host.notes[-1])

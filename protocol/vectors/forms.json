@@ -1,0 +1,557 @@
+{
+ "about": "P212 (§29): one set of show_if / answer cases both sides must agree on (host forms.holds / forms.check, phone forms.js holds / check).",
+ "holds": [
+  [
+   {
+    "q": "a",
+    "eq": "x"
+   },
+   {
+    "a": "x"
+   },
+   true
+  ],
+  [
+   {
+    "q": "a",
+    "eq": "x"
+   },
+   {
+    "a": "y"
+   },
+   false
+  ],
+  [
+   {
+    "q": "a",
+    "eq": "x"
+   },
+   {},
+   false
+  ],
+  [
+   {
+    "q": "a",
+    "ne": "x"
+   },
+   {},
+   true
+  ],
+  [
+   {
+    "q": "a",
+    "ne": "x"
+   },
+   {
+    "a": "x"
+   },
+   false
+  ],
+  [
+   {
+    "q": "a",
+    "in": [
+     "x",
+     "y"
+    ]
+   },
+   {
+    "a": "y"
+   },
+   true
+  ],
+  [
+   {
+    "q": "a",
+    "in": [
+     "x",
+     "y"
+    ]
+   },
+   {
+    "a": [
+     "z",
+     "y"
+    ]
+   },
+   true
+  ],
+  [
+   {
+    "q": "a",
+    "in": [
+     "x"
+    ]
+   },
+   {
+    "a": [
+     "z"
+    ]
+   },
+   false
+  ],
+  [
+   {
+    "q": "a",
+    "not_in": [
+     "x"
+    ]
+   },
+   {
+    "a": [
+     "z"
+    ]
+   },
+   true
+  ],
+  [
+   {
+    "q": "a",
+    "not_in": [
+     "x"
+    ]
+   },
+   {},
+   true
+  ],
+  [
+   {
+    "q": "a",
+    "not_in": [
+     "x"
+    ]
+   },
+   {
+    "a": "x"
+   },
+   false
+  ],
+  [
+   {
+    "q": "n",
+    "gt": 3
+   },
+   {
+    "n": 4
+   },
+   true
+  ],
+  [
+   {
+    "q": "n",
+    "gt": 3
+   },
+   {
+    "n": 3
+   },
+   false
+  ],
+  [
+   {
+    "q": "n",
+    "lt": 3
+   },
+   {
+    "n": 2.5
+   },
+   true
+  ],
+  [
+   {
+    "q": "n",
+    "lt": 3
+   },
+   {},
+   false
+  ],
+  [
+   {
+    "q": "a",
+    "answered": true
+   },
+   {
+    "a": ""
+   },
+   false
+  ],
+  [
+   {
+    "q": "a",
+    "answered": true
+   },
+   {
+    "a": "k"
+   },
+   true
+  ],
+  [
+   {
+    "q": "a",
+    "answered": false
+   },
+   {
+    "a": []
+   },
+   true
+  ],
+  [
+   {
+    "all": [
+     {
+      "q": "a",
+      "eq": "x"
+     },
+     {
+      "q": "n",
+      "gt": 1
+     }
+    ]
+   },
+   {
+    "a": "x",
+    "n": 2
+   },
+   true
+  ],
+  [
+   {
+    "all": [
+     {
+      "q": "a",
+      "eq": "x"
+     },
+     {
+      "q": "n",
+      "gt": 1
+     }
+    ]
+   },
+   {
+    "a": "x",
+    "n": 0
+   },
+   false
+  ],
+  [
+   {
+    "any": [
+     {
+      "q": "a",
+      "eq": "x"
+     },
+     {
+      "q": "n",
+      "gt": 1
+     }
+    ]
+   },
+   {
+    "a": "y",
+    "n": 5
+   },
+   true
+  ],
+  [
+   {
+    "any": [
+     {
+      "q": "a",
+      "eq": "x"
+     },
+     {
+      "q": "n",
+      "gt": 1
+     }
+    ]
+   },
+   {},
+   false
+  ],
+  [
+   {
+    "q": "a",
+    "eq": "x"
+   },
+   {
+    "a": [
+     "x",
+     "y"
+    ]
+   },
+   true
+  ],
+  [
+   {
+    "q": "a",
+    "ne": "x"
+   },
+   {
+    "a": [
+     "x",
+     "y"
+    ]
+   },
+   false
+  ]
+ ],
+ "form": {
+  "title": "T",
+  "sections": [
+   {
+    "id": "s1",
+    "questions": [
+     {
+      "id": "mode",
+      "type": "single",
+      "label": "Mode",
+      "required": true,
+      "options": [
+       "onsite",
+       "online"
+      ]
+     },
+     {
+      "id": "people",
+      "type": "number",
+      "label": "People",
+      "min": 1,
+      "max": 9,
+      "required": true,
+      "show_if": {
+       "q": "mode",
+       "eq": "onsite"
+      }
+     },
+     {
+      "id": "mail",
+      "type": "text",
+      "label": "Mail",
+      "pattern": "email"
+     },
+     {
+      "id": "pick",
+      "type": "multi",
+      "label": "Pick",
+      "min": 1,
+      "max": 2,
+      "options": [
+       "a",
+       "b",
+       "c"
+      ],
+      "other": true
+     },
+     {
+      "id": "when",
+      "type": "date",
+      "label": "When",
+      "min": "2026-01-01"
+     },
+     {
+      "id": "rate",
+      "type": "rating",
+      "label": "Rate"
+     }
+    ]
+   }
+  ]
+ },
+ "check": [
+  [
+   {
+    "mode": "online"
+   },
+   {},
+   "ok",
+   {
+    "mode": "online"
+   }
+  ],
+  [
+   {
+    "mode": "online",
+    "people": 3
+   },
+   {},
+   "ok",
+   {
+    "mode": "online"
+   }
+  ],
+  [
+   {
+    "mode": "onsite"
+   },
+   {},
+   "required",
+   null
+  ],
+  [
+   {
+    "mode": "onsite",
+    "people": 3
+   },
+   {},
+   "ok",
+   {
+    "mode": "onsite",
+    "people": 3
+   }
+  ],
+  [
+   {
+    "mode": "onsite",
+    "people": 12
+   },
+   {},
+   "answer",
+   null
+  ],
+  [
+   {},
+   {},
+   "required",
+   null
+  ],
+  [
+   {
+    "mode": "x"
+   },
+   {},
+   "answer",
+   null
+  ],
+  [
+   {
+    "mode": "online",
+    "mail": "no-at-sign"
+   },
+   {},
+   "answer",
+   null
+  ],
+  [
+   {
+    "mode": "online",
+    "mail": "a@b.co"
+   },
+   {},
+   "ok",
+   {
+    "mode": "online",
+    "mail": "a@b.co"
+   }
+  ],
+  [
+   {
+    "mode": "online",
+    "pick": [
+     "a",
+     "b",
+     "c"
+    ]
+   },
+   {},
+   "answer",
+   null
+  ],
+  [
+   {
+    "mode": "online",
+    "pick": [
+     "c",
+     "a"
+    ]
+   },
+   {},
+   "ok",
+   {
+    "mode": "online",
+    "pick": [
+     "a",
+     "c"
+    ]
+   }
+  ],
+  [
+   {
+    "mode": "online",
+    "pick": [
+     "_other"
+    ]
+   },
+   {},
+   "required",
+   null
+  ],
+  [
+   {
+    "mode": "online",
+    "pick": [
+     "_other"
+    ]
+   },
+   {
+    "pick": "Mine"
+   },
+   "ok",
+   {
+    "mode": "online",
+    "pick": [
+     "_other"
+    ],
+    "_other": {
+     "pick": "Mine"
+    }
+   }
+  ],
+  [
+   {
+    "mode": "online",
+    "when": "2025-12-31"
+   },
+   {},
+   "answer",
+   null
+  ],
+  [
+   {
+    "mode": "online",
+    "when": "2026-02-30"
+   },
+   {},
+   "answer",
+   null
+  ],
+  [
+   {
+    "mode": "online",
+    "rate": 6
+   },
+   {},
+   "answer",
+   null
+  ],
+  [
+   {
+    "mode": "online",
+    "rate": 5
+   },
+   {},
+   "ok",
+   {
+    "mode": "online",
+    "rate": 5
+   }
+  ],
+  [
+   {
+    "mode": "online",
+    "nope": 1
+   },
+   {},
+   "answer",
+   null
+  ]
+ ]
+}

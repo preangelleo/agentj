@@ -19,8 +19,8 @@ test('task_grant: kept from the ask (≤ 200 chars, zh + en), painted as one lin
   assert.match(relay, /paintTaskGrant\(p, open\);/);
   assert.doesNotMatch(read('../public/js/api.js'), /task_grant/, 'the signature covers what it always covered');
 });
-test('auto by task: its own toast and activity line, zh + en', async () => {
-  assert.match(controls, /m\.by === 'task' \? 'p573\.autoTask'/);
+test('auto by task: silent event and activity line, zh + en', async () => {
+  assert.match(controls, /export function showAuto\(_m\) \{\}/, '#562 automatic approvals are silent');
   assert.match(controls, /r\.k === 'auto' && r\.by === 'task'\) return t\('p573\.act\.task', v\)/);
   const d = (await import('../public/i18n.js')).default;
   for (const k of ['p573.autoTask', 'p573.act.task']) { assert.match(d.zh[k], /本任务/); assert.match(d.en[k], /this task/); }
@@ -40,7 +40,7 @@ test('sudo card: password + 同意 = one tap on a P573 host; the helper path wit
   // 0.26.9 #482: 「用 Face ID 记住」 ticked (`save`) needs the assertion — its PRF is what remembers the password; unticked stays one tap
   assert.match(elev, /const needFa = vaultUse \|\| save \|\| \(c\.tier573 \? c\.passkey_required \|\| \(nopw && c\.helperUv\) : !c\.buttonOnly && !!c\.fa\);/);
   assert.match(elev, /if \(ok && needFa\) \{/);
-  assert.match(elev, /allow = node\('button', 'elev-allow', 'aj-btn aj-btn--primary'\); allow\.type = 'submit';/, '同意 is a plain submit button (no hold)');
+  assert.match(elev, /allow = node\('button', 'elev-allow', 'aj-action aj-action--primary'\); allow\.type = 'submit';/, '同意 is a plain submit button (no hold)');
 });
 test('file reader: ← / → step through the same reply\'s files (the viewer\'s order); a picture / PDF closes the reader first', () => {
   assert.match(media, /export function fileNeighbour\(c, d\) \{ const list = navList\(c\)/);

@@ -80,7 +80,7 @@ export function paintCard(p) {
   box.setAttribute('aria-label', t('p414.card.aria'));
   const lines = term.out.replace(/\n$/, '').split('\n');
   const long = lines.length > CARD_LINES;
-  const pre = mk('pre', 'bangout'); pre.id = 'bangOut';
+  const pre = mk('pre', 'bangout', undefined, 'aj-terminal'); pre.id = 'bangOut';
   const preBox = copyable(pre, { variant: 'block', click: false });   // P292: the copy icon (the whole output)
   pre.textContent = term.out || t('p414.card.empty');
   pre.classList.toggle('none', !term.out);
@@ -92,7 +92,7 @@ export function paintCard(p) {
   const kids = [preBox];
   if (notes.length) { const n = mk('p', 'bangnote', notes.join(' · ')); n.id = 'bangNote'; kids.push(n); }
   if (long) {
-    const b = mk('button', 'bangmore', t(open ? 'p414.card.less' : 'p414.card.more', { n: lines.length })); b.type = 'button'; b.id = 'bangMore';
+    const b = mk('button', 'bangmore', t(open ? 'p414.card.less' : 'p414.card.more', { n: lines.length }), 'aj-terminal'); b.type = 'button'; b.id = 'bangMore';
     b.setAttribute('aria-expanded', String(open));
     b.addEventListener('click', () => { open = !open; shownFor = null; paintCard(p); });
     kids.push(b);

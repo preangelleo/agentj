@@ -6,7 +6,7 @@ open. The page sends `{"t":"res_watch","on":true}` when the card opens (again ev
 watch ends or expires (WATCH_TTL — a phone that vanished never keeps it running). Every sample is cheap reads:
 
 - Linux: /proc/stat (CPU), /proc/meminfo (memory), /proc/diskstats io_ticks (disk busy), /proc/net/dev on interfaces with
-  a real device (network), statvfs of the home folder (free space); GPU = /sys/class/drm/*/device/gpu_busy_percent (AMD /
+  a real device (network), statvfs of the active working folder (free space; home when unavailable); GPU = /sys/class/drm/*/device/gpu_busy_percent (AMD /
   some Intel) or `nvidia-smi` (at most every GPU_EVERY s, and never when the NVIDIA card is runtime-suspended: asking would
   wake it up);
 - macOS: host_statistics through ctypes (CPU), `vm_stat` + hw.memsize (memory), `ioreg` IOBlockStorageDriver statistics
@@ -263,10 +263,11 @@ def _win_mem():
 class Sampler:
     """Keeps the previous counters so CPU / disk busy / network can be turned into shares and rates."""
 
-    def __init__(self, platform: str | None = None, home: str | None = None, now=time.monotonic):
+    def __init__(self, platform: str | None = None, home: str | None = None, now=time.monotonic, workdir=None):
         self.plat = platform or ("linux" if sys.platform.startswith("linux") else "mac" if sys.platform == "darwin"
                                  else "win" if sys.platform.startswith("win") else "other")
         self.home = home or os.path.expanduser("~")
+        self.workdir = workdir
         self.now = now
         self.prev: dict = {}
         self.gpu_at = -1e9
@@ -346,11 +347,17 @@ class Sampler:
 
     def _disk(self, dt):
         out = {}
-        with contextlib.suppress(OSError):
-            du = shutil.disk_usage(self.home)
+        path = self.workdir() if self.workdir else None
+        candidates = [(path, "workdir"), (self.home, "home")] if path else [(self.home, "home")]
+        for folder, scope in candidates:
+            try:
+                du = shutil.disk_usage(folder)
+            except OSError:
+                continue
             if du.total > 0:
-                out["free"] = _frac(du.free / du.total)
-                out["free_gb"] = round(du.free / 1e9, 1)
+                out.update(free=_frac(du.free / du.total), free_gb=round(du.free / 1e9, 1),
+                           total_gb=round(du.total / 1e9, 1), scope=scope)
+                break
         busy = None
         if self.plat == "linux":
             ticks = parse_diskstats(_r("/proc/diskstats"))

@@ -9,7 +9,7 @@ const fn=source.slice(source.indexOf('const chanOpen = new Set();'),source.index
 function load(){
  const made=[];
  const ctx=vm.createContext({t:k=>k,showPage:()=>{ctx.redrawn=(ctx.redrawn||0)+1;},
-   document:{createElement:tag=>{const n={tag,dataset:{},children:[],append(...c){this.children.push(...c);},appendChild(c){this.children.push(c);},addEventListener(k,f){this.click=f;}};made.push(n);return n;}}});
+   document:{createElement:tag=>{const n={tag,dataset:{},attributes:{},setAttribute(k,v){this.attributes[k]=String(v);},children:[],append(...c){this.children.push(...c);},appendChild(c){this.children.push(c);},addEventListener(k,f){this.click=f;}};made.push(n);return n;}}});
  vm.runInContext(fn+';this.chanCard=chanCard;this.chanWords=chanWords;this.paintChan=paintChan;this.chanOpen=chanOpen;',ctx);
  return ctx;
 }
@@ -28,7 +28,7 @@ test('the words, not the inbox path; plain text under the label and the low-trus
  assert.equal(d.children[0].textContent,'…');
  assert.match(d.children[1].textContent,/wechat-message\.json/);
  assert.ok(!b.children.some(x=>x.tag==='button'),'short text: no fold button');
- assert.match(source,/p\.source\?\.k === "friend_report" \|\| !!chan\);/,'rendered as plain text (never Markdown)');
+ assert.match(source,/p\.source\?\.k === "friend_report" \|\| !!chan(?: \|\| noticeOnly)?\);/,'rendered as plain text (never Markdown)');
 });
 test('long text folds behind 展开 and opens in place; a cut message says so when open',()=>{
  const c=load(),long='很'.repeat(900),p=page(long,{cut:true});

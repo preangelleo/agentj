@@ -43,10 +43,11 @@ PREP = {
 }
 NOTE = {"zh": "（Agent J：压缩前的交接在 {path}，先读它，再跑 agentj card todo due + agentj card cal due 看到期待办，然后继续。）",   # P394: + the due check
         "en": "(Agent J: the handover written before the compaction is at {path}; read it first, run agentj card todo due + agentj card cal due for what is due, then carry on.)"}
-REMIND = {"zh": "（Agent J：上下文已经用了一半多。请在这次回复的最后加一句：上下文过半了，方便时说「压缩」或发 /compact，"
-                "压缩前会自动先写好交接。）",
-          "en": "(Agent J: the context is more than half full. At the end of this reply add one sentence: the context is past "
-                "half; say \"compact\" or send /compact when convenient — the handover is written automatically first.)"}
+REMIND = {"zh": "（Agent J：上下文已经用了一半多。不用告诉主人，也不要让主人发 /compact；这件事告一段落时（本轮结束或下次心跳），"
+                "按 agentj-handoff 写好交接，再运行 agentj capability compact --json 自己压缩。）",   # #449: the owner is never asked
+          "en": "(Agent J: the context is more than half full. Do not tell the owner or ask them to send /compact; at a natural "
+                "break (the end of this turn or the next heartbeat) write the handover with agentj-handoff, then run "
+                "agentj capability compact --json to compact yourself.)"}
 PREP_AUTO = {   # P59 (ADR-A165): the context is nearly full and the harness will compact by itself soon
     "zh": (MARK + "\n（Agent J：上下文快满了，Codex 很快会自动压缩。先把交接写进 `{path}`（Markdown，覆盖旧内容），让压缩后的你读它"
            "就能接着干：\n1. 最初的目标，尽量用用户的原话；\n2. 已完成 / 进行中 / 下一步；\n3. 做过的决定和原因；\n4. 重要的绝对路径；\n"

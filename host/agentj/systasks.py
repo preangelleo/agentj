@@ -1,17 +1,10 @@
-"""the Agent J host's own scheduled tasks, read-only, for the phone's 「定时任务」 page (P207 §2, PROTOCOL §8 `systask_list`).
+"""Bounded read-only native automation metadata for the owner's scheduled-task views.
 
-Agent J's own tasks live in tasks.py; this module only *lists* what the Agent J host already schedules by itself, so the page
-can show 「这台Agent J 主机上的其它定时任务」 next to them. Nothing here can create, change, start or delete anything.
-
-Sources: Linux = systemd --user timers (`systemctl --user list-timers --all --output=json`, text fallback; Description and
-state from `systemctl --user show` — never ExecStart) + `crontab -l`; macOS = ~/Library/LaunchAgents/*.plist with
-StartCalendarInterval / StartInterval (+ `launchctl list` for loaded / last exit) + `crontab -l`; Windows =
-`schtasks /query /fo csv /v`, the current user's tasks, \\Microsoft\\ excluded.
-
-Privacy: a row carries only {src, id, name, when, next|next_s, last|last_s, state}. Command lines, arguments, environment
-lines, working directories and "Task To Run" are never read into a row; a cron line becomes its schedule + the basename of its
-first command word (no arguments). Bounded: ≤ MAX rows, short strings, each tool ≤ TIMEOUT s, no shell, a missing tool = no
-rows. Cached TTL s (the page re-reads on every open). Runs in the host process only — nothing is exposed to the Agent.
+Linux: user/system timers and user/system cron/anacron. macOS: LaunchAgents,
+LaunchDaemons and user cron. Windows: all visible Task Scheduler items. No
+mutations here. Permission failures are explicit when distinguishable; unseen
+objects are never claimed to be inventoried. Arguments/environment never enter
+rows; execution is a service identity or masked marker, not a command line.
 """
 from __future__ import annotations
 
@@ -89,11 +82,11 @@ def _span_secs(s: str) -> int | None:
     return int(total) if ok and total >= 1 else None
 
 
-def _show(run, units: list[str]) -> dict:
+def _show(run, units: list[str], system=False) -> dict:
     """{unit: {prop: value}} from `systemctl --user show` — only names, descriptions, states and timer specs."""
     out: dict = {}
     for i in range(0, len(units), 50):
-        txt = run(["systemctl", "--user", "show", "--no-pager", "-p",
+        txt = run(["systemctl", *([] if system else ["--user"]), "show", "--no-pager", "-p",
                    "Id,Description,ActiveState,UnitFileState,Result,TimersCalendar,TimersMonotonic", "--", *units[i:i + 50]])
         if not txt:
             continue
@@ -135,8 +128,8 @@ def _list_timers_text(txt: str) -> list[dict]:
     return out
 
 
-def scan_systemd(run=_run) -> list[dict]:
-    txt = run(["systemctl", "--user", "list-timers", "--all", "--output=json", "--no-pager"])
+def scan_systemd(run=_run, system=False) -> list[dict]:
+    txt = run(["systemctl", *([] if system else ["--user"]), "list-timers", "--all", "--output=json", "--no-pager"])
     timers = None
     if txt:
         try:
@@ -144,7 +137,10 @@ def scan_systemd(run=_run) -> list[dict]:
         except ValueError:
             timers = None
     if not isinstance(timers, list):
-        txt = run(["systemctl", "--user", "list-timers", "--all", "--no-pager", "--no-legend"])
+        txt = run(["systemctl", *([] if system else ["--user"]), "list-timers", "--all", "--no-pager", "--no-legend"])
+        if not txt and system:
+            return [dict(src="systemd", id="system-timers", name="System timers", when=[], state="waiting", scope="system",
+                         visibility="unavailable", control={"supported":False,"reason":"not_visible"})]
         timers = _list_timers_text(txt) if txt else []
     timers = [t for t in timers if isinstance(t, dict) and isinstance(t.get("unit"), str)][:MAX]
     units = []
@@ -152,7 +148,7 @@ def scan_systemd(run=_run) -> list[dict]:
         units.append(t["unit"])
         if isinstance(t.get("activates"), str) and t["activates"]:
             units.append(t["activates"])
-    info = _show(run, units) if units else {}
+    info = _show(run, units, system) if units else {}
     rows = []
     for t in timers:
         tp = info.get(t["unit"], {})
@@ -168,7 +164,10 @@ def scan_systemd(run=_run) -> list[dict]:
         else:
             state = "waiting"
         us = lambda v: int(v // 1_000_000) if isinstance(v, int) and not isinstance(v, bool) and v > 0 else None
-        rows.append(_row("systemd", t["unit"], name, _timer_when(tp), state, us(t.get("next")), us(t.get("last"))))
+        row = _row("systemd", t["unit"], name, _timer_when(tp), state, us(t.get("next")), us(t.get("last")))
+        row.update(scope="system" if system else "user", owner="unknown", execution=t.get("activates"),
+                   last_result=first(sp, "Result") or "unknown")
+        rows.append(row)
     return rows
 
 
@@ -236,7 +235,13 @@ def parse_crontab(txt: str) -> list[dict]:
 
 
 def scan_cron(run=_run) -> list[dict]:
-    return parse_crontab(run(["crontab", "-l"]) or "")
+    text = run(["crontab", "-l"]) or ""
+    rows = []
+    for number, line in enumerate(text.splitlines(), 1):
+        for row in parse_crontab(line):
+            row.update(control_id="crontab:" + str(number), control={"supported": False, "reason": "backend_unavailable"})
+            rows.append(row)
+    return rows[:MAX]
 
 
 # ---------------------------------------------------------------- macOS LaunchAgents
@@ -270,18 +275,19 @@ def _launchctl(txt: str) -> dict:
     return out
 
 
-def scan_launchd(run=_run, home: str | None = None) -> list[dict]:
-    d = os.path.join(home or os.path.expanduser("~"), "Library", "LaunchAgents")
+def scan_launchd(run=_run, home: str | None = None, directory=None, system=False) -> list[dict]:
+    d = directory or os.path.join(home or os.path.expanduser("~"), "Library", "LaunchAgents")
     try:
         names = sorted(n for n in os.listdir(d) if n.endswith(".plist"))[:MAX * 2]
     except OSError:
-        return []
-    loaded = _launchctl(run(["launchctl", "list"]) or "")
+        return [dict(src="launchd",id="system-daemons",name="LaunchDaemons",when=[],state="waiting",scope="system",
+                     visibility="unavailable",control={"supported":False,"reason":"not_visible"})] if system else []
+    loaded = _launchctl(run(["launchctl", "list"]) or "") if not system or (hasattr(os, "geteuid") and os.geteuid() == 0) else {}
     rows = []
     for n in names:
         p = os.path.join(d, n)
         try:
-            if os.path.getsize(p) > 256 * 1024:
+            if os.path.islink(p) or not os.path.isfile(p) or os.path.getsize(p) > 256 * 1024:
                 continue
             with open(p, "rb") as fh:
                 pl = plistlib.load(fh)
@@ -307,7 +313,12 @@ def scan_launchd(run=_run, home: str | None = None) -> list[dict]:
             state = "disabled"
         if pl.get("Disabled") is True and label not in loaded:
             state = "disabled"
-        rows.append(_row("launchd", label, label, when, state))
+        row = _row("launchd", label, label, when, state)
+        row.update(scope="system" if system else "user", owner="unknown", execution="[masked]",
+                   last_result=loaded[label][1] if label in loaded else "unknown")
+        if system and (not hasattr(os, "geteuid") or os.geteuid() != 0):
+            row.update(state="waiting", visibility="limited")
+        rows.append(row)
         if len(rows) >= MAX:
             break
     return rows
@@ -318,7 +329,7 @@ _WIN_COLS = {"TaskName": 1, "Next Run Time": 2, "Status": 3, "Last Run Time": 5,
              "Comment": 10, "Scheduled Task State": 11, "Run As User": 14, "Schedule Type": 18, "Start Time": 19}
 
 
-def parse_schtasks(txt: str, user: str | None = None) -> list[dict]:
+def parse_schtasks(txt: str, user: str | None = None, all_users=False) -> list[dict]:
     """`schtasks /query /fo csv /v` → rows. English headers by name, any other language by the fixed column order.
     "Task To Run" / "Start In" are never read."""
     rd = csv.reader(io.StringIO(txt or ""))
@@ -337,10 +348,10 @@ def parse_schtasks(txt: str, user: str | None = None) -> list[dict]:
             continue
         col = lambda k: rec[idx[k]].strip() if idx[k] < len(rec) else ""
         full = col("TaskName")
-        if not full or full.lower().startswith("\\microsoft\\") or full in seen:
+        if not full or (not all_users and full.lower().startswith("\\microsoft\\")) or full in seen:
             continue
         runas, author = col("Run As User").lower(), col("Author").lower()
-        if user and runas and not (runas == user or runas.endswith("\\" + user) or author.endswith(user)):
+        if not all_users and user and runas and not (runas == user or runas.endswith("\\" + user) or author.endswith(user)):
             continue
         seen.add(full)
         leaf = full.rstrip("\\").rsplit("\\", 1)[-1]
@@ -357,36 +368,61 @@ def parse_schtasks(txt: str, user: str | None = None) -> list[dict]:
             state = "waiting"
         when_txt = " ".join(x for x in (col("Schedule Type"), col("Start Time")) if x and x.upper() != "N/A")
         na = lambda s: None if not s or s.upper() == "N/A" or s.startswith("1999") or s.startswith("11/30/1999") else s
-        rows.append(_row("schtasks", leaf, name, [{"k": "raw", "v": _clip(when_txt, 60)}] if when_txt else [], state,
+        rows.append(_row("schtasks", full if all_users else leaf, name, [{"k": "raw", "v": _clip(when_txt, 60)}] if when_txt else [], state,
                          nxt_s=na(col("Next Run Time")), last_s=na(col("Last Run Time"))))
+        if all_users:
+            rows[-1]["id"] = full
+        rows[-1].update(scope="all-users", owner="unknown", execution="[masked]", last_result=result or "unknown")
         if len(rows) >= MAX:
             break
     return rows
 
 
 def scan_schtasks(run=_run) -> list[dict]:
-    return parse_schtasks(run(["schtasks", "/query", "/fo", "csv", "/v"]) or "", os.environ.get("USERNAME"))
+    text = run(["schtasks", "/query", "/fo", "csv", "/v"])
+    if text is None:
+        return [dict(src="schtasks", id="all-users-tasks", name="Task Scheduler", when=[], state="waiting", scope="all-users",
+                     visibility="unavailable", control={"supported":False,"reason":"not_visible"})]
+    return parse_schtasks(text, all_users=True)
 
 
 # ---------------------------------------------------------------- entry point
-def scan(platform: str | None = None, run=_run, home: str | None = None) -> list[dict]:
-    """Every source of this OS, ≤ MAX rows; a source that fails contributes nothing."""
+def scan_snapshot(platform: str | None = None, run=_run, home: str | None = None, system_directory="/etc", daemon_directory="/Library/LaunchDaemons") -> dict:
+    """Bounded aggregate: retain every scanned family, with explicit incomplete coverage.
+
+    Each existing scanner keeps its own cap. Counts describe visible scanned rows,
+    never an exhaustive OS inventory (tools and permissions can hide entries).
+    """
     platform = platform or sys.platform
     if platform.startswith("linux"):
-        parts = (lambda: scan_systemd(run), lambda: scan_cron(run))
+        parts = ((lambda: scan_systemd(run), MAX), (lambda: scan_systemd(run, system=True), MAX),
+                 (lambda: scan_cron(run), MAX), (lambda: scan_system_cron(system_directory, aggregate=True), 7 * MAX))
     elif platform == "darwin":
-        parts = (lambda: scan_launchd(run, home), lambda: scan_cron(run))
+        parts = ((lambda: scan_launchd(run, home), MAX),
+                 (lambda: scan_launchd(run, directory=daemon_directory, system=True), MAX), (lambda: scan_cron(run), MAX))
     elif platform == "win32":
-        parts = (lambda: scan_schtasks(run),)
+        parts = ((lambda: scan_schtasks(run), MAX),)
     else:
-        parts = (lambda: scan_cron(run),)
+        parts = ((lambda: scan_cron(run), MAX),)
     rows: list[dict] = []
-    for part in parts:
+    for part, limit in parts:
         try:
-            rows.extend(part())
+            rows.extend(part()[:limit])
         except Exception:                                   # noqa: BLE001 — a surprise in one source never hides the others
             continue
-    return rows[:MAX]
+    for row in rows:
+        row.setdefault("scope", "user")
+        row.setdefault("owner", "unknown")
+        row.setdefault("execution", "[masked]")
+        row.setdefault("last_result", "unknown")
+        row.setdefault("control", {"supported": False, "reason": "read_only"})
+    return {"items": rows, "scan_limited": True}
+
+
+def scan(platform: str | None = None, run=_run, home: str | None = None, system_directory="/etc", daemon_directory="/Library/LaunchDaemons", *, aggregate=False) -> list[dict]:
+    """Legacy bounded list by default; opt-in aggregate retains per-source caps."""
+    items = scan_snapshot(platform, run, home, system_directory, daemon_directory)["items"]
+    return items if aggregate else items[:MAX]
 
 
 def rows(now: float | None = None) -> list[dict]:
@@ -399,3 +435,93 @@ def rows(now: float | None = None) -> list[dict]:
         out = scan()
         _cache["rows"] = (now, out)
         return [dict(r) for r in out]
+
+
+def scan_system_cron(directory="/etc", *, aggregate=False):
+    """Bounded read-only system cron/anacron discovery; directory injection is for fixtures."""
+    from pathlib import Path
+    root, rows = Path(directory), []
+    counts = {}
+    def add(row, family):
+        if not aggregate or counts.get(family, 0) < MAX:
+            rows.append(row)
+            counts[family] = counts.get(family, 0) + 1
+    paths = [root / "crontab", root / "anacrontab"]
+    def unavailable(name, family=None):
+        add(dict(src="cron-system", id=name, name=name, when=[], state="waiting", scope="system",
+                         visibility="unavailable", control={"supported":False, "reason":"not_visible"}), family or name)
+    for name in ("cron.d", "cron.hourly", "cron.daily", "cron.weekly", "cron.monthly"):
+        folder = root / name
+        try:
+            if folder.is_symlink():
+                unavailable(name)
+                continue
+            entries = sorted(folder.iterdir())[:MAX]
+        except OSError:
+            unavailable(name)
+            continue
+        if name == "cron.d":
+            paths.extend(entries)
+        else:
+            for entry in entries:
+                if entry.is_symlink() or not entry.is_file():
+                    continue
+                add(_row("cron-system", name+"/"+entry.name, entry.name, [{"k":"raw","v":name}], "waiting"), name)
+    for path in paths[:MAX + 2 if aggregate else MAX]:
+        family = "cron.d" if path.parent == root / "cron.d" else path.name
+        if aggregate and counts.get(family, 0) >= MAX:
+            continue
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size > 262144:
+                continue
+            text = path.read_text(errors="replace")
+        except OSError:
+            unavailable(path.name, family)
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            if aggregate and counts.get(family, 0) >= MAX:
+                break
+            line = line.strip()
+            if not line or line.startswith("#") or re.match(r"^[A-Za-z_]\w*\s*=", line):
+                continue
+            if path == root / "anacrontab":
+                f = line.split(None, 3)
+                if len(f) != 4 or not (f[0].isdigit() or f[0] == "@monthly") or not f[1].isdigit():
+                    continue
+                parsed = [_row("anacron", "job", _cmd_name(f[3]), [{"k":"raw","v":f[0]+" days; delay "+f[1]+" min"}], "waiting")]
+            else:
+                f = line.split(None, 2 if line.startswith("@") else 6)
+                candidate = f[0]+" "+f[2] if len(f)==3 else " ".join(f[:5])+" "+f[6] if len(f)==7 else ""
+                parsed = parse_crontab(candidate)
+            for row in parsed:
+                row.update(src="anacron" if path == root / "anacrontab" else "cron-system", id=str(path.relative_to(root))+":"+str(number))
+                add(row, family)
+    for row in rows:
+        row.update(scope="system", owner="unknown", execution="[masked]", last_result="unknown")
+        row.setdefault("control", {"supported":False,"reason":"read_only","edit_path":"/agentj-automation @<exact-name> (separate owner-authorized task-management workflow)"})
+    return rows if aggregate else rows[:MAX]
+
+
+def eligible_source_line(line, source):
+    """Strict known single physical-line grammar; never interpret commands or owner as authority."""
+    try:
+        text = line.decode('utf-8')
+    except UnicodeDecodeError:
+        return False
+    if any(c in text for c in ('\x00', '\v', '\f')) or text.rstrip('\r\n').endswith('\\'):
+        return False
+    text = text.rstrip('\r\n')
+    if '\r' in text or '\n' in text or not text.strip() or text.lstrip().startswith('#'):
+        return False
+    if source == 'anacron':
+        fields = text.split(None, 3)
+        return len(fields) == 4 and (fields[0].isdigit() or fields[0] == '@monthly') and fields[1].isdigit() and bool(re.fullmatch(r'[A-Za-z0-9_-]+', fields[2]))
+    if source == 'cron':
+        fields = text.split(None, 1 if text.lstrip().startswith('@') else 5)
+        if text.lstrip().startswith('@'):
+            return len(fields) == 2 and fields[0] in _CRON_AT and bool(fields[1].strip())
+        return len(fields) == 6 and all(_CRON_FIELD.fullmatch(f) for f in fields[:5]) and bool(fields[5].strip())
+    fields = text.split(None, 2 if text.lstrip().startswith('@') else 6)
+    if len(fields) == 3 and fields[0] in _CRON_AT:
+        return bool(re.fullmatch(r'[A-Za-z_][A-Za-z0-9_-]*', fields[1]))
+    return len(fields) == 7 and all(_CRON_FIELD.fullmatch(f) for f in fields[:5]) and bool(re.fullmatch(r'[A-Za-z_][A-Za-z0-9_-]*', fields[5]))

@@ -72,6 +72,21 @@ export function syncHtml(html, zh = dictionaries().zh) {
   return html;
 }
 
+/** Web-owned modules are concatenated, preserving cascade and one original HTTP resource. */
+export function webComponentCss() {
+  const names = JSON.parse(readFileSync(join(WEB_DIR, 'styles/order.json'), 'utf8'));
+  let css = '', line = 1; const sources = [];
+  for (const name of names) {
+    if (!/^[a-z0-9-]+\.css$/.test(name)) throw new Error('Invalid Web CSS source name');
+    const text = readFileSync(join(WEB_DIR, 'styles', name), 'utf8');
+    sources.push({ source: 'styles/' + name, output: 'brand/base.css', startLine: line, lineCount: text.split('\n').length - 1 });
+    css += text + '\n'; line += (text.match(/\n/g) || []).length + 1;
+  }
+  css = css.replace(/\n+$/, '\n');
+  if (sources.length) sources.at(-1).lineCount = css.split('\n').length - sources.at(-1).startLine;
+  return { css, sources };
+}
+
 /** { path → Buffer } of everything that ships, with the copied / generated files taken from their sources. */
 export function sourceFiles() {
   const out = new Map();
@@ -82,6 +97,11 @@ export function sourceFiles() {
   }
   for (const n of PROTO_FILES) out.set(`proto/${n}`, readFileSync(join(PROTOCOL_DIR, n)));
   if (HAVE_BRAND) for (const { src, dst } of brandPlan(PUBLIC_DIR, 'web')) out.set(relPosix(dst), readFileSync(src));
+  // #577: shared brand assets/tokens may sync; Web component ownership never does.
+  // In the standalone export, styles/ sources are shipped alongside build.mjs.
+  out.set('brand/base.css', Buffer.from(webComponentCss().css));
+  // Language controls carry explicit Web ownership metadata; upstream cannot erase it.
+  out.set('brand/lang.js', readFileSync(join(WEB_DIR, 'brand/lang.js')));
   const d = dictionaries();
   // P250: immutable licensed vector sources embedded as module data; CSP permits
   // module loading, not extra HTTP connect-src requests. Rendering maps fills to the palette.

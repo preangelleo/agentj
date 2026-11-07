@@ -32,7 +32,7 @@ try{
      const shot=async(tag)=>writeFileSync(out+`${width}-${scheme}-${factory}-${state}-${tag}.png`,await shoot(p,''));
      if(factory==='robots')await shot('chat');
      await click(p,'#orb');await waitFor(p,`document.getElementById('orb').classList.contains('father-dance')`);
-     check(await ev(p,`getComputedStyle(document.getElementById('orb')).animationName==='father-dance' && getComputedStyle(document.getElementById('orb')).animationDuration==='2.4s'`),'dance 12 steps '+state);
+     check(await ev(p,`getComputedStyle(document.getElementById('orb')).animationName==='aj-header-father-dance' && getComputedStyle(document.getElementById('orb')).animationDuration==='2.4s'`),'dance 12 steps '+state);
      check(await ev(p,`getComputedStyle(document.getElementById('orb')).backgroundImage.includes('dance-${state}.png')`),'dance state '+state);
      if(factory==='robots')await shot('menu');
      const r=await rect(p,'#orb');await p.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:r.x,y:r.y}]});await sleep(800);await p.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
@@ -58,7 +58,7 @@ try{
    const singles=await ev(p,`import('./js/theme.js').then(m=>${JSON.stringify(states)}.map(s=>m.themeLogo(s)))`);check(new Set(singles).size===1,'legacy single across five states');
    await fake.send(M.robots);await fake.send({t:'status',s:'idle'});
    await p.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:scheme},{name:'prefers-reduced-motion',value:'reduce'}]});
-   await click(p,'#orb');await waitFor(p,`getComputedStyle(document.getElementById('orb')).animationName==='father-hint'`);
+   await click(p,'#orb');await waitFor(p,`getComputedStyle(document.getElementById('orb')).animationName==='aj-header-father-hint'`);
    check(await ev(p,`getComputedStyle(document.getElementById('orb')).backgroundImage==='none' && getComputedStyle(document.getElementById('orb')).objectPosition==='50% 50%'`),'reduced still outline');
    writeFileSync(out+`${width}-${scheme}-reduced.png`,await shoot(p,''));
    check(await ev(p,`new Promise(resolve=>{const orb=document.getElementById('orb');let writes=0;const obs=new MutationObserver(r=>writes+=r.length);obs.observe(orb,{attributes:true,attributeFilter:['style']});const node=document.createElement('div');node.hidden=true;document.body.append(node);setTimeout(()=>{node.remove();obs.disconnect();resolve(writes===0)},150)})`),'unrelated reply/media content never rewrites header style');

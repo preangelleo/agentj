@@ -533,6 +533,67 @@ def _absent_user_unit(unit, launches=()):
             and props.get("SubState") == "dead" and not any(props.get(k) for k in ("Job", "ExecStop", "ExecStopPost")))
 
 
+def _prompt_dispatch(command, root, state, ctx):
+    """#572: one literal prompt-data write followed by one registered CEO launch.
+
+    No other companion commands or shell expansions acquire this exception. The
+    existing executable identity proof still owns every launch operand.
+    """
+    from . import danger
+    cmds = danger.lex(command)
+    if not cmds or any(c.subst or c.owner is not None for c in cmds):
+        return None, "shape"
+    proof = _Proof(ctx)
+    if cmds[-1].piped:
+        tail = cmds.pop()
+        if (tail.words != ["tail", "-1"] or tail.redirs or tail.docs
+                or not proof.word("tail", "tail", "caller") or proof.why):
+            return None, "shape"
+    if len(cmds) not in (2, 3) or any(c.piped for c in cmds):
+        return None, "shape"
+    base = root
+    if len(cmds) == 3:
+        c = cmds.pop(0)
+        if (len(c.words) != 2 or c.words[0] != "cd" or c.redirs or c.docs
+                or _real(c.words[1], root) != os.path.join(root, NOTES)):
+            return None, "shape"
+        base = os.path.join(root, NOTES)
+    note, launch = cmds
+    if (note.words != ["cat"] or note.ins or len(note.outs) != 1 or note.redirs != note.outs
+            or len(note.docs) != 1 or not note.docs[0][1] or launch.docs or launch.redirs
+            or not launch.words or launch.words[0] != "systemd-run"):
+        return None, "shape"
+    path = note.outs[0]
+    rel = os.path.relpath(_real(path, base) or "/", root)
+    if (not re.fullmatch(r"\.jarvis/PROMPT-[A-Za-z0-9][A-Za-z0-9_.-]*\.md", rel)
+            or not _writes(path, base, root, state)
+            or any("$" in w or "`" in w for w in note.redirs)):
+        return None, "shape"
+    proof = _Proof(ctx)
+    if not proof.word("cat", "cat", "caller") or proof.why:
+        return None, "shape"
+    code, _ = danger.heredocs(command)
+    if _globs(code):
+        return None, "shape"
+    if any("$HOME" in w or "${HOME}" in w for w in re.findall(r"'([^']*)'", code)):
+        return None, "shape"
+    words = [re.sub(r"\$(?:HOME\b|\{HOME\})", lambda _: os.path.expanduser("~"), w) for w in launch.words]
+    if any("$" in w or "`" in w for w in words):
+        return None, "shape"
+    if (not any(words[i:i + 3] == ["agentj", "busy", "run"] for i in range(len(words)))
+            or "--kind" not in words or words[words.index("--kind") + 1:][:1] != ["ceo"]):
+        return None, "shape"
+    # Human busy labels are argv data. The older _plain checker rejects even a
+    # quoted # in labels; normalize only these inert values for its proof copy.
+    stop = words.index("--") if "--" in words else len(words)
+    for i in range(stop - 1):
+        if words[i] in ("--label", "--who"):
+            words[i + 1] = "CEO task"
+    # shlex.join preserves literal argv. check() inspects the bash -c program
+    # again; command substitutions and adjacent execution fail.
+    return check(shlex.join(words), root, state, ctx)
+
+
 def check_batch(command, root, state=None, ctx=None):
     """Prove CEO launches and their finite note-only companions."""
     unit, why = check(command, root, state, ctx)
@@ -543,6 +604,9 @@ def check_batch(command, root, state=None, ctx=None):
     from . import approval_level, approval_policy, danger, policy_registry
     if not isinstance(command, str) or not root or len(command) > danger.MAX_CMD:
         return None, "shape"
+    narrow_unit, narrow_why = _prompt_dispatch(command, root, state, ctx)
+    if narrow_unit:
+        return narrow_unit, narrow_why
     code, _ = danger.heredocs(command)
     if re.search(r"(?:^|[\s;])(?:HOME|PATH|BASH_ENV|ENV|LD_[A-Z_]+|PYTHON[A-Z_]*)=", code):
         return None, "shape"
@@ -659,6 +723,10 @@ def unproven(why, lang="zh"):
 
 
 def units(command, root=None, ctx=None) -> list:
+    if isinstance(root, str) and root:
+        unit, why = _prompt_dispatch(command, os.path.realpath(root), None, ctx)
+        if unit and why == "ok":
+            return [unit]
     c = _one(command)
     if c and c.words[1:3] == ["busy", "run"]:
         return []  # direct wrapper proof never authorises a systemd peer unit

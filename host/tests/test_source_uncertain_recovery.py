@@ -1,6 +1,7 @@
 import _hermetic
 import asyncio
 import json
+import os
 from collections import deque
 from pathlib import Path
 from types import SimpleNamespace as N
@@ -213,7 +214,7 @@ class CompletionRecovery(unittest.TestCase):
 class OwnerIngress(unittest.IsolatedAsyncioTestCase):
     async def test_real_paired_owner_native_slash_and_redacted_feedback_receipt(self):
         from unittest.mock import patch
-        from agentj import serve, completion_recovery, host_diagnostics, support
+        from agentj import serve, completion_recovery, host_diagnostics, support, privacy_host, privacy, approval_material, elevate
         from agentj.state import State
         with tempfile.TemporaryDirectory(prefix='source-owner-') as td:
             st = State(Path(td)/'state')
@@ -230,9 +231,9 @@ class OwnerIngress(unittest.IsolatedAsyncioTestCase):
             with patch.object(st, 'is_allowed', side_effect=lambda x:x == pub):
                 turn = await serve.Host.on_slash(h, session, 'recover-background', key, False, True)
                 self.assertEqual(turn, 9)
-                result = json.loads(h.cmd_card.call_args.args[1].text)
-                self.assertEqual(result['result'], 'reconciled')
-                self.assertIn('retained result', result['report'])
+                shown = h.cmd_card.call_args.args[1].text
+                self.assertNotIn('{', shown.split('---')[0])
+                self.assertIn('retained result', shown)
                 self.assertEqual(h.background_done.recovery.rows[key]['state'], 'reconciled')
                 denied = N(**{**vars(session), 'cid':2})
                 self.assertEqual((await completion_recovery.owner_command(h, denied, '/recover-background'))['why'], 'paired_owner_required')
@@ -244,11 +245,28 @@ class OwnerIngress(unittest.IsolatedAsyncioTestCase):
                         sent.append(fields)
                         return 201, {'thread':'st_'+'a'*22, 'seq':1}
                 secret='sk-live-'+'a1b2c3d4'*6
+                semantic=N(st=st,agent=N(kind='claude',cfg={},session={'sessionId':'offline-semantic'}),
+                           stopped=lambda:False,agent_notice=Mock())
+                semantic_calls=[]
+                def ipc(state, request, *, timeout):
+                    self.assertEqual(state.root,st.root)
+                    self.assertEqual(set(request),{'t','gate','draft'})
+                    self.assertEqual((request['t'],request['gate']),('privacy_check','feedback'))
+                    self.assertNotIn(secret,json.dumps(request))
+                    semantic_calls.append(request)
+                    return asyncio.run(privacy_host.handle(semantic,request,peer_pid=123))
+                # Only the isolated IPC and Jev backend are synthetic; recursive
+                # redaction, Host semantic admission and typed receipt stay real.
                 with provenance.paired_request(lambda:True), patch.object(support, 'channel_for', return_value=Channel()), \
-                     patch.object(support.privacy, 'layer2', return_value=N(status='ok')), \
+                     patch.dict(os.environ,{'AGENTJ_STATE_DIR':str(st.root)}), \
+                     patch.object(elevate,'client_request',side_effect=ipc), \
+                     patch.object(approval_material,'verified_caller_origin',return_value={'verified':True,'suspicious':False}), \
+                     patch.object(privacy,'layer2',return_value=privacy.Verdict('ok')) as backend, \
                      patch('agentj.report_privacy.privacy.local_identity', return_value=('', '')):
-                    result = host_diagnostics.execute(st, {'op':'support', 'kind':'report',
+                    result = await asyncio.to_thread(host_diagnostics.execute,st, {'op':'support', 'kind':'report',
                         'text':'Owner asks to report source failure. api_key='+secret, 'wait':0})
+                self.assertEqual(len(semantic_calls),1)
+                backend.assert_called_once_with(semantic_calls[0]['draft'],gate='feedback',_host=True)
                 self.assertIn('st_'+'a'*22, result['output'])
                 self.assertNotIn(secret, result['output']+json.dumps(sent))
                 self.assertEqual(len(sent), 1)

@@ -18,13 +18,13 @@ test('P440 lint: every shipped CSS file forbids top popup notifications',()=>{
  assert.equal(topPopups('.new-toast{position:absolute;top:env(safe-area-inset-top)}').length,1);
  assert.equal(topPopups('.toast.circle{position:fixed;top:50%}').length,0);
 });
-test('P440: sudo and grants use the reply slot; auto approval always requests internal format',()=>{
+test('P440: sudo and grants use the reply slot; #562 automatic approval stays silent',()=>{
  const ui=read('js/ui.js'),elev=read('js/elevate.js'),controls=read('js/controls.js');
  assert.match(read('index.html'),/id="reply-notices"[\s\S]*?id="rmbar"/);
  assert.match(read('js/share.js'),/dataset.view === 'pair' && !ready\) el\('pair-view'\)\.prepend\(box\)/);
  assert.match(elev,/replyNotice\(runEl\)/);assert.match(elev,/replyNotice\(grantBar\)/);
  assert.doesNotMatch(elev,/document.body.appendChild\((runEl|grantBar)\)/);
- assert.match(controls,/executionToast\(t\(m.by/);
+ assert.doesNotMatch(controls,/executionToast\(t\(m.by/);
  assert.match(ui,/export function executionToast[\s\S]*?shape: 'rect'/);
  for(const id of ['setup-banner','ar-renew','qr-banner','rescue-banner','estop-banner','grant-bar','share-notice'])assert.ok(ui.includes("'"+id+"'"));
 });

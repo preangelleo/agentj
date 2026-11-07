@@ -1,0 +1,1047 @@
+{
+  "schemaVersion": 1,
+  "description": "Narrow exact-rule technical contracts. This is not a legacy component-appearance exception list. Component radius/padding/alignment/hover remain owned.",
+  "entries": [
+    {
+      "file": "styles/01-technical-language.css",
+      "selector": "html:not([data-lang=\"en\"]) [data-l=\"en\"],\nhtml[data-lang=\"en\"] [data-l=\"zh\"]",
+      "context": [],
+      "role": "technical-language",
+      "declarations": [
+        {
+          "property": "display",
+          "value": "none !important",
+          "raw": " display: none !important",
+          "start": 0,
+          "end": 25
+        }
+      ],
+      "declarationSha256": "613241ac3ed09e245350ea049efb9eb57a28614716ee6a6499b49ed0782e7143",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "styles/02a-technical-reset-head.css",
+      "selector": "*, *::before, *::after",
+      "context": [],
+      "role": "technical-reset",
+      "declarations": [
+        {
+          "property": "box-sizing",
+          "value": "border-box",
+          "raw": " box-sizing: border-box",
+          "start": 0,
+          "end": 23
+        }
+      ],
+      "declarationSha256": "26358b6a49efdc7e4570d4778ba976143bd06ec8c4cdf90effeeaa9cb7cd1058",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "styles/02a-technical-reset-head.css",
+      "selector": "html",
+      "context": [],
+      "role": "technical-reset",
+      "declarations": [
+        {
+          "property": "-webkit-text-size-adjust",
+          "value": "100%",
+          "raw": " -webkit-text-size-adjust: 100%",
+          "start": 0,
+          "end": 31
+        },
+        {
+          "property": "text-size-adjust",
+          "value": "100%",
+          "raw": " text-size-adjust: 100%",
+          "start": 32,
+          "end": 55
+        },
+        {
+          "property": "hanging-punctuation",
+          "value": "first last",
+          "raw": " hanging-punctuation: first last",
+          "start": 56,
+          "end": 88
+        }
+      ],
+      "declarationSha256": "6611ca3d585b0e45a0c9c492b84026f3e1aa02b6a9febd14b6c9dce706ffe5ae",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "styles/02c-technical-reset-tail.css",
+      "selector": "img, svg, video, canvas, picture",
+      "context": [],
+      "role": "technical-reset",
+      "declarations": [
+        {
+          "property": "display",
+          "value": "block",
+          "raw": " display: block",
+          "start": 0,
+          "end": 15
+        },
+        {
+          "property": "max-width",
+          "value": "100%",
+          "raw": " max-width: 100%",
+          "start": 16,
+          "end": 32
+        },
+        {
+          "property": "height",
+          "value": "auto",
+          "raw": " height: auto",
+          "start": 33,
+          "end": 46
+        }
+      ],
+      "declarationSha256": "db5916c6611a9e8b960c85e949a30ede89372d16e2565acb695fe844259602f6",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "styles/02c-technical-reset-tail.css",
+      "selector": "input, button, textarea, select",
+      "context": [],
+      "role": "technical-reset",
+      "declarations": [
+        {
+          "property": "font",
+          "value": "inherit",
+          "raw": " font: inherit",
+          "start": 0,
+          "end": 14
+        },
+        {
+          "property": "color",
+          "value": "inherit",
+          "raw": " color: inherit",
+          "start": 15,
+          "end": 30
+        }
+      ],
+      "declarationSha256": "996a67c4931a7d186fe6fc2e958390e6cf87e9c5ebbb83df4f9f64f512856744",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "styles/02c-technical-reset-tail.css",
+      "selector": "button",
+      "context": [],
+      "role": "technical-reset",
+      "declarations": [
+        {
+          "property": "cursor",
+          "value": "pointer",
+          "raw": " cursor: pointer",
+          "start": 0,
+          "end": 16
+        }
+      ],
+      "declarationSha256": "dcc5eb1b6aaa5d0aab4214f11e30b09bff7157e430cd7ab54ab1775d9597530f",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "styles/02c-technical-reset-tail.css",
+      "selector": "h1, h2, h3, h4, h5, h6, p, ul, ol, dl, figure, blockquote, pre",
+      "context": [],
+      "role": "technical-reset",
+      "declarations": [
+        {
+          "property": "margin",
+          "value": "0",
+          "raw": " margin: 0",
+          "start": 0,
+          "end": 10
+        }
+      ],
+      "declarationSha256": "cb4e82dbdf0fd20cd80b57885dae7eaba3d53727ca4540bbf36bf7bd4d9f5b11",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "styles/02c-technical-reset-tail.css",
+      "selector": ":where(ul, ol)[role=\"list\"], .aj-plain-list",
+      "context": [],
+      "role": "technical-reset",
+      "declarations": [
+        {
+          "property": "list-style",
+          "value": "none",
+          "raw": " list-style: none",
+          "start": 0,
+          "end": 17
+        },
+        {
+          "property": "padding",
+          "value": "0",
+          "raw": " padding: 0",
+          "start": 18,
+          "end": 29
+        }
+      ],
+      "declarationSha256": "1109f36b093f1b9995964e3724698e01a646284b93eb75ee2a7094821565fefc",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "styles/02c-technical-reset-tail.css",
+      "selector": "[hidden]",
+      "context": [],
+      "role": "technical-reset",
+      "declarations": [
+        {
+          "property": "display",
+          "value": "none !important",
+          "raw": " display: none !important",
+          "start": 0,
+          "end": 25
+        }
+      ],
+      "declarationSha256": "613241ac3ed09e245350ea049efb9eb57a28614716ee6a6499b49ed0782e7143",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "styles/04-technical-accessibility.css",
+      "selector": ":focus-visible",
+      "context": [],
+      "role": "technical-a11y",
+      "declarations": [
+        {
+          "property": "outline",
+          "value": "3px solid var(--focus)",
+          "raw": "outline:3px solid var(--focus)",
+          "start": 0,
+          "end": 30
+        },
+        {
+          "property": "outline-offset",
+          "value": "2px",
+          "raw": "outline-offset:2px",
+          "start": 31,
+          "end": 49
+        }
+      ],
+      "declarationSha256": "8e091c6843161b6650db6cee69cd9b07aba704c407b7e36ba743366f18137008",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "styles/04-technical-accessibility.css",
+      "selector": "*, *::before, *::after",
+      "context": [
+        "@media (prefers-reduced-motion: reduce)"
+      ],
+      "role": "technical-a11y",
+      "declarations": [
+        {
+          "property": "animation-duration",
+          "value": "0.01ms !important",
+          "raw": " animation-duration: 0.01ms !important",
+          "start": 0,
+          "end": 38
+        },
+        {
+          "property": "animation-iteration-count",
+          "value": "1 !important",
+          "raw": " animation-iteration-count: 1 !important",
+          "start": 39,
+          "end": 79
+        },
+        {
+          "property": "transition-duration",
+          "value": "0.01ms !important",
+          "raw": "\n    transition-duration: 0.01ms !important",
+          "start": 80,
+          "end": 123
+        },
+        {
+          "property": "scroll-behavior",
+          "value": "auto !important",
+          "raw": " scroll-behavior: auto !important",
+          "start": 124,
+          "end": 157
+        }
+      ],
+      "declarationSha256": "81d76b90a9c137d87751b0e7046ebb341cfb56aed7bd7d2f39f23f1214ac0f6d",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "styles/04-technical-accessibility.css",
+      "selector": "html",
+      "context": [
+        "@media (prefers-reduced-motion: no-preference)"
+      ],
+      "role": "technical-a11y",
+      "declarations": [
+        {
+          "property": "scroll-behavior",
+          "value": "smooth",
+          "raw": " scroll-behavior: smooth",
+          "start": 0,
+          "end": 24
+        }
+      ],
+      "declarationSha256": "48d65fb45714f9889e193c16dac3ed8cda873b42e3df6ad024a19b899d4f232f",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": "input::selection,textarea::selection",
+      "context": [],
+      "role": "technical-selection",
+      "declarations": [
+        {
+          "property": "background",
+          "value": "var(--c-peek-a-blue)",
+          "raw": "background:var(--c-peek-a-blue)",
+          "start": 0,
+          "end": 31
+        },
+        {
+          "property": "color",
+          "value": "var(--c-sooty)",
+          "raw": "color:var(--c-sooty)",
+          "start": 32,
+          "end": 52
+        }
+      ],
+      "declarationSha256": "fbafed00bbdc182228a09c107a8ad9a5d5e82b5190b60616bdb3c28f5575e340",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": "*",
+      "context": [],
+      "role": "technical-browser",
+      "declarations": [
+        {
+          "property": "box-sizing",
+          "value": "border-box",
+          "raw": "box-sizing:border-box",
+          "start": 0,
+          "end": 21
+        },
+        {
+          "property": "-webkit-tap-highlight-color",
+          "value": "transparent",
+          "raw": "-webkit-tap-highlight-color:transparent",
+          "start": 22,
+          "end": 61
+        }
+      ],
+      "declarationSha256": "8e5dc2a59568b4a8685bf00de9dd35a6d66a39f074e7e42e885e7e9106a96150",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": ":focus:not(:focus-visible)",
+      "context": [],
+      "role": "technical-a11y",
+      "declarations": [
+        {
+          "property": "outline",
+          "value": "none",
+          "raw": "outline:none",
+          "start": 0,
+          "end": 12
+        }
+      ],
+      "declarationSha256": "3615152942b8326e1e08a07ea37a38945a71d80e436128e5f0801e2b1bfe183a",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": "html:not([data-kbd]) :focus,html:not([data-kbd]) :focus-visible",
+      "context": [],
+      "role": "technical-a11y",
+      "declarations": [
+        {
+          "property": "outline",
+          "value": "none!important",
+          "raw": "outline:none!important",
+          "start": 0,
+          "end": 22
+        }
+      ],
+      "declarationSha256": "a06236f09a1ede64948de8e22a23f3a67276a48d10281bc117ad48399ea45de0",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": "html[data-kbd] :focus-visible",
+      "context": [],
+      "role": "technical-a11y",
+      "declarations": [
+        {
+          "property": "outline-color",
+          "value": "var(--ring)!important",
+          "raw": "outline-color:var(--ring)!important",
+          "start": 0,
+          "end": 35
+        }
+      ],
+      "declarationSha256": "d11c64a2de999fe85f820b454c9edbcc00cb356d09efb58e23e1d4ee22cb0e99",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": "*,*::before,*::after",
+      "context": [],
+      "role": "technical-browser",
+      "declarations": [
+        {
+          "property": "scrollbar-width",
+          "value": "none",
+          "raw": "scrollbar-width:none",
+          "start": 0,
+          "end": 20
+        }
+      ],
+      "declarationSha256": "e76497404d4e4cd0b43099ba54468ea269be08542a1ebc291aafc2c3e8940a5f",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": "::-webkit-scrollbar,::-webkit-scrollbar-button,::-webkit-scrollbar-track,::-webkit-scrollbar-thumb,::-webkit-scrollbar-corner",
+      "context": [],
+      "role": "technical-browser",
+      "declarations": [
+        {
+          "property": "display",
+          "value": "none",
+          "raw": "display:none",
+          "start": 0,
+          "end": 12
+        },
+        {
+          "property": "width",
+          "value": "0",
+          "raw": "width:0",
+          "start": 13,
+          "end": 20
+        },
+        {
+          "property": "height",
+          "value": "0",
+          "raw": "height:0",
+          "start": 21,
+          "end": 29
+        },
+        {
+          "property": "background",
+          "value": "transparent",
+          "raw": "background:transparent",
+          "start": 30,
+          "end": 52
+        }
+      ],
+      "declarationSha256": "0196ed9763a98ea27baaa68c4ba16748dd721e65dc1ea09abed388505c29733c",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": "*,*::before,*::after",
+      "context": [],
+      "role": "technical-browser",
+      "declarations": [
+        {
+          "property": "scrollbar-width",
+          "value": "none!important",
+          "raw": "scrollbar-width:none!important",
+          "start": 0,
+          "end": 30
+        }
+      ],
+      "declarationSha256": "cfd8db8e022e8aff3cfe3e924183cc02454996788390458809855d35be29ef17",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 1
+    },
+    {
+      "file": "public/app.css",
+      "selector": "*::-webkit-scrollbar",
+      "context": [],
+      "role": "technical-browser",
+      "declarations": [
+        {
+          "property": "display",
+          "value": "none!important",
+          "raw": "display:none!important",
+          "start": 0,
+          "end": 22
+        },
+        {
+          "property": "width",
+          "value": "0!important",
+          "raw": "width:0!important",
+          "start": 23,
+          "end": 40
+        },
+        {
+          "property": "height",
+          "value": "0!important",
+          "raw": "height:0!important",
+          "start": 41,
+          "end": 59
+        }
+      ],
+      "declarationSha256": "5e3370e2ffcf4f13d30121546c387dd13a0e7a837dfe86f305e59b9cc0bc9772",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": "html,body",
+      "context": [],
+      "role": "technical-browser",
+      "declarations": [
+        {
+          "property": "transition",
+          "value": "none",
+          "raw": "transition:none",
+          "start": 0,
+          "end": 15
+        }
+      ],
+      "declarationSha256": "f9b0c571ded27a9363329ec0fc3fc485d481c2e1b6198be7738b1420b10e858f",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": "button",
+      "context": [],
+      "role": "technical-reset",
+      "declarations": [
+        {
+          "property": "font",
+          "value": "inherit",
+          "raw": "font:inherit",
+          "start": 0,
+          "end": 12
+        },
+        {
+          "property": "color",
+          "value": "inherit",
+          "raw": "color:inherit",
+          "start": 13,
+          "end": 26
+        },
+        {
+          "property": "border",
+          "value": "0",
+          "raw": "border:0",
+          "start": 27,
+          "end": 35
+        },
+        {
+          "property": "background",
+          "value": "none",
+          "raw": "background:none",
+          "start": 36,
+          "end": 51
+        },
+        {
+          "property": "cursor",
+          "value": "pointer",
+          "raw": "cursor:pointer",
+          "start": 52,
+          "end": 66
+        }
+      ],
+      "declarationSha256": "415b276929a6a12eb81a81359370f35fb624581883f999593f8b3b3281170e40",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": "main::-webkit-scrollbar",
+      "context": [],
+      "role": "technical-browser",
+      "declarations": [
+        {
+          "property": "display",
+          "value": "none",
+          "raw": "display:none",
+          "start": 0,
+          "end": 12
+        }
+      ],
+      "declarationSha256": "1791b74e9ecf371ec6f050d4a5fb6596a9de8cb5c57f0294629d7fda63d01ba8",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rm::-webkit-scrollbar,.rm ::-webkit-scrollbar,.deck::-webkit-scrollbar",
+      "context": [],
+      "role": "technical-browser",
+      "declarations": [
+        {
+          "property": "display",
+          "value": "none",
+          "raw": "display:none",
+          "start": 0,
+          "end": 12
+        },
+        {
+          "property": "width",
+          "value": "0",
+          "raw": "width:0",
+          "start": 13,
+          "end": 20
+        },
+        {
+          "property": "height",
+          "value": "0",
+          "raw": "height:0",
+          "start": 21,
+          "end": 29
+        }
+      ],
+      "declarationSha256": "8fd3e6e8a52b899eea9cd9de6120bec200566b610e4bfee7ff0328932fd25efe",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".deck.open::-webkit-scrollbar",
+      "context": [],
+      "role": "technical-browser",
+      "declarations": [
+        {
+          "property": "display",
+          "value": "none",
+          "raw": "display:none",
+          "start": 0,
+          "end": 12
+        }
+      ],
+      "declarationSha256": "1791b74e9ecf371ec6f050d4a5fb6596a9de8cb5c57f0294629d7fda63d01ba8",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rdsc::-webkit-scrollbar",
+      "context": [],
+      "role": "technical-browser",
+      "declarations": [
+        {
+          "property": "display",
+          "value": "none",
+          "raw": "display:none",
+          "start": 0,
+          "end": 12
+        },
+        {
+          "property": "width",
+          "value": "0",
+          "raw": "width:0",
+          "start": 13,
+          "end": 20
+        },
+        {
+          "property": "height",
+          "value": "0",
+          "raw": "height:0",
+          "start": 21,
+          "end": 29
+        }
+      ],
+      "declarationSha256": "8fd3e6e8a52b899eea9cd9de6120bec200566b610e4bfee7ff0328932fd25efe",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".tray::-webkit-scrollbar",
+      "context": [],
+      "role": "technical-browser",
+      "declarations": [
+        {
+          "property": "display",
+          "value": "none",
+          "raw": "display:none",
+          "start": 0,
+          "end": 12
+        }
+      ],
+      "declarationSha256": "1791b74e9ecf371ec6f050d4a5fb6596a9de8cb5c57f0294629d7fda63d01ba8",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#input.ovf::-webkit-scrollbar",
+      "context": [],
+      "role": "technical-browser",
+      "declarations": [
+        {
+          "property": "display",
+          "value": "none",
+          "raw": "display:none",
+          "start": 0,
+          "end": 12
+        }
+      ],
+      "declarationSha256": "1791b74e9ecf371ec6f050d4a5fb6596a9de8cb5c57f0294629d7fda63d01ba8",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": "*,*::before,*::after",
+      "context": [
+        "@media (prefers-reduced-motion: reduce)"
+      ],
+      "role": "technical-browser",
+      "declarations": [
+        {
+          "property": "animation",
+          "value": "none!important",
+          "raw": "animation:none!important",
+          "start": 0,
+          "end": 24
+        },
+        {
+          "property": "transition",
+          "value": "none!important",
+          "raw": "transition:none!important",
+          "start": 25,
+          "end": 50
+        }
+      ],
+      "declarationSha256": "f99f0ad608d3fb9d8ada123681f965a45bb37b5031514b34a5b78b092978cdf6",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "public/app.css",
+      "selector": "[data-tv-focus=\"1\"]",
+      "context": [],
+      "role": "technical-a11y",
+      "declarations": [
+        {
+          "property": "outline",
+          "value": "3px solid currentColor!important",
+          "raw": "outline:3px solid currentColor!important",
+          "start": 0,
+          "end": 40
+        },
+        {
+          "property": "outline-offset",
+          "value": "-5px",
+          "raw": "outline-offset:-5px",
+          "start": 41,
+          "end": 60
+        }
+      ],
+      "declarationSha256": "d6dcce2f59415d461e4c1d62830457ce1c848fcf15859d532d7f145bdb518c59",
+      "reason": "Root tvremote.js initRemote focus() marks only a temporary target, clears it after RING_MS. Current Root rule has outline:3px solid currentColor!important and offset:-5px; no old box-shadow grant retained.",
+      "occurrence": 0,
+      "reviewedSourceBody": "outline:3px solid currentColor!important;outline-offset:-5px",
+      "sourceReview": "577 late-business review: exact selector and declaration list; no component ownership exception or additional properties permitted."
+    },
+    {
+      "file": "public/controls.css",
+      "selector": ":is(input,textarea,select,[contenteditable=\"true\"])",
+      "context": [],
+      "role": "technical-selection",
+      "declarations": [
+        {
+          "property": "user-select",
+          "value": "text!important",
+          "raw": "user-select:text!important",
+          "start": 0,
+          "end": 26
+        },
+        {
+          "property": "-webkit-user-select",
+          "value": "text!important",
+          "raw": "-webkit-user-select:text!important",
+          "start": 27,
+          "end": 61
+        },
+        {
+          "property": "-webkit-touch-callout",
+          "value": "default!important",
+          "raw": "-webkit-touch-callout:default!important",
+          "start": 62,
+          "end": 101
+        }
+      ],
+      "declarationSha256": "12b0cdea71afe8d1e56f11c52a2e14bca65cb9a709da625f7fe6cdc3969b4431",
+      "reason": "Existing browser/reset/input-mode contract; exact properties and values frozen. New appearance does not inherit this permission.",
+      "occurrence": 0
+    },
+    {
+      "file": "styles/03-content-typography.css",
+      "selector": "p",
+      "context": [],
+      "occurrence": 0,
+      "role": "technical-typography",
+      "declarations": [
+        {
+          "property": "text-wrap",
+          "value": "pretty",
+          "raw": " text-wrap: pretty",
+          "start": 0,
+          "end": 18
+        }
+      ],
+      "declarationSha256": "7ba7647c2dba77825d6d14c3bc8a46c96a9c8ff11cfba300818324dcdb0d5f3b",
+      "reason": "Fixed existing text-wrap:pretty paragraph wrapping. Any future change requires full-site impact/pixel evidence.",
+      "decision": "CEO #577 explicit technical-boundary ruling, 2026-11-07"
+    },
+    {
+      "file": "styles/03-content-typography.css",
+      "selector": "strong, b",
+      "context": [],
+      "occurrence": 0,
+      "role": "technical-semantics",
+      "declarations": [
+        {
+          "property": "font-weight",
+          "value": "700",
+          "raw": " font-weight: 700",
+          "start": 0,
+          "end": 17
+        }
+      ],
+      "declarationSha256": "6cd8970ad5832f93ddbcc38d5369703f4557adadb2ad4e5bbcba2e54148228fe",
+      "reason": "Existing semantic emphasis weight 700, frozen exact value.",
+      "decision": "CEO #577 explicit technical-boundary ruling, 2026-11-07"
+    },
+    {
+      "file": "styles/03-content-typography.css",
+      "selector": "::selection",
+      "context": [],
+      "occurrence": 0,
+      "role": "technical-selection",
+      "declarations": [
+        {
+          "property": "background",
+          "value": "var(--c-peek-a-blue)",
+          "raw": " background: var(--c-peek-a-blue)",
+          "start": 0,
+          "end": 33
+        },
+        {
+          "property": "color",
+          "value": "var(--c-sooty)",
+          "raw": " color: var(--c-sooty)",
+          "start": 34,
+          "end": 56
+        }
+      ],
+      "declarationSha256": "fbafed00bbdc182228a09c107a8ad9a5d5e82b5190b60616bdb3c28f5575e340",
+      "reason": "Existing application text selection contrast, frozen exact colors.",
+      "decision": "CEO #577 explicit technical-boundary ruling, 2026-11-07"
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#agent,#busyDots,#slashBtn,#tDoc,#tPhoto",
+      "context": [],
+      "occurrence": 0,
+      "role": "technical-gesture",
+      "declarations": [
+        {
+          "property": "-webkit-touch-callout",
+          "value": "none",
+          "raw": "-webkit-touch-callout:none",
+          "start": 0,
+          "end": 26
+        },
+        {
+          "property": "-webkit-user-select",
+          "value": "none",
+          "raw": "-webkit-user-select:none",
+          "start": 27,
+          "end": 51
+        },
+        {
+          "property": "user-select",
+          "value": "none",
+          "raw": "user-select:none",
+          "start": 52,
+          "end": 68
+        }
+      ],
+      "declarationSha256": "73d9d5ba8c82d9cb468296b40cd1ad5fdcb5d32de45076583497ce5e23cd3f59",
+      "reason": "Five specifically named long-press targets suppress native selection/callout; this permission cannot add appearance or more selectors.",
+      "decision": "CEO #577 explicit technical-boundary ruling, 2026-11-07"
+    },
+    {
+      "file": "public/app.css",
+      "selector": "[data-cc][data-cc-click=\"0\"]",
+      "context": [],
+      "occurrence": 0,
+      "role": "technical-copy-capability",
+      "declarations": [
+        {
+          "property": "cursor",
+          "value": "auto",
+          "raw": "cursor:auto",
+          "start": 0,
+          "end": 11
+        }
+      ],
+      "declarationSha256": "7c6e3bab1ba618a023a4af3f0c4717e6bb717d89f6ffcf00a7eff8ff31be2a34",
+      "reason": "copycode.js:61 explicit disabled click-copy capability changes only cursor:auto.",
+      "decision": "CEO #577 explicit technical-boundary ruling, 2026-11-07"
+    },
+    {
+      "file": "public/app.css",
+      "selector": "code[data-cc],pre[data-cc],.cc-in",
+      "context": [],
+      "occurrence": 0,
+      "role": "technical-copy-capability",
+      "declarations": [
+        {
+          "property": "cursor",
+          "value": "copy",
+          "raw": "cursor:copy",
+          "start": 0,
+          "end": 11
+        }
+      ],
+      "declarationSha256": "17fdfff41ddad7fe028a1eb9776b52545dcc32f922c0a636ab63ed21e709358d",
+      "reason": "Existing enabled copy capability cursor:copy, companion of the explicitly frozen disabled cursor:auto state. Only cursor and these exact existing targets are permitted; not a component appearance exemption.",
+      "evidence": "public/js/copycode.js attach/markCopyable capability",
+      "decision": "Implementation of CEO #577 existing copy-capability technical boundary; reviewable exact declaration."
+    },
+    {
+      "file": "public/cards.css",
+      "selector": ".jc-dialog button:focus-visible",
+      "context": [],
+      "occurrence": 0,
+      "role": "technical-a11y",
+      "declarations": [
+        {
+          "property": "outline",
+          "value": "2px solid var(--c-lotion)",
+          "raw": "outline:2px solid var(--c-lotion)",
+          "start": 0,
+          "end": 33
+        },
+        {
+          "property": "outline-offset",
+          "value": "2px",
+          "raw": "outline-offset:2px",
+          "start": 34,
+          "end": 52
+        }
+      ],
+      "declarationSha256": "03262ef4e11295613c66bcacad3c612b72216e8cb337e54011d46b3626a9a1ea",
+      "bodySha256": "3bee47d5bfc9f861e936f6ef5cc0e1e56fece9c948514777a5022fd3d82fd9a1",
+      "reason": "CEO C6: exact existing dark native-dialog visible focus ring. Only outline and outline-offset; no component shape/color/background permission."
+    },
+    {
+      "file": "public/app.css",
+      "selector": "html[data-kbd] [data-tv-focus=\"1\"]",
+      "context": [],
+      "occurrence": 0,
+      "role": "technical-a11y",
+      "declarations": [
+        {
+          "property": "outline-color",
+          "value": "currentColor!important",
+          "raw": "outline-color:currentColor!important",
+          "start": 0,
+          "end": 36
+        }
+      ],
+      "declarationSha256": "0ed6a180d164969644ab38b47ce7a2de72f34663990fdbf0979df6c11f045ab9",
+      "reason": "Root keyboard-input-mode refines only the temporary focus outline color to currentColor; cannot authorize background/layout/skin.",
+      "reviewedSourceBody": "outline-color:currentColor!important",
+      "sourceReview": "577 late-business review: exact selector and declaration list; no component ownership exception or additional properties permitted."
+    },
+    {
+      "file": "public/app.css",
+      "selector": "code[data-cc],pre[data-cc],[data-cc-field],.cc-in",
+      "context": [],
+      "occurrence": 0,
+      "role": "technical-copy-affordance",
+      "declarations": [
+        {
+          "property": "cursor",
+          "value": "copy",
+          "raw": "cursor:copy",
+          "start": 0,
+          "end": 11
+        }
+      ],
+      "declarationSha256": "17fdfff41ddad7fe028a1eb9776b52545dcc32f922c0a636ab63ed21e709358d",
+      "reason": "copycode.js explicitly marks these copy affordances; cursor:copy only never supplies their text/code/native actor.",
+      "reviewedSourceBody": "cursor:copy",
+      "sourceReview": "577 late-business review: exact selector and declaration list; no component ownership exception or additional properties permitted."
+    },
+    {
+      "file": "public/forms.css",
+      "selector": "body[data-fdeep=\"1\"]",
+      "context": [],
+      "occurrence": 0,
+      "role": "technical-scroll-lock",
+      "declarations": [
+        {
+          "property": "overflow",
+          "value": "hidden",
+          "raw": "overflow:hidden",
+          "start": 0,
+          "end": 15
+        }
+      ],
+      "declarationSha256": "4766c6666f54e54434a5cc1c2e5552ba5c0dfb3f118c445ac96918a1cb391a4e",
+      "reason": "forms.js deep open sets body.dataset.fdeep=1 and close deletes it; overflow:hidden only prevents background scrolling, not form or body appearance.",
+      "reviewedSourceBody": "overflow:hidden",
+      "sourceReview": "577 late-business review: exact selector and declaration list; no component ownership exception or additional properties permitted."
+    },
+    {
+      "file": "public/controls.css",
+      "selector": "[data-cc=\"bare\"],[data-cc=\"bare\"] *",
+      "context": [],
+      "occurrence": 0,
+      "role": "technical-selection",
+      "declarations": [
+        {
+          "property": "user-select",
+          "value": "text!important",
+          "raw": "\n  user-select:text!important",
+          "start": 0,
+          "end": 29
+        },
+        {
+          "property": "-webkit-user-select",
+          "value": "text!important",
+          "raw": "-webkit-user-select:text!important",
+          "start": 30,
+          "end": 64
+        },
+        {
+          "property": "-webkit-touch-callout",
+          "value": "default!important",
+          "raw": "-webkit-touch-callout:default!important",
+          "start": 65,
+          "end": 104
+        }
+      ],
+      "declarationSha256": "12b0cdea71afe8d1e56f11c52a2e14bca65cb9a709da625f7fe6cdc3969b4431",
+      "reason": "copycode.js bare inline code and control-gestures.js explicitly retain text selection. Only user-select:text!important, -webkit-user-select:text!important, -webkit-touch-callout:default!important; no text/native actor or skin grant."
+    }
+  ]
+}

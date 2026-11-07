@@ -75,13 +75,13 @@ class Boundaries(unittest.TestCase):
         s='`EXAMPLE_KEY=Ab9!Cd8?Ef7%Gh6`，保存后重启服务。'
         self.assertEqual(privacy.owner_text(s),'`EXAMPLE_KEY=<redacted>`，保存后重启服务。')
 
-    def test_installed_only(self):
+    def test_uninstalled_remains_discoverable(self):
         from agentj import harness
         with mock.patch.object(harness, 'detect', return_value={'harnesses':[
                 {'name':'kimi','installed':True,'supported':True},
                 {'name':'codex','installed':False,'supported':True}]}):
             names=cmdrun.available_commands()
-        self.assertIn('switch_kimi',names); self.assertNotIn('switch_codex',names)
+        self.assertIn('switch_kimi',names); self.assertIn('switch_codex',names)
         self.assertIn('doctor',names)
 
     def test_six_fixed_force_commands(self):

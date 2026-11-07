@@ -1,3 +1,4 @@
+import { attachSpecial, canSpecialApprove, decorateSpecial, forgetSpecial, refreshSpecialVisibility, restoreSpecial } from './approval-special541.js';
 // P408 (PROTOCOL §38, ADR-P408-terminal): the web terminal page, line mode. Loaded on the first open by js/termhook.js (a
 // module script next to it — never in the first-screen bundle) together with terminal.css.
 // Open = two steps: an unsigned `term_open` fetches the HOST's one-use nonce, Face ID challenge, PRF salt and one-time X25519
@@ -63,7 +64,7 @@ function fresh() {
     pty: false, px: null, sentSize: null, inSeq: 0, inQ: [], inQb: 0, budget: PTY_RATE, budgetAt: 0, inTimer: 0, size: null, rsTimer: 0 };   // 0.26.9 #463
 }
 let root = null, tick = 0, hideTimer = 0, closeTimer = 0;
-const $ = (id) => root.querySelector('#' + id);
+const $ = (id) => document.getElementById(id);
 
 // ---------------------------------------------------------------- DOM
 function css() {
@@ -72,24 +73,24 @@ function css() {
   l.id = 'term-css'; l.rel = 'stylesheet'; l.href = new URL('../terminal.css', import.meta.url).href;
   document.head.appendChild(l);
 }
-function btn(id, cls, text) { const b = mk('button', cls, text); b.type = 'button'; if (id) b.id = id; return b; }
+function btn(id, cls, text) { const b = mk('button', cls, text, 'aj-terminal'); b.type = 'button'; if (id) b.id = id; return b; }
 function build() {
   if (root) return;
   css();
   root = mk('div', 'term'); root.id = 'term'; root.hidden = true;
   root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'term-title');
   const top = mk('div', 'term-top');
-  const title = mk('h2', 'term-title'); title.id = 'term-title';
+  const title = mk('h2', 'term-title', undefined, 'aj-terminal'); title.id = 'term-title';
   const rec = mk('span', 'term-rec'); rec.id = 'term-rec';
   const left = mk('span', 'term-left'); left.id = 'term-left';
   // P576b (#372): 「操作日志记录中 · 还剩 mm:ss」 is one link to the official page on what is logged, why and who can read it
-  const log = mk('a', 'term-log'); log.id = 'term-log'; log.target = '_blank'; log.rel = 'noopener noreferrer';
+  const log = mk('a', 'term-log', undefined, 'aj-terminal'); log.id = 'term-log'; log.target = '_blank'; log.rel = 'noopener noreferrer';
   log.append(rec, left);
   // P414 (#179③): the grabber (top centre) and the exit icon (top right) collapse the page; 「结束」 ends the session
   const grab = btn('term-grab', 'term-grab'); grab.append(mk('span'));
   const exit = btn('term-exit', 'term-exit'); exit.append(icon('M6 6l12 12M18 6L6 18'));   // P414: 「右上角叉退出」 (Leo #179③) — collapses; 「结束」 ends
   top.append(grab, title, log, btn('term-end', 'term-end'), exit);
-  const out = mk('pre', 'term-out'); out.id = 'term-out'; out.tabIndex = 0;
+  const out = mk('pre', 'term-out', undefined, 'aj-terminal'); out.id = 'term-out'; out.setAttribute('data-aj-owner','aj-terminal'); out.tabIndex = 0;
   out.setAttribute('role', 'log'); out.setAttribute('aria-live', 'polite');
   out.append(document.createTextNode(''), mk('span', 'term-cur'));
   const outBox = mk('div', 'term-outbox'); outBox.append(copyable(out, { variant: 'bare', click: false }));   // P414: 「复制输出」 below replaces P292's corner icon
@@ -101,10 +102,10 @@ function build() {
   const prog = mk('p', 'term-hint'); prog.id = 'term-prog'; prog.hidden = true;
   const bad = mk('p', 'term-hint'); bad.id = 'term-bad'; bad.hidden = true; bad.setAttribute('role', 'alert');
   const form = mk('form', 'term-form'); form.id = 'term-form'; form.autocomplete = 'off'; form.noValidate = true;
-  const input = mk('input', 'term-input'); input.id = 'term-input';
+  const input = mk('input', 'term-input', undefined, 'aj-terminal'); input.id = 'term-input';
   Object.assign(input, { type: 'text', autocomplete: 'off', spellcheck: false });
   for (const [k, v] of [['autocapitalize', 'off'], ['autocorrect', 'off'], ['enterkeyhint', 'send']]) input.setAttribute(k, v);
-  const send = mk('button', 'term-send'); send.type = 'submit'; send.id = 'term-send';
+  const send = mk('button', 'term-send', undefined, 'aj-terminal'); send.type = 'submit'; send.id = 'term-send';
   form.append(input, send);
   const keys = mk('div', 'term-keys'); keys.id = 'term-keys'; keys.setAttribute('role', 'group');
   keys.append(btn('term-k-int', 'term-key', KEYS.int), btn('term-k-quit', 'term-key', KEYS.quit), btn('term-k-up', 'term-key', '↑'),
@@ -119,16 +120,16 @@ function build() {
   bottom.append(status, stActs, prog, bad, go, goNote, form, keys, tools, warn, lineOnly);
   // the one sheet of this page: intro, the login card, a confirm, sudo, 「结束？」
   const wrap = mk('div', 'term-sheetwrap'); wrap.id = 'term-sheetwrap'; wrap.hidden = true;
-  const sheet = mk('form', 'term-sheet'); sheet.id = 'term-sheet'; sheet.autocomplete = 'off'; sheet.noValidate = true;
+  const sheet = mk('form', 'term-sheet box'); sheet.id = 'term-sheet'; sheet.autocomplete = 'off'; sheet.noValidate = true;
   sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-labelledby', 'term-sh-title');
-  const shPw = mk('input', 'term-input term-pw'); shPw.id = 'term-sh-pw';
+  const shPw = mk('input', 'term-input term-pw', undefined, 'aj-terminal'); shPw.id = 'term-sh-pw';
   Object.assign(shPw, { type: 'password', autocomplete: 'off', spellcheck: false });
   for (const [k, v] of [['autocapitalize', 'off'], ['autocorrect', 'off'], ['enterkeyhint', 'done']]) shPw.setAttribute(k, v);
   const shPwLab = mk('label', 'term-pwlab'); shPwLab.id = 'term-sh-pwlab'; shPwLab.htmlFor = 'term-sh-pw';
   const acts = mk('div', 'term-acts');
-  const yes = mk('button', 'term-btn term-btn--yes'); yes.type = 'submit'; yes.id = 'term-sh-yes';
+  const yes = mk('button', 'term-btn term-btn--yes', undefined, 'aj-terminal'); yes.type = 'submit'; yes.id = 'term-sh-yes';
   acts.append(btn('term-sh-no', 'term-btn'), yes);
-  const node = (tag, id, cls) => { const n = mk(tag, cls); n.id = id; return n; };
+  const node = (tag, id, cls) => { const n = mk(tag, cls, undefined, 'aj-terminal'); n.id = id; return n; };
   const pre = node('pre', 'term-sh-pre'), pre2 = node('pre', 'term-sh-pre2');
   const sbad = node('p', 'term-sh-bad', 'term-hint'); sbad.setAttribute('role', 'alert');
   sheet.append(node('p', 'term-sh-origin', 'term-origin'), node('h2', 'term-sh-title'), node('p', 'term-sh-text'), copyable(pre, { variant: 'block', click: false }),
@@ -166,7 +167,7 @@ function build() {
   registerLayer({ element: () => root, open: () => !!root && !root.hidden && $('term-sheetwrap').hidden, rank: 50,
     close: () => escape(), fallback: () => document.getElementById('input') || document.getElementById('set-term-open') });
   registerLayer({ element: () => $('term-sheetwrap'), open: () => !!root && !root.hidden && !$('term-sheetwrap').hidden, rank: 52,
-    close: () => sheetNo(), fallback: () => (S.px ? S.px.term.textarea : $('term-input')) });
+    close: () => {if(S.login?.approval_v===2&&sheet?.kind==='login'){S.login.collapsed=true;closeSheet();refreshSpecialVisibility();}else sheetNo();}, fallback: () => (S.px ? S.px.term.textarea : $('term-input')) });
   onLang(labels);
   labels();
 }
@@ -309,8 +310,8 @@ function buildChip() {
   chip = mk('div', 'termchip'); chip.id = 'term-chip'; chip.hidden = true; chip.setAttribute('role', 'group');
   const txt = mk('span', 'termchip-text'); txt.id = 'term-chip-text';
   txt.append(icon('M5 8l4 4-4 4M12 17h7'), mk('span'));
-  const open_ = mk('button', 'termchip-btn termchip-open'); open_.type = 'button'; open_.id = 'term-chip-open';
-  const end = mk('button', 'termchip-btn'); end.type = 'button'; end.id = 'term-chip-end';
+  const open_ = mk('button', 'termchip-btn termchip-open', undefined, 'aj-terminal'); open_.type = 'button'; open_.id = 'term-chip-open';
+  const end = mk('button', 'termchip-btn', undefined, 'aj-terminal'); end.type = 'button'; end.id = 'term-chip-end';
   chip.append(txt, open_, end);
   open_.addEventListener('click', () => expand());
   end.addEventListener('click', () => endNow());
@@ -341,7 +342,7 @@ function wipe() {
 }
 
 // ---------------------------------------------------------------- the sheet (one at a time; a later one waits)
-let sheet = null;
+let sheet = null, loginHome541 = null;
 const queue = [];
 function openSheet(o) {
   if (sheet) { queue.push(o); return; }
@@ -369,6 +370,8 @@ function openSheet(o) {
 function closeSheet() {
   if (!sheet) return;
   clearTimeout(sheet.timer);
+  restoreSpecial($('term-sheetwrap'));
+  if(loginHome541){loginHome541.replaceWith($('term-sheetwrap'));loginHome541=null;$('term-sheetwrap').classList.remove('ajmodal');}
   sheet = null;
   $('term-sh-pw').value = '';
   $('term-sheetwrap').hidden = true;
@@ -552,19 +555,28 @@ async function loginCard(m) {
   if (typeof m.id !== 'string' || !HEX32.test(m.id) || !HEX32.test(m.n || '') || !epkOk(m.epk)) return;
   const c = { id: m.id, n: m.n, epk: unb64u(m.epk), tries: Number.isInteger(m.tries) ? m.tries : 3, bad: Number.isInteger(m.bad) ? m.bad : 0,
     ttl: Number.isInteger(m.ttl) && m.ttl > 0 && m.ttl <= 600 ? m.ttl : 120, fa: typeof m.fa === 'string' && m.fa.length <= 1400 ? m.fa : null, faCh: null,
-    fa_s: faState(m.fa_s) };   // P539
-  c.digest = await elevateDigest('login', elevateFields({ kind: 'login', term: m.term }));
+    fa_s: faState(m.fa_s),kind:'login',term:m.term,deadline:Date.now()+(Number(m.ttl)||120)*1000 };   // P539
+  S.login=c;attachSpecial(m,c,()=>{if(S.login===c)paintLoginCard(c);});await c.envelopeReady;
+  c.digest = await elevateDigest('login', elevateFields(c));
   if (c.fa) c.faCh = await elevateChallenge(channel(), await myDeviceId(), c.id, 'login', c.n, c.digest).catch(() => null);
   if (S.phase !== 'opening') return;
   if (sheet?.kind === 'login') closeSheet();
   S.login = c;
+  paintLoginCard(c);
+}
+function paintLoginCard(c){
+  if(S.login!==c)return;
+  if(c.collapsed){if(sheet?.kind==='login')closeSheet();root.hidden=true;delete document.body.dataset.term;H.goChat();refreshSpecialVisibility();return;}
+  if(sheet?.kind==='login')closeSheet();
   openSheet({ kind: 'login', origin: t('p408.loginFrom'), title: t('p408.loginTitle'), password: t('p408.loginLabel'),
     bad: c.bad ? t('p408.pwBad', { n: c.tries }) : '', note: t('p408.pwNote'), yes: t(c.fa ? 'p408.pwSend' : 'p408.pwSendPlain'), no: t('sheet.cancel'),
-    ttl: c.ttl * 1000, pk: c.fa ? { fa: c.fa_s } : null, onYes: () => loginAnswer(c, true), onNo: () => loginAnswer(c, false) });
+    ttl: Math.max(1,c.deadline-Date.now()), pk: c.fa ? { fa: c.fa_s } : null, onYes: () => loginAnswer(c, true), onNo: () => loginAnswer(c, false) });
+  if(c.approval_v===2){const wrap=$('term-sheetwrap');loginHome541=document.createComment('541 terminal login home');wrap.before(loginHome541);document.body.append(wrap);wrap.classList.add('ajmodal');root.hidden=true;delete document.body.dataset.term;H.goChat();}
+  decorateSpecial($('term-sheetwrap'),c,{title:$('term-sh-title'),metadata:[$('term-sh-text'),$('term-sh-note')],allow:$('term-sh-yes'),deny:$('term-sh-no'),repaint:()=>paintLoginCard(c),fold:()=>{closeSheet();refreshSpecialVisibility();}});
 }
 /** Answered exactly like a §11 sudo card: Face ID first (inside the tap), then sealed + signed `elev_answer`. */
 function loginAnswer(c, ok) {
-  if (S.login !== c) return;
+  if (S.login !== c || ok && !canSpecialApprove(c)) return;
   const pw = $('term-sh-pw');
   if (ok && !pw.value) { $('term-sh-bad').textContent = t('p408.pwEmpty'); $('term-sh-bad').hidden = false; return; }
   let p = Promise.resolve(null);
@@ -790,7 +802,7 @@ function echo(line) {
 function onMsg(m) {
   if (!m || typeof m.t !== 'string') return;
   if (m.t === 'elev' && m.kind === 'login') { loginCard(m).catch(() => {}); return; }
-  if (m.t === 'elev_done' && S.login && m.id === S.login.id) { if (sheet?.kind === 'login') closeSheet(); if (m.result !== 'done' && m.result !== 'saved') S.login = null; return; }
+  if (m.t === 'elev_done' && S.login && m.id === S.login.id) { forgetSpecial(m.id,m.result); if (sheet?.kind === 'login') closeSheet(); if (m.result !== 'done' && m.result !== 'saved') S.login = null; return; }
   if (m.t === 'elev_refused' && S.login && m.id === S.login.id) { sheetBusy(false); toast(t('p408.faRefused'), 3600); return; }
   if (S.phase !== 'ready' || m.id !== S.id) {
     if (m.t === 'term_close' && S.phase === 'opening') refuse(CLOSE_WHY.includes(m.why) ? m.why : 'host');

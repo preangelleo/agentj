@@ -28,6 +28,10 @@ export function sanitize(t) {
       sha256: m.sha256, ref: typeof m.ref === 'string' ? m.ref.slice(0, 512) : '' }));
   const skip = (Array.isArray(t && t.media_skip) ? t.media_skip : []).filter((s) => s && typeof s.name === 'string' && WHYS.includes(s.why))
     .slice(0, MAX_ITEMS * 2).map((s) => ({ name: base(s.name).slice(0, 128), why: s.why, bytes: Number.isInteger(s.bytes) && s.bytes > 0 ? s.bytes : 0,
+      ...(s.download && /^[0-9a-f]{32}$/.test(s.download.id) && /^[A-Za-z0-9_-]{22}$/.test(s.download.seat)
+        && Number.isSafeInteger(s.download.bytes) && s.download.bytes === s.bytes && Number.isInteger(s.download.expires)
+        ? { download: { id: s.download.id, seat: s.download.seat, bytes: s.download.bytes, expires: s.download.expires,
+          ...(/^\/[a-z2-7]{8}\/#file=[0-9a-f]{32}$/.test(s.download.locator) && s.download.locator.endsWith(s.download.id) ? { locator: s.download.locator } : {}) } } : {}),
       // P424 #142: where a key-like refusal is — the line and a two-character masked hint (never the text)
       ...(Number.isInteger(s.line) && s.line > 0 && s.line < 1e8 && typeof s.hint === 'string' && s.hint.length <= 4 ? { line: s.line, hint: s.hint } : {}) }));
   return { media, skip };

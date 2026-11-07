@@ -1,0 +1,94 @@
+{
+  "envelope": {
+    "v": 2,
+    "channel": "vector-channel",
+    "session": "7",
+    "request_id": "541b0000000000000000000000000001",
+    "revision": 1,
+    "nonce": "f367b051d5e70e51ba26aa1193b917a3",
+    "source": {
+      "message_id": 41,
+      "root_message_id": 41,
+      "session": "7",
+      "channel": "phone",
+      "time": 1793928780000,
+      "sender": "你",
+      "text": "清理旧导出。\n保留本月数据。",
+      "verified": true,
+      "suspicious": false,
+      "history_outside_window": false,
+      "initiator": "主 Agent J",
+      "task_record": "task-541",
+      "chain": []
+    },
+    "title": "清理旧导出。",
+    "action": "删除旧导出，删除后无法撤回。",
+    "source_record_sha256": "501d323bc68f3b937c51f8d465ef288876163627dca9583b8708ad294b5df34e",
+    "input_sha256": "59424c731c0d9458118d784e653e608dd5b49abf7bd3a39b449f5e88eac32681",
+    "details": "rm -- exports/old.csv",
+    "effects": [
+      "irreversible_destroy"
+    ],
+    "categories": [
+      "delete"
+    ],
+    "controls": {
+      "batch": null,
+      "allow_offer": [
+        "preauth:computer.control"
+      ],
+      "goal_add": null
+    },
+    "plan": null,
+    "expires_at": 1793951381
+  },
+  "context": {
+    "request_id": "541b0000000000000000000000000001",
+    "revision": 1,
+    "source": {
+      "message_id": 41,
+      "root_message_id": 41,
+      "session": "7",
+      "channel": "phone",
+      "time": 1793928780000,
+      "sender": "你",
+      "text": "清理旧导出。\n保留本月数据。",
+      "verified": true,
+      "suspicious": false,
+      "history_outside_window": false,
+      "initiator": "主 Agent J",
+      "task_record": "task-541",
+      "chain": []
+    },
+    "action": "删除旧导出，删除后无法撤回。",
+    "details": "rm -- exports/old.csv",
+    "effects": [
+      "irreversible_destroy"
+    ],
+    "plan": null,
+    "expires_at": 1793951381,
+    "state": "pending",
+    "task_record_context": {
+      "handle": "task-541",
+      "source": {
+        "message_id": 41,
+        "root_message_id": 41,
+        "session": "7",
+        "channel": "phone",
+        "time": 1793928780000,
+        "sender": "你",
+        "text": "清理旧导出。\n保留本月数据。",
+        "verified": true,
+        "suspicious": false,
+        "history_outside_window": false,
+        "initiator": "主 Agent J",
+        "task_record": "task-541",
+        "chain": []
+      },
+      "source_record_sha256": "501d323bc68f3b937c51f8d465ef288876163627dca9583b8708ad294b5df34e"
+    }
+  },
+  "digest": "b4a8c80995903884ed117606d7573fe1a519e0972c89dec7f0d6e8a6c0680590",
+  "decision": "agentjarvis/approval/v2\nvector-channel\ndevice-B\n541b0000000000000000000000000001\nallow\nb4a8c80995903884ed117606d7573fe1a519e0972c89dec7f0d6e8a6c0680590",
+  "review": "agentjarvis/approval-review/v2\nvector-channel\ndevice-B\n541b0000000000000000000000000001\nquestion\n1\nevent-541-0000000001\nb4a8c80995903884ed117606d7573fe1a519e0972c89dec7f0d6e8a6c0680590"
+}

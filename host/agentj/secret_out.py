@@ -48,7 +48,8 @@ def _h(s: str) -> str:
 
 def shown_fields(c: dict) -> list[str]:
     """What the phone shows before Face ID, in a fixed order: name, purpose, text|file, file name, size (bytes)."""
-    return [c["name"], c.get("purpose") or "", c["kind"], c.get("filename") or "", str(c["size"])]
+    fields = [c["name"], c.get("purpose") or "", c["kind"], c.get("filename") or "", str(c["size"])]
+    return fields + ([c['envelope_sha256']] if c.get('envelope_sha256') else [])
 
 
 def shown_digest(fields: list[str]) -> str:
@@ -67,7 +68,8 @@ def norm(req: dict) -> dict:
             return ""
         if not isinstance(v, str) or wire.text_problem(v, limit) or "\n" in v:
             raise elevate.Refused("shape", f"{field}: one line up to {limit} characters")
-        return v
+        from .approval_review import safe_text
+        return safe_text(v, limit)
     name = text(req.get("name"), NAME_MAX, "name", True)
     purpose = text(req.get("purpose"), PURPOSE_MAX, "purpose", False)
     kind = req.get("kind")
@@ -145,6 +147,12 @@ class Outbox:
         c["digest"] = shown_digest(shown_fields(c))
         c["deadline"] = time.monotonic() + c["ttl"]
         c["until"] = int(time.time() + c["ttl"])
+        from . import approval_special
+        approval_special.attach(self.host, c, tool='SecretPickup', action=c['purpose'] or c['name'],
+            fields=shown_fields(c), render=lambda session: self.card_msg(c, session),
+            rotate=lambda: c.update(nonce=secrets.token_hex(16)),
+            finish=lambda result: self._end(c, result),
+            refresh=lambda: c.update(digest=shown_digest(shown_fields(c))))
         c["timer"] = asyncio.get_running_loop().call_later(c["ttl"], lambda: self._end(c, "expired"))
         self.cards[c["id"]] = c
         faceid = sum(1 for d in approvers if self.st.passkey_of_device(d))
@@ -163,7 +171,8 @@ class Outbox:
         pk = self.st.passkey_of_device(s.device) if s is not None and getattr(s, "device", None) else None
         if pk:
             m["fa"], m["fa_s"] = pk["id"], passkey.pk_state(pk)        # this device's own credential id only
-        return m
+        from . import approval_special
+        return approval_special.decorate(c, m)
 
     def open_msgs(self, s) -> list[dict]:
         return [self.card_msg(c, s) for c in list(self.cards.values())]   # P203: the cards_get snapshot shares it
@@ -174,6 +183,7 @@ class Outbox:
 
     # ---------------------------------------------------------- the phone answers
     async def on_phone(self, s, obj: dict) -> None:
+        from . import approval_special
         rid = obj.get("id")
         c = self.cards.get(rid) if isinstance(rid, str) and elevate._ID.fullmatch(rid) else None
         if c is None or time.monotonic() > c["deadline"]:
@@ -183,7 +193,8 @@ class Outbox:
             self.st.log("sout_refused", id=rid, device=s.device, reason="no_key")
             return
         if obj["t"] == "secret_out_decline":
-            return self._end(c, "declined", device=s.device)
+            # Legacy bare declines do not bind the shown revision. New UI uses signed approval_review(op=deny).
+            return await self.host.send_app(s, {'t': 'secret_out_err', 'id': rid, 'why': 'stale_revision'})
         why = self._check(s, c, obj)
         if why:
             self.st.log("sout_refused", id=rid, device=s.device, reason=why)
@@ -191,6 +202,9 @@ class Outbox:
             return await self.host.send_app(s, {"t": "secret_out_err", "id": rid,
                                                 "why": "no_passkey" if why == "no_passkey" else "passkey"})
         nonce, c["nonce"] = c["nonce"], None        # one attempt per nonce while this delivery is under way
+        c['busy'] = True
+        c['delivery_authority']=(s,self.st.sign_key(s.device))
+        c['review_adapter'].review_state = c['review_state'] = 'executing'
         try:
             v = c["value"]
             msg = {"t": "secret_out_val", "id": rid, "kind": c["kind"], "filename": c["filename"]}
@@ -199,18 +213,30 @@ class Outbox:
             else:
                 msg["data"] = base64.b64encode(bytes(v)).decode()
             ok = await self.host.send_app(s, msg)
+        except asyncio.CancelledError:
+            self._end(c, 'unknown', device=s.device, passkey='uv')
+            raise
+        except Exception:
+            # A transport may raise after writing bytes. Delivery is unknown, never transferable.
+            ok = False
         finally:
             msg = None  # noqa: F841 — drop the reference; str cannot be wiped
-        if not ok:                                   # not delivered (closed, too big for an old session): stays open
-            c["nonce"] = secrets.token_hex(16)
-            self.st.log("sout_refused", id=rid, device=s.device, reason="send")
-            await self.host.send_app(s, {"t": "secret_out_err", "id": rid, "why": "send"})
-            await self.host._send_ready(lambda x: self.card_msg(c, x))
+        if not approval_special.source_allows(c,self.host):
+            ok=False
+        if not ok:
+            # A failed transport write may already have delivered bytes. Never issue a new nonce or offer it to A.
+            self.st.log("sout_refused", id=rid, device=s.device, reason="delivery_unknown")
+            self._end(c, "unknown", device=s.device, passkey="uv")
             return
         del nonce
         self._end(c, "picked", device=s.device, passkey="uv")
 
     def _check(self, s, c: dict, obj: dict) -> str | None:
+        from . import approval_special
+        if not approval_special.source_allows(c,self.host):
+            return 'unverified_trigger'
+        if not approval_special.pending(c):
+            return 'questioned'
         if obj.get("n") != c["nonce"] or not c["nonce"]:
             return "replay"
         pk = self.st.passkey_of_device(s.device)
@@ -234,6 +260,9 @@ class Outbox:
     def _end(self, c: dict, result: str, device: str | None = None, passkey: str | None = None) -> None:
         if self.cards.pop(c["id"], None) is None:
             return
+        adapter = c.get('review_adapter')
+        if adapter is not None:
+            adapter.ended(result)
         with contextlib.suppress(Exception):
             c["timer"].cancel()
         elevate.wipe(c["value"])

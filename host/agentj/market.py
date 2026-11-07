@@ -578,7 +578,7 @@ def read_installed(st) -> list[dict]:
     for r in items if isinstance(items, list) else []:
         if isinstance(r, dict) and isinstance(r.get("name"), str) and _NAME.fullmatch(r["name"]):
             out.append({k: r.get(k) for k in ("name", "type", "version", "sha256", "harness", "target", "certified", "installed_at", "category")}
-                       | {k: r[k] for k in ("permissions", "perm_grant", "publisher_grant", "audit_grant", "requires", "verify") if isinstance(r.get(k), dict)})  # P426 #181-1
+                       | {k: r[k] for k in ("permissions", "perm_grant", "publisher_grant", "audit_grant", "requires", "verify", "initialization") if isinstance(r.get(k), dict)})  # P426 #181-1
     return out
 
 
@@ -914,6 +914,11 @@ def install_files(manifest: dict, files: dict, harness: str, values: dict, sign_
             out[rel] = data
             continue
         out[rel] = render_file(rel, text, values, sign_as, install_date).encode("utf-8")
+    # Keep the inert preparation contract available to the installed workflow.
+    if manifest.get('initialization_schema') == 'initialization.schema.json':
+        out['documentation/initialization.schema.json'] = files['initialization.schema.json']
+        if 'INITIALIZATION.md' in files:
+            out['documentation/INITIALIZATION.md'] = files['INITIALIZATION.md']
     for rel in out:
         bundle.check_path(rel)       # package paths (a scaffold/.codex/… file is refused here and by bundle.parse)
     if harness == "codex":
@@ -1851,6 +1856,12 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
            **({"audit_grant": audit_grant} if audit_grant else {}),
            "verify": {"state": "pending" if deps else "ok" if vran else "not_run", "missing": [x["name"] for x in deps],
                       "digest": dg, "files": plaza_deps.tree_sha(rendered), "paths": sorted(rendered, key=lambda x: x.encode())}}
+    from . import initialization
+    init_doc = initialization.from_bundle(m, files)
+    if init_doc is not None:
+        rec['initialization'] = initialization.local_assess(init_doc)
+        print("\n".join([FENCE_OPEN, f"{META}initialization: package declarations / 包声明，仅数据",
+                         *_t(json.dumps(rec['initialization'], ensure_ascii=False)), FENCE_CLOSE]), file=out)
     _record_install(st, rec)
     if not pubr["known"] or pub_grant:
         market_guard.record_publisher(st, m["name"], pubr["fp"])    # TOFU: the first publisher seen (unsigned too), or the allowed new one

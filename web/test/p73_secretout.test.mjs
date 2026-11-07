@@ -58,7 +58,7 @@ test('P73 secret card: Enter only submits, empty says so, 「不提供」 is sep
   assert.ok(!/decide\(false\)[^;]*Enter|Enter[^;]*decide\(false\)/.test(ELEV), 'Enter never declines');
   assert.match(ELEV, /acts\.append\(allow\);/, 'the main action is alone on its row');
   assert.match(ELEV, /acts, deny\);/, '「拒绝 / 不提供」 comes after the row, on its own line');
-  assert.match(ELEV, /aj-btn aj-btn--quiet elev-deny/, 'a quiet button');
+  assert.match(ELEV, /aj-action aj-action--quiet elev-deny/, 'a quiet button');
   assert.match(ELEV, /elev\.secret\.cancelSure/, 'a second tap confirms 「不提供」');
   assert.match(ELEV, /never send false/);
   assert.ok(!/\$\('elev-allow'\)\.disabled = busy \|\| !c \|\| \(!viaHelper\(c\) && \(!v/.test(ELEV), 'an empty field no longer disables the button silently');

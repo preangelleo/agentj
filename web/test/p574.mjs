@@ -98,7 +98,8 @@ try {
     await fake.addTurn(hostNotice.turn.src,hostNotice.turn.reply.text,hostNotice.turn.end);
     await waitFor(p, `document.body.innerText.includes(${JSON.stringify(notice)})`);
     check(await evaluate(p, `window.__gets.length===1`),tag+' holding-host notice requires no second assertion');
-    check(await evaluate(p, `document.querySelector('#words').textContent.trim()==='' && getComputedStyle(document.querySelector('#main')).display==='none' && getComputedStyle(document.querySelector('#rmbar')).display==='none'`),tag+' real Host broadcast has no empty Agent reply card');
+    // 0.26.9 #431 (owner 11-03: 「只要有input message就应该有response message card，哪怕card里边没有内容」): the notice keeps its card, one grey line
+    check(await evaluate(p, `/不用回|不需要回复|No reply needed/.test(document.querySelector('#words').textContent) && document.querySelector('#words').classList.contains('empty') && getComputedStyle(document.querySelector('#main')).display!=='none'`),tag+' real Host broadcast keeps its reply card with one grey line (#431)');
     const nstop=stops.length;
     await fake.send({...hostNotice.notice,peer:'test-peer',grant:'0123456789abcdef0123456789abcdef'});
     await waitFor(p, `document.querySelector('#toast .nt-acts button')!==null`);
@@ -130,10 +131,10 @@ try {
     check(await evaluate(p, `/无文字回复|No text reply/.test(document.querySelector('#words').textContent)&&getComputedStyle(document.querySelector('#main')).display!=='none'`),tag+' history navigation restores ordinary empty reply');
     await evaluate(p, `import('./js/relay.js').then(m=>m.remoteMessage(-1))`);
     await waitFor(p, `document.querySelector('#rm').classList.contains('host-notice')`);
-    check(await evaluate(p, `document.querySelector('#words').textContent.trim()===''&&getComputedStyle(document.querySelector('#rmbar')).display==='none'`),tag+' history return preserves notice-only rendering');
+    check(await evaluate(p, `/不用回|不需要回复|No reply needed/.test(document.querySelector('#words').textContent)&&getComputedStyle(document.querySelector('#main')).display!=='none'`),tag+' history return preserves notice-only rendering (card + grey line, #431)');
     await evaluate(p, `import('./js/relay.js').then(m=>m.remoteMessage(1))`);
     await waitFor(p, `document.querySelector('#omText').textContent==='Empty answer regression'`);
-    check(await evaluate(p, `getComputedStyle(document.querySelector('#rmbar')).display!=='none'`),tag+' leaving a notice restores reply controls');
+    check(await evaluate(p, `getComputedStyle(document.querySelector('#rmbar')).display!=='none'&&getComputedStyle(document.querySelector('#rmbar .act')).visibility!=='hidden'`),tag+' leaving a notice restores reply controls');
     await evaluate(p, `import('./js/relay.js').then(m=>m.remoteMessage(1))`);
     await waitFor(p, `document.querySelector('#words').textContent.includes('Visible host reply')`);
     // Malicious caller mixes the display with a challenge over different authorization: do not call get().

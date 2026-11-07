@@ -81,7 +81,7 @@ export async function runP207Unread({ B, web, fake, out = OUT }) {
       await waitFor(p, `+${$('omUnread')}.dataset.n===4`);   // back in front: the newest page is on screen = seen
       assert.match(await evaluate(p, `${$('omUnread')}.getAttribute('aria-label')`), s.badge);
       const pulse = await evaluate(p, `getComputedStyle(document.querySelector('#omUnread .unb')).animationName`);
-      assert.equal(pulse, 'new-message-pulse', 'the badge flashes like the page number');
+      assert.equal(pulse, 'aj-source-new-message-pulse', 'the badge flashes like the page number');
       const bb = await evaluate(p, `(()=>{const r=document.querySelector('#omUnread .unb').getBoundingClientRect();return {w:r.width,h:r.height}})()`);
       assert.ok(Math.abs(bb.w - bb.h) <= 0.5, `a round badge for one digit (${bb.w}×${bb.h})`);
       await save('badge');

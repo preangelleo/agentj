@@ -91,9 +91,12 @@ class Classify(unittest.TestCase):
         zh = codex_failure(SAMPLES["region"][0], None, "zh")[1]
         self.assertIn("你所在地区连不上 ChatGPT", zh)
         self.assertIn("agentj config set proxy.https", zh)
-        self.assertIn("OpenCode + 国内模型", zh); self.assertIn("Claude Code", zh)
+        self.assertIn("网页终端", zh)
+        self.assertIn("火山方舟", zh); self.assertIn("阿里百炼", zh); self.assertIn("Kimi", zh)
+        self.assertIn("不自动购买", zh)
         en = codex_failure(SAMPLES["region"][0], None, "en")[1]
-        self.assertIn("proxy/VPN", en); self.assertIn("agentj agent opencode", en)
+        self.assertIn("proxy/VPN", en); self.assertIn("Web Terminal", en)
+        self.assertIn("Volcano Ark", en); self.assertIn("Alibaba Bailian", en)
 
     def test_usage_quotes_reset_time_only_when_codex_gave_one(self):
         self.assertIn("3:05 PM", codex_failure(SAMPLES["usage"][0], None, "zh")[1].split("\n\n")[0])

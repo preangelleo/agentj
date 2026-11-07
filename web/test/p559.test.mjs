@@ -120,7 +120,7 @@ test('the unlock is named Face ID or Touch ID — never 屏幕锁 / 指纹或人
 });
 
 test('the Settings row has the same shape as 遥控器管理 / 转移席位: icon + title + small explanation (static)', () => {
-  const html = read('../public/index.html');
+  const html = read('../public/index.html').replace(/ data-aj-(?:owner|action-context)="[^"]+"/g,'');
   const row = html.slice(html.indexOf('id="set-pk-row"'), html.indexOf('id="setup-faceid"'));
   assert.match(row, /<svg class="mi" data-icon="face"/);
   assert.match(row, /<svg class="mi" data-icon="finger"/);

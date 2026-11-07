@@ -15,7 +15,7 @@ import os
 import re
 from urllib.parse import urlsplit
 
-from .preferences import get
+from .preference_values import get
 
 TARGETS = (('https', 'HTTPS_PROXY'), ('http', 'HTTP_PROXY'), ('no_proxy', 'NO_PROXY'))
 SCHEMES = ('http', 'https', 'socks5', 'socks5h')

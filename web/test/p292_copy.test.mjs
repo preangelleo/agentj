@@ -87,7 +87,8 @@ test('P292: every code / pre the page makes goes through the copy component (or 
 });
 
 test('P292: md.js (elements from a tag variable) marks the reply\'s inline code and the code block\'s code', () => {
-  const md = readFileSync(join(PUB, 'js/md.js'), 'utf8');
+  // Ownership is nonvisual metadata; retain the original code creation → data-cc ordering contract.
+  const md = readFileSync(join(PUB, 'js/md.js'), 'utf8').replace(/\bcode\.setAttribute\(\s*(['"])data-aj-owner\1,\s*(['"])aj-prose\2\);[ \t]*/g, '');
   assert.match(md, /if \(tag === "code"\) \{[^\n]*setAttribute\("data-cc", "bare"\)/, 'inline code → data-cc="bare" (P154 one click)');
   assert.match(md, /const code = doc\.createElement\("code"\);\s*\n\s*code\.setAttribute\("data-cc", "ext"\)/, 'code block → data-cc="ext" (presses 拷贝)');
   const t = readFileSync(join(PUB, 'js/t.js'), 'utf8');

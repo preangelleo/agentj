@@ -5,12 +5,13 @@ Developer reference: documentation/notes/P0263-HOST-REFERENCE.md#migrate.
 from __future__ import annotations
 
 import json
+import fcntl
 import os
-import socket
 import sys
 import time
 
-from . import __version__
+from .legacy_state_probe import serve_running
+from . import __version__, humane
 from .envcompat import getenv
 from .state import (DEFAULT_RELAY, DEFAULT_WEB, OLD_DEFAULT_RELAY, OLD_DEFAULT_WEB, State, default_state, legacy_state,
                     state_dir)
@@ -43,25 +44,6 @@ def tilde(p) -> str:
     return "~" + p[len(h):] if h and (p == h or p.startswith(h + "/")) else p
 
 
-def serve_running(root) -> bool:
-    """Is a serve using this directory? = its control socket accepts a connection. A socket file that refuses (a crashed
-    serve) is not running; anything unclear counts as running (never move a directory under a live process)."""
-    sock = os.path.join(str(root), "control.sock")
-    if not os.path.exists(sock):
-        return False
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.settimeout(2)
-    try:
-        s.connect(sock)
-        return True
-    except (FileNotFoundError, ConnectionRefusedError):
-        return False
-    except OSError:
-        return True
-    finally:
-        s.close()
-
-
 def read_record(st: State) -> dict:
     try:
         d = json.loads(st.migrated_path.read_text())
@@ -86,6 +68,56 @@ def _read_json(path) -> dict | None:
     return d if isinstance(d, dict) else None
 
 
+def needs_url_upgrade(st: State) -> bool:
+    """Read-only preflight: modern/custom URLs never enter the migration writer.
+
+    Do not cache by version: an owner may restore old state after an upgrade.
+    Missing/malformed files stay untouched; a later repaired file is checked again.
+    Existing config/cloud locks and the durable urls/urls_at rollback record remain
+    owned by upgrade_urls, rather than a second migration/configuration system.
+    """
+    if not st.config_path.exists():
+        return False
+    table = _defaults()
+    for name, path in (("config", st.config_path), ("cloud", st.cloud_path)):
+        doc = _read_json(path)
+        if doc is not None and any(f == name and _same(doc.get(k), old)
+                                   for (f, k), (old, _) in table.items()):
+            return True
+    return False
+
+
+def upgrade_urls_if_needed(st: State, out=None) -> dict:
+    """Serialize legacy URL writers, without creating a lock on a modern read path.
+
+    The second check lets concurrent CLI processes observe the first completion.
+    Exceptions propagate without a new completion record, allowing the next call
+    to retry. upgrade_urls retains the existing per-file locks and rollback record.
+    """
+    if not needs_url_upgrade(st):
+        return {}
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(st.root / "migrate-urls.lock", flags, 0o600)
+    with os.fdopen(fd, "r+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not needs_url_upgrade(st):
+            return {}
+        return upgrade_urls(st, out)
+
+
+def _remember_urls(st: State, changed: dict) -> None:
+    """Write rollback intent before a config/cloud replacement can become visible.
+
+    A crash may leave an intent for an unchanged file; restore already compares
+    against the new default, so that intent is safe and retryable.
+    """
+    rec = read_record(st)
+    rec.setdefault("v", 1)
+    rec["urls"] = {**(rec.get("urls") or {}), **changed}
+    rec.setdefault("urls_at", int(time.time()))
+    _write_record(st, rec)
+
+
 def upgrade_urls(st: State, out=None) -> dict:
     """Old default URLs → new defaults (config.json, cloud.json). → {"config.relay": old, …} of what changed (also kept in
     migrated.json under "urls"). Idempotent; custom values untouched."""
@@ -104,6 +136,7 @@ def upgrade_urls(st: State, out=None) -> dict:
                     cfg[k] = new
                     hit = True
             if hit:
+                _remember_urls(st, changed)
                 st.write_private(st.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
     if st.cloud_path.exists():
         with cloud_lock(st):
@@ -112,13 +145,9 @@ def upgrade_urls(st: State, out=None) -> dict:
             if c is not None and _same(c.get("api"), old):
                 changed["cloud.api"] = c["api"]
                 c["api"] = new
+                _remember_urls(st, changed)
                 st.write_private(st.cloud_path, json.dumps(c, indent=1, ensure_ascii=False).encode())
     if changed:
-        rec = read_record(st)
-        rec.setdefault("v", 1)
-        rec["urls"] = {**(rec.get("urls") or {}), **changed}
-        rec.setdefault("urls_at", int(time.time()))
-        _write_record(st, rec)
         _say("Agent J：已把旧网址换成新网址 / switched to the new addresses (" + ", ".join(sorted(changed)) + ")", out)
     return changed
 
@@ -247,11 +276,12 @@ def auto(out=None, decision: str | None = None, interactive: bool | None = None)
                          "directory stays as it is）\n  （或环境变量 / or env AGENTJ_LEGACY_STATE=migrate|fresh）", out, "undecided")
                     return "undecided"
     st = State(state_dir())
-    if st.config_path.exists():
-        try:
-            upgrade_urls(st, out)
-        except OSError as e:
-            _say(f"Agent J：旧网址没能替换（{type(e).__name__}），照常使用 / could not update the old addresses", out, "urls")
+    try:
+        upgrade_urls_if_needed(st, out)
+    except OSError as e:
+        kind = type(e).__name__
+        _say(humane.say("migration.urls_failed", kind=kind) + " / "
+             + humane.say("migration.urls_failed", lang="en", kind=kind), out, "urls")
     return result
 
 

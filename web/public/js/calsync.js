@@ -1,7 +1,7 @@
 // P428: the calendar card's two-way parts — source tags, the per-calendar sync strip, conflict choices and the inline
 // undo line. Text only (textContent), no network of its own: every request goes through the paired channel (ask1).
 import {t,locale} from './t.js';
-const n=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;};
+const n=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;e.setAttribute('data-aj-owner', 'aj-wallet-calendar'); return e;};
 const b=(text,fn)=>{const e=n('button',text,'fp-action');e.type='button';e.onclick=fn;return e;};
 export const timing={undo:10000,note:120000};
 const TWO=['google','caldav'];

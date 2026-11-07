@@ -180,6 +180,8 @@ test('P239 wiring: 5 s constant, page-leave flush, /model drops, CSS look has no
   assert.match(src, /visibilityState === "hidden"\) pillFlush\(\)/);
   assert.match(src, /addEventListener\("pagehide", pillFlush\)/);
   assert.match(src, /if \(cmd === "model"\) pillDrop\(\)/);
-  const rule = css.slice(css.indexOf('.meta[data-sw-model=wait]'), css.indexOf('@keyframes pillwait'));
+  const start = css.indexOf('.meta[data-sw-model=wait]'), end = css.indexOf('@keyframes aj-header-pillwait');
+  assert.ok(start >= 0 && end > start, 'the exact pill rule and namespaced keyframe boundaries both exist in order');
+  const rule = css.slice(start, end);
   assert.ok(rule.length > 0 && !/background-color|background:\s*(#|rgb|var\(--(ink|sooty))/.test(rule), 'only a thin currentColor line, no fill');
 });

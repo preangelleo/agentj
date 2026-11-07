@@ -69,9 +69,9 @@ async function shot(p, sels, file) {
 // the gap between the text's last line and the button's edge, in px. The floor is the token --ui-space-control.
 const SWEEP = `(()=>{const S=document.getElementById('settings'),out=[];
   const vis=e=>e&&e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden';
-  const texty=e=>vis(e)&&!e.matches('button,.aj-btn,.rsacts,.tgl,select,input,hr')&&!e.querySelector('button,.aj-btn,input,select')&&e.textContent.trim().length>0;
+  const texty=e=>vis(e)&&!e.matches('button,.aj-action,.rsacts,.tgl,select,input,hr')&&!e.querySelector('button,.aj-action,input,select')&&e.textContent.trim().length>0;
   const units=new Set();
-  for(const b of S.querySelectorAll('.aj-btn')){if(!vis(b))continue;const u=b.parentElement.matches('.rsacts,.setbtns,.btnrow')?b.parentElement:b;units.add(u)}
+  for(const b of S.querySelectorAll('.aj-action')){if(!vis(b))continue;const u=b.parentElement.matches('.rsacts,.setbtns,.btnrow')?b.parentElement:b;units.add(u)}
   for(const u of units){const ur=u.getBoundingClientRect(),kids=[...u.parentElement.children].filter(k=>k!==u&&texty(k));
     for(const dir of ['above','below']){
       // the text block visually right above / below (grid / order can move a button under its notes)

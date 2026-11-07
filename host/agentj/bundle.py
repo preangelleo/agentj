@@ -547,6 +547,22 @@ def files_list(files: dict) -> list:
     return [{"path": p, "sha256": sha256(files[p]), "bytes": len(files[p])} for p in sorted(files, key=_path_key)]
 
 
+def check_initialization(m, files):
+    if m.get('initialization_schema') is None and 'initialization.schema.json' not in files:
+        return
+    try:
+        # tools/plaza loads this file by path. Load the same closed stdlib-only
+        # validator by sibling path, without importing the Host package.
+        import importlib.util
+        from pathlib import Path
+        spec = importlib.util.spec_from_file_location('aj_initialization', Path(__file__).with_name('initialization.py'))
+        initialization = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(initialization)
+        initialization.from_bundle(m, files)
+    except ValueError:
+        raise BundleError('invalid initialization.schema.json', 'bad_initialization') from None
+
+
 def build(directory, manifest_override: dict | None = None) -> tuple[bytes, dict]:
     """Package folder → (bundle bytes, manifest). `manifest.files` is regenerated; `manifest_override` (publish) is merged
     over manifest.json before the checks."""
@@ -566,6 +582,7 @@ def build(directory, manifest_override: dict | None = None) -> tuple[bytes, dict
         raise BundleError(f"files total {total} bytes > 8 MiB")
     m = {**m, **(manifest_override or {}), "files": files_list(files)}
     check_manifest(m, set(files))
+    check_initialization(m, files)
     check_entry_files(m, set(files))
     if m["type"] == "workflow":
         _check_params_schema(files["params.schema.json"])
@@ -656,4 +673,5 @@ def parse(data: bytes) -> tuple[dict, dict]:
             raise BundleError(f"{f['path']!r:.80}: SHA-256 / length differ from the manifest")
     if m["type"] == "workflow":
         _check_params_schema(files["params.schema.json"])
+    check_initialization(m, files)
     return m, files

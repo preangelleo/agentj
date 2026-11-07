@@ -424,9 +424,13 @@ class Serve(unittest.IsolatedAsyncioTestCase):
         self.s.p33 = True
 
     async def test_cmd_detect_sends_cmds_state_without_type_error(self):
-        with patch('agentj.cmdrun.available_commands', return_value=['status']):
+        facts = [{'name': 'kimi', 'label': 'Kimi Code', 'installed': False, 'logged_in': False}]
+        with patch('agentj.cmdrun.available_commands', return_value=['status']) as names, \
+                patch('agentj.cmdrun.command_harnesses', return_value=facts) as harnesses:
             await self.h._detect_terminal_commands()
-        self.assertIn({'t': 'cmds_state', 'names': ['status']}, [o for _, o in self.sent])
+        names.assert_called_once_with()
+        harnesses.assert_called_once_with(detect=True)
+        self.assertIn({'t': 'cmds_state', 'names': ['status'], 'harnesses': facts}, [o for _, o in self.sent])
         self.assertFalse(self.h._cmdrun_detecting)
 
     def controls(self):

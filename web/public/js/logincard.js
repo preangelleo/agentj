@@ -21,18 +21,18 @@ function build() {
     close: () => { const b = $('lqr-later'); (b && !b.hidden ? b : $('lqr-close'))?.click(); } });
   root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'lqr-title');
   const box = mk('div', 'box');
-  const node = (tag, id, cls) => { const n = mk(tag, cls); n.id = id; return n; };
+  const node = (tag, id, cls) => { const n = mk(tag, cls, undefined, cls?.split(/\s+/).includes('aj-action') ? 'aj-action' : 'aj-auth-card', 'dialog'); n.id = id; return n; };
   const frame = node('div', 'lqr-frame', 'lqr-frame');
   const img = node('img', 'lqr-img', 'lqr-img');
   img.decoding = 'sync'; img.draggable = true;
   frame.appendChild(img);
   const acts = mk('div', 'lqr-acts');
-  const check = node('button', 'lqr-check', 'aj-btn aj-btn--primary'); check.type = 'button';
-  const refresh = node('button', 'lqr-refresh', 'aj-btn aj-btn--primary'); refresh.type = 'button'; refresh.hidden = true;
-  const close = node('button', 'lqr-close', 'aj-btn'); close.type = 'button'; close.hidden = true;
+  const check = node('button', 'lqr-check', 'aj-action aj-action--primary'); check.type = 'button';
+  const refresh = node('button', 'lqr-refresh', 'aj-action aj-action--primary'); refresh.type = 'button'; refresh.hidden = true;
+  const close = node('button', 'lqr-close', 'aj-action'); close.type = 'button'; close.hidden = true;
   acts.append(check, refresh, close);
-  const tg = node('button', 'lqr-tg', 'aj-btn aj-btn--quiet lqr-tg'); tg.type = 'button'; tg.hidden = true;
-  const later = node('button', 'lqr-later', 'aj-btn aj-btn--quiet lqr-later'); later.type = 'button';
+  const tg = node('button', 'lqr-tg', 'aj-action aj-action--quiet lqr-tg'); tg.type = 'button'; tg.hidden = true;
+  const later = node('button', 'lqr-later', 'aj-action aj-action--quiet lqr-later'); later.type = 'button';
   box.append(node('p', 'lqr-kicker', 'elev-kicker'), node('h2', 'lqr-title'), frame, node('p', 'lqr-left', 'elev-left'),
     node('p', 'lqr-note', 'elev-note'), acts, node('p', 'lqr-tgnote', 'elev-note lqr-tgnote'), tg, later);
   root.appendChild(box);

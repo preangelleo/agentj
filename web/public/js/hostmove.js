@@ -29,7 +29,7 @@ export function parseHostMoved(m, allowRelay) {
  *  ticket of the old computer is void (rtAt dropped → the new host issues one after ready). */
 export function movedRecord(h, mv) {
   const keep = { ...(h || {}) };
-  for (const k of ['rtAt', 'plat', 'boot', 'removed']) delete keep[k];
+  for (const k of ['rtAt', 'plat', 'boot', 'removed', 'moveStayed']) delete keep[k];
   return { ...keep, relay: mv.relay, channel: mv.channel, hostPub: mv.hostPub, approved: true, pk: false, pkAsked: false,
     ...(mv.name ? { name: mv.name } : {}) };
 }
@@ -38,4 +38,15 @@ export function movedRecord(h, mv) {
 export function movedAt(ms) {
   const d = new Date(Number.isFinite(ms) ? ms : Date.now());
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// 0.26.9 #434 (董事长 11-03: the phone kept being sent to the offline old host after every reconnect): 「留在这里」 is kept
+// in the stored pairing, so the same move is never asked again — after a reload or on the next visit. Key = old channel >
+// new channel; at most STAY_MAX remembered (a newer move of the same seat is a new question).
+export const STAY_MAX = 8;
+export const moveKey = (from, to) => String(from) + '>' + String(to);
+export const stayedHere = (h, key) => !!h && Array.isArray(h.moveStayed) && h.moveStayed.includes(key);
+export function withStay(h, key) {
+  const had = h && Array.isArray(h.moveStayed) ? h.moveStayed.filter((k) => typeof k === 'string' && k !== key) : [];
+  return { ...(h || {}), moveStayed: [...had, key].slice(-STAY_MAX) };
 }

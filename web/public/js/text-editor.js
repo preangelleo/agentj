@@ -15,7 +15,7 @@ export const saveForm = (input) => input.form || null;
 export function field(input, title) {
   if (input.dataset.textField || !multiline(input)) return input;
   if (input.tagName === 'TEXTAREA') {
-    const old = input; input = document.createElement('input');
+    const old = input; input = document.createElement('input'); input.setAttribute('data-aj-owner', 'aj-editor');
     for (const a of old.attributes) if (!['rows','type'].includes(a.name)) input.setAttribute(a.name,a.value);
     input.type='hidden'; input.value=old.value; old.replaceWith(input);
   }
@@ -29,7 +29,7 @@ export function field(input, title) {
   };
   let button=null;
   const paint=()=>{if(button)button.textContent=(input.value || t('p537.edit')).slice(0,180);};
-  button=document.createElement('button');button.type='button';button.className='aj-input text-editor-field';button.setAttribute('aria-label',title||t('p537.edit'));input.after(button);button.addEventListener('click',launch);paint();
+  button=document.createElement('button'); button.setAttribute('data-aj-owner', 'aj-editor');button.type='button';button.className='aj-input text-editor-field';button.setAttribute('aria-label',title||t('p537.edit'));input.after(button);button.addEventListener('click',launch);paint();
   return input;
 }
 export function watchSettings(root) {

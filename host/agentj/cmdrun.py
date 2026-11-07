@@ -19,7 +19,7 @@ import re
 import subprocess
 import time
 
-from . import controls, passkey, privacy, wire
+from . import controls, harness, passkey, privacy, wire
 
 # The whole whitelist. name → (argv after `agentj`, why it is safe). Nothing that stops, deletes, revokes, pairs, sets a
 # preference, installs or touches a key is here, except the P567 fixed emergency AI switches (signed + UV).
@@ -32,14 +32,26 @@ RUN_CMDS = {
     "rescue_status": (("rescue", "status"), "read-only: the rescue watchdog's state and whitelisted log metadata"),
     "update_check": (("update", "check"), "read-only: compares versions, installs nothing"),
 }
-for _h in ("claude", "codex", "opencode", "kimi", "qwen", "dsh"):
+for _h in harness.SUPPORTED:
     RUN_CMDS["switch_" + _h] = (("agent", "switch", _h, "--force"), "owner-confirmed emergency AI switch")
 
 
 def available_commands():
-    from . import harness
-    installed = {r["name"] for r in harness.detect()["harnesses"] if r["installed"] and r["supported"]}
-    return [n for n in RUN_CMDS if not n.startswith("switch_") or n[7:] in installed]
+    # #555: unavailable tools stay discoverable; the switch itself owns target checks.
+    return list(RUN_CMDS)
+
+
+def command_harnesses(*, detect=False):
+    """Registry metadata only. Native detection must run outside the event loop.
+
+    Null is unknown, never a claim that a tool is installed or signed in. Do not
+    project paths or native diagnostics into phone command facts.
+    """
+    records = {r["name"]: r for r in harness.detect()["harnesses"]} if detect else {}
+    return [{"name": name, "label": harness.LABEL[name],
+             "installed": records.get(name, {}).get("installed"),
+             "logged_in": records.get(name, {}).get("logged_in")}
+            for name in harness.SUPPORTED]
 
 
 # Only this argv has a whole-CLI zero-write contract (including startup migration).

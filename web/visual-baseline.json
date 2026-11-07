@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "baseline": {
+    "commit": "447cbfb7940f3de148478c88543d05f6e466a3eb",
+    "publicCombined": "707727abf3f16a1b84adee7da8113154d795871397477deddaea8d9fbc6c8061"
+  },
+  "viewports": [
+    [
+      390,
+      844
+    ],
+    [
+      834,
+      1112
+    ],
+    [
+      1440,
+      900
+    ]
+  ],
+  "themes": [
+    "light",
+    "dark"
+  ],
+  "languages": [
+    "zh",
+    "en"
+  ],
+  "criticalScenes": [
+    "chat-idle",
+    "chat-working",
+    "source-quotes-folded",
+    "source-quotes-expanded",
+    "reply-hover",
+    "reply-focus-visible",
+    "reply-active",
+    "approval",
+    "question",
+    "file-tray",
+    "media-message",
+    "composer-multi-quotes",
+    "publish-chat-code",
+    "settings-main",
+    "settings-main-end",
+    "settings-section-set-s-agent",
+    "settings-section-set-s-rescue",
+    "settings-section-set-s-tools",
+    "settings-section-set-s-look",
+    "settings-section-set-s-read",
+    "settings-section-set-s-notify",
+    "settings-section-set-s-channels",
+    "settings-section-set-s-safety",
+    "settings-section-set-s-app",
+    "settings-section-set-s-help",
+    "settings-ios",
+    "settings-remotes",
+    "settings-mail",
+    "settings-contacts",
+    "settings-auth",
+    "settings-imessage",
+    "settings-cards",
+    "settings-notify",
+    "settings-hooks",
+    "settings-files",
+    "settings-accts",
+    "models",
+    "contact-editor",
+    "publish-owner-hosts-list",
+    "publish-owner-hosts-edit",
+    "publish-dashboard-account",
+    "wallet-automation"
+  ],
+  "comparisonInput": {
+    "status": "ready",
+    "matrixFlag": "--comparison-inputs",
+    "file": "web/test/p577/comparison-inputs.json",
+    "receiptField": "comparisonInput",
+    "rawAboutField": "rawAbout",
+    "reason": "Actual source37 profile API with explicit fixed display Version/time; raw actual About retained separately."
+  },
+  "sceneManifestSha256": "dd3d63df2dbd6295887cf00640767c33ec3a1949b34701df35f4ac859d0df6d4",
+  "scope": "publish-critical",
+  "runnerInterface": {
+    "status": "ready",
+    "flag": "--profile",
+    "value": "publish-critical"
+  },
+  "notApplicable": [
+    {
+      "scene": "settings-ios",
+      "widths": [
+        834,
+        1440
+      ],
+      "reason": "Desktop UA uses browser install menu"
+    }
+  ],
+  "dashboard": {
+    "status": "preserved-unchanged",
+    "baselineAssetsSha256": "78c2f316f7747cdf4baaf675dc7319314122cd92e7669329d0936e059cee785f",
+    "adapter": "web/test/p0033-dashboard-adapter.mjs"
+  },
+  "cacheEnvironment": {
+    "status": "ready",
+    "entryFlag": "--environment-only",
+    "reason": "Same capture launcher actual CDP/binary/runtime/system fonts, zero page/screenshot; ship compares fresh remote fingerprint before cached qualification reuse."
+  },
+  "pureRefactorBaseline": {
+    "scope": "577-all-pages-independent",
+    "commit": "0f9619bd56cf8aaa2820be0b4dfbee140eaf6781",
+    "publicCombined": "562d9ec40730b5d44f4739da76c81f2b5afedbeea6b2164eaabf4495a981a037",
+    "worker": "93e142a1-3692-4a8f-8c3b-3cddd05272e6",
+    "qualification": "not-satisfied-by-publish-critical"
+  },
+  "pureRefactorCandidate": {
+    "status": "frozen-source-only",
+    "commit": "7c545b892f3677804084444ca8ba2c1b2ad314cb",
+    "publicCombined": "729459189c5dc49b105f12ad6d8650700c69cdb6f89cc1095952248bf4c89f7b",
+    "qualification": "full-and-touch-not-yet-run"
+  },
+  "captureTopology": {
+    "schema": "p577-owned-page-envelope-v3",
+    "topology": "one-owned-page-new-documents-per-side",
+    "isolation": "Different actual loader/realm; clear observed synthetic storage and HTTP cache; remove phase hooks/routes; actual delivered source bytes; blank surface and frame-to-renderer trace. Internal renderer resource caches are not claimed cleared."
+  },
+  "acceptance": {
+    "mode": "baseline-noise-envelope",
+    "minimumSamples": 3,
+    "outsidePixels": 0,
+    "uncertainFraction": 0.005,
+    "authorization": {
+      "file": "INCOMING-0280-from-jarvis-1012.md",
+      "copy": "web/test/p577/acceptance-1012.md",
+      "sha256": "85af0a2255554c781312cd38c91a2dabc326a7d462570a13aa5f4c9d8fa6731d"
+    },
+    "fullMatrix": "post-release-regression-not-release-blocker",
+    "baselineStatus": "confirmed",
+    "clarification": {
+      "file": "INCOMING-0280-from-jarvis-1025.md",
+      "copy": "web/test/p577/acceptance-1025.md",
+      "sha256": "6081004a86737ea8ec334df1bd9a6205f8b5db8b84f2b7e40b4b9beb1fa180c4"
+    },
+    "formalDrift": {
+      "required": true,
+      "baseline": {
+        "scope": "577-all-pages-independent",
+        "commit": "0f9619bd56cf8aaa2820be0b4dfbee140eaf6781",
+        "publicCombined": "562d9ec40730b5d44f4739da76c81f2b5afedbeea6b2164eaabf4495a981a037",
+        "worker": "93e142a1-3692-4a8f-8c3b-3cddd05272e6",
+        "qualification": "not-satisfied-by-publish-critical"
+      },
+      "candidate": {
+        "commit": "447cbfb7940f3de148478c88543d05f6e466a3eb",
+        "publicCombined": "707727abf3f16a1b84adee7da8113154d795871397477deddaea8d9fbc6c8061"
+      },
+      "minimumSamples": 3,
+      "sceneContract": "web/test/p577/formal-critical-scenes.json",
+      "decisions": "web/test/p577/formal-drift-decisions.json"
+    }
+  }
+}

@@ -216,7 +216,20 @@ class Manager:
                 return {'result':output,'read_only':True}
             finally:
                 store.db.execute('DELETE FROM visitors WHERE bot=? AND id=?',(bid,vid))
-        if op=='tool_save':return {'tool':ToolRegistry(store,bid).save(req['tool'])}
+        if op=='tool_save':
+            from .tools import definition
+            d=definition(req['tool'],store.get(bid)['outbound_domains'])
+            if d.get('kind')=='script':
+                # A new code/root authority always needs real owner UV, even
+                # when the caller already signed the configuration proposal.
+                from .. import provenance, policy_registry
+                if provenance._paired_source()!=provenance.phone():raise BotError('signed_owner_required')
+                digest=hashlib.sha256(canonical(d).encode()).hexdigest()
+                answer=await self.host.ask('company.write',{'bot':bid,'tool':d['name'],
+                    'digest':digest,'summary':canonical(d)},batch=False,require_passkey=True,
+                    _company_proposal=policy_registry.COMPANY_PROPOSAL)
+                if answer.get('behavior')!='allow':raise BotError('owner_approval_required')
+            return {'tool':ToolRegistry(store,bid).save(d)}
         if op=='tool_delete':
             reg=ToolRegistry(store,bid);d=reg.load(req['name']);(reg.root/'tools'/(d['name']+'.json')).unlink();return {}
         raise BotError('unknown_operation')

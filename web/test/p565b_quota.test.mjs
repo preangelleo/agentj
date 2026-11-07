@@ -18,7 +18,7 @@ test('the expired mark travels from the host message to the bar and the dialog',
   assert.deepEqual(w.map((x) => [x.window, !!x.expired]), [['weekly', true], ['5h', false]]);
   assert.match(read('../public/js/snap.js'), /h5_expired: !!\(m\.h5 && m\.h5\.expired\), week_expired: !!\(m\.week && m\.week\.expired\)/);
   const { quotaRows } = await import('../public/js/usagedlg.js');
-  const node = (tag) => ({ tag, style: { setProperty() {} }, dataset: {}, kids: [], classList: { add() {} }, append(...k) { this.kids.push(...k); } });
+  const node = (tag) => ({ tag, style: { setProperty() {} }, dataset: {}, attributes: {}, setAttribute(k,v) { this.attributes[k]=String(v); }, kids: [], classList: { add() {} }, append(...k) { this.kids.push(...k); } });
   const had = document.createElement;
   document.createElement = node;
   try {

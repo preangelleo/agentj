@@ -55,7 +55,7 @@ export async function runP258({B, web, fake, out = process.env.P258_OUT || 'repo
         await waitFor(p, `document.querySelector('#ar-list [data-kind=claude] .archip')?.textContent===${JSON.stringify(s.login)}`);
         const labels = await evaluate(p, `[...document.querySelectorAll('#ar-list [data-kind=claude] button')].map(b=>b.textContent)`);
         assert.ok(labels.includes(s.a), 'Claude rescue button');
-        assert.ok(await evaluate(p, `!!document.querySelector('#ar-list [data-kind=codex] button.aj-btn--primary')`), 'Codex device button');
+        assert.ok(await evaluate(p, `!!document.querySelector('#ar-list [data-kind=codex] button.aj-action--primary')`), 'Codex device button');
         assert.ok(!(await evaluate(p, `!!document.querySelector('#ar-list [data-kind=opencode]')`)), 'not installed and not current → hidden');
         assert.match(await evaluate(p, `document.querySelector('#ar-list [data-kind=claude] .ardanger')?.textContent||''`), /2026-11-01/);
         assert.equal(seen[0].t, 'auth_get');

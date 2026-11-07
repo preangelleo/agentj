@@ -7,7 +7,7 @@ import { t } from './t.js';
 export const DAY = 86400;
 export const WHY = ['official', 'not_found', 'exists', 'link'];
 
-function el(tag, text, cls) { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; }
+function el(tag, text, cls) { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; n.setAttribute('data-aj-owner', 'aj-knowledge'); return n; }
 
 /** Days since a unix time → 今天 / 1 天前 / n 天前 (today / 1 day ago / n days ago). */
 export function ago(ts, now = Date.now() / 1000) {

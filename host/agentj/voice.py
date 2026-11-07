@@ -24,13 +24,15 @@ import urllib.error
 from websockets.exceptions import InvalidStatus, ConnectionClosed
 import uuid
 import sys
-from . import preferences as p
+from . import preference_values as p
+from .preference_checks import asr_endpoint
 
 ASR_URL='https://openrouter.ai/api/v1/audio/transcriptions'
 TTS_URL='https://api.openai.com/v1/audio/speech'
 ASR_OPENAI_URL='https://api.openai.com/v1/audio/transcriptions'
 TTS_ELEVEN_URL='https://api.elevenlabs.io/v1/text-to-speech/'
 TTS_REALTIME_URL='wss://api.openai.com/v1/realtime'
+TTS_VOLC_URL='https://openspeech.bytedance.com/api/v3/tts/unidirectional'
 MAX_AUDIO=8*1024*1024
 
 class SpeechError(p.ConfigError):
@@ -183,6 +185,12 @@ def validate_runtime(cfg, *, telegram_enrolled=None, environment="CLI"):
         chosen=p.get(cfg,'voice.tts.voice')
         if chosen not in ('alloy','ash','ballad','coral','echo','sage','shimmer','verse','marin','cedar') and not re.fullmatch(r'voice_[A-Za-z0-9_-]{1,120}',chosen):
             raise p.ConfigError('voice.tts.voice','Realtime requires a supported voice (e.g. marin or cedar) or your voice_ID; previous voice retained')
+    if p.get(cfg,'voice.tts.mode')=='cloud' and p.get(cfg,'voice.tts.provider')=='volcengine':
+        # P208: the App ID is not a secret (config); the access key is only ever an environment variable.
+        if not p.get(cfg,'voice.tts.app_id'):raise p.ConfigError('voice.tts.app_id','Volcengine needs its App ID: agentj voice set --engine volcengine --app-id <App ID>')
+        if not re.fullmatch(r'[A-Za-z0-9_.-]{2,80}',p.get(cfg,'voice.tts.voice')):raise p.ConfigError('voice.tts.voice','Volcengine requires a plain speaker ID (e.g. zh_female_… or your S_… clone)')
+        if not re.fullmatch(r'seed-(?:tts|icl)-[0-9.]{1,6}',p.get(cfg,'voice.tts.model')):raise p.ConfigError('voice.tts.model','Volcengine resource ID: seed-tts-2.0 (official voices) or seed-icl-2.0 (your clone)')
+        if not 0.5<=p.get(cfg,'voice.tts.rate')<=2.0:raise p.ConfigError('voice.tts.rate','Volcengine speed range: 0.5..2.0')
     command_selected=p.get(cfg,'voice.tts.mode')=='host' and p.get(cfg,'voice.tts.provider')=='command'
     if p.get(cfg,'voice.tts.mode')=='cloud' and p.get(cfg,'voice.tts.provider')=='command':
         raise p.ConfigError('voice.tts.mode','local command uses host mode')
@@ -193,7 +201,7 @@ def validate_runtime(cfg, *, telegram_enrolled=None, environment="CLI"):
     for kind in ('asr','tts'):
         if p.get(cfg,f'voice.{kind}.mode')=='cloud':
             provider=p.get(cfg,f'voice.{kind}.provider');env=p.get(cfg,f'voice.{kind}.key_env')
-            known={'OPENAI_API_KEY':'openai','OPENROUTER_API_KEY':'openrouter','ELEVENLABS_API_KEY':'elevenlabs'}
+            known={'OPENAI_API_KEY':'openai','OPENROUTER_API_KEY':'openrouter','ELEVENLABS_API_KEY':'elevenlabs','VOLCENGINE_TTS_ACCESS_KEY':'volcengine'}
             if env in known and known[env]!=provider:raise p.ConfigError(f'voice.{kind}.key_env','named key belongs to a different provider; choose your local key variable explicitly')
         if p.get(cfg,f'voice.{kind}.mode')=='cloud' and not has_key(p.get(cfg,f'voice.{kind}.key_env')):
             from .service import missing_key_message
@@ -247,28 +255,54 @@ def _request(url,key,body,content_type,timeout,max_bytes,auth_header='Authorizat
         if len(data)>max_bytes:raise ValueError('provider response exceeds limit')
         return data
 
-def asr_endpoint(base_url):
-    """Validate owner-selected destinations without retaining or echoing invalid URL text."""
-    try:
-        u=urllib.parse.urlsplit(base_url)
-        if (u.scheme not in ('http','https') or not u.hostname or u.username is not None or
-                u.password is not None or u.query or u.fragment or any(ord(c)<33 for c in base_url)):
-            raise ValueError()
-        _=u.port
-    except (ValueError,TypeError):
-        raise p.ConfigError('voice.asr.base_url','expected http(s) base URL without credentials, query or fragment') from None
-    path=u.path.rstrip('/')
-    if path.endswith('/audio/transcriptions'): return urllib.parse.urlunsplit((u.scheme,u.netloc,path,'',''))
-    if not path.endswith('/v1'): path+='/v1'
-    return urllib.parse.urlunsplit((u.scheme,u.netloc,path+'/audio/transcriptions','',''))
-
-
 def correct_transcript(text,cfg):
     # Deliberately exact: never fuzzy-rewrite ordinary speech into guessed product names.
     replacements={'Olayris':'Olares', **p.get(cfg,'voice.asr.corrections',{})}
     if not replacements: return text
     pattern=re.compile('|'.join(re.escape(x) for x in sorted(replacements,key=len,reverse=True)))
     return pattern.sub(lambda match: replacements[match[0]],text)
+
+
+def volc_resource(cfg):
+    """A clone (speaker ID S_…) bills under seed-icl-*; the official voices under seed-tts-*."""
+    model=p.get(cfg,'voice.tts.model')
+    if p.get(cfg,'voice.tts.voice').startswith('S_') and model.startswith('seed-tts-'):return 'seed-icl-'+model[len('seed-tts-'):]
+    return model
+
+
+def _volc_audio(text,cfg,timeout):
+    # Volcengine (豆包语音) V3 one-way HTTP: the answer is a run of JSON frames, each with a base64 PCM chunk.
+    body=json.dumps({'user':{'uid':'agentj'},'req_params':{'text':text,'speaker':p.get(cfg,'voice.tts.voice'),
+                     'audio_params':{'format':'pcm','sample_rate':24000,'speech_rate':int(round((p.get(cfg,'voice.tts.rate')-1)*100))}}}).encode()
+    headers={'X-Api-App-Key':p.get(cfg,'voice.tts.app_id'),'X-Api-Access-Key':os.environ[p.get(cfg,'voice.tts.key_env')],
+             'X-Api-Resource-Id':volc_resource(cfg),'X-Api-Request-Id':str(uuid.uuid4()),'Content-Type':'application/json'}
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self,*args): return None
+    req=urllib.request.Request(TTS_VOLC_URL,data=body,headers=headers,method='POST')
+    with urllib.request.build_opener(NoRedirect).open(req,timeout=timeout) as r:
+        raw=r.read(3*MAX_AUDIO+1)
+    if len(raw)>3*MAX_AUDIO:raise ValueError('provider response exceeds limit')
+    return _pcm_wav(volc_frames(raw.decode('utf-8')),24000)
+
+
+def volc_frames(content):
+    """Concatenated JSON frames → PCM bytes. code 0 = audio chunk, 20000000 = end; anything else is a provider refusal."""
+    dec=json.JSONDecoder(); pos=0; pcm=bytearray()
+    while pos<len(content):
+        while pos<len(content) and content[pos].isspace():pos+=1
+        if pos>=len(content):break
+        obj,pos=dec.raw_decode(content,pos)
+        if not isinstance(obj,dict) or 'ResponseMetadata' in obj and (obj['ResponseMetadata'] or {}).get('Error'):
+            raise SpeechError('provider_rejected','VolcengineError')
+        code=obj.get('code')
+        if code==20000000:break
+        if code not in (None,0,3000):raise SpeechError('provider_rejected','VolcengineError')
+        if obj.get('data'):
+            chunk=base64.b64decode(obj['data'],validate=True)
+            if len(pcm)+len(chunk)>MAX_AUDIO-44:raise ValueError('audio exceeds limit')
+            pcm.extend(chunk)
+    if not pcm:raise ValueError('no audio')
+    return bytes(pcm)
 
 
 def cloud_asr(path,cfg,timeout=60):
@@ -378,6 +412,9 @@ def synthesize(text,cfg,timeout=60):
             try:
                 pcm=_request(url+'?output_format=pcm_16000',os.environ[p.get(cfg,'voice.tts.key_env')],body,'application/json',timeout,8*1024*1024-44,auth_header='xi-api-key')
                 return _pcm_wav(pcm,16000)
+            except Exception as exc:raise speech_error(exc) from None
+        if p.get(cfg,'voice.tts.provider')=='volcengine':
+            try:return _volc_audio(text,cfg,timeout)
             except Exception as exc:raise speech_error(exc) from None
         if p.get(cfg,'voice.tts.model').startswith('gpt-realtime'):
             try:return asyncio.run(_realtime_audio(text,cfg,timeout))

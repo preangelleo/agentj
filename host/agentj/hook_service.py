@@ -615,8 +615,8 @@ class HookService:
                 msg = (f"主人没有批准常驻 Webhook「{h['name']}」，它已作废。" if self.lang != "en"
                        else f"The owner did not approve resident webhook 「{h['name']}」; it was dropped.")
             self.changed()
-            self._to_agent("〔Agent J 系统提示〕" + msg + "\n没有要补充的，最终回复只写 〔不回群〕" if self.lang != "en" else
-                           "[Agent J system notice] " + msg + "\nWith nothing to add, reply exactly 〔不回群〕", h["id"])
+            self._to_agent("〔Agent J 系统提示〕" + msg + "\n没有要补充的，最终回复只写 〔静默消息〕" if self.lang != "en" else
+                           "[Agent J system notice] " + msg + "\nWith nothing to add, reply exactly 〔静默消息〕", h["id"])
         task = asyncio.ensure_future(card())
         self.cards.add(task)
         task.add_done_callback(self.cards.discard)
@@ -777,9 +777,9 @@ class HookService:
                             _write_secret(f"file:{os.path.dirname(where.split('#')[0])}/{h['id']}.url", self.url(h, new.decode()), h["id"])
                 self.store.set_key(h["id"], new, grace)
                 self.log("hook_rotated", hook=h["id"][:8], src="card")
-                self._to_agent(("〔Agent J 系统提示〕主人批准了给「{n}」换密钥，新密钥已生效（文件里）。没有要补充的，最终回复只写 〔不回群〕"
+                self._to_agent(("〔Agent J 系统提示〕主人批准了给「{n}」换密钥，新密钥已生效（文件里）。没有要补充的，最终回复只写 〔静默消息〕"
                                 if self.lang != "en" else "[Agent J system notice] The owner approved the new secret for 「{n}」; it "
-                                "is in effect (in its file). With nothing to add, reply exactly 〔不回群〕").format(n=h["name"]), h["id"])
+                                "is in effect (in its file). With nothing to add, reply exactly 〔静默消息〕").format(n=h["name"]), h["id"])
             finally:
                 self.widening.discard(h["id"])
         task = asyncio.ensure_future(card())

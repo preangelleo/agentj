@@ -20,7 +20,7 @@ import { copyable } from './copycode.js';   // P292
 import { upgrade } from './render.js';
 import { PREVIEW, parseDelimited, codeLang, sandboxAttrs, FRAME_NOBAR } from './mediawire.js';
 
-const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+const mk = (tag, cls, text, owner) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; if (owner) e.setAttribute('data-aj-owner', owner); return e; };
 
 // ---------------------------------------------------------------- vendor loading (lazy, 'self' only)
 const scripts = {};
@@ -129,7 +129,7 @@ async function viewDocx(blob, box) {
     'font:16px/1.65 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;overflow-wrap:anywhere}' +
     'img{max-width:100%;height:auto}table{border-collapse:collapse;margin:1em 0}td,th{border:1px solid #e3dacc;padding:4px 8px;vertical-align:top}' +
     'a{color:#2d4f83}</style>';
-  const f = document.createElement('iframe');
+  const f = document.createElement('iframe'); f.setAttribute('data-aj-owner','aj-file'); f.setAttribute('data-aj-boundary','opaque-document');
   for (const [k, v] of Object.entries(sandboxAttrs())) f.setAttribute(k, v);
   f.className = 'mframe';
   f.title = t('media.pv.docx');
@@ -154,7 +154,7 @@ async function viewSheet(blob, box) {
     [...tabs.children].forEach((b, j) => b.setAttribute('aria-selected', String(i === j)));
   };
   names.forEach((n, i) => {
-    const b = mk('button', 'mpvtab', n); b.type = 'button'; b.setAttribute('role', 'tab');
+    const b = mk('button', 'mpvtab', n, 'aj-file'); b.type = 'button'; b.setAttribute('role', 'tab');
     b.addEventListener('click', () => show(i));
     tabs.appendChild(b);
   });
@@ -188,7 +188,7 @@ async function viewMarkdown(blob, box) {
 async function viewCode(blob, box, m, lang) {
   const { text, cut } = await textOf(blob);
   const wrap = mk('div', 'codeblock mpvcode');
-  const pre = mk('pre'), code = mk('code', null, text);   // P292: the whole file behind ⧉ (a tap here is reading)
+  const pre = mk('pre', undefined, undefined, 'aj-file'), code = mk('code', null, text, 'aj-file');   // P292: the whole file behind ⧉ (a tap here is reading)
   if (lang && text.length <= 20000) pre.setAttribute('data-lang', lang);
   pre.appendChild(code); wrap.appendChild(copyable(pre, { click: false }));
   box.replaceChildren(wrap);
@@ -208,6 +208,6 @@ export async function renderDoc(kind, m, blob, box) {
   if (kind === 'markdown') return viewMarkdown(blob, box);
   if (kind === 'code') return viewCode(blob, box, m, codeLang(m.name));
   const { text, cut } = await textOf(blob);
-  box.replaceChildren(copyable(mk('pre', 'mpvtext', text), { click: false }));   // P292: ⧉ copies the text shown
+  box.replaceChildren(copyable(mk('pre', 'mpvtext', text, 'aj-file'), { click: false }));   // P292: ⧉ copies the text shown
   if (cut) box.appendChild(noteEl('media.pv.more'));
 }

@@ -173,7 +173,8 @@ class MCP(unittest.IsolatedAsyncioTestCase):
 class RealSignedMCP(unittest.IsolatedAsyncioTestCase):
     async def test_signed_host_ask_to_real_once_pickup(self):
         with tempfile.TemporaryDirectory() as td:
-            from test_l1 import _owner_host, _state, Phone, _ready
+            from test_l1 import _state, Phone, _ready
+            from _p541_device import _owner_host
             from test_p73_secret import fa_out
             sent=[];st=_state(td);host=_owner_host(st,sent);ph=Phone(st,with_passkey=True);s=_ready(host,ph)
             service=hook_service.HookService(host);service.ensure_net=lambda:None

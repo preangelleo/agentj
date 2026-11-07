@@ -21,12 +21,8 @@ from .envcompat import getenv
 from .noise import Keypair
 from .text import agent_name_problem, normalise_agent_name
 
-DEFAULT_RELAY = "wss://relay.agentj.app"
-DEFAULT_WEB = "https://m.agentj.app"
-OLD_DEFAULT_RELAY = "wss://alpha-relay.agentjarvis.net"   # ≤ 0.9 defaults: rewritten to the new ones by migrate.py
-OLD_DEFAULT_WEB = "https://alpha-web.agentjarvis.net"
-DEFAULT_STATE = "~/.local/state/agentj"
-LEGACY_STATE = "~/.local/state/agentjarvis-alpha"   # ≤ 0.9; after the move (migrate.py) a symlink to DEFAULT_STATE
+from .state_paths import (DEFAULT_RELAY, DEFAULT_WEB, OLD_DEFAULT_RELAY, OLD_DEFAULT_WEB,
+                          DEFAULT_STATE, LEGACY_STATE, state_dir, default_state, legacy_state)
 MAX_DEVICES = 10  # remotes per host = per seat (Q32 2026-10-02: 5; P171 2026-10-12 Leo: 10 — four colleagues × phone + computer
 #                   = 8, plus room); enforced here, in the one writer of the allowlist
 
@@ -52,28 +48,6 @@ def evict_order(devs: dict, online=frozenset()) -> list[str]:
 def _brief(did: str, v, online=frozenset()) -> dict:
     v = v if isinstance(v, dict) else {}
     return {"id": did, "name": str(v.get("name", "")), "paired_at": _num(v.get("paired_at")), "online": did in online}
-
-
-def state_dir() -> pathlib.Path:
-    """$AGENTJ_STATE_DIR (or, one version cycle, $AGENTJARVIS_STATE_DIR); else ~/.local/state/agentj — except while a
-    0.9 state directory has not been moved yet (migrate.py refused: a serve is running on it): then that one."""
-    d = getenv("AGENTJ_STATE_DIR")
-    if d:
-        return pathlib.Path(d)
-    new, old = default_state(), legacy_state()
-    if not os.path.lexists(new) and old.is_dir() and not old.is_symlink():
-        from .migrate import serve_running    # P127: only a serve still running on it keeps the old one in use —
-        if serve_running(old):                # an old directory nobody chose to adopt is never used silently
-            return old
-    return new
-
-
-def default_state(home: str | None = None) -> pathlib.Path:
-    return pathlib.Path(os.path.join(home, DEFAULT_STATE[2:]) if home else os.path.expanduser(DEFAULT_STATE))
-
-
-def legacy_state(home: str | None = None) -> pathlib.Path:
-    return pathlib.Path(os.path.join(home, LEGACY_STATE[2:]) if home else os.path.expanduser(LEGACY_STATE))
 
 
 _WRITES = [0]   # P292: private writes by this process — part of the allowlist cache key (an inode number can be reused)
@@ -297,7 +271,7 @@ class State:
                     evict: bool = False, online: frozenset | set = frozenset(), source: str = "local") -> dict:
         """Add (or re-pair) one device in ONE locked read-modify-write (0.15.1, P55). → {"device", "replaced": rec|None,
         "evicted": rec|None} where rec = {"id", "name", "paired_at", "online"}.
-        - same key (= same device id) → its record is rewritten, nothing else changes (ADR-015's rule, here since A3.1);
+        - same static key → update its label and supplied approval key in place; keep credentials and revocation lineage;
         - same browser install (`iid`, a per-host hash the page sends in its pairing msg1) under another key — the browser
           lost its key, the human paired it again → the old record is replaced, not kept as a second remote;
         - a NEW device on a full allowlist: evict=False → DeviceLimit; evict=True → the stalest remote goes (offline before
@@ -322,7 +296,13 @@ class State:
                     raise DeviceLimit(len(d))
                 victim = evict_order(d, online)[0]
                 evicted = _brief(victim, d.pop(victim), online)
-            rec = {"pub": wire.b64u(pub), "name": name, "self_name": name, "paired_at": int(time.time()), "source": source}
+            # A repeated QR for an already allowed static key repairs that remote,
+            # rather than erasing its passkey, renewal ticket or revocation lineage.
+            # A different key with the same browser iid is a replacement: never copy
+            # its credentials. The complete pub check also excludes a device-id collision.
+            same_key = did in d and isinstance(earlier, dict) and earlier.get("pub") == wire.b64u(pub)
+            rec = dict(earlier) if same_key else {"paired_at": int(time.time())}
+            rec.update(pub=wire.b64u(pub), name=name, self_name=name, source=source)
             kept = device_names(earlier) if isinstance(earlier, dict) else None
             if kept and kept["named_by"] == "owner":
                 rec["name"] = rec["owner_name"] = kept["owner_name"]
@@ -423,6 +403,27 @@ class State:
             _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
         self.note_removed(did, why)
         return True
+
+    def remove_all_devices(self, expected: list[str], cutoff: int = 0) -> list[str] | None:
+        """#560: compare the reviewed full set and revoke it in one locked allowlist write.
+        Passkeys, approval keys and renewal tickets live in these records. A changed
+        roster leaves every record and the revocation cutoff untouched.
+        """
+        from . import credential_revoke
+        with self.devices_lock():
+            devices = self.devices()
+            if sorted(devices) != expected:
+                return None
+            # Old queued account pairing approvals must not recreate an old pairing.
+            journal = credential_revoke.read(self)
+            journal['cutoff'] = max(journal.get('cutoff', 0), cutoff)
+            # This first durable barrier also denies old records if the allowlist write fails.
+            journal['devices'] = sorted(set(journal['devices']) | set(expected))
+            self.write_private(self.root/'credential_revocations.json', json.dumps(journal).encode())
+            self.write_private(self.devices_path, b'{}')
+        for did in expected:
+            self.note_removed(did, 'revoked')
+        return list(expected)
 
     def device_full(self) -> bool:
         return len(self.devices()) >= MAX_DEVICES
@@ -756,9 +757,9 @@ class State:
                     cfg["agent"].pop("region", None)
                 _write_private(self.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
 
-    def set_agent_model(self, model: str | None, *, expected: dict | None = None) -> bool:
-        """/model from the phone (slash.py): only the model of the configured Agent changes."""
-        with self.config_lock():
+    def set_agent_model(self, model: str | None, *, expected: dict | None = None, locked: bool = False) -> bool:
+        """Only the selected model changes; locked callers already hold config_lock."""
+        with contextlib.nullcontext() if locked else self.config_lock():
             cfg = self.config()
             a = cfg.get("agent")
             if expected is not None and (not isinstance(a, dict) or

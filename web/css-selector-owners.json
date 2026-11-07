@@ -1,0 +1,1161 @@
+{
+  "schemaVersion": 1,
+  "description": "Exact reviewed selector ownership. No catch-all web/page owner. Source/module classification alone is not semantic or pixel qualification.",
+  "entries": [
+    {
+      "file": "public/app.css",
+      "selector": "html",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 99,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "body",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 105,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "body",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 128,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "html",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 154,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "html[data-sbar=black]",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 155,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "main",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 344,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "::highlight(aj-quote)",
+      "owner": "aj-quote",
+      "purpose": "Named quote highlight belongs to the quote component only.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 943,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "main",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 1840,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "main",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 1851,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#pull-refresh",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3708,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#pull-refresh[hidden]",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3710,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#pull-refresh svg",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3711,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "main[data-pulling]",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3712,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "html[data-ios=\"1\"]",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3796,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "html[data-ios=\"1\"] body",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3797,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "html[data-ios=\"1\"]::before",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3800,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "html[data-ios=\"1\"]:not([data-standalone=\"1\"]) body",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3810,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#iosdiag",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3827,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "html[data-ios-safari=\"1\"],html[data-ios-safari=\"1\"] body",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3833,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "html[data-ios-safari=\"1\"] body::before",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3834,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#wc-qr",
+      "owner": "aj-channel",
+      "purpose": "Existing WeChat QR/code/panel component, proven by the exact production IDs.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3846,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#wc-qr img",
+      "owner": "aj-channel",
+      "purpose": "Existing WeChat QR/code/panel component, proven by the exact production IDs.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3847,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#wechat-panel button",
+      "owner": "aj-channel",
+      "purpose": "Existing WeChat QR/code/panel component, proven by the exact production IDs.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3848,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#wc-code",
+      "owner": "aj-channel",
+      "purpose": "Existing WeChat QR/code/panel component, proven by the exact production IDs.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3849,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/cards.css",
+      "selector": "#five-menu",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/cards.css",
+        "line": 19,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "#five-page,#five-menu,#five-detail",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 2,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "#five-page[hidden],#five-menu[hidden],#five-detail[hidden],#five-mentions[hidden]",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 3,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "[data-theme=dark] #five-page,[data-theme=dark] #five-detail",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 4,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "#five-body",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 5,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "#five-menu",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 11,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "#five-detail",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 12,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "#five-mentions",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 13,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "#five-mentions",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 18,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "#workflow-compose",
+      "owner": "aj-composer",
+      "purpose": "Explicit workflow composition editor, independent of the containing navigation frame.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 40,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "#workflow-compose[hidden]",
+      "owner": "aj-composer",
+      "purpose": "Explicit workflow composition editor, independent of the containing navigation frame.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 40,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "#five-page,#five-detail",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 59,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "[data-theme=dark] #five-page,[data-theme=dark] #five-detail",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 60,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "html:has(body:is([data-five-page]:not([data-five-page=\"chat\"]),:has(>#five-detail:not([hidden])),:has(>#five-menu:not([hidden])))),\nbody:is([data-five-page]:not([data-five-page=\"chat\"]),:has(>#five-detail:not([hidden])),:has(>#five-menu:not([hidden])))",
+      "owner": "aj-shell",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 61,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "#five-body",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 72,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "#five-menu",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 122,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "#five-menu",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 141,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": "#five-mentions",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/five-pages.css",
+        "line": 153,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/menu.css",
+      "selector": "#five-page",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/menu.css",
+        "line": 150,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/menu.css",
+      "selector": "#five-detail",
+      "owner": "aj-knowledge",
+      "purpose": "Existing five-page navigation/content frame, independent of embedded wallet/business-card content.",
+      "evidence": {
+        "source": "public/menu.css",
+        "line": 166,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/menu.css",
+      "selector": "::highlight(aj-find)",
+      "owner": "aj-search",
+      "purpose": "Named current/all-match search highlight belongs to search only.",
+      "evidence": {
+        "source": "public/menu.css",
+        "line": 1547,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/menu.css",
+      "selector": "::highlight(aj-find-cur)",
+      "owner": "aj-search",
+      "purpose": "Named current/all-match search highlight belongs to search only.",
+      "evidence": {
+        "source": "public/menu.css",
+        "line": 1548,
+        "decision": "CEO #577 explicit boundary ruling (2026-11-07), items 1-4"
+      }
+    },
+    {
+      "file": "public/controls.css",
+      "selector": "#elev-allow:is(:hover,:active,:focus)",
+      "owner": "aj-approval",
+      "purpose": "elevate.js:81 explicit privileged approval control and its original interaction state.",
+      "evidence": {
+        "source": "public/controls.css",
+        "decision": "CEO #577 explicit boundary ruling, 2026-11-07"
+      }
+    },
+    {
+      "file": "public/menu.css",
+      "selector": "body:is([data-view=\"mem\"],[data-view=\"act\"],[data-view=\"tasks\"],[data-view=\"models\"],[data-view=\"friends\"],[data-view=\"bots\"],[data-view=\"setup\"])",
+      "owner": "aj-shell",
+      "purpose": "Document mode color/composition while the corresponding page covers chat.",
+      "evidence": {
+        "source": "public/menu.css",
+        "decision": "CEO #577 explicit boundary ruling, 2026-11-07"
+      }
+    },
+    {
+      "file": "public/menu.css",
+      "selector": "body[data-assist-view]",
+      "owner": "aj-shell",
+      "purpose": "Document scroll lock while the explicit assist overlay is visible.",
+      "evidence": {
+        "source": "public/menu.css",
+        "decision": "CEO #577 explicit boundary ruling, 2026-11-07"
+      }
+    },
+    {
+      "file": "styles/20-composition-rhythm.css",
+      "selector": ".model-options",
+      "owner": "aj-account",
+      "purpose": "模型选择列表的列排布",
+      "sourceReview": "#577 source6 independent producer review rule 15",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 729,
+          "purpose": "模型/API页唯一#model-options容器"
+        },
+        {
+          "file": "public/app.js",
+          "line": 1434,
+          "purpose": "openModels读取该容器"
+        },
+        {
+          "file": "public/app.js",
+          "line": 1441,
+          "purpose": "模型条目aj-action按钮创建，点击切模型"
+        }
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".row:has(.send:disabled)",
+      "owner": "aj-composer",
+      "purpose": "禁用发送键长按音量的触控策略",
+      "sourceReview": "#577 source6 independent producer review rule 17",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 555,
+          "purpose": "含.send的composer row"
+        },
+        {
+          "file": "public/js/sendvol.js",
+          "line": 1,
+          "purpose": "发送音量弹层模块，禁用发送时仍允许按住调音量"
+        },
+        {
+          "file": "public/app.css",
+          "line": 1294,
+          "purpose": "原注释说明send disabled pointer-events转给row"
+        }
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".cmdcopy",
+      "owner": "aj-approval",
+      "purpose": "复制完整待审批命令",
+      "sourceReview": "#577 source6 independent producer review rule 24",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 434,
+          "purpose": "唯一cmdCopy.cmdcopy，显式aj-approval"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 694,
+          "purpose": "cmdMore/命令折叠协调"
+        }
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".cmdcopy svg",
+      "owner": "aj-approval",
+      "purpose": "复制完整待审批命令",
+      "sourceReview": "#577 source6 independent producer review rule 25",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 434,
+          "purpose": "唯一cmdCopy.cmdcopy，显式aj-approval"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 694,
+          "purpose": "cmdMore/命令折叠协调"
+        }
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".cmdcopy:active",
+      "owner": "aj-approval",
+      "purpose": "复制完整待审批命令",
+      "sourceReview": "#577 source6 independent producer review rule 26",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 434,
+          "purpose": "唯一cmdCopy.cmdcopy，显式aj-approval"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 694,
+          "purpose": "cmdMore/命令折叠协调"
+        }
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".ajpages",
+      "owner": "aj-shell",
+      "purpose": "非聊天页滚动壳和页面背景",
+      "sourceReview": "#577 source6 independent producer review rule 27",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 603,
+          "purpose": "唯一#pages.ajpages包多个不同业务view"
+        },
+        {
+          "file": "public/index.html",
+          "line": 622,
+          "purpose": "pair-view子页"
+        },
+        {
+          "file": "public/index.html",
+          "line": 726,
+          "purpose": "models-view子页"
+        },
+        {
+          "file": "public/index.html",
+          "line": 792,
+          "purpose": "friends-view子页"
+        },
+        {
+          "file": "public/menu.css",
+          "line": 199,
+          "purpose": "mem/act/tasks/models/friends/bots/setup状态下body和ajpages背景"
+        }
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": "body[data-view=\"chat\"] .ajpages",
+      "owner": "aj-shell",
+      "purpose": "非聊天页滚动壳和页面背景",
+      "sourceReview": "#577 source6 independent producer review rule 28",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 603,
+          "purpose": "唯一#pages.ajpages包多个不同业务view"
+        },
+        {
+          "file": "public/index.html",
+          "line": 622,
+          "purpose": "pair-view子页"
+        },
+        {
+          "file": "public/index.html",
+          "line": 726,
+          "purpose": "models-view子页"
+        },
+        {
+          "file": "public/index.html",
+          "line": 792,
+          "purpose": "friends-view子页"
+        },
+        {
+          "file": "public/menu.css",
+          "line": 199,
+          "purpose": "mem/act/tasks/models/friends/bots/setup状态下body和ajpages背景"
+        }
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".gear svg",
+      "owner": "aj-settings",
+      "purpose": "顶栏设置齿轮svg尺寸",
+      "sourceReview": "#577 source6 independent producer review rule 43",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 286,
+          "purpose": "setBtn.gear，显式aj-settings"
+        }
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": "div.math.display",
+      "owner": "aj-prose",
+      "purpose": "Markdown独立数学公式居中",
+      "sourceReview": "#577 source6 independent producer review rule 44",
+      "producerEvidence": [
+        {
+          "file": "public/js/md.js",
+          "line": 673,
+          "purpose": "mathEl: block生成div、display生成math display"
+        },
+        {
+          "file": "public/js/render.js",
+          "line": 209,
+          "purpose": "math分支后处理KaTeX"
+        }
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".model-options",
+      "owner": "aj-account",
+      "purpose": "模型选择列表的列排布",
+      "sourceReview": "#577 source6 independent producer review rule 45",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 729,
+          "purpose": "模型/API页唯一#model-options容器"
+        },
+        {
+          "file": "public/app.js",
+          "line": 1434,
+          "purpose": "openModels读取该容器"
+        },
+        {
+          "file": "public/app.js",
+          "line": 1441,
+          "purpose": "模型条目aj-action按钮创建，点击切模型"
+        }
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".ajpages .model-options",
+      "owner": "aj-account",
+      "purpose": "模型选择列表的列排布",
+      "sourceReview": "#577 source6 independent producer review rule 49",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 729,
+          "purpose": "模型/API页唯一#model-options容器"
+        },
+        {
+          "file": "public/app.js",
+          "line": 1434,
+          "purpose": "openModels读取该容器"
+        },
+        {
+          "file": "public/app.js",
+          "line": 1441,
+          "purpose": "模型条目aj-action按钮创建，点击切模型"
+        }
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".lt details>summary",
+      "owner": "aj-setup",
+      "purpose": "长任务配置/完整brief的details summary",
+      "sourceReview": "#577 source6 independent producer review rule 50",
+      "producerEvidence": [
+        {
+          "file": "public/js/longtask.js",
+          "line": 187,
+          "purpose": "lt-opt-sec配置details"
+        },
+        {
+          "file": "public/js/longtask.js",
+          "line": 199,
+          "purpose": "lt-full完整任务brief details"
+        },
+        {
+          "file": "public/js/longtask.js",
+          "line": 330,
+          "purpose": "lt-cap能力说明details"
+        }
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#set-phones .name-note",
+      "owner": "aj-remotes",
+      "purpose": "遥控器名字来源说明",
+      "sourceReview": "#577 source6 independent producer review rule 51",
+      "producerEvidence": [
+        {
+          "file": "public/js/remotes.js",
+          "line": 147,
+          "purpose": "small.name-note：名字来自owner或device，显式aj-remotes"
+        },
+        {
+          "file": "public/app.css",
+          "line": 3163,
+          "purpose": "同组set-phones/remotename样式上下文"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1542,
+          "purpose": "设置遥控器区域，rm-list在1589行"
+        }
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".bangcard",
+      "owner": "aj-terminal",
+      "purpose": "!命令结果在reply上方的Noir卡",
+      "sourceReview": "#577 source6 independent producer review rule 55",
+      "producerEvidence": [
+        {
+          "file": "public/js/bang.js",
+          "line": 78,
+          "purpose": "paintCard创建bangCard.bangcard"
+        },
+        {
+          "file": "public/js/bang.js",
+          "line": 82,
+          "purpose": "bangout pre owner terminal"
+        },
+        {
+          "file": "public/js/bang.js",
+          "line": 93,
+          "purpose": "结果注释/折叠"
+        }
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#wechat-panel .box",
+      "owner": "aj-channel",
+      "purpose": "Wechat配对/验证弹层box高度和滚动",
+      "sourceReview": "#577 source6 independent producer review rule 56",
+      "producerEvidence": [
+        {
+          "file": "public/js/wechat.js",
+          "line": 54,
+          "purpose": "创建唯一#wechat-panel弹层"
+        },
+        {
+          "file": "public/js/wechat.js",
+          "line": 56,
+          "purpose": "box创建"
+        },
+        {
+          "file": "public/js/wechat.js",
+          "line": 58,
+          "purpose": "标题/状态通道owner"
+        },
+        {
+          "file": "public/js/wechat.js",
+          "line": 65,
+          "purpose": "内部标准动作仍action/dialog context"
+        }
+      ]
+    },
+    {
+      "file": "public/menu.css",
+      "selector": "body:is([data-view=\"mem\"],[data-view=\"act\"],[data-view=\"tasks\"],[data-view=\"models\"],[data-view=\"friends\"],[data-view=\"bots\"],[data-view=\"setup\"]),\nbody:is([data-view=\"mem\"],[data-view=\"act\"],[data-view=\"tasks\"],[data-view=\"models\"],[data-view=\"friends\"],[data-view=\"bots\"],[data-view=\"setup\"]) .ajpages",
+      "owner": "aj-shell",
+      "purpose": "非聊天页滚动壳和页面背景",
+      "sourceReview": "#577 source6 independent producer review rule 59",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 603,
+          "purpose": "唯一#pages.ajpages包多个不同业务view"
+        },
+        {
+          "file": "public/index.html",
+          "line": 622,
+          "purpose": "pair-view子页"
+        },
+        {
+          "file": "public/index.html",
+          "line": 726,
+          "purpose": "models-view子页"
+        },
+        {
+          "file": "public/index.html",
+          "line": 792,
+          "purpose": "friends-view子页"
+        },
+        {
+          "file": "public/menu.css",
+          "line": 199,
+          "purpose": "mem/act/tasks/models/friends/bots/setup状态下body和ajpages背景"
+        }
+      ]
+    },
+    {
+      "file": "public/menu.css",
+      "selector": ".keydl",
+      "owner": "aj-menu",
+      "purpose": "按键组合+说明的定义列表",
+      "sourceReview": "#577 source6 independent producer review rule 60",
+      "producerEvidence": [
+        {
+          "file": "public/js/relay.js",
+          "line": 4491,
+          "purpose": "paintKeys功能键/单键/手势分组dl.keydl"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 4493,
+          "purpose": "dt/dd创建按键/说明对"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 4516,
+          "purpose": "钱包卡自身快捷键第二组dl.keydl"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1700,
+          "purpose": "keysCols是快捷键页menupage内容区"
+        }
+      ]
+    },
+    {
+      "file": "public/menu.css",
+      "selector": ".keydl dt,.keydl dd",
+      "owner": "aj-menu",
+      "purpose": "按键组合+说明的定义列表",
+      "sourceReview": "#577 source6 independent producer review rule 61",
+      "producerEvidence": [
+        {
+          "file": "public/js/relay.js",
+          "line": 4491,
+          "purpose": "paintKeys功能键/单键/手势分组dl.keydl"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 4493,
+          "purpose": "dt/dd创建按键/说明对"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 4516,
+          "purpose": "钱包卡自身快捷键第二组dl.keydl"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1700,
+          "purpose": "keysCols是快捷键页menupage内容区"
+        }
+      ]
+    },
+    {
+      "file": "public/menu.css",
+      "selector": ".keydl dt",
+      "owner": "aj-menu",
+      "purpose": "按键组合+说明的定义列表",
+      "sourceReview": "#577 source6 independent producer review rule 62",
+      "producerEvidence": [
+        {
+          "file": "public/js/relay.js",
+          "line": 4491,
+          "purpose": "paintKeys功能键/单键/手势分组dl.keydl"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 4493,
+          "purpose": "dt/dd创建按键/说明对"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 4516,
+          "purpose": "钱包卡自身快捷键第二组dl.keydl"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1700,
+          "purpose": "keysCols是快捷键页menupage内容区"
+        }
+      ]
+    },
+    {
+      "file": "public/menu.css",
+      "selector": ".keydl dt:first-of-type,.keydl dd:first-of-type",
+      "owner": "aj-menu",
+      "purpose": "按键组合+说明的定义列表",
+      "sourceReview": "#577 source6 independent producer review rule 63",
+      "producerEvidence": [
+        {
+          "file": "public/js/relay.js",
+          "line": 4491,
+          "purpose": "paintKeys功能键/单键/手势分组dl.keydl"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 4493,
+          "purpose": "dt/dd创建按键/说明对"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 4516,
+          "purpose": "钱包卡自身快捷键第二组dl.keydl"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1700,
+          "purpose": "keysCols是快捷键页menupage内容区"
+        }
+      ]
+    },
+    {
+      "file": "public/menu.css",
+      "selector": ".keydl dt",
+      "owner": "aj-menu",
+      "purpose": "按键组合+说明的定义列表",
+      "sourceReview": "#577 source6 independent producer review rule 64",
+      "producerEvidence": [
+        {
+          "file": "public/js/relay.js",
+          "line": 4491,
+          "purpose": "paintKeys功能键/单键/手势分组dl.keydl"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 4493,
+          "purpose": "dt/dd创建按键/说明对"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 4516,
+          "purpose": "钱包卡自身快捷键第二组dl.keydl"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1700,
+          "purpose": "keysCols是快捷键页menupage内容区"
+        }
+      ]
+    },
+    {
+      "file": "public/menu.css",
+      "selector": ".keydl dd",
+      "owner": "aj-menu",
+      "purpose": "按键组合+说明的定义列表",
+      "sourceReview": "#577 source6 independent producer review rule 65",
+      "producerEvidence": [
+        {
+          "file": "public/js/relay.js",
+          "line": 4491,
+          "purpose": "paintKeys功能键/单键/手势分组dl.keydl"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 4493,
+          "purpose": "dt/dd创建按键/说明对"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 4516,
+          "purpose": "钱包卡自身快捷键第二组dl.keydl"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1700,
+          "purpose": "keysCols是快捷键页menupage内容区"
+        }
+      ]
+    },
+    {
+      "file": "public/menu.css",
+      "selector": ".keydl dd code",
+      "owner": "aj-menu",
+      "purpose": "按键组合+说明的定义列表",
+      "sourceReview": "#577 source6 independent producer review rule 66",
+      "producerEvidence": [
+        {
+          "file": "public/js/relay.js",
+          "line": 4491,
+          "purpose": "paintKeys功能键/单键/手势分组dl.keydl"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 4493,
+          "purpose": "dt/dd创建按键/说明对"
+        },
+        {
+          "file": "public/js/relay.js",
+          "line": 4516,
+          "purpose": "钱包卡自身快捷键第二组dl.keydl"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1700,
+          "purpose": "keysCols是快捷键页menupage内容区"
+        }
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".aj-approval-command .tool",
+      "owner": "aj-approval",
+      "purpose": "Only approval command tool tag; notice command has no such child",
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "purpose": "#tool span within approval command root"
+        }
+      ],
+      "sourceReview": "#577 source6 command source split"
+    }
+  ],
+  "source6ProducerBindings": {
+    "public/index.html": "3df32b00d92465d9303b41f04bb701500838d09074dd39bb15b9efac9893375c",
+    "public/app.js": "0b154f10f9fb0d19abbfd8f8df5d346765d02e6807f56a86012e94a2b0ea2f07",
+    "public/js/sendvol.js": "af0e1b739e9bb027cfa3be86ad04ba002c0768c443cdb2b60c7c6536e573b229",
+    "public/app.css": "991ba0e4732f8954c444ff611f3bafb4822ad9b5e5a33af685619339a6ff3ce5",
+    "public/js/relay.js": "a6c99bf9aa3c6c68599d432f094231e75d5c6621dc1a9f0953433011591d7bbf",
+    "public/menu.css": "3c8c0908069eda66ef52e32cb50edacdbe6a7d9225426e67b64f65eb16ff9ecf",
+    "public/js/md.js": "1a1f0eea6053c9a783d1da26907761f7038d4229e543c4b6f514951815727409",
+    "public/js/render.js": "7ad1676b626ce53c0cef3d4b3f4a33317d8dd5857f59aceea3bb2ffccec921fe",
+    "public/js/longtask.js": "6bef8993727fd0ccea003553980609f7d70af5d73cdbe87f42240dc82d335f36",
+    "public/js/remotes.js": "b063ec59122cd649280a7b7c4b7fee17a033e0b4448dbecd441777e1fe02a37d",
+    "public/js/bang.js": "7d6af4c80e22f5d3957a97baddd5a20b0f3d677e56be57313d742c6351d39d6a",
+    "public/js/wechat.js": "65c8c2343b03458f660f8e90d94bc23a18be434eec36274448d5caa3d98218e9"
+  }
+}

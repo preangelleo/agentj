@@ -1,0 +1,1182 @@
+{
+  "schemaVersion": 1,
+  "description": "Exact existing same-kind private controls/layout slots; separate normative semantic roles and actual direct consumers provide ownership authority.",
+  "entries": [
+    {
+      "id": "native-0",
+      "file": "public/app.css",
+      "selector": ".rdfspop button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "2e8ca457982cd8b31575c20f602c1ca9bc751861c6c3cb96f10e3e3c999445d4",
+      "scopeIds": [
+        "rdfspop"
+      ]
+    },
+    {
+      "id": "native-1",
+      "file": "public/app.css",
+      "selector": ".rdfspop button:active",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "09bdd92b1f883c02bbcd30ea3cb08a9a600cd76c7ee18ba33966d7b8b2d9c5e8",
+      "scopeIds": [
+        "rdfspop"
+      ]
+    },
+    {
+      "id": "native-2",
+      "file": "public/app.css",
+      "selector": ".rdfspop button:disabled",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "5c8a96731fccfcd52d43dd50b50fd3961b2490220426fccbd8cb2bb19b8ebe07",
+      "scopeIds": [
+        "rdfspop"
+      ]
+    },
+    {
+      "id": "native-3",
+      "file": "public/app.css",
+      "selector": ".qc>button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "5538a89b5a34b962318a92fed17f2ee34f2af2428f2fc96eee7c2b9c5e5c8606",
+      "scopeIds": [
+        "qc"
+      ]
+    },
+    {
+      "id": "native-4",
+      "file": "public/app.css",
+      "selector": ".slashmenu button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "de68849649b3f92760c468fea7cccaa2d6ea81e7354db006b75fae89c8cd0a1b",
+      "scopeIds": [
+        "slashmenu"
+      ]
+    },
+    {
+      "id": "native-5",
+      "file": "public/app.css",
+      "selector": ".slashmenu button+button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "876de5844b2fe1cafa66132c0ad6ff723fa681b0ee7aa7f4861891cec10a9a69",
+      "scopeIds": [
+        "slashmenu"
+      ]
+    },
+    {
+      "id": "native-6",
+      "file": "public/app.css",
+      "selector": ".slashmenu button:active",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "98c24f5cd3727c532a9546248694b66c3c88aae07dd390b2cbf1f655496ce145",
+      "scopeIds": [
+        "slashmenu"
+      ]
+    },
+    {
+      "id": "native-7",
+      "file": "public/app.css",
+      "selector": ".slashmenu.sug button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "fade88e3758307268c340d4d6bf44432f6c845ea661cf122ee5d14a3db123eeb",
+      "scopeIds": [
+        "slashmenu"
+      ]
+    },
+    {
+      "id": "native-8",
+      "file": "public/app.css",
+      "selector": ".slashmenu.sug button[aria-selected=\"true\"]",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "8b77075e8c4cda74fb4ccf5abf02af577206158c5be73ca6f6d24c87fb837e28",
+      "scopeIds": [
+        "slashmenu"
+      ]
+    },
+    {
+      "id": "native-9",
+      "file": "public/app.css",
+      "selector": ".apprbtns[hidden], .apprbtns button[hidden]",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "6aa34d7432e79eb0ce9d335d909a58940c4a549b4bb7d0ad14b9259889ee5001",
+      "scopeIds": [
+        "apprbtns"
+      ]
+    },
+    {
+      "id": "native-10",
+      "file": "public/app.css",
+      "selector": ".apprbtns button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "bbb8eeb367cb748ce2f4c02f702d2a2f744fd98fbfb8f129851f304a50a59966",
+      "scopeIds": [
+        "apprbtns"
+      ]
+    },
+    {
+      "id": "native-11",
+      "file": "public/app.css",
+      "selector": ".apprbtns button:disabled",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "59370c37a68c45552fd3d3ff09ffe47c9faf1b9dd77b9768afe5123e10e3e2ae",
+      "scopeIds": [
+        "apprbtns"
+      ]
+    },
+    {
+      "id": "native-12",
+      "file": "public/app.css",
+      "selector": ".cam .row button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "186a8f1c3d5a1558f468e5ba3e966519cc20e07e232f1eba54aa83a2dcbfdb2b",
+      "scopeIds": [
+        "cam"
+      ]
+    },
+    {
+      "id": "native-13",
+      "file": "public/app.css",
+      "selector": ".cam .row button.go",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "d8e0e218c7a75c9775c62417d50977a1ce2a5db417b2009714e459f2ec88ac21",
+      "scopeIds": [
+        "cam"
+      ]
+    },
+    {
+      "id": "native-14",
+      "file": "public/app.css",
+      "selector": ".cam .row button[hidden]",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "6aa34d7432e79eb0ce9d335d909a58940c4a549b4bb7d0ad14b9259889ee5001",
+      "scopeIds": [
+        "cam"
+      ]
+    },
+    {
+      "id": "native-15",
+      "file": "public/app.css",
+      "selector": ".seg button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "97a773a30a51163f2599deb1301680529a76c7f341157bd0c18ea007e6d04f1b",
+      "scopeIds": [
+        "seg"
+      ]
+    },
+    {
+      "id": "native-16",
+      "file": "public/app.css",
+      "selector": ".seg button+button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "204b474ce0744f8c1a3c71251192c9c4336289b6535cbd82e72ff80b07a50919",
+      "scopeIds": [
+        "seg"
+      ]
+    },
+    {
+      "id": "native-17",
+      "file": "public/app.css",
+      "selector": ".seg button[aria-pressed=\"true\"]",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "ba420e12b666c859ecf9c2dd3a4e1996a7388c28e9d0fc7b84e7076c2f07136d",
+      "scopeIds": [
+        "seg"
+      ]
+    },
+    {
+      "id": "native-18",
+      "file": "public/app.css",
+      "selector": ".seg button:focus-visible",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "e084924408f7c8d1ef7844f381c77dd35f08e3d1a2969256c2bb312f620d85c9",
+      "scopeIds": [
+        "seg"
+      ]
+    },
+    {
+      "id": "native-19",
+      "file": "public/app.css",
+      "selector": ".fontstep>button:disabled",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "59370c37a68c45552fd3d3ff09ffe47c9faf1b9dd77b9768afe5123e10e3e2ae",
+      "scopeIds": [
+        "fontstep-disabled-opacity"
+      ]
+    },
+    {
+      "id": "native-20",
+      "file": "public/app.css",
+      "selector": ".sfxvol button:focus-visible,.sfxvol input:focus-visible",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "e084924408f7c8d1ef7844f381c77dd35f08e3d1a2969256c2bb312f620d85c9",
+      "scopeIds": [
+        "sfxvol"
+      ]
+    },
+    {
+      "id": "native-21",
+      "file": "public/app.css",
+      "selector": ".model-options button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "544b4461ddd0cbf696df1ad1501b6adf10bc8e6727f8c38b344672b2e7d42333",
+      "scopeIds": [
+        "model-options"
+      ]
+    },
+    {
+      "id": "native-22",
+      "file": "public/app.css",
+      "selector": ".fr-mode button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "8e6a01010278beb1a2ab35bc0fb01d32283241d54bd1dca39769d6b6acf2bf75",
+      "scopeIds": [
+        "fr-mode"
+      ]
+    },
+    {
+      "id": "native-23",
+      "file": "public/app.css",
+      "selector": ".fr-mode button+button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "539c78cd942727893e64a9cd1d4f69c45538aadab97b51e4a559b1fd0c5de6a5",
+      "scopeIds": [
+        "fr-mode"
+      ]
+    },
+    {
+      "id": "native-24",
+      "file": "public/app.css",
+      "selector": ".seg button+button",
+      "context": [
+        "@media(max-width:600px)"
+      ],
+      "occurrence": 0,
+      "bodySha256": "539c78cd942727893e64a9cd1d4f69c45538aadab97b51e4a559b1fd0c5de6a5",
+      "scopeIds": [
+        "seg"
+      ]
+    },
+    {
+      "id": "native-25",
+      "file": "public/app.css",
+      "selector": ".share-notice[hidden],.share-notice button[hidden]",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "6aa34d7432e79eb0ce9d335d909a58940c4a549b4bb7d0ad14b9259889ee5001",
+      "scopeIds": [
+        "share-notice"
+      ]
+    },
+    {
+      "id": "native-26",
+      "file": "public/app.css",
+      "selector": ".share-notice button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "9a0579adc1764b793e676fa96ea9a517764e25242546629e42d712281f4488f2",
+      "scopeIds": [
+        "share-notice"
+      ]
+    },
+    {
+      "id": "native-27",
+      "file": "public/app.css",
+      "selector": ".share-notice button:disabled",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "443072299c4fef7f8e0847881986b41aa1a4d88e6542f22bf556af9ee2edf393",
+      "scopeIds": [
+        "share-notice"
+      ]
+    },
+    {
+      "id": "native-28",
+      "file": "public/app.css",
+      "selector": ".ct-sorts button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "12fe32c455ea98cdfd9b10464f82be27f36c2e9ab1113ac6b3280417ad0fa0e3",
+      "scopeIds": [
+        "ct-sorts"
+      ]
+    },
+    {
+      "id": "native-29",
+      "file": "public/app.css",
+      "selector": ".ct-sorts button[aria-selected=\"true\"]",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "6d7826d7619bdf383a5ce024348a50c6f828584fc3432b1cdb7322a6f0d0e39b",
+      "scopeIds": [
+        "ct-sorts"
+      ]
+    },
+    {
+      "id": "native-30",
+      "file": "public/app.css",
+      "selector": ".ct-sorts button:disabled",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "f7906d2cefa7361873c1f5dff853ae098859df07070f5debed65d62a29461144",
+      "scopeIds": [
+        "ct-sorts"
+      ]
+    },
+    {
+      "id": "native-31",
+      "file": "public/app.css",
+      "selector": ".fscmdlist button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "82b756a7074570b354a1d643f9920cacc8dcdeb971a0874a7bd8382e58a44e27",
+      "scopeIds": [
+        "fscmdlist"
+      ]
+    },
+    {
+      "id": "native-32",
+      "file": "public/app.css",
+      "selector": ".fscmdlist button[aria-selected=\"true\"],.fscmdlist button:hover",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "4ebc952a6b3ed372336a164bdfcf6d8117404d1ad71b1dac52efc834b6e1f3d4",
+      "scopeIds": [
+        "fscmdlist"
+      ]
+    },
+    {
+      "id": "native-33",
+      "file": "public/app.css",
+      "selector": ".slashmenu button.tui",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "5f967f37dc3dcc5512975a561607c05dbcb57ed28b47770965a9c01fe852dc10",
+      "scopeIds": [
+        "slashmenu"
+      ]
+    },
+    {
+      "id": "native-34",
+      "file": "public/app.css",
+      "selector": ".menulist button.tui",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "5f967f37dc3dcc5512975a561607c05dbcb57ed28b47770965a9c01fe852dc10",
+      "scopeIds": [
+        "menulist"
+      ]
+    },
+    {
+      "id": "native-35",
+      "file": "public/app.css",
+      "selector": ".fscmdlist button.tui",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "5f967f37dc3dcc5512975a561607c05dbcb57ed28b47770965a9c01fe852dc10",
+      "scopeIds": [
+        "fscmdlist"
+      ]
+    },
+    {
+      "id": "native-36",
+      "file": "public/app.css",
+      "selector": ".reply-component input,.reply-component select",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "9f544223f36eba2507ae37d82dd38755f9efd1b97ae93e678496d3f9199adfbc",
+      "scopeIds": [
+        "reply-component"
+      ]
+    },
+    {
+      "id": "native-37",
+      "file": "public/app.css",
+      "selector": ".reply-component button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "69441352b10d6c223eebfbd6dc55dff96f7eded3248e5e99c6b689b91111ac45",
+      "scopeIds": [
+        "reply-component"
+      ]
+    },
+    {
+      "id": "native-38",
+      "file": "public/app.css",
+      "selector": "#set-local-files input,#set-local-files select",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "f7f6545286ce833782a66df9fffaa76f400790268aadd04ead071832c0162d98",
+      "scopeIds": [
+        "set-local-files"
+      ]
+    },
+    {
+      "id": "native-40",
+      "file": "public/app.css",
+      "selector": "#settings[data-unpaired=\"1\"] .sethead button,#settings[data-unpaired=\"1\"] .set-actions",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "23fe0971dae0e4a345ad4d17e29da73668de1a1f5a23ef5a7347149652394b06",
+      "scopeIds": [
+        "unpaired-settings"
+      ]
+    },
+    {
+      "id": "native-41",
+      "file": "public/app.css",
+      "selector": ".connection-help button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "a26157a1cea5ce37c923a7bdca9d16efe6cb9b16535a9c2fcc3a03b51e7605b5",
+      "scopeIds": [
+        "connection-help"
+      ]
+    },
+    {
+      "id": "native-42",
+      "file": "public/app.css",
+      "selector": ".connection-help button",
+      "context": [
+        "@media(max-width:600px)"
+      ],
+      "occurrence": 0,
+      "bodySha256": "0fd943ffe4c56bbc10db6b7a848b163abc2440545a15362d586584dc010f06bf",
+      "scopeIds": [
+        "connection-help"
+      ]
+    },
+    {
+      "id": "native-43",
+      "file": "public/app.css",
+      "selector": ".session-help button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "a26157a1cea5ce37c923a7bdca9d16efe6cb9b16535a9c2fcc3a03b51e7605b5",
+      "scopeIds": [
+        "session-help"
+      ]
+    },
+    {
+      "id": "native-44",
+      "file": "public/app.css",
+      "selector": ".session-help button",
+      "context": [
+        "@media(max-width:600px)"
+      ],
+      "occurrence": 0,
+      "bodySha256": "0fd943ffe4c56bbc10db6b7a848b163abc2440545a15362d586584dc010f06bf",
+      "scopeIds": [
+        "session-help"
+      ]
+    },
+    {
+      "id": "native-45",
+      "file": "public/cards.css",
+      "selector": ".jc-dialog>button:not(.jc-dialog-close)",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "b65accfedad05e6dacf23c0ce2fbef164f33333c79aec7e3587ac029cdeb83b1",
+      "scopeIds": [
+        "jc-dialog"
+      ]
+    },
+    {
+      "id": "native-46",
+      "file": "public/cards.css",
+      "selector": ".jc-dialog-actions button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "930ce41b4e9f51cedd0ec1c35fc9ce973948d3098fcfd8295a2ba7d4876b0b99",
+      "scopeIds": [
+        "jc-dialog",
+        "jc-dialog-actions"
+      ]
+    },
+    {
+      "id": "native-47",
+      "file": "public/cards.css",
+      "selector": ".jc-cal-grid button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "871d657b5d7c0d574b24db776c8a873c8e59896aa37c8142bbb7f8174828570f",
+      "scopeIds": [
+        "jc-cal-grid"
+      ]
+    },
+    {
+      "id": "native-48",
+      "file": "public/cards.css",
+      "selector": ".jc-cal-grid button[aria-pressed=true]",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "df3e8fee060f81f68b26834ba9dd389dbcfc6b10161d63f62796d4e1f48a31aa",
+      "scopeIds": [
+        "jc-cal-grid"
+      ]
+    },
+    {
+      "id": "native-49",
+      "file": "public/cards.css",
+      "selector": ".jc-cal-grid button[data-out=true]",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "d9e00b71adb40a08f40fddf2fbdf2f600907c30c8f31d2ace9f6a0cac351f4e7",
+      "scopeIds": [
+        "jc-cal-grid"
+      ]
+    },
+    {
+      "id": "native-50",
+      "file": "public/cards.css",
+      "selector": ".jc-cal-footer button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "569622a333c5986beab27c6a1c0ac079bcb137e35edf1d391deabf1735f07617",
+      "scopeIds": [
+        "jc-cal-footer"
+      ]
+    },
+    {
+      "id": "native-51",
+      "file": "public/cards.css",
+      "selector": ".jp-controls input,.jp-controls select",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "dbd0d4210f2432df65b45340a4b94a2549e32ee760f2058e73a6d83301d54aea",
+      "scopeIds": [
+        "jp-controls"
+      ]
+    },
+    {
+      "id": "native-52",
+      "file": "public/cards.css",
+      "selector": ".jp-palette button:focus-visible",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "06fe18a063333d62a4f125aff0d63af6d5d91375bc245b6a887fc5401fbdfe4a",
+      "scopeIds": [
+        "jp-palette"
+      ]
+    },
+    {
+      "id": "native-53",
+      "file": "public/five-pages.css",
+      "selector": ".busy-tabs button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "4ba287bbed817c0423d7ed454918c4f42dac2559c6eb8fb441a66c517047ee84",
+      "scopeIds": [
+        "busy-tabs"
+      ]
+    },
+    {
+      "id": "native-54",
+      "file": "public/five-pages.css",
+      "selector": ".busy-tabs button[aria-selected=true]",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "9f5e8c7d4abbb2fdcc701cdaeb0fea8e99d5ad18629ba11b996a64507cdcbe27",
+      "scopeIds": [
+        "busy-tabs"
+      ]
+    },
+    {
+      "id": "native-55",
+      "file": "public/menu.css",
+      "selector": ".hotsheet .menulist button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "c5d6c3446dd2fe0676c1f1c693f0eb77ff64c928f3ff79152539c1d0c8d76ec9",
+      "scopeIds": [
+        "menulist"
+      ]
+    },
+    {
+      "id": "native-56",
+      "file": "public/menu.css",
+      "selector": ".hotask button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "53255a95171fef1cf4664b849a5914c771fa05784aab8746c735caf38543bc5c",
+      "scopeIds": [
+        "hotask"
+      ]
+    },
+    {
+      "id": "native-57",
+      "file": "public/menu.css",
+      "selector": ".hotask button.yes",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "78ae04fc5c86a6904beae0e9ff034b080cb6c5280b7efa492f2590b026f72132",
+      "scopeIds": [
+        "hotask"
+      ]
+    },
+    {
+      "id": "native-58",
+      "file": "public/menu.css",
+      "selector": ".hotask button:disabled",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "7734c0847ceb3671dac0cfaf7e2043919ec1ea3ae533855ae84373fe79382851",
+      "scopeIds": [
+        "hotask"
+      ]
+    },
+    {
+      "id": "native-59",
+      "file": "public/menu.css",
+      "selector": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.seg button):focus-visible",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "70defcba2356711793fab4ac98e174eed11845844c9453e4f1f5c6f9d065ed57",
+      "scopeIds": [
+        "seg"
+      ]
+    },
+    {
+      "id": "native-60",
+      "file": "public/menu.css",
+      "selector": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible:where([data-aj-owner=\"aj-settings-control\"])",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "70defcba2356711793fab4ac98e174eed11845844c9453e4f1f5c6f9d065ed57",
+      "scopeIds": [
+        "fontstep-focus-control"
+      ],
+      "mode": "self-owned-native-context"
+    },
+    {
+      "id": "native-61",
+      "file": "public/menu.css",
+      "selector": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.sfxvol>button):focus-visible",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "70defcba2356711793fab4ac98e174eed11845844c9453e4f1f5c6f9d065ed57",
+      "scopeIds": [
+        "sfxvol"
+      ]
+    },
+    {
+      "id": "native-62",
+      "file": "public/menu.css",
+      "selector": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.menulist button):focus-visible",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "32fd03f31055b5214bbbf63ee965514c3d1f09b566647d081180b3697cda4143",
+      "scopeIds": [
+        "menulist"
+      ]
+    },
+    {
+      "id": "native-63",
+      "file": "public/menu.css",
+      "selector": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.seg button):focus-visible",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "70defcba2356711793fab4ac98e174eed11845844c9453e4f1f5c6f9d065ed57",
+      "scopeIds": [
+        "seg"
+      ]
+    },
+    {
+      "id": "native-64",
+      "file": "public/menu.css",
+      "selector": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible:where([data-aj-owner=\"aj-settings-control\"])",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "70defcba2356711793fab4ac98e174eed11845844c9453e4f1f5c6f9d065ed57",
+      "scopeIds": [
+        "fontstep-focus-control"
+      ],
+      "mode": "self-owned-native-context"
+    },
+    {
+      "id": "native-65",
+      "file": "public/menu.css",
+      "selector": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.sfxvol>button):focus-visible",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "70defcba2356711793fab4ac98e174eed11845844c9453e4f1f5c6f9d065ed57",
+      "scopeIds": [
+        "sfxvol"
+      ]
+    },
+    {
+      "id": "native-66",
+      "file": "public/menu.css",
+      "selector": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.menulist button):focus-visible",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "32fd03f31055b5214bbbf63ee965514c3d1f09b566647d081180b3697cda4143",
+      "scopeIds": [
+        "menulist"
+      ]
+    },
+    {
+      "id": "native-67",
+      "file": "public/menu.css",
+      "selector": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.seg button):focus-visible",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "70defcba2356711793fab4ac98e174eed11845844c9453e4f1f5c6f9d065ed57",
+      "scopeIds": [
+        "seg"
+      ]
+    },
+    {
+      "id": "native-68",
+      "file": "public/menu.css",
+      "selector": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible:where([data-aj-owner=\"aj-settings-control\"])",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "70defcba2356711793fab4ac98e174eed11845844c9453e4f1f5c6f9d065ed57",
+      "scopeIds": [
+        "fontstep-focus-control"
+      ],
+      "mode": "self-owned-native-context"
+    },
+    {
+      "id": "native-69",
+      "file": "public/menu.css",
+      "selector": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.sfxvol>button):focus-visible",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "70defcba2356711793fab4ac98e174eed11845844c9453e4f1f5c6f9d065ed57",
+      "scopeIds": [
+        "sfxvol"
+      ]
+    },
+    {
+      "id": "native-70",
+      "file": "public/menu.css",
+      "selector": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.menulist button):focus-visible",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "32fd03f31055b5214bbbf63ee965514c3d1f09b566647d081180b3697cda4143",
+      "scopeIds": [
+        "menulist"
+      ]
+    },
+    {
+      "id": "native-71",
+      "file": "public/menu.css",
+      "selector": "#settings .seg button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "8ca61042797917d7adad554bb945a9fa7c5357bbf315c250bc42915afb65c441",
+      "scopeIds": [
+        "seg"
+      ]
+    },
+    {
+      "id": "native-72",
+      "file": "public/menu.css",
+      "selector": "#settings .seg button+button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "71a99128af3c1d4387827a75c21b10329653efe94935fc16fa2b7349b919d033",
+      "scopeIds": [
+        "seg"
+      ]
+    },
+    {
+      "id": "native-73",
+      "file": "public/menu.css",
+      "selector": "#settings .seg button[aria-pressed=\"true\"]",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "44154356be40550ed4ff4fce960a6226401633f707a87e63362c83f9cca01a0c",
+      "scopeIds": [
+        "seg"
+      ]
+    },
+    {
+      "id": "native-74",
+      "file": "public/menu.css",
+      "selector": ".menulist button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "929646df3734d456fbec9cec1c30a0f0bf8e7550ce6747654fb87352c0c84d90",
+      "scopeIds": [
+        "menulist"
+      ]
+    },
+    {
+      "id": "native-75",
+      "file": "public/menu.css",
+      "selector": ".menulist .menugroup+button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "29ebb5f6550d8393cdfa9a82bcfb5239764005733c25cf15d34ac6330947495c",
+      "scopeIds": [
+        "menulist"
+      ]
+    },
+    {
+      "id": "native-76",
+      "file": "public/menu.css",
+      "selector": ".menulist button:hover",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "81f40faf2728addb03b943c171353311d313c3b6eabd7ad7417d923ce9a0d65a",
+      "scopeIds": [
+        "menulist"
+      ]
+    },
+    {
+      "id": "native-77",
+      "file": "public/menu.css",
+      "selector": ".menulist button:active",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "28617211fee3876f3f95487c460cad6c0c8840bf3ddacf9c1bcf6202a8d8e647",
+      "scopeIds": [
+        "menulist"
+      ]
+    },
+    {
+      "id": "native-78",
+      "file": "public/menu.css",
+      "selector": ".menulist button:disabled",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "5f967f37dc3dcc5512975a561607c05dbcb57ed28b47770965a9c01fe852dc10",
+      "scopeIds": [
+        "menulist"
+      ]
+    },
+    {
+      "id": "native-79",
+      "file": "public/menu.css",
+      "selector": "#sug.slashmenu button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "4ea9aa8a9f5e62bb20769519fa9356a487ad37d690df97efa52093134de7cb09",
+      "scopeIds": [
+        "slashmenu"
+      ]
+    },
+    {
+      "id": "native-80",
+      "file": "public/menu.css",
+      "selector": "#sug.slashmenu button+button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "8f5eedaee501406b7beda3a72918afd06dbc7a4bc97233784a36ef39be04668e",
+      "scopeIds": [
+        "slashmenu"
+      ]
+    },
+    {
+      "id": "native-81",
+      "file": "public/menu.css",
+      "selector": "#sug.slashmenu button[aria-selected=\"true\"]",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "904dcc6506a7ac11bf8eaacdfbec75b0fc0b46df27e235608cd453ceb70cfec2",
+      "scopeIds": [
+        "slashmenu"
+      ]
+    },
+    {
+      "id": "native-82",
+      "file": "public/menu.css",
+      "selector": ".srsort button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "8f320d066ba88b36144903f4e4f1a4a7baae33be3a23f428c104f909cfab0849",
+      "scopeIds": [
+        "srsort"
+      ]
+    },
+    {
+      "id": "native-83",
+      "file": "public/menu.css",
+      "selector": ".srsort button+button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "1b394093825369fce69911db2cbcb2e033076c9102d6b2cb508d7fe33b2bb86a",
+      "scopeIds": [
+        "srsort"
+      ]
+    },
+    {
+      "id": "native-84",
+      "file": "public/menu.css",
+      "selector": ".srsort button[aria-pressed=\"true\"]",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "44154356be40550ed4ff4fce960a6226401633f707a87e63362c83f9cca01a0c",
+      "scopeIds": [
+        "srsort"
+      ]
+    },
+    {
+      "id": "native-85",
+      "file": "public/menu.css",
+      "selector": "#settings .sethb :is(select,input)",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "edaa82faf8a9776f25a4f7a5d4fe9299daae537e163d3f738563ce9c88687d29",
+      "scopeIds": [
+        "sethb"
+      ]
+    },
+    {
+      "id": "native-86",
+      "file": "public/menu.css",
+      "selector": ".ctm-main:focus-visible,.ctm-allow:focus-visible,.ctm-bar :is(input,button):focus-visible",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "62d724fa5d3880447fd44458594630b8034b4a52dc82c620c58ae75e1dc761a7",
+      "scopeIds": [
+        "ctm-bar"
+      ]
+    },
+    {
+      "id": "native-87",
+      "file": "public/menu.css",
+      "selector": "#set-hooks .mcp474-form button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "bd8d5750c8e2b834e9f2fd4b114ac4615cdb4f70f22af34f189494825812f10c",
+      "scopeIds": [
+        "mcp474-form"
+      ]
+    },
+    {
+      "id": "native-88",
+      "file": "public/terminal.css",
+      "selector": ".term button:disabled",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "5f967f37dc3dcc5512975a561607c05dbcb57ed28b47770965a9c01fe852dc10",
+      "scopeIds": [
+        "term"
+      ]
+    },
+    {
+      "id": "native-89",
+      "file": "public/terminal.css",
+      "selector": ".term button:focus-visible,.term input:focus-visible,.term-out:focus-visible",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "c184d7362001a63f8afbf9b3b46ec3828e4320c982c2ca6e90ecf3a2c89788e1",
+      "scopeIds": [
+        "term"
+      ]
+    },
+    {
+      "id": "native-90",
+      "file": "styles/07-header.css",
+      "selector": ".aj-header .aj-lang--pair button",
+      "context": [
+        "@media (max-width: 480px)"
+      ],
+      "occurrence": 0,
+      "bodySha256": "fc26d43562b91c61d50f85d01a7f893b63511cafcdc1d42f194843b0c85b2059",
+      "scopeIds": [
+        "aj-lang",
+        "aj-lang--pair"
+      ]
+    },
+    {
+      "id": "native-91",
+      "file": "styles/08-language-menu.css",
+      "selector": ".aj-lang:not(.aj-lang--globe) button, .aj-lang:not(.aj-lang--globe) a",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "e7ad12eee8dce6ac5ee9974f04df861c2b88c5fc2ca2dd545a363d2a75ab0070",
+      "scopeIds": [
+        "aj-lang"
+      ]
+    },
+    {
+      "id": "native-92",
+      "file": "styles/09-footer.css",
+      "selector": ".aj-footer .aj-lang button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "89455c93fc735f92cc7d92133c8d92635b136fe1b4f34d03e7e542ca7faa7601",
+      "scopeIds": [
+        "aj-lang"
+      ]
+    },
+    {
+      "id": "late-native-93",
+      "file": "public/assist-terminal.css",
+      "selector": ".ast button,.ast__intro button,.ast__banner button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "b77d74723a4acb7c003e825f7071c0757c8bef090c2b3489b2442cf5de18994a",
+      "scopeIds": [
+        "ast-button-metrics",
+        "ast-intro-button-metrics",
+        "ast-banner-button-metrics"
+      ]
+    },
+    {
+      "id": "late-native-94",
+      "file": "public/assist-terminal.css",
+      "selector": ".ast__confirm button+button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "32a0891977405c22fbdb140695d345c0978676b2b88f1dd995b49623006eb7cf",
+      "scopeIds": [
+        "ast-confirm-action-spacing"
+      ]
+    },
+    {
+      "id": "late-native-95",
+      "file": "public/assist-terminal.css",
+      "selector": ".ast__banner button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "a01681c8b2925a1dd88daf7a31c997eb7cc4e464527b3857e753b7e2586339d1",
+      "scopeIds": [
+        "ast-banner-actions"
+      ]
+    },
+    {
+      "id": "late-native-96",
+      "file": "public/assist-terminal.css",
+      "selector": ".ast__durations button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "fbc7dc47898d1440edc4da4580e7475c85c47acaf2db9d8a2826953e87b82ea3",
+      "scopeIds": [
+        "ast-duration-actions"
+      ]
+    },
+    {
+      "id": "late-native-97",
+      "file": "public/assist-terminal.css",
+      "selector": ".ast__durations button",
+      "context": [],
+      "occurrence": 1,
+      "bodySha256": "fc55d26b5e336a7564e26630fadaefba3613f78c4a8d7eea1b55b29b171b4dc2",
+      "scopeIds": [
+        "ast-duration-actions"
+      ]
+    },
+    {
+      "id": "late-native-98",
+      "file": "public/assist-terminal.css",
+      "selector": ".ast__login button+button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "32a0891977405c22fbdb140695d345c0978676b2b88f1dd995b49623006eb7cf",
+      "scopeIds": [
+        "ast-login-actions"
+      ]
+    },
+    {
+      "id": "late-native-99",
+      "file": "public/menu.css",
+      "selector": "#settings #owner-hosts-form>button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "51377a917eb300718260706c74bdd7faf10af464dc8077e826f648bfc9e855e0",
+      "scopeIds": [
+        "owner-host-submit"
+      ]
+    },
+    {
+      "id": "late-native-approval-viewer-close",
+      "file": "public/app.css",
+      "selector": "#full541 button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "f572ef2afca7171979008850198d8a1389cb2a81327ff2871725eded6624a047",
+      "scopeIds": [
+        "full541-close"
+      ]
+    },
+    {
+      "id": "late-native-100",
+      "file": "public/app.css",
+      "selector": "#auth-full541 button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "f572ef2afca7171979008850198d8a1389cb2a81327ff2871725eded6624a047",
+      "scopeIds": [
+        "auth-full541-close"
+      ]
+    },
+    {
+      "id": "native-60-reset",
+      "file": "public/menu.css",
+      "selector": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible:where([data-aj-owner=\"aj-settings\"])",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "2bc0a398085b083e2e61deefdca16d134b7213438f9137dd8da5a847d79de92d",
+      "scopeIds": [
+        "fontstep-focus-reset"
+      ],
+      "mode": "self-owned-native-context"
+    },
+    {
+      "id": "native-64-reset",
+      "file": "public/menu.css",
+      "selector": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible:where([data-aj-owner=\"aj-settings\"])",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "2bc0a398085b083e2e61deefdca16d134b7213438f9137dd8da5a847d79de92d",
+      "scopeIds": [
+        "fontstep-focus-reset"
+      ],
+      "mode": "self-owned-native-context"
+    },
+    {
+      "id": "native-68-reset",
+      "file": "public/menu.css",
+      "selector": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible:where([data-aj-owner=\"aj-settings\"])",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "2bc0a398085b083e2e61deefdca16d134b7213438f9137dd8da5a847d79de92d",
+      "scopeIds": [
+        "fontstep-focus-reset"
+      ],
+      "mode": "self-owned-native-context"
+    }
+  ],
+  "retiredSourceContracts": [
+    {
+      "id": "native-39",
+      "file": "public/app.css",
+      "selector": "#wechat-panel button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "24c5960959a018354082c6745da80b9d852235e315cecdf93fa1715e0d1b697c",
+      "scopeIds": [
+        "wechat-panel"
+      ],
+      "reason": "Current Root WeChat dialog has private wc-close/channel and explicit aj-action controls; old broad native rule no longer exists. Removing stale contract is not runtime coverage."
+    }
+  ]
+}

@@ -7,7 +7,8 @@ import os
 import re
 import time
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from . import wire, minisign, preferences, release_notes
+from . import wire, minisign, release_notes
+from . import preference_values as preferences
 
 CONTEXT = 'agentj-official-notice-v1'
 TYPES = ('upgrade','security','skill','billing','announce','support_reply')

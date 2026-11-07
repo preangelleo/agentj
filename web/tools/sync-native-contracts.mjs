@@ -1,0 +1,10 @@
+// Expand an existing, explicitly owned native contract to newly registered semantic owners.
+// This is build-source maintenance, never runtime tag-based class injection.
+import{readFileSync,writeFileSync,readdirSync}from'node:fs';import{fileURLToPath}from'node:url';import{join}from'node:path';import{rules}from'./css-syntax.mjs';
+const web=fileURLToPath(new URL('../',import.meta.url));const componentRegistry=JSON.parse(readFileSync(join(web,'component-ownership.json'),'utf8'));const owners=[...new Set([...JSON.parse(readFileSync(join(web,'control-ownership-sites.json'),'utf8')).owners,...componentRegistry.components.map(x=>x.namespace),...Object.keys(componentRegistry.independentFamilies||{})])].sort();
+const files=[join(web,'public/controls.css'),join(web,'public/app.css'),join(web,'public/menu.css'),...readdirSync(join(web,'styles')).filter(x=>x.endsWith('.css')).map(x=>join(web,'styles',x))];let added=0;
+for(const file of files){let s=readFileSync(file,'utf8');const rs=rules(s);const groups=new Map();for(const r of rs){const owner=/data-aj-owner="([a-z-]+)"/.exec(r.head)?.[1];if(!owner||!['native','composition'].some(kind=>r.body.includes('--'+owner+'-'+kind+'-')))continue;const key=r.head.replaceAll('data-aj-owner="'+owner+'"','data-aj-owner="OWNER"')+'{'+r.body.replaceAll('--'+owner+'-','--OWNER-')+'}';let g=groups.get(key);if(!g)groups.set(key,g={rule:r,owner,owners:new Set()});g.owners.add(owner);}
+const inserts=[];for(const g of groups.values()){const miss=owners.filter(x=>!g.owners.has(x));if(miss.length){let add='';for(const owner of miss){add+='\n/* owner: '+owner+'; explicit opt-in, equal initial value */\n'+g.rule.head.replaceAll('data-aj-owner="'+g.owner+'"','data-aj-owner="'+owner+'"')+'{'+g.rule.body.replaceAll('--'+g.owner+'-','--'+owner+'-')+'}\n';added++;}inserts.push({at:g.rule.end,text:add});}}
+for(const ins of inserts.sort((a,b)=>b.at-a.at))s=s.slice(0,ins.at)+ins.text+s.slice(ins.at);
+if(!process.argv.includes('--check'))writeFileSync(file,s);
+}console.log(JSON.stringify({owners:owners.length,missingContracts:added}));if(process.argv.includes('--check')&&added)process.exitCode=1;

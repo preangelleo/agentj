@@ -1,0 +1,94 @@
+/* #577 Web-owned action; source order is a compatibility contract. */
+/* ===== buttons ===== */
+.aj-action {display:var(--aj-action-display,inline-flex);align-items:var(--aj-action-align-items,center);justify-content:var(--aj-action-justify-content,center);gap:var(--aj-action-gap,var(--sp-2));min-height:var(--aj-action-min-height,var(--tap));padding:var(--aj-action-padding,0 var(--sp-5));border-radius:var(--aj-action-border-radius,var(--r-md));border:var(--aj-action-border,1px solid var(--quiet-border));background:var(--aj-action-background,var(--quiet-bg));color:var(--aj-action-color,var(--quiet-fg));font-weight:var(--aj-action-font-weight,500);font-size:var(--aj-action-font-size,var(--fs-md));line-height:var(--aj-action-line-height,1.2);text-decoration:var(--aj-action-text-decoration,none);text-align:var(--aj-action-text-align,center);cursor:var(--aj-action-cursor,pointer);transition:var(--aj-action-transition,background-color var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease)); }
+/* #577 aj-icon-action: independent equal initial contract. */
+.aj-icon-action{border:0;display:var(--aj-icon-action-display,inline-flex);align-items:var(--aj-icon-action-align-items,center);justify-content:var(--aj-icon-action-justify-content,center);gap:var(--aj-icon-action-gap,var(--sp-2));min-height:var(--aj-icon-action-min-height,var(--tap));padding:var(--aj-icon-action-padding,0 var(--sp-5));border-radius:var(--aj-icon-action-border-radius,var(--r-md));;background:var(--aj-icon-action-background,var(--quiet-bg));color:var(--aj-icon-action-color,var(--quiet-fg));font-weight:var(--aj-icon-action-font-weight,500);font-size:var(--aj-icon-action-font-size,var(--fs-md));line-height:var(--aj-icon-action-line-height,1.2);text-decoration:var(--aj-icon-action-text-decoration,none);text-align:var(--aj-icon-action-text-align,center);cursor:var(--aj-icon-action-cursor,pointer);transition:var(--aj-icon-action-transition,background-color var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease)); }
+/* Explicit border contract; other icon actions stay frameless. */
+.aj-icon-action--framed{border:var(--aj-icon-action-border,1px solid var(--quiet-border));}
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+.aj-navigation-action{display:var(--aj-navigation-action-display,inline-flex);align-items:var(--aj-navigation-action-align-items,center);justify-content:var(--aj-navigation-action-justify-content,center);gap:var(--aj-navigation-action-gap,var(--sp-2));min-height:var(--aj-navigation-action-min-height,var(--tap));padding:var(--aj-navigation-action-padding,0 var(--sp-5));border-radius:var(--aj-navigation-action-border-radius,var(--r-md));border:var(--aj-navigation-action-border,1px solid var(--quiet-border));background:var(--aj-navigation-action-background,var(--quiet-bg));color:var(--aj-navigation-action-color,var(--quiet-fg));font-weight:var(--aj-navigation-action-font-weight,500);font-size:var(--aj-navigation-action-font-size,var(--fs-md));line-height:var(--aj-navigation-action-line-height,1.2);text-decoration:var(--aj-navigation-action-text-decoration,none);text-align:var(--aj-navigation-action-text-align,center);cursor:var(--aj-navigation-action-cursor,pointer);transition:var(--aj-navigation-action-transition,background-color var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease)); }
+
+.aj-action:hover {text-decoration:var(--aj-action-hover-text-decoration,none);border-color:var(--aj-action-hover-border-color,var(--text-muted)); }
+/* #577 aj-icon-action: independent equal initial contract. */
+.aj-icon-action:hover{text-decoration:var(--aj-icon-action-hover-text-decoration,none);border-color:var(--aj-icon-action-hover-border-color,var(--text-muted)); }
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+.aj-navigation-action:hover{text-decoration:var(--aj-navigation-action-hover-text-decoration,none);border-color:var(--aj-navigation-action-hover-border-color,var(--text-muted)); }
+
+.aj-action--primary {background:var(--aj-action-primary-background,var(--primary-bg));color:var(--aj-action-primary-color,var(--primary-fg));border-color:var(--aj-action-primary-border-color,var(--primary-bg)); }
+/* #577 aj-icon-action: independent equal initial contract. */
+.aj-icon-action--primary{background:var(--aj-icon-action-primary-background,var(--primary-bg));color:var(--aj-icon-action-primary-color,var(--primary-fg));border-color:var(--aj-icon-action-primary-border-color,var(--primary-bg)); }
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+.aj-navigation-action--primary{background:var(--aj-navigation-action-primary-background,var(--primary-bg));color:var(--aj-navigation-action-primary-color,var(--primary-fg));border-color:var(--aj-navigation-action-primary-border-color,var(--primary-bg)); }
+
+.aj-action--primary:hover {background:var(--aj-action-primary-hover-background,var(--c-noir));border-color:var(--aj-action-primary-hover-border-color,var(--c-noir)); }
+/* #577 aj-icon-action: independent equal initial contract. */
+.aj-icon-action--primary:hover{background:var(--aj-icon-action-primary-hover-background,var(--c-noir));border-color:var(--aj-icon-action-primary-hover-border-color,var(--c-noir)); }
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+.aj-navigation-action--primary:hover{background:var(--aj-navigation-action-primary-hover-background,var(--c-noir));border-color:var(--aj-navigation-action-primary-hover-border-color,var(--c-noir)); }
+
+html[data-theme="dark"] .aj-action--primary:hover {background:var(--aj-action-primary-hover-background,var(--c-salt));border-color:var(--aj-action-primary-hover-border-color,var(--c-salt)); }
+/* #577 aj-icon-action: independent equal initial contract. */
+html[data-theme="dark"] .aj-icon-action--primary:hover{background:var(--aj-icon-action-primary-hover-background,var(--c-salt));border-color:var(--aj-icon-action-primary-hover-border-color,var(--c-salt)); }
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+html[data-theme="dark"] .aj-navigation-action--primary:hover{background:var(--aj-navigation-action-primary-hover-background,var(--c-salt));border-color:var(--aj-navigation-action-primary-hover-border-color,var(--c-salt)); }
+
+@media (prefers-color-scheme: dark) { html:not([data-theme="light"]) .aj-action--primary:hover {background:var(--aj-action-primary-hover-background,var(--c-salt));border-color:var(--aj-action-primary-hover-border-color,var(--c-salt)); }
+/* #577 aj-icon-action: independent equal initial contract. */
+html:not([data-theme="light"]) .aj-icon-action--primary:hover{background:var(--aj-icon-action-primary-hover-background,var(--c-salt));border-color:var(--aj-icon-action-primary-hover-border-color,var(--c-salt)); }
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+html:not([data-theme="light"]) .aj-navigation-action--primary:hover{background:var(--aj-navigation-action-primary-hover-background,var(--c-salt));border-color:var(--aj-navigation-action-primary-hover-border-color,var(--c-salt)); }
+ }
+.aj-action--quiet {background:var(--aj-action-quiet-background,transparent);border-color:var(--aj-action-quiet-border-color,transparent);color:var(--aj-action-quiet-color,var(--text)); }
+/* #577 aj-icon-action: independent equal initial contract. */
+.aj-icon-action--quiet{background:var(--aj-icon-action-quiet-background,transparent);border-color:var(--aj-icon-action-quiet-border-color,transparent);color:var(--aj-icon-action-quiet-color,var(--text)); }
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+.aj-navigation-action--quiet{background:var(--aj-navigation-action-quiet-background,transparent);border-color:var(--aj-navigation-action-quiet-border-color,transparent);color:var(--aj-navigation-action-quiet-color,var(--text)); }
+
+.aj-action--quiet:hover {background:var(--aj-action-quiet-hover-background,var(--surface-2));border-color:var(--aj-action-quiet-hover-border-color,var(--surface-2)); }
+/* #577 aj-icon-action: independent equal initial contract. */
+.aj-icon-action--quiet:hover{background:var(--aj-icon-action-quiet-hover-background,var(--surface-2));border-color:var(--aj-icon-action-quiet-hover-border-color,var(--surface-2)); }
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+.aj-navigation-action--quiet:hover{background:var(--aj-navigation-action-quiet-hover-background,var(--surface-2));border-color:var(--aj-navigation-action-quiet-hover-border-color,var(--surface-2)); }
+
+.aj-action--danger {background:var(--aj-action-danger-background,var(--danger-bg));color:var(--aj-action-danger-color,var(--danger));border-color:var(--aj-action-danger-border-color,var(--danger-line, var(--danger))); }
+/* #577 aj-icon-action: independent equal initial contract. */
+.aj-icon-action--danger{background:var(--aj-icon-action-danger-background,var(--danger-bg));color:var(--aj-icon-action-danger-color,var(--danger));border-color:var(--aj-icon-action-danger-border-color,var(--danger-line, var(--danger))); }
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+.aj-navigation-action--danger{background:var(--aj-navigation-action-danger-background,var(--danger-bg));color:var(--aj-navigation-action-danger-color,var(--danger));border-color:var(--aj-navigation-action-danger-border-color,var(--danger-line, var(--danger))); }
+
+.aj-action--danger:hover {background:var(--aj-action-danger-hover-background,var(--danger));color:var(--aj-action-danger-hover-color,var(--bg)); }
+/* #577 aj-icon-action: independent equal initial contract. */
+.aj-icon-action--danger:hover{background:var(--aj-icon-action-danger-hover-background,var(--danger));color:var(--aj-icon-action-danger-hover-color,var(--bg)); }
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+.aj-navigation-action--danger:hover{background:var(--aj-navigation-action-danger-hover-background,var(--danger));color:var(--aj-navigation-action-danger-hover-color,var(--bg)); }
+
+.aj-action--sm {padding:var(--aj-action-sm-padding,0 var(--sp-4));font-size:var(--aj-action-sm-font-size,var(--fs-sm)); }
+/* #577 aj-icon-action: independent equal initial contract. */
+.aj-icon-action--sm{padding:var(--aj-icon-action-sm-padding,0 var(--sp-4));font-size:var(--aj-icon-action-sm-font-size,var(--fs-sm)); }
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+.aj-navigation-action--sm{padding:var(--aj-navigation-action-sm-padding,0 var(--sp-4));font-size:var(--aj-navigation-action-sm-font-size,var(--fs-sm)); }
+
+.aj-action--block {display:var(--aj-action-block-display,flex);width:var(--aj-action-block-width,100%); }
+/* #577 aj-icon-action: independent equal initial contract. */
+.aj-icon-action--block{display:var(--aj-icon-action-block-display,flex);width:var(--aj-icon-action-block-width,100%); }
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+.aj-navigation-action--block{display:var(--aj-navigation-action-block-display,flex);width:var(--aj-navigation-action-block-width,100%); }
+
+.aj-action:disabled, .aj-action[aria-disabled="true"] {opacity:var(--aj-action-disabled-opacity,0.5);cursor:var(--aj-action-disabled-cursor,not-allowed); }
+/* #577 aj-icon-action: independent equal initial contract. */
+.aj-icon-action:disabled, .aj-icon-action[aria-disabled="true"]{opacity:var(--aj-icon-action-disabled-opacity,0.5);cursor:var(--aj-icon-action-disabled-cursor,not-allowed); }
+
+/* #577 aj-navigation-action: independent equal initial contract. */
+.aj-navigation-action:disabled, .aj-navigation-action[aria-disabled="true"]{opacity:var(--aj-navigation-action-disabled-opacity,0.5);cursor:var(--aj-navigation-action-disabled-cursor,not-allowed); }

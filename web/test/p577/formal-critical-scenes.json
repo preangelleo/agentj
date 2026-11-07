@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "scenes": [
+    "chat-idle",
+    "chat-working",
+    "source-quotes-folded",
+    "source-quotes-expanded",
+    "reply-hover",
+    "reply-focus-visible",
+    "reply-active",
+    "approval",
+    "question",
+    "file-tray",
+    "media-message",
+    "composer-multi-quotes",
+    "publish-chat-code",
+    "settings-main",
+    "settings-main-end",
+    "settings-section-set-s-agent",
+    "settings-section-set-s-rescue",
+    "settings-section-set-s-tools",
+    "settings-section-set-s-look",
+    "settings-section-set-s-read",
+    "settings-section-set-s-notify",
+    "settings-section-set-s-channels",
+    "settings-section-set-s-safety",
+    "settings-section-set-s-app",
+    "settings-section-set-s-help",
+    "settings-ios",
+    "settings-remotes",
+    "settings-mail",
+    "settings-contacts",
+    "settings-auth",
+    "settings-imessage",
+    "settings-cards",
+    "settings-notify",
+    "settings-hooks",
+    "settings-files",
+    "settings-accts",
+    "models",
+    "contact-editor",
+    "publish-dashboard-account"
+  ],
+  "purpose": "1025 formal576 existing-scene drift comparison only; not the full publish-critical qualification",
+  "formalBaseline": "0f9619bd56cf8aaa2820be0b4dfbee140eaf6781",
+  "businessReference": "447cbfb7940f3de148478c88543d05f6e466a3eb",
+  "status": "source-inventory; existing flow compatibility and pixels have not been captured or qualified",
+  "excluded": [
+    {
+      "scene": "publish-owner-hosts-list",
+      "ticket": "feedback:400",
+      "reason": "New editable same-owner host settings component; absent owner-hosts.js in formal0f, added by941cad5f884e01acce0ad404d76747e714954721.",
+      "source": ".jarvis/FEEDBACK-BACKLOG.md#400",
+      "implementation": "web/public/js/owner-hosts.js"
+    },
+    {
+      "scene": "publish-owner-hosts-edit",
+      "ticket": "feedback:400",
+      "reason": "New editable same-owner host settings component; absent owner-hosts.js in formal0f, added by941cad5f884e01acce0ad404d76747e714954721.",
+      "source": ".jarvis/FEEDBACK-BACKLOG.md#400",
+      "implementation": "web/public/js/owner-hosts.js"
+    },
+    {
+      "scene": "wallet-automation",
+      "ticket": "feedback:369",
+      "reason": "This scene requires new task/native typed controls, aggregate sources and pagination; formal0f has the older automation row display, which is not a substitute for this new scene.",
+      "source": ".jarvis/PROMPT-0280-369-aggregate.md",
+      "implementationCommit": "a4cc11dec8",
+      "implementation": "web/public/js/jcards.js"
+    }
+  ],
+  "evidence": {
+    "formalExisting": "39 retained scenes use pre-existing chat/reply/quote/approval/question/media/settings/model/contact and preserved Dashboard interfaces. This is a source inventory, not an assertion that their appearance or current capture flow matches.",
+    "lateSourceCommit": "941cad5f884e01acce0ad404d76747e714954721",
+    "sourcePolicy": ".jarvis/INCOMING-0280-from-jarvis-1025.md"
+  },
+  "legacyOwnerSources": [
+    "562d9ec40730b5d44f4739da76c81f2b5afedbeea6b2164eaabf4495a981a037",
+    "707727abf3f16a1b84adee7da8113154d795871397477deddaea8d9fbc6c8061"
+  ]
+}

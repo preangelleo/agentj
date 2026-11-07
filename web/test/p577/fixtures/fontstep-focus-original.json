@@ -1,0 +1,21 @@
+{
+  "sourceSha256": "7cadef126da87b5b1be63a65712ee3553ac144effb3d5fc471e0f4918949357f",
+  "rulesSha256": "c3cb6c64d8883beb9b12500e263370da9e1bc7c57935a1224b331e8ee2e8f88f",
+  "rules": [
+    {
+      "head": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible",
+      "body": "outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));",
+      "context": []
+    },
+    {
+      "head": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-icon-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible",
+      "body": "outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));",
+      "context": []
+    },
+    {
+      "head": ":is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-navigation-action,.seg button,.setnav,.setside .setsidebtn,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):where(.fontstep>button):focus-visible",
+      "body": "outline:var(--aj-settings-control-layout-outline,var(--ui-focus-w) solid var(--menu-accent));outline-offset:var(--aj-settings-control-layout-outline-offset,var(--ui-focus-gap));",
+      "context": []
+    }
+  ]
+}

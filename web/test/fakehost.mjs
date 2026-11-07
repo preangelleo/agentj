@@ -6,7 +6,7 @@
 // it) with the device's Ed25519 key from msg1 — the real host does the same (host/tests, tests/e2e_*).
 import { createServer } from 'node:http';
 import { createHash, randomBytes, webcrypto } from 'node:crypto';
-import { Handshake, IK, IKPSK2, generateKeypair } from '../../protocol/noise.js';
+import { Handshake, IK, IKPSK2, generateKeypair, keypairFromPrivate } from '../../protocol/noise.js';
 import * as wire from '../../protocol/wire.js';
 import * as S from '../../protocol/search.js';   // P188: hist_find
 
@@ -86,9 +86,13 @@ export function wavOk(b) {
 }
 
 // ---------------------------------------------------------------- fake relay + host
-export async function startFakeHost() {
-  const hostKp = await generateKeypair(false);
-  const channel = await channelId(randomBytes(32));
+export async function startFakeHost({ channelSeed, visualSeed, hostKeypair, ephemeral } = {}) {
+  // Public synthetic visual vectors only. Omission preserves normal random fixture behavior.
+  let visualCounter = 0;
+  const visualBytes = (label, length = 32) => createHash('sha256').update(`P577 public visual fixture/${visualSeed}/${label}`).digest().subarray(0, length);
+  const hostKp = hostKeypair ?? (visualSeed === undefined ? await generateKeypair(false) : await keypairFromPrivate(visualBytes('host-static')));
+  const handshakeEphemeral = async () => ephemeral ?? (visualSeed === undefined ? undefined : await keypairFromPrivate(visualBytes('ephemeral/' + visualCounter++)));
+  const channel = await channelId(channelSeed ?? randomBytes(32));
   const pairings = new Map();       // b64u(id) → { psk }
   const allow = new Map();          // b64u(device pub) → { sk (b64u Ed25519 pub) | null }
   const conns = new Set();
@@ -654,12 +658,12 @@ export async function startFakeHost() {
       const id = b.slice(1, 17), p = pairings.get(b64u(id));
       if (!p) return c.close(4010);
       pairings.delete(b64u(id));
-      c.hs = await new Handshake({ protocol: IKPSK2, initiator: false, prologue: pairPrologue(channel, id), s: hostKp, psk: p.psk }).init();
+      c.hs = await new Handshake({ protocol: IKPSK2, initiator: false, prologue: pairPrologue(channel, id), s: hostKp, psk: p.psk, e: await handshakeEphemeral() }).init();
       const info = JSON.parse(dec.decode(await c.hs.readMessage(b.subarray(17))));
       lastLabel = info.name; c.sk = info.sk || null;
       c.mode = 'pair';
     } else if (kind === KIND.RESUME_INIT) {
-      c.hs = await new Handshake({ protocol: IK, initiator: false, prologue: Uint8Array.from(resumePrologue(channel)), s: hostKp }).init();
+      c.hs = await new Handshake({ protocol: IK, initiator: false, prologue: Uint8Array.from(resumePrologue(channel)), s: hostKp, e: await handshakeEphemeral() }).init();
       const info = JSON.parse(dec.decode(await c.hs.readMessage(b.subarray(1))));
       if (st.refuseResumes > 0) { st.refuseResumes--; return c.close(4010); }
       if (st.muteResumes > 0) { st.muteResumes--; return; }      // P133: a resume the Agent J host never answers (the socket stays open)
@@ -701,7 +705,8 @@ export async function startFakeHost() {
     /** F17: ready devices with their approval key (b64u Ed25519 public) — to check a signed elev_answer. */
     get devs() { return [...conns].filter((c) => c.isReady && c.devId).map((c) => ({ id: c.devId, sk: allow.get(b64u(c.devPub))?.sk || null })); },
     newPairing(base, ttl = 300, { compact = false } = {}) {
-      const id = randomBytes(16), psk = randomBytes(32);
+      const sequence = visualCounter++;
+      const id = visualSeed === undefined ? randomBytes(16) : visualBytes(`pair-id/${sequence}`, 16), psk = visualSeed === undefined ? randomBytes(32) : visualBytes(`pair-psk/${sequence}`);
       pairings.set(b64u(id), { psk });
       const x = Math.floor(Date.now() / 1000) + ttl;
       if (compact) {   // ADR-A177: the digits link today's host prints (host wire.pairing_link)

@@ -65,7 +65,7 @@ class P302Units(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             busy.write_item(d, busy.item("run:x", "掌枢", "ceo", "P302", report="/r/notes/REPORT-302.md"))
             board = busy.Board.__new__(busy.Board)
-            board.root, board.outside = d, []
+            board.root, board.outside, board.finished = d, [], []
             board.units = [busy.item("unit:agentj-p302.service", "掌枢", "ceo", "菜单热修")]
             board.refresh_outside(units=False)
             self.assertEqual([x["key"] for x in board.outside], ["run:x"])

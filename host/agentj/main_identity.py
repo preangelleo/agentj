@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 DATA = Path(__file__).with_name("identity")
-VERSION = 26  # #520: UV-only waiting in full-access mode; external content never grants authority.
+VERSION = 27  # #551: silent message markers and edge matching.
 # v24 (P571, 0.26.0): delegation rules after pstack + `agentj decide`; gap / Father detail moved to skills
 # v23 (P569): update check before support (#368); system-scheduler default (#369)
 # v22 (P510): verified source rules plus retained friend-report boundary
@@ -25,7 +25,7 @@ VERSION = 26  # #520: UV-only waiting in full-access mode; external content neve
 # v9 (P113, ADR-A193): long tasks — preflight card, brief, CEO routing, report read-back
 # v8 (P82): owner-authorized customer-service bot management
 # v5 (P64): a workflow with a CEO is always dispatched — never run or edited by the main Agent; read-only reporting stays
-HASHES = {'en': '814aace080ebf143b004bf29a70c2891d03b08907e57227def9a27c95df13c13', 'zh': '5830d69e61aadb590bd4916afc3e8d08f3b15f64394aca93be2cb8a5f1ee1897'}
+HASHES = {'en': 'a48e5fbac6c9cfeaf66746eebd852bd5a1f96536040c9b670989059a0e3407d8', 'zh': '5a4a32f03bbf02b274c5dc2b3ae60018d3631a6d31130334eb3d0e8b9be9ae13'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system",
               "kimi": "acp.resource", "qwen": "acp.resource", "dsh": "acp.text"}   # P329: dsh takes no embedded resources (acp._block)   # P305: ACP has no system-prompt field — an embedded resource block (acp.prompt_blocks)
 
@@ -53,6 +53,8 @@ def validate_working_root(cfg: dict, st) -> Path:
     if not isinstance(raw, str) or not (Path(raw).is_absolute() or raw == "~" or raw.startswith("~/")):
         raise IdentityError("working root must be an absolute path or ~/path")
     root = working_root(cfg)
+    if root == Path.home().resolve():
+        raise IdentityError("工作根是用户主目录；请重新选择 ~/coding 等工作目录。 / Working root is the home directory; reselect a work folder. No files or personal configuration were moved or changed.")
     if not root.is_dir():
         raise IdentityError("working root must be an existing directory")
     from .fence import protected_paths
@@ -141,8 +143,8 @@ def language_of(cfg: dict) -> str:
 
 
 SILENCE_LINE = {
-    "zh": "\n当后台例行任务没有需要主人处理的新结果、通知已重复或群消息无需回复时，最终回复可以只写〔不回群〕。最终回复仅此标记即整回合静默：不推送、不计未读、不进入主消息流。主人直接提问、错误、风险、等待审批或必须报告的结果不得静默。标记旁有正文会正常发送。仅工具调用或空白最终回复不会向主人发空卡。切换服务商时先读 agentj-config skill，Key 只收手机密钥卡。\n",
-    "en": "\nFor routine background work with no new actionable result, duplicate notices, or group messages that need no answer, the entire final reply may be 〔不回群〕. A final reply of exactly this marker silences the whole turn (no delivery, no unread). Never silence a direct question, error, risk, pending approval, or required result. Text alongside the marker is delivered normally. Tool-only or blank final replies never send an empty card. Read agentj-config before switching providers; keys enter only through the phone secret card.\n",
+    "zh": "\n后台无新结果、重复通知或群消息无需回复时，可只回〔静默消息〕（英文[silent]）。最终回复去首尾空白后以任一标记开头或结尾，整回合不推送、不计未读、不进主消息流，记录保留。标记仅在中间时去标记、正文照发；所有展示均剥标记。主人提问、错误、风险、待审批及必须汇报的结果不得静默。仅工具调用或空白最终回复不发空卡。切换服务商时先读 agentj-config skill，Key 只收手机密钥卡。\n",
+    "en": "\nFor routine work with no new result, duplicate notices or group messages needing no answer, reply [silent] (Chinese: 〔静默消息〕). After trimming whitespace, either marker at the start or end silences the whole turn: no push, unread or main-stream delivery; records remain. A marker only in the middle is stripped while the body is delivered. Strip markers from every display. Never silence direct questions, errors, risks, pending approvals or required results. Tool-only or blank final replies never send an empty card. Read agentj-config before switching providers; keys enter only through the phone secret card.\n",
 }
 
 SHARED_CODEX_LINE = {'zh': 'Agent J 主机上的 Codex App 打开会话时，手机会从本机记录显示它实际使用的模型，并提示当前只读。发送被原生写入权拒绝时，消息不会投递，也不会自动新开会话。完全退出 Codex App 后重发，可尝试接着同一会话；仅切到 New chat 或等一轮回答结束不保证释放写入权。不要承诺两个独立客户端能同时写这个会话，也不要删写锁、注入桌面私有管道或改权限。被拒时手机会说明是谁占着：Agent J 自己上次留下的后台进程会自动清理；ChatGPT App、Codex App 或终端里的 codex 要主人自己退出。Codex 权限：config.toml 顶层没写 sandbox_mode 时，你直接跑在底层（danger-full-access，危险清单和手机审批照旧）；主人写了就照主人的。要改 Codex 沙箱只用 `agentj codex-sandbox set <模式>|default|fix`（只写文件顶层，改完 `agentj service restart`），不要把 sandbox_mode 追加到文件末尾。共享模式下因权限被拒，请主人在 Codex 桌面 App 里把这条对话的权限改成「完全访问」。\n', 'en': 'While the Codex App holds a session, the phone follows its actual model from local records and shows read-only status. A native active-writer refusal leaves the message undelivered and never automatically starts another thread. Quit the Codex App completely, then resend to try continuing the same thread; switching to New chat or waiting for a reply does not guarantee release. Do not promise concurrent writes from separate clients, delete writer locks, inject the App’s private pipes or change permissions. A refusal names the holder: an Agent J leftover background process is cleaned up automatically; the ChatGPT App, the Codex App or a terminal codex must be quit by the owner. Codex permissions: with no top-level sandbox_mode in config.toml you run directly on the system (danger-full-access; the danger list and phone approvals still apply); an explicit owner setting is kept. Change the Codex sandbox only with `agentj codex-sandbox set <mode>|default|fix` (top level only, then `agentj service restart`); never append sandbox_mode to the end of the file. In shared mode, a permission refusal means the owner sets this conversation to Full access in the Codex App.\n'}
@@ -235,7 +237,7 @@ HEARTBEAT_LINE = {
     "zh": "跳舞机器人=后台 Agent；后台命令用 "
           "`agentj busy run --who 谁 --label 干啥 -- 命令`，没机器人=没；`agentj busy capacity`："
           "空多起、紧排队，守 harness 上限。收到〔Agent J 心跳〕照提示查后台、待办与挂掉的活；哈希未变不重读；"
-          "没要报的只回〔不回群〕。改心跳频率或内容用 agentj-heartbeat 技能（`agentj heartbeat set 30m`、"
+          "没要报的只回〔静默消息〕。改心跳频率或内容用 agentj-heartbeat 技能（`agentj heartbeat set 30m`、"
           "`agentj heartbeat prompt edit`），改完回「记下了」。\n",
     "en": "The dancing robots at the phone's top right are Agents working in the background, shown whether or not you are replying; "
           "background work you start yourself (`claude -p`, `codex exec`, `opencode run`, docker, …) always goes through "
@@ -245,7 +247,7 @@ HEARTBEAT_LINE = {
           "available memory) — start more when it is idle, queue when it is tight, never a fixed number, and keep any concurrency "
           "limit of the harness itself. When an 〔Agent J 心跳〕/[Agent J heartbeat] arrives (the host wakes you after an idle spell, "
           "on every harness): check the background, the to-dos and any work that died half-way as the heartbeat prompt says; if its "
-          "hash has not changed there is no need to re-read it; with nothing to report make your final reply exactly 〔不回群〕. When "
+          "hash has not changed there is no need to re-read it; with nothing to report make your final reply exactly [silent]. When "
           "the owner wants a different frequency or wake-up task, use the agentj-heartbeat skill (`agentj heartbeat set 30m`, "
           "`agentj heartbeat prompt edit`) and answer \"noted\".\n",
 }
@@ -255,7 +257,7 @@ HEARTBEAT_LINE["zh"] = (
     "跳舞机器人=后台 Agent；后台命令用 "
     "`agentj busy run --who 谁 --label 干啥 -- 命令`；`agentj busy capacity`："
     "空多起、紧排队，守 harness 上限。心跳照提示巡检；哈希未变不重读；"
-    "无事回〔不回群〕；改心跳用 agentj-heartbeat。\n"
+    "无事回〔静默消息〕；改心跳用 agentj-heartbeat。\n"
     "后台活已结束：核对归你，跑验收命令看结论再短报，不凭退出码。\n"
 )
 HEARTBEAT_LINE["en"] += "On a background-job-ended [Agent J system notice], checking is yours, never the owner's: run the dispatch's acceptance command, read the actual report and evidence, then tell the owner the result in one or two sentences; never trust only the exit code; send a missing report back to whoever ran the job.\n"
@@ -365,6 +367,11 @@ REPLY_LINE_CLAUDE = {
     "zh": "全放行非UV自动；其它档只问业务取舍：2–4项末尾[选项](reply:选项)；回X必须带。组件见agentj-reply-components，表单/确认只填草稿。\n",
     "en": REPLY_LINE["en"],
 }
+
+
+# #398: recovery must remain available when the AI cannot answer.
+SUPPORT_LINE['zh'] += 'AI登录/额度故障先手机「AI登录救援」；需命令用网页终端，不要求回主机，勿让主人贴凭据。\n'
+SUPPORT_LINE['en'] += 'For AI login/quota failure, guide phone AI login rescue; use Web Terminal for commands, never a trip to the host or credentials in chat.\n'
 
 
 def prompt(cfg: dict, harness: str | None = None) -> str:

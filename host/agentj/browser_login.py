@@ -35,10 +35,37 @@ MAX_OPEN = 4
 PHONE_TYPES = ("login_qr_check", "login_qr_cancel", "login_qr_tg", "login_qr_refresh")
 _ID = re.compile(r"[0-9a-f]{32}")
 QUIET = (22, 7)                 # no unprompted reminders between 22:00 and 07:00 local
+LANDING_EVERY = 15.0            # #470: a login tab on a landing page re-runs the trusted check at most this often
+# #470: why 「我扫好了，帮我确认」 did not confirm — the chat line under the card (the toast is the page's fixed text)
+WHY = ("signed_out", "other_browser", "landing_unknown", "browser")
+WHY_TEXT = {
+    "signed_out": ("「{title}」：Agent J 主机的浏览器里检查下来仍是未登录。请再扫一次这张卡上的二维码。",
+                   "{title}: the check in the Agent J host's browser still finds it signed out. Scan this card's QR code again."),
+    "other_browser": ("「{title}」：Agent J 主机的浏览器还停在登录页，仍是未登录。你看到已登录的那个窗口很可能是另一个浏览器"
+                      "（不是 Agent J 用的这个）；请扫这张卡上的二维码。",
+                      "{title}: the Agent J host's browser is still on the sign-in page and signed out. The window you saw signed "
+                      "in is most likely another browser (not the one Agent J uses); scan this card's QR code."),
+    "landing_unknown": ("「{title}」：登录页跳到了 Agent J 不认识的页面（{site}），检查也没能确认登录。等几秒再点一次；"
+                        "仍不行就在 Agent J 主机的浏览器里打开创作中心看看。",
+                        "{title}: the sign-in page went to a page Agent J does not recognise ({site}) and the check could not "
+                        "confirm a sign-in. Wait a few seconds and tap again; if it still fails, open the creator center in the "
+                        "Agent J host's browser."),
+    "browser": ("「{title}」：连不上 Agent J 主机的浏览器（登录页被关掉了，或浏览器没在运行），没法确认。点「刷新二维码」重来。",
+                "{title}: cannot reach the Agent J host's browser (the sign-in tab was closed or the browser is not running), "
+                "so nothing could be confirmed. Tap New QR code to start again."),
+}
 
 
 def bind_digest(channel: str, site: str, cid: str, nonce: str, until: int) -> str:
     return hashlib.sha256("\n".join([CTX, channel or "", site, cid, nonce, str(until)]).encode()).hexdigest()
+
+
+def urlsplit_host(origin: str | None) -> str:
+    """The host name of an origin (never a path or query)."""
+    if not origin:
+        return ""
+    from urllib.parse import urlsplit
+    return (urlsplit(origin).hostname or "")[:80]
 
 
 def quiet(now: _dt.datetime | None = None) -> bool:
@@ -202,12 +229,25 @@ class LoginCards:
 
     # ---------------------------------------------------------- watching the login tab
     def _signed_in(self, c: dict) -> bool:
+        return self._tab(c)[0] == "in"
+
+    def _tab(self, c: dict) -> tuple[str, str | None]:
+        """(thread) The login tab: (bs.login_state — in / landing / out / none / offsite / error, its origin). A dead
+        connection is ("gone", None). The origin is the only part of the URL ever shown (paths carry account ids)."""
         with c["lock"]:                         # the watcher and a phone's 「我扫好了」 share one connection
-            href, _ = c["cdp"].location(c["session"])
+            try:
+                href, _ = c["cdp"].location(c["session"])
+            except CDPError:
+                return "gone", None
             t = bs.templates()[bs.load(self.st)["sites"][c["site"]]["template"]]
-            if bs.classify(href, t) != "in":
-                return False
-            return not (t.get("out_dom") and present(c["cdp"], c["session"], t["out_dom"]))
+            state = bs.login_state(href, t)
+            if state == "in" and t.get("out_dom"):
+                try:
+                    if present(c["cdp"], c["session"], t["out_dom"]):
+                        state = "out"
+                except CDPError:
+                    return "gone", None
+            return state, bs._origin(href) if href else None
 
     async def _watch(self, c: dict) -> None:
         try:
@@ -216,25 +256,36 @@ class LoginCards:
                 if c["id"] not in self.cards:
                     return
                 try:
-                    if await asyncio.to_thread(self._signed_in, c) and await self._success(c):
-                        return
+                    state, _ = await asyncio.to_thread(self._tab, c)
                 except CDPError:
                     continue
+                if state == "landing":           # #470: a landing page only triggers the trusted check, with a back-off
+                    if time.monotonic() - c.get("landing_at", -LANDING_EVERY) < LANDING_EVERY:
+                        continue
+                    c["landing_at"] = time.monotonic()
+                if state in ("in", "landing") and await self._success(c):
+                    return
         except asyncio.CancelledError:
             pass
 
     async def _success(self, c: dict) -> bool:
         """The login tab looks signed in: the trusted check (fresh tab, stable URL, sign-in form cross-check) decides."""
+        return await self._confirm(c) == "logged_in"
+
+    async def _confirm(self, c: dict) -> str | None:
+        """The trusted check's status for the card's site; a logged_in ends the card ("done"). None while another check of
+        this card is running."""
         if c.get("confirming"):
-            return False
+            return None
         c["confirming"] = True
         try:
             res = await asyncio.to_thread(bs.check, self.st, [c["site"]], False, "login")
         finally:
             c["confirming"] = False
         status = next((x["status"] for x in res.get("sites", []) if x["site"] == c["site"]), None)
+        c["last_status"] = status
         if status != "logged_in" or c["id"] not in self.cards:
-            return False
+            return status
         self._end(c, "done")
         lang = getattr(self.host, "lang", "zh")
         hm = time.strftime("%H:%M")
@@ -242,7 +293,7 @@ class LoginCards:
                 else f"{c['title']} signed in at {hm} (check: {status})")
         with contextlib.suppress(Exception):
             self.host.hist_add({"k": "sys", "text": ""}, note, "done")
-        return True
+        return status
 
     # ---------------------------------------------------------- the phone answers
     async def on_phone(self, s, obj: dict) -> None:
@@ -264,13 +315,7 @@ class LoginCards:
         if t == "login_qr_cancel":
             return self._end(c, "cancelled", device=s.device)
         if t == "login_qr_check":
-            try:
-                done = await asyncio.to_thread(self._signed_in, c)
-            except CDPError:
-                done = False
-            if done and await self._success(c):
-                return
-            return await self.host.send_app(s, {"t": "login_qr_state", "id": cid, "state": "waiting"})
+            return await self._check_tap(s, c)
         if t == "login_qr_tg":
             on = obj.get("on") is True
             await asyncio.to_thread(bs.set_tg_consent, self.st, on, s.device)
@@ -278,6 +323,32 @@ class LoginCards:
             if on:
                 await self._telegram(c)
             await self.host._send_ready(lambda x: {"t": "login_qr_state", "id": cid, "state": "settings", "tg": self._tg_state()})
+
+    async def _check_tap(self, s, c: dict) -> None:
+        """#470: the owner's 「我扫好了，帮我确认」 — always the trusted check (whatever page the login tab shows); when it does
+        not confirm, the card stays and one chat line says why (login_qr_state carries the same `why`)."""
+        end = time.monotonic() + 60
+        while c.get("confirming") and time.monotonic() < end:      # the watcher's check is running: wait for its word
+            await asyncio.sleep(0.2)
+        if c["id"] not in self.cards:
+            return                                                  # it confirmed meanwhile (login_qr_done is out)
+        state, origin = await asyncio.to_thread(self._tab, c)
+        status = await self._confirm(c)
+        if status == "logged_in":
+            return
+        if state == "gone" or status == "unavailable":
+            why = "browser"
+        elif status == "auth_required":
+            why = "other_browser" if state == "out" else "signed_out"
+        else:
+            why = "landing_unknown"
+        lang = getattr(self.host, "lang", "zh")
+        text = WHY_TEXT[why][1 if lang == "en" else 0].format(title=c["title"], site=urlsplit_host(origin) or "?")
+        self._audit(c, "check_waiting", why=why)
+        self.st.log("login_qr_waiting", id=c["id"], site=c["site"], why=why, tab=state, status=status)
+        with contextlib.suppress(Exception):
+            self.host.hist_add({"k": "sys", "text": ""}, text, "done")
+        await self.host.send_app(s, {"t": "login_qr_state", "id": c["id"], "state": "waiting", "why": why})
 
     # ---------------------------------------------------------- Telegram (text by default; QR only with consent)
     async def _telegram(self, c: dict) -> str:

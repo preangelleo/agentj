@@ -4,7 +4,7 @@ import contextlib
 import datetime as dt
 import json
 import time
-from . import preferences
+from . import preference_values as preferences
 
 
 def quiet(p, now):

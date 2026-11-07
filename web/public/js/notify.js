@@ -57,7 +57,7 @@ export function failText(m) {
 function say(s) { const n = P.el('ntf-msg'); if (n) n.textContent = s || ''; }
 
 function sw(on, label, onClick) {
-  const b = document.createElement('button');
+  const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-channel');
   b.type = 'button'; b.className = 'tgl'; b.setAttribute('role', 'switch');
   b.setAttribute('aria-checked', String(!!on)); b.setAttribute('aria-label', label);
   b.disabled = busy;
@@ -71,7 +71,7 @@ function row(kind, id, label, on, extra) {
   const lab = document.createElement('span'); lab.className = 'setlab ntfname'; lab.textContent = label;
   const ctl = document.createElement('span'); ctl.className = 'ntfctl';
   if (extra.remove) {
-    const rm = document.createElement('button');
+    const rm = document.createElement('button'); rm.setAttribute('data-aj-owner', 'aj-channel');
     rm.type = 'button'; rm.className = 'setlink setdanger ntfrm'; rm.textContent = t('p365.remove');
     rm.setAttribute('aria-label', t('p365.removeName', { name: label }));
     rm.disabled = busy;

@@ -71,7 +71,7 @@ def collect(media: "media_mod.Media", text: str, keys: list | None = None, mask:
             rec, why = None, None
         values = media.last_values() if mask else []
         if why:
-            skip = {"name": name, "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {}),
+            skip = {"name": media_mod.owner_name(name, why, media.lang() if callable(getattr(media, "lang", None)) else "zh"), "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {}),
                     **media_mod._at(media, why)}
             skips.append(skip)
             if keys is not None and why in ("key_file", "key_content") and rec and "sha256" in rec and ref.explicit:
@@ -96,7 +96,7 @@ def read_checked(rec: dict) -> bytes:
         data = media_mod.read_blob(rec)
         if data is not None:
             return data
-        if rec.get("masked"):
+        if rec.get("masked") or rec.get("generated"):
             raise media_mod.Gone("store")
     fd = media_mod.open_rel(rec["root"], list(rec["parts"]))
     try:

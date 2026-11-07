@@ -14,6 +14,7 @@ import time
 import threading
 from datetime import datetime
 from pathlib import Path
+from .quota_pace import pace as quota_pace
 
 WEEK_S = 7 * 86400
 DAY_S = 86400
@@ -196,6 +197,7 @@ def load_state(state_root) -> dict:
     if not isinstance(d, dict):
         d = {}
     d["sent"] = d["sent"] if isinstance(d.get("sent"), dict) else {}
+    d["credit_sent"] = d["credit_sent"] if isinstance(d.get("credit_sent"), dict) else {}
     d["resets"] = [r for r in d.get("resets", []) if valid_reset(r)] if isinstance(d.get("resets"), list) else []
     return d
 
@@ -267,6 +269,10 @@ def analyse(src: dict, resets: list[dict], now: float) -> dict:
     out["name"] = NAMES.get(src["harness"], src["harness"])
     out["at"] = now
     out["resets"] = [{"expires": r["expires"], **({"note": r["note"]} if r.get("note") else {})} for r in resets]
+    out["pace"] = quota_pace(src.get("used_pct"), src.get("reset_at"), now,
+                             stale=src.get("status") != "ok" or bool(src.get("stale"))
+                             or not _num(src.get("source_at")) or not 0 <= now-src["source_at"] <= 300
+                             or (_num(src.get("reset_at")) and src["source_at"] < src["reset_at"]-WEEK_S))
     h5 = src.get("h5")
     # Keep validity separate from display clamping: --pick must not use a repaired reading.
     out["weekly_valid"] = (src.get("weekly_valid") is not False and src.get("status") in ("ok", "stale") and src.get("weekly_valid") is not False
@@ -284,10 +290,14 @@ def analyse(src: dict, resets: list[dict], now: float) -> dict:
         out["used_pct"] = round(min(100.0, max(0.0, src["used_pct"])), 1)
     if src.get("status") != "ok":
         return out
-    reset_at, used = src["reset_at"], min(100.0, max(0.0, src["used_pct"]))
+    reset_at = src.get("reset_at")
+    if not out["weekly_valid"] or not _num(reset_at) or reset_at > now + WEEK_S:
+        out.update(status="unknown", why="invalid_window")
+        return out
     if reset_at <= now:                                # the window rolled over since this reading
         out.update(status="unknown", why="window_rolled_over")
         return out
+    used = src["used_pct"]
     elapsed = min(7.0, max(0.0, (now - (reset_at - WEEK_S)) / DAY_S))
     left = 7.0 - elapsed
     pace = elapsed * DAY_SHARE
@@ -396,11 +406,11 @@ def reminder_text(a: dict, kind: str, lang: str = "zh", alts: list[dict] | None 
 
 ASK = {"zh": "这是额度管家的提醒（确定性规则，不是主人原话）：请告诉主人；额度富余 / reset 类，结合主人的工作流和待办给 1–3 个具体的大活建议"
              "（谁来做、大概多久）；5 小时 / 周额度告警类只让主人知道，点了别的账号就建议新活交给它（不切当前会话）；"
-             "不要回〔不回群〕。主人说「别提醒额度」就运行 agentj quota off。",
+             "不要回〔静默消息〕。主人说「别提醒额度」就运行 agentj quota off。",
        "en": "This is the quota steward (deterministic rules, not the owner's words): tell the owner; for spare quota / resets, "
              "from the owner's workflows and to-dos, propose 1–3 concrete big jobs (who does it, roughly how long); for 5-hour / "
              "weekly warnings just let the owner know and, if another account is named, suggest new work goes there (this "
-             "conversation stays where it is); do not reply 〔不回群〕. If the owner says to stop quota reminders, run agentj quota off."}
+             "conversation stays where it is); do not reply 〔静默消息〕. If the owner says to stop quota reminders, run agentj quota off."}
 TAG = {"zh": "〔额度提醒〕", "en": "[Quota]"}
 
 
@@ -415,7 +425,7 @@ _WEEKLY_CACHE_LOCK = threading.Lock()
 
 def _weekly_sample(src, now):
     kind = src.get("harness")
-    return (kind in ("claude", "codex") and src.get("source") == {"claude": "statusline", "codex": "session_log"}.get(kind)
+    return (kind in ("claude", "codex") and src.get("source") in (("session_log", "app_server") if kind == "codex" else ("statusline",))
             and src.get("status") in ("ok", "stale") and src.get("weekly_valid") is not False
             and not ("weekly_valid" not in src and src.get("reading_valid") is False) and _num(src.get("used_pct")) and 0 <= src["used_pct"] <= 100
             and _num(src.get("source_at")) and 0 <= src["source_at"] <= now and _num(src.get("reset_at"))
@@ -472,16 +482,32 @@ def report(state_root, now: float | None = None, env=None, sources=None, meter_s
     seen = {s["harness"] for s in srcs}
     srcs += [unknown(h, "source_failed") for h in HARNESSES if h not in seen]
     acc = _accounts(state_root)
+    from . import codex_reset_credits as native
+    native_accounts = native.read_accounts(state_root, acc, now, env) if sources is None else {}
+    active_codex = (acc.get("codex") or {}).get("active")
+    active_native = native_accounts.get(active_codex) or {}
+    if active_native.get("reading"):
+        srcs = [active_native["reading"] if s["harness"] == "codex" else s for s in srcs]
     out = []
     for s in srcs:
         s = last_weekly(state_root, since_switch(s, acc), acc, now)
         a = analyse(s, live_resets(d, s["harness"], now), now)
         a["reminders"] = assess(a)
         rows = account_rows(acc, s["harness"], a)
+        if s["harness"] == "codex":
+            for row in rows:
+                nr = native_accounts.get(row["id"]) or {}
+                row["reset_credits"] = nr.get("reset_credits", native.unknown())
+                r = nr.get("reading")
+                if r:
+                    row["quota"] = {"pct": r["used_pct"], "window": "week", "at": r["source_at"],
+                                    "reset_at": r["reset_at"], "source": "app_server", "status": "ok",
+                                    **({"h5": r["h5"]} if r.get("h5") else {})}
+            a["reset_credits"] = active_native.get("reset_credits", native.unknown())
         if rows:
             a["accounts"] = rows
         out.append(a)
-    return {"ok": True, "at": now, "day_share_pct": round(DAY_SHARE, 2), "harnesses": out}
+    return {"ok": True, "at": now, "day_share_pct": round(DAY_SHARE, 2), "harnesses": out, "codex_accounts": next((a.get("accounts", []) for a in out if a["harness"] == "codex"), [])}
 
 
 # ------------------------------------------------------------------ #427: readings per account (accounts.py)
@@ -524,7 +550,7 @@ def account_rows(acc: dict, harness: str, a: dict) -> list[dict]:
     return rows
 
 
-def due(rep: dict, state_root, day: str | None = None, mark: bool = True) -> list[dict]:
+def _due(rep: dict, state_root, day: str | None = None, mark: bool = True) -> list[dict]:
     """Reminders not yet given today; marks them given when `mark`."""
     day = day or time.strftime("%Y-%m-%d", time.localtime(rep.get("at") or time.time()))
     d = load_state(state_root)
@@ -541,10 +567,34 @@ def due(rep: dict, state_root, day: str | None = None, mark: bool = True) -> lis
                     continue
             out.append({"harness": a["harness"], "kind": k, "key": key})
             d["sent"][key] = day
+    from . import codex_reset_credits as native
+    now = rep.get("at") or time.time()
+    for account in rep.get("codex_accounts", []):
+        for credit in native.expiring(account.get("reset_credits"), now):
+            # Durable per account + credit identity, never daily or expiry based.
+            import hashlib
+            key = "codex:credit:" + hashlib.sha256((account["id"] + "\0" + credit["id"]).encode()).hexdigest()
+            if key in d["credit_sent"] or len(d["credit_sent"]) >= 1024:
+                continue
+            out.append({"harness": "codex", "kind": "native_reset_expiring", "key": key,
+                        "account": {"id": account["id"], "name": account["name"]}, "credit": credit})
+            d["credit_sent"][key] = credit["expires_at"]
     if out and mark:
-        with contextlib.suppress(OSError):
-            save_state(state_root, d)
+        save_state(state_root, d)
     return out
+
+
+def due(rep: dict, state_root, day: str | None = None, mark: bool = True) -> list[dict]:
+    from .codex_reset_credits import reminder_lock
+    with reminder_lock(state_root):
+        return _due(rep, state_root, day, mark)
+
+
+def due_text(item, by, rep, lang):
+    if item["kind"] == "native_reset_expiring":
+        from .codex_reset_credits import reminder
+        return reminder(item["account"], item["credit"], lang)
+    return reminder_text(by[item["harness"]], item["kind"], lang, headroom(rep, item["harness"]))
 
 
 def heartbeat_lines(state_root, prefs: dict | None, lang: str = "zh", now: float | None = None, env=None,
@@ -560,7 +610,7 @@ def heartbeat_lines(state_root, prefs: dict | None, lang: str = "zh", now: float
         return ""
     by = {a["harness"]: a for a in rep["harnesses"]}
     lang = "en" if lang == "en" else "zh"
-    body = "\n".join("- " + reminder_text(by[i["harness"]], i["kind"], lang, headroom(rep, i["harness"])) for i in items)
+    body = "\n".join("- " + due_text(i, by, rep, lang) for i in items)
     return f"{TAG[lang]} {ASK[lang]}\n{body}"
 
 
@@ -696,16 +746,21 @@ async def _handle(host, req: dict, root, prefs: dict, meter_state: dict | None =
             return {"ok": ok, **({} if ok else {"why": "no_such_resume"}), "items": qr.view()}
         return {"ok": True, "items": qr.view()}
     if op == "quota":
-        rep = report(root, meter_state=meter_state)
+        import asyncio
+        rep = await asyncio.to_thread(report, root, meter_state=meter_state)
         rep["reminders_on"] = reminders_on(prefs)
+        if host is not None and getattr(getattr(host, "agent", None), "kind", None) == "codex":
+            row = next((a for a in rep["harnesses"] if a["harness"] == "codex"), {})
+            host.meter_update(reset_credits=row.get("reset_credits"))
         return rep
     if op == "quota_remind":
-        rep = report(root, meter_state=meter_state)
+        import asyncio
+        rep = await asyncio.to_thread(report, root, meter_state=meter_state)
         rep["reminders_on"] = reminders_on(prefs)
         items = due(rep, root, mark=not req.get("peek")) if rep["reminders_on"] else []
         by = {a["harness"]: a for a in rep["harnesses"]}
         lang = "en" if req.get("lang") == "en" else "zh"
-        rep["due"] = [{**i, "text": reminder_text(by[i["harness"]], i["kind"], lang, headroom(rep, i["harness"]))} for i in items]
+        rep["due"] = [{**i, "text": due_text(i, by, rep, lang)} for i in items]
         return rep
     if op in ("quota_on", "quota_off"):
         if host is None:
@@ -814,6 +869,14 @@ def render(rep: dict, lang: str = "zh") -> str:
             lines.append((f"  extra reset recorded, expires {_when(r['expires'], lang)}" if en else
                           f"  额外 reset（登记）：{_when(r['expires'], lang)} 过期") + (f" · {r['note']}" if r.get("note") else ""))
         for r in a.get("accounts", []):          # #427: one line per account; no reading = 「—」, never an estimate
+            box = r.get("reset_credits")
+            if box is not None:
+                from .codex_reset_credits import summary
+                lines.append(f"  · {r['name']}: " + summary(box, lang))
+                for credit in box.get("credits", []):
+                    exp = credit.get("expires_at")
+                    lines.append(("    reset credit expires " + _when(exp, lang) if exp is not None else "    reset credit: no expiry") if en else
+                                 ("    重置券到期：" + _when(exp, lang) if exp is not None else "    重置券：无到期时间"))
             q = r.get("quota")
             when = time.strftime("%m-%d %H:%M", time.localtime(q["at"])) if q else ""
             if r["active"]:
@@ -926,20 +989,28 @@ def pick(rep: dict, now: float | None = None, task: str = "") -> dict:
         kind = r.get("harness")
         if kind not in ("claude", "codex"):
             continue
-        readings = [(r, None)]
+        native_rows = kind == "codex" and any((a.get("quota") or {}).get("source") == "app_server" for a in r.get("accounts", []))
+        active_account = next((a for a in r.get("accounts", []) if a.get("active")), None)
+        readings = [] if native_rows else [(r, active_account)]
         for account in r.get("accounts", []):
             q = account.get("quota") or {}
             live_week = r.get("status") in ("ok", "stale") and r.get("weekly_valid") is not False and _num(r.get("used_pct")) and _num(r.get("reset_at"))
-            if q.get("window") == "week" and (not account.get("active") or not live_week):
+            if q.get("window") == "week" and (native_rows or not account.get("active") or not live_week):
                 readings.append(({"used_pct": q.get("pct"), "reset_at": q.get("reset_at"),
-                                  "source_at": q.get("at"), "source": {"claude": "statusline", "codex": "session_log"}[kind], "status": "stale"}, account))
+                                  "source_at": q.get("at"), "source": q.get("source") or {"claude": "statusline", "codex": "session_log"}[kind],
+                                  "status": q.get("status", "stale"), **({"h5": q["h5"]} if q.get("h5") else {})}, account))
         for reading, account in readings:
             row = {"harness": kind, "eligible": False, "why": "missing_reading"}
             if account:
                 row.update(account_id=account["id"], account_name=account["name"], switch_account=not account.get("active"))
+            if account:
+                from .codex_reset_credits import expiring
+                live = expiring(account.get("reset_credits"), now)
+                row["reset_credits"] = account.get("reset_credits")
+                row["reset_credit_expires_at"] = live[0]["expires_at"] if live else None
             rows.append(row)
             used, reset, at = (reading.get(k) for k in ("used_pct", "reset_at", "source_at"))
-            if reading.get("source") != {"claude": "statusline", "codex": "session_log"}[kind] or reading.get("weekly_valid") is False or ("weekly_valid" not in reading and reading.get("reading_valid") is False) or not _num(used) or not 0 <= used <= 100:
+            if reading.get("source") not in (("session_log", "app_server") if kind == "codex" else ("statusline",)) or reading.get("weekly_valid") is False or ("weekly_valid" not in reading and reading.get("reading_valid") is False) or not _num(used) or not 0 <= used <= 100:
                 row["why"] = "invalid_usage"
                 continue
             if not _num(at) or at > now or not _num(reset) or not now < reset <= now + WEEK_S:
@@ -952,22 +1023,26 @@ def pick(rep: dict, now: float | None = None, task: str = "") -> dict:
             h_valid = reading.get("h5_valid") is not False and h_fresh and _num(h_used) and 0 <= h_used <= 100
             left = (reset-now) / DAY_S
             row.update(used_pct=used, source_at=at, fresh=fresh, per_day=(100-used)/left,
-                       speed=used / (max(.001, 7-left) * DAY_SHARE),
+                       speed=quota_pace(used, reset, now, stale=not fresh or at < reset-WEEK_S)["speed"],
+                       pace=quota_pace(used, reset, now, stale=not fresh or at < reset-WEEK_S),
                        h5_used_pct=h_used if h_valid else 0 if fresh and h is None and not reading.get("h5_present") else None,
                        h5_unlimited=fresh and h is None and not reading.get("h5_present"),
                        eligible=used < 100 and (not h_valid or h_used < H5_WARN_PCT),
                        why="available" if fresh else "last_weekly_reading")
     affinity = "codex" if task in ("content", "内容创作") else "claude" if task in ("agentj", "Agent J") else None
     candidates = sorted((r for r in rows if r["eligible"]),
-                        key=lambda r: (affinity is not None and r["harness"] != affinity, -r["per_day"], r["harness"]))
+                        key=lambda r: (not (r.get("reset_credit_expires_at") and r.get("fresh")),
+                                       r.get("reset_credit_expires_at") if r.get("fresh") and r.get("reset_credit_expires_at") else float("inf"),
+                                       affinity is not None and r["harness"] != affinity, -r["per_day"], r["harness"]))
     chosen = candidates[0] if candidates else None
-    why = "task_affinity" if chosen and affinity == chosen["harness"] else "daily_headroom" if chosen else "no_weekly_reading" if not any("per_day" in r for r in rows) else "both_quota_high"
-    reason = (f"{chosen['harness']} 每天可用 {chosen['per_day']:.1f}%" + ("（最近一次周读数，已降级）" if not chosen['fresh'] else "") + ("，按任务类型优先" if why == "task_affinity" else "，剩余日均额度最多")) if chosen else "没有可用的周额度读数，请先读取账号额度"
-    reason_en = (f"{chosen['harness']}: {chosen['per_day']:.1f}% available per day" + (" (degraded: last weekly reading)" if not chosen['fresh'] else "") + (", preferred for this task" if why == "task_affinity" else ", largest daily headroom")) if chosen else "No usable weekly reading; read account quota first"
+    why = "reset_credit_expiring" if chosen and chosen.get("fresh") and chosen.get("reset_credit_expires_at") else "task_affinity" if chosen and affinity == chosen["harness"] else "daily_headroom" if chosen else "no_weekly_reading" if not any("per_day" in r for r in rows) else "both_quota_high"
+    reason = (f"{chosen['harness']} 每天可用 {chosen['per_day']:.1f}%" + ("（最近一次周读数，已降级）" if not chosen['fresh'] else "") + ("，按任务类型优先" if why == "task_affinity" else "，重置券即将到期，优先使用" if why == "reset_credit_expiring" else "，剩余日均额度最多")) if chosen else "没有可用的周额度读数，请先读取账号额度"
+    reason_en = (f"{chosen['harness']}: {chosen['per_day']:.1f}% available per day" + (" (degraded: last weekly reading)" if not chosen['fresh'] else "") + (", preferred for this task" if why == "task_affinity" else ", expiring reset credit takes priority" if why == "reset_credit_expiring" else ", largest daily headroom")) if chosen else "No usable weekly reading; read account quota first"
     return {"harness": chosen["harness"] if chosen else None, "account_id": chosen.get("account_id") if chosen else None,
             "switch_account": bool(chosen and chosen.get("switch_account")), "why": why, "reason": reason,
             "reason_en": reason_en, "max_age_s": PICK_MAX_AGE, "accounts": rows,
-            "more_work": bool(chosen and chosen["per_day"] > DAY_SHARE and chosen["used_pct"] < 80)}
+            "more_work": bool(chosen and chosen["per_day"] > DAY_SHARE and chosen["used_pct"] < 80),
+            "codex_accounts": rep.get("codex_accounts", [])}
 
 
 def render_pick(result: dict, lang="zh") -> str:

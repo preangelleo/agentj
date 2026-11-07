@@ -6,7 +6,7 @@ import { request, done, isReady, channel, sendApp, randHex, gen, peer, whenReady
 import { signKey } from './store.js';
 import { myDeviceId } from './api.js';
 import { t, lang, locale, plain, fillText } from './t.js';
-import { el, mk, toast, executionToast, toastAction, confirmSheet } from './ui.js';
+import { el, mk, toast, executionToast, toastAction, confirmSheet, pageCopy } from './ui.js';
 import { approve as passkeyApprove } from './faceid.js';
 import { copyable } from './copycode.js';   // P292
 import { faState, webauthnErr, failNotice } from './pkassist.js';   // P539: why a passkey tap failed, said with one way on
@@ -56,6 +56,7 @@ function command(obj, onSent = null) {               // pending acknowledgement 
     const r = request(obj, (m) => {
       if (m.t === 'ctl_res' || m.t === 'offline') finish(m.t === 'offline' ? { ok: false, why: 'offline' } : m);
       else if (!extended && m.t === 'ctl_pending' && obj.t === 'wf_resume_do' && m.action === 'wf_resume_do' && m.timeout_ms === 620000) { extended = true; arm(620000); }
+      else if (!extended && m.t === 'ctl_pending' && obj.t === 'setup_run' && m.action === 'setup_run' && m.timeout_ms === 620000) { extended = true; arm(620000); }
       else if (!extended && m.t === 'ctl_pending' && obj.t === 'bots_write' && m.action === 'bots_write' && m.timeout_ms === 620000) { extended = true; arm(620000); }
       else if (!extended && m.t === 'ctl_pending' && obj.t === 'cmd_run' && m.action === 'cmd_run' && m.timeout_ms === 150000) { extended = true; arm(150000); }   // P361
       // P570c: 重新迁移 test-runs the task on the system scheduler (the host's sysmigrate.PENDING_MS = 2 200 000 at most)
@@ -136,7 +137,7 @@ export async function onResume() {
   else if (!res.ok) toast(t('estop.resumeFail', { why: why(res.why) }), 4000);
 }
 
-// ---- batch approval grants: the bar above the field + 「收回授权」; an automatic approval is one toast line
+// ---- batch approval grants: the bar above the field + 「收回授权」. Automatic actions are audit-only (#562).
 const grants = new Map();
 export function renderGrants() {
   const live = [...grants.values()];
@@ -153,7 +154,7 @@ const GRANT_END = ['turn_end', 'revoked', 'limit', 'expired', 'device_gone', 'es
 export function endGrant(id, code) {
   if (!grants.delete(id)) return;
   renderGrants();
-  if (code !== 'turn_end') executionToast(t('grant.end.' + (GRANT_END.includes(code) ? code : 'other')), 3200);
+  if (!['turn_end', 'limit', 'expired'].includes(code)) executionToast(t('grant.end.' + (GRANT_END.includes(code) ? code : 'other')), 3200);
 }
 export function clearGrants() { grants.clear(); renderGrants(); }
 export const grantIds = () => [...grants.keys()];                                                     // P203 (§29.1)
@@ -162,10 +163,9 @@ export async function revokeGrants() {
   if (!isReady() || grants.size === 0) return;
   await sendApp({ t: 'grant_off', id: null }).catch(() => {});
 }
-export function showAuto(m) {
-  if (typeof m.tool !== 'string' || typeof m.summary !== 'string') return;
-  executionToast(t(m.by === 'jev' ? 'ask.autoJev' : m.by === 'goal' ? 'ask.autoGoal' : m.by === 'task' ? 'p573.autoTask' : m.by === 'full' ? 'p336.autoFull' : 'ask.auto', { tool: m.tool, summary: m.summary.slice(0, 120) }), 2600);
-}
+// Older hosts still send `auto`. Consume it without touching notices, history or unread state.
+// The host's activity log remains available through act_list; this is not an owner action.
+export function showAuto(_m) {}
 
 // ---- 它记住了什么
 const memItems = new Map();
@@ -179,8 +179,8 @@ export function loadMemory() {
       el('mem-status').textContent = m.harness ? t('mem.sources', { agent: HN[m.harness] ?? m.harness }) : t('mem.noAgent');
       for (const src of Array.isArray(m.sources) ? m.sources : []) {
         const sec = mk('section', 'mem-src');
-        const head = mk('h2', 'mem-src-h', String(src.label ?? ''));
-        const path = mk('p', 'small mem-path', String(src.path ?? ''));
+        const head = mk('h2', 'mem-src-h', String(src.label ?? ''), 'aj-history');
+        const path = pageCopy(mk('p', 'small mem-path', String(src.path ?? ''), 'aj-history'));
         const PROB = ['not_found', 'symlink', 'too_large', 'io', 'too_many_files'];
         const note = mk('span', 'small mem-note', src.problem ? (PROB.includes(src.problem) ? t('mem.prob.' + src.problem) : `(${src.problem})`) : t('mem.count', { n: Number.isInteger(src.n) ? src.n : 0 }));
         head.append(' ', note);
@@ -203,10 +203,10 @@ export function loadMemory() {
         const li = mk('li', 'mem-item');
         li.dataset.kind = String(it.kind ?? '');
         const body = mk('div', 'mem-body');
-        if (it.title) body.append(mk('p', 'mem-title', String(it.title) + (it.file ? `  ·  ${it.file}` : '')));
-        if (it.desc) body.append(mk('p', 'small mem-desc', String(it.desc)));
-        body.append(copyable(mk('pre', 'mem-text', it.text + (it.cut ? '\n' + t('mem.cut', { shown: it.text.length, total: it.cut }) : '')), { click: false, text: () => it.text }));   // P292: ⧉ copies the memory
-        const del = mk('button', 'aj-btn aj-btn--sm mem-del', t('mem.del')); del.type = 'button';
+        if (it.title) body.append(pageCopy(mk('p', 'mem-title', String(it.title) + (it.file ? `  ·  ${it.file}` : ''), 'aj-history')));
+        if (it.desc) body.append(pageCopy(mk('p', 'small mem-desc', String(it.desc), 'aj-history')));
+        body.append(copyable(mk('pre', 'mem-text', it.text + (it.cut ? '\n' + t('mem.cut', { shown: it.text.length, total: it.cut }) : ''), 'aj-history'), { click: false, text: () => it.text }));   // P292: ⧉ copies the memory
+        const del = mk('button', 'aj-action aj-action--sm mem-del', t('mem.del'), 'aj-action'); del.type = 'button';
         del.setAttribute('aria-label', t('mem.delAria'));
         del.addEventListener('click', () => deleteMemory(key));
         li.append(body, del);
@@ -222,7 +222,7 @@ function renderTrash(items) {
   for (const x of items) {
     const li = mk('li', 'trash-item');
     li.append(mk('span', 'trash-text', `${String(x.label ?? '')}${lang() === 'en' ? ': ' : '：'}${String(x.text ?? '')}`));
-    const b = mk('button', 'aj-btn aj-btn--sm', t('mem.restore')); b.type = 'button';
+    const b = mk('button', 'aj-action aj-action--sm', t('mem.restore'), 'aj-action'); b.type = 'button';
     b.addEventListener('click', () => undoMemory(String(x.id)));
     li.append(b);
     ul.append(li);
@@ -378,8 +378,8 @@ function sysCard(x) {
   const src = SYS_SRC[x.src] ? x.src : '';
   li.dataset.src = src; li.dataset.state = state;
   const name = str(x.name) || str(x.id) || '?';
-  li.append(mk('p', 'task-title', name));
-  const tags = mk('p', 'ask-tags');
+  li.append(pageCopy(mk('p', 'task-title', name, 'aj-history')));
+  const tags = pageCopy(mk('p', 'ask-tags', undefined, 'aj-history'));
   tags.append(mk('span', 'tag ' + ({ active: 'tag-task', waiting: 'tag-on', failed: 'tag-fail', disabled: 'tag-off' }[state]), t('tasks.' + SYS_STATES[state])));
   if (src) tags.append(mk('span', 'tag', t('tasks.' + SYS_SRC[src])));
   li.append(tags);
@@ -388,9 +388,9 @@ function sysCard(x) {
   else if (str(x.next_s, 40)) line += t('tasks.next', { at: str(x.next_s, 40) });
   if (Number.isInteger(x.last) && x.last > 0) line += t('tasks.sysLast', { at: atText(x.last) });
   else if (str(x.last_s, 40)) line += t('tasks.sysLast', { at: str(x.last_s, 40) });
-  li.append(mk('p', 'small', line));
+  li.append(pageCopy(mk('p', 'small', line, 'aj-history')));
   const id = str(x.id, 80);
-  if (id && id !== name) li.append(mk('p', 'small muted systask-id', id));
+  if (id && id !== name) li.append(pageCopy(mk('p', 'small muted systask-id', id, 'aj-history')));
   return li;
 }
 const tzText = (tk) => (tk.tz === 'local' ? t('tasks.localTz') : tk.tz ?? '');
@@ -398,8 +398,8 @@ function taskCard(tk, paused) {
   const li = mk('li', 'task-card');
   const title = tk.title && typeof tk.title[lang()] === 'string' ? tk.title[lang()] : tk.title && typeof tk.title.zh === 'string' ? tk.title.zh : String(tk.id);
   li.dataset.id = String(tk.id); li.dataset.enabled = String(!!tk.enabled);
-  li.append(mk('p', 'task-title', title));
-  const tags = mk('p', 'ask-tags');
+  li.append(pageCopy(mk('p', 'task-title', title, 'aj-history')));
+  const tags = pageCopy(mk('p', 'ask-tags', undefined, 'aj-history'));
   if (tk.mode === 'research') tags.append(mk('span', 'tag tag-low', t('tasks.readonly')));
   if (tk.mode === 'normal') tags.append(mk('span', 'tag', t('tasks.normal')));
   const sys = SYS_MOVED.includes(tk.sys) ? tk.sys : '';   // P570c: moved to the Agent J host's scheduler (an old host never sends it)
@@ -408,24 +408,24 @@ function taskCard(tk, paused) {
   else tags.append(mk('span', 'tag ' + (tk.enabled ? 'tag-on' : 'tag-off'), t(tk.problems?.length ? 'tasks.invalid' : tk.enabled ? (paused ? 'tasks.onPaused' : 'tasks.on') : tk.stale ? 'tasks.stale' : 'tasks.off')));
   if (tk.running) tags.append(mk('span', 'tag tag-task', t('tasks.running')));
   li.append(tags);
-  li.append(mk('p', 'small', t('tasks.when', { when: cronText(tk.schedule), tz: tzText(tk) }) + (Number.isInteger(tk.next) ? t('tasks.next', { at: new Date(tk.next * 1000).toLocaleString(locale(), { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }) : '')));
-  if (tk.problems?.length) li.append(mk('p', 'error small', t('tasks.bad', { p: tk.problems[0] })));
-  if (tk.last && typeof tk.last === 'object') li.append(mk('p', 'small', t('tasks.last', { verdict: tk.last.verdict ?? '', line: tk.last.line ?? '' })));
+  li.append(pageCopy(mk('p', 'small', t('tasks.when', { when: cronText(tk.schedule), tz: tzText(tk) }) + (Number.isInteger(tk.next) ? t('tasks.next', { at: new Date(tk.next * 1000).toLocaleString(locale(), { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }) : ''), 'aj-history')));
+  if (tk.problems?.length) li.append(pageCopy(mk('p', 'error small', t('tasks.bad', { p: tk.problems[0] }), 'aj-history')));
+  if (tk.last && typeof tk.last === 'object') li.append(pageCopy(mk('p', 'small', t('tasks.last', { verdict: tk.last.verdict ?? '', line: tk.last.line ?? '' }), 'aj-history')));
   if (peer.wfresume1 && /^[0-9a-f]{32}$/.test(tk.resume?.run_id || '')) li.append(resumeButton(tk.resume.run_id));
   if (sys) {                                            // P570c: 退回 (task_set off) · 重新迁移 (task_migrate) — no plain 停用 here
     const row = mk('div', 'aj-actions task-sys-acts');
     if (sys === 'changed') {
-      const m = mk('button', 'aj-btn aj-btn--primary aj-btn--sm', t('p570c.remigrate')); m.type = 'button'; m.dataset.act = 'remigrate';
+      const m = mk('button', 'aj-action aj-action--primary aj-action--sm', t('p570c.remigrate'), 'aj-action'); m.type = 'button'; m.dataset.act = 'remigrate';
       m.addEventListener('click', () => remigrateTask(tk, title));
       row.append(m);
     }
-    const b = mk('button', sys === 'migrated' ? 'aj-btn aj-btn--primary aj-btn--sm' : 'aj-btn aj-btn--sm', t('p570c.back')); b.type = 'button'; b.dataset.act = 'back';
+    const b = mk('button', sys === 'migrated' ? 'aj-action aj-action--primary aj-action--sm' : 'aj-action aj-action--sm', t('p570c.back'), 'aj-action'); b.type = 'button'; b.dataset.act = 'back';
     b.addEventListener('click', () => backTask(tk, title));
     row.append(b);
     li.append(row);
   } else if (!tk.problems?.length || tk.enabled) {
     const on = !tk.enabled;
-    const b = mk('button', on ? 'aj-btn aj-btn--primary aj-btn--sm' : 'aj-btn aj-btn--sm', t(on ? 'tasks.enable' : 'tasks.disable')); b.type = 'button';
+    const b = mk('button', on ? 'aj-action aj-action--primary aj-action--sm' : 'aj-action aj-action--sm', t(on ? 'tasks.enable' : 'tasks.disable'), 'aj-action'); b.type = 'button';
     b.addEventListener('click', () => setTask(tk, on, title));
     li.append(b);
   }
@@ -468,14 +468,21 @@ async function remigrateTask(tk, title) {
   toast(said || (res.ok ? t('p570c.migDone') : t('tasks.fail', { why: why(res.why) })), said ? 6000 : 3200);
   loadTasks();
 }
-async function setTask(tk, on, title) {
+/** Aggregate cards may reuse only a typed Host task identity; never a native scheduler target. */
+export function agentjTaskTarget(item) {
+  const x=item?.control?.target;
+  return item?.source==='agentj' && item.control?.supported===true && x && Object.keys(x).sort().join(',')==='enabled,id,kind,tsha' && x.kind==='agentj-task' && typeof x.id==='string' && typeof x.tsha==='string' && /^[a-z0-9][a-z0-9-]{0,39}$/.test(x.id) && /^[0-9a-f]{64}$/.test(x.tsha) && typeof x.enabled==='boolean' ? {...x} : null;
+}
+export async function setTask(tk, on, title, current = () => true) {
   const text = on ? t('tasks.textOn', { title, when: cronText(tk.schedule), tz: tzText(tk), ro: tk.mode === 'research' ? t('tasks.textOnRo') : '' }) : t('tasks.textOff', { title });
-  if (!await confirmSheet(t(on ? 'tasks.confirmOn' : 'tasks.confirmOff'), text, t(on ? 'tasks.enable' : 'tasks.disable'))) return;
+  if (!await confirmSheet(t(on ? 'tasks.confirmOn' : 'tasks.confirmOff'), text, t(on ? 'tasks.enable' : 'tasks.disable'))) return {ok:false,why:'cancel'};
+  if (!current()) return {ok:false,why:'changed'};
   const target = { id: String(tk.id), tsha: typeof tk.tsha === 'string' ? tk.tsha : '' };
   let res;
-  try { res = await command(await signed(on ? 'task_on' : 'task_off', target, { t: 'task_set', on, ...target })); } catch (e) { res = { ok: false, why: e.message }; }
+  try { const message=await signed(on ? 'task_on' : 'task_off', target, { t: 'task_set', on, ...target }); if(!current())return {ok:false,why:'changed'}; res = await command(message); } catch (e) { res = { ok: false, why: e.message }; }
   toast(res.ok ? t(on ? 'tasks.enabled' : 'tasks.disabled') : t('tasks.fail', { why: why(res.why) }), 3200);
   loadTasks();
+  return res;
 }
 
 // P498: fetch one exact checkpoint challenge, then sign and send on the SAME Noise generation.
@@ -494,7 +501,7 @@ export async function workflowResume(runId) {
 }
 
 export function resumeButton(runId) {
-  const button = mk('button', 'cmdundo', t('p498.resume'));
+  const button = mk('button', 'cmdundo', t('p498.resume'), 'aj-history');
   button.type = 'button'; button.dataset.wfResume = runId; button.disabled = !isReady();
   button.addEventListener('click', async () => {
     if (button.disabled) return;
@@ -504,4 +511,25 @@ export function resumeButton(runId) {
     button.disabled = !!res.ok || !isReady();
   });
   return button;
+}
+
+
+/** Exact native object and snapshot; any reconnect while approving requires a fresh tap. */
+export async function nativeSchedulerControl(target) {
+  const g = gen(), ch = channel(), device = await myDeviceId();
+  if (!g || gen() !== g || channel() !== ch) return {ok:false,why:'offline'};
+  const frozen = JSON.stringify(target);
+  const message = await signed('native_scheduler_control', target, {t:'native_scheduler_control',...target});
+  if (gen() !== g || channel() !== ch || await myDeviceId() !== device || JSON.stringify(target) !== frozen) return {ok:false,why:'changed'};
+  if (gen() !== g || channel() !== ch) return {ok:false,why:'offline'};
+  let result = await command(message);
+  if (gen() !== g || channel() !== ch) return {ok:false,why:'offline'};
+  if (result.why === 'passkey_required') {
+    const fa = await passkeyApprove(unb64u(result.fa_ch),result.fa);
+    if (gen() !== g || channel() !== ch || await myDeviceId() !== device || JSON.stringify(target) !== frozen) return {ok:false,why:'changed'};
+    if (gen() !== g || channel() !== ch) return {ok:false,why:'offline'};
+    result = await command({...message,fa});
+    if (gen() !== g || channel() !== ch) return {ok:false,why:'offline'};
+  }
+  return result;
 }

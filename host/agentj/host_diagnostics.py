@@ -51,7 +51,7 @@ def request(op, **fields):
         fields['selected_instance'] = instance.current()
     try:
         res = elevate.client_request(st, {"t": "host_diagnostics", "op": op, **fields},
-                                     timeout=(90 + min(max(fields.get("wait", 0), 0), 180) if op in ("support", "feedback_send") else 300), path=os.environ.get(elevate.ENV) or names.elevate_sock(st))
+                                     timeout=(90 + min(max(fields.get("wait", 0), 0), 180) if op in ("support", "feedback_send") else 30 if op in READ_ONLY else 300), path=os.environ.get(elevate.ENV) or names.elevate_sock(st))
     except (OSError, ValueError) as e:
         res = {"error": type(e).__name__}  # class name only
     if bound and (not isinstance(res, dict) or type(res.get('host_instance')) is not int or res.get('host_instance') != instance.current()):
@@ -60,6 +60,10 @@ def request(op, **fields):
         print(res["output"], end="")
         return res["exit"]
     why = str(res.get("error") or "")[:40] if isinstance(res, dict) else ""
+    if op in READ_ONLY:          # #467: never an empty list / "no tasks" when the host did not answer
+        print(f"({why}) " * bool(why) + fence.hidden_state("主机这次没有回答，稍后再试。 / The host did not answer this time; "
+                                                              "try again later. "))
+        return 1
     print(f"({why}) " * bool(why) + "聊天能继续时，可忽略这一步连接检查；安全隔离内不能读取本机钥匙文件，后台暂时没有返回结果。"
               "反馈若未收到编号，就还没有确认提交，请先查看客服会话再重试。 / If chat works, this connection check can be skipped. "
               "Isolation hides the local key files; the background service has not returned a result. "
@@ -80,7 +84,46 @@ ALLOWED = {  # P569: each op is signature-tested
     "support": {"kind", "text", "thread", "attach_doctor", "wait", "lang", "owner_confirmed"},
     "thread": {"thread", "wait"}, "list": set(),
     "feedback_send": {"raw", "owner_confirmed"}, "feedback_replies": {"as_json"},
+    "tasks_list": {"as_json"},   # #467 (ADR-0269-w4-fence): read-only; serve's own state, fixed projection
 }
+READ_ONLY = frozenset({"tasks_list"})
+# #467: what a fenced `agentj tasks list` may learn — the same rows the owner's terminal shows, last run reduced to its verdict
+TASK_FIELDS = ("id", "title", "schedule", "tz", "mode", "suggested", "enabled", "stale", "uncertain", "problems", "next",
+               "migrated", "last")
+_LAST_FIELDS = ("verdict", "status", "at")
+
+
+def caller_refusal(req, sock, host) -> str | None:
+    """Security review A-1 (w4-fence): a READ_ONLY op answers only a caller that is identified (SO_PEERCRED / LOCAL_PEERPID,
+    like report_local's peer check) AND runs inside the owner's own Agent session (its process chain meets serve's
+    `_agent_pids()`: the owned Agent or the served shared session). Friend / visitor / group sessions, bots and scheduled
+    tasks are other children of serve and are refused. Other ops are unchanged. None = allowed."""
+    if not isinstance(req, dict) or req.get("op") not in READ_ONLY:
+        return None
+    from .shared_hook import ancestors, peer_pid
+    pid, _ = peer_pid(sock) if sock is not None else (None, None)
+    if not isinstance(pid, int) or pid <= 1:
+        return "peer_unverified"
+    try:
+        owner = {p for p in host._agent_pids() if isinstance(p, int) and p > 1}
+    except Exception:  # noqa: BLE001 — no known owner session: nobody qualifies
+        owner = set()
+    if not owner or not set(ancestors(pid)) & owner:
+        return "not_owner_agent"
+    return None
+
+
+def refused(why: str) -> dict:
+    from . import fence
+    return {"exit": 1, "output": f"Request refused: {why}. " + fence.hidden_state(
+        "这条只读查询只回答主人自己的 Agent 会话。 / This read-only query answers only the owner's own Agent session. ") + "\n"}
+
+
+def task_row(r: dict) -> dict:
+    out = {k: r[k] for k in TASK_FIELDS if k in r}
+    last = r.get("last")
+    out["last"] = {k: last[k] for k in _LAST_FIELDS if k in last} if isinstance(last, dict) else None
+    return out
 
 
 def execute(st, req):
@@ -171,6 +214,9 @@ def execute(st, req):
             rc = support.run_thread(req.get("thread"), wait=wait, ch=support.channel_for(st), out=out)
         elif op == "list":
             rc = support.run_list(st=st, out=out)
+        elif op == "tasks_list":
+            from . import cli
+            rc = cli.tasks_list(st, as_json=req.get("as_json", False), out=out, safe=True)
         elif op == "feedback_send":
             rc = feedback.run_send(None, raw_text=req.get("raw"),
                                    owner_confirmed=req.get("owner_confirmed", False) and not support._full_access(st),

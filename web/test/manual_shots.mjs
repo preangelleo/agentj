@@ -122,7 +122,7 @@ async function homeRobots(p, lang, colors) {
       : ['核对库存', '起草周报', '整理退货', '准备图表', '比较供应商', '汇总订单'][i],
   })) });
   await waitFor(p, `document.querySelectorAll('#busyDots i.rb').length === ${colors.length}`);
-  await waitFor(p, `[...document.querySelectorAll('#busyDots i.rb')].every(e => getComputedStyle(e).animationName === 'rb-dance-18')`);
+  await waitFor(p, `[...document.querySelectorAll('#busyDots i.rb')].every(e => getComputedStyle(e).animationName === 'aj-busy-rb-dance-18')`);
   const rows = await evaluate(p, `[...document.querySelectorAll('#busyDots i.rb')].map(e => {const r=e.getBoundingClientRect(); return {row:e.dataset.r, visible:r.width>0 && r.left>=0 && r.right<=innerWidth};})`);
   assert.equal(new Set(rows.map(x => x.row)).size, colors.length);
   assert.ok(rows.every(x => x.visible));

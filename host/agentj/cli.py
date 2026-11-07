@@ -50,6 +50,9 @@ from .text import STARTER_NAMES, ask_yes, clean, clean_label, pick
 
 def _need_init(st: State) -> None:
     if not st.exists():
+        from . import fence
+        if fence.inside():       # #467: an empty mount here, never a missing installation
+            sys.exit(fence.hidden_state())
         sys.exit(f"还没初始化：先运行 `agentj init`（状态目录 {st.root}）")
     st.check_perms()
 
@@ -1735,11 +1738,29 @@ NEWS_PROBLEM = {   # P374: why `agentj news` did not work — (zh, en)
 }
 
 
+def cmd_news_release(a) -> None:
+    """#481 `agentj news --version [X] [--json]`: one honest line when the note is missing (exit 1), never a traceback."""
+    from . import news_notes
+    try:
+        res = news_notes.load(a.release or None)
+    except Exception:  # noqa: BLE001
+        res = {"ok": False, "version": a.release or "", "why": "unreadable"}
+    lang = "zh"
+    with contextlib.suppress(Exception):
+        from . import preferences
+        lang = "en" if preferences.get(preferences.effective(), "appearance.language", "zh") == "en" else "zh"
+    print(json.dumps(res, ensure_ascii=False) if a.json else news_notes.render(res, lang))
+    if not res.get("ok"):
+        raise SystemExit(1)
+
+
 def cmd_news(a) -> None:
     """P374 `agentj news [status|on|off] [--json]`: this Agent J host's Daily AI News (the daily 「Musk + AI 24h」 digest, in
     Chinese; default off) — the same signed call as the phone's switch. P393 #128: the digest goes to the seat's own person;
     `agentj news email <address>` mails a code to confirm one when the seat has none, `agentj news verify <address> <code>`
     confirms it. The e-mail and the code are never logged."""
+    if getattr(a, "release", None) is not None:      # #481: the shipped release note — no init, no network
+        return cmd_news_release(a)
     st = State()
     _need_init(st)
     en = _lang(st) == "en"
@@ -2628,9 +2649,65 @@ def cmd_config(a) -> None:
               + f" 现有 {activity.size(st) // 1024} KiB / activity log " + ("on" if on else "off"))
 
 
+def tasks_list(st: State, as_json: bool = False, out=None, safe: bool = False) -> int:
+    """`agentj tasks list` — also serve's answer to a fenced caller (host_diagnostics `tasks_list`, safe=True: the fixed
+    projection host_diagnostics.TASK_FIELDS, last run = verdict / status / time only)."""
+    from . import tasks, sysmigrate
+    out = out or sys.stdout
+    c = st.agent_config()
+    wd = c["dir"] if c else None
+    rows = tasks.rows(st, wd)
+    moved, lang = sysmigrate.migrated(st), _lang(st)
+    for r in rows:
+        r["migrated"] = moved.get(r["id"])
+    if safe:
+        from .host_diagnostics import task_row
+        rows = [task_row(r) for r in rows]
+    if as_json:
+        print(json.dumps(rows, ensure_ascii=False, indent=1), file=out)
+        return 0
+    if not wd:
+        print("还没接 Agent：定时任务在 Agent 工作目录的 workflows/*/task.json 里。", file=out)
+        return 0
+    print(_estop_line(st), file=out)
+    if not rows:
+        print(f"{memory_tilde(wd)}/workflows 下没有任务。", file=out)
+    note, stay = sysmigrate.list_note(st, rows, lang)      # P570b: why enabled tasks stay in Agent J
+    if note:
+        print(note, file=out)
+    for r in rows:
+        state = (pick(lang, "✗ 无效：", "✗ invalid: ") + r["problems"][0]) if r["problems"] else pick(lang, *(
+            ("✓ 已启用", "✓ enabled") if r["enabled"] else ("! 已改动，需重新启用", "! changed, enable again") if r["stale"] else
+            ("· 未启用", "· not enabled")))      # P570b QA L4
+        nx = time.strftime(pick(lang, " · 下次 ", " · next ") + "%m-%d %H:%M", time.localtime(r["next"])) if r.get("next") else ""
+        last = r.get("last") or {}
+        lt = pick(lang, " · 上次 ", " · last ") + str(last.get("verdict")) if last else ""
+        mv = (pick(lang, " → 已迁到系统定时 ", " → moved to the system scheduler ") + r["migrated"] if r["migrated"] else
+              " · " + stay[r["id"]] if r["id"] in stay else "")
+        print(f"  {r['id']:<20} {state}  {r.get('schedule') or ''} ({r.get('tz') or ''}) {r.get('mode') or ''}{nx}{lt}{mv}", file=out)
+    return 0
+
+
+def _tasks_hidden(st: State) -> bool:
+    """#467: the state directory is hidden from this caller (Agent fence / sandboxed Agent session), not missing."""
+    from . import fence, host_diagnostics
+    try:
+        return not st.exists() and (fence.inside() or host_diagnostics.agent_side())
+    except PermissionError:
+        if host_diagnostics.agent_side():
+            return True
+        raise
+
+
 def cmd_tasks(a) -> None:
     from . import activity, tasks
     st = State()
+    if _tasks_hidden(st):
+        if a.mode == "list":      # #467: read-only, answered by serve over the existing Agent socket
+            from . import host_diagnostics
+            sys.exit(host_diagnostics.request("tasks_list", as_json=bool(getattr(a, "json", False))))
+        from . import fence
+        sys.exit(fence.hidden_state())
     _need_init(st)
     c = st.agent_config()
     wd = c["dir"] if c else None
@@ -2638,33 +2715,7 @@ def cmd_tasks(a) -> None:
         from . import sysmigrate
         return sysmigrate.cli(st, a, _lang(st))
     if a.mode == "list":
-        rows = tasks.rows(st, wd)
-        from . import sysmigrate
-        moved, lang = sysmigrate.migrated(st), _lang(st)
-        for r in rows:
-            r["migrated"] = moved.get(r["id"])
-        if a.json:
-            print(json.dumps(rows, ensure_ascii=False, indent=1))
-            return
-        if not wd:
-            print("还没接 Agent：定时任务在 Agent 工作目录的 workflows/*/task.json 里。")
-            return
-        print(_estop_line(st))
-        if not rows:
-            print(f"{memory_tilde(wd)}/workflows 下没有任务。")
-        note, stay = sysmigrate.list_note(st, rows, lang)      # P570b: why enabled tasks stay in Agent J
-        if note:
-            print(note)
-        for r in rows:
-            state = (pick(lang, "✗ 无效：", "✗ invalid: ") + r["problems"][0]) if r["problems"] else pick(lang, *(
-                ("✓ 已启用", "✓ enabled") if r["enabled"] else ("! 已改动，需重新启用", "! changed, enable again") if r["stale"] else
-                ("· 未启用", "· not enabled")))      # P570b QA L4
-            nx = time.strftime(pick(lang, " · 下次 ", " · next ") + "%m-%d %H:%M", time.localtime(r["next"])) if r.get("next") else ""
-            last = r.get("last") or {}
-            lt = pick(lang, " · 上次 ", " · last ") + str(last.get("verdict")) if last else ""
-            mv = (pick(lang, " → 已迁到系统定时 ", " → moved to the system scheduler ") + r["migrated"] if r["migrated"] else
-                  " · " + stay[r["id"]] if r["id"] in stay else "")
-            print(f"  {r['id']:<20} {state}  {r.get('schedule') or ''} ({r.get('tz') or ''}) {r.get('mode') or ''}{nx}{lt}{mv}")
+        tasks_list(st, bool(a.json))
         return
     if not a.id:
         sys.exit("要给任务 id（`agentj tasks list`）")
@@ -2750,7 +2801,8 @@ def cmd_onboarding(a) -> None:
     """F28 (P72): what the installing Agent checks after each step — seat, the two required remotes, the welcome."""
     st = State()
     if not st.exists():
-        sys.exit("先运行 `agentj init` / run `agentj init` first")
+        from . import fence
+        sys.exit(fence.hidden_state() if fence.inside() else "先运行 `agentj init` / run `agentj init` first")
     from . import onboarding
     sys.exit(onboarding.command(a, st))
 
@@ -2785,6 +2837,13 @@ def cmd_reload(a) -> None:
 
 
 def cmd_doctor(a) -> None:
+    if getattr(a, "latency", False):
+        if any(getattr(a, k, False) for k in ("reconnect", "post_upgrade", "upgrade_only", "isolation_only")):
+            sys.exit("--latency is metadata only; cannot combine with active probes")
+        from . import latency
+        result = latency.summary(latency.read(State()))
+        print(json.dumps(result) if a.json else latency.table(result))
+        return
     from . import doctor
     if getattr(a, "read_only", False):
         if any(getattr(a, k, False) for k in ("reconnect", "post_upgrade", "upgrade_only", "isolation_only")):
@@ -3239,7 +3298,7 @@ def main_jarvis(argv=None) -> None:
 
 # `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
 # AI's own memory file), `handover` only reads: none may move the state directory first
-NO_MIGRATE = ("trash", "file", "files", "diag", "preflight", "migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask", "order", "core")   # recall / friends / codex-sandbox / capability: usually inside the fence
+NO_MIGRATE = ("trash", "file", "files", "diag", "preflight", "migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask", "form", "learn", "usage", "order", "core")   # recall / friends / codex-sandbox / capability: usually inside the fence
 
 
 APPROVALS_HELP = {
@@ -3317,6 +3376,36 @@ def cmd_label(a) -> None:
         sys.exit("✗ " + str(e))
 
 
+def cmd_owner_hosts(argv):
+    """Metadata-only client, deliberately before migration/service environment setup."""
+    p = argparse.ArgumentParser(prog="agentj owner-hosts")
+    commands = p.add_subparsers(dest="action", required=True).add_parser("commands")
+    commands.add_argument("alias", nargs="?")
+    commands.add_argument("--json", action="store_true")
+    mode = commands.add_mutually_exclusive_group()
+    mode.add_argument("--remote")
+    mode.add_argument("--source")
+    commands.add_argument("--destination")
+    a = p.parse_args(argv)
+    req = {"cmd": "owner_hosts_commands"}
+    req.update({k: getattr(a, k) for k in ("alias", "remote", "source", "destination") if getattr(a, k) is not None})
+    try:
+        result = names.ctl_call(State(), req, 10)
+    except (names.ServeBusy, OSError):
+        result = None
+    if not isinstance(result, dict) or "ok" not in result:
+        result = {"ok": False, "error": "owner_hosts_commands_unavailable", "rows": []}
+    if a.json:
+        print(json.dumps(result, ensure_ascii=False))
+    elif result["ok"]:
+        for row in result["rows"]:
+            print(row["alias"] + "\n" + row["ssh"] + "\n" + row["scp"])
+    else:
+        print("No verified active owner host / 无已验证且有效的自有主机: " + str(result.get("error")))
+    if not result["ok"]:
+        raise SystemExit(1)
+
+
 def main(argv=None) -> None:
     from . import instance
     try:   # P180: `--instance N` / AGENTJ_INSTANCE first — everything below reads the state dir / preferences / unit name
@@ -3330,6 +3419,8 @@ def main(argv=None) -> None:
         sys.exit("✗ " + str(e))
     if rest != list(sys.argv[1:] if argv is None else argv):
         argv = rest
+    if rest[:1] == ["owner-hosts"]:
+        return cmd_owner_hosts(rest[1:])
     if inst > 1 and rest and rest[0] in instance.AUTO_CREATE and not instance.exists(inst):
         try:
             instance.create(inst)
@@ -3393,6 +3484,9 @@ def main(argv=None) -> None:
     if args and args[0] == "card":       # P360 (§34): Agent J Cards — list|validate|apply|on|off|remove|export|schema
         from . import jcards
         raise SystemExit(jcards.command(args[1:]))
+    if args[:1] == ["voice"] and args[1:2] and args[1] in ("status", "engines", "voices", "set", "reset", "test", "price"):
+        from . import voice_engines
+        raise SystemExit(voice_engines.command(args[1:]))
     if args and args[0] in ("voice", "menu", "key", "channel", "skill"):
         from . import personalize
         raise SystemExit(personalize.command(args))
@@ -3417,6 +3511,7 @@ def main(argv=None) -> None:
     dc = sub.add_parser("doctor", help="自检：一项一行 ✓/!/✗ + 修法 / health check, one line per check",
                         description="自检 / health check: ✓ ok · ! warning · ✗ must fix. Exit 0 unless a ✗. Never prints secrets.")
     dc.add_argument("--json", action="store_true", help="机器可读 / machine-readable (paths shown with ~)")
+    dc.add_argument("--latency", action="store_true", help="仅历史响应元数据；未知保持未知 / recorded metadata only")
     dc.add_argument("--read-only", action="store_true", help="仅报告，不安装、修复或重连 / inspect only; no installation, repair or reconnect")
     dc.add_argument("--offline", action="store_true", help="跳过网络检查 / skip the network checks")
     dc.add_argument("--isolation-only", action="store_true", help="仅隔离预检：不读用户状态、不联网 / isolation preflight only, no user state or network")
@@ -3572,6 +3667,9 @@ def main(argv=None) -> None:
     nw.add_argument("mode", nargs="?", choices=["status", "on", "off", "email", "verify"], default="status")
     nw.add_argument("args", nargs="*", metavar="arg", help="email <邮箱>；verify <邮箱> <验证码> / email <address>; verify <address> <code>")
     nw.add_argument("--json", action="store_true", help="机器可读输出 / machine-readable output")
+    nw.add_argument("--version", nargs="?", const="", default=None, dest="release", metavar="X",
+                    help="#481 这一版（或 X 版）面向主人的更新说明，不加版本号 = 已装的版本 / the owner-facing release note of "
+                         "the installed version (or X)")
     nw.set_defaults(fn=cmd_news)
     rh = sub.add_parser("report-hostname", help="账号后台是否显示这台Agent J 主机的名字（默认显示）/ show the Agent J host's name in the account dashboard")
     rh.add_argument("mode", nargs="?", choices=["on", "off", "status"], default="status")
@@ -3726,7 +3824,10 @@ def main(argv=None) -> None:
     from . import hook_service
     hook_service.add_parser(sub)   # P366: agentj hook create|list|show|update|rotate|revoke|test|logs|wait|triage|forward|presets
     from . import ask
-    ask.add_parser(sub)         # P322: agentj ask — the Agent J question card under any harness
+    form_ask = args[:1] == ["ask"] and (args[1:2] and args[1] in ("send", "templates", "template", "validate", "list", "show", "cancel") or
+                                       any(x in args for x in ("--file", "--template", "--fill", "--set", "--mode", "--ttl")))
+    if not form_ask:
+        ask.add_parser(sub)         # P322: agentj ask — the Agent J question card under any harness
     from . import screenhelp
     screenhelp.add_parser(sub)  # P411: agentj qr push / agentj screen ask|wait|cancel — screen help on the phone
     from . import workflows
@@ -3813,11 +3914,17 @@ def main(argv=None) -> None:
                                            "the Agent J host's browser, main phone, welcome")
     ob.add_argument("--json", action="store_true")
     ob.set_defaults(fn=cmd_onboarding)
+    from . import usage, learn, forms
+    usage.add_parser(sub)
+    learn.add_parser(sub)
+    forms.add_parser(sub, include_ask=bool(form_ask))
     a = p.parse_args(argv)
     from . import host_diagnostics
     host_owned = a.cmd in ("diag", "status", "support", "feedback", "devices") or (a.cmd == "doctor" and a.reconnect) or (a.cmd == 'asr' and list(a.args or []) in (['status'], ['status','--json']))
-    host_owned = host_owned and host_diagnostics.agent_side()
-    if not host_owned and a.cmd not in NO_MIGRATE and not (a.cmd == "report" and getattr(a, "action", None)) and a.cmd not in ("keep-awake", "browser") and not (a.cmd == "doctor" and (a.isolation_only or a.read_only)):
+    host_owned = (host_owned or (a.cmd == "tasks" and a.mode == "list")
+                  or (a.cmd == "news" and a.release is not None))
+    host_owned = host_owned and (host_diagnostics.agent_side() or (a.cmd == "news" and a.release is not None))
+    if not host_owned and a.cmd not in NO_MIGRATE and not (a.cmd == "report" and getattr(a, "action", None)) and a.cmd not in ("keep-awake", "browser") and not (a.cmd == "doctor" and (a.isolation_only or a.read_only or a.latency)):
         from . import migrate
         try:
             # P127: `serve` without a terminal is the owner's own service restarting (auto-update / reboot): a 0.9 install

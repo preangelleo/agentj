@@ -1,0 +1,57 @@
+{
+ "name": "satisfaction",
+ "mode": "light",
+ "title": {
+  "zh": "满意度",
+  "en": "Satisfaction"
+ },
+ "about": {
+  "zh": "给刚做完的事打分，再说一句。",
+  "en": "Rate what was just delivered, plus one sentence."
+ },
+ "vars": {
+  "thing": {
+   "label": {
+    "zh": "评什么",
+    "en": "What to rate"
+   },
+   "required": true
+  }
+ },
+ "fill": [
+  "title",
+  "label.why"
+ ],
+ "form": {
+  "title": "{{thing}}",
+  "questions": [
+   {
+    "id": "stars",
+    "type": "rating",
+    "label": {
+     "zh": "满意吗？",
+     "en": "How satisfied are you?"
+    },
+    "required": true,
+    "keep": true
+   },
+   {
+    "id": "why",
+    "type": "longtext",
+    "label": {
+     "zh": "哪里好、哪里要改？",
+     "en": "What worked, what should change?"
+    },
+    "max_length": 1000
+   }
+  ]
+ },
+ "example": {
+  "zh": {
+   "thing": "这周的竞品简报"
+  },
+  "en": {
+   "thing": "This week's competitor brief"
+  }
+ }
+}

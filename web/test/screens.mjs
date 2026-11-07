@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { buttonAuditSource } from '../../brand/test/button-audit.mjs';
+import { buttonAuditSource } from '../tools/button-audit.mjs';
+import { orphanLineAuditSource } from '../../brand/test/orphan-line-audit.mjs';
 import { rowAuditSource } from '../../brand/test/row-audit.mjs';   // P369 (#81): one line of a row shares a top
 // Web client: screenshots + layout audit + full client flow + relay-parity cases against a local fake relay/host, in an
 // INDEPENDENT headless Chromium (test/browser.mjs: own profile, random debugging port — never the shared CDP on :9222;
@@ -47,6 +48,8 @@ const SEC_ONLY = process.env.AJ_SECURITY_ONLY === '1';      // section 0 only (n
 
 mkdirSync(SHOTS, { recursive: true });
 const failures = [];
+const orphanFindings = [];
+const auditedPages = [];
 const results = {};
 const check = (ok, msg) => { if (!ok) failures.push(msg); console.log(`${ok ? 'PASS' : 'FAIL'}  ${msg}`); return ok; };
 
@@ -60,6 +63,10 @@ const B = await launch();
 const text = (p, sel) => evaluate(p, `document.querySelector(${JSON.stringify(sel)}).textContent`);
 async function shoot(p, name, opts) { const f = join(SHOTS, `${name}.png`); writeFileSync(f, await shot0(p, f, opts)); console.log(`      shot ${f}`); }
 async function layoutOk(p, label) {
+  const orphans = await evaluate(p, orphanLineAuditSource);
+  auditedPages.push(label);
+  if (orphans.length) orphanFindings.push({page:label, findings:orphans});
+  check(!orphans.length, label + ': no orphan label lines (≤2 characters) ' + JSON.stringify(orphans));
   const r = await evaluate(p, `(() => {
     const vis = (e) => { if (!e.getClientRects().length) return false; const cs = getComputedStyle(e); return cs.visibility !== 'hidden' && cs.display !== 'none' && cs.opacity !== '0'; };
     const hit = (e) => { const a = getComputedStyle(e, '::after'); return a.content !== 'none' && a.position === 'absolute' ? [parseFloat(a.width) || 0, parseFloat(a.height) || 0] : [0, 0]; };
@@ -634,6 +641,7 @@ try {
   await web.stop();
   await fake.stop();
 }
+writeFileSync(join(SHOTS, 'orphan-lines.json'), JSON.stringify({auditedPages, findings:orphanFindings},null,2)+'\n');
 // ---------- report in the parity gate's format (parity/lib.mjs parityRecorder): {"suite","results":{"<id>":"pass"|"fail"}}
 // at AJ_PARITY_OUT (tests/e2e_parity.mjs sets it) or reports/qa/parity/web-web_test_screens.mjs.json
 const rec = parityRecorder('web/test/screens.mjs');

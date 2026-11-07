@@ -1,3 +1,5 @@
+import { mountCall } from './js/call.js';
+import { specialQuestioned, clearSpecialApprovals } from './js/approval-special541.js';
 import * as sessionHelp from './js/session-help.js';
 import * as wechat from './js/wechat.js';
 import { floatAuthAsk } from './js/auth-overlay.js';
@@ -53,11 +55,14 @@ import * as webhooks from './js/webhooks.js';   // P366: Settings → Webhook re
 import * as qresume from './js/qresume.js';         // P314 (§32): 「额度用完，预计 HH:MM 自动继续」 banner
 import * as rescue from './js/rescue.js';           // P332 (§33): Settings → 紧急修复 + the rescue-mode banner
 import { registerMailForward } from './js/mailfwd.js';   // P189: file card → the dialog below
+import * as forms from './js/forms.js';         // P212 (§29): Quick Pick / Deep Dive
 import * as contacts from './js/contacts.js';   // P184 (§25): contact cards + 「转发到邮箱」
 import * as secretout from './js/secretout.js'; // F32: secret pickup cards (§18)
 import * as cmdrun from './js/cmdrun.js';     // P361: Settings 「执行」
 import * as termhook from './js/termhook.js'; // P408 (§38): Settings → 安全 → 网页终端 (the page itself loads on first open)
+import * as ownerHosts from './js/owner-hosts.js';
 import * as budget from './js/budget.js';   // 0.26.9 §E3: Settings → 安全 → 预算 (budget_state / signed budget_set)
+import * as assistTerminal from './js/assist-terminal.js';
 import * as assist from './js/assist.js';     // 0.26.9 #468 (§B3): official remote assist — grant in 紧急修复 ②, banner, read-only task feed
 import * as bang from './js/bang.js';         // P414 (§38.12): 「!」 commands + their result card
 import * as pkassist from './js/pkassist.js';   // P539 (#300 / #299): own passkey state, card hints, pre-authorization, draft_restore
@@ -71,7 +76,7 @@ import * as renew from './js/renew.js';        // P122: …and after the browser
 import * as seatxfer from './js/seatxfer.js';   // P547: Settings → 转移席位 (row state pushed by the host)
 import * as pkhandin from './js/pkhandin.js';
 import * as pkpeer from './js/pkpeer.js';       // P547: this remote's own key, approved by another remote (#315 / #317)
-import { parseHostMoved, movedRecord, movedAt } from './js/hostmove.js';   // P547: the seat moved to a new host → follow it
+import { parseHostMoved, movedRecord, movedAt, moveKey, stayedHere, withStay } from './js/hostmove.js';   // P547: the seat moved to a new host → follow it
 import * as bots from './js/bots.js';
 import * as friends from './js/friends.js';    // §17.7: /friends + the friend cards
 import * as setupcard from './js/setup.js';   // P115: the first-run checklist card
@@ -83,6 +88,7 @@ import { applyTheme } from './js/theme.js';  // P169 (§23): the owner's theme (
 import * as shotclip from './js/shotclip.js'; // P154: a screenshot copied on a computer → the attachment tray
 import * as offline from './js/offline-card.js'; // P168: the disconnected card (blur + gdlg square, feedback@ after 30 min)
 import { hintKey, hostKind, HINT_AFTER_MS } from './js/offhint.js';   // P287: the offline line under 「电脑离线」
+import { createRecovery } from './js/recovery574.js';
 import { createGate, DOWN_DEBOUNCE_MS } from './js/reconnect.js';   // P393: the five-second rule (one constant for every 「连不上」)
 import { parseAgentId } from './proto/wire.js';
 import { SCAN_CONSTRAINTS, SCAN_FALLBACK, SCAN_SLOW_MS, scanFrame } from './js/scan.js';   // F29 (ADR-A177)
@@ -212,10 +218,11 @@ let statusKey = ['st.idle'];
 // P393: the window is the link gate (js/reconnect.js): DOWN_DEBOUNCE_MS of foreground time, started again when the page
 // comes back to the front; the relay's 「Agent J 主机离线」 waits it out too. During it only the dots say so (data-relink).
 const QUIET_MS = DOWN_DEBOUNCE_MS;
+const recovery574 = createRecovery();
 let quietPaint = false, painted = 'idle';
 const link = createGate({ ms: QUIET_MS, onChange: (v) => {
   document.body.toggleAttribute('data-relink', v === 'quiet');
-  if (v === 'quiet') offline.hush();
+  if (v === 'quiet') { offline.hush(); recovery574.drop(); }
   if (v === 'down') { quietPaint = false; paintStatus(); rescue.onLinkDown(); }
   else settings.connectionChanged(state === 'ready', v === 'quiet');
 } });
@@ -318,7 +325,7 @@ function rerender() {
 }
 
 function deviceLabel() {
-  return describeDevice(navigator.userAgent, push.standalone());
+  return describeDevice(navigator.userAgent, push.standalone(), t);
 }
 
 // The client only ever talks to our relay: relay.agentj.app, or the legacy alpha-relay.agentjarvis.net that pairing links
@@ -351,15 +358,18 @@ const parsePairing = (input) => parseLink(input, undefined, allowRelay);
 // ---------------------------------------------------------------- session hooks
 let lastSeq = 0;
 function onHostGone() {
+  voiceCall.reset();
   snap.S.asks.clear(); snap.S.qs.clear(); snap.S.order = [];   // the host re-sends every request still open after ready
   controls.clearGrants();
   // P392: retain pending/running ids until authoritative cards sync or a terminal receipt.
   contacts.clear({ keepForward: true });              // P184: open contact cards come again after ready
   secretout.clear({ keepOpened: true });              // F32: and open pickup cards (a value on screen stays)
   longtask.clear();                                   // 0.18: the host re-sends open opening cards after ready
+  clearSpecialApprovals();
   logincard.clear();
   wechat.reset();                                  // P114: the host re-sends open sign-in cards after ready
   helpcard.clear();                                   // P411: … and open screen-help cards
+  assistTerminal.gone();
   termhook.gone();                                    // P408: the terminal rode that session — the host has closed it
   pkpeer.gone();                                      // P547: open approval cards come again after ready
 }
@@ -376,6 +386,7 @@ session.configure({
   // P153 (§3.3): the host put a card on the paired remotes — nothing to type; the code stays as the one to compare
   onPairWait: () => { $('sas-view').dataset.mode = 'card'; setStatus('awaiting-approval', 'st.awaitingRemote'); },
   async onApproved(ctx) {
+    recovery574.reset();
     knownHost = { plat: null, boot: null };           // P287: a new computer; its ready says what it is
     // dk = this browser's device public key: a later page that finds the pairing but another device key knows the browser
     // lost the key (0.15.1) instead of failing the resume and calling it "removed"
@@ -397,10 +408,16 @@ session.configure({
     return host;
   },
   onReady() {
+    const recovered = recovery574.up(session.peer.recoveryStall);
+    if (recovered) {
+      const facts = t('p574.recovered', {n: recovered.seconds}) + ' ' + (recovered.stallSeconds === null
+        ? t('p574.unknown') : t('p574.stall', {n: recovered.stallSeconds}));
+      toast(facts + (recovered.frequent ? ' ' + t('p574.frequent') : ''), 12000);
+    }
     backfillPairing().catch(() => { /* only a hint for later */ });
     learnHost().catch(() => { /* only a hint for later */ });
     restoreKind = null; rtRetries = 0; pkTakeover = false;
-    if (movePending) { movePending = false; clearTimeout(moveTimer); }   // P547: followed the seat to the new host
+    if (movePending) { movePending = false; clearTimeout(moveTimer); toastAction(t('sxf.bound'), t('p574.aiLogin'), () => settings.openAuth(), 20000); }   // P547: followed the seat to the new host
     if (!ticketComing) ticketCheck().catch(() => {});
     ticketComing = false;
     onHostGone();
@@ -458,21 +475,28 @@ authrescue.configure({ openAuth: () => settings.openAuth() });   // P288: the ch
 loginsheet.configure({ openAuth: () => settings.openAuth() });   // 0.26.9 (#464): the chat's login sheet → 其他登录方式
 qresume.configure();                                           // P314: ✕ on the quota banner = qr_cancel
 assist.configure({ turns: () => relay.loadedTurns() });          // 0.26.9 #468 (§B3): the feed reads a task's reply from the loaded history
+ownerHosts.init();
 budget.init();                                                      // 0.26.9 §E3: Settings → 安全 → 预算
 rescue.configure({                                             // P332: 紧急修复 — the block, ≡ 重置连接, /reset, the banner
   openSettings: () => settings.openRescue(),
   linkState: () => (session.isReady() ? 'up' : link.state() === 'quiet' ? 'quiet' : 'down'),   // P393: wait out a blink
   toChat: () => { settings.close(); if (controls.panel !== 'chat') controls.openPanel('chat'); },
 });
+api.configureApprovalReview(onApp);
 api.setUpgradeFlow(() => upgcard.start());                 // ≡ /update and Settings ask the computer first
 
+const voiceCall = mountCall({send: m => session.sendApp(m), ready: () => session.isReady(), lang});
+
 function onApp(m) {
+  if (m.t === 'call_capability') { voiceCall.capability(m); return; }
+  if (m.t === 'call_event') { voiceCall.event(m); return; }
   if (api.route(m) || blobs.handle(m) || media.handle(m)) return;
+  if (m.t === 'assist_state') { assistTerminal.onState(m); if (m.scope === 'terminal') return; }
   if (m.assist === true && typeof m.t === 'string' && m.t.startsWith('term_')) return;   // 0.26.9 #468 (§B3): nothing terminal-shaped from the helper — never the owner's terminal
   switch (m.t) {
     case 'pair_guide': showPairGuide(m.kind); return;
-    case 'cmds_state': settings.setRunCmds(m.names); rerender(); return;
-    case 'preferences': setHostVersion(m.host?.version); relay.hostVersionIs(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); rerender(); if(m.problem)relay.configProblem(m.problem.error); return;
+    case 'cmds_state': settings.setRunCmds(m.names, m.harnesses); rerender(); return;
+    case 'preferences': ownerHosts.capability(m.host); setHostVersion(m.host?.version); relay.hostVersionIs(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); rerender(); if(m.problem)relay.configProblem(m.problem.error); return;
     case 'status': setAgentName(m.name); document.body.dataset.goalActive = m.goal_active === true ? '1' : '0'; wechat.channelStatus(m); snap.setStatus(m); renderTg(); return;
     // P150 (§22): who works in the background (display only)
     // P575: 在办 empty → 全部完成
@@ -482,6 +506,7 @@ function onApp(m) {
     case 'ask':
       if (snap.addAsk(m)) { frontAsk(m); rosterbind.ensureForCeremony(m).catch(() => {}); }
       return;
+    case 'approval_questioned': specialQuestioned(m); snap.approvalQuestioned(m); relay.approvalQuestioned(m); return;
     case 'ask_done': friends.answerDone(m); snap.askDone(m); pkhandin.answered('ask:' + m.id); return;   // P566: a handed-in approval ended
     case 'answer_refused': relay.answerRefused(m); friends.answerRefused(m); snap.answerRefused(m); toast(t('fr.ask.failed'), 5000); return;
     case 'pair_ev': settings.onPairEv(m); return;    // P153 (§3.3): how the pairing this remote opened went
@@ -493,7 +518,7 @@ function onApp(m) {
     case 'owner_grant_notice': friends.ownerGrantNotice(m); return;
     case 'fr_changed': friends.changed(m); return;   // §17.7: something changed on the computer → the friends page re-reads
     case 'hook_changed': webhooks.changed(); return;   // P366: a webhook changed on the computer → the open Webhook page re-reads
-    case 'elev': if (m.kind === 'login') termhook.msg(m); else elevate.add(m); return;   // F17 (§11) · P408: the terminal's login card stays in its page
+    case 'elev': if (m.kind === 'login' && m.assist_gid) { assistTerminal.onElev(m); return; } if (m.kind === 'login') termhook.msg(m); else elevate.add(m); return;   // F17 (§11) · P408: the terminal's login card stays in its page
     case 'auth_rescue': authrescue.onPush(m); return;   // P258 (§31)
     case 'quota_resume': qresume.onPush(m); return;     // P314 (§32)
     case 'rescue': rescue.onRescue(m); return;          // P332 (§33): the rescue watchdog answers instead of Agent J
@@ -502,11 +527,14 @@ function onApp(m) {
     case 'reset_step': return;                          // (steps of another remote's repair: its own card shows them)
     case 'elev_progress': elevate.progress(m); pkhandin.answered('elev:' + m.id); return;   // P566: the host took the handed-in answer
     case 'elev_out': elevate.output(m); return;        // P406 (§11.2): a running sudo command's masked output (the strip)
-    case 'elev_done': termhook.msg(m); elevate.done(m); pkhandin.answered('elev:' + m.id); return;
-    case 'elev_refused': termhook.msg(m); elevate.refused(m); pkhandin.answered('elev:' + m.id); return;   // ADR-A163: Face ID not accepted, the card stays open
+    case 'elev_done': if (assistTerminal.onElevResult(m)) { pkhandin.answered('elev:' + m.id); return; } termhook.msg(m); elevate.done(m); pkhandin.answered('elev:' + m.id); return;
+    case 'elev_refused': if (assistTerminal.onElevResult(m)) { pkhandin.answered('elev:' + m.id); return; } termhook.msg(m); elevate.refused(m); pkhandin.answered('elev:' + m.id); return;   // ADR-A163: Face ID not accepted, the card stays open
+    case 'assist_term_event': assistTerminal.onEvent(m); return;
+    case 'assist_report': assistTerminal.onReport(m); return;
     case 'assist_state': assist.onState(m); return;      // 0.26.9 #468 (§B2): a grant is active / over → the banner on every page
-    case 'assist_notice': assist.onNotice(m); return;    // 0.26.9 #468: granted / connected / closed / expired / taken back / blocked
+    case 'assist_notice': assistTerminal.onNotice(m); assist.onNotice(m); return;    // 0.26.9 #468: granted / connected / closed / expired / taken back / blocked
     case 'assist_task': assist.onTask(m); return;        // 0.26.9 #468 (§B3): a task the helper sent to this Agent, as it moves → the read-only feed
+    case 'owner_hosts_state': ownerHosts.onState(m); return;
     case 'budget_state': budget.onState(m); return;     // 0.26.9 §E3: the day / month budget (Settings → 安全 → 预算)
     case 'msg_steered': relay.onSteered(m); return;      // 0.26.9 #471 (§D): an owner message went into the running turn → 「已插入当前这一轮」
     case 'term_prefill_res': case 'term_out': case 'term_confirm': case 'term_sudo': case 'term_close': termhook.msg(m); return;   // P408 (§38)
@@ -516,6 +544,7 @@ function onApp(m) {
     case 'ct_card': contacts.card(m); return;         // P184 (§25): save / complete a contact (the owner's tap)
     case 'ct_card_done': contacts.cardDone(m); return;
     case 'ct_card_err': contacts.cardErr(m); return;
+    case 'form_draft_res': forms.onDraftRes(m); return;   // P212 (§29): the computer kept a Deep Dive draft
     case 'pk_offer': offerPasskey(m).catch(() => {}); return;    // F20 (§12)
     case 'pk_peer_done': case 'pk_peer_ask': case 'pk_peer_close': case 'pk_peer_answer_res': pkpeer.handle(m); if (m.t === 'pk_peer_answer_res') pkhandin.answered('peer:' + m.id); return;   // P547: another remote approves · P566: its handed-in answer
     case 'seat_xfer_state': seatxfer.onState(m); return;   // P547: the transfer code was issued / revoked / used
@@ -549,7 +578,7 @@ function onApp(m) {
     case 'upg_card': upgcard.add(m); return;         // P203 (§29.2): what an upgrade now would interrupt — the owner decides
     case 'upg_card_done': upgcard.done(m); return;
     case 'question_done': snap.questionDone(m); return;
-    case 'auto': controls.showAuto(m); return;
+    case 'auto': controls.showAuto(m); return;        // #562: legacy host event, audit-only, no notice/unread
     case 'grant': controls.setGrant(m); return;
     case 'grant_end': controls.endGrant(m.id, m.why); return;
     case 'push_key': push.gotPushKey(m.k); return;
@@ -653,6 +682,7 @@ async function forgetLocal() {
   contacts.clear();
   secretout.clear();
   longtask.clear();
+  clearSpecialApprovals();
   logincard.clear();
   wechat.reset();
   helpcard.clear();
@@ -804,6 +834,7 @@ async function regOpts() {
   return { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, tag: await pkTag(h.channel), name: agentName ?? DEFAULT_NAME, displaySuffix: t('pk.computer') };
 }
 pkpeer.configure({
+  channel: () => session.channel(), device: () => api.myDeviceId(), sendBootstrap: (o) => session.sendApp(o),
   ask: (o, want, ms) => session.ask1(o, want, ms), send: (o) => (o && o.t === 'pk_reg' ? pkhandin.handIn(o)   // P565 追加 A: a made key is handed in, never lost with the socket
     // P566 (#364): an approval of another remote's set-up carries this remote's Face ID — handed in the same way (≤ 2 min)
     : o && o.t === 'pk_peer_answer' && o.ok ? pkhandin.put('peer:' + o.id, { send: (g) => session.sendApp(o, g), until: Date.now() + 120000, ch: readyCh }).then((ok) => { if (!ok) throw new Error('offline'); })   // review N1: the computer the card came from
@@ -821,7 +852,7 @@ pkpeer.configure({
 secretout.configure({ setupFaceId });
 keys.configure({ setupFaceId });   // P352: 拷贝 / 删除 on a phone without a passkey offer the same F20 setup
 sessionHelp.configure({ repair: () => { settings.openRescue(); cmdrun.run('reconnect'); }, supported: () => cmdrun.supports('reconnect') });
-cmdrun.configure({ setupFaceId, openTerminal: (cmd) => termhook.open(cmd) }); // P361: 「执行」 on a phone without a passkey — the same F20 offer · P408: 「在终端里打开」
+cmdrun.configure({ setupFaceId, openTerminal: (cmd) => termhook.open(cmd), showChat: () => { settings.close(); controls.openPanel('chat'); } }); // P361: 「执行」 on a phone without a passkey — the same F20 offer · P408: 「在终端里打开」
 termhook.configure({ setupFaceId, openSettings: () => { if (!settings.isOpen()) settings.open(); }, openRescue: () => settings.openRescue(), changed: () => cmdrun.paint(),
   attach: (f) => relay.attachShot(f, true), insert: (s) => relay.insertText(s), goChat: () => { if (settings.isOpen()) settings.close(); } });   // P408 · P414: 截屏发到聊天 / 放回输入框
 vaultrow.configure({ setupFaceId });   // P414
@@ -926,7 +957,7 @@ async function pkSaved(m) {
 // yet. Not connected within MOVE_MS → one notice with 「扫码配对新主机」 (the pairing screen).
 // P547 review M2: never silent — each remote asks first 「席位已转到新主机「名」（HH:MM）。让这台遥控器切过去吗？」. Only
 // 「切过去」 rewrites the stored pairing and reconnects; 「留在这里」 changes nothing (the old host keeps serving until its seat
-// certificate ends) and the same move is not asked again on this page.
+// certificate ends) and the same move is not asked again (0.26.9 #434: kept in the stored pairing, so not after a reload either).
 const MOVE_MS = 25000;
 let movePending = false, moveTimer = 0, moveAsking = '';
 const moveStayed = new Set();
@@ -934,14 +965,14 @@ async function hostMoved(m) {
   const mv = parseHostMoved(m, allowRelay);
   const h0 = await dbGet('host');
   if (!mv || !h0 || !h0.approved || h0.channel !== session.channel() || mv.channel === h0.channel) return;
-  const key = h0.channel + '>' + mv.channel;
-  if (moveAsking === key || moveStayed.has(key)) return;   // the host may say it again (reconnect): one sheet, one answer
+  const key = moveKey(h0.channel, mv.channel);
+  if (moveAsking === key || moveStayed.has(key) || stayedHere(h0, key)) return;   // the host may say it again (reconnect): one sheet, one answer; 0.26.9 #434: also after a reload
   moveAsking = key;
   let go = false;
   try {
     go = await confirmSheet(t('hmv.askTitle'), t('hmv.ask', { name: displayAgentName(mv.name || null), time: movedAt(mv.at ? mv.at * 1000 : Date.now()) }), t('hmv.go'), false, t('hmv.stay'));
   } finally { moveAsking = ''; }
-  if (!go) { moveStayed.add(key); return; }
+  if (!go) { moveStayed.add(key); await updHost((h) => h && h.channel === h0.channel && withStay(h, key)).catch(() => {}); return; }
   const h = await dbGet('host');                      // re-read: the pairing may have changed while the sheet was open
   if (!h || !h.approved || h.channel !== h0.channel || h.channel !== session.channel()) return;
   // P550 (P545 × P547): a seat's page is named by its channel; the new host's channel names another seat → its records go to
@@ -1130,12 +1161,12 @@ function renderSeatPick(extra = null) {
   if (!show) return;
   for (const e of known) {
     if (e.s === seats.SEAT) continue;
-    const a = document.createElement('a');
+    const a = document.createElement('a'); a.setAttribute('data-aj-owner', 'aj-pairing');
     a.className = 'seatpick__item';
     a.href = seats.seatHref(e.s);
     const b = document.createElement('b');
     b.textContent = e.n ? displayAgentName(e.n) : t('seat.noName');
-    const small = document.createElement('small');
+    const small = document.createElement('small'); small.setAttribute('data-aj-owner','aj-pairing');
     small.textContent = seats.seatShown(e.s);
     a.append(b, small);
     const li = document.createElement('li');
@@ -1437,9 +1468,11 @@ async function openModels() {
   const catalog = await api.models();
   if (view !== 'models') return;
   if (catalog) snap.setModels(catalog);
+  const title = document.querySelector('#models-view h1');
+  if (title) title.textContent = [catalog?.harness, t('models.title')].filter(Boolean).join(' · ');
   const c = snap.snapshot().switch;
   for (const m of c?.models || []) {
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'aj-btn'; b.dataset.modelId = m.id; b.textContent = m.name && m.name !== m.id ? `${m.name} · ${m.id}` : m.id;
+    const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-action'); b.type = 'button'; b.className = 'aj-action'; b.dataset.modelId = m.id; b.textContent = m.name && m.name !== m.id ? `${m.name} · ${m.id}` : m.id;
     b.addEventListener('click', async () => {
       b.disabled = true;
       const result = await api.model({model:m.id, effort:m.efforts?.[0] || null});
@@ -1467,7 +1500,9 @@ const fromSettings = (fn) => (e) => { backToSettings = settings.isOpen(); backFo
 // P417 #186: every NEW 「请你点头」 card does the same — Settings never hides one. A Same-owner card (its six-digit code)
 // also leaves the friends page / any other page for the chat, where the card is.
 function frontAsk(m) {
-  if (m.tool === 'AuthRescue' && settings.isOpen() && !$('set-auth').hidden) { floatAuthAsk(); return; }
+  // 0.26.9 #454: an AuthRescue card (sign in again, add / remove an AI account, emergency repair) is the owner's own action on a
+  // Settings page — it is answered right there, above that page, and Settings stays where he was (any Settings sub-page)
+  if (m.tool === 'AuthRescue' && m.host_tool === true && settings.isOpen()) { floatAuthAsk(); return; }   // security C-2: the host's marker
   if (document.querySelector('.gdlg:not([hidden])')) { floatAuthAsk(); return; }   // P549 (#316): above an open dialog, focused
   relay.remoteReader(false);
   if (m.tool === 'pair_device' && settings.isOpen()) settings.onPairCard();
@@ -1555,7 +1590,7 @@ function wire() {
   };
   $('unpair').addEventListener('click', unpairAsk);
   initVersionNotice(settings.refreshApp, {blocked: relay.refreshBlocked, save: relay.saveDraft});
-  busy.init({ name: () => displayAgentName(), prompt: (k) => relay.sayPreset(k), detail: api.busyDetail });   // P160: a row → its read-only card
+  busy.init({ name: () => displayAgentName(), prompt: (k) => relay.sayPreset(k), detail: api.busyDetail, mention: (text) => relay.insertText(text), orderMain: relay.sayOrder, orderStopped: () => controls.estop.on });   // P160: a row → its read-only card
   agentname.init({ name: () => agentName ?? DEFAULT_NAME, canRename: () => session.isReady() });
   shotclip.init({ attach: (f) => relay.attachShot(f, false, true), say: () => toast(t('set.shotDenied'), 4000) });   // P398: auto
   offline.configure({
@@ -1607,12 +1642,12 @@ function wire() {
   };
   for (const kind of ['friends', 'bots']) $('assist-' + kind).addEventListener('click', () => assist(kind));
   // P387 #98: same sealed-draft and busy guards as automatic refresh; a hold suppresses its tap.
-  const guardedRefresh=async()=>{
-    const ready=async()=>!relay.refreshBlocked()&&await relay.saveDraft()&&!relay.refreshBlocked();
+  const guardedRefresh=async({allowSettings=false}={})=>{
+    const ready=async()=>!relay.refreshBlocked({allowSettings})&&await relay.saveDraft()&&!relay.refreshBlocked({allowSettings});
     if(!await ready()){toast(t('p387.refreshBusy'),4000);return false;}
     return settings.refreshApp({silent:true,beforeReload:ready});
   };
-  longPress($('srchBtn'), guardedRefresh); // @ix app.refresh_hold
+  longPress($('srchBtn'), () => guardedRefresh({allowSettings:settings.isOpen()})); // @ix app.refresh_hold
   initPullRefresh($('main'), {blocked:relay.refreshBlocked,refresh:guardedRefresh}); // @ix app.refresh_pull
   $('srchBtn').addEventListener('click', () => { if (settings.isOpen()) settings.toggleSearch(); });
   document.addEventListener('keydown', e => {
@@ -1628,6 +1663,7 @@ function wire() {
     }
   }, true);
   settings.configure({                                // F13: the gear, before relay.init so its Esc runs first
+    nativeCommand: (cmd) => { if (api.slash(cmd)) { settings.close(); show('chat'); } },
     screenshot,
     gearHelp: () => noticeSheet(t('set.btn'), t('p264.gearHelp')),
     agentName: () => displayAgentName(),

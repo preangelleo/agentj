@@ -1,0 +1,486 @@
+{
+ "name": "grill-startup",
+ "mode": "deep",
+ "title": {
+  "zh": "项目启动拷问（Grill me）",
+  "en": "Project kick-off grilling (Grill me)"
+ },
+ "about": {
+  "zh": "开工前把创业 / 新项目的关键决定一次问透：用户、价值、赚钱、第一版、风险。每题带推荐，同意就直接下一节。方法见 agentj-grill 技能。",
+  "en": "Before starting a venture or project, settle the key decisions: users, value, money, first version, risks. Every question has a recommendation — agree and move on. Method: the agentj-grill skill."
+ },
+ "vars": {
+  "project": {
+   "label": {
+    "zh": "项目名",
+    "en": "Project"
+   },
+   "required": true
+  },
+  "user1": {
+   "label": {
+    "zh": "用户画像 1（推荐）",
+    "en": "User type 1 (recommended)"
+   },
+   "required": true
+  },
+  "user2": {
+   "label": {
+    "zh": "用户画像 2",
+    "en": "User type 2"
+   },
+   "required": true
+  },
+  "currency": {
+   "label": {
+    "zh": "货币单位",
+    "en": "Currency"
+   },
+   "default": "元"
+  }
+ },
+ "fill": [
+  "recommend.*",
+  "label.*",
+  "hint.*",
+  "options.who",
+  "options.skip",
+  "drop",
+  "intro"
+ ],
+ "form": {
+  "title": {
+   "zh": "项目启动拷问 · {{project}}",
+   "en": "Kick-off grilling · {{project}}"
+  },
+  "intro": {
+   "zh": "每题都有我的推荐（黄底），同意就不用改；「不确定」永远可以选——我会把它记成要验证的假设。",
+   "en": "Each question carries my recommendation (yellow); agree and leave it. “Not sure” is always fine — it becomes an assumption to test."
+  },
+  "preselect": true,
+  "sections": [
+   {
+    "id": "user",
+    "title": {
+     "zh": "用户",
+     "en": "Users"
+    },
+    "intro": {
+     "zh": "先定是谁在痛。",
+     "en": "Who is in pain, first."
+    },
+    "questions": [
+     {
+      "id": "who",
+      "type": "single",
+      "label": {
+       "zh": "第一批用户是谁？",
+       "en": "Who are the first users?"
+      },
+      "required": true,
+      "keep": true,
+      "other": true,
+      "options": [
+       {
+        "value": "u1",
+        "label": {
+         "zh": "{{user1}}",
+         "en": "{{user1}}"
+        }
+       },
+       {
+        "value": "u2",
+        "label": {
+         "zh": "{{user2}}",
+         "en": "{{user2}}"
+        }
+       },
+       {
+        "value": "unsure",
+        "label": {
+         "zh": "不确定",
+         "en": "Not sure"
+        }
+       }
+      ]
+     },
+     {
+      "id": "now",
+      "type": "longtext",
+      "label": {
+       "zh": "他们现在怎么解决这个问题？",
+       "en": "How do they solve it today?"
+      },
+      "required": true,
+      "max_length": 1000
+     },
+     {
+      "id": "freq",
+      "type": "buttons",
+      "label": {
+       "zh": "多久痛一次？",
+       "en": "How often does it hurt?"
+      },
+      "options": [
+       {
+        "value": "daily",
+        "label": {
+         "zh": "每天",
+         "en": "Daily"
+        }
+       },
+       {
+        "value": "weekly",
+        "label": {
+         "zh": "每周",
+         "en": "Weekly"
+        }
+       },
+       {
+        "value": "rare",
+        "label": {
+         "zh": "偶尔",
+         "en": "Rarely"
+        }
+       }
+      ]
+     },
+     {
+      "id": "reach",
+      "type": "single",
+      "label": {
+       "zh": "你能直接找到 10 个这样的人吗？",
+       "en": "Can you reach 10 of them directly?"
+      },
+      "options": [
+       {
+        "value": "yes",
+        "label": {
+         "zh": "能，现在就能",
+         "en": "Yes, today"
+        }
+       },
+       {
+        "value": "some",
+        "label": {
+         "zh": "能找到几个",
+         "en": "A few"
+        }
+       },
+       {
+        "value": "no",
+        "label": {
+         "zh": "不能",
+         "en": "No"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "value",
+    "title": {
+     "zh": "价值",
+     "en": "Value"
+    },
+    "questions": [
+     {
+      "id": "promise",
+      "type": "text",
+      "label": {
+       "zh": "一句话：用了它，用户得到什么？",
+       "en": "In one line: what do users get?"
+      },
+      "required": true,
+      "max_length": 200
+     },
+     {
+      "id": "pain",
+      "type": "slider",
+      "label": {
+       "zh": "不用它，用户有多痛？",
+       "en": "How much does it hurt without it?"
+      },
+      "min": 1,
+      "max": 10,
+      "step": 1,
+      "labels": [
+       {
+        "zh": "无所谓",
+        "en": "Meh"
+       },
+       {
+        "zh": "非解决不可",
+        "en": "Must fix"
+       }
+      ],
+      "default": 6
+     },
+     {
+      "id": "alt",
+      "type": "rank",
+      "label": {
+       "zh": "用户最可能的替代选择（最像的放最上）",
+       "en": "Their likeliest alternatives (closest first)"
+      },
+      "options": [
+       {
+        "value": "diy",
+        "label": {
+         "zh": "自己动手 / Excel",
+         "en": "DIY / spreadsheets"
+        }
+       },
+       {
+        "value": "competitor",
+        "label": {
+         "zh": "现成产品",
+         "en": "An existing product"
+        }
+       },
+       {
+        "value": "nothing",
+        "label": {
+         "zh": "忍着不管",
+         "en": "Live with it"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "money",
+    "title": {
+     "zh": "赚钱",
+     "en": "Money"
+    },
+    "questions": [
+     {
+      "id": "model",
+      "type": "single",
+      "label": {
+       "zh": "怎么收钱？",
+       "en": "How does it make money?"
+      },
+      "required": true,
+      "other": true,
+      "options": [
+       {
+        "value": "sub",
+        "label": {
+         "zh": "订阅",
+         "en": "Subscription"
+        }
+       },
+       {
+        "value": "once",
+        "label": {
+         "zh": "一次性",
+         "en": "One-off"
+        }
+       },
+       {
+        "value": "commission",
+        "label": {
+         "zh": "抽成",
+         "en": "Commission"
+        }
+       },
+       {
+        "value": "unsure",
+        "label": {
+         "zh": "不确定",
+         "en": "Not sure"
+        }
+       }
+      ]
+     },
+     {
+      "id": "price",
+      "type": "number",
+      "label": {
+       "zh": "第一版定价（每月 / 每单）",
+       "en": "First price (per month / per order)"
+      },
+      "min": 0,
+      "unit": "{{currency}}"
+     },
+     {
+      "id": "first10",
+      "type": "longtext",
+      "label": {
+       "zh": "前 10 个付费用户从哪来？",
+       "en": "Where do the first 10 paying users come from?"
+      },
+      "max_length": 1000
+     }
+    ]
+   },
+   {
+    "id": "scope",
+    "title": {
+     "zh": "第一版",
+     "en": "First version"
+    },
+    "questions": [
+     {
+      "id": "core",
+      "type": "longtext",
+      "label": {
+       "zh": "第一版只做哪一件事？",
+       "en": "The ONE thing version one does"
+      },
+      "required": true,
+      "max_length": 600
+     },
+     {
+      "id": "weeks",
+      "type": "slider",
+      "label": {
+       "zh": "几周内上线？",
+       "en": "Live within how many weeks?"
+      },
+      "min": 1,
+      "max": 12,
+      "step": 1,
+      "unit": {
+       "zh": "周",
+       "en": "weeks"
+      },
+      "default": 4
+     },
+     {
+      "id": "skip",
+      "type": "multi",
+      "label": {
+       "zh": "第一版先不做（勾上的都砍掉）",
+       "en": "Not in version one (tick to cut)"
+      },
+      "options": [
+       {
+        "value": "login",
+        "label": {
+         "zh": "账号体系",
+         "en": "Accounts"
+        }
+       },
+       {
+        "value": "pay",
+        "label": {
+         "zh": "在线支付",
+         "en": "Online payment"
+        }
+       },
+       {
+        "value": "app",
+        "label": {
+         "zh": "手机 App",
+         "en": "Mobile app"
+        }
+       },
+       {
+        "value": "admin",
+        "label": {
+         "zh": "后台管理",
+         "en": "Admin panel"
+        }
+       },
+       {
+        "value": "i18n",
+        "label": {
+         "zh": "多语言",
+         "en": "Multiple languages"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "risk",
+    "title": {
+     "zh": "风险",
+     "en": "Risks"
+    },
+    "questions": [
+     {
+      "id": "kill",
+      "type": "longtext",
+      "label": {
+       "zh": "什么情况会让这件事失败？",
+       "en": "What would kill this?"
+      },
+      "required": true,
+      "max_length": 1000
+     },
+     {
+      "id": "test",
+      "type": "text",
+      "label": {
+       "zh": "最便宜的验证办法",
+       "en": "The cheapest way to test it"
+      },
+      "max_length": 300
+     },
+     {
+      "id": "disagree",
+      "type": "longtext",
+      "label": {
+       "zh": "上面哪一条推荐，你其实不同意？",
+       "en": "Which recommendation above do you actually disagree with?"
+      },
+      "hint": {
+       "zh": "一路「同意」往往是还没想；挑一条说说。",
+       "en": "Agreeing with everything usually means not thinking yet — pick one."
+      },
+      "max_length": 600
+     },
+     {
+      "id": "proof",
+      "type": "file",
+      "label": {
+       "zh": "用户聊天截图、录音或调研材料（可选）",
+       "en": "User chat screenshots, recordings or research (optional)"
+      },
+      "accept": [
+       "image",
+       "audio",
+       "file"
+      ],
+      "max_files": 5
+     }
+    ]
+   }
+  ],
+  "recommend": {
+   "who": "u1",
+   "freq": "weekly",
+   "reach": "some",
+   "pain": 7,
+   "model": "sub",
+   "weeks": 4,
+   "skip": [
+    "login",
+    "app",
+    "admin",
+    "i18n"
+   ]
+  }
+ },
+ "example": {
+  "zh": {
+   "project": "宠物店在线预约",
+   "user1": "社区宠物店店主",
+   "user2": "上门洗护师",
+   "currency": "元"
+  },
+  "en": {
+   "project": "Pet-shop online booking",
+   "user1": "Neighbourhood pet-shop owners",
+   "user2": "Mobile groomers",
+   "currency": "USD"
+  }
+ }
+}

@@ -1,5 +1,5 @@
 {
-  "version": "0.27.1",
-  "zh": "[主机/网页] 修复子Agent与自派任务审批、邮件已读、停止重启通知、语音状态及日志刷屏；优化字号与后台轮询退避，保留技能配置。",
-  "en": "Fix subagent/CEO approvals, mail read state, restart notices, ASR status and log floods; improve typography and polling backoff; preserve skill settings."
+  "version": "0.28.0",
+  "zh": "找回遗漏的网页交互与账号流程，减少误弹审批，补齐任务来源与静默消息；手机集中查看和控制自动化、刷新 Codex 升级后的额度，修复切号、无 pip 环境升级和设置顶栏。",
+  "en": "Restore phone controls, improve approvals and automations, refresh Codex quota after upgrading, and fix switching and pipless updates."
 }

@@ -106,6 +106,8 @@ ITEMS = [
      "让Agent J 主机屏幕熄灭，手机关掉 Wi-Fi 用蜂窝网络发一句话，收到回复就完成。",
      "Let the Agent J host's screen turn off, switch the phone to mobile data and send a message; a reply completes it."),
 ]
+# P225: guide membership; owner_guide presents existing journal evidence locally.
+GUIDE = tuple(i[0] for i in ITEMS if i[2] == "required" and i[0] not in ("exit", "desktop"))
 BY_ID = {i[0]: i for i in ITEMS}
 REQUIRED = tuple(i[0] for i in ITEMS if i[2] == "required")
 _ADAPTERS: dict = {}       # item id → probe(st, ctx) → (state, reason); other modules (browser login, P90) register here
@@ -595,7 +597,8 @@ def snapshot(rec: dict) -> dict:
         items.append({"id": iid, "group": group, "need": need, "where": where, "depends_on": deps,
                       "title": {"zh": zh, "en": en}, "hint": {"zh": hzh, "en": hen}, "choice": row["choice"],
                       "state": "verified" if fresh(row) else ("stale" if row["state"] == "verified" else row["state"]),
-                      "reason": row["reason"], "checked_at": row["checked_at"], "explain": explain(rec, iid)})
+                      "reason": row["reason"], "checked_at": row["checked_at"], "explain": explain(rec, iid),
+                      "required": need == "required", "guide": iid in GUIDE})
     gi = GROUPS.index(BY_ID[cur][1]) + 1 if cur else len(GROUPS)
     src = rec.get("browser_source")
     return {"revision": rec["revision"], "items": items, "current": cur, "counts": counts(rec), "group": gi,
@@ -605,6 +608,29 @@ def snapshot(rec: dict) -> dict:
             "closed": rec.get("closed", False), "progress": progress(rec),
             "browser_source": {k: src[k] for k in ("kind", "port", "running") if k in src} if isinstance(src, dict) else None,
             "action": rec.get("action")}
+
+
+def owner_guide(rec: dict | None) -> dict:
+    """Read-only local owner workflow, using the existing checklist evidence.
+
+    A next action is an instruction, never an assertion that setup succeeded.
+    Ordinary pairing remains the route; no temporary helper pairing is offered.
+    """
+    installer = {"available": False, "why": "cloud_qualification_unavailable"}
+    if rec is None:
+        return {"ready": False, "verified": 0, "start": "agentj setup checklist --resume",
+                "next": None, "installer": installer}
+    snap = snapshot(rec)
+    selected = [r for r in snap["items"] if r["choice"] == "selected"]
+    remaining = [r for r in selected if r["state"] != "verified"]
+    # Preserve checklist dependency order and show the actual owner action/hint.
+    row = next((r for r in remaining if all(rec["items"][d]["choice"] == "unused" or fresh(rec["items"][d])
+                                          for d in r["depends_on"])), remaining[0] if remaining else None)
+    next_ = None if row is None else {"id": row["id"], "title": row["title"], "action": row["hint"],
+                                      "state": row["state"], "explain": row["explain"],
+                                      "verify": "agentj setup checklist --item " + row["id"]}
+    return {"ready": snap["remote_ready"], "verified": sum(r["state"] == "verified" for r in selected),
+            "selected": len(selected), "remaining": len(remaining), "next": next_, "installer": installer}
 
 
 def active(rec: dict | None) -> bool:
@@ -863,6 +889,23 @@ def _text(res: dict, lang: str = "zh") -> str:
 
 
 def cmd(a) -> int:
+    if getattr(a, "guide", False):
+        from .state import State
+        result = owner_guide(read(State()))
+        if a.json:
+            print(json.dumps(result, ensure_ascii=False))
+        elif result.get("start"):
+            print(result["start"])
+        else:
+            print(f"已验证 / verified: {result['verified']}/{result['selected']}")
+            row = result["next"]
+            if row:
+                print(row["title"]["zh"] + " / " + row["title"]["en"])
+                print(row["action"]["zh"] + " / " + row["action"]["en"])
+                print(row["verify"])
+            else:
+                print("所选事项已验证 / Selected items verified")
+        return 0
     from . import elevate
     from .state import State
     st = State()
@@ -887,6 +930,7 @@ def add_parser(sub) -> None:
     ss = p.add_subparsers(dest="setup_cmd", required=True)
     c = ss.add_parser("checklist", help="首次准备清单：只读，或 --resume 开始/继续 / the checklist: read-only, or --resume to start")
     g = c.add_mutually_exclusive_group()
+    g.add_argument("--guide", action="store_true", help="本机主人逐项指引，只读 / local owner next step, read-only")
     g.add_argument("--resume", action="store_true", help="开始或继续，并把卡片发到手机 / start or continue and show the card")
     g.add_argument("--check", action="store_true", help="实时只读复查 / live read-only re-check")
     g.add_argument("--item", choices=[i[0] for i in ITEMS], help="只复查这一项（网站项会真去查一次登录）/ re-check one item")

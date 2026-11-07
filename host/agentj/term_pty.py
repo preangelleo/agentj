@@ -145,8 +145,9 @@ def utf8_locale(env: dict) -> dict:
 
 # ---------------------------------------------------------------- non-blocking master I/O
 class PtyIO:
-    def __init__(self, fd: int):
+    def __init__(self, fd: int, write_guard=None):
         self.fd, self.out, self.closed = fd, bytearray(), False
+        self.write_guard = write_guard
         self.loop = asyncio.get_running_loop()
         self._writing = False
 
@@ -174,6 +175,10 @@ class PtyIO:
         """Queue and write without waiting; False (nothing queued) when > OUT_BUF is still unread by the program."""
         if self.closed:
             return False
+        if self.write_guard is not None and not self.write_guard():
+            self.out.clear()
+            self.close()
+            return False
         if len(self.out) + len(data) > OUT_BUF:
             return False
         self.out += data
@@ -182,6 +187,10 @@ class PtyIO:
 
     def _flush(self) -> None:
         while self.out and not self.closed:
+            if self.write_guard is not None and not self.write_guard():
+                self.out.clear()
+                self.close()
+                return
             try:
                 k = os.write(self.fd, self.out)
             except BlockingIOError:

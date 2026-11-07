@@ -6,13 +6,20 @@ import {toast} from './ui.js';
 export const isTV=()=>/web0s|webos|smart-?tv|netcast|tizen|hbbtv/i.test(navigator.userAgent);
 export const isRemoteScreen=()=>isTV()||(innerWidth>=1600&&innerHeight>=850);
 export function phoneConfirmation(noPasskey=false){if(isRemoteScreen()&&(noPasskey||!canAssert())){toast(t('p387.phoneConfirm'),5000);return true;}return false;}
+export const RING_MS=4000;   // #438: how long the remote's focus mark stays after the last key
 const editing=n=>n?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(n?.tagName);
 export function initRemote(H){ // @ix card.remote_reader
  if(isRemoteScreen()){document.documentElement.dataset.tv='1';if(!navigator.mediaDevices?.getUserMedia)document.documentElement.dataset.tvNoMic='1';
   navigator.permissions?.query({name:'microphone'}).then(p=>{const paint=()=>{document.documentElement.dataset.tvNoMic=(!navigator.mediaDevices?.getUserMedia||p.state==='denied')?'1':'0';};paint();p.addEventListener('change',paint);}).catch(()=>{});
  }
- let lastEnter=-Infinity;
- const focus=n=>{document.querySelectorAll('[data-tv-focus]').forEach(x=>delete x.dataset.tvFocus);if(!n)return;n.tabIndex=-1;n.dataset.tvFocus='1';n.focus({preventScroll:true});};
+ let lastEnter=-Infinity,ringTimer=0;
+ // 0.26.9 #438 (owner 11-03: 「Response message card的边框……加粗……白颜色……一刷新就好了」): a big desktop window counts as a
+ // remote screen, so an arrow key / Enter there marked the reply card and the mark stayed until a reload. The mark is a
+ // short-lived pointer now: gone RING_MS after the last remote key, at once on a pointer / touch or a typed key.
+ const unmark=()=>{clearTimeout(ringTimer);ringTimer=0;document.querySelectorAll('[data-tv-focus]').forEach(x=>delete x.dataset.tvFocus);};
+ const focus=n=>{unmark();if(!n)return;n.tabIndex=-1;n.dataset.tvFocus='1';n.focus({preventScroll:true});ringTimer=setTimeout(unmark,RING_MS);};
+ window.addEventListener('pointerdown',unmark,true);
+ window.addEventListener('keydown',e=>{if(editing(e.target)||editing(document.activeElement))unmark();},true);
  window.addEventListener('keydown',e=>{
   if(e.isComposing||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||editing(e.target)||editing(document.activeElement))return;
   if(!isRemoteScreen())return;

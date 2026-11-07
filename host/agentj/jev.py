@@ -20,10 +20,12 @@ class Route:
     endpoint: str = ""
     model: str = ""
     confirmed_at: int | None = None
+    cheap: dict | None = None
+    candidate: str | None = None
 
     def public(self):
         return {"mode": self.mode, "ready": bool(self.key) or self.mode == "off",
-                "confirmed_at": self.confirmed_at}
+                "confirmed_at": self.confirmed_at, "candidate": self.candidate}
 
 
 def resolve(*, st=None, prefs=None, env=None):
@@ -36,21 +38,39 @@ def resolve(*, st=None, prefs=None, env=None):
     if env is None:
         from .provider_runtime import fresh_environment
         env = fresh_environment(os.environ, extra=[r[0] for r in ROUTES.values()])
+    candidate = None
+    from .privacy_cheap import review
+    try:
+        candidate = review(preferences.get(prefs, 'jev.cheap', {}))
+    except (ValueError, TypeError):
+        pass
     choice = preferences.get(prefs, KEY, "")
+    if isinstance(choice, str) and choice.startswith('cheap'):
+        from .privacy_cheap import review
+        config = preferences.get(prefs, 'jev.cheap', {})
+        try:
+            declaration = review(config)
+            signed = approval_level._live(st, KEY)
+            if choice == declaration and signed and signed.get('value') == declaration:
+                return Route('cheap', confirmed_at=signed['at'], cheap=config, candidate=candidate)
+        except (ValueError, TypeError):
+            pass
+        # A forged/unknown cheap receipt never changes the default Jev route.
+        choice = ''
     if choice == "off":
         signed = approval_level._live(st, KEY)
         if signed and signed.get("value") == "off":
-            return Route("off", confirmed_at=signed["at"])
+            return Route("off", confirmed_at=signed["at"], candidate=candidate)
         choice = ""  # forged / revoked choice never disables review
     if choice not in ROUTES:
         # Existing OpenRouter owners keep their current route; official TypeSafe
         # is the recommended choice for new owners without an OpenRouter key.
         choice = next((m for m in ("openrouter", "typesafe") if str(env.get(ROUTES[m][0]) or "").strip()), None)
-    if choice is None: return Route(None)
+    if choice is None: return Route(None, candidate=candidate)
     name, endpoint, model = ROUTES[choice]
     key = str(env.get(name) or "").strip()
     if any(c.isspace() for c in key): key = ""
-    return Route(choice, key, endpoint, model)
+    return Route(choice, key, endpoint, model, candidate=candidate)
 
 
 def instructions(lang="zh"):

@@ -29,6 +29,7 @@ Application policy does not isolate code already running under the same OS accou
 | mail.send | reversible | hold | hold | handoff | handoff | deny |
 | memory.restore | reversible | hold | hold | handoff | handoff | deny |
 | payment | irreversible | uv | uv | handoff | handoff | deny |
+| plan.bounded | irreversible | uv | uv | handoff | handoff | deny |
 | publish | reversible | hold | hold | handoff | handoff | deny |
 | rewrite | none | none | allow | allow | allow | allow |
 | secrets.read | irreversible | uv | hold | handoff | handoff | deny |

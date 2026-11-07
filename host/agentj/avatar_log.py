@@ -57,7 +57,7 @@ def snapshot(host, since):
             break
         selected.insert(0, row)
     return {'ok':True, 'records':selected, 'truncated':len(selected) < len(data),
-            'coverage':'retained local records; historical replies/delivery may be unknown',
+            'coverage':'read-only legacy avatar history, not current main-thread channel coverage; historical replies/delivery may be unknown',
             'unavailable':[name for name, store in zip(('wechat', 'mail/telegram'), stores) if store is None]}
 
 
@@ -68,7 +68,7 @@ def cli(a):
     if a.json or not res.get('ok'):
         print(json.dumps(res, ensure_ascii=False))
     else:
-        print('分身处理记录 / Avatar handling records — 本机保留记录；历史回复和送达可能未知 / retained local records; old replies and delivery may be unknown')
+        print('旧分身历史（只读） / Legacy avatar history (read-only) — 本机保留记录；历史回复和送达可能未知 / retained local records; old replies and delivery may be unknown')
         for r in res['records']:
             at = datetime.datetime.fromtimestamp(r['at']).astimezone().isoformat(timespec='seconds')
             print(f"{at} · {r['channel']} · {r['state']} · {r['outcome']} · delivery={r['delivery']} · {r['id']}")

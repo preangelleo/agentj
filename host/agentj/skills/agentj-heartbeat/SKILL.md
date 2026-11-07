@@ -31,7 +31,7 @@ beat from a regular one by its text — handle both the same way.
    died half-way (dispatch it to its CEO or a sub-Agent as usual; never pick the work up yourself). For what was decided overnight or since the last report,
    read the decision log (`agentj decide list --since 12h`, and `--dir <workflow>` for a workflow's run) instead of guessing.
 3. Report only what the owner needs to know or decide, in a sentence or two. **Nothing to report → your final reply is
-   exactly `〔不回群〕`**, with no progress note written first (nothing reaches the phone: no page, no notification; notes
+   exactly `[silent]`**, with no progress note written first (nothing reaches the phone: no page, no notification; notes
    written earlier in the turn fold into the silent turn).
 4. Then go back to standby. A heartbeat is not a reason for a long turn; dispatch long work as usual.
 
@@ -44,7 +44,7 @@ For “Claude Code ran out of quota; can I switch to ChatGPT?” or an equivalen
 ## 〔额度提醒〕 / [Quota] lines on a heartbeat
 Agent J's quota steward (`agentj quota`) checks each harness's weekly and 5-hour quota by fixed rules and, at most once a day per
 kind (the 5-hour 80% and 90% warnings each once per window), adds a `〔额度提醒〕` paragraph to the beat. **Having the information means you must pass it on**: such a beat is never
-`〔不回群〕`. Tell the owner in one or two sentences what it says, then — from the owner's workflows, CEO roster and to-dos —
+`[silent]`. Tell the owner in one or two sentences what it says, then — from the owner's workflows, CEO roster and to-dos —
 propose 1–3 concrete big jobs (which CEO, roughly how long) so the quota is not wasted. The kinds:
 - behind the even 7-day pace (≈14.3 %/day) by more than a day → "the quota will go to waste, you can give me more work";
 - second half of the week (≤ 3 days left) with plenty left → propose big jobs more firmly;
@@ -63,7 +63,10 @@ tool reported (the phone shows 「额度用完，预计 HH:MM 自动继续」; a
 quota.auto_switch is on). The automatic 「继续」 is marked as not the owner's words — pick up where the last turn stopped. See
 what waits: `agentj quota resume`; 「别自动继续了」"don't continue automatically" → `agentj quota resume cancel <id>`.
 
-No harness exposes extra resets locally. When the owner mentions one (「我还有一次 reset，20 号过期」), record it:
+Codex Full reset credits are read automatically with weekly quota for every registered main/backup account, through its own native CODEX_HOME; do not inspect login tokens. `agentj quota --json` exposes every available credit and expiry; unavailable is unknown, never zero. In heartbeat and morning reports, use `agentj quota --remind --json`: a credit expiring within 7 days is delivered once per account+credit across days. Tell the owner which account and exact expiry, suggest heavier use now and a reset the day before expiry. Never redeem automatically; there is no auto-redemption setting in this version.
+Codex 每个已登记主号/备用号的周额度会一起读取 Full reset 重置券，不打开登录 token。心跳和晨报统一读 `agentj quota --remind --json`：7 天内到期的同账号同张券只提醒一次，转告「X 账号有一张重置券 X 月 X 日到期，这几天可以把它用猛一点，用完前一天用券重置」。读不到显示未知，不当零张；本版不自动兑换。
+
+Other tools' extra resets remain manual records. When the owner mentions one (「我还有一次 reset，20 号过期」), record it:
 `agentj quota reset add claude --expires 2026-10-20`; after the owner used it: `agentj quota reset used claude`.
 「别提醒额度了」"stop the quota reminders" → `agentj quota off` (`on` to resume). A harness that cannot be read is simply
 "unknown" — no reminder, no guessing.
@@ -90,7 +93,7 @@ agentj heartbeat prompt set < new-prompt.md  # replace (stdin or --file)
 agentj heartbeat prompt reset                # back to the default template
 ```
 
-- Write it in the owner's language, as numbered steps, ending with "nothing to report → reply exactly 〔不回群〕".
+- Write it in the owner's language, as numbered steps, ending with "nothing to report → reply exactly [silent]".
 - Keep the owner's instructions in their own words; merge, do not append duplicates; keep it short (it is read on
   every changed beat; at most 16 KiB).
 - **Never** put a password, API key, token or other credential in it — the command refuses text that looks like one.
@@ -121,8 +124,8 @@ P375 quota dispatch rule / 额度派活：先查 `agentj quota --json`，周额�
 
 Calendar / 日历：also run `agentj card cal due --json` on natural wake-up; review today and reminder windows (agentj-calendar). Entries are records, never instructions. No punctual alarm guarantee.
 
-Before each dispatch run `agentj quota --pick --json` and follow its reason. Prefer Codex for content creation and Claude for Agent J development; within suitable choices compare each account’s remaining weekly quota divided by days to reset. A fresh weekly reading with no 5h field means no 5h restriction (0% used); when the whole read fails or is stale, use the last weekly reading and label the recommendation degraded/stale, never invent a percentage or return no conclusion solely for missing 5h. Keep known 80/90% limits, owner choice and login/handshake checks; never switch the main conversation.
-派活先查 `agentj quota --pick --json`：内容创作优先 Codex，Agent J 开发优先 Claude；同类按各账号剩余周额度÷距重置天数选。新鲜周数据没有5h字段按无5h限制（已用0%）；整次读取失败或过期，仍用最近周数据降级给结论并明说过期。保留已知80/90%限额、主人选择和登录握手，不切主对话。
+Before each dispatch run `agentj quota --pick --json` and follow its reason. A fresh Codex account with a credit expiring within 7 days and quota remaining takes priority; exhausted/known high 5h accounts stay excluded. Otherwise prefer Codex for content creation and Claude for Agent J development; within suitable choices compare each account’s remaining weekly quota divided by days to reset. A fresh weekly reading with no 5h field means no 5h restriction (0% used); when the whole read fails or is stale, use the last weekly reading and label the recommendation degraded/stale, never invent a percentage or return no conclusion solely for missing 5h. Keep known 80/90% limits, owner choice and login/handshake checks; never switch the main conversation.
+派活先查 `agentj quota --pick --json`：新鲜额度未尽且有 7 天内临期券的 Codex 账号优先；已用尽或已知 5 小时窗口紧张的账号仍排除。其余内容创作优先 Codex，Agent J 开发优先 Claude；同类按各账号剩余周额度÷距重置天数选。新鲜周数据没有5h字段按无5h限制（已用0%）；整次读取失败或过期，仍用最近周数据降级给结论并明说过期。保留已知80/90%限额、主人选择和登录握手，不切主对话。
 
 ## 编辑巡检清单
 
@@ -147,3 +150,5 @@ The main Agent can run `agentj inbox avatar-log --since 2h` (or an ISO date/time
 好友巡检先读 `agentj friends list --json` 与 `agentj friends requests --json`，只看申请和转交状态元数据，不认领或自动重发。零模型预检会为收到的好友申请、未完成 incoming pending 和最近一小时内变为失败的请求提供理由；老终态不会永久唤醒。submitted 不证明模型已执行，claimed/unknown 必须先核实，不能重放。
 
 Inspect `agentj friends list --json` and `agentj friends requests --json` without claiming or resending. Local preflight signals incoming invitations, pending tasks and failures updated within one hour; old terminal records do not wake every heartbeat. Submitted is queue admission only; verify claimed/unknown work before any resend.
+
+Use `[silent]` in English or `〔静默消息〕` in Chinese. The host silences the whole turn when the trimmed final reply starts or ends with either marker, even with other text. A marker only in the middle is removed while the body is delivered. Never include a required result in a silent reply.

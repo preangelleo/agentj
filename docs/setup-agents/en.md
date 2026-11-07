@@ -20,7 +20,7 @@ Just want Agent J plus one AI, without setting up each tool? Use [one command](/
 
 ## One-command setup
 
-First install curl below. The setup asks which tools to install, checks official service connectivity with short requests that send no user data, and recommends a route. Reachable: native login. Unreachable: AgentsRelay, which provides an alternative service endpoint. You can change the recommendation with `--relay` / `--no-relay`. Connectivity does not prove regional eligibility or account access. Full-access settings are backed up and merged, and the script prints a warning while full access is on; `--no-full-access` keeps approval defaults. `--dry-run` downloads nothing and writes no files. Automatic setup supports macOS and Ubuntu/Debian/WSL2.
+First install curl below. The setup asks which tools to install, checks official service connectivity with short requests that send no user data, and recommends a route. Reachable: native login. Unreachable: AgentsRelay, which provides an alternative service endpoint. You can change the recommendation with `--relay` / `--no-relay`. Connectivity does not prove regional eligibility or account access. Full-access settings are backed up and merged, and the script prints a warning while full access is on; `--no-full-access` keeps approval defaults. `--dry-run` downloads nothing and writes no files. Automatic setup supports macOS and Ubuntu/Debian/WSL2. In Hong Kong without a relay plan: add `--gemini` to use your own Google Cloud key, see [Google Gemini without a relay](#gemini).
 
 
 ```bash
@@ -855,6 +855,32 @@ claude --dangerously-skip-permissions
 
 
 [Claude Code official guide](https://code.claude.com/docs/en/setup)
+
+## Google Gemini with an API key {#gemini}
+
+Use Gemini through OpenCode with your own API key. This route does not use Gemini CLI, Gemini app subscriptions or Antigravity. Enter the key only in your own terminal, never in chat.
+
+| Your region/network | API key route |
+|---|---|
+| A region served by Google AI Studio | Create a Gemini API key in [AI Studio](https://aistudio.google.com/apikey). Check Google's current regional eligibility and billing requirements. |
+| Hong Kong | Use a Google Cloud Vertex AI API key bound to a service account. An AI Studio key may be refused with “User location is not supported”. |
+| Mainland China or another network that cannot reach Google | Check network access first. Do not treat reachability as account or regional eligibility. Choose another supported AI route if Google is unreachable. |
+
+For Vertex AI, create a project in [Google Cloud](https://console.cloud.google.com/), enable billing and the Vertex AI API, create a service account with the Vertex AI User role, and create an API key with “Authenticate API calls through a service account” selected. Restrict the key to the required API. For AI Studio, use its API-key page in a supported region. Review Google's current prices and set a billing budget alert before use.
+
+```bash
+curl -fsSL https://agentj.app/install.sh | bash -s -- --gemini
+```
+
+In the interactive installer, choose Google Gemini (option 7); skip and free-model choices keep their existing numbers. To prepare only OpenCode without Agent J:
+
+```bash
+curl -fsSL https://agentj.app/setup-agents.sh | bash -s -- --gemini
+```
+
+The hidden prompt checks Vertex AI first. A key not bound to a service account is also checked against AI Studio. A nonempty model reply is required before saving the key or installing a CLI; three failures stop setup. A short message distinguishes invalid key, unsupported region, disabled API, missing role, billing, quota, network and empty reply. HTTP reachability alone never counts as a successful model reply.
+
+The key stays in OpenCode's private `auth.json`; its provider and model selection go in `opencode.json`. Existing providers are retained. Symlinked destinations and JSONC configurations require manual setup. The historical defaults are `gemini/gemini-3.8-flash` and optional `gemini-3.1-pro-preview`; actual model availability, account eligibility and current pricing require verification with Google. No live Google call was used to qualify this source recovery.
 
 ## Gemini CLI
 

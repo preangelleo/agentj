@@ -1,0 +1,50 @@
+"""Real Host answer handoff across asynchronous operation reservation; no tools execute."""
+import _hermetic
+import asyncio
+import copy
+import threading
+import unittest
+import test_p541_approval_review as fixture
+
+
+class AnswerRace(unittest.IsolatedAsyncioTestCase):
+    asyncSetUp = fixture.Review.asyncSetUp
+    open = fixture.Review.open
+    stop = fixture.Review.stop
+
+    async def race(self, change):
+        task, ask = await self.open()
+        entered, release = threading.Event(), threading.Event()
+        class Ledger:
+            def reserve(self, operation, rid):
+                entered.set()
+                if not release.wait(3):
+                    raise OSError('fixture deadline')
+                return True
+        self.h._approval_operation_once = Ledger()
+        answer = asyncio.create_task(self.h._app(self.s, self.ph.answer(self.h._ask_msg(ask, self.s), True)))
+        self.addAsyncCleanup(asyncio.gather, answer, return_exceptions=True)
+        try:
+            self.assertTrue(await asyncio.to_thread(entered.wait, 2))
+            change(ask)
+        finally:
+            release.set()
+        await asyncio.wait_for(answer, 2)
+        self.assertFalse(ask.fut.done(), 'old approval must not resolve the tool request')
+        refused = [o for _, o in self.sent if o.get('t') == 'answer_refused']
+        self.assertTrue(refused, self.sent)
+        self.assertEqual(refused[-1]['why'], 'authority_changed')
+        self.assertFalse(task.done())
+
+    async def test_clear_during_reservation_refuses_old_approval(self):
+        await self.race(lambda ask: setattr(self.h.hist, 'epoch', self.h.hist.epoch + 1))
+
+    async def test_same_agent_new_task_during_reservation_refuses_old_approval(self):
+        await self.race(lambda ask: setattr(self.h, 'task_epoch', 'new-host-task-epoch'))
+
+    async def test_same_task_replaced_source_during_reservation_refuses_old_approval(self):
+        def change(ask):
+            origin = copy.deepcopy(self.agent.cur_send.approval_origin)
+            origin['root_message_id'] += 1
+            self.agent.cur_send.approval_origin = origin
+        await self.race(change)

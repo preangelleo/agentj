@@ -28,7 +28,7 @@ const OWN_WHY = '#500 rollback (chairman 11-05): a card the owner acts on is dra
 /** kind → { place, surface (CSS selector of its root, null = drawn by the platform), msgs (host → phone types), was, why? }.
  *  `was` = where it was drawn before #472 (the inventory the report lists). */
 export const CARDS = Object.freeze({
-  approval:      { place: 'own', surface: '#sheet', msgs: ['ask', 'ask_done', 'answer_refused'], was: 'sheet rising from the bottom of the chat stage over a scrim', why: OWN_WHY },
+  approval:      { place: 'own', surface: '#sheet', msgs: ['ask', 'ask_done', 'answer_refused', 'approval_review_result', 'approval_questioned'], was: 'sheet rising from the bottom of the chat stage over a scrim', why: OWN_WHY },
   question:      { place: 'own', surface: '#sheet', msgs: ['question', 'question_done'], was: 'sheet rising from the bottom of the chat stage over a scrim', why: OWN_WHY },
   sudo:          { place: 'own', surface: '#elev', msgs: ['elev'], was: 'centred dialog over the whole screen (on the composer with the keyboard up)', why: OWN_WHY },   // kind sudo · secret · vshare
   sudo_run:      { place: 'reply', surface: '#elev-run', msgs: ['elev_progress', 'elev_out', 'elev_done', 'elev_refused'], was: 'reply notice slot (P440)' },
@@ -48,6 +48,11 @@ export const CARDS = Object.freeze({
   notice:        { place: 'reply', surface: '#toast', msgs: ['auto', 'approval_resign', 'owner_grant_notice'], was: 'reply notice slot (P440 rect); short status = centred circle (P461, not a card)' },
   banner:        { place: 'reply', surface: '#setup-banner, #qr-banner, #rescue-banner, #estop-banner, #grant-bar, #ar-renew, #shared-status, #version-later, #share-notice, #assist-banner',
                    msgs: ['setup_card', 'quota_resume', 'rescue', 'ark_plan', 'reset_done', 'estop_state', 'grant', 'grant_end', 'assist_state', 'assist_notice'], was: 'reply notice slot (P440)' },
+  usage: { place: 'reply', surface: '#useBox', msgs: ['meter'], was: 'usage details in the existing reply header' },
+  approval_details: { place: 'page', surface: '#full541', msgs: [], was: 'owner-opened full-screen command details', why: 'the owner opens the existing full-screen reader from a pending approval; it cannot execute the action' },
+  form_draft:    { place: 'reply', surface: '.fstrip, .fdeep', msgs: ['form_draft_res'], was: 'existing reply form and owner-opened deep form; draft acknowledgement updates its state' },
+  assist_terminal: { place: 'page', surface: '#assist-terminal-view', msgs: ['assist_term_event', 'assist_report'], was: 'customer assistant terminal page', why: 'read-only terminal events and reports belong to the separately opened assistant terminal page' },
+  private_file:  { place: 'page', surface: '#private-file-locator', msgs: [], was: 'owner-opened private file locator', why: 'the locator opens a read-only download sheet; each transfer still needs this paired device and an explicit save tap' },
   terminal:      { place: 'page', surface: '#term', msgs: ['term_out', 'term_confirm', 'term_sudo', 'term_close', 'term_bang', 'term_go'],
                    was: 'inside the terminal page', why: 'the terminal\'s login-password and dangerous-line cards belong to the terminal page the owner is typing in' },
   bot_request:   { place: 'page', surface: '#bots-main', msgs: ['bots_tool_request', 'bots_proposal'],
@@ -68,7 +73,7 @@ export const NOT_CARDS = Object.freeze([
   'term_prefill_res', // Terminal draft acknowledgement; no standalone card or content surface.
   'pair_guide', 'cmds_state', 'preferences', 'status', 'busy', 'res', 'theme', 'pair_ev', 'jcard_open', 'fr_changed', 'hook_changed',
   'reset_step', 'assist_task', 'msg_steered', 'devs', 'dev_pending', 'dev_pair_end', 'host_moved', 'pk_reg_res', 'pk_state', 'preauth',
-  'draft_restore', 'rt', 'push_key', 'hist_read', 'hist_meta', 'hist_turn', 'meter', 'models', 'msg', 'budget_state',
+  'draft_restore', 'rt', 'push_key', 'hist_read', 'hist_meta', 'hist_turn', 'models', 'msg', 'budget_state',
 ]);
 
 /** Dialog-shaped roots that are pages, not cards (the test's surface scan skips exactly these). */

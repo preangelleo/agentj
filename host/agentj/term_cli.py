@@ -221,6 +221,7 @@ async def host_card(h, text: str, target: dict, face: bool = True) -> str:
     rid = secrets.token_hex(16)
     a = Ask(rid, TOOL, text, approvals.shown_digest(TOOL, text), target, approvals.input_digest(target),
             time.monotonic() + CARD_TTL, asyncio.get_running_loop().create_future(), require_passkey=face, pk_kind="terminal")
+    h._bind_native_ask(a,'terminal_cfg',h.term_desk)
     h.asks[rid] = a
     h.st.log("ask", id=rid, tool=TOOL, agent="host", kind="terminal")
     h.activity("ask", id=rid, tool=TOOL, summary=text.split("\n", 1)[0])
@@ -235,7 +236,12 @@ async def host_card(h, text: str, target: dict, face: bool = True) -> str:
         decision, did, sk, sig = a.fut.result()
     finally:
         h.asks.pop(rid, None)
-    if did:
+    authority_changed = (decision == 'allow' and
+        (not h._native_ask_live(a,pending=False) or h.st.sign_key(did)!=sk))
+    if authority_changed:
+        result,reason='deny','authority_changed'
+        did=sk=sig=None
+    elif did:
         result, reason = ("allow" if decision == "allow" else "deny"), "device"
     else:
         result = reason = "timeout" if decision == "timeout" else ("estop" if h.stopped() else "serve_stop")

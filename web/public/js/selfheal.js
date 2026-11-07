@@ -96,7 +96,7 @@ export function linkLogin(box, label, onClick) {
   return n;
 }
 function loginLink(label, onClick) {
-  const b = document.createElement('button');
+  const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-recovery');
   b.type = 'button'; b.className = 'fp-link sh-loginlink'; b.dataset.login = '1';
   b.textContent = '/login'; b.title = label; b.setAttribute('aria-label', label);
   b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });

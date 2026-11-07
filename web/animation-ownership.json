@@ -1,0 +1,1157 @@
+{
+  "schemaVersion": 1,
+  "definitions": {
+    "aj-status-drift": {
+      "owner": "aj-status",
+      "file": "public/app.css",
+      "previousName": "drift",
+      "originalBodySha256": "4a9b165c73bff73bd2e472d7062c3f23d900fedf525d5dd781684a45f2d66764",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-status-sink": {
+      "owner": "aj-status",
+      "file": "public/app.css",
+      "previousName": "sink",
+      "originalBodySha256": "0c162a2553e78e740d7c712ad24e235508aa717f9ddc3c41639e7229a4e82514",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-status-churn": {
+      "owner": "aj-status",
+      "file": "public/app.css",
+      "previousName": "churn",
+      "originalBodySha256": "2caca678c470ad2189caca341bec3b38e4c614a7eb0b8d114f63a4a3c9fe9747",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-status-glow": {
+      "owner": "aj-status",
+      "file": "public/app.css",
+      "previousName": "glow",
+      "originalBodySha256": "fddfd53f492b65cf4d35030688c892a6919f383065a99eda8361c4a0004db460",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-status-flow": {
+      "owner": "aj-status",
+      "file": "public/app.css",
+      "previousName": "flow",
+      "originalBodySha256": "c40fe1989e01a869ed0d1f3f26013004959844538694913796fc66fb99cf91ff",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-header-logo-heart": {
+      "owner": "aj-header",
+      "file": "public/app.css",
+      "previousName": "logo-heart",
+      "originalBodySha256": "fd32326baeb8a6af08ab3babe64616dcce9703bc18ba96be9ef88d18d435e9a7",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-header-pillwait": {
+      "owner": "aj-header",
+      "file": "public/app.css",
+      "previousName": "pillwait",
+      "originalBodySha256": "231bc42eaf268b7755e223c7fdbdb751fd299f2fb34e01cf40bca6e12d3967ae",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-status-ripple": {
+      "owner": "aj-status",
+      "file": "public/app.css",
+      "previousName": "ripple",
+      "originalBodySha256": "a6586fbb6dd3887a0c5d68a6bb6a8de5979bc29684f5473f3cff2a4e3245df2c",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-status-beat": {
+      "owner": "aj-status",
+      "file": "public/app.css",
+      "previousName": "beat",
+      "originalBodySha256": "abb2787cf00882f06dfb1efb1d953e43f0cd71a70162ef7a10357f38d5608942",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-reply-action-spin": {
+      "owner": "aj-reply-action",
+      "file": "public/app.css",
+      "previousName": "spin",
+      "originalBodySha256": "b1a35c158267b994a15f948faeb2533edb413540b927603cd85f92f779277749",
+      "evidence": "index.html #rmbar and .act explicit data-aj-owner; reader clones independently reader"
+    },
+    "aj-reader-spin": {
+      "owner": "aj-reader",
+      "file": "public/app.css",
+      "previousName": "spin",
+      "originalBodySha256": "b1a35c158267b994a15f948faeb2533edb413540b927603cd85f92f779277749",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-busy-wb-dance": {
+      "owner": "aj-busy",
+      "file": "public/app.css",
+      "previousName": "wb-dance",
+      "originalBodySha256": "a039c99e22e0da2f3a4a73c389a93bbfa9ef61e522bc56b62f6333ee45fc3e1b",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-reply-action-breathe": {
+      "owner": "aj-reply-action",
+      "file": "public/app.css",
+      "previousName": "breathe",
+      "originalBodySha256": "23174f5bd14c67c8d49f62c7f2f2e9b30c2c282e40d3ee4886423752232580e7",
+      "evidence": "index.html #rmbar and .act explicit data-aj-owner; reader clones independently reader"
+    },
+    "aj-reader-breathe": {
+      "owner": "aj-reader",
+      "file": "public/app.css",
+      "previousName": "breathe",
+      "originalBodySha256": "23174f5bd14c67c8d49f62c7f2f2e9b30c2c282e40d3ee4886423752232580e7",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-busy-breathe": {
+      "owner": "aj-busy",
+      "file": "public/app.css",
+      "previousName": "breathe",
+      "originalBodySha256": "23174f5bd14c67c8d49f62c7f2f2e9b30c2c282e40d3ee4886423752232580e7",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-composer-breathe": {
+      "owner": "aj-composer",
+      "file": "public/app.css",
+      "previousName": "breathe",
+      "originalBodySha256": "23174f5bd14c67c8d49f62c7f2f2e9b30c2c282e40d3ee4886423752232580e7",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-composer-tool-breathe": {
+      "owner": "aj-composer-tool",
+      "file": "public/app.css",
+      "previousName": "breathe",
+      "originalBodySha256": "23174f5bd14c67c8d49f62c7f2f2e9b30c2c282e40d3ee4886423752232580e7",
+      "evidence": "index.html #mic data-aj-owner=aj-composer-tool"
+    },
+    "aj-file-breathe": {
+      "owner": "aj-file",
+      "file": "public/app.css",
+      "previousName": "breathe",
+      "originalBodySha256": "23174f5bd14c67c8d49f62c7f2f2e9b30c2c282e40d3ee4886423752232580e7",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-composer-tool-ring": {
+      "owner": "aj-composer-tool",
+      "file": "public/app.css",
+      "previousName": "ring",
+      "originalBodySha256": "2665682c53fa1b7cc002d2a8ccfaca02c4330f6d3800eaf8f7d6f2e47b4e3e5e",
+      "evidence": "index.html #mic data-aj-owner=aj-composer-tool"
+    },
+    "aj-composer-tool-lockring": {
+      "owner": "aj-composer-tool",
+      "file": "public/app.css",
+      "previousName": "lockring",
+      "originalBodySha256": "c51a18545323b9a90272ad003cf4d9ad4c5d5a4975b73eeaa850e770006f07a8",
+      "evidence": "index.html #mic data-aj-owner=aj-composer-tool"
+    },
+    "aj-recording-pttwave": {
+      "owner": "aj-recording",
+      "file": "public/app.css",
+      "previousName": "pttwave",
+      "originalBodySha256": "384bdd711d53cbd51c519f11d7e4c99daabe7353c979d7f76af3c4ad8f9352eb",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-recording-pttbreathe": {
+      "owner": "aj-recording",
+      "file": "public/app.css",
+      "previousName": "pttbreathe",
+      "originalBodySha256": "21dd601d72fd91d4d52c762052c8a0fc0818f55a7dc63e973cd236219a004e7e",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-composer-pillin": {
+      "owner": "aj-composer",
+      "file": "public/app.css",
+      "previousName": "pillin",
+      "originalBodySha256": "1a3e59eb79fce1048a504aef8517c01bf59b8e4ab4a7c8d27d2720fdf25b00d9",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-composer-volpop-grow": {
+      "owner": "aj-composer",
+      "file": "public/app.css",
+      "previousName": "volpop-grow",
+      "originalBodySha256": "ab57280ee979a861143fd8ddc5abeb78d2ab69024155c969768b874d38c3b099",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-notice-nt-spin": {
+      "owner": "aj-notice",
+      "file": "public/app.css",
+      "previousName": "nt-spin",
+      "originalBodySha256": "b1a35c158267b994a15f948faeb2533edb413540b927603cd85f92f779277749",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-approval-dropbreath": {
+      "owner": "aj-approval",
+      "file": "public/app.css",
+      "previousName": "dropbreath",
+      "originalBodySha256": "e03c4a1d2378e903bdf0c75b279c17ea255ab75719d03eb884669e1439ef8d6b",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-reader-new-message-pulse": {
+      "owner": "aj-reader",
+      "file": "public/app.css",
+      "previousName": "new-message-pulse",
+      "originalBodySha256": "c354375ea51408b35aec6a1a0b1b0478ed93ca1c1ad124685c8ffc46871f505b",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-source-new-message-pulse": {
+      "owner": "aj-source",
+      "file": "public/app.css",
+      "previousName": "new-message-pulse",
+      "originalBodySha256": "c354375ea51408b35aec6a1a0b1b0478ed93ca1c1ad124685c8ffc46871f505b",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-busy-ll-slide": {
+      "owner": "aj-busy",
+      "file": "public/app.css",
+      "previousName": "ll-slide",
+      "originalBodySha256": "2b029f6ab59f48142a3cb848efc986afb75630b9f96dcfc4517d66525c48f841",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-busy-rb-dance-18": {
+      "owner": "aj-busy",
+      "file": "public/app.css",
+      "previousName": "rb-dance-18",
+      "originalBodySha256": "db7aabb3c81721d13be0f9c77fee134965a1de57870d9d7e9a38e6a92fe90ddc",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-busy-rb-dance-24": {
+      "owner": "aj-busy",
+      "file": "public/app.css",
+      "previousName": "rb-dance-24",
+      "originalBodySha256": "eb9c56b25c468e1357fc7f3614571549603efc00f44cc1784bff0de837847e50",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-busy-rb-pop": {
+      "owner": "aj-busy",
+      "file": "public/app.css",
+      "previousName": "rb-pop",
+      "originalBodySha256": "1fef92b807cdeadd40292451ade96afd03473ba19faa9dea66efd88b7b4fa001",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-busy-rb-bow": {
+      "owner": "aj-busy",
+      "file": "public/app.css",
+      "previousName": "rb-bow",
+      "originalBodySha256": "83a88e13d3ee3e353840897a45f42d804bf296ed5250875b2d58c5b2c4bbaaa9",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-recording-gdlg-in": {
+      "owner": "aj-recording",
+      "file": "public/app.css",
+      "previousName": "gdlg-in",
+      "originalBodySha256": "313f3f3c8877499b189af15501c39b7c6d6897784ff382d21b4e6212cf34d156",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-dialog-gdlg-in": {
+      "owner": "aj-dialog",
+      "file": "public/app.css",
+      "previousName": "gdlg-in",
+      "originalBodySha256": "313f3f3c8877499b189af15501c39b7c6d6897784ff382d21b4e6212cf34d156",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-busy-busy-blink": {
+      "owner": "aj-busy",
+      "file": "public/app.css",
+      "previousName": "busy-blink",
+      "originalBodySha256": "6fc17003f3eec2765ee19db868a070080614ed31846bd79402b203ef4ac6772e",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-recovery-off-pulse": {
+      "owner": "aj-recovery",
+      "file": "public/app.css",
+      "previousName": "off-pulse",
+      "originalBodySha256": "7552ae9e3baaa6ac44c8767f686822fedd8bbefcba5b7d28d62c8fe38c912880",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-pairing-sf-sweep": {
+      "owner": "aj-pairing",
+      "file": "public/app.css",
+      "previousName": "sf-sweep",
+      "originalBodySha256": "40348be18eb3c784163ff919cc46bdb8ce8d5174b87a619e72d6f8706edc44c5",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-header-father-dance": {
+      "owner": "aj-header",
+      "file": "public/app.css",
+      "previousName": "father-dance",
+      "originalBodySha256": "53f4f2ff374401030821c9059fa66d0e93e54c8bf6d3e3435bdd04624dfa195c",
+      "evidence": "Actual sole #orb header consumer and logo.js receiver; original frame body SHA retained; prior busy attribution corrected."
+    },
+    "aj-header-father-hint": {
+      "owner": "aj-header",
+      "file": "public/app.css",
+      "previousName": "father-hint",
+      "originalBodySha256": "c1dbfce9b11eeacbb51e742f4b1f88d0a9388a7008f133ca68faa5907ebef84d",
+      "evidence": "Actual sole #orb header consumer and logo.js receiver; original frame body SHA retained; prior busy attribution corrected."
+    },
+    "aj-approval-elevRunPulse": {
+      "owner": "aj-approval",
+      "file": "public/app.css",
+      "previousName": "elevRunPulse",
+      "originalBodySha256": "2cc8823c71047f0b3841472c7003b03309c4a7117997266c704da77cf96fb12a",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-rescue-lgs-breathe": {
+      "owner": "aj-rescue",
+      "file": "public/controls.css",
+      "previousName": "lgs-breathe",
+      "originalBodySha256": "9dc5b54089a856e3b50c6b1cfd28d1f17fa74a91857d2110d7d7690edd1449e2",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-knowledge-fp-dance": {
+      "owner": "aj-knowledge",
+      "file": "public/five-pages.css",
+      "previousName": "fp-dance",
+      "originalBodySha256": "d535004d4b14efc46994a64313c81d9e72b7b4b59ad3f709ff9606e4797e9874",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-menu-menu-in": {
+      "owner": "aj-menu",
+      "file": "public/menu.css",
+      "previousName": "menu-in",
+      "originalBodySha256": "8b32c3a1ccfe0d9aba462de0ae6fa87358ceb81d209737ae98c4da2803ea512d",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-dialog-menu-in": {
+      "owner": "aj-dialog",
+      "file": "public/menu.css",
+      "previousName": "menu-in",
+      "originalBodySha256": "8b32c3a1ccfe0d9aba462de0ae6fa87358ceb81d209737ae98c4da2803ea512d",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-search-menu-in": {
+      "owner": "aj-search",
+      "file": "public/menu.css",
+      "previousName": "menu-in",
+      "originalBodySha256": "8b32c3a1ccfe0d9aba462de0ae6fa87358ceb81d209737ae98c4da2803ea512d",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-menu-sheet-in": {
+      "owner": "aj-menu",
+      "file": "public/menu.css",
+      "previousName": "sheet-in",
+      "originalBodySha256": "4835467cc2469efc2c2dcc5a3e839ce15da6987a05baf3c7bde16371c8ea6a7a",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-search-sr-flash": {
+      "owner": "aj-search",
+      "file": "public/menu.css",
+      "previousName": "sr-flash",
+      "originalBodySha256": "e96e39635e494832897ef3af51bcd28c66b0334a56b384cb38cf6241645619eb",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-settings-set-found": {
+      "owner": "aj-settings",
+      "file": "public/menu.css",
+      "previousName": "set-found",
+      "originalBodySha256": "49ce1c9ab88d45aed1eb9aa6a9700d5a72b01293e3111a885334c221c574652f",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-rescue-rs-breathe": {
+      "owner": "aj-rescue",
+      "file": "public/menu.css",
+      "previousName": "rs-breathe",
+      "originalBodySha256": "c2dc3265a1bbaed47739dd525b36dc5ff9ba27a7d42e2c30247fb37e15549f96",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-terminal-term-rec": {
+      "owner": "aj-terminal",
+      "file": "public/terminal.css",
+      "previousName": "term-rec",
+      "originalBodySha256": "2cc8823c71047f0b3841472c7003b03309c4a7117997266c704da77cf96fb12a",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-terminal-term-up": {
+      "owner": "aj-terminal",
+      "file": "public/terminal.css",
+      "previousName": "term-up",
+      "originalBodySha256": "c77d7e06fe91fe1beda5d3680fc5f2d00b3c799f7a59360a977ca2037480c773",
+      "evidence": "reviewed exact component/class ownership and matching producer"
+    },
+    "aj-reply-action-heart541": {
+      "owner": "aj-reply-action",
+      "file": "public/app.css",
+      "previousName": "heart541",
+      "originalBodySha256": "e0212fd8599202dbe07b044b56ae155db80c844126fa87d65af5d4e2698ec4c1",
+      "evidence": "approval-anchor541.paint() clones webReportBtn and builds these two SVG circles; independently owned existing reply action slot, never an execution approval."
+    },
+    "aj-reply-action-halo541": {
+      "owner": "aj-reply-action",
+      "file": "public/app.css",
+      "previousName": "halo541",
+      "originalBodySha256": "77f8ba3f6674eb5da509f0bac6e89ab96c8cd9f5b18af7c3579aa67fec1330bf",
+      "evidence": "approval-anchor541.paint() clones webReportBtn and builds these two SVG circles; independently owned existing reply action slot, never an execution approval."
+    },
+    "aj-inline-component-fdeep-in": {
+      "owner": "aj-inline-component",
+      "file": "public/forms.css",
+      "previousName": "fdeep-in",
+      "originalBodySha256": "fe7742c3baa4a402905192adb0fa500839030cab019dd9fd9051899650f49ff1",
+      "evidence": "forms.js deep() full-screen schema view; metadata-only namespace rename preserves exact keyframe declaration body."
+    }
+  },
+  "consumers": [
+    {
+      "file": "public/app.css",
+      "selector": ".water .wave",
+      "owner": "aj-status",
+      "name": "aj-status-drift",
+      "previousName": "drift",
+      "property": "animation",
+      "originalValue": "drift 11s linear infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".water .wave2",
+      "owner": "aj-status",
+      "name": "aj-status-drift",
+      "previousName": "drift",
+      "property": "animation",
+      "originalValue": "drift 17s linear infinite reverse",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".water[data-compacting=\"1\"]",
+      "owner": "aj-status",
+      "name": "aj-status-sink",
+      "previousName": "sink",
+      "property": "animation",
+      "originalValue": "sink 14s cubic-bezier(.25,.5,.45,1) forwards",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".water[data-compacting=\"1\"]",
+      "owner": "aj-status",
+      "name": "aj-status-sink",
+      "previousName": "sink",
+      "property": "animation",
+      "originalValue": "sink 14s cubic-bezier(.25,.5,.45,1) forwards",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".water[data-compacting=\"1\"] .wave",
+      "owner": "aj-status",
+      "name": "aj-status-churn",
+      "previousName": "churn",
+      "property": "animation",
+      "originalValue": "churn 2.4s linear infinite",
+      "context": [
+        "@media (prefers-reduced-motion: no-preference)"
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".water[data-compacting=\"1\"] .wave2",
+      "owner": "aj-status",
+      "name": "aj-status-churn",
+      "previousName": "churn",
+      "property": "animation",
+      "originalValue": "churn 3.1s linear infinite reverse",
+      "context": [
+        "@media (prefers-reduced-motion: no-preference)"
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": "body[data-status=waiting] .aura",
+      "owner": "aj-status",
+      "name": "aj-status-glow",
+      "previousName": "glow",
+      "property": "animation",
+      "originalValue": "glow 2.6s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": "body[data-status=working] .flow",
+      "owner": "aj-status",
+      "name": "aj-status-flow",
+      "previousName": "flow",
+      "property": "animation",
+      "originalValue": "flow 3.6s linear infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": "body[data-status=waiting] .orb",
+      "owner": "aj-header",
+      "name": "aj-header-logo-heart",
+      "previousName": "logo-heart",
+      "property": "animation",
+      "originalValue": "logo-heart 1.1s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".meta[data-sw-model=wait] #metaModel,.meta[data-sw-effort=wait] #metaEffort",
+      "owner": "aj-header",
+      "name": "aj-header-pillwait",
+      "previousName": "pillwait",
+      "property": "animation",
+      "originalValue": "pillwait 5s linear forwards",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": "body[data-status=working] .dot::after",
+      "owner": "aj-status",
+      "name": "aj-status-ripple",
+      "previousName": "ripple",
+      "property": "animation",
+      "originalValue": "ripple 2.2s var(--re) infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": "body[data-status=waiting] .dot::after",
+      "owner": "aj-status",
+      "name": "aj-status-ripple",
+      "previousName": "ripple",
+      "property": "animation",
+      "originalValue": "ripple 1.1s var(--re) infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": "body[data-status=waiting] .dot",
+      "owner": "aj-status",
+      "name": "aj-status-beat",
+      "previousName": "beat",
+      "property": "animation",
+      "originalValue": "beat 1.1s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".pendtag .dot",
+      "owner": "aj-status",
+      "name": "aj-status-beat",
+      "previousName": "beat",
+      "property": "animation",
+      "originalValue": "beat 1.1s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".ask .dot",
+      "owner": "aj-status",
+      "name": "aj-status-beat",
+      "previousName": "beat",
+      "property": "animation",
+      "originalValue": "beat 1.1s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rmbar .act[data-state=gen] .gspin",
+      "owner": "aj-reply-action",
+      "name": "aj-reply-action-spin",
+      "previousName": "spin",
+      "property": "animation",
+      "originalValue": "spin 1s linear infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rdacts .act[data-state=gen] .gspin",
+      "owner": "aj-reader",
+      "name": "aj-reader-spin",
+      "previousName": "spin",
+      "property": "animation",
+      "originalValue": "spin 1s linear infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".wbot",
+      "owner": "aj-busy",
+      "name": "aj-busy-wb-dance",
+      "previousName": "wb-dance",
+      "property": "animation",
+      "originalValue": "var(--aj-busy-wbot-animation,wb-dance 2.4s steps(12) infinite)",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rmbar .act[data-state=sending] .g0",
+      "owner": "aj-reply-action",
+      "name": "aj-reply-action-breathe",
+      "previousName": "breathe",
+      "property": "animation",
+      "originalValue": "breathe 1.1s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rmbar #fwdBtn[data-tg=\"1\"][data-state=sending] .gtg",
+      "owner": "aj-reply-action",
+      "name": "aj-reply-action-breathe",
+      "previousName": "breathe",
+      "property": "animation",
+      "originalValue": "breathe 1.1s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rdacts .act[data-state=sending] .g0",
+      "owner": "aj-reader",
+      "name": "aj-reader-breathe",
+      "previousName": "breathe",
+      "property": "animation",
+      "originalValue": "breathe 1.1s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rdacts #rdFwdBtn[data-tg=\"1\"][data-state=sending] .gtg",
+      "owner": "aj-reader",
+      "name": "aj-reader-breathe",
+      "previousName": "breathe",
+      "property": "animation",
+      "originalValue": "breathe 1.1s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rdfhd .act[data-state=sending] .g0",
+      "owner": "aj-reader",
+      "name": "aj-reader-breathe",
+      "previousName": "breathe",
+      "property": "animation",
+      "originalValue": "breathe 1.1s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".wbot.wdots i",
+      "owner": "aj-busy",
+      "name": "aj-busy-breathe",
+      "previousName": "breathe",
+      "property": "animation",
+      "originalValue": "var(--aj-busy-wdots-animation,breathe 1.4s ease-in-out infinite)",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".asrtag",
+      "owner": "aj-composer",
+      "name": "aj-composer-breathe",
+      "previousName": "breathe",
+      "property": "animation",
+      "originalValue": "breathe 1.4s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".tools .tool.mic.asr svg",
+      "owner": "aj-composer-tool",
+      "name": "aj-composer-tool-breathe",
+      "previousName": "breathe",
+      "property": "animation",
+      "originalValue": "breathe 1.4s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".macts .mact[data-state=sending] .g0",
+      "owner": "aj-file",
+      "name": "aj-file-breathe",
+      "previousName": "breathe",
+      "property": "animation",
+      "originalValue": "breathe 1.1s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rmbar #fwdBtn[data-wx=\"1\"][data-state=sending] .gwx",
+      "owner": "aj-reply-action",
+      "name": "aj-reply-action-breathe",
+      "previousName": "breathe",
+      "property": "animation",
+      "originalValue": "breathe 1.1s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rdacts #rdFwdBtn[data-wx=\"1\"][data-state=sending] .gwx",
+      "owner": "aj-reader",
+      "name": "aj-reader-breathe",
+      "previousName": "breathe",
+      "property": "animation",
+      "originalValue": "breathe 1.1s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".tools .tool.rec",
+      "owner": "aj-composer-tool",
+      "name": "aj-composer-tool-ring",
+      "previousName": "ring",
+      "property": "animation",
+      "originalValue": "ring 1.1s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".tools .tool.mic.lock",
+      "owner": "aj-composer-tool",
+      "name": "aj-composer-tool-lockring",
+      "previousName": "lockring",
+      "property": "animation",
+      "originalValue": "lockring 1.2s ease-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".pttring.r2",
+      "owner": "aj-recording",
+      "name": "aj-recording-pttwave",
+      "previousName": "pttwave",
+      "property": "animation",
+      "originalValue": "pttwave 1.6s ease-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".pttc:not([data-live]) .pttring:not(.r2)",
+      "owner": "aj-recording",
+      "name": "aj-recording-pttbreathe",
+      "previousName": "pttbreathe",
+      "property": "animation",
+      "originalValue": "pttbreathe 1.4s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".saycancel b",
+      "owner": "aj-composer",
+      "name": "aj-composer-pillin",
+      "previousName": "pillin",
+      "property": "animation",
+      "originalValue": "pillin .22s var(--re)",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".volpop",
+      "owner": "aj-composer",
+      "name": "aj-composer-volpop-grow",
+      "previousName": "volpop-grow",
+      "property": "animation",
+      "originalValue": "volpop-grow .18s var(--re)",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".toast[data-kind=\"progress\"].on .nt-ico",
+      "owner": "aj-notice",
+      "name": "aj-notice-nt-spin",
+      "previousName": "nt-spin",
+      "property": "animation",
+      "originalValue": "nt-spin 1s linear infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".dropzone.on .card",
+      "owner": "aj-approval",
+      "name": "aj-approval-dropbreath",
+      "previousName": "dropbreath",
+      "property": "animation",
+      "originalValue": "dropbreath 1.6s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rd[data-unread=\"1\"] .rdun .unb",
+      "owner": "aj-reader",
+      "name": "aj-reader-new-message-pulse",
+      "previousName": "new-message-pulse",
+      "property": "animation",
+      "originalValue": "new-message-pulse 1.2s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rd[data-newreply=\"1\"] .rdpg .pg",
+      "owner": "aj-reader",
+      "name": "aj-reader-new-message-pulse",
+      "previousName": "new-message-pulse",
+      "property": "animation",
+      "originalValue": "new-message-pulse 1.2s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".pg-corner[data-unread=\"1\"] .pg",
+      "owner": "aj-source",
+      "name": "aj-source-new-message-pulse",
+      "previousName": "new-message-pulse",
+      "property": "animation",
+      "originalValue": "new-message-pulse 1.2s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".om[data-unread=\"1\"] .om-unread .unb",
+      "owner": "aj-source",
+      "name": "aj-source-new-message-pulse",
+      "previousName": "new-message-pulse",
+      "property": "animation",
+      "originalValue": "new-message-pulse 1.2s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".loadline::after",
+      "owner": "aj-busy",
+      "name": "aj-busy-ll-slide",
+      "previousName": "ll-slide",
+      "property": "animation",
+      "originalValue": "var(--aj-busy-loadline-animation,ll-slide var(--ll-dur,3.5s) ease-in-out infinite alternate)",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rb18",
+      "owner": "aj-busy",
+      "name": "aj-busy-rb-dance-18",
+      "previousName": "rb-dance-18",
+      "property": "animation",
+      "originalValue": "var(--aj-busy-sprite-small-animation,rb-dance-18 2.4s steps(12) var(--rbd,0s) infinite)",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rb18.in",
+      "owner": "aj-busy",
+      "name": "aj-busy-rb-dance-18",
+      "previousName": "rb-dance-18",
+      "property": "animation",
+      "originalValue": "var(--aj-busy-in-animation,rb-dance-18 2.4s steps(12) var(--rbd,0s) infinite,rb-pop .42s cubic-bezier(.3,1.6,.5,1) both)",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rb24",
+      "owner": "aj-busy",
+      "name": "aj-busy-rb-dance-24",
+      "previousName": "rb-dance-24",
+      "property": "animation",
+      "originalValue": "var(--aj-busy-sprite-large-animation,rb-dance-24 2.4s steps(12) var(--rbd,0s) infinite)",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rb24.in",
+      "owner": "aj-busy",
+      "name": "aj-busy-rb-dance-24",
+      "previousName": "rb-dance-24",
+      "property": "animation",
+      "originalValue": "var(--aj-busy-in-animation,rb-dance-24 2.4s steps(12) var(--rbd,0s) infinite,rb-pop .42s cubic-bezier(.3,1.6,.5,1) both)",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rb18.in",
+      "owner": "aj-busy",
+      "name": "aj-busy-rb-pop",
+      "previousName": "rb-pop",
+      "property": "animation",
+      "originalValue": "var(--aj-busy-in-animation,rb-dance-18 2.4s steps(12) var(--rbd,0s) infinite,rb-pop .42s cubic-bezier(.3,1.6,.5,1) both)",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rb24.in",
+      "owner": "aj-busy",
+      "name": "aj-busy-rb-pop",
+      "previousName": "rb-pop",
+      "property": "animation",
+      "originalValue": "var(--aj-busy-in-animation,rb-dance-24 2.4s steps(12) var(--rbd,0s) infinite,rb-pop .42s cubic-bezier(.3,1.6,.5,1) both)",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".rb.bye",
+      "owner": "aj-busy",
+      "name": "aj-busy-rb-bow",
+      "previousName": "rb-bow",
+      "property": "animation",
+      "originalValue": "var(--aj-busy-bye-animation,rb-bow 1s ease-in-out forwards)",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".pttc",
+      "owner": "aj-recording",
+      "name": "aj-recording-gdlg-in",
+      "previousName": "gdlg-in",
+      "property": "animation",
+      "originalValue": "gdlg-in var(--dlg-dur) var(--re) both",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".gdlg .sq",
+      "owner": "aj-dialog",
+      "name": "aj-dialog-gdlg-in",
+      "previousName": "gdlg-in",
+      "property": "animation",
+      "originalValue": "gdlg-in var(--dlg-dur) var(--re) both",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".ajmodal.dlgcard>.box",
+      "owner": "aj-dialog",
+      "name": "aj-dialog-gdlg-in",
+      "previousName": "gdlg-in",
+      "property": "animation",
+      "originalValue": "gdlg-in var(--dlg-dur) var(--re) both",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": "i.bd",
+      "owner": "aj-busy",
+      "name": "aj-busy-busy-blink",
+      "previousName": "busy-blink",
+      "property": "animation",
+      "originalValue": "busy-blink 2.4s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".offdlg[data-state=\"reconnecting\"] .off-icon svg",
+      "owner": "aj-recovery",
+      "name": "aj-recovery-off-pulse",
+      "previousName": "off-pulse",
+      "property": "animation",
+      "originalValue": "off-pulse 1.8s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".scan-finder .sf-sweep",
+      "owner": "aj-pairing",
+      "name": "aj-pairing-sf-sweep",
+      "previousName": "sf-sweep",
+      "property": "animation",
+      "originalValue": "sf-sweep 2.2s cubic-bezier(.45,0,.55,1) infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#orb.father-dance",
+      "owner": "aj-header",
+      "name": "aj-header-father-dance",
+      "previousName": "father-dance",
+      "property": "animation",
+      "originalValue": "father-dance 2.4s step-end infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#orb.father-dance",
+      "owner": "aj-header",
+      "name": "aj-header-father-hint",
+      "previousName": "father-hint",
+      "property": "animation",
+      "originalValue": "father-hint 2.4s ease-in-out infinite!important",
+      "context": [
+        "@media(prefers-reduced-motion:reduce)"
+      ]
+    },
+    {
+      "file": "public/app.css",
+      "selector": ".elev-run[data-state=\"running\"] .elev-run-dot",
+      "owner": "aj-approval",
+      "name": "aj-approval-elevRunPulse",
+      "previousName": "elevRunPulse",
+      "property": "animation",
+      "originalValue": "elevRunPulse 1.4s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/controls.css",
+      "selector": ".lgs .rsbar i",
+      "owner": "aj-rescue",
+      "name": "aj-rescue-lgs-breathe",
+      "previousName": "lgs-breathe",
+      "property": "animation",
+      "originalValue": "lgs-breathe 1.6s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/five-pages.css",
+      "selector": ".fp-robot.working",
+      "owner": "aj-knowledge",
+      "name": "aj-knowledge-fp-dance",
+      "previousName": "fp-dance",
+      "property": "animation",
+      "originalValue": "fp-dance 1s steps(12) infinite",
+      "context": []
+    },
+    {
+      "file": "public/menu.css",
+      "selector": ".menupage",
+      "owner": "aj-menu",
+      "name": "aj-menu-menu-in",
+      "previousName": "menu-in",
+      "property": "animation",
+      "originalValue": "menu-in var(--ui-dur) var(--ui-ease) both",
+      "context": []
+    },
+    {
+      "file": "public/menu.css",
+      "selector": ".cmdmenu",
+      "owner": "aj-menu",
+      "name": "aj-menu-menu-in",
+      "previousName": "menu-in",
+      "property": "animation",
+      "originalValue": "menu-in var(--ui-dur) var(--ui-ease) both",
+      "context": []
+    },
+    {
+      "file": "public/menu.css",
+      "selector": ".ajconfirm .box",
+      "owner": "aj-dialog",
+      "name": "aj-dialog-menu-in",
+      "previousName": "menu-in",
+      "property": "animation",
+      "originalValue": "menu-in var(--dlg-dur) var(--re) both",
+      "context": []
+    },
+    {
+      "file": "public/menu.css",
+      "selector": ".srch",
+      "owner": "aj-search",
+      "name": "aj-search-menu-in",
+      "previousName": "menu-in",
+      "property": "animation",
+      "originalValue": "menu-in var(--ui-dur) var(--ui-ease) both",
+      "context": []
+    },
+    {
+      "file": "public/menu.css",
+      "selector": ".cmdsheet",
+      "owner": "aj-menu",
+      "name": "aj-menu-sheet-in",
+      "previousName": "sheet-in",
+      "property": "animation",
+      "originalValue": "sheet-in var(--ui-dur) var(--ui-ease) both",
+      "context": []
+    },
+    {
+      "file": "public/menu.css",
+      "selector": ".hotask",
+      "owner": "aj-menu",
+      "name": "aj-menu-sheet-in",
+      "previousName": "sheet-in",
+      "property": "animation",
+      "originalValue": "sheet-in var(--ui-dur) var(--ui-ease) both",
+      "context": []
+    },
+    {
+      "file": "public/menu.css",
+      "selector": ".srflash",
+      "owner": "aj-search",
+      "name": "aj-search-sr-flash",
+      "previousName": "sr-flash",
+      "property": "animation",
+      "originalValue": "sr-flash 1.6s var(--ui-ease) both",
+      "context": []
+    },
+    {
+      "file": "public/menu.css",
+      "selector": ".set-found",
+      "owner": "aj-settings",
+      "name": "aj-settings-set-found",
+      "previousName": "set-found",
+      "property": "animation",
+      "originalValue": "set-found 2.4s ease-out",
+      "context": []
+    },
+    {
+      "file": "public/menu.css",
+      "selector": "#settings .rscard[data-state=\"run\"] .rsbar i",
+      "owner": "aj-rescue",
+      "name": "aj-rescue-rs-breathe",
+      "previousName": "rs-breathe",
+      "property": "animation",
+      "originalValue": "rs-breathe 1.6s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/menu.css",
+      "selector": "#settings .rssteps li[data-state=\"run\"]::before",
+      "owner": "aj-rescue",
+      "name": "aj-rescue-rs-breathe",
+      "previousName": "rs-breathe",
+      "property": "animation",
+      "originalValue": "rs-breathe 1.6s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/terminal.css",
+      "selector": ".term-rec::before",
+      "owner": "aj-terminal",
+      "name": "aj-terminal-term-rec",
+      "previousName": "term-rec",
+      "property": "animation",
+      "originalValue": "term-rec 1.6s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/terminal.css",
+      "selector": ".term:not([hidden])",
+      "owner": "aj-terminal",
+      "name": "aj-terminal-term-up",
+      "previousName": "term-up",
+      "property": "animation",
+      "originalValue": "term-up .2s ease-out",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#pending541 .heart541",
+      "owner": "aj-reply-action",
+      "name": "aj-reply-action-heart541",
+      "previousName": "heart541",
+      "property": "animation",
+      "originalValue": "heart541 2.6s ease-in-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#pending541 .halo541",
+      "owner": "aj-reply-action",
+      "name": "aj-reply-action-halo541",
+      "previousName": "halo541",
+      "property": "animation",
+      "originalValue": "halo541 2.6s ease-out infinite",
+      "context": []
+    },
+    {
+      "file": "public/forms.css",
+      "selector": ".fdeep",
+      "owner": "aj-inline-component",
+      "name": "aj-inline-component-fdeep-in",
+      "previousName": "fdeep-in",
+      "property": "animation",
+      "originalValue": "fdeep-in .2s var(--re,ease) both",
+      "context": []
+    }
+  ],
+  "jsReferences": [
+    {
+      "file": "public/js/busy.js",
+      "name": "aj-busy-rb-pop",
+      "owner": "aj-busy",
+      "previousName": "rb-pop",
+      "shape": "animationName equality literal"
+    }
+  ]
+}

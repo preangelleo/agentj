@@ -8,7 +8,7 @@ import { authOf } from './authcard.js';
 // 「现在续期」 button inside the last 7 days, and a thin chat banner (the host's view.renew) that starts the same route A —
 // dismissed per reminder mark on this phone. The authorize round shows its countdown and reopens by itself on the host.
 import { t, fillText } from './t.js';
-import { el } from './ui.js';
+import { el, notify } from './ui.js';
 import { copyable, copyNow } from './copycode.js';   // P292
 import { ask1, isReady } from './session.js';
 import { onView as loginSheet } from './loginsheet.js';   // 0.26.9: a login step view goes to the chat's sheet
@@ -17,7 +17,7 @@ let view = null;          // the host's last view: {harnesses, flow, dot, renew?
 let hooks = {};           // app.js: {openAuth} (Settings → AI 登录救援)
 const RENEW_KEY = 'aj.arRenew';
 let timers = [], poll = null, loadId = 0;
-// #427: the same flow card is drawn on Settings → AI 登录救援 and on Settings → AI 账号 (adding an account = this flow)
+// #568: account flows belong to AI accounts; rescue flows belong to AI login rescue.
 const FLOW_BOXES = ['ar-flow', 'acct-flow'];
 const stopTimers = () => { for (const x of timers) clearInterval(x); timers = []; };
 const LONG = 11 * 60 * 1000;   // auth_start answers after the passkey card (up to its 10 minutes)
@@ -27,7 +27,9 @@ const tw = (k, fb) => { const s = t(k); return s === k ? (fb || '') : s; };
 
 async function call(obj, ms = 20000) {
   if (!isReady()) { say(t('set.offline')); return null; }
+  const owner = loadId;
   const m = await ask1(obj, 'auth_res', ms);
+  if (owner !== loadId) return null;   // closing/reopening invalidates an older page response
   if (m.t !== 'auth_res') { say(m.t === 'timeout' ? t('ar.timeout') : t('set.offline')); return null; }
   if (m.view && typeof m.view === 'object') setView(m.view);
   if (!m.ok && m.why) say(tw('ar.why.' + m.why, m.why));
@@ -52,11 +54,26 @@ function setView(v) {
   const before = view?.flow, flow = v.flow;
   const moved = flow && (!before || ['kind','stage','round','route'].some(k => before[k] !== flow[k]));
   view = v; dot(); render(); banner();
+  endNotice(before, flow);
   // Long multi-harness pages preserve their scroll anchor. Bring a new device/code card into view once; health polling
   // never pulls the owner away from what they are reading, and a hidden Settings page is never opened here.
   if (moved && el('set-auth')?.getClientRects().length) el('ar-flow')?.scrollIntoView({ block:'start' });
   else if (moved && el('set-accts')?.getClientRects().length) el('acct-flow')?.scrollIntoView({ block:'start' });
   for (const f of watchers) { try { f(view); } catch { /* a painter must not stop the rest */ } }
+}
+// 0.26.9 #456 (chairman 11-04 11:34: 「已经添加成功了，为什么这个状态消息一直在那里？我已经强制刷新过了，它还在。」): a flow that has
+// ended (done / failed) is no longer a status box on AI 账号 or AI 登录救援 — the change into it shows ONE 10-second result notice
+// (seen on this page), and an ended flow the host still remembers after a refresh shows nothing. The failure reason stays on
+// the harness row (h.last) where it always was.
+export const END_MS = 10000;
+const ENDED = ['done', 'failed'];
+const ended = (f) => !!f && ENDED.includes(f.stage);
+function endNotice(before, flow) {
+  if (flow?.account) return;   // The accepted account attempt owns its result; unrelated rescue flow state cannot suppress it.
+  if (!before || ended(before) || !ended(flow)) return;
+  const acct = typeof flow.account === 'string' ? flow.account : flow.account && typeof flow.account.name === 'string' ? flow.account.name : '';
+  const text = flow.stage === 'done' ? (acct ? t('acct.added', { name: acct }) : t('ar.done')) : (flow.why || t('ar.failed'));
+  notify({ kind: flow.stage === 'done' ? 'success' : 'warn', shape: 'rect', text, ms: END_MS });
 }
 /** P332: card ③ of 紧急修复 follows the view (flow stage → progress / green / failure). */
 export function watch(fn) { watchers.push(fn); if (view) fn(view); }
@@ -89,8 +106,8 @@ function dot() {
 
 const STATE = { ok: 'ar.stOk', login: 'ar.stLogin', balance: 'ar.stBalance', rate_limit: 'ar.stRate', checking: 'ar.checking', unknown: 'ar.unknown' };
 function btn(label, cls, fn) {
-  const b = document.createElement('button');
-  b.type = 'button'; b.className = 'aj-btn aj-btn--sm' + (cls ? ' ' + cls : ''); b.textContent = label;
+  const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-action'); b.setAttribute('data-aj-action-context','dialog');
+  b.type = 'button'; b.className = 'aj-action aj-action--sm' + (cls ? ' ' + cls : ''); b.textContent = label;
   b.addEventListener('click', fn);
   return b;
 }
@@ -99,7 +116,7 @@ function line(text, cls) { const p = document.createElement('p'); p.className = 
 async function start(kind, route) {
   say(t('ar.confirm'));
   const m = await call({ t: 'auth_start', kind, route }, LONG);
-  if (m && m.ok) say(t('ar.started'));
+  if (m && m.ok) say(route === 'quota_recheck' ? t('p0280.quotaQueued') : t('ar.started'));
 }
 
 function harnessCard(h) {
@@ -117,6 +134,10 @@ function harnessCard(h) {
   if (h.state === 'checking') return box;
   if (h.state === 'balance') box.append(line(t('ar.balanceNote')));
   if (h.state === 'rate_limit') box.append(line(t('ar.rateNote')));
+  if (h.kind === 'codex' && h.installed && ['balance','rate_limit'].includes(h.state)) {
+    box.append(line(t('p0280.quotaNote')));
+    box.append(btn(t('p0280.quotaRecheck'), '', () => start('codex', 'quota_recheck')));
+  }
   if (h.token) {
     const d = h.token.days_left;
     const k = d > 0 ? 'ar.token' : d === 0 ? 'ar.tokenToday' : 'ar.tokenPast';
@@ -132,7 +153,7 @@ function harnessCard(h) {
   }
   if (h.kind === 'claude' && h.installed && (h.warn || h.expiry === 'unknown')) {
     const p = document.createElement('p'); p.className = 'mailbtns';
-    p.append(btn(t('ar.renewNow'), 'aj-btn--primary arrenewbtn', () => start('claude', 'setup_token')));
+    p.append(btn(t('ar.renewNow'), 'aj-action--primary arrenewbtn', () => start('claude', 'setup_token')));
     box.append(p, line(t('ar.renewNote')));
   }
   if (h.conflicts && h.conflicts.length) box.append(line(t('ar.conflict').replace('{n}', h.conflicts.join(', ')), 'ardanger'));
@@ -144,35 +165,35 @@ function harnessCard(h) {
       if (last.screen.last) box.append(line(last.screen.last, 'arlast'));
       if (last.screen.action === 'confirm') {
         const p = document.createElement('p'); p.className = 'mailbtns';
-        p.append(btn(t('ar.press'), 'aj-btn--primary', () => press(h.kind, last.screen.id)));
+        p.append(btn(t('ar.press'), 'aj-action--primary', () => press(h.kind, last.screen.id)));
         box.append(p);
       }
-    } else if (last.why) box.append(line(t('ar.lastFail').replace('{w}', tw('ar.why.' + last.why, last.why)), 'ardanger'));
+    } else if (last.why && last.why !== 'same_account') box.append(line(t('ar.lastFail').replace('{w}', tw('ar.why.' + last.why, last.why)), 'ardanger'));
   }
   if (!h.installed) { box.append(line(t('ar.notInstalled'))); return box; }
   const p = document.createElement('p'); p.className = 'mailbtns';
   if (h.kind === 'claude') {
-    p.append(btn(t('ar.claudeA'), 'aj-btn--primary', () => start('claude', 'setup_token')),
+    p.append(btn(t('ar.claudeA'), 'aj-action--primary', () => start('claude', 'setup_token')),
              btn(t('ar.claudeB'), '', () => start('claude', 'paste')));
     box.append(p, line(t('ar.claudeNote')));
     const d = document.createElement('details'); d.className = 'mailadv';
-    const s = document.createElement('summary'); s.textContent = t('ar.more');
+    const s = document.createElement('summary'); s.setAttribute('data-aj-owner', 'aj-account'); s.textContent = t('ar.more');
     const q = document.createElement('p'); q.className = 'mailbtns';
     q.append(btn(t('ar.claudeC'), '', () => start('claude', 'login')));
     d.append(s, q, line(t('ar.claudeCNote')));
     box.append(d);
   } else if (h.kind === 'codex') {
     const before = line(t('ar.codexBefore'), 'arbefore');
-    const security = document.createElement('a');
+    const security = document.createElement('a'); security.setAttribute('data-aj-owner', 'aj-account');
     security.href = 'https://chatgpt.com/#settings/Security';
     security.target = '_blank'; security.rel = 'noopener noreferrer';
     security.className = 'arlink'; security.textContent = t('ar.codexSecurity');
     before.append(document.createTextNode(' '), security);
     box.append(before);
-    p.append(btn(t('ar.codexA'), 'aj-btn--primary', () => start('codex', 'device')));
+    p.append(btn(t('ar.codexA'), 'aj-action--primary', () => start('codex', 'device')));
     box.append(p, line(t('ar.codexNote')));
   } else if (h.kind === 'kimi') {   // P305: `kimi login` device code (kimi.com / kimi.ai), or a key card
-    p.append(btn(t('ar.kimiA'), 'aj-btn--primary', () => start('kimi', 'device')));
+    p.append(btn(t('ar.kimiA'), 'aj-action--primary', () => start('kimi', 'device')));
     box.append(p, line(t('ar.kimiNote')), line(t('ar.kimiKey')));
   } else {
     p.append(btn(t('ar.opencodeA'), '', () => start('opencode', 'provider_key')));
@@ -197,14 +218,15 @@ function flowCard(f) {
 }
 function flowInto(box, f) {
   box.replaceChildren();
-  if (!f) { box.hidden = true; return; }
+  if (!f || ended(f)) { box.hidden = true; return; }
+  if ((box.id === 'acct-flow') !== !!f.account) { box.hidden = true; return; }
   box.hidden = false;
   // #427: a flow that adds an account names it (`account`: the name, or {name})
   const here = box.id === 'acct-flow', acct = typeof f.account === 'string' ? f.account : (f.account && typeof f.account.name === 'string' ? f.account.name : ''), adding = !!acct;
-  const h = document.createElement('h3'); h.className = 'setg'; h.textContent = t(adding ? 'acct.flowTitle' : 'ar.flowTitle').replace('{h}', { codex: 'Codex', kimi: 'Kimi Code' }[f.kind] || 'Claude Code');
+  const h = document.createElement('h3'); h.setAttribute('data-aj-owner','aj-account'); h.className = 'setg'; h.textContent = t(adding ? 'acct.flowTitle' : 'ar.flowTitle').replace('{h}', { codex: 'Codex', kimi: 'Kimi Code' }[f.kind] || 'Claude Code');
   box.append(h);
   if (adding) box.append(line(t('acct.flowFor', { name: acct })));
-  const link = (u) => { const a = document.createElement('a'); a.href = u; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.className = 'arlink'; a.textContent = t('ar.openLink'); return a; };
+  const link = (u) => { const a = document.createElement('a'); a.setAttribute('data-aj-owner', 'aj-account'); a.href = u; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.className = 'arlink'; a.textContent = t('ar.openLink'); return a; };
   if (!here && ['url','device'].includes(f.stage)) box.append(line(t('p332.auth.wait')));   // #427: on AI 账号 the steps are right here
   if (f.stage === 'starting') box.append(line(t('ar.stStarting')));
   if (f.stage === 'device' && authOf({...f,round:f.round||1,rounds:f.rounds||1}) && f.code) {
@@ -236,8 +258,6 @@ function flowInto(box, f) {
   }
   if (f.stage === 'paste') box.append(line(t('ar.pasteStep')));
   if (f.stage === 'verifying') box.append(line(t(f.saved ? 'ar.savedChecking' : 'ar.verifying')));
-  if (f.stage === 'done') box.append(line(t('ar.done')));
-  if (f.stage === 'failed') box.append(line(f.why || t('ar.failed'), 'ardanger'));
   if (['starting', 'device', 'url', 'paste'].includes(f.stage)) {
     const p = document.createElement('p'); p.className = 'mailbtns';
     p.append(btn(t('ar.cancel'), '', () => call({ t: 'auth_cancel' })));

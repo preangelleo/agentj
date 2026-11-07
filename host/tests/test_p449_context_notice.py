@@ -50,6 +50,13 @@ class ContextNotice(Decide):
         self.assertNotIn(ZH, self.agent.got[-1].text)
         self.owner_never_pushed()
 
+    def test_explicit_high_cost_profile_does_not_pause_or_notify_owner(self):
+        self.host.meter_state = {'ctx': {'used': 60000, 'max': 200000},
+                                 'model': 'fixture-expensive', 'cost_profile': 'high'}
+        self.assertTrue(self.beat(self.now)['ok'])
+        self.assertNotIn(ZH,self.agent.got[-1].text)
+        self.owner_never_pushed()
+
     def test_old_absolute_and_expensive_rules_gone(self):
         # 120k used, but a 1M window (12 %) on an "expensive" model: the old guard paused here
         self.host.meter_state = {'ctx': {'used': 120000, 'max': 1000000}, 'model': 'gpt-6'}
@@ -76,7 +83,7 @@ class ContextNotice(Decide):
         self.owner_never_pushed()
 
     def test_next_day_notice_again(self):
-        self.host.meter_state = {'ctx': {'used': 150000, 'max': 200000}}
+        self.host.meter_state = {'ctx': {'used': 140000, 'max': 200000}}     # 70 %: the half notice (75 % has its own)
         self.assertTrue(self.beat(self.now)['ok'])
         self.assertIn(ZH, self.agent.got[-1].text)
         self.h.last_activity = noon(1) - 7200
@@ -105,10 +112,62 @@ class ContextNotice(Decide):
         self.owner_never_pushed()
 
 
+MUST = "上下文已用到四分之三"
+
+
+class ContextNotice0269(ContextNotice):
+    """0.26.9 #449 b/d + the self-compact invite (the beat that asked may compact without an owner turn)."""
+
+    def test_absolute_cap_on_a_large_window(self):
+        self.host.meter_state = {'ctx': {'used': 410000, 'max': 1000000}}     # 41 %: over the 400k default cap
+        self.assertTrue(self.beat(self.now)['ok'])
+        self.assertIn(ZH, self.agent.got[-1].text)
+        self.owner_never_pushed()
+
+    def test_cap_preference(self):
+        self.host.preferences['heartbeat']['context_max_tokens'] = 50000
+        self.host.meter_state = {'ctx': {'used': 60000, 'max': 200000}}       # 30 % but over the owner's 50k
+        self.assertTrue(self.beat(self.now)['ok'])
+        self.assertIn(ZH, self.agent.got[-1].text)
+
+    def test_75_percent_required_once_more_then_heartbeat_goes_on(self):
+        self.host.meter_state = {'ctx': {'used': 110000, 'max': 200000}}
+        self.assertTrue(self.beat(self.now)['ok'])
+        self.assertIn(ZH, self.agent.got[-1].text)
+        self.host.meter_state = {'ctx': {'used': 160000, 'max': 200000}}      # 80 %, still not compacted
+        self.assertTrue(self.beat(self.now + 3700)['ok'])
+        self.assertIn(MUST, self.agent.got[-1].text)
+        self.assertTrue(self.beat(self.now + 7400)['ok'], 'heartbeat never stops')
+        self.assertNotIn(MUST, self.agent.got[-1].text)
+        self.assertNotIn(ZH, self.agent.got[-1].text)
+        self.owner_never_pushed()
+
+    def test_only_the_noticed_beat_carries_a_one_shot_invite(self):
+        from agentj.heartbeat import session_key
+        self.host.meter_state = {'ctx': {'used': 60000, 'max': 200000}}
+        self.assertTrue(self.beat(self.now)['ok'])
+        self.assertIsNone(getattr(self.agent.got[-1], 'compact_invite', None))
+        self.assertIsNone(self.h.compact_invite)
+        self.host.meter_state = {'ctx': {'used': 110000, 'max': 200000}}
+        self.assertTrue(self.beat(self.now + 3700)['ok'])
+        self.assertIn('agentj capability compact --json', self.agent.got[-1].text)
+        tok = self.agent.got[-1].compact_invite
+        key = session_key(self.host.agent)
+        t = self.now + 3710
+        self.assertFalse(self.h.take_invite('wrong', key, t))
+        self.assertFalse(self.h.take_invite(tok, 'other-session', t))
+        self.assertFalse(self.h.take_invite(tok, key, t + 4000), 'expires')
+        self.assertTrue(self.h.take_invite(tok, key, t))
+        self.assertFalse(self.h.take_invite(tok, key, t), 'one shot')
+
+
 # Fixture only; the inherited delivery tests run in test_p156_heartbeat.
 for name in dir(Decide):
     if name.startswith('test_') and name not in ContextNotice.__dict__:
         setattr(ContextNotice, name, None)
+for name in dir(ContextNotice):
+    if name.startswith('test_') and name not in ContextNotice0269.__dict__:
+        setattr(ContextNotice0269, name, None)
 del Decide
 
 if __name__ == '__main__':

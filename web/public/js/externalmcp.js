@@ -8,10 +8,10 @@ let pending = false, notice = '';
 function setNotice(key) { notice=key; const node=document.querySelector('.mcp474-status'); if(node) node.textContent=key?t(key):''; }
 const stamp = sec => new Date(sec * 1000).toLocaleString(locale());
 export function connectorsSection(connectors, D) {
-  const box = mk('section', 'mcp474'), title = mk('h3', 'setg', t('mcp474.title'));
+  const box = mk('section', 'mcp474'), title = mk('h3', 'setg', t('mcp474.title'), 'aj-settings');
   box.append(title, mk('p','setnote',t('mcp474.disclosure')), mk('p','setnote',t('mcp474.pickup')));
   const status = mk('p','setnote mcp474-status',notice?t(notice):''); status.setAttribute('role','status');
-  const button = (label, cls, fn) => { const b = mk('button','aj-btn aj-btn--sm '+cls,t(label)); b.type='button'; b.disabled=pending; b.addEventListener('click',fn); return b; };
+  const button = (label, cls, fn) => { const b = mk('button','aj-action aj-action--sm '+cls,t(label), 'aj-action', 'dialog'); b.type='button'; b.disabled=pending; b.addEventListener('click',fn); return b; };
   async function operate(op, fields) {
     if (pending) return;
     if (!D.ready()) { setNotice('mcp474.failed'); return; }
@@ -41,7 +41,7 @@ export function connectorsSection(connectors, D) {
           if(await D.confirm(t('mcp474.confirm',{name:c.name}),t('mcp474.rotateNote'),t('mcp474.rotate'),true)) operate('mcp-rotate',{id:c.id});
         }));
       }
-      acts.append(button('mcp474.revoke','aj-btn--danger mcp474-revoke',async()=>{
+      acts.append(button('mcp474.revoke','aj-action--danger mcp474-revoke',async()=>{
         if(await D.confirm(t('mcp474.confirm',{name:c.name}),t('mcp474.revokeNote'),t('mcp474.revoke'),true)) operate('mcp-revoke',{id:c.id});
       })); li.append(acts);
     }
@@ -49,8 +49,8 @@ export function connectorsSection(connectors, D) {
   }
   box.append(ul);
   const form=mk('form','mcp474-form');
-  const name=mk('input','aj-input mcp474-name'); name.id='mcp474-name'; name.maxLength=40; name.required=true; name.autocomplete='off';
-  const origins=mk('textarea','aj-textarea mcp474-origins'); origins.id='mcp474-origins'; origins.rows=3; origins.required=true; origins.maxLength=4096; origins.autocapitalize='none'; origins.spellcheck=false;
+  const name=mk('input','aj-input mcp474-name', undefined, 'aj-settings'); name.id='mcp474-name'; name.maxLength=40; name.required=true; name.autocomplete='off';
+  const origins=mk('textarea','aj-textarea mcp474-origins', undefined, 'aj-settings'); origins.id='mcp474-origins'; origins.rows=3; origins.required=true; origins.maxLength=4096; origins.autocapitalize='none'; origins.spellcheck=false;
   const nl=mk('label','',t('mcp474.name')); nl.htmlFor=name.id;
   const ol=mk('label','',t('mcp474.origins')); ol.htmlFor=origins.id;
   const go=button('mcp474.create','mcp474-create',()=>{}); go.type='submit';

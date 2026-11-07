@@ -304,6 +304,7 @@ class SharedClaudeAgent(Agent):
         self.card_agent = {}            # P172: withdraw future → sub-agent id (None = the main thread) that asked
         self.sub_agents = {}            # P172: sub-agent id → (type, description) for the card's 「来自子 Agent」 line
         self.child_sources, self.child_pending, self.child_pending_uncertain = {}, [], False
+        self.child_approval_origins, self.child_pending_origins = {}, []
         self.child_tool_sources, self.child_tool_overflow = {}, False
         self.sub_pending = []           # P172: (type, description) of Agent/Task calls whose SubagentStart is still to come
         self.tool_agent = {}            # P172: input digest → sub-agent id of its PreToolUse (PermissionRequest may omit it)
@@ -738,7 +739,8 @@ class SharedClaudeAgent(Agent):
         aid = event.get("agent_id") if isinstance(event, dict) else None
         if aid and event.get("hook_event_name") != "SubagentStart":
             src = self.child_sources.get(aid, provenance.normalize(None))
-            with provenance.shared_child_request(self, src):
+            from .approval_review import origin_scope
+            with provenance.shared_child_request(self, src), origin_scope(self.child_approval_origins.get(aid, {})):
                 return await self._hook_event(event)
         if not aid and isinstance(event, dict) and event.get("hook_event_name") == "PermissionRequest":
             digest = hashlib.sha256(json.dumps([event.get("tool_name"), event.get("tool_input")], sort_keys=True).encode()).hexdigest()
@@ -802,14 +804,27 @@ class SharedClaudeAgent(Agent):
             return {}
         name = event.get("hook_event_name")
         aid = event.get("agent_id")
+        from . import approval_material
+        approval_material.observe(self.host, self, event)
+        if not aid and name in ("PreToolUse", "PermissionRequest"):
+            from .approval_review import explanation_tool_allowed
+            limited = explanation_tool_allowed(self.host, event.get("tool_name"), event.get("tool_input") or {})
+            if limited is False:
+                reason = "Approval explanation is read-only; quoted data cannot execute changes or access secrets."
+                return {"hookSpecificOutput": {"hookEventName": name,
+                        **({"permissionDecision": "deny", "permissionDecisionReason": reason} if name == "PreToolUse" else
+                           {"decision": {"behavior": "deny", "message": reason}})}}
         if not aid and name in ("SessionStart", "SessionEnd"):
             self.child_sources.clear()
+            self.child_approval_origins.clear()
+            self.child_pending_origins.clear()
             self.child_pending.clear()
             self.child_pending_uncertain = False
             self.child_tool_sources.clear()
             self.child_tool_overflow = False
         elif not aid and name == "UserPromptSubmit":
             self.child_pending_uncertain = self.child_pending_uncertain or bool(self.child_pending)
+            self.child_pending_origins.clear()
             self.child_pending.clear()
         if name == "PreToolUse" and aid:
             digest = hashlib.sha256(json.dumps([event.get("tool_name"), event.get("tool_input")], sort_keys=True).encode()).hexdigest()
@@ -826,6 +841,9 @@ class SharedClaudeAgent(Agent):
             if provenance.untrusted_turn(self) and not provenance.delegated_turn(self) and not provenance.unattended_turn(self):
                 src = provenance.normalize(None)
             self.child_pending_uncertain = self.child_pending_uncertain or len(self.child_pending) >= 64
+            from .approval_review import snapshot
+            ref = snapshot(self.host) or {}
+            self.child_pending_origins = (self.child_pending_origins + [ref])[-64:]
             self.child_pending = (self.child_pending + [(str(ti.get("subagent_type") or ""), src)])[-64:]
         elif name == "SubagentStart" and isinstance(aid, str):
             matches = [i for i, (typ, _) in enumerate(self.child_pending) if typ == str(event.get("agent_type") or "") or not typ]
@@ -834,13 +852,25 @@ class SharedClaudeAgent(Agent):
             if sources and any(s != sources[0] for s in sources):
                 self.child_pending = [(typ, provenance.normalize(None) if i in matches else pending)
                                       for i, (typ, pending) in enumerate(self.child_pending)]
+            origins = [self.child_pending_origins[i] for i in matches if i < len(self.child_pending_origins)]
+            origin = origins[0] if origins and len(origins) == len(matches) and not self.child_pending_uncertain and all(x == origins[0] for x in origins) else {}
             if matches:
                 self.child_pending.pop(matches[0])
+                if matches[0] < len(self.child_pending_origins):
+                    self.child_pending_origins.pop(matches[0])
+            if aid in self.child_approval_origins:
+                origin = {}
+            if origin:
+                import copy
+                origin = copy.deepcopy(origin)
+                origin['chain'] = (origin.get('chain', []) + [{'kind': 'subagent', 'id': aid[:80]}])[-16:]
+            self.child_approval_origins[aid] = origin
             self.child_sources[aid] = src if aid not in self.child_sources else provenance.normalize(None)
             while len(self.child_sources) > 128:
                 self.child_sources.pop(next(iter(self.child_sources)))
         elif name == "SubagentStop" and aid:
             self.child_sources.pop(aid, None)
+            self.child_approval_origins.pop(aid, None)
         self._note_agent(name, event)
         self._withdraw_answered(name, event)
         if not event.get("agent_id"):

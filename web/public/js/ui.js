@@ -6,7 +6,9 @@ import { SVG } from './icons.js';
 import { configureCopyNotice } from './copycode.js';
 import { slotShow } from './cardplace.js';   // 0.26.9 #472: a notice above a docked card scrolls only the reply's slot
 export const el = (id) => document.getElementById(id);
-export function mk(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+export function mk(tag, cls, text, owner, actionContext) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; if (owner) e.setAttribute('data-aj-owner', owner); if (actionContext) e.setAttribute('data-aj-action-context', actionContext); return e; }
+// Explicit page-copy slot: the caller supplies the node's own semantic owner.
+export function pageCopy(node) { node.setAttribute('data-aj-page-copy', ''); return node; }
 
 // P200 追加 2 (Leo, 2026-10-13): a tapped / clicked button or icon never keeps a ring. Chromium also matches
 // :focus-visible when focus moves by script after the last input was a key — typing in the field and then closing a
@@ -107,7 +109,7 @@ export function notify(spec) {
   if (acts.length && f.shape === 'rect') {
     const row = mk('span', 'nt-acts');
     for (const a of acts) {
-      const b = document.createElement('button'); b.type = 'button'; b.className = 'undo'; b.textContent = a.label;
+      const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-notice'); b.type = 'button'; b.className = 'undo'; b.textContent = a.label;
       b.addEventListener('pointerdown', (e) => e.preventDefault());          // keep the field's focus
       b.addEventListener('click', () => { toastOff(); a.fn(b); });
       row.appendChild(b);
@@ -116,8 +118,7 @@ export function notify(spec) {
   }
   box.replaceChildren(...kids);
   box.classList.add(f.shape);
-  // P566 (#354, Sammi 10-28 17:50 「点了没反应」): a card on screen (key / pickup / Face ID dialog) covers the reply's notice slot
-  // (.stage, z 1, under its scrim) — while one is open, an execution notice floats above the card instead
+  // #556: a visible password / confirmation card owns the stage; its results use a centred rounded card above it.
   const dlg = f.shape === 'rect' && document.querySelector('.ajmodal.dlgcard:not([hidden]):not(.cp-docked),#confirm:not([hidden]):not(.cp-docked)');
   if (dlg) { document.body.appendChild(box); box.classList.add('over-dlg'); }
   else if (f.shape === 'rect') {
@@ -128,6 +129,7 @@ export function notify(spec) {
       let area = local.querySelector('.page-notices');
       if (!area) { area = mk('div', 'reply-notices page-notices'); local.appendChild(area); }
       area.appendChild(box);
+      box.classList.add('over-dlg'); // #556: page results are centred cards, never a sticky bottom bar.
     } else {
       replyNotice(box);
       // 0.26.9 #472: a card open under the reply card — the notice goes right above it (never below its fold) and into view
@@ -136,13 +138,41 @@ export function notify(spec) {
     }
   }
   else if (box.parentElement && box.parentElement !== document.body) document.body.appendChild(box);
-  box.classList.toggle('cmd', cmd); box.classList.toggle('act', !!acts.length && f.shape === 'rect');
+  box.classList.toggle('aj-notice-command', cmd); box.classList.toggle('act', !!acts.length && f.shape === 'rect');
   box.classList.toggle('media', kids.some((k) => k.classList && k.classList.contains('nt-media')));
   if (ms) delete box.dataset.hold; else box.dataset.hold = '1';
   box.classList.add('on');
+  fitNotice(box);
   clearTimeout(box._t);
   if (ms) box._t = setTimeout(() => box.classList.remove('on', 'act'), ms);
   return box;
+}
+// A centred notice may use the viewport centre only while it stays clear of the composer.
+// Refit for the software keyboard, a growing draft and rotation; never move focus or scroll the page.
+export function noticeBounds(height, protectedTop, noticeHeight) {
+  const bottom = Math.max(16, Math.min(height - 16, protectedTop - 12));
+  const maxHeight = Math.max(1, bottom - 16), half = Math.min(noticeHeight, maxHeight) / 2;
+  return { top: Math.max(16 + half, Math.min(height / 2, bottom - half)), maxHeight };
+}
+function fitNotice(box = el('toast')) {
+  if (!box?.classList.contains('on') || !['circle', 'square', 'mail-saved', 'over-dlg'].some(c => box.classList.contains(c))) return;
+  if (typeof window.innerHeight !== 'number') return;
+  const view = window.visualViewport, height = view?.height || window.innerHeight, offset = view?.offsetTop || 0;
+  const protectedRects = ['tools', 'input'].map(el).filter(n => n && !n.closest('[hidden]') && n.getClientRects().length)
+    .map(n => n.getBoundingClientRect()).filter(r => r.height && r.top >= offset && r.top < offset + height);
+  const protectedTop = protectedRects.length ? Math.min(...protectedRects.map(r => r.top)) - offset : height;
+  const bounds = noticeBounds(height, protectedTop, box.scrollHeight);
+  box.style.setProperty('--aj-notice-center-y', `${bounds.top + offset}px`);
+  box.style.setProperty('--aj-notice-max-height', `${bounds.maxHeight}px`);
+}
+if (typeof document !== 'undefined') {
+  addEventListener('resize', () => fitNotice());
+  window.visualViewport?.addEventListener('resize', () => fitNotice());
+  window.visualViewport?.addEventListener('scroll', () => fitNotice());
+  if (typeof ResizeObserver !== 'undefined') {
+    const watch = new ResizeObserver(() => fitNotice());
+    for (const id of ['tools', 'input']) { const n = el(id); if (n) watch.observe(n); }
+  }
 }
 // the glance: kind info (an upload holds its progress line by passing a long ms)
 export function toast(t, ms, kind = 'info') { notify({ kind, text: t, ms: ms || FORMATS[kind]?.ms || 1800 }); }
@@ -151,9 +181,12 @@ export function toastOff() { const n = el('toast'); if (!n) return; clearTimeout
 export function toastAction(t, label, fn, ms) { notify({ kind: 'confirm', text: t, actions: [{ label, fn }], ms: ms || 5000 }); }
 // a held notice is a layer like any other: Esc puts it away (transient ones go by themselves)
 if (typeof document !== 'undefined') addEventListener('keydown', (e) => {
+  // Modal editors and the focused PTY program own Escape while a recent notice is still visible.
+  const program = !e.isComposing && !e.ctrlKey && !e.metaKey && e.target?.closest?.('#term-xt');
+  if (document.querySelector('dialog[open]') || program) return;
   const n = e.key === 'Escape' && el('toast');
-  if (n && n.dataset.hold && n.classList.contains('on')) toastOff();
-});
+  if (n && n.classList.contains('on')) { toastOff(); e.preventDefault(); e.stopImmediatePropagation(); }
+}, true);
 
 /** Two-step confirmation for every write (and /clear): → true / false. `danger` = a destructive yes (unbind, unpair);
  *  `no` = an optional label for the other button (P182). */
@@ -164,8 +197,8 @@ export function confirmSheet(title, text, yes, danger = false, no, details = '')
     const raw = el('confirm-details'); raw.open = false; raw.hidden = !details;
     pkOff();   // P539: pkassist.pkSheet() fills #confirm-pk after this; every other sheet has none
     el('confirm-raw').textContent = details;
-    el('confirm-yes').classList.toggle('aj-btn--danger', !!danger);              // P171: unbind / unpair read as destructive
-    el('confirm-yes').classList.toggle('aj-btn--primary', !danger);
+    el('confirm-yes').classList.toggle('aj-action--danger', !!danger);              // P171: unbind / unpair read as destructive
+    el('confirm-yes').classList.toggle('aj-action--primary', !danger);
     const noBtn = el('confirm-no'), noWas = noBtn.textContent;              // P182: an optional label for the other button
     if (no) noBtn.textContent = no;
     const box = el('confirm'), opener = document.activeElement;

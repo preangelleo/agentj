@@ -1,0 +1,226 @@
+{
+ "name": "hiring-screen",
+ "mode": "deep",
+ "title": {
+  "zh": "招聘初筛",
+  "en": "Hiring screen"
+ },
+ "about": {
+  "zh": "主人看完候选人后的自评：硬条件、各项评分、结论，可附简历。",
+  "en": "The owner's own read of a candidate: must-haves, scores, verdict, CV attached."
+ },
+ "vars": {
+  "role": {
+   "label": {
+    "zh": "岗位",
+    "en": "Role"
+   },
+   "required": true
+  },
+  "candidate": {
+   "label": {
+    "zh": "候选人代号（不要写真名）",
+    "en": "Candidate code (no real name)"
+   },
+   "required": true
+  },
+  "must1": {
+   "label": {
+    "zh": "硬条件 1",
+    "en": "Must-have 1"
+   },
+   "required": true
+  },
+  "must2": {
+   "label": {
+    "zh": "硬条件 2",
+    "en": "Must-have 2"
+   },
+   "required": true
+  },
+  "must3": {
+   "label": {
+    "zh": "硬条件 3",
+    "en": "Must-have 3"
+   },
+   "required": true
+  }
+ },
+ "fill": [
+  "drop",
+  "options.musts",
+  "title"
+ ],
+ "form": {
+  "title": {
+   "zh": "初筛 · {{role}} · {{candidate}}",
+   "en": "Screen · {{role}} · {{candidate}}"
+  },
+  "sections": [
+   {
+    "id": "must",
+    "title": {
+     "zh": "硬条件",
+     "en": "Must-haves"
+    },
+    "questions": [
+     {
+      "id": "musts",
+      "type": "multi",
+      "label": {
+       "zh": "满足哪些硬条件？",
+       "en": "Which must-haves are met?"
+      },
+      "options": [
+       {
+        "value": "m1",
+        "label": {
+         "zh": "{{must1}}",
+         "en": "{{must1}}"
+        }
+       },
+       {
+        "value": "m2",
+        "label": {
+         "zh": "{{must2}}",
+         "en": "{{must2}}"
+        }
+       },
+       {
+        "value": "m3",
+        "label": {
+         "zh": "{{must3}}",
+         "en": "{{must3}}"
+        }
+       }
+      ]
+     },
+     {
+      "id": "years",
+      "type": "number",
+      "label": {
+       "zh": "相关经验（年）",
+       "en": "Relevant experience (years)"
+      },
+      "min": 0,
+      "max": 40
+     }
+    ]
+   },
+   {
+    "id": "score",
+    "title": {
+     "zh": "评分",
+     "en": "Scores"
+    },
+    "questions": [
+     {
+      "id": "skill",
+      "type": "rating",
+      "label": {
+       "zh": "专业能力",
+       "en": "Skills"
+      },
+      "required": true,
+      "keep": true
+     },
+     {
+      "id": "comm",
+      "type": "rating",
+      "label": {
+       "zh": "沟通",
+       "en": "Communication"
+      }
+     },
+     {
+      "id": "fit",
+      "type": "rating",
+      "label": {
+       "zh": "和团队合得来",
+       "en": "Team fit"
+      }
+     }
+    ]
+   },
+   {
+    "id": "verdict",
+    "title": {
+     "zh": "结论",
+     "en": "Verdict"
+    },
+    "questions": [
+     {
+      "id": "next",
+      "type": "buttons",
+      "label": {
+       "zh": "下一步",
+       "en": "Next step"
+      },
+      "required": true,
+      "options": [
+       {
+        "value": "interview",
+        "label": {
+         "zh": "约面试",
+         "en": "Interview"
+        }
+       },
+       {
+        "value": "hold",
+        "label": {
+         "zh": "放一放",
+         "en": "Hold"
+        }
+       },
+       {
+        "value": "no",
+        "label": {
+         "zh": "不合适",
+         "en": "Pass"
+        }
+       }
+      ]
+     },
+     {
+      "id": "why",
+      "type": "longtext",
+      "label": {
+       "zh": "理由",
+       "en": "Why"
+      },
+      "max_length": 1500
+     },
+     {
+      "id": "cv",
+      "type": "file",
+      "label": {
+       "zh": "简历 / 作品（可选）",
+       "en": "CV / portfolio (optional)"
+      },
+      "accept": [
+       "file",
+       "image"
+      ],
+      "max_files": 3
+     }
+    ]
+   }
+  ]
+ },
+ "example": {
+  "zh": {
+   "role": "产品设计师",
+   "candidate": "候选人 A",
+   "must1": "3 年以上 B 端经验",
+   "must2": "有上线作品",
+   "must3": "能独立做用户访谈"
+  },
+  "en": {
+   "role": "Product designer",
+   "candidate": "Candidate A",
+   "must1": "3+ years of B2B work",
+   "must2": "Shipped work to show",
+   "must3": "Runs user interviews alone"
+  }
+ }
+}

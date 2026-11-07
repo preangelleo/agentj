@@ -76,7 +76,7 @@
         "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,31}$"},
         "label": {"$ref": "#/$defs/text", "description": "zh ≤ 8, en ≤ 20 characters"},
         "href": {"type": "string", "maxLength": 512, "pattern": "^https?://[^\\s@/?#]+([/?#][^\\s]*)?$", "description": "http / https only; no user:password@, no token / key / secret / password / auth / session / signature parameter"},
-        "jlink": {"type": "string", "pattern": "^(skill/[a-z0-9][a-z0-9-]{1,63}|workflow/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|doc/([A-Za-z0-9][A-Za-z0-9._-]{0,79}/)?[A-Za-z0-9][A-Za-z0-9._-]{0,79}\\.md|card/[a-z][a-z0-9-]{1,31}(#[A-Za-z0-9][A-Za-z0-9_-]{0,63})?|page/(chat|workflows|skills|memory|agentj|cards))$", "description": "skill/<name> · workflow/<folder> · doc/[<folder>/]<file>.md · card/<id>[#<anchor>] · page/<page> — opens inside Agent J"}
+        "jlink": {"type": "string", "pattern": "^(skill/[a-z0-9][a-z0-9-]{1,63}|workflow/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|doc/([A-Za-z0-9][A-Za-z0-9._-]{0,79}/)?[A-Za-z0-9][A-Za-z0-9._-]{0,79}\\.md|card/[a-z][a-z0-9-]{1,31}(#[A-Za-z0-9][A-Za-z0-9_-]{0,63})?|page/(chat|workflows|skills|memory|agentj|friends|bots|cards))$", "description": "skill/<name> · workflow/<folder> · doc/[<folder>/]<file>.md · card/<id>[#<anchor>] · page/<page> — opens inside Agent J"}
       },
       "oneOf": [{"required": ["href"]}, {"required": ["jlink"]}]
     },

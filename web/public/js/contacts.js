@@ -15,6 +15,7 @@ import {field as textField} from './text-editor.js';
 import { t, onLang } from './t.js';
 import { human, mk, toast } from './ui.js';
 import { ask1, isReady, peer, sendApp } from './session.js';
+import { signed } from './controls.js';
 import { registerLayer } from './layers.js';
 
 const ADDR = /^[A-Za-z0-9._%+'=-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
@@ -58,13 +59,13 @@ function buildForward() {
   if (F.root) return F.root;
   F.root = shell('ctFwd', 47, fwdClose);   // P273: above the full-screen reader (45) it can be opened from
   const sq = F.root.sq;
-  const h = mk('h2'); h.id = 'ctFwd-title';
+  const h = mk('h2', undefined, undefined, 'aj-contacts'); h.id = 'ctFwd-title';
   const sub = mk('p', 'gdlg-sub'); sub.id = 'ctFwd-what';
   const body = mk('div', 'ct-body'); body.id = 'ctFwd-body';
   const note = mk('p', 'ct-note'); note.id = 'ctFwd-note'; note.setAttribute('aria-live', 'polite');
   const row = mk('div', 'gdlg-row');
-  const no = mk('button'); no.type = 'button'; no.id = 'ctFwd-cancel';
-  const go = mk('button', 'go'); go.type = 'button'; go.id = 'ctFwd-send';
+  const no = mk('button', 'aj-dialog-action', undefined, 'aj-dialog-action'); no.type = 'button'; no.id = 'ctFwd-cancel';
+  const go = mk('button', 'go aj-dialog-action aj-dialog-action--primary', undefined, 'aj-dialog-action'); go.type = 'button'; go.id = 'ctFwd-send';
   row.append(no, go);
   sq.append(icon(ICON), h, sub, body, note, row);
   no.addEventListener('click', () => { if (!settling()) fwdClose(); });
@@ -147,10 +148,10 @@ function renderForward() {
   // 发给我自己 / 发给别人
   const modes = mk('div', 'ct-modes'); modes.setAttribute('role', 'radiogroup'); modes.setAttribute('aria-label', t('ct.fwdTitle'));
   const opt = (mode, title, sub, disabled) => {
-    const b = mk('button', 'ct-mode'); b.type = 'button'; b.setAttribute('role', 'radio');
+    const b = mk('button', 'ct-mode', undefined, 'aj-contacts'); b.type = 'button'; b.setAttribute('role', 'radio');
     b.dataset.mode = mode; b.setAttribute('aria-checked', String(F.mode === mode)); b.disabled = !!disabled;
     const dot = mk('i'); dot.setAttribute('aria-hidden', 'true');
-    const tx = mk('span'); tx.append(mk('b', '', title), mk('small', '', sub));
+    const tx = mk('span'); tx.append(mk('b', '', title), mk('small', '', sub, 'aj-contacts'));
     b.append(dot, tx);
     b.addEventListener('click', () => { F.mode = mode; if (mode === 'me') F.picked.clear(); renderForward(); });
     return b;
@@ -167,10 +168,10 @@ function renderForward() {
 
 // P189: 「不带我的提问」 — unticked by default (the mail carries the owner's message above the reply, for context)
 function inputToggle() {
-  const b = mk('button', 'ct-person ct-noinput'); b.type = 'button'; b.id = 'ctFwd-noinput'; b.setAttribute('role', 'checkbox');
+  const b = mk('button', 'ct-person ct-noinput', undefined, 'aj-contacts'); b.type = 'button'; b.id = 'ctFwd-noinput'; b.setAttribute('role', 'checkbox');
   b.setAttribute('aria-checked', String(F.noInput));
   const box = mk('i'); box.setAttribute('aria-hidden', 'true');
-  const tx = mk('span'); tx.append(mk('b', '', t('ct.noInput')), mk('small', '', t('ct.noInputSub')));
+  const tx = mk('span'); tx.append(mk('b', '', t('ct.noInput')), mk('small', '', t('ct.noInputSub'), 'aj-contacts'));
   b.append(box, tx);
   b.addEventListener('click', () => { F.noInput = !F.noInput; renderForward(); document.getElementById('ctFwd-noinput')?.focus({ preventScroll: true }); });
   return b;
@@ -178,13 +179,13 @@ function inputToggle() {
 
 function otherPanel() {
   const box = mk('div', 'ct-other');
-  const search = mk('input', 'ct-search'); search.id = 'ctFwd-q'; search.type = 'search';
+  const search = mk('input', 'ct-search', undefined, 'aj-contacts'); search.id = 'ctFwd-q'; search.type = 'search';
   search.placeholder = t('ct.search'); search.setAttribute('aria-label', t('ct.search')); search.value = F.q;
   search.autocomplete = 'off'; search.setAttribute('autocapitalize', 'off'); search.spellcheck = false;
   search.addEventListener('input', () => { F.q = search.value; clearTimeout(F.qTimer); F.qTimer = setTimeout(refresh, 220); });
   const sorts = mk('div', 'ct-sorts'); sorts.setAttribute('role', 'tablist');
   for (const k of ['recent', 'frequent', 'name']) {
-    const b = mk('button', '', t('ct.sort.' + k)); b.type = 'button'; b.dataset.sort = k; b.setAttribute('role', 'tab');
+    const b = mk('button', '', t('ct.sort.' + k), 'aj-contacts'); b.type = 'button'; b.dataset.sort = k; b.setAttribute('role', 'tab');
     b.setAttribute('aria-selected', String(F.sort === k)); b.disabled = !!F.q.trim();
     b.addEventListener('click', () => { F.sort = k; refresh(); });
     sorts.append(b);
@@ -195,27 +196,27 @@ function otherPanel() {
   for (const r of rs) {
     if (F.sort === 'name' && !F.q.trim() && r.c.letter !== lastLetter) { lastLetter = r.c.letter; ul.append(mk('li', 'ct-letter', lastLetter)); }
     const li = mk('li');
-    const b = mk('button', 'ct-person'); b.type = 'button'; b.setAttribute('role', 'checkbox');
+    const b = mk('button', 'ct-person', undefined, 'aj-contacts'); b.type = 'button'; b.setAttribute('role', 'checkbox');
     b.setAttribute('aria-checked', String(F.picked.has(r.addr))); b.dataset.addr = r.addr;
     const box2 = mk('i'); box2.setAttribute('aria-hidden', 'true');
     const tx = mk('span');
     const nm = mk('b', '', r.c.name || r.addr);
     if (r.c.nicks && r.c.nicks.length) nm.append(mk('em', '', ' · ' + r.c.nicks.slice(0, 2).join('、')));
     const meta = r.c.send_count ? t('ct.sentN', { n: r.c.send_count }) : '';
-    tx.append(nm, mk('small', '', r.addr + (meta ? ' · ' + meta : '')));
+    tx.append(nm, mk('small', '', r.addr + (meta ? ' · ' + meta : ''), 'aj-contacts'));
     b.append(box2, tx);
     b.addEventListener('click', () => pick(r.addr, r.c.name || ''));
     li.append(b); ul.append(li);
   }
   if (!rs.length) ul.append(mk('li', 'ct-empty', F.q.trim() ? t('ct.noHit', { q: F.q.trim() }) : t('ct.empty')));
   const add = mk('details', 'ct-add'); add.id = 'ctFwd-add';
-  const sm = mk('summary', '', t('ct.add'));
-  const a = mk('input'); a.id = 'ctFwd-addr'; a.type = 'email'; a.inputMode = 'email'; a.placeholder = t('ct.addr'); a.setAttribute('aria-label', t('ct.addr'));
+  const sm = mk('summary', '', t('ct.add'), 'aj-contacts');
+  const a = mk('input', undefined, undefined, 'aj-contacts'); a.id = 'ctFwd-addr'; a.type = 'email'; a.inputMode = 'email'; a.placeholder = t('ct.addr'); a.setAttribute('aria-label', t('ct.addr'));
   a.autocomplete = 'off'; a.setAttribute('autocapitalize', 'off'); a.spellcheck = false;
-  const nk = mk('input'); nk.id = 'ctFwd-nick'; nk.type = 'text'; nk.placeholder = t('ct.nick'); nk.setAttribute('aria-label', t('ct.nick'));
+  const nk = mk('input', undefined, undefined, 'aj-contacts'); nk.id = 'ctFwd-nick'; nk.type = 'text'; nk.placeholder = t('ct.nick'); nk.setAttribute('aria-label', t('ct.nick'));
   if (ADDR.test(F.q.trim())) a.value = F.q.trim();
   else if (F.q.trim() && !rs.length) nk.value = F.q.trim();
-  const ok = mk('button', 'ct-addgo', t('ct.addGo')); ok.type = 'button'; ok.id = 'ctFwd-addgo';
+  const ok = mk('button', 'ct-addgo', t('ct.addGo'), 'aj-contacts'); ok.type = 'button'; ok.id = 'ctFwd-addgo';
   ok.addEventListener('click', () => addNew(a.value.trim(), nk.value.trim()));
   for (const inp of [a, nk]) inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); ok.click(); } });
   add.append(sm, a, nk, ok);
@@ -250,8 +251,11 @@ async function send(again = false) {
   const to = F.mode === 'me' ? F.me.slice(0, 1).map((addr) => ({ addr })) : [...F.picked].map(([addr, name]) => ({ addr, ...(name ? { name } : {}) }));
   if (!to.length) return;
   F.busy = true; F.result = null; renderForward(); say('');
-  const m = await ask1({ t: 'mail_fwd', to, ...(F.what.mid ? { mid: F.what.mid } : {}), ...(F.what.turn !== null ? { turn: F.what.turn } : {}),
-    ...(F.what.whole && F.noInput ? { input: false } : {}), ...(again ? { again: true } : {}) }, 'mail_fwd_res', 90000);
+  const request = { to, ...(F.what.mid ? { mid: F.what.mid } : {}), ...(F.what.turn !== null ? { turn: F.what.turn } : {}),
+    ...(F.what.whole && F.noInput ? { input: false } : {}), ...(again ? { again: true } : {}) };
+  let m;
+  try { m = await ask1(await signed('mail_fwd', { request }, { t: 'mail_fwd', ...request }), 'mail_fwd_res', 90000); }
+  catch (e) { m = { t: 'mail_fwd_res', ok: false, why: e.message }; }
   F.busy = false;
   if (!F.root || F.root.d.hidden) return;
   const why = m.t === 'mail_fwd_res' ? (m.ok ? null : m.why) : m.t;
@@ -347,15 +351,15 @@ function buildCard() {
   if (K.root) return K.root;
   K.root = shell('ctCard', 54, cardClose);
   const sq = K.root.sq;
-  const h = mk('h2'); h.id = 'ctCard-title';
+  const h = mk('h2', undefined, undefined, 'aj-contacts'); h.id = 'ctCard-title';
   const sub = mk('p', 'gdlg-sub'); sub.id = 'ctCard-why';
   // 0.26.9 security r7: the owner card pre-filled by the Agent (`agentj contacts owner set --email …`) says so — host `proposed: "agent"`
   const prop = mk('p', 'ct-proposed'); prop.id = 'ctCard-proposed'; prop.setAttribute('role', 'note'); prop.hidden = true;
   const form = mk('form', 'ct-form'); form.id = 'ctCard-form'; form.noValidate = true; form.autocomplete = 'off';
   const note = mk('p', 'ct-note'); note.id = 'ctCard-note'; note.setAttribute('aria-live', 'polite');
   const row = mk('div', 'gdlg-row');
-  const no = mk('button'); no.type = 'button'; no.id = 'ctCard-no';
-  const go = mk('button', 'go'); go.type = 'submit'; go.id = 'ctCard-save'; go.setAttribute('form', 'ctCard-form');
+  const no = mk('button', 'aj-dialog-action', undefined, 'aj-dialog-action'); no.type = 'button'; no.id = 'ctCard-no';
+  const go = mk('button', 'go aj-dialog-action aj-dialog-action--primary', undefined, 'aj-dialog-action'); go.type = 'submit'; go.id = 'ctCard-save'; go.setAttribute('form', 'ctCard-form');
   row.append(no, go);
   sq.append(icon(PERSON), h, sub, form, note, prop, row);   // the Agent-proposed warning sits right above 保存 (seen with it)
   no.addEventListener('click', () => answer(false));
@@ -370,7 +374,7 @@ const LIST_FIELDS = [['emails', 'email'], ['phones', 'tel'], ['addresses', 'text
 function field(label, id, value, type = 'text', fresh = false) {
   const w = mk('label', 'ct-field' + (fresh ? ' fresh' : ''));
   w.append(mk('span', '', label));
-  const i = mk('input'); i.id = id; i.type = type === 'note' ? 'hidden' : type === 'email' ? 'email' : type === 'tel' ? 'tel' : 'text';
+  const i = mk('input', undefined, undefined, 'aj-contacts'); i.id = id; i.type = type === 'note' ? 'hidden' : type === 'email' ? 'email' : type === 'tel' ? 'tel' : 'text';
   if (type === 'email') { i.inputMode = 'email'; i.setAttribute('autocapitalize', 'off'); i.spellcheck = false; }
   if (type === 'tel') i.inputMode = 'tel';
   i.value = value || '';
@@ -428,7 +432,7 @@ function renderCard(keepValues) {
     const grp = mk('div', 'ct-multi'); grp.dataset.k = k;
     const items = (v[k] || []).length ? v[k] : [{ v: '' }];
     items.forEach((x, i) => grp.append(field(t('ct.f.' + k) + (items.length > 1 ? ' ' + (i + 1) : ''), `ct-f-${k}-${i}`, x.v, type, !!x.fresh)));
-    const more = mk('button', 'ct-more', t('ct.more.' + k)); more.type = 'button';
+    const more = mk('button', 'ct-more', t('ct.more.' + k), 'aj-contacts'); more.type = 'button';
     more.addEventListener('click', () => { const n = grp.querySelectorAll('input').length; grp.insertBefore(field(t('ct.f.' + k) + ' ' + (n + 1), `ct-f-${k}-${n}`, '', type), more); grp.querySelectorAll('input')[n].focus(); });
     grp.append(more);
     form.append(grp);

@@ -15,7 +15,7 @@ ENTRY = ("CLAUDE.md", "AGENTS.md", "README.md")
 
 PREAMBLE = ("You are an expert coding assistant operating inside Agent J Harness. You help by reading files, running "
             "commands, editing code and writing new files.")
-SNIPPET = {"read": "Read file contents", "bash": "Execute bash commands (tests, git, builds)",
+SNIPPET = {"apply_patch": "Apply a multi-file Codex patch with exact context", "read": "Read file contents", "bash": "Execute bash commands (tests, git, builds)",
            "edit": "Make precise file edits with exact text replacement, several disjoint edits in one call",
            "write": "Create or overwrite files", "grep": "Search file contents for patterns",
            "find": "Find files by glob pattern", "ls": "List folder contents",
@@ -56,8 +56,8 @@ def tokens(text: str) -> int:
     return a // 4 + (len(text) - a) + 1
 
 
-def tool_list(role: str, tier: str = "large") -> list[str]:
-    base = ["read", "bash", "edit", "write", "grep", "find", "ls"]
+def tool_list(role: str, tier: str = "large", edit_mode: str = "str_replace") -> list[str]:
+    base = ["read", "bash", ("apply_patch" if edit_mode == "apply_patch" else "edit"), "write", "grep", "find", "ls"]
     if role == "main":
         return base + ["task"] + (["dispatch"] if tier != "small" else [])
     if role == "ceo":
@@ -65,23 +65,25 @@ def tool_list(role: str, tier: str = "large") -> list[str]:
     return base
 
 
-def specs(role: str, tier: str = "large") -> list[dict]:
+def specs(role: str, tier: str = "large", edit_mode: str = "str_replace") -> list[dict]:
     from .tools import SPECS
     from .orders import DISPATCH_SPEC, DECIDE_SPEC
     from .loop import TASK_SPEC
     extra = {"task": TASK_SPEC, "dispatch": DISPATCH_SPEC, "decide": DECIDE_SPEC}
-    return [SPECS.get(n) or extra[n] for n in tool_list(role, tier)]
+    return [SPECS.get(n) or extra[n] for n in tool_list(role, tier, edit_mode)]
 
 
-def harness_text(role: str, tier: str = "large") -> str:
-    names = tool_list(role, tier)
+def harness_text(role: str, tier: str = "large", edit_mode: str = "str_replace") -> str:
+    names = tool_list(role, tier, edit_mode)
     tools = "\n".join(f"- {n}: {SNIPPET[n]}" for n in names)
-    rules = "\n".join(f"- {r}" for r in RULES)
+    rules = "\n".join(f"- {r}" for r in (RULES if edit_mode != "apply_patch" else [RULES[0],
+        "Use apply_patch for precise changes with exact context; read files before patching. Use write for full rewrites.",
+        *RULES[3:]]))
     return f"{PREAMBLE}\n\n<tools>\n{tools}\n</tools>\n\n<rules>\n{rules}\n</rules>\n\n<role>\n{ROLE[role]}\n</role>"
 
 
-def harness_tokens(role: str, tier: str = "large") -> int:
-    return tokens(harness_text(role, tier)) + tokens(json.dumps(specs(role, tier), ensure_ascii=False))
+def harness_tokens(role: str, tier: str = "large", edit_mode: str = "str_replace") -> int:
+    return tokens(harness_text(role, tier, edit_mode)) + tokens(json.dumps(specs(role, tier, edit_mode), ensure_ascii=False))
 
 
 def project_doc(root: str) -> tuple[str, str] | None:
@@ -98,8 +100,8 @@ def project_doc(root: str) -> tuple[str, str] | None:
     return None
 
 
-def system(role: str, root: str, tier: str = "large", identity: str = "", standing: str = "") -> str:
-    parts = [harness_text(role, tier)]
+def system(role: str, root: str, tier: str = "large", identity: str = "", standing: str = "", edit_mode: str = "str_replace") -> str:
+    parts = [harness_text(role, tier, edit_mode)]
     if identity:
         parts.append(f"<identity>\n{identity}\n</identity>")
     if standing:

@@ -12,7 +12,7 @@ import { touch } from './snap.js';
 // the send ("offline"), so nothing meant for one session — or one computer — is ever sent on another (P33-X01 / X02).
 import { sendApp, isReady, peer, ask1, channel, textMax, gen } from './session.js';
 import { Upload, newId } from './blobs.js';
-import { approveMessage, mailAllowMessage, questionMessage, controlMessage, keyOpMessage, b64u, deviceId } from '../proto/wire.js';
+import { approveMessage, mailAllowMessage, approvalV2Message, approvalReviewMessage, questionMessage, controlMessage, keyOpMessage, b64u, deviceId } from '../proto/wire.js';
 import { deviceKey, signKey } from './store.js';
 import * as snap from './snap.js';
 import { approve as passkeyApprove, canAssert } from './faceid.js';
@@ -35,12 +35,20 @@ export function cleanText(s) {
 
 // say_res / say_state / say_cancel_res carry the send id (sid), not r.
 const sayWait = new Map();       // sid → resolve(say_res)
+let reviewUpdate=()=>{};
+export function configureApprovalReview(fn){reviewUpdate=fn;}
+const reviewWait = new Map();
 const cancelWait = new Map();    // sid → resolve(say_cancel_res)
 let onSayState = () => {};
 export function onState(fn) { onSayState = fn; }
 /** → true when m was one of ours. */
 export function route(m) {
+  if(m.t==='approval_review_result'){
+    if(m.ask){if(m.ask.t&&m.ask.t!=='ask')reviewUpdate(m.ask);else snap.replaceApproval(m.ask);}
+    const f=reviewWait.get(m.event_id);if(f){reviewWait.delete(m.event_id);f(m);}return true;
+  }
   if (m.t === "tts_chunk" || m.t === "tts_end") { routeSpeech(m); return true; }
+  if (m.t === "tts_script_res") { const f = scriptWait.get(m.r); if (f) { scriptWait.delete(m.r); f(m); } return true; }
   if (m.t === 'say_res' && typeof m.sid === 'string') { const f = sayWait.get(m.sid); if (f) { sayWait.delete(m.sid); f(m); } return true; }
   if (m.t === 'say_cancel_res' && typeof m.sid === 'string') { const f = cancelWait.get(m.sid); if (f) { cancelWait.delete(m.sid); f(m.r); } return true; }
   if (m.t === 'say_state' && typeof m.sid === 'string') { onSayState(m); return true; }
@@ -51,18 +59,19 @@ export const newSid = () => newId();
 
 /** P286: this computer takes several quotes in one say (`quote_more`, §10.6). */
 export const multiQuote = () => !!(peer.p33 && peer.mq);
-export async function say({ sid, text, att = [], reply_to = null, excerpt = null, more = null }) {
+export async function say({ sid, text, att = [], reply_to = null, excerpt = null, more = null, form = null }) {
   const g = gen();
   if (!g) return { ok: false, why: 'offline' };
   text = cleanText(text);
   if (!peer.p33) {                                   // an older host: chat as §8 msg, no attachments / quotes
-    if (att.length) return { ok: false, why: 'shape' };
+    if (att.length || form) return { ok: false, why: 'shape' };
     if (text.length > textMax()) return { ok: false, why: 'too_long' };
     try { await sendApp({ t: 'msg', id: newId().slice(0, 16), text, ts: Date.now() }, g); } catch { return { ok: false, why: 'offline' }; }
     return { ok: true, state: 'delivered' };
   }
   const m = { t: 'say', sid, text, ts: Date.now() };
   if (att.length) m.att = att.slice(0, 10);
+  if (form) m.form = form;                           // P212 (§29): a form's answers (the host re-checks them)
   if (Number.isInteger(reply_to)) {
     m.reply_to = reply_to;
     if (typeof excerpt === 'string' && excerpt) m.excerpt = cleanText(excerpt).slice(0, 2000);
@@ -127,6 +136,9 @@ export function configureApprove(h) { H = h || {}; }
 /** action: allow | deny | batch. Signed over exactly what the sheet shows (§8). allowAdd (P296, a mail card): the ticked
  *  「以后发给 X 不用再确认」 addresses, in the card's order — signed with the allow (mailAllowMessage). */
 export async function approve(p, action, allowAdd) {
+  if (!p || typeof p !== "object") return {ok:false,why:"invalid_envelope"};
+  if (action !== "deny" && p.approval_v === 2 && (p.envelope?.source?.verified !== true || p.envelope?.source?.suspicious === true)) return {ok:false,why:"unverified_trigger"};
+  if (p.approval_invalid || (p.approval_v !== undefined && p.approval_v !== 2) || (p.approval_v === 2 && !p.envelope_verified)) return {ok:false,why:"invalid_envelope"};
   touch(p.id);
   const g = gen();
   if (!g) return { ok: false, why: 'offline' };
@@ -148,10 +160,11 @@ export async function approve(p, action, allowAdd) {
     if (batch && !p.scope) return { ok: false, why: 'no_batch' };
     const decision = batch ? 'allow_batch' : action === 'allow' ? 'allow' : 'deny';
     const picks = decision === 'allow' ? allowPicks(p, allowAdd) : [];
-    const msg = picks.length ? await mailAllowMessage(ch, await myDeviceId(), p.id, p.tool, p.summary, picks, p.task_scope)
+    const msg = p.approval_v === 2 ? await approvalV2Message(ch, await myDeviceId(), p, decision, picks) : picks.length ? await mailAllowMessage(ch, await myDeviceId(), p.id, p.tool, p.summary, picks, p.task_scope)
       : await approveMessage(ch, await myDeviceId(), p.id, decision, p.tool, p.summary, batch ? p.scope : undefined, p.task_scope);
     const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg));
     const out = batch ? { t: 'answer', id: p.id, ok: true, batch: true, sig: b64u(sig) } : { t: 'answer', id: p.id, ok: decision === 'allow', sig: b64u(sig), ...(picks.length ? { allow_add: picks } : {}), ...(fa ? { fa } : {}) };
+    if (p.approval_v === 2) Object.assign(out, {approval_v:2,revision:p.revision,envelope_sha256:p.envelope_sha256});
     // P561 (追加 6, #335): the passkey sheet may have cost the socket — the signed answer (bound to the card, not the session)
     // goes on the reconnected session instead of 「没连上Agent J 主机，没发出去」; never sent twice (a refused send left nothing)
     // P566 (#364): …and once more after a reconnect that swallowed it, until the card ends (ask_done) or 2 minutes; a second
@@ -249,6 +262,17 @@ export function speechAudio(id) {
     const timer=setTimeout(()=>{speechWait.delete(r);reject(new Error('timeout'));},90000);
     speechWait.set(r,{parts:[],size:0,g,resolve,reject,timer});
     sendApp({t:'tts_get',r,id},g).catch(()=>{clearTimeout(timer);speechWait.delete(r);reject(new Error('offline'));});
+  });
+}
+// P208 (§10.14a): the spoken script of a reply for the phone's own voices (voice.tts.spoken = on); null = read the reply itself
+const scriptWait = new Map();
+export function speechScript(id) {
+  const r=newId(), g=gen();
+  if (!g) return Promise.resolve(null);
+  return new Promise((resolve)=>{
+    const timer=setTimeout(()=>{scriptWait.delete(r);resolve(null);},130000);
+    scriptWait.set(r,(m)=>{clearTimeout(timer);resolve(m.ok===true&&typeof m.text==='string'&&m.text.trim()?m.text.slice(0,8000):null);});
+    sendApp({t:'tts_script',r,id},g).catch(()=>{clearTimeout(timer);scriptWait.delete(r);resolve(null);});
   });
 }
 function routeSpeech(m) {
@@ -372,4 +396,17 @@ export async function readHistory(epoch, id) {
   const g = gen();
   if (!g) return;
   try { await sendApp({t: 'hist_read', epoch, id}, g); } catch {}
+}
+
+/** #541 review intents carry no execution authority and remain paired/session bound. */
+export async function approvalReview(p,op,biometric){
+ const g=gen();if(!g)return {ok:false,why:'offline'};
+ try{
+  const event_id=newId(),sk=await signKey();if(!sk)return {ok:false,why:'no_key'};
+  const msg=approvalReviewMessage(channel(),await myDeviceId(),p,op,event_id);
+  const sig=b64u(new Uint8Array(await crypto.subtle.sign({name:'Ed25519'},sk.priv,msg)));
+  let timer;const waiting=new Promise(resolve=>{reviewWait.set(event_id,resolve);timer=setTimeout(()=>{reviewWait.delete(event_id);resolve({ok:false,why:'timeout'});},15000);});
+  try{await sendApp({t:'approval_review',id:p.id,op,revision:p.revision,event_id,biometric,envelope_sha256:p.envelope_sha256,sig},g);}catch{clearTimeout(timer);reviewWait.delete(event_id);return {ok:false,why:'offline'};}
+  const result=await waiting;clearTimeout(timer);return result;
+ }catch{return {ok:false,why:'invalid_envelope'};}
 }

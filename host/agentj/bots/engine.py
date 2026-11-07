@@ -48,7 +48,22 @@ class Engine:
             if pattern.search(text):return False
         from .. import jev, peer_guard
         if stage=='inbound' and not peer_guard.inbound(text).ok:return False
-        if jev.resolve().mode == 'off':return True
+        route = jev.resolve()
+        if route.mode == 'off':return True
+        if route.mode == 'cheap':
+            from .. import privacy_cheap, provider_runtime
+            from ..core import presets
+            config = route.cheap
+            try:
+                preset = presets.resolve(config['model'], environ={})
+                env = provider_runtime.fresh_environment({}, extra=[preset.key_env])
+            except (ValueError, TypeError, KeyError):
+                return False
+            verdict = await privacy_cheap.resident_layer2(
+                {'stage':stage, 'scope':self.store.get(bid)['prompt'], 'candidate':clean,
+                 'criteria':self.store.get(bid)['safety']['criteria']}, config=config,
+                store=self.store, bid=bid, vid=vid, rid=rid, env=env)
+            return verdict.status == 'ok'
         if self.decision_call is invoke_jev or self.audit_resolve:
             from .audit import resolve as audit_resolve
             p=(self.audit_resolve or audit_resolve)(self.store,bid)

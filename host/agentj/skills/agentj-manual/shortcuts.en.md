@@ -191,6 +191,12 @@ Function keys also work while a text field is focused. System or input-method sh
 | — | Tap Rotate credential | Rotate a connection credential |
 | — | Tap Revoke connection | Revoke a connection |
 | — | Tap Copy connection URL | Copy the connection URL |
+| — | Tap | Prepare and authorize official terminal assistance |
+| — | Tap | Open the read-only terminal observer |
+| — | Tap | End the current official assistance session |
+| — | Tap | View the activity log and repair report |
+| — | Tap | Retry notifying support of the authorized session |
+| — | Tap | View the previous page of activity for this assistance session |
 | `/` · `⌘+K` / `Ctrl+K` | Tap the magnifier at the top right of the list | Search the shortcut list: type a word to filter by action, key or gesture, in Chinese or English |
 | `Esc` | Tap the magnifier again | Clear and close the search box; Esc again closes the shortcut list |
 | `i` · `Esc` | Tap the message box | Into the message box; Esc in it leaves (the draft stays) |
@@ -238,3 +244,11 @@ Function keys also work while a text field is focused. System or input-method sh
 | `Esc` | Tap ×; tap outside | Close the search |
 | `⌘+Enter` / `Ctrl+Enter` | Tap Approve | Approve, the same as tapping Approve (identity checks as usual); the card wins over the message box |
 | `Esc` | Tap put away | Put the card away, neither approved nor denied; tap Pending at the top to reopen it |
+| — | Tap I have a question | Ask the main agent to explain this approval without approving it |
+| — | Tap Approval source message | Locate and highlight the original message while folding the approval |
+| — | Tap Command details | Expand or fold command details |
+| — | Tap View command full screen | View redacted command details full screen |
+| — | Tap Reopen for my approval | Recheck and reopen the original card; identity confirmation is still required |
+| — | Tap Pending approval heartbeat | Open the pending approval you put away |
+| — | Tap | Approve or deny the helper’s requested operation |
+| — | Tap | Confirm or cancel this Agent J host login password verification |

@@ -7,7 +7,7 @@ test('P417 secret-save completion refreshes once with only the public name and v
  const src=read('../public/js/elevate.js');
  const part=src.slice(src.indexOf('export function done('),src.indexOf('/** The computer did not accept'));
  const calls=[];
- const ctx=vm.createContext({completed:new Set(),cards:new Map([['c1',{kind:'secret',name:'DASHSCOPE_API_KEY'}]]),
+ const ctx=vm.createContext({forgetSpecial(){},completed:new Set(),cards:new Map([['c1',{kind:'secret',name:'DASHSCOPE_API_KEY'}]]),
   shownId:null,busy:false,RESULT:{},secretSaved:(...args)=>calls.push(args),render(){},Date,clearTimeout});
  vm.runInContext(part.replace('export function','function'),ctx);
  vm.runInContext("done({id:'c1',result:'saved',verify:'fail'});done({id:'c1',result:'saved',verify:'fail'})",ctx);

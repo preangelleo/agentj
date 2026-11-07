@@ -21,11 +21,14 @@ import { busyLook, onTheme } from './theme.js';   // P169 (§23): the owner's th
 import { isReady, sendApp } from './session.js';
 import { lang } from './t.js';
 import { longPress } from './longpress.js';
+import { orderCard, orderedBusy, orderId } from './order-cards.js';
+let orderMain = null, orderStopped = () => false;
+import { SVG } from './icons.js';   // 0.26.9 #430: the @ glyph
+import { sanitizeToday, todayText, useShort, useOf as useOfDetail } from './use.js';   // P204 (§29): today's spend on the load card, a run's on its robot
 
 export const MAX_DOTS = 6;
-// 追加 11: how many robots the header shows side by side. Default 6; when the computer says how many background Agents it
-// can run at once (§22 `cap` = running + `agentj busy capacity`'s can_start), a stronger machine may show more — up to 12
-// on a wide screen. A phone (≤ 600 px) stays at 6 so the time is never covered. Beyond the limit: 「+N」.
+// Legacy viewport/cap limit retained for consumers of rowLimit()/limit(). #557's
+// header renderer measures its actual remaining width and no longer uses this cap.
 export const MAX_WIDE = 12;
 export function rowLimit(cap, wide) {
   const want = Number.isInteger(cap) && cap > MAX_DOTS ? Math.min(cap, MAX_WIDE) : MAX_DOTS;
@@ -58,6 +61,8 @@ let unknownCount = null;
 const assigned = new Map();   // task key → robot index, for as long as the task is on screen (CEOs: by name, kept longer)
 let agentName = () => 'Agent J';
 let prompt = async () => false;      // P181: relay.sayPreset — the 「定制主题」 message to the main Agent
+let mentionHook = null;       // 0.26.9 #430: relay.insertText (injected by app.js) — a row's @ puts the task in the composer
+const mentioned = new Map();  // text → {text, label}: the composer shows these as one chip (five-pages.js getMentions)
 let fetchDetail = null;       // P160: api.busyDetail (injected by app.js, so this module stays importable without a session)
 export const DETAIL_POLL_MS = 4000;
 let view = 'tasks';
@@ -80,6 +85,7 @@ export function sanitize(m) {
       conflict: x.conflict === true,
       status: x.status === 'unknown' ? 'unknown' : 'running',
       harness: str(x.harness, 32), model: str(x.model, 100), workflow: str(x.workflow, 80),
+      where: str(x.where, 40),                                          // 0.26.9 #444: the machine it runs on (empty = this computer)
       company: str(x.company, 80), role: str(x.role, 80), parent: str(x.parent, 80),
       lk: x.lk === 'schedule' || x.lk === 'dispatch' ? x.lk : null,
       since: Number.isInteger(x.since) && x.since > 0 ? x.since : null,      // P160: the card's 「已经干了 …」
@@ -124,6 +130,38 @@ export const robotName = (r) => {
 };
 export const who = (x) => x.who || t('busy.temp');
 export const what = (x) => x.label || (x.lk ? t('busy.lk.' + x.lk) : '');
+// 0.26.9 #430 (owner 11-03: 「每一个任务都应该添加一个艾特icon……直接点击这一个icon就可以艾特……这个task」): the words the
+// message carries for the Agent — who, what, and the task id the host listed (`agentj busy` shows the same id) — and the
+// short chip the composer shows instead, like @CEO. Plain text only; the host's id / label are bounded already (sanitize).
+const clip = (v, n) => (v.length > n ? v.slice(0, n - 1) + '…' : v);
+export function mentionOf(x) {
+  const name = clip(who(x), 24), job = clip(what(x).replace(/\s+/g, ' ').trim(), 60);
+  const text = '@' + t('p0269w4.busy.mention', { who: name, what: job || name }) + (x.id ? t('p0269w4.busy.mentionId', { id: x.id }) : '');
+  return { text, label: '@' + name };
+}
+/** The tasks put in the composer on this page (the composer turns each `text` back into its chip). */
+export const mentions = () => [...mentioned.values()];
+function mentionTask(x) {
+  const m = mentionOf(x);
+  mentioned.set(m.text, m);
+  close();
+  if (mentionHook) mentionHook(m.text + ' ');
+}
+function atButton(x) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'busy-at'; b.setAttribute('data-aj-owner', 'aj-busy');
+  const label = t('p0269w4.busy.at', { who: who(x) });
+  b.setAttribute('aria-label', label); b.title = label;
+  const NS = SVG, svg = document.createElementNS(NS, 'svg');
+  for (const [k, v] of [['viewBox', '0 0 24 24'], ['fill', 'none'], ['stroke', 'currentColor'], ['stroke-width', '1.9'], ['stroke-linecap', 'round'], ['stroke-linejoin', 'round'], ['aria-hidden', 'true']]) svg.setAttribute(k, v);
+  for (const d of ['M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z', 'M15.5 8.5v4.75a2.25 2.25 0 0 0 4.5 0V12a8 8 0 1 0-3.13 6.35']) {
+    const path = document.createElementNS(NS, 'path'); path.setAttribute('d', d); svg.append(path);
+  }
+  b.append(svg);
+  b.addEventListener('click', (e) => { e.stopPropagation(); mentionTask(x); });
+  b.addEventListener('keydown', (e) => e.stopPropagation());   // Enter / Space press this button, not the row under it
+  return b;
+}
 
 /** Robot k: its dance starts a little later than its left neighbour's, so a row never moves in lockstep. */
 export const danceDelay = (k) => -((k * 0.37 * ROBOT_FRAMES * ROBOT_STEP_MS) % (ROBOT_FRAMES * ROBOT_STEP_MS)) / 1000;
@@ -198,7 +236,7 @@ function fillRow(box, now, h) {     // `now`: already keyed + assigned (over the
 export const ROBOT_POP_MS = 420;
 function popIn(i) {
   i.classList.add('in');
-  const done = (e) => { if (!e || e.animationName === 'rb-pop') i.classList.remove('in'); };
+  const done = (e) => { if (!e || e.animationName === 'aj-busy-rb-pop') i.classList.remove('in'); };
   i.addEventListener('animationend', done);
   setTimeout(done, ROBOT_POP_MS + 200);
 }
@@ -228,11 +266,43 @@ export const limit = () => rowLimit(cap, wide());
 function paintDots() {
   const b = $('busyDots');
   if (!b) return;
-  const lim = limit();
-  const shown = keyed(tasks).slice(0, tasks.length > lim ? lim - 1 : lim);
+  b.classList.toggle('dots', dotsMode());
+  b.hidden = !tasks.length && !b.querySelector('i.rb');
+  // #557: the name/time have already claimed their flex space. Measure this remainder,
+  // including the actual +K font width, rather than guessing from the viewport.
+  const style = getComputedStyle(b), gap = parseFloat(style.columnGap) || 0;
+  const width = Math.max(0, b.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
+  const probe = document.createElement('b');
+  probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none';
+  b.append(probe);
+  const figure = document.createElement('i');
+  figure.className = dotsMode() ? 'bd' : 'rb rb18';
+  figure.style.cssText = 'position:absolute;visibility:hidden;animation:none';
+  b.append(figure);
+  const unit = figure.getBoundingClientRect().width;
+  figure.remove();
+  const count = tasks.length;
+  let n = count;
+  for (; n >= 0; n--) {
+    const extra = tasks.length - n;
+    probe.textContent = extra ? '+' + extra : '';
+    const needed = n * unit + Math.max(0, n - 1) * gap + (extra ? probe.getBoundingClientRect().width + (n ? gap : 0) : 0);
+    if (needed <= width) break;
+  }
+  probe.remove();
+  const shown = keyed(tasks).slice(0, Math.max(0, n));
   b.classList.toggle('dots', dotsMode());
   if (dotsMode()) b.replaceChildren(...shown.map((x, k) => dot(x, k)));
-  else { for (const d of b.querySelectorAll('i.bd')) d.remove(); fillRow(b, shown, 18); settle(b); }
+  else {
+    for (const d of b.querySelectorAll('i.bd')) d.remove();
+    fillRow(b, shown, 18);
+    // A hidden/finished robot may bow only when its slot fits. Resizing must free
+    // obsolete slots immediately; otherwise the bow itself could cover the time.
+    const activeWidth = shown.length * unit + Math.max(0, shown.length - 1) * gap;
+    if (shown.length < tasks.length || b.scrollWidth > b.clientWidth || activeWidth >= width)
+      for (const i of b.querySelectorAll('i.bye')) i.remove();
+    settle(b);
+  }
   b.hidden = !tasks.length && !b.querySelector('i.rb');
   if (shown.length < tasks.length) { const more = document.createElement('b'); more.textContent = '+' + (tasks.length - shown.length); b.append(more); }
   const label = t('busy.aria', { n: runningCount() });
@@ -249,21 +319,23 @@ function paintDialog() {
   const big = keyed(tasks).slice(0, MAX_WIDE);
   const fig = (x, k, cls) => (dotsMode() ? dot(x, k, cls) : robot(x, k, 24));
   $('busyBig').replaceChildren(...big.map((x, k) => fig(x, k)));
-  $('busyList').replaceChildren(...keyed(tasks).map((x, k) => {
+  $('busyList').replaceChildren(...orderedBusy(keyed(tasks)).map((x, k) => {
     const li = document.createElement('li');
+    const oid = orderId(x); if (oid) li.dataset.order = oid;
     const b = document.createElement('b'); b.textContent = who(x);
     const s = document.createElement('span'); s.textContent = what(x); s.title = what(x);
     const identity = document.createElement('div'); identity.className = 'busy-identity';
-    const summary = document.createElement('small');
+    const summary = document.createElement('small'); summary.setAttribute('data-aj-owner','aj-busy');
     summary.textContent = [identityText(x), x.since ? t('p515.running', {d: dur(nowS()-x.since)}) : ''].filter(Boolean).join(' · ');
     identity.append(summary);
     if (x.conflict && x.reported && (x.reported.harness || x.reported.model)) {
-      const claim = document.createElement('small'); claim.className = 'error';
+      const claim = document.createElement('small'); claim.setAttribute('data-aj-owner','aj-busy'); claim.className = 'error';
       claim.textContent = t('p515.conflict', {x: [shortHarness(x.reported.harness), x.reported.model].filter(Boolean).join(' · ')});
       identity.append(claim);
     }
     li.append(fig(x, k, 'row'), b, s, identity);
-    li.setAttribute('role', 'button'); li.tabIndex = 0;     // P160: a tap → this task's card
+    if (mentionHook) li.append(atButton(x));             // 0.26.9 #430: @ = mention this task in the composer
+    li.setAttribute('role', 'button'); li.setAttribute('data-aj-owner', 'aj-busy'); li.tabIndex = 0;     // P160: a tap → this task's card
     li.setAttribute('aria-label', t('busy.detail.open', { who: who(x), what: what(x) }));
     const go = (e) => { e.stopPropagation(); openOne(x.key); };
     li.addEventListener('click', go);
@@ -323,7 +395,14 @@ export function identityText(x) {
   const accounts = [...new Set(tasks.filter(v=>v.detected?.harness===d.harness).map(v=>v.detected?.account).filter(Boolean))].sort();
   if (d.account && accounts.length > 1) parts.push(t('p515.account',{h:shortHarness(d.harness),n:accounts.indexOf(d.account)+1}));
   if (x.status === 'unknown') parts.unshift(t('p508.state_unknown'));
+  { const w = whereText(x); if (w) parts.push(w); }
   return parts.filter(Boolean).join(' · ');
+}
+/** 0.26.9 #444 (chairman 11-03 22:5x: 「我看不到它们是在 TensorBook 跑的，还是在 Olares 上的」): 「在 Olares 上跑」 for a task the
+    host saw sent to another machine; 「在本机跑」 for the rest only while some task on the list runs elsewhere. */
+export function whereText(x) {
+  if (x.where) return t('p0269w4.where', { h: x.where === 'ssh' ? t('p0269w4.remote') : x.where });
+  return tasks.some((v) => v.where) ? t('p0269w4.whereLocal') : '';
 }
 export function harnessName(h) {
   return ({claude:'Claude Code · Anthropic', codex:'Codex · OpenAI', opencode:'OpenCode', gemini:'Gemini · Google',
@@ -346,16 +425,16 @@ function paintWorkflow() {
   }
   for (const [folder, workers] of groups) {
     const section = document.createElement('section'); section.className = 'busy-org';
-    const head = document.createElement('h3'); head.textContent = folder ? workers[0].company || folder : t('p244.busy48');
+    const head = document.createElement('h3'); head.setAttribute('data-aj-owner','aj-busy'); head.textContent = folder ? workers[0].company || folder : t('p244.busy48');
     section.append(head);
     if (folder) {
       const root = document.createElement('p'); root.className = 'busy-org-root'; root.textContent = t('p244.busy49') + (workers.find(x=>x.role==='CEO')?.who || workers[0].parent || 'CEO');
       section.append(root);
     }
     workers.forEach((x,k)=>{
-      const row=document.createElement('button'); row.type='button'; row.className='busy-org-person';
+      const row=document.createElement('button'); row.setAttribute('data-aj-owner', 'aj-busy'); row.type='button'; row.className='busy-org-person';
       const words=document.createElement('span'); words.textContent=who(x)+' · '+(x.role||t('p244.busy50'));
-      const meta=document.createElement('small'); meta.textContent=folder ? (x.role==='CEO' ? t('p244.busy51') : t('p244.busy52')+(x.parent||'CEO')) : harnessName(x.harness);
+      const meta=document.createElement('small'); meta.setAttribute('data-aj-owner','aj-busy'); meta.textContent=folder ? (x.role==='CEO' ? t('p244.busy51') : t('p244.busy52')+(x.parent||'CEO')) : harnessName(x.harness);
       row.append(robot(x,k,24),words);if(meta.textContent)row.append(meta); row.onclick=()=>{view='tasks';paintDialog();openOne(x.key);}; section.append(row);
     }); box.append(section);
   }
@@ -377,9 +456,14 @@ export function sanitizeDetail(d) {
   const num = (v) => (Number.isInteger(v) && v > 0 ? v : null);
   const out = { src: SRC.includes(d.src) ? d.src : null, since: num(d.since) };
   if (d.last && typeof d.last === 'object' && str(d.last.text, 200)) out.last = { text: str(d.last.text, 200), at: num(d.last.at) };
+  if (d.use && typeof d.use === 'object') {                 // P204 (§29): a workflow's last run — 「12 s · ≈$0.04」
+    const s = useShort(useOfDetail(d.use));
+    if (s) out.use = s;
+  }
   if (d.report && typeof d.report === 'object' && str(d.report.path, 400))
     out.report = { path: str(d.report.path, 400), head: str(d.report.head, 240) || null, at: num(d.report.at) };
   if (str(d.cmd, 400)) out.cmd = str(d.cmd, 400);     // P200: a dispatch's raw command line — here only, never on the list
+  if (d.order && typeof d.order.id === 'string' && /^o\d{8}-\d{6}-[0-9a-f]{4}$/.test(d.order.id)) out.order = d.order;
   return out;
 }
 const nowS = () => Math.floor(Date.now() / 1000);
@@ -404,10 +488,11 @@ function paintOne() {
     const since = (info && info.since) || x.since;
     const meta = [info && info.src ? t('busy.src.' + info.src) : '', Number.isInteger(since) ? t('busy.detail.since', { d: dur(nowS() - since) }) : '']
       .filter(Boolean).join(' · ');
+    if (info?.order && orderMain) kids.push(orderCard(info.order, { t, toMain: orderMain, input: async label => window.prompt(label), stopped: orderStopped() }));
     if (meta) { const m = document.createElement('div'); m.className = 'bo-meta'; m.textContent = meta; kids.push(m); }
     const dl = document.createElement('dl');
     const row = (label, ...vals) => { const dt = document.createElement('dt'); dt.textContent = label; dl.append(dt); for (const v of vals) dl.append(v); };
-    const dd = (text, code = false) => { const e = document.createElement('dd'); if (code) { const c = document.createElement('code'); c.textContent = text; e.append(copyable(c)); } else e.textContent = text; return e; };
+    const dd = (text, code = false) => { const e = document.createElement('dd'); if (code) { const c = document.createElement('code'); c.setAttribute('data-aj-owner','aj-busy'); c.textContent = text; e.append(copyable(c)); } else e.textContent = text; return e; };
     if (oneData === 'old') { /* an older computer: what the list says is all there is */ }
     else if (!info) row(t('busy.detail.last'), dd(t('busy.detail.loading')));
     else {
@@ -475,6 +560,18 @@ function sizeLoad() {
   const half = Math.round(rd.clientWidth / 2);
   if (half > 0) line.style.width = half + 'px';
 }
+// #553: share the input-message card's measured width; keep following it on rotation / resize.
+function sizeLoadDialog() {
+  const sq = $('loadDlg')?.querySelector('.sq'), om = $('om'), deck = $('deck');
+  if (!sq) return;
+  let width = om && !om.hidden ? om.getBoundingClientRect().width : 0;
+  if (!width && deck) {
+    const style = getComputedStyle(deck);
+    width = deck.clientWidth - parseFloat(style.paddingLeft || 0) - parseFloat(style.paddingRight || 0) - 24;
+  }
+  if (width > 0) sq.style.setProperty('--load-card-width', Math.round(width) + 'px');
+  else sq.style.removeProperty('--load-card-width');
+}
 function paintLoad() {
   const line = $('loadLine');
   if (!line) return;
@@ -485,6 +582,7 @@ function paintLoad() {
 /** 追加 5: a tap on the line → the explainer (what it is, the load now, three sample speeds) in the global dialog. */
 export function openLoad() {
   close();
+  sizeLoadDialog();
   paintLoadNow();
   $('loadDlg').hidden = false;
   $('loadClose').focus({ preventScroll: true });
@@ -513,7 +611,7 @@ export function sanitizeRes(m) {
   return {
     cpu: share(m && m.cpu), mem: share(m && m.mem),
     gpu: m && m.gpu ? { pct: share(g.pct), sleep: g.sleep === true, name: typeof g.name === 'string' ? g.name.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 40) : '' } : null,
-    disk: m && m.disk ? { busy: share(d.busy), free: share(d.free), free_gb: gb } : null,
+    disk: m && m.disk ? { busy: share(d.busy), free: share(d.free), free_gb: gb, scope: d.scope === 'workdir' ? 'workdir' : 'home', total_gb: Number.isFinite(d.total_gb) && d.total_gb > 0 ? Math.min(d.total_gb, 1e6) : null } : null,
     net: m && m.net && rate(n.rx) !== null && rate(n.tx) !== null ? { rx: rate(n.rx), tx: rate(n.tx) } : null,
   };
 }
@@ -548,12 +646,22 @@ function paintRes() {
   else row('gpu', res ? t('p181.res.none') : dash, null);
   const d = r.disk;
   const free = d && d.free != null ? t('p181.res.free', { gb: d.free_gb != null ? (d.free_gb >= 100 ? Math.round(d.free_gb) : d.free_gb) : '—', pct: pct(d.free) }) : '';
-  row('disk', d && d.busy != null ? pct(d.busy) : dash, d ? d.busy : null, free);
+  const diskInfo = d ? [t(d.scope === 'workdir' ? 'p553.disk.workdir' : 'p553.disk.home'), d.total_gb != null ? t('p553.disk.total', { gb: Math.round(d.total_gb) }) : '', free].filter(Boolean).join(' · ') : '';
+  row('disk', d && d.busy != null ? pct(d.busy) : dash, d ? d.busy : null, diskInfo);
   row('net', r.net ? `↓ ${rateText(r.net.rx)}  ↑ ${rateText(r.net.tx)}` : dash, undefined);
 }
 /** `{"t":"res",…}` from the computer (only while this card watches). */
-export function setRes(m) { res = sanitizeRes(m); if (typeof m.load === 'number') { load = sanitizeLoad(m); paintLoad(); paintLoadNow(); } paintRes(); }
+// P204: `use` absent (an older computer) → the 今天花费 row hides
+export function setRes(m) { res = sanitizeRes(m); paintUseToday(sanitizeToday(m && m.use)); if (typeof m.load === 'number') { load = sanitizeLoad(m); paintLoad(); paintLoadNow(); } paintRes(); }
 export const currentRes = () => res;
+let today;
+function paintUseToday(d) {
+  if (d !== undefined) today = d;
+  const v = $('loadUseV');
+  if (!v) return;
+  $('loadUse').hidden = today === null;
+  v.textContent = today === undefined ? '…' : todayText(today);
+}
 function paintLoadNow() {
   const p = $('loadNow');
   if (!p) return;
@@ -579,8 +687,11 @@ export function setBusy(m) { taskCount = Number.isInteger(m?.task_count)&&m.task
 export const current = () => tasks.slice();
 
 export function init(fns = {}) {
+  if (typeof fns.orderMain === 'function') orderMain = fns.orderMain;
+  if (typeof fns.orderStopped === 'function') orderStopped = fns.orderStopped;
   if (fns.name) agentName = fns.name;
   if (typeof fns.detail === 'function') fetchDetail = fns.detail;
+  if (typeof fns.mention === 'function') mentionHook = fns.mention;
   if ($('busyBack')) $('busyBack').addEventListener('click', (e) => { e.stopPropagation(); backToList(); });
   $('busyDots').addEventListener('click', (e) => { e.stopPropagation(); open(); });   // @ix app.busy_list
   $('busyClose').addEventListener('click', close);
@@ -609,7 +720,16 @@ export function init(fns = {}) {
   });
   onLang(() => { paintDots(); paintDialog(); sizeLoad(); if ($('loadDlg') && !$('loadDlg').hidden) { paintLoadNow(); paintRes(); } });
   addEventListener('pagehide', () => { if ($('loadDlg') && !$('loadDlg').hidden) send(false); });
-  try { const ro = new ResizeObserver(sizeLoad); for (const id of ['read']) if ($(id)) ro.observe($(id)); }
-  catch (_) { addEventListener('resize', sizeLoad); }
+  try { const ro = new ResizeObserver(() => { sizeLoad(); sizeLoadDialog(); }); for (const id of ['read', 'om', 'deck']) if ($(id)) ro.observe($(id)); }
+  catch (_) { addEventListener('resize', () => { sizeLoad(); sizeLoadDialog(); }); }
+  // Observe the row and its text as both resizing and font changes affect the budget.
+  let frame = 0;
+  const refit = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; paintDots(); }); };
+  try {
+    const ro = new ResizeObserver(refit);
+    for (const el of [$('busyDots'), $('busyDots')?.parentElement, $('agent'), $('rmTime'), $('rmPart')]) if (el) ro.observe(el);
+  } catch (_) { addEventListener('resize', refit); }
+  document.fonts?.ready.then(refit);
+  document.fonts?.addEventListener('loadingdone', refit);
   paintDots(); paintLoad(); sizeLoad();
 }

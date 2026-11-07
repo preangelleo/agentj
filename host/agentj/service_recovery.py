@@ -187,16 +187,17 @@ READY_LIMIT = 600     # s (P142 A12): longest the restart waits for an idle serv
 READY_POLL = 2.0
 
 
-def wait_ready(st, *, limit=READY_LIMIT, poll=READY_POLL, ctl=None, sleep=time.sleep):
+def wait_ready(st, *, limit=READY_LIMIT, poll=READY_POLL, ctl=None, sleep=time.sleep, purpose=None):
     """P142 (A12): before restarting, wait until the running serve has no sudo/secret card, no open approval or question,
     no turn in flight (owned or shared) and no task — `upgrade_ready` over the control socket; an older serve without it
-    answers from `status`. Returns idle | not_running | timeout."""
+    answers from `status`. Returns idle | not_running | timeout. purpose="upgrade" (0.26.10 #484): serve does not wait on
+    the turn that launched the upgrade nor on a stuck turn, and tells the phone it restarts when the task ends."""
     from .names import ServeBusy, ctl_call
     ctl = ctl or ctl_call
     end = time.monotonic() + limit
     while True:
         try:
-            r = ctl(st, {'cmd': 'upgrade_ready'}, 10)
+            r = ctl(st, {'cmd': 'upgrade_ready', **({'purpose': purpose} if purpose else {})}, 10)
             if r is not None and r.get('ok') is not True:
                 s = ctl(st, {'cmd': 'status'}, 10)
                 r = None if s is None else {'ok': True, 'ready': s.get('ok') is True and s.get('agent_status') in ('idle', None)
@@ -224,7 +225,7 @@ def run(st, target, *, timeout=45, install=None, status=None, ready=None, runner
         auto_active = auto_job.get('phase') in ('installing', 'installed', 'rollback')
         pending = None if auto_active else update.read_pending(st, target)
         record(st, 'waiting', target)
-        waited = (ready or wait_ready)(st)
+        waited = ready(st) if ready else wait_ready(st, purpose='upgrade')
         st.log('upgrade_wait', status=waited)
         record(st, 'running', target)
         # The marker is the last claim before the restart (P142). The old fenced apply may have written its marker only in a

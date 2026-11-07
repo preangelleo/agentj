@@ -1,0 +1,7 @@
+/* Original freeze3 15a950814f4794e4b382eaaddf8f592fde3a9a1a33146c647392f5806ad46ab7 settings overrides; immutable comparison fixture. */
+#settings .rscmdacts{flex:none;height:44px;padding:0;background:none;overflow:visible}
+#settings .rscmdacts .act{margin-bottom:0}
+#settings .rscmdacts .act[aria-disabled=true]{opacity:.35;cursor:default;background:none}
+#settings .rscmdskills .rscmdacts{gap:var(--ui-space-control);justify-content:flex-start}
+#settings .rscmdskills .act{width:auto;min-width:44px;padding-inline:12px;white-space:nowrap}
+#settings .rscmdskills code{overflow-wrap:anywhere}

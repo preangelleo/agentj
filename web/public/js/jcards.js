@@ -1,3 +1,4 @@
+import { readNoteTextFile, NOTE_FILE_MAX } from './note-text-file.js';
 import { copyButton } from './copycode.js';
 // P360 Agent J Cards (PROTOCOL §34, spec agentjarvis/docs/specs/AGENTJ-CARDS-SPEC.md): cards 6, 7, 8 … in the logo menu.
 // The computer does the work; this page only draws one of the built-in templates from what the computer read and turns a
@@ -8,7 +9,7 @@ import {ask1, peer, isReady} from './session.js';
 import {RelayMD} from './md.js';
 import {t, lang} from './t.js';
 import {confirmSheet, toast} from './ui.js';
-import {sysWhen, cronText} from './controls.js';
+import {sysWhen, cronText, nativeSchedulerControl, agentjTaskTarget, setTask} from './controls.js';
 import {cardColor, setColors, resetColors} from './jcard-color.js';
 import * as PF from './pagefind.js';
 import {mountPalette,resetPalettes} from './palette.js';
@@ -29,7 +30,7 @@ export function clear() { resetPalettes(); system = []; list = null; busy = null
 export const ID = /^[a-z][a-z0-9-]{1,31}$/, ANCHOR = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 export const ADDR = /^card\/([a-z][a-z0-9-]{1,31})(?:#([A-Za-z0-9][A-Za-z0-9_-]{0,63}))?/;
 /** One internal address, whole (host jcards.JLINK_RE): skill/ · workflow/ · doc/[<folder>/]<file>.md · card/<id>[#<anchor>] · page/. */
-export const JLINK = /^(skill\/[a-z0-9][a-z0-9-]{1,63}|workflow\/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|doc\/(?:[A-Za-z0-9][A-Za-z0-9._-]{0,79}\/)?[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.md|card\/[a-z][a-z0-9-]{1,31}(?:#[A-Za-z0-9][A-Za-z0-9_-]{0,63})?|page\/(?:chat|workflows|skills|memory|agentj|cards))$/;
+export const JLINK = /^(skill\/[a-z0-9][a-z0-9-]{1,63}|workflow\/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|doc\/(?:[A-Za-z0-9][A-Za-z0-9._-]{0,79}\/)?[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.md|card\/[a-z][a-z0-9-]{1,31}(?:#[A-Za-z0-9][A-Za-z0-9_-]{0,63})?|page\/(?:chat|workflows|skills|memory|agentj|friends|bots|cards))$/;
 /** `@<name>（card/<id>）` for every switched-on card — what a mention puts in the message (the Agent reads the id), with the
  *  chip's label. Two cards with one name (or a card named like a system card, `taken`) carry 「官方」/「我的」, or the id. */
 export function mentions(taken = []) {
@@ -45,7 +46,7 @@ export function mentions(taken = []) {
 }
 const pick = (v) => (v && typeof v === 'object' ? v[lang()] || v.en || v.zh || '' : String(v || ''));
 const changed = () => { for (const f of subs) f(); };
-function node(tag, text, cls) { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; }
+function node(tag, text, cls) { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; n.setAttribute('data-aj-owner', 'aj-wallet'); return n; }
 function button(text, fn, cls = 'fp-action') { const n = node('button', text, cls); n.type = 'button'; n.onclick = fn; return n; }
 
 /** jcard_list → the list (one request at a time; an older computer without the capability: an empty list). */
@@ -160,12 +161,12 @@ async function web(href) {
 }
 
 /** Draws card `id` into `body` (the five-pages page). hooks: { title(text), say(text), draft(text), nav(jlink), at? }. */
-export async function render(body, id, hooks) {
-  const e = ++view, c = cards().find((x) => x.id === id), again = () => { if (e === view && body.isConnected) render(body, id, hooks); };
+export async function render(body, id, hooks, {automationPage = 0} = {}) {
+  const e = ++view, c = cards().find((x) => x.id === id), again = () => { if (e === view && body.isConnected) render(body, id, hooks, {automationPage}); };
   body.replaceChildren();
   hooks.title(c ? nameOf(c) : '');
   const wait = node('p', t('p244.fivepages31'), 'fp-meta'); body.append(wait);
-  const m = await ask1({ t: 'jcard_get', id, lang: lang() }, 'jcard_get', 15000);
+  const m = await ask1({ t: 'jcard_get', id, lang: lang(), ...(id==='automation'?{automation_page:automationPage}:{}) }, 'jcard_get', 15000);
   if (e !== view || !body.isConnected) return;
   body.replaceChildren();
   const box = node('section', undefined, 'jc-body' + (c ? ' jc-accent-' + c.accent : ''));
@@ -208,12 +209,36 @@ export async function render(body, id, hooks) {
     }
     box.append(stack);
   } else if (m.template === 'automation' && Array.isArray(m.items)) {
+    const pg=m.pagination;
+    if(pg && Number.isInteger(pg.page) && pg.page>=0 && Number.isInteger(pg.pages) && pg.pages>=1 && pg.page<pg.pages && Number.isInteger(pg.total) && pg.total>=0) {
+      const nav=node('div',undefined,'fp-actions jc-auto-nav'), page=pg.page;
+      const move=next=>{if(e===view && body.isConnected)render(body,id,hooks,{automationPage:next});};
+      const prev=button(t('media.pv.prev'),()=>move(page-1),'jc-auto-control'), next=button(t('media.pv.next'),()=>move(page+1),'jc-auto-control');nav.setAttribute('data-aj-owner','aj-wallet');prev.setAttribute('data-aj-owner','aj-wallet');next.setAttribute('data-aj-owner','aj-wallet');
+      prev.disabled=page===0;next.disabled=page+1>=pg.pages;
+      nav.append(prev,node('span',t('media.pv.page',{n:page+1,of:pg.pages})+' · '+t('mem.count',{n:pg.total}),'jc-auto-meta'),next);box.append(nav);
+      if(pg.scan_limited===true)box.append(node('p',t('p0280.scheduler.scanLimited'),'jc-note'));
+    }
     const stack=node('div',undefined,'jc-stack');
     for(const it of m.items) {
       const row=node('article',undefined,'jc-entry jc-automation'); row.dataset.item=it.id;
       row.append(node('h2',it.name));
       const at=button('@',()=>hooks.draft(String(it.prompt||'/agentj-automation @'+it.name)+' '),'jc-auto-at'); at.setAttribute('aria-label',t('p386.ask',{name:it.name})); row.append(at);
-      const fields=node('dl'); for(const key of ['schedule','repeat','next','harness','model','description','source']) { let value=it[key]; if(Array.isArray(value))value=sysWhen(value); else if(key==='schedule' && value) { let when=it.when; if(!when && typeof value==='string' && value.startsWith('[')){try{when=JSON.parse(value);}catch{}} value=Array.isArray(when)?sysWhen(when):cronText(value); } if(key==='next' && typeof value==='number') { const date=new Date(value>1e14?value/1000:value>1e11?value:value*1000); value=Number.isFinite(date.getTime())?date.toLocaleString(lang()==='zh'?'zh-CN':'en-GB'):null; } fields.append(node('dt',t('p386.'+key)),node('dd',value||t('p386.unknown'))); } row.append(fields);stack.append(row);
+      const fields=node('dl'); for(const key of ['schedule','repeat','next','harness','model','description','source','scope','owner','execution','last','last_result','visibility']) { let value=it[key]; if(Array.isArray(value))value=sysWhen(value); else if(key==='schedule' && value) { let when=it.when; if(!when && typeof value==='string' && value.startsWith('[')){try{when=JSON.parse(value);}catch{}} value=Array.isArray(when)?sysWhen(when):cronText(value); } if((key==='next'||key==='last') && typeof value==='number') { const date=new Date(value>1e14?value/1000:value>1e11?value:value*1000); value=Number.isFinite(date.getTime())?date.toLocaleString(lang()==='zh'?'zh-CN':'en-GB'):null; } fields.append(node('dt',({scope:t('p0280.scheduler.scope'),owner:t('p0280.scheduler.owner'),execution:t('p0280.scheduler.execution'),last:t('p0280.scheduler.last'),last_result:t('p0280.scheduler.last_result'),visibility:t('p0280.scheduler.visibility')})[key]||t('p386.'+key)),node('dd',value===0?'0':value||t('p386.unknown'))); } row.append(fields);
+      const control=it.control, task=agentjTaskTarget(it);
+      if(control?.supported && control.target && (it.source==='agentj' ? task : control.target.kind!=='agentj-task')) {
+        const target=structuredClone(control.target), snapshot=JSON.stringify(target), v=view;
+        const action=button(task ? t(task.enabled?'tasks.disable':'tasks.enable') : target.op==='restore'?t('p0280.scheduler.restore'):t('p0280.scheduler.disable'),async()=>{
+          action.disabled=true;
+          try {
+            if(v!==view || !row.isConnected || JSON.stringify(control.target)!==snapshot)return;
+            const result=task ? await setTask({...it,id:task.id,tsha:task.tsha},!task.enabled,it.name,()=>v===view&&row.isConnected&&JSON.stringify(control.target)===snapshot) : await nativeSchedulerControl(target);
+            if(v!==view || !row.isConnected || JSON.stringify(control.target)!==snapshot)return;
+            if(!task)toast(result.ok?t('p0280.scheduler.done'):t('p0280.scheduler.failed'));
+            if(result.ok)again(); else action.disabled=false;
+          } catch { if(v===view && row.isConnected) { toast(t('p0280.scheduler.failed')); action.disabled=false; } }
+        },'jc-auto-control');action.setAttribute('data-aj-owner','aj-wallet'); row.append(action);
+      } else row.append(node('p',t('p0280.scheduler.readOnly'),'jc-note'));
+      stack.append(row);
     } box.append(stack);
   } else if (m.template === 'obsidian') {   // P432: the Obsidian card — the picked notes; @ drafts the edit for the Agent
     if (m.vault) box.append(node('p', m.vault, 'fp-meta jc-vault'));
@@ -512,9 +537,9 @@ export async function directAdd(id, hooks) {
     if (generation !== epoch) return false;
     if (!r.ok) { toast(t(r.why === 'looks_like_a_secret' ? 'p415.secret' : 'p386.failed')); return false; }
     toast(t('p415.saved')); hooks.nav('card/' + id + (id === 'notes' ? '#latest' : '#' + r.item.id)); return true;
-  }, t(id === 'notes' ? 'p415.addNote' : 'p415.addTodo'), fields ? {title:''} : null);
+  }, t(id === 'notes' ? 'p415.addNote' : 'p415.addTodo'), fields ? {title:''} : null, id === 'notes');
 }
-function editNote(value, save, label = t('p386.edit'), fields = null) {
+function editNote(value, save, label = t('p386.edit'), fields = null, importText = false) {
   return new Promise(resolve=>{
     const opener=document.activeElement, dialog=node('dialog',undefined,'jc-dialog'), title=node('h2',label), input=node('textarea'); input.value=value; input.setAttribute('aria-label',label); input.maxLength=16000;
     let titleInput=null;
@@ -525,11 +550,30 @@ function editNote(value, save, label = t('p386.edit'), fields = null) {
       input.setAttribute('aria-label',t('p474.content')); input.placeholder=t('p474.content');
     }
     const result=()=>fields?{text:input.value,title:titleInput.value,...(fields.date?{date:fields.date}:{})}:input.value;
-    let busy=false, closed=false;
+    let busy=false, closed=false, reading=false;
     const done=v=>{if(closed)return;closed=true;dialog.close();dialog.remove();if(opener?.isConnected)opener.focus({preventScroll:true});resolve(v);};
-    const submit=async()=>{if(busy||!input.value.trim())return;busy=true;ok.disabled=true;try{if(!save||await save(result()))done(result());}finally{busy=false;ok.disabled=false;}};
+    const submit=async()=>{if(busy||reading||!input.value.trim())return;busy=true;ok.disabled=true;try{if(!save||await save(result()))done(result());}finally{busy=false;ok.disabled=false;}};
     const ok=button(t('p386.save'),submit), clip=button(t('p415.paste'),async()=>{try{const text=await navigator.clipboard.readText();if(dialog.isConnected&&text)input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');input.focus();}catch{toast(t('p415.pasteHelp'));}});
     dialog.append(title,...(titleInput?[titleInput]:[]),input,clip,button(t('p386.cancel'),()=>{done(null);}),ok);
+    if (importText) {
+      const picker=node('input'); picker.type='file'; picker.accept='.txt,text/plain'; picker.hidden=true;
+      const load=async files=>{
+        if(busy||reading)return;
+        if(files.length!==1){toast(t('p167.type'));return;}
+        reading=true;ok.disabled=true;
+        try {
+          const text=await readNoteTextFile(files[0]);
+          const merged=input.value.slice(0,input.selectionStart)+text+input.value.slice(input.selectionEnd);
+          if(new TextEncoder().encode(merged).length>NOTE_FILE_MAX || merged.length>input.maxLength)throw new Error('size');
+          if(!closed){input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');input.focus();}
+        } catch(e){if(!closed)toast(t('p167.'+(['type','size','utf8','secret'].includes(e.message)?e.message:'read')));}
+        finally{reading=false;ok.disabled=false;picker.value='';}
+      };
+      picker.onchange=()=>load([...picker.files]);
+      clip.after(button(t('p167.choose'),()=>picker.click()));dialog.append(picker);
+      dialog.addEventListener('paste',e=>{const files=[...(e.clipboardData?.files||[])];if(files.length){e.preventDefault();e.stopPropagation();load(files);}});
+    }
+
     dialog.addEventListener('cancel',e=>{e.preventDefault();done(null);});
     dialog.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)&&!e.isComposing){e.preventDefault();e.stopPropagation();submit();}});
     document.body.append(dialog);dialog.showModal();input.focus();

@@ -118,7 +118,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: var(--sp-6) 0; colo
     padding: var(--sp-2) var(--gutter) var(--sp-4); background: var(--bg); border-bottom: 1px solid var(--border);
     box-shadow: var(--shadow-2); }
   .aj-nav a { min-height: 48px; font-size: var(--fs-md); border-bottom: 1px dashed var(--seam); border-radius: 0; }
-  .aj-nav a[aria-current="page"] { box-shadow: inset 3px 0 0 var(--accent); }
+  .aj-nav a[aria-current="page"] { box-shadow: none; border-left: 3px solid var(--accent); padding-inline-start: calc(var(--sp-3) - 3px); }
   .aj-nav__cta { display: inline-flex !important; margin-top: var(--sp-3); justify-content: center; }
   .aj-nav a.aj-nav__cta, .aj-nav a.aj-nav__cta:hover { color: var(--primary-fg); background: var(--primary-bg);
     border: 1px solid var(--primary-bg); border-radius: var(--r-md); }
@@ -220,8 +220,8 @@ a.aj-card:hover { border-color: var(--text-muted); }
 /* ===== callouts — P214 scheme A, ONE look for every notice (note / info / warm / danger alike) =====
    Solid palette fill + a 4 px bar on the left (palette.css --callout-*); the title is Milky Waves in dark. A warning or an
    error never changes the fill: it only puts a small Peachy Feeling dot before its title (or first line). */
-.aj-callout { border-radius: var(--r-md); padding: var(--sp-4) var(--sp-5) var(--sp-4) calc(var(--sp-5) + 4px);
-  background: var(--callout-bg); color: var(--callout-fg); box-shadow: inset 4px 0 0 var(--callout-bar); }
+.aj-callout { border-radius: var(--r-md); border-left: 4px solid var(--callout-bar); padding: var(--sp-4) var(--sp-5);
+  background: var(--callout-bg); color: var(--callout-fg); }
 .aj-callout > * + * { margin-top: var(--sp-2); }
 .aj-callout__title, .aj-callout > :is(h2, h3, h4), .aj-callout > p:first-child > strong:first-child { font-weight: 700; color: var(--callout-title); }
 .aj-callout--warm, .aj-callout--note, .aj-callout--info, .aj-callout--danger { background: var(--callout-bg); color: var(--callout-fg); }

@@ -34,6 +34,31 @@ class ProviderError(Exception):
     pass
 
 
+def validate_model(model, providers):
+    """Offline routing check; a configured provider is not a model entitlement claim."""
+    if not isinstance(model, str) or '/' not in model:
+        raise ProviderError('invalid_provider_model')
+    pid, mid = model.split('/', 1)
+    if not ID_RE.fullmatch(pid) or not MODEL_RE.fullmatch(mid):
+        raise ProviderError('invalid_provider_model')
+    if pid not in providers:
+        raise ProviderError('model_missing')
+    return pid, mid
+
+
+def model_references(cfg, pid):
+    """Native model references, including auxiliary agent models; no key access."""
+    refs = []
+    for key in ('model', 'small_model'):
+        if isinstance(cfg.get(key), str) and cfg[key].startswith(pid + '/'):
+            refs.append((cfg, key))
+    agents = cfg.get('agent')
+    for value in agents.values() if isinstance(agents, dict) else ():
+        if isinstance(value, dict) and isinstance(value.get('model'), str) and value['model'].startswith(pid + '/'):
+            refs.append((value, 'model'))
+    return refs
+
+
 def config_file(environ=None) -> str:
     e = os.environ if environ is None else environ
     base = e.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
@@ -85,7 +110,7 @@ def _merge_model(previous, new: dict) -> dict:
 
 def block(pid: str, base_url: str, models: list[str], api: str = "openai", name: str | None = None,
           env: str | None = None, caps: dict | None = None) -> dict:
-    if not ID_RE.match(pid or ""):
+    if not isinstance(pid, str) or not ID_RE.fullmatch(pid):
         raise ProviderError("服务商 id 只能用小写字母、数字、- 和 _（例如 myrelay） / provider id: lowercase letters, digits, - and _")
     if pid == "claude-agent":
         raise ProviderError("Claude Agent 用 Claude Code 本人登录：先安装 Claude Code，运行 `claude auth login`，再在 OpenCode 的 "
@@ -97,7 +122,7 @@ def block(pid: str, base_url: str, models: list[str], api: str = "openai", name:
                             f"{pid} is built into OpenCode: store its key with `opencode auth login {pid}`")
     if api not in NPM:
         raise ProviderError("--api 只能是 openai 或 anthropic")
-    if not models or any(not MODEL_RE.match(m) for m in models):
+    if not models or any(not isinstance(m, str) or not MODEL_RE.fullmatch(m) for m in models):
         raise ProviderError("至少给一个模型 id（--model），只能是字母数字和 . _ : / @ + - / give at least one valid --model")
     env = env or key_env(pid)
     if not re.match(r"^[A-Z][A-Z0-9_]{1,63}$", env):
@@ -171,23 +196,54 @@ def next_steps(pid: str, var: str, base_url: str, api: str, model: str) -> list[
     env_file = service.env_file(service.name())
     verify = f"{base_url}/models"
     return [
-        f"agentj secret request --name {var} --purpose '{pid} 模型服务的 key（OpenCode 用）' --dest env:{env_file}#{var} "
-        f"--verify-url {verify} --verify-header '{HEADER[api]}'",
-        f"agentj agent opencode --dir <工作目录> --model {pid}/{model}",
+        f"agentj secret request --name {shlex.quote(var)} "
+        f"--purpose {shlex.quote(f'{pid} 模型服务的 key（OpenCode 用）')} --dest {secret_dest(env_file, var)} "
+        f"--verify-url {shlex.quote(verify)} --verify-header {shlex.quote(HEADER[api])}",
+        f"agentj agent opencode --dir <工作目录> --model {shlex.quote(f'{pid}/{model}')}",
         "agentj service restart",
     ]
 
 
 def remove(pid: str, environ=None) -> dict:
+    if not isinstance(pid, str) or not ID_RE.fullmatch(pid):
+        raise ProviderError('invalid_provider_id')
     path = config_file(environ)
     cfg = _load(path)
     prov = cfg.get("provider") if isinstance(cfg.get("provider"), dict) else {}
-    if pid not in prov:
-        return {"file": path, "provider": pid, "removed": False}
-    prov = {k: v for k, v in prov.items() if k != pid}
-    cfg["provider"] = prov
-    _write(path, cfg)
-    return {"file": path, "provider": pid, "removed": True}
+    existed = pid in prov
+    # Clear offline Host references with the existing CAS writer. A live Host
+    # needs an owner stop first; a deferred restart is not proof of quiescence.
+    from .state import State
+    state = State()
+    with state.config_lock():
+        selected = state.agent_config() or {}
+        host_unset = False
+        if selected.get('kind') == 'opencode' and isinstance(selected.get('model'), str) and selected['model'].startswith(pid + '/'):
+            from .names import ctl_call, ServeBusy
+            try:
+                live = ctl_call(state, {'cmd': 'provider_model', 'kind': 'opencode', 'write': False}, 10)
+            except ServeBusy:
+                raise ProviderError('provider_in_use: Host status unknown; stop the Host safely and retry; no provider was removed') from None
+            if live is not None:
+                raise ProviderError('provider_in_use: stop the Host and shared OpenCode safely, then retry removal; no provider was removed')
+            if not state.set_agent_model(None, expected=selected, locked=True):
+                raise ProviderError('agent_model_changed: retry removal')
+            host_unset = True
+        refs = model_references(cfg, pid)
+        if not existed and not refs and not host_unset:
+            return {'file': path, 'provider': pid, 'removed': False}
+        for owner, key in refs:
+            owner.pop(key)
+        prov = {k: v for k, v in prov.items() if k != pid}
+        cfg["provider"] = prov
+        try:
+            _write(path, cfg)
+        except OSError:
+            if selected.get('kind') == 'opencode' and isinstance(selected.get('model'), str) and selected['model'].startswith(pid + '/'):
+                state.set_agent_model(selected['model'], expected={**selected, 'model': None}, locked=True)
+            raise
+        return {"file": path, "provider": pid, "removed": existed, "models_unset": len(refs), "host_model_unset": host_unset,
+                "selection": cfg.get('model'), "selection_status": 'unchanged' if cfg.get('model') else 'unset'}
 
 
 def listing(environ=None) -> list[dict]:
@@ -278,6 +334,10 @@ def cmd(a) -> int:
               "\n  3. " + r["next"][2])
     elif a.action == "remove":
         print(("已删除" if r["removed"] else "没有这个服务商：") + f" {r['provider']}（{r['file']}）")
+        if r.get('models_unset'):
+            print(f"已取消 {r['models_unset']} 处模型引用 / model references unset: {r['models_unset']}")
+        if r.get('selection_status') == 'unset':
+            print('主模型未设置，请在「模型和 API Key」选择已配置的模型。 / Main model is unset; choose a configured model in Models & API keys.')
     else:
         for p in r["providers"]:
             print(f"{p['provider']}  {p['base_url']}  key={p['key_env'] or ('写在文件里' if p['inline_key'] else '—')}"

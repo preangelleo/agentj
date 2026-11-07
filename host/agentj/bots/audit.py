@@ -22,6 +22,7 @@ def resolve(store,bid):
     from .. import jev
     route=_route()
     if route.mode=='off':return None
+    if route.mode=='cheap':raise BotError('cheap_budget_required')   # no Jev fallback outside resident budget
     # Global route wins; old bot-local keys remain usable when no host key exists.
     endpoint,name,vendor=settings(store.get(bid))
     if route.mode in jev.ROUTES:

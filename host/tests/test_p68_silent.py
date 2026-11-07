@@ -8,7 +8,7 @@ from agentj import main_identity
 
 class Silent(unittest.TestCase):
     def test_marker_is_history_only_without_live_message_or_push_flag(self):
-        h=SimpleNamespace(cur_turn=7,hist=SimpleNamespace(get=Mock(return_value={'id':7})),turn_text=False,
+        h=SimpleNamespace(st=SimpleNamespace(log=Mock()),cur_turn=7,hist=SimpleNamespace(get=Mock(return_value={'id':7})),turn_text=False,
             hist_update=Mock(return_value=[{'id':7}]),emit=Mock(),_remember=Mock(),_post=Mock())
         Host.agent_text(h,MARKER)
         h.hist_update.assert_called_once_with(7,append=MARKER)

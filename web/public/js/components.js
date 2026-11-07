@@ -29,7 +29,7 @@ export function parseComponent(src){
  }catch{return null;}
 }
 const ctx=new WeakMap();
-function el(doc,tag,text,cls){const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
+function el(doc,tag,text,cls){const n=doc.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;n.setAttribute('data-aj-owner','aj-inline-component');return n;}
 function svg(doc,tag,attrs,text){const n=doc.createElementNS(SVG,tag);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,String(v));if(text!==undefined)n.textContent=text;return n;}
 function graph(v,doc){
  const flow=v.component==='flowchart', w=flow?360:600,h=flow?v.nodes.length*64+20:280;

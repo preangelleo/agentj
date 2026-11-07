@@ -3,7 +3,7 @@ import {focusDraft, touchComposer} from './composer-focus.js';
 // transport / draft / ASR boundary. No markup is sent, stored, copied or pasted.
 const CMD_RE=/^[/\uFF0F][^\s/\uFF0F]+(?=\s)/;
 export function composeMentions(input, getMentions) {
- const editor=document.createElement('div');editor.id='workflow-compose';editor.contentEditable='true';editor.hidden=true;
+ const editor=document.createElement('div');editor.id='workflow-compose';editor.contentEditable='true';editor.setAttribute('data-aj-owner','aj-composer');editor.hidden=true;
  editor.setAttribute('role','textbox');editor.setAttribute('aria-label',input.getAttribute('placeholder')||'Message');
  editor.setAttribute('aria-multiline','true');input.after(editor);
  let last='',frame=0,composing=false;

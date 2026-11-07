@@ -123,7 +123,7 @@ function render() {
   list.replaceChildren(...rows.map(row));
   let safety=el('rm-security');
   if(!safety) {
-    safety=mk('button','aj-btn');safety.id='rm-security';safety.type='button';
+    safety=mk('button','aj-action', undefined, 'aj-action', 'dialog');safety.id='rm-security';safety.type='button';
     safety.addEventListener('click',()=>rotationWizard());
     el('rm-list').before(safety);
   }
@@ -144,7 +144,7 @@ function row(d) {
   if (d.me) name.append(mk('span', 'rmtag', t('rm.this')));
   // P179: who gave this name — the device itself when it paired, or the owner (the device's own label on hover / long tap)
   if (d.named_by === 'owner' || d.named_by === 'device') {
-    const note = mk('small', 'name-note', t(d.named_by === 'owner' ? 'set.nameOwner' : 'set.nameDevice'));
+    const note = mk('small', 'name-note', t(d.named_by === 'owner' ? 'set.nameOwner' : 'set.nameDevice'), 'aj-remotes');
     if (d.named_by === 'owner' && d.self_name) note.title = t('set.nameSelf', { name: clean(d.self_name) });
     name.append(' ', note);
   }
@@ -155,7 +155,7 @@ function row(d) {
     pkState(d.pk) && t('p539.rm.pk.' + d.pk)].filter(Boolean);   // P539: this remote's own passkey, as the computer sees it
   meta.textContent = bits.join(' · ');
   const id = mk('p', 'rmid');
-  id.append(mk('span', '', t('rm.idLabel') + ' '), copyable(mk('code', '', clean(d.id, 32))));   // P292: the ID can be copied
+  id.append(mk('span', '', t('rm.idLabel') + ' '), copyable(mk('code', '', clean(d.id, 32), 'aj-remotes')));   // P292: the ID can be copied
   txt.append(name, meta, id);
   head.append(dot, txt);
   li.append(head);
@@ -163,13 +163,13 @@ function row(d) {
   if (editing === d.id) {
     const f = mk('form', 'rmrename');
     const lab = mk('label', 'vh', t('rm.renameLabel'));
-    const inp = mk('input', 'aj-input');
+    const inp = mk('input', 'aj-input', undefined, 'aj-remotes');
     inp.id = 'rm-name-' + d.id.replace(/[^A-Za-z0-9_-]/g, '');
     lab.htmlFor = inp.id;
     inp.type = 'text'; inp.maxLength = 64; inp.value = clean(d.name); inp.autocomplete = 'off'; inp.enterKeyHint = 'done';
-    const save = mk('button', 'aj-btn aj-btn--sm aj-btn--primary', t('rm.save'));
+    const save = mk('button', 'aj-action aj-action--sm aj-action--primary', t('rm.save'), 'aj-action', 'dialog');
     save.type = 'submit';
-    const cancel = mk('button', 'aj-btn aj-btn--sm', t('rm.cancel'));
+    const cancel = mk('button', 'aj-action aj-action--sm', t('rm.cancel'), 'aj-action', 'dialog');
     cancel.type = 'button';
     cancel.addEventListener('click', () => { editing = null; render(); });
     f.addEventListener('submit', (e) => { e.preventDefault(); rename(d, inp.value); });
@@ -181,10 +181,10 @@ function row(d) {
     return li;
   }
   const acts = mk('div', 'setacts rmitem__acts');
-  const ren = mk('button', 'aj-btn aj-btn--sm', t('rm.rename'));
+  const ren = mk('button', 'aj-action aj-action--sm', t('rm.rename'), 'aj-action', 'dialog');
   ren.type = 'button'; ren.dataset.act = 'rename';
   ren.addEventListener('click', () => { editing = d.id; render(); });
-  const unb = mk('button', 'aj-btn aj-btn--sm aj-btn--danger', t('rm.unbind'));
+  const unb = mk('button', 'aj-action aj-action--sm aj-action--danger', t('rm.unbind'), 'aj-action', 'dialog');
   unb.type = 'button'; unb.dataset.act = 'unbind';
   unb.addEventListener('click', () => unbind(d));
   acts.append(ren, unb);

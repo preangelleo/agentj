@@ -1,0 +1,123 @@
+[
+  {
+    "name": "flowchart",
+    "value": {
+      "component": "flowchart",
+      "title": "Flowchart",
+      "nodes": [
+        {
+          "id": "a",
+          "label": "Review"
+        },
+        {
+          "id": "b",
+          "label": "Done"
+        }
+      ],
+      "edges": [
+        {
+          "from": "a",
+          "to": "b"
+        }
+      ]
+    }
+  },
+  {
+    "name": "chart",
+    "value": {
+      "component": "chart",
+      "title": "Chart",
+      "kind": "bar",
+      "items": [
+        {
+          "label": "Mug",
+          "value": 60
+        },
+        {
+          "label": "Cap",
+          "value": 40
+        }
+      ]
+    }
+  },
+  {
+    "name": "steps",
+    "value": {
+      "component": "steps",
+      "title": "Steps",
+      "items": [
+        {
+          "label": "Review",
+          "status": "active"
+        },
+        {
+          "label": "Deliver",
+          "status": "pending"
+        }
+      ]
+    }
+  },
+  {
+    "name": "confirm",
+    "value": {
+      "component": "confirm",
+      "title": "Confirm",
+      "message": "Review the proposed restock order.",
+      "choices": [
+        "Prepare order",
+        "Keep draft"
+      ]
+    }
+  },
+  {
+    "name": "form",
+    "value": {
+      "component": "form",
+      "title": "Form",
+      "fields": [
+        {
+          "id": "note",
+          "label": "Public note",
+          "type": "text"
+        },
+        {
+          "id": "choice",
+          "label": "Public choice",
+          "type": "select",
+          "options": [
+            "First",
+            "Second"
+          ]
+        },
+        {
+          "id": "date",
+          "label": "Public date",
+          "type": "date"
+        },
+        {
+          "id": "check",
+          "label": "Public checkbox",
+          "type": "checkbox"
+        }
+      ]
+    }
+  },
+  {
+    "name": "chart-line",
+    "value": {
+      "component": "chart",
+      "title": "Chart",
+      "kind": "line",
+      "items": [
+        {
+          "label": "Mug",
+          "value": 60
+        },
+        {
+          "label": "Cap",
+          "value": 40
+        }
+      ]
+    }
+  }
+]

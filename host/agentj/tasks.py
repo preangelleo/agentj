@@ -682,6 +682,9 @@ class Scheduler:
             if minute is not None:
                 d["ran"][tid] = minute
         update(self.st, change)  # commit before acknowledging acceptance or adding to the in-memory queue
+        from . import approval_review
+        origin=approval_review.snapshot(self.host) if trigger in ('manual','dispatch') else None
+        approval_review.register_task_origin(self.host,rid,tid,origin)
         self.queued[tid] = rid
         self.waiting.append((tid, trigger))
         self.wake.set()
@@ -967,7 +970,8 @@ class Scheduler:
                     raise TaskError("quota", str(exc)) from exc
                 except Exception:  # unavailable readings preserve the configured harness, never invented limits
                     pass
-                update(self.st, lambda d: d["runs"][rid].update(status="running", started_at=int(time.time())))
+                run_started = time.time()
+                update(self.st, lambda d: d["runs"][rid].update(status="running", started_at=run_started))
                 caps = getattr(host, "capabilities", None)
                 if caps is not None and trigger == "dispatch":
                     caps.run_started(tid, rid)
@@ -983,6 +987,7 @@ class Scheduler:
                     with contextlib.suppress(Exception):
                         busy.start("wf:" + tid, ceo, "ceo", "", lk="dispatch" if trigger == "dispatch" else "schedule",
                                    harness=kind, cwd=e.get("dir"), role="CEO")
+                self.run_use = None
                 try:
                     # Publish lock ownership before the first await, including idle-harness shutdown (P249).
                     if not await diskq.aflush():
@@ -992,6 +997,10 @@ class Scheduler:
                     self.cur_resume, self.limit = resume, None
                     from . import provenance
                     with provenance.task_run() as mail_scope:
+                        if rid not in host.__dict__.get('_approval_task_refs',{}):
+                            from . import approval_review
+                            approval_review.register_task_origin(host,rid,tid)
+                        mail_scope['approval_task_ref'] = rid
                         from . import workflow_mail
                         mail_scope['mail_contract'] = workflow_mail.task_contract(e)
                         mail_scope['mail_admission'] = {'run_id': rid, 'instance_id': self.instance_id,
@@ -1002,8 +1011,9 @@ class Scheduler:
                             from . import wfrun
                             out, code = await wfrun.run_steps(self, kind, e, research, rid, trigger)
                         else:
-                            out, code = await asyncio.wait_for(self._exec(kind, e, research), RUN_TIMEOUT)
+                            out, code = await asyncio.wait_for(self._exec_retry(kind, e, research, res), RUN_TIMEOUT)
                 finally:
+                    self._take_use(res)
                     if busy is not None:
                         with contextlib.suppress(Exception):
                             busy.stop("wf:" + tid, fg=True)
@@ -1048,6 +1058,40 @@ class Scheduler:
         self._finish(e, res)
         return res
 
+    async def _exec_retry(self, kind, e, research, res):
+        from . import task_retry, capability
+        raw = e.get('brief_bytes')
+        brief, problems = capability.parse_brief(raw, e['id']) if raw else (None, [])
+        limit = (brief or {}).get('failure_policy', {}).get('retry_limit', 0)
+        history = []
+        while True:
+            self.execution_failure, self.execution_ended = None, False
+            out, code = await self._exec(kind, e, research)
+            # Close and reap the actual old child before considering a replacement.
+            proc = self.proc
+            await self._kill()
+            ended = self.execution_ended or proc is not None and proc.returncode is not None
+            verdict = parse_verdict(out)
+            if verdict and verdict[0] == 'ok' and code == 0:
+                res.update(retry_count=len(history), retry_history=history, retry_advice='none')
+                return out, code
+            known = bool(verdict and type(code) is int or research and code in ('failed', 'error'))
+            row = task_retry.result(self.execution_failure, code, history, ended=ended, known=known)
+            res.update({k:v for k,v in row.items() if k != 'verdict'})
+            res.update(retry_count=len(history), retry_history=[*history, row])
+            if (not task_retry.allowed(row, len(history), limit) or self.host.stopped()
+                    or problems or find(self.workdir(), e['id'])['tsha'] != e['tsha']):
+                return out, code
+            history.append(row)
+            self.st.log('task_retry', id=e['id'], attempt=len(history), failure_kind=row['failure_kind'])
+            await asyncio.sleep(min(30, 2 ** len(history)))
+            latest = find(self.workdir(), e['id'])
+            enabled = load(self.st)['on'].get(e['id'])
+            scheduled = res.get('trigger') in ('schedule', 'catch_up')
+            if (self.host.stopped() or latest['tsha'] != e['tsha'] or latest['problems']
+                    or scheduled and (not enabled or enabled.get('tsha') != e['tsha'])):
+                return out, code
+
     async def _limit_hit(self, e: dict, title: str, kind: str | None, trigger: str, resume: dict | None) -> None:
         """P314: one record for this task — after the reset, or at once on another account (quota.auto_switch on, the
         task does not pin its harness, that harness shows room and answers a handshake)."""
@@ -1068,6 +1112,23 @@ class Scheduler:
                frm_resume=(resume or {}).get("id"), to=to, task={"trigger": first}, limit=lim.get("limit"),
                stale=lim.get("stale"))
 
+    def _take_use(self, res: dict) -> None:
+        """P204 (§29): the run's spend (tokens, dollars or — on a subscription login — no dollars) → res["use"]."""
+        use, self.run_use = getattr(self, "run_use", None), None
+        if not isinstance(use, dict):
+            return
+        q = getattr(self.host, "_quota_pct", None)
+        if callable(q) and q() is not None:
+            use["b"] = "sub"
+        res["use"] = use
+
+    def last_of(self, tid: str) -> dict | None:
+        """The last run of a task as tasks.json keeps it (verdict, secs, use …), or None."""
+        try:
+            return load(self.st)["last"].get(tid)
+        except Exception:  # noqa: BLE001 — display only
+            return None
+
     @staticmethod
     def _check_report(e: dict, res: dict, since: float) -> None:
         from .capability import check_run_report      # 0.18: report.json vs brief, deliverables (capability.py)
@@ -1076,13 +1137,20 @@ class Scheduler:
     def _end_run(self, rid: str, res: dict) -> None:
         def change(d):
             rec = d["runs"][rid]
-            rec.update({k: res[k] for k in ("verdict", "line", "readonly", "secs", "report_check", "uncertain", "exit_code") if k in res})
+            rec.update({k: res[k] for k in ("verdict", "line", "readonly", "secs", "report_check", "uncertain", "exit_code",
+                "failure_kind", "retry_advice", "root_cause_hash", "retry_count", "retry_history", "process_ended", "result_known") if k in res})
             rec.update(status="interrupted" if res.get("stopped") else res.get("status", "finished"), ended_at=int(time.time()))
             d["last"][rec["id"]] = dict(rec, at=rec["ended_at"])
         update(self.st, change)
         self.queued.pop(res.get("id", ""), None)
 
     def _finish(self, e: dict, res: dict) -> None:
+        if res.get('verdict') != 'ok' and 'failure_kind' not in res:
+            from .task_retry import result
+            row = result(None, res.get('exit_code'), [], ended=False, known=False)
+            res.update({k:v for k,v in row.items() if k != 'verdict'})
+        if res.get('retry_advice') == 'escalate':
+            res['line'] = (res.get('line', '') + ' 同类问题连续两次，请重新规划后再试。')[:300]
         # P356 × P348: a task's environment may hold a coding-plan key; its VERDICT line goes to the phone, the run record,
         # activity and the readback — credential shapes are masked once here (contacts / paths stay, as on every owner channel)
         if isinstance(res.get("line"), str):
@@ -1131,6 +1199,8 @@ class Scheduler:
         with contextlib.suppress(Exception):
             await asyncio.wait_for(p.wait(), 5)
         _signal_tree(p, signal.SIGKILL)
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(p.wait(), 5)
 
     async def _exec(self, kind: str | None, e: dict, research: bool, prompt: str | None = None) -> tuple[str, int | str]:
         from . import agent as agents
@@ -1190,6 +1260,16 @@ class Scheduler:
             try:
                 return await runner.run_once(prompt)
             finally:
+                errors = getattr(runner, 'err_kind', None)
+                if callable(errors):
+                    native_kind = errors()
+                    self.execution_failure = {'rate':'rate_limit'}.get(native_kind, native_kind)
+                ended = list(getattr(runner, 'ended', ()))
+                self.execution_ended = bool(ended) and all(p.returncode is not None for p in ended)
+                tt = getattr(self.runner, "task_turn", None)
+                if tt is not None:
+                    with contextlib.suppress(Exception):
+                        self.run_use = tt.finish()
                 self.runner = None
                 if getattr(runner, "limit_hit", None):   # P314: set by quota_resume.main_hit from its fail_notice
                     self.limit = runner.limit_hit
@@ -1232,6 +1312,8 @@ class Scheduler:
             elif ev.get("type") == "result":
                 if isinstance(ev.get("result"), str):
                     last = ev["result"]
+                from . import usage
+                self.run_use = usage.from_claude_result(ev)
                 from . import quota_resume              # P314
                 v = quota_resume.judge("claude", last, rate, quota_resume.host_meters(host, "claude"), host.st.root) \
                     if ev.get("is_error") else None

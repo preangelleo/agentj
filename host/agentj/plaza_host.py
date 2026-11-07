@@ -241,6 +241,13 @@ async def handle(host, req: dict, emit=None, **run_kw) -> dict:
         why = None if rc == 0 else pre.get(n) or (card.get("why") if n in infos and card and not card.get("ok") else "error")
         host.st.log("plaza_request", name=n, result="ok" if rc == 0 else str(why), rc=rc)
         results.append({"name": n, "rc": rc, **({"why": why} if why else {})})
+    if card.get('ok') and card.get('device'):
+        from . import initialization
+        installed = {r['name']: r for r in market.read_installed(host.st)}
+        cards = [{'name': r['name'], **installed[r['name']]['initialization']}
+                 for r in results if r['rc'] == 0 and installed.get(r['name'], {}).get('initialization')]
+        if cards:
+            await initialization.deliver(host, card['device'], cards)
     pending = _deps_task(host, [r["name"] for r in results if r["rc"] == 0], en)      # #466
     if not group:
         r, out = results[0], bufs[first].getvalue()

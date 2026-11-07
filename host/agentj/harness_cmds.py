@@ -71,7 +71,7 @@ RUN = {"claude": frozenset(n for n, _, _ in _CLAUDE_BASE)}
 _CLAUDE_AGENT = frozenset(_CLAUDE_DESC) - RUN["claude"] | {n for n, _, _ in _CLAUDE_TUI}
 _NONE_ALL = {
     "exit": ("网页里不用退出：要停下这一轮用 /stop，要新对话用 /clear", "No need to exit on the web: /stop ends this turn, /clear starts anew"),
-    "login": ("登录要在 Agent J 主机上的终端里做（账号凭据不经过手机）", "Log in at the computer's terminal (credentials never pass through the phone)"),
+    "login": ("在手机打开「设置 → 紧急修复 → AI 登录救援」，需要命令时用网页终端，不在对话中发送凭据", "Open Settings → Emergency repair → AI login rescue on your phone; use Web Terminal for commands, never credentials in chat"),
     "vim": ("Vim 编辑模式只在终端里有；网页有全屏编辑器（Ctrl+G）", "Vim mode is a terminal thing; the web has the full-screen editor (Ctrl+G)"),
 }
 _NONE_ALL |= {"quit": _NONE_ALL["exit"], "logout": _NONE_ALL["login"]}
@@ -100,9 +100,19 @@ NONE = {
 # P495: dedicated native endpoints only. Codex /init is a TUI prompt expansion,
 # not an app-server operation; never claim a natural-language substitute is native execution.
 RUN |= {"codex": frozenset({"review"}), "opencode": frozenset({"init", "review"})}
+# Delegation is a request to the current Agent, never a native TUI invocation.
+# Session rewind/share and permission controls have no safe headless substitute.
+DELEGATE = {"codex": frozenset({"init", "diff", "mcp", "skills", "personality", "experimental", "statusline"}),
+            "opencode": frozenset({"sessions"})}
+_OWNER_PERMISSIONS = ("权限变更必须由主人本人在现有手机 UV 审批入口确认；不能通过终端命令代办。",
+                      "Permission changes require the owner's existing phone UV approval; terminal-command delegation is unavailable.")
+for _h in TUI:
+    for _n in ("permissions", "approvals"):
+        if any(n == _n for n, _, _ in TUI[_h]):
+            NONE[_h][_n] = _OWNER_PERMISSIONS
 for _h in ("codex", "opencode"):
     for _n, _, _ in TUI[_h]:
-        if _n not in RUN[_h] and _n not in NONE[_h]:
+        if _n not in RUN[_h] and _n not in NONE[_h] and _n not in DELEGATE[_h]:
             NONE[_h][_n] = ("此命令只支持终端界面，当前无头接口不可用；请在 Agent J 主机终端操作。",
                             "This command requires the terminal UI and is unavailable in the headless interface; use the computer terminal.")
 HARNESS = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
@@ -156,10 +166,15 @@ def agent_text(text, kind, init=None, lang: str = "zh") -> str | None:
                 "own normal path (Agent J's settings: the agentj-config skill — a permission change waits for the owner's "
                 "signature on the phone; anything else that needs the owner's yes goes through the approval card), then say "
                 "in a sentence or two what you did and how it went. Never go around an approval, and never edit a config file "
-                "to give yourself more permissions.")
+                "to give yourself more permissions. This is delegated intent, not native command execution: use only supported "
+                "headless tools; never pipe unknown TUI input or start an unrestricted shell. If unavailable, explain the "
+                "owner's terminal steps and say explicitly that nothing was executed. Credentials stay on the key card; "
+                "approval/root changes require the owner personally with UV.")
     return (f"〔菜单命令 /{name}〕主人从手机发来 {h} 的 /{name}" + (f" {arg}" if arg else "") + f"。这条命令要用 {h} 的终端界面或会改设置，"
             "请你代为完成主人的意图：走你自己的正常路径（Agent J 的设置用 agentj-config 技能，权限类改动要等主人在手机上签名确认；其他需要"
-            "主人同意的走审批卡），办完用一两句话告诉主人做了什么、结果如何。不要绕过审批，也不要直接改配置文件给自己加权限。")
+            "主人同意的走审批卡），办完用一两句话告诉主人做了什么、结果如何。不要绕过审批，也不要直接改配置文件给自己加权限。"
+            "这是意图代办，不是原生命令执行：只用已支持的无头工具，不向管道发送未知 TUI 输入，不启动全权限 shell。"
+            "无法执行时解释主人在终端的步骤，并明确未执行；凭据仍用密钥卡，approval/root 变更仍须主人本人 UV。")
 
 
 def _d(pair: tuple[str, str] | None, lang: str) -> str:

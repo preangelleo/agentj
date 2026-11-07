@@ -223,14 +223,12 @@ def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | Non
         kind = "model"
     elif has(_CODEX_REGION) or code == 451:
         text = ("ChatGPT is not available from where you are (OpenAI does not serve this region). Codex needs a working "
-                "proxy/VPN: on the Agent J host run `agentj config set proxy.https http://127.0.0.1:7890` (your own proxy "
-                "address), then resend. Or switch to Claude Code, or OpenCode with a model that works here: "
-                "`agentj agent opencode --dir <folder> --model zhipuai/glm-5.3` (install guide Step 3a)."
+                "proxy/VPN: open Web Terminal on your phone and run `agentj config set proxy.https http://127.0.0.1:7890` (your own proxy "
+                "address), then resend. You can also choose one of the registered domestic routes below."
                 if en else
-                "你所在地区连不上 ChatGPT（OpenAI 不支持这个地区）。Codex 需要可用的代理/VPN：在Agent J 主机上运行 "
+                "你所在地区连不上 ChatGPT（OpenAI 不支持这个地区）。Codex 需要可用的代理/VPN：在手机的网页终端（Web Terminal）运行 "
                 "`agentj config set proxy.https http://127.0.0.1:7890`（换成你自己的代理地址）后重发。"
-                "或者改用 Claude Code，或 OpenCode + 国内模型：`agentj agent opencode --dir <文件夹> --model zhipuai/glm-5.3`"
-                "（安装说明第 3a 步）。")
+                "也可选择下方现有的国内服务商路径。")
         kind = "region"
     elif has(_CODEX_QUOTA) and relay:
         text = (f"Your relay service {where} says the balance/credit is not enough. Top up or check this key's quota in "
@@ -270,45 +268,45 @@ def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | Non
         when = _codex_retry_at(raw)
         text = ((f"Codex usage limit reached — it resets {'at' if re.search(r'try again at', raw, re.I) else 'in'} {when}. "
                  if when else "Codex usage limit reached (Codex did not say when it resets; ChatGPT → Settings → Usage shows it). ")
-                + "Until then: tap the model name at the top for a lighter model, or switch to Claude Code / OpenCode on this "
-                  "computer (`agentj agent claude` / `agentj agent opencode`)."
+                + "Until then: tap the model name at the top for a lighter model, or switch to Claude Code / OpenCode in Web Terminal on your phone "
+                  "(`agentj agent claude` / `agentj agent opencode`)."
                 if en else
                 (f"Codex 用量到上限了，恢复时间：{when}（Codex 给的时间）。" if when else
                  "Codex 用量到上限了（原文没给恢复时间，可在 ChatGPT 设置 → 用量 里看）。")
-                + "等不及的话：点顶部模型名换个更省的模型，或在Agent J 主机上改用 Claude Code / OpenCode"
+                + "等不及的话：点顶部模型名换个更省的模型，或在手机的网页终端里改用 Claude Code / OpenCode"
                   "（`agentj agent claude` / `agentj agent opencode`）。")
         kind = "usage"
     elif has(_CODEX_PLAN):
-        text = ("This ChatGPT account's plan does not include Codex (free plan, or Plus has expired). Renew/upgrade at "
-                "https://chatgpt.com/explore/plus, then on the Agent J host run `codex login` again and resend."
+        text = ("The provider says this account's plan does not include Codex. Check the plan at "
+                "https://chatgpt.com/explore/plus, then open AI login rescue → Codex on your phone, follow the device-code card and resend."
                 if en else
-                "这个 ChatGPT 账号的套餐不含 Codex（免费版，或 Plus 已过期）。到 https://chatgpt.com/explore/plus 续费/升级，"
-                "再在Agent J 主机上运行 `codex login` 重新登录后重发。")
+                "服务商提示这个 ChatGPT 账号的套餐不含 Codex。到 https://chatgpt.com/explore/plus 核对套餐，"
+                "再从手机的 AI 登录救援 → Codex 按设备码卡重新登录后重发。")
         kind = "plan"
     elif has(_CODEX_WORKSPACE):
         text = ("Your ChatGPT workspace/organisation does not allow this login to use Codex. Ask your workspace admin to "
-                "enable Codex, or run `codex login` on the Agent J host with a personal account, then resend."
+                "enable Codex, or choose a personal account through AI login rescue → Codex on your phone, then resend."
                 if en else
                 "你的 ChatGPT 工作区/组织不允许这个登录使用 Codex。请工作区管理员开通 Codex，"
-                "或在Agent J 主机上运行 `codex login` 换成个人账号登录后重发。")
+                "或在手机的 AI 登录救援 → Codex 换成个人账号登录后重发。")
         kind = "workspace"
     elif relay and re.search(r"\b401\b|unauthori[sz]ed|invalid.{0,10}(?:api.?key|token)|incorrect api key", low):
         pid = clean_line(str(provider.get("id") or "?"), 60)
         text = (f"Your relay service {where} rejected the key (401). Check the key [model_providers.{pid}] uses in "
                 "~/.codex/config.toml; if it comes from an environment variable, the background service must see it too "
-                "(after changing it run `agentj service install` on the Agent J host)." if en else
+                "(after changing it run `agentj service install` in Web Terminal on your phone)." if en else
                 f"你用的中转服务 {where} 拒绝了这把 key（401）。检查 ~/.codex/config.toml 里 [model_providers.{pid}] 用的 key；"
-                "key 放在环境变量里的话，后台服务也要读得到（改完在Agent J 主机上运行 `agentj service install`）。")
+                "key 放在环境变量里的话，后台服务也要读得到（改完在手机的网页终端运行 `agentj service install`）。")
         kind = "auth"
     elif re.search(r"\b401\b|unauthori[sz]ed|authentication.*(?:failed|required)|token.*(?:expired|rejected)|"
                    r"refresh token|sign in again|log ?in again", low):
         from . import harness
         logged_before = harness.codex_login()[0] != "warn"
         expired = logged_before and bool(re.search(r"\b401\b|refresh token|token.*(?:expired|rejected)", low))
-        text = (("Codex login has expired. Run `codex login` on the Agent J host, then resend."
-                 if en else "Codex 登录已失效，在这台Agent J 主机上运行 `codex login` 重新登录后再发。") if expired else
-                ("Codex is not logged in yet. Run `codex login` on the Agent J host, then resend."
-                 if en else "还没登录 Codex，在这台Agent J 主机上运行 `codex login` 后再发。"))
+        text = (("Codex login has expired. Open AI login rescue → Codex on your phone, follow the device-code card, then resend."
+                 if en else "Codex 登录已失效，在手机的 AI 登录救援 → Codex 按设备码卡重新登录后再发。") if expired else
+                ("Codex is not logged in yet. Open AI login rescue → Codex on your phone, follow the device-code card, then resend."
+                 if en else "还没登录 Codex，在手机的 AI 登录救援 → Codex 按设备码卡登录后再发。"))
         kind = "auth"
     elif has(_CODEX_CONTEXT):
         text = ("This conversation is too long for the model. Send /compact to shrink it (or /clear to start fresh), then resend."
@@ -330,35 +328,37 @@ def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | Non
                 "沙箱拦下了 Codex 的某一步（这是安全隔离，不是故障）。让 Agent J 换个做法，或在卡片弹出时批准放宽权限；"
                 "Agent J 主机上运行 `agentj doctor` 可看隔离状态。")
         kind = "sandbox"
+    elif any(word in low for word in ('unsupported_country', 'country, region, or territory', 'region is not supported', 'location is not supported')):
+        text = ("The provider reports that this region is unsupported." if en else "模型服务明确报告当前地区不受支持。")
+        kind = 'region'
     elif code == 403 or re.search(r"\b403\b|forbidden", low):
-        text = ("ChatGPT refused access (403). Most often this region is not served or the proxy node is blocked: switch "
-                "proxy/VPN node and resend. If it persists, your account/workspace may not have Codex — run `codex login` again."
+        text = ("The provider refused access (403). The response does not establish whether this is account permissions, "
+                "a region restriction or a proxy policy. Check the provider's account and access settings."
                 if en else
-                "ChatGPT 拒绝了访问（403）。最常见是所在地区不受支持或代理节点被封：换个代理/VPN 节点后重发；"
-                "一直这样的话，可能是账号/工作区没开通 Codex，在Agent J 主机上重新运行 `codex login`。")
+                "模型服务拒绝访问（403），尚不能确认是账户权限、地区限制还是代理策略。请核对服务商的账户与访问设置。")
         kind = "access"
     elif any(w in re.sub(r"（[a-z]*error）", "", low) for w in _CODEX_NETWORK):   # not our own "（TimeoutError）" start wrapper
         text = ("Cannot connect to ChatGPT. Check your proxy/VPN, then resend (the proxy Agent J uses: "
-                "`agentj config get proxy.https` on the Agent J host)."
-                if en else "连不上 ChatGPT，检查代理/VPN 后重发（Agent J 用的代理：Agent J 主机上运行 `agentj config get proxy.https`）。")
+                "`agentj config get proxy.https` in Web Terminal on your phone)."
+                if en else "连不上 ChatGPT，检查代理/VPN 后重发（Agent J 用的代理：手机的网页终端运行 `agentj config get proxy.https`）。")
         kind = "network"
     elif exit_code is not None:
         sig = {"-9": "SIGKILL", "137": "SIGKILL", "-15": "SIGTERM", "143": "SIGTERM", "-11": "SIGSEGV", "139": "SIGSEGV"}.get(exit_code)
         if exit_code == "start":
-            text = ("Codex did not start. On the Agent J host run `codex --version` and `agentj doctor`, then `agentj agent restart`."
-                    if en else "Codex 没能启动。在Agent J 主机上运行 `codex --version` 和 `agentj doctor`，再运行 `agentj agent restart`。")
+            text = ("Codex did not start. In Web Terminal on your phone run `codex --version` and `agentj doctor`, then `agentj agent restart`."
+                    if en else "Codex 没能启动。在手机的网页终端运行 `codex --version` 和 `agentj doctor`，再运行 `agentj agent restart`。")
         else:
             why = (" — killed by the system, often out of memory" if en else "，被系统强制结束，常见是内存不足") if sig == "SIGKILL" else ""
             text = (f"Codex stopped unexpectedly (exit {exit_code}{why}). Just resend once; if it happens again, run "
-                    "`agentj doctor` then `agentj agent restart` on the Agent J host."
+                    "`agentj doctor` then `agentj agent restart` in Web Terminal on your phone."
                     if en else
-                    f"Codex 进程意外退出（退出码 {exit_code}{why}）。先直接重发一次；再出现就在Agent J 主机上运行 `agentj doctor`，"
+                    f"Codex 进程意外退出（退出码 {exit_code}{why}）。先直接重发一次；再出现就在手机的网页终端运行 `agentj doctor`，"
                     "再运行 `agentj agent restart`。")
         kind = "crash"
     elif "没找到 Codex" in raw or "codex: command not found" in low:
-        text = ("Codex is not installed on the Agent J host (or not on the service's PATH). Install it, run `codex login`, then "
+        text = ("Codex is not installed on the Agent J host (or not on the service's PATH). Use Web Terminal on your phone to install it, then AI login rescue → Codex for device-code sign-in. Run "
                 "`agentj service install`, and resend."
-                if en else "这台Agent J 主机上找不到 Codex（或后台服务的 PATH 里没有）。装好并运行 `codex login`，再运行 "
+                if en else "这台Agent J 主机上找不到 Codex（或后台服务的 PATH 里没有）。在手机的网页终端装好后，通过 AI 登录救援 → Codex 设备码卡登录；再在网页终端运行 "
                            "`agentj service install` 后重发。")
         kind = "missing"
     else:
@@ -370,6 +370,9 @@ def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | Non
         kind = "other"
     if kind in ("usage", "rate", "quota", "auth"):
         text += _codex_relay_hint(kind, provider, stale, en)
+    if kind in ('network', 'region'):
+        from .startup_help import domestic_note
+        text += '\n' + domestic_note(lang)
     detail = redact(raw).replace("```", "` ` `")
     if detail and provider:
         detail = f"provider: {clean_line(str(provider.get('id') or '?'), 60)}" + (f" ({where})" if provider.get("host") else "") + \
@@ -379,6 +382,24 @@ def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | Non
 
 HARNESS_CMD = {"claude": "claude", "codex": "codex", "opencode": "opencode", "kimi": "kimi", "qwen": "qwen", "dsh": "dsh"}
 _CLAUDE_ID = re.compile(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[1m\])?", re.I)
+
+
+def claude_output(ev: dict) -> bool:
+    """P230: is this Claude Code stream-json event the model's own output — an `assistant` message (not `<synthetic>`: a
+    local command's text, an API error, or the kept segment replayed after a compaction) with a non-empty text block or a tool_use block, or a partial-message `stream_event`
+    starting a text / tool_use block? Thinking is not output."""
+    t = ev.get("type")
+    if t == "stream_event":
+        e = ev.get("event") if isinstance(ev.get("event"), dict) else {}
+        b = e.get("content_block") if isinstance(e.get("content_block"), dict) else {}
+        return e.get("type") == "content_block_start" and b.get("type") in ("text", "tool_use")
+    if t != "assistant":
+        return False
+    msg = ev.get("message") if isinstance(ev.get("message"), dict) else {}
+    if msg.get("model") == "<synthetic>":
+        return False
+    return any(isinstance(b, dict) and (b.get("type") == "tool_use" or b.get("type") == "text" and isinstance(b.get("text"), str)
+                                        and b["text"].strip()) for b in msg.get("content") or [])
 
 
 def pretty_model(mid) -> str | None:
@@ -418,17 +439,17 @@ def stall_text(kind: str, reason: str, excerpt: str, secs: int, lang: str = "zh"
     en = lang == "en"
     shown = ("\n```text\n" + excerpt.replace("```", "` ` `") + "\n```") if excerpt else ""
     if reason in ("tty", "prompt"):
-        return (f"Agent J has been waiting {secs} s for an answer in a terminal on the Agent J host — the phone cannot answer it."
-                f"{' It printed:' if shown else ''}{shown}\nAt the Agent J host: run `agentj agent {kind}` (answers the one-time "
+        return (f"Agent J has been waiting {secs} s for an answer in a terminal on the Agent J host — chat cannot answer that terminal prompt directly."
+                f"{' It printed:' if shown else ''}{shown}\nOpen Web Terminal on your phone: run `agentj agent {kind}` (answers the one-time "
                 f"setup ahead), or run `{cmd}` once in the working folder and answer it there; then send the message again."
                 if en else
-                f"Agent J 卡在Agent J 主机终端里的一个确认上（已等 {secs} 秒），手机上没法回答。{'它显示的是：' if shown else ''}{shown}\n"
-                f"在Agent J 主机上处理：运行 `agentj agent {kind}`（预先完成首次设置），或在工作目录里运行一次 `{cmd}` 把它答掉；然后在手机上重发这条消息。")
+                f"Agent J 卡在Agent J 主机终端里的一个确认上（已等 {secs} 秒），聊天区不能直接回答那个终端提示。{'它显示的是：' if shown else ''}{shown}\n"
+                f"在手机的网页终端处理：运行 `agentj agent {kind}`（预先完成首次设置），或在工作目录里运行一次 `{cmd}` 把它答掉；然后在手机上重发这条消息。")
     return (f"No answer from Agent J for {secs} s; its process is still running. It may be thinking for a long time, or the "
-            f"connection to the model service is very slow. If nothing changes: at the Agent J host run `agentj doctor`, or tap Stop "
+            f"connection to the model service is very slow. If nothing changes: open Web Terminal on your phone and run `agentj doctor`, or tap Stop "
             f"and send again." if en else
             f"Agent J 已经 {secs} 秒没有任何回应，进程还在运行：可能在长时间思考，也可能连模型服务很慢。"
-            f"一直没有动静的话：在Agent J 主机上运行 `agentj doctor` 查看，或在手机上按「停止」后重发。")
+            f"一直没有动静的话：在手机的网页终端运行 `agentj doctor` 查看，或在手机上按「停止」后重发。")
 
 
 class Agent:
@@ -481,6 +502,32 @@ class Agent:
         fn = getattr(self.host, "meter_update", None)
         if fn:
             fn(**kw)
+
+    def own_turns(self) -> bool:
+        """The owner's chat Agent (its turns are the phone's pages), not a scheduled run's throw-away one."""
+        current = getattr(self.host, "agent", None)
+        return (current is None or current is self) and not (self.cfg.get("_workflow_ceo") or getattr(self, "research", False) or getattr(self, "persist", True) is False)
+
+    def use_put(self, key: str, toks: dict | None = None, usd=None, model=None) -> None:
+        """P204 (§29): this turn's spend as the harness reported it; each key's value replaces its last one."""
+        if not self.own_turns():
+            from . import usage
+            if getattr(self, "task_turn", None) is None:
+                self.task_turn = usage.Turn(self.kind)
+            self.task_turn.put(key, toks, usd, model)
+            return
+        fn = getattr(self.host, "turn_use", None)
+        if fn:
+            fn(key, toks, usd, model)
+
+    def use_phase(self, ph: str | None, tool: str | None = None) -> None:
+        """P204 (§29): "tool" while a tool runs, "gen" while the model writes — the phone's status line tells them apart."""
+        if self.own_turns():
+            fn = getattr(self.host, "agent_phase", None)
+            if fn:
+                fn(ph, tool)
+        elif getattr(self, "task_turn", None) is not None:
+            self.task_turn.set_phase(ph)
 
     def _auth_signal(self, text) -> None:
 
@@ -699,9 +746,18 @@ class Agent:
         self.ever_touched = True               # 0269: this adapter reports events (the turn watchdog may judge silence)
         self.event_at = time.monotonic()
 
+    def first_output(self) -> None:
+        if getattr(self, "out_seen", False) or (getattr(self, "cfg", None) or {}).get("_workflow_ceo"):
+            return
+        self.out_seen = True
+        fn = getattr(self.host, "agent_first_out", None)
+        if fn:
+            fn()
+
     async def watched(self, coro):
 
         self.touched = False
+        self.out_seen = False
         self.event_at = time.monotonic()       # 0269: the turn's event clock starts with the turn
         w = asyncio.create_task(self._stall_watch())
         try:
@@ -1208,6 +1264,7 @@ class ClaudeAgent(Agent):
         from .static_shell import interpreter_env
         self.approval_env = interpreter_env(env)
         sid = self.host.st.agent_session(self.kind)
+        self.cost_seen = 0.0
         self.proc = await asyncio.create_subprocess_exec(*resource_policy.work_argv(argv), cwd=self.cfg["dir"], env=env,
                                                          stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                                                          stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT,
@@ -1354,6 +1411,8 @@ class ClaudeAgent(Agent):
         t = ev.get("type")
         if t in ("assistant", "user", "result", "stream_event"):
             self.touch()                           # P219: progress (the stall watch stays quiet)
+        if getattr(self, "capture", None) is None and not getattr(self, "replay", False) and claude_output(ev):
+            self.first_output()
         if t == "system" and ev.get("subtype") == "api_retry":
             self._api_retry(ev)
         elif t == "system" and ev.get("subtype") in ("model_refusal_fallback", "model_refusal_no_fallback"):
@@ -1416,6 +1475,8 @@ class ClaudeAgent(Agent):
                 return     # P219: the turn's result carries the same error (its notice, or the model fallback) — not a reply
             if not synthetic:
                 self.replay = False
+            if not synthetic and isinstance(msg.get("model"), str):
+                self.turn_model = msg["model"]
             if not synthetic:
                 self._note_tools(msg.get("content"), ev.get("parent_tool_use_id"))
             if not synthetic and not ev.get("parent_tool_use_id") and getattr(self.host, "peers", None) is not None:
@@ -1423,19 +1484,36 @@ class ClaudeAgent(Agent):
                     if isinstance(block, dict) and block.get("type") == "tool_use":
                         self.host.peers.xfer.broker.register(block.get("id"), block.get("name"), block.get("input"), self.cfg["dir"])
             for block in msg.get("content") or []:
-                if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+                if isinstance(block, dict) and block.get("type") == "tool_use" and self.capture is None \
+                        and isinstance(block.get("name"), str):
+                    self.use_phase("tool", block["name"])
+                elif isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
                     if self.capture is not None:
                         self.capture.append(block["text"])
                     else:
+                        self.use_phase("gen")
                         self.host.agent_text(block["text"])
-        elif t == "user" and getattr(self.host, "peers", None) is not None:
+        elif t == "user":
+            if self.capture is None and not ev.get("isReplay"):
+                self.use_phase("gen")
             message = ev.get("message") if isinstance(ev.get("message"), dict) else {}
             for block in message.get("content") or []:
                 if isinstance(block, dict) and block.get("type") == "tool_result":
-                    self.host.peers.xfer.broker.complete(block.get("tool_use_id"), not block.get("is_error", False), block.get("content"))
+                    if getattr(self.host, "peers", None) is not None:
+                        self.host.peers.xfer.broker.complete(block.get("tool_use_id"), not block.get("is_error", False), block.get("content"))
         elif t == "result":
             self.replay = False
             self.last_result = ev
+            from . import usage as use_mod
+            total, usd = use_mod.usd_of(ev.get("total_cost_usd")), None
+            if total is not None:
+                prev = getattr(self, "cost_seen", 0.0)
+                usd = round(total - prev, 6) if total >= prev else total
+                self.cost_seen = total
+            if self.capture is None:
+                self.results_seen = getattr(self, "results_seen", 0) + 1
+                self.use_put(f"result:{self.results_seen}", use_mod.tokens_claude(ev.get("usage")), usd,
+                             getattr(self, "turn_model", None) or self.cur_model())
             from .heartbeat_check import sample
             u = ev.get('usage') or {}
             inp = u.get('input_tokens')
@@ -1814,7 +1892,7 @@ class ClaudeAgent(Agent):
                     models.append({"id": v, "name": clean_line(str(m.get("displayName") or v), 60),
                                    "desc": clean_line(str(m.get("description") or ""), 120),
                                    "cur": v == cur or m.get("resolvedModel") == cur})
-            return Result(f"当前模型：{cur or '默认'}。点一个切换（之后的对话都用它）：", models=models[:40])
+            return Result(f"Claude Code · 当前模型：{cur or '默认'}。点一个切换（之后的对话都用它）：", models=models[:40])
         if not slash.MODEL_RE.match(arg):
             return Result(f"模型名不对：{clean_line(arg, 100)}", "error")
         try:
