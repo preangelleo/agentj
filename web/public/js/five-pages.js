@@ -74,15 +74,21 @@ export function toggleMenu(){if(!$('five-menu'))return;const e=$('five-menu');if
 // P360: rebuilt in place when the computer's card list changes while the menu is open (focus stays on the same card)
 function buildDeck(focus){const e=$('five-menu'),was=document.activeElement?.closest?.('.fp-menu-card'),key=was&&(was.dataset.page||'card:'+was.dataset.card);
  e.replaceChildren();const deck=node('div',undefined,'fp-menu-deck');
- for(const [i,[key,title,icon]] of names().entries()){
-  const b=button('',()=>go(key),'fp-menu-card fp-dark-'+i);b.dataset.page=key;cardColor(b,key);
+ // Preserve the 0.27.1 deck before appending later navigation entries.
+ const base=names().filter(([id])=>id!=='friends'&&id!=='bots'),tail=names().filter(([id])=>id==='friends'||id==='bots');
+ const notes={chat:'p244.fivepages6',workflows:'p244.fivepages7',skills:'p244.fivepages8',memory:'p244.fivepages9',agentj:'p244.fivepages10',terminal:'terminal.cardNote',friends:'p0280.friendsNote',bots:'p0280.botsNote'};
+ const addSystem=([key,title],i,accent=i)=>{
+  const b=button('',()=>go(key),'fp-menu-card fp-dark-'+accent);b.dataset.page=key;b.style.setProperty('--fp-i',String(i));cardColor(b,key);
   const head=node('div',undefined,'fp-menu-head');
   if(key==='agentj'){const img=node('img');img.src='assets/five-robot.png';img.alt='';head.append(img);}else head.append(globalIcon(key));
   head.append(node('span',[current===key&&t('p244.fivepages5'),menuCount(key)].filter(Boolean).join(' · '),'fp-current'));
-  b.append(head,node('h2',title),node('p',[t('p244.fivepages6'),t('p244.fivepages7'),t('p244.fivepages8'),t('p244.fivepages9'),t('p244.fivepages10'),t('p0280.friendsNote'),t('p0280.botsNote'),t('terminal.cardNote')][i]));deck.append(b);
- }
- // P360: the owner's cards stack below the five (Apple Wallet: one fixed peek and card size, cards.css — the deck scrolls)
- const mine=jc.deck();mine.forEach((c,j)=>deck.append(jc.deckCard(c,names().length+j,()=>go('card',c.id))));deck.style.setProperty('--fp-n',String(names().length+mine.length));deck.dataset.n=String(names().length+mine.length);
+  b.append(head,node('h2',title),node('p',t(notes[key])));deck.append(b);
+ };
+ base.forEach((entry,i)=>addSystem(entry,i));
+ const mine=jc.deck();mine.forEach((c,j)=>deck.append(jc.deckCard(c,base.length+j,()=>go('card',c.id))));
+ // Friends and customer service are independent filled cards; customer service is last.
+ tail.forEach((entry,j)=>addSystem(entry,base.length+mine.length+j,j));
+ const count=base.length+mine.length+tail.length;deck.style.setProperty('--fp-n',String(count));deck.dataset.n=String(count);
  keyHints(deck);deck.onclick=ev=>{if(ev.target===deck)closeMenu();};e.append(deck);e.hidden=false;const back=key&&[...deck.children].find(b=>(b.dataset.page||'card:'+b.dataset.card)===key);if(focus||back)(back||deck.querySelector('button')).focus({preventScroll:!focus});arm();
 }
 // P412 #176: the cards' keys (cardkeys.js). The title shows its letter underlined; a Chinese title, or a digit, gets a small

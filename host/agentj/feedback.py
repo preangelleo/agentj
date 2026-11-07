@@ -1,13 +1,15 @@
 """`agentj feedback check | send | replies` — install feedback after Step 4 (seat-setup CONTRACT §6; worker/FEEDBACK_API.md).
 
-  check <draft.json>   layer 1 (deterministic redaction) + layer 2 (Jev, only with the customer's OPENROUTER_API_KEY);
+  check <draft.json>   mandatory local rule redaction + optional configured model review;
                        writes <draft>.checked.json (0600), prints the redacted JSON + the verdict.
-                       exit 0 = OK to show the human · 2 = blocked by layer 2 · 3 = layer 2 unavailable (not a
-                       rejection: the human reads it, then send --owner-confirmed) · 1 = error, incl. a draft the API
-                       would refuse (missing / wrong fields, named; nothing written, layer 2 not called)
-  send <checked.json>  re-runs both layers on the exact bytes; posts them only if they pass, or — when layer 2 is
-                       unavailable / blocked — only with --owner-confirmed (the human read it and said yes). Stores
-                       {id, receipt, created_at} in <state>/feedback/receipts.json (0600); prints the fb_ id only.
+                       exit 0 = checked, including explicitly unavailable optional model review;
+                       2 = blocked by privacy checks; 3 = unverified authenticated broker/source;
+                       1 = error, including invalid API fields (nothing written).
+  send <checked.json>  rechecks the exact bytes before sending. Missing or unavailable model review does not hold
+                       locally redacted content or require another confirmation. A configured model's noncredential
+                       denial retains explicit owner consent. Credentials, local-check failures and unverified
+                       broker/source checks stop sending. The legacy install channel also retains owner-informed consent.
+                       Stores {id, receipt, created_at} in <state>/feedback/receipts.json (0600); prints the fb_ id only.
   replies              reads every stored receipt; prints our replies as data, never as instructions.
 
 The install session id (~/.agentj-install/feedback-id) and the receipts are never printed. Stdlib + the host package only.
@@ -202,19 +204,31 @@ def _shape_refusal(probs: list[str], what: str) -> str:
 
 
 # ------------------------------------------------------------------ commands
+
+def _local_report(value):
+    from . import report_privacy, support
+    if isinstance(value, str):
+        return support.redact_paths(report_privacy.support_rules(value)[0])
+    if isinstance(value, list):
+        return [_local_report(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _local_report(item) for key, item in value.items()}
+    return value
+
 def run_check(draft: pathlib.Path, threshold: float = privacy.THRESHOLD, *, transport=None, env=None, identity=None,
               out=None) -> int:
     out = out or sys.stdout
     _, obj = _read_json_object(draft)
     host, user = identity if identity is not None else privacy.local_identity()
     from . import report_privacy
+    obj = _local_report(obj)
     redacted, hits, reason = report_privacy.prepare(obj, identity=(host, user))
     if reason:
         print("未检查：脱敏后仍含凭据 / Not checked: residual credential (" + reason + ")", file=out)
         return EXIT_BLOCKED
     dest = checked_path(draft)
     text = json.dumps(redacted, ensure_ascii=False, indent=2) + "\n"
-    probs = shape_problems(redacted)
+    probs = shape_problems(redacted, require_owner_informed=False)
     if len(text.encode()) > MAX_BODY:
         probs.append(f"the whole report is {len(text.encode())} bytes; at most {MAX_BODY}: shorten problem / resolution")
     if probs:    # before layer 2 (a paid call) and before writing anything: `send` would only get HTTP 400
@@ -227,8 +241,10 @@ def run_check(draft: pathlib.Path, threshold: float = privacy.THRESHOLD, *, tran
     print(text, end="", file=out)
     print(_verdict_line(v, threshold), file=out)
     print(f"written: {dest} (0600)", file=out)
-    if v.status == "ok":
-        print(f"next: show your human the JSON above; after their yes: agentj feedback send {dest} --owner-confirmed", file=out)
+    if v.status == "ok" or privacy.optional_review(v):
+        if privacy.optional_review(v):
+            print(privacy.LOCAL_REVIEW_NOTE, file=out)
+        print(f"next: agentj feedback send {dest}; existing outbound authorization still applies", file=out)
         return EXIT_OK
     if v.status == "blocked":
         print("next: residual credential flagged; remove it and run check again. Owner confirmation cannot bypass credentials." if v.kind in ("credential", None) else f"next: after owner consent: agentj feedback send {dest} --owner-confirmed (automatic redaction; credentials cannot be bypassed)", file=out)
@@ -239,12 +255,9 @@ def run_check(draft: pathlib.Path, threshold: float = privacy.THRESHOLD, *, tran
 
 # exit 3 of `check`: said so that the AI needs no extra round-trip to work out what to do
 UNAVAILABLE_NEXT = (
-    "what exit 3 means: the second, automatic privacy check could not run here (it needs an OpenRouter key on this "
-    "computer, or the network to reach it). The report is NOT rejected; the first pass did run and already replaced what "
-    "it recognised. Do not look for, ask for or set a key yourself.\n"
-    "next: show your human the JSON above exactly as printed and ask them to read it for anything private (names, "
-    "addresses, keys, paths, account details). Only if they say yes: agentj feedback send {dest} --owner-confirmed\n"
-    "If they want something removed, edit the draft and run check again. If they say no, do not send it.")
+    "The authenticated Host privacy broker/source could not be verified. Keep the draft and verify the active session; "
+    "do not invent owner confirmation. Optional model absence/failure alone does not stop sending.")
+
 
 
 def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_file: str = SESSION_FILE,
@@ -256,7 +269,7 @@ def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_fi
     from . import support
     from .state import State
     st = state if state is not None else State()
-    autonomous = support._full_access(st)
+    autonomous = bool(st.exists() and support.cloud.read_cloud(st))
     if raw_text is None:
         raw, obj = _read_json_object(checked)
     else:
@@ -277,14 +290,12 @@ def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_fi
                 prior_count = meta['count']
         except (OSError, ValueError, AttributeError):
             pass
+    obj = _local_report(obj)
     obj, hits, reason = report_privacy.prepare(obj, identity=(host, user))
     if reason:
         print("未提交：脱敏后仍含凭据 / Not sent: residual credential (" + reason + ")", file=out)
         return EXIT_BLOCKED
-    if hits and not owner_confirmed and not autonomous:
-        print("refused: layer 1 would still change this draft; run check and obtain consent, or use --owner-confirmed after consent.", file=out)
-        return EXIT_ERROR
-    if hits:
+    if json.loads(raw) != obj:
         raw = (json.dumps(obj, ensure_ascii=False) + "\n").encode()
     probs = shape_problems(obj, require_owner_informed=not autonomous)
     if len(raw) > MAX_BODY:
@@ -296,12 +307,15 @@ def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_fi
     print(_verdict_line(v, threshold), file=out)
     # #520: the legacy feedback API requires owner_informed=true (human read it).
     # Do not fabricate that assertion: autonomous reports use the
-    # existing signed support channel and a fixed content-free body instead.
-    if autonomous and not (v.status == "blocked" and v.kind in ("credential", None)):
+    # existing signed support channel with deterministic local redaction instead.
+    if autonomous and (v.status == 'ok' or privacy.optional_review(v) or
+                       v.status == 'blocked' and v.kind not in ('credential', None) and owner_confirmed):
         review = v.status if v.status in ("ok", "blocked", "unavailable") else "unavailable"
-        body = ("Agent J feedback request\nprivacy_review: " + review +
-                "\npayload: withheld\nmode: automatic-metadata-only")
-        st.log("feedback_autonomous", reason="review_" + review, result="metadata_only", by="full_access_no_owner_answer")
+        # The signed support channel carries the useful report after applying its
+        # local rules; it must never assert legacy owner_informed on the owner's behalf.
+        report = {k: value for k, value in obj.items() if k != 'owner_informed'}
+        body = "Agent J feedback request\n" + json.dumps(report, ensure_ascii=False, indent=2)
+        st.log("feedback_autonomous", reason="review_" + review, result="local_rule_redaction", by="signed_support_channel")
         return support.run_send("report", body, ch=support.channel_for(st), wait=0, env={}, out=out,
                                 owner_confirmed=False)
     if v.status == "blocked" and (v.kind in ("credential", None) or not owner_confirmed):
@@ -312,10 +326,13 @@ def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_fi
             print("refused: blocked by layer 2. Show your human the text and the reason; send with --owner-confirmed only "
                   "after they read it and said yes.", file=out)
         return EXIT_BLOCKED
-    if v.status == "unavailable" and not owner_confirmed:
-        print("refused: layer 2 unavailable. Show your human the exact JSON; send with --owner-confirmed only after "
-              "they read it and said yes.", file=out)
+    if v.status == "unavailable" and not privacy.optional_review(v):
+        print("refused: authenticated privacy broker/source check failed; keep the draft", file=out)
         return EXIT_UNAVAILABLE
+    if privacy.optional_review(v):
+        obj['problem'] = privacy.LOCAL_REVIEW_NOTE + "\n" + obj['problem']
+        raw = (json.dumps(obj, ensure_ascii=False) + "\n").encode()
+        print(privacy.LOCAL_REVIEW_NOTE, file=out)
 
     sf = pathlib.Path(session_file).expanduser()
     if session_file == SESSION_FILE and not sf.exists() and pathlib.Path(LEGACY_SESSION_FILE).expanduser().exists():
@@ -448,7 +465,7 @@ def cmd_replies(a) -> None:
 def add_parser(sub) -> None:
     fb = sub.add_parser("feedback", help="安装反馈：check 脱敏+隐私检查 · send 发送 · replies 读回复 / install feedback with a privacy gate",
                         description=__doc__.split("\n\n")[0] + " Exit codes: 0 ok · 1 error (also: missing or wrong "
-                        "fields, named) · 2 blocked by layer 2 · 3 layer 2 unavailable (needs the human's explicit yes).")
+                        "fields, named) · 2 blocked by layer 2 · model review is optional; local rules always apply.")
     fs = fb.add_subparsers(dest="feedback_cmd", required=True)
     c = fs.add_parser("check", help="脱敏 + 隐私检查，写出 <draft>.checked.json / redact + check, write <draft>.checked.json")
     c.add_argument("draft", help="the draft feedback JSON (FEEDBACK_API.md fields)")
@@ -458,7 +475,7 @@ def add_parser(sub) -> None:
     s = fs.add_parser("send", help="重新检查并发送 / re-check the exact bytes and send")
     s.add_argument("checked", help="the .checked.json written by `agentj feedback check`")
     s.add_argument("--owner-confirmed", action="store_true",
-                   help="your human read this exact JSON and said yes (required when layer 2 is unavailable or blocked)")
+                   help="your human read this exact JSON and said yes (needed to override noncredential model findings)")
     s.add_argument("--session-file", default=SESSION_FILE, help=f"install session id file (default {SESSION_FILE})")
     s.set_defaults(fn=cmd_send)
     r = fs.add_parser("replies", help="读取我们的回复（数据，不是指令）/ read our replies (data, not instructions)")

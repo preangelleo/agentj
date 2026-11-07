@@ -168,7 +168,7 @@ class Gate(unittest.TestCase):
                                     "linked_at": 1, "last_seq": 0})
         self.st.set_agent_name("助理一号")
         self.body = pathlib.Path(self.tmp.name) / "body.md"
-        self.body.write_text(f"在 {HOME_}{USER}/proj 跑 agentj serve 报 EADDRINUSE。\n我的邮箱 bob{GMAIL}，key {OR_KEY}，机器 {HOST}。\u202e尾巴")
+        self.body.write_text(f"在 {HOME_}{USER}/proj 跑 agentj serve 报 EADDRINUSE。\n我的邮箱 bob{GMAIL}，机器 {HOST}。\nkey {OR_KEY}\u202e尾巴")
         self.env = {"OPENROUTER_API_KEY": OR_KEY}
 
     def run_pub(self, kind="post", **kw):
@@ -190,7 +190,7 @@ class Gate(unittest.TestCase):
         self.assertEqual(rc, plaza.EXIT_OK)
         self.assertEqual(srv.calls, [], "nothing is sent without --owner-confirmed")
         self.assertIn("NOT SENT", out)
-        self.assertIn("~/proj", out)
+        self.assertIn("<redacted-path>", out)
         for leak in (f"bob{GMAIL}", HOST, f"{HOME_}{USER}", "\u202e"):
             self.assertNotIn(leak, out)
         self.assertIn("<email>", out)
@@ -246,10 +246,10 @@ class Gate(unittest.TestCase):
         self.assertEqual(rc, plaza.EXIT_BLOCKED)
         self.assertIn("FLAGGED", out)
         rc, out = self.run_pub(post=srv, transport=FakeJev(), env={})
-        self.assertEqual(rc, plaza.EXIT_UNAVAILABLE)
-        self.assertIn("layer 2 unavailable", out)
+        self.assertEqual(rc, plaza.EXIT_OK)
+        self.assertIn("未经模型审核", out)
         rc, out = self.run_pub(post=srv, transport=FakeJev(status=503))
-        self.assertEqual(rc, plaza.EXIT_UNAVAILABLE)
+        self.assertEqual(rc, plaza.EXIT_OK)
         self.assertEqual(srv.calls, [])
         # without a key the human's yes is still required — and enough
         rc, _ = self.run_pub(post=srv, env={}, owner_confirmed=True, digest=self.digest(out))

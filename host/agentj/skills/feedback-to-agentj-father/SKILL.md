@@ -11,7 +11,9 @@ Agent J Father = Agent J 官方反馈与客服平台（开发者团队后台）�
 
 `/feedback-to-agentj-father <内容>` is an explicit owner instruction to submit the following content, adding only necessary context.
 Redact locally, then run `agentj support feedback "<redacted content>" --attach-doctor --wait 0` directly: **不再二次确认 / no second confirmation**.
-Exit 3 (Jev flagged personal details or is unavailable): show the owner the redacted text; rerun with `--owner-confirmed` only after their yes.
+始终先完成本机规则脱敏；只在已配置模型时增加审核。模型未配置或不可用时照常发送脱敏正文，明确标注未经模型审核，不再要一次确认。
+Always complete local rule redaction first; add model review only when configured. Missing or unavailable model review does not withhold the redacted body or require another confirmation; retain the explicit unreviewed status.
+If a configured model flags noncredential personal details, show the redacted text and use `--owner-confirmed` only after the owner agrees. Credentials, failed local checks and unverified session/source checks still stop sending.
 Use `--kind bug` for a bug, default report for an idea or general feedback; both use the existing official support thread.
 Prefer `--file <private local draft>` for multiline content or shell metacharacters; never interpolate raw user text into a shell command.
 Only `/feedback-to-agentj-father` with no content: ask “想反馈什么？” / “What would you like to report?” and do not send yet.

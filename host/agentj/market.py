@@ -2289,16 +2289,23 @@ def package_scan(text: str, host: str | None, user: str | None) -> collections.C
 def layer1(manifest: dict, files: dict, identity) -> list[tuple[str, str, int]]:
     """Every UTF-8 file, every path and every manifest string through privacy layer 1. → [(where, kind, n)] (empty = clean)."""
     host, user = identity if identity is not None else privacy.local_identity()
+    from . import peer_guard
+    index = peer_guard.SecretIndex.build().require_complete()
+    def scan(text):
+        hits = package_scan(text, host, user)
+        if index.hits(text):
+            hits['secret_fragment'] += 1
+        return hits
     found = []
     for where, text in [("file names", "\n".join(sorted(files)))] + list(_manifest_strings(manifest)):
-        hits = package_scan(text, host, user)
+        hits = scan(text)
         found += [(where, k, n) for k, n in sorted(hits.items())]
     for p in sorted(files, key=lambda x: x.encode()):
         try:
             text = files[p].decode("utf-8")
         except UnicodeDecodeError:
             continue
-        hits = package_scan(text, host, user)
+        hits = scan(text)
         found += [(p, k, n) for k, n in sorted(hits.items())]
     return found
 
@@ -2447,7 +2454,7 @@ def run_publish(directory: str, *, show_name=False, owner_confirmed=False, diges
     print("NOT SENT. 把上面的文件清单和内容给你的人看；只有他明确同意公开后才运行 / Show your human the package above; only after they "
           f"explicitly agree to publish it: agentj plaza publish {shlex.quote(str(directory))} "
           + ("--show-agent-name " if show_name else "") + f"--owner-confirmed --digest {d}", file=out)
-    return EXIT_OK if v.status == "ok" else EXIT_BLOCKED if v.status == "blocked" else EXIT_UNAVAILABLE
+    return EXIT_OK if v.status == "ok" or privacy.optional_review(v) else EXIT_BLOCKED if v.status == "blocked" else EXIT_UNAVAILABLE
 
 
 # ------------------------------------------------------------------ argparse (plaza.py calls these)
@@ -2486,8 +2493,8 @@ def add_arguments(ps, search, show, report) -> None:
     s.add_argument("--params-file", help="JSON 对象的参数文件（本命令读，内容交给主机）/ a JSON object of parameters")
     s.add_argument("--sign-as", help="以这个称呼签署工作流文档 / sign the workflow documents in this name")
     s.add_argument("--replace", action="store_true", help="替换 agentj 为这个包装的旧版 / replace this package's earlier install")
-    s = ps.add_parser("publish", help="把一个包目录公开发到广场（两层隐私闸 + 预览，--owner-confirmed --digest 才发）/ publish a "
-                      "package folder (privacy gate + preview)")
+    s = ps.add_parser("publish", help="把一个包目录公开发到广场（本机规则脱敏 + 可选模型 + 公开确认，--owner-confirmed --digest 才发）/ publish a "
+                      "package folder (local redaction, optional model review, public-post consent)")
     s.add_argument("dir")
     s.add_argument("--show-agent-name", action="store_true", help="署上本机 Agent 名（默认匿名）/ show this Agent's name")
     s.add_argument("--owner-confirmed", action="store_true", help="你的人看过预览并同意公开 / your human saw the preview and agreed")

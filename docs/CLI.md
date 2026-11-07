@@ -2898,7 +2898,7 @@ usage: agentj feedback send [-h] [--owner-confirmed]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `checked` | `null` | true | — | `the .checked.json written by 'agentj feedback check'` |
-| `--owner-confirmed` | `false` | false | — | `your human read this exact JSON and said yes (required when layer 2 is unavailable or blocked)` |
+| `--owner-confirmed` | `false` | false | — | `your human read this exact JSON and said yes (needed to override noncredential model findings)` |
 | `--session-file` | `"~/.agentj-install/feedback-id"` | false | — | `install session id file (default ~/.agentj-install/feedback-id)` |
 
 ### agentj file
@@ -5537,7 +5537,7 @@ usage: agentj plaza post [-h] --title TITLE --body-file BODY_FILE
 ### agentj plaza publish
 
 ```text
-把一个包目录公开发到广场（两层隐私闸 + 预览，--owner-confirmed --digest 才发）/ publish a package folder (privacy gate + preview)
+把一个包目录公开发到广场（本机规则脱敏 + 可选模型 + 公开确认，--owner-confirmed --digest 才发）/ publish a package folder (local redaction, optional model review, public-post consent)
 ```
 
 ```bash
@@ -6925,7 +6925,7 @@ usage: agentj support ask [-h] [--file FILE] [--attach-doctor]
 | `--thread` | `null` | false | — | `continue a thread (st_…)` |
 | `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
 | `--lang` | `null` | false | `zh`, `en` | `` |
-| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（第 2 层判出个人信息或不可用时才需要）/ the owner read the exact text and said yes` |
+| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（仅用于模型指出的非凭据个人信息；模型不可用无需确认）/ owner consent for noncredential model findings; not needed when model review is unavailable` |
 
 ### agentj support feedback
 
@@ -6955,7 +6955,7 @@ usage: agentj support feedback [-h] [--kind {bug,report}] [--file FILE]
 | `--thread` | `null` | false | — | `continue a thread (st_…)` |
 | `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
 | `--lang` | `null` | false | `zh`, `en` | `` |
-| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（第 2 层判出个人信息或不可用时才需要）/ the owner read the exact text and said yes` |
+| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（仅用于模型指出的非凭据个人信息；模型不可用无需确认）/ owner consent for noncredential model findings; not needed when model review is unavailable` |
 
 ### agentj support list
 
@@ -7002,7 +7002,7 @@ usage: agentj support report [-h] [--kind {bug,report}] [--file FILE]
 | `--thread` | `null` | false | — | `continue a thread (st_…)` |
 | `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
 | `--lang` | `null` | false | `zh`, `en` | `` |
-| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（第 2 层判出个人信息或不可用时才需要）/ the owner read the exact text and said yes` |
+| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（仅用于模型指出的非凭据个人信息；模型不可用无需确认）/ owner consent for noncredential model findings; not needed when model review is unavailable` |
 
 ### agentj support thread
 
@@ -10680,7 +10680,7 @@ usage: agentj feedback send [-h] [--owner-confirmed]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `checked` | `null` | true | — | `the .checked.json written by 'agentj feedback check'` |
-| `--owner-confirmed` | `false` | false | — | `your human read this exact JSON and said yes (required when layer 2 is unavailable or blocked)` |
+| `--owner-confirmed` | `false` | false | — | `your human read this exact JSON and said yes (needed to override noncredential model findings)` |
 | `--session-file` | `"~/.agentj-install/feedback-id"` | false | — | `install session id file (default ~/.agentj-install/feedback-id)` |
 
 ### agentj file
@@ -13319,7 +13319,7 @@ usage: agentj plaza post [-h] --title TITLE --body-file BODY_FILE
 ### agentj plaza publish
 
 ```text
-把一个包目录公开发到广场（两层隐私闸 + 预览，--owner-confirmed --digest 才发）/ publish a package folder (privacy gate + preview)
+把一个包目录公开发到广场（本机规则脱敏 + 可选模型 + 公开确认，--owner-confirmed --digest 才发）/ publish a package folder (local redaction, optional model review, public-post consent)
 ```
 
 ```bash
@@ -14707,7 +14707,7 @@ usage: agentj support ask [-h] [--file FILE] [--attach-doctor]
 | `--thread` | `null` | false | — | `接着一个已有会话问` |
 | `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
 | `--lang` | `null` | false | `zh`, `en` | `` |
-| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（第 2 层判出个人信息或不可用时才需要）/ the owner read the exact text and said yes` |
+| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（仅用于模型指出的非凭据个人信息；模型不可用无需确认）/ owner consent for noncredential model findings; not needed when model review is unavailable` |
 
 ### agentj support feedback
 
@@ -14737,7 +14737,7 @@ usage: agentj support feedback [-h] [--kind {bug,report}] [--file FILE]
 | `--thread` | `null` | false | — | `接着一个已有会话问` |
 | `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
 | `--lang` | `null` | false | `zh`, `en` | `` |
-| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（第 2 层判出个人信息或不可用时才需要）/ the owner read the exact text and said yes` |
+| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（仅用于模型指出的非凭据个人信息；模型不可用无需确认）/ owner consent for noncredential model findings; not needed when model review is unavailable` |
 
 ### agentj support list
 
@@ -14784,7 +14784,7 @@ usage: agentj support report [-h] [--kind {bug,report}] [--file FILE]
 | `--thread` | `null` | false | — | `接着一个已有会话问` |
 | `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
 | `--lang` | `null` | false | `zh`, `en` | `` |
-| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（第 2 层判出个人信息或不可用时才需要）/ the owner read the exact text and said yes` |
+| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（仅用于模型指出的非凭据个人信息；模型不可用无需确认）/ owner consent for noncredential model findings; not needed when model review is unavailable` |
 
 ### agentj support thread
 

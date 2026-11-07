@@ -1,5 +1,5 @@
 {
-  "version": "0.28.2",
-  "zh": "修复日常维护误弹审批和 Mac 本人领取，审批卡可重新展开且不挡输入；恢复连接不弹浮层，耗时仅文字，短提示按长度使用圆形或圆角方形。",
-  "en": "Fix maintenance prompts, Mac secret pickup and folded approvals; preserve the composer, reconnect quietly, and simplify timing and toast shapes."
+  "version": "0.28.3",
+  "zh": "外发必先本机规则脱敏，模型审查可选，客服保留有用正文。卡片菜单恢复旧版顺序与间距，客服放末位，移除顶栏多余状态文字。",
+  "en": "Always redact outgoing content locally, make model review optional, and restore card-menu order and spacing with customer service last."
 }

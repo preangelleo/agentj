@@ -9,8 +9,8 @@ aj?_ ids. Runs on this machine only.
 Layer 2 — `layer2()`: Jev (`~typesafe/jev-latest`, TypeSafe decisions API on OpenRouter) judges the layer-1 output
 against the criteria in `privacy_criteria.md` and returns a probability of privacy exposure; ≥ threshold (0.5) → blocked.
 Only with the customer's own OPENROUTER_API_KEY from the environment; the key is never logged or printed and is sent
-to ENDPOINT only (no override). No key / network / non-200 / odd answer → "unavailable": the caller falls back to
-layer 1 + an explicit human confirmation. Jev never sees the raw draft.
+to ENDPOINT only (no override). No key / network / non-200 / odd answer → "unavailable": the caller proceeds with mandatory local rules and an honest unreviewed marker. Source authentication and real model
+denials remain independent gates. Jev never sees the raw draft.
 
 `python3 -m agentj.privacy --eval` runs the regression set (host/tests/privacy_cases.json) live — paid, opt-in.
 Stdlib only.
@@ -649,6 +649,18 @@ class Verdict:
     criteria_version: str | None = None
 
 
+
+LOCAL_REVIEW_NOTE = '本机规则脱敏，未经模型审核 / Local rule redaction; not model-reviewed'
+
+
+def optional_review(v):
+    """Only model absence/failure is optional; broker/source authority failures are not."""
+    if v.status != 'unavailable':
+        return False
+    reason = v.reason or ''
+    return not reason.startswith('privacy-check/') or reason in (
+        'privacy-check/backend_unavailable', 'privacy-check/backend_off')
+
 def load_criteria(path: pathlib.Path = CRITERIA_PATH) -> dict:
     """The first ```json block of privacy_criteria.md: {"version", "questions"}."""
     m = re.search(r"```json\n(.*?)\n```", path.read_text(encoding="utf-8"), re.S)
@@ -694,9 +706,7 @@ def layer2(draft, *, threshold: float = THRESHOLD, env=None, transport=None, tim
     if route.mode == "cheap":
         return Verdict("unavailable", reason="cheap route requires the resident request budget")
     if route.mode == "off":
-        if _host:
-            return Verdict("unavailable", reason="privacy-check/backend_off")
-        return Verdict("ok", reason="Jev off: owner confirmed; local redaction only")
+        return Verdict("unavailable", reason="privacy-check/backend_off")
     key = route.key
     if not key:
         names = jev.ROUTES[route.mode][0] if route.mode in jev.ROUTES else " / ".join(r[0] for r in jev.ROUTES.values())

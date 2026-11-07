@@ -293,22 +293,13 @@ def read_body_file(path: str) -> str:
 
 def prepare(title: str | None, body: str, *, identity=None) -> tuple[dict, collections.Counter]:
     """Layer 1 + the server's cleaning → the exact text that would be published ({"title"?, "body"})."""
-    host, user = identity if identity is not None else privacy.local_identity()
-    hits: collections.Counter = collections.Counter()
-    draft: dict = {}
-    if title is not None:
-        t, h = privacy.redact_with_report(title, host, user)
-        hits.update(h)
-        draft["title"] = plaza_clean(t, True)
-    b, h = privacy.redact_with_report(body, host, user)
-    hits.update(h)
-    draft["body"] = plaza_clean(b)
-    # cleaning can open a boundary a layer-1 rule needs; run both to a fixpoint (both are idempotent)
-    for _ in range(4):
-        again = {k: plaza_clean(privacy.redact(v, host, user), k == "title") for k, v in draft.items()}
-        if again == draft:
-            break
-        draft = again
+    from . import support
+    values = {'body': body, **({'title': title} if title is not None else {})}
+    draft, hits = {}, collections.Counter()
+    for field, text in values.items():
+        item, counts = support.prepare(text, None, identity=identity)
+        draft[field] = plaza_clean(item['body'], field == 'title')
+        hits.update(counts)
     return draft, hits
 
 
@@ -323,7 +314,7 @@ def _verdict_line(v: privacy.Verdict) -> str:
     if v.status == "blocked":
         return (f"layer 2 (Jev, plaza criteria): FLAGGED — {v.reason}; most likely: {v.kind or '?'} "
                 f"({privacy.kind_text(v.kind, gate='plaza')})")
-    return f"layer 2 unavailable: {v.reason} — only layer 1 ran; your human must read the text below"
+    return privacy.LOCAL_REVIEW_NOTE if privacy.optional_review(v) else "authenticated privacy broker/source check failed"
 
 
 def run_publish(kind: str, *, title: str | None, body_file: str, target: str | None = None, show_name=False,
@@ -382,7 +373,7 @@ def run_publish(kind: str, *, title: str | None, body_file: str, target: str | N
              + ("--show-agent-name " if show_name else "") + f"--owner-confirmed --digest {d}")
     print("NOT SENT. 把上面的全文原样给你的人看；只有他明确同意公开后才运行 / Show your human the exact text above; only after "
           f"they explicitly agree to publish it: {again}", file=out)
-    return EXIT_OK if v.status == "ok" else EXIT_BLOCKED if v.status == "blocked" else EXIT_UNAVAILABLE
+    return EXIT_OK if v.status == "ok" or privacy.optional_review(v) else EXIT_BLOCKED if v.status == "blocked" else EXIT_UNAVAILABLE
 
 
 def run_resolve(pid: str, *, st=None, post=None, out=None) -> int:

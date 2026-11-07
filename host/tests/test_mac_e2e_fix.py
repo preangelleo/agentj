@@ -379,7 +379,6 @@ class FeedbackShape(unittest.TestCase):
             "long": ({**GOOD, "agent_version": "9" * 101}, "agent_version: too long"),
             "resolution": ({**GOOD, "resolved": True}, "resolution: required when resolved is true"),
             "resolved": ({**GOOD, "resolved": "no"}, "resolved: must be true or false"),
-            "owner": ({**GOOD, "owner_informed": False}, "owner_informed: must be true"),
             "unknown": ({**GOOD, "severity": "high"}, "unknown field(s), remove them: severity"),
             "empty": ({**GOOD, "problem": ""}, "missing: problem"),
         }
@@ -391,13 +390,50 @@ class FeedbackShape(unittest.TestCase):
         self.assertTrue(feedback.shape_problems({**GOOD, "problem": "😀" * 8193}))
         self.assertEqual(feedback.shape_problems({**GOOD, "problem": "😀" * 8192}), [])
 
-    def test_exit_3_says_what_it_means_and_what_to_do(self):
+    def test_missing_optional_model_checks_without_extra_confirmation(self):
         rc, out, jev, checked = self.check(GOOD, env={})
-        self.assertEqual(rc, 3)
+        self.assertEqual(rc, feedback.EXIT_OK)
         self.assertTrue(checked.exists())
-        for s in ("NOT rejected", "OpenRouter", "Do not look for, ask for or set a key yourself", "--owner-confirmed",
-                  "If they say no, do not send it"):
-            self.assertIn(s, out)
+        self.assertEqual(jev.calls, [], "no model call without configured credentials")
+        self.assertIn(privacy.LOCAL_REVIEW_NOTE, out)
+        self.assertIn("next: agentj feedback send", out)
+        self.assertNotIn("--owner-confirmed", out)
+
+    def test_check_preserves_false_owner_flag_but_legacy_send_refuses(self):
+        rc, _, _, checked = self.check({**GOOD, "owner_informed": False}, env={})
+        self.assertEqual(rc, feedback.EXIT_OK, "checking a draft supplies no sending authority")
+        self.assertIs(json.loads(checked.read_text())["owner_informed"], False)
+        self.assertTrue(any("owner_informed" in p for p in feedback.shape_problems(json.loads(checked.read_text()))))
+        http = mock.Mock(side_effect=AssertionError("legacy send must refuse before network"))
+        out = io.StringIO()
+        rc = feedback.run_send(checked, owner_confirmed=True, env={}, identity=("devbox", "alice"),
+                               state=State(self.tmp / "unbound-state"), http_fn=http, out=out)
+        self.assertEqual(rc, feedback.EXIT_ERROR)
+        self.assertIn("owner_informed: must be true", out.getvalue())
+        http.assert_not_called()
+        self.assertIs(json.loads(checked.read_text())["owner_informed"], False)
+
+    def test_bound_false_owner_flag_uses_signed_channel_without_forging_consent(self):
+        from test_p520_feedback import Feedback520
+        fixture = Feedback520()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        rc, text = fixture.send(privacy.Verdict("unavailable", reason="no key"),
+                                full=False, draft={**GOOD, "owner_informed": False})
+        self.assertEqual(rc, __import__("agentj.support", fromlist=["EXIT_PENDING"]).EXIT_PENDING)
+        fixture.feedback_http.assert_not_called()
+        self.assertEqual(len(fixture.api.sent), 1)
+        self.assertNotIn("owner_informed", json.dumps(fixture.api.sent))
+        self.assertNotIn("owner confirmed", text)
+        self.assertIn("Step 4: something odd", fixture.api.sent[0]["body"])
+
+    def test_authenticated_source_failure_stays_exit_3_without_invented_consent(self):
+        with mock.patch.object(privacy, "layer2", return_value=privacy.Verdict("unavailable", reason="privacy-check/source_denied")):
+            rc, out, _, checked = self.check(GOOD, env={})
+        self.assertEqual(rc, feedback.EXIT_UNAVAILABLE)
+        self.assertTrue(checked.exists())
+        self.assertIn("authenticated Host privacy broker/source", out)
+        self.assertIn("do not invent owner confirmation", out)
 
     def test_send_refuses_a_bad_shape_before_the_network(self):
         p = self.tmp / "x.checked.json"

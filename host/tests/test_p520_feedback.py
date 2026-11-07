@@ -1,4 +1,4 @@
-"""#520: feedback privacy holds use content-free support, never fake owner_informed."""
+"""#520: feedback retains locally redacted support text, never fake owner_informed."""
 import _hermetic  # noqa: F401
 import io
 import json
@@ -28,19 +28,19 @@ class Feedback520(unittest.TestCase):
                                    owner_confirmed=owner_confirmed)
         return rc, out.getvalue()
 
-    def test_full_unavailable_sends_fixed_support_metadata_without_owner_informed(self):
+    def test_full_unavailable_sends_redacted_report_without_owner_informed(self):
         rc, out = self.send(privacy.Verdict('unavailable', reason='personal reviewer error'))
         self.assertEqual(rc, support.EXIT_PENDING)
         self.feedback_http.assert_not_called()
         self.assertEqual(len(self.api.sent), 1)
         text = json.dumps(self.api.sent[0])
-        for raw in ('private customer story', 'owner_informed', 'personal reviewer error', 'attach'):
+        for raw in ('owner_informed', 'personal reviewer error', 'attach'):
             self.assertNotIn(raw, text)
-        self.assertIn('payload: withheld', self.api.sent[0]['body'])
-        self.assertIn('owner did not answer', out)
+        self.assertIn('本机规则脱敏，未经模型审核', self.api.sent[0]['body'])
+        self.assertIn('not model-reviewed', out)
         self.assertNotIn('owner confirmed', out)
         records = [json.loads(x) for x in self.f.st.log_path.read_text().splitlines()]
-        self.assertTrue(any(x.get('ev') == 'feedback_autonomous' and x.get('by') == 'full_access_no_owner_answer' for x in records))
+        self.assertTrue(any(x.get('ev') == 'feedback_autonomous' and x.get('by') == 'signed_support_channel' for x in records))
 
     def test_full_personal_flag_and_layer1_changes_never_send_raw(self):
         draft = {**DRAFT, 'problem': 'personal email person@example.invalid', 'owner_informed': True}
@@ -51,10 +51,10 @@ class Feedback520(unittest.TestCase):
         self.assertNotIn('owner confirmed', out)
         self.feedback_http.assert_not_called()
 
-    def test_full_clean_review_with_no_owner_read_still_uses_support_metadata(self):
+    def test_full_clean_review_with_no_owner_read_uses_signed_support_report(self):
         rc, _ = self.send(privacy.Verdict('ok'))
         self.assertEqual(rc, support.EXIT_PENDING)
-        self.assertNotIn('private customer story', json.dumps(self.api.sent))
+        self.assertIn('private customer story', json.dumps(self.api.sent))
         self.feedback_http.assert_not_called()
 
     def test_payload_owner_informed_true_is_not_proof_of_a_human_read(self):
@@ -70,11 +70,11 @@ class Feedback520(unittest.TestCase):
             self.assertFalse(self.api.sent)
             self.feedback_http.assert_not_called()
 
-    def test_nonfull_keeps_existing_confirmation(self):
+    def test_nonfull_model_unavailable_is_optional(self):
         rc, out = self.send(privacy.Verdict('unavailable'), full=False, draft={**DRAFT, 'owner_informed': True})
-        self.assertEqual(rc, feedback.EXIT_UNAVAILABLE)
-        self.assertIn('--owner-confirmed', out)
-        self.assertFalse(self.api.sent)
+        self.assertEqual(rc, support.EXIT_PENDING)
+        self.assertIn('未经模型审核', self.api.sent[0]['body'])
+        self.assertNotIn('owner confirmed', out)
         self.feedback_http.assert_not_called()
 
     def test_host_diagnostics_does_not_forge_human_confirmation(self):

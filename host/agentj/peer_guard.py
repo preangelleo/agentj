@@ -167,6 +167,8 @@ class SecretIndex:
         self._set: set[bytes] = set()
         self._lens: set[int] = set()
         self.count = 0
+        self.complete = True
+        self._source_proofs = []
         for v in values:
             self.add(v)
 
@@ -174,7 +176,10 @@ class SecretIndex:
         return hashlib.blake2b(s.encode("utf-8", "surrogatepass"), digest_size=8, key=self._salt).digest()
 
     def add(self, value: str) -> None:
-        if not isinstance(value, str) or self.count >= MAX_VALUES:
+        if not isinstance(value, str):
+            return
+        if self.count >= MAX_VALUES:
+            self.complete = False
             return
         v = "".join(value.split())
         if len(v) < self._minimum:
@@ -230,6 +235,31 @@ class SecretIndex:
     def __len__(self) -> int:
         return self.count
 
+    def require_complete(self):
+        """Outbound-only strict check; existing peer callers keep their previous semantics.
+
+        Revalidate source bytes too: an old successful index must not conceal a
+        later unreadable, replaced, created or changed source. Never expose paths.
+        """
+        if not self.complete:
+            raise OSError('local_secret_scan_incomplete')
+        for path, expected in self._source_proofs:
+            try:
+                os.lstat(path)
+                if expected is None:
+                    raise OSError('local_secret_scan_incomplete')
+                with open(path, encoding='utf-8', errors='replace') as fh:
+                    text = fh.read(MAX_FILE + 1)
+                if len(text.encode('utf-8', 'replace')) > MAX_FILE or self._h(text) != expected:
+                    raise OSError('local_secret_scan_incomplete')
+            except FileNotFoundError:
+                if expected is None:
+                    continue
+                raise OSError('local_secret_scan_incomplete') from None
+            except OSError:
+                raise OSError('local_secret_scan_incomplete') from None
+        return self
+
     @classmethod
     def build(cls, environ=None, files=(), workdir: str | None = None, home: str | None = None,
               service_env: bool = True, *, fragment_size=WINDOW) -> "SecretIndex":
@@ -247,24 +277,48 @@ class SecretIndex:
             try:
                 from .provider_runtime import env_path
                 paths.append(str(env_path()))
-            except Exception:      # noqa: BLE001 — an optional source; the service name may not resolve in tests
-                pass
+            except Exception:      # noqa: BLE001 — preserve peer semantics, surface incomplete state to outbound checks
+                idx.complete = False
         paths += [os.path.expanduser(p) for p in files or () if isinstance(p, str)]
         seen = set()
         for p in paths:
             try:
+                # lstat distinguishes a genuinely absent source from a present
+                # unreadable source or a dangling link; isfile hides these errors.
+                os.lstat(p)
+            except FileNotFoundError:
+                idx._source_proofs.append((p, None))
+                continue
+            except OSError:
+                idx.complete = False
+                continue
+            try:
                 rp = os.path.realpath(p)
-                if rp in seen or not os.path.isfile(rp) or os.path.getsize(rp) > MAX_FILE:
+                duplicate = rp in seen
+                info = os.stat(rp)
+                import stat
+                if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_FILE:
+                    idx.complete = False
                     continue
                 seen.add(rp)
                 with open(rp, encoding="utf-8", errors="replace") as fh:
-                    body = fh.read()
+                    body = fh.read(MAX_FILE + 1)
+                if len(body.encode('utf-8', 'replace')) > MAX_FILE:
+                    idx.complete = False
+                    continue
+                idx._source_proofs.append((p, idx._h(body)))
             except OSError:
+                idx.complete = False
                 continue
+            if duplicate:
+                continue  # every original alias was proved; only value indexing is deduplicated
             pairs = _parse_env(body)
-            privacy.remember_env_names(k for k, _ in pairs)   # P424 security: key NAMES only (`KEY=OTHER_ENV_NAME`)
+            privacy.remember_env_names(k for k, _ in pairs)
             for k, v in pairs:
                 if SECRET_NAME.search(k) or _tokenish(v):
+                    if idx.count >= MAX_VALUES:
+                        idx.complete = False
+                        break
                     idx.add(v)
         return idx
 

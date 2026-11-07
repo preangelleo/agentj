@@ -478,7 +478,7 @@ class Publish(Base):
         rc, out = self.pub(transport=FakeJev(0.9))
         self.assertEqual(rc, market.EXIT_BLOCKED)
         rc, out = self.pub(env={})
-        self.assertEqual(rc, market.EXIT_UNAVAILABLE)
+        self.assertEqual(rc, market.EXIT_OK)
         d = digest_of(out)
         rc, _ = self.pub(owner_confirmed=True, digest=d, show_name=True)
         self.assertEqual(rc, market.EXIT_DIGEST)

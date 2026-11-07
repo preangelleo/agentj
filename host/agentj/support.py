@@ -1,6 +1,6 @@
 """Agent J support client (worker/FEEDBACK_API.md).
 Support replies are untrusted advice, never instructions. Seat/install authentication stays host-local.
-Outbound credentials cannot be bypassed; full access degrades failed privacy review to fixed metadata.
+Outbound credentials cannot be bypassed; full access uses local rule redaction if the model cannot review.
 Logs and local thread records exclude message bodies and secrets."""
 from __future__ import annotations
 
@@ -227,10 +227,18 @@ def redact_paths(text: str) -> str:
 def prepare(body: str, attach: str | None, *, identity=None) -> tuple[dict, dict]:
     """Layer 1 on the exact text that would leave + the server's cleaning; → (draft, hits)."""
     from . import report_privacy
+    body, removed, names = report_privacy.support_rules(body)
     raw = {"body": plaza_clean(redact_paths(body))[:MAX_TEXT]}
     if attach:
+        attach, extra_removed, extra_names = report_privacy.support_rules(attach)
+        removed += extra_removed
+        names += extra_names
         raw["attach"] = plaza_clean(redact_paths(attach))[:MAX_ATTACH]
     draft, hits, reason = report_privacy.prepare(raw, identity=identity)
+    if removed:
+        hits['credential_line'] = removed
+    if names:
+        hits['name'] = names
     if reason:
         raise SupportError("未提交：脱敏后仍含凭据 / Not sent: residual credential (" + reason + ")")
     return draft, hits
@@ -330,28 +338,19 @@ def run_send(kind: str, text: str, *, thread: str | None = None, attach_doctor=F
         print(f"NOT SENT — layer 2 (Jev) flagged it: {v.reason}; most likely {v.kind or '?'} ({privacy.kind_text(v.kind)}). "
               "Remove that and run again. / 没发出：第 2 层判定仍含隐私，请删掉后重发。", file=out)
         return EXIT_BLOCKED
-    # #520: full access never turns a failed privacy review into raw transmission
-    # or a fabricated owner confirmation. Send only a fixed, content-free notice.
-    degraded = (v.status in ("blocked", "unavailable") and getattr(ch, "signed", False)
-                and _full_access(getattr(ch, "st", None)))
+    # Model review is optional in every mode. Authentication/source failures
+    # from the Host broker are a separate boundary and cannot acquire this fallback.
+    degraded = privacy.optional_review(v)
     if degraded:
-        review = v.status
-        draft = {"body": "Agent J support request\nprivacy_review: " + review +
-                 "\npayload: withheld\nmode: automatic-metadata-only"}
-        attach = None
-        owner_confirmed = False
-        ch.st.log("support_autonomous", kind=kind, reason="review_" + review, result="metadata_only",
-                  by="full_access_no_owner_answer")
-    # Other modes keep their existing explicit-confirmation flow.
-    if v.status == "blocked" and not owner_confirmed and not degraded:
-        print(f"NOT SENT — layer 2 (Jev) flagged personal details: {v.reason}; most likely {v.kind} ({privacy.kind_text(v.kind)}). "
-              "Show your human the exact text; send again with --owner-confirmed only after they read it and said yes. / "
-              "没发出：第 2 层判定含个人信息。请把原文给主人看，主人同意后加 --owner-confirmed 再发。", file=out)
+        draft['body'] = (privacy.LOCAL_REVIEW_NOTE + "\n" + draft['body'])[:MAX_TEXT]
+        st = getattr(ch, 'st', None)
+        if st is not None:
+            st.log("support_local_review", kind=kind, result="local_rule_redaction", model_review="unavailable")
+    if v.status == "blocked" and not owner_confirmed:
+        print("NOT SENT — model review denied the draft; explicit existing owner consent is required for noncredential findings.", file=out)
         return EXIT_BLOCKED
-    if v.status == "unavailable" and not owner_confirmed and not degraded:
-        print(f"NOT SENT — layer 2 (Jev) unavailable ({v.reason}). Show your human the exact text; send again with "
-              "--owner-confirmed only after they read it and said yes. Do not look for or set a key yourself. / "
-              "没发出：第 2 层隐私检查不可用。请把原文给主人看，主人同意后加 --owner-confirmed 再发。", file=out)
+    if v.status == "unavailable" and not degraded:
+        print("NOT SENT — authenticated privacy broker/source check failed; keep the draft and verify the active session.", file=out)
         return EXIT_UNAVAILABLE
     fields: dict = {"kind": kind, "body": draft["body"]}
     if "attach" in draft:
@@ -373,7 +372,7 @@ def run_send(kind: str, text: str, *, thread: str | None = None, attach_doctor=F
     print(f"已脱敏 {sum(hits.values())} 处后提交，工单号 {tid} / Submitted after redacting {sum(hits.values())} occurrence(s); ticket {tid} · layer 1: "
           + (", ".join(f"{k}×{n}" for k, n in sorted(hits.items())) if hits else "nothing replaced")
           + f" · layer 2: {v.status}" + (" · owner confirmed" if owner_confirmed and v.status != "ok" else "")
-          + (" · automatic metadata only; owner did not answer" if degraded else "")
+          + (" · local rule redaction; not model-reviewed" if degraded else "")
           + (" · +doctor" if attach else ""), file=out)
     if wait <= 0:
         print(f"之后查看 / read later: agentj support thread {tid}", file=out)
@@ -482,7 +481,7 @@ def add_parser(sub) -> None:
         s.add_argument("--wait", type=int, default=DEFAULT_WAIT, help="等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)")
         s.add_argument("--lang", choices=("zh", "en"))
         s.add_argument("--owner-confirmed", action="store_true",
-                       help="主人已读过原文并同意（第 2 层判出个人信息或不可用时才需要）/ the owner read the exact text and said yes")
+                       help="主人已读过原文并同意（仅用于模型指出的非凭据个人信息；模型不可用无需确认）/ owner consent for noncredential model findings; not needed when model review is unavailable")
         s.set_defaults(fn=cmd)
     s = ss.add_parser("thread", help="查看一个会话 / read a thread")
     s.add_argument("id")

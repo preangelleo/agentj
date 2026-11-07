@@ -371,7 +371,7 @@ class FeedbackCmd(unittest.TestCase):
         checked = self.tmp / "feedback.checked.json"
         self.assertEqual(stat.S_IMODE(checked.stat().st_mode), 0o600)
         got = json.loads(checked.read_text())
-        self.assertEqual(got["problem"], "Step 6 on <host> as <user>: `agentj serve` failed reading ~/.config/x; mail <email>")
+        self.assertEqual(got["problem"], "Step 6 on <host> as <user>: `agentj serve` failed reading <redacted-path> mail <email>")
         self.assertEqual({k: v for k, v in got.items() if k != "problem"}, {k: v for k, v in DRAFT.items() if k != "problem"})
         self.assertIn(got["problem"], out)
         self.assertNotIn("alice", out)
@@ -386,11 +386,11 @@ class FeedbackCmd(unittest.TestCase):
         self.assertIn("person", out)
         jev = FakeJev()
         rc, out = self.check(jev, env={})
-        self.assertEqual(rc, 3)
+        self.assertEqual(rc, 0)
         self.assertIn("unavailable", out)
-        self.assertIn("--owner-confirmed", out)
+        self.assertIn("未经模型审核", out)
         self.assertEqual(jev.calls, [])
-        self.assertEqual(self.check(FakeJev(status=503, raw=b""))[0], 3)
+        self.assertEqual(self.check(FakeJev(status=503, raw=b""))[0], 0)
 
     def test_jev_sees_only_the_redacted_draft(self):
         jev = FakeJev(p=0.05)
@@ -418,7 +418,7 @@ class FeedbackCmd(unittest.TestCase):
         self.send(FakeJev(p=0.05), FakeApi(post=(201, {"id": "fb_" + "B" * 22, "receipt": "ajr_" + "Q" * 43, "created_at": "t"})))
         self.assertEqual(len(json.loads(rp.read_text())["receipts"]), 2)
 
-    def test_send_refuses_an_edited_file_before_any_network(self):
+    def test_send_redacts_an_edited_file_before_any_network(self):
         self.check(FakeJev(p=0.05))
         checked = self.tmp / "feedback.checked.json"
         d = json.loads(checked.read_text())
@@ -426,19 +426,19 @@ class FeedbackCmd(unittest.TestCase):
         checked.write_text(json.dumps(d))
         jev, api = FakeJev(p=0.05), FakeApi()
         rc, out = self.send(jev, api)
-        self.assertEqual(rc, 1)
-        self.assertIn("layer 1 would still change", out)
-        self.assertEqual((jev.calls, api.calls), ([], []))
+        self.assertEqual(rc, 0)
+        self.assertNotIn('13812345678', api.calls[0]['body'].decode())
+        self.assertNotIn('13812345678', str(jev.calls))
 
-    def test_send_unavailable_or_blocked_needs_owner_confirmed(self):
+    def test_send_unavailable_is_optional_but_real_deny_needs_existing_consent(self):
         self.check(FakeJev(p=0.05))
         api = FakeApi()
-        self.assertEqual(self.send(FakeJev(), api, env={})[0], 3)
+        self.assertEqual(self.send(FakeJev(), api, env={})[0], 0)
         self.assertEqual(self.send(FakeJev(p=0.9, kind="person"), api)[0], 2)
-        self.assertEqual(api.calls, [])
+        self.assertEqual(len(api.calls), 1)
         self.assertEqual(self.send(FakeJev(), api, env={}, owner_confirmed=True)[0], 0)
         self.assertEqual(self.send(FakeJev(p=0.9), api, owner_confirmed=True)[0], 0)
-        self.assertEqual(len(api.calls), 2)
+        self.assertEqual(len(api.calls), 3)
 
     def test_send_has_no_threshold_and_check_only_stricter(self):
         """Review SS-05: `send` always judges at privacy.THRESHOLD (no knob); `check --threshold` may only be stricter."""
@@ -520,7 +520,7 @@ class FeedbackCmd(unittest.TestCase):
         with mock.patch.object(privacy, "local_identity", lambda: self.ident), contextlib.redirect_stdout(io.StringIO()) as out:
             with self.assertRaises(SystemExit) as e:
                 cli.main(["feedback", "check", str(self.draft)])
-        self.assertEqual(e.exception.code, 3)
+        self.assertEqual(e.exception.code, 0)
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as e:
             cli.main(["feedback", "check", str(self.draft), "--threshold", "1.5"])
         self.assertEqual(e.exception.code, 2)   # argparse refusal

@@ -85,19 +85,21 @@ async def handle(host, req, *, peer_pid=None):
     result = None
     if why is None:
         try:
-            # No caller-selected key, endpoint, environment, criteria, threshold, provider or tool.
+            # Model failures are optional; source/session proofs never are.
             v = await asyncio.to_thread(privacy.layer2, req['draft'], gate=req['gate'], _host=True)
-            if (host.stopped() or host.agent is not agent or session_key(agent) != owner
-                    or approval_material.verified_caller_origin(host, peer_pid) != origin):
-                why = 'session_changed'
-            elif v.status not in ('ok', 'blocked', 'unavailable'):
-                why = 'backend_unavailable'
-            elif v.status == 'unavailable':
-                why = 'backend_unavailable'
-            else:
-                result = asdict(v)
         except Exception:
+            v = privacy.Verdict('unavailable', reason='privacy-check/backend_unavailable')
+        try:
+            same_authority = (not host.stopped() and host.agent is agent and session_key(agent) == owner
+                              and approval_material.verified_caller_origin(host, peer_pid) == origin)
+        except Exception:
+            same_authority = False
+        if not same_authority:
+            why = 'session_changed'
+        elif v.status not in ('ok', 'blocked', 'unavailable') or v.status == 'unavailable':
             why = 'backend_unavailable'
+        else:
+            result = asdict(v)
     if why:
         result = failure(why)
     if result['status'] != 'ok':
@@ -109,8 +111,10 @@ async def handle(host, req, *, peer_pid=None):
             if len(seen) >= 128:
                 seen.clear()
             seen.add(key)
-            host.st.log('privacy_check_failed', reason=code, gate=key[1])
-            host.agent_notice('隐私外发检查未通过（' + code + '），请保留草稿，恢复后再试。')
+            host.st.log('privacy_check_optional' if privacy.optional_review(privacy.Verdict(**result))
+                        else 'privacy_check_failed', reason=code, gate=key[1])
+            if not privacy.optional_review(privacy.Verdict(**result)):
+                host.agent_notice('隐私外发检查未通过（' + code + '），请保留草稿，恢复后再试。')
     return result
 
 

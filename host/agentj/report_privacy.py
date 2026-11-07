@@ -17,7 +17,7 @@ _STREET = re.compile(r'\b\d{1,6}\s+(?:[A-Za-z]+\s+){1,5}(?:Street|St|Road|Rd|Ave
 
 def prepare(obj, *, identity=None, index=None):
     host, user = identity if identity is not None else privacy.local_identity()
-    index = index if index is not None else peer_guard.SecretIndex.build()
+    index = (index if index is not None else peer_guard.SecretIndex.build()).require_complete()
     hits = collections.Counter()
 
     def redact(value):
@@ -61,3 +61,28 @@ def sudo_notice(res, lang='zh', what=''):
                  else (f'Not done ("{what}"): admin command exit code {res["code"]}' if what else f"Admin command failed (exit code {res['code']})"))
         return label + (': ' + res['summary'] if res.get('summary') else '')
     return None
+
+
+_NAME = re.compile(r'(?im)(?<![\w])(?:full[ \-]?name|customer[ \-]?name|name|姓名|名字|联系人|客户姓名)\s*[:：=]\s*[^\n,，;；<>]+')
+_SELF_NAME = re.compile(r'(?:我叫|我的名字是)\s*[^\s,，。;；:：<>]{2,20}|(?i:my name is)\s+[A-Za-z][A-Za-z .-]{1,60}')
+
+
+def support_rules(text, *, index=None):
+    """Local support fallback: delete credential-bearing lines, then mask labelled names.
+
+    The same secret-gate index and shape rules are used before any replacement can
+    split a match. A multiline private key is removed as a whole block first.
+    """
+    index = (index if index is not None else peer_guard.SecretIndex.build()).require_complete()
+    key_pattern = next(pattern for kind, pattern, _ in privacy._SECRETS if kind == 'private_key')
+    text, blocks = key_pattern.subn('', str(text))
+    lines, removed = [], blocks
+    for line in text.splitlines():
+        if index.hits(line) or peer_guard.credential_shape(line):
+            removed += 1
+        else:
+            lines.append(line)
+    text = '\n'.join(lines)
+    text, labelled = _NAME.subn('<name>', text)
+    text, self_names = _SELF_NAME.subn('<name>', text)
+    return text, removed, labelled + self_names
