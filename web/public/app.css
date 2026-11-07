@@ -4364,3 +4364,27 @@ body[data-conn="off"] .connection-help{display:flex}
 #auth-full541 pre{white-space:pre-wrap;overflow-wrap:anywhere;font:15px/1.6 var(--font-mono)}
 #auth-full541:not([open]){display:none}
 .auth-action541 .scope541{display:block;white-space:pre-line}
+
+/* P0 / 0.28.1: approval text uses the ordinary reply hierarchy and saved scale. */
+#sheet[data-approval-v="2"],.approval-special541{--approval-body-size:calc(18px*var(--fz)*var(--rs,1));--approval-body-leading:1.66}
+@media(max-width:600px) and (orientation:portrait){
+  #sheet[data-approval-v="2"],.approval-special541{--approval-body-size:calc(16px*var(--fz)*var(--rs,1));--approval-body-leading:1.58}
+}
+#sheet[data-approval-v="2"] #sheetTitle,.approval-special541 h2{font-size:var(--approval-body-size);line-height:var(--approval-body-leading)}
+#sheet[data-approval-v="2"] .srctext541,#sheet[data-approval-v="2"] .action541,.approval-special541 .auth-text541,.approval-special541 .auth-action541{font-size:var(--approval-body-size);line-height:var(--approval-body-leading);overflow-wrap:anywhere}
+.source541,.auth-source541{box-sizing:border-box;min-width:0;max-width:100%}
+.srcmeta541,.auth-meta541{flex-wrap:wrap;min-width:0;max-width:100%;overflow-wrap:anywhere;font-size:calc(13px*var(--fz)*var(--rs,1))}
+.srcmeta541>span,.auth-meta541>span{white-space:normal;min-width:0;max-width:100%}
+
+/* #0281: bounded step heading; the only human quote stays in its two-line block. */
+#sheet[data-approval-v="2"] #sheetTitle,.approval-special541 h2{min-width:0;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-decoration:none}
+#sheet[data-approval-v="2"] .sheethead{min-width:0;max-width:100%}
+#sheet[data-approval-v="2"] .action541,.approval-special541 .auth-action541{min-width:0;max-width:100%;overflow-wrap:anywhere}
+#sheet[data-approval-v="2"] .srcmeta541,.approval-special541 .auth-meta541{overflow:hidden}
+
+.srcmeta541{flex-wrap:nowrap;white-space:nowrap}
+.srcmeta541>.srcsender541{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.srcmeta541>span:not(.srcsender541){flex-shrink:0;white-space:nowrap}
+.auth-meta541{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+#sheet[data-approval-v="2"] .approval-source572{border:0;padding:0 2px;margin:0 0 10px;color:var(--ink);font-size:calc(13px*var(--fz)*var(--rs,1))}

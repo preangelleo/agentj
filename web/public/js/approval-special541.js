@@ -1,3 +1,4 @@
+import { stepTitle } from './approval-layout0281.js';
 // Dedicated secret/elevation cards keep their sealed-value protocols. Only safe metadata is shared.
 import { approvalEnvelopeDigest } from '../proto/wire.js';
 import { channel } from './session.js';
@@ -78,7 +79,7 @@ export function decorateSpecial(root,c,{title,metadata=[],allow,deny,fold,repain
  ui.querySelector('.auth-full541').onclick=()=>{let d=document.getElementById('auth-full541');if(!d){d=document.getElementById('full541').cloneNode(true);d.id='auth-full541';for(const n of [d,...d.querySelectorAll('*')]){if(n!==d)n.removeAttribute('id');n.setAttribute('data-aj-owner','aj-auth-card');}document.body.append(d);}d.querySelector('pre').textContent=[e.details||'',src.root_message_id?t('p541.rootRef',{id:src.root_message_id}):'',src.message_id?t('p541.triggerRef',{id:src.message_id}):'',src.task_record?t('p541.task',{task:src.task_record}):''].filter(Boolean).join('\n\n');c.collapsed=true;fold();d.addEventListener('close',()=>{if(records.get(c.id)?.c===c){c.collapsed=false;repaint();}},{once:true});d.showModal();d.querySelector('button').onclick=()=>d.close();};
  deny.textContent=t('r.appr.deny');
  const doubt=box.querySelector('.special-question541');doubt.onclick=()=>reviewSpecial(c,'question');doubt.disabled=!c.envelope_verified;
- if(title&&e.title)title.textContent=e.title;
+ if(title)title.textContent=stepTitle(e,title.textContent);
  if(!canSpecialApprove(c))allow.disabled=true;
  refreshSpecialVisibility();
 }

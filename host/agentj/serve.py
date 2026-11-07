@@ -6193,6 +6193,7 @@ class Host:
         source_before_bind = approval_review.snapshot(self)
         approval_review.bind(self, a, origin=source_before_bind)
         a.review_request_source = approval_review.digest(source_before_bind)
+        a.review_live_authority = self._approval_live_authority()
         if _bounded_context is None:
             from .bounded_plan import OperationOnce
             ledger_path = self.st.root / "approval-operation-once.sqlite3"
@@ -6499,6 +6500,16 @@ class Host:
         except Exception:  # noqa: BLE001 — an unknown floor cannot lower a signed plan's required tier
             return True
 
+    def _approval_live_authority(self):
+        """Host-owned live task identity, independent of request/socket ContextVars."""
+        agent = self.agent
+        origin = getattr(getattr(agent, "cur_send", None), "approval_origin", None)
+        identity = origin if origin else [self.cur_turn, self.__dict__.get("_approval_origins", {}).get(getattr(self, "desktop_turn", None))]
+        return approval_review.digest([self.__dict__.get("task_epoch"),
+                                       getattr(agent, "kind", None), (self.agent_cfg or {}).get("dir"), identity,
+                                       getattr(self, "desktop_turn", None), getattr(agent, "phone_turn", None),
+                                       getattr(agent, "phone_seen", None)])
+
     def _task_id(self):
         origin = approval_review.snapshot(self) or {}
         identity = [origin.get("session"), origin.get("root_message_id")] if origin.get("root_message_id") else self.cur_turn
@@ -6689,6 +6700,12 @@ class Host:
             return await self._answer_refused(s, a, 'authority_changed')
         answer_task = self._task_id()
         answer_source = approval_review.digest(approval_review.snapshot(self))
+        answer_live_authority = self._approval_live_authority()
+        if (review_bound and not getattr(a, "review_event", None)
+                and answer_live_authority != a.review_live_authority):
+            a.decision_pending = False
+            return await self._answer_refused(s, a, "authority_changed")
+        reserved_here, ledger = False, None
         try:
             if answer_v == 2 and ok and getattr(a, "bounded_plan", None) is None and not getattr(a, "tg_plan_only", False):
                 from .bounded_plan import OperationOnce
@@ -6701,15 +6718,24 @@ class Host:
                     return await self._answer_refused(s, a, "operation_ledger_unavailable")
                 if not reserved:
                     return await self._answer_refused(s, a, "operation_already_consumed")
+                reserved_here = True   # P0: a refusal below releases it, else every retry reads operation_already_consumed
             if (a.fut.done() or time.monotonic() > a.deadline or self.stopped()
                     or self.st.sign_key(s.device) != sk
                     or (not review_bound and not self._native_ask_live(a))
                     or (review_bound and (self.agent is not a.review_agent
                     or (hasattr(a, "envelope") and str(self.hist.epoch) != a.envelope["session"])
                     or self._task_id() != answer_task
-                    or (not getattr(a, "review_event", None) and self._task_id() != a.review_task)
-                    or approval_review.digest(approval_review.snapshot(self)) != answer_source
-                    or (not getattr(a, "review_event", None) and answer_source != getattr(a, "review_request_source", answer_source))))):
+                    or self._approval_live_authority() != answer_live_authority
+                    or (not getattr(a, "review_event", None) and self._approval_live_authority() != a.review_live_authority)
+                    or approval_review.digest(approval_review.snapshot(self)) != answer_source))):
+                # P0 (0.28.0): the card's source is pinned by the signed envelope. The answer runs in the phone socket's
+                # context, which cannot re-derive a hook/subagent request's origin (nor the main turn's after a newer
+                # owner message); comparing it with the ask-time source refused every such allow and deny.
+                if reserved_here and callable(getattr(ledger, "release", None)):
+                    try:
+                        await asyncio.to_thread(ledger.release, a.operation_once_key, a.rid)
+                    except (ValueError, OSError):
+                        pass
                 return await self._answer_refused(s, a, "authority_changed")
             a.answer_v, a.answer_digest = answer_v, display_digest
             if hasattr(a, "envelope") and not ok:

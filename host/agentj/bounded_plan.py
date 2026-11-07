@@ -384,6 +384,20 @@ class OperationOnce:
         finally:
             db.close()
 
+    def release(self, operation, rid):
+        """P0: undo this rid's own still-executing reservation when its answer was refused before it resolved."""
+        if operation in self._terminal:
+            return
+        db = self._connect()
+        try:
+            with db:
+                db.execute("DELETE FROM operation_once WHERE operation=? AND rid=? AND state='executing'", (operation, rid))
+        except sqlite3.Error:
+            self._failed = True
+            raise PlanError('operation_ledger_unavailable') from None
+        finally:
+            db.close()
+
     def consumed(self, operation):
         if self._failed or operation in self._terminal:
             return True

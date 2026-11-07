@@ -2198,14 +2198,64 @@ async function jumpToTurn(id){
 // ---- select to quote (relay ADR-046; §10.6 excerpt) ---------------------------------------
 const SEL_IDLE_MS = 450, EXCERPT_MAX = 2000;
 let selPtr = false, selTimer = 0, selLast = null, selPending = null;
-function wordsSelection(){
+function wordsSelection(full = false){
   const s = document.getSelection ? document.getSelection() : null;
   if (!s || !s.rangeCount || s.isCollapsed) return null;
   const w = rdOpen() ? el("rdWords") : el("words");     // P286: selecting in the full-screen reader quotes too
-  const inside = n => { const e = n && (n.nodeType === 1 ? n : n.parentElement); return !!e && w.contains(e) && (!e.closest("button") || !!e.closest("button.fp-link")); };
+  const inside = n => { const e = n && (n.nodeType === 1 ? n : n.parentElement); return !!e && w.contains(e) && (!e.closest("button") || !!e.closest(SEL_WORD_BUTTONS)); };
   if (!inside(s.anchorNode) || !inside(s.focusNode)) return null;
-  const tx = s.toString().trim();
-  return tx ? tx.slice(0, EXCERPT_MAX) : null;
+  const tx = rangeText(s.getRangeAt(0)).trim();
+  return tx ? (full ? tx : tx.slice(0, EXCERPT_MAX)) : null;
+}
+// P581 (#312/#407): the words' own buttons (#580 tag, internal link, reply option) are words too.
+const SEL_WORD_BUTTONS = "button.fp-link, button.rtag, button.rbtn";
+const SEL_BLOCK = /^(P|DIV|LI|UL|OL|PRE|BLOCKQUOTE|H[1-6]|TR|TABLE|SECTION|ARTICLE|DETAILS|SUMMARY|FIGURE|HR)$/;
+/** P581: a range's visible words. Selection.toString() drops any text under user-select:none, and the
+    reply tag (button.rtag, aj-reply-action owner) is user-select:none → 「见（#580）」 was quoted / copied as 「见（）」.
+    Walk the DOM instead: every displayed text node in the range, a newline between blocks, a tab between cells. */
+function rangeText(r){
+  const root = r.commonAncestorContainer;
+  if (root.nodeType === 3) return getComputedStyle(root.parentElement).display === "none" ? "" : root.data.slice(r.startOffset, r.endOffset);
+  const top = root.nodeType === 1 ? root : null;
+  if (!top) return "";
+  const shown = new Map(), visible = e => {
+    if (!e || e === top.parentElement) return true;
+    if (shown.has(e)) return shown.get(e);
+    let v;
+    if (/^(SCRIPT|STYLE|TEMPLATE|NOSCRIPT)$/.test(e.tagName) || e.hidden) v = false;
+    else { const cs = getComputedStyle(e); v = cs.display !== "none" && cs.visibility !== "hidden" && visible(e.parentElement); }
+    shown.set(e, v); return v;
+  };
+  let out = "", lastBlock = null;
+  const w = document.createTreeWalker(top, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  for (let n = w.nextNode(); n; n = w.nextNode()){
+    if (!r.intersectsNode(n)) continue;
+    if (n.nodeType === 1){
+      if (n.tagName === "BR"){ out += "\n"; continue; }
+      if ((n.tagName === "TD" || n.tagName === "TH") && n.previousElementSibling && out && !out.endsWith("\n")) out += "\t";
+      continue;
+    }
+    const pe = n.parentElement;
+    if (!visible(pe)) continue;
+    let d = n.data;
+    if (n === r.startContainer && n === r.endContainer) d = d.slice(r.startOffset, r.endOffset);
+    else if (n === r.startContainer) d = d.slice(r.startOffset);
+    else if (n === r.endContainer) d = d.slice(0, r.endOffset);
+    if (!pe.closest("pre")) d = d.replace(/[ \t\r\n]+/g, " ");
+    if (!d) continue;
+    let b = pe; while (b && b !== top && !SEL_BLOCK.test(b.tagName)) b = b.parentElement;
+    if (lastBlock && b !== lastBlock && out && !out.endsWith("\n")) out += "\n";
+    lastBlock = b;
+    if (out.endsWith("\n") || !out) d = d.replace(/^ +/, "");
+    out += d;
+  }
+  return out.replace(/ +\n/g, "\n").replace(/\n{3,}/g, "\n\n");
+}
+/** P581: native copy keeps the complete selection; only quote excerpts use EXCERPT_MAX. */
+function selNativeCopy(e){
+  let tx = null; try{ tx = wordsSelection(true); }catch(_){}
+  if (!tx || !e.clipboardData) return;
+  e.clipboardData.setData("text/plain", tx); e.preventDefault();
 }
 function excerptLine(x){
   const ls = String(x).split("\n").map(l => l.trim()).filter(Boolean);
@@ -5205,6 +5255,7 @@ export function init(ctx){
     if (nearSelection(tt.clientX, tt.clientY)){ sw.mode = "hold"; deck.dataset.swipe = "hold"; }   // dragging a selection handle
   }, {passive: true});
   document.addEventListener("selectionchange", () => { if (sw && wordsSelection()) swipeVeto(); });
+  document.addEventListener("copy", selNativeCopy);
   deck.addEventListener("touchmove", e => {
     if (!sw || e.touches.length !== 1) return;
     const tt = e.touches[0], dx = tt.clientX - sw.x, dy = tt.clientY - sw.y;

@@ -21,13 +21,14 @@ export function paint(p) {
   if (p.approval_v !== 2) row('',t(p.approval_invalid ? 'p572source.invalid' : 'p572source.legacy'));
   else {
     const e=p.envelope, s=e?.source || {}, lines=sourceLines(e);
-    row(t('p572source.root')+(lines.rootRef?' · #'+lines.rootRef:''),lines.root || t('p572source.missing'));
-    if (lines.trigger && (lines.trigger !== lines.root || lines.triggerRef !== lines.rootRef)) row(t('p572source.trigger')+(lines.triggerRef?' · #'+lines.triggerRef:''),lines.trigger);
-    row(t('p572source.chain'),lines.chain || t('p572source.unknown'));
-    row(t('p572source.reason'),lines.reason || t('p572source.unknown'));
+    // #0281: #541 already renders the human quote and confirmation reason.
+    // Keep only the optional provenance chain here, with no missing-data filler.
+    if(lines.chain) row(t('p572source.chain'),lines.chain);
     if (s.verified !== true || s.suspicious === true) row('',t('p572source.external'));
     if (!p.envelope_verified) row('',t('p572source.invalid'));
   }
+  box.hidden = !box.childNodes.length;
+  if(p.approval_v===2)document.getElementById('action541')?.after(box);
   if (p.approval_invalid || (p.approval_v === 2 && (!p.envelope_verified || p.envelope?.source?.verified !== true || p.envelope?.source?.suspicious === true))) {
     document.getElementById('apprAllow').disabled=true;
     document.getElementById('apprBatch').hidden=true;

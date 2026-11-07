@@ -1,5 +1,5 @@
-# Agent J v0.28.0
+# Agent J v0.28.1
 
-Restore phone controls, improve approvals and automations, refresh Codex quota after upgrading, and fix switching and pipless updates.
+Fix approval submissions and card layout, preserve tags and links when quoting or copying, and promptly deliver new support tickets.
 
-找回遗漏的网页交互与账号流程，减少误弹审批，补齐任务来源与静默消息；手机集中查看和控制自动化、刷新 Codex 升级后的额度，修复切号、无 pip 环境升级和设置顶栏。
+修复审批确认与拒绝无法提交，审批卡标题、引用和理由更清楚，字号一致且不出界；引用和复制保留标签与链接，客服新工单及时推送。

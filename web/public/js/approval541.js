@@ -4,6 +4,7 @@ import { el, toast } from './ui.js';
 import { specialApprovalById, reviewSpecial } from './approval-special541.js';
 import { setApprovalAnchor } from './approval-anchor541.js';
 import { approvalReview } from './api.js';
+import { stepTitle } from './approval-layout0281.js';
 const detailIds=['cmdBox','why','apprScope','cmdReason'];
 const homes=new Map();
 let key='', current=null, hooks=null, active=false;
@@ -33,7 +34,7 @@ export function paint(p, options){
  const channel=t('p541.channel.'+src.channel),label=channel.startsWith('p541.')?String(src.channel||''):channel;
  const tm=Number(src.time),time=Number.isFinite(tm)&&tm>0?new Date(tm<1e12?tm*1000:tm).toLocaleTimeString(lang()==='zh'?'zh-CN':'en-GB',{hour:'2-digit',minute:'2-digit',hour12:false}):'';
  const who=suspect?t('p541.external'):String(src.sender||t('p541.you'));
- const meta=text('span','srcmeta541',outside?t('p541.initiator',{name:src.initiator||src.sender||'Agent J'}):[label,who].filter(Boolean).join(' · ')+(time?' · '+time:''));
+ const meta=text('span','srcmeta541','');meta.append(text('span','srcsender541',outside?t('p541.initiator',{name:src.initiator||src.sender||'Agent J'}):[label,who].filter(Boolean).join(' · ')+(time?' · '+time:'')));
  if(!outside&&src.message_id)meta.append(text('span','',t('p541.source')));
  source.append(meta,text('span','srctext541',outside?t('p541.older'):src.text||t('p541.unknown')),text('span','srcid541',outside?t('p541.task',{task:src.task_record||''}):'Message ID · '+(src.message_id||'—')));
  // @ix appr.source
@@ -41,7 +42,7 @@ export function paint(p, options){
  source.onclick=async()=>{if(!source.disabled){options.fold();await options.locate(src);}};
  const action=el('action541');action.hidden=false;action.textContent=String((lang()==='en'&&e.action_en)||e.action||p.reason||'');
  if(e.plan?.display){action.append(text('span','scope541','\n'+((lang()==='en'&&e.plan.display_en)||e.plan.display)));}
- if(e.title)el('sheetTitle').textContent=String((lang()==='en'&&e.title_en)||e.title);
+ el('sheetTitle').textContent=stepTitle(e,t('p336.faTitle'));
  el('askText').textContent=t('p541.wait');el('askTags').hidden=true;el('cmdToggle').hidden=true;el('goalInfo').hidden=true;
  for(const id of ['apprBatch','apprGoalAdd','apprKbd','cmdCopy'])el(id).hidden=true;
  const task=el('apprTask');if(task)task.hidden=true;
