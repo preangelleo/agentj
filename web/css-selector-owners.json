@@ -1347,6 +1347,16 @@
         }
       ],
       "sourceReview": "0285 Root exact five-selector namespace delta; DOM/callback source reviewed at ba8b27f16c9b12daf90ad6bdf97005d4ed4fde86; metadata only, no public byte changes"
+    },
+    {
+      "file": "public/app.css",
+      "selector": "body[data-conn=on] .stale.syncing",
+      "owner": "aj-reply",
+      "purpose": "0.28.6 existing stale slot displays pending data sync while connected; no new layout or appearance",
+      "evidence": {
+        "source": "public/app.css",
+        "decision": "0286 source-owned sync visibility, existing #stale reply slot"
+      }
     }
   ],
   "source6ProducerBindings": {

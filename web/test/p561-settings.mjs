@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {SETTINGS_CARD_GAPS} from './settings-card-spacing.mjs';
 // P561 追加 16 / 18 (董事长 10-28): Settings — words never touch the button under / over them (发送画面诊断, 重启服务 and every
 // other text + button block), 「本机文件访问」 has its line icon and chevron, the shortcut hints come from the shortcut table
 // (desktop only; a phone shows none), the upgrade note names /update; the gear's remote-count digit wears the state colour
@@ -93,6 +94,7 @@ try {
       const p = await paired({ w, scheme, lang, phone });
       try {
         await openSettings(p);
+        if (phase === 'after') { const cards = await evaluate(p, SETTINGS_CARD_GAPS); assert.ok(cards.floor >= 12); assert.deepEqual(cards.violations, [], 'every adjacent Settings card keeps --ui-space-control'); }
         const rows = await evaluate(p, SWEEP), floor = await tokenPx(p, '--ui-space-control');
         const bad = rows.filter((r) => r.gap < floor);
         audit.push({ tag, phase, floor, bad, rows: rows.length });

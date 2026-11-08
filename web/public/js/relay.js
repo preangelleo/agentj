@@ -4,7 +4,7 @@ import { useShort, phaseText } from './use.js';
 import { renderPage as renderForm, configure as configureForms, forgetAll as forgetForms } from './forms.js';
 import { refreshSpecialVisibility } from './approval-special541.js';
 import * as approval541 from './approval541.js';
-import { approvalById } from './snap.js';
+import { approvalById, acceptHistoryHead } from './snap.js';
 import { paint as paintApprovalSource572 } from './approval-source572.js';
 import {paint as terminalCommands, configure as configureRun} from './termcommands.js';
 import { paintReportActions } from './report-actions.js';
@@ -165,7 +165,8 @@ function renderWords(text, pending = false, label = "", waitLine = false, sys = 
   rdFollow(tx, sys, dataOnly);
 }
 // Shared post-Markdown rendering for the reply card and its full-screen reader.
-const replyDataOnly=p=>p?.source?.k==='friend_report'||!!chanCard(p)||(p?.source?.k==='host'&&!!p.source.text?.trim()&&p.end==='done'&&!p.reply?.trim()&&!p.card&&!p.source.att?.length);
+const externalEcho=p=>p?.source?.k!=='phone' && !!p?.source?.text?.trim() && p.source.text.trim()===p.reply?.trim();
+const replyDataOnly=p=>externalEcho(p)||p?.source?.k==='friend_report'||(p?.source?.k==='host'&&!!p.source.text?.trim()&&p.end==='done'&&!p.reply?.trim()&&!p.card&&!p.source.att?.length);
 function enhanceReplySurface(root,p,reader=false){
  if(!root||!p)return;
  if(!replyDataOnly(p))linkSlash(root,{run:phoneCmd,fill:text=>appendText(text)},t);
@@ -1279,7 +1280,19 @@ const SILENT_MARKERS = ["〔静默消息〕", "[silent]", "\u3014\u4e0d\u56de\u7
 const isSilent = text => typeof text === "string" && SILENT_MARKERS.some(m => text.trim().startsWith(m) || text.trim().endsWith(m));
 const silentTurn = p => p?.silent === true || isSilent(p?.reply);
 const cleanSilentMarkers = text => typeof text === "string" ? SILENT_MARKERS.reduce((s,m) => s.split(m).join(""), text).trim() : "";
-function displayTurn(p){ return {...p, silent: silentTurn(p), reply: cleanSilentMarkers(p.reply)}; }
+function displayTurn(p){
+  // Legacy channel notices carry their real input in card.channel, never Agent words.
+  const channel = chanCard(p);
+  if (channel) {
+    const raw = channel.text.trim(), chars = Array.from(raw);
+    const inert = {'[':'［',']':'］','<':'‹','>':'›','`':"'"};
+    const lead = (chars.slice(0,200).join('').trimEnd() + (chars.length > 200 ? '…' : '')).replace(/[\[\]<>`]/g,c=>inert[c]);
+    const fallback = p.reply === channel.text || !!channel.label && [channel.label+'：'+lead,channel.label+': '+lead].includes(p.reply);
+    p = {...p, reply: fallback ? '' : p.reply, source: {...p.source,
+      text: p.source?.text?.trim() ? p.source.text : channel.text,
+      name: channel.label || p.source?.name || '', input_channel: channel.source}};
+  }
+  return {...p, silent: silentTurn(p), reply: cleanSilentMarkers(p.reply)}; }
 const tailSeen = {primed: false, id: 0, reply: "", virt: false, seg: ""};
 function newTurnArrived(ps){
   const tt = ps.findLast(p => visibleReply(p)) || {id: null, reply: ""};
@@ -1332,9 +1345,12 @@ function totalPages(){ return pages().length + Math.max(0, hist.count - hist.tur
 function noteHistory(s){
   const h = s.history;
   if (h && typeof h.last_id === "number"){
-    hist.count = Math.max(h.count || 0, hist.turns.length);
     const ep = typeof h.epoch === "number" ? h.epoch : 0;
-    if (ep !== hist.epoch || h.last_id < hist.lastId) resetHistory(ep);
+    // Cached status metadata can trail a completed head read. Only an advancing
+    // epoch clears history; a lower ID in the same epoch cannot roll it back.
+    if (ep < hist.epoch) { showPage(); return; }
+    if (ep > hist.epoch) resetHistory(ep);
+    hist.count = Math.max(h.count || 0, hist.count, hist.turns.length);
     if (h.last_id > hist.lastId) syncHistory(h.last_id);
   }
   showPage();
@@ -1362,23 +1378,104 @@ export function upsertTurn(p){
   if (histSettled()) return;             // P398: dequeue → paintQueued → showPage
   showPage();
 }
-export function historyReset(ep){ resetHistory(ep); showPage(); }
+export function historyReset(ep){
+  historyConfirmedStore = false;
+  if (ep !== hist.epoch) {
+    historyGeneration++; historyHead = null; historySync = true;
+    if (historyRetry) { clearTimeout(historyRetry); historyRetry = null; }
+  }
+  resetHistory(ep); showPage();
+  if (C?.connected?.()) refreshNewest();
+}
 // P135: a head fetch that fails or times out retries after 5 s, doubling to 60 s, one at a time; success or a newer
 // generation (a reconnect, a fresh refresh) ends it — otherwise the page would say 「正在恢复…」 forever.
 const RETRY_MS = 5000, RETRY_MAX_MS = 60000;
 let historyRetry = null, historyDelay = 0;
-async function refreshNewest(retry = false){
+let historyHead = null, historyReadTail = Promise.resolve(), historyHintSequence = 0, historyCandidate = null, historyFollowup = false, historyAwaitingMeta = false, historyConfirmedStore = false;
+function beginHistorySync(waitForMeta){
+  historyAwaitingMeta = waitForMeta && !historyConfirmedStore;
+  if (!historyAwaitingMeta) { refreshNewest(); return; }
+  historySync = true; paintHistorySync();
+  if (historyRetry) clearTimeout(historyRetry);
+  // p33 sends hist_meta immediately after ready. Let that establish the read
+  // hint before dispatch, instead of downloading a head we must discard.
+  // The same single-owner timer is a bounded fallback for a missing header.
+  historyRetry = setTimeout(() => { historyRetry = null; historyAwaitingMeta = false; refreshNewest(); },250);
+}
+export function historyMeta(){
+  if (!historyAwaitingMeta) return;
+  historyAwaitingMeta = false; refreshNewest();
+}
+export function historyHint(hint = {}){
+  const epoch = Number.isInteger(hint.epoch) ? hint.epoch : null;
+  // Once this epoch is confirmed, live turns use upsertTurn. Repeated pushes
+  // from one pending store are data activity, not another store transition.
+  if (hint.kind === 'turn' && epoch === hist.epoch) return;
+  if (!historyCandidate || historyCandidate.epoch !== epoch) {
+    historyCandidate = {epoch, dirty:false}; historyHintSequence++;
+  } else if (historyHead && ['meta','turn'].includes(hint.kind)) historyCandidate.dirty = true;
+  if (C?.connected?.()) refreshNewest();
+}
+// All history reads share one request owner; UI views never retry a transport themselves.
+function readHistorySnapshot(query, generation){
+  const task = historyReadTail.then(() => generation === historyGeneration ? C.api.history(query) : null);
+  historyReadTail = task.catch(() => {});
+  return task;
+}
+function paintHistorySync(){
+  if (!C) return;
+  document.body.dataset.sync = historySync ? 'pending' : 'ready';
+  const stale = el('stale');
+  stale.classList.toggle('syncing', historySync && C.connected());
+  if (C.connected()) {
+    stale.textContent = historySync ? t('p0286.syncing') : '';
+    el('capText').textContent = t(historySync ? 'p0286.syncing' : 'p0286.synced');
+  }
+}
+function refreshNewest(retry = false){
+  if (historyHead) return historyHead;
+  const hintAtStart = historyHintSequence;
+  const task = refreshNewestRun(retry, hintAtStart);
+  historyHead = task;
+  task.finally(() => {
+    if (historyHead !== task) return;
+    historyHead = null;
+    // A hint received after dispatch needs a read issued after that hint. One
+    // pending reread is shared by every caller; never bless the older response.
+    if ((hintAtStart !== historyHintSequence || historyFollowup) && C?.connected?.()) { historyFollowup = false; refreshNewest(); }
+  });
+  return task;
+}
+async function refreshNewestRun(retry = false, hintAtStart = historyHintSequence){
   if (historyRetry){ clearTimeout(historyRetry); historyRetry = null; }
   if (!retry) historyDelay = 0;
   unread.bind(hostId());
   const generation = ++historyGeneration;
-  historySync = true; wordsSrc = null; showPage();
+  historySync = true; wordsSrc = null; paintHistorySync(); showPage();
   const before = new Map(hist.turns.map(x => [x.id, x]));
   try{
-    const j = await C.api.history({limit: 50});
-    if (generation !== historyGeneration) return;
-    if (!j || j.epoch < hist.epoch) throw new Error("stale head");
-    if (j.epoch > hist.epoch) resetHistory(j.epoch);
+    // A retained page needs the last turn plus missed turns, not the last 50 full replies again.
+    // Keep every retained open turn inclusive: notices may have arrived after an unfinished reply.
+    const firstOpen = hist.turns.reduce((id,p) => p.end === 'open' ? Math.min(id,p.id) : id, hist.lastId);
+    let query = hist.turns.length && firstOpen >= 1 ? {after:firstOpen - 1,limit:50} : {limit:50};
+    let j = await readHistorySnapshot(query, generation);
+    if (generation !== historyGeneration || hintAtStart !== historyHintSequence) return;
+    if (j && j.epoch !== hist.epoch && Object.hasOwn(query, 'after')) {
+      query = {limit:50}; j = await readHistorySnapshot(query, generation);
+    }
+    let rounds = 0;
+    while (j && Object.hasOwn(query, 'after') && j.more && rounds++ < 10) {
+      const cursor = j.turns.at(-1)?.id;
+      if (!Number.isInteger(cursor) || cursor <= query.after) throw new Error('history cursor stalled');
+      const next = await readHistorySnapshot({after:cursor,limit:50}, generation);
+      if (generation !== historyGeneration || hintAtStart !== historyHintSequence) return;
+      if (!next || next.epoch !== j.epoch) throw new Error('history epoch changed');
+      j = {...next, turns:j.turns.concat(next.turns)}; query = {after:cursor,limit:50};
+    }
+    if (j?.more && Object.hasOwn(query, 'after')) throw new Error('history catchup budget');
+    if (!j) throw new Error("missing head");
+    if (generation !== historyGeneration || hintAtStart !== historyHintSequence) return;
+    if (j.epoch !== hist.epoch) resetHistory(j.epoch);
     const byId = new Map(hist.turns.map(x => [x.id, x]));
     // A live update received after this request is newer than its snapshot.
     for (const p of j.turns){
@@ -1386,13 +1483,19 @@ async function refreshNewest(retry = false){
     }
     hist.turns = [...byId.values()].sort((a,b) => a.id - b.id);
     hist.lastId = hist.turns.at(-1)?.id || 0;
-    hist.count = Math.max(j.count || 0, hist.turns.length);
-    hist.firstId = j.first_id || hist.turns[0]?.id || 0;
+    hist.count = Math.max(j.count || 0, hist.count, hist.turns.length);
+    hist.firstId = Math.max(hist.firstId, j.first_id || hist.turns[0]?.id || 0);
+    historyConfirmedStore = true;
+    acceptHistoryHead({epoch:hist.epoch,first:hist.firstId,last:hist.lastId,count:hist.count});
     if (Number.isSafeInteger(j.read)) {
       unread.owner(j.epoch, j.read);
       if (unread.mark() > j.read) sendRead();
     }
-    pagesCache = null; historySync = false; historyDelay = 0;
+    // No turn payload is buffered across stores. Confirm the fresh head first,
+    // then one shared post-confirmation read covers pushes received in flight.
+    historyFollowup = !!historyCandidate?.dirty;
+    historyCandidate = null;
+    pagesCache = null; historySync = historyFollowup; historyDelay = 0; paintHistorySync();
     unread.rebase(hist.turns.filter(visibleReply).map(x => x.id));   // P333: what the head brought (reload, foreground, reconnect) is not a live arrival
   }catch(_){
     if (generation === historyGeneration){   // keep the syncing wording and try again later
@@ -1406,20 +1509,22 @@ async function syncHistory(want){
   hist.want = Math.max(hist.want, want || 0);
   if (hist.busy) return;
   hist.busy = true;
+  const generation = historyGeneration;
   try{
     for (let n = 0; n < 4; n++){
       const reset = hist.want < hist.lastId;
       const q = hist.lastId && !reset ? {after: hist.lastId} : {limit: 50};
-      const j = await C.api.history(q);
-      if (!j) break;
+      const before = new Map(hist.turns.map(x => [x.id, x]));
+      if (historyHead) { await historyHead; if (generation !== historyGeneration || hist.lastId >= hist.want) break; }
+      const j = await readHistorySnapshot(q, generation);
+      if (generation !== historyGeneration || !j) break;
       const fresh = j.turns.filter(x => x && typeof x.id === "number").map(displayTurn);
       const ep = typeof j.epoch === "number" ? j.epoch : 0;
-      if (ep < hist.epoch) continue;
-      if (ep > hist.epoch){ resetHistory(ep); hist.turns = fresh; }
-      else if (reset || !hist.lastId) hist.turns = fresh;
+      if (ep !== hist.epoch) { historyHint({epoch:ep,kind:'meta'}); break; }
+      if (reset || !hist.lastId) hist.turns = fresh;
       else {
         const byId = new Map(hist.turns.map(x => [x.id, x]));
-        for (const x of fresh) byId.set(x.id, x);
+        for (const x of fresh) if (!byId.has(x.id) || byId.get(x.id) === before.get(x.id)) byId.set(x.id, x);
         hist.turns = [...byId.values()].sort((a, b) => a.id - b.id);
       }
       hist.count = Math.max(j.count || 0, hist.turns.length); hist.firstId = j.first_id || (hist.turns[0] ? hist.turns[0].id : 0);
@@ -1442,10 +1547,11 @@ function olderLeft(){ return hist.turns.length > 0 && hist.turns[0].id > hist.fi
 async function loadOlderBatch(){
   if (hist.older || !olderLeft()) return null;
   hist.older = true;
+  const generation = historyGeneration, epoch = hist.epoch;
   try{
-    const j = await C.api.history({before: hist.turns[0].id, limit: 50});
+    const j = await readHistorySnapshot({before: hist.turns[0].id, limit: 50}, generation);
     // Older pages of a session that has since been cleared are not this session's.
-    if (j && j.turns.length && (typeof j.epoch === "number" ? j.epoch : 0) === hist.epoch){
+    if (generation === historyGeneration && epoch === hist.epoch && j && j.turns.length && (typeof j.epoch === "number" ? j.epoch : 0) === hist.epoch){
       const older = j.turns.filter(t => t && typeof t.id === "number" && t.id < hist.turns[0].id).map(displayTurn);
       hist.turns = older.concat(hist.turns); hist.firstId = j.first_id || hist.firstId;
       if (!older.length) hist.firstId = hist.turns[0].id;
@@ -1493,6 +1599,7 @@ function sourceOf(src){
   // P179: another remote's label is its current one (the owner may have renamed it since), else the name the page was stamped with
   if (src.k === "phone") return src.dev && src.dev === C.myDev() ? {kind: "leo", label: t('r.src.you')}
     : {kind: "dev", label: (src.dev && deviceInfo(src.dev)?.label) || src.name || t('r.src.otherDevice')};
+  if (src.input_channel) return {kind:'sys', label:src.name || (src.input_channel === 'mail' ? t('r.src.email', {name:''}) : src.input_channel === 'wechat' ? t('p0286.wechat') : 'Telegram')};
   if (src.k === "telegram") return {kind:"tg",label:"Telegram"};
   if (src.k === "email") return {kind:"tg",label:t('r.src.email', {name: src.name || ''})};   // P170: same quiet colour as Telegram
   if (src.k === "wechat") return {kind:"tg",label:src.name || "WeChat"};   // P562: the owner's WeChat — the host names it 「微信」 / "WeChat"
@@ -1500,7 +1607,7 @@ function sourceOf(src){
   if (src.k === "host") return {kind: "host", label: t('r.src.host')};
   // P132: a page the Agent started itself says why — a /loop or wake-up check, a background task, or just reporting in
   // P156: the host's own heartbeat check (its prompt is not shown — a folded label; a quiet beat has no page at all)
-  if (src.k === "agent") return {kind: "agent", label: src.via === "heartbeat" ? t('r.src.heartbeat') : src.via === "quota" ? t('p314.src') : src.via === "hook" ? t('p366.src') : src.via === "loop" ? t('r.src.loop') : src.via === "task" ? t('r.src.bgTask')
+  if (src.k === "agent") return {kind: "agent", label: src.via === "heartbeat" ? t('r.src.heartbeat') : src.via === "quota" ? t('p314.src') : src.via === "hook" ? t('p366.src') + (src.name ? " · " + src.name : "") : ["api", "mcp"].includes(src.via) ? "API" + (src.name ? " · " + src.name : "") : src.via === "loop" ? t('r.src.loop') : ["task", "background_done"].includes(src.via) ? t('r.src.bgTask')
     : src.via === "auto" ? t('p365.src.about', {name: src.name || ''})   // P365: the main Agent's own follow-up about an automation's message
     : t(src.text?.trim() ? 'r.src.agent' : 'r.src.agentReport', {name: C.agentName()})};
   if (isAssistSrc(src)) return {kind: "task", label: t('p0269.assist.src')};   // 0.26.9 #468: a task official remote assist sent your Agent
@@ -1562,6 +1669,8 @@ function showPage(){
   const ic = el("srcIcons").content.querySelector(`[data-kind="${who.kind}"]`);
   el("omIcon").replaceChildren(ic ? ic.cloneNode(true) : "");
   el("omLabel").textContent = who.label;
+  el("omSourceDetail").textContent = who.label;
+  om.dataset.sourceDetail = who.label ? "1" : "0";
   el("omTime").textContent = p.ts ? "· " + hhmm(p.ts) : "";
   const tx = src && typeof src.text === "string" ? src.text.trim() : "";
   const ot = el("omText");
@@ -1575,7 +1684,7 @@ function showPage(){
   // same place and size, the source label, the page capsule, both corner gestures and the new-message flash.
   const header = !tx && !src?.att?.length && !src?.quote;
   om.dataset.header = header ? "1" : "0";
-  if (header) ot.textContent = t('r.om.noInput');
+  if (header) ot.textContent = t('p0286.inputUnavailable');
   if (p.seg){ const w = contOfText(src); ot.textContent = w ? t('p0269.split.contOf', {text: w}) : t('p0269.split.contOfNone'); }   // 0.26.9 #471: what this card continues
   paintOmAttachments(src);
   const q = src && src.quote ? src.quote : null;
@@ -1615,7 +1724,7 @@ function showPage(){
   queueStuck = queueWatch.check(queueList, hist.turns);
   const chan = chanCard(p);                              // P543 (#308): an owner-channel message shows its words
   el("words").dataset.chan = chan ? "1" : "0";
-  if (chan) paintChan(el("cmdx"), p, chan);
+  if (chan) { el("cmdx").replaceChildren(); el("cmdx").hidden = true; }
   else if (p.cont) paintCont(el("cmdx"), p, ps);         // 0.26.9 #471: 「继续见下方」 — this card gets nothing more
   else if (!chatheal.paint(el("cmdx"), p, HEAL)){ paintCmdx(p); chatheal.tail(el("cmdx"), p, HEAL); }   // 0.26.9: 重新登录 / 已等 N 分钟 / 强制结束这一轮
   if (p.source?.k === 'cmd' && p.card?.kind === 'refused') {
@@ -1650,8 +1759,8 @@ function showPage(){
   const hostWait = open && (c.wait === true || c.queued === true) || (typeof c.switch === "string" && p === ps[ps.length - 1]);
   const absorbed = isSteered(p) && !visibleReply(p);   // 0.26.9 #471: steered into the running turn — its answer is that turn's
   if (absorbed) renderWords(t('p0269.queue.steered'), false, "", false, false, true);
-  else renderWords(chan ? chanWords(p, chan) : (silentTurn(p) ? "" : p.reply?.trim()) || (noticeOnly ? t('p0269w4.notice') : p.end === "open" || p.id === null ? "" : t('r.noReply')), open,
-    qd ? t(queueStuck ? 'p481.queueStuck' : 'r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : progress, hostWait, sysPage(p), p.source?.k === "friend_report" || !!chan || noticeOnly);
+  else renderWords((silentTurn(p) ? "" : p.reply?.trim()) || (noticeOnly ? t('p0269w4.notice') : p.end === "open" || p.id === null ? "" : t('r.noReply')), open,
+    qd ? t(queueStuck ? 'p481.queueStuck' : 'r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : progress, hostWait, sysPage(p), replyDataOnly(p) || noticeOnly);
   { const lg = selfheal.loginOf(p); if (lg) selfheal.linkLogin(el("words"), t('p0269.login.btn'), () => openLogin(lg.agent, lg.why)); }   // 0.26.9: `/login` = 「重新登录」
   // 0.26.9 #433 #447 · security C-1: never on a friend's report or an owner-channel page (a stranger's words); a fill tap goes
   // after the owner's draft (appendText), never replacing it
@@ -2802,7 +2911,12 @@ function swipeEnd(){
 // P393 #122: a drop that heals inside the five-second quiet window never paints "off", so setConn(true) below sees no
 // off→on edge; connLost marks it so an upload the drop cut (why "net") still resumes when the link is back.
 let quietLost = false;
-export function connLost(){ quietLost = true; outbox.lost(); }
+export function connLost(){
+  quietLost = true; outbox.lost(); historyAwaitingMeta = false;
+  historyGeneration++; historyHead = null; historySync = true;
+  if (historyRetry) { clearTimeout(historyRetry); historyRetry = null; }
+  paintHistorySync();
+}
 /** on: a ready session with the host up. text: what the screen reader says while off. */
 export function setConn(on, text){
   if (!C) return;
@@ -2810,7 +2924,8 @@ export function setConn(on, text){
   document.body.dataset.conn = on ? "on" : "off";
   cueBox.set({conn: !!on});
   if (!on){
-    historyGeneration++; historySync = true;
+    historyGeneration++; historySync = true; historyAwaitingMeta = false;
+    if (historyRetry) { clearTimeout(historyRetry); historyRetry = null; }
     el("capText").textContent = text || "";
     el("capSub").textContent = "";
     const stale = el("stale");
@@ -2823,7 +2938,7 @@ export function setConn(on, text){
   if (on) quietLost = false;
   if (on) drainOut(); else outbox.lost();          // 0.15.2: the offline queue goes out on ready, stops on a drop
   paintOut();
-  wordsSrc = null; showPage(); paintChrome(); refreshSend(); paintSayCancel();
+  wordsSrc = null; paintHistorySync(); showPage(); paintChrome(); refreshSend(); paintSayCancel();
 }
 
 // P251: preserve text through the existing sealed draft store; never discard in-flight card/media work.
@@ -5903,6 +6018,11 @@ export function init(ctx){
   restoreDraft();
   paintKeys();   // P207: the sheet is in the DOM from the start (drawn from interactions.json), as the hand-written one was
   outbox.open(); addEventListener("online", paintOut); addEventListener("offline", paintOut);
+  const syncVisible = () => { if (!document.hidden && C.connected()) refreshNewest(); };
+  document.addEventListener('visibilitychange', syncVisible);
+  document.addEventListener('resume', syncVisible);
+  addEventListener('online', syncVisible);
+  navigator.connection?.addEventListener?.('change', syncVisible);
   showPage();
   pttUI(null);
   paintTray();
@@ -5910,11 +6030,11 @@ export function init(ctx){
 /** Called when the session becomes ready again (a new host turn source, menu). */
 window.addEventListener('agentj-forward-change', () => { if (C) paintFwd(); });
 export function onForwardChanged(){ paintFwd(); }
-export function onReady(){ syncQueued(); window.dispatchEvent(new Event('agentj-forward-change')); paintVoiceReadiness(); refreshNewest(); paintPlaceholder(); refreshSend(); loadMenu(); paintActs(); renderMenu(); setTimeout(() => recRecover().catch(() => {}), 800); }
+export function onReady(){ syncQueued(); window.dispatchEvent(new Event('agentj-forward-change')); paintVoiceReadiness(); beginHistorySync(peer.p33); paintPlaceholder(); refreshSend(); loadMenu(); paintActs(); renderMenu(); setTimeout(() => recRecover().catch(() => {}), 800); }
 export function onEstop(){ paintPlaceholder(); renderMenu(); refreshSend(); }
 export function rerender(){ paintVoiceReadiness(); if (cur) render(cur); else showPage(); }
 /** For the screens test: internal state worth asserting. */
-export function debug(){ return {search: search.debug(), pageAt, follow, pages: pages().length, total: totalPages(), atts: atts.map(a => ({st: a.st, name: a.name, id: a.id || null, origin: a.origin})), queued: queued.length, asrBusy, hist: hist.turns.map(x => x.id), menuItems: menuItems.map(x => x[0]), ptt: ptt ? {locked: ptt.locked, cancel: ptt.cancel} : null, lockCount, histMem: histMem.slice(), killBuf: killed()}; }
+export function debug(){ return {search: search.debug(), pageAt, follow, pages: pages().length, total: totalPages(), atts: atts.map(a => ({st: a.st, name: a.name, id: a.id || null, origin: a.origin})), queued: queued.length, asrBusy, sync: historySync ? 'pending' : 'ready', hist: hist.turns.map(x => x.id), menuItems: menuItems.map(x => x[0]), ptt: ptt ? {locked: ptt.locked, cancel: ptt.cancel} : null, lockCount, histMem: histMem.slice(), killBuf: killed()}; }
 
 
 let userPreferences={};

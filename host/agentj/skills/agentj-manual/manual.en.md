@@ -381,7 +381,7 @@ Your own scripts and timers can post a page to the phone with `agentj notify`. T
 automation:" plus the automation's name; its images and files open as file cards. Each automation is off until you turn it on — in Settings under Automation
 messages, or `agentj notify --allow <name>` on the computer. A long task your Agent makes decides this when it is created;
 you can switch it in the same place; that page also has a master switch. Your Agent also gets a copy of each message
-and treats it as information from a script, not as your instruction; with nothing to add it stays quiet. Your Agent itself
+and treats it as information from a script, not as your instruction. It summarizes success as FYI, explains failures and the repair arranged within existing permissions, and tells you clearly if it needs you. Only noise may stay silent. Your Agent itself
 can never post this way. See
 [Long tasks](https://agentj.app/docs/long-tasks/).
 

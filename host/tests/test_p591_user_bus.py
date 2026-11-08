@@ -17,7 +17,7 @@ from _testtmp import TEST_TMP
 class Policy(unittest.TestCase):
     def test_manager_writes_always_require_pairing(self):
         for cmd in ('systemctl --user start x.service', 'systemctl --user enable x.timer',
-                    'systemctl --user link /tmp/x.service', 'systemd-run --user true',
+                    'systemctl --user link /tmp/x.service',
                     'env systemctl --user restart x.service'):
             with self.subTest(cmd=cmd):
                 v = danger.classify('Bash', {'command': cmd})
@@ -28,6 +28,29 @@ class Policy(unittest.TestCase):
                     self.assertEqual(requirement, 'uv', tool)
                     self.assertEqual(approval_level.full_access_keep(tool, inp, v, requirement=requirement), 'uv', tool)
                 self.assertTrue(set(danger.shared_keys(v, {'approvals': 'native'})) & danger.ALWAYS_CARD)
+
+    def test_transient_pure_child_keeps_service_label_but_needs_no_uv(self):
+        # #537 classifies the closed child effect, not the transport label.
+        for tool in ('Bash', 'exec_command'):
+            with self.subTest(tool=tool):
+                inp = {'command': 'systemd-run --user true'}
+                verdict = danger.classify('Bash', inp)  # normalized command classification, as above
+                self.assertIn('cred.service', verdict.rules)
+                requirement = policy_registry.main_requirement(tool, inp)
+                self.assertEqual(requirement, 'allow')
+                self.assertIsNone(approval_level.full_access_keep(tool, inp, verdict, requirement=requirement))
+
+    def test_transient_sensitive_child_or_environment_still_requires_uv(self):
+        for tool in ('Bash', 'exec_command'):
+            for cmd in ('systemd-run --user sh -c "cat ~/.env"',
+                        'systemd-run --user --setenv=SECRET=fixture true'):
+                with self.subTest(tool=tool, cmd=cmd):
+                    inp = {'command': cmd}
+                    verdict = danger.classify('Bash', inp)  # normalized command classification, as above
+                    self.assertIn('cred.service', verdict.rules)
+                    requirement = policy_registry.main_requirement(tool, inp)
+                    self.assertEqual(requirement, 'uv')
+                    self.assertEqual(approval_level.full_access_keep(tool, inp, verdict, requirement=requirement), 'uv')
 
     def test_unit_roots_cannot_replace_the_private_proc_or_filesystem_root(self):
         for root in ('/proc', '/', '/agentj-p591-absent-root/not-created'):

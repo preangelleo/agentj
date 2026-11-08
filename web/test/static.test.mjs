@@ -12,6 +12,7 @@ import { PUBLIC_DIR, PROTOCOL_DIR, PROTO_FILES, I18N_DIR, HAVE_BRAND, sourceFile
 // that need them are skipped, everything else still runs on the shipped copies)
 const POLISH = fileURLToPath(new URL('../../i18n/polish.py', import.meta.url));
 const GLOSSARY_FILE = fileURLToPath(new URL('../../i18n/glossary.json', import.meta.url));
+import {checkedPreviewRemainder} from './inert-preview-policy.mjs';
 import { handle, csp, webHeaders } from '../worker.ts';
 
 const walk = (d) => readdirSync(d).flatMap((n) => { const p = join(d, n); return statSync(p).isDirectory() ? walk(p) : [p]; });
@@ -163,7 +164,7 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
 test('no innerHTML / eval / new Function / string timers / document.write anywhere', () => {
   for (const f of JS.concat(pub('index.html'))) {
     // brand/*.js say in their header comments that they avoid these APIs; there only the code counts
-    const s = rel(f).startsWith('brand/') ? read(f).replace(/\/\*[\s\S]*?\*\//g, '') : read(f);
+    const s = checkedPreviewRemainder(rel(f), rel(f).startsWith('brand/') ? read(f).replace(/\/\*[\s\S]*?\*\//g, '') : read(f));
     // pinned upstream libraries (P57: hljs / KaTeX / mermaid) may carry innerHTML / document.write code paths the page
     // never calls (hljs.highlightElement, DOMPurify …); eval / new Function / string timers stay banned there too, and
     // CSP script-src 'self' (no 'unsafe-eval') stops them at run time anyway.

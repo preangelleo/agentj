@@ -5886,5 +5886,9 @@
   "p0285.pk.registered": "This device’s {bio}: registered",
   "p0285.pk.checkHere": "Choose “Test it” to check that this browser works now.",
   "p0285.pk.unverified": "This device’s {bio}: verification did not finish",
-  "p0285.pk.incomplete": "Verification did not finish: it may have been cancelled, timed out, or the matching passkey may be unavailable. If retrying fails, set it up again."
+  "p0285.pk.incomplete": "Verification did not finish: it may have been cancelled, timed out, or the matching passkey may be unavailable. If retrying fails, set it up again.",
+  "p0286.syncing": "Connected. Syncing messages…",
+  "p0286.synced": "Connected. Messages are up to date.",
+  "p0286.inputUnavailable": "Trigger text was not saved",
+  "p0286.wechat": "WeChat"
 }

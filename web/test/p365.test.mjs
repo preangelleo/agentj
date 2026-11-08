@@ -33,7 +33,7 @@ test('P365 toPage keeps k "auto" with its name; an Agent turn keeps via "auto"; 
 
 test('P365 history search (hist_find) keeps via "auto" too', () => {
   const snap = read('../public/js/snap.js');
-  assert.match(snap, /src\.k === 'agent' && \['loop', 'task', 'quota', 'auto', 'hook'\]\.includes\(src\.via\) \? \{ via: src\.via \}/);
+  assert.match(snap, /src\.k === 'agent' && \['loop', 'task', 'quota', 'auto', 'hook', 'heartbeat', 'api', 'mcp', 'background_done'\]\.includes\(src\.via\) \? \{ via: src\.via \}/);
 });
 
 function sourceOf(lang = 'zh') {

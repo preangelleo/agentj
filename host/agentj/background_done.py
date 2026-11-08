@@ -330,7 +330,8 @@ class Notifier:
                      "the actual reports and evidence, then report the result to the owner in one or two sentences; never "
                      "infer success from an exit code. Say when a report is missing; never automatically replay unknown outcomes, "
                      "and ask the original worker to reconcile delivery evidence first.")
-        page = self.host.hist_add({"k": "agent", "via": "background_done", "text": ""}, "", "open")
+        from . import privacy
+        page = self.host.hist_add({"k": "agent", "via": "background_done", "text": privacy.owner_text("\n".join(lines))}, "", "open")
         send = CompletionSend(page["id"], "\n".join(lines), [k for k, _ in batch])
         send.report_paths = [v["report_path"] for _, v in batch if v.get("report_path")]   # #450: own_report scope
         if chain:

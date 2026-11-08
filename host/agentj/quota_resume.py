@@ -598,9 +598,9 @@ def _current():
 
 def send_resume(host, rec: dict, lang: str = "zh") -> None:
     """One fresh turn: its own page (via quota), system provenance, nothing attached, never a phone's say."""
-    from . import provenance
+    from . import privacy, provenance
     from .compose import Send
-    page = host.hist_add({"k": "agent", "via": "quota", "text": ""}, "", "open")
+    page = host.hist_add({"k": "agent", "via": "quota", "text": privacy.owner_text(continue_text(rec, lang))}, "", "open")
     s = Send("quota", secrets.token_urlsafe(16), page["id"], text=continue_text(rec, lang), by="quota_resume")
     s.source = provenance.system()
     s.quota_resume_id = rec["id"]

@@ -673,7 +673,8 @@ class Heartbeat:
             g = auth_rescue.heartbeat_line(h.st, lang)
             if g:
                 body += "\n" + g
-        page = h.hist_add({"k": "agent", "via": "heartbeat", "text": ""}, "", "open")
+        from . import privacy
+        page = h.hist_add({"k": "agent", "via": "heartbeat", "text": privacy.owner_text(body)}, "", "open")
         send = HeartbeatSend(page["id"], body, key, digest)
         if note:                                      # #449: this beat asked for a self-compaction (host-made, one shot)
             send.compact_invite = secrets.token_urlsafe(16)

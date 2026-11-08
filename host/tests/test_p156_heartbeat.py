@@ -28,8 +28,9 @@ from unittest.mock import AsyncMock, Mock, patch
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
-from agentj import busy, heartbeat as hb, preferences, provenance, serve, shared  # noqa: E402
+from agentj import busy, heartbeat as hb, preferences, privacy, provenance, serve, shared  # noqa: E402
 from agentj.state import State  # noqa: E402
+from agentj.silent import MARKER  # noqa: E402
 from test_slash import _Chain  # noqa: E402
 
 
@@ -64,7 +65,7 @@ class Pure(unittest.TestCase):
             self.assertFalse(hb.ensure_prompt("zh", p), "never overwrites")
             self.assertEqual(oct(p.stat().st_mode & 0o777), "0o600")
             text, digest = hb.read_prompt(p)
-            self.assertIn("〔不回群〕", text)
+            self.assertIn(MARKER, text)
             self.assertEqual(digest, hb.sha8(hb.TEMPLATE["zh"]))
             self.assertEqual(len(digest), 8)
             with self.assertRaises(ValueError):
@@ -84,7 +85,7 @@ class Pure(unittest.TestCase):
         full = hb.message("zh", "做这些事", "abcd1234", True, 61)
         self.assertTrue(full.startswith("〔Agent J 心跳〕 提示 abcd1234"))
         self.assertIn("做这些事", full)
-        self.assertIn("〔不回群〕", full)
+        self.assertIn(MARKER, full)
         self.assertIn("~/.config/agentj/heartbeat.md", full.replace(str(hb.prompt_path().parent), "~/.config/agentj")
                       if not str(hb.prompt_path()).startswith(os.path.expanduser("~")) else full)
         short = hb.message("zh", "做这些事", "abcd1234", False, 61)
@@ -164,7 +165,7 @@ class Decide(unittest.TestCase):
         self.assertTrue(send.text.startswith("〔Agent J 心跳〕"))
         self.assertIn("醒来以后按顺序做", send.text)
         page = self.host.hist.get(send.turn)
-        self.assertEqual(page["src"], {"k": "agent", "via": "heartbeat", "text": ""})
+        self.assertEqual(page["src"], {"k": "agent", "via": "heartbeat", "text": privacy.owner_text(send.text)})
         self.assertTrue(hb.prompt_path().exists(), "the default template is written on the first beat")
         send.state = "delivered"
         self.assertIsNone(asyncio.run(self.h.tick(t + 60)), "not due again within the interval")
@@ -446,6 +447,20 @@ class ClaudeBeat(_Beat):
 
 class CodexBeat(_Beat):
     KIND = "codex"
+
+    def setUp(self):
+        super().setUp()
+        # The transport stand-in echoes its input; unlike a model it never chooses
+        # silence. A literal prompt ending in MARKER would otherwise be mistaken
+        # for a silent final reply. Preserve its entire ECHO, then terminate it.
+        source = (HERE / "fakecodex.py").read_text()
+        needle = 'say(tid, turn, f"ECHO: {text}")'
+        self.assertIn(needle, source)
+        source = source.replace(needle, 'say(tid, turn, f"ECHO: {text}" + ("\\nHEARTBEAT-TRANSPORT-END" '
+                                'if text.startswith("〔Agent J 心跳〕") else ""))')
+        fake = self.work / ".fake-heartbeat-codex.py"
+        fake.write_text(source)
+        pathlib.Path(self.env["AGENTJ_CODEX_BIN"]).write_text(f'#!/bin/sh\nexec {sys.executable} {fake} "$@"\n')
 
 
 class OpenCodeBeat(_Beat):

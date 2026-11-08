@@ -7,13 +7,13 @@ import {createUnread} from '../public/js/unread.js';
 const src=readFileSync(new URL('../public/js/relay.js',import.meta.url),'utf8');
 test('P123 refreshed pending page waits for fresh host history, then renders offline completion',async()=>{
   let resolve,queries=[],painted=[];
-  const ctx=vm.createContext({...turnsplit,unread:createUnread(),hostId:()=> 'test-host',C:{api:{history:q=>{queries.push(q);return new Promise(r=>resolve=r);}},myDev:()=> 'mine'},showPage(){},announceTurn(){},el:()=>({hidden:true}),cur:{status:'idle'},t:x=>x,fill:(w,x)=>painted.push(x),afterWords(){},rdFollow(){}});
+  const ctx=vm.createContext({...turnsplit,t:x=>x,document:{body:{dataset:{}}},chanCard:()=>null,acceptHistoryHead(){},setTimeout,clearTimeout,unread:createUnread(),hostId:()=> 'test-host',C:{connected:()=>true,api:{history:q=>{queries.push(q);return new Promise(r=>resolve=r);}},myDev:()=> 'mine'},showPage(){},announceTurn(){},el:()=>({hidden:true,classList:{toggle(){}},textContent:""}),cur:{status:'idle'},t:x=>x,fill:(w,x)=>painted.push(x),afterWords(){},rdFollow(){}});
   vm.runInContext(src.slice(src.indexOf('let wordsSrc ='),src.indexOf('function fill(')),ctx);
   vm.runInContext(src.slice(src.indexOf('const hist ='),src.indexOf('function hhmm')).replaceAll('export function','function'),ctx);
   vm.runInContext(`hist.turns=[{id:1,reply:'',end:'open',source:{k:'phone',text:'question'}}];hist.lastId=1;renderWords('',true)`,ctx);
   assert.equal(painted.at(-1),'st.resuming');
   const job=vm.runInContext('refreshNewest()',ctx);
-  assert.equal(queries[0].limit,50);assert.equal(queries[0].after,undefined);
+  await Promise.resolve();assert.equal(queries[0].limit,50);assert.equal(queries[0].after,0,'retained open turn 1 is included');
   resolve({epoch:0,count:1,first_id:1,turns:[{id:1,reply:'completed while offline',end:'done',source:{k:'phone',text:'question'}}]});
   await job;
   assert.equal(vm.runInContext('hist.turns[0].reply',ctx),'completed while offline');
@@ -24,10 +24,10 @@ test('P123 refreshed pending page waits for fresh host history, then renders off
 
 test('P123 an in-flight head refresh cannot overwrite a newer live reply',async()=>{
  let resolve;
- const ctx=vm.createContext({...turnsplit,unread:createUnread(),hostId:()=> 'test-host',C:{api:{history:()=>new Promise(r=>resolve=r)},myDev:()=> 'mine'},showPage(){},announceTurn(){},el:()=>({hidden:true}),historySync:false,historyGeneration:0,wordsSrc:null});
+ const ctx=vm.createContext({...turnsplit,t:x=>x,document:{body:{dataset:{}}},chanCard:()=>null,acceptHistoryHead(){},setTimeout,clearTimeout,unread:createUnread(),hostId:()=> 'test-host',C:{connected:()=>true,api:{history:()=>new Promise(r=>resolve=r)},myDev:()=> 'mine'},showPage(){},announceTurn(){},el:()=>({hidden:true,classList:{toggle(){}},textContent:""}),historySync:false,historyGeneration:0,wordsSrc:null});
  vm.runInContext(src.slice(src.indexOf('const hist ='),src.indexOf('function hhmm')).replaceAll('export function','function'),ctx);
  vm.runInContext(`hist.turns=[{id:1,reply:'',end:'open',source:{k:'phone',text:'question'}}];hist.lastId=1`,ctx);
- const job=vm.runInContext('refreshNewest()',ctx);
+ const job=vm.runInContext('refreshNewest()',ctx);await Promise.resolve();
  vm.runInContext(`upsertTurn({id:1,reply:'new live reply',end:'done',source:{k:'phone',text:'question'}})`,ctx);
  resolve({epoch:0,count:1,first_id:1,turns:[{id:1,reply:'',end:'open',source:{k:'phone',text:'question'}}]});
  await job;assert.equal(vm.runInContext('hist.turns[0].reply',ctx),'new live reply');

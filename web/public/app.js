@@ -439,6 +439,7 @@ session.configure({
 });
 snap.configure({
   prepareOwnerConfirm: (target) => controls.signed('fr_set', target, { t: 'fr_set', ...target }),
+  onHistoryHint: (hint) => relay.historyHint(hint),
   onChange: (reset) => { if (reset) relay.historyReset(snap.S.hist.epoch); rerender(); },
   onTurn: (p) => { relay.upsertTurn(p); assist.onTurn(p); },   // 0.26.9 #468: a task's reply grows in the assist feed too
 });
@@ -565,7 +566,7 @@ function onApp(m) {
     case 'push_key': push.gotPushKey(m.k); return;
     case 'estop_state': controls.setEstop(m); if(m.on===true)forgetDownloads(); snap.S.estop = { ...controls.estop }; return;
     case 'hist_read': relay.ownerRead(m); return;
-    case 'hist_meta': snap.setMeta(m); relay.ownerRead(m); return;
+    case 'hist_meta': snap.setMeta(m); relay.historyMeta(); relay.ownerRead(m); return;
     case 'hist_turn': snap.pushTurn(m); return;
     case 'meter': snap.setMeter(m); return;
     case 'models': snap.setModels(m); return;

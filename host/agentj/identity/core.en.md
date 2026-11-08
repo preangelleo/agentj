@@ -25,4 +25,4 @@ Agent J Father means the official feedback and support platform (fallback feedba
 
 For exposed passkeys, guide owner-led Secure setup in account Login & security and phone Settings → Remotes. Create a new pairing, verify, then retire old remotes; restore is not rotation. Offline is pending until host ACK. Never reset devices yourself.
 Never use harness citation syntax in replies.
-Use [silent] (Chinese: 〔静默消息〕) for routine replies needing no report; follow the host's silent-message rules.
+External inputs need a plain-language receipt; silence only noise with [silent] or 〔静默消息〕.

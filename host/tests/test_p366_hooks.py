@@ -384,7 +384,7 @@ class Review(unittest.TestCase):
         host, s = svc(self.tmp)
         h = self._hook(s, {"preset": "bearer", "target": "owner"})
         run(s.cli({"t": "test", "id": h["id"]}))
-        self.assertIn("测试", host.notices[-1])
+        self.assertIn("测试", host.pages[-1]["name"])
 
     def test_l6_secret_files_stay_out_of_git_trees(self):
         d = Path(tempfile.mkdtemp(dir=TEST_TMP))
@@ -508,7 +508,8 @@ class Pipeline(unittest.TestCase):
         self.assertIs(host.ask.call_args.kwargs["batch"], False)
         n0 = len(host.agent.sent)
         self.assertEqual(self._post(s, h2, body=b'{"alert":"disk 95%"}')[0], 200)
-        self.assertIn("disk 95%", host.notices[-1])
+        self.assertIn("disk 95%", host.pages[-1]["text"])
+        self.assertEqual(host.notices, [], "external payload is input, never an Agent response notice")
         self.assertEqual(host.pushed[-1], "reply")
         self.assertEqual(len(host.agent.sent), n0 + 1)
         self.assertIn("主人已经在手机上看到了", host.agent.sent[-1].text)
@@ -655,7 +656,7 @@ class Pipeline(unittest.TestCase):
         r = run(s.cli({"t": "forward", "id": h["id"], "body": '{"from":"my worker"}',
                        "headers": {"Authorization": "Bearer " + key, "X-Request-Id": "w1"}}))
         self.assertEqual(r["status"], 200)
-        self.assertIn("my worker", host.notices[-1])
+        self.assertIn("my worker", host.pages[-1]["text"])
 
     def test_test_command_uses_the_pipeline_without_quota(self):
         host, s = svc(self.tmp)

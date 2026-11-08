@@ -31,8 +31,9 @@ export const S = {
 };
 let onChange = () => {};
 let onTurn = () => {};
+let onHistoryHint = () => {};
 let prepareOwnerConfirm = null;
-export function configure(h) { onChange = h.onChange; onTurn = h.onTurn; prepareOwnerConfirm = h.prepareOwnerConfirm || null; }
+export function configure(h) { onChange = h.onChange; onTurn = h.onTurn; onHistoryHint = h.onHistoryHint || (() => {}); prepareOwnerConfirm = h.prepareOwnerConfirm || null; }
 const nowS = () => Date.now() / 1000;
 const CATS = ['spend', 'delete', 'send', 'credentials', 'price', 'opaque', 'service'];
 
@@ -327,7 +328,7 @@ export function toPage(t) {
   return {
     id: t.id, ts: typeof t.ts === 'number' ? t.ts / 1000 : null,
     source: { k, ...(src.k === 'sys' && src.repair === 'reconnect' ? {repair:'reconnect'} : {}), ...(k === 'sys' && ['wsl', 'loop'].includes(src.guide) ? { guide: src.guide } : {}), dev: typeof src.dev === 'string' ? src.dev : null, name: typeof src.name === 'string' ? src.name.slice(0, 64) : '',
-      text: typeof src.text !== 'string' ? '' : k === 'telegram' ? src.text.replace(TG_SOURCE_LINE, '') : src.text, quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}), ...(k === 'agent' && ['loop', 'task', 'quota', 'auto', 'hook'].includes(src.via) ? {via: src.via} : {}), ...(k === 'task' && src.via === 'same-owner' ? {via: src.via} : {}),
+      text: typeof src.text !== 'string' ? '' : k === 'telegram' ? src.text.replace(TG_SOURCE_LINE, '') : src.text, quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}), ...(k === 'agent' && ['loop', 'task', 'quota', 'auto', 'hook', 'heartbeat', 'api', 'mcp', 'background_done'].includes(src.via) ? {via: src.via} : {}), ...(k === 'task' && src.via === 'same-owner' ? {via: src.via} : {}),
       ...(src.form && typeof src.form.id === "string" ? {form: {id: src.form.id.slice(0, 18), title: String(src.form.title || "").slice(0, 80)}} : {}),
       ...assistCarry(src),   // 0.26.9 #468: k = official_assist (+ the task id) whichever way the host wrote it
       ...(k === 'phone' && src.term && typeof src.term === 'object' ? { term: src.term } : {}) },   // P414 (§37.12): a 「!」 line's result (js/bang.js termOf)
@@ -345,12 +346,19 @@ export function toPage(t) {
   };
 }
 export function setMeta(m) {
-  const reset = Number.isInteger(m.epoch) && m.epoch !== S.hist.epoch;
-  S.hist = { epoch: Number.isInteger(m.epoch) ? m.epoch : 0, first: Number(m.first) || 0, last: Number(m.last) || 0, count: Number(m.count) || 0 };
-  onChange(reset);
+  const epoch = Number.isInteger(m.epoch) ? m.epoch : 0, last = Number(m.last) || 0;
+  // Epochs identify stores/modes, not a globally ordered clock. Every differing
+  // epoch is only a hint; a fresh generation-bound head confirms the switch.
+  if (epoch !== S.hist.epoch || last < S.hist.last) { onHistoryHint({epoch,kind:'meta'}); return; }
+  S.hist = { epoch, first: Number(m.first) || 0, last, count: Number(m.count) || 0 };
+  onChange(false);
+}
+/** Only relay's current-generation fresh head calls this after its merge. Metadata alone cannot lower an epoch. */
+export function acceptHistoryHead(meta) {
+  S.hist = {epoch:meta.epoch,first:meta.first,last:meta.last,count:meta.count};
 }
 export function pushTurn(m) {
-  if (Number.isInteger(m.epoch) && m.epoch !== S.hist.epoch) return;      // a stale one from before a reset
+  if (Number.isInteger(m.epoch) && m.epoch !== S.hist.epoch) { onHistoryHint({epoch:m.epoch,kind:'turn'}); return; } // verify another epoch, never apply a mismatched push
   const p = toPage(m.turn);
   if (!p) return;
   if (p.id > S.hist.last) { S.hist.last = p.id; S.hist.count += 1; if (!S.hist.first) S.hist.first = p.id; }
@@ -360,17 +368,17 @@ export function pushTurn(m) {
 /** relay's GET /history?… → {turns, count, first_id, epoch}. p33: hist_get / hist_page; old hosts: from memory. */
 export function history(q = {}) {
   if (!peer.p33) {
-    let ts = S.synth.turns.slice();
+    let ts = S.synth.turns.slice(), more = false;
     if (q.before) ts = ts.filter((x) => x.id < q.before).slice(-(q.limit || 50));
-    else if (q.after) ts = ts.filter((x) => x.id > q.after);
+    else if (Number.isInteger(q.after) && q.after >= 0) { ts = ts.filter((x) => x.id > q.after); more = ts.length > (q.limit || 50); ts = ts.slice(0,q.limit || 50); }
     else ts = ts.slice(-(q.limit || 50));
     const all = S.synth.turns;
-    return Promise.resolve({ turns: ts.map((x) => ({ ...x })), count: all.length, first_id: all.length ? all[0].id : 0, epoch: 0 });
+    return Promise.resolve({ turns: ts.map((x) => ({ ...x })), count: all.length, first_id: all.length ? all[0].id : 0, epoch: 0, ...(more ? {more:true} : {}) });
   }
   return new Promise((resolve) => {
     const req = { t: 'hist_get', limit: Math.min(50, q.limit || 50) };
     if (q.before) req.before = q.before;
-    if (q.after) req.after = q.after;
+    if (Number.isInteger(q.after) && q.after >= 0) req.after = q.after;
     const r = request(req, (m) => {
       if (m.t !== 'hist_page') return;
       reqDone(r);
@@ -400,7 +408,7 @@ export function findHistory(q, sort = 'score') {
         return { id: h.id, ts: typeof h.ts === 'number' ? h.ts / 1000 : null, score: Number(h.score) || 0,
           where: Array.isArray(h.where) ? h.where.filter((f) => f in snip) : Object.keys(snip), snip,
           src: { k: str(src.k, 16) || 'sys', dev: str(src.dev, 64) || null, name: str(src.name, 64), local: src.local === true,
-            ...(src.k === 'agent' && ['loop', 'task', 'quota', 'auto', 'hook'].includes(src.via) ? { via: src.via } : {}), ...(src.k === 'task' && src.via === 'same-owner' ? {via: src.via} : {}) } };
+            ...(src.k === 'agent' && ['loop', 'task', 'quota', 'auto', 'hook', 'heartbeat', 'api', 'mcp', 'background_done'].includes(src.via) ? { via: src.via } : {}), ...(src.k === 'task' && src.via === 'same-owner' ? {via: src.via} : {}) } };
       });
       resolve({ epoch: Number(m.epoch) || 0, hits, n: Number(m.n) || hits.length, more: m.more === true });
     });

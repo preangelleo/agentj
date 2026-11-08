@@ -4262,13 +4262,12 @@ class Host:
         return {**self.hist.meta(), "read": self.readmark.value(self.hist)}
 
     def hist_emit(self, turns: list[dict]) -> None:
-        ep = self.hist.epoch
-        for t in turns:
-            self._post(self._send_p33, lambda s, t=t: {"t": "hist_turn", "epoch": ep, "turn": t})
+        from .history_delivery import for_host
+        for_host(self).enqueue(turns)
 
     def hist_meta_all(self) -> None:
-        m = {"t": "hist_meta", **self.hist_metadata()}
-        self._post(self._send_p33, lambda s: m)
+        from .history_delivery import for_host
+        for_host(self).enqueue(meta=True)
 
     def hist_add(self, src: dict, reply: str = "", end: str = "done", card: dict | None = None, form: dict | None = None) -> dict:
         if src.get("k") == "sys":
@@ -4463,7 +4462,7 @@ class Host:
             prior = "\n\n".join(v for v in (rep.get("pre", ""), rep.get("silent_raw", rep.get("text", ""))) if v)
             self.hist_update(self.cur_turn, text=strip_markers(prior), pre="")
         text = strip_markers(text)
-        if getattr(self, "voice_stream", None) is not None:
+        if getattr(self, "voice_stream", None) is not None and self.voice_stream.wants_reply(getattr(self.agent, "cur_send", None)):
             self._post(self.voice_stream.reply, getattr(self.agent, "cur_send", None), text)
         self.turn_text = True
         if getattr(self, "wait_note", None):
@@ -4472,7 +4471,8 @@ class Host:
         for chunk in agents.split_text(text, wire.MAX_TEXT):
             self.emit("agent_msg", text=clean(chunk, wire.MAX_TEXT))
             e = self._remember("agent", chunk)
-            self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
+            if any(s.state == "ready" and not s.p33 for s in self.sessions.values()):
+                self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
         tid = None
         if self.cur_turn is not None and self.hist.get(self.cur_turn) is not None:
             changed = self.hist_update(self.cur_turn, append=text)
@@ -4491,7 +4491,8 @@ class Host:
 
     def _agent_src(self) -> dict:
         via = getattr(self, "proactive_via", None)
-        return {"k": "agent", "text": "", **({"via": via} if via else {})}
+        return {"k": "agent", "text": privacy.owner_text(getattr(self, "proactive_input", "") or "") if via else "",
+                **({"via": via} if via else {})}
 
     def desktop_input(self, text: str) -> None:
         if not text or not text.strip():
@@ -4579,6 +4580,7 @@ class Host:
         from . import main_thread
         main_thread.completed(self)
         self.proactive_via = None
+        self.proactive_input = ""
         _hb_touch(self)
         tid = getattr(self, "desktop_turn", None)
         if tid is not None:
@@ -4917,7 +4919,7 @@ class Host:
     def agent_turn_end(self) -> None:
         from . import main_thread
         main_thread.completed(self)
-        if getattr(self, "voice_stream", None) is not None:
+        if getattr(self, "voice_stream", None) is not None and self.voice_stream.wants_reply(getattr(self.agent, "cur_send", None)):
             self._post(self.voice_stream.reply, getattr(self.agent, "cur_send", None), "", True)
         approval_review.acknowledge(self, getattr(self.agent, "cur_send", None))
         approval_review.retry_events(self)

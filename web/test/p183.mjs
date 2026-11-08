@@ -235,7 +235,7 @@ try {
         await waitFor(p, `!!document.querySelector('.mdoc iframe.mframe')`, 15000);
         const docx = await ev(p, `(() => { const f = document.querySelector('.mdoc iframe.mframe'); return { sandbox: f.getAttribute('sandbox'), csp: f.getAttribute('csp'),
           has: f.srcdoc.includes('季度计划') && f.srcdoc.includes('<strong>季度计划</strong>'), script: /<script/i.test(f.srcdoc) }; })()`);
-        assert.deepEqual(docx, { sandbox: '', csp: "default-src 'none'; img-src data:; style-src 'unsafe-inline'", has: true, script: false });
+        assert.deepEqual(docx, { sandbox: '', csp: "default-src 'none'; script-src 'none'; connect-src 'none'; img-src data:; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'", has: true, script: false });
         await sleep(300);
         writeFileSync(join(OUT, `p183-preview-docx-${tag}-${scheme}.png`), await shoot(p));
         await closeEsc(p);

@@ -289,7 +289,8 @@ def _deps_task(host, names: list, en: bool) -> dict:
         import secrets
         from .compose import Send
         from .provenance import system
-        page = host.hist_add({"k": "agent", "via": "plaza_deps", "text": ""}, "", "open")
+        from . import privacy
+        page = host.hist_add({"k": "agent", "via": "plaza_deps", "text": privacy.owner_text(text)}, "", "open")
         send = Send("plaza_deps", secrets.token_urlsafe(16), page["id"], text=text, by="plaza_deps", source=system())
         host.agent.submit(send)
         host.st.log("plaza_deps_task", count=len(recs))

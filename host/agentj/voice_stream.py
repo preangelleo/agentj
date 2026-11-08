@@ -285,3 +285,7 @@ class Manager:
         for call in list(self.calls.values()):
             if call.owner == getattr(send, 'device', None) and call.id == getattr(send, 'sid', None):
                 await call.reply(text, final)
+
+    def wants_reply(self, send):
+        return send is not None and any(call.owner == getattr(send, 'device', None)
+                                       and call.id == getattr(send, 'sid', None) for call in self.calls.values())

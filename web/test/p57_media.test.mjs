@@ -96,10 +96,11 @@ test('HTML preview frame: an EMPTY sandbox, no referrer, a CSP that allows no ne
   assert.equal(a.sandbox, '', 'sandbox="" — no allow-scripts / same-origin / forms / popups');
   assert.equal(a.referrerpolicy, 'no-referrer');
   assert.match(a.csp, /^default-src 'none'/);
-  assert.doesNotMatch(a.csp, /script-src|https?:|\*/);
+  assert.match(a.csp, /(?:^|; )script-src 'none'(?:;|$)/);
+  assert.doesNotMatch(a.csp, /script-src (?!'none')|https?:|\*/);
   assert.equal(a.allow, '');
   assert.doesNotMatch(SRC, /allow-scripts|allow-same-origin|allow-popups|allow-forms|allow-top-navigation/);
-  assert.match(SRC, /f\.srcdoc = html/);
+  assert.match(SRC, /f\.srcdoc = previewDocument\(html\)/);
   assert.doesNotMatch(SRC, /window\.open|location\.href|\.src = .*html/i, 'HTML is never opened as a page of its own');
 });
 

@@ -96,16 +96,20 @@ try {
         if (pgn === 1) { await fake.addTurn({ k: 'agent', via: 'task' }, lang === 'zh' ? '后台任务跑完了。' : 'The background task is done.');
           await waitFor(p, `${$('pg')}.textContent==='2 / 2'`); await sleep(200); }
         await evaluate(p, `(()=>{${$('om')}.dataset.unread='1';${$('omUnreadN')}.textContent='99+';return true})()`); await sleep(120);
-        await C(`header (${name}) with 99+ badge: label not cut, clear of the badge`, async () => {
+        await C(`header (${name}) with 99+ badge: single line, clear of the badge`, async () => {
           const g = await hdr();
-          // out of room (a phone with the badge on): two lines, every word whole, an ellipsis only at the end of the second
-          if (g.cut && !(g.lines === 2 && g.wordFits)) throw new Error('label truncated ' + JSON.stringify(g));
+          // 0.28.6 fix1 supersedes the old two-line label: ellipsis reserves the badge/time zones.
+          if (g.lines !== 1) throw new Error('label wraps ' + JSON.stringify(g));
           if (g.overlapBadge) throw new Error('label runs under the badge ' + JSON.stringify(g));
           return g;
         });
         writeFileSync(`${OUT}${tag}-header-${name}.png`, await shoot(p, ''));
         await evaluate(p, `(()=>{${$('om')}.dataset.unread='0';return true})()`); await sleep(80);
-        await C(`header (${name}) without badge: label not cut`, async () => { const g = await hdr(); if (g.cut) throw new Error('label truncated ' + JSON.stringify(g)); return g; });
+        await C(`header (${name}) without badge: single line and complete source on expansion`, async () => { const g = await hdr(); if (g.lines !== 1) throw new Error('label wraps ' + JSON.stringify(g));
+          await evaluate(p, `${$('omMore')}.click()`);
+          const detail = await evaluate(p, `({text:${$('omSourceDetail')}.textContent,visible:getComputedStyle(${$('omSourceDetail')}).display!=='none'})`);
+          if (!detail.visible || detail.text !== g.label) throw new Error('full source unavailable ' + JSON.stringify(detail));
+          await evaluate(p, `${$('omMore')}.click()`); return g; });
       }
       await C('no horizontal overflow, no page errors', async () => {
         if (await evaluate(p, `document.documentElement.scrollWidth>innerWidth`)) throw new Error('horizontal overflow');

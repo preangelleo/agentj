@@ -1,3 +1,4 @@
+import {previewDocument} from './preview-document.js';
 import { copyButton } from './copycode.js';
 // P183: the full-screen preview's document views (media.js owns the viewer itself, the image zoom and the HTML frame).
 // Every view is built from the SHA-verified Blob the card already holds — nothing is fetched from anywhere but our own
@@ -133,7 +134,7 @@ async function viewDocx(blob, box) {
   for (const [k, v] of Object.entries(sandboxAttrs())) f.setAttribute(k, v);
   f.className = 'mframe';
   f.title = t('media.pv.docx');
-  f.srcdoc = '<!doctype html><meta charset="utf-8">' + css + FRAME_NOBAR + String(r && r.value || '');
+  f.srcdoc = previewDocument(css + String(r && r.value || ''));
   box.replaceChildren(f);
 }
 

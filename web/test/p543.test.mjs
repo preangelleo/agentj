@@ -28,7 +28,9 @@ test('the words, not the inbox path; plain text under the label and the low-trus
  assert.equal(d.children[0].textContent,'…');
  assert.match(d.children[1].textContent,/wechat-message\.json/);
  assert.ok(!b.children.some(x=>x.tag==='button'),'short text: no fold button');
- assert.match(source,/p\.source\?\.k === "friend_report" \|\| !!chan(?: \|\| noticeOnly)?\);/,'rendered as plain text (never Markdown)');
+ assert.match(source,/ot\.textContent = tx/,'input body remains plain text');
+ assert.match(source,/text: p\.source\?\.text\?\.trim\(\) \? p\.source\.text : channel\.text/,'channel raw is projected into the existing source card');
+ assert.doesNotMatch(source,/renderWords\(chan \? chanWords/,'raw channel text no longer impersonates an Agent response');
 });
 test('long text folds behind 展开 and opens in place; a cut message says so when open',()=>{
  const c=load(),long='很'.repeat(900),p=page(long,{cut:true});

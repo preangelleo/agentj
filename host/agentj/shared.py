@@ -2156,6 +2156,7 @@ class SharedClaudeAgent(Agent):
                         mark = getattr(self.host, "proactive_turn", None)   # P132: the next agent-only page says where it came from
                         if mark:
                             mark(via)
+                            self.host.proactive_input = public_text(text)  # display only, never provenance
                         continue
                     if delivery_echo or self._phone_echo(item, text):
                         if self.phone_turn:

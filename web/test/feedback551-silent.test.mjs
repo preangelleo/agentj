@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 const src=readFileSync(process.env.P551_SOURCE || new URL('../public/js/relay.js',import.meta.url),'utf8');
-const ctx=vm.createContext({});
+const ctx=vm.createContext({chanCard:()=>null});
 vm.runInContext(src.slice(src.indexOf('const hist ='),src.indexOf('const tailSeen')),ctx);
 const run=code=>vm.runInContext(code,ctx);
 const old='\u3014\u4e0d\u56de\u7fa4\u3015';

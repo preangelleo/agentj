@@ -1689,6 +1689,8 @@ html:root #rm-copy > svg{width:21px;height:21px;flex:none}
 
 /* P527: standalone rescue cards need the same breathing room as list cards. */
 #settings #layout-diag-card{margin-top:var(--ui-space-content)}
+/* 0.28.6: the standalone friend-cleanup card retains the shared card spacing. */
+#settings #rs-clear{margin-block:var(--ui-space-control)}
 /* P561 追加 16: 「发送画面诊断」's note sits under the button — a note right under a button = --ui-space-control */
 #settings #layout-diag-card>.aj-action+.setnote{margin-top:var(--aj-settings-setnote-margin-top,var(--ui-space-control))}
 /* #577 aj-icon-action: independent equal initial contract. */

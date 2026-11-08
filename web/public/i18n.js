@@ -5380,7 +5380,11 @@ export default {
   "p0285.pk.registered": "本机{bio}：已登记",
   "p0285.pk.checkHere": "请点「测试一下」，确认这个浏览器现在能用。",
   "p0285.pk.unverified": "本机{bio}：本次未完成验证",
-  "p0285.pk.incomplete": "未完成验证：可能取消、超时，或没有对应通行密钥。重试仍失败时，请重新设置。"
+  "p0285.pk.incomplete": "未完成验证：可能取消、超时，或没有对应通行密钥。重试仍失败时，请重新设置。",
+  "p0286.syncing": "已连接，正在同步消息…",
+  "p0286.synced": "已连接，消息已同步",
+  "p0286.inputUnavailable": "未保存触发原文",
+  "p0286.wechat": "微信"
  },
  "en": {
   "fr.ask.failed": "Your confirmation did not take effect. Please try again.",
@@ -10762,6 +10766,10 @@ export default {
   "p0285.pk.registered": "This device’s {bio}: registered",
   "p0285.pk.checkHere": "Choose “Test it” to check that this browser works now.",
   "p0285.pk.unverified": "This device’s {bio}: verification did not finish",
-  "p0285.pk.incomplete": "Verification did not finish: it may have been cancelled, timed out, or the matching passkey may be unavailable. If retrying fails, set it up again."
+  "p0285.pk.incomplete": "Verification did not finish: it may have been cancelled, timed out, or the matching passkey may be unavailable. If retrying fails, set it up again.",
+  "p0286.syncing": "Connected. Syncing messages…",
+  "p0286.synced": "Connected. Messages are up to date.",
+  "p0286.inputUnavailable": "Trigger text was not saved",
+  "p0286.wechat": "WeChat"
  }
 };

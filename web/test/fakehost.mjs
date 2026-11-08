@@ -226,6 +226,7 @@ export async function startFakeHost({ channelSeed, visualSeed, hostKeypair, ephe
       return;
     }
     if (m.t === 'hist_get') {
+      if(st.historySnapshotDelay && !m.before && !m.delayed){setTimeout(()=>onData(c,{...m,delayed:true}).catch(()=>{}),st.historySnapshotDelay);return;}
       if(st.ownerReadHeadDelay && !m.before && !m.after && !m.delayed){setTimeout(()=>onData(c,{...m,delayed:true}).catch(()=>{}),st.ownerReadHeadDelay);return;}
       // P188: a slow page-back that does not hold up the messages behind it (a real host answers reads independently)
       if (st.olderDelay && Number.isInteger(m.before) && !m.delayed) { setTimeout(() => onData(c, { ...m, delayed: true }).catch(() => {}), st.olderDelay); return; }
@@ -786,7 +787,7 @@ export async function startFakeHost({ channelSeed, visualSeed, hostKeypair, ephe
     swapHost() { for (const c of conns) { c.hs = c.send = c.recv = null; c.mode = null; c.awaiting = false; c.isReady = false; c.sendText(JSON.stringify({ t: 'host', up: true })); } },
     /** back to an empty host between test blocks (pairings and allowlist stay) */
     reset() {
-      Object.assign(st, { ownerRead:false, ownerReadMute:false, ownerReadLose:0, ownerReadLost:0, ownerReadDropTo:null, ownerReadHeadDelay:0, read:0, kind: null, extraCaps: [], p33: true, asr: 'ready', asrText: '这是转写出来的文字', asrWhy: null, asrTexts: [], asrDelays: [], sayMode: 'delivered', sayDelay: 0,
+      Object.assign(st, { historySnapshotDelay:0, ownerRead:false, ownerReadMute:false, ownerReadLose:0, ownerReadLost:0, ownerReadDropTo:null, ownerReadHeadDelay:0, read:0, kind: null, extraCaps: [], p33: true, asr: 'ready', asrText: '这是转写出来的文字', asrWhy: null, asrTexts: [], asrDelays: [], sayMode: 'delivered', sayDelay: 0,
         autoReply: true, replyFor: null, epoch: st.epoch + 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [],
         answers: [], qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], slashes: [],
         stallAfter: 0, blobErr: null, sayWhy: null, estop: false, rate: true, firsts: [], errors: [], lastError: undefined,

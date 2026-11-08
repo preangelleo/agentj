@@ -8,7 +8,7 @@
   "properties": {
     "id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{22}$", "readOnly": true},
     "name": {"type": "string", "maxLength": 40},
-    "preset": {"enum": ["alert", "bearer", "callback", "form", "github", "hmac", "ping", "stripe"]},
+    "preset": {"enum": ["alert", "automation-report", "bearer", "callback", "form", "github", "hmac", "ping", "stripe"]},
     "life": {"enum": ["once", "ttl", "resident"], "description": "once: void after the first accepted delivery (≤ 7 d) · ttl: until it expires (≤ 30 d) · resident: until revoked, needs the owner's approval on the paired phone"},
     "ttl": {"type": ["string", "integer"], "description": "30m · 24h · 7d or seconds (create / update only)"},
     "expires": {"type": ["integer", "null"], "readOnly": true},

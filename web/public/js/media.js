@@ -1,3 +1,4 @@
+import {previewDocument} from './preview-document.js';
 import { downloadFile, revokeFile, downloadError, forgetDownloads } from './private-files.js';
 import { fileDoubleTap, DOUBLE_MS } from './file-gestures.js';
 import { registerLayer } from './layers.js';
@@ -962,7 +963,7 @@ function viewHtml(html, m, c) {
   for (const [k, v] of Object.entries(sandboxAttrs())) f.setAttribute(k, v);
   f.className = 'mframe';
   f.title = name;
-  f.srcdoc = html + FRAME_NOBAR;                     // P273: appended, so a doctype stays first (no quirks mode)
+  f.srcdoc = previewDocument(html);                     // P273: appended, so a doctype stays first (no quirks mode)
   V.stage.replaceChildren(f);
   V.note.textContent = t('media.htmlNote'); V.note.hidden = false;
 }

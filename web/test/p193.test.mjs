@@ -21,7 +21,7 @@ function host(n,silentEvery=0){
   return {calls,history};
 }
 function page(h){
-  const ctx=vm.createContext({...turnsplit,C:{api:{history:h.history}},showPage(){},renderSilent(){},announceTurn(){},el:()=>({hidden:true})});
+  const ctx=vm.createContext({...turnsplit,chanCard:()=>null,acceptHistoryHead(){},document:{body:{dataset:{}}},t:x=>x,hist:{epoch:0},historyGeneration:0,C:{connected:()=>true,api:{history:h.history}},showPage(){},renderSilent(){},announceTurn(){},el:()=>({hidden:true,classList:{toggle(){}},textContent:''})});
   vm.runInContext(history,ctx);
   return x=>vm.runInContext(x,ctx);
 }
@@ -59,7 +59,7 @@ function clock(){
 }
 function wordsCtx(){
   const c=clock(),painted=[],refreshes=[],w={dataset:{}};
-  const ctx=vm.createContext({...turnsplit,setTimeout:c.setTimeout,clearTimeout:c.clearTimeout,Date:c.Date,historySync:false,shownKey:'7|x',wordsSrc:null,cardReplyKey:null,refreshCards:()=>refreshes.push(1),
+  const ctx=vm.createContext({...turnsplit,chanCard:()=>null,acceptHistoryHead(){},document:{body:{dataset:{}}},t:x=>x,hist:{epoch:0},historyGeneration:0,setTimeout:c.setTimeout,clearTimeout:c.clearTimeout,Date:c.Date,historySync:false,shownKey:'7|x',wordsSrc:null,cardReplyKey:null,refreshCards:()=>refreshes.push(1),
     cur:{status:'working',hostStatus:'working'},t:x=>x,el:()=>w,fill:(_,x)=>painted.push(x),afterWords(){},rdFollow(){}});
   vm.runInContext(words,ctx);
   ctx.showPage=()=>vm.runInContext('renderWords(globalThis.latest,globalThis.open)',ctx);

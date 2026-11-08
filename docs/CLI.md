@@ -4188,7 +4188,7 @@ agentj hook create --help
 
 ```text
 usage: agentj hook create [-h]
-                          [--preset {alert,bearer,callback,form,github,hmac,ping,stripe}]
+                          [--preset {alert,automation-report,bearer,callback,form,github,hmac,ping,stripe}]
                           [--name NAME] [--life {once,ttl,resident}]
                           [--ttl TTL] [--target TARGET]
                           [--auth {stripe,github,hmac,bearer,token}]
@@ -4204,7 +4204,7 @@ usage: agentj hook create [-h]
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--preset` | `null` | false | `alert`, `bearer`, `callback`, `form`, `github`, `hmac`, `ping`, `stripe` | `scenario preset` |
+| `--preset` | `null` | false | `alert`, `automation-report`, `bearer`, `callback`, `form`, `github`, `hmac`, `ping`, `stripe` | `scenario preset` |
 | `--name` | `null` | false | — | `名字（≤ 40 字）` |
 | `--life` | `null` | false | `once`, `ttl`, `resident` | `once 一次性 · ttl 临时 · resident 常驻（要主人手机批准）` |
 | `--ttl` | `null` | false | — | `有效期：30m · 24h · 7d（once ≤ 7d，ttl ≤ 30d）` |
@@ -11970,7 +11970,7 @@ agentj hook create --help
 
 ```text
 usage: agentj hook create [-h]
-                          [--preset {alert,bearer,callback,form,github,hmac,ping,stripe}]
+                          [--preset {alert,automation-report,bearer,callback,form,github,hmac,ping,stripe}]
                           [--name NAME] [--life {once,ttl,resident}]
                           [--ttl TTL] [--target TARGET]
                           [--auth {stripe,github,hmac,bearer,token}]
@@ -11986,7 +11986,7 @@ usage: agentj hook create [-h]
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--preset` | `null` | false | `alert`, `bearer`, `callback`, `form`, `github`, `hmac`, `ping`, `stripe` | `场景预置` |
+| `--preset` | `null` | false | `alert`, `automation-report`, `bearer`, `callback`, `form`, `github`, `hmac`, `ping`, `stripe` | `场景预置` |
 | `--name` | `null` | false | — | `名字（≤ 40 字）` |
 | `--life` | `null` | false | `once`, `ttl`, `resident` | `once 一次性 · ttl 临时 · resident 常驻（要主人手机批准）` |
 | `--ttl` | `null` | false | — | `有效期：30m · 24h · 7d（once ≤ 7d，ttl ≤ 30d）` |

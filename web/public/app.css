@@ -2764,7 +2764,7 @@ body:has(>.gdlg:not([hidden])) .ajmodal.hlp{z-index:104}   /* P549 (#316): help 
 .setup-row[data-state="attention"] .setup-st{color:var(--danger, inherit)}
 /* P132: a page without the owner's input keeps this card as its header (same place and size: label, page capsule, corner
    gestures, new-message flash); there is no input to expand. */
-.om[data-header="1"] .ommore{visibility:hidden;pointer-events:none}
+.om[data-header="1"]:not([data-source-detail="1"]) .ommore{visibility:hidden;pointer-events:none}
 
 /* P138: interpreter commands require a password even with the admin helper. */
 .elev.interpreter #elev-title,.elev.interpreter #elev-note,.elev.interpreter .mono{color:var(--danger)}
@@ -3334,10 +3334,11 @@ body[data-scan-paused="1"] .scan-finder .sf-sweep{animation-play-state:paused;op
 .om-first .omfl{position:absolute;left:0;top:0;bottom:0;display:flex;align-items:center;gap:6px;width:max-content;max-width:calc(200% - 8px);
   white-space:nowrap;pointer-events:none}
 .om-first .omfl>b{min-width:0;overflow:hidden;text-overflow:ellipsis}
-/* P318 (owner, 2026-10-15: 「Not…」 / 「Background task finish…」): the label wraps to a second line before it is cut (the
-   header is 44 px: two 13 px lines fit), and the unread badge sits at the right end of its third, so the label gets the
-   middle third up to the badge instead of stopping half-way. The tap zones stay equal thirds. */
-.om-first .omfl>b{white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;line-height:1.15;overflow-wrap:normal;word-break:normal}
+/* 0.28.6 fix1: one title line at every width; the source yields to the time and page number.
+   The existing expanded input preserves the complete source label. Tap zones stay equal thirds. */
+.om-first .omfl>b{flex:1 1 auto;white-space:nowrap;display:block;line-height:1.15}
+.om-source-detail{display:none}
+.om.open .om-source-detail{display:block;white-space:pre-wrap;overflow-wrap:anywhere;margin-bottom:6px;font-weight:600}
 .om-first .omfl>.t,.om-first .omfl>#omIcon{flex:none}
 .om-first #omIcon{display:inline-flex}
 .om[data-unread="1"] .om-first .omfl{max-width:calc(200% - 6px - 2.8em)}
@@ -3345,7 +3346,7 @@ body[data-scan-paused="1"] .scan-finder .sf-sweep{animation-play-state:paused;op
 /* P369 (#80, owner 10-17: 「新消息显示没有正放到正中间」): the badge sits at the centre of the card, not at the end of the
    middle third — the middle third is centred in the header and the header's side insets are equal, so its centre is the
    card's (test: |badge centre − card centre| ≤ 1 px). The label stops 6 px before the badge's left half (1.4em = half the
-   widest 「99+」 badge) and wraps / ellipsises there, so a long label never runs under it. */
+   widest 「99+」 badge) and ellipsises there, so a long label never runs under it. */
 .om-unread{place-items:center}
 .om[data-unread="1"] .om-first .omfl{max-width:calc(150% - 6px - 1.4em)}
 /* a phone: the left half minus the badge is ~140 px, too narrow for a long English label (「Background task finished」) and
@@ -4468,3 +4469,6 @@ body:has(#sheet.aj-layer-covered) .scrim{visibility:hidden;pointer-events:none}
 
 /* Preserve the native parent's center while its existing ontop child uses the viewport. */
 :is(dialog,#full541).aj-shared-popup:modal:has(>.ontop-float){transform:none;top:calc(var(--popup-center) - var(--popup-native-height,0px)/2);overflow:visible}
+
+/* 0.28.6: reuse the existing stale-data slot while the live link catches up. */
+body[data-conn=on] .stale.syncing{display:block}

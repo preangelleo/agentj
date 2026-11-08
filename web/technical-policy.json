@@ -1043,5 +1043,11 @@
       "declarationSha256": "12b0cdea71afe8d1e56f11c52a2e14bca65cb9a709da625f7fe6cdc3969b4431",
       "reason": "copycode.js bare inline code and control-gestures.js explicitly retain text selection. Only user-select:text!important, -webkit-user-select:text!important, -webkit-touch-callout:default!important; no text/native actor or skin grant."
     }
-  ]
+  ],
+  "inertMarkup": {
+    "file": "js/preview-document.js",
+    "function": "previewDocument",
+    "functionSha256": "74aea95f2158cb1ca11729120792b34026656e685617ae97d18bbe93a384797b",
+    "reason": "0.28.6 reviewed inert off-document template parse only; clean before serialization; CSP before untrusted bytes; empty sandbox at both callers; no file-wide exemption"
+  }
 }

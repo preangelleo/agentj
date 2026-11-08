@@ -75,8 +75,10 @@ test('P318 (b): the cap note — from 90 % of the cap, n / max, both languages',
   assert.match(css, /\.capnote\[hidden\]\{display:none\}/);
 });
 
-test('P318 (c): the header label wraps to two lines and runs up to the badge (P369 #80: the badge now sits at the card centre)', () => {
-  assert.match(css, /\.om-first \.omfl>b\{white-space:normal;[^}]*-webkit-line-clamp:2/);
+test('P318 (c), updated by 0286 fix1: the source label ellipsises on one line and reserves the centred badge', () => {
+  assert.match(css, /\.om-first \.omfl>b\{flex:1 1 auto;white-space:nowrap;display:block;line-height:1\.15\}/);
+  assert.match(css, /\.om-first \.omfl>b\{min-width:0;overflow:hidden;text-overflow:ellipsis\}/);
+  assert.match(css, /\.om\.open \.om-source-detail\{display:block;white-space:pre-wrap;overflow-wrap:anywhere/);
   assert.match(css, /\.om-first \.omfl\{[^}]*width:max-content;max-width:calc\(200% - 8px\)/);
   assert.match(css, /\.om\[data-unread="1"\] \.om-first \.omfl\{max-width:calc\(150% - 6px - 1\.4em\)\}/);
   assert.match(css, /\.om-unread\{place-items:center\}/);

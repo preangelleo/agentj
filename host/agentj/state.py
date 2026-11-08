@@ -862,5 +862,6 @@ class State:
                   "into", "uncertain", "outcome"}   # w2-sec R3-6: msg_steered's target turn id + uncertain flag; bot_handoff outcome word
 
     def log(self, ev: str, **kw) -> None:
-        rec = {"ts": int(time.time()), "ev": ev, **{k: v for k, v in kw.items() if k in self.LOG_FIELDS}}
+        from .diagnostic_log import record
+        rec = {"ts": int(time.time()), **record(ev, kw, self.LOG_FIELDS)}
         diskq.append(self.log_path, (json.dumps(rec, ensure_ascii=False) + "\n").encode())   # P142: buffered on the loop

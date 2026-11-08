@@ -33,9 +33,10 @@ test('the global rule: every element, every engine', () => {
 
 test('preview frames (srcdoc) carry the same no-bar style', () => {
   assert.match(FRAME_NOBAR, /scrollbar-width:none/);
+  assert.match(readFileSync(join(PUB,'js/preview-document.js'),'utf8'),/FRAME_NOBAR \+ template\.innerHTML/);
   assert.match(FRAME_NOBAR, /::-webkit-scrollbar\{display:none/);
-  assert.match(readFileSync(join(PUB, 'js/media.js'), 'utf8'), /f\.srcdoc = html \+ FRAME_NOBAR/);
-  assert.match(readFileSync(join(PUB, 'js/preview.js'), 'utf8'), /css \+ FRAME_NOBAR/);
+  assert.match(readFileSync(join(PUB, 'js/media.js'), 'utf8'), /f\.srcdoc = previewDocument\(html\)/);
+  assert.match(readFileSync(join(PUB, 'js/preview.js'), 'utf8'), /f\.srcdoc = previewDocument\(css \+/);
 });
 
 test('reader: fixed header + scrolling words + fixed footer, on --dlg-bg', () => {

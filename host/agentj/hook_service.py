@@ -25,7 +25,7 @@ import struct
 import sys
 import time
 
-from . import hooks, relaydiag, wire
+from . import hooks, privacy, relaydiag, wire
 
 SOCK_NAME = "hooks.sock"
 ENV = "AGENTJ_HOOKS_SOCK"
@@ -355,7 +355,7 @@ class HookService:
         env_text = None
         if t == "owner":
             text = hooks.owner_text(self.lang, h, rec, test)
-            self.host.agent_notice(text)
+            self.host.hist_add(hooks.input_source(h, rec, test), "", "done")
             with contextlib.suppress(Exception):
                 self.host.push_notify("reply")
             self._telegram(text)
@@ -393,7 +393,7 @@ class HookService:
             st["times"].popleft()
         if len(st["times"]) < MERGE:
             st["times"].append(now)
-            self._to_agent(hooks.envelope(self.lang, h, rec, where, test=test), h["id"])
+            self._to_agent(hooks.envelope(self.lang, h, rec, where, test=test), h["id"], hooks.input_source(h, rec, test))
             return
         st["held"], st["n"] = (h, rec, where, test), st["n"] + 1
         if st["task"] is None or st["task"].done():
@@ -406,10 +406,10 @@ class HookService:
                 if held:
                     hh, rr, ww, tt = held
                     st["times"].append(self.clock())
-                    self._to_agent(hooks.envelope(self.lang, hh, rr, ww, more=n - 1, test=tt), hh["id"])
+                    self._to_agent(hooks.envelope(self.lang, hh, rr, ww, more=n - 1, test=tt), hh["id"], hooks.input_source(hh, rr, tt))
             st["task"] = asyncio.ensure_future(flush())
 
-    def _to_agent(self, body: str, hid: str) -> str:
+    def _to_agent(self, body: str, hid: str, src: dict | None = None) -> str:
         a = getattr(self.host, "agent", None)
         if a is None or not callable(getattr(a, "submit", None)):
             self.log("hook_agent", hook=hid[:8], result="no_agent")
@@ -417,10 +417,7 @@ class HookService:
         try:
             from . import provenance
             from .compose import Send
-            if getattr(a, "kind", None) == "codex":        # P351: Codex writes a progress note first unless told not to
-                from .heartbeat import NO_NOTES
-                body += "\n" + NO_NOTES[self.lang]
-            page = self.host.hist_add({"k": "agent", "via": "hook", "text": ""}, "", "open")
+            page = self.host.hist_add(src or {"k": "agent", "via": "hook", "text": privacy.owner_text(body)}, "", "open")
             s = Send("hook", secrets.token_urlsafe(16), page["id"], text=body, by="hook")
             s.source = provenance.system()
             s.hook_notice = hid
@@ -615,8 +612,8 @@ class HookService:
                 msg = (f"主人没有批准常驻 Webhook「{h['name']}」，它已作废。" if self.lang != "en"
                        else f"The owner did not approve resident webhook 「{h['name']}」; it was dropped.")
             self.changed()
-            self._to_agent("〔Agent J 系统提示〕" + msg + "\n没有要补充的，最终回复只写 〔静默消息〕" if self.lang != "en" else
-                           "[Agent J system notice] " + msg + "\nWith nothing to add, reply exactly 〔静默消息〕", h["id"])
+            self._to_agent("〔Agent J 系统提示〕" + msg + "\n请用一句人话回执，说明结果与是否需要主人处理。" if self.lang != "en" else
+                           "[Agent J system notice] " + msg + "\nGive a plain-language receipt: the result and whether the owner needs to act.", h["id"])
         task = asyncio.ensure_future(card())
         self.cards.add(task)
         task.add_done_callback(self.cards.discard)
@@ -777,9 +774,9 @@ class HookService:
                             _write_secret(f"file:{os.path.dirname(where.split('#')[0])}/{h['id']}.url", self.url(h, new.decode()), h["id"])
                 self.store.set_key(h["id"], new, grace)
                 self.log("hook_rotated", hook=h["id"][:8], src="card")
-                self._to_agent(("〔Agent J 系统提示〕主人批准了给「{n}」换密钥，新密钥已生效（文件里）。没有要补充的，最终回复只写 〔静默消息〕"
+                self._to_agent(("〔Agent J 系统提示〕主人批准了给「{n}」换密钥，新密钥已生效（文件里）。请用一句人话回执，FYI，无需处理。"
                                 if self.lang != "en" else "[Agent J system notice] The owner approved the new secret for 「{n}」; it "
-                                "is in effect (in its file). With nothing to add, reply exactly 〔静默消息〕").format(n=h["name"]), h["id"])
+                                "is in effect (in its file). Give a plain-language receipt: FYI, no action needed.").format(n=h["name"]), h["id"])
             finally:
                 self.widening.discard(h["id"])
         task = asyncio.ensure_future(card())

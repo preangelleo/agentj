@@ -221,7 +221,9 @@ class Service:
             receipts[rkey] = {'hash': content, 'delivery': did, 'at': round(now), 'state': 'pending'}
             self.save()  # durable before submit: crash/exception never resubmits
             try:
-                page = self.host.hist_add({'k': 'agent', 'via': 'mcp', 'text': ''}, '', 'open')
+                from . import privacy
+                page = self.host.hist_add({'k': 'agent', 'via': 'mcp', 'name': c.get('name', 'API'),
+                                           'text': privacy.owner_text(text)}, '', 'open')
                 send = Send('mcp', secrets.token_urlsafe(16), page['id'], text=text, by='external-mcp')
                 send.source = provenance.external_mcp(c['id'])
                 agent.submit(send)
