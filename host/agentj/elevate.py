@@ -1091,6 +1091,17 @@ class Elevator:
 
     def _source_allows(self, card):
         from . import approval_special
+        if card.get('kind') in ('login', 'vshare') and '_term_native' in card:
+            # 0.30.1 hotfix: the owner's own web-terminal unlock / password-share card. Its authority is the signed +
+            # UV-checked term_open / vault_share of that one device (`only`), the signed answer and, for login, sudo's
+            # own password check — not the Agent's turn, which moves on while the owner types the password.
+            desk = getattr(self.host, 'term_desk', None)
+            live = getattr(desk, 'native_cards', None)
+            adapter = card.get('review_adapter')
+            # Only the Agent-turn context check is skipped: the review adapter must still be this card's, registered, live.
+            return bool(live is not None and card['_term_native'] in live and not self.host.stopped()
+                        and adapter is not None and adapter.card is card and adapter.host is self.host and not adapter.terminal
+                        and self.host.__dict__.get('_approval_special', {}).get(adapter.rid) is adapter)
         if '_native_scheduler_nonce' not in card:
             return approval_special.source_allows(card, self.host)
         authority = self._native_plan(card)

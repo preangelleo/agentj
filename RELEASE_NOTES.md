@@ -1,5 +1,5 @@
-# Agent J v0.30.1
+# Agent J v0.30.2
 
-Hotfix: the web terminal opens again on iPhone, Android and tablets; Settings on phones no longer drifts sideways and scrolls and taps smoothly.
+Hotfix: the web terminal no longer fails after you type the host password while the Agent keeps working.
 
-热修：网页终端在 iPhone、安卓和平板上又能打开；手机上的设置页不再左右漂移，滚动和点按更顺。
+热修：网页终端输入主机密码后，即使 Agent 还在继续工作，也不再卡在「正在核对密码」或提示「已取消」。

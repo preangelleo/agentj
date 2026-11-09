@@ -93,6 +93,26 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         with contextlib.suppress(Exception):
             controls.log(self.st, action=action, device=device, result=result, obj=obj, **kw)
 
+    def native_card(self, card):
+        """0.30.1 hotfix (董事长 14:20): mark this Desk's own login / vshare card as the owner's terminal card, live only
+        while it is being asked. The elevator then judges it by the signed + UV-checked open of that device, the signed
+        answer and sudo's password check — not by the Agent's turn (in a shared session that turn moves on while the
+        owner types, and the card was refused 「unverified_trigger」, then timed out). Official assist desks keep the old rule."""
+        if type(self) is not Desk or getattr(self.h, "term_desk", None) is not self:
+            return contextlib.nullcontext()
+        live = self.__dict__.setdefault("native_cards", set())
+        token = secrets.token_hex(16)
+        card["_term_native"] = token
+
+        @contextlib.contextmanager
+        def scope():
+            live.add(token)
+            try:
+                yield
+            finally:
+                live.discard(token)
+        return scope()
+
     def h_paired(self, s):
         """0.30.0 hotfix (董事长 11-09): the login / vault-share card is asked from a background task spawned by this
         session's signed + UV-checked term_open. 0.30.0's elevate.request only accepts the paired frame's own task, so the
@@ -475,7 +495,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             return {"result": "saved", "receipt": {"name": "login", "dest": "terminal", "length": 0, "verify": "ok"}}
         card = {"kind": "login", "term": r, "only": device, "sink": sink, "cwd": "/"}
         from .approval_review import origin_scope
-        with origin_scope(pend.get('approval_origin') or {}), self.h_paired(s):
+        with origin_scope(pend.get('approval_origin') or {}), self.h_paired(s), self.native_card(card):
             res = await self.h.elevate.request(card)
         if res.get("result") == "saved" and "pw" in keep:
             res["_pw"] = keep.pop("pw")

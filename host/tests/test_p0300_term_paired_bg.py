@@ -11,11 +11,13 @@ term_ready, and a session that is gone by the time the card is asked must still 
 import _hermetic  # noqa: F401,I001
 import pathlib
 import sys
+import itertools
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from agentj import provenance, term_store  # noqa: E402
+from agentj import approval_special, provenance, term_store  # noqa: E402
 
 from test_p408_terminal import GOOD  # noqa: E402
 from test_p417_term_enable import IPHONE, ANDROID, Kind  # noqa: E402
@@ -65,6 +67,29 @@ class PairedFrames(Kind):
             return await self.open()
         ready = self.run_async(go)
         self.assertEqual(ready["t"], "term_ready", ready)
+
+    def test_agent_turn_moving_on_does_not_refuse_the_owner_login_card(self):
+        # 董事长 14:20 (0.30.1 on Mac Chrome): Face ID → password typed → refused 「unverified_trigger」 → timeout. The card
+        # was bound to the Agent's live turn, which in a shared session moves on while the owner types the password.
+        turns = itertools.count()
+        real = approval_special._current_context
+        moving = lambda host: ({"turn": next(turns)}, "task-%d" % next(turns))      # a different turn at every look
+        with mock.patch.object(approval_special, "_current_context", moving):
+            ready = self._enable_open(IPHONE)
+        self.assertEqual(ready["t"], "term_ready", ready)
+        self.assertTrue(term_store.read_config(self.st)["on"])
+        self.assertIs(approval_special._current_context, real)
+        self.assertEqual(self.desk.native_cards, set())                            # the mark lives only while asked
+
+    def test_a_forged_native_mark_is_not_authority(self):
+        el, desk = self.host.elevate, self.desk
+        card = {"kind": "login", "term": "x", "only": self.phone.did}
+        with desk.native_card(card):
+            self.assertFalse(el._source_allows(card))                              # no registered review adapter → no
+        self.assertFalse(el._source_allows(card))                                  # gone afterwards
+        self.assertFalse(el._source_allows({**card, "_term_native": "f" * 32}))    # a made-up mark is nothing
+        from agentj import assist_terminal
+        self.assertIsNone(getattr(assist_terminal._Desk.native_card(desk.__class__.__new__(assist_terminal._Desk), {}), "gen", None))
 
     def test_session_gone_before_the_card_is_still_refused(self):
         self.label(IPHONE)
