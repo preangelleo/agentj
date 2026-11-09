@@ -34,6 +34,8 @@ try {
       assert.equal(await evaluate(p, `getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()`), expectedBg);
       await evaluate(p, `document.getElementById('a2hs-ok')?.click();document.getElementById('phone-env-dismiss')?.click();true`);
       await fake.send({ t: 'jcard_open', id: 'todo' });
+      await waitFor(p, `!!document.querySelector('.jc-text')`);
+      await evaluate(p, `(()=>{const c=document.querySelector('.jc-hide-done input');if(c?.checked)c.click();})()`);
       await waitFor(p, `document.querySelectorAll('.jc-text').length === 3`); await sleep(250);
       const geom = await evaluate(p, `(()=>{const box=document.querySelector('.jc-body'),r=box.getBoundingClientRect();return [...box.querySelectorAll('.jc-text')].map(e=>{const t=e.getBoundingClientRect(),s=getComputedStyle(e),range=document.createRange();range.selectNodeContents(e);return {left:t.left,right:t.right,boxLeft:r.left,boxRight:r.right,sw:e.scrollWidth,cw:e.clientWidth,lines:range.getClientRects().length,whiteSpace:s.whiteSpace,text:e.textContent}})})()`);
       if (!before) {

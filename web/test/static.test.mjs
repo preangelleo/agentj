@@ -236,6 +236,8 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   // 0.15.1 (P55): + the install id (IID_KEY = "aj.iid", 16 random bytes, b64url) and the paired marker (PAIRED_KEY =
   // "aj.paired", a unix time) — no key, no channel, nothing about the Agent J host.
   assert.deepEqual(ls.sort(), ['getItem("aj.test.segMs")', 'getItem(A2HS_KEY)', 'getItem(RD_KEY)', 'getItem(FONT_KEY)', 'setItem(A2HS_KEY)', 'setItem(RD_KEY)', 'setItem(FONT_KEY)',
+    // 0.28.7: seat-scoped boolean To-do display preference only; never task text.
+    "getItem('aj.todo.hideDone')", "setItem('aj.todo.hideDone')",
     'getItem(IID_KEY)', 'setItem(IID_KEY)', 'getItem(PAIRED_KEY)', 'setItem(PAIRED_KEY)', 'removeItem(PAIRED_KEY)', "getItem('aj.homeInstalled')", "setItem('aj.homeInstalled')",
     // P154: the Send-sound volume (VOLUME_KEY = "aj.sfxVolume", 0 … 100) and the screenshot switch (SHOT_KEY = "aj.shotClip", "1"/"0")
     'getItem(VOLUME_KEY)', 'setItem(VOLUME_KEY)', 'getItem(SHOT_KEY)', 'setItem(SHOT_KEY)',
@@ -267,7 +269,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.match(OURS, /const ORDER_KEY = 'aj\.toolOrder';/);
   assert.match(read(pub('js/push.js')), /const PUSH_KINDS_KEY = 'aj\.pushKinds';/);
   assert.match(OURS, /export const OFF_KEY = 'aj\.cueOff';/);
-  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 44, '#538c adds only two same-seat preference reads; P422 removes both aj.chrome calls; localStorage appears only in these calls (P575: aj.cueOff get + set + remove; P340: aj.toolOrder get + set; P346: aj.recDim gone; P247: host-scoped numeric read receipts; P302 #29: aj.verUpdated consumed + aj.verUpdatedSeen.<version>; P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
+  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 46, '0.28.7 adds exactly two boolean To-do preference calls; #538c adds only two same-seat preference reads; P422 removes both aj.chrome calls; localStorage appears only in these calls (P575: aj.cueOff get + set + remove; P340: aj.toolOrder get + set; P346: aj.recDim gone; P247: host-scoped numeric read receipts; P302 #29: aj.verUpdated consumed + aj.verUpdatedSeen.<version>; P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
   assert.match(OURS, /const IID_KEY = 'aj\.iid';/);
   assert.match(OURS, /const PAIRED_KEY = 'aj\.paired';/);
   assert.match(OURS, /const FONT_KEY = 'aj\.fontScale';/);

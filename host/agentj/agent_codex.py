@@ -10,6 +10,7 @@ import os
 import re
 import shlex
 import signal
+import tempfile
 import time
 
 from . import bg, codex_perm, compactprep, danger, humane, slash, codex_children
@@ -494,7 +495,53 @@ class CodexAgent(Agent):
         return _agentmod.codex_failure(last, None)[0]
 
     def argv(self) -> list[str]:
-        return [_agentmod._bin("AGENTJ_CODEX_BIN", "codex") or "codex", "app-server"]
+        argv = [_agentmod._bin("AGENTJ_CODEX_BIN", "codex") or "codex", "app-server"]
+        channel = getattr(self, '_control_channel', None)
+        if channel:
+            from . import shared_hook
+            command = shared_hook.settings(channel.path, ('PreToolUse',))['hooks']['PreToolUse'][0]['hooks'][0]['command']
+            argv += ['-c', 'hooks.PreToolUse=[{ hooks = [{ type = "command", command = '+json.dumps(command)+', timeout = 180 }] }]']
+        return argv
+
+    async def _prepare_control_paths(self):
+        # Shared adapters already own their additive pre-execution channel.
+        if hasattr(self, 'risk_channel') or getattr(self, '_control_channel', None):
+            return
+        from . import shared_hook, shared_risk
+        guard = shared_risk.NativePathGuard(self)
+        self.host.st.perm_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        directory = tempfile.mkdtemp(prefix='control-', dir=self.host.st.perm_dir)
+        channel = shared_hook.Channel(guard, shared_hook.channel_path(directory, 'codex'))
+        await channel.start()
+        self._control_channel = channel
+
+    async def _stop_control_paths(self):
+        channel = getattr(self, '_control_channel', None)
+        if channel:
+            await channel.stop()
+            with contextlib.suppress(OSError):
+                channel.path.parent.rmdir()
+            self._control_channel = None
+
+    async def _protected_hook_config(self):
+        channel = getattr(self, '_control_channel', None)
+        if not channel:
+            return None
+        from . import shared_hook
+        listing = await self.call('hooks/list', {'cwds': [self.cfg['dir']]})
+        command = shared_hook.settings(channel.path, ('PreToolUse',))['hooks']['PreToolUse'][0]['hooks'][0]['command']
+        trusted = {}
+        for entry in (listing or {}).get('data', []):
+            if os.path.realpath(entry.get('cwd', '')) != os.path.realpath(self.cfg['dir']):
+                continue
+            for hook in entry.get('hooks', []):
+                if (hook.get('command') == command and hook.get('handlerType') == 'command'
+                        and hook.get('eventName') == 'preToolUse' and hook.get('enabled')
+                        and hook.get('currentHash') and hook.get('key')):
+                    trusted[hook['key']] = {'trusted_hash': hook['currentHash']}
+        if not trusted:
+            raise RPCError({'message': 'Agent J protected-path PreToolUse hook unavailable'})
+        return {'hooks.state': trusted}
 
     def submit(self, text) -> None:
         """0269-w2-steer (#471): an owner's message during the owner's running turn goes into it (codex_steer), else queued."""
@@ -541,7 +588,7 @@ class CodexAgent(Agent):
             self._send({"jsonrpc": "2.0", "id": rid, **({"error": error} if error else {"result": result})})
 
     # ------------------------------------------------ start
-    def initialize_capabilities(self): return {}
+    def initialize_capabilities(self): return {"experimentalApi": True} if getattr(self, "_control_channel", None) else {}
 
     async def _spawn(self) -> bool:
         self.image_home = None  # #558: an old process/account cannot lend its generated folder
@@ -551,6 +598,7 @@ class CodexAgent(Agent):
             self.fail_notice("后台环境里没找到 Codex（codex 命令）/ Codex executable missing in the background environment.\n" +
                              guidance("codex", "launch", getattr(self.host, "lang", "zh")))
             return False
+        await self._prepare_control_paths()
         argv = await self.authorized_launch_argv(self.argv())
         if argv is None:
             self.failed_start = True
@@ -614,15 +662,18 @@ class CodexAgent(Agent):
         from . import codex_perm
         p = {}
         sandbox, self.perm_source = codex_perm.main_sandbox(self.human.get("sandbox_mode"), self.research)
-        if self.cfg.get("follow_harness") and not self.research:
-            # P556 「全放行」: no sandbox for Agent J's own thread (the owner's config.toml is not touched); approvals stay
-            # routed to the host so the four ③ kinds are still seen — Agent J answers the rest (= approval_policy never)
-            sandbox, self.perm_source = codex_perm.FULL, "level"
-        # P513d: native preferences cannot suppress host review. Accepted calls
-        # still pass beyond_sandbox; asking more never expands inherited access.
-        p["approvalsReviewer"] = "user"
-        p["approvalPolicy"] = "untrusted"
-        p["sandbox"] = sandbox
+        # Do not synthesize an Agent J permission mode. Preserve the effective
+        # native config; research remains the separately configured read-only run.
+        reviewer = self.human.get("approvals_reviewer")
+        if isinstance(reviewer, str):
+            p["approvalsReviewer"] = reviewer
+        native_policy = self.human.get("approval_policy")
+        if self.research:
+            p["approvalPolicy"] = "untrusted"
+        elif isinstance(native_policy, str):
+            p["approvalPolicy"] = native_policy
+        if self.research or self.human.get("sandbox_mode") is not None:
+            p["sandbox"] = sandbox
         if self.cfg.get("model"):
             p["model"] = self.cfg["model"]
         return p
@@ -640,6 +691,9 @@ class CodexAgent(Agent):
         if self.tid and (want == self.tid or not self.persist):
             return True
         base = {"cwd": self.cfg["dir"], **self.policy()}
+        hook_config = await self._protected_hook_config()
+        if hook_config:
+            base["config"] = hook_config
         if self.persist and not self.cfg.get("_workflow_ceo"):
             from . import main_identity
             base["developerInstructions"] = main_identity.prompt(self.cfg)
@@ -1193,7 +1247,7 @@ class CodexAgent(Agent):
             r = ({"behavior": "deny", "message": "No live native secret-call admission"} if child_secret else
                  await broker.execute(name, inp, self.__dict__.get("secret_native_calls", {}).pop(str(rid), None), gone) if broker else None)
             r = r if r is not None else ({"behavior": "allow"} if not self.research and low_risk_pass(self.host, self.cfg, name, inp, batch)
-                 else await self.host.ask(name, inp, gone, batch=batch, **({"bind": bind} if bind else {}),
+                 else await self.host.ask(name, inp, gone, _harness_permission=True, batch=batch, **({"bind": bind} if bind else {}),
                                          **({"background": "task"} if self.cfg.get("_workflow_ceo") else {})))   # P552
             if r.get("behavior") == "allow" and codex_children.active_live(self):
                 ans = yes
@@ -1360,6 +1414,7 @@ class CodexAgent(Agent):
             await self._kill(p)
         for t in list(self.tasks):
             t.cancel()
+        await self._stop_control_paths()
 
     # ------------------------------------------------ a scheduled run (tasks.py): one throw-away thread
     async def run_once(self, prompt: str) -> tuple[str, int | str]:
@@ -1375,6 +1430,7 @@ class CodexAgent(Agent):
                 await self._kill(self.proc)
             for t in list(self.tasks):
                 t.cancel()
+            await self._stop_control_paths()
 
     # ------------------------------------------------ slash commands (slash.py)
     async def drop_conversation(self) -> None:

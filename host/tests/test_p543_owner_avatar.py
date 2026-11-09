@@ -224,8 +224,11 @@ class CodexFull(unittest.TestCase):
                 return {"thread": {"id": params.get("threadId", "new")}, "model": "m"}
             runner.call = call
             runner.policy = lambda: {"approvalPolicy": "untrusted", "sandbox": "danger-full-access"}
+            hook_config = {"hooks.state": {"fixture": {"trusted_hash": "fixture"}}}
+            runner._protected_hook_config = mock.AsyncMock(return_value=hook_config)
             asyncio.run(runner._thread())
             self.assertEqual(calls[0][0], "thread/resume")
+            self.assertEqual(calls[0][1]["config"], hook_config)
             self.assertEqual(calls[0][1]["developerInstructions"], owner_avatar.SYSTEM)
             self.assertEqual(runner.tid, "thr-1")
             # the runner's approvals and failures: the avatar's, never the main page's

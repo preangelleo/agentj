@@ -147,7 +147,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding,usage,learn,form} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,fn,uv,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding,usage,learn,form} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2246,18 +2246,19 @@ agentj card todo --help
 ```
 
 ```text
-usage: agentj card todo [-h] [--entry ID] [--text TEXT]
+usage: agentj card todo [-h] [--page PAGE] [--entry ID] [--text TEXT]
                         [--owner {agent,owner}] [--start WHEN] [--end WHEN]
                         [--status {pending,active,done,cancelled}]
                         [--by {agent,owner}] [--source SOURCE] [--note NOTE]
                         [--json]
-                        {add,edit,done,cancel,reopen,start,toggle,list,due}
+                        {add,edit,done,cancel,reopen,start,toggle,list,due,archive}
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `op` | `null` | true | `add`, `edit`, `done`, `cancel`, `reopen`, `start`, `toggle`, `list`, `due` | `add 新加 · edit 改字段 · done 完成 · cancel 取消 · reopen 撤回 · start 开始做 · toggle 完成/撤回 · list 全部 · due 现在该处理的` |
+| `op` | `null` | true | `add`, `edit`, `done`, `cancel`, `reopen`, `start`, `toggle`, `list`, `due`, `archive` | `add 新加 · edit 改字段 · done 完成 · cancel 取消 · reopen 撤回 · start 开始做 · toggle 完成/撤回 · list 全部 · due 现在该处理的` |
+| `--page` | `0` | false | — | `archive page, starting at 0` |
 | `--entry` | `null` | false | — | `哪一条（t3）/ which item (t3)` |
 | `--text` | `null` | false | — | `the title, one line` |
 | `--owner` | `null` | false | `agent`, `owner` | `who is responsible` |
@@ -2387,7 +2388,7 @@ usage: agentj config [-h] [--json] [--json-value] [--dry-run]
 ### agentj config approvals
 
 ```text
-shared-mode approval strength (standard = default, strict = old rule, native = the harness's own permissions only)
+legacy approval setting; all values follow harness permissions plus the explicit UV list
 ```
 
 ```bash
@@ -3013,6 +3014,100 @@ usage: agentj files status [-h]
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj fn
+
+```text
+registered functions require owner verification
+```
+
+```bash
+agentj fn --help
+```
+
+```text
+usage: agentj fn [-h] {add,run,remove,list} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj fn add
+
+```text
+register a command in this directory
+```
+
+```bash
+agentj fn add --help
+```
+
+```text
+usage: agentj fn add [-h] name ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `` |
+| `argv` | `null` | false | — | `` |
+
+### agentj fn list
+
+```text
+
+```
+
+```bash
+agentj fn list --help
+```
+
+```text
+usage: agentj fn list [-h]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj fn remove
+
+```text
+
+```
+
+```bash
+agentj fn remove --help
+```
+
+```text
+usage: agentj fn remove [-h] name
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `` |
+
+### agentj fn run
+
+```text
+
+```
+
+```bash
+agentj fn run --help
+```
+
+```text
+usage: agentj fn run [-h] name
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `` |
 
 ### agentj form
 
@@ -7451,6 +7546,42 @@ usage: agentj usage [-h] [--days DAYS] [--week] [--json] [--lang {zh,en}]
 | `--cache-write` | `null` | false | — | `` |
 | `--remove` | `false` | false | — | `drop the owner's row for this model` |
 
+### agentj uv
+
+```text
+explicit verification list
+```
+
+```bash
+agentj uv --help
+```
+
+```text
+usage: agentj uv [-h] {list} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj uv list
+
+```text
+
+```
+
+```bash
+agentj uv list --help
+```
+
+```text
+usage: agentj uv list [-h]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
 ### agentj voice
 
 ```text
@@ -7765,7 +7896,7 @@ usage: agentj workflows [-h] [--json] [--staff-hint FOLDER]
 
 Agent J Father is the official feedback platform. Say “Please report this to Agent J’s developers (support platform)”, or “Tell your dad about this”. Use `/feedback-to-agentj-father <text>` on the phone: owner requests send after redaction without asking twice; Agent-initiated reports need agreement first.
 
-The approval level (`approval.level`) and "Goal mode: no cards" (`approval.goal_nocard`) change only by a signed switch in Settings → Safety on a paired phone. There are three levels: Safe, Standard and Full access (`harness`); an older `full` in the configuration is Full access too, and a signed one keeps working with no new confirmation. Under Full access the AI coding tool the Agent J host starts itself stops asking the owner: no tool is switched to its own allow-everything mode, it keeps asking and the Agent J host agrees to everything (Claude Code with its own sandbox off, Codex without a sandbox), config files untouched; only the four kinds (spending money, deleting data, unbinding or moving a seat, sending a key out) and anything that looks like an attack on Agent J itself still need Face ID; back to Safe or Standard, it restarts with its normal settings before the next turn. When an Agent runs `agentj config set approval.level …`, nothing changes by itself: the owner gets a confirmation card on the phone. `agentj approvals --verify` checks every line: automatic approvals under Full access (`level_harness`, and the older level_full), Goal mode: no cards (goal_preauth, goal_nocard) and a retry after a card kept while the owner was offline (parked) must trace back to a signed confirmation on the phone; the denials sent to the Agent while nobody was online are logged as offline or parked_wait.
+Ordinary tools follow native AI coding tool permissions: allowed actions add no card and native permission requests use ordinary buttons. Only Agent J commands and matching phone operations explicitly listed by `agentj uv list` require fresh in-person owner verification. Background, heartbeat, recovery, webhook and mail turns use the same rule; friend and visitor isolation remains. Approval/security settings including `approval.level` and `approval.goal_nocard` are themselves listed, require verification to change and cannot waive listed-command verification. Legacy standard / strict / native values remain compatible. `agentj approvals --verify` checks recorded signatures, request binding and expiry; host refusals and owner denials retain distinct reasons.
 
 For AI tool full-access flags, configuration, short aliases and rollback, see [Full-access launch (three ways)](/docs/setup-agents/#full-access).
 
@@ -7929,7 +8060,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding,usage,learn,form} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,fn,uv,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding,usage,learn,form} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -10028,18 +10159,19 @@ agentj card todo --help
 ```
 
 ```text
-usage: agentj card todo [-h] [--entry ID] [--text TEXT]
+usage: agentj card todo [-h] [--page PAGE] [--entry ID] [--text TEXT]
                         [--owner {agent,owner}] [--start WHEN] [--end WHEN]
                         [--status {pending,active,done,cancelled}]
                         [--by {agent,owner}] [--source SOURCE] [--note NOTE]
                         [--json]
-                        {add,edit,done,cancel,reopen,start,toggle,list,due}
+                        {add,edit,done,cancel,reopen,start,toggle,list,due,archive}
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `op` | `null` | true | `add`, `edit`, `done`, `cancel`, `reopen`, `start`, `toggle`, `list`, `due` | `add 新加 · edit 改字段 · done 完成 · cancel 取消 · reopen 撤回 · start 开始做 · toggle 完成/撤回 · list 全部 · due 现在该处理的` |
+| `op` | `null` | true | `add`, `edit`, `done`, `cancel`, `reopen`, `start`, `toggle`, `list`, `due`, `archive` | `add 新加 · edit 改字段 · done 完成 · cancel 取消 · reopen 撤回 · start 开始做 · toggle 完成/撤回 · list 全部 · due 现在该处理的` |
+| `--page` | `0` | false | — | `归档页码，从 0 开始` |
 | `--entry` | `null` | false | — | `哪一条（t3）/ which item (t3)` |
 | `--text` | `null` | false | — | `标题，一行` |
 | `--owner` | `null` | false | `agent`, `owner` | `责任人：agent = Agent J，owner = 主人` |
@@ -10169,7 +10301,7 @@ usage: agentj config [-h] [--json] [--json-value] [--dry-run]
 ### agentj config approvals
 
 ```text
-共享模式审批强度
+兼容审批设置
 ```
 
 ```bash
@@ -10795,6 +10927,100 @@ usage: agentj files status [-h]
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj fn
+
+```text
+高危函数：注册/执行每次验证本人
+```
+
+```bash
+agentj fn --help
+```
+
+```text
+usage: agentj fn [-h] {add,run,remove,list} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj fn add
+
+```text
+注册当前目录下的命令
+```
+
+```bash
+agentj fn add --help
+```
+
+```text
+usage: agentj fn add [-h] name ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `` |
+| `argv` | `null` | false | — | `` |
+
+### agentj fn list
+
+```text
+
+```
+
+```bash
+agentj fn list --help
+```
+
+```text
+usage: agentj fn list [-h]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj fn remove
+
+```text
+
+```
+
+```bash
+agentj fn remove --help
+```
+
+```text
+usage: agentj fn remove [-h] name
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `` |
+
+### agentj fn run
+
+```text
+
+```
+
+```bash
+agentj fn run --help
+```
+
+```text
+usage: agentj fn run [-h] name
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `` |
 
 ### agentj form
 
@@ -15233,6 +15459,42 @@ usage: agentj usage [-h] [--days DAYS] [--week] [--json] [--lang {zh,en}]
 | `--cache-write` | `null` | false | — | `` |
 | `--remove` | `false` | false | — | `drop the owner's row for this model` |
 
+### agentj uv
+
+```text
+指纹清单
+```
+
+```bash
+agentj uv --help
+```
+
+```text
+usage: agentj uv [-h] {list} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj uv list
+
+```text
+
+```
+
+```bash
+agentj uv list --help
+```
+
+```text
+usage: agentj uv list [-h]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
 ### agentj voice
 
 ```text
@@ -15547,7 +15809,7 @@ usage: agentj workflows [-h] [--json] [--staff-hint FOLDER]
 
 Agent J Father 是官方反馈平台。标准说法：请把问题汇报给 Agent J 开发者（客服平台）；轻松说法：把这事告诉你爸爸。手机用 `/feedback-to-agentj-father <内容>`，主人下令脱敏直发，Agent 自发先请示。
 
-审批档位（`approval.level`）和「设了目标就不弹窗」（`approval.goal_nocard`）只能在已配对手机的「设置 → 安全」里签名切换。审批档位只有安全、中等、全放行（`harness`）三档；配置里以前的 `full` 也是全放行，当初签名确认过的直接生效，不用重新确认。全放行时，Agent J 主机自己启动的 AI 编程工具不再问主人：不切到工具自带的全部允许模式，工具照常发问，由 Agent J 主机全部替主人同意（Claude Code 关掉自带的沙箱，Codex 不用沙箱），不改配置文件；只有四类（花钱、删除数据、解绑或转移席位、密钥外发）和疑似攻击 Agent J 本身的动作仍要 Face ID；切回安全或中等，下一轮前按原来的参数重启。Agent 里运行 `agentj config set approval.level …` 不会直接生效，只会在主人手机上弹一张确认卡。`agentj approvals --verify` 会逐条核对：按全放行（`level_harness`，以及以前的 level_full）、设了目标就不弹窗（goal_preauth、goal_nocard）、离线留卡后重试（parked）自动批准的记录，都要追到手机上那次签名确认；没人在线时回给 Agent 的拒绝记为 offline 或 parked_wait。
+普通工具跟随底层 AI 编程工具的权限：底层放行不加卡，底层确认用普通按钮；只有 `agentj uv list` 明确列出的 Agent J 命令和对应手机操作要求主人当场验证。后台、心跳、恢复、Webhook和邮件回合使用同一规则，好友访客隔离照旧。`approval.level`、`approval.goal_nocard`等审批安全设置本身在清单中，修改要当场验证，不能借设置免除清单命令的验证。旧 standard / strict / native 值保留兼容。`agentj approvals --verify`核对审批记录的签名、请求与有效期；主机拒绝和主人拒绝会分别记原因。
 
 AI 工具的全权限启动参数、配置、短别名与回退方法：[全权限启动（三种方式）](/docs/setup-agents/#full-access)。
 

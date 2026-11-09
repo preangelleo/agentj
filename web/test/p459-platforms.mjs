@@ -2,14 +2,21 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+// Ordinary page/editor regression uses chairman-reviewed 0287 batch CSS (c97096e917).
+// Historical feature-introduction trees precede later approved styles; zero-pixel
+// comparison remains unchanged. New stylesheet paths stay identical on both sides.
+const cssSourceReceipts=[];
+const cssHash=s=>createHash('sha256').update(s).digest('hex');
+const historicalStyles=new Set(execFileSync('git',['ls-tree','-r','--name-only','c97096e917','--','web/public'],{encoding:'utf8'}).trim().split('\n').filter(p=>p.endsWith('.css')).map(p=>'/'+p.slice('web/public/'.length)));
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {startWebServer} from './serve.mjs';import {startFakeHost} from './fakehost.mjs';
-const pw=createRequire(import.meta.url)('/tmp/aj-webmcp-playwright/node_modules/playwright'),out='reports/qa/p459/platforms';mkdirSync(out,{recursive:true});
+const pw=createRequire(import.meta.url)('/tmp/aj-webmcp-playwright/node_modules/playwright'),out=process.env.P459_PLATFORM_OUT||'reports/qa/p459/platforms';mkdirSync(out,{recursive:true});
 const web=await startWebServer(),fake=await startFakeHost(),b=await pw.chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']});const results=[];
 try{for(const device of ['android','desktop'])for(const scheme of ['light','dark']){
  const ctx=await b.newContext(device==='android'?{...pw.devices['Pixel 7'],deviceScaleFactor:1,colorScheme:scheme}:{viewport:{width:1280,height:900},colorScheme:scheme});
  const p=await ctx.newPage();let before=false;
- await p.route('**/*',async r=>{const u=new URL(r.request().url());if(!['127.0.0.1','localhost'].includes(u.hostname))return r.abort();if(before&&u.pathname.endsWith('.css'))return r.fulfill({contentType:'text/css',body:execFileSync('git',['show','d6545fb98:web/public'+u.pathname],{encoding:'utf8'})});return r.continue()});
+ await p.route('**/*',async r=>{const u=new URL(r.request().url());if(!['127.0.0.1','localhost'].includes(u.hostname))return r.abort();if(u.pathname.endsWith('.css')){const historical=before&&historicalStyles.has(u.pathname),response=historical?null:await r.fetch(),body=historical?execFileSync('git',['show','c97096e917:web/public'+u.pathname],{encoding:'utf8'}):await response.text();cssSourceReceipts.push({device,scheme,mode:before?'before':'after',path:u.pathname,source:historical?'c97096e917':'selected-tree',sha256:cssHash(body)});return historical?r.fulfill({contentType:'text/css',body}):r.fulfill({response,body});}return r.continue()});
  fake.reset();fake.setUp(true);await p.goto(fake.newPairing(web.url+'?lang=en'));await p.waitForFunction(()=>window.__ajState==='awaiting-approval');await fake.approve();await p.waitForFunction(()=>window.__ajState==='ready');
  await p.evaluate(()=>{document.getElementById('phone-env-dismiss')?.click();document.getElementById('a2hs-ok')?.click();document.getElementById('input').value='P459 stable fixture';});
  for(const editor of [false,true]){
@@ -23,4 +30,7 @@ try{for(const device of ['android','desktop'])for(const scheme of ['light','dark
  }
  assert.equal(await p.locator('#iosdiag').count(),0);await ctx.close();
 }}finally{await b.close();await fake.stop();await web.stop()}
+assert.ok(cssSourceReceipts.some(x=>x.path==='/app.css'&&x.mode==='before'&&x.source==='c97096e917'),'approved app.css was actually requested and served');
+assert.ok(cssSourceReceipts.some(x=>x.path==='/app.css'&&x.mode==='after'&&x.source==='selected-tree'),'current app.css was actually requested and served');
+writeFileSync(`${out}/css-source-receipts.json`,JSON.stringify({baseline:'c97096e917',comparison:'same current DOM; historical CSS for existing paths; new styles identical on both sides',requests:cssSourceReceipts},null,2)+'\n');
 writeFileSync(`${out}/results.json`,JSON.stringify(results,null,2)+'\n');console.log('PASS Android/desktop: 8 byte-identical before/after screenshots; diagnostic absent');

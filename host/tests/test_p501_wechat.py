@@ -106,21 +106,29 @@ class Protocol(unittest.TestCase):
 class Channel(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp=tempfile.TemporaryDirectory(dir=TEST_TMP); self.root=Path(self.tmp.name)
-        self.st=State(self.root/'state');self.st.init()
+        self.st=State(self.root/'state');self.st.init(relay='ws://127.0.0.1:1')
         self.st.log=MagicMock()
         self.work=self.root/'work';self.work.mkdir()
         self.jobs=[];self.posts=[];self.sent=[];self.stopped=False
-        self.h=NS(st=self.st,lang='zh',channel=self.st.config()['channel'],agent_cfg={'dir':str(self.work),'kind':'claude'},
-                  preferences={},asks={},peers=None,nonces=controls.Nonces(),agent=NS(submit=MagicMock(),cur_send=None),
-                  stopped=lambda:self.stopped,_send_ready=None,status_changed=MagicMock(),push_notify=MagicMock(),
-                  agent_notice=MagicMock(),send_app=AsyncMock(),_ctl_res=AsyncMock(),_answer_refused=AsyncMock())
+        from _p541_device import _owner_host
+        import test_l1 as l1
+        import test_p513b_summary as actual_wire
+        self.h=_owner_host(self.st,self.sent)
+        self.h.lang='zh';self.h.agent_cfg={'dir':str(self.work),'kind':'claude'}
+        self.h.preferences={};self.h.stopped=lambda:self.stopped
+        self.h.status_changed=MagicMock();self.h.push_notify=MagicMock();self.h.agent_notice=MagicMock()
+        self.h._ctl_res=AsyncMock()
+        self.h.agent.submit=MagicMock();self.h.agent.cur_send=None
+        self.phone=l1.Phone(self.st,with_passkey=True)
+        self.s=l1._ready(self.h,self.phone)
+        actual_wire.real_outbound(self.h,self.s,self.sent)
         def bg(coro,*_):
             t=asyncio.create_task(coro);self.jobs.append(t);return t
         self.h.hist_add=MagicMock(return_value={'id':101})
-        # P562 (#337): the owner's WeChat message is a main-conversation message (serve._accept stand-in)
+        # Business intake is a local stand-in; approvals use the real Host,
+        # paired session, production verifier, Noise and durable key registry.
         self.h._accept=AsyncMock(side_effect=lambda session,text,sid,blobs=None:NS(turn=200+self.h._accept.await_count))
-        self.h._bg=bg;self.h._post=lambda fn,body:self.posts.append(body(None))
-        self.h._ask_msg=lambda a,s:{'t':'ask','id':a.rid,'tool':a.tool,'summary':a.summary}
+        self.h._bg=bg
         self.c=WeChat(self.h,model=AsyncMock(return_value=TurnResult('reply','译文','',None,None)))
         self.h.wechat=self.c
         self.c.index=__import__('agentj.peer_guard',fromlist=['SecretIndex']).SecretIndex()
@@ -144,19 +152,30 @@ class Channel(unittest.IsolatedAsyncioTestCase):
                                 'message.json','application/json')
         r=self.c.store.put('legacy-'+str(len(self.c.store.data['records'])),[path],'翻译这段话')
         r['state']='pending';self.c.store.save()
-        self.c.open_card(r);await asyncio.sleep(0)
+        self.c.open_card(r)
+        for _ in range(200):
+            if r['id'] in self.c.cards:break
+            await asyncio.sleep(.005)
+        self.assertIn(r['id'],self.c.cards)
         return r
     async def complete(self,turn,text,end='done'):
         self.c.completed({'id':turn,'src':{'k':'wechat'},'reply':{'text':text},'end':end})
         await asyncio.gather(*list(self.c.card_tasks))
     async def answer(self,a,ok=True,*,wrong=False,did='paired'):
-        from agentj.serve import Host
-        sk=Ed25519PrivateKey.generate();pk=sk.public_key().public_bytes(Encoding.Raw,PublicFormat.Raw)
-        self.st.sign_key=lambda dev:pk if dev=='paired' else None
-        self.st.passkey_of_device=lambda _:None
-        digest='0'*64 if wrong else a.digest
-        sig=sk.sign(approvals.signed_message(self.h.channel,did,a.rid,'allow' if ok else 'deny',digest))
-        await Host._answer(self.h,NS(device=did),{'id':a.rid,'ok':ok,'sig':wire.b64u(sig)})
+        from agentj.serve import Session
+        for _ in range(200):
+            cards=[obj for _,obj in self.sent if obj.get('t')=='ask' and obj.get('id')==a.rid]
+            if cards:break
+            await asyncio.sleep(.005)
+        self.assertTrue(cards,'approval must arrive through actual Noise wire')
+        card=cards[-1]
+        answer=self.phone.answer(card,ok)
+        if wrong:
+            answer['sig']=wire.b64u(self.phone.sk.sign(approvals.signed_message(
+                self.h.channel,self.phone.did,a.rid,'allow' if ok else 'deny','0'*64)))
+        session=self.s if did=='paired' else Session(99,state='ready',pub=b'u'*32,device=did,provenance=provenance.phone())
+        await self.h._app(session,answer)
+
     async def test_owner_group_bot_rejected_before_model_or_context(self):
         for extra in ({'from_user_id':'other'},{'group_id':'g'},{'message_type':2},{'delete_time_ms':1}):await self.receive(**extra)
         self.assertEqual(self.c.store.data['counts']['ignored_non_owner_group_bot'],4)
@@ -364,10 +383,11 @@ class Channel(unittest.IsolatedAsyncioTestCase):
         self.h.skill_turn_note=lambda *_:'';self.h.native_text=False;self.h.sends=compose.Sends()
         self.h.quota_resume=NS(owner_spoke=MagicMock());self.h._model_set_flush=AsyncMock()
         self.h._meeting_text=lambda session,text,voice:text
-        self.st.is_allowed=lambda pub:pub==b'p'*32
         session=Session(1,state='ready',pub=b'p'*32,device='paired',name='Owner',provenance=provenance.phone())
-        self.h.sessions[session.cid]=session  # registered authenticated transport, as required by P506c
-        send=await Host._accept(self.h,session,'handle my WeChat request',sid=None)
+        self.assertFalse(self.h._paired_live(session))
+        self.h.sessions[self.s.cid]=self.s
+        self.h.hist_add=Host.hist_add.__get__(self.h)
+        send=await Host._accept(self.h,self.s,'handle my WeChat request',sid=None)
         self.assertEqual(send.source,provenance.phone(),'real paired producer must not leave source=None')
         self.h.agent.cur_send=send
         listing=await self.c.agent_request({'op':'pending'})

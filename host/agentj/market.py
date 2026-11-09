@@ -1566,7 +1566,7 @@ def _backup_path(st, name: str) -> pathlib.Path:
 
 def run_install(name: str, *, version=None, harness=None, workspace=None, params=None, params_file=None, accept_unverified=False,
                 sign_as=None, replace=False, skip_verify=False, owner_confirmed=False, digest=None, st=None, post=None, get=None,
-                keyring=None, now=None, out=None, _starter=False, perm_call=None, host_ask=None) -> int:
+                keyring=None, now=None, out=None, _starter=False, perm_call=None, host_ask=None, _host_live=None) -> int:
     """host_ask (#428, serve only — plaza_host): the Agent J host runs this install. No preview step: ONE signed card
     (host_ask(info) → {ok, rid, device} | {ok: False, why}) stands for the owner's yes to exactly this package, sha256 and
     digest — including an unverified community package; every check below stays as it is."""
@@ -1604,7 +1604,7 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
             raise PlazaError("卡片没有参数、签名人和工作目录 / a card takes no --param, --sign-as or --workspace")
         return _install_card(st, m, files, sha, certified, downgrade, name=name, version=version, replace=replace,
                              accept_unverified=accept_unverified, owner_confirmed=owner_confirmed, digest=digest, post=post, out=out,
-                             pubr=pubr, findings=findings, audit_blk=audit_blk, perm_call=perm_call, host_ask=host_ask)
+                             pubr=pubr, findings=findings, audit_blk=audit_blk, perm_call=perm_call, host_ask=host_ask, _host_live=_host_live)
     h = resolve_harness(harness, st)
     if _starter:
         from .starters import STARTERS
@@ -1755,10 +1755,13 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
             print(_perm_refusal(name, res, bool(perm_extra), pub_changed, bool(audit_blk)), file=out)
             st.log("plaza_pkg_install", name=m["name"], result="host_" + str(res.get("why"))[:20])
             return EXIT_PERMISSION
-        g = {"rid": res.get("rid"), "device": res.get("device"), **({"inherited": True, "parent_grant": res.get("parent_grant")} if res.get("inherited") is True else {})}
+        g = {"rid": res.get("rid"), "device": res.get("device"), **({"inherited": True, "parent_grant": res.get("parent_grant")} if res.get("inherited") is True else {})} if res.get("rid") and res.get("device") else None
         grant, pub_grant = (g if perm_extra else None), (g if pub_changed else None)
-        audit_grant = {**g, "findings": [a["rule"] for a in audit_blk]} if audit_blk else None
-        print("按已签署的全放行档自动安装，未请求新签名 / installed under signed Full access; no new signature requested" if res.get("inherited") else "主人已在手机上签名允许这次安装 / the owner allowed this install on the phone (signed)", file=out)
+        audit_grant = {**g, "findings": [a["rule"] for a in audit_blk]} if audit_blk and g else None
+        if g:
+            print("主人已在手机上签名允许这次安装 / the owner allowed this install on the phone (signed)", file=out)
+        else:
+            print("按本次原生调用执行安装 / installing under this native request", file=out)
         if m["type"] == "workflow":
             print(WS_DIGEST, file=out)
     elif (perm_extra and not _starter) or pub_changed or audit_blk:
@@ -1772,13 +1775,15 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
             st.log("plaza_pkg_install", name=m["name"], result=("permission_" if items else "publisher_" if pub_changed else "audit_")
                    + ("no_serve" if res is None else str(res.get("why"))[:20]))
             return EXIT_PERMISSION
-        g = {"rid": res.get("rid"), "device": res.get("device"), **({"inherited": True, "parent_grant": res.get("parent_grant")} if res.get("inherited") is True else {})}
+        g = {"rid": res.get("rid"), "device": res.get("device"), **({"inherited": True, "parent_grant": res.get("parent_grant")} if res.get("inherited") is True else {})} if res.get("rid") and res.get("device") else None
         grant = g if items else None
         pub_grant = g if pub_changed else None
-        audit_grant = {**g, "findings": [a["rule"] for a in audit_blk]} if audit_blk else None
+        audit_grant = {**g, "findings": [a["rule"] for a in audit_blk]} if audit_blk and g else None
         what = [x for x in (("权限", "these permissions") if items else None, ("新的发布方", "the new publisher") if pub_changed else None,
                             ("审计拦下的这几处（只这一次）", "the audit findings (this one time)") if audit_blk else None) if x]
-        if res.get("inherited"):
+        if not g:
+            print("按本次原生调用执行安装 / installing under this native request", file=out)
+        elif res.get("inherited"):
             print("按已签署的全放行档自动处理，未请求新签名 / authorised by signed Full access; no new signature requested", file=out)
         else:
             print("和".join(z for z, _ in what) + "：主人已在手机上签名允许 / the owner allowed " + " and ".join(e for _, e in what)
@@ -1812,6 +1817,9 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                     print(f"install.verify: OK（{SANDBOX_TEXT[sandbox]}，无网络 / sandboxed, no network）", file=out)
                 vran = True
 
+    if _host_live is not None and not _host_live():
+        raise PlazaError('application request expired; no installation committed')
+
     # 2. staging next to the target, then one rename; a replaced folder goes to <state>/plaza/backups/
     # #428 H1: through the real parent's fd pinned at the card (mkdirat / renameat; a swapped path is refused)
     parent, pfd = target.parent, market_guard.open_pinned(pin)
@@ -1819,6 +1827,8 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
     try:
         try:
             write_tree(parent / staging, rendered, dir_fd=pfd)
+            if _host_live is not None and not _host_live():
+                raise PlazaError('application request expired; no installation committed')
             try:
                 os.lstat(target.name, dir_fd=pfd)
                 there = True
@@ -2106,7 +2116,7 @@ def _perm_refusal(name: str, res, items: bool = True, publisher: bool = False, a
     return f"没有安装：权限确认没完成 / NOT INSTALLED: the permission check did not complete ({clean_line(str(res.get('why')), 40)})"
 
 def _install_card(st, m, files, sha, certified, downgrade, *, name, version, replace, accept_unverified, owner_confirmed, digest,
-                  post, out, pubr=None, findings=(), audit_blk=(), perm_call=None, host_ask=None) -> int:
+                  post, out, pubr=None, findings=(), audit_blk=(), perm_call=None, host_ask=None, _host_live=None) -> int:
     """P432: a card package → the owner's deck, switched OFF until the owner reads its permission summary on the phone."""
     from . import jcards, jcards_pkg
     pubr = pubr or {"known": True, "changed": False, "prev": None, "fp": None}
@@ -2164,9 +2174,11 @@ def _install_card(st, m, files, sha, certified, downgrade, *, name, version, rep
         if res is None or not res.get("ok"):
             print(_perm_refusal(name, res, False, pubr["changed"], bool(audit_blk)), file=out)
             return EXIT_PERMISSION
-        g = {"rid": res.get("rid"), "device": res.get("device"), **({"inherited": True, "parent_grant": res.get("parent_grant")} if res.get("inherited") is True else {})}
+        g = {"rid": res.get("rid"), "device": res.get("device"), **({"inherited": True, "parent_grant": res.get("parent_grant")} if res.get("inherited") is True else {})} if res.get("rid") and res.get("device") else None
         pub_grant = g if pubr["changed"] else None
-        audit_grant = {**g, "findings": [a["rule"] for a in audit_blk]} if audit_blk else None
+        audit_grant = {**g, "findings": [a["rule"] for a in audit_blk]} if audit_blk and g else None
+    if _host_live is not None and not _host_live():
+        raise PlazaError('application request expired; no installation committed')
     r = jcards_pkg.install(st.root, files, {"name": m["name"], "version": m["version"], "sha256": sha, "certified": certified})
     if not r.get("ok"):
         print("refused: " + "; ".join(r.get("problems") or [e.get("en", "") for e in r.get("errors", [])] or [str(r.get("why"))]), file=out)

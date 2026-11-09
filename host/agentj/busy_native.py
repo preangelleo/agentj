@@ -50,6 +50,36 @@ def parse(argv):
     return prompt[0], opts
 
 
+def _main_peer(host, pid, table):
+    """A live main-harness descendant, independent of a human-message reference."""
+    from . import provenance
+    agent = host.agent
+    source = provenance.turn_source(agent)
+    if ((source.get('role') == 'group' and source.get('kind') != 'unknown')
+            or source.get('kind') == 'friend_task' or getattr(agent, 'research', False)):
+        return False
+    session = getattr(agent, 'session', None)
+    if isinstance(session, dict):
+        root, start = session.get('pid'), session.get('procStart')
+    else:
+        proc = getattr(agent, 'proc', None)
+        root = getattr(proc, 'pid', None)
+        if proc is None or getattr(proc, 'returncode', None) is not None:
+            return False
+        contexts = getattr(getattr(host, 'busy', None), 'context', {})
+        start = next((v.get('proc_start') for v in contexts.values()
+                      if isinstance(v, dict) and v.get('pid') == root), None)
+    if not start or root not in table or str(start) != table[root][2]:
+        return False
+    current, seen = pid, set()
+    while current in table and current not in seen and len(seen) < 64:
+        if current == root:
+            return True
+        seen.add(current)
+        current = table[current][0]
+    return False
+
+
 def policy(host, req, pid, uid):
     from . import approval_material, busy_launch, codex_perm, ctl_auth
     if uid != os.getuid() or type(pid) is not int or pid <= 1:
@@ -63,7 +93,10 @@ def policy(host, req, pid, uid):
         raise ValueError('native plan must match the verified current Codex session')
     cfg = copy.deepcopy(agent.cfg)
     origin = approval_material.verified_caller_origin(host, pid)
-    if not origin or origin.get('verified') is not True or origin.get('suspicious'):
+    if (not origin or origin.get('verified') is not True or origin.get('suspicious')) and _main_peer(host, pid, table):
+        # Ordinary work inherits the native session, never synthetic owner authority.
+        origin = copy.deepcopy(origin or {})
+    elif not origin or origin.get('verified') is not True or origin.get('suspicious'):
         if (origin is not None or ctl_auth.refusal(pid, os.getpid(), host._agent_pids())
                 or not ctl_auth.has_tty(pid) or 'sandbox' not in opts):
             raise ValueError('unknown source; dispatch inside the paired Host owner session, or use an independent owner terminal with explicit --sandbox')
@@ -91,7 +124,15 @@ def policy(host, req, pid, uid):
     if effective == 'workspace-write' and isinstance(sb, dict) and any(
             sb.get(k) for k in ('writableRoots', 'writable_roots', 'excludeTmpdirEnvVar', 'excludeSlashTmp')):
         effective = 'read-only'
-    cfg.update(_workflow_ceo=True, session_mode='independent', follow_harness=False)
+    native = {}
+    human = getattr(agent, 'human', {}) or {}
+    for wire, key in (('approvalPolicy', 'approval_policy'), ('approvalsReviewer', 'approvals_reviewer')):
+        value = thread.get(wire)
+        if value is None:
+            value = human.get(key)
+        if isinstance(value, (str, dict)):
+            native[wire] = copy.deepcopy(value)
+    cfg.update(_workflow_ceo=True, session_mode='independent', follow_harness=False, _native_permissions=native)
     if opts.get('model'):
         cfg['model'] = opts['model']
     return text, cfg, origin, effective, table[pid][2]
@@ -126,7 +167,7 @@ async def start(host, req, pid, uid):
         launch.dirty = True
     launch.save()
     receipt = {'ok': True, 'key': key, 'manager': 'host-native-adapter', 'harness': 'codex app-server',
-               'sandbox': mode, 'model': cfg.get('model') or getattr(host.agent, 'thread', {}).get('model'), 'approval': 'untrusted / Host review', 'fence': bool(cfg.get('fence', True)),
+               'sandbox': mode, 'model': cfg.get('model') or getattr(host.agent, 'thread', {}).get('model'), 'approval': copy.deepcopy(cfg['_native_permissions'].get('approvalPolicy', 'native default')), 'fence': bool(cfg.get('fence', True)),
                'network': 'not checked: no approved probe target'}
     rows[key] = {'binding': (pid, proc_start, digest), 'receipt': receipt}
     token = approval_review.ORIGIN.set(copy.deepcopy(origin))
@@ -136,6 +177,24 @@ async def start(host, req, pid, uid):
         approval_review.ORIGIN.reset(token)
     rows[key]['task'] = task
     return receipt
+
+
+def _runner_host(host):
+    from . import owner_avatar
+    from .list_approval import NativeContext
+    class Context(NativeContext):
+        def live(self, controller):
+            return controller is host and super().live(proxy)
+    class Proxy(owner_avatar._Host):
+        async def ask(self, tool, inp, gone=None, **kw):
+            context = kw.get('_native_context')
+            if context is None and kw.get('_harness_permission'):
+                context = NativeContext.capture(self.runner)
+            if type(context) is NativeContext and context.live(self):
+                kw['_native_context'] = Context(context.adapter, context.process, context.cwd, context.session)
+            return await host.ask(tool, inp, gone, **kw)
+    proxy = Proxy(host, 'Busy native dispatch', None)
+    return proxy
 
 
 async def run(host, cfg, text, mode, it):
@@ -161,18 +220,18 @@ async def run(host, cfg, text, mode, it):
 
         async def call(self, method, params=None, *args, **kw):
             if method == 'turn/start':
-                params = {**(params or {}), 'sandboxPolicy': sandbox,
-                          'approvalPolicy': 'untrusted', 'approvalsReviewer': 'user'}
+                params = {**(params or {}), 'sandboxPolicy': sandbox, **cfg.get('_native_permissions', {})}
                 # Keep the approval adapter's own ceiling consistent with the turn.
                 self.thread['sandbox'] = sandbox
             return await super().call(method, params, *args, **kw)
 
         def policy(self):
             value = super().policy()
-            value.update(sandbox=mode, approvalPolicy='untrusted', approvalsReviewer='user')
+            value.update(sandbox=mode, **cfg.get('_native_permissions', {}))
             return value
-    proxy = owner_avatar._Host(host, 'Busy native dispatch', None)
+    proxy = _runner_host(host)
     runner = BusyCodex(proxy, cfg, persist=False)
+    proxy.runner = runner
     code = None
     stop = threading.Event()
     admitted = False

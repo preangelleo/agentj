@@ -19,12 +19,12 @@ AGENTJ = pathlib.Path(main_identity.__file__).resolve().parent
 
 # rule → (zh needles, en needles); every needle of a rule must sit on the same core line in both languages
 RULES = {
-    "owner-load": (("硬规则：你分担的是主人的责任，不是 CEO 的活",),
-                   ("Hard rule: you carry the owner's responsibilities, not a CEO's work",)),
+    "owner-load": (("默认分工：分担主人责任",),
+                   ("By default, carry the owner's responsibilities",)),
     "design-supervise": (("你设计每个 CEO 或子 Agent 的职责、能力和验收标准并监督",),
                          ("you design each CEO's or sub-Agent's duties, capabilities and acceptance criteria and supervise",)),
-    "never-do-the-work": (("绝不下场干活：排查、诊断、修改、发布一律派出去",),
-                          ("never do the work yourself: investigation, diagnosis, fixes and releases are always dispatched",)),
+    "delegation-default": (("派活不是禁令", "不另验身份"),
+                          ("Delegation is a default, not a prohibition", "without an extra identity check")),
     "acceptance-command": (("每张派单带预先写好的验收命令", "只跑验收命令、看结论再报"),
                            ("Every dispatch carries a pre-written acceptance command",
                             "only run the acceptance command and read its verdict")),
@@ -67,7 +67,7 @@ class Core(unittest.TestCase):
                     self.assertNotIn(phrase, core(lang))
 
     def test_budgets_not_raised(self):
-        self.assertEqual(main_identity.verify_core()["version"], 26)          # manifest + pinned hashes agree
+        self.assertEqual(main_identity.verify_core()["version"], 28)          # manifest + pinned hashes agree
         for lang, cap in (("zh", 4408), ("en", 13957)):
             self.assertLessEqual(len(core(lang)), cap, lang)
         self.assertEqual((shared.SharedClaudeAgent.INLINE_MAX, shared.SharedClaudeAgent.HOOK_MAX), (9500, 10000))
@@ -84,12 +84,12 @@ class Core(unittest.TestCase):
             text = ans["hookSpecificOutput"]["additionalContext"]
             self.assertEqual(a.identity_marker[3], "hook.additionalContext")   # still inline, not the Read fallback
             self.assertLessEqual(len(text), a.HOOK_MAX - 300)
-            for n in ("绝不下场干活", "每张派单带预先写好的验收命令", "你只跑验收命令看结论"):
+            for n in ("派活不是禁令", "每张派单带预先写好的验收命令", "主人明确让你亲做"):
                 self.assertIn(n, text)
 
     def test_reminder_and_heartbeat_line(self):
-        self.assertIn("排查、诊断、修改、发布也派出去，你只跑验收命令看结论", main_identity.IDENTITY_REMINDER["zh"])
-        self.assertIn("diagnosing, fixing, releasing too; you run the acceptance command", main_identity.IDENTITY_REMINDER["en"])
+        self.assertIn("主人明确让你亲做、别派", main_identity.IDENTITY_REMINDER["zh"])
+        self.assertIn("Follow an owner request or personal preference to do the work yourself", main_identity.IDENTITY_REMINDER["en"])
         for lang in ("zh", "en"):
             self.assertLess(len(main_identity.IDENTITY_REMINDER[lang]), 600)
         self.assertIn("后台活已结束：核对归你，跑验收命令看结论", main_identity.HEARTBEAT_LINE["zh"])

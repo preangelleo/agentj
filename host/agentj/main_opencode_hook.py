@@ -15,22 +15,22 @@ def install(directory, channel):
         raise ValueError('dispatch_plugin_symlink')
     script = r'''
 import {spawn} from 'node:child_process';
+import {Plugin} from '@opencode/plugin';
 const python=PYTHON, hook=HOOK, channel=CHANNEL;
 function request(event){
   return new Promise((resolve,reject)=>{
     const child=spawn(python,[hook,channel],{stdio:['pipe','pipe','ignore']});
-    let out='';const timer=setTimeout(()=>{child.kill();reject(new Error('Agent J dispatch guard unavailable'));},15000);
+    let out='';const timer=setTimeout(()=>{child.kill();reject(new Error('Agent J dispatch guard unavailable'));},170000);
     child.stdout.on('data',d=>{out+=d;if(out.length>32768){child.kill();reject(new Error('Agent J dispatch guard response too large'));}});
     child.on('error',()=>{clearTimeout(timer);reject(new Error('Agent J dispatch guard unavailable'));});
     child.on('exit',code=>{clearTimeout(timer);if(code!==0)return reject(new Error('Agent J dispatch guard unavailable'));try{resolve(JSON.parse(out.trim()||'{}'));}catch{reject(new Error('Agent J dispatch guard invalid'));}});
     child.stdin.end(JSON.stringify(event));
   });
 }
-export default {
+export default Plugin.define({
  id:'agentj.dispatch-budget',
  async setup(ctx){
   const directory=ctx.location.directory;
-  await request({hook_event_name:'SharedGuardReady',cwd:directory});
   await ctx.session.hook('prompt',async event=>{
     await request({hook_event_name:'UserPromptSubmit',session_id:event.sessionID,cwd:directory});
     await ctx.session.instructions.entry.remove({sessionID:event.sessionID,key:'agentj.dispatch-budget'});
@@ -45,8 +45,9 @@ export default {
     if(output.additionalContext)await ctx.session.instructions.entry.put({sessionID:event.sessionID,key:'agentj.dispatch-budget',value:output.additionalContext});
     if(output.permissionDecision==='deny'||output.permissionDecision==='ask')throw new Error(output.permissionDecisionReason||'Agent J dispatch budget refused this main-thread work');
   });
+  await request({hook_event_name:'SharedGuardReady',cwd:directory});
  }
-};
+});
 '''.replace('PYTHON',json.dumps(sys.executable)).replace('HOOK',json.dumps(str(Path(shared_hook.__file__).resolve()))).replace('CHANNEL',json.dumps(str(channel)))
     data = HEADER + script
     if path.exists() and not path.read_text().startswith(HEADER):

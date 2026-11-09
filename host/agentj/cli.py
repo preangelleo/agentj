@@ -88,7 +88,7 @@ def cmd_init(a) -> None:
         if st.exists() and getattr(a, "working_root", None) and not a.force:
             cfg = st.config()  # record a root for installed users without regenerating keys
         else:
-            cfg = st.init(relay=a.relay, web=a.web, force=a.force)
+            cfg = st.init(relay=a.relay, web=a.web, force=a.force, _setup_root=root)
     except FileExistsError as e:
         sys.exit(f"{e}（要重建身份密钥用 --force；所有已配对设备都要重配）")
     print(f"这台Agent J 主机的身份已生成：{st.root}\n通道 {cfg['channel']}\n转发服务器 {cfg['relay']}\n下一步：运行 `agentj`，看看还差哪几步 / next: run `agentj` to see what is left")
@@ -1126,17 +1126,13 @@ def cmd_revoke(a) -> None:
     st = State()
     _need_init(st)
     try:
-        res = names.ctl_call(st, {"cmd": "revoke", "device": a.device}, 10)
+        res = names.ctl_call(st, {"cmd": "revoke", "device": a.device}, 900)
     except names.ServeBusy:
-        sys.exit("agentj serve 在运行但没有响应：没有吊销（不会绕过它直接改准许名单）。稍后再试，或先停掉 serve。")
+        sys.exit("确认未完成，没有解绑 / Approval unavailable; remote was not revoked.")
     if res is not None and res.get("error") in ("claim_required", "claim_refused"):
         sys.exit("✗ " + _ctl_refused_msg(res))
-    if res is None:  # serve certainly not running (no socket / refused): edit the allowlist directly, under its lock
-        ok = st.remove_device(a.device)
-        if ok:
-            st.log("revoked", device=a.device)
-            print("（Agent J 现在没在运行：已经把这台设备删掉了，以后它连不上。）")
-        res = {"ok": ok, "closed": 0}
+    if res is None:
+        sys.exit("需要运行中的 Agent J 和主人现场验证，未解绑 / A running Host and fresh owner verification are required.")
     if not res.get("ok"):
         sys.exit(f"没有这台设备：{a.device}（`agentj devices` 查看）")
     print(f"已吊销 {a.device}，断开了 {res.get('closed', 0)} 个连接。")
@@ -1849,7 +1845,17 @@ def cmd_report(a) -> None:
 def cmd_unlink(a) -> None:
     st = State()
     _need_init(st)
+    from .approval_review import digest
     link = cloud.read_cloud(st)
+    target_sha256 = digest(link)
+    try:
+        approval = names.ctl_call(st, {"cmd": "uv_security", "command": "agentj unlink", "target_sha256": target_sha256}, 900)
+    except names.ServeBusy:
+        approval = None
+    if not approval or approval.get("ok") is not True:
+        sys.exit("主人验证未完成，未解绑账号 / Fresh owner verification unavailable; account unchanged.")
+    if digest(cloud.read_cloud(st)) != target_sha256:
+        sys.exit("账号在确认期间改变，未解绑 / Account changed during approval; nothing unlinked.")
     slug = link["tenant"]["slug"] if link else "?"
     left = False
     if link and link["via"] == "seat":
@@ -3298,31 +3304,23 @@ def main_jarvis(argv=None) -> None:
 
 # `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
 # AI's own memory file), `handover` only reads: none may move the state directory first
-NO_MIGRATE = ("trash", "file", "files", "diag", "preflight", "migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask", "form", "learn", "usage", "order", "core")   # recall / friends / codex-sandbox / capability: usually inside the fence
+NO_MIGRATE = ("fn", "uv", "trash", "file", "files", "diag", "preflight", "migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask", "form", "learn", "usage", "order", "core")   # recall / friends / codex-sandbox / capability: usually inside the fence
 
 
-APPROVALS_HELP = {
-    "standard": ("standard（默认）：共享会话里，只有改凭据、把凭据显示到屏幕、花钱、对外发送、公开删除才需要手机点头；"
-                 "程序按名字读取 .env 等不再弹窗。",
-                 "standard (default): in a shared session the phone is asked only when a credential is changed or shown on "
-                 "screen, or for spending, sending out and public deletion; a program reading .env by name no longer asks."),
-    "strict": ("strict：只要命令里出现凭据文件（哪怕只是读取或提到）就要手机点头，即旧规则。",
-               "strict: any credential file anywhere in a call asks the phone, even a read or a mention (the old rule)."),
-    "native": ("native：共享会话里 Agent J 不另外弹卡，花钱、对外发送、公开删除、改凭据都只看 Claude Code / Codex / OpenCode "
-               "自己的权限设置（只有改 Agent J 的 hook 文件仍要手机点头）。",
-               "native: in a shared session Agent J adds no card of its own — spending, sending out, public deletion and credential "
-               "changes follow only Claude Code's / Codex's / OpenCode's own permission settings (rewriting Agent J's hook files "
-               "still asks the phone)."),
-}
+APPROVALS_HELP = dict.fromkeys(("standard", "strict", "native"), (
+    "工具审批跟随 Claude Code / Codex / OpenCode 的权限设置；仅 `agentj uv list` 中的 Agent J 命令要求本人指纹。"
+    "旧 standard / strict / native 值保留兼容，均使用此规则。",
+    "Tool approvals follow Claude Code / Codex / OpenCode permissions. Only Agent J commands in `agentj uv list` require "
+    "owner verification. Legacy standard / strict / native values are retained for compatibility and use this same rule.",
+))
 
 
 def config_approvals(rest: list) -> int:
-    """`agentj config approvals standard|strict|native|status` (P128, P198): shared-mode approval strength; independent
-    mode unchanged."""
+    """`agentj config approvals standard|strict|native|status`: legacy aliases; ordinary tools follow native harness
+    permissions and only explicit UV-list commands require owner verification."""
     from . import preferences
     p = argparse.ArgumentParser(prog="agentj config approvals",
-                                description="共享模式审批强度 / shared-mode approval strength (standard = default, strict = old rule, "
-                                            "native = the harness's own permissions only)")
+                                description="兼容审批设置 / legacy approval setting; all values follow harness permissions plus the explicit UV list")
     p.add_argument("level", nargs="?", default="status", choices=("standard", "strict", "native", "status"))
     a = p.parse_args(rest)
     lang = "en" if str(preferences.get(preferences.effective(State()), "appearance.language", "zh")).startswith("en") else "zh"
@@ -3837,6 +3835,8 @@ def main(argv=None) -> None:
         from .core import cli as core_cli
         core_cli.add_parser(sub)    # P359: agentj order … · agentj core … (Agent J Harness, AGENTJ_CORE=1 only)   # P244 (§30): agentj workflows [--json] — what the phone's five pages read, read-only
     elevate.add_parser(sub)   # F17: agentj sudo · agentj secret request
+    from . import functions
+    functions.add_parser(sub)   # UV-list: explicit owner-registered commands
     from . import term_cli
     term_cli.add_parser(sub)
     from . import assist as assist_cli

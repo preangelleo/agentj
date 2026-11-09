@@ -93,7 +93,7 @@ def allowed_by_rule(cmd):
 def hook_decision(tool, inp):
     for c in HOOKS:
         p = subprocess.run(c, shell=True, input=json.dumps({"hook_event_name": "PreToolUse", "tool_name": tool,
-                                                           "tool_input": inp, "permission_mode": "default"}),
+                                                           "tool_input": inp, "permission_mode": "default", "cwd": os.getcwd()}),
                            capture_output=True, text=True)
         if p.returncode == 2:
             return "deny", p.stderr.strip()

@@ -122,6 +122,69 @@ class Base(unittest.TestCase):
     def tool_runs(self):
         return self.tool_log.read_text().count("cwd=") if self.tool_log.exists() else 0
 
+def actual_ctl(case, request=None, *, valid=True, host=None, client=None, setup=None):
+    """Real kernel-authenticated UDS/on_ctl/names path; only vendors are fake.
+
+    No Host.ask/application_ingress/peer proof is patched. The child is launched
+    beneath the exact Host-held native session PID/start and committed root.
+    """
+    from _p541_device import _owner_host
+    from agentj import approval_review, codex_procs, provenance
+    from types import SimpleNamespace as NS
+    import signal
+    async def run():
+        sent = []
+        h = host or _owner_host(case.st, sent)
+        h.agent_cfg = case.st.agent_config()
+        notices = []
+        h.task_notice = lambda text, **kw: notices.append(text)
+        h._fixture_notices, h._fixture_sent = notices, sent
+        handlers = set()
+        async def handler(reader, writer):
+            current = asyncio.current_task(); handlers.add(current)
+            try: await h.on_ctl(reader, writer)
+            finally: handlers.discard(current)
+        path = case.st.sock_path
+        server = await asyncio.start_unix_server(handler, path=str(path))
+        req = request or {'cmd':'tasks_migrate','ids':None}
+        script = client or ("import json,sys\nfrom agentj import names\nfrom agentj.state import State\n"
+            "progress=[]\nresult=names.ctl_call(State(),json.loads(sys.argv[1]),timeout=12,on_sent=progress.append)\n"
+            "print(json.dumps({'result':result,'phone_sent_frames':progress}))\n")
+        anchor = "import subprocess,sys;sys.stdin.readline();sys.exit(subprocess.call([sys.executable,'-c',sys.argv[1],sys.argv[2]]))"
+        child_env = {**os.environ, 'AGENTJ_STATE_DIR':str(case.st.root),'PYTHONPATH':str(HOST)}
+        proc = await asyncio.create_subprocess_exec(sys.executable,'-c',anchor,script,json.dumps(req),env=child_env,
+                stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,start_new_session=True)
+        old_agent = h.agent
+        h.agent = NS(host=h,kind='claude',session={'sessionId':'migration-actual-kernel','pid':proc.pid,
+                'procStart':codex_procs.start_token(proc.pid)},native_source=provenance.system(),research=False,
+                phone_turn=False,cfg={'kind':'claude','dir':case.st.agent_config()['dir']})
+        if not valid: h.agent.session['procStart']='wrong-kernel-generation'
+        if setup: setup(h)
+        try:
+            proc.stdin.write(b'go\n');await proc.stdin.drain()
+            out,err = await asyncio.wait_for(proc.communicate(), 18)
+            if client is not None and proc.returncode == 1 and err.decode().startswith("✗ "):
+                raise SystemExit(err.decode().strip())
+            case.assertEqual(proc.returncode,0,err.decode())
+            case.assertFalse(h.asks)
+            case.assertFalse(any(obj.get('t')=='ask' for _,obj in sent))
+            if client is not None: return (out.decode(),err.decode()), h
+            receipt = json.loads(out.decode().splitlines()[-1])
+            case.assertEqual(receipt['phone_sent_frames'],[])
+            case.assertFalse(set(receipt['result']) & {'grant_info','device','sig','rid','uv'})
+            return receipt['result'], h
+        finally:
+            h.agent=old_agent
+            if proc.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    if os.getpgid(proc.pid)==proc.pid: os.killpg(proc.pid,signal.SIGKILL)
+                await proc.wait()
+            server.close();await server.wait_closed()
+            if handlers: await asyncio.wait_for(asyncio.gather(*list(handlers)),2)
+            path.unlink(missing_ok=True)
+    return asyncio.run(run())
+
+
 
 class Migrate(Base):
     def test_migrate_switches_the_old_task_off_and_runs_it_through_the_scheduler(self):
@@ -291,7 +354,7 @@ class Migrate(Base):
         self.assertEqual(e.exception.reason, "stopped")
 
     def test_parser_has_the_new_modes(self):
-        r = subprocess.run([str(HOST / "bin" / "agentj"), "tasks", "--help"], capture_output=True, text=True, timeout=60,
+        r = subprocess.run([sys.executable, "-m", "agentj.cli", "tasks", "--help"], capture_output=True, text=True, timeout=60,
                            env={**os.environ, "AGENTJ_STATE_DIR": str(self.st.root)})
         self.assertIn("migrate", r.stdout + r.stderr)
         self.assertIn("unmigrate", r.stdout + r.stderr)
@@ -543,7 +606,7 @@ class OwnerOnly(Base):
         task(self.work, "daily")
         self.enable("daily")
         env = {k: v for k, v in os.environ.items() if k not in ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")}
-        r = subprocess.run(["env", "-u", "CLAUDECODE", "-u", "CLAUDE_CODE_ENTRYPOINT", str(HOST / "bin" / "agentj"), "tasks", "migrate",
+        r = subprocess.run(["env", "-u", "CLAUDECODE", "-u", "CLAUDE_CODE_ENTRYPOINT", sys.executable, "-m", "agentj.cli", "tasks", "migrate",
                             "--all"], capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL,
                            env={**env, "AGENTJ_STATE_DIR": str(self.st.root)})
         self.assertNotEqual(r.returncode, 0)
@@ -552,31 +615,26 @@ class OwnerOnly(Base):
         self.assertIn("daily", self.on())
 
     def test_even_the_owners_own_terminal_needs_the_card(self):
-        task(self.work, "daily")
-        self.enable("daily")
+        task(self.work, "daily"); self.enable("daily")
         h = Host(self.st, {"behavior": "deny", "message": "timeout"})
         with mock.patch("agentj.ctl_auth.refusal", return_value=None), mock.patch("agentj.ctl_auth.has_tty", return_value=True):
             res = asyncio.run(sysmigrate.ctl(h, {"cmd": "tasks_migrate", "ids": None}))
-        self.assertEqual(res, {"ok": False, "error": "none"})
-        self.assertEqual(len(h.asks), 1)
+        self.assertEqual(res, {"ok": False, "error": "proposal"})
+        self.assertEqual(h.asks, [], 'mock TTY booleans are not a real request frame')
         self.assertEqual(sysmigrate.migrated(self.st), {})
         self.assertIn("daily", self.on())
-
+        result, real = actual_ctl(self)
+        self.assertTrue(result['ok'], result)
+        self.assertIn('daily', sysmigrate.migrated(self.st))
 
 class Texts(Base):
     """QA a–d: the CLI never crashes on a skipped / unmigrated row, --json is JSON only, the notice uses titles and reasons."""
 
     def cli(self, mode="migrate", id_=None, all_=False, dry=False, as_json=False, lang="zh", tty=True):
-        out, err = io.StringIO(), io.StringIO()
-        h = Host(self.st, YES)
-
-        def call(st, req, timeout=None, max_bytes=None, progress=None):
-            return asyncio.run(sysmigrate.ctl(h, req, _sent(progress))) if req["cmd"] == "tasks_migrate" else {"ok": True}
-        with mock.patch("agentj.names.ctl_call", side_effect=call), mock.patch("sys.stdin", mock.Mock(isatty=lambda: tty)), \
-                mock.patch.object(sysmigrate, "unavailable", return_value=None), contextlib.redirect_stdout(out), \
-                contextlib.redirect_stderr(err):
-            sysmigrate.cli(self.st, Namespace(mode=mode, id=id_, all=all_, dry_run=dry, json=as_json), lang)
-        return out.getvalue(), err.getvalue()
+        args = {'mode':mode,'id':id_,'all':all_,'dry_run':dry,'json':as_json}
+        script = ("from argparse import Namespace\nfrom agentj import sysmigrate\nfrom agentj.state import State\n"
+                  + "sysmigrate.cli(State(),Namespace(**" + repr(args) + ")," + repr(lang) + ")\n")
+        return actual_ctl(self, client=script)[0]
 
     def test_text_output_of_skipped_and_unmigrated_rows(self):
         task(self.work, "good", title={"zh": "每日简报", "en": "Daily brief"})
@@ -590,7 +648,7 @@ class Texts(Base):
         out, err = self.cli(all_=True)
         self.assertIn("✓ → agentj-task-good.timer", out)
         self.assertIn("已改用系统定时 1 个：每日简报。1 个照旧由 Agent J 运行：日报steps（多步任务的进度记在 Agent J 里）。", out)
-        self.assertIn("已发到手机", err, "the progress line goes to stderr")
+        self.assertNotIn("已发到手机", err, "ordinary migration sends no phone card/progress")
         out, _ = self.cli(id_="off")
         self.assertIn("✗ 没有启用", out)
         out, _ = self.cli(id_="nope")
@@ -611,7 +669,7 @@ class Texts(Base):
         self.enable("good")
         out, err = self.cli(id_="good", as_json=True)
         self.assertEqual(json.loads(out)[0]["result"], "migrated")
-        self.assertIn("已发到手机", err)
+        self.assertNotIn("已发到手机", err)
         out, _ = self.cli(all_=True, dry=True, as_json=True)
         self.assertEqual(json.loads(out), [])
 
@@ -804,20 +862,16 @@ class Card(Base):
         self.assertNotRegex(text + many + en, "试用|trial|Trial")
 
     def test_yes_needs_a_device_allow_and_moves_everything(self):
-        task(self.work, "a")
-        task(self.work, "b")
-        self.enable("a", "b")
+        task(self.work, "a"); task(self.work, "b"); self.enable("a", "b")
         h = Host(self.st, YES)
-        self.assertEqual(self.offer(h), "yes")
-        self.assertEqual(len(h.asks), 1)
-        tool, inp, kw = h.asks[0]
-        self.assertEqual(tool, "agentj tasks migrate")
-        from agentj import policy_registry
-        self.assertEqual(kw, {"batch": False, "grant_info": True, "_company_proposal": policy_registry.HOST_CARD},
-                         "P570c: a plain confirm card (no Face ID); L-b: the host's sentinel")
-        self.assertIn("日报a、日报b", inp["summary"])
+        self.assertEqual(self.offer(h), 'proposal')
+        self.assertEqual(h.asks, [])
+        self.assertEqual(sysmigrate.migrated(self.st), {})
+        result, real = actual_ctl(self)
+        self.assertTrue(result['ok'], result)
         self.assertEqual(sorted(sysmigrate.migrated(self.st)), ["a", "b"])
-        self.assertEqual(h.notices, ["已改用系统定时 2 个：日报a、日报b。"])
+        self.assertEqual(sysmigrate.summary(result["rows"], "zh"), "已改用系统定时 2 个：日报a、日报b。")
+        self.assertEqual(real._fixture_notices, [], "CLI owns the final result; no fictitious phone progress")
         self.assertEqual(sysmigrate.load(self.st)["decision"]["answer"], "yes")
         self.assertEqual(self.offer(Host(self.st, YES)), "decided")
 
@@ -827,25 +881,29 @@ class Card(Base):
         for ans in ({"behavior": "allow", "updatedInput": {}}, {"behavior": "deny", "message": "已急停（全部停下）：默认拒绝。"}):
             h = Host(self.st, ans)
             with mock.patch.object(sysmigrate, "REOFFER", 0), mock.patch.object(sysmigrate, "MAX_OFFERS", 1):
-                self.assertEqual(self.offer(h), "limit")
+                self.assertEqual(self.offer(h), "proposal")
             sysmigrate._update(self.st, lambda m: m.__setitem__("offers", {}))
         self.assertEqual(sysmigrate.migrated(self.st), {})
         self.assertNotIn("decision", sysmigrate.load(self.st))
 
     def test_yes_with_a_failing_task_reports_the_rollback(self):
-        task(self.work, "a")
-        self.enable("a")
+        task(self.work, "a"); self.enable("a")
         self.verdict("VERDICT: FAIL no data")
         h = Host(self.st, YES)
-        self.offer(h)
-        self.assertEqual(h.notices, ["没有任务改用系统定时。1 个照旧由 Agent J 运行：日报a（试跑没有通过：no data）。"])
+        self.assertEqual(self.offer(h), 'proposal')
+        self.assertEqual(h.asks, [])
+        result, real = actual_ctl(self)
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(sysmigrate.summary(result["rows"], "zh"), "没有任务改用系统定时。1 个照旧由 Agent J 运行：日报a（试跑没有通过：no data）。")
         self.assertIn("a", self.on())
 
     def test_no_is_remembered_and_never_asked_again(self):
         task(self.work, "a")
         self.enable("a")
         h = Host(self.st, NO)
-        self.assertEqual(self.offer(h), "no")
+        self.assertEqual(self.offer(h), "proposal")
+        self.assertEqual(h.asks, [])
+        sysmigrate._update(self.st, lambda doc: doc.__setitem__("decision", {"answer":"no","at":1}))
         self.assertEqual(sysmigrate.migrated(self.st), {})
         self.assertIn("a", self.on())
         task(self.work, "later")
@@ -860,8 +918,8 @@ class Card(Base):
         self.enable("a")
         h = Host(self.st, {"behavior": "deny", "message": "timeout"})
         with mock.patch.object(sysmigrate, "REOFFER", 0):
-            self.assertEqual(self.offer(h), "limit")
-        self.assertEqual(len(h.asks), sysmigrate.MAX_OFFERS)
+            self.assertEqual(self.offer(h), "proposal")
+        self.assertEqual(h.asks, [], "no current intent means proposal, not an unanswered phone card")
         self.assertNotIn("decision", sysmigrate.load(self.st))
         self.assertIn("a", self.on())
 
@@ -879,88 +937,44 @@ class Card(Base):
         self.assertEqual(self.offer(Host(self.st, YES)), "test")
 
 
-class RealHostCard(unittest.TestCase):
-    """L5 through the real serve.Host.ask (test_l1 fixtures): the card is a host card with a plain signed allow / deny (P570c:
-    no Face ID, even on a remote that has a passkey, under every level); a signed decline is the remembered "no"."""
-
+class RealHostCard(Base):
+    """Ordinary migration uses the real current kernel request, never a fake grant."""
     def setUp(self):
-        from test_l1 import Phone, _owner_host, _ready, _state
-        self.tmp = tempfile.TemporaryDirectory(prefix="p570b-h-", dir=TEST_TMP)
-        self.addCleanup(self.tmp.cleanup)
-        self.st, self.sent = _state(self.tmp.name), []
-        self.ph = Phone(self.st, with_passkey=True)
-        self.host = _owner_host(self.st, self.sent)
-        self.s = _ready(self.host, self.ph)
-        self.s.p33 = True
-        self.host.ask_ttl = 1
-        self.host.agent_cfg = {"kind": "codex", "dir": self.tmp.name}
-        rows = [{"id": "a", "title": {"zh": "每日简报"}}]
-        self.moved = []
-        for p in (mock.patch.dict(os.environ, {"AGENTJ_TEST_MIGRATE_CARD": "1"}),
-                  mock.patch.object(sysmigrate, "candidates", return_value=rows), mock.patch.object(sysmigrate, "MAX_OFFERS", 1),
-                  mock.patch.object(sysmigrate, "REOFFER", 0),
-                  mock.patch.object(sysmigrate, "migrate", side_effect=lambda st, ids, *a: self.moved.append(ids) or [])):
-            p.start()
-            self.addCleanup(p.stop)
-
-    def answer(self, ok, fa):
-        from agentj import approvals, passkey, wire
-
-        async def go():
-            t = asyncio.create_task(sysmigrate.offer(self.host))
-            while not [o for _, o in self.sent if o.get("t") == "ask"] and not t.done():
-                await asyncio.sleep(0.01)
-            ask = [o for _, o in self.sent if o.get("t") == "ask"][-1]
-            msg = approvals.signed_message(self.ph.channel, self.ph.did, ask["id"], "allow" if ok else "deny",
-                                           approvals.shown_digest(ask["tool"], ask["summary"]))
-            obj = {"t": "answer", "id": ask["id"], "ok": ok, "sig": wire.b64u(self.ph.sk.sign(msg))}
-            if fa:
-                a = self.host.asks[ask["id"]]
-                obj["fa"] = self.ph.auth.assert_(passkey.elevate_challenge(self.ph.channel, self.ph.did, a.rid, a.pk_kind, a.rid,
-                                                                           a.digest), b"0", nonce=b"0")
-            await self.host._app(self.s, obj)
-            return ask, await t
-        return asyncio.run(go())
+        super().setUp()
+        task(self.work, 'a', title={'zh':'每日简报','en':'Daily brief'})
+        self.enable('a')
 
     def test_plain_signed_allow_moves_and_is_logged(self):
         from agentj import approvals
-        ask, res = self.answer(True, fa=False)
-        self.assertFalse(ask.get("passkey_required"), "P570c: a plain confirm button, no Face ID")
-        self.assertEqual(ask["tool"], "agentj tasks migrate")
-        self.assertTrue(ask["summary"].startswith("Agent J 主机 · 定时任务改用系统定时\n把 1 个定时任务改用 Agent J 主机自己的系统定时？每日简报\n"))
-        self.assertNotIn("Agent 附注", ask["summary"], "L5: the host's own words, not an Agent note")
-        self.assertEqual((res, self.moved), ("yes", [["a"]]))
-        log = [x for x in approvals.read_log(self.st) if x.get("tool") == "agentj tasks migrate"]
-        self.assertEqual([(x.get("decision"), x.get("device")) for x in log][-1:], [("allow", self.ph.did)], "red line: device + log")
+        result, host = actual_ctl(self)
+        self.assertTrue(result['ok'], result)
+        self.assertIn('a', sysmigrate.migrated(self.st))
+        self.assertEqual([r for r in approvals.read_log(self.st) if r.get('tool')=='agentj tasks migrate'], [],
+                         'ordinary ingress must not fabricate a paired signature/device/grant')
+        self.assertIn('task_migrate_card', self.st.log_path.read_text())
 
-    def test_no_level_answers_the_card_by_itself(self):  # historical case retained; #520 adds signed-Full positive
+    def test_no_level_answers_the_card_by_itself(self):
         from agentj import approval_level
-        self.assertIn("agentj tasks migrate", approval_level.HARNESS_KEEPS, "the legacy list remains; the current Full-access path has its own UV floor")
         for lv in ("safe", "standard"):
-            sysmigrate._update(self.st, lambda m: (m.pop("decision", None), m.__setitem__("offers", {})))
-            self.sent.clear()                       # answer() signs the newest card: not the previous level's
-            with mock.patch.object(approval_level, "level", return_value=lv):
-                ask, res = self.answer(True, fa=False)
-            self.assertEqual(res, "yes", lv)
-            self.assertFalse(ask.get("passkey_required"), lv)
-        self.sent.clear()
-        sysmigrate._update(self.st, lambda m: (m.pop("decision", None), m.__setitem__("offers", {})))
-        from test_p551_confirm_levels import sign
-        from agentj import preferences, approvals
-        signed = sign(self.ph, {"key": "approval.level", "value": "harness"})
-        approval_level.note_signer(self.st, "approval.level", "harness", self.ph.did,
-                                   self.st.sign_key(self.ph.did), "migration-parent", signed)
-        self.host.preferences = preferences.validate({**self.host.preferences, "approval": {"level": "harness"}})
-        self.assertEqual(approval_level.level(self.host.preferences, self.st), "harness")
-        result = asyncio.run(sysmigrate.offer(self.host))
-        self.assertEqual(result, "yes", "#520 Full access executes ordinary migration autonomously")
-        self.assertFalse([o for _, o in self.sent if o.get("t") == "ask"])
-        self.assertEqual(approvals.read_log(self.st)[-1]["auto"], "level")
+            h = Host(self.st, YES)
+            with mock.patch.object(approval_level,'level',return_value=lv):
+                self.assertEqual(asyncio.run(sysmigrate.offer(h)), 'proposal')
+            self.assertEqual(h.asks, [])
+            self.assertEqual(sysmigrate.migrated(self.st), {})
+        with mock.patch.object(approval_level,'level',return_value='harness'):
+            self.assertEqual(asyncio.run(sysmigrate.offer(Host(self.st,YES))), 'proposal')
+            result, real = actual_ctl(self)
+        self.assertTrue(result['ok'], result)
+        self.assertIn('a', sysmigrate.migrated(self.st))
 
     def test_signed_decline_is_no(self):
-        _, res = self.answer(False, fa=False)
-        self.assertEqual((res, self.moved), ("no", []))
-        self.assertEqual(sysmigrate.load(self.st)["decision"]["answer"], "no")
+        # The old NO device-answer dictionary is not a fresh request capability.
+        h = Host(self.st, NO)
+        self.assertEqual(asyncio.run(sysmigrate.offer(h)), 'proposal')
+        result, real = actual_ctl(self, valid=False)
+        self.assertEqual(result, {'ok':False,'error':'proposal'})
+        self.assertEqual(sysmigrate.migrated(self.st), {})
+        self.assertEqual(h.asks, [])
 
 
 class Round3(Base):
@@ -1042,48 +1056,31 @@ class Round3(Base):
         halt.assert_called_once()
 
     def test_h5r_the_terminal_sends_the_same_card(self):
-        from agentj import policy_registry
-        task(self.work, "daily", title={"zh": "每日简报", "en": "Daily brief"})
-        self.enable("daily")
+        task(self.work, "daily", title={"zh": "每日简报", "en": "Daily brief"}); self.enable("daily")
         h = Host(self.st, NO)
-        res = asyncio.run(sysmigrate.ctl(h, {"cmd": "tasks_migrate", "ids": None}))
-        self.assertEqual(res, {"ok": False, "error": "no"})
-        tool, inp, kw = h.asks[0]
-        self.assertEqual(tool, "agentj tasks migrate")
-        self.assertIs(kw.pop("_company_proposal"), policy_registry.HOST_CARD, "L-b: the host's private sentinel")
-        self.assertEqual(kw, {"batch": False, "grant_info": True})
-        self.assertIn("每日简报", inp["summary"])
-        self.assertEqual(sysmigrate.migrated(self.st), {})
-        for ans, err in (({"behavior": "allow", "updatedInput": {}}, "none"), ({"behavior": "deny", "message": "timeout"}, "none")):
-            self.assertEqual(asyncio.run(sysmigrate.ctl(Host(self.st, ans), {"ids": ["daily"]}))["error"], err)
-        h = Host(self.st, YES)
-        h._online_approvers = lambda: set()
-        self.assertEqual(asyncio.run(sysmigrate.ctl(h, {"ids": None})), {"ok": False, "error": "no_remote"})
+        self.assertEqual(asyncio.run(sysmigrate.ctl(h, {"cmd":"tasks_migrate","ids":None})), {'ok':False,'error':'proposal'})
         self.assertEqual(h.asks, [])
-        h = Host(self.st, YES)
-        h._sysmigrate_card = True
-        self.assertEqual(asyncio.run(sysmigrate.ctl(h, {"ids": None}))["error"], "pending", "one card at a time")
-        with mock.patch.object(sysmigrate, "unavailable", return_value=None):
-            res = asyncio.run(sysmigrate.ctl(Host(self.st, YES), {"ids": None}))
-        self.assertEqual([(r["id"], r["result"]) for r in res["rows"]], [("daily", "migrated")])
-        r = sysmigrate.unmigrate(self.st, "daily")
-        self.assertNotIn("restored", r)
-        self.assertNotIn("daily", self.on(), "unmigrate always leaves the task off (enable it again to run it in Agent J)")
+        for ans, err in (({"behavior": "allow", "updatedInput": {}}, "none"), ({"behavior": "deny", "message": "timeout"}, "none")):
+            self.assertEqual(asyncio.run(sysmigrate.ctl(Host(self.st, ans), {"ids": ["daily"]}))["error"], 'proposal')
+        h = Host(self.st, YES); h._online_approvers=lambda:set()
+        self.assertEqual(asyncio.run(sysmigrate.ctl(h, {"ids":None})), {'ok':False,'error':'proposal'})
+        self.assertEqual(h.asks, [])
+        # Busy transaction remains a business negative on a verified frame.
+        result, real = actual_ctl(self, setup=lambda host:setattr(host,'_sysmigrate_card',True))
+        self.assertEqual(result['error'], 'pending')
+        result, real = actual_ctl(self)
+        self.assertEqual([(r['id'],r['result']) for r in result['rows']], [('daily','migrated')])
+        r = sysmigrate.unmigrate(self.st,'daily')
+        self.assertNotIn('restored',r); self.assertNotIn('daily',self.on())
 
     def test_h5r_cli_without_markers_or_terminal_still_only_sends_the_card(self):
-        task(self.work, "daily")
-        self.enable("daily")
-        h, err = Host(self.st, NO), io.StringIO()
-        with mock.patch("agentj.names.ctl_call", side_effect=lambda st, req, *a, progress=None, **k: asyncio.run(
-                sysmigrate.ctl(h, req, _sent(progress)))), \
-                mock.patch.dict(os.environ, {"CLAUDECODE": "1"}), mock.patch("sys.stdin", mock.Mock(isatty=lambda: False)), \
-                mock.patch.object(sysmigrate, "unavailable", return_value=None), contextlib.redirect_stderr(err), \
-                contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as e:
-            sysmigrate.cli(self.st, Namespace(mode="migrate", id=None, all=True, dry_run=False, json=False), "zh")
-        self.assertIn("已发到手机", err.getvalue())
-        self.assertIn("拒绝", str(e.exception.code))
-        self.assertEqual(len(h.asks), 1)
+        task(self.work, "daily"); self.enable("daily")
+        with mock.patch.dict(os.environ, {"CLAUDECODE":"1"}):
+            result, real = actual_ctl(self, valid=False)
+        self.assertEqual(result, {'ok':False,'error':'proposal'})
         self.assertEqual(sysmigrate.migrated(self.st), {})
+        result, real = actual_ctl(self)
+        self.assertTrue(result['ok'], result)
 
     def test_la_read_only_profiles_load_no_project_settings_or_mcp(self):
         claude = sysmigrate.headless("claude", True)[1]
@@ -1109,29 +1106,25 @@ class Round3(Base):
         self.assertEqual(seen, ["?"], "an unknown name: the main floor denies it")
 
     def test_lc_lb_host_card_ignores_the_main_turn_and_shows_only_with_the_sentinel(self):
-        from test_l1 import Phone, _owner_host, _ready, _state
+        from _p541_device import _owner_host
+        from test_l1 import _state
         from agentj import approvals, policy_registry, provenance
         st, sent = _state(str(self.root / "h")), []
-        ph = Phone(st, with_passkey=True)
         host = _owner_host(st, sent)
-        _ready(host, ph).p33 = True
-        host.ask_ttl = 0.3
         text = sysmigrate.card_text(["每日简报"], "zh")
-
         async def go(**kw):
-            n = len([o for _, o in sent if o.get("t") == "ask"])
-            r = await host.ask("agentj tasks migrate", {"summary": text}, batch=False, grant_info=True, **kw)
-            asks = [o for _, o in sent if o.get("t") == "ask"]
-            return r, asks[-1] if len(asks) > n else None
+            return await host.ask('agentj tasks migrate', {'summary':text}, batch=False, grant_info=True, **kw)
         with mock.patch.object(provenance, "untrusted_turn", return_value=True), \
                 mock.patch.object(provenance, "unattended_turn", return_value="system"), \
                 mock.patch.object(provenance, "owner_channel_turn", return_value="wechat"):
-            _, ask = asyncio.run(go(_company_proposal=policy_registry.HOST_CARD))
-        self.assertIsNotNone(ask, "a group / channel / unattended main turn does not decide the host's own card")
-        self.assertEqual(ask["summary"], text, "the host's text exactly, no request-hash line")
-        self.assertFalse([r for r in approvals.read_log(st) if r.get("reason") == "group_source"])
-        _, ask = asyncio.run(go())
-        self.assertTrue(ask is None or not ask["summary"].startswith("Agent J 主机"), "no sentinel: never shown as the host's card")
+            result = asyncio.run(go(_company_proposal=policy_registry.HOST_CARD))
+        self.assertEqual(result['reason'], 'application_ingress_unverified')
+        self.assertEqual(asyncio.run(go())['reason'], 'application_ingress_unverified')
+        self.assertEqual(sent, [])
+        self.assertEqual(approvals.read_log(st), [])
+        task(self.work,'daily'); self.enable('daily')
+        result, real = actual_ctl(self)
+        self.assertTrue(result['ok'],result)
 
     def test_ld_isolated_interpreter_and_bounded_report(self):
         self.assertEqual(sysmigrate.command(self.st, "x")[1], "-I")
@@ -1297,28 +1290,20 @@ class Round4(_Sigterm, Base):
         self.assertNotIn("--ignore-rules", sysmigrate.headless("codex", False)[1])
 
     def test_lg_after_a_decline_terminal_cards_are_rate_limited_and_never_say_dont_ask_again(self):
-        task(self.work, "daily")
-        self.enable("daily")
-        sysmigrate._update(self.st, lambda m: m.__setitem__("decision", {"answer": "no", "at": 1}))
+        task(self.work, "daily"); self.enable("daily")
+        sysmigrate._update(self.st, lambda m: m.__setitem__("decision", {"answer":"no","at":1}))
         h, sent = Host(self.st, NO), []
-
-        async def note():
-            sent.append(1)
-        res = [asyncio.run(sysmigrate.ctl(h, {"ids": None}, f))["error"] for f in (note, None, note)]
-        self.assertEqual(res, ["no", "declined", "declined"], "≤ 1 card per 24 h after a decline")
-        self.assertEqual((len(h.asks), sent), (1, [1]))
-        self.assertTrue(h.asks[0][1]["summary"].endswith("拒绝＝不迁。"), "L-g: a card someone asked for never says don't ask again")
-        self.assertIn("24 小时", sysmigrate.why("declined"))
-        sysmigrate._update(self.st, lambda m: m.pop("decision"))
-        h = Host(self.st, {"behavior": "deny", "message": "timeout"})
-        for _ in range(2):
-            asyncio.run(sysmigrate.ctl(h, {"ids": None}, note))
-        self.assertEqual(len(h.asks), 2, "no decline → not limited")
-        h = Host(self.st, NO)
-        with mock.patch.object(sysmigrate, "unavailable", return_value=None):
-            asyncio.run(sysmigrate.offer(h, plat="linux"))
-        self.assertTrue(h.asks[0][1]["summary"].endswith("拒绝＝不迁，以后别问。"), "the automatic card keeps it")
-        self.assertTrue(sysmigrate.card_text(["x"], "en", again=False).endswith("Deny = don't move."))
+        async def note(): sent.append(1)
+        res = [asyncio.run(sysmigrate.ctl(h, {"ids":None}, f))["error"] for f in (note,None,note)]
+        self.assertEqual(res, ['proposal','proposal','proposal'])
+        self.assertEqual((h.asks,sent), ([],[]))
+        self.assertIn("24 小时",sysmigrate.why('declined'))
+        sysmigrate._update(self.st,lambda m:m.pop('decision'))
+        h = Host(self.st, {"behavior":"deny","message":"timeout"})
+        for _ in range(2): self.assertEqual(asyncio.run(sysmigrate.ctl(h, {'ids':None}, note))['error'],'proposal')
+        self.assertEqual(h.asks,[])
+        self.assertEqual(asyncio.run(sysmigrate.offer(Host(self.st,NO),plat='linux')),'proposal')
+        self.assertTrue(sysmigrate.card_text(['x'],'en',again=False).endswith("Deny = don't move."))
 
     def test_qa_l2_native_shared_paths_map_the_tool_name(self):
         import re
@@ -1339,7 +1324,8 @@ class Round4(_Sigterm, Base):
         for name in ("shared.py", "shared_risk.py"):
             src = (HOST / "agentj" / name).read_text()
             calls = re.findall(r"host\.ask\(\s*([^,]+),", src)
-            self.assertTrue(calls and all("harness_tool(" in c for c in calls), (name, calls))
+            self.assertTrue(calls, (name, calls))
+            self.assertNotIn('host.ask("agentj tasks migrate"', src, 'native adapter cannot impersonate semantic Host command')
 
     def test_qa_l3_sent_line_only_once_serve_sent_the_card(self):
         import socket
@@ -1357,7 +1343,7 @@ class Round4(_Sigterm, Base):
                     contextlib.redirect_stderr(out), self.assertRaises(SystemExit) as e:
                 sysmigrate.cli(self.st, Namespace(mode="migrate", id=None, all=True, dry_run=False, json=False), "zh")
             self.assertNotIn("已发到手机", out.getvalue(), err)
-            self.assertEqual(e.exception.code, "✗ " + sysmigrate.why(err))
+            self.assertEqual(e.exception.code, "✗ " + sysmigrate.why("stopped" if err == "stopped" else "no_serve" if err == "no_serve" else "proposal"))
         srv = socket.socket(socket.AF_UNIX)
         srv.bind(str(self.st.sock_path))
         srv.listen(2)

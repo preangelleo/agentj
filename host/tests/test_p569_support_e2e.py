@@ -170,6 +170,12 @@ class OfficialReplyReachesIsolatedAgent(unittest.IsolatedAsyncioTestCase):
                                agent=SimpleNamespace(native_source=provenance.terminal(),
                                                      session={'pid': os.getpid(), 'procStart': proc[2]}))
         from agentj.history import History
+        from agentj.serve import Host
+        # Use the production identity/lineage methods; the actual child socket
+        # still supplies PID/UID and the remembered native owner origin.
+        host.kp=self.st.host_keypair();host.channel=wire.channel_id(host.kp.pub)
+        host.stopping=asyncio.Event();host.agent_cfg={}
+        host._agent_pids=Host._agent_pids.__get__(host)
         host.hist=History(self.st,on=False)
         host.hist_add=host.hist.add
         owner=host.hist.add({'k':'terminal','text':'Synthetic owner support request'},'', 'done')

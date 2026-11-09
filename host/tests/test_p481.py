@@ -89,7 +89,8 @@ class Upgrade(_Env):
         root = self.st.root.parent / 'work'; root.mkdir()
         original = '# My instructions\nKeep my words.\n'
         (root / 'CLAUDE.md').write_text(original)
-        working_root.record(self.st, root)
+        import test_working_root as root_fixture
+        root_fixture.apply_with_real_uv(self,self.st,{'agent.working_root':str(root)})  # existing state requires real paired UV
         before = self.st.config()
         with mock.patch('agentj.starters.ensure', return_value=[]):
             update.repair_upgrade(self.st, [{'id':'root-structure','status':'fail'}])

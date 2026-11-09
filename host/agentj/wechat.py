@@ -254,6 +254,85 @@ class Sessions(peer_session.PeerSessions):
             await self._owner.stop_all()
 
 
+class _HeldChannelApproval:
+    """One controller-owned data/control decision, never a main-session grant."""
+    def __init__(self, controller, target, ttl):
+        import copy
+        self.controller, self.host = controller, controller.h
+        self.state, self.store, self.data = self.host.st, controller.store, controller.store.data
+        self.host_identity = (self.host.channel,self.host.kp.pub,str(self.host.hist.epoch))
+        self.generation = self.data['generation']
+        self.target, self.input_sha = target, approvals.input_digest(target)
+        self.frozen_target = copy.deepcopy(target)
+        self.nonce, self.deadline = secrets.token_hex(16), time.monotonic() + ttl
+        self.ask, self.used, self.autonomous, self.timer = None, False, False, None
+        self.record = None
+        if isinstance(target, dict) and set(target) == {'id'} and isinstance(target['id'], str):
+            self.slot = target['id']
+            self.record = self.data['records'].get(self.slot)
+            if not isinstance(self.record, dict):raise ValueError('held_record')
+            self.record_sha = approvals.input_digest(self.record)
+        elif target in ({'op':'setup'}, {'op':'unbind'}):
+            self.slot = self.nonce
+        elif (isinstance(target, dict) and set(target) == {'op','config'} and target['op'] == 'avatar'
+              and isinstance(target['config'], dict) and target['config'].get('kind') in AVATAR_KINDS):
+            self.slot = self.nonce
+        else:raise ValueError('held_target')
+        self.account_sha = approvals.input_digest(self.data.get('account'))
+        self.passkeys = {did:self.pk(did) for did in self.state.devices()}
+        if not self.live():raise ValueError('held_subject')
+
+    def pk(self, did):
+        value = self.state.passkey_of_device(did)
+        return ({k:value.get(k) for k in ('id','alg','spki','rp')} if value else None)
+
+    def live(self):
+        c,h = self.controller,self.host
+        try:
+            if (self.used or c.h is not h or c not in (getattr(h,'wechat',None),getattr(h,'external_channels',None))
+                    or (h.channel,h.kp.pub,str(h.hist.epoch)) != self.host_identity
+                    or h.st is not self.state or c.store is not self.store or self.store.st is not self.state
+                    or c.store.data is not self.data or c.closed or h.stopped() or h.stopping.is_set()
+                    or self.data['generation'] != self.generation or time.monotonic() > self.deadline
+                    or approvals.input_digest(self.target) != self.input_sha
+                    or approvals.input_digest(self.data.get('account')) != self.account_sha):return False
+            if self.record is not None:
+                r = self.data['records'].get(self.slot)
+                if (r is not self.record or approvals.input_digest(r) != self.record_sha
+                        or r.get('state') != 'pending' or r.get('until',0) <= c.clock()
+                        or r.get('untrusted') is not True or r.get('execute') is not False):return False
+                if hasattr(c,'admitted') and not c.admitted(r):return False
+            if self.ask is not None:
+                a = self.ask
+                if (c.cards.get(self.slot) is not a or h.__dict__.get('_held_channel_asks',{}).get(a.rid) != (a,self)
+                        or getattr(a,'_held_nonce',None) != self.nonce
+                        or (a.rid,a.deadline,a.summary,a.digest,a.require_passkey,a.pk_if_any,a.pk_kind) != self.display
+                        or approvals.input_digest(a.tool_input) != self.input_sha):return False
+            if self.autonomous:
+                from . import approval_level
+                if (approval_level.level(getattr(h,'preferences',{}),h.st) != 'harness'
+                        or approvals.input_digest(approval_level.level_grant(h.st)) != self.auto_grant):return False
+            return True
+        except (KeyError, ValueError, TypeError, OSError, AttributeError):return False
+
+    def bind(self, ask):
+        if self.ask is not None or not self.live():raise ValueError('held_subject')
+        self.ask = ask
+        ask._held_nonce = self.nonce
+        self.display = (ask.rid,ask.deadline,ask.summary,ask.digest,ask.require_passkey,ask.pk_if_any,ask.pk_kind)
+
+    def allowed(self):
+        if not self.live():return False
+        if self.autonomous:return True
+        a = self.ask
+        if a is None or not a.fut.done() or a.fut.cancelled():return False
+        decision,did,key,_sig = a.fut.result()
+        if (decision != 'allow' or not did or not key or self.state.sign_key(did) != key
+                or getattr(a,'_held_verified',None) != (self.host,did,key,_sig,a.digest)):return False
+        needs_uv = a.require_passkey or a.pk_if_any and (self.pk(did) is not None or self.passkeys.get(did) is not None)
+        return not needs_uv or (a.uv_ok and self.pk(did) == self.passkeys.get(did))
+
+
 class WeChat:
     def __init__(self, host, *, api_factory=API, model=None, clock=time.time, namespace="wechat"):
         self.h, self.clock, self.api_factory = host, clock, api_factory
@@ -323,8 +402,10 @@ class WeChat:
     async def call(self, api, endpoint, *args, **kwargs):
         return await asyncio.to_thread(api.call, endpoint, *args, **kwargs)
 
-    async def setup(self):
+    async def setup(self, *, _approval=None):
         async with self.setup_lock:
+            if _approval is not None and not self.consume_approval(_approval, {'op':'setup'}):
+                return {'ok':False, 'why':'approval_changed'}
             if self.h.stopped() or self.closed:
                 return {'ok': False, 'why': 'stopped'}
             if self.store.data.get('binding_error'):
@@ -406,7 +487,9 @@ class WeChat:
             self.setup_deadline = self.setup_id = None
             self.publish()
 
-    async def unbind(self):
+    async def unbind(self, *, _approval=None):
+        if _approval is not None and not self.consume_approval(_approval, {'op':'unbind'}):
+            return {'ok':False, 'why':'approval_changed'}
         # Invalidate before cancelling I/O, so a delayed response cannot restore the binding.
         d = self.store.data
         d.update(account={}, cursor='', context='', sessions={}, generation=secrets.token_hex(16), binding_error=None, last_forward=None)
@@ -904,16 +987,49 @@ class WeChat:
         a = next((a for a in self.cards.values() if a.rid == obj.get('id')), None)
         if a is None:
             return False
-        # Adapter to the authoritative verifier, not a second signature implementation.
-        # Keep held channel cards out of the main Agent's MAX_ASKS and waiting state.
-        from types import SimpleNamespace
-        from .serve import Host
-        proxy = SimpleNamespace(asks={a.rid: a}, peers=None, st=self.h.st, channel=self.h.channel,
-                                _answer_refused=self.h._answer_refused)
-        await Host._answer(proxy, s, obj)
+        # Stay on the real Host: the private subject selects only this exact
+        # controller card, while the common verifier still checks sig and UV.
+        await self.h._answer_held_channel(self, a, s, obj)
+        return True
+
+    def discard_approval(self, receipt):
+        cap = receipt.get('_held_channel') if isinstance(receipt,dict) else None
+        if type(cap) is _HeldChannelApproval and cap.controller is self:
+            self._release_approval(cap)
+
+    def _release_approval(self, cap):
+        if cap.controller is not self:return
+        cap.used = True
+        a = cap.ask
+        if a is not None:
+            if self.cards.get(cap.slot) is a:self.cards.pop(cap.slot,None)
+            if self.h.__dict__.get('_held_channel_asks',{}).get(a.rid) == (a,cap):
+                self.h._held_channel_asks.pop(a.rid,None)
+        self.__dict__.get('_approval_receipts',{}).pop(cap.nonce,None)
+        if cap.timer is not None and cap.timer is not asyncio.current_task():cap.timer.cancel()
+
+    def consume_approval(self, receipt, target):
+        cap = receipt.get('_held_channel') if isinstance(receipt,dict) else None
+        if type(cap) is not _HeldChannelApproval or cap.controller is not self:return False
+        try:
+            return approvals.input_digest(target) == cap.input_sha and cap.allowed()
+        finally:
+            self._release_approval(cap)
+
+    def _retain_approval(self, cap, receipt):
+        if not isinstance(receipt,dict):return False
+        receipt['_held_channel'] = cap
+        self.__dict__.setdefault('_approval_receipts',{})[cap.nonce] = cap
+        async def expire():
+            try:await asyncio.sleep(max(0,cap.deadline-time.monotonic()))
+            finally:self._release_approval(cap)
+        cap.timer = self.h._bg(expire(), 'channel_approval_receipt')
+        self.card_tasks.add(cap.timer)
+        cap.timer.add_done_callback(self.card_tasks.discard)
         return True
 
     async def pause(self):
+        for cap in list(self.__dict__.get('_approval_receipts',{}).values()):self._release_approval(cap)
         for a in list(self.cards.values()):
             if not a.fut.done():
                 a.fut.set_result(('deny', None, None, None))
@@ -948,28 +1064,46 @@ class WeChat:
                              decision='allow', reason='level_harness', grant=approval_level.level_grant(self.h.st))
             self.h.st.log('wechat_confirmation_auto', operation='transfer_data' if transfer else 'unbind',
                           owner_answered=False, execute=False)
-            if isinstance(receipt, dict):
-                receipt['autonomous'] = True
-            return True
-        a = Ask(rid, 'wechat_confirm', summary, approvals.shown_digest('wechat_confirm', summary), target,
-                approvals.input_digest(target), time.monotonic() + ttl,
-                asyncio.get_running_loop().create_future(), pk_if_any=pk,
-                require_passkey=target == {'op': 'setup'})
-        self.cards[target.get('id', rid)] = a
-        self.h._post(self.h._send_ready, lambda s: self.h._ask_msg(a, s))
-        self.h.status_changed()
-        self.h.push_notify('ask')
+            try:
+                cap = _HeldChannelApproval(self,target,ttl)
+                cap.autonomous = True
+                cap.auto_grant = approvals.input_digest(approval_level.level_grant(self.h.st))
+                if not cap.live():return False
+            except (ValueError,TypeError,OSError):return False
+            if isinstance(receipt,dict):receipt['autonomous'] = True
+            return self._retain_approval(cap,receipt)
+        from . import action_policy, approval_review
         try:
-            await asyncio.wait({a.fut}, timeout=ttl)
-            decision, did, sk, sig = a.fut.result() if a.fut.done() else ('deny', None, None, None)
-            allowed = decision == 'allow' and bool(did) and not self.h.stopped() and not self.closed
-            approvals.record(self.h.st, rid=rid, agent='host', tool='wechat_confirm', input_sha256=a.input_sha,
-                             shown_sha256=a.digest, decision=decision if did else 'deny',
-                             reason='device' if did else ('serve_stop' if self.closed else 'estop' if self.h.stopped() else 'timeout'), device=did, sign_pub=sk, sig=sig)
-            return allowed
+            cap = _HeldChannelApproval(self,target,ttl)
+            display = await asyncio.to_thread(action_policy.display_normalizer,lang=self.h.lang,
+                                             workdir=(self.h.agent_cfg or {}).get('dir'))
+            summary = approval_review.display_text(summary,display)
+            if not cap.live() or len(summary.encode('utf-8')) > 24000:return False
+        except (ValueError,TypeError,OSError,RecursionError):return False
+        a = Ask(rid,'wechat_confirm',summary,approvals.shown_digest('wechat_confirm',summary),
+                cap.frozen_target,cap.input_sha,cap.deadline,asyncio.get_running_loop().create_future(),
+                pk_if_any=pk,require_passkey=target == {'op':'setup'})
+        self.cards[cap.slot] = a
+        try:self.h._bind_native_ask(a,'held_channel',cap)
+        except (ValueError,TypeError):
+            self._release_approval(cap)
+            return False
+        self.h._post(self.h._send_ready, lambda s:self.h._ask_msg(a,s))
+        self.h.status_changed();self.h.push_notify('ask')
+        retain = False
+        try:
+            await asyncio.wait({a.fut},timeout=max(0,cap.deadline-time.monotonic()))
+            decision,did,key,sig = a.fut.result() if a.fut.done() else ('deny',None,None,None)
+            allowed = cap.allowed()
+            approvals.record(self.h.st,rid=rid,agent='host',tool='wechat_confirm',input_sha256=a.input_sha,
+                             shown_sha256=a.digest,decision=decision if did else 'deny',
+                             reason='device' if did else ('serve_stop' if self.closed else 'estop' if self.h.stopped() else 'timeout'),
+                             device=did,sign_pub=key,sig=sig)
+            if allowed:retain = self._retain_approval(cap,receipt)
+            return allowed and retain
         finally:
-            self.cards.pop(target.get('id', rid), None)
-            self.h._post(self.h._send_ready, lambda s: {'t': 'ask_done', 'id': rid, 'result': 'gone'})
+            if not retain:self._release_approval(cap)
+            self.h._post(self.h._send_ready,lambda s:{'t':'ask_done','id':rid,'result':'gone'})
             self.h.status_changed()
 
     async def confirm(self, r):
@@ -979,16 +1113,18 @@ class WeChat:
         text = text.replace('来自微信', '来自' + {'mail':'邮件', 'telegram':'Telegram'}.get(r.get('source'), '微信')).replace('From WeChat', 'From ' + r.get('source', 'WeChat'))
         text += r['text'][:1000] + '\n' + '\n'.join(r['paths'])
         receipt = {}
-        allowed = await self.approval(text, {'id': r['id']}, max(1, r['until'] - self.clock()), receipt=receipt, pk=False)
-        if self.closed or self.h.stopped():
-            return                           # restart / stop keeps the durable pending request
-        if allowed:
-            await self.claim(r['id'], approved=True, autonomous=receipt.get('autonomous') is True)
-        elif r['state'] == 'pending':
-            r['state'] = 'expired' if r['until'] <= self.clock() else 'denied'
-            self.store.save()
+        try:
+            allowed = await self.approval(text, {'id': r['id']}, max(1, r['until'] - self.clock()), receipt=receipt, pk=False)
+            if self.closed or self.h.stopped():
+                return                           # restart / stop keeps the durable pending request
+            if allowed:
+                await self.claim(r['id'], approved=True, autonomous=receipt.get('autonomous') is True, _approval=receipt)
+            elif r['state'] == 'pending':
+                r['state'] = 'expired' if r['until'] <= self.clock() else 'denied'
+                self.store.save()
+        finally:self.discard_approval(receipt)
 
-    async def claim(self, rid, *, source=None, approved=False, autonomous=False):
+    async def claim(self, rid, *, source=None, approved=False, autonomous=False, _approval=None):
         async with self.handoff_lock:
             if not approved and not (isinstance(source, dict) and source.get('kind') == 'phone' and source.get('role') == 'owner'):
                 return {'ok': False, 'why': 'owner_phone_required'}
@@ -997,6 +1133,8 @@ class WeChat:
                 return {'ok': False, 'why': 'not_pending'}
             if not self.h.agent:
                 return {'ok': False, 'why': 'no_agent'}
+            if approved and not self.consume_approval(_approval, {'id':rid}):
+                return {'ok':False, 'why':'approval_changed'}
             r['state'] = 'uncertain'              # before crossing to main queue; never replay
             self.store.save()
             payload = {'kind': 'wechat_handoff', 'source': r.get('source', 'wechat'), 'untrusted': True, 'execute': False,
@@ -1058,9 +1196,12 @@ class WeChat:
                 return {'ok': False, 'why': 'owner_required'}
             summary = ('连接微信 ClawBot，仅服务扫码者本人。' if op == 'setup' else '解除这台主机的微信通道绑定。') if self.h.lang == 'zh' else ('Connect WeChat ClawBot for the scanning owner only.' if op == 'setup' else 'Unbind this host from WeChat.')
             # #520: unbinding is reversible; setup establishes a new channel trust root and requires UV.
-            if not await self.approval(summary, {'op': op}, pk=False):
-                return {'ok': False, 'why': 'denied'}
-            return await (self.setup() if op == 'setup' else self.unbind())
+            receipt = {}
+            try:
+                if not await self.approval(summary, {'op':op}, pk=False, receipt=receipt):
+                    return {'ok':False, 'why':'denied'}
+                return await (self.setup(_approval=receipt) if op == 'setup' else self.unbind(_approval=receipt))
+            finally:self.discard_approval(receipt)
         return {'ok': False, 'why': 'shape'}
 
     async def poll_once(self, api, generation):

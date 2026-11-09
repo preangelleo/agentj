@@ -30,15 +30,15 @@ class CoreV10(unittest.TestCase):
             self.assertIn(triage, lines[4])
 
     def test_three_way_triage_and_harness_tools(self):
-        for needle in ("一定派 CEO", "派子 Agent", "Agent/Task", "OpenCode 用 task", "headless", "`codex exec`",
-                       "仅立等可取且无 CEO 的一句话小事亲做"):
+        for needle in ("默认请求分三类：① 花名册里有 CEO → 派 CEO", "派子 Agent", "Agent/Task", "OpenCode 用 task", "headless", "`codex exec`",
+                       "立等可取且无 CEO 的一句话小事亲做"):
             self.assertIn(needle, self.zh)
-        for needle in ("always dispatch to the CEO", "dispatch a sub-Agent", "Agent/Task", "OpenCode task",
-                       "headless", "`codex exec`", "only an immediate one-sentence task with no CEO is yours"):
+        for needle in ("Sort each request by default: (1) roster CEO exists → dispatch to the CEO", "dispatch a sub-Agent", "Agent/Task", "OpenCode task",
+                       "headless", "`codex exec`", "an immediate one-sentence task with no CEO is yours"):
             self.assertIn(needle, self.en)
 
     def test_handed_off_then_standby_and_progress_card(self):
-        for needle in ("已交代给 X，有结论再报", "并待命", "退出码不够", "主会话随时接主人消息", "只派活、写验收、跑验收、汇报"):
+        for needle in ("已交代给 X，有结论再报", "并待命", "退出码不够", "主会话随时接主人消息", "默认派活、写验收、跑验收、汇报"):
             self.assertIn(needle, self.zh)
         for needle in ("Handed to X; I will report when there is a result", "return to standby", "not exit code", "Keep the main session ready for owner messages",
                        "dispatch, write acceptance checks, run them and report"):

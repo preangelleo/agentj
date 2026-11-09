@@ -47,8 +47,11 @@ def tearDownModule():
 
 class _Real(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        from test_l1 import _host, _state, Phone, _ready
+        from test_l1 import _host, _state, _ready
+        from _p541_device import Phone
         self.tmp = tempfile.TemporaryDirectory(prefix='p562a-', dir=TEST_TMP); self.addCleanup(self.tmp.cleanup)
+        prefs=mock.patch.dict(os.environ, {'XDG_CONFIG_HOME':str(pathlib.Path(self.tmp.name)/'config')})
+        prefs.start();self.addCleanup(prefs.stop)
         self.st = _state(self.tmp.name)
         self.work = pathlib.Path(self.tmp.name) / 'work'; self.work.mkdir()
         (self.work / 'out').mkdir(); (self.work / 'out' / 'report.pdf').write_bytes(PDF)
@@ -75,22 +78,55 @@ class _Real(unittest.IsolatedAsyncioTestCase):
         return [o for _, o in self.sent if o.get('t') == 'ask']
 
     async def face_id_step(self, send, notice):
-        """A ③ step of this channel's turn: the Web App card wants Face ID; the channel is told where; the signed answer
-        with the passkey assertion is what allows it."""
+        """Actual native signed tap, then two independent listed calls with fresh UV."""
+        from agentj import approval_review
         self.host.agent.cur_send = send
-        with mock.patch.object(owner_channels, 'CARD_NOTICE_AFTER', 0.05):
-            t = asyncio.ensure_future(self.host.ask('Bash', {'command': 'sudo rm -rf /opt/old-build'}))
-            for _ in range(300):
-                await asyncio.sleep(0.01)
-                open_ = [o for o in self.cards() if o['id'] in self.host.asks]
-                if open_ and notice():
-                    break
-            card = open_[-1]
-            told = notice()
-            await self.host._answer(self.s, self.phone.answer(card, True))
-            res = await t
-        self.host.agent.cur_send = None
-        return card, told, res
+        cards = []
+        last_fa = None
+        try:
+            expected_source = approval_review.snapshot(self.host)
+            for tool, inp, native in (
+                    ('Bash', {'command': 'sudo rm -rf /opt/old-build'}, True),
+                    ('agentj secret request', {'name': 'synthetic-test-only'}, False),
+                    ('agentj secret request', {'name': 'synthetic-test-only'}, False)):
+                task = asyncio.create_task(self.host.ask(tool, inp, _harness_permission=native))
+                try:
+                    for _ in range(100):
+                        if self.host.asks or task.done():
+                            break
+                        await asyncio.sleep(0.005)
+                    self.assertFalse(task.done(), 'native permission must wait for a real signed tap')
+                    ask = next(iter(self.host.asks.values()))
+                    card = self.host._ask_msg(ask, self.s)
+                    self.assertEqual(bool(card.get('passkey_required')), not native)
+                    source = card['envelope']['source']
+                    self.assertEqual(source['channel'], expected_source.get('channel', 'unknown'))
+                    self.assertEqual(source['verified'], bool(expected_source.get('verified')))
+                    if source['channel'] == 'unknown':
+                        self.assertFalse(source['verified'], 'no channel label can invent owner authority')
+                    obj = self.phone.answer(card, True)
+                    if not native:
+                        unsigned_uv = dict(obj); unsigned_uv.pop('fa')
+                        await self.host._answer(self.s, unsigned_uv)
+                        self.assertFalse(task.done()); self.assertFalse(ask.fut.done())
+                        if last_fa is not None:
+                            stale_uv = dict(obj); stale_uv['fa'] = last_fa
+                            await self.host._answer(self.s, stale_uv)
+                            self.assertFalse(task.done()); self.assertFalse(ask.fut.done())
+                        last_fa = obj['fa']
+                    await self.host._answer(self.s, obj)
+                    res = await task
+                    self.assertEqual(res['behavior'], 'allow')
+                    cards.append(card)
+                finally:
+                    if not task.done():
+                        task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+            self.assertNotEqual(cards[1]['id'], cards[2]['id'])
+            self.assertNotEqual(cards[1]['envelope']['nonce'], cards[2]['envelope']['nonce'])
+            return cards[-1], notice(), res
+        finally:
+            self.host.agent.cur_send = None
 
     def page(self, turn):
         return self.host.hist.get(turn)
@@ -156,16 +192,17 @@ class WeChatAcceptance(_Real):
             await asyncio.gather(*list(self.c.card_tasks))
         self.assertEqual(self.said()[n:], ['周报做好了', 'file'])
         self.assertEqual(up.call_args.args[2], PDF)
+        self.assertNotIn(str(self.work), '\n'.join(x for x in self.said()[n:] if isinstance(x, str)))
         record('wechat', 'file', channel=self.said()[n:], bytes=len(PDF))
-        # ④ a Face ID step: the card on the Web App, WeChat only hears where to confirm
+        # ④ actual native tap + fresh per-call list UV; history keeps the real channel source
         await self.receive('把 /opt/old-build 删掉')
         send = self.sends()[-1]
         n = len(self.tr.calls)
         card, told, res = await self.face_id_step(send, lambda: self.said()[n:])
-        self.assertTrue(card.get('passkey_required')); self.assertIn('来自微信', card['summary'])
-        self.assertEqual(told, ['已转到 Agent J 网页，请在那里确认。'])
+        self.assertTrue(card.get('passkey_required')); self.assertEqual(self.page(send.turn)['src']['k'], 'wechat')
+        self.assertEqual(told, [], 'list cards carry source in the signed envelope; no legacy channel notice')
         self.assertEqual(res['behavior'], 'allow')
-        record('wechat', 'face_id', card_passkey=True, card_origin='来自微信', channel=told, decision=res['behavior'])
+        record('wechat', 'face_id', card_passkey=True, history_source='wechat', native_signed_tap=True, fresh_uv_calls=2, channel=told, decision=res['behavior'])
 
     async def test_336_refusal_says_why_in_wechat(self):
         refused = TurnResult('reply', '不能生成真实人物的写实肖像。', 'image', None, None)
@@ -232,9 +269,9 @@ class TelegramAcceptance(_Real):
         send = self.sends()[-1]
         n = len(self.bot.texts())
         card, told, res = await self.face_id_step(send, lambda: self.bot.texts()[n:])
-        self.assertTrue(card.get('passkey_required')); self.assertIn('来自 Telegram', card['summary'])
-        self.assertEqual(told, ['已转到 Agent J 网页，请在那里确认。']); self.assertEqual(res['behavior'], 'allow')
-        record('telegram', 'face_id', card_passkey=True, card_origin='来自 Telegram', channel=told, decision=res['behavior'])
+        self.assertTrue(card.get('passkey_required')); self.assertEqual(self.page(send.turn)['src']['k'], 'telegram')
+        self.assertEqual(told, [], 'list cards carry source in the signed envelope; no legacy channel notice'); self.assertEqual(res['behavior'], 'allow')
+        record('telegram', 'face_id', card_passkey=True, history_source='telegram', native_signed_tap=True, fresh_uv_calls=2, channel=told, decision=res['behavior'])
 
     async def test_a_stranger_keeps_the_old_path(self):
         await self.t.handle_round([self.update('你好，我是机主', uid=777)], self.cfg)
@@ -276,8 +313,13 @@ class MailAcceptance(_Real):
         return [email.message_from_bytes(raw, policy=email.policy.default) for _f, _t, raw in self.smtp.sent]
 
     async def reply_with_card(self, turn_text_send, words):
-        """The main answer → the reply mail; sending it is the mail channel's card (Face ID, P503d), answered on the phone."""
+        """The main answer reaches SMTP; ordinary replies do not synthesize UV cards."""
         self.answer_turn(turn_text_send, words)
+        from agentj import uv_list
+        if not uv_list.required('agentj mail reply'):
+            await asyncio.gather(*list(self.host.mail.sending))
+            self.assertFalse(any(o['tool']=='agentj mail reply' and o['id'] in self.host.asks for o in self.cards()))
+            return None
         for _ in range(300):
             await asyncio.sleep(0.01)
             open_ = [o for o in self.cards() if o['id'] in self.host.asks and o['tool'] == 'agentj mail reply']
@@ -293,22 +335,17 @@ class MailAcceptance(_Real):
         [send] = self.sends()
         self.assertEqual(send.source, provenance.email_owner(self.boss))
         card = await self.reply_with_card(send, '明天东京晴，最高 18 度。')
-        self.assertIn('来自邮件', card['summary'])
+        self.assertIsNone(card, 'ordinary mail reply is outside the UV list')
         [m] = self.mails()
         self.assertIn('明天东京晴', m.get_body(('plain',)).get_content())
         self.assertEqual(self.page(send.turn)['src']['k'], 'email')
-        record('mail', 'question', main_submitted=True, page_label='邮件', reply_card_origin='来自邮件', replied=True)
+        record('mail', 'question', main_submitted=True, page_label='邮件', reply_card=False, replied=True)
         drawn = TurnResult('reply', '画好了：东京塔前的人像。', 'image', None, None); drawn.images = [('image/png', PNG)]
         with mock.patch.object(channel_native, 'draw_models', return_value=[None]), \
                 mock.patch.object(channel_native.NativeCodex, 'turn', AsyncMock(return_value=drawn)):
-            task = asyncio.ensure_future(self.deliver(ASK_336))
-            for _ in range(300):
-                await asyncio.sleep(0.01)
-                open_ = [o for o in self.cards() if o['id'] in self.host.asks and o['tool'] == 'agentj mail reply']
-                if open_:
-                    break
-            await self.host._answer(self.s, self.phone.answer(open_[-1], True))
-            await task
+            before_cards = len(self.cards())
+            await self.deliver(ASK_336)
+            self.assertEqual(len(self.cards()), before_cards, 'ordinary image reply does not synthesize UV')
         m = self.mails()[-1]
         self.assertEqual([p.get_content_type() for p in m.iter_attachments()], ['image/png'])
         self.assertEqual(len(self.sends()), 1)
@@ -322,9 +359,9 @@ class MailAcceptance(_Real):
         await self.deliver('把 /opt/old-build 删掉')
         send = self.sends()[-1]
         card, told, res = await self.face_id_step(send, lambda: True)
-        self.assertTrue(card.get('passkey_required')); self.assertIn('来自邮件', card['summary'])
+        self.assertTrue(card.get('passkey_required')); self.assertEqual(self.page(send.turn)['src']['k'], 'email')
         self.assertEqual(res['behavior'], 'allow')
-        record('mail', 'face_id', card_passkey=True, card_origin='来自邮件', decision=res['behavior'],
+        record('mail', 'face_id', card_passkey=True, history_source='email', native_signed_tap=True, fresh_uv_calls=2, decision=res['behavior'],
                channel_notice='none (a mail channel gets no extra "confirm on the web" mail; the reply mail follows)')
 
     async def test_forged_and_stranger_mail_never_reach_main(self):

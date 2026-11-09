@@ -322,6 +322,9 @@ def _codex(host, cfg, sid):
             if self.tid:
                 return True
             base = {"cwd": self.cfg["dir"], **self.policy(), "developerInstructions": SYSTEM}
+            hook_config = await self._protected_hook_config()
+            if hook_config:
+                base["config"] = hook_config
             res = None
             if sid:
                 try:

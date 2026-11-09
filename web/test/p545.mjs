@@ -39,7 +39,7 @@ mkdirSync(join(tmp, 'work'));
 writeFileSync(join(tmp, 'claude'), `#!/bin/sh\nexec python3 ${join(HERE, '../../host/tests/fakeclaude.py')} "$@"\n`);
 chmodSync(join(tmp, 'claude'), 0o700);
 const mkHost = (name) => {
-  const h = new HostProc({ relay: relay.url, web: web.url, env: { AGENTJ_CLAUDE_BIN: join(tmp, 'claude'), AGENTJ_TEST_PASSKEY_ORIGIN: 'loopback' } }).init();
+  const h = new HostProc({ relay: relay.url, web: web.url, env: { AGENTJ_CLAUDE_BIN: join(tmp, 'claude'), AGENTJ_TEST_PASSKEY_ORIGIN: 'loopback' } }).init({ workingRoot: join(tmp, 'work') });
   h.run(['agent', 'claude', '--dir', join(tmp, 'work')]);
   h.run(['name', name]);
   return h;

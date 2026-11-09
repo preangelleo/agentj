@@ -301,6 +301,12 @@ def _own_card(args):
 
 
 def main_requirement(tool, tool_input=None, *, env=None, cwd=None):
+    """Main tool admission follows the harness; explicit Host commands own UV."""
+    from . import uv_list
+    return "uv" if uv_list.required(tool, tool_input, cwd=cwd, env=env) else "allow"
+
+
+def _legacy_main_requirement(tool, tool_input=None, *, env=None, cwd=None):
     action = tool_action(tool)
     requirement = decision("main", action)
     if requirement == "deny":

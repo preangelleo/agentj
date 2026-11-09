@@ -10,9 +10,44 @@ import pathlib
 import tempfile
 import unittest
 from types import SimpleNamespace
-from agentj import action_policy, approvals, serve
+from agentj import action_policy, approvals, approval_review, serve, wire
+from agentj.noise import CipherState
 from agentj.state import State
-from test_l1 import Phone, _owner_host, _ready
+from test_l1 import _ready
+from _p541_device import Phone, _owner_host
+
+
+def real_outbound(host, session, sent):
+    """Actual send_app privacy projection, padding, Noise and receive defrag.
+
+    Only the relay's final byte sink is local. The signed ask is never edited
+    or passed through a test substitute for a privacy routine.
+    """
+    key = os.urandom(32)
+    session.send = CipherState(key)
+    session.p33 = True
+    recv, fragments = CipherState(key), wire.Defrag()
+    async def relay_sink(op, cid, payload=b''):
+        if op != wire.OP_DATA:
+            return
+        assert cid == session.cid and payload[0] == wire.DATA
+        message = fragments.feed(wire.unpad_json(recv.decrypt(b'', payload[1:]), wire.MAX_JSON_P33))
+        if message is not None:
+            sent.append((cid, message))
+    host._op = relay_sink
+    host.send_app = serve.Host.send_app.__get__(host)
+    return sent
+
+
+async def outbound_card(test, host, sent, task):
+    for _ in range(200):
+        cards = [obj for _, obj in sent if obj.get('t') == 'ask']
+        if cards:
+            return cards[-1]
+        if task.done():
+            test.fail('request ended without a transmitted card: ' + str(task.result()))
+        await asyncio.sleep(.005)
+    test.fail('no transmitted card within local fixture budget')
 
 
 class Summary(unittest.TestCase):
@@ -72,18 +107,19 @@ class HostCards(unittest.IsolatedAsyncioTestCase):
             env = project / '.env'; env.write_text('FIXTURE_TEST_SECRET=' + value + '\n'); env.chmod(0o600)
             host = _owner_host(_state(d), [])
             host.agent_cfg = {'dir': str(project)}
-            phone = Phone(host.st, with_passkey=True); _ready(host, phone)
-            task = asyncio.create_task(host.ask('Bash', {'command':'$UNKNOWN -m test', 'payload':value, 'scope':'read'}))
+            phone = Phone(host.st, with_passkey=True); session = _ready(host, phone)
+            sent = []; real_outbound(host, session, sent)
+            task = asyncio.create_task(host.ask('Bash', {'command':'$UNKNOWN -m test', 'payload':value, 'scope':'read'}, _harness_permission=True))
             try:
                 for _ in range(200):
                     if host.asks or task.done(): break
                     await asyncio.sleep(.005)
                 self.assertTrue(host.asks)
-                card = next(iter(host.asks.values()))
-                self.assertNotIn(value, card.summary)
-                self.assertNotIn(value[:8], card.summary)
-                self.assertIn('scope', card.summary); self.assertIn('read', card.summary)
-                card.fut.set_result(('deny','fixture',None,None)); await task
+                card = await outbound_card(self, host, sent, task)
+                self.assertNotIn(value, json.dumps(card))
+                self.assertNotIn(value[:8], json.dumps(card))
+                self.assertIn('scope', card['summary']); self.assertIn('read', card['summary'])
+                await host._answer(session, phone.answer(card, False)); await task
             finally:
                 if not task.done(): task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
@@ -94,18 +130,21 @@ class HostCards(unittest.IsolatedAsyncioTestCase):
                 st = State(pathlib.Path(d)); st.init()
                 sent = []; host = _owner_host(st, sent)
                 phone = Phone(st, with_passkey=True); session = _ready(host, phone)
+                real_outbound(host, session, sent)
                 inp = {'command': 'echo ' + 'x' * 2100 + '; rm /fixture/final-target',
                        'summary': 'harmless', 'card': 'do not show parameters', 'description': 'only a read'}
-                task = asyncio.create_task(host.ask(tool, inp, require_passkey=True))
+                task = asyncio.create_task(host.ask(tool, inp, require_passkey=True, _harness_permission=True))
                 try:
                     for _ in range(200):
                         if host.asks or task.done(): break
                         await asyncio.sleep(.005)
                     self.assertTrue(host.asks)
-                    card = host._ask_msg(next(iter(host.asks.values())), session)
+                    card = await outbound_card(self, host, sent, task)
                     self.assertIn('/fixture/final-target', card['summary'])
-                    self.assertIn('Agent 附注：', card['summary'])
-                    self.assertTrue(card['passkey_required'])
+                    self.assertIn('description', card['summary'])
+                    self.assertEqual(card.get('approval_v'), 2)
+                    self.assertEqual(card['envelope_sha256'], approval_review.digest(card['envelope']))
+                    self.assertEqual(card['envelope']['input_sha256'], approvals.input_digest(inp))
                     wrong = phone.answer(card, True, summary=card['summary'].replace('final-target', 'different-target'))
                     await host._answer(session, wrong)
                     self.assertFalse(task.done())
@@ -118,6 +157,33 @@ class HostCards(unittest.IsolatedAsyncioTestCase):
                 finally:
                     if not task.done(): task.cancel()
                     await asyncio.gather(task, return_exceptions=True)
+
+    async def test_host_held_source_and_root_are_private_on_actual_wire(self):
+        with tempfile.TemporaryDirectory() as d:
+            st = State(pathlib.Path(d)/'state'); st.init()
+            sent = []; host = _owner_host(st, sent)
+            host.agent_cfg = {**(host.agent_cfg or {}), 'dir':d}
+            secret = 'fixture-source-private-value-6841'
+            pathlib.Path(d, '.env').write_text('SOURCE_SECRET=' + secret + '\n')
+            host.agent.submit = lambda item: None
+            host.desktop_input('Synthetic owner request containing ' + secret + ' fragment ' + secret[:8])
+            phone = Phone(st, with_passkey=True); session = _ready(host, phone)
+            real_outbound(host, session, sent)
+            task = asyncio.create_task(host.ask('Bash', {'command':'date'}, _harness_permission=True))
+            try:
+                card = await outbound_card(self, host, sent, task)
+                transmitted = json.dumps(card)
+                self.assertNotIn(secret, transmitted)
+                self.assertNotIn(secret[:8], transmitted)
+                self.assertTrue(card['envelope']['source']['verified'])
+                ask = host.asks[card['id']]
+                self.assertIn(secret, ask.review_record['text'])
+                self.assertEqual(card['envelope']['source_record_sha256'], approval_review.digest(ask.review_record))
+                await host._answer(session, phone.answer(card, True))
+                self.assertEqual((await asyncio.wait_for(task,2))['behavior'], 'allow')
+            finally:
+                if not task.done(): task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
 
     async def test_credentials_keep_effect_through_real_host_ask(self):
         secret = 'demo-only-password'
@@ -192,25 +258,26 @@ class HostCards(unittest.IsolatedAsyncioTestCase):
                 host.agent_cfg = {**(host.agent_cfg or {}), 'dir': d}
                 pathlib.Path(d, '.env').write_text('P513_FILE_SECRET=' + known + '\nP513_SHORT_SECRET=eightval\nP513_NUM_SECRET=12345678\n')
                 phone = Phone(st, with_passkey=True); session = _ready(host, phone)
-                task = asyncio.create_task(host.ask(tool, inp, require_passkey=True))
+                real_outbound(host, session, sent)
+                task = asyncio.create_task(host.ask(tool, inp, require_passkey=True, _harness_permission=True))
                 try:
                     for _ in range(200):
                         if host.asks or task.done(): break
                         await asyncio.sleep(.005)
                     self.assertTrue(host.asks)
-                    card = host._ask_msg(next(iter(host.asks.values())), session)
+                    card = await outbound_card(self, host, sent, task)
                     for value in hidden:
-                        self.assertNotIn(value, card['summary'].replace('\\"', '"'))
+                        self.assertNotIn(value, json.dumps(card).replace('\\"', '"'))
                     for value in retained:
                         self.assertIn('decoded' if value == '已解码' and lang == 'en' else value, card['summary'])
                     if str(inp.get('content', '')).startswith('payload={'):
-                        fields, _ = json.JSONDecoder().raw_decode(card['summary'][card['summary'].index('{\n'):])
+                        fields, _ = json.JSONDecoder().raw_decode(card['summary'][card['summary'].index('{'):])
                         nested = json.loads(fields['content'].removeprefix('payload='))
                         self.assertEqual(nested['password'], '<redacted>')
                         self.assertEqual(nested['arbitrary'], '<redacted>')
                         self.assertEqual(nested['destination'], 'target.example.com/path')
                         self.assertEqual(nested['scope'], 'upload')
-                    self.assertIn('Request SHA-256:', card['summary'])
+                    self.assertEqual(card['envelope']['input_sha256'], approvals.input_digest(inp))
                     await host._answer(session, phone.answer(card, True))
                     self.assertEqual((await asyncio.wait_for(task, 2))['behavior'], 'allow')
                     # The wire object and every local audit file also stay clean.
@@ -230,8 +297,9 @@ class HostCards(unittest.IsolatedAsyncioTestCase):
             with self.subTest(tool=tool), tempfile.TemporaryDirectory() as d:
                 st = State(pathlib.Path(d)); st.init()
                 sent = []; host = _owner_host(st, sent)
-                _ready(host, Phone(st, with_passkey=True))
-                result = await asyncio.wait_for(host.ask(tool, inp, require_passkey=True), 2)
+                session = _ready(host, Phone(st, with_passkey=True))
+                real_outbound(host, session, sent)
+                result = await asyncio.wait_for(host.ask(tool, inp, require_passkey=True, _harness_permission=True), 2)
                 self.assertEqual(result['behavior'], 'deny')
                 self.assertFalse(host.asks)
                 self.assertFalse([o for _, o in sent if o.get('t') == 'ask'])
@@ -240,11 +308,20 @@ class HostCards(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as d:
             st = State(pathlib.Path(d)); st.init()
             sent = []; host = _owner_host(st, sent); host.lang = 'en'
-            _ready(host, Phone(st, with_passkey=True))
+            phone = Phone(st, with_passkey=True); session = _ready(host, phone)
+            real_outbound(host, session, sent)
             inp = {'payload': ''}
             empty = serve.approval_summary('SandboxOnce', inp, host._classify('SandboxOnce', inp), 'en')
             inp['payload'] = 'x' * (23950 - len(empty.encode()))
             self.assertLess(len(serve.approval_summary('SandboxOnce', inp, host._classify('SandboxOnce', inp), 'en').encode()), 24000)
-            result = await asyncio.wait_for(host.ask('SandboxOnce', inp, require_passkey=True), 2)
-            self.assertEqual(result['behavior'], 'deny')
-            self.assertFalse(host.asks)
+            task = asyncio.create_task(host.ask('SandboxOnce', inp, require_passkey=True, _harness_permission=True))
+            try:
+                card = await outbound_card(self, host, sent, task)
+                self.assertLessEqual(len(card['summary'].encode()), 24000)
+                self.assertEqual(card['envelope']['input_sha256'], approvals.input_digest(inp))
+                self.assertNotIn('[truncated]', card['summary'])
+                await host._answer(session, Phone.answer.__get__(phone)(card, False))
+                self.assertEqual((await asyncio.wait_for(task, 2))['behavior'], 'deny')
+            finally:
+                if not task.done(): task.cancel()
+                await asyncio.gather(task, return_exceptions=True)

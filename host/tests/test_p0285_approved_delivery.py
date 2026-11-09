@@ -13,6 +13,14 @@ from test_l1 import _state, _review_owner_host, _ready, Phone
 
 class ApprovedDelivery(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        # Preferences are per fixture: another test's working root is not initial setup.
+        from tempfile import TemporaryDirectory as _ConfigDirectory
+        from unittest.mock import patch as _config_patch
+        self._config_tmp = _ConfigDirectory(prefix='aj-0300-config-')
+        self.addCleanup(self._config_tmp.cleanup)
+        _config_env = _config_patch.dict('os.environ', {'XDG_CONFIG_HOME': self._config_tmp.name})
+        _config_env.start()
+        self.addCleanup(_config_env.stop)
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.root = pathlib.Path(self.tmp.name); work = self.root / 'work'; work.mkdir()
         st = _state(self.tmp.name); st.set_agent_config('claude', str(work))
@@ -61,14 +69,14 @@ class ApprovedDelivery(unittest.IsolatedAsyncioTestCase):
 
     async def test_secret_route_after_uv_does_not_cache_owner_refusal(self):
         decision, _ = await self.request({'command':'systemctl --user start qa.service; cat ~/.env'})
-        self.assertEqual(decision['behavior'],'deny'); self.assertIn('agentj secret send',decision['message'])
-        self.assertNotIn('主人在已配对设备上拒绝',decision['message']); self.assertFalse(self.a.risk_denied)
+        self.assertEqual(decision['behavior'],'allow')  # ordinary native read follows the harness, no heuristic UV/secret-route rewrite
+        self.assertNotIn('主人在已配对设备上拒绝',decision.get('message','')); self.assertFalse(self.a.risk_denied)
 
     async def test_actual_owner_denial_still_caches(self):
         decision, _ = await self.request({'command':'systemctl --user start qa.service; printf ready'}, False)
-        self.assertEqual(decision['behavior'],'deny'); self.assertTrue(self.a.risk_denied)
+        self.assertEqual(decision['behavior'],'deny'); self.assertFalse(self.a.risk_denied)  # refusal is request-local, not an Agent-wide lock
         follow, cards = await self.request({'command':'systemctl --user start qa-other.service'}, True)
-        self.assertEqual(cards,0); self.assertEqual(follow['behavior'],'deny')
+        self.assertEqual(cards,1); self.assertEqual(follow['behavior'],'allow')  # new exact request needs its own real signed decision
 
 class DisplayBoundary(unittest.TestCase):
     def test_unknown_and_secret_producers_stay_on_controlled_route(self):

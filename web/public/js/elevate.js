@@ -16,7 +16,7 @@ import { registerLayer, TOP_RANK } from './layers.js';
 import { copyable } from './copycode.js';   // P292
 import { paintMailPassword } from './mail-password.js';
 import { elevateChallenge, canAssert, approve } from './faceid.js';
-import { paintPk, errName } from './pkassist.js';   // P539: no own passkey here · why a passkey tap failed
+import { offerLocalSetup, paintPk, errName } from './pkassist.js';   // P539: no own passkey here · why a passkey tap failed
 import { put as handIn } from './pkhandin.js';
 import { paintScope } from './cardplace.js';   // 0.26.9 #472 ②   // P566 (#364): the answer outlives the socket the sheet drops
 // P414 (PROTOCOL §37.10 / §37.11, ADR-P414-bang): the computer-password vault on sudo cards — 「用 Face ID 填入电脑密码」 (the
@@ -497,6 +497,7 @@ async function decide(ok, how) {
   // 0.26.9 #482: `save` needs the assertion — the PRF over `vs` IS what remembers the password (P573 dropped it: no pct, ever)
   const needFa = vaultUse || save || (c.tier573 ? c.passkey_required || (nopw && c.helperUv) : !c.buttonOnly && !!c.fa);   // P573: password + 同意 = one tap
   if (ok && needFa) {
+    if (offerLocalSetup(c.fa_s)) return;
     if (!canAssert() && phoneConfirmation()) return;
     if (!canAssert() || !c.fa) { setErr(c, 'elev.fa.none'); toast(t('elev.fa.none'), 5000); return; }
     if (!c.faCh) { setErr(c, 'elev.fail'); toast(t('elev.fail'), 3000); return; }

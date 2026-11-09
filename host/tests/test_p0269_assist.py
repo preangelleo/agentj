@@ -620,6 +620,14 @@ class Round2(_TaskRig):
 # ---------------------------------------------------------------- 4. Host.ask: the owner's cards, never a bypass
 class Cards(_KeyEnv, unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        # Preferences are per fixture: another test's working root is not initial setup.
+        from tempfile import TemporaryDirectory as _ConfigDirectory
+        from unittest.mock import patch as _config_patch
+        self._config_tmp = _ConfigDirectory(prefix='aj-0300-config-')
+        self.addCleanup(self._config_tmp.cleanup)
+        _config_env = _config_patch.dict('os.environ', {'XDG_CONFIG_HOME': self._config_tmp.name})
+        _config_env.start()
+        self.addCleanup(_config_env.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.addAsyncCleanup(_fixture_disk.drain_async_disk, self)
@@ -643,7 +651,7 @@ class Cards(_KeyEnv, unittest.IsolatedAsyncioTestCase):
         self.h.agent.cur_send = self.send
 
     async def open_card(self, tool, inp):
-        t = asyncio.create_task(self.h.ask(tool, inp))
+        t = asyncio.create_task(self.h.ask(tool, inp, _harness_permission=True))
         for _ in range(200):
             if any(not a.fut.done() for a in self.h.asks.values()) or t.done():
                 break
@@ -656,7 +664,7 @@ class Cards(_KeyEnv, unittest.IsolatedAsyncioTestCase):
             t, a = await self.open_card("Bash", {"command": cmd})
             self.assertIsNotNone(a, cmd)
             self.assertFalse(t.done(), cmd)
-            a.fut.set_result(("deny", None, None, None))
+            await self.h._answer(self.s, __import__("_p541_device").Phone.answer(self.ph, self.h._ask_msg(a,self.s), False))
             res = await t
             self.assertEqual(res["behavior"], "deny")
             self.assertTrue(any(o["t"] == "ask" for _, o in self.sent))
@@ -670,7 +678,7 @@ class Cards(_KeyEnv, unittest.IsolatedAsyncioTestCase):
                     self.h.agent.cur_send = SimpleNamespace(source=src) if src["kind"] == "friend_task" else self.send
                     t, a = await self.open_card("Bash", {"command": "git push origin main"})
                     self.assertIsNotNone(a, (lv, src["kind"]))
-                    a.fut.set_result(("deny", None, None, None))
+                    await self.h._answer(self.s, __import__("_p541_device").Phone.answer(self.ph, self.h._ask_msg(a,self.s), False))
                     self.assertEqual((await t)["behavior"], "deny")
         self.h.agent.cur_send = self.send
 
@@ -680,21 +688,21 @@ class Cards(_KeyEnv, unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(preauth, "live", return_value=None) as live:
             t, a = await self.open_card(cu, {"x": 1, "y": 2})
             self.assertIsNotNone(a)
-            a.fut.set_result(("deny", None, None, None))
+            await self.h._answer(self.s, __import__("_p541_device").Phone.answer(self.ph, self.h._ask_msg(a,self.s), False))
             await t
             self.assertFalse(live.called, "免问 looked up for an official-assist turn")
             self.h.agent.cur_send = None                         # the owner's own turn: the grant IS consulted
             t, a = await self.open_card(cu, {"x": 1, "y": 2})
             if a is not None:
-                a.fut.set_result(("deny", None, None, None))
+                await self.h._answer(self.s, __import__("_p541_device").Phone.answer(self.ph, self.h._ask_msg(a,self.s), False))
             await t
-            self.assertTrue(live.called)
+            live.assert_not_called()  # native requests never consume old preauth, regardless of source label
         self.h.agent.cur_send = self.send
 
     async def test_no_same_owner_auto_path(self):
         t, a = await self.open_card("AgentJSameOwnerAction", {"summary": "Same owner: heartbeat on", "request": {"op": "on"}})
         self.assertIsNotNone(a)
-        a.fut.set_result(("deny", None, None, None))
+        await self.h._answer(self.s, __import__("_p541_device").Phone.answer(self.ph, self.h._ask_msg(a,self.s), False))
         await t
         self.assertNotIn("same_owner", [r.get("reason") for r in approvals.read_log(self.st)])
 

@@ -104,6 +104,8 @@ class StartupThreshold(unittest.IsolatedAsyncioTestCase):
                                 authorized_launch_argv=AsyncMock(return_value=['fake-opencode']),
                                 _drain_err=lambda p: asyncio.sleep(0), _bg=discard,
                                 _kill=kill, fail_notice=lambda text, **kw: failures.append(text))
+        agent._spawn_native = lambda: oc.OpenCodeAgent._spawn_native(agent)
+        agent._prepare_control_paths = AsyncMock()  # startup timing unit, no project plugin installation
         agent._startup_failure = lambda phase, reason: oc.OpenCodeAgent._startup_failure(agent, phase, reason)
         with patch.object(oc, '_bin', return_value='/fake/opencode'), \
              patch('agentj.harness.version_of', return_value='1.18.34'), \

@@ -1,6 +1,6 @@
 """#561 legacy web approval protocol on real Host; isolated synthetic keys only.
 
-A harmless echo card is explicitly UV-required. Nothing executes a command.
+A listed secret-request card requires UV. Nothing executes a command.
 No verifier mock: both Ed25519 and WebAuthn P256 are actually checked.
 """
 import _hermetic
@@ -28,7 +28,7 @@ class LegacyWebProtocol(Flows):
     def test_legacy_signed_uv_allows_and_forgery_missing_uv_reject(self):
         ph, host, s = self.rig()
         async def go():
-            wait = asyncio.create_task(host.ask('Bash', {'command':'echo protocol-561-no-execution'}, require_passkey=True))
+            wait = asyncio.create_task(host.ask('agentj secret request', {'name':'protocol-561-no-execution'}))
             while not self.asks() and not wait.done(): await asyncio.sleep(.01)
             self.assertFalse(wait.done())
             card = self.asks()[-1]

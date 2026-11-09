@@ -57,7 +57,7 @@ class Restart(unittest.IsolatedAsyncioTestCase):
         with mock.patch('agentj.shared.claude_sessions',return_value=[{'pid':44,'sessionId':'selected'}]):
             await phone_restart.prepare(a,'selected')
         a.ordinary_start.assert_awaited_once_with(resume='selected', extra_flags=[]); a._repin.assert_called_once()
-        for kind,fn in [('claude','_ensure'),('codex','_thread'),('opencode','_session_ok')]:
+        for kind,fn in [('claude','_ensure'),('codex','_ready'),('opencode','_session_ok')]:
             a=NS(kind=kind,cfg={},_spawn=mock.AsyncMock(return_value=True)); setattr(a,fn,mock.AsyncMock(return_value=True))
             await phone_restart.prepare(a,'selected'); getattr(a,fn).assert_awaited_once()
 
@@ -110,7 +110,9 @@ class Restart(unittest.IsolatedAsyncioTestCase):
             made.append(a);return a
         with mock.patch.object(phone_restart,'profile',return_value=flags),mock.patch.object(phone_restart,'end_selected',new_callable=mock.AsyncMock),mock.patch.object(phone_restart.agent,'make',side_effect=make),mock.patch.object(phone_restart,'prepare',new_callable=mock.AsyncMock,side_effect=[ValueError(),None]):
             self.assertTrue((await phone_restart.run(h))['new'])
-        self.assertTrue(old.halting);self.assertEqual(h.queue_dropped.call_count,1)
+        self.assertTrue(old.halting);h.queue_dropped.assert_not_called()
+        self.assertEqual(h.agent.q.get_nowait().turn,9)  # shipped #484 retains not-yet-delivered messages
+        self.assertTrue(h.agent.q.empty())
         h.agent_turn_end.assert_called_once();h.end_grant.assert_called_once_with('old','turn_end')
         self.assertFalse(hasattr(h,'_parked_ok'));self.assertTrue(all(a._phone_restart_flags==flags for a in made))
         self.assertTrue(all('_phone_restart_flags' not in a.cfg for a in made))
@@ -123,8 +125,9 @@ class Restart(unittest.IsolatedAsyncioTestCase):
         a=NS(kind='claude',cfg=old.cfg,stop=mock.AsyncMock(),start=mock.Mock(),set_status=mock.Mock())
         with mock.patch.object(phone_restart.agent,'make',return_value=a),mock.patch.object(phone_restart,'prepare',new_callable=mock.AsyncMock):
             self.assertTrue((await phone_restart.run(h))['ok'])
-        self.assertIs(a.q,old.q);self.assertEqual(a.q.get_nowait(),'new owner message')
-        h.queue_dropped.assert_called_once_with(picked)
+        self.assertIs(a.q,old.q);self.assertIs(a.q.get_nowait(),picked)
+        self.assertEqual(a.q.get_nowait(),'new owner message');self.assertTrue(a.q.empty())
+        h.queue_dropped.assert_not_called()  # pending is retained, delivered/uncertain is never replayed
 
     async def test_failed_reopen_leaves_a_fresh_actor_for_next_owner_message(self):
         h, old = self.host();old.q=asyncio.Queue();made=[]

@@ -280,15 +280,22 @@ class Units(unittest.TestCase):
         c = " ".join(cx.argv())
         for bad in ("dangerously", "bypass", "--sandbox", "-s ", "approval", "-c", "--enable", "--disable"):
             self.assertNotIn(bad, c)
-        # app-server (ADR-A70): the only thread settings serve adds make Codex ask more, never less (Invariant 11)
-        # F30 (ADR-A175): plus the sandbox — the owner's explicit sandbox_mode, else danger-full-access (directly on the system)
-        self.assertEqual(cx.policy(), {"approvalsReviewer": "user", "approvalPolicy": "untrusted", "sandbox": "danger-full-access"})
+        # Unset parent policy stays the native harness default. Neither warnings
+        # nor unsupported granular config may manufacture a different policy.
+        self.assertEqual(cx.policy(), {})
         cx.cfg["high_risk_warnings"] = True
-        self.assertEqual(cx.policy(), {"approvalsReviewer": "user", "approvalPolicy": "untrusted", "sandbox": "danger-full-access"})
-        cx.human = {"approval_policy": {"granular": {"rules": False, "sandbox_approval": False, "mcp_elicitations": False}}}
-        self.assertEqual(cx.policy(), {"approvalsReviewer": "user", "approvalPolicy": "untrusted", "sandbox": "danger-full-access"})   # native granular settings cannot remove review
+        self.assertEqual(cx.policy(), {})
+        granular = {"granular": {"rules": False, "sandbox_approval": False, "mcp_elicitations": False}}
+        cx.human = {"approval_policy": granular}
+        self.assertEqual(cx.policy(), {})
+        self.assertEqual(cx.human['approval_policy'], granular)
+        for sandbox in ('read-only','workspace-write','danger-full-access'):
+            for policy in ('never','on-request','untrusted'):
+                cx.human={'sandbox_mode':sandbox,'approval_policy':policy,'approvals_reviewer':'auto_review'}
+                self.assertEqual(cx.policy(),{'sandbox':sandbox,'approvalPolicy':policy,'approvalsReviewer':'auto_review'})
         self.assertEqual(CodexAgent(None, {"kind": "codex", "dir": "/tmp", "model": None}, research=True).policy()["sandbox"],
                          "read-only")
+
 
 
 # ------------------------------------------------------------------ approval flows (no relay)
@@ -325,7 +332,12 @@ class Flows(unittest.TestCase):
         res = self.run_ask(host, None)
         self.assertEqual(res["behavior"], "deny")
         self.assertLess(time.monotonic() - t0, 1)
-        self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "no_device")
+        self.assertEqual(res["reason"], "no_device")
+        self.assertEqual(approvals.read_log(self.st), [], "a refusal with no approver has no fabricated signed row")
+        self.assertEqual(self.asks(), [])
+        refused=[json.loads(line) for line in self.st.log_path.read_text().splitlines()]
+        self.assertTrue(any(row.get("ev")=="ask_done" and row.get("decision")=="deny"
+                            and row.get("reason")=="no_device" and row.get("tool")=="Bash" for row in refused))
 
     def test_signed_allow_returns_the_input_unchanged_and_is_logged(self):
         ph = Phone(self.st, with_passkey=True)  # Bash UV uses a real fixture assertion
@@ -345,7 +357,8 @@ class Flows(unittest.TestCase):
         self.assertNotIn(MARK, self.st.approvals_path.read_text(), "the log never holds the tool input")
         self.assertNotIn(MARK, self.st.log_path.read_text(), "host.log never holds the tool input")
         self.assertEqual(stat.S_IMODE(self.st.approvals_path.stat().st_mode), 0o600)
-        self.assertIn({"t": "ask_done", "id": rec["id"], "result": "allow"}, [o for _, o in self.sent])
+        done = next(o for _,o in self.sent if o.get("t")=="ask_done" and o.get("id")==rec["id"])
+        self.assertEqual((done["result"],done["reason"]),("allow","device"))
 
     def test_signed_deny(self):
         ph = Phone(self.st)
@@ -470,6 +483,10 @@ class Flows(unittest.TestCase):
 class Chain(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        from unittest.mock import patch
+        config = patch.dict(os.environ, {'XDG_CONFIG_HOME':str(pathlib.Path(self.tmp.name)/'config')})
+        config.start()
+        self.addCleanup(config.stop)
         self.st = _state(self.tmp.name)
         self.work = pathlib.Path(self.tmp.name) / "work"
         self.work.mkdir()
@@ -508,52 +525,63 @@ class Chain(unittest.TestCase):
 
         async def go():
             run = asyncio.create_task(host.run())
-            await wait(lambda: host.agent is not None)
-            s = _ready(host, ph)
-            self.assertEqual(stat.S_IMODE(self.st.perm_sock_path.stat().st_mode), 0o600)
-            # 1. plain message → reply; working → idle
-            await host._app(s, {"t": "msg", "id": "a" * 16, "text": "列出当前目录", "ts": 0})
-            await wait(lambda: any(m["text"] == "ECHO: 列出当前目录" for m in msgs()))
-            await wait(lambda: statuses()[-1:] == ["idle"])
-            self.assertIn("working", statuses())
-            # 2. the agent wants rm → card → phone denies → file stays, agent told
-            await host._app(s, {"t": "msg", "id": "b" * 16, "text": "RUN: rm victim.txt", "ts": 0})
-            await wait(lambda: any(o["t"] == "ask" for _, o in sent))
-            self.assertEqual(statuses()[-1], "waiting")
-            ask = [o for _, o in sent if o["t"] == "ask"][-1]
-            self.assertEqual(ask["tool"], "Bash")
-            self.assertIn("rm victim.txt", ask["summary"])
-            self.assertIn("Request SHA-256:", ask["summary"])
-            await host._app(s, ph.answer(ask, False))
-            await wait(lambda: any(m["text"].startswith("被拒绝") for m in msgs()))
-            self.assertTrue((self.work / "victim.txt").exists(), "denied rm did not run")
-            # 3. approve → runs
-            await host._app(s, {"t": "msg", "id": "c" * 16, "text": "RUN: touch made.txt", "ts": 0})
-            await wait(lambda: len([o for _, o in sent if o["t"] == "ask"]) == 2)
-            ask2 = [o for _, o in sent if o["t"] == "ask"][-1]
-            await host._app(s, ph.answer(ask2, True))
-            await wait(lambda: any(m["text"].startswith("已执行") for m in msgs()))
-            self.assertTrue((self.work / "made.txt").exists())
-            # 4. nobody answers → default deny after ask_ttl
-            t0 = time.monotonic()
-            await host._app(s, {"t": "msg", "id": "d" * 16, "text": "RUN: rm victim.txt", "ts": 0})
-            await wait(lambda: sum(m["text"].startswith("被拒绝") for m in msgs()) == 2, 10000)
-            self.assertGreaterEqual(time.monotonic() - t0, 2.5)
-            self.assertTrue((self.work / "victim.txt").exists())
-            self.assertIn({"t": "ask_done", "id": [o for _, o in sent if o["t"] == "ask"][-1]["id"], "result": "timeout",
-                           "why": "timeout"},   # P539: + the reason
-                          [o for _, o in sent])
-            # 5. a long reply is split, nothing lost
-            await host._app(s, {"t": "msg", "id": "e" * 16, "text": "LONG", "ts": 0})
-            await wait(lambda: sum(len(m["text"]) for m in msgs() if set(m["text"]) == {"长"}) == 9000)
-            # 6. the agent process dies mid-turn → notice; the next message resumes the same session
-            await host._app(s, {"t": "msg", "id": "f" * 16, "text": "CRASH", "ts": 0})
-            # The permission socket can close before the process watcher sees its exit; both are actionable crash notices.
-            await wait(lambda: any("退出了" in m["text"] or "批准通道断了" in m["text"] for m in msgs()))
-            await host._app(s, {"t": "msg", "id": "g" * 16, "text": "还在吗", "ts": 0})
-            await wait(lambda: any(m["text"] == "ECHO: 还在吗" for m in msgs()))
-            host.stopping.set()
-            await run
+            try:
+                await wait(lambda: host.agent is not None)
+                s = _ready(host, ph)
+                self.assertEqual(stat.S_IMODE(self.st.perm_sock_path.stat().st_mode), 0o600)
+                # 1. plain message → reply; working → idle
+                await host._app(s, {"t": "msg", "id": "a" * 16, "text": "列出当前目录", "ts": 0})
+                await wait(lambda: any(m["text"] == "ECHO: 列出当前目录" for m in msgs()))
+                await wait(lambda: statuses()[-1:] == ["idle"])
+                self.assertIn("working", statuses())
+                # 2. the agent wants rm → card → phone denies → file stays, agent told
+                await host._app(s, {"t": "msg", "id": "b" * 16, "text": "RUN: rm victim.txt", "ts": 0})
+                await wait(lambda: any(o["t"] == "ask" for _, o in sent))
+                self.assertEqual(statuses()[-1], "waiting")
+                ask = [o for _, o in sent if o["t"] == "ask"][-1]
+                self.assertEqual(ask["tool"], "Bash")
+                self.assertIn("rm victim.txt", ask["summary"])
+                self.assertEqual(ask["envelope"]["input_sha256"], approvals.input_digest({"command":"rm victim.txt"}))
+                self.assertEqual(ask["envelope"]["details"],ask["summary"])
+                self.assertEqual(json.loads(ask["summary"].split("\n")[-1]), {"command":"rm victim.txt"})
+                from _p541_device import Phone as V2Phone
+                await host._app(s, V2Phone.answer(ph, ask, False))
+                await wait(lambda: any(m["text"].startswith("被拒绝") for m in msgs()))
+                self.assertTrue((self.work / "victim.txt").exists(), "denied rm did not run")
+                # 3. approve → runs
+                await host._app(s, {"t": "msg", "id": "c" * 16, "text": "RUN: touch made.txt", "ts": 0})
+                await wait(lambda: len([o for _, o in sent if o["t"] == "ask"]) == 2)
+                ask2 = [o for _, o in sent if o["t"] == "ask"][-1]
+                self.assertEqual(ask2["envelope"]["input_sha256"],approvals.input_digest({"command":"touch made.txt"}))
+                self.assertNotEqual(ask2["id"],ask["id"])
+                await host._app(s, V2Phone.answer(ph, ask2, True))
+                await wait(lambda: any(m["text"].startswith("已执行") for m in msgs()))
+                self.assertTrue((self.work / "made.txt").exists())
+                # 4. nobody answers → default deny after ask_ttl
+                t0 = time.monotonic()
+                await host._app(s, {"t": "msg", "id": "d" * 16, "text": "RUN: rm victim.txt", "ts": 0})
+                await wait(lambda: sum(m["text"].startswith("被拒绝") for m in msgs()) == 2, 10000)
+                self.assertGreaterEqual(time.monotonic() - t0, 2.5)
+                self.assertTrue((self.work / "victim.txt").exists())
+                timeout_id = [o for _,o in sent if o['t']=='ask'][-1]['id']
+                timeout_frame = next(o for _,o in sent if o.get('t')=='ask_done' and o.get('id')==timeout_id)
+                self.assertEqual((timeout_frame['result'],timeout_frame['reason']),('deny','timeout'))
+                # 5. a long reply is split, nothing lost
+                await host._app(s, {"t": "msg", "id": "e" * 16, "text": "LONG", "ts": 0})
+                await wait(lambda: sum(len(m["text"]) for m in msgs() if set(m["text"]) == {"长"}) == 9000)
+                # 6. the agent process dies mid-turn → notice; the next message resumes the same session
+                await host._app(s, {"t": "msg", "id": "f" * 16, "text": "CRASH", "ts": 0})
+                # The permission socket can close before the process watcher sees its exit; both are actionable crash notices.
+                await wait(lambda: any("退出了" in m["text"] or "批准通道断了" in m["text"] for m in msgs()))
+                await host._app(s, {"t": "msg", "id": "g" * 16, "text": "还在吗", "ts": 0})
+                await wait(lambda: any(m["text"] == "ECHO: 还在吗" for m in msgs()))
+            finally:
+                host.stopping.set()
+                try:
+                    await asyncio.wait_for(asyncio.shield(run),5)
+                finally:
+                    if not run.done(): run.cancel()
+                    await asyncio.gather(run,return_exceptions=True)
         asyncio.run(go())
         starts = [s for s in (json.loads(x) for x in self.argv_log.read_text().splitlines()) if "argv" in s]   # control lines: §10.10 meters
         self.assertEqual(len(starts), 2, "one process, restarted once after the crash")

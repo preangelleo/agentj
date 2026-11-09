@@ -146,7 +146,8 @@ class MailConfigRace(unittest.IsolatedAsyncioTestCase):
 
 class HostExecution(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        from test_l1 import _owner_host as _host, _ready, Phone
+        from test_l1 import _ready
+        from _p541_device import _owner_host as _host, Phone
         self.tmp=tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.st=State(pathlib.Path(self.tmp.name));self.st.init()
         self.sent=[];self.h=_host(self.st,self.sent);self.ph=Phone(self.st)
@@ -165,25 +166,27 @@ class MailFinalExecution(HostExecution):
             smtp={'host':'127.0.0.1','port':smtp.port,'security':'plain'},
             allow=[{'addr':'owner@example.com','role':'owner'}])
         mail.save_config(self.st,mail.validate(cfg));mail.store_secret(self.st,b'fixture-password',cfg['address'])
-        # P573: mail only to the owner goes with no card now — a recipient off the allowlist keeps this action's one-tap card
-        task=asyncio.create_task(self.h.elevate.contacts.agent_send({'to':['colleague@example.com'], 'subject':'fixture', 'body':'hello'}))
-        try:
-            for _ in range(200):
-                if self.h.asks:break
-                await asyncio.sleep(.005)
-            self.assertTrue(self.h.asks)
-            a=next(iter(self.h.asks.values()));card=self.h._ask_msg(a,self.session)
-            self.assertNotIn('passkey_required',card);self.assertIn('colleague@example.com',card['summary'])
-            self.assertFalse(task.done());self.assertFalse(smtp.sent)
-            obj=self.ph.answer(card,True);obj.pop('fa',None)
-            await self.h._answer(self.session,obj)
-            res=await asyncio.wait_for(task,5)
-            self.assertTrue(res['ok'],res);self.assertEqual(len(smtp.sent),1)
-            await self.h._answer(self.session,obj)
+        # Actual kernel child and private socket: ordinary mail follows the native
+        # request, with no second card. Invalid invocation proof must have zero SMTP.
+        from test_p513_policy import PaidLibrary
+        import json
+        req={'t':'mail_send','to':['colleague@example.com'],'subject':'fixture','body':'hello'}
+        body="import json;from agentj import elevate;from agentj.state import State;print(json.dumps(elevate.client_request(State(),"+repr(req)+")))"
+        result=await RealMailEffectsUV.native_transport(self,self.h,self.st,req,transport='elevate')
+        self.assertTrue(result['ok'],result);self.assertEqual(len(smtp.sent),1)
+        self.assertFalse(self.h.asks)
+        # An answer naming a nonexistent/replayed card cannot send again.
+        await self.h._answer(self.session,{'id':'f'*32,'ok':True,'sig':'AA'})
+        self.assertEqual(len(smtp.sent),1)
+        for ingress in ('invalid_start','revoked_root'):
+            result=await RealMailEffectsUV.native_transport(self,self.h,self.st,req,transport='elevate',ingress=ingress)
+            self.assertFalse(result['ok'],result)
             self.assertEqual(len(smtp.sent),1)
-        finally:
-            if not task.done():task.cancel()
-            await asyncio.gather(task,return_exceptions=True)
+        # Keep the real historical system-origin refusal as a zero-effect control.
+        self.h.desktop_input('Fixture Host-held root for the independent system mail negative.')
+        result,seen=await PaidLibrary.native_call(self,self.st,self.h,body)
+        self.assertEqual((result['ok'],result['why']),(False,'group_source'))
+        self.assertEqual(len(smtp.sent),1)
 
 
 class MailPhoneUV(HostExecution):
@@ -300,51 +303,81 @@ class LegacyEnvelope(unittest.TestCase):
 
 class RealMailEffectsUV(unittest.IsolatedAsyncioTestCase):
     async def test_notes_reply_long_press_and_phone_forward_without_card(self):
-        # P551 (#318): Agent notes / reply → one signed long-press allow sends once (no Face ID); the owner's phone forward
-        # sends at once without any card (the signed tap is the instruction)
         from test_p184_contacts import _Svc
-        from test_l1 import _owner_host as _host,_ready,Phone
-        for effect in ("notes","reply"):     # P549 (#316): a phone forward asks nothing (test_p549_mail_cred_cards)
+        from test_l1 import _ready
+        from _p541_device import _owner_host as _host,Phone
+        for effect in ("notes","reply"):
             with self.subTest(effect=effect):
                 fixture=_Svc();await fixture.asyncSetUp()
-                task=None
                 try:
                     fixture.mailbox();fixture.st.sign_key=State.sign_key.__get__(fixture.st,State)
                     sent=[];h=_host(fixture.st,sent)
                     ph=Phone(fixture.st,with_passkey=True);session=_ready(h,ph);session.p33=True
-                    h.mail=mail.Mail(h);h.media=fixture.media;h.hist.get=fixture.host.hist.get
-                    fixture.svc.host=h
+                    h.mail=mail.Mail(h);h.media=fixture.media
                     cfg=mail.read_config(fixture.st);cfg["enabled"]=True;cfg=h.mail.set_config(cfg)
                     from test_p184_contacts import CODE
                     mail.store_secret(fixture.st,CODE.encode(),cfg["address"])
                     owner=cfg["allow"][0]["addr"]
                     if effect=="notes":
-                        call=h.mail.send_notes([owner],"fixture","body",quiet=True)
+                        result=await self.native_notes(h,fixture.st,owner)
+                        self.assertTrue(result.get('ok'),result)
                     else:
-                        state=mail.read_state(fixture.st);state["routes"]["1"]={"to":owner,"gen":cfg["generation"],"subject":"fixture","msgid":"<fixture@example.com>","refs":"","role":"owner","verified":True,"explicit_owner":True};mail.save_state(fixture.st,state)
-                        call=h.mail.reply(1,"body")
-                    task=asyncio.create_task(call)
-                    if effect=="forward":
-                        result=await asyncio.wait_for(task,5)
-                        self.assertTrue(result.get("ok"),result);self.assertFalse(h.asks)
-                        self.assertEqual(len(fixture.smtp.sent),1)
-                        continue
-                    for _ in range(200):
-                        if h.asks:break
-                        await asyncio.sleep(.005)
-                    self.assertTrue(h.asks)
-                    a=next(iter(h.asks.values()));card=h._ask_msg(a,session)
-                    self.assertNotIn("passkey_required",card)
-                    self.assertFalse(task.done());self.assertFalse(fixture.smtp.sent)
-                    obj=ph.answer(card,True);obj.pop("fa",None)
-                    await h._answer(session,obj)
-                    result=await asyncio.wait_for(task,5)
-                    self.assertTrue(result=="sent" if effect=="reply" else result.get("ok"),result)
+                        turn=h.hist.add({'k':'email','text':'original mail'},reply='body',end='done')
+                        h.cur_turn=turn['id']
+                        state=mail.read_state(fixture.st);state["routes"][str(turn['id'])]={"to":owner,"gen":cfg["generation"],"subject":"fixture","msgid":"<fixture@example.com>","refs":"","role":"owner","verified":True,"explicit_owner":True};mail.save_state(fixture.st,state)
+                        h.mail.completed(turn);h.mail.completed(turn)
+                        tasks=list(h.mail.sending);self.assertEqual(len(tasks),1)
+                        self.assertEqual(await asyncio.gather(*tasks),['sent'])
+                        h.mail.completed(turn)
+                    self.assertFalse(h.asks)
                     self.assertEqual(len(fixture.smtp.sent),1)
-                    await h._answer(session,obj);self.assertEqual(len(fixture.smtp.sent),1)
+                    await h._answer(session,{'id':'f'*32,'ok':True,'sig':'AA'})
+                    self.assertEqual(len(fixture.smtp.sent),1)
                 finally:
-                    if task and not task.done():task.cancel();await asyncio.gather(task,return_exceptions=True)
                     fixture.doCleanups()
+
+    async def native_notes(self,h,st,owner):
+        return await self.native_transport(h,st,{'cmd':'mail_notes','to':[owner],'subject':'fixture','body':'body'})
+
+    async def native_transport(self,h,st,req,*,transport='control',ingress='valid'):
+        import os,sys,json,contextlib,signal
+        from agentj import codex_procs,provenance
+        # Actual Host terminal input creates the private history/root receipt
+        # before this freshly launched native process. A source label alone is
+        # insufficient: invalid procStart and revoked root are tested above.
+        h.desktop_input('Send '+str(req.get('body'))+' to '+', '.join(req.get('to',[]))+'; subject '+str(req.get('subject')))
+        self.assertIn(h.desktop_turn,h.__dict__.get('_approval_origins',{}))
+        if transport=='control':
+            path=st.root/'notes-control.sock'
+            server=await asyncio.start_unix_server(h.on_ctl,path=str(path))
+        else:
+            await h.elevate.start();server=h.elevate.server;path=h.elevate.sock_path
+        code="import sys,socket,json;s=socket.socket(socket.AF_UNIX);s.connect(sys.argv[1]);s.sendall((sys.argv[2]+chr(10)).encode());print(s.makefile().readline())"
+        anchor="import subprocess,sys;sys.stdin.readline();sys.exit(subprocess.call([sys.executable,'-c',sys.argv[1],sys.argv[2],sys.argv[3]]))"
+        proc=await asyncio.create_subprocess_exec(sys.executable,'-c',anchor,code,str(path),json.dumps(req),
+            stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,start_new_session=True)
+        old=h.agent
+        h.agent=SimpleNamespace(kind='claude',session={'sessionId':'mail-owner-native-fixture','pid':proc.pid,
+            'procStart':codex_procs.start_token(proc.pid)},native_source=provenance.terminal(),research=False,
+            cfg={'kind':'claude','dir':str(st.root.parent)})
+        if ingress=='invalid_start':h.agent.session['procStart']='not-the-live-kernel-start'
+        elif ingress=='revoked_root':h.__dict__.get('_approval_origins',{}).pop(h.desktop_turn)
+        else:self.assertEqual(ingress,'valid')
+        try:
+            proc.stdin.write(b'go\n');await proc.stdin.drain()
+            out,err=await asyncio.wait_for(proc.communicate(),10)
+            self.assertEqual(proc.returncode,0,err.decode())
+            self.assertFalse(h.asks)
+            return json.loads(out)
+        finally:
+            h.agent=old
+            if proc.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    if os.getpgid(proc.pid)==proc.pid:os.killpg(proc.pid,signal.SIGKILL)
+                await proc.wait()
+            if transport=='elevate':await h.elevate.stop()
+            else:server.close()
+            await server.wait_closed()
 
 
 class CustomerServiceMailUV(unittest.IsolatedAsyncioTestCase):

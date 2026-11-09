@@ -136,23 +136,26 @@ class OnTheCard(Base):
         self.ask({"command": "rm -rf build", "description": "清掉旧的构建产物"})   # nobody answers: timeout, the card was sent
         msgs = self.cards()
         self.assertTrue(msgs, self.sent)
-        self.assertEqual(msgs[-1].get("reason"), "清掉旧的构建产物")
+        self.assertEqual(msgs[-1].get("reason"), "Bash")
+        self.assertEqual(msgs[-1]["summary"], msgs[-1]["envelope"]["details"])
         self.assertIn("清掉旧的构建产物", msgs[-1]["summary"])
 
     def test_no_description_sends_empty_reason(self):
         self.ask({"command": "rm -rf build"})
-        self.assertEqual(self.cards()[-1].get("reason"), "")
+        self.assertEqual(self.cards()[-1].get("reason"), "Bash")
+        self.assertNotIn("Agent note:", self.cards()[-1]["summary"])
 
     def test_parked_card_keeps_the_reason(self):
         from agentj.heartbeat import HeartbeatSend
         self.host.sessions.clear()                    # paired, nobody online: the card parks, pushed again on connect
         self.host.agent.cur_send = HeartbeatSend(0, "〔Agent J 系统提示〕heartbeat", "k", "d")   # as test_p570 parks one
         res = self.ask({"command": "git push origin main", "description": "清掉旧的构建产物"})
-        self.assertEqual((res["behavior"], self.last()["reason"]), ("deny", "offline"), res)
-        parked = [a for a in self.host.asks.values() if a.parked]
-        self.assertEqual(len(parked), 1)
-        self.assertEqual(parked[0].reason, "清掉旧的构建产物")
-        self.assertEqual(self.host._ask_msg(parked[0])["reason"], "清掉旧的构建产物")
+        self.assertEqual((res["behavior"], res["reason"]), ("deny", "timeout"), res)
+        self.assertFalse(self.host.asks, "retired parked cards cannot retain a reusable answer")
+        self.assertFalse([a for a in self.host.asks.values() if a.parked])
+        self.host.st.remove_device(self.phone.did)
+        again = self.ask({"command": "git push origin main", "description": "清掉旧的构建产物"})
+        self.assertEqual(again["reason"], "no_device")
 
     def test_codex_host_context_and_real_reason_are_separate(self):
         from agentj.agent_codex import CodexAgent

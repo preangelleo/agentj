@@ -37,7 +37,7 @@ import { mk, executionToast as toast, toastAction } from './ui.js';
 import { copyable, copyNow } from './copycode.js';   // P292: the shown line / argv can be copied (icon only) · P414: 「复制输出」
 import { assertPrf, salt32 } from './vault.js';   // P414 (M3): PRF eval.first + eval.second, prf1 ‖ prf2
 import { SVG } from './icons.js';
-import { paintPk, setupStepsAside, faState, webauthnErr } from './pkassist.js';   // P539: no own passkey here · why a tap failed
+import { offerLocalSetup, paintPk, setupStepsAside, faState, webauthnErr } from './pkassist.js';   // P539: no own passkey here · why a tap failed
 import { UNSAFE } from './bang.js';               // P414 (H1c): Unicode format characters / > 8 spaces never go out
 
 const LINE_MAX = 4096, KEEP_CHARS = 200000, HIDDEN_MS = 60000, NONCE_MS = 110000, CLOSE_SHOW_MS = 1600;
@@ -582,6 +582,7 @@ function loginAnswer(c, ok) {
   if (ok && !pw.value) { $('term-sh-bad').textContent = t('p408.pwEmpty'); $('term-sh-bad').hidden = false; return; }
   let p = Promise.resolve(null);
   if (ok && c.fa) {
+    if (offerLocalSetup(c.fa_s)) return;
     if (!canAssert() || !c.faCh) { toast(t('p408.faCancel'), 3600); return; }
     try { p = approve(c.faCh, c.fa); } catch { p = Promise.reject(new Error('webauthn')); }
   }

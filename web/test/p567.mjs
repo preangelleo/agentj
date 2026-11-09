@@ -22,7 +22,10 @@ try{
     await page.goto(fake.newPairing(web.url+'?lang='+lang));
     await page.waitForFunction(()=>document.body.dataset.conn==='approval'||document.body.dataset.phase==='awaiting-approval'||document.getElementById('pair-code')?.textContent, null,{timeout:1000}).catch(()=>{});
     await fake.approve();
-    await page.waitForFunction(async()=>{const m=await import('./js/session.js');return m.isReady()},{timeout:15000});
+    // waitForFunction polls synchronously in this runtime: a Promise itself is truthy.
+    const loadWaitModules=()=>page.evaluate(async()=>{window.__p567Session=await import('./js/session.js');window.__p567Forward=await import('./js/forward-choice.js');});
+    await loadWaitModules();
+    await page.waitForFunction(()=>window.__p567Session.isReady(),{timeout:15000});
     await page.evaluate(async()=>{document.getElementById('phone-env-dismiss')?.click();document.getElementById('a2hs-ok')?.click();await import('./js/settings.js').then(m=>m.open());});
     await page.waitForFunction(()=>!document.getElementById('settings').hidden&&document.querySelectorAll('#rs-cmd-list li').length>0);
     const shot=async name=>{await page.evaluate(async()=>{await document.fonts.ready;await import('./js/ui.js').then(m=>m.toastOff());});await page.waitForTimeout(350);await page.screenshot({path:resolve(out,`${engine}-${lang}-${width}-${theme}-${phase}-${name}.png`)});};
@@ -73,16 +76,16 @@ try{
      await page.evaluate(()=>document.getElementById('set-back').click());
      // An actual signed write must save share after unbinding, and reloading must not send another reset.
      await fake.send({t:'wechat_state',bound:true,can_forward:false,pending:0});
-     await page.waitForFunction(async()=>{const m=await import('./js/session.js');return m.peer.wxbound===true;});
+     await page.waitForFunction(()=>window.__p567Session.peer.wxbound===true);
      assert.equal(await page.evaluate(async()=>{const m=await import('./js/forward-choice.js');return m.select('wx');}),true);
-     await page.waitForFunction(()=>import('./js/forward-choice.js').then(m=>m.destination()==='wx'));
+     await page.waitForFunction(()=>window.__p567Forward.destination()==='wx');
      for(let i=0;i<1000&&fake.st.prefs.ui.forward_destination!=='wx';i++)await page.waitForTimeout(20);
      assert.equal(fake.st.prefs.ui.forward_destination,'wx', JSON.stringify({meta:await page.evaluate(async()=>({note:document.getElementById('set-fwd-note')?.dataset.i18n,key:!!(await import('./js/store.js').then(m=>m.signKey())),peer:(await import('./js/session.js')).peer.wxbound})),sets:fake.st.forwardSets, toast:await page.locator('#toast').textContent()}));
      await fake.send({t:'wechat_state',bound:false,can_forward:false,pending:0});
-     await page.waitForFunction(()=>import('./js/forward-choice.js').then(m=>m.destination()==='share'));
+     await page.waitForFunction(()=>window.__p567Forward.destination()==='share');
      for(let i=0;i<50&&fake.st.prefs.ui.forward_destination!=='share';i++)await page.waitForTimeout(20);
      assert.equal(fake.st.prefs.ui.forward_destination,'share');assert.ok(fake.st.forwardSets.some(x=>x.dest==='share'));
-     await page.reload();await page.waitForFunction(()=>import('./js/session.js').then(m=>m.isReady()));
+     await page.reload();await loadWaitModules();await page.waitForFunction(()=>window.__p567Session.isReady());
      assert.equal(await page.evaluate(()=>import('./js/forward-choice.js').then(m=>m.destination())),'share');
      await page.evaluate(async()=>{await import('./js/settings.js').then(m=>m.open());document.getElementById('set-mail-nav').click();});
      await page.waitForFunction(()=>!document.getElementById('set-mail').hidden);await page.locator('#mail-allow-card').evaluate(e=>{e.open=true;e.scrollIntoView({block:'start'});});

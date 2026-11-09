@@ -10,6 +10,7 @@ from unittest.mock import patch, Mock, AsyncMock
 from agentj.agent import ClaudeAgent
 from agentj.agent_codex import CodexAgent
 from test_slash import _Chain
+from _p541_device import Phone as ReviewPhone
 from agentj import approval_level, approvals, preferences
 from test_p336_approval_level import FA, face_id, sign
 
@@ -34,8 +35,9 @@ class NativeFloor(unittest.TestCase):
                         a=CodexAgent(None,{'kind':'codex','dir':'/tmp',**cfg})
                         a.human={'sandbox_mode':sandbox,'approval_policy':policy,'approvals_reviewer':'auto_review'}
                         got=a.policy()
-                        self.assertEqual(got.get('approvalPolicy'),'untrusted')
-                        self.assertEqual(got.get('approvalsReviewer'),'user')
+                        self.assertEqual(got.get('approvalPolicy'),policy if isinstance(policy,str) else None)
+                        self.assertEqual(a.human['approval_policy'], policy)
+                        self.assertEqual(got.get('approvalsReviewer'),'auto_review')
                         self.assertEqual(got['sandbox'],sandbox)
 
     def test_research_keeps_read_only(self):
@@ -80,8 +82,8 @@ class ThreadRequests(unittest.IsolatedAsyncioTestCase):
                 method,fields=a.call.call_args.args
                 self.assertEqual(method,'thread/resume' if stored else 'thread/start')
                 self.assertEqual(fields['sandbox'],'workspace-write')
-                self.assertEqual(fields['approvalPolicy'],'untrusted')
-                self.assertEqual(fields['approvalsReviewer'],'user')
+                self.assertEqual(fields['approvalPolicy'],'never')
+                self.assertEqual(fields['approvalsReviewer'],'auto_review')
 
     async def test_restricted_sandbox_cannot_be_widened_by_phone_review(self):
         from agentj.agent_codex import beyond_sandbox
@@ -99,9 +101,13 @@ class StatusReview(unittest.IsolatedAsyncioTestCase):
         a.human={'sandbox_mode':'workspace-write','approval_policy':{'granular':{'rules':False}}}
         with patch('agentj.codex_perm.config_info',return_value={}):
             text=(await a.cmd_status('')).text
-        self.assertIn('untrusted',text)
-        self.assertNotIn('agentj 没改',text)
+        self.assertIn('granular',text)
+        self.assertNotIn('untrusted',text)
+        self.assertNotIn('approvalPolicy', a.policy())
         self.assertEqual(a.human['approval_policy'],{'granular':{'rules':False}})
+        # Keep the real untrusted policy's language round-trip coverage separately;
+        # the inherited granular input above must never be rewritten to get it.
+        a.human = {**a.human, 'approval_policy':'untrusted'}
         for lang, wanted, absent in (
             ('en', 'Agent J requests user review; native sandbox boundaries remain in force', '请求用户审查'),
             ('zh', 'Agent J 请求用户审查；保留原生沙箱边界', 'requests user review'),
@@ -117,17 +123,29 @@ class StatusReview(unittest.IsolatedAsyncioTestCase):
 class _LaunchReview(_Chain):
     """Real Host lifecycle, child process, hook/RPC and signed phone refusal.
 
-    Only the vendor executable/relay transport is a local stand-in. Full's
-    credential red line is used because ordinary deletion is allowed by Full.
+    Only the vendor executable/relay transport is a local stand-in. Ordinary
+    native-authorized deletion gets no second gate; control-file deletion is UV.
     """
+    def run_chain(self, script, ttl=6):
+        # Keep the shared chain unchanged for other generations; this current
+        # card fixture signs its actual v2 envelope, including signed denial.
+        with patch('test_slash.Phone', ReviewPhone):
+            return super().run_chain(script, ttl=ttl)
+
     def setUp(self):
         super().setUp()
         pref = preferences.path()
-        original = pref.read_text()
-        self.addCleanup(pref.write_text, original)
+        pref.parent.mkdir(parents=True, exist_ok=True)
+        original = pref.read_text() if pref.exists() else '{}'
+        # _Chain owns/removes this entire temporary XDG tree; no write-back
+        # after its tearDown may recreate a deleted fixture directory.
         text = preferences.edit(original, "agent.high_risk_warnings", False)
+        text = preferences.edit(text, "skills.suggest", False)
         pref.write_text(preferences.edit(text, "agent.approvals", "native"))
         (self.work / ".env").write_text("synthetic fixture only\n")
+        control = self.work / '.codex' / 'config.toml'
+        control.parent.mkdir(exist_ok=True)
+        control.write_text('# synthetic control fixture\n')
         if self.KIND == "claude":
             rules = self.work / "allow.json"
             rules.write_text(json.dumps({"permissions": {"allow": ["Bash(rm:*)"]}}))
@@ -167,18 +185,35 @@ class _LaunchReview(_Chain):
                         self.assertTrue(self.st.agent_session(self.KIND))
                         if resumed:
                             self.assertEqual(self.st.agent_session(self.KIND), stored)
-                        # An allow rule / native never must not bypass mandatory review.
+                        # Preserve the original .env deletion vector: its native
+                        # allow rule / never policy is authoritative for ordinary work.
+                        (self.work / '.env').write_text('synthetic fixture only\n')
                         await c["say"]("RUN: rm .env")
-                        await c["wait"](lambda: len(c["asks"]()) == 1)
-                        ask = c["asks"]()[0]
-                        self.assertIn("credentials", ask["cat"])
-                        self.assertEqual((self.work / ".env").read_text(), "synthetic fixture only\n")
-                        await host._app(c["s"], c["ph"].answer(ask, False))
-                        denied = "被拒绝：" if self.KIND == "claude" else "declined: rm .env"
-                        await c["wait"](lambda: any(m["text"].startswith(denied) for m in c["msgs"]()))
+                        await c["wait"](lambda: not (self.work / '.env').exists())
                         await c["idle"]()
-                        self.assertEqual((self.work / ".env").read_text(), "synthetic fixture only\n")
-                        record = approvals.read_log(self.st)[-1]
+                        self.assertEqual(c["asks"](), [])
+                        # A real protected control-path write remains fresh UV.
+                        await c["say"]("RUN: rm .codex/config.toml")
+                        await c["wait"](lambda: len(c["asks"]()) == 1, ms=6000)
+                        ask = c["asks"]()[0]
+                        self.assertTrue(ask["passkey_required"])
+                        pending = host.asks[ask['id']]
+                        self.assertEqual(pending.tool_input['command'], 'rm .codex/config.toml')
+                        self.assertEqual(ask['approval_v'], 2)
+                        self.assertEqual(ask['envelope']['input_sha256'], approvals.input_digest(pending.tool_input))
+                        self.assertEqual((self.work / ".codex/config.toml").read_text(), "# synthetic control fixture\n")
+                        await host._app(c["s"], c["ph"].answer(ask, False))
+                        denied = "被拒绝：" if self.KIND == "claude" else "declined by installed pre-tool hook"
+                        await c["wait"](lambda: any(m["text"].startswith(denied) for m in c["msgs"]()), ms=6000)
+                        await c["idle"]()
+                        self.assertEqual((self.work / ".codex/config.toml").read_text(), "# synthetic control fixture\n")
+                        records = [r for r in approvals.read_log(self.st) if r['id'] == ask['id']]
+                        self.assertEqual(len(records), 1)
+                        record = records[0]
+                        self.assertEqual(record['approval_v'], 2)
+                        self.assertEqual(record['input_sha256'], ask['envelope']['input_sha256'])
+                        self.assertEqual(record['shown_sha256'], ask['envelope_sha256'])
+                        self.assertEqual(record['reason'], 'device')
                         self.assertEqual(record["decision"], "deny")
                         self.assertEqual(approvals.check_record(self.st, record), "ok")
 
@@ -194,8 +229,8 @@ class _LaunchReview(_Chain):
                     else:
                         request = next(x for x in launches if x.get("method") in ("thread/start", "thread/resume"))
                         self.assertEqual(request["method"], "thread/resume" if resumed else "thread/start")
-                        self.assertEqual(request["params"]["approvalPolicy"], "untrusted")
-                        self.assertEqual(request["params"]["approvalsReviewer"], "user")
+                        self.assertEqual(request["params"]["approvalPolicy"], "never")
+                        self.assertEqual(request["params"].get("approvalsReviewer"), "auto_review")
                         self.assertEqual(request["params"]["sandbox"], "danger-full-access")
                         if resumed:
                             self.assertEqual(request["params"]["threadId"], stored)

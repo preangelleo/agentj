@@ -3,8 +3,8 @@ name: agentj-goal
 description: Goal mode — the owner sends `/goal <what to finish, maybe by when>` (「/goal 今晚把 X 做完」「我去睡了，把这件事做完」「开个目标」「目标模式」, "/goal", "finish this while I sleep", "goal mode"), or asks how goal mode works / what it approved / why something is waiting. You write ONE opening card with every dangerous action the goal needs, the owner signs once on the phone (no card when the owner switched on 「设了目标就不弹窗」), then you work toward the goal without bothering them; `agentj goal status|progress|done|stop`.
 ---
 
-主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
-Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+默认派 CEO/子 Agent，写验收、复验、汇报；主人明确要求亲做就照办。指纹清单、凭据规则和 harness 硬限制不变。
+Delegate by default; follow explicit owner requests to work personally. Verify and report; UV, credential rules and harness limits remain.
 
 # Goal mode (`/goal`)
 

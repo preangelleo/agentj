@@ -1108,30 +1108,61 @@ class Elevator:
             return False
 
     async def request(self, card: dict, gone: asyncio.Future | None = None, on_card=None) -> dict:
-        from . import approval_review
-        operation = approval_review.digest({'card': card, 'origin': approval_review.snapshot(self.host)}) if card.get('kind') in ('sudo', 'secret') else None
-        old = self.review_operations.get(operation) if operation else None
-        if old is not None and old.get('review_detached'):
-            if old['fut'].done():
-                result = old['fut'].result()
-                return {'result': result.get('result'), 'id': old['id'], 'already_requested': True}
-            return {'result': 'questioned', 'id': old['id'], 'not_executed': True}
-        pause = asyncio.get_running_loop().create_future()
-        worker = asyncio.create_task(self._request_impl(card, gone, on_card, pause, operation))
-        self.review_requests.add(worker)
-        worker.add_done_callback(self.review_requests.discard)
+        from . import approval_review, provenance
+        paired = provenance._PAIRED_REQUEST.get()
+        creator_live = None
+        if paired is not provenance._UNSET:
+            source = provenance._paired_source()
+            if source is provenance._UNSET or not provenance.is_owner(source):
+                return {'result': 'refused', 'why': 'authority_changed'}
+            creator_live = paired[1]  # real creator checked above; never infer owner from worker context
+        binding = card
+        callback_entry = None
+        callbacks = self.__dict__.setdefault('_review_callbacks', [])
+        if card.get('kind') == 'secret' and 'sink' in card:
+            sink = card['sink']
+            if not callable(sink):
+                return {'result': 'failed', 'why': 'invalid_sink'}
+            callback_entry = next((entry for entry in callbacks if entry['callback'] is sink), None)
+            if callback_entry is None:
+                callback_entry = {'callback': sink, 'token': secrets.token_hex(16), 'leases': 0}
+                callbacks.append(callback_entry)
+            callback_entry['leases'] += 1
+            binding = {**card, 'sink': {'private_callback': callback_entry['token']}}
         try:
-            done, _ = await asyncio.wait((worker, pause), return_when=asyncio.FIRST_COMPLETED)
-            if worker in done:
-                return await worker
-            return {'result': 'questioned', 'id': pause.result(), 'not_executed': True,
-                    'detail': 'The card remains pending. Explain in the main thread; do not repeat the operation.'}
-        except asyncio.CancelledError:
-            worker.cancel()
-            raise
+            operation = approval_review.digest({'card': binding, 'origin': approval_review.snapshot(self.host)}) if card.get('kind') in ('sudo', 'secret') else None
+            old = self.review_operations.get(operation) if operation else None
+            if old is not None and old.get('review_detached'):
+                if old['fut'].done():
+                    result = old['fut'].result()
+                    return {'result': result.get('result'), 'id': old['id'], 'already_requested': True}
+                return {'result': 'questioned', 'id': old['id'], 'not_executed': True}
+            pause = asyncio.get_running_loop().create_future()
+            worker = asyncio.create_task(self._request_impl(card, gone, on_card, pause, operation, creator_live))
+            self.review_requests.add(worker)
+            worker.add_done_callback(self.review_requests.discard)
+            try:
+                done, _ = await asyncio.wait((worker, pause), return_when=asyncio.FIRST_COMPLETED)
+                if worker in done:
+                    return await worker
+                return {'result': 'questioned', 'id': pause.result(), 'not_executed': True,
+                        'detail': 'The card remains pending. Explain in the main thread; do not repeat the operation.'}
+            except asyncio.CancelledError:
+                worker.cancel()
+                raise
+        finally:
+            if callback_entry is not None:
+                callback_entry['leases'] -= 1
+            retained = [c.get('sink') for c in self.review_operations.values()]
+            # In-flight requests own a lease before their card is registered.
+            # Retained operations own identity after request returns Question.
+            callbacks[:] = [entry for entry in callbacks if entry['leases']
+                            or any(entry['callback'] is live for live in retained)]
 
-    async def _request_impl(self, card, gone, on_card, review_pause, operation) -> dict:
+    async def _request_impl(self, card, gone, on_card, review_pause, operation, _creator_live=None) -> dict:
 
+        if _creator_live is not None and not _creator_live():
+            return {'result': 'refused', 'why': 'authority_changed'}
         if self.host.stopped():
             return {"result": "stopped"}
         native_authority = None
@@ -1142,13 +1173,8 @@ class Elevator:
             native_authority.live()
         from . import provenance
         unattended = provenance.unattended_turn(getattr(self.host, "agent", None))
-        if native_authority is None and card["kind"] not in ("login", "vshare") and provenance.untrusted_turn(getattr(self.host, "agent", None)) \
-                and not provenance.delegated_turn(getattr(self.host, "agent", None)) and not unattended:
-            audit(self.st, None, kind=card.get("kind"), result="group_source", reason="group_source")
-            recovery = getattr(getattr(self.host, 'background_done', None), 'recovery', None)
-            if recovery is not None:
-                await asyncio.to_thread(recovery.refusal, 'elevate:' + card['kind'], card, 'group_source')
-            return {"result": "group_source"}
+        # Main/host/external turn labels do not decide tool authority. The
+        # controller below still requires its concrete paired signed request.
         if len([c for c in self.cards.values() if not c["fut"].done()]) >= MAX_OPEN:
             return {"result": "busy"}
         if card["kind"] == "sudo" and (left := locked_for(self.st)):
@@ -1160,6 +1186,8 @@ class Elevator:
         same_owner_task = provenance.same_owner_source(getattr(self.host, "agent", None)) or bool(unattended)
         if card["kind"] == "sudo" and native_authority is None and not same_owner_task and (auto := await self.grants.auto(card, gone)) is not None:
             return auto
+        if _creator_live is not None and not _creator_live():
+            return {'result': 'refused', 'why': 'authority_changed'}
         c = dict(card, id=secrets.token_hex(16), fails=0, fut=asyncio.get_running_loop().create_future())
         if native_authority is not None:
             native_authority.card = c
@@ -1487,8 +1515,11 @@ class Elevator:
     async def _execute_approved(self, c, s, obj, signed, nonce, priv) -> None:
         from . import approval_special
         approval_key=wire.unb64u(signed['sk'])
-        def ensure_live():
-            if (c.get('revoked') or self.host.stopped() or c['cancel'].is_set()
+        def ensure_live(*, completed_result=None):
+            # Only classify an already-terminated signed stop; this never authorizes work.
+            signed_stop = bool(c.get('stop_by') and completed_result is not None
+                               and completed_result.get('result') == 'timeout')
+            if (c.get('revoked') or self.host.stopped() or (c['cancel'].is_set() and not signed_stop)
                     or self.host.sessions.get(s.cid) is not s or self.st.sign_key(s.device)!=approval_key
                     or not self.st.is_allowed(s.pub) or not self._source_allows(c)):
                 raise approval_special.AuthorityChanged()
@@ -1506,7 +1537,7 @@ class Elevator:
             if c.get('envelope_sha256'):
                 req['envelope_sha256'] = c['envelope_sha256']
             res = await asyncio.to_thread(elevate_helper.run, req, c["timeout"], self.sudo, self.helper_cmd, c["cancel"])
-            ensure_live()
+            ensure_live(completed_result=res)
             if c.get("stop_by") and res.get("result") == "timeout":
                 res["result"] = "stopped"
             audit(self.st, c, result=res["result"], reason="helper", code=res.get("code"), **signed)
@@ -1569,7 +1600,7 @@ class Elevator:
                 else:
                     res = await asyncio.to_thread(run_sudo, c["argv"], value, c["cwd"], c["timeout"], self.sudo, c["cancel"],
                                                   c.get("live"))
-                ensure_live()
+                ensure_live(completed_result=res)
                 why = None   # 0.26.9 #482: a requested save that is not kept is logged (names only), never silent
                 verified = res.get("prompts") == 1
                 if save_prf is not None and res.get("result") == "done" and res.get("prompts") == 0 and vv.get("save"):
@@ -1972,6 +2003,8 @@ class Elevator:
         watch = None
         peer = None
         origin_token = None
+        app_scope = None
+        uid = None
         try:
             sock = w.get_extra_info("socket")
             if sock is not None and hasattr(socket, "SO_PEERCRED"):
@@ -1981,7 +2014,14 @@ class Elevator:
                     return
             line = await asyncio.wait_for(r.readline(), 10)
             req = json.loads(line)
-            if isinstance(req, dict) and req.get("t") in ("sudo", "secret", "secret_out"):
+            from . import application_ingress
+            if peer is None and sys.platform == 'darwin':
+                from .core.process_evidence import peer_pid, uid as peer_uid
+                peer = peer_pid(w)
+                uid = peer_uid(peer)
+            app_scope = application_ingress.native(self.host, w, line, peer, uid)
+            app_scope.__enter__()
+            if isinstance(req, dict) and req.get("t") in ("sudo", "secret", "secret_out", "fn"):
                 from . import bounded_plan, approval_review, provenance, ctl_auth
                 if peer is None and sys.platform == "darwin":
                     from .core.process_evidence import peer_pid
@@ -1991,6 +2031,13 @@ class Elevator:
                     turn = self.host.hist_add({"k": "host", "name": "Agent J 主机", "text": "本人在本机终端发起这项受控操作。"}, "", "done")
                     incoming_origin = approval_review.remember(self.host, turn, provenance.terminal())
                 origin_token = approval_review.ORIGIN.set(incoming_origin or {})
+            if isinstance(req, dict) and req.get("t") == "fn":
+                from . import functions
+                res = await functions.handle(self.host, req, peer=peer)
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
             if isinstance(req, dict) and req.get("t") == "keep_awake":
                 from . import keep_awake
                 if req.get("action") not in ("status", "on", "off") or req.get("power") not in ("ac", "battery", "all") or type(req.get("dry_run")) is not bool \
@@ -2375,6 +2422,8 @@ class Elevator:
         except (OSError, ConnectionError):
             return
         finally:
+            if app_scope is not None:
+                app_scope.__exit__(None, None, None)
             if origin_token is not None:
                 from .approval_review import ORIGIN
                 ORIGIN.reset(origin_token)

@@ -194,6 +194,10 @@ def low_risk_pass(host, cfg, tool, tool_input, batch: bool = True) -> bool:
     batchable request of an ordinary tool whose shared registry row allows automation, nothing stopped, the owner's own turn, no live goal (the goal path already lets
     low risk through and counts it), and layer 1 finds none of the five categories and nothing it cannot read.
     cfg = the asking adapter's own config (a scheduled task's adapter is not host.agent)."""
+    # A native request for confirmation must reach the ordinary phone card.
+    # Advisory effect judgments no longer answer it automatically.
+    return False
+
     try:
         cfg = cfg if isinstance(cfg, dict) else {}
         if (not batch or not cfg.get("high_risk_warnings") or cfg.get("session_mode") == "shared"

@@ -115,6 +115,8 @@ class _Chain(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        prefs = mock.patch.dict(os.environ, {'XDG_CONFIG_HOME':str(pathlib.Path(self.tmp.name)/'config')})
+        prefs.start();self.addCleanup(prefs.stop)
         self.st = _state(self.tmp.name)
         self.work = pathlib.Path(self.tmp.name) / "work"
         self.work.mkdir()

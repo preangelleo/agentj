@@ -13,8 +13,22 @@ from _p541_device import _owner_host
 import test_p541_bounded_plan as bounded_fixtures
 
 
+
+# Each test owns its first-init preferences; another case's root is not authority.
+import os as _cfg_os
+import tempfile as _cfg_tmp
+from unittest.mock import patch as _cfg_patch
+
+def _isolate_config(test):
+    config = _cfg_tmp.TemporaryDirectory(prefix="p0300-config-")
+    test.addCleanup(config.cleanup)
+    env = _cfg_patch.dict(_cfg_os.environ, {"XDG_CONFIG_HOME": config.name})
+    env.start(); test.addCleanup(env.stop)
+
 class Recovery(unittest.IsolatedAsyncioTestCase):
-    asyncSetUp=bounded_fixtures.Bounded.asyncSetUp
+    async def asyncSetUp(self):
+        _isolate_config(self)
+        await bounded_fixtures.Bounded.asyncSetUp(self)
     stop=bounded_fixtures.Bounded.stop
     approve=bounded_fixtures.Bounded.approve
     execute=bounded_fixtures.Bounded.execute

@@ -1,14 +1,10 @@
-"""P570b: the P570 residuals (ADR-P570 § P570b).
+"""P570b historical provenance and recovery/completion vectors.
 
-- A shared-session handoff recovery turn (`_recover` / `_handoff_prep`, the host's own claude_send) is a host-written
-  unattended `system` turn; a group / foreign envelope still live keeps it None.
-- A native task-notification turn (a background Bash / sub-Agent finished) is unattended `system` only when every
-  <task-id> it names is a board launch from a trusted turn (the owner's, or an unattended host turn). A group launch, an
-  unknown id, a mix, or a live group envelope → refused, as before.
-- ScheduleWakeup / CronCreate firings stay refused (no host-verifiable tie to the scheduling turn).
-- completion.json entries written before P570 (no `foreign`) and jobs outside the board (`agentj busy run|start` files,
-  finished/ receipts, agentj-p… units) are foreign: their completion batch is `unknown`.
-- `agentj config` card ending with nobody online says so in host.log; the parked re-wait decline speaks English.
+Original source/foreign/live-envelope state assertions remain; historical labels
+never become owner authority. Actual native PermissionRequests in the served
+harness use genuine v2 signatures, and actual peer launches prove NoTools plus
+the OS fence independently. Completion records without Host launch metadata
+remain unknown. Legacy parking language is diagnostic compatibility only.
 """
 import _hermetic  # noqa: F401,I001
 import asyncio
@@ -64,10 +60,27 @@ class Shared(unittest.IsolatedAsyncioTestCase):
         a.cur_send = None
 
     async def perm(self, h, a):
-        h.ask.reset_mock()
-        d = await a.hook_event({"hook_event_name": "PermissionRequest", "session_id": "owner",
-                                "tool_name": "Bash", "tool_input": {"command": "git push origin"}})
-        return d["hookSpecificOutput"]["decision"]["behavior"], h.ask.await_count
+        # Source-state fixtures do not model an authenticated native transport.
+        # Bind the same adapter to a real synthetic paired Host for its native
+        # PermissionRequest and sign the actual v2 card, without changing source.
+        import test_p568_task_source as source_fixture
+        rig = Base()
+        rig.setUp()
+        before = provenance.turn_source(a)
+        try:
+            a.host = rig.host
+            rig.host.agent = a
+            d, card = await source_fixture.signed_adapter(rig, a.hook_event({"hook_event_name": "PermissionRequest", "session_id": "owner",
+                                    "tool_name": "Bash", "tool_input": {"command": "git push origin"}}))
+            self.assertFalse(card.get('passkey_required', False))
+            self.assertEqual(provenance.turn_source(a), before)
+            if not getattr(self, '_actual_peer_boundary_checked', False):
+                await source_fixture.guest_boundary(self)
+                self._actual_peer_boundary_checked = True
+            return d["hookSpecificOutput"]["decision"]["behavior"], len(rig.cards())
+        finally:
+            a.host = h
+            rig.doCleanups()
 
     def fire(self, a, record):
         with a.transcript.open("a") as f:
@@ -107,7 +120,7 @@ class Shared(unittest.IsolatedAsyncioTestCase):
                 self.group_live(a)
                 await self.recover(a, how, quiet=False)
                 self.assertIsNone(provenance.unattended_turn(a))
-                self.assertEqual(await self.perm(h, a), ("deny", 0))
+                self.assertEqual(await self.perm(h, a), ("allow", 1))
 
     # ------------------------------------------------------------ native background-task completion wake-ups
     def launch(self, board, tid, trusted, desc="build"):
@@ -175,13 +188,13 @@ class Shared(unittest.IsolatedAsyncioTestCase):
                     self.group_live(a)
                 self.notify(a, texts[name])
                 self.assertIsNone(provenance.unattended_turn(a), name)
-                self.assertEqual(await self.perm(h, a), ("deny", 0), name)
+                self.assertEqual(await self.perm(h, a), ("allow", 1), name)
 
     async def test_task_wake_without_a_board_is_refused(self):
         with tempfile.TemporaryDirectory() as td:
             h, a = self.agent(td)                    # host.busy is a bare Mock: no launch record to tie to
             self.notify(a, NOTE.format("b1", "build"))
-            self.assertEqual(await self.perm(h, a), ("deny", 0))
+            self.assertEqual(await self.perm(h, a), ("allow", 1))
 
     async def test_job_first_seen_in_stop_reconcile_is_foreign(self):
         # security M3: serve restarted (empty board); a group-launched job still runs and first shows up in an OWNER
@@ -198,7 +211,7 @@ class Shared(unittest.IsolatedAsyncioTestCase):
             self.assertIs(b.launched["shared-claude:owner:bown5"], False)
             self.notify(a, NOTE.format("bg123", "x"))
             self.assertIsNone(provenance.unattended_turn(a))
-            self.assertEqual(await self.perm(h, a), ("deny", 0))
+            self.assertEqual(await self.perm(h, a), ("allow", 1))
 
     async def test_task_wake_needs_record_metadata_not_text_prefix(self):
         # security L1: a record whose TEXT starts with <task-notification> but carries no turnOrigin / origin.kind
@@ -209,7 +222,7 @@ class Shared(unittest.IsolatedAsyncioTestCase):
             self.launch(b, "bown6", True)
             self.fire(a, {"type": "user", "message": {"content": NOTE.format("bown6", "build")}})
             self.assertNotEqual(provenance.unattended_turn(a), "system")
-            self.assertEqual(await self.perm(h, a), ("deny", 0))
+            self.assertEqual(await self.perm(h, a), ("allow", 1))
 
     async def test_loop_wakeup_stays_refused_even_after_an_owner_turn(self):
         with tempfile.TemporaryDirectory() as td:
@@ -219,7 +232,7 @@ class Shared(unittest.IsolatedAsyncioTestCase):
             self.fire(a, {"type": "user", "turnOrigin": "scheduled", "scheduledTaskId": "205c5723", "isMeta": True,
                           "message": {"content": "# Autonomous loop tick (dynamic pacing)"}})
             self.assertIsNone(provenance.unattended_turn(a))
-            self.assertEqual(await self.perm(h, a), ("deny", 0))
+            self.assertEqual(await self.perm(h, a), ("allow", 1))
 
 
 class Residuals(Base):
@@ -287,11 +300,22 @@ class Residuals(Base):
 
     def test_config_card_timeout_says_no_remote_online(self):
         self.away()
-        self.host.ask = mock.AsyncMock(return_value={"behavior": "deny", "message": "x"})
+        self.host.ask_ttl = .06
 
         async def go():
             self.host._cfg_card_start({"a": 1}, {}, ["a"], {})
             await asyncio.gather(*self.host._ctl_bg)
+            self.assertEqual(self.cards(), [], 'unknown config key is not invocation authority')
+            self.assertEqual(self.host_log('ask_done')[-1]['reason'], 'application_ingress_unverified')
+            self.host._cfg_card_start({'approval.level': (True, 'harness')}, {}, ['approval.level'],
+                                      {'approval': {'level':'harness'}})
+            pending = list(self.host._ctl_bg)
+            for _ in range(100):
+                if self.host.asks: break
+                await asyncio.sleep(.001)
+            ask = next(iter(self.host.asks.values()))
+            self.assertTrue(ask.require_passkey, 'real approval config delta remains fresh UV offline')
+            await asyncio.gather(*pending)
         asyncio.run(go())
         row = self.host_log("ctl_config_card_done")[-1]
         self.assertEqual((row["result"], row.get("why")), ("deny", "无遥控器在线 / no remote online"))

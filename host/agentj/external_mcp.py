@@ -97,8 +97,8 @@ class Service:
                 answer = await self.host.ask('AgentJHook', {'card': text, 'hook': c['id'], 'mcp': op}, batch=False, grant_info=True)
             except Exception:
                 answer = {}
-            grant = answer.get('grant_info') or {}
-            if answer.get('behavior') != 'allow' or not isinstance(grant, dict) or not grant.get('device'):
+            from . import application_ingress
+            if answer.get('behavior') != 'allow' or not application_ingress.allowed(self.host):
                 if op == 'mcp-create':
                     c['state'] = 'revoked'; self.store.end(self.store.get(c['id']), 'revoked'); self.save()
                 self.service.changed()
@@ -113,7 +113,7 @@ class Service:
                 # Save replacement first: old token ceases working immediately.
                 c['hash'], c['state'] = digest(c['id'], token), 'active'
                 h = self.store.get(c['id']); h['state'] = 'active'
-                h['approved'] = {'device': grant['device'], 'at': round(self.service.clock())}
+                h['approved'] = {'actor': application_ingress.actor(self.host), 'at': round(self.service.clock())}
                 self.store.save(); self.save()
                 box = getattr(getattr(self.host, 'elevate', None), 'out', None)
                 try:

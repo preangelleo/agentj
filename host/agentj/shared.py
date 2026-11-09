@@ -462,28 +462,18 @@ class SharedClaudeAgent(Agent):
 
     async def _background_child(self, event, gone=None) -> dict:
 
-        from . import confirm_tier, policy_registry
-        tool, inp = event.get("tool_name"), event.get("tool_input")
-        try:
-            keep = confirm_tier.harness_keeps(tool, inp, workdir=event.get("cwd") or self.cfg.get("dir"))
-        except Exception:  # noqa: BLE001 — cannot tell → the strictest step
-            keep = "delete"
-        if not keep:
-            self.host.st.log("ask_done", tool=str(tool)[:64], decision="native", reason="background_child")
+        from . import uv_list
+        tool, inp = event.get('tool_name'), event.get('tool_input') or {}
+        from .shared_risk import credential_read_refusal
+        if (refusal := credential_read_refusal(self.host, tool, inp, self.cfg.get('dir'))) is not None:
+            return refusal
+        if not uv_list.protected_targets(tool, inp, cwd=self.cfg.get('dir'), env=uv_list.host_environment(self.host)):
             return {}
-        en = str(getattr(self.host, "lang", "zh")).lower().startswith("en")
-        ans = {"behavior": "deny"}
-        with contextlib.suppress(Exception):   # bounded as a whole (review S2): answered before the hook's 170 s socket timeout
-            ans = await asyncio.wait_for(self.host.ask(
-                policy_registry.harness_tool(tool), inp, gone, batch=False, require_passkey=True, ttl=BACKGROUND_WAIT,
-                origin=("From a background run (headless)" if en else "来自后台单（headless 子会话）")), BACKGROUND_WAIT + 10)
-        if ans.get("behavior") == "allow":
+        answer = await self.host.ask(tool, inp, gone, batch=False, _harness_permission=True)
+        if answer.get('behavior') == 'allow':
             return {}
-        return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                "permissionDecisionReason": ("Agent J: a background run cannot do this without the owner's Face ID "
-                                             "(money, deleting the owner's data, a seat, a key going out). Report it back."
-                                             if en else "Agent J：后台单不能直接做这一步（花钱 / 删除主人数据 / 解绑席位 / "
-                                             "密钥外发），主人没有用 Face ID 批准。把它写进报告交回主 Agent。")}}
+        return {'hookSpecificOutput': {'hookEventName':'PreToolUse', 'permissionDecision':'deny',
+                'permissionDecisionReason':answer.get('message') or 'Owner verification required for protected control files.'}}
 
     def issue_hook_token(self):
 
@@ -1020,54 +1010,17 @@ class SharedClaudeAgent(Agent):
             self.host.peers.xfer.broker.complete(event.get("tool_use_id"), success, response,
                 event.get("tool_name"), event.get("tool_input"), event.get("cwd") or self.cfg["dir"])
         if name == "PreToolUse":
-            from .owner_broker import parse as secret_command
-            if secret_command(event.get("tool_name"), event.get("tool_input"), self.cfg["dir"]):
-                return {"hookSpecificOutput":{"hookEventName":"PreToolUse", "permissionDecision":"ask",
-                    "permissionDecisionReason":"Agent J: native secret-call authorization required"}}
-            from . import policy_registry
-            requirement = policy_registry.main_requirement(event.get("tool_name"), event.get("tool_input"), cwd=self.cfg.get("dir"))
-            if requirement != "allow":
-                if requirement != "deny":
-                    # Preserve denial suppression and late-answer revocation checks,
-                    # without making a category approval satisfy the registry floor.
-                    verdict = danger.classify_shared(event.get("tool_name"), event.get("tool_input"), self.cfg.get("danger_extra"),
-                                                     self.cfg.get("approvals", "standard"), event.get("cwd") or self.cfg.get("dir"))
-                    digest = card_digest(event.get("tool_name", "?"), event.get("tool_input") or {})
-                    self.risk_requests[(event.get("tool_use_id"), digest)] = danger.shared_keys(verdict, self.cfg)
-                lang = str(getattr(self.host, "lang", "zh"))
-                if requirement == "deny":     # P553 (#326): no card is shown — say so and name the tool, and log it
-                    policy_registry.log_unknown(getattr(self.host, "st", None), event.get("tool_name"), event.get("tool_input"), agent="claude")
-                    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                        "permissionDecisionReason": policy_registry.unknown_text(event.get("tool_name"), lang)}}
-                return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
-                    "permissionDecisionReason": ("Agent J: owner confirmation required"
-                        if lang.lower().startswith("en") else "Agent J：需要主人确认")}}
-            verdict = danger.classify_shared(event.get("tool_name"), event.get("tool_input"), self.cfg.get("danger_extra"),
-                                             self.cfg.get("approvals", "standard"), event.get("cwd") or self.cfg.get("dir"))
-            # P198: the five clear dangers ask on the phone (P128's documented `standard`); from 0.15 (F14) to 0.20.0 the
-            # default kept only hook-file writes (A5) — now only under agent.approvals = native
-            keys = danger.shared_keys(verdict, self.cfg)
-            if keys and set(keys) <= self.permissions:
-                for cat in keys:
-                    self.host.st.log("shared_risk_batch", category=cat, grant=self.risk_grants[cat]["rid"],
-                        session=self.session["sessionId"], input_sha256=hashlib.sha256(
-                            json.dumps(event.get("tool_input"), sort_keys=True).encode()).hexdigest())
-            if set(keys) - self.permissions:
-                ident = event.get("tool_use_id")
-                digest = hashlib.sha256(json.dumps([event.get("tool_name"), event.get("tool_input")], sort_keys=True).encode()).hexdigest()
-                self.risk_requests[(ident, digest)] = keys
-                return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
-                    "permissionDecisionReason": "Agent J: " + danger.card_why(verdict, getattr(self.host, "lang", "zh"))}}
-        if name == "PermissionRequest" and provenance.untrusted_turn(self) and not provenance.delegated_turn(self) \
-                and not provenance.unattended_turn(self):   # P570
-            # B1: a group member's turn never reaches the owner's approval, nor a category grant from an owner turn
-            self.host.st.log("ask_done", tool=event.get("tool_name"), decision="deny", reason="group_source")
-            recovery = getattr(getattr(self.host, "background_done", None), "recovery", None)
-            if recovery is not None:
-                await asyncio.to_thread(recovery.refusal, event.get("tool_name") or "?", event.get("tool_input") or {},
-                                        "group_source", event.get("agent_id"))
-            return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny",
-                "message": provenance.refusal_text(self)}}}
+            from . import uv_list
+            from .shared_risk import credential_read_refusal
+            if (refusal := credential_read_refusal(self.host, event.get('tool_name'), event.get('tool_input') or {}, self.cfg.get('dir'))) is not None:
+                return refusal
+            if uv_list.protected_targets(event.get('tool_name'), event.get('tool_input'), cwd=self.cfg.get('dir'), env=uv_list.host_environment(self.host)):
+                answer = await self.host.ask(event.get('tool_name'), event.get('tool_input') or {}, gone,
+                                             _harness_permission=True, batch=False)
+                if answer.get('behavior') != 'allow':
+                    return {'hookSpecificOutput': {'hookEventName':'PreToolUse', 'permissionDecision':'deny',
+                        'permissionDecisionReason':answer.get('message') or 'Owner verification required for protected control files.'}}
+            return {}
         if name == "SessionStart" and not event.get("agent_id"):
             # P116 (B11): startup / resume / clear / compact of the served session reads the identity (again)
             note = self._handoff_context(event.get("source"))
@@ -1130,7 +1083,7 @@ class SharedClaudeAgent(Agent):
                     origin = self.card_origin(self.card_agent[withdraw])
                     try:
                         ctx = approval_jev.transcript_context(event.get("transcript_path")) if event.get("transcript_path") else None
-                        answer = await self.host.ask(policy_registry.harness_tool(tool), inp, batch=False, risk_scope=bool(cats), gone=withdraw, _receipt=receipt,
+                        answer = await self.host.ask(policy_registry.harness_tool(tool), inp, _harness_permission=True, batch=False, risk_scope=bool(cats), gone=withdraw, _receipt=receipt,
                                                      **({"context": ctx} if ctx is not None else {}),
                                                      **({"origin": origin} if origin else {}))
                     finally:
@@ -3019,11 +2972,9 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         self.owned_server=False   # P59: True once Agent J started this ordinary server itself (restartable, same session)
 
     async def prepare_risk(self, owner=False):
-        # P198: Agent J's own ordinary server always loads the guard (the five clear dangers ask on the phone); a server the
-        # OWNER started keeps it opt-in (agent.high_risk_warnings: loading it disposes their instance, refused while busy)
-        if (owner and not self.cfg.get('high_risk_warnings',False)) or not danger.shared_guard(self.cfg) or self.risk_channel:
-            if owner and not self.risk_channel:
-                self.host.st.log('shared_guard_unavailable', agent=self.kind, reason='owner_server')
+        # Fixed control paths require the hook in every permission mode. Native
+        # permissions still own all ordinary targets; no warning opt-in applies.
+        if self.risk_channel:
             return
         # P198 (C): under agentperm/ — the only part of the state dir the fence binds back (fence.py); at <state>/ the fenced
         # plugin's hook could not reach it, SharedGuardReady never came and every turn ended in TimeoutError

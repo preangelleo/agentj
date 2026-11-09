@@ -3,8 +3,8 @@ name: agentj-update
 description: Upgrade Agent J when the owner asks to update it.
 ---
 
-主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
-Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+默认派 CEO/子 Agent，写验收、复验、汇报；主人明确要求亲做就照办。指纹清单、凭据规则和 harness 硬限制不变。
+Delegate by default; follow explicit owner requests to work personally. Verify and report; UV, credential rules and harness limits remain.
 
 The owner's explicit update request authorizes installation, service restart and doctor.
 Run `agentj update apply` (F14, non-interactive). Do not assemble uv/pip commands.
@@ -59,9 +59,9 @@ Nightly 03–05 local checks report auto-update on/off and the last automatic re
 P453: A completed rollback with an active service is a warning (upgrade-restart), not a broken installation. `agentj service start` acknowledges a completed failure even when its target differs from the current version; the next successful upgrade clears it too. Inactive services still fail. On doctor_failed, inspect fixed check IDs in service-recovery.log (macOS) / worker journal (Linux) and host.log upgrade_health_failed; never copy private log details into a support report.
 中文：已自动退回旧版、服务正常时，upgrade-restart 是警告；升级没成功，但旧版可以用。运行 `agentj service start` 再 doctor 可确认并清除这次记录，下次成功升级也会清掉。服务未恢复时仍显示失败。自检失败项 ID 记录在 Mac 的 service-recovery.log / Linux 任务日志，以及 host.log 的 upgrade_health_failed；对外反馈前先脱敏。
 
-P535: After upgrading, the host checks itself automatically. With no blocking problems it says “Upgrade succeeded; everything is working.” A blocking problem is named in the receipt with a Repair button on the phone, using the existing paired-device confirmation flow. Continue the first-run checklist in Settings; its counts and doctor use the same host record and do not appear in upgrade receipts. Waiting for the first phone message after restart is not an upgrade failure.
+P535: After upgrading, the host checks itself automatically. With no blocking problems it says “Upgrade succeeded; everything is working.” A blocking problem is named in the receipt with a Repair button on the phone, using the existing paired-device confirmation flow. Continue the first-run checklist in Settings → Agent tools → First-run checklist; its counts and doctor use the same host record and do not appear in upgrade receipts. Waiting for the first phone message after restart is not an upgrade failure.
 
-升级后主机会自动自检；没有阻塞问题时只提示「升级成功，一切正常」。有阻塞时会说明故障，并在手机回执上提供「一键修复」，沿用已配对手机的确认流程。首次准备清单在「设置」里继续，待办数字与清单、doctor 使用同一份主机记录，不计入升级回执。重启后等待首条手机消息不算升级故障。
+升级后主机会自动自检；没有阻塞问题时只提示「升级成功，一切正常」。有阻塞时会说明故障，并在手机回执上提供「一键修复」，沿用已配对手机的确认流程。首次准备清单从「设置 → Agent 的功能 → 首次准备清单」继续，待办数字与清单、doctor 使用同一份主机记录，不计入升级回执。重启后等待首条手机消息不算升级故障。
 
 
 For an ordinary host on an older version (including 0.15.5a1), first run `agentj update apply`, then verify `agentj --version` and `agentj doctor`. Only if the command is missing or the old updater fails, copy the current install command from the account seat card and rerun it as the same OS user and instance. Configuration and bindings are kept; do not unlink, delete state or create another seat. Olares Market applications still update through Market.

@@ -412,7 +412,8 @@ def turn_gate(host) -> dict:
     via = (provenance.unattended_turn(agent) or ("delegated" if provenance.delegated_turn(agent) else None)
            or ("owner_channel" if provenance.owner_channel_turn(agent) else None))
     otg = bool(provenance.owner_grant_required(agent))
-    gated = otg or bool(provenance.untrusted_turn(agent) and not via)
+    from . import application_ingress
+    gated = otg or (not application_ingress.allowed(host) and bool(provenance.untrusted_turn(agent) and not via))
     from .google_api import mail_read
     return {"gated": gated, "via": via, "why": ("owner_grant_scope" if otg else "group_source") if gated else None,
             "mail": mail_read(host)}
@@ -448,38 +449,13 @@ async def signed_card(host, name: str, tool_input: dict, emit=None, gate: dict |
 
 
 async def _signed_card(host, name: str, tool_input: dict, emit, *, require_passkey=False) -> dict:
-    import asyncio
-    from . import policy_registry
-    asks = lambda: set(getattr(host, "asks", None) or ())
-    before = asks()
-    needs_uv = require_passkey or any(i.get("kind") == "secret" for i in tool_input.get("items", []) if isinstance(i, dict))
-    task = asyncio.ensure_future(host.ask(CARD_TOOL, tool_input, batch=False, grant_info=True, always_ask=True, require_passkey=needs_uv,
-                                          _company_proposal=policy_registry.HOST_CARD))
-    if emit is not None:
-        for _ in range(100):
-            if task.done() or asks() - before:
-                break
-            await asyncio.sleep(0.01)
-        if not task.done() and asks() - before:
-            emit({"stage": "card", "online": bool(host._online_approvers()), "ttl": int(host.ask_ttl)})
-    ans = await task
-    g = ans.get("grant_info") if isinstance(ans, dict) else None
-    if not isinstance(ans, dict) or ans.get("behavior") != "allow" or not isinstance(g, dict):
-        why = WHYS.get(ans.get("reason") if isinstance(ans, dict) else None, "no_signature")
-        host.st.log("plaza_perm_card_done", name=name, result="deny", why=why)
-        return {"ok": False, "why": why}
-    inherited = g.get("inherited") is True
-    extra = {}
-    if inherited and needs_uv:
-        return {"ok": False, "why": "no_signature"}
-    if inherited:
-        from . import approval_level
-        parent = approval_level.level_grant(host.st)
-        if approval_level.level(host.preferences, host.st) != "harness" or not parent or g.get("parent_grant") != parent:
-            return {"ok": False, "why": "no_signature"}
-        extra = {"inherited": True, "parent_grant": parent}
-    host.st.log("plaza_perm_card_done", name=name, result="allow", mode="level_harness" if inherited else "card")
-    return {"ok": True, "approved": True, "rid": g.get("rid"), "device": g.get("device"), **extra}
+    # Package manifest environment access is a permissions review, not an
+    # operation that inputs/replaces a credential. Actual secret entry retains
+    # its existing secret-controller UV; manifest names cannot create UV.
+    from . import application_ingress
+    answer = await host.ask(CARD_TOOL, tool_input, batch=False, grant_info=True)
+    ok = answer.get('behavior') == 'allow' and application_ingress.allowed(host)
+    return {'ok': ok, **({'approved': True} if ok else {'why': answer.get('reason') or 'application_ingress_unverified'})}
 
 
 _ISO = re.compile(r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?")

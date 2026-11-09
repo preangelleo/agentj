@@ -132,7 +132,8 @@ def _run(engine: pathlib.Path, args: list[str], capture=False) -> subprocess.Com
             reason = observation.get('reason', 'unknown')
             code = {'offline':'interaction_unavailable', 'no_device':'interaction_unavailable', 'host_unavailable':'interaction_unavailable',
                     'device':'authorization_denied', 'timeout':'authorization_timeout', 'estop':'execution_stopped',
-                    'group_source':'authorization_source_refused', 'owner_grant_scope':'authorization_scope_missing',
+                    'group_source':'authorization_source_refused', 'application_ingress_unverified':'authorization_source_refused',
+                    'owner_grant_scope':'authorization_scope_missing',
                     'serve_stop':'interaction_interrupted', 'agent_gone':'interaction_interrupted',
                     'superseded':'interaction_interrupted', 'too_many':'interaction_unavailable'}.get(reason, 'authorization_unknown')
             receipt = {'code':code, 'reason':reason, 'receipt':'report-execution/' + code,

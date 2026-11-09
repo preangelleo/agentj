@@ -98,7 +98,7 @@ export async function extras(page, lang) {
     const h = (html) => { const d = document.createElement('div'); d.innerHTML = html; return d.firstElementChild; };
     const box = document.createElement('div'); box.id = 'p569-extras'; box.style.cssText = 'position:absolute;left:0;top:0;width:360px;z-index:1;pointer-events:none;visibility:hidden';
     box.append(
-      h(`<div class="sheet danger"><div class="cmd" id="p569-cmd">rm -rf build/</div></div>`),
+      h(`<div class="sheet danger"><div class="aj-approval-command" id="p569-cmd">rm -rf build/</div></div>`),
       h(`<p class="setup-act" id="p569-setup-act">${t.act}</p>`),
       h(`<div class="fr-gmentions"><button class="fp-mention" id="p569-frm" aria-selected="true">Sammi</button></div>`),
       h(`<div><button class="fp-mention" id="p569-fpm" aria-selected="true">Sammi</button></div>`),

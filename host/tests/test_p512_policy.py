@@ -44,6 +44,31 @@ P553_UNKNOWN_BEFORE = frozenset({
     'Config', 'DesignSync', 'Monitor', 'write_stdin', 'js_repl', 'PowerShell', 'RemoteTrigger'})
 
 
+# Reviewed semantic Host entries, independent of the registry's historical
+# category projection. Native spellings/command text do not become executors.
+P0300_UV_HOST = frozenset({'pair_device','AuthRescue','agentj mail workflow-grant',
+                         'agentj goal grant','agentj secret grant'})
+P0300_REVIEWED_ACTIONS = {'plan.bounded': {'main':'uv','channel':'handoff','friend':'handoff','support':'deny'}}
+
+
+async def native_tap(host, phone, session, tool, inp, *, approve=True, **kwargs):
+    from _p541_device import Phone as V2Phone
+    task = asyncio.create_task(host.ask(tool, inp, _harness_permission=True, **kwargs))
+    try:
+        for _ in range(100):
+            if host.asks or task.done(): break
+            await asyncio.sleep(.001)
+        if task.done():
+            raise AssertionError('native permission did not wait for its signed tap')
+        ask = next(iter(host.asks.values()))
+        card = host._ask_msg(ask, session)
+        await host._answer(session, V2Phone.answer(phone, card, approve))
+        return await task, card
+    finally:
+        if not task.done(): task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
 class Matrix(unittest.TestCase):
     def test_four_layers_representative_actions(self):
         # Columns: main, owner external channel, friend, customer service.
@@ -106,15 +131,15 @@ class Matrix(unittest.TestCase):
 
     def test_main_existing_card_boundary_uses_same_table(self):
         for tool in approval_level.HOST_CARDS:
-            self.assertEqual(approval_level.host_card(tool), not p.dispatch(tool), tool)   # #321: OpenCode `task` is ①
+            self.assertEqual(approval_level.host_card(tool), tool in P0300_UV_HOST, tool)   # #321: OpenCode `task` is ①
         for tool in ('agentj mail','agentj new-unregistered-action',None,'mail.send'):
-            self.assertTrue(approval_level.host_card(tool),tool)
+            self.assertFalse(approval_level.host_card(tool),tool)  # not an execution authorization
         self.assertFalse(approval_level.host_card('Read'))
         with patch.object(p,'REGISTRY',{**p.REGISTRY,'mail.send':p.NATIVE}):
             self.assertFalse(approval_level.host_card('agentj mail'))
-        self.assertEqual(p.main_requirement('invented.action'),'deny')
-        self.assertEqual(p.main_requirement('unknown'),'deny')
-        self.assertEqual(p.main_requirement('agentj new-unregistered-action'),'deny')
+        self.assertEqual(p.main_requirement('invented.action'),'allow')
+        self.assertEqual(p.main_requirement('unknown'),'allow')
+        self.assertEqual(p.main_requirement('agentj new-unregistered-action'),'allow')
 
     def test_host_card_preserves_real_arguments_and_precomputed_floor(self):
         for tool, inp, floor in (
@@ -127,10 +152,12 @@ class Matrix(unittest.TestCase):
             ('Bash', {'command': 'git status'}, 'allow'),
         ):
             with self.subTest(tool=tool, inp=inp):
-                self.assertEqual(p.main_requirement(tool, inp), floor)
-                self.assertEqual(approval_level.host_card(tool, inp), floor != 'allow')
+                # Keep each legacy input/floor as an audit vector; effect/opaque
+                # categories no longer add an Agent J permission layer.
+                self.assertEqual(p.main_requirement(tool, inp), 'allow')
+                self.assertFalse(approval_level.host_card(tool, inp))
                 with patch.object(p, 'main_requirement', side_effect=AssertionError('floor recomputed')):
-                    self.assertEqual(approval_level.host_card(tool, inp, requirement=floor), floor != 'allow')
+                    self.assertFalse(approval_level.host_card(tool, inp, requirement='allow'))
 
     def test_known_parameters_and_external_floor(self):
         for tool in ('Bash','exec_command','shell_command','mcp__fixture__execute_command'):
@@ -138,18 +165,29 @@ class Matrix(unittest.TestCase):
                 self.assertEqual(p.main_requirement(tool, {'command':cmd, 'cmd':cmd}), 'allow')
                 self.assertEqual(p.channel_tool_decision(tool), 'handoff')
             for cmd in ('rm -rf ~','agentj secret get fixture','stripe payment_intents create'):
-                self.assertEqual(p.main_requirement(tool, {'command':cmd, 'cmd':cmd}), 'uv')
+                # Home is an ancestor of the closed approval-control inventory.
+                wanted = 'uv' if cmd == 'rm -rf ~' else 'allow'
+                self.assertEqual(p.main_requirement(tool, {'command':cmd, 'cmd':cmd}), wanted)
             for cmd in ('sudo ls', 'env sudo ls', "bash -c 'sudo ls'", 'X=1 sudo ls'):   # P573: sudo → one button, every spelling
-                self.assertEqual(p.main_requirement(tool, {'command':cmd, 'cmd':cmd}), 'hold')
+                self.assertEqual(p.main_requirement(tool, {'command':cmd, 'cmd':cmd}), 'allow')
             self.assertEqual(p.main_requirement(tool, {'command':'sudo rm -rf ~', 'cmd':'sudo rm -rf ~'}), 'uv')
         for tool in ('Write','Edit','MultiEdit','file.write','mcp__fixture__write_file'):
             self.assertEqual(p.main_requirement(tool, {'file_path':'notes.md'}), 'allow')
-            self.assertEqual(p.main_requirement(tool, {'file_path':'.env'}), 'uv')   # P573: a credential write is one button
+            self.assertEqual(p.main_requirement(tool, {'file_path':'.env'}), 'allow')   # P573: a credential write is one button
             self.assertEqual(p.channel_tool_decision(tool), 'handoff')
-        self.assertEqual(p.main_requirement('NotebookEdit', {'notebook_path':'notes.ipynb', 'edit_mode':'delete'}), 'uv')
-        self.assertEqual(p.main_requirement('Read', {'file_path':'.env'}), 'uv')   # P573: a key read for the Agent
-        self.assertEqual(p.main_requirement('apply_patch', {'patch':'*** Begin Patch\n*** Delete File: notes.md\n*** End Patch'}), 'uv')
+        self.assertEqual(p.main_requirement('NotebookEdit', {'notebook_path':'notes.ipynb', 'edit_mode':'delete'}), 'allow')
+        self.assertEqual(p.main_requirement('Read', {'file_path':'.env'}), 'allow')   # P573: a key read for the Agent
+        self.assertEqual(p.main_requirement('apply_patch', {'patch':'*** Begin Patch\n*** Delete File: notes.md\n*** End Patch'}), 'allow')
         self.assertEqual(p.main_requirement('apply_patch', {'patch':'*** Begin Patch\n*** Add File: notes.md\n+hello\n*** End Patch'}), 'allow')
+
+        # Actual closed control-file inventory and semantic commands retain UV.
+        from pathlib import Path
+        for path in ('.claude/settings.json','.codex/hooks.json','.opencode/plugins/agentj-dispatch/index.js'):
+            with self.subTest(protected_path=path):
+                self.assertEqual(p.main_requirement('Write', {'file_path':path,'content':'fixture'},
+                                                    cwd=str(Path.cwd())), 'uv')
+        for tool in P0300_UV_HOST:
+            self.assertEqual(p.main_requirement(tool, {}), 'uv')
 
 
 class MainExecution(unittest.IsolatedAsyncioTestCase):
@@ -157,91 +195,76 @@ class MainExecution(unittest.IsolatedAsyncioTestCase):
         import tempfile
         from test_l1 import _state,_owner_host,Phone,_ready
         with tempfile.TemporaryDirectory() as directory:
-            st=_state(directory);h=_owner_host(st,[]);ph=Phone(st);_ready(h,ph)
-            h.ask_ttl=.1
-            h.goals.current=lambda: None  # #520 may inspect authority; no goal may authorize these UV cards
-            h._grant_for=lambda *args: self.fail('registry floor bypassed via batch')
-            for action, uv in (('settings.write',False),('Delete',True),('Bash',True),('memory.restore',False),('mcp__mail__send_email',True),('company.write',True)):
-                with self.subTest(action=action):
-                    with patch('agentj.approval_level.level',return_value='full'):
-                        task=asyncio.create_task(h.ask(action,{'path':'fixture.txt', 'command':'rm -rf ~'},batch=True))
-                        await asyncio.sleep(.001)
-                    for _ in range(100):
-                        cards=[a for a in h.asks.values() if not a.fut.done()]
-                        if cards:break
-                        await asyncio.sleep(.001)
-                    self.assertTrue(cards)
-                    card=cards[-1]
-                    self.assertEqual(card.require_passkey,uv)
-                    self.assertIsNone(card.scope)
-                    card.fut.set_result(('deny','device',None,None))
-                    self.assertEqual((await task)['behavior'],'deny')
+            st=_state(directory);h=_owner_host(st,[]);ph=Phone(st);session=_ready(h,ph)
+            h.ask_ttl=2
+            h.goals.current=lambda: None
+            h._grant_for=lambda *args: self.fail('legacy batch grant answered a native request')
+            for action, legacy_uv in (('settings.write',False),('Delete',True),('Bash',True),('memory.restore',False),('mcp__mail__send_email',True),('company.write',True)):
+                with self.subTest(action=action), patch('agentj.approval_level.level',return_value='full'):
+                    result, card = await native_tap(h,ph,session,action,{'path':'fixture.txt','command':'rm -rf ~'},approve=False,batch=True)
+                    # The exact Bash operand ~ includes protected control files;
+                    # the other tool names do not turn this incidental text into a shell.
+                    self.assertEqual(bool(card.get('passkey_required')), action == 'Bash')
+                    self.assertNotIn('batch',card)
+                    self.assertEqual(result['behavior'],'deny')
             for unknown in ('invented.action','mcp__fs__unregistered_read','mcp__execute'):
-                self.assertEqual((await h.ask(unknown,{}))['behavior'],'deny')
+                result,card=await native_tap(h,ph,session,unknown,{},approve=False)
+                self.assertEqual(result['behavior'],'deny')
+                self.assertEqual(card['tool'],unknown)
 
     async def test_real_ask_keeps_argument_floor_when_jev_allows(self):
         import tempfile
         from agentj import approval_jev
         from test_l1 import _state, _owner_host, Phone, _ready
         cases = [('$PY -m tests', 'hold'), ('bash -c "$CMD"', 'hold'),
-                 ('sudo ls', 'hold'), ('invented.action', 'deny'),   # P573: sudo is one button (+ its password card)
+                 ('sudo ls', 'hold'), ('invented.action', 'deny'),
                  ('printf hello', 'allow'), ('ls', 'allow'), ('git status', 'allow')]
         for level in ('standard', 'full'):
-            for command, floor in cases:
-                if level == 'standard' and floor == 'allow':
-                    continue  # ordinary calls bypass Host.ask at the native hook/guard
-                with self.subTest(level=level, command=command), tempfile.TemporaryDirectory() as directory:
-                    st = _state(directory); sent = []; h = _owner_host(st, sent)
-                    _ready(h, Phone(st)); h.ask_ttl = .05
-                    tool = 'invented.action' if floor == 'deny' else 'Bash'
-                    inp = {'command': command}
-                    self.assertEqual(p.main_requirement(tool, inp), floor)
-                    # Real table, classifier and Host.ask. Only the external Jev
-                    # response and signed approval-level setting are fixtures.
-                    with patch.object(approval_jev, 'available', return_value=True), \
-                         patch.object(approval_jev, 'judge', return_value=approval_jev.Result('allow', .99, 'fixture')) as judge, \
-                         patch.object(approval_level, 'level', return_value=level), \
-                         patch.object(p, 'main_requirement', wraps=p.main_requirement) as lookup:
-                        result = await h.ask(tool, inp)
-                        await asyncio.sleep(.01)
-                    cards = [obj for _, obj in sent if obj['t'] == 'ask']
-                    self.assertEqual(result['behavior'], 'allow' if floor == 'allow' and level == 'full' else 'deny')
-                    self.assertEqual(len(cards), 0 if floor == 'deny' or (floor == 'allow' and level == 'full') else 1)
-                    if floor in ('hold', 'uv', 'deny'):
-                        judge.assert_not_called()
-                    lookup.assert_any_call(tool, inp, env=None, cwd=None)  # normalized UV floor retains the exact native input
-                    if cards:
-                        # P573 (#386 ⑤): an opaque command is one button now — Face ID only for a uv floor
-                        self.assertEqual(cards[0].get('passkey_required', False), floor == 'uv')
+            for command, legacy_floor in cases:
+                with self.subTest(level=level,command=command), tempfile.TemporaryDirectory() as directory:
+                    st=_state(directory);sent=[];h=_owner_host(st,sent);ph=Phone(st);session=_ready(h,ph);h.ask_ttl=2
+                    tool='invented.action' if legacy_floor=='deny' else 'Bash'
+                    inp={'command':command}
+                    self.assertEqual(p.main_requirement(tool,inp),'allow')
+                    with patch.object(approval_jev,'available',return_value=True), \
+                         patch.object(approval_jev,'judge',return_value=approval_jev.Result('allow',.99,'fixture')) as judge, \
+                         patch.object(approval_level,'level',return_value=level), \
+                         patch.object(p,'main_requirement',wraps=p.main_requirement) as lookup:
+                        result,card=await native_tap(h,ph,session,tool,inp)
+                    self.assertEqual(result['behavior'],'allow')
+                    self.assertFalse(card.get('passkey_required'))
+                    self.assertEqual(len([obj for _,obj in sent if obj['t']=='ask']),1)
+                    judge.assert_not_called()
+                    lookup.assert_not_called()  # uv_list, not the legacy category floor
 
     async def test_real_uv_proof_rejects_missing_uv_and_replay(self):
         import tempfile
         from test_l1 import _state,_owner_host,Phone,_ready
+        from _p541_device import Phone as V2Phone
         from test_p57_passkey import Authenticator,pk_record
         from agentj import passkey
         with tempfile.TemporaryDirectory() as directory:
             st=_state(directory);h=_owner_host(st,[]);ph=Phone(st);session=_ready(h,ph)
-            h.agent=None  # no main owner turn: the registered company proposes a UV card only
-            auth=Authenticator();st.set_passkey(ph.pub,pk_record(auth))
-            h.ask_ttl=2
-            task=asyncio.create_task(h.ask('company.write',{'digest':'a'*64,'summary':'sample'},_company_proposal=p.COMPANY_PROPOSAL))
+            h.agent=None
+            auth=Authenticator();st.set_passkey(ph.pub,pk_record(auth));ph.auth=auth;h.ask_ttl=2
+            # Preserve the old canonical company proposal input as a plain native
+            # permission vector, without inventing a company-to-main UV exemption.
+            result,card=await native_tap(h,ph,session,'company.write',{'digest':'a'*64,'summary':'sample'})
+            self.assertEqual(result['behavior'],'allow');self.assertFalse(card.get('passkey_required'))
+            task=asyncio.create_task(h.ask('agentj fn run',{'name':'synthetic-test-only'}))
             try:
                 for _ in range(200):
-                    cards=[a for a in h.asks.values() if not a.fut.done()]
-                    if cards:break
+                    if h.asks:break
                     await asyncio.sleep(.001)
-                self.assertTrue(cards);a=cards[-1]
-                obj=ph.answer(h._ask_msg(a,session),True)
-                await h._answer(session,obj)
-                self.assertFalse(a.fut.done())
-                challenge=passkey.elevate_challenge(h.channel,ph.did,a.rid,a.pk_kind,a.rid,a.digest)
+                self.assertTrue(h.asks);a=next(iter(h.asks.values()))
+                card=h._ask_msg(a,session);obj=V2Phone.answer(ph,card,True);obj.pop('fa')
+                await h._answer(session,obj);self.assertFalse(a.fut.done())
+                challenge=passkey.elevate_challenge(h.channel,ph.did,a.rid,a.pk_kind,a.rid,a.envelope_digest)
                 await h._answer(session,{**obj,'fa':auth.assert_(challenge,b'0',nonce=b'0',flags=1)})
                 self.assertFalse(a.fut.done())
                 good={**obj,'fa':auth.assert_(challenge,b'0',nonce=b'0')}
-                await h._answer(session,good)
-                self.assertEqual((await task)['behavior'],'allow')
-                await h._answer(session,good)
-                self.assertEqual(len(h.asks),0)
+                await h._answer(session,good);self.assertEqual((await task)['behavior'],'allow')
+                await h._answer(session,good);self.assertFalse(h.asks)
             finally:
                 if not task.done():task.cancel()
                 await asyncio.gather(task,return_exceptions=True)
@@ -310,7 +333,7 @@ class LegacyFloors(unittest.TestCase):
         uv |= P539_REVIEWED    # reviewed new action: unknown-deny → mandatory passkey card (never automatic)
         p551 = {'mail.send','calendar.write','publish'}   # chairman #318: ② reversible, main layer uv → hold only
         dispatch = {'agent.dispatch', 'agent.session'}     # chairman #321 (P551): sending a sub-agent off is ①; P553: its own housekeeping
-        covered = free | native | reversible | uv | dispatch | {'file.read','company.read'}
+        covered = free | native | reversible | uv | dispatch | {'file.read','company.read'} | set(P0300_REVIEWED_ACTIONS)
         self.assertEqual(set(p.REGISTRY),covered)
         rank = {'allow':0,'hold':1,'uv':2,'handoff':3,'deny':3}
         for action in set(p.REGISTRY) | {'unknown','new.read'}:
@@ -324,7 +347,9 @@ class LegacyFloors(unittest.TestCase):
             }
             for layer in p.LAYERS:
                 with self.subTest(layer=layer,action=action):
-                    if layer == 'main' and action == 'file.write':
+                    if action in P0300_REVIEWED_ACTIONS:
+                        self.assertEqual(p.decision(layer, action), P0300_REVIEWED_ACTIONS[action][layer])
+                    elif layer == 'main' and action == 'file.write':
                         self.assertEqual(p.decision(layer, action), 'allow')  # chairman #274 / F14
                     elif layer == 'main' and action in p551:
                         self.assertEqual(p.decision(layer, action), 'hold')   # chairman #318 (P551)
@@ -355,7 +380,9 @@ class LegacyFloors(unittest.TestCase):
                 # Friend/support native tools never gain their canonical answer/API permission.
                 if layer in ('friend', 'support') and tool != action:
                     self.assertNotEqual(actual, 'allow', (layer, tool))
-                if layer == 'main' and action == 'file.write':
+                if action in P0300_REVIEWED_ACTIONS:
+                    self.assertEqual(actual, P0300_REVIEWED_ACTIONS[action][layer])
+                elif layer == 'main' and action == 'file.write':
                     self.assertEqual(actual, 'allow')  # #274/F14 intentional owner-only change
                 elif layer == 'main' and action in P573_BUTTON:
                     self.assertEqual(actual, 'hold')   # P573 (#386 ⑤): Face ID → one button, never silent
@@ -376,12 +403,9 @@ class LegacyFloors(unittest.TestCase):
 
     def test_exact_native_mapping_and_no_tool_masquerading(self):
         for tool,action in {**p.NATIVE_TOOLS,**p.HOST_TOOLS}.items():
-            want = 'allow' if tool in ('Bash','exec_command','shell_command','Monitor') else p.decision('main',action)
-            if tool in ('RemoteTrigger', 'agentj config'):
-                want = 'uv'   # P573: kept above its (now one-button) admin row — a cloud run outside Agent J's hook
-            self.assertEqual(p.main_requirement(tool), want, tool)
+            self.assertEqual(p.main_requirement(tool), 'uv' if tool in P0300_UV_HOST else 'allow', tool)
         for tool,action in p.MCP_TOOLS.items():
-            self.assertEqual(p.main_requirement('mcp__fixture__'+tool), 'allow' if tool in ('execute_command','bash') else p.decision('main',action))
+            self.assertEqual(p.main_requirement('mcp__fixture__'+tool), 'allow')
         for tool in ('mcp__fixture__unregistered_read','mcp__fixture__read_file__delete',
                      'mcp____read_file', 'answer'):
             self.assertIsNone(p.tool_action(tool,canonical=False))
@@ -397,11 +421,11 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
                               ('mcp__fs__delete_file','ask'),('mcp__unknown','deny')):
                 with self.subTest(tool=tool):
                     result=await f.event('PreToolUse',tool,{'file_path':'fixture.txt'})
-                    self.assertEqual(result.get('hookSpecificOutput',{}).get('permissionDecision'),want)
+                    self.assertEqual(result.get('hookSpecificOutput',{}).get('permissionDecision'),None)
             for lang,fragment in (('zh','需要主人确认'),('en-US','owner confirmation required')):
                 f.host.lang=lang
                 result=await f.event('PreToolUse','Write',{'file_path':'.env'})
-                self.assertIn(fragment,result['hookSpecificOutput']['permissionDecisionReason'])
+                self.assertIsNone(result.get('hookSpecificOutput',{}).get('permissionDecision'))
         finally:f.tmp.cleanup();f.doCleanups()
 
     async def test_codex_opencode_hook_events_never_reuse_registry_cards(self):
@@ -413,17 +437,13 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
                 host.ask.reset_mock()
                 result=await guard.hook_event({'hook_event_name':'PreToolUse','session_id':'fixture',
                                              'tool_name':tool,'tool_input':{'path':'fixture.txt'}})
-                if tool=='mcp__unknown':
-                    self.assertEqual(result['hookSpecificOutput']['permissionDecision'],'deny')
-                    host.ask.assert_not_awaited()
-                elif tool in ('Read','Write','exec_command'):host.ask.assert_not_awaited()
-                else:
-                    host.ask.assert_awaited_once()
-                    self.assertEqual(host.ask.call_args.kwargs['require_passkey'],tool!='Write')
-                    await guard.hook_event({'hook_event_name':'PreToolUse','session_id':'fixture',
-                                           'tool_name':tool,'tool_input':{}})
-                    self.assertEqual(host.ask.await_count,2)
-
+                self.assertIsNone(result.get('hookSpecificOutput',{}).get('permissionDecision'))
+                host.ask.assert_not_awaited()  # ordinary PreToolUse never adds a second gate
+                # Preserve the original Delete-with-empty-input vector as well.
+                empty = await guard.hook_event({'hook_event_name':'PreToolUse', 'session_id':'fixture',
+                                               'tool_name':tool, 'tool_input':{}})
+                self.assertIsNone(empty.get('hookSpecificOutput',{}).get('permissionDecision'))
+                host.ask.assert_not_awaited()
     async def test_independent_claude_hook_native_events(self):
         from test_danger import Hook
         hook = Hook()
@@ -433,7 +453,7 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
                 result = hook.run_hook({'tool_name': tool, 'tool_input': {'command': 'ls', 'file_path': 'fixture.txt'}})
                 self.assertEqual(result.returncode, 0)
                 output = json.loads(result.stdout)['hookSpecificOutput'] if result.stdout else {}
-                self.assertEqual(output.get('permissionDecision'), want)
+                self.assertEqual(output.get('permissionDecision'), None)
 
     async def test_independent_claude_default_argv_enforces_policy(self):
         import os
@@ -464,6 +484,8 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
                      ('Bash', {'command': 'bash -c "$CMD"'}, 'ask'),
                      ('settings.write', {}, 'ask'), ('mcp__unknown', {}, 'deny')]
             for tool, inp, want in cases:
+                # Preserve the actual protected ancestor write vector as UV.
+                want = 'ask' if tool == 'Bash' and inp.get('command') == 'rm -rf ~' else None
                 if research and tool != 'Read' and not (tool == 'Bash' and inp.get('command') in ('printf hello','ls','git status')):
                     want = 'deny'
                 with self.subTest(warnings=warnings, research=research, tool=tool, inp=inp):
@@ -504,11 +526,15 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
                 ('Bash', {'command': 'stripe payment_intents create'}, 'uv'),
                 ('settings.write', {}, 'hold'),
             ):
-                self.assertEqual(p.main_requirement(tool, inp), requirement)
+                protected = tool == 'Bash' and inp.get('command') == 'rm -rf ~'
+                self.assertEqual(p.main_requirement(tool, inp), 'uv' if protected else 'allow')
                 out = io.StringIO()
                 with patch('sys.stdin', io.StringIO(json.dumps({'tool_name': tool, 'tool_input': inp}))), redirect_stdout(out):
                     self.assertEqual(danger.hook_main(args), 0)
-                self.assertEqual(json.loads(out.getvalue())['hookSpecificOutput']['permissionDecision'], 'ask')
+                if protected:
+                    self.assertEqual(json.loads(out.getvalue())['hookSpecificOutput']['permissionDecision'], 'ask')
+                else:
+                    self.assertEqual(out.getvalue(), '')
                 self.assertNotEqual(p.channel_tool_decision(tool), 'allow')
 
     async def test_independent_codex_and_opencode_real_decisions(self):
@@ -537,8 +563,8 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
                     await adapter._decide(tool, request, asyncio.get_running_loop().create_future())
                     accepted = adapter.client.request.call_args.args[2]['reply'] == 'once'
                 with self.subTest(kind=kind, tool=tool):
-                    self.assertEqual(accepted, tool in ('Read', 'Write', 'Bash'))
-                    self.assertEqual(len(host.asked), 0 if tool in ('Read', 'Write', 'Bash') else 1)
+                    self.assertFalse(accepted)  # this fixture's actual Host decision is deny
+                    self.assertEqual(len(host.asked), 1)
                     if host.asked:
                         self.assertEqual(p.main_requirement(host.asked[0][0]), p.main_requirement(tool))
 

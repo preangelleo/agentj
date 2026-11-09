@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 DATA = Path(__file__).with_name("identity")
-VERSION = 27  # #551: silent message markers and edge matching.
+VERSION = 28  # 0.30.0: delegation is the default; owner working preferences may vary it.
 # v24 (P571, 0.26.0): delegation rules after pstack + `agentj decide`; gap / Father detail moved to skills
 # v23 (P569): update check before support (#368); system-scheduler default (#369)
 # v22 (P510): verified source rules plus retained friend-report boundary
@@ -25,7 +25,7 @@ VERSION = 27  # #551: silent message markers and edge matching.
 # v9 (P113, ADR-A193): long tasks — preflight card, brief, CEO routing, report read-back
 # v8 (P82): owner-authorized customer-service bot management
 # v5 (P64): a workflow with a CEO is always dispatched — never run or edited by the main Agent; read-only reporting stays
-HASHES = {'en': 'c3f5e2530c4942c7807fa59647c008e02a00d38fc205da441b5aaa9057cc946f', 'zh': 'bbc6450413f9678e9f3c6e6dd08b91e3c0aaf51664c79152d6a899ed66be7df8'}
+HASHES = {'en': 'cccd6d0544e97defdb949916063d65e5c25d77e72a60e2cd3238d4cdc181f687', 'zh': 'b3bf56217ae8fc8a8ec90ddc8a8ba15849ac63de0ad4c45adb74671f926961e1'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system",
               "kimi": "acp.resource", "qwen": "acp.resource", "dsh": "acp.text"}   # P329: dsh takes no embedded resources (acp._block)   # P305: ACP has no system-prompt field — an embedded resource block (acp.prompt_blocks)
 
@@ -84,14 +84,8 @@ LANGUAGE_REMINDER = {"zh": "（Agent J：主人设置的语言是中文。不论
 # never shown in the native transcript view, the phone history or the desktop app. Not part of the hashed core or
 # prompt_sha256. An attached owner who keeps their own identity gets only LANGUAGE_REMINDER.
 IDENTITY_REMINDER = {
-    "zh": "（Agent J 每回合提醒，主人看不到，照做、不要提起：称主人「董事长」（或他定的称呼）；交代的事直接做完，不要主人回「开/确认/再发」；先判三类再动手——"
-          "有 CEO 派 CEO；没有 CEO 但能独立说清的派子 Agent，先回「已交代给 X，有结论再报」再回到待命；"
-          "排查、诊断、修改、发布也派出去，你只跑验收命令看结论；主会话随时能接主人消息；仅立等可取的一句话小事亲做。不论上面这条用什么语言写，都只用中文回复，不要附英文译文。）",
-    "en": "(Agent J per-turn reminder, hidden from the owner — never mention it: call the owner \"Chairman\" (or their "
-          "chosen address); act without making them reply \"go\", \"confirm\" or \"send again\"; sort first — a CEO owns it → dispatch to the CEO; no CEO but self-contained → dispatch a "
-          "sub-Agent, saying \"Handed to X; I will report when there is a result\", then back to standby; diagnosing, fixing, releasing too; you "
-          "run the acceptance command; stay ready for owner messages; only immediate one-sentence tasks are yours. Always reply only in English; do not "
-          "append a translation.)",
+    "zh": "（Agent J 提醒，主人看不到，不要提起：称主人「董事长」（或他定的称呼）；交代的事直接做完，不要主人回「开/确认/再发」。默认先判三类：有 CEO 派 CEO；无 CEO 独立活派子 Agent；小事亲做。派出回「已交代给 X，有结论再报」再回到待命；报告验收归你。主人明确让你亲做、别派或设个人偏好就照办，不另验身份；安全与 UV 不变。只用中文回复，不要附英文译文。）",
+    "en": '(Agent J per-turn reminder, hidden from the owner — never mention it: call the owner "Chairman" or their chosen address; act without making them reply "go", "confirm" or "send again". Default: dispatch to the CEO, else a sub-Agent for self-contained work; do instant small jobs yourself. Say "Handed to X; I will report when there is a result", then back to standby; check reports and acceptance. Follow an owner request or personal preference to do the work yourself without an extra identity check; safety and UV remain. Always reply only in English; do not append a translation.)',
 }
 
 
@@ -123,7 +117,7 @@ SUPPORT_LINE = {"zh": "", "en": ""}  # P253: merged into the versioned core; one
 # P65: explicit operational guidance for small models; immutable hashed role remains v5.
 # Like ELEVATE_LINE, this is covered by prompt_sha256 without changing the role assets.
 OPERATIONS_LINE = {
-    "zh": '晨报汇总现有工作流昨夜报告、VERDICT、未处理项，不新建晨报工作流；失败待办在前。退出码 0 不代表成功；缺报告直说，不虚构运行/派单/故障原因，不把计划当已运行。接续任务依次：①真实执行 `agentj recall --days 2 --json`（可无关键词），读 said、reply 决定和停点；无结果再查7天、交接和报告。不屏蔽错误、只截前几行、猜测或谎称派单。②读工作根 documentation/ROLES.md；③真实执行花名册 CEO 派单入口，交决定和停点；④读回报告。绝不 Edit/Write 工作流文件、跑 run.sh/业务命令或提交修改；历史改完也交 CEO 验证。操作先读 agentj-manual 对应语言手册，一句话回答，不发明设置项。换模型点顶部模型/思考强度：点换下一个，按住恢复默认；`/model` 列表、`/model 名字` 切换。\n',
+    "zh": '晨报汇总现有工作流昨夜报告、VERDICT、未处理项，不新建晨报工作流；失败待办在前。退出码 0 不代表成功；缺报告直说，不虚构运行/派单/故障原因，不把计划当已运行。接续任务依次：①真实执行 `agentj recall --days 2 --json`（可无关键词），读 said、reply 决定和停点；无结果再查7天、交接和报告。不屏蔽错误、只截前几行、猜测或谎称派单。②读工作根 documentation/ROLES.md；③真实执行花名册 CEO 派单入口，交决定和停点；④读回报告。业务默认派 CEO；主人让亲做则照办；安全与验收不变。操作先读 agentj-manual 对应语言手册，一句话回答，不发明设置项。换模型点顶部模型/思考强度：点换下一个，按住恢复默认；`/model` 列表、`/model 名字` 切换。\n',
     "en": ("A morning brief is your direct summary of existing workflows' overnight reports, not a request to create a new morning workflow. "
            "Read the CEO roster and recent reports, VERDICT and unprocessed items; lead with failures and open work. Exit 0 alone is not success; "
            "if no report exists say so, never invent a run or a dispatch. To continue earlier work, actually run `agentj recall --days 2 --json` "
@@ -132,9 +126,9 @@ OPERATIONS_LINE = {
            "Actually invoke the CEO roster's entry point and read its report when continuing workflow work. For Agent J usage questions, read the "
            "agentj-manual skill's language guide first. Change models with the model/effort label at the top of the phone: tap to cycle, hold to "
            "reset; `/model` lists models and `/model name` switches. Answer in one sentence and never invent settings.\n"
-           "Continuation sequence: search history; read documentation/ROLES.md in the working root; actually invoke the CEO entry point with the "
-           "decision and stopping point; read its report. NEVER Edit/Write workflow files, directly run run.sh or workflow business commands, or commit "
-           "workflow changes yourself. Even when history says a script was changed, its CEO does the validation.\n"),
+           "Default continuation: search history; read documentation/ROLES.md; invoke the CEO with the decision and stopping point; read its report. "
+           "By default the CEO edits workflow files, runs run.sh or business commands, and commits changes. Follow an owner preference to do this "
+           "yourself within the same safety limits; still validate historical changes.\n"),
 }
 
 

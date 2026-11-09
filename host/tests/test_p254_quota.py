@@ -36,7 +36,7 @@ def claude_fixture(root: pathlib.Path, pct, reset, sid="s1", mtime=None):
     return p
 
 
-def codex_fixture(home: pathlib.Path, used, reset, credits=True, window=10080, name="rollout-a.jsonl", day="14"):
+def codex_fixture(home: pathlib.Path, used, reset, credits=True, window=10080, name="rollout-a.jsonl", day="14", timestamp=None):
     d = home / "sessions" / "2026" / "10" / day
     d.mkdir(parents=True, exist_ok=True)
     rl = {"limit_id": "codex", "limit_name": None,
@@ -49,6 +49,18 @@ def codex_fixture(home: pathlib.Path, used, reset, credits=True, window=10080, n
              json.dumps({"type": "event_msg", "payload": {"type": "token_count", "info": {"total": 1}, "rate_limits": rl}}),
              '{"type": "event_msg", "payload": {"rate_limits": BROKEN',
              json.dumps({"type": "response_item", "payload": {"text": "no limits here"}})]
+    if timestamp is not None:
+        # Real native quota readers require a recent event observation, not only file mtime.
+        observed = []
+        for line in lines:
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                observed.append(line)
+            else:
+                if obj.get('type') == 'event_msg': obj['timestamp'] = timestamp
+                observed.append(json.dumps(obj))
+        lines = observed
     (d / name).write_text("\n".join(lines) + "\n")
     return d / name
 
@@ -421,7 +433,7 @@ class StateAndDedupe(unittest.TestCase):
             text = quota.heartbeat_lines(self.root, {}, "zh")
             self.assertTrue(text.startswith("〔额度提醒〕"))
             self.assertIn("1–3 个具体的大活", text)
-            self.assertIn("不要回〔不回群〕", text)
+            self.assertIn("不要回〔静默消息〕", text)
             self.assertEqual(quota.heartbeat_lines(self.root, {}, "zh"), "", "once a day")
 
     def test_schema_key(self):
@@ -521,7 +533,9 @@ class Cli(unittest.TestCase):
             env = {**os.environ, "AGENTJ_STATE_DIR": os.path.join(d, "state"), "CODEX_HOME": os.path.join(d, "codex"),
                    "XDG_CONFIG_HOME": os.path.join(d, "cfg"), "AGENTJ_HEARTBEAT_SOCK": os.path.join(d, "none.sock")}
             os.makedirs(env["AGENTJ_STATE_DIR"])
-            codex_fixture(pathlib.Path(env["CODEX_HOME"]), 10.0, time.time() + 4 * DAY)
+            from datetime import datetime, timezone
+            codex_fixture(pathlib.Path(env["CODEX_HOME"]), 10.0, time.time() + 4 * DAY,
+                          timestamp=datetime.now(timezone.utc).isoformat())
             run = lambda *a: subprocess.run([sys.executable, "-c", "import sys; from agentj import cli; sys.argv=['agentj']+sys.argv[1:]; cli.main()", *a],
                                             cwd=HERE.parent, env=env, capture_output=True, text=True, timeout=60)
             out = run("quota", "--json")

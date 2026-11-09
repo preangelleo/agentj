@@ -130,6 +130,10 @@ def asks(tid, cmd):
 
 
 def command(tid, turn, cmd, net=False):
+    from _native_hook_fixture import codex_pretool
+    if not codex_pretool('Bash',{'command':cmd},tid,os.getcwd()):
+        say(tid,turn,'declined by installed pre-tool hook')
+        return False
     full = "/usr/bin/bash -lc " + shlex.quote(cmd)
     iid = "exec-" + uuid.uuid4().hex[:12]
     item = {"type": "commandExecution", "id": iid, "command": full, "cwd": os.getcwd(), "status": "inProgress",
@@ -154,6 +158,10 @@ def command(tid, turn, cmd, net=False):
 
 def patch(tid, turn, kind, path):
     full = path if os.path.isabs(path) else os.path.join(os.getcwd(), path)
+    from _native_hook_fixture import codex_pretool
+    if not codex_pretool('Delete' if kind=='delete' else 'Write',{'file_path':full,'content':'synthetic'},tid,os.getcwd()):
+        say(tid,turn,'patch declined by installed pre-tool hook')
+        return
     diff = {"add": "hi\n", "update": "@@ -1 +1 @@\n-keep me\n+changed\n", "delete": ""}[kind]
     iid = "patch-" + uuid.uuid4().hex[:12]
     item = {"type": "fileChange", "id": iid, "changes": [{"path": full, "kind": {"type": kind}, "diff": diff}], "status": "inProgress"}
@@ -319,6 +327,9 @@ def handle(m):
         # danger-full-access itself)
         return {"config": {"approval_policy": pol, "approvals_reviewer": "auto_review", "sandbox_mode": os.environ.get("FAKE_CX_SANDBOX"), "model": "gpt-fake",
                            "model_reasoning_effort": "medium"}}
+    if method == 'hooks/list':
+        from _native_hook_fixture import codex_listing
+        return codex_listing(p.get('cwds',[]))
     if method in ("thread/start", "thread/resume"):
         if method == "thread/resume":
             tid = p.get("threadId")

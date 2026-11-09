@@ -431,7 +431,7 @@ def _verdict(st, tid: str, t0: float) -> str | None:
 
 
 def migrate(st, ids: list | None = None, dry: bool = False, plat: str | None = None, run=_run, lang: str = "zh",
-            tz_local: str | None = None) -> list[dict]:
+            tz_local: str | None = None, _live=None) -> list[dict]:
     """→ one row per task {id, title, result: migrated | rolled_back | rollback_failed | skipped | plan, reason, unit, verdict}."""
     from . import activity, controls
     plat, cfg = plat or sys.platform, st.agent_config()
@@ -466,6 +466,8 @@ def migrate(st, ids: list | None = None, dry: bool = False, plat: str | None = N
             res.update(files=[str(st.root / "sysmigrate" / tid / "PROMPT.md")] + [os.path.join(b["dir"], f) for f in b["text"]],
                        install=b["install"], start=b["start"])
             continue
+        if _live is not None and not _live():
+            raise MigrateError('none')
         prev = tasks.load(st)["on"].get(tid)
         rec = {k: b[k] for k in ("unit", "tsha", "psha", "argv", "how", "bindirs", "title", "kind", "fence", "docker", "wd", "research",
                                  "xdg")}
@@ -486,10 +488,15 @@ def migrate(st, ids: list | None = None, dry: bool = False, plat: str | None = N
                         _put(d, f, text.encode(), 0o644)
                 finally:
                     _close(d)
-            if any(run(a)[0] for a in b["install"]):
-                raise MigrateError("install")
+            for command in b['install']:
+                if _live is not None and not _live():
+                    raise MigrateError('none')
+                if run(command)[0]:
+                    raise MigrateError('install')
             tasks.set_enabled(st, wd, tid, False, "migrate")
             end = time.monotonic() + RUN_WAIT
+            if _live is not None and not _live():
+                raise MigrateError('none')
             failed = run(b["start"], RUN_WAIT)[0]
             while (verdict := _verdict(st, tid, t0)) is None and not failed and time.monotonic() < end:
                 time.sleep(2)              # launchd / Task Scheduler return at once; systemd's oneshot start waits
@@ -734,23 +741,28 @@ async def offer(host, plat: str | None = None, run=_run) -> str:
 
 
 async def _card(host, rows: list, lang: str, sent=None) -> str:
-    """The one confirm card (P570c: a plain allow / deny, no Face ID) → yes (a paired device's signed allow, logged) | no (a
-    device declined) | none | pending. `sent`: ctl's "card is out" line (QA L3); its card never says "don't ask again" (L-g)."""
+    """Consume this verified ordinary migration request, without a second card.
+
+    Keep the legacy callback parameter and decline-cooldown bookkeeping, but
+    never report a phone-sent event when no approval card was actually sent.
+    """
     from .policy_registry import HOST_CARD
+    from . import application_ingress
+    if not application_ingress.allowed(host):
+        return 'proposal'
     if host.__dict__.get("_sysmigrate_card"):
         return "pending"
     host._sysmigrate_card = True
     try:
         if sent:
             host._sysmigrate_ctl = time.monotonic() + 86400
-            await sent()
         ans = await host.ask(TOOL, {"summary": card_text([_title(r.get("title"), r["id"], lang) for r in rows], lang,
                                                          bool((host.agent_cfg or {}).get("fence", True)), not sent)},
                              batch=False, grant_info=True, _company_proposal=HOST_CARD)
     finally:
         host._sysmigrate_card = False
-    res = ("yes" if ans.get("behavior") == "allow" and isinstance(ans.get("grant_info"), dict) else
-           "no" if ans.get("behavior") == "deny" and ans.get("message") in DECLINED else "none")
+    res = ("yes" if ans.get("behavior") == "allow" and application_ingress.allowed(host) else
+           "no" if ans.get("behavior") == "deny" and ans.get("reason") == "device" else "none")
     host.st.log("task_migrate_card", result=res, count=len(rows))
     if res != "none":
         await asyncio.to_thread(_update, host.st, lambda m: m.__setitem__("decision", {"answer": res, "at": int(time.time())}))
@@ -770,17 +782,30 @@ async def _offer(host, plat, run) -> str:
                 return "none"
             host.task_notice(pick(lang, *WSL), guide="wsl")
             return "wsl"
-        while host.stopped() or not host._online_approvers():
-            await asyncio.sleep(5)
+        from . import application_ingress
+        if not application_ingress.allowed(host):
+            # A scheduler poll is a proposal, never native execution intent.
+            if m.get('proposal_version') != v:
+                await asyncio.to_thread(_update, st, lambda doc: doc.__setitem__('proposal_version', v))
+                host.task_notice(pick(lang,
+                    '有任务可改用系统定时。请在手机「定时任务」查看后发起迁移，或在原生会话运行 agentj tasks migrate；尚未迁移。',
+                    'Tasks can move to the system scheduler. Review Scheduled tasks on the phone, or request agentj tasks migrate in the native session. Nothing has moved.'))
+            return 'proposal'
+        if host.stopped():
+            return 'stopped'
         await asyncio.to_thread(_update, st, lambda m: m["offers"].__setitem__(v, m["offers"].get(v, 0) + 1))
         ans = await _card(host, rows, lang)
         if ans == "yes":
             try:
-                text = summary(await asyncio.to_thread(migrate, st, [r["id"] for r in rows], False, plat, run, lang), lang)
+                request = application_ingress.current(host)
+                text = summary(await application_ingress.run(host, migrate, st, [r["id"] for r in rows], False, plat, run, lang,
+                                                            _live=request._transport_live if request else lambda:False), lang)
+            except application_ingress.Expired:
+                return "none"
             except MigrateError as err:
                 text = why(err.reason, lang)
             host.task_notice(text)
-        if ans in ("yes", "no"):
+        if ans in ("yes", "no", "proposal"):
             return ans
         await asyncio.sleep(REOFFER)
 
@@ -870,7 +895,7 @@ async def phone(host, s, r: str, t: dict) -> None:
 
 # ------------------------------------------------------------------ serve's control socket, `agentj tasks migrate`
 async def ctl(host, req: dict, sent=None) -> dict:
-    """serve's `tasks_migrate`: whoever asks, a move needs the same card (H5-R); after a decline ≤ 1 card / 24 h (L-g)."""
+    """serve's tasks_migrate uses actual ingress; keep existing decline cooldown."""
     lang = req.get("lang") if req.get("lang") in ("zh", "en") else getattr(host, "lang", "zh")
     ids = req.get("ids")
     if ids is not None and not (isinstance(ids, list) and all(_ok_id(x) for x in ids)):
@@ -880,12 +905,20 @@ async def ctl(host, req: dict, sent=None) -> dict:
         if plan := [r for r in rows if r["result"] == "plan"]:
             no = time.monotonic() < host.__dict__.get("_sysmigrate_ctl", 0) and (
                 (await asyncio.to_thread(load, host.st)).get("decision") or {}).get("answer") == "no"
-            ans = ("stopped" if host.stopped() else "no_remote" if not host._online_approvers() else "declined" if no else
+            ans = ("stopped" if host.stopped() else "declined" if no else
                    await _card(host, plan, lang, sent or (lambda: asyncio.sleep(0))))
             if ans != "yes":
                 raise MigrateError(ans)
-            rows = [r for r in rows if r["result"] != "plan"] + await asyncio.to_thread(
-                migrate, host.st, [r["id"] for r in plan], False, None, _run, lang)
+            from . import application_ingress
+            if not application_ingress.allowed(host):
+                raise MigrateError('stopped' if host.stopped() else 'none')
+            try:
+                request = application_ingress.current(host)
+                moved = await application_ingress.run(host, migrate, host.st, [r["id"] for r in plan], False, None, _run, lang,
+                                                     _live=request._transport_live if request else lambda:False)
+            except application_ingress.Expired:
+                raise MigrateError('none')
+            rows = [r for r in rows if r['result'] != 'plan'] + moved
     except MigrateError as err:
         return {"ok": False, "error": err.reason}
     with contextlib.suppress(AttributeError):

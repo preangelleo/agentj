@@ -73,11 +73,11 @@ def notice(host, source: str, text: str, files, manifest: str) -> None:
         host.agent_notice(fallback)
 
 
-def attach(host, page, files) -> None:
+def attach(host, page, files):
     """P557: files / images an avatar answer carried → §13 media of its Web App page (serve.channel_media)."""
     fn = getattr(host, "channel_media", None)
     if callable(fn) and files and isinstance(page, dict) and type(page.get("id")) is int:
-        fn(page, list(files))
+        return fn(page, list(files))
 
 
 def reply(host, source: str, text: str, files=(), *, page=None):

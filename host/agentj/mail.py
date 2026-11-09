@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import copy
 import email
 import email.policy
 import email.utils
@@ -1066,9 +1067,13 @@ def build_reply(cfg: dict, route: dict, text: str, agent_name: str, lang: str, f
     return m
 
 
-def send(cfg: dict, password: str, msg: EmailMessage) -> None:
+def send(cfg: dict, password: str, msg: EmailMessage, *, _reply_job=None) -> None:
+    if _reply_job is not None and not _reply_job.live():
+        raise MailError('stale')
     c = smtp_open(cfg, password)
     try:
+        if _reply_job is not None:
+            _reply_job.claim(cfg, msg)  # after login/recovery waits, immediately before SMTP DATA
         c.send_message(msg, from_addr=cfg["address"], to_addrs=[msg["To"]])
     except MailError:
         raise
@@ -1377,6 +1382,64 @@ def _day() -> str:
     return time.strftime("%Y-%m-%d")
 
 
+class _ReplyJob:
+    """One Host completion, one exact reply. Never owner/tool authority."""
+    def __init__(self, manager, turn, route, cfg, text, drawn=None):
+        from .approval_review import digest
+        self.manager, self.host, self.state = manager, manager.host, manager.st
+        self.epoch = str(self.host.hist.epoch)
+        self.turn, self.tid = turn, turn['id']
+        self.turn_digest = digest(turn)
+        self.route, self.cfg = copy.deepcopy(route), copy.deepcopy(cfg)
+        self.text, self.drawn = text, drawn
+        self.payload = self._payload()
+        self.task = None
+        self.target = None
+        self.used = False
+        self.lock = threading.Lock()
+
+    def _payload(self):
+        return (str(self.text), copy.deepcopy(getattr(self.text, 'images', ())),
+                copy.deepcopy(getattr(self.text, 'files', ())))
+
+    def live(self):
+        from .approval_review import digest
+        try:
+            return (self.manager.host is self.host and self.host.mail is self.manager
+                    and self.host.st is self.state and self.manager.st is self.state
+                    and self.manager._reply_jobs.get(self.tid) is self
+                    and self.task is not None and not self.task.done()
+                    and not self.host.stopped() and not self.host.stopping.is_set()
+                    and str(self.host.hist.epoch) == self.epoch
+                    and self.host.hist.get(self.tid) is self.turn and self.turn.get('end') == 'done'
+                    and digest(self.turn) == self.turn_digest
+                    and self._payload() == self.payload
+                    and (self.drawn is None or (self.drawn.turn == self.tid and self.drawn.reply is self.text))
+                    and read_config(self.state) == self.cfg
+                    and read_state(self.state)['routes'].get(str(self.tid)) == self.route)
+        except (AttributeError, KeyError, TypeError, ValueError, OSError):
+            return False
+
+    def bind(self, target):
+        from .approval_review import digest
+        if asyncio.current_task() is not self.task or not self.live() or self.used or self.target is not None:
+            raise MailError('stale')
+        self.target = digest(target)
+
+    def authorizes(self, inp):
+        from .approval_review import digest
+        return (asyncio.current_task() is self.task and not self.used and self.target is not None
+                and self.live() and digest(inp) == self.target)
+
+    def claim(self, cfg, msg):
+        from .approval_review import digest
+        with self.lock:
+            if (self.used or not self.live() or cfg != self.cfg
+                    or self.target != digest(send_target(cfg, msg, [str(msg['To'])]))):
+                raise MailError('stale')
+            self.used = True  # uncertain SMTP outcome is never retried by this job
+
+
 class Mail:
     """See ARCHITECTURE."""
 
@@ -1388,6 +1451,8 @@ class Mail:
         self.read_busy = asyncio.Lock()
         self._config_lock = threading.RLock() # serve writes vs. secret-card sink worker; no network under this lock
         self.sending: set = set()
+        self._reply_jobs = {}
+        self._reply_completed = set()
         self.error = None
         self.recovering = True
         self.expects: dict[str, Expect] = {}      # P206 A: waiting windows (memory only; bodies never reach a file)
@@ -1722,21 +1787,46 @@ class Mail:
             st2["routes"].pop(next(iter(st2["routes"])))
         save_state(self.st, st2)
         if drawn is not None:
-            await self.reply(send.turn, drawn.reply)
+            turn = self.host.hist.get(send.turn)
+            if (turn is not None and str(drawn.reply) == (turn.get('reply') or {}).get('text', '')
+                    and (task := self._start_reply_job(turn, drawn.reply, drawn=drawn)) is not None):
+                await task
         return True
 
     # ---------------- replies
     def completed(self, turn) -> None:
-        if not turn or (turn.get("src") or {}).get("k") != "email":
+        if not turn or getattr(self.host, 'cur_turn', None) != turn.get('id'):
             return
-        tid = turn.get("id")
-        if str(tid) not in read_state(self.st)["routes"]:
-            return
-        text = (turn.get("reply") or {}).get("text", "")
         from .silent import MARKER
-        task = asyncio.get_running_loop().create_task(self.reply(tid, MARKER if turn.get("silent") is True else text))
+        text = MARKER if turn.get('silent') is True else (turn.get('reply') or {}).get('text', '')
+        self._start_reply_job(turn, text)
+
+    def _start_reply_job(self, turn, text, *, drawn=None):
+        """The two fixed completion producers share one exact, one-shot SMTP job."""
+        if not turn or (turn.get('src') or {}).get('k') != 'email':
+            return
+        tid = turn.get('id')
+        hist = getattr(self.host, 'hist', None)
+        if (type(tid) is not int or hist is None or hist.get(tid) is not turn
+                or turn.get('end') != 'done'
+                or tid in self._reply_jobs or (str(hist.epoch), tid) in self._reply_completed):
+            return
+        cfg = read_config(self.st)
+        route = read_state(self.st)['routes'].get(str(tid))
+        if not route or route.get('gen') != cfg['generation'] or not cfg['enabled']:
+            return
+        job = _ReplyJob(self, turn, route, cfg, text, drawn)
+        self._reply_jobs[tid] = job
+        self._reply_completed = {(epoch, old) for epoch, old in self._reply_completed
+                                 if epoch == str(hist.epoch) and hist.get(old) is not None}
+        self._reply_completed.add((str(hist.epoch), tid))
+        task = asyncio.get_running_loop().create_task(self.reply(tid, text))
+        job.task = task
         self.sending.add(task)
         task.add_done_callback(self.sending.discard)
+        task.add_done_callback(lambda done: self._reply_jobs.pop(tid, None)
+                               if self._reply_jobs.get(tid) is job else None)
+        return task
 
     async def reply(self, tid, text: str) -> str:
         from .silent import is_silent, strip_markers
@@ -1752,7 +1842,8 @@ class Mail:
             if result in ("sent", "silent", "archive") and route.get("gen") == cfg["generation"] and (r := route.get("read_receipt")):
                 await self._mark_processed(cfg, r["epoch"], r["uid"], r["id"])
             st2 = read_state(self.st)
-            st2["routes"].pop(str(tid), None)
+            if st2["routes"].get(str(tid)) == route:
+                st2["routes"].pop(str(tid), None)
             self.count(st2, "reply_" + result)
             save_state(self.st, st2)
             self.log("reply", id=tid, result=result)
@@ -1803,8 +1894,18 @@ class Mail:
         with contextlib.suppress(Exception):
             agent_name = self.st.agent_name() or ""
         msg = build_reply(cfg, route, body, agent_name, lang, files)
-        ans = await self.host.ask("agentj mail reply", send_target(cfg,msg,[str(msg["To"])]),   # P562: the mail channel's card
-                                  batch=False, **({"avatar": "来自邮件" if lang == "zh" else "From email"} if row["role"] == "owner" and route.get("verified") else {}))
+        from . import application_ingress
+        job = self._reply_jobs.get(tid)
+        job = job if job is not None and job.task is asyncio.current_task() else None
+        target = send_target(cfg, msg, [str(msg['To'])])
+        if job is not None:
+            try:
+                job.bind(target)
+            except MailError:
+                return await drop('stale')
+        with application_ingress._completed_mail_reply(self.host, job):
+            ans = await self.host.ask("agentj mail reply", target, batch=False,
+                                     **({"avatar": "来自邮件" if lang == "zh" else "From email"} if row["role"] == "owner" and route.get("verified") else {}))
         if ans.get("behavior") != "allow":
             return await drop("denied")
         s = read_state(self.st)
@@ -1817,15 +1918,29 @@ class Mail:
                 self.note(owner_route.failed_note(rep, lang))
             if keys:
                 await owner_route.offer_files(self.host, keys, lang, owner_route.MAX_CARDS - rep["cards"])
+        # Pickup and attachment delivery can await owner interaction. Re-read
+        # after those awaits; never restore an old route/rate snapshot.
+        s = read_state(self.st)
+        if (read_config(self.st) != cfg or s['routes'].get(str(tid)) != route
+                or self.host.stopped() or self.host.stopping.is_set()
+                or (job is not None and not job.live())):
+            return await drop('stale')
         used = s["hour"].get("out",[0,0])
         if used[0] == hour and used[1] >= cfg["reply_per_hour"]:
             return await drop("limited")
         if str(tid) in s["routes"]:
             s["routes"][str(tid)]["state"] = "sending"
+            route = copy.deepcopy(s["routes"][str(tid)])
         s["hour"]["out"] = [hour, (used[1] if used[0] == hour else 0) + 1]
         save_state(self.st, s)
+        if job is not None:
+            job.route = copy.deepcopy(s['routes'][str(tid)])
         try:
-            await asyncio.to_thread(mail_recovery.run, self.host, send, cfg, pw, msg)
+            if job is None:
+                await asyncio.to_thread(mail_recovery.run, self.host, send, cfg, pw, msg)
+            else:
+                from functools import partial
+                await asyncio.to_thread(mail_recovery.run, self.host, partial(send, _reply_job=job), cfg, pw, msg)
         except MailError as e:
             self.note(T[lang]["send_failed"].format(why=why_text(e.why, lang)))
             return await drop("failed")

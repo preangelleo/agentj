@@ -22,14 +22,14 @@ try{
 for(const lang of ['zh','en'])for(const theme of ['light','dark'])for(const width of [390,1440]){
  const key=`${lang}-${theme}-${width}`;
  const p=await page(current,lang,theme,width);
- const writes=[];
+ const writes=[];let advertise=false;let statusRequests=0;
  fake.st.onApp=async(c,m,send)=>{
   if(m.t!=='wechat')return false;
   if(m.op!=='status'){
    const target={op:m.op,id:m.id||'',code:m.code||''};
    assert.equal(await fake.verifyControl(c,'wechat',m,target),true);signed++;writes.push(m);
    await send({t:'ctl_res',r:m.r,action:'wechat',ok:true});
-  }else await send({t:'wechat_state',bound:false,pending:0});
+  }else {statusRequests++;if(advertise)await send({t:'wechat_state',bound:false,pending:0});}
   return true;
  };
  try{
@@ -38,7 +38,7 @@ for(const lang of ['zh','en'])for(const theme of ['light','dark'])for(const widt
   await waitFor(p,`!document.getElementById('settings').hidden`);
   assert.equal(await evaluate(p,`document.getElementById('set-wechat-row').hidden`),true);
 
-  await fake.send({t:'wechat_state',bound:false,pending:0});
+  advertise=true;await fake.send({t:'wechat_state',bound:false,pending:0});
   await evaluate(p,`import('./js/settings.js').then(m=>m.open())`);await waitFor(p,`!document.getElementById('settings').hidden`);
   await shot(p,key+'-after-settings');
   assert.equal(await evaluate(p,`document.getElementById('set-wechat-row').hidden`),false);
@@ -72,7 +72,7 @@ for(const lang of ['zh','en'])for(const theme of ['light','dark'])for(const widt
   await evaluate(p,`document.getElementById('apprDeny').click()`);
   for(let i=0;i<50&&!fake.st.answers.length;i++)await sleep(20);
   assert.ok(fake.st.answers.some(m=>m.id==='c'.repeat(32)&&m.ok===false));
-  results.push({lang,theme,width,scope:'portable paired controls',screens:['after-chat','after-settings','qr','bound','confirmation'],pass:true});
+  results.push({lang,theme,width,statusRequests,scope:'portable paired controls',screens:['after-chat','after-settings','qr','bound','confirmation'],pass:true});
  }finally{await p.close();}
 }
 writeFileSync(out+'/result.json',JSON.stringify({pass:true,baselineComparison:'private P505 visual gate',combos:results.length,signedControls:signed,results},null,2));

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // P539 (#300 / #299): the real web client against fakehost.mjs, own headless Chromium (never :9222).
-//   a. Android (OPPO) UA: Settings 「本机 Touch ID：未设」 row + the pk.notSaved toast (no Apple / iCloud words)
+//   a. Android (OPPO) UA: Settings 「本机指纹或面容：未设」 row + the pk.notSaved toast (no Apple / iCloud words)
 //   b. Mac Chrome UA: an approval card with fa_s=borrowed → the quiet line + 「在本机设置」; a refused passkey → reason +
 //      「再试一次」 + 「在本机设置 Face ID（需另一台批准）」 (re-tap re-runs approve from the tap)
 //   c. the same card closed with why=timeout
@@ -70,8 +70,8 @@ try {
       await openSettings(p, 'set-h-agent');
       await waitFor(p, `!document.getElementById('set-pk-row').hidden`);
       const row = await ev(p, `document.getElementById('set-pk-row').innerText`);
-      check(row.includes(L('本机 Touch ID：未设', "This device's Touch ID: not set")), 'a: state label ' + lang);   // P559: Touch ID
-      check(!/iCloud|Apple|屏幕锁：|screen lock:/.test(row) && !/Face ID：|Face ID:/.test(row), 'a: Android words only ' + lang);
+      check(row.includes(L('本机指纹或面容：未设', "This device's fingerprint or face: not set")), 'a: state label ' + lang);   // P0284: use Android's own biometric name, never Apple's Touch ID
+      check(!/iCloud|Apple|Touch ID|屏幕锁：|screen lock:/.test(row) && !/Face ID：|Face ID:/.test(row), 'a: Android words only ' + lang);
       check(await ev(p, `!document.getElementById('set-pk-setup').hidden && document.getElementById('setup-faceid').hidden`), 'a: one setup button, the old entry folded in ' + lang);
       check(await tall(p, '#set-pk-setup'), 'a: 44 px ' + lang);
       await shot(p, `a-android-pkrow-390-light-${lang}`);

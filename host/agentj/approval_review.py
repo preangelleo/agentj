@@ -122,7 +122,19 @@ def snapshot(host):
     send = getattr(agent, 'cur_send', None)
     cfg = getattr(agent, 'cfg', None) or {}
     shared = type(agent).__name__.startswith('Shared') or cfg.get('session_mode') == 'shared'
-    ref = getattr(send, 'approval_origin', None) if not shared or (getattr(agent, 'phone_turn', False) and getattr(agent, 'phone_seen', False)) else None
+    # Display the exact Host-held phone request even while native delivery flags
+    # are settling. This is display context only; it never supplies command UV.
+    phone_ref = getattr(send, 'approval_origin', None)
+    phone_source = provenance.normalize(getattr(send, 'source', None))
+    if phone_source.get('kind') == 'phone' and not phone_ref:
+        # Exact active Send.turn only; never borrow a recent/nearest owner row.
+        turn = getattr(send, 'turn', None)
+        exact = host.hist.get(turn) if type(turn) is int else None
+        if exact and (exact.get('src') or {}).get('k') == 'phone':
+            phone_ref = copy.deepcopy(host.__dict__.get('_approval_origins', {}).get(turn))
+    display_phone = (phone_source.get('kind') == 'phone' and isinstance(phone_ref, dict)
+                     and phone_ref.get('session') == str(getattr(getattr(host,'hist',None),'epoch','')))
+    ref = phone_ref if display_phone or not shared or (getattr(agent, 'phone_turn', False) and getattr(agent, 'phone_seen', False)) else None
     if ref:
         return copy.deepcopy(ref)
     from . import shared_turn_origin
@@ -166,8 +178,28 @@ def remember(host, turn, source):
     return entry
 
 
+def display_text(value, normalizer):
+    """Complete privacy-projected display text; callers own the final UTF-8 budget."""
+    text = normalizer(str(value or ''))
+    return ''.join(c for c in text if c in '\n\t' or unicodedata.category(c) not in ('Cc', 'Cf', 'Cs'))
+
+
 def bind(host, ask, origin=None):
     from . import goal
+    # The Host UV-list controller built this projector before signing, using
+    # the actual launch/Host cwd. Original source records remain untouched.
+    normalizer = getattr(ask, 'display_normalizer', None)
+    def shown(value, limit):
+        if normalizer is None:
+            return safe_text(value, limit)
+        text = display_text(value, normalizer)
+        return text if len(text) <= limit else text[:max(0, limit-14)] + '\n[truncated]'
+    if getattr(ask, 'list_model', False):
+        details = getattr(ask, '_list_display_snapshot', None)
+        if not isinstance(details, str) or details != ask.summary or len(details.encode('utf-8')) > 24000:
+            raise ValueError('invalid frozen approval display')
+    else:
+        details = shown(ask.summary, 24000)
     source = copy.deepcopy(origin if origin is not None else snapshot(host))
     from . import approval_material
     material_source = approval_material.snapshot(host, source)
@@ -187,10 +219,10 @@ def bind(host, ask, origin=None):
                           'message_id':source.get('root_message_id'), 'channel':source.get('channel')}
     for key in ('text', 'sender', 'initiator', 'task_record'):
         if key in source:
-            source[key] = safe_text(source[key], 1200 if key == 'text' else 200)
+            source[key] = shown(source[key], 1200 if key == 'text' else 200)
     if isinstance(source.get('root'), dict):
-        source['root'] = {**source['root'], 'text': safe_text(source['root'].get('text'), 1200)}
-    source['chain'] = [{k: safe_text(v, 100) for k, v in item.items() if k in ('kind', 'id')}
+        source['root'] = {**source['root'], 'text': shown(source['root'].get('text'), 1200)}
+    source['chain'] = [{k: shown(v, 100) for k, v in item.items() if k in ('kind', 'id')}
                        for item in source.get('chain', [])[-16:] if isinstance(item, dict)]
     if getattr(ask, 'scope_text', None) is not None and safe_text(ask.scope_text, 24000) != ask.scope_text:
         ask.scope = ask.scope_text = None
@@ -206,8 +238,11 @@ def bind(host, ask, origin=None):
     ask.review_revision = getattr(ask, 'review_revision', 0) + 1
     ask.review_state = 'pending'
     ask.review_origin = source
-    ask.operation_once_key = digest({'channel':host.channel, 'session':source.get('session'),
-                                    'root':source.get('root_message_id'), 'tool':ask.tool, 'input':ask.input_sha})
+    operation = {'channel':host.channel, 'session':source.get('session'),
+                 'root':source.get('root_message_id'), 'tool':ask.tool, 'input':ask.input_sha}
+    if getattr(ask, 'list_model', False):
+        operation['request'] = ask.rid  # Every native invocation has its own signed one-use request.
+    ask.operation_once_key = digest(operation)
     if not hasattr(ask, 'review_task'):
         ask.review_task = host._task_id()
         ask.review_pause = asyncio.get_running_loop().create_future()
@@ -218,10 +253,10 @@ def bind(host, ask, origin=None):
         ask.review_expires_at=math.ceil(time.time()+max(0,ask.deadline-time.monotonic()))
     env = {'v': 2, 'channel': host.channel, 'session': str(host.hist.epoch), 'request_id': ask.rid,
            'revision': ask.review_revision, 'nonce': secrets.token_hex(16), 'source': source,
-           'title': safe_text(source.get('text', '').split('\n')[0] or ask.task or '确认这次操作', 160),
-           'action': safe_text(ask.reason or ask.goal_what or goal.human(ask.tool, ask.tool_input, host._classify(ask.tool, ask.tool_input), host.lang, host._classify), 240),
+           'title': shown(source.get('text', '').split('\n')[0] or ask.task or '确认这次操作', 160),
+           'action': shown(ask.reason or ask.goal_what or goal.human(ask.tool, ask.tool_input, host._classify(ask.tool, ask.tool_input), host.lang, host._classify), 240),
            'source_record_sha256': digest(getattr(ask, 'review_record', None)),
-           'input_sha256': ask.input_sha, 'details': safe_text(ask.summary, 24000), 'effects': sorted(ask.cats), 'categories': sorted(ask.cats),
+           'input_sha256': ask.input_sha, 'details': details, 'effects': sorted(ask.cats), 'categories': sorted(ask.cats),
            'controls': {'batch': getattr(ask, 'scope_text', None), 'allow_offer': list(ask.allow_offer),
                         'goal_add': safe_text(ask.goal_add['text'], 24000) if getattr(ask, 'goal_add', None) else None},
            'plan': json.loads(ask.task_scope) if ask.task_scope else None,

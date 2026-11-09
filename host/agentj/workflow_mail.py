@@ -217,8 +217,24 @@ def proof_ok(st, core, proof):
         pk = st.passkey_of_device(proof['device'])
         if not sk or not pk or proof['kind'] not in ('sandbox', 'perm'):
             return False
-        d = approvals.shown_digest(TOOL, proof['summary'])
-        if not approvals.verify(sk, wire.unb64u(proof['sig']), proof['channel'], proof['device'], proof['rid'], 'allow', d):
+        version=proof.get('approval_v')
+        if version is None:
+            d = approvals.shown_digest(TOOL, proof['summary'])
+            if not approvals.verify(sk, wire.unb64u(proof['sig']), proof['channel'], proof['device'], proof['rid'], 'allow', d):
+                return False
+        elif type(version) is int and version==2:
+            from . import approval_review
+            envelope=proof.get('envelope')
+            if (not isinstance(envelope,dict) or envelope.get('v')!=2 or envelope.get('channel')!=core['host']
+                    or envelope.get('request_id')!=proof['rid'] or envelope.get('action')!=TOOL
+                    or envelope.get('details')!=approval_review.safe_text(proof['summary'],24000)
+                    or envelope.get('input_sha256')!=approvals.input_digest({'summary':shown(core)})
+                    or envelope.get('plan') is not None):
+                return False
+            d=approval_review.digest(envelope)
+            if not approvals.verify(sk,wire.unb64u(proof['sig']),proof['channel'],proof['device'],proof['rid'],'allow',d,approval_v=2):
+                return False
+        else:
             return False
         f = passkey.approval_fields(proof['fa'])
         if f['id'] != pk['id']:
@@ -388,7 +404,7 @@ class Service:
         ans = await self.host.ask(TOOL, {'summary': shown(core)}, batch=False, grant_info=True, always_ask=True,
                                   require_passkey=True, ttl=CARD_TTL, _company_proposal=policy_registry.HOST_CARD)
         proof = {k: v for k, v in (ans.get('grant_info') or {}).items() if k in
-                 ('rid', 'device', 'sig', 'fa', 'summary', 'kind', 'channel')}
+                 ('rid', 'device', 'sig', 'fa', 'summary', 'kind', 'channel', 'approval_v', 'envelope')}
         async with self.lock:
             try:
                 e = await asyncio.to_thread(tasks.find, self.host.scheduler.workdir(), wid)
@@ -507,23 +523,30 @@ class Service:
             return {'ok': False, 'why': 'approval_not_shown' if receipt.get('approval_card_shown') is False else 'denied',
                     'approval_reason': why, 'approval_card_shown': receipt.get('approval_card_shown'),
                     'detail': ans.get('message') or ('批准卡未获确认，邮件没有发出 / The retry was not approved; no mail was sent: ' + why)}
+        from . import application_ingress
         async with self.lock:
             data = await asyncio.to_thread(self.load)
             rec, current = data['deliveries'].get(key), data['grants'].get(wid)
             if (not rec or digest(rec) != digest_before or not current or digest(current) != grant_before
                     or await asyncio.to_thread(self.retry_caller, wid, replacement, peer) != caller):
                 return {'ok': False, 'why': 'retry_stale'}
+            if not application_ingress.allowed(self.host):
+                return {'ok': False, 'why': 'retry_stale'}
             if replacement:
-                proof = ans.get('grant_info') or {}
                 try:
-                    if (not proof.get('rid') or not proof.get('device') or not await asyncio.to_thread(self.live, current, contract)
+                    if (not await asyncio.to_thread(self.live, current, contract)
                             or digest((await asyncio.to_thread(self.snapshot, req, contract, current['core']['artifact_root'], current['core']))[0]) != target):
                         return {'ok': False, 'why': 'retry_stale'}
                 except (ValueError, KeyError, TypeError, OSError):
                     return {'ok': False, 'why': 'retry_stale'}
-                rec.update(retry_allowed_manifest=target, retry_grant_sha256=grant_before, retry_caller=caller, retry_approval={k: proof[k] for k in ('rid', 'device')})
+                rec.update(retry_allowed_manifest=target, retry_grant_sha256=grant_before, retry_caller=caller, retry_request={'actor': application_ingress.actor(self.host)})
+            if not application_ingress.allowed(self.host):
+                return {'ok': False, 'why': 'retry_stale'}
             rec['retry_allowed'] = True
-            await asyncio.to_thread(self.save, data)
+            try:
+                await application_ingress.run(self.host, self.save, data)
+            except application_ingress.Expired:
+                return {'ok': False, 'why': 'retry_stale'}
             self.st.log('workflow_mail_retry', task=wid, delivery=key)
         return {'ok': True, 'retry_once': True, 'delivery': key, 'retry_manifest_sha256': target}
 

@@ -12,6 +12,29 @@ def agent(src):
     return NS(cur_send=NS(source=src))
 
 
+async def actual_native_permission(case, adapter):
+    """Real Host/v2 tap for the served native request, with source left intact."""
+    import test_p568_task_source as source_fixture
+    from test_p551_confirm_levels import Base
+    rig = Base(); rig.setUp()
+    old_host, source = adapter.host, p.turn_source(adapter)
+    try:
+        adapter.host = rig.host; rig.host.agent = adapter
+        result, card = await source_fixture.signed_adapter(rig, adapter.hook_event({
+            'hook_event_name':'PermissionRequest','session_id':'owner',
+            'tool_name':'Bash','tool_input':{'command':'git push origin'}}))
+        case.assertEqual(result['hookSpecificOutput']['decision']['behavior'], 'allow')
+        case.assertEqual(p.turn_source(adapter), source)
+        case.assertFalse(card.get('passkey_required',False))
+        if not getattr(case,'_real_peer_isolation_checked',False):
+            await source_fixture.guest_boundary(case)
+            case._real_peer_isolation_checked=True
+        return result, len(rig.cards())
+    finally:
+        adapter.host=old_host
+        rig.doCleanups()
+
+
 class Sources(unittest.TestCase):
     def test_unknown_and_system_are_never_owner(self):
         for src in (None, {}, p.system(), p.telegram_owner(7), p.email_owner('a@example.com'),
@@ -88,7 +111,7 @@ class Consumers(unittest.IsolatedAsyncioTestCase):
                 a.cfg, a.halting = {}, False
                 h = NS(agent=a, st=Mock(), preferences={}, lang='en', stopped=lambda: False,
                        _approvers=lambda: [], _classify=lambda *_: NS(danger=False, cats=[]), goals=None)
-                self.assertEqual(approval_jev.low_risk_pass(h, {'high_risk_warnings': True}, 'Read', {'file_path': 'fixture.txt'}), owner)
+                self.assertFalse(approval_jev.low_risk_pass(h, {'high_risk_warnings': True}, 'Read', {'file_path': 'fixture.txt'}))
                 desk = term_bang.BangDesk.__new__(term_bang.BangDesk)
                 desk.h = h
                 self.assertEqual(desk.untrusted(123), not owner)
@@ -100,12 +123,16 @@ class Consumers(unittest.IsolatedAsyncioTestCase):
                 h.set_pref = AsyncMock(return_value={'ok': True})
                 self.assertEqual((await hb.handle({'op': 'on'}))['ok'], owner)
                 self.assertEqual(h.set_pref.call_count, int(owner))
-                el = elevate.Elevator.__new__(elevate.Elevator)
-                el.host, el.st, el.cards = h, h.st, {}
-                with patch('agentj.elevate.audit'):
-                    # P570: a host system turn (heartbeat) may ASK the owner (a card) — here no paired phone: no_device
-                    self.assertEqual((await el.request({'kind': 'secret'}))['result'],
-                                     'no_device' if owner or src == p.system() else 'group_source')
+                # Full controller initialization, empty real paired roster:
+                # labels alone cannot manufacture a key or an approver.
+                import tempfile
+                from test_l1 import _state, _host
+                with tempfile.TemporaryDirectory() as folder:
+                    real = _host(_state(folder), [])
+                    real.agent = a
+                    result = await real.elevate.request({'kind':'secret'})
+                    self.assertEqual(result['result'],'no_device')
+                    self.assertFalse(real.elevate.cards)
                 cs = contacts_serve.ContactService.__new__(contacts_serve.ContactService)
                 cs.host, cs.st = h, h.st
                 with patch('agentj.contacts_serve.C.read', return_value={}), patch('agentj.contacts_serve.C.get', return_value=None):
@@ -155,11 +182,11 @@ class Consumers(unittest.IsolatedAsyncioTestCase):
                 h = _host(st, [])
                 h.agent = NS(kind='codex', status='idle', cur_send=NS(source=src))
                 h._approvers = lambda: []
-                await h.ask('Bash', {'command': 'rm -rf /tmp/owned-fixture'})
+                refused = await h.ask('Bash', {'command': 'rm -rf /tmp/owned-fixture'}, _harness_permission=True)
                 await diskq.aflush()
-                # P570: a system turn asks like a delegated task (no paired phone here: no_device); unknown is refused
-                self.assertEqual(approvals.read_log(st)[-1]['reason'],
-                                 'no_device' if owner or src == p.system() else 'group_source')
+                self.assertEqual(refused['reason'], 'no_device')
+                self.assertEqual(approvals.read_log(st), [], 'no device means no invented signed approval row')
+                self.assertEqual(h.agent.cur_send.source, src)
                 h.seat_refusal = lambda: False
                 h.sends = NS(used=lambda *a: False, full=lambda *a: False)
                 h._accept = AsyncMock(return_value=NS(turn=3))
@@ -189,7 +216,7 @@ class Consumers(unittest.IsolatedAsyncioTestCase):
             q.put_nowait(nxt)
             a = NS(q=q, halting=False, session={'sessionId': 's'}, cur_send=None,
                    host=NS(turn_merged=lambda: None, agent_turn_start=Mock(), turn_queued_note=Mock()),
-                   _mark_untrusted=Mock(), deliver=AsyncMock())
+                   _mark_untrusted=Mock(), untrusted=lambda: not p.is_owner(src), deliver=AsyncMock())
             with self.subTest(source=src), patch('agentj.compactprep.decorate', return_value='hello'):
                 await SharedClaudeAgent._merge_queued(a)
                 self.assertEqual(a.pending_source, p.normalize(src))
@@ -210,13 +237,30 @@ class Consumers(unittest.IsolatedAsyncioTestCase):
                 a._note_turn()
                 a.cur_send = None
                 with a._src_ctx('main'):
-                    self.assertEqual(a._refused(), not owner)
+                    self.assertFalse(a._refused(), 'ordinary native permissions do not use source-wide extra refusal')
+                    self.assertEqual(p.is_owner(a._req_src('main')), owner)
                 a.cur_send = NS(source=p.phone())
                 with a._src_ctx('untracked'):
-                    self.assertTrue(a._refused(), 'unknown child None must not mean current owner context')
+                    self.assertFalse(a._refused())
+                    self.assertFalse(p.is_owner(a._req_src('untracked')), 'unknown child never borrows owner provenance')
                 a.children['known'] = {'src': src}
                 with a._src_ctx('known'):
-                    self.assertEqual(a._refused(), not owner)
+                    self.assertFalse(a._refused())
+                    self.assertEqual(p.is_owner(a._req_src('known')), owner)
+        import test_p568_task_source as source_fixture
+        from test_p551_confirm_levels import Base
+        from unittest.mock import AsyncMock
+        rig = Base(); rig.setUp()
+        try:
+            for src, owner in ((p.phone(), True), (p.terminal(), True), (None, False), (p.system(), False)):
+                oc = OpenCodeAgent(rig.host, {**rig.host.agent_cfg,'_workflow_ceo':True}, persist=False)
+                oc.out_src = p.normalize(src); oc._reply_permission=AsyncMock()
+                oc.client=NS(request=AsyncMock())
+                with p.request_source(src):
+                    await source_fixture.signed_adapter(rig, oc._decide('r', {'permission':'bash','patterns':['git push origin']}, asyncio.get_running_loop().create_future()))
+                self.assertEqual(oc.out_src,p.normalize(src))
+            await source_fixture.guest_boundary(self)
+        finally: rig.doCleanups()
         self.assertEqual(p.stricter(p.phone(), None), p.normalize(None))
         self.assertEqual(p.stricter(None, p.phone()), p.normalize(None))
 
@@ -265,11 +309,9 @@ class Consumers(unittest.IsolatedAsyncioTestCase):
                 a = SharedClaudeAgent(h, {'kind': 'claude', 'dir': td, '_workflow_ceo': True})
                 a.session = {'sessionId': 'owner'}
                 a.cur_send = NS(source=src)
-                result = await a.hook_event({'hook_event_name': 'PermissionRequest', 'session_id': 'owner',
-                                            'tool_name': 'Bash', 'tool_input': {'command': 'git push origin'}})
-                asks = owner or src == p.system()      # P570: a host system turn reaches Host.ask (which decides)
-                self.assertEqual(h.ask.call_count, int(asks))
-                self.assertEqual(result['hookSpecificOutput']['decision']['behavior'], 'allow' if asks else 'deny')
+                result, actual_cards = await actual_native_permission(self,a)
+                self.assertEqual(actual_cards,1)
+                self.assertEqual(a.cur_send.source,src)
                 # A real native prompt provides terminal evidence; synthetic input revokes it.
                 a.cur_send = None
                 await a.hook_event({'hook_event_name': 'UserPromptSubmit', 'session_id': 'owner', 'prompt': 'read the report'})
@@ -459,12 +501,8 @@ class ContinuationB(unittest.IsolatedAsyncioTestCase):
                             if timeout == 'input':
                                 read({'type': 'user', 'isMeta': meta, 'message': {'content': echo}})
                             self.assertEqual(p.untrusted_turn(a), not p.is_owner(src))
-                            decision = await a.hook_event({'hook_event_name': 'PermissionRequest', 'session_id': 'owner',
-                                'tool_name': 'Bash', 'tool_input': {'command': 'git push origin'}})
-                            asks = p.is_owner(src) or src == p.system()   # P570: a system turn asks; Host.ask decides
-                            self.assertEqual(decision['hookSpecificOutput']['decision']['behavior'],
-                                             'allow' if asks else 'deny')
-                            self.assertEqual(h.ask.call_count, int(asks))
+                            decision, actual_cards = await actual_native_permission(self,a)
+                            self.assertEqual(actual_cards,1)
                             # A same-body system readback is not this phone request's echo.
                             read({'type': 'user', 'isMeta': True,
                                   'message': {'content': p.envelope('fixture', body, p.system())}})

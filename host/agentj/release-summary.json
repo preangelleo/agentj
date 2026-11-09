@@ -1,5 +1,5 @@
 {
-  "version": "0.28.6",
-  "zh": "历史加载与切网恢复更稳定，文件预览更安全，诊断开销有界；自动化触发显示原文和回执，输入来源标题可展开查看。",
-  "en": "Faster history and reconnection, safer file previews, bounded diagnostics, clearer automation inputs and receipts, and single-line source titles."
+  "version": "0.30.0",
+  "zh": "工具权限跟随所用 AI，清单操作逐次验证指纹；改进待办卡、首次准备和账号登录引导，保留三按钮确认。",
+  "en": "Native AI tool permissions, fingerprint checks for listed actions, clearer to-dos and setup, and improved account login guidance."
 }

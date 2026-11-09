@@ -56,6 +56,42 @@ class Flow(unittest.TestCase):
         cloud.write_cloud(self.st, {"api": cp.url, "host_id": "h_1", "tenant": {"slug": "acme-co", "name": "Acme"},
                                     "linked_at": int(time.time()), "last_seq": 0})
 
+    def unlink_with_fresh_uv(self):
+        """Actual CLI/control socket and Host verifier; account unlink is now explicitly listed."""
+        import asyncio
+        from test_l1 import _owner_host, _ready
+        from _p541_device import Phone
+        async def run():
+            host = _owner_host(self.st, [])
+            host.ask_ttl = 5
+            phone = Phone(self.st, with_passkey=True)
+            session = _ready(host, phone)
+            server = await asyncio.start_unix_server(host.on_ctl, path=str(self.st.sock_path))
+            task = asyncio.create_task(asyncio.to_thread(self.agentj, 'unlink'))
+            try:
+                for _ in range(300):
+                    if host.asks or task.done(): break
+                    await asyncio.sleep(.01)
+                self.assertTrue(host.asks, task.result() if task.done() else 'no actual unlink card')
+                ask = next(iter(host.asks.values()))
+                self.assertEqual(ask.tool, 'agentj unlink')
+                self.assertTrue(ask.require_passkey)
+                card = host._ask_msg(ask, session)
+                without_uv = phone.answer(card, True); without_uv.pop('fa', None)
+                await host._answer(session, without_uv)
+                self.assertFalse(ask.fut.done())
+                self.assertTrue(self.st.cloud_path.exists())
+                await host._answer(session, phone.answer(card, True))
+                return await asyncio.wait_for(task, 8)
+            finally:
+                if not task.done():
+                    for ask in list(host.asks.values()):
+                        if not ask.fut.done():
+                            await host._answer(session, phone.answer(host._ask_msg(ask, session), False))
+                    await asyncio.wait_for(task, 8)
+                server.close(); await server.wait_closed()
+        return asyncio.run(run())
+
     def test_login_to_bound_then_report(self):
         did = self.st.add_device(os.urandom(32), "Leo 的手机")
         before = self.st.devices_path.read_bytes()
@@ -96,7 +132,11 @@ class Flow(unittest.TestCase):
             self.assertIn("acme-co", self.agentj("status").stdout)
 
             r = self.agentj("unlink")
-            self.assertEqual(r.returncode, 0)
+            self.assertNotEqual(r.returncode, 0, "offline unlink must not bypass the new UV list")
+            self.assertIn("Fresh owner verification unavailable", r.stderr)
+            self.assertTrue(self.st.cloud_path.exists())
+            r = self.unlink_with_fresh_uv()
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertFalse(self.st.cloud_path.exists())
             self.assertIn("Agent J 账号：还没加入", self.agentj("status").stdout)
             self.assertNotEqual(self.agentj("report").returncode, 0)

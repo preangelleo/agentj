@@ -107,13 +107,18 @@ class Onboarding(unittest.IsolatedAsyncioTestCase):
         new={**old,'enabled':True}
         tasks=[]
         avatar=NS(offer_choice=AsyncMock())
-        manager=object.__new__(mail.Mail)
-        import threading
-        manager._config_lock=threading.RLock()
-        manager.st=NS();manager.host=NS(external_channels=avatar,_bg=lambda c,*_:tasks.append(asyncio.create_task(c)))
-        manager.wake=NS(set=MagicMock());manager._watch_allow=MagicMock()
-        with patch.object(mail,'read_config',return_value=old),patch.object(mail,'save_config',side_effect=lambda st,c:c):
-            self.assertTrue(manager.set_config(new)['enabled'])
+        import tempfile
+        from pathlib import Path
+        from agentj.state import State
+        tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
+        state=State(Path(tmp.name)/'state');state.init()
+        host=NS(st=state,external_channels=avatar,_bg=lambda c,*_:tasks.append(asyncio.create_task(c)))
+        manager=mail.Mail(host)
+        manager.set_config(old)
+        with self.assertRaises(mail.MailError):manager.set_config(new)  # original incomplete input stays fail-closed
+        complete={**new,'imap':{'host':'imap.example.test','port':993,'security':'ssl'},
+                  'smtp':{'host':'smtp.example.test','port':465,'security':'ssl'}}
+        self.assertTrue(manager.set_config(complete)['enabled'])
         await asyncio.gather(*tasks)
         avatar.offer_choice.assert_not_awaited()     # P562
 

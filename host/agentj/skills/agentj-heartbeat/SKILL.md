@@ -3,8 +3,8 @@ name: agentj-heartbeat
 description: The heartbeat — Agent J wakes you after an idle spell to check background work and the owner's to-dos. Use when background work ended in 〔Agent J 系统提示〕 / [Agent J system notice], or a message starts with 〔Agent J 心跳〕 / [Agent J heartbeat], or the owner says 「以后每 30 分钟看一次」「心跳改成两小时」「别再定时叫醒了」「每天早上 7 点叫醒你看一眼」「醒来以后先看备份任务」「心跳的时候帮我盯着 X」"heartbeat", "check every hour", "wake up every day at 7", "stop the heartbeat", "what does the heartbeat do". Changes the interval, the daily wake-up time, turns it on/off and maintains the heartbeat prompt.
 ---
 
-主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
-Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+默认派 CEO/子 Agent，写验收、复验、汇报；主人明确要求亲做就照办。指纹清单、凭据规则和 harness 硬限制不变。
+Delegate by default; follow explicit owner requests to work personally. Verify and report; UV, credential rules and harness limits remain.
 
 The heartbeat is Agent J's own wake-up call, the same on Claude Code, Codex and OpenCode. When nothing has happened
 for the interval (default 60 minutes: no phone message, no turn, no desktop input), the host checks local records without

@@ -898,6 +898,9 @@ class Host:
             return bool(direct is not None and current is direct and await direct.delivery_live(s, file_message))
         from .silent import public_message
         obj = public_message(obj)
+        from . import display_privacy
+        if isinstance(obj, dict) and obj.get("t") in display_privacy.DISPLAY_MESSAGES:
+            obj = await asyncio.to_thread(display_privacy.project, self, obj)
         def special_delivery_live():
             if obj.get('t')!='secret_out_val':return True
             from . import approval_special
@@ -1217,6 +1220,11 @@ class Host:
                 and self.st.is_allowed(s.pub) and provenance.normalize(s.provenance)["kind"] == "phone")
 
     async def _app(self, s: Session, obj: dict) -> None:
+        from . import application_ingress
+        with application_ingress.paired(self, s, obj):
+            return await self._app_frame(s, obj)
+
+    async def _app_frame(self, s: Session, obj: dict) -> None:
         t = obj["t"]
         if s.state == "hello":
             if t != "hello":
@@ -1668,24 +1676,37 @@ class Host:
 
     def _bind_native_ask(self, a, kind, subject=None):
         # Only these Host constructors can create this private authority record.
-        if kind not in ('pair', 'pass_reset', 'restart', 'terminal_cfg'):
+        if kind not in ('pair', 'pass_reset', 'restart', 'terminal_cfg', 'held_channel'):
             raise ValueError('native_ask_kind')
         from . import approval_special
+        if kind == 'held_channel':
+            from .wechat import _HeldChannelApproval
+            if type(subject) is not _HeldChannelApproval or subject.host is not self or a.tool != 'wechat_confirm':
+                raise ValueError('held_channel_subject')
+            book = self.__dict__.setdefault('_held_channel_asks',{})
+            if a.rid in book or len(book) >= 128:raise ValueError('held_channel_full')
+            subject.bind(a)
+            book[a.rid] = (a,subject)
         a.host_card = True
-        a.native_authority = (self, self.channel, str(self.hist.epoch), kind, subject,
-                              a.tool, a.input_sha, a.digest, self.agent, approval_special._current_task(self),
-                              approval_review.digest(approval_special._current_source(self)))
+        main = ((None,None,None) if kind == 'held_channel' else
+                (self.agent,approval_special._current_task(self),approval_review.digest(approval_special._current_source(self))))
+        a.native_authority = (self,self.channel,str(self.hist.epoch),kind,subject,
+                              a.tool,a.input_sha,a.digest,*main)
 
     def _native_ask_live(self, a, *, pending=True):
         ref = getattr(a, 'native_authority', None)
         if (not isinstance(ref, tuple) or len(ref) != 11 or ref[0] is not self
                 or ref[1] != self.channel or ref[2] != str(self.hist.epoch)
                 or self.stopped() or time.monotonic() > a.deadline
-                or pending and self.asks.get(a.rid) is not a
                 or (a.tool, a.input_sha, a.digest) != ref[5:8]
                 or approvals.input_digest(a.tool_input) != ref[6]):
             return False
         kind, subject = ref[3:5]
+        if kind == 'held_channel':
+            from .wechat import _HeldChannelApproval
+            return (type(subject) is _HeldChannelApproval and subject.host is self
+                    and subject.ask is a and subject.live())
+        if pending and self.asks.get(a.rid) is not a:return False
         if kind == 'pair':
             pairing, session = subject
             return (self.pairing is pairing and self.sessions.get(session.cid) is session
@@ -1712,7 +1733,7 @@ class Host:
         target = {"device": s.device, "handshake": pair_card.handshake_id(s.h)}
         rid = secrets.token_hex(16)
         a = Ask(rid, pair_card.TOOL, text, approvals.shown_digest(pair_card.TOOL, text), target, approvals.input_digest(target),
-                s.deadline, asyncio.get_running_loop().create_future(), pk_if_any=True, pk_kind=pair_card.PK_KIND)
+                s.deadline, asyncio.get_running_loop().create_future(), require_passkey=True, pk_kind=pair_card.PK_KIND)
         self._bind_native_ask(a, 'pair', (p, s))
         self.asks[rid] = a
         s.card = rid
@@ -1744,7 +1765,7 @@ class Host:
         rid = secrets.token_hex(16)
         a = Ask(rid, pass_reset.TOOL, text, approvals.shown_digest(pass_reset.TOOL, text), target,
                 approvals.input_digest(target), time.monotonic() + pass_reset.CARD_TTL,
-                asyncio.get_running_loop().create_future(), pk_if_any=True, pk_kind=pass_reset.PK_KIND)
+                asyncio.get_running_loop().create_future(), require_passkey=True, pk_kind=pass_reset.PK_KIND)
         self._bind_native_ask(a, 'pass_reset', pid)
         self.asks[rid] = a
         self.st.log("ask", id=rid, tool=pass_reset.TOOL, agent="host", kind="passphrase")
@@ -2461,8 +2482,10 @@ class Host:
         from . import bounded_plan, approval_review
         origin = bounded_plan.caller_origin(self, pid) if puid == os.getuid() else None
         source_token = approval_review.ORIGIN.set(copy.deepcopy(origin or {}))
+        from . import application_ingress
+        frames = application_ingress.frames(self, r, w, pid, puid)
         try:
-            while line := await r.readline():
+            async for line in frames:
                 req = json.loads(line)
                 if not isinstance(req, dict):
                     break
@@ -2762,9 +2785,20 @@ class Host:
                     await self._ctl_send(w, await self._pass_consent(req, pid))
                 elif cmd == "passphrase_replace":   # #118: the new password typed at that terminal, with the ticket
                     await self._ctl_send(w, await self._pass_replace(req, pid))
+                elif cmd == "uv_security":
+                    from . import list_approval
+                    await self._ctl_send(w, await list_approval.security(self,req))
                 elif cmd == "revoke":
-                    removed, closed = await self.revoke(str(req.get("device", "")))
-                    await self._ctl_send(w, {"ok": removed, "closed": closed})
+                    device = str(req.get("device", ""))
+                    ans = await self.ask("agentj revoke", {"device":device}, grant_info=True)
+                    proof = ans.get("grant_info") or {}
+                    allowed = (ans.get("behavior") == "allow" and proof.get("uv") is True
+                               and self.st.sign_key(proof.get("device")) == proof.get("sign_pub"))
+                    if allowed:
+                        removed, closed = await self.revoke(device)
+                        await self._ctl_send(w, {"ok":removed,"closed":closed})
+                    else:
+                        await self._ctl_send(w, {"ok":False,"error":"uv_required","closed":0})
                 elif cmd == "stop":                 # `agentj stop` (the terminal: no signature needed — it only stops)
                     await self.do_estop("terminal", "终端")
                     await self._ctl_send(w, {"ok": True, "estop": self.estop})
@@ -2841,6 +2875,7 @@ class Host:
         except (json.JSONDecodeError, ConnectionError):
             pass
         finally:
+            await frames.aclose()
             approval_review.ORIGIN.reset(source_token)
             with contextlib.suppress(Exception):
                 w.close()
@@ -4621,7 +4656,7 @@ class Host:
         self.channel_media(t, files)
         return t
 
-    def channel_media(self, t, files=()) -> None:
+    def channel_media(self, t, files=()) -> asyncio.Task | None:
 
         from . import channel_card
         refs = channel_card.media_refs(files)
@@ -4634,7 +4669,7 @@ class Host:
                 self.hist_update(tid, media=(items, skips))
                 self.st.log("media_page", turn=tid, status=f"{len(items)}/{len(skips)}")
         try:
-            self._bg(attach(), "channel_media")
+            return self._bg(attach(), "channel_media")
         except RuntimeError:            # not inside the loop (a unit test calling it directly): no cards, the text stands
             attach().close()
 
@@ -5328,7 +5363,9 @@ class Host:
         if getattr(a, "answer_v", None) == 2:
             base = {**base, "shown_sha256":a.answer_digest, "approval_v":2}
         approvals.record(self.st, **base, decision=decision, reason=reason, device=did, sign_pub=sk, sig=sig,
-                         scope_sha256=approvals.allow_add_line(picks) if picks else None)
+                         scope_sha256=approvals.allow_add_line(picks) if picks else None,
+                         **({"task_scope":a.task_scope,"task_uv":bool(a.require_passkey and a.uv_ok),"task_id":a.review_task}
+                            if getattr(a,"list_model",False) and a.task_scope else {}))
         approval_review.finished(self, a, decision, reason)
         allowed = decision in ("allow", "allow_batch") and reason == "device" and not getattr(a, "secret_display_route", False)
         bounded = getattr(a, "bounded_plan", None)
@@ -5360,6 +5397,9 @@ class Host:
             with contextlib.suppress(Exception):
                 send = ReadBackSend(note)
                 send.approval_origin = getattr(a, "review_origin", None)
+                if allowed and getattr(a,"list_model",False):
+                    from . import list_approval
+                    list_approval.bind_resume(self,a,send,did,sk,sig)
                 if getattr(a, "bounded_plan", None) is not None:
                     send.bounded_plan_resume = a.rid
                 self.agent.submit(send)
@@ -5394,10 +5434,12 @@ class Host:
         msg = pick(self.lang, "用户在手机上拒绝了这个操作。", "The owner declined this on the phone.") if did else _timeout_text(self.lang, int(self.ask_ttl))
         return {"behavior": "deny", "message": msg}
 
-    def new_perm_env(self, background: str | None = None) -> dict:
+    def new_perm_env(self, background: str | None = None, *, cwd: str | None = None) -> dict:
 
         self.perm_token = secrets.token_urlsafe(32)
         self.perm_bg_next = background
+        directory = cwd or (getattr(self, 'agent_cfg', None) or {}).get('dir')
+        self.perm_cwd_next = os.path.realpath(directory) if isinstance(directory, str) else None
         self.perm_task_next = provenance.task_scope() if background == "task" else None
         self.perm_claimed = asyncio.Event()
         if self.perm_w:
@@ -5431,10 +5473,15 @@ class Host:
                     return
             conn_bg = None
             conn_task = None
+            conn_context = None
             if side is None:
                 self.perm_token, self.perm_w, claimed = None, w, True
                 conn_bg, self.perm_bg_next = self.__dict__.get("perm_bg_next"), None   # P552: bound to this connection
                 conn_task, self.perm_task_next = self.__dict__.get("perm_task_next"), None
+                launch_cwd, self.perm_cwd_next = self.__dict__.get("perm_cwd_next"), None
+                if launch_cwd is not None:
+                    from .list_approval import PermissionContext
+                    conn_context = PermissionContext(self, w, launch_cwd)
             await self._perm_send(w, {"t": "claimed"})
             (side["claimed"] if side else self.perm_claimed).set()
             self.st.log("perm_claimed", **({"side": "avatar"} if side else {}))
@@ -5446,7 +5493,7 @@ class Host:
                     gone[m["id"]].set_result(True)
                 elif m.get("t") == "ask" and m["id"] not in gone:
                     gone[m["id"]] = asyncio.get_running_loop().create_future()
-                    self._bg(self._perm_ask(w, m, gone, side, conn_bg, conn_task), "perm_ask")
+                    self._bg(self._perm_ask(w, m, gone, side, conn_bg, conn_task, conn_context), "perm_ask")
         except (ValueError, ConnectionError, asyncio.LimitOverrunError):
             pass
         finally:
@@ -5462,7 +5509,7 @@ class Host:
                 w.close()
 
     async def _perm_ask(self, w: asyncio.StreamWriter, m: dict, gone: dict, side: dict | None = None,
-                        background: str | None = None, task_scope=None) -> None:
+                        background: str | None = None, task_scope=None, launch_context=None) -> None:
         rid = m["id"]
         ans = {"behavior": "deny", "message": "请求无效，已拒绝。"}
         try:
@@ -5476,7 +5523,7 @@ class Host:
                         broker = self.peers.xfer.broker if self.peers is not None and not background and task_scope is None else None
                         ans = await broker.execute(tool, tool_input, m.get("tool_use_id"), gone.get(rid)) if broker else None
                         if ans is None:
-                            ans = await self.ask(clean_line_tool(tool), tool_input, gone.get(rid),
+                            ans = await self.ask(clean_line_tool(tool), tool_input, gone.get(rid), _harness_permission=True, _native_context=launch_context,
                                                  **({"background": background} if background else {}))
         finally:
             gone.pop(rid, None)
@@ -5507,7 +5554,23 @@ class Host:
                   ttl: float | None = None, grant_info: bool = False, origin: str | None = None,
                   allow_offer: list | None = None, _company_proposal=None, bind: dict | None = None,
                   avatar: str | None = None, background: str | None = None, always_ask: bool = False, task_actions: list | None = None, task_target: dict | None = None, only: str | None = None, _receipt: dict | None = None,
-                  known_recipients: bool = False, _host_card: bool = False, _settings_session=None, _learn_proposal=None, _plan_only: bool = False, _bounded_context=None) -> dict:
+                  known_recipients: bool = False, _host_card: bool = False, _settings_session=None, _learn_proposal=None, _plan_only: bool = False, _bounded_context=None, _harness_permission=False, _native_context=None, _settings_context=None) -> dict:
+
+        # Chairman 2026-11-08: main approval is explicit-list only. The legacy
+        # implementation below is retained for rollback, never called here.
+        if tool == "AskUserQuestion" and self.agent and self.agent.kind == "claude":
+            return await self._ask_user_question(tool_input, gone)
+        from . import list_approval, bounded_plan, policy_registry
+        if tool == bounded_plan.TOOL and (not isinstance(_bounded_context, bounded_plan.SealedPlan)
+                or _bounded_context.owner is not bounded_plan.manager(self)
+                or _company_proposal is not policy_registry.HOST_CARD):
+            return {"behavior":"deny", "message":"Host-owned bounded executor requires a sealed concrete plan."}
+        if tool == "agentj learn" and (_learn_proposal is None or not self.learner.authorize(_learn_proposal, tool_input)):
+            return {"behavior":"deny", "message":"Host-owned policy registration required."}
+        return await list_approval.ask(self, Ask, tool, tool_input, gone=gone, ttl=ttl,
+            grant_info=grant_info, receipt=_receipt, only=only, host_card=_host_card,
+            settings_session=_settings_session, bounded_context=_bounded_context, harness_permission=_harness_permission,
+            task_actions=task_actions, task_target=task_target, native_context=_native_context, settings_context=_settings_context)
 
         def observe(reason, shown=None):
             if type(_receipt) is dict:
@@ -6484,14 +6547,9 @@ class Host:
                 approval_review.launch(self, unit)
 
     def _classify(self, tool, tool_input):
-        cfg = self.agent_cfg or {}
-        env = getattr(self.agent, "approval_env", None)
-        if cfg.get("session_mode") == "shared":
-            verdict = danger.classify_shared(tool, tool_input, self.danger_extra, cfg.get("approvals", "standard"), cfg.get("dir"), env=env)
-        else:
-            verdict = danger.classify(tool, tool_input, self.danger_extra, env=env)
-        desk = getattr(self, "owner_hosts", None)
-        return desk.narrow(tool, tool_input, verdict) if desk else verdict
+        # Presentation adapters receive no heuristic danger verdict in the main
+        # owner path. Sandbox-specific classifiers remain independently owned.
+        return danger.Verdict()
 
     def policy_refused(self, tool: str, tool_input: dict, why: str, notice: str) -> None:
 
@@ -6646,18 +6704,35 @@ class Host:
         self.st.log("answer_refused", id=a.rid, device=s.device, reason=reason)
         await self.send_app(s, {"t": "answer_refused", "id": a.rid, "why": reason, "ask": self._ask_msg(a, s)})
 
-    async def _answer(self, s: Session, obj: dict) -> None:
-        if getattr(self, "wechat", None) is not None and await self.wechat.answer(s, obj):
+    async def _answer_held_channel(self, controller, ask, session, obj):
+        from .wechat import _HeldChannelApproval
+        ref = getattr(ask,'native_authority',None)
+        cap = ref[4] if isinstance(ref,tuple) and len(ref)==11 and ref[3]=='held_channel' else None
+        if (type(cap) is not _HeldChannelApproval or cap.controller is not controller or cap.host is not self
+                or cap.ask is not ask or controller.cards.get(cap.slot) is not ask
+                or obj.get('id') != ask.rid or not self._paired_live(session) or not self._native_ask_live(ask)):
+            return False
+        await self._answer(session,obj,_held_channel=ask)
+        return True
+
+    async def _answer(self, s: Session, obj: dict, *, _held_channel=None) -> None:
+        if _held_channel is None and getattr(self, "wechat", None) is not None and await self.wechat.answer(s, obj):
             return
-        if getattr(self, "external_channels", None) is not None and await self.external_channels.answer(s, obj):
+        if _held_channel is None and getattr(self, "external_channels", None) is not None and await self.external_channels.answer(s, obj):
             return
         refused = []
-        if self.peers is not None and self.peers.answer(s.device, obj, refuse=refused.append):
+        if _held_channel is None and self.peers is not None and self.peers.answer(s.device, obj, refuse=refused.append):
             for receipt in refused:
                 await self.send_app(s, receipt)
             return                         # P71: a friend card (friend_request / peer_question), decided by its own rules
         rid, ok, sig, batch = obj.get("id"), obj.get("ok"), obj.get("sig"), obj.get("batch", False)
-        a = self.asks.get(rid) if isinstance(rid, str) else None
+        if _held_channel is not None:
+            ref = getattr(_held_channel,'native_authority',None)
+            if (not isinstance(ref,tuple) or len(ref)!=11 or ref[3]!='held_channel'
+                    or rid != _held_channel.rid or not self._paired_live(s) or not self._native_ask_live(_held_channel)):return
+            a = _held_channel
+        else:
+            a = self.asks.get(rid) if isinstance(rid,str) else None
         if a is None or a.fut.done():
             return                         # unknown or already decided (another phone, timeout): nothing to do
         if not isinstance(ok, bool) or not isinstance(sig, str) or not isinstance(batch, bool) \
@@ -6702,7 +6777,7 @@ class Host:
             if a.review_state != "pending":
                 return await self._answer_refused(s, a, "stale_envelope")
             source = a.envelope["source"]
-            if ok and (source.get("verified") is not True or source.get("suspicious") is True):
+            if ok and not getattr(a, "list_model", False) and (source.get("verified") is not True or source.get("suspicious") is True):
                 return await self._answer_refused(s, a, "unverified_trigger")
         if set(obj) - allowed_fields:
             return await self._answer_refused(s, a, "approval_fields")
@@ -6732,7 +6807,7 @@ class Host:
             if a.settings_session is s:
                 a.settings_uv_at = time.monotonic()
             a.uv_ok = True                 # P539: this allow passed the passkey (a preauth pick needs it)
-            if a.task_scope or getattr(a, "bounded_plan", None) is not None or a.tool in (owner_grant.TOOL, "agentj mail workflow-grant"):  # P574 + narrow workflow mail: the assertion itself travels to the other same-owner hosts
+            if getattr(a, "list_model", False) or a.task_scope or getattr(a, "bounded_plan", None) is not None or a.tool in (owner_grant.TOOL, "agentj mail workflow-grant"):  # P574 + narrow workflow mail: the assertion itself travels to the other same-owner hosts
                 a.fa = {k: obj["fa"][k] for k in ("id", "cd", "ad", "sig")}
         from . import auth_settings_uv
         if not ok:
@@ -6744,11 +6819,17 @@ class Host:
         if not review_bound and not self._native_ask_live(a):
             a.decision_pending = False
             return await self._answer_refused(s, a, 'authority_changed')
-        answer_task = self._task_id()
-        answer_source = approval_review.digest(approval_review.snapshot(self))
-        answer_live_authority = self._approval_live_authority()
+        answer_task = self._task_id() if _held_channel is None else None
+        answer_source = approval_review.digest(approval_review.snapshot(self)) if _held_channel is None else None
+        from .list_approval import SettingsContext
+        settings_context = getattr(a, 'settings_context', None)
+        settings_bound = type(settings_context) is SettingsContext
+        def settings_live():
+            return settings_bound and settings_context.live(self)
+        answer_live_authority = (None if _held_channel is not None else
+                                 settings_context.current(self) if settings_bound else self._approval_live_authority())
         if (review_bound and not getattr(a, "review_event", None)
-                and answer_live_authority != a.review_live_authority):
+                and (answer_live_authority != a.review_live_authority or (settings_bound and not settings_live()))):
             a.decision_pending = False
             return await self._answer_refused(s, a, "authority_changed")
         reserved_here, ledger = False, None
@@ -6768,7 +6849,8 @@ class Host:
             if (a.fut.done() or time.monotonic() > a.deadline or self.stopped()
                     or self.st.sign_key(s.device) != sk
                     or (not review_bound and not self._native_ask_live(a))
-                    or (review_bound and (self.agent is not a.review_agent
+                    or (settings_bound and not settings_live())
+                    or (review_bound and not settings_bound and (self.agent is not a.review_agent
                     or (hasattr(a, "envelope") and str(self.hist.epoch) != a.envelope["session"])
                     or self._task_id() != answer_task
                     or self._approval_live_authority() != answer_live_authority
@@ -6797,6 +6879,8 @@ class Host:
                 a.review_state = "denied"
                 approval_review.submit_event(self, a, "deny", secrets.token_hex(16), device=s.device)
             a.allow_add = list(picks or [])
+            if _held_channel is not None:
+                a._held_verified = (self,s.device,sk,sigb,display_digest)
             a.fut.set_result((decision, s.device, sk, sigb))
         finally:
             a.decision_pending = False
@@ -6981,6 +7065,7 @@ class Host:
         self.emit("estop", on=True, by=by)
         self.activity("estop", by=name)
         self.__dict__.pop("_parked_ok", None)          # P336: an allow given to a parked card dies with 「全部停下」
+        self.__dict__.pop("_uv_list_resumes", None)    # Exact question continuations also die with emergency stop.
         with contextlib.suppress(Exception):           # P539: every 「免问」 pre-authorization ends too (re-grant after resume)
             await self._preauth_revoke("estop")
         for a in list(self.asks.values()):
@@ -8040,6 +8125,8 @@ class Host:
         self.tts_busy=True
         try:
             text=turn.get("reply",{}).get("text","")
+            from . import display_privacy
+            text=await asyncio.to_thread(display_privacy.text,self,text)
             import hashlib, json, time as _time
             cache_key=hashlib.sha256(json.dumps([text,self.preferences.get("voice",{})],sort_keys=True).encode()).digest()
             cached=getattr(self,"tts_cache",None)
@@ -8051,6 +8138,7 @@ class Host:
                 from . import spoken, voice_engines
                 t0=_time.monotonic()
                 sc=await asyncio.to_thread(spoken.script,self.st,text,self.preferences,(getattr(self,"agent_cfg",None) or {}).get("kind"))
+                sc={**sc,"text":await asyncio.to_thread(display_privacy.text,self,sc["text"])}
                 audio=await asyncio.to_thread(voice.synthesize,sc["text"][:4000],self.preferences)
                 self.tts_cache=(cache_key,audio)
                 voice_engines.record(self.st,seconds=_time.monotonic()-t0,engine=voice_engines.engine_of(self.preferences),
@@ -8233,6 +8321,8 @@ class Host:
         self.tts_script_busy=True
         try:
             text=turn.get("reply",{}).get("text","")
+            from . import display_privacy
+            text=await asyncio.to_thread(display_privacy.text,self,text)
             sc=await asyncio.to_thread(spoken.script,self.st,text,self.preferences,(getattr(self,"agent_cfg",None) or {}).get("kind"))
             if sc["spoken"] and not sc["cached"]:
                 from . import voice_engines

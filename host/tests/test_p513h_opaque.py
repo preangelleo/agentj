@@ -1,11 +1,13 @@
-"""Opaque permissions always get a fresh signed card (P573: one button, no Face ID), including Full/goal/Jev bypass attempts."""
+"""Actual native PermissionRequest needs a fresh signed tap; opaque diagnostics add no extra AJ gate."""
 import _hermetic
 import asyncio
+import json
 import tempfile
 import unittest
 from unittest.mock import patch
-from agentj import action_policy, approval_jev, approval_level, goal, passkey
-from test_l1 import Phone, _owner_host, _ready, _state
+from agentj import action_policy, approval_jev, approval_level, goal, passkey, danger, approval_review, approvals
+from test_l1 import _ready, _state
+from _p541_device import Phone, _owner_host
 from test_p336_approval_level import sign, PROP
 
 
@@ -24,10 +26,11 @@ class OpaqueFloor(unittest.IsolatedAsyncioTestCase):
                     signed = sign(ph, target)
                     approval_level.note_signer(st, approval_level.KEY, 'full', ph.did,
                                               st.sign_key(ph.did), 'f'*32, signed)
-                    # P552 (chairman 10-26): a signed released full is in force as 减少弹窗 (`harness`), where opaque commands
-                    # follow the harness (P550/P551, test_p513i); the fresh-UV floor below is the other levels' invariant
+                    # The historical full switch resolves to harness. Ordinary
+                    # work follows native permission; this test explicitly asks
+                    # native PermissionRequest, so each invocation needs a tap.
                     self.assertEqual(approval_level.level(h.preferences, st), 'harness')
-                    continue
+                    # Native PermissionRequest still needs this invocation's signed tap.
                 if mode == 'goal':
                     d = goal.validate(PROP)
                     d.update(v=1, state='active', used={}, counts={}, id=goal.new_id(),
@@ -37,12 +40,12 @@ class OpaqueFloor(unittest.IsolatedAsyncioTestCase):
                     self.assertIsNotNone(h.goals.current())
                 inp = {'command':'$PY -m unittest discover -s tests',
                        'description':'already approved and reversible', 'confirmed':True}
-                self.assertTrue(approval_jev.gray(h._classify('Bash', inp)))
+                self.assertTrue(approval_jev.gray(danger.classify('Bash', inp)))
                 with patch.object(approval_jev, 'available', return_value=True), \
                      patch.object(approval_jev, 'judge', return_value=approval_jev.Result('allow', 1., 'safe')) as judge:
                     old = None
                     for attempt in range(2):
-                        t = asyncio.create_task(h.ask('Bash', dict(inp)))
+                        t = asyncio.create_task(h.ask('Bash', dict(inp), _harness_permission=True))
                         try:
                             for _ in range(100):
                                 if h.asks or t.done(): break
@@ -50,8 +53,9 @@ class OpaqueFloor(unittest.IsolatedAsyncioTestCase):
                             self.assertTrue(h.asks, 'automatic bypass reached')
                             a = next(iter(h.asks.values()))
                             card = h._ask_msg(a, s)
-                            # P573 (#386 ⑤): a command Jev cannot read is one button (was Face ID) — still always a card,
-                            # never a model / goal / old-answer bypass
+                            # This actual native PermissionRequest needs a new
+                            # ordinary signed tap; neither diagnostics, model,
+                            # goal nor an old answer can approve this invocation.
                             self.assertNotIn('passkey_required', card)
                             self.assertNotIn('batch', card)
                             if old is not None:
@@ -78,18 +82,31 @@ class OpaqueFloor(unittest.IsolatedAsyncioTestCase):
                 h = _owner_host(st, sent)
                 h.ask_ttl = .02
                 ph = Phone(st)
-                _ready(h, ph)
-                self.assertIn(rule, h._classify('Bash', {'command':command}).rules)
-                result = await h.ask('Bash', {'command':command})
+                session = _ready(h, ph)
+                from test_p513b_summary import real_outbound
+                real_outbound(h, session, sent)
+                self.assertIn(rule, danger.classify('Bash', {'command':command}).rules)
+                result = await h.ask('Bash', {'command':command}, _harness_permission=True)
                 self.assertEqual(result['behavior'], 'deny')
                 await asyncio.sleep(.01)
                 cards = [o for _, o in sent if o.get('t') == 'ask']
-                if rule == 'too_long' or len(action_policy.summary('Bash', {'command':command}).encode()) > 24000:
-                    self.assertEqual(cards, [])  # complete effect cannot fit; never send a truncated card
+                # The current card serializes the command once, unlike the
+                # historical heading+JSON presentation. Keep the same 24000-byte
+                # bound, measured on the complete canonical display, not a tier.
+                complete = 'Bash\n' + approval_review.canonical({'command':command})
+                if rule == 'too_long' or len(complete.encode()) > 24000:
+                    self.assertEqual(cards, [])  # no final wire card for an unshowable request
                 else:
                     self.assertEqual(len(cards), 1)
-                    self.assertTrue(cards[0]['passkey_required'])
-                    self.assertIn("Request SHA-256:", cards[0]['summary'])
+                    card = cards[0]
+                    self.assertNotIn('passkey_required', card)
+                    self.assertEqual(card['approval_v'], 2)
+                    self.assertLessEqual(len(card['summary'].encode()), 24000)
+                    self.assertNotIn('[truncated]', card['summary'])
+                    self.assertEqual(json.loads(card['summary'].split('\n',1)[1]), {'command':command})
+                    self.assertEqual(card['envelope']['input_sha256'], approvals.input_digest({'command':command}))
+                    self.assertEqual(result['reason'], 'timeout')
+                self.assertFalse(h.asks)
 
     async def test_ineffective_threshold_control_is_not_offered(self):
         from pathlib import Path

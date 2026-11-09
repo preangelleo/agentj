@@ -2083,39 +2083,12 @@ def hook_main(argv: list[str]) -> int:
                     "permissionDecisionReason": "agentj 只读运行（定时任务 mode: research）：" + why + "。这次运行只能读取，"
                                                 "把要做的事写进报告，由人决定。"}}, ensure_ascii=False))
                 return 0
-        from .policy_registry import main_requirement, unknown_text
-        requirement = main_requirement(ev.get("tool_name"), ev.get("tool_input"))
-        if requirement == "deny":
-            sys.stdout.write(json.dumps({"hookSpecificOutput": {
-                "hookEventName": "PreToolUse", "permissionDecision": "deny",
-                "permissionDecisionReason": unknown_text(ev.get("tool_name"))}}, ensure_ascii=False))
-            return 0
-        if "harness" in argv[1:]:
-            # P551 (#320) + P550: following the harness — only the four ③ kinds that stay (money, the owner's data deleted, a
-            # seat, a key going out) are forced to the phone; everything else is the harness's own call
-            from .confirm_tier import harness_keeps
-            if harness_keeps(ev.get("tool_name"), ev.get("tool_input"), workdir=ev.get("cwd")):
-                sys.stdout.write(json.dumps({"hookSpecificOutput": {
-                    "hookEventName": "PreToolUse", "permissionDecision": "ask",
-                    "permissionDecisionReason": "Agent J：不可逆动作，需要主人 Face ID / Irreversible: owner Face ID required"}},
-                    ensure_ascii=False))
-            return 0
-        from .owner_broker import parse as secret_command
-        if secret_command(ev.get("tool_name"), ev.get("tool_input"), ev.get("cwd") or os.getcwd()):
-            sys.stdout.write(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse", "permissionDecision":"ask",
-                "permissionDecisionReason":"Agent J: native secret-call authorization required"}}))
-            return 0
-        v = classify(ev.get("tool_name"), ev.get("tool_input"), extra) if "policy-only" not in argv[1:] else None
-        if v is not None and v.danger:
-            reason = "agentj 危险动作清单（" + "、".join(LABEL[c].split(" · ")[0] for c in v.cats) + "）：" + v.why + \
-                     "——必须在手机上逐条批准。"
-            sys.stdout.write(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
-                                                                "permissionDecisionReason": reason}}, ensure_ascii=False))
-        elif requirement in ("hold", "uv"):
-            sys.stdout.write(json.dumps({"hookSpecificOutput": {
-                "hookEventName": "PreToolUse", "permissionDecision": "ask",
-                "permissionDecisionReason": "Agent J：需要主人确认 / Owner confirmation required (" + requirement + ")"}},
-                ensure_ascii=False))
+        from . import uv_list
+        if uv_list.protected_targets(ev.get('tool_name'), ev.get('tool_input'), cwd=ev.get('cwd')):
+            sys.stdout.write(json.dumps({'hookSpecificOutput': {
+                'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
+                'permissionDecisionReason': 'Agent J protected control file: owner verification required.'}}))
+
         return 0
     except Exception as e:  # noqa: BLE001 — fail closed
         sys.stderr.write(f"agentj danger hook failed ({type(e).__name__}): blocked\n")

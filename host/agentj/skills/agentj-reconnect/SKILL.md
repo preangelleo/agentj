@@ -3,8 +3,8 @@ name: agentj-reconnect
 description: Repair no reply / "Not yet received", grey/disconnected phone or web, and check a new session (including compaction, /clear or resume). Triggers: 「手机灰了」「网页断开了」「手机连不上你」「接上手机」「重连」「手机卡住了」「紧急修复」「找回原来的对话」; "phone is grey", "reconnect/connect my phone", "bring back my earlier conversation".
 ---
 
-主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
-Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+默认派 CEO/子 Agent，写验收、复验、汇报；主人明确要求亲做就照办。指纹清单、凭据规则和 harness 硬限制不变。
+Delegate by default; follow explicit owner requests to work personally. Verify and report; UV, credential rules and harness limits remain.
 
 # Bring a grey phone back (起死回生)
 

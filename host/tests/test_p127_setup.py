@@ -33,7 +33,12 @@ from agentj import cli, doctor, migrate, preferences, session_choice, state  # n
 from agentj.state import State  # noqa: E402
 
 
+import test_p174 as _owner_fixture
+
+
 class _Env(unittest.TestCase):
+    approve_mode = _owner_fixture._Env.approve_mode
+
     def setUp(self):
         self.tmp = pathlib.Path(tempfile.mkdtemp(prefix="aj-p127s-", dir="/tmp"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
@@ -105,40 +110,50 @@ class SessionModeDefault(_Env):
         self.assertFalse([r for r in doctor.run(offline=True) if r["id"] == "session"])
 
     def test_an_owner_choice_through_config_is_kept_silently(self):
+        self.st.set_agent_config("claude", str(self.work))
         out = io.StringIO()
+        before = preferences.path().read_bytes()
         with contextlib.redirect_stdout(out):
-            self.assertEqual(preferences.command(["set", "agent.session_mode", "shared"]), 0)
-        res = json.loads(out.getvalue())
+            self.assertEqual(preferences.command(["set", "agent.session_mode", "shared"]), 3)
+        self.assertEqual(preferences.path().read_bytes(), before)
+        self.assertIn("fresh paired-device UV", json.loads(out.getvalue())["error"])
+        notice = self.approve_mode("shared")
         self.assertEqual(session_choice.recorded(self.st), "shared")
-        self.assertEqual((res["old"], res["new"]), ("independent", "shared"))
-        self.assertEqual(res["notice"]["rollback"], "agentj config set agent.session_mode independent", "the one line that undoes it")
-        self.assertIn("高级", res["notice"]["text_zh"])
-        self.assertIn("agentj service restart", res["notice"]["text_en"])
+        self.assertEqual(notice["rollback"], "agentj config set agent.session_mode independent")
+        self.assertIn("高级", notice["text_zh"])
+        self.assertIn("agentj service restart", notice["text_en"])
         code, text, _ = self.agent("claude", "--dir", str(self.work), tty=True)
         self.assertEqual(code, 0, text)
         self.assertEqual(self.mode(), "shared")
         out = io.StringIO()
         with contextlib.redirect_stdout(out), mock.patch("agentj.claude_auth.available", return_value=True):
-            preferences.command(["unset", "agent.session_mode"])
+            self.assertEqual(preferences.command(["unset", "agent.session_mode"]),3)
+        self.assertEqual(self.mode(), "shared")
+        notice = self.approve_mode(None)
         self.assertEqual(session_choice.recorded(self.st), "independent")
-        self.assertEqual(json.loads(out.getvalue())["notice"]["rollback"], "agentj config set agent.session_mode shared")
+        self.assertEqual(notice["rollback"], "agentj config set agent.session_mode shared")
         self.assertEqual(self.st.agent_config()["session_mode"], "independent", "back to the default")
 
     def test_flags(self):
-        code, text, _ = self.agent("claude", "--dir", str(self.work), "--shared")
-        self.assertEqual((code, self.mode()), (0, "shared"), text)
-        self.assertIn("agentj config set agent.session_mode independent", text, "a switch names its undo")
-        code, text, _ = self.agent("claude", "--dir", str(self.work), "--independent")
-        self.assertEqual((code, self.mode()), (0, "independent"), text)
+        self.st.set_agent_config("claude", str(self.work))
+        for mode, old in (("shared","independent"),("independent","shared")):
+            before = preferences.path().read_bytes()
+            code, text, _ = self.agent("claude", "--dir", str(self.work), "--"+mode)
+            self.assertNotEqual(code,0,text)
+            self.assertEqual(self.mode(),old)
+            self.assertEqual(preferences.path().read_bytes(),before)
+            notice = self.approve_mode(mode)
+            self.assertIn("agentj config set agent.session_mode "+old,notice["text"])
+            code,text,_=self.agent("claude","--dir",str(self.work),"--"+mode)
+            self.assertEqual((code,self.mode()),(0,mode),text)
         self.assertEqual(session_choice.user_value(), "independent", "an owner's independent is written down")
         self.assertEqual(session_choice.recorded(self.st), "independent")
         self.assertEqual(self.st.agent_config()["session_mode"], "independent")
-        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            cli.main(["agent", "claude", "--shared", "--independent"])
 
 
 class AgentLine(_Env):
     def test_shared_is_not_described_as_fenced(self):
+        self.user_config('{version:1, agent:{session_mode:"shared"}}')  # input to the formatting test
         self.agent("claude", "--dir", str(self.work), "--shared")
         zh, en = cli._agent_line(self.st, "zh"), cli._agent_line(self.st, "en")
         self.assertNotIn("隔离运行", zh)
@@ -293,6 +308,7 @@ def _fake_session(cc: pathlib.Path, work: pathlib.Path, sid: str, name: str, upd
 class SharedSessionPick(_Env):
     def setUp(self):
         super().setUp()
+        self.user_config('{version:1, agent:{session_mode:"shared"}}')  # selection fixture, not runtime approval
         self.cc = pathlib.Path(os.environ["CLAUDE_CONFIG_DIR"])
         now = int(time.time() * 1000)
         self.socks = []

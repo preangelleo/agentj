@@ -1,5 +1,6 @@
 // Small page helpers shared by the modules: element lookup, the Noir Notification (notify / toast / toastAction), the
 // two-step confirm dialog of Agent J's signed writes.
+import { activeLayer } from './layers.js';
 import { initSurfaceOutlines } from './surface-outline.js';
 import { fillText } from './t.js';
 import { SVG } from './icons.js';
@@ -116,6 +117,7 @@ export function notify(spec) {
   const f = notifyFormat(spec), box = el('toast');
   if (!box) return null;
   delete box.dataset.sharedFollow;
+  delete box.dataset.pkTest;
   box.classList.remove('act', 'mail-saved', 'circle', 'square', 'rect', 'glance', 'over-dlg');
   box.classList.toggle('glance', !!spec.glance);
   box.dataset.kind = f.kind; box.style.setProperty('--nt-accent', 'var(' + f.accent + ')');
@@ -213,8 +215,14 @@ export function toastAction(t, label, fn, ms) { notify({ kind: 'confirm', text: 
 // a held notice is a layer like any other: Esc puts it away (transient ones go by themselves)
 if (typeof document !== 'undefined') addEventListener('keydown', (e) => {
   // Modal editors and the focused PTY program own Escape while a recent notice is still visible.
+  const owner = e.key === 'Escape' ? activeLayer() : null;
+  const terminal = owner?.element()?.id === 'term';
+  if (owner?.trap && !terminal) return;
   const program = !e.isComposing && !e.ctrlKey && !e.metaKey && e.target?.closest?.('#term-xt');
-  if (document.querySelector('dialog[open]') || program) return;
+  const modal = [...document.querySelectorAll('.gdlg:not([hidden]),.ajmodal:not([hidden]):not(.cp-docked),#fsEd:not([hidden]),#rd:not([hidden])')]
+    .some(n => !(terminal && n.id === 'settings') && n.getClientRects().length && getComputedStyle(n).visibility !== 'hidden');
+  // The terminal may cover Settings; that underlying page must not own its header's Escape.
+  if (document.querySelector('dialog[open]') || program || modal || document.body.dataset.sheet === '1') return;
   const n = e.key === 'Escape' && el('toast');
   if (n && n.classList.contains('on')) { toastOff(); e.preventDefault(); e.stopImmediatePropagation(); }
 }, true);

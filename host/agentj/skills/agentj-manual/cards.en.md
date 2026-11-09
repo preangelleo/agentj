@@ -26,6 +26,8 @@ If another remote has changed an entry, refresh before editing again so you do n
 
 ## To-do {#todo}
 
+Near storage capacity, completed and cancelled items archive automatically, retaining their content and notes. Ask Agent J to search the To-do archive, or run `agentj card todo archive --page 0` on the computer (200 items per page; use `--page 1` for the next). Original item IDs still accept notes; reopening an archived item returns it to the card. A warning appears when open-item storage is nearly full.
+
 You and Agent J keep this list together. Whatever Agent J promises to do later — tomorrow, next week, once something else is finished — goes on the card at once, so you can see it and hold it to it. It also adds the things it should remind you of.
 
 Each item shows who is responsible (Agent J or you), when it may start and when it is due. A start or due point is a time, another item being finished (written `after:t3`), or a condition in words. Overdue, Due soon and Can start items carry a mark and come first, then items in progress and the rest; finished items are struck through and move to the end, cancelled ones last.

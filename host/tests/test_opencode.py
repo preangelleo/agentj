@@ -56,6 +56,18 @@ def runs_without_card(cmd: str, rules) -> bool:
 
 
 # ------------------------------------------------------------------ units
+
+# Each test owns its first-init preferences; another case's root is not authority.
+import os as _cfg_os
+import tempfile as _cfg_tmp
+from unittest.mock import patch as _cfg_patch
+
+def _isolate_config(test):
+    config = _cfg_tmp.TemporaryDirectory(prefix="p0300-config-")
+    test.addCleanup(config.cleanup)
+    env = _cfg_patch.dict(_cfg_os.environ, {"XDG_CONFIG_HOME": config.name})
+    env.start(); test.addCleanup(env.stop)
+
 class Rules(unittest.TestCase):
     def test_matcher_is_opencodes(self):
         w = oc.wildcard
@@ -211,6 +223,7 @@ class Detect(unittest.TestCase):
 # ------------------------------------------------------------------ the chain with a stand-in `opencode serve`
 class Chain(unittest.TestCase):
     def setUp(self):
+        _isolate_config(self)
         self.tmp = tempfile.TemporaryDirectory()
         self.st = _state(self.tmp.name)
         self.work = pathlib.Path(self.tmp.name) / "work"

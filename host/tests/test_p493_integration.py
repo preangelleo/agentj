@@ -19,6 +19,7 @@ class DiagnosticCommands(unittest.TestCase):
                    and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Attribute)
                    and node.value.func.attr == 'parse_args')
         namespace = dict(vars(cli))
+        namespace.update(args=[], argv=[])  # parser conditionals inspect the requested argv
         exec(compile(ast.Module(body=main.body[start:end], type_ignores=[]), cli.__file__, 'exec'), namespace)
         return namespace['p']
 

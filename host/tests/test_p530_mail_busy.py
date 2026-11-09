@@ -55,9 +55,18 @@ class PhoneCard(Base):
     def test_unknown_agent_source_still_rejected(self):
         async def go():
             with patch.object(mail.mail_recovery, 'recover', return_value=None):
-                res = await self.host.mail.secret_card(recover=False)
-            self.assertEqual(res['result'], 'group_source')
-            self.assertFalse(self.of('elev'))
+                task=asyncio.create_task(self.host.mail.secret_card(recover=False))
+                for _ in range(50):
+                    if self.of('elev') or task.done():break
+                    await asyncio.sleep(.01)
+                self.assertFalse(task.done(),task.exception() if task.done() else '')
+                card=next(iter(self.host.elevate.cards.values()))
+                self.assertEqual(card['review_adapter'].tool,'SecretInput')
+                self.assertFalse(mail.has_secret(self.st,mail.read_config(self.st)['address']))
+                # Unknown origin cannot supply the required paired UV; no secret is stored.
+                self.host.elevate.cancel_all('denied')
+                self.assertEqual((await task)['result'],'denied')
+                self.assertFalse(mail.has_secret(self.st,mail.read_config(self.st)['address']))
         asyncio.run(go())
 
 
@@ -128,7 +137,9 @@ class SocketCLI(unittest.IsolatedAsyncioTestCase):
         from agentj.state import State
         with tempfile.TemporaryDirectory(prefix='p530-') as tmp:
             st = State(Path(tmp)/'s'); st.init()
-            host = SimpleNamespace(st=st, lang='en', agent=None, stopped=lambda:False)
+            from test_l1 import _host
+            host = _host(st, [])
+            host.lang='en'
             host.mail = mail.Mail(host)
             host.mail.set_config(mail.apply_preset(mail.blank_config(),'gmail','demo@example.com'))
             el = elevate.Elevator(host)
@@ -162,7 +173,7 @@ cli.main(['mail',os.environ['P530_ACTION'],'--json'])
                         self.assertFalse(res['has_password'])
                     else:
                         self.assertEqual(p.returncode,1,err)
-                        self.assertEqual(res['result'],'group_source',res)
+                        self.assertEqual(res['result'],'no_device',res)
                         self.assertFalse(el.cards)
             finally:
                 await el.stop()

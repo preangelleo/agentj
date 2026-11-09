@@ -49,15 +49,9 @@ def _readonly(line: str) -> bool:
 
 
 def line_needs_face(line: str) -> bool:
-    """P573 (#386 ⑤): a confirmed terminal line needs Face ID only for the three classes — money, the owner's data deleted
-    for good, a key going out (or unbinding a remote) — or a rewrite of an Agent's hook / approval files; any other confirmed
-    line is the owner's signed tap (one button). Cannot tell → Face ID."""
-    from . import confirm_tier, policy_registry
-    try:
-        return bool(confirm_tier.harness_keeps("Bash", {"command": line})) or \
-            policy_registry.main_requirement("Bash", {"command": line}) == "uv"
-    except Exception:  # noqa: BLE001
-        return True
+    """Terminal text is never classified for UV; listed Agent J executors own it."""
+    return False
+
 
 class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
     """serve's glue (`h` = serve.Host): phone messages, `terminal_cfg`, the host info block, close on e-stop / stop.

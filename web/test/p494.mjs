@@ -5,7 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
 import {launch,newPage,navigate,waitFor,waitState,evaluate,shoot} from './browser.mjs';
-const out=new URL('../../../reports/qa/p494/',import.meta.url);mkdirSync(out,{recursive:true});
+const out=process.env.P494_OUT?new URL(process.env.P494_OUT.replace(/\/$/,'')+'/',new URL('file://'+process.cwd()+'/')):new URL('../../../reports/qa/p494/',import.meta.url);mkdirSync(out,{recursive:true});
 const web=await startWebServer(),fake=await startFakeHost(),B=await launch();const checks=[];
 try {
  for (const lang of ['zh','en']) {
@@ -23,11 +23,26 @@ try {
     execFileSync(process.env.AJ_PYTHON||'python3',['-c',`from agentj.startup_help import guidance; print(guidance('opencode','listen','${lang}'))`],{env:{...process.env,PYTHONPATH:'agentjarvis/host'}}).toString().trim();
    await fake.addTurn({k:'sys',text:''},note,'done',{recovery:'restart_session'});
    await waitFor(p,`document.getElementById('words').textContent.includes(${JSON.stringify(stage==='after'?'AJ_START_OPENCODE_LISTEN':lang==='zh'?'OpenCode 还没准备好':'OpenCode is not ready')})`,5000);
-   assert.equal(await evaluate(p,`!!document.querySelector('#cmdx [data-recovery="restart_session"]')`),true);
-   if(stage==='after') for(const wanted of ['PATH','HOME','agentj provider ark','agentj provider bailian','Kimi']) assert.equal(await evaluate(p,`document.getElementById('words').textContent.includes(${JSON.stringify(wanted)})`),true);
+   const recoveryVisible=await evaluate(p,`!!document.querySelector('#cmdx [data-recovery="restart_session"]')`);
+   if(!recoveryVisible)console.log('P494_RECOVERY_DIAGNOSTIC',JSON.stringify({lang,stage,turn:fake.st.turns.at(-1),dom:await evaluate(p,`({words:document.getElementById('words').textContent,cmdx:document.getElementById('cmdx').outerHTML,state:window.__ajState})`)}));
+   assert.equal(recoveryVisible,true);
+
+   if(stage==='after'){
+    for(const wanted of ['PATH','HOME','AJ_START_OPENCODE_LISTEN','unknown']) assert.equal(await evaluate(p,`document.getElementById('words').textContent.includes(${JSON.stringify(wanted)})`),true,'unknown guidance retains '+wanted);
+    for(const unwanted of ['agentj provider ark','agentj provider bailian','Kimi']) assert.equal(await evaluate(p,`document.getElementById('words').textContent.includes(${JSON.stringify(unwanted)})`),false,'unknown cause never infers provider trouble: '+unwanted);
+   }
    writeFileSync(new URL(`${stage}-startup-${lang}.png`,out),await shoot(p,''));
   }
-  checks.push(lang+': compact recovery and startup code/model guidance visible');
+  for(const reason of ['network','region','auth']){
+   const note=execFileSync(process.env.AJ_PYTHON||'python3',['-c',`from agentj.startup_help import guidance; print(guidance('opencode','listen','${lang}',reason='${reason}'))`],{env:{...process.env,PYTHONPATH:'agentjarvis/host'}}).toString().trim();
+   await fake.addTurn({k:'sys',text:''},note,'done',{recovery:'restart_session'});
+   await waitFor(p,`document.getElementById('words').textContent.includes(${JSON.stringify(note.split('\n')[0])})`,5000);
+   assert.equal(await evaluate(p,`!!document.querySelector('#cmdx [data-recovery="restart_session"]')`),true);
+   for(const wanted of ['PATH','HOME'])assert.equal(await evaluate(p,`document.getElementById('words').textContent.includes(${JSON.stringify(wanted)})`),true);
+   for(const provider of ['agentj provider ark','agentj provider bailian','Kimi'])assert.equal(await evaluate(p,`document.getElementById('words').textContent.includes(${JSON.stringify(provider)})`),reason!=='auth','actual structured reason controls provider guidance: '+reason+'/'+provider);
+   writeFileSync(new URL(`structured-${reason}-startup-${lang}.png`,out),await shoot(p,''));
+  }
+  checks.push(lang+': compact recovery, original unknown startup guidance, actual network/region provider guidance and auth negative visible');
  }
 } finally {await B.close();await fake.stop();await web.stop();}
 writeFileSync(new URL('phone.json',out),JSON.stringify({ok:true,checks},null,2)+'\n');console.log('P494 phone PASS',checks);

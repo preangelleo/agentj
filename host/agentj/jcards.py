@@ -822,10 +822,16 @@ def phone_get(root, cid, lang: str = "zh", agent_cfg=None, automation_page=0) ->
     else:
         if c["id"] == "todo" and c["official"]:   # P394: owner, status, start / end, marks, the card's order
             from . import jcards_todo
-            items, bad = jcards_todo.phone_items(raw, lang)
+            items, bad = jcards_todo.phone_items(raw, lang, root=root)
             from .jcards_data import _revision
             res["revision"] = _revision(raw or b"")
-            res["todo"] = {"counts": {w: sum(1 for i in items if w == "all" or i["owner"] == w) for w in ("all", "agent", "owner")}}
+            from . import jcards_todo_archive
+            try:
+                capacity = jcards_todo_archive.capacity(root, c, raw)
+            except OSError:
+                capacity = {'bytes': len(raw or b''), 'maxBytes': d['data'].get('maxBytes', DATA_DEFAULT), 'near_limit': True, 'archive_unavailable': True}
+            res["todo"] = {"counts": {w: sum(1 for i in items if w == "all" or i["owner"] == w) for w in ("all", "agent", "owner")},
+                           'capacity': capacity}
         else:
             items, bad = _items(raw) if raw else ([], None)
         if bad:
@@ -928,8 +934,9 @@ def parser() -> argparse.ArgumentParser:
     x.add_argument("--json", action="store_true")
     # P394 (#130): the To-do card kept by the Agent and the owner together (jcards_todo; flags spelled out here for the docs checker)
     x = ps.add_parser("todo", help="待办卡：加、改、标完成 / 取消，列出现在该处理的 / the To-do card: add, change, close, list what is due")
-    x.add_argument("op", choices=["add", "edit", "done", "cancel", "reopen", "start", "toggle", "list", "due"],
+    x.add_argument("op", choices=["add", "edit", "done", "cancel", "reopen", "start", "toggle", "list", "due", "archive"],
                    help="add 新加 · edit 改字段 · done 完成 · cancel 取消 · reopen 撤回 · start 开始做 · toggle 完成/撤回 · list 全部 · due 现在该处理的")
+    x.add_argument('--page', type=int, default=0, help='归档页码，从 0 开始 / archive page, starting at 0')
     x.add_argument("--entry", metavar="ID", help="哪一条（t3）/ which item (t3)")
     x.add_argument("--text", help="标题，一行 / the title, one line")
     x.add_argument("--owner", choices=["agent", "owner"], help="责任人：agent = Agent J，owner = 主人 / who is responsible")

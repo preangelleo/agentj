@@ -205,6 +205,8 @@ class OwnerOpenCodeV2Agent(SharedOpenCodeV2Agent):
             self.connected = asyncio.Event()
             self._bg(self._events(self.proc))
             await asyncio.wait_for(self.connected.wait(), CONNECT_WAIT)
+            if self.risk_channel:
+                await asyncio.wait_for(self.risk.ready.wait(), CONNECT_WAIT)
         except (OSError, ValueError, HTTPError, asyncio.TimeoutError):
             self.proc = None
             self.failed_start = True

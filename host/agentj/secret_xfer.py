@@ -1023,6 +1023,10 @@ class Xfer:
             return {"result": "refused", "why": "owner"}
         try:
             proof = og.proof_of(otg, ans.get("grant_info") or {})
+            entry = self.binding_entry(device)
+            og.verify(otg, proof, [entry] if entry else [])
+            if not self.local_live({"otg": otg, "proof": proof}):
+                raise og.GrantError("bad_proof", "current credential or grant epoch changed")
         except og.GrantError as e:
             return {"result": "refused", "why": e.why}
         if scope.startswith("task:"):

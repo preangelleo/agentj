@@ -119,7 +119,8 @@ async def handle(host, req: dict, emit=None, **run_kw) -> dict:
     """→ {ok, rc, why?, out, results? (a group)}. `emit(event)` gets {"stage": "card", "online", "ttl"} when the card is out
     and {"stage": "queued", "position"} / {"stage": "checking", "done", "total"} meanwhile. run_kw: tests only (post / get /
     keyring for the synthetic plaza)."""
-    from . import market, plaza, plaza_perms
+    from . import market, plaza, plaza_perms, application_ingress
+    request = application_ingress.current(host)
     try:
         spec = check(req)
     except ValueError:
@@ -131,7 +132,7 @@ async def handle(host, req: dict, emit=None, **run_kw) -> dict:
         plaza_perms.gate_refused(host, first, {"names": names}, gate["why"])
         return _refuse(host, first, gate["why"], market)
     early = ("estop" if host.stopped() else "serve_stop" if host.stopping.is_set() else
-             "no_device" if not host._approvers() else None)
+             "application_ingress_unverified" if not application_ingress.allowed(host) else None)
     flight = host.__dict__.setdefault("_plaza_installing", set())
     todo = [n for n in names if n not in flight]
     if early is None and not todo:
@@ -184,7 +185,8 @@ async def handle(host, req: dict, emit=None, **run_kw) -> dict:
             plaza.seat_gate(host.st)              # the plaza needs a usable seat (P199), checked where the state is
             return market.run_install(n, version=spec["version"], harness=spec["harness"], workspace=spec["workspace"],
                                       params=spec["params"] or [], params_file=spec["params_obj"], sign_as=spec["sign_as"],
-                                      replace=bool(spec["replace"]), st=host.st, out=bufs[n], host_ask=asker(n), **run_kw)
+                                      replace=bool(spec["replace"]), st=host.st, out=bufs[n], host_ask=asker(n),
+                                      _host_live=request._transport_live if request else lambda:False, **run_kw)
         except plaza.PlazaError as e:
             print(f"agentj plaza: {e}", file=bufs[n])
             return market.EXIT_ERROR

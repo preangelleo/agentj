@@ -156,18 +156,56 @@ class ClaudeHooks(unittest.IsolatedAsyncioTestCase):
 
 class NativeRiskHooks(unittest.IsolatedAsyncioTestCase):
     async def test_late_answer_does_not_cross_turn_and_revocation_blocks_execution(self):
-        from agentj.shared_risk import RiskGuard
-        a=Mock();a.cfg={'high_risk_warnings':True};a.host.stopped.return_value=False;a.host.st.sign_key.return_value='SIGN'
-        entered=asyncio.Event();release=asyncio.Event()
-        async def delayed(*args,**kwargs):
-            entered.set();await release.wait()
-            return {'behavior':'allow','risk_grant':{'rid':'old','device':'device','sign_pub':'SIGN'}}
-        a.host.ask=AsyncMock(side_effect=delayed);guard=RiskGuard(a)
-        old=asyncio.create_task(guard.check('Read',{'file_path':'demo.pem'}))
-        await entered.wait();guard.reset('next');release.set()
-        self.assertTrue(await old);self.assertEqual(guard.grants,{})
-        a.host.st.sign_key.return_value=None
-        self.assertFalse(await guard.check('Read',{'file_path':'second.pem'}))
+        from agentj import shared_risk
+        import test_uv_list as uv_fixture
+        from types import SimpleNamespace as NS
+        fixture=uv_fixture.ListApproval()
+        await fixture.asyncSetUp()
+        self.addCleanup(fixture.doCleanups)
+        h,st,phone,session=fixture.h,fixture.st,fixture.ph,fixture.s
+        work=st.root/'work';work.mkdir()
+        a=NS(kind='codex',host=h,cfg={'dir':str(work)},tid='old-turn',
+             proc=NS(pid=os.getpid(),returncode=None),cur_send=h.agent.cur_send,status='idle',halting=False)
+        h.agent=a;h.agent_cfg=a.cfg
+        guard=shared_risk.RiskGuard(a)
+        # Ordinary reads no longer create an Agent J category card.
+        self.assertTrue(await asyncio.wait_for(guard.check('Read',{'file_path':'demo.pem'}),1))
+        self.assertFalse(h.asks);self.assertEqual(guard.grants,{})
+        target=st.root/'settings.json'
+        async def pending():
+            task=asyncio.create_task(guard.check('Write',{'file_path':str(target),'content':'{}'}))
+            self.addAsyncCleanup(cancel,task)
+            for _ in range(100):
+                if h.asks or task.done():break
+                await asyncio.sleep(.005)
+            self.assertFalse(task.done(),'real protected path must reach Host.ask')
+            self.assertTrue(h.asks)
+            ask=next(iter(h.asks.values()))
+            self.assertTrue(ask.require_passkey)
+            return task,ask,h._ask_msg(ask,session)
+        async def cancel(task):
+            if not task.done():task.cancel()
+            await asyncio.gather(task,return_exceptions=True)
+        old,ask,card=await pending()
+        # A genuine old signed/UV answer cannot cross a native session change.
+        a.tid='next-turn';guard.reset('next')
+        await h._answer(session,phone.answer(card,True))
+        self.assertFalse(await asyncio.wait_for(old,3));self.assertEqual(guard.grants,{})
+        self.assertFalse(target.exists());h.asks.clear()
+        revoked,ask,card=await pending()
+        original=st.sign_key
+        from unittest.mock import patch
+        with patch.object(st,'sign_key',side_effect=lambda dev: None if dev==session.device else original(dev)):
+            await h._answer(session,phone.answer(card,True))
+            self.assertFalse(await asyncio.wait_for(revoked,3))
+        self.assertEqual(guard.grants,{});self.assertFalse(target.exists());h.asks.clear()
+        current,ask,card=await pending()
+        no_uv=phone.answer(card,True);no_uv.pop('fa')
+        await h._answer(session,no_uv)
+        self.assertFalse(ask.fut.done())
+        await h._answer(session,phone.answer(card,True))
+        self.assertTrue(await asyncio.wait_for(current,3))
+        self.assertEqual(guard.grants,{})
 
     async def test_category_denial_is_one_card_until_next_turn(self):
         from agentj.shared_risk import RiskGuard

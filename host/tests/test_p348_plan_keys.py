@@ -175,8 +175,14 @@ class BotsRefusePlans(unittest.TestCase):
         js = (ROOT / "web/public/js/bots.js").read_text()
         self.assertIn("coding_plan_bot:planProblem", js)
         self.assertIn("e.message==='coding_plan_bot'", js)
-        self.assertIn("主人自带模型 key", js[js.index("const planProblem"):js.index("async function act")])
-        self.assertIn("按量付费", js)
+        key = 'bots.a_support_bot_serves_other_people_so_it_cannot_use_a_coding_plan_token_plan_key_choose_owner_s_model'
+        self.assertIn("both('"+key+"')", js[js.index("const planProblem"):js.index("async function act")])
+        zh = json.loads((ROOT / "web/i18n/web.zh.json").read_text())[key]
+        en = json.loads((ROOT / "web/i18n/web.en.json").read_text())[key]
+        self.assertIn("主人自带模型 key", zh)
+        self.assertIn("按量付费", zh)
+        self.assertIn("Owner’s model key", en)
+        self.assertIn("pay-as-you-go API key", en)
 
 
 class BotVendors(unittest.IsolatedAsyncioTestCase):

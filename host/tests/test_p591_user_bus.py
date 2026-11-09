@@ -9,13 +9,13 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
-from agentj import fence, danger, approval_level, policy_registry
+from agentj import fence, danger, approval_level, policy_registry, uv_list
 from agentj.state import State
 from _testtmp import TEST_TMP
 
 
 class Policy(unittest.TestCase):
-    def test_manager_writes_always_require_pairing(self):
+    def test_ordinary_manager_commands_follow_native_permissions(self):
         for cmd in ('systemctl --user start x.service', 'systemctl --user enable x.timer',
                     'systemctl --user link /tmp/x.service',
                     'env systemctl --user restart x.service'):
@@ -25,9 +25,9 @@ class Policy(unittest.TestCase):
                 for tool in ('Bash', 'exec_command'):
                     inp={'command': cmd}
                     requirement=policy_registry.main_requirement(tool, inp)
-                    self.assertEqual(requirement, 'uv', tool)
-                    self.assertEqual(approval_level.full_access_keep(tool, inp, v, requirement=requirement), 'uv', tool)
-                self.assertTrue(set(danger.shared_keys(v, {'approvals': 'native'})) & danger.ALWAYS_CARD)
+                    self.assertEqual(requirement, 'allow', tool)
+                    self.assertIsNone(approval_level.full_access_keep(tool, inp, v, requirement=requirement), tool)
+                    self.assertFalse(uv_list.required(tool, inp), tool)
 
     def test_transient_pure_child_keeps_service_label_but_needs_no_uv(self):
         # #537 classifies the closed child effect, not the transport label.
@@ -40,7 +40,7 @@ class Policy(unittest.TestCase):
                 self.assertEqual(requirement, 'allow')
                 self.assertIsNone(approval_level.full_access_keep(tool, inp, verdict, requirement=requirement))
 
-    def test_transient_sensitive_child_or_environment_still_requires_uv(self):
+    def test_transient_child_and_environment_do_not_create_a_second_permission_layer(self):
         for tool in ('Bash', 'exec_command'):
             for cmd in ('systemd-run --user sh -c "cat ~/.env"',
                         'systemd-run --user --setenv=SECRET=fixture true'):
@@ -49,8 +49,25 @@ class Policy(unittest.TestCase):
                     verdict = danger.classify('Bash', inp)  # normalized command classification, as above
                     self.assertIn('cred.service', verdict.rules)
                     requirement = policy_registry.main_requirement(tool, inp)
-                    self.assertEqual(requirement, 'uv')
-                    self.assertEqual(approval_level.full_access_keep(tool, inp, verdict, requirement=requirement), 'uv')
+                    self.assertEqual(requirement, 'allow')
+                    self.assertIsNone(approval_level.full_access_keep(tool, inp, verdict, requirement=requirement))
+                    self.assertFalse(uv_list.required(tool, inp))
+
+    def test_explicit_commands_and_control_paths_still_require_uv(self):
+        for tool, inp in (('agentj secret send', {}), ('agentj secret request', {}),
+                          ('agentj fn run', {'name':'synthetic'}),
+                          ('agentj config', {'changes':{'approval.level':'full'}})):
+            self.assertTrue(uv_list.required(tool, inp), tool)
+        self.assertFalse(uv_list.required('agentj config', {'changes':{'appearance.language':'en'}}))
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as root:
+            env={'HOME':root,'AGENTJ_STATE_DIR':str(pathlib.Path(root)/'state')}
+            for tool in ('Write','Delete'):
+                self.assertTrue(uv_list.required(tool,{'file_path':str(pathlib.Path(root)/'state/devices.json')},env=env))
+            self.assertFalse(uv_list.required('Read',{'file_path':str(pathlib.Path(root)/'state/devices.json')},env=env))
+            self.assertFalse(uv_list.required('Write',{'file_path':str(pathlib.Path(root)/'.config/systemd/user/ordinary.service')},env=env))
+        # Actual signatures/UV/expiry and output redaction are qualified by
+        # test_uv_list, test_uv_list_paths and test_uv_list_egress_fix1; bus/fence
+        # assertions below remain independent of this policy migration.
 
     def test_unit_roots_cannot_replace_the_private_proc_or_filesystem_root(self):
         for root in ('/proc', '/', '/agentj-p591-absent-root/not-created'):

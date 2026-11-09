@@ -58,7 +58,7 @@ class Base(unittest.TestCase):
         self.work.mkdir()
         self.cfg = pathlib.Path(self.tmp.name) / "claudecfg"
         self.cfg.mkdir()
-        self.env = mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(self.cfg)})
+        self.env = mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(self.cfg), "XDG_CONFIG_HOME":str(pathlib.Path(self.tmp.name)/"config")})
         self.env.start()
         self.st.set_agent_config("claude", str(self.work))
         self.sent = []
@@ -225,7 +225,7 @@ class Cli(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.st = _state(self.tmp.name)
-        self.env = mock.patch.dict(os.environ, {"AGENTJ_STATE_DIR": str(self.st.root)})
+        self.env = mock.patch.dict(os.environ, {"AGENTJ_STATE_DIR": str(self.st.root), "XDG_CONFIG_HOME":str(pathlib.Path(self.tmp.name)/"config")})
         self.env.start()
 
     def tearDown(self):

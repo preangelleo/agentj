@@ -27,6 +27,18 @@ ROOT = pathlib.Path(__file__).resolve().parents[1] / "agentj"
 N_SECONDS = 5          # the phone must leave grey within this after the restart
 
 
+
+# Each test owns its first-init preferences; another case's root is not authority.
+import os as _cfg_os
+import tempfile as _cfg_tmp
+from unittest.mock import patch as _cfg_patch
+
+def _isolate_config(test):
+    config = _cfg_tmp.TemporaryDirectory(prefix="p0300-config-")
+    test.addCleanup(config.cleanup)
+    env = _cfg_patch.dict(_cfg_os.environ, {"XDG_CONFIG_HOME": config.name})
+    env.start(); test.addCleanup(env.stop)
+
 class FakeAgent:
     def __init__(self, host, cfg):
         self.host, self.cfg, self.kind, self.status = host, cfg, cfg["kind"], "idle"
@@ -64,7 +76,7 @@ class Restart(unittest.IsolatedAsyncioTestCase):
     """The real serve start-up (`Host._run`), a phone that resumes before the Agent exists."""
 
     async def run_serve(self, mode):
-        with tempfile.TemporaryDirectory(dir=TEST_TMP) as tmp:
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as tmp, patch.dict(os.environ, {"XDG_CONFIG_HOME":str(pathlib.Path(tmp)/"config")}):
             host = _host(tmp, mode)
             sent = []
             s = _phone(host, sent)
@@ -106,6 +118,7 @@ class Restart(unittest.IsolatedAsyncioTestCase):
 
 class Push(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        _isolate_config(self)
         self.tmp = tempfile.TemporaryDirectory(dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.host = _host(self.tmp.name, "shared")
@@ -140,6 +153,10 @@ class Push(unittest.IsolatedAsyncioTestCase):
 
 
 class SharedNothingAttached(test_p147.Fixture):
+    def setUp(self):
+        _isolate_config(self)
+        super().setUp()
+
     async def test_no_live_session_is_down_then_a_new_window_brings_idle(self):
         dead = "99999999-1111-1111-1111-111111111111"     # the pin from before the restart; that window is closed
         a = shared.SharedClaudeAgent(self.host, {**self.cfg, "shared_session_id": dead})

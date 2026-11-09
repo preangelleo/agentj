@@ -3,20 +3,20 @@ name: agentj-first-run
 description: First-run "at your computer" checklist — prepare everything remote work will need while the owner is still at the computer. Use after the first installation's welcome, or when the owner says "Agent J 主机前一次做完", "继续首次准备", "离开Agent J 主机前检查", "prepare everything while I am at my computer", "continue first-run setup", "check before I leave".
 ---
 
-主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
-Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+默认派 CEO/子 Agent，写验收、复验、汇报；主人明确要求亲做就照办。指纹清单、凭据规则和 harness 硬限制不变。
+Delegate by default; follow explicit owner requests to work personally. Verify and report; UV, credential rules and harness limits remain.
 
 You are the one main Agent; only you talk to the owner. The host owns the checklist journal and every check; you guide.
 
 1. Read first: `agentj setup checklist --json` (read-only; `needs_setup` = never started). Do not ask what the host can see.
-2. Start or continue only with the owner's go-ahead: `agentj setup checklist --resume --json`. The host probes everything; the paired
-   phone AND this computer's browser show a thin banner above the chat (「首次准备 3/12 · 继续」) that opens the checklist as its own
-   page (same revision). It never covers the chat. Tell the owner: the steps are done ON THE COMPUTER, the phone shows progress,
-   and if anything is stuck they just tell you in the chat. The banner's ✕ (or the page's 「收起清单」) closes it at once and it no
-   longer comes back by itself; the menu 「首次准备清单」 reopens it. If the owner says "close it / not now / 关掉清单", run
-   `agentj setup checklist --close --json` — never insist, never re-open it on your own. Closed is permanent on that device:
-   `--resume`, `--check`, new revisions and restarts never bring it back. Only when the owner asks to see it again run
-   `agentj setup checklist --open --json` (or point them to the menu).
+2. Start or continue only with the owner's go-ahead: `agentj setup checklist --resume --json`. Always direct the owner to
+   Settings → Agent tools → First-run checklist. Never rely on a chat-top entry: the thin banner appears only when a host
+   checklist exists and neither the host nor this device has closed it. A package preparation banner is separate.
+   Follow each item's location and concrete next step. Do phone choices and approvals on the phone; only sign-ins,
+   physical steps and system permission prompts that require local presence need the Agent J host. If stuck, tell you in chat.
+   If the owner says "close it / not now / 关掉清单", run `agentj setup checklist --close --json` — never insist or reopen it
+   yourself. `--resume`, `--check`, new revisions and restarts never clear this device's close flag. When asked to see it again,
+   point to Settings → Agent tools → First-run checklist; `--open` can reopen the host journal but cannot clear a device's close flag.
 3. Explain the whole outline once, in six groups: your connection · power and services · your websites · Google tools · permissions
    you need · optional connections. Each item is "I do it", "needs you at the computer", "can be done on the phone" or "not in this
    version yet". Recommend Gmail website sign-in first if they use Google. Chat-only use is a valid choice.
@@ -63,9 +63,11 @@ You are the one main Agent; only you talk to the owner. The host owns the checkl
    agentj-capability skill (the workflow wizard's goal mode, built on the Workflow Design Bible). Record who the owner is in
    documentation/MEMORY.md and rewrite documentation/NEXT_SESSION.md. Ask once; if they say not now, drop it.
 
-中文要点：先 `agentj setup checklist --json` 只读；主人同意才 `--resume`，手机和Agent J 主机网页的聊天上方出现一条细横幅，点开是独立的清单页，
-绝不挡住聊天。告诉主人：步骤都在Agent J 主机上做、手机看进度、卡住了直接在聊天里说。主人点 ✕ 或说「关掉清单」就 `--close`，之后
-`--resume`/`--check`/重启都不会再弹；只有主人要看时才 `--open` 或让他点菜单重开。网站项会写明查的是哪个浏览器；主人已有登录好的本机浏览器时用 `agentj browser adopt --endpoint http://127.0.0.1:<端口>`
+中文要点：先 `agentj setup checklist --json` 只读；主人同意才 `--resume`。指路一律用「设置 → Agent 的功能 → 首次准备清单」，
+不让主人找聊天页顶部入口：主机已有清单、主机与当前设备都未收起时才有横幅，包初始化横幅是另一回事。
+按每项写明的位置和下一步操作：选择和审批在手机上做，只有本人登录、实物操作和系统授权等才需要在主机上完成。
+主人说「关掉清单」就 `--close`；`--resume`/`--check`/重启都不会清除这台设备的收起标记。主人要看时让他从上述设置路径打开；
+`--open` 只重开主机记录，不能清除设备的收起标记。网站项会写明查的是哪个浏览器；主人已有登录好的本机浏览器时用 `agentj browser adopt --endpoint http://127.0.0.1:<端口>`
 提议，主人在页面上点「用我已有的浏览器」才生效。一次讲清六组全貌，再按卡片顺序一项一项做。
 「要用 / 我不用 / 稍后」只能主人在卡片上点；你不能替主人标记、不能写就绪、必需项不能「我不用」。主人说「做完了」只运行 `--check`。
 主 AI 一项：用不了 Claude Code / Codex 的地区（`agentj agent route` 结果为 kimi）按命令打印的规则：中国大陆从零开始首推火山方舟 Coding Plan、先买 Lite（和 Pro 能力一样，只差 5 倍用量）；香港 / 海外推荐 Kimi 会员 Plus 及以上（Go 档没有编程额度）；已有某一家就继续用；主人有自己的模型服务（Olares Router 等）可用 DeepSeek Harness（`agentj agent dsh --base-url … --model …`）。百炼 Token Plan 要讲清自己的定时任务可用但长时间后台任务可能限流、客服 bot 不能用、数据会被用于模型优化。

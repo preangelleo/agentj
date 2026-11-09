@@ -19,6 +19,14 @@ from _p541_device import _owner_host, Phone
 
 class Review(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        # Preferences are per fixture: another test's working root is not initial setup.
+        from tempfile import TemporaryDirectory as _ConfigDirectory
+        from unittest.mock import patch as _config_patch
+        self._config_tmp = _ConfigDirectory(prefix='aj-0300-config-')
+        self.addCleanup(self._config_tmp.cleanup)
+        _config_env = _config_patch.dict('os.environ', {'XDG_CONFIG_HOME': self._config_tmp.name})
+        _config_env.start()
+        self.addCleanup(_config_env.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.st = _state(self.tmp.name)
@@ -38,7 +46,7 @@ class Review(unittest.IsolatedAsyncioTestCase):
         patch = mock.patch.object(approval_jev, 'available', return_value=False);patch.start();self.addCleanup(patch.stop)
 
     async def open(self, command='rm -rf /synthetic/old', actions=None):
-        task = asyncio.create_task(self.h.ask('Bash', {'command':command}, task_actions=actions))
+        task = asyncio.create_task(self.h.ask('Bash', {'command':command}, task_actions=actions, _harness_permission=True))
         for _ in range(100):
             if self.h.asks or task.done():break
             await asyncio.sleep(.005)
@@ -114,9 +122,17 @@ class Review(unittest.IsolatedAsyncioTestCase):
         await self.h._answer(self.s,self.ph.answer(self.h._ask_msg(ask,self.s),True))
         await asyncio.sleep(0)
         self.assertEqual(ask.fut.result()[0],'allow')
-        key = ask.park_key
-        self.assertIsNotNone(self.h._parked_take(key,uv=True))
-        self.assertIsNone(self.h._parked_take(key,uv=True))
+        # The current controller uses an exact Host-created continuation Send,
+        # not the retired UV-only parked cache. Consume it through the real ask.
+        self.agent.cur_send = self.agent.submit.call_args.args[0]
+        continued = await self.h.ask('Bash', {'command':'rm -rf /synthetic/old'}, _harness_permission=True, grant_info=True)
+        self.assertEqual(continued['behavior'],'allow')
+        self.assertEqual(continued['grant_info']['rid'],ask.rid)
+        self.assertFalse(continued['grant_info']['uv'])
+        again, fresh = await self.open()
+        self.assertNotEqual(fresh.rid,ask.rid)
+        await self.h._answer(self.s,self.ph.answer(self.h._ask_msg(fresh,self.s),False))
+        self.assertEqual((await again)['behavior'],'deny')
         records = approvals.read_log(self.st)
         signed = [r for r in records if r.get('reason')=='device'][-1]
         self.assertEqual(signed['approval_v'],2)
@@ -148,15 +164,9 @@ class Review(unittest.IsolatedAsyncioTestCase):
             self.origin = review.remember(self.h, source, provenance.phone())
             self.agent.cur_send.approval_origin = self.origin
             if suspicious:
-                # A fabricated external projection is not an authenticated owner
-                # task under the current source contract: it cannot even mint a
-                # card, much less reuse the previous card's refusal/reopen path.
+                # Source labels are display data. They neither grant authority
+                # nor suppress a real native permission request's signed tap.
                 self.agent.cur_send.approval_origin = {**self.origin,'suspicious':True,'channel':'email'}
-                before = len([m for _,m in self.sent if m.get('t') == 'ask'])
-                result = await self.h.ask('Bash', {'command':'rm -rf /synthetic/old'})
-                self.assertEqual(result['behavior'],'deny')
-                self.assertEqual(len([m for _,m in self.sent if m.get('t') == 'ask']),before)
-                continue
             task, ask = await self.open()
             await self.h._answer(self.s,self.ph.answer(self.h._ask_msg(ask,self.s),False))
             self.assertEqual((await task)['behavior'],'deny')
@@ -200,7 +210,7 @@ class Review(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(task.done())
         ask = next(iter(self.h.asks.values()))
         self.addAsyncCleanup(self.stop,task,ask)
-        self.assertTrue(ask.require_passkey)
+        self.assertFalse(ask.require_passkey)  # ordinary exact native actions do not invent UV
         self.assertEqual(len(ask.envelope['plan']['actions']),2)
         self.assertLessEqual(ask.envelope['plan']['expires']-time.time(),600)
         self.assertTrue(any('预计需要你确认 1 次' in t['reply']['text'] for t in self.h.hist.turns.values()))
@@ -208,16 +218,37 @@ class Review(unittest.IsolatedAsyncioTestCase):
         result = await task
         self.assertTrue(result['ok'], result)
         self.assertEqual(result['proof']['approval_v'],2)
+        # The signed plan is a scope proof; it does not fabricate a native
+        # process grant. Each actual native PermissionRequest still needs its
+        # exact signed ordinary tap. Keep both original command vectors.
         for action in actions:
-            self.assertEqual((await self.h.ask(action['tool'],action['input']))['behavior'],'allow')
-            self.assertEqual(approvals.read_log(self.st)[-1]['reason'],'task_grant')
-        # Once executed, an identical operation in this root task is rejected before another approvable card.
-        retry = await self.h.ask('Bash', actions[0]['input'])
-        self.assertEqual(retry['behavior'], 'deny')
-        self.assertIn('consumed', retry['message'])
-        records = approvals.read_log(self.st); index = {r['id']:r for r in records}
+            pending = asyncio.create_task(self.h.ask(action['tool'],action['input'],_harness_permission=True))
+            for _ in range(100):
+                if self.h.asks or pending.done():break
+                await asyncio.sleep(.005)
+            self.assertFalse(pending.done())
+            step = next(iter(self.h.asks.values()))
+            self.addAsyncCleanup(self.stop,pending,step)
+            self.assertFalse(step.require_passkey)
+            await self.h._answer(self.s,self.ph.answer(self.h._ask_msg(step,self.s),True))
+            self.assertEqual((await pending)['behavior'],'allow')
+            self.assertEqual(approvals.read_log(self.st)[-1]['reason'],'device')
+        # A prior proof is never an answer to a new request. Its owner denial
+        # remains terminal; no execution is performed by this approval test.
+        retry = asyncio.create_task(self.h.ask('Bash', actions[0]['input'],_harness_permission=True))
+        for _ in range(100):
+            if self.h.asks or retry.done():break
+            await asyncio.sleep(.005)
+        self.assertFalse(retry.done())
+        fresh = next(iter(self.h.asks.values()));self.addAsyncCleanup(self.stop,retry,fresh)
+        self.assertNotEqual(fresh.rid,ask.rid)
+        await self.h._answer(self.s,self.ph.answer(self.h._ask_msg(fresh,self.s),False))
+        result = await retry
+        self.assertEqual(result['behavior'], 'deny')
+        self.assertEqual(result['reason'],'device')
+        records = approvals.read_log(self.st)
         for rec in records:
-            if rec.get('reason')=='task_grant':self.assertEqual(approvals.check_record(self.st,rec,index),'auto')
+            if rec.get('reason')=='device':self.assertEqual(approvals.check_record(self.st,rec),'ok')
 
     async def test_plan_size_and_trust_root_are_rejected(self):
         from agentj.peer_service import PeerService
@@ -236,8 +267,10 @@ class Review(unittest.IsolatedAsyncioTestCase):
         task,ask=await self.open('cat ~/.env')
         await self.h._answer(self.s,self.ph.answer(self.h._ask_msg(ask,self.s),True))
         result=await task
-        self.assertEqual(result['behavior'],'deny')
-        self.assertIn('agentj secret send',result['message'])
+        # Ordinary native reads follow the harness. Command text alone cannot
+        # force Agent J's explicit secret-delivery executor or a heuristic UV.
+        self.assertFalse(ask.require_passkey)
+        self.assertEqual(result['behavior'],'allow')
 
     async def test_event_outbox_bound_thread_pending_retry_and_ack(self):
         task,ask=await self.open()
@@ -275,9 +308,21 @@ class Review(unittest.IsolatedAsyncioTestCase):
         for tool,inp in [('Bash',{'command':'cat ~/.env'}),('Bash',{'command':'agentj telegram off'}),
                          ('Write',{'file_path':'/tmp/report.txt','content':'changed'}),
                          ('Bash',{'command':'echo changed > /tmp/report.txt'})]:
-            result=await self.h.ask(tool,inp)
+            # The explanation quotes are not tool instructions. A real native
+            # permission request is still an exact signed tap; an explanation
+            # label cannot authorize it or replace the owner's decision.
+            pending=asyncio.create_task(self.h.ask(tool,inp,_harness_permission=True))
+            for _ in range(100):
+                if self.h.asks and any(not a.parked for a in self.h.asks.values()) or pending.done():break
+                await asyncio.sleep(.005)
+            self.assertFalse(pending.done())
+            request=next(a for a in self.h.asks.values() if not a.parked)
+            self.addAsyncCleanup(self.stop,pending,request)
+            self.assertFalse(request.require_passkey)
+            await self.h._answer(self.s,self.ph.answer(self.h._ask_msg(request,self.s),False))
+            result=await pending
             self.assertEqual(result['behavior'],'deny')
-            self.assertIn('解释只允许',result['message'])
+            self.assertEqual(result['reason'],'device')
         self.assertTrue(review.explanation_tool_allowed(self.h,'Read',{'file_path':'/tmp/ordinary-report.txt'}))
         self.assertFalse(review.explanation_tool_allowed(self.h,'Bash',{'command':'cat /tmp/ordinary-report.txt'}))
 
@@ -296,7 +341,7 @@ class Review(unittest.IsolatedAsyncioTestCase):
         self.h.ask_ttl=5
         restarted,fresh=await self.open()
         self.assertNotEqual(fresh.rid,old_rid)
-        self.assertTrue(fresh.require_passkey)
+        self.assertFalse(fresh.require_passkey)  # renewed native request stays an ordinary signed tap
         await self.h._answer(self.s,self.ph.answer(self.h._ask_msg(fresh,self.s),False))
         self.assertEqual((await restarted)['behavior'],'deny')
 

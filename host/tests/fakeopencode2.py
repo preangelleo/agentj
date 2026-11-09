@@ -104,7 +104,9 @@ def task(sid, rest, background=False):
             cmd = inner[5:]
             r = ask_shell(cid, cmd, [json.loads(os.environ.get("FAKE_OC2_GENERAL_RULES") or "null") or GENERAL_RULES, perms or []])
             if r == "allow":
-                out = "OUT: " + subprocess.run(["/bin/sh", "-c", cmd], capture_output=True, text=True, timeout=60).stdout.strip()
+                from _native_hook_fixture import opencode_event
+                out = ("OUT: " + subprocess.run(["/bin/sh", "-c", cmd], capture_output=True, text=True, timeout=60).stdout.strip()
+                       if opencode_event(os.getcwd(),'PreToolUse',cid,'Bash',{'command':cmd}) else 'REJECTED by installed pre-tool hook')
             else:
                 out = "REJECTED" if r == "reject" else "DENIED"
         elif inner == "FORM":
@@ -197,7 +199,9 @@ def work(sid, prompt):
         ev.wait(120)
         p = PENDING.pop(rid)
         if p["reply"] == "once":
-            out = subprocess.run(["/bin/sh", "-c", cmd], capture_output=True, text=True, timeout=60).stdout.strip()
+            from _native_hook_fixture import opencode_event
+            out = (subprocess.run(["/bin/sh", "-c", cmd], capture_output=True, text=True, timeout=60).stdout.strip()
+                   if opencode_event(os.getcwd(),'PreToolUse',sid,'Bash',{'command':cmd}) else 'REJECTED by installed pre-tool hook')
             text(sid, "OUT: " + out)
         else:
             text(sid, "REJECTED: " + (p["message"] or ""))
@@ -431,6 +435,8 @@ def main():
     port = int(a[a.index("--port") + 1])
     srv = ThreadingHTTPServer(("127.0.0.1", port), H)
     srv.daemon_threads = True
+    from _native_hook_fixture import opencode_event
+    threading.Thread(target=opencode_event,args=(os.getcwd(),'SharedGuardReady'),daemon=True).start()
     print(f"server listening on http://127.0.0.1:{port}", flush=True)
     srv.serve_forever()
 

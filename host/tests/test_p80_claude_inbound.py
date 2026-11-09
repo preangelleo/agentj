@@ -17,8 +17,8 @@ from agentj.serve import Host, Session
 class Defaults(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
-        self.home = Path(self.tmp.name)
-        env = patch.dict(os.environ, {'HOME': str(self.home), 'CLAUDE_CONFIG_DIR': str(self.home/'cc'),
+        self.home = Path(self.tmp.name)/'workspace'; self.home.mkdir()
+        env = patch.dict(os.environ, {'HOME': str(Path(self.tmp.name)), 'CLAUDE_CONFIG_DIR': str(self.home/'cc'),
               'XDG_CONFIG_HOME': str(self.home/'config'), 'AGENTJ_STATE_DIR': str(self.home/'st')})
         env.start(); self.addCleanup(env.stop)
         self.st = State(); self.st.init(); self.st.set_agent_config('claude', str(self.home))
@@ -75,9 +75,10 @@ class Defaults(unittest.TestCase):
         self.assertEqual(inbound.value(),'accept');self.assertIsNotNone(inbound.default_notice(self.st))
     def test_offline_switch_automatically_enables(self):
         with patch('agentj.names.ctl_call',return_value=None),patch('agentj.claude_auth.available',return_value=True):
-            preferences.transact(self.st, preferences.edit(preferences.read()[0], 'agent.session_mode','independent'))
+            import test_working_root as root_fixture
+            root_fixture.apply_with_real_uv(self,self.st,{'agent.session_mode':'independent'})
             self.assertFalse(inbound.path().exists())
-            preferences.transact(self.st, preferences.edit(preferences.read()[0], 'agent.session_mode','shared'))
+            root_fixture.apply_with_real_uv(self,self.st,{'agent.session_mode':'shared'})
         self.assertEqual(inbound.value(),'accept')
 
 class Runtime(unittest.IsolatedAsyncioTestCase):

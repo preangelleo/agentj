@@ -68,13 +68,13 @@ class AskObservation(Base):
         with patch.object(approval_level,'PARK_GRACE',.01):
             initial={}
             self.assertEqual(self.ask('git push origin main',_receipt=initial)['behavior'],'deny')
-            self.assertEqual(initial,{'reason':'offline','approval_card_shown':None})
+            self.assertEqual(initial,{'reason':'timeout','approval_card_shown':None})
             count=len(self.host.asks)
             retry={}
             self.assertEqual(self.ask('git push origin main',_receipt=retry)['behavior'],'deny')
-            self.assertEqual(retry,{'reason':'offline','approval_card_shown':None})
+            self.assertEqual(retry,{'reason':'timeout','approval_card_shown':None})
             self.assertEqual(len(self.host.asks),count)
-            self.assertEqual(count,1)
+            self.assertEqual(count,0)  # completed native timeout does not leave a retired offline parked card
 
     def test_actual_parked_rewait_timeout_denied_and_stale_allow(self):
         from types import SimpleNamespace
@@ -95,13 +95,16 @@ class AskObservation(Base):
 
     def test_reused_card_unknown_reason_does_not_claim_denial_or_shown(self):
         from unittest.mock import AsyncMock
-        legacy={'behavior':'deny','message':'reused card outcome'}
         receipt={}
-        with patch.object(self.host,'_parked_find',return_value=object()),patch.object(self.host,'_parked_rewait',new=AsyncMock(return_value=legacy)):
+        # The list adapter never consults the legacy parked grant hooks. The
+        # real request times out with an unknown display receipt instead.
+        with patch.object(self.host,'_parked_find',side_effect=AssertionError('retired parked hook')) as find, \
+             patch.object(self.host,'_parked_rewait',new=AsyncMock(side_effect=AssertionError('retired parked rewait'))) as rewait:
             answer=self.ask('git push origin main',_receipt=receipt)
-        self.assertEqual(answer,legacy)
-        self.assertEqual(receipt,{'reason':'unknown','approval_card_shown':None})
-        self.assertEqual(self.cards(),[])
+        self.assertEqual((answer['behavior'],answer['reason']),('deny','timeout'))
+        self.assertEqual(receipt,{'reason':'timeout','approval_card_shown':None})
+        find.assert_not_called();rewait.assert_not_awaited()
+        self.assertEqual(len(self.cards()),1)
 
     def test_actual_policy_socket_preserves_no_device_reason(self):
         self.st.remove_device(self.phone.did)
@@ -117,7 +120,7 @@ class AskObservation(Base):
                 with patch('agentj.names.elevate_sock',return_value=sock):
                     approved=await asyncio.to_thread(action_policy.confirm_cli,'broker.execute',params,st=self.st,receipt=receipt)
                 self.assertFalse(approved)
-                self.assertEqual(receipt,{'result':'denied','reason':'no_device','approval_card_shown':False})
+                self.assertEqual(receipt,{'result':'denied','reason':'application_ingress_unverified','approval_card_shown':False})  # unframed broker request refuses before device selection
             finally:
                 server.close()
                 await server.wait_closed()

@@ -622,5 +622,5 @@ def build_card(host, name: str) -> dict:
             p.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     card = elevate.norm_secret({"name": name, "purpose": _purpose(host, name), "dest": "env:" + str(p) + "#" + name},
                                host.st.root)
-    card["button_only"] = True
+    card["button_only"] = False  # UV list: inserting/replacing secrets always requires fresh UV.
     return card

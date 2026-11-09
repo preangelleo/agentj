@@ -1357,6 +1357,38 @@
         "source": "public/app.css",
         "decision": "0286 source-owned sync visibility, existing #stale reply slot"
       }
+    },
+    {
+      "file": "public/cards.css",
+      "selector": ".jc-hide-done",
+      "owner": "aj-wallet",
+      "purpose": "Official To-do completed-item display preference; same existing wallet filter group, no global native control styling.",
+      "evidence": {
+        "source": "public/js/jcards.js",
+        "decision": "0.28.7 chairman request: 不显示已完成 checkbox beside existing owner filters; independent p0287 mobile light/dark browser QA."
+      }
+    },
+    {
+      "file": "public/cards.css",
+      "selector": ".jc-hide-done input",
+      "owner": "aj-wallet",
+      "purpose": "Official To-do completed-item display preference; same existing wallet filter group, no global native control styling.",
+      "evidence": {
+        "source": "public/js/jcards.js",
+        "decision": "0.28.7 chairman request: 不显示已完成 checkbox beside existing owner filters; independent p0287 mobile light/dark browser QA."
+      }
+    },
+    {
+      "file": "public/cards.css",
+      "selector": ":root[data-theme=\"light\"]:has(body[data-five-page=\"card\"] .jc-body[data-card=\"todo\"]):not(:has(#settings:not([hidden]),#five-menu:not([hidden]),#five-detail:not([hidden])))",
+      "owner": "aj-wallet",
+      "purpose": "Only the active To-do page light-theme menu tokens; uses the approved palette and preserves other menu surfaces."
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#sheet #apprBtns+.pkassist",
+      "owner": "aj-passkey",
+      "purpose": "Space between approval buttons and the existing passkey verification status."
     }
   ],
   "source6ProducerBindings": {

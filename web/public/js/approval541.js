@@ -51,7 +51,7 @@ export function paint(p, options){
  el('doubt541c').hidden=false;el('doubt541c').disabled=options.busy;
  // @ix appr.question
  el('doubt541c').onclick=()=>review(p,'question',options);
- if(p.envelope_verified!==true||p.review_state==='questioned'||suspect)el('apprAllow').disabled=true;
+ if(p.envelope_verified!==true||p.review_state==='questioned')el('apprAllow').disabled=true;
  if(p.envelope_verified!==true){el('askState').textContent=t('p541.invalid');el('askState').hidden=false;}
  // @ix appr.details_full
  el('details541').ontoggle=()=>{}; // @ix appr.details

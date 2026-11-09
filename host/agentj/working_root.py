@@ -66,9 +66,59 @@ def select(st, specified=None, interactive=False):
     return root
 
 
+class _InitialRootSetup:
+    """Process-private, one-use receipt for this actual fresh State.init only.
+
+    The caller-selected path is not wire authority. State.init mints this only
+    after proving absent/empty state *before* it writes its identity and log.
+    """
+    def __init__(self, st, root):
+        self.state, self.root, self.used = st, str(Path(root).resolve()), False
+        self.identity = (st.config(), st.signing_pub())
+        self.generation = self._generation(st)
+
+    @staticmethod
+    def _generation(st):
+        import hashlib
+        # Fresh init has four tiny files. Any added history or rewritten entry
+        # (including identical pairing metadata replaced by rename) invalidates.
+        return tuple((p.relative_to(st.root).as_posix(), p.lstat().st_ino,
+                      p.lstat().st_mtime_ns, p.lstat().st_ctime_ns,
+                      hashlib.sha256(p.read_bytes()).digest() if p.is_file() and not p.is_symlink() else None)
+                     for p in (st.root, *sorted(st.root.rglob('*'))))
+
+    def consume(self, st, candidate):
+        if self.used:
+            return False
+        self.used = True
+        return self.live(st, candidate)
+
+    def live(self, st, candidate):
+        try:
+            from . import preferences
+            import copy
+            current = preferences.validate(preferences.read()[1])
+            expected = copy.deepcopy(current)
+            preferences.put(expected, 'agent.working_root', self.root)
+            return bool(st is self.state and candidate == expected
+                        and not preferences.get(current, 'agent.working_root', '')
+                        and not st.config().get('agent')
+                        and not st.devices() and not st.removed_path.exists()
+                        and self.identity == (st.config(), st.signing_pub())
+                        and self.generation == self._generation(st))
+        except (OSError, ValueError, TypeError):
+            return False
+
+
+def _consume_initial_setup(st, candidate):
+    setup = getattr(st, '_initial_root_setup', None)
+    st._initial_root_setup = None
+    return setup if type(setup) is _InitialRootSetup and setup.consume(st, candidate) else None
+
+
 def record(st, root):
     from . import preferences
     root.mkdir(parents=True, exist_ok=True)
     raw, _ = preferences.read()
     raw = preferences.edit(raw, "agent.working_root", str(root))
-    return preferences.transact(st, raw)
+    return preferences.transact(st, raw, _working_root_record=True)

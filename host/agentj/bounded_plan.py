@@ -551,7 +551,7 @@ class Plans:
                 actual, individual = _http_effects(kind,parsed,step['method'],step['body'])
                 if step.get('file'):
                     actual=tuple(sorted(set(actual)|{'sensitive_delivery'}))
-                step['effects'],step['individual_uv']=list(actual),individual
+                step['effects'],step['individual_uv']=list(actual),False  # Display effects never escalate UV.
                 if kind == 'token_create':
                     alias=step.get('alias')
                     if not isinstance(alias,str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,31}',alias) or alias in aliases:
@@ -575,7 +575,7 @@ class Plans:
                     step['other_seal']=path_seal(step['other'],key=self.key)
                     if not step['other_seal']['exists']:raise PlanError('missing_comparison')
                 from . import danger
-                step['individual_uv'] = any(danger.cred_path(step[field]) or danger.hook_path(step[field]) for field in ('path','other') if step.get(field))
+                step['individual_uv'] = False  # Explicit Agent J command executors own UV, never path guesses.
                 step['effects']=['sensitive_storage']
             else:
                 if set(step) != {'kind','source','destination'}:
@@ -594,7 +594,7 @@ class Plans:
                     raise PlanError('approval_root_requires_individual_operation')
                 if dst.startswith(src.rstrip('/')+'/') or src.startswith(dst.rstrip('/')+'/'):
                     raise PlanError('overlapping_objects')
-                step['individual_uv'] = any(danger.cred_path(p) for p in paths)
+                step['individual_uv'] = False  # No effect-based UV inside a sealed ordinary plan.
                 step['source'],step['destination']=src,dst
                 step['effects']=['sensitive_storage'] + (['irreversible_destroy'] if kind in ('clean','migrate') else [])
             effects.update(step['effects'])
@@ -732,17 +732,8 @@ class Plans:
             await asyncio.to_thread(self.operation_once.finish,operation,rid,'revoked')
             return {'ok':False,'why':'authority_changed'}
         plan.states[index]='reserved'
-        if step.get('individual_uv'):
-            view=copy.copy(plan)
-            view.steps=[step]
-            view.display=describe_step(step,'en' if self.host.lang=='en' else 'zh')
-            view.effects=tuple(step['effects'])
-            answer=await self.host.ask(TOOL,{'scope':view.public(),'summary':view.display+'\nCommand details:\n'+json.dumps(view.public()['actions'],ensure_ascii=False,sort_keys=True,separators=(',',':'))},
-                batch=False,always_ask=True,require_passkey=True,ttl=min(self.host.ask_ttl,max(.01,plan.expires-time.time())),_company_proposal=policy_registry.HOST_CARD,_bounded_context=view)
-            if answer.get('behavior')!='allow' or not self._authority(plan):
-                plan.states[index]='denied'
-                await asyncio.to_thread(self.operation_once.finish,operation,rid,'denied')
-                return {'ok':False,'why':'individual_uv_required'}
+        # No heuristic per-step UV layer. Named Agent J commands enforce their
+        # own list checks at their actual executor; this plan keeps its seals.
         try:
             if not self._authority(plan):
                 raise PlanError('authority_changed')

@@ -45,6 +45,16 @@ class ActiveMedia(unittest.TestCase):
 if __name__ == '__main__': unittest.main()
 
 class ScanRegression(unittest.TestCase):
+    def setUp(self):
+        # Preferences are per fixture: another test's working root is not initial setup.
+        from tempfile import TemporaryDirectory as _ConfigDirectory
+        from unittest.mock import patch as _config_patch
+        self._config_tmp = _ConfigDirectory(prefix='aj-0300-config-')
+        self.addCleanup(self._config_tmp.cleanup)
+        _config_env = _config_patch.dict('os.environ', {'XDG_CONFIG_HOME': self._config_tmp.name})
+        _config_env.start()
+        self.addCleanup(_config_env.stop)
+
     def test_incremental_versions_race_and_failure(self):
         import threading
         from agentj import media_live

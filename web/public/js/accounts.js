@@ -8,6 +8,7 @@ import { resetCreditText } from './reset-credits.js';
 import { el, mk, toast, notify } from './ui.js';
 import { ask1, isReady } from './session.js';
 import * as authrescue from './authrescue.js';
+import { scrollToPkRow } from './pkassist.js';
 
 /** The harnesses this page knows, in order: [view key, label, the login route a new account takes]. */
 export const KINDS = [['claude', 'Claude Code', 'setup_token'], ['codex', 'Codex', 'device']];
@@ -23,8 +24,16 @@ let addGeneration = 0;   // monotonic even after an attempt ends (adding returns
 let deleting = '';        // the id whose removal waits for the owner's answer on the host's confirmation card
 
 const tw = (k, fb) => { const s = t(k); return s === k ? (fb || '') : s; };
-function say(s, danger = false) { const m = el('acct-msg'); if (m) { m.textContent = s || ''; m.classList.toggle('ardanger', !!danger); } }
-function whyText(why) { if (why === 'same_account') return t('acct.sameAccountHelp'); if (why === 'unregistered_login') return t('acct.loginMismatchHelp'); return tw('acct.why.' + why, tw('ar.why.' + why, t('acct.failed'))); }
+function say(s, danger = false, why = '') {
+  const m = el('acct-msg'); if (!m) return;
+  m.textContent = s || ''; m.classList.toggle('ardanger', !!danger);
+  if (why === 'passkey') {
+    const actions = mk('span', 'mailbtns');
+    actions.append(btn(t('p0300.pk.setup'), 'acct-pk-setup', () => scrollToPkRow()));
+    m.append(actions);
+  }
+}
+function whyText(why) { if (why === 'same_account') return t('acct.sameAccountHelp'); if (why === 'unregistered_login') return t('acct.loginMismatchHelp'); return tw('ar.why.' + why, tw('acct.why.' + why, t('acct.failed'))); }
 
 /** Name rules shared with the host: trimmed, 1–24 characters, unique (case-insensitive) within the harness. → '' or an i18n key. */
 export function nameProblem(name, items = [], exceptId = '') {
@@ -113,7 +122,7 @@ async function startAdd(harness, route, name) {
   if (m.t !== 'auth_res') { adding = null; stop(); render(); say(m.t === 'timeout' ? t('ar.timeout') : t('set.offline'), true); return; }
   attempt.accepted = !!m.ok;
   if (m.view && typeof m.view === 'object') authrescue.onPush(m);
-  if (!m.ok) { adding = null; stop(); render(); say(whyText(m.why), true); return; }
+  if (!m.ok) { adding = null; stop(); render(); say(whyText(m.why), true, m.why); return; }
   if (adding === attempt) say(t('ar.started'));
 }
 

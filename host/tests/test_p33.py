@@ -509,7 +509,7 @@ class Menu(unittest.TestCase):
             self.assertEqual([i["cmd"] for i in r["items"]], ["/" + c for c in ("clear", "compact", "model", "context", "cost",
                                                                               "usage", "status", "help", "stop", "update",
                                                                               "goal", "add-friend", "my-agent-id",   # + P158 goal, P73 friends
-                                                                              "switch-harness", "feedback-to-agentj-father")])              # + P155
+                                                                              "switch-harness", "feedback-to-agentj-father", "learn")])              # + P155
             self.assertEqual(r["skills"], [{"cmd": "/fake-skill", "desc": ""}])
             self.assertIn("compact", r["cmds"])
             (w / ".agentj").mkdir()
@@ -517,7 +517,7 @@ class Menu(unittest.TestCase):
                                            {"cmd": "/a", "desc": "A", "group": "g1", "order": 1}, {"cmd": "/c", "desc": "C", "group": "g2"}]}
             (w / ".agentj" / "menu.json").write_text(json.dumps(doc))
             r = menu.served(str(w), [], "en")
-            self.assertEqual((r["source"], [i["cmd"] for i in r["items"]]), ("file", ["/a", "/b", "/c", "/goal", "/switch-harness", "/feedback-to-agentj-father"]))   # P158 /goal, P155 always there
+            self.assertEqual((r["source"], [i["cmd"] for i in r["items"]]), ("file", ["/a", "/b", "/c", "/goal", "/switch-harness", "/feedback-to-agentj-father", "/learn"]))   # P158 /goal, P155 always there
             (w / ".agentj" / "menu.json").write_text(json.dumps({"version": 1, "items": [{"cmd": "rm -rf", "desc": ""}]}))
             r = menu.served(str(w), [], "zh")
             self.assertEqual(r["source"], "default")
@@ -560,7 +560,7 @@ class SendApp(unittest.TestCase):
             self.assertEqual(got[-1], big)
             self.assertEqual([(o, c) for o, c, _ in frames if o == wire.OP_BULK], [(wire.OP_BULK, 5)],
                              "BULK only for the ready p33 session")
-            self.assertEqual(host._caps()["caps"], ["p33", "heartbeat", "lt1", "pair1", "mailuv1", "busyget", "contacts", "hfind", "cards1", "upg1", "systasks", "wfresume1", "friendreport1", "wf1", "jpalette1", "sk1", "jcards1", "mq5", "hooks1", "externalmcp1", "ss1", "heartbeat_prompt"]
+            self.assertEqual(host._caps()["caps"], ["p33", "heartbeat", "lt1", "pair1", "mailuv1", "privatefiles1", "privatefiles2", "use1", "form1", "busyget", "contacts", "hfind", "cards1", "upg1", "systasks", "wfresume1", "friendreport1", "wf1", "jpalette1", "sk1", "jcards1", "mq5", "hooks1", "externalmcp1", "ss1", "heartbeat_prompt"]
                              + (["term_pty1"] if host.term_desk.pty_supported() else []))   # 0.26.9 §38.15: the PTY web terminal   # P426 §39 sk1; P398 ss1 say_sync; P360 §34 jcards1; P286 mq5; P244 §30 wf1; 0.18: long-task cards (§20); P153: pair cards (§4 step 10); P160 busy_get (§22); P184 §25; P188 §28; P203 §29; P207 §2 systask_list
             self.assertIn(host._caps()["asr"], ("ready", "not_installed", "off", "broken"))
 
@@ -580,7 +580,7 @@ class Cli(unittest.TestCase):
             xdg = mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": cfg_home})
             xdg.start()
             self.addCleanup(xdg.stop)
-            self.assertEqual(self.run_cli(env, "init", "--relay", "ws://127.0.0.1:1").returncode, 0)
+            self.assertEqual(self.run_cli(env, "init", "--relay", "ws://127.0.0.1:1", "--working-root", str(pathlib.Path(d)/"w")).returncode, 0)
             st = __import__("agentj.state", fromlist=["State"]).State(sd)
             h = history.History(st)
             t = h.add({"k": "phone", "text": "秘密的问题"}, "秘密的回答", "done")
@@ -598,7 +598,7 @@ class Cli(unittest.TestCase):
             self.assertIn("history on", self.run_cli(env, "history", "on").stdout)
             self.assertNotEqual(self.run_cli(env, "inbox").returncode, 0, "no Agent folder yet")
             work = pathlib.Path(d) / "w"
-            work.mkdir()
+            work.mkdir(exist_ok=True)
             st.set_agent_config("claude", str(work))
             self.assertEqual(self.run_cli(env, "inbox", "path").stdout.strip(), str(work.resolve() / ".agentj" / "inbox"))
             src = pathlib.Path(d) / "x.png"

@@ -5,13 +5,38 @@ import copy
 import json
 import time
 import unittest
-from agentj import approvals, approval_jev, wire
+from agentj import approvals, approval_jev, approval_review, wire
 from test_p405_same_owner import SameOwnerTests as _SameOwnerTests
 from test_p71_peer_service import pmsg, settle_pending
-from test_l1 import _owner_host
+from _p541_device import _owner_host, Phone
 from unittest.mock import patch
 
 class PeerPlan(_SameOwnerTests):
+    async def asyncSetUp(self):
+        offline=patch.object(approval_jev,'available',return_value=False)
+        offline.start();self.addCleanup(offline.stop)
+        await super().asyncSetUp()
+
+    async def wait_card(self, host, task):
+        for _ in range(100):
+            if host.asks or task.done():break
+            await asyncio.sleep(.005)
+        self.assertFalse(task.done(),task.result() if task.done() else '')
+        return next(iter(host.asks.values()))
+
+    def root_phone(self, host):
+        from types import SimpleNamespace
+        # Existing cross-host root key, signed with the current v2 public card format.
+        return SimpleNamespace(pub=wire.unb64u(host.st.devices()[self.odid]['pub']),
+                               sk=self.osk,did=self.odid,channel=host.channel)
+
+    async def native_tap(self, host, phone, session, command):
+        task=asyncio.create_task(host.ask('Bash',{'command':command},_harness_permission=True))
+        card=await self.wait_card(host,task)
+        self.assertFalse(card.require_passkey)
+        await host._answer(session,Phone.answer(phone,host._ask_msg(card,session),True))
+        self.assertEqual((await task)['behavior'],'allow')
+
     async def test_p573_signed_plan_roundtrip_and_negative_boundaries(self):
         self.clock.t = time.time()
         await self.confirm()
@@ -20,8 +45,10 @@ class PeerPlan(_SameOwnerTests):
         self.svc.host = h
         h.agent.submit = self.sends.append
         commands = ['rm -rf ~/Documents/old', 'stripe charges create --amount 500']
-        actions = [{"tool":"Bash", "input": {"command":c}} for c in commands]
+        actions = [{"tool":"Bash", "input": {"command":commands[0]}}]
         origin = _owner_host(self.other.st, [])
+        origin.ask_ttl=2
+        h.ask_ttl=2
         origin.cur_turn = 7
         self.remote.host = origin
         origin.peers = self.remote
@@ -34,22 +61,23 @@ class PeerPlan(_SameOwnerTests):
         auth = Authenticator()
         origin.st.set_passkey(ph.pub, pk_record(auth))
         session = _ready(origin, ph)
+        # Stripe remains an unsupported raw executor, including the changed amount.
+        for command in (commands[1], 'stripe charges create --amount 501'):
+            plan=[{'tool':'Bash','input':{'command':command}}]
+            self.assertFalse((await self.remote.cli({'t':'approve-actions','actions':plan}))['ok'])
         text = '请按已列动作完成清理与付款。'
         job = asyncio.create_task(self.remote.cli({'t':'tell','friend':self.a,'text':text,'actions':actions}))
         for _ in range(100):
             if origin.asks:break
             await asyncio.sleep(.005)
         card = next(iter(origin.asks.values()))
-        self.assertTrue(card.require_passkey)
-        for c in commands:self.assertIn(c,card.summary)
-        challenge = passkey.elevate_challenge(origin.channel,ph.did,card.rid,card.pk_kind,card.rid,card.digest)
-        answer = {'id':card.rid,'ok':True,'sig':wire.b64u(self.osk.sign(approvals.signed_message(
-            origin.channel,ph.did,card.rid,'allow',card.digest,task_scope=card.task_scope))),
-                  'fa':auth.assert_(challenge,b'0',nonce=b'0')}
+        self.assertFalse(card.require_passkey)
+        self.assertIn(commands[0],card.summary)
+        self.assertIs(json.loads(card.task_scope)["uv"],False)
+        answer=Phone.answer(ph,origin._ask_msg(card,session),True)
         with patch.object(approval_jev,'available',return_value=False):
             await origin._answer(session,answer)
             self.assertTrue((await job)['ok'])
-        from test_l1 import Phone
         other_phone = Phone(origin.st, with_passkey=True)
         other_session = _ready(origin, other_phone, cid=12)
         before = sum(obj['t']=='pmsg' for _,obj in self.remote.net.sent)
@@ -59,8 +87,6 @@ class PeerPlan(_SameOwnerTests):
             await asyncio.sleep(.005)
         wrong_card = next(iter(origin.asks.values()))
         wrong_answer = other_phone.answer(origin._ask_msg(wrong_card, other_session), True)
-        wrong_answer['sig'] = wire.b64u(other_phone.sk.sign(approvals.signed_message(origin.channel,other_phone.did,
-                    wrong_card.rid,'allow',wrong_card.digest,task_scope=wrong_card.task_scope)))
         await origin._answer(other_session, wrong_answer)
         result = await wrong
         self.assertEqual(result['why'],'root_reconfirm')
@@ -79,21 +105,18 @@ class PeerPlan(_SameOwnerTests):
         self.assertEqual(send.action_proof,proof)
         h.agent.cur_send = send
         h.cur_turn = send.turn
-        with patch.object(approval_jev, 'available', return_value=False):
-            for command in commands:
-                self.assertEqual((await h.ask('Bash',{'command':command}))['behavior'],'allow')
-            self.assertFalse(h.asks)
-            rows = approvals.read_log(h.st)
-            self.assertEqual(approvals.check_record(h.st,rows[-1]),'auto')
-            self.assertEqual(approvals.check_record(h.st,{**rows[-1],'task_id':'different-turn'}),'bad')
-            task = asyncio.create_task(h.ask('Bash',{'command':'stripe charges create --amount 501'}))
-            for _ in range(50):
-                if h.asks:break
-                await asyncio.sleep(.005)
-            self.assertTrue(h.asks)
-            self.assertTrue(next(iter(h.asks.values())).require_passkey)
-            task.cancel()
-            await asyncio.gather(task,return_exceptions=True)
+        from test_l1 import _ready
+        receiver_phone=Phone(h.st,with_passkey=True);receiver_phone.policy_host=h
+        receiver_session=_ready(h,receiver_phone)
+        for command in commands:
+            self.assertIsNone(self.svc.same_owner.authorized(send,'Bash',{'command':command},json.loads(scope)['actions'][0]['class']))
+            await self.native_tap(h,receiver_phone,receiver_session,command)
+        await self.native_tap(h,receiver_phone,receiver_session,'stripe charges create --amount 501')
+        rows=approvals.read_log(h.st)
+        self.assertEqual(approvals.check_record(h.st,rows[-1]),'ok')
+        self.assertNotIn('task_grant',[r['reason'] for r in rows])
+        # The historical task_id field is metadata for this native tap, never a reusable grant.
+        self.assertEqual(approvals.check_record(h.st,{**rows[-1],'task_id':'different-turn'}),'ok')
         # A new message-id may not spend an already claimed signature again.
         self.svc.on_app(self.b, {**msg,'mid':'fa'*8})
         await settle_pending(self.svc)
@@ -109,8 +132,11 @@ class PeerPlan(_SameOwnerTests):
         # A full nonce table retains every live nonce: fresh proofs are refused instead of evicting old ones.
         fresh = copy.deepcopy(proof)
         fresh['id'] = 'ef'*16
-        fresh['sig'] = wire.b64u(self.osk.sign(approvals.signed_message(fresh['channel'],fresh['device'],fresh['id'],
-                                          'allow',fresh['shown_sha256'],task_scope=scope)))
+        fresh['envelope']['request_id']=fresh['id']
+        fresh['shown_sha256']=approval_review.digest(fresh['envelope'])
+        fresh['sig']=wire.b64u(self.osk.sign(approval_review.decision_message(fresh['channel'],fresh['device'],fresh['id'],
+                                         'allow',fresh['shown_sha256'],task_scope=scope)))
+        self.assertIsNotNone(self.svc.same_owner.task_proof(self.b,{**msg,'task_proof':fresh}))
         with self.svc.store._edit('same-owner.json', {}) as rows:
             row=rows[self.b]
             for i in range(1023):row['action_nonces'][f'capacity-{i}']=int(self.clock())+1700
@@ -122,11 +148,19 @@ class PeerPlan(_SameOwnerTests):
         self.assertIsNone(self.svc.same_owner.task_proof(self.b,msg))
         self.assertIsNone(self.svc.same_owner.task_proof('11'*16,msg))
         before_cards=len(h.asks)
-        expired=await h.ask('Bash',{'command':commands[0]})
-        self.assertEqual(expired['behavior'],'deny')
+        await self.native_tap(h,receiver_phone,receiver_session,commands[0])
         self.assertEqual(len(h.asks),before_cards)
         h.cur_turn = send.turn + 1
         self.assertIsNone(self.svc.same_owner.authorized(send,'Bash',{'command':commands[0]},json.loads(scope)['actions'][0]['class']))
+        # Revoking the receiver signer invalidates an otherwise current native card.
+        task=asyncio.create_task(h.ask('Bash',{'command':commands[0]},_harness_permission=True))
+        card=await self.wait_card(h,task)
+        answer=receiver_phone.answer(h._ask_msg(card,receiver_session),True)
+        self.assertTrue(h.st.remove_device(receiver_phone.did))
+        await h._answer(receiver_session,answer)
+        self.assertFalse(card.fut.done())
+        task.cancel();await asyncio.gather(task,return_exceptions=True)
+
 
     async def test_p573_explicit_invalid_plan_never_becomes_plain_task(self):
         self.clock.t=time.time()
@@ -181,50 +215,42 @@ class PeerPlan(_SameOwnerTests):
         self.assertEqual(len(self.sends),1)
 
     async def test_receiver_uv_floor_must_not_reuse_button_plan(self):
-      from agentj import policy_registry
-      from test_l1 import _ready
-      from types import SimpleNamespace
-      self.clock.t=time.time()
-      await self.confirm()
-      receiver=_owner_host(self.host.st,[])
-      receiver.peers=self.svc;self.svc.host=receiver
-      receiver.agent.submit=self.sends.append
-      sender=_owner_host(self.other.st,[])
-      sender.cur_turn=7;sender.peers=self.remote;self.remote.host=sender
-      phone=SimpleNamespace(pub=wire.unb64u(sender.st.devices()[self.odid]['pub']),sk=self.osk,did=self.odid,channel=sender.channel)
-      session=_ready(sender,phone)
-      inp={'command':'rm -rf '+__import__('shlex').quote(str(__import__('pathlib').Path(__import__('tempfile').gettempdir())/'p573-controlled-uv-boundary'))}
-      job=asyncio.create_task(self.remote.cli({'t':'tell','friend':self.a,'text':'Run the exact cleanup plan','actions':[{'tool':'Bash','input':inp}]}))
-      for _ in range(100):
-       if sender.asks:break
-       await asyncio.sleep(.005)
-      card=next(iter(sender.asks.values()))
-      print('sender_requires_uv='+str(card.require_passkey),flush=True)
-      self.assertFalse(card.require_passkey)
-      self.assertIs(json.loads(card.task_scope)['uv'],False)
-      answer={'id':card.rid,'ok':True,'sig':wire.b64u(self.osk.sign(approvals.signed_message(sender.channel,phone.did,card.rid,'allow',card.digest,task_scope=card.task_scope)))}
-      with patch.object(approval_jev,'available',return_value=False):
-       await sender._answer(session,answer)
-       self.assertTrue((await job)['ok'])
-      msg=next(obj for _,obj in reversed(self.remote.net.sent) if obj['t']=='pmsg')
-      self.clock.t=time.time()
-      self.svc.on_app(self.b,json.loads(json.dumps(msg)))
-      await settle_pending(self.svc)
-      self.assertEqual(len(self.sends),1)
-      send=self.sends[-1];receiver.agent.cur_send=send;receiver.cur_turn=send.turn
-      original=policy_registry.main_requirement
-      def receiver_floor(tool,tool_input=None,**kw):
-       if tool=='Bash' and tool_input==inp:return 'uv'
-       return original(tool,tool_input,**kw)
-      with patch.object(policy_registry,'main_requirement',side_effect=receiver_floor),patch.object(approval_jev,'available',return_value=False):
-       result=await receiver.ask('Bash',inp)
-      print('receiver_effective_requirement=uv',flush=True)
-      print('receiver_result='+result['behavior'],flush=True)
-      print('receiver_cards='+str(len(receiver.asks)),flush=True)
-      self.assertEqual(len(receiver.asks),0)
-      self.assertEqual(result['behavior'],'deny','Receiver UV must not be bypassed by a sender button-only plan')
-      self.assertIn('re-authorize',result['message'])
-      self.assertEqual(approvals.read_log(receiver.st)[-1]['reason'],'task_uv')
+        from test_l1 import _ready
+        self.clock.t=time.time()
+        await self.confirm()
+        receiver=_owner_host(self.host.st,[])
+        receiver.peers=self.svc;self.svc.host=receiver
+        receiver.agent.submit=self.sends.append
+        sender=_owner_host(self.other.st,[])
+        sender.ask_ttl=2;receiver.ask_ttl=2
+        sender.cur_turn=7;sender.peers=self.remote;self.remote.host=sender
+        phone=self.root_phone(sender);session=_ready(sender,phone)
+        inp={'command':'rm -rf '+__import__('shlex').quote(str(__import__('pathlib').Path(__import__('tempfile').gettempdir())/'p573-controlled-uv-boundary'))}
+        job=asyncio.create_task(self.remote.cli({'t':'tell','friend':self.a,'text':'Run the exact cleanup plan','actions':[{'tool':'Bash','input':inp}]}))
+        card=await self.wait_card(sender,job)
+        self.assertFalse(card.require_passkey)
+        self.assertIs(json.loads(card.task_scope)['uv'],False)
+        await sender._answer(session,Phone.answer(phone,sender._ask_msg(card,session),True))
+        self.assertTrue((await job)['ok'])
+        msg=next(obj for _,obj in reversed(self.remote.net.sent) if obj['t']=='pmsg')
+        self.clock.t=time.time()
+        self.svc.on_app(self.b,json.loads(json.dumps(msg)))
+        await settle_pending(self.svc)
+        self.assertEqual(len(self.sends),1)
+        send=self.sends[-1];receiver.agent.cur_send=send;receiver.cur_turn=send.turn
+        self.assertIsNone(self.svc.same_owner.authorized(send,'Bash',inp,json.loads(card.task_scope)['actions'][0]['class']))
+        # A real explicit semantic controller name owns UV; no string classifier override.
+        ph=Phone(receiver.st,with_passkey=True);ph.policy_host=receiver;sess=_ready(receiver,ph)
+        for attempt in range(2):
+            task=asyncio.create_task(receiver.ask('agentj secret send',{'name':'SYNTHETIC_NOT_READ'}))
+            ask=await self.wait_card(receiver,task)
+            self.assertTrue(ask.require_passkey)
+            answer=ph.answer(receiver._ask_msg(ask,sess),True)
+            answer.pop('fa',None)
+            await receiver._answer(sess,answer)
+            self.assertFalse(ask.fut.done())
+            task.cancel();await asyncio.gather(task,return_exceptions=True)
+        self.assertFalse(receiver.asks)
 
 
 def load_tests(loader, tests, pattern):

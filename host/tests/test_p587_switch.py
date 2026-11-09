@@ -9,13 +9,49 @@ import unittest
 from unittest.mock import patch
 from agentj import elevate, handoff, switch_harness as sw
 from test_p155_switch_harness import Clock, mk_state
-from test_p339_switch_via_serve import ServeThread, unfenced
+from test_p339_switch_via_serve import unfenced
+
+
+class ReceiptHostThread:
+    """Actual isolated Host owns the existing read-only Elevator socket."""
+    def __init__(self,st):
+        import asyncio, threading
+        self.st=st
+        self.loop=asyncio.new_event_loop()
+        self.thread=threading.Thread(target=self.loop.run_forever,daemon=True)
+
+    def __enter__(self):
+        import asyncio
+        from agentj.serve import Host
+        async def start():
+            self.host=Host(self.st,events='quiet',read_stdin=False)
+            self.el=self.host.elevate
+            await self.el.start()
+        self.thread.start()
+        asyncio.run_coroutine_threadsafe(start(),self.loop).result(10)
+        return self
+
+    def __exit__(self,*exc):
+        import asyncio
+        async def stop():
+            await self.el.stop()
+            pending=list(getattr(self.host,'_bg_tasks',()))
+            for task in pending:task.cancel()
+            await asyncio.gather(*pending,return_exceptions=True)
+        try:asyncio.run_coroutine_threadsafe(stop(),self.loop).result(10)
+        finally:
+            self.loop.call_soon_threadsafe(self.loop.stop)
+            self.thread.join(10)
+            if self.thread.is_alive():raise AssertionError('owned receipt Host thread did not stop')
+            self.loop.close()
 
 
 class Switch(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='p587-')
         self.addCleanup(self.tmp.cleanup)
+        prefs=patch.dict(os.environ,{'XDG_CONFIG_HOME':str(Path(self.tmp.name)/'config')})
+        prefs.start();self.addCleanup(prefs.stop)
         self.st = mk_state(self.tmp.name, 'opencode', model='ark-agent-plan/kimi-k3')
         p = patch.object(sw, 'receipt_path', side_effect=lambda name=sw.RECEIPT: Path(self.tmp.name)/'units'/name)
         p.start()
@@ -44,7 +80,7 @@ class Switch(unittest.TestCase):
         self.addCleanup(unfenced().stop)
         rec = sw.write_receipt(self.st, {'status': 'switching', 'detail': 'lost', 'job': self.job,
                                        'line': 'private diagnostic', 'target': 'codex'})
-        with ServeThread(self.st) as server:
+        with ReceiptHostThread(self.st) as server:
             def ask(**req):
                 return elevate.client_request(self.st, {'t': 'harness_result', **req}, 10, path=server.el.sock_path)
             r = ask(kind='switch', job=self.job)
@@ -99,9 +135,10 @@ class Switch(unittest.TestCase):
             if req.get('cmd') == 'harness_hello':
                 seen.append(sw.read_receipt(self.st))
             return fake(req)
-        self.assertEqual(sw.worker(self.st, 'codex', job=self.job, probe=fake_probe(), ctl=ctl,
+        result=sw.worker(self.st, 'codex', job=self.job, probe=fake_probe(), ctl=ctl,
                                    restart=fake.restart, status=UP, ready=lambda *a, **kw: 'idle',
-                                   sleep=clock.sleep, clock=clock), 0)
+                                   sleep=clock.sleep, clock=clock)
+        self.assertEqual(result,0,sw.read_receipt(self.st))
         self.assertTrue(seen)
         self.assertEqual(seen[0]['job'], self.job)
 

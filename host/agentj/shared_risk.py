@@ -10,6 +10,15 @@ import json
 from . import danger, policy_registry, refusal_intent
 from .text import pick
 
+
+def credential_read_refusal(host, tool, inp, cwd):
+    from . import uv_list
+    if not uv_list.credential_reads(tool, inp, host=host, cwd=cwd):
+        return None
+    host.st.log('credential_read_refused', tool=tool, reason=uv_list.CREDENTIAL_READ_REASON)
+    return {'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
+            'permissionDecisionReason': uv_list.CREDENTIAL_READ_REASON + ': ' + uv_list.CREDENTIAL_READ_HINT}}
+
 # P539 (#301): the deny reason the agent sees says what happened and what it can do next (never a bare "denied").
 WHY = {
     'unknown': ('Agent J 的规则里没有这种动作，没有给主人弹确认卡就直接拒绝了（不是主人拒绝的）。换一种常见做法再试，或用一句话告诉主人你想做什么、请他在手机上确认。',
@@ -53,6 +62,9 @@ class RiskGuard:
     def reason(self) -> str:
         """The deny reason for the agent (P539): which of unknown / denied before / stopped / revoked / the host's own."""
         kind,msg=self.why or ('host','')
+        from . import uv_list
+        if kind == uv_list.CREDENTIAL_READ_REASON:
+            return kind + ': ' + uv_list.CREDENTIAL_READ_HINT
         lang=getattr(getattr(self.adapter,'host',None),'lang','zh')
         if kind=='host':
             msg=(msg or '').strip() or pick(lang,'主人没有批准（拒绝了，或没在时限内回答）。','The owner did not approve it (denied, or no answer in time).')
@@ -66,6 +78,21 @@ class RiskGuard:
         return False
 
     async def _check(self, tool, inp):
+        # Pre-tool observer: no extra permission layer. Native permission
+        # requests still reach Host.ask. Explicit Agent J executors own UV.
+        if self.adapter.host.stopped():
+            return self._deny('stopped')
+        from . import uv_list
+        a = self.adapter
+        if credential_read_refusal(a.host, tool, inp, getattr(a, 'cfg', {}).get('dir')):
+            return self._deny(uv_list.CREDENTIAL_READ_REASON)
+        if uv_list.protected_targets(tool, inp, cwd=getattr(a, 'cfg', {}).get('dir'), env=uv_list.host_environment(a.host)):
+            from .list_approval import NativeContext
+            answer = await a.host.ask(tool, inp, batch=False, _harness_permission=True, _native_context=NativeContext.capture(a))
+            if answer.get('behavior') != 'allow':
+                return self._deny('host', answer.get('message', 'Owner verification required.'))
+        return True
+
         a=self.adapter
         from . import handoff
         if not a.host.stopped() and handoff.owner_side(a) and handoff.own_read(tool, inp, a.cfg):
@@ -165,10 +192,60 @@ class RiskGuard:
         dispatch_output=dispatch.get('hookSpecificOutput',{})
         if dispatch_output.get('permissionDecision') == 'deny':
             return dispatch
-        if getattr(a,'kind',None) == 'opencode' and getattr(a,'v2',False):
-            return dispatch  # dispatch-only hook: native permission.asked still owns all approvals
         if await self.check(tool,inp):
             return dispatch  # no allow: preserve every native hook/permission decision
         return {'hookSpecificOutput':{'hookEventName':'PreToolUse','permissionDecision':'deny',
                                      'permissionDecisionReason':self.reason(),
                                      **({'additionalContext':dispatch_output['additionalContext']} if dispatch_output.get('additionalContext') else {})}}
+
+
+class NativePathGuard:
+    """Protected paths only for an Agent J-owned native server process.
+
+    Kernel ancestry authenticates the channel; the native session/cwd still binds
+    each protected operation. No native permission or sandbox decision is allowed.
+    """
+    def __init__(self, adapter):
+        self.adapter = adapter
+        self.ready = asyncio.Event()
+
+    @property
+    def session(self):
+        return {'pid': getattr(getattr(self.adapter, 'proc', None), 'pid', None)}
+
+    def authentic(self, event):
+        pid = self.session['pid']
+        event['_agentj_path_authenticated'] = isinstance(pid, int) and pid in (event.get('_agentj_chain') or [])
+        # Keep a protected request visible to hook_event even when authentication
+        # fails: returning False here would make Channel emit an empty decision.
+        return True
+
+    async def hook_event(self, event):
+        import os
+        from . import uv_list
+        a = self.adapter
+        if isinstance(event, dict) and event.get('hook_event_name') == 'SharedGuardReady':
+            if (event.get('_agentj_path_authenticated') and isinstance(event.get('cwd'), str)
+                    and os.path.realpath(event['cwd']) == os.path.realpath(a.cfg['dir'])):
+                self.ready.set()
+            return {}
+        if not isinstance(event, dict) or event.get('hook_event_name') != 'PreToolUse':
+            return {}
+        tool, inp = event.get('tool_name', '?'), event.get('tool_input') or {}
+        if a.kind == 'codex':
+            tool = policy_registry.codex_hook_tool(tool)
+        if (refusal := credential_read_refusal(a.host, tool, inp, a.cfg.get('dir'))) is not None:
+            return refusal
+        if not uv_list.protected_targets(tool, inp, cwd=event.get('cwd') or a.cfg.get('dir'), env=uv_list.host_environment(a.host)):
+            return {}
+        sid = getattr(a, 'tid', None) if a.kind == 'codex' else getattr(a, 'sid', None)
+        same_cwd = isinstance(event.get('cwd'), str) and os.path.realpath(event['cwd']) == os.path.realpath(a.cfg['dir'])
+        if not event.get('_agentj_path_authenticated') or not sid or event.get('session_id') != sid or not same_cwd:
+            answer = {'behavior': 'deny', 'message': 'Protected control file: native session binding unavailable.'}
+        else:
+            from .list_approval import NativeContext
+            answer = await a.host.ask(tool, inp, event.get('_agentj_gone'), batch=False, _harness_permission=True, _native_context=NativeContext.capture(a))
+        if answer.get('behavior') == 'allow':
+            return {}
+        return {'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
+                'permissionDecisionReason': answer.get('message') or 'Owner verification required for protected control files.'}}

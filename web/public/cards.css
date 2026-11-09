@@ -196,3 +196,20 @@
 .slash-command-link::after{content:"";position:absolute;left:calc(-1 * var(--sp-1));right:calc(-1 * var(--sp-1));top:50%;height:var(--ui-tap,44px);transform:translateY(-50%)}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .rm #words .slash-command-link{-webkit-text-fill-color:var(--c-banana-republic)}}
 :root[data-theme="dark"] .rm #words .slash-command-link{-webkit-text-fill-color:var(--c-banana-republic)}
+
+/* 0.28.7: To-do ownership is always visible, independent of due/status flags. */
+.jc-body[data-card="todo"] .jc-list[data-todo-list]{display:flex;flex-direction:column;gap:16px}
+.jc-body[data-card="todo"] .jc-list[data-todo-list] .jc-todo-item{border-left:4px solid var(--c-windstorm,#6a9bcc);border-radius:var(--ui-radius-control) 0 0 var(--ui-radius-control);padding:12px 0 0 12px}
+.jc-body[data-card="todo"] .jc-list[data-todo-list] .jc-todo-item[data-owner="owner"]{border-left-color:var(--c-peachy-feeling,#d97757)}
+.jc-body[data-card="todo"] .jc-todo-item>.jc-row{align-items:flex-start}
+.jc-body[data-card="todo"] .jc-filter{flex-wrap:nowrap;overflow-x:auto;max-width:100%}
+.jc-body[data-card="todo"] .jc-filter-chip{padding-inline:8px;white-space:nowrap}
+.jc-hide-done{margin:0 0 var(--ui-space-control);display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;font-size:13px}
+.jc-hide-done input{width:18px;height:18px;margin:0;accent-color:var(--c-windstorm,#6a9bcc)}
+
+/* 0.28.7 fix1: the active To-do page follows the selected light theme, including its header.
+   Other menu pages retain their existing Noir tokens. */
+:root[data-theme="light"]:has(body[data-five-page="card"] .jc-body[data-card="todo"]):not(:has(#settings:not([hidden]),#five-menu:not([hidden]),#five-detail:not([hidden]))){
+  --menu-bg:var(--c-lotion);--menu-panel:var(--c-salt);--menu-text:var(--c-sooty);
+  --menu-accent:var(--c-noir);--menu-on-accent:var(--c-lotion);
+}

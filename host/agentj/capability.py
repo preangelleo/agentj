@@ -1432,10 +1432,11 @@ class Capabilities:
 
     # ---------------------------------------------------------- the Agent's socket
     async def on_client(self, r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
+        pid = uid = None
         try:
             sock = w.get_extra_info("socket")
             if sock is not None and hasattr(socket, "SO_PEERCRED"):
-                _, uid, _ = struct.unpack("3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+                pid, uid, _ = struct.unpack("3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
                 if uid != os.getuid():
                     w.close()
                     return
@@ -1451,7 +1452,12 @@ class Capabilities:
                 pid, _uid = shared_hook.peer_pid(sock)
                 res = capability_pause.handle(self.host, req, pid)
             else:
-                res = await self.handle(req)
+                from . import application_ingress
+                if pid is None and sys.platform == 'darwin':
+                    from .core.process_evidence import peer_pid, uid as peer_uid
+                    pid = peer_pid(w); uid = peer_uid(pid)
+                with application_ingress.native(self.host, w, req, pid, uid):
+                    res = await self.handle(req)
         except CapError as e:
             res = e.out()
         except (ValueError, asyncio.TimeoutError, asyncio.LimitOverrunError):

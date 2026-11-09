@@ -3,8 +3,8 @@ name: agentj-manual
 description: The Agent J phone user guide (zh + en). Read it whenever the user asks what something on the phone screen means or how to do something there — background colours (green / blue / orange / purple / grey), the weekly / 5-hour lines, the water level (context), buttons, slash commands, attachments (any file ≤ 200 MB; audio / video transcribed on the Agent J host), sharing screenshots, recordings and files (Android shares, the iPhone "Send to Agent J" Files Shortcut and the clipboard screenshot Shortcut; Telegram's 20 MB limit), voice, keyboard shortcuts, settings, approval / question / admin-password / key cards, Face ID pairing, offline sending, what to do when the context is past half, and the Agent friends screens (friend request card, the friends page, groups and limits, cards for the owner to decide). Triggers: 「这个颜色什么意思」「手机上怎么…」「那条线是什么」「水位」「怎么发文件」「怎么分享截图」「录音怎么发给你」「iPhone 怎么分享文件」「好友页怎么看」「策略组是什么」 "what does this colour mean", "how do I … on the phone", "what are friend groups".
 ---
 
-主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
-Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+默认派 CEO/子 Agent，写验收、复验、汇报；主人明确要求亲做就照办。指纹清单、凭据规则和 harness 硬限制不变。
+Delegate by default; follow explicit owner requests to work personally. Verify and report; UV, credential rules and harness limits remain.
 
 # agentj-manual — the phone user guide
 

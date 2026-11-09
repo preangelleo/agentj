@@ -405,13 +405,13 @@ def fallback(name, family, event, valid_execution):
     """
     if name == 'SessionStart' and family == 'claude' and not event.get('agent_id'):
         return {'additionalContext': RECONNECT}
-    if family == 'claude' and name == 'PreToolUse' and valid_execution:
-        try:
-            why = _risk(event)
-        except Exception:
-            why = 'Agent J could not check this call'
-        if why:
-            return {'permissionDecision': 'ask', 'permissionDecisionReason': 'Agent J offline: ' + str(why)[:200]}
+    if name == 'PreToolUse':
+        from agentj import uv_list
+        if uv_list.credential_reads(event.get('tool_name'), event.get('tool_input'), cwd=event.get('cwd')):
+            return {'permissionDecision': 'deny', 'permissionDecisionReason':
+                    uv_list.CREDENTIAL_READ_REASON + ': ' + uv_list.CREDENTIAL_READ_HINT}
+        if uv_list.protected_targets(event.get('tool_name'), event.get('tool_input'), cwd=event.get('cwd')):
+            return {'permissionDecision': 'deny', 'permissionDecisionReason': 'Agent J is unavailable; protected control files require owner verification.'}
     # F14: no Agent J decision. Native hooks/rules and dialogs remain authoritative.
     # Crucially this is neither allow nor an amendment to the session's permissions.
     return None

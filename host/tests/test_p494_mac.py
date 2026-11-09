@@ -3,6 +3,8 @@ import _hermetic
 import io
 import os
 import struct
+import tempfile
+from pathlib import Path
 import unittest
 from contextlib import redirect_stdout
 from types import SimpleNamespace
@@ -74,7 +76,7 @@ class Diagnostics(unittest.TestCase):
             for language in ('zh','en'):
                 for code in ('start_failed','start_timeout','no_reply','timeout','call_failed','native_failed'):
                     text=switch_harness.reason_text(code,kind,language)
-                    for required in ('AJ_START_', 'PATH', 'HOME', 'agentj doctor --offline', 'agentj provider ark', 'agentj provider bailian', 'Kimi'):
+                    for required in ('AJ_START_', 'PATH', 'HOME', 'agentj doctor --offline'):
                         self.assertIn(required,text)
         self.assertNotIn('untrusted-secret-value',startup_help.guidance('codex','untrusted-secret-value'))
 
@@ -187,6 +189,10 @@ class CodexLaunch(unittest.IsolatedAsyncioTestCase):
         from unittest.mock import Mock, AsyncMock
         from agentj.agent_codex import CodexAgent
         a=object.__new__(CodexAgent);a.host=Mock(lang='en',preferences={});a.cfg={'fence':False,'dir':'/tmp'}
+        from agentj.state import State
+        td=tempfile.TemporaryDirectory();self.addCleanup(td.cleanup)
+        a.host.st=State(Path(td.name));a.host.st.init()
+        self.addAsyncCleanup(a._stop_control_paths)
         a.argv=Mock(return_value=['codex','app-server']);a.authorized_launch_argv=AsyncMock(return_value=['codex','app-server']);a.fail_notice=Mock()
         with patch('agentj.agent._bin',return_value='/fixture/codex'), patch('agentj.agent_codex.asyncio.create_subprocess_exec',side_effect=OSError('private failure payload')):
             self.assertFalse(await a._spawn())
@@ -221,11 +227,12 @@ class MissingExecutable(unittest.IsolatedAsyncioTestCase):
         from agentj.agent_codex import CodexAgent
         from agentj.agent_opencode import OpenCodeAgent
         for cls,kind in ((CodexAgent,'codex'),(OpenCodeAgent,'opencode')):
-            a=object.__new__(cls);a.host=Mock(lang='zh');a.fail_notice=Mock()
+            a=object.__new__(cls);a.host=Mock(lang='zh');a.fail_notice=Mock();a.cfg={'dir':tempfile.gettempdir()}
             target='agentj.agent._bin' if kind=='codex' else 'agentj.agent_opencode._bin'
             with patch(target,return_value=None):
                 self.assertFalse(await a._spawn())
             self.assertTrue(a.failed_start)
             text=a.fail_notice.call_args.args[0]
-            for required in ('AJ_START_'+kind.upper()+'_LAUNCH','PATH','HOME','agentj provider bailian'):
+            for required in ('AJ_START_'+kind.upper()+'_LAUNCH','PATH','HOME','agentj doctor --offline','原因分类：unknown'):
                 self.assertIn(required,text)
+            self.assertNotIn('agentj provider bailian',text)  # missing executable does not diagnose a provider/key fault

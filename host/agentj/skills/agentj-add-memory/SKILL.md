@@ -3,8 +3,8 @@ name: agentj-add-memory
 description: Add something to your long-term memory because the owner asked — the phone's + on the 「记忆」 page puts `/agentj-add-memory ` in the message box and the owner says what to remember (「/agentj-add-memory 我对花生过敏」, "remember that …", 「记住…」「以后都…」). Writes one item into the working root's documentation/MEMORY.md, atomically, then says so in one line.
 ---
 
-主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
-Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+默认派 CEO/子 Agent，写验收、复验、汇报；主人明确要求亲做就照办。指纹清单、凭据规则和 harness 硬限制不变。
+Delegate by default; follow explicit owner requests to work personally. Verify and report; UV, credential rules and harness limits remain.
 
 The phone's 「记忆」 page shows the working root's `documentation/MEMORY.md` (the main Agent's memory) and the harness's
 own memory files. Everything after `/agentj-add-memory` is what to remember. Nothing after it → ask in one short line.

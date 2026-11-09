@@ -1,4 +1,5 @@
 {
+  "p0287.hideDone": "Hide completed",
   "fr.ask.failed": "Your confirmation did not take effect. Please try again.",
   "meta": {
     "title": "Agent J · Phone remote"
@@ -1848,7 +1849,35 @@
     "menu": "First-run checklist",
     "page": "First-run checklist",
     "closeList": "✕ Close checklist",
-    "sticky": "Do these steps on the Agent J host; watch progress on the phone. Stuck? Just tell me in the chat.",
+    "step": {
+      "seat": "On the Agent J host, open the Agent J installer and enter the setup code from your account page; then tap Check here.",
+      "harness": "On the Agent J host, open your chosen AI tool and finish its sign-in prompts; then tap Check here.",
+      "desktop": "On the Agent J host, open the remote pairing page provided by the installer, compare the security code and approve.",
+      "phone": "Pair this phone and send a message in chat, then return here and tap Check.",
+      "passkey": "On this phone, set up a passkey in Settings → Security, complete Face ID / fingerprint, then tap Check here.",
+      "phonepermissions": "Tap the microphone or camera in chat on this phone and allow browser access; then tap Check here.",
+      "sudo": "On the Agent J host, open Terminal and run agentj doctor; follow its local Touch ID diagnosis. Do not send passwords in chat.",
+      "browser": "Tap Use my existing browser or Install the dedicated browser here; Agent J handles it on the host without you returning there.",
+      "login": "Tap Use here, then Open the sign-in page on the host. Sign in in the browser opened on the Agent J host, then tap Check on your phone.",
+      "google": "Choose Use here and tell the Agent in chat whether you need mail, calendar or YouTube. Follow its Google project authorization steps, then tap Check.",
+      "fda": "On the Agent J host, allow your current AI tool in System Settings → Privacy & Security → Full Disk Access, then tap Check.",
+      "accessibility": "On the Agent J host, allow the desktop-control tool in System Settings → Privacy & Security → Accessibility, then tap Check.",
+      "automation": "On the Agent J host, allow your AI tool to control the target app in System Settings → Privacy & Security → Automation, then tap Check.",
+      "screen": "On the Agent J host, allow the capture tool in System Settings → Privacy & Security → Screen Recording, then tap Check.",
+      "hardware": "On the Agent J host, allow the required app to use the camera or microphone in system privacy settings, then tap Check.",
+      "tg": "Tap Use on this phone, then follow Settings → Channels → Telegram to connect; return here and tap Check.",
+      "wx": "Tap Use on this phone, then follow Settings → Channels → WeChat to connect; return here and tap Check.",
+      "botkey": "Tap Use on this phone, then enter your model-service key using the key card in Settings → Agent tools → Bots / Customer service; return here and tap Check.",
+      "exit": "Tap Start the leaving check here and let the host screen turn off. Disable Wi-Fi on your phone and send a chat message over mobile data; return to check after receiving a reply.",
+      "awake": "If the host is unplugged, connect power. Say “Disable idle sleep on my host” in phone chat, approve its password card, then tap Check here.",
+      "service": "Say “Install and start the Agent J background service” in phone chat, approve its prompts, then tap Check here.",
+      "network": "Tap Check here first. If it still fails, describe the error in phone chat; if the host is offline, first make sure it is awake and online.",
+      "updates": "Choose an update policy in Settings → Agent J host → Updates on your phone, then tap Check here.",
+      "keyring": "Say “Check my host system keychain service” in phone chat, follow the diagnosis, then tap Check here. If the system displays an unlock dialog, unlock it on the host screen.",
+      "files": "Tell the Agent in phone chat which work folder you want and ask it to check read/write access; then tap Check here.",
+      "macfiles": "On the Agent J host, open Terminal and run agentj files prepare --at-computer. Allow Downloads, Desktop, Documents and Finder access, then tap Check on your phone."
+    },
+    "sticky": "Tap any item to act. Choose, install and check on your phone; only marked steps such as website sign-in or system permission need the Agent J host.",
     "banner": "First-run setup {d}/{n} · Continue",
     "bannerReady": "First-run setup done · View",
     "bannerClose": "Close first-run setup; it won't pop up again",
@@ -1860,9 +1889,9 @@
       "none": "No browser for Agent J yet"
     },
     "next": {
-      "install_browser": "Install Agent J's browser on the Agent J host",
+      "install_browser": "Install the dedicated browser",
       "adopt_browser": "Use my existing browser",
-      "open_login": "Open it on the Agent J host and sign in"
+      "open_login": "Open the sign-in page on the host"
     },
     "act": {
       "running": {
@@ -5890,5 +5919,24 @@
   "p0286.syncing": "Connected. Syncing messages…",
   "p0286.synced": "Connected. Messages are up to date.",
   "p0286.inputUnavailable": "Trigger text was not saved",
-  "p0286.wechat": "WeChat"
+  "p0286.wechat": "WeChat",
+  "p0287.reason.missingFields": "This confirmation request contains no separate reason field. The available information does not explain the specific reason; expand the details to review it.",
+  "p0287.todo.nearLimit": "To-dos are nearing capacity. Completed items are archived automatically and remain searchable.",
+  "p0287.todo.tooLarge": "To-do content exceeds capacity. Complete and archive older items, or shorten this note, then retry.",
+  "p0287.reason.emptyOrRepeated": "The supplied reason is empty or repeats the action title; it does not explain why confirmation is needed. Expand the details to review it.",
+  "p0300.pk.setup": "Set up Face ID here",
+  "p0300.pk.testExpired": "This test has expired. Tap again to retry.",
+  "p0300.pk.testRejected": "This passkey verification failed. You can set it up again here.",
+  "p0300.pk.testIncomplete": "Verification did not finish. Please try again.",
+  "ar.why.denied": "You declined. Sign-in did not start.",
+  "ar.why.expired": "Confirmation expired. Add the account again to retry.",
+  "ar.why.no_device": "No paired remote can approve. Pair a remote first.",
+  "ar.why.session_changed": "The connection or authorization changed. Sign-in did not start. Try again.",
+  "ar.why.estop": "Stop everything is on. Sign-in did not start.",
+  "ar.why.serve_stop": "The Agent J host service stopped. Sign-in did not start.",
+  "ar.why.source_unavailable": "This settings request could not be verified. Sign-in did not start. Try again.",
+  "ar.why.execution_error": "Sign-in confirmation failed temporarily. Try again.",
+  "ar.why.approval_unavailable": "Confirmation is unavailable. Sign-in did not start.",
+  "ar.why.questioned": "You asked a question. Sign-in has not started.",
+  "p0300.pk.localOnly": "Set up Face ID here, then start sign-in again."
 }

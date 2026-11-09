@@ -1,7 +1,11 @@
-"""P570c (P570b rework, chairman 10-29 18:2x): the move card is a plain confirm (no Face ID) from a paired device, logged;
-user texts say 「Agent J 主机」, never a bare 「电脑」; the phone's 定时任务 page gets `sys` (migrated | changed) and a signed
-`task_migrate`; WSL2 without systemd gets one plain notice per version; a new task gets the system-scheduler hint; a loop
-wake-up refused for approval tells the owner, in plain words, to use a scheduled task instead."""
+"""P570c scheduler UI/business contracts under ordinary authenticated ingress.
+
+Startup without a current authenticated request is a proposal. Real signed
+phone task_migrate controls remain bound to task hashes; native permissions use
+actual paired v2 taps. Historical loop labels stay nonowner, with real peer
+NoTools/fence coverage. Owned heartbeat blocks update without touching custom
+text. Vendor/system scheduler commands remain local synthetic fixtures.
+"""
 import _hermetic  # noqa: F401,I001
 import asyncio
 import contextlib
@@ -30,9 +34,10 @@ class Card(m.Base):
         m.task(self.work, "a")
         self.enable("a")
         h = m.Host(self.st, m.YES)
-        self.assertEqual(asyncio.run(sysmigrate.offer(h, plat="linux")), "yes")
-        self.assertNotIn("require_passkey", h.asks[0][2], "chairman: 普通确认按钮，不扫 Face ID")
-        self.assertIn("花钱、删数据等）也不再问", h.asks[0][1]["summary"], "the cost stays on the card")
+        self.assertEqual(asyncio.run(sysmigrate.offer(h, plat="linux")), "proposal")
+        self.assertEqual(h.asks, [], "startup has no current authenticated call intent")
+        self.assertEqual(sysmigrate.migrated(self.st), {})
+        self.assertIn("花钱、删数据等）也不再问", sysmigrate.card_text(["a"], "zh"), "cost disclosure remains available")
         src = (HOST / "agentj" / "sysmigrate.py").read_text()
         self.assertNotIn("用 Face ID 确认", src)
         self.assertNotIn("Face ID", sysmigrate.why("none") + sysmigrate.why("none", "en"))
@@ -101,9 +106,13 @@ class HeartbeatWords(unittest.TestCase):
         from agentj import heartbeat
         old = heartbeat.CHECKLIST["zh"].replace("Agent J 主机", "电脑")
         custom = "我的额外要求\n" + old
-        self.assertEqual(heartbeat.merge_checklist(custom, "zh"), custom)
-        self.assertTrue(heartbeat.has_checklist(custom, "zh"))
-        self.assertEqual(heartbeat.merge_checklist("自定义", "zh").count("<!-- agentj:watchlist v1 -->"), 1)
+        merged = heartbeat.merge_checklist(custom, "zh")
+        self.assertTrue(merged.startswith("我的额外要求\n"))
+        self.assertEqual(merged.count("<!-- agentj:watchlist v2 -->"), 1)
+        self.assertIn(heartbeat.CHECKLIST["zh"], merged)
+        self.assertFalse(heartbeat.has_checklist(custom, "zh"), "old owned block needs the current canonical wording")
+        self.assertTrue(heartbeat.has_checklist(merged, "zh"))
+        self.assertEqual(heartbeat.merge_checklist("自定义", "zh").count("<!-- agentj:watchlist v2 -->"), 1)
         self.assertNotIn("电脑", heartbeat.CHECKLIST["zh"])
 
 
@@ -320,18 +329,24 @@ class LoopTick(unittest.IsolatedAsyncioTestCase):
                                     "message": {"content": "# Autonomous loop tick (dynamic pacing)"}}) + "\n")
             a.read_transcript()
             a.session = {"sessionId": "owner"}
-            for _ in range(2):
-                d = await self.perm(a)
-                self.assertEqual(d["behavior"], "deny")
-                self.assertIn("循环唤醒（ScheduleWakeup / CronCreate）", d["message"])
-                self.assertIn("请改用定时任务", d["message"])
-                self.assertIn("agentj tasks enable", d["message"])
-                self.assertIn("不是主人手动拒绝", d["message"])
-            h.ask.assert_not_awaited()
-            self.assertEqual(h.task_notice.call_count, 1, "one plain line to the phone, not one per tick")
-            note = h.task_notice.call_args[0][0]
-            self.assertIn("这种循环唤醒请改用定时任务", note)
-            self.assertIn("「把这个循环改成定时任务」", note)
+            # Historical loop metadata remains system provenance. A native
+            # PermissionRequest belongs to the served harness and needs a real
+            # paired tap; it is not an AJ source-wide second approval gate.
+            from test_p551_confirm_levels import Base
+            import test_p568_task_source as source_fixture
+            rig = Base()
+            rig.setUp()
+            try:
+                a.host = rig.host
+                rig.host.agent = a
+                for _ in range(2):
+                    decision, card = await source_fixture.signed_adapter(rig, self.perm(a))
+                    self.assertEqual(decision['behavior'], 'allow')
+                    self.assertFalse(card.get('passkey_required', False))
+                    self.assertFalse(provenance.is_owner(provenance.turn_source(a)))
+                await source_fixture.guest_boundary(self)
+            finally:
+                rig.doCleanups()
 
     def test_other_refusals_unchanged(self):
         from types import SimpleNamespace

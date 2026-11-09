@@ -11,6 +11,7 @@ Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / auth_
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import os
 import re
@@ -24,6 +25,34 @@ import threading
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+
+_LOGIN_START = contextvars.ContextVar('auth_rescue_login_start', default=None)
+
+
+class _LoginStart:
+    """One approved operation's spawn boundary, not a reusable settings grant."""
+    def __init__(self, owner, context):
+        self.owner, self.context, self.consumed = owner, context, False
+
+    def check(self):
+        c = self.context
+        live = (c.current(self.owner.host) == c.binding and time.monotonic() < c.until
+                if self.consumed else c.live(self.owner.host))
+        if not live:
+            raise RescueError('session_changed')
+
+    def consume(self):
+        self.check()
+        if not self.consumed:
+            self.context.discard()
+            self.consumed = True
+
+
+def _consume_login_start():
+    scope = _LOGIN_START.get()
+    if scope is not None:
+        scope.consume()
+
 
 KINDS = ("claude", "codex", "opencode", "kimi")
 META = "auth-rescue.json"           # state dir, 0600: dates and outcomes only — never a code or token
@@ -367,6 +396,7 @@ class ClaudeFlow:
         if self.ctx is not None:
             env.pop("CLAUDE_CONFIG_DIR", None)
             env.update({k: v for k, v in self.ctx.items() if k in ("HOME", "CLAUDE_CONFIG_DIR")})
+        _consume_login_start()
         self.pty = Pty(argv, self.cwd, env)
         m = self.pty.wait_for(CLAUDE_URL_RE, URL_WAIT)
         if not m:
@@ -448,6 +478,7 @@ class CodexFlow:
             env["CODEX_HOME"] = str(self.slot)
         if self.bound_live is not None and not self.bound_live():
             raise RescueError("cancelled")
+        _consume_login_start()
         self.proc = subprocess.Popen([exe, "login", "--device-auth"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, env=env, start_new_session=True, cwd=tempfile.gettempdir())
         os.set_blocking(self.proc.stdout.fileno(), False)
@@ -602,6 +633,7 @@ class KimiFlow(CodexFlow):
         for k in ("DISPLAY", "WAYLAND_DISPLAY"):      # a remote rescue: the link is for the phone, no browser opens here
             env.pop(k, None)
         env["BROWSER"] = "true"
+        _consume_login_start()
         self.proc = subprocess.Popen([exe, "login", "--region", self.region], stdin=subprocess.DEVNULL,
                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env, start_new_session=True,
                                      cwd=tempfile.gettempdir())
@@ -1032,6 +1064,18 @@ WHY = {
            "config": "Configuration error: the model or provider {h} is set to cannot be used right now (or its config file has an error). This is not a login or quota problem; pick a working model in {h}, then tap Check now"},
 }
 
+for _language, _messages in {
+    'zh': {'denied':'主人拒绝了这次操作', 'no_device':'没有可批准的已配对遥控器',
+           'session_changed':'设置请求已失效，请重新开始', 'estop':'已全部停下，未执行',
+           'serve_stop':'主机服务已停止', 'source_unavailable':'未能核验本次请求来源',
+           'execution_error':'处理确认请求时出错，请重试', 'approval_unavailable':'确认暂不可用，请重试', 'questioned':'主人对此有疑问，尚未执行'},
+    'en': {'denied':'the owner denied this operation', 'no_device':'no paired remote can approve',
+           'session_changed':'the settings request changed; start again', 'estop':'Stop everything is on; nothing ran',
+           'serve_stop':'the host service stopped', 'source_unavailable':'the request source could not be verified',
+           'execution_error':'the confirmation request failed; retry', 'approval_unavailable':'confirmation unavailable; retry', 'questioned':'the owner has a question; nothing ran'},
+}.items():
+    WHY[_language].update(_messages)
+
 
 class Rescue:
     """serve's one instance: status for the phone, alerts, the flows, recovery and self-check."""
@@ -1214,9 +1258,10 @@ class Rescue:
                 return {"ok": False, "why": e.args[0]}
         if kind == "opencode":
             return await self._opencode(remote=remote)
-        ok = await self._confirm(kind, name, remote=remote)
+        failure = {}
+        ok = await self._confirm(kind, name, remote=remote, failure=failure)
         if not ok:
-            return {"ok": False, "why": "passkey"}
+            return {"ok": False, "why": failure.get('why', 'approval_unavailable')}
         self.cancel.clear()
         self.flow = {"kind": kind, "route": route, "stage": "starting", "_remote": remote, **({"account": name} if name else {})}
         self.broadcast()
@@ -1227,26 +1272,74 @@ class Rescue:
         coro = {"device": self._kimi if kind == "kimi" else self._codex, "setup_token": self._claude_pty,
                 "login": self._claude_pty, "paste": self._claude_paste}[route]
         bg = getattr(self.host, "_bg", None)
-        (bg(coro(), "auth_rescue") if bg else asyncio.ensure_future(coro()))
+        work = self._confirmed_start(coro(), failure.get('_context'), kind)
+        (bg(work, "auth_rescue") if bg else asyncio.ensure_future(work))
         return {"ok": True}
 
-    async def _confirm(self, kind: str, account: str | None = None, *, remote=None) -> bool:
-        from . import auth_settings_uv
+    async def _confirmed_start(self, work, context, kind):
+        if context is not None:
+            live = context.live(self.host)
+            if not live:
+                context.discard()
+                work.close()
+                return self._end(kind, 'failed', 'session_changed')
+        token = _LOGIN_START.set(_LoginStart(self, context) if context else None)
+        try:
+            return await work
+        finally:
+            if context is not None:
+                context.discard()
+            _LOGIN_START.reset(token)
+
+    async def _start_command(self, start):
+        scope = _LOGIN_START.get()
+        def checked():
+            if scope is not None:
+                if scope.owner is not self:
+                    raise RescueError('session_changed')
+                scope.check()
+            return start()
+        return await asyncio.to_thread(checked)
+
+    async def _confirm(self, kind: str, account: str | None = None, *, remote=None, failure=None) -> bool:
+        from .list_approval import SettingsContext
+        failure = failure if isinstance(failure, dict) else {}
+        failure['why'] = 'approval_unavailable'
         scoped = remote is not None and getattr(self.host, "_paired_live", lambda _:False)(remote)
-        if scoped and auth_settings_uv.reuse(self.host, remote, "add" if account else "login"):
-            return True
+        if remote is not None and not scoped:
+            failure['why'] = 'session_changed'
+            return False
+        # Listed credential actions always ask for fresh request-bound UV.
+        # The prior five-minute settings shortcut cannot authorize this command.
         ask = getattr(self.host, "ask", None)
         if ask is None:
             return False
+        context = None
         try:
             summary = self._summary(kind, account)
-            if scoped:
-                summary += "\n" + auth_settings_uv.note(self.lang())
-            res = await ask("AuthRescue", {"summary": summary}, batch=False, always_ask=True, _host_card=True,
+            inp = {"summary": summary}
+            context = SettingsContext.capture(self.host, self, remote, inp) if scoped else None
+            res = await ask("AuthRescue", inp, batch=False, always_ask=True, _host_card=True,
+                            **({'_settings_context': context} if context else {}),
                             **({"_settings_session": remote, "only": remote.device, "require_passkey": True} if scoped else {}))   # P573: one button
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001 — fixed classification; exception text may carry credentials
+            failure['why'] = 'execution_error'
+            self.host.st.log('auth_rescue_confirm_error', phase='approval', error=type(exc).__name__)
+            if context:
+                context.discard()
             return False
-        return isinstance(res, dict) and res.get("behavior") == "allow"
+        if isinstance(res, dict) and res.get("behavior") == "allow" and (context is None or context.live(self.host)):
+            failure['_context'] = context
+            return True
+        reason = res.get('reason') if isinstance(res, dict) else None
+        failure['why'] = {'device':'denied', 'timeout':'expired', 'agent_gone':'expired',
+            'no_device':'no_device', 'estop':'estop', 'serve_stop':'serve_stop',
+            'group_source':'source_unavailable', 'unverified_trigger':'source_unavailable',
+            'authority_changed':'session_changed', 'native_context_changed':'session_changed',
+            'session_changed':'session_changed', 'passkey_required':'passkey', 'question':'questioned'}.get(reason, 'approval_unavailable')
+        if context:
+            context.discard()
+        return False
 
     def _summary(self, kind: str, account: str | None = None) -> str:
         if account:      # 0.26.9 #452: one plain sentence — a NEW account, the one in use is not touched
@@ -1285,7 +1378,7 @@ class Rescue:
             return await self._codex_account(self.flow["account"])
         flow = CodexFlow()
         try:
-            url, code, ttl = await asyncio.to_thread(flow.start)
+            url, code, ttl = await self._start_command(flow.start)
         except RescueError as e:
             return self._end("codex", "failed", e.args[0])
         self.flow.update(stage="device", url=url, code=code, expires_at=int(time.time()) + ttl, round=1, rounds=1)
@@ -1321,10 +1414,12 @@ class Rescue:
             return self._end("codex", "failed", "io")
         flow = CodexFlow(home=slot)
         try:
-            url, code, ttl = await asyncio.to_thread(flow.start)
-        except RescueError as e:
+            url, code, ttl = await self._start_command(flow.start)
+        except (RescueError, OSError, asyncio.CancelledError) as e:
             await asyncio.to_thread(accounts.discard_slot, root, "codex", iid)
-            return self._end("codex", "failed", e.args[0])
+            if isinstance(e, asyncio.CancelledError):
+                raise
+            return self._end("codex", "failed", e.args[0] if isinstance(e, RescueError) else 'io')
         self.flow.update(stage="device", url=url, code=code, expires_at=int(time.time()) + ttl, round=1, rounds=1)
         self.broadcast()
         res = await asyncio.to_thread(flow.wait, self.cancel)
@@ -1358,7 +1453,7 @@ class Rescue:
         """`kimi login --region <configured site>`; native Kimi owns any accepted login even when a test fails."""
         flow = KimiFlow((getattr(self.host, "agent_cfg", None) or {}).get("region"))
         try:
-            url, code, ttl = await asyncio.to_thread(flow.start)
+            url, code, ttl = await self._start_command(flow.start)
         except RescueError as e:
             return self._end("kimi", "failed", e.args[0])
         self.flow.update(stage="device", url=url, code=code, expires_at=int(time.time()) + ttl, region=flow.region)
@@ -1382,7 +1477,7 @@ class Rescue:
         for rnd in range(1, RENEW_ROUNDS + 1):
             flow = ClaudeFlow(route)
             try:
-                url = await asyncio.to_thread(flow.start)
+                url = await self._start_command(flow.start)
             except RescueError as e:
                 return self._end("claude", "failed", e.args[0])
             if self.cancel.is_set():
@@ -1543,12 +1638,14 @@ class Rescue:
         ps = [k for k in provider_runtime.configured() if provider_runtime.key_name(k)]
         if not ps:
             return {"ok": False, "why": "unsupported"}
-        ok = await self._confirm("opencode", remote=remote)
+        failure = {}
+        ok = await self._confirm("opencode", remote=remote, failure=failure)
         if not ok:
-            return {"ok": False, "why": "passkey"}
+            return {"ok": False, "why": failure.get('why', 'approval_unavailable')}
         bg = getattr(self.host, "_bg", None)
         coro = provider_runtime.request_key(self.host, ps[0], session=remote)
-        (bg(coro, "auth_rescue") if bg else asyncio.ensure_future(coro))
+        work = self._confirmed_start(coro, failure.get('_context'), 'opencode')
+        (bg(work, "auth_rescue") if bg else asyncio.ensure_future(work))
         return {"ok": True, "provider": ps[0]}
 
     async def cancel_flow(self) -> dict:
@@ -1650,8 +1747,9 @@ class Rescue:
         """「代按确认」: re-run the restart check allowing exactly this catalogued confirm screen's fixed keys."""
         if confirm_keys(kind, bid) is None:
             return {"ok": False, "why": "unsupported"}
-        if not await self._confirm(kind):
-            return {"ok": False, "why": "passkey"}
+        failure = {}
+        if not await self._confirm(kind, failure=failure):
+            return {"ok": False, "why": failure.get('why', 'approval_unavailable')}
         bg = getattr(self.host, "_bg", None)
         coro = self.recover(kind, press=(bid,))
         (bg(coro, "auth_rescue") if bg else asyncio.ensure_future(coro))

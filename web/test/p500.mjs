@@ -1,9 +1,16 @@
-// Source-bound comparison against shipped d3ca5aed3. Synthetic safe areas/keyboard,
+// Independent archived page=d3ca5aed3; same-current-page CSS baseline=c97096e917. Synthetic safe areas/keyboard,
 // desktop WebKit, not physical iOS compositor evidence or a diagnosis of #264.
 // env() substitution models page insets only; navigator.standalone does not launch an iOS Web.app.
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+const cssHash=s=>createHash('sha256').update(s).digest('hex');
+const cssSourceReceipts=[];
+// Ordinary page/editor regression uses chairman-reviewed 0287 batch CSS (c97096e917).
+// Historical feature-introduction trees precede later approved styles; zero-pixel
+// comparison remains unchanged. New stylesheet paths stay identical on both sides.
+const historicalStyles=new Set(execFileSync('git',['ls-tree','-r','--name-only','c97096e917','--','web/public'],{encoding:'utf8'}).trim().split('\n').filter(p=>p.endsWith('.css')).map(p=>'/'+p.slice('web/public/'.length)));
 import {fileURLToPath} from 'node:url';
 import {mkdirSync,mkdtempSync,rmSync,writeFileSync,readFileSync} from 'node:fs';
 import {startWebServer} from './serve.mjs';import {startFakeHost} from './fakehost.mjs';
@@ -14,7 +21,7 @@ assert.equal(view(execFileSync('git',['show','850e08209:web/public/index.html'],
 assert.equal(execFileSync('git',['diff','--name-only','d3ca5aed3','850e08209','--','web/public'],{encoding:'utf8'}).split('\n').filter(p=>p.endsWith('.css')).length,0,'P500 candidate changes no CSS; integrated changes are covered by P505 comparisons');
 
 if(!process.argv.includes('--baseline'))execFileSync(process.execPath,[fileURLToPath(import.meta.url),'--baseline'],{stdio:'inherit'});
-const baseline=process.argv.includes('--baseline'),out=`reports/qa/p500/visual/${baseline?'before':'after'}`,tmp=mkdtempSync('/tmp/p500-visual-');mkdirSync(out,{recursive:true});
+const baseline=process.argv.includes('--baseline'),out=`${process.env.P500_OUT||'reports/qa/p500/visual'}/${baseline?'before':'after'}`,tmp=mkdtempSync('/tmp/p500-visual-');mkdirSync(out,{recursive:true});
 if(baseline)execFileSync('tar',['-x','-C',tmp],{input:execFileSync('git',['archive','d3ca5aed3','web/public'],{maxBuffer:100e6})});
 const web=await startWebServer(baseline?{publicDir:tmp+'/web/public'}:{}),fake=await startFakeHost(),wk=await pw.webkit.launch(),ch=await pw.chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox','--disable-gpu','--force-color-profile=srgb']}),rows=[],recoveries=[];
 try{for(const mode of (process.argv.includes('--platforms')?['android','desktop']:['safari','crios','standalone','android','desktop']))for(const scheme of ['light','dark']){
@@ -28,7 +35,8 @@ try{for(const mode of (process.argv.includes('--platforms')?['android','desktop'
  let oldCSS=false;const p=await ctx.newPage();await p.route('**/*',async r=>{
   const u=new URL(r.request().url());if(!['127.0.0.1','localhost'].includes(u.hostname))return r.abort();
   if(u.pathname.endsWith('.css')){
-   const body=oldCSS?execFileSync('git',['show','d3ca5aed3:web/public'+u.pathname],{encoding:'utf8'}):await(await r.fetch()).text();
+   const body=oldCSS&&historicalStyles.has(u.pathname)?execFileSync('git',['show','c97096e917:web/public'+u.pathname],{encoding:'utf8'}):await(await r.fetch()).text();
+   cssSourceReceipts.push({mode,scheme,path:u.pathname,comparisonMode:oldCSS?'approved-css':'served-css',source:oldCSS&&historicalStyles.has(u.pathname)?'c97096e917':baseline?'d3ca5aed3-archive':'selected-tree',sha256:cssHash(body)});
    return r.fulfill({contentType:'text/css',body:ios?body.replace(/env\(safe-area-inset-(top|bottom|left|right)(?:\s*,[^)]*)?\)/g,(_,s)=>({top:'68px',bottom:'68px',left:'0px',right:'0px'}[s])):body});
   }
   return r.continue();
@@ -57,7 +65,7 @@ try{for(const mode of (process.argv.includes('--platforms')?['android','desktop'
       await p.evaluate(async old=>{await Promise.all([...document.querySelectorAll('link[rel=stylesheet]')].map(e=>new Promise((resolve,reject)=>{e.onload=resolve;e.onerror=reject;const u=new URL(e.href);u.searchParams.set('p500',String(old));e.href=u.href;})));await document.fonts.ready;},old);
       await p.waitForTimeout(200);shots.push(await p.screenshot({path:old?`${out}/${label}-same-page-before.png`:path}));
      }
-     equal=shots[0].equals(shots[1]);comparison='same-page shipped/current CSS; view markup unchanged; install metadata asserted separately';
+     equal=shots[0].equals(shots[1]);comparison='same selected-tree DOM; approved c97096e917 CSS / selected-tree CSS; metadata independently asserted; archived d3ca5aed3 page is separate evidence';
     }
     assert.ok(equal,`${label}: shipped pixels unchanged (${comparison})`);
    }
@@ -72,4 +80,6 @@ try{for(const mode of (process.argv.includes('--platforms')?['android','desktop'
  await p.screenshot({path:`${out}/${mode}-${scheme}-reconnected.png`});recoveries.push({mode,scheme,...recovery});
  await ctx.close();
 }}finally{await wk.close();await ch.close();await fake.stop();await web.stop();rmSync(tmp,{recursive:true,force:true});}
-writeFileSync(out+'/results.json',JSON.stringify({baseline,rows,recoveries,model:'Desktop WebKit iPhone Air-sized420x912 / Chromium Android390x844 and desktop1280x844; synthetic68px insets, keyboard510px; no physical phone'},null,2)+'\n');console.log(`PASS ${rows.length} screens ${baseline?'baseline captured':'byte-identical to shipped baseline'}; ${recoveries.length} viewport restorations and encrypted connection recoveries`);
+if(!baseline){assert.ok(cssSourceReceipts.some(x=>x.path==='/app.css'&&x.source==='c97096e917'),'approved app.css really served');assert.ok(cssSourceReceipts.some(x=>x.path==='/app.css'&&x.source==='selected-tree'),'selected-tree app.css really served');}
+writeFileSync(out+'/css-source-receipts.json',JSON.stringify({archive:'d3ca5aed3',samePageCSSBaseline:'c97096e917',currentDOM:!baseline,requests:cssSourceReceipts},null,2)+'\n');
+writeFileSync(out+'/results.json',JSON.stringify({baseline,rows,recoveries,model:'Desktop WebKit iPhone Air-sized420x912 / Chromium Android390x844 and desktop1280x844; synthetic68px insets, keyboard510px; no physical phone'},null,2)+'\n');console.log(`PASS ${rows.length} screens ${baseline?'baseline captured':'byte-identical to approved c97096e917 CSS on the same current DOM'}; ${recoveries.length} viewport restorations and encrypted connection recoveries`);

@@ -38,9 +38,9 @@ function button(cls, key, fn) {
 /** The block under a confirm button. opts = {fa (fa_s), err (an error name after a failed tap, or null), retry (fn, runs
  *  straight from the tap so the system sheet follows it), setup (false: no 「在本机设置」 — a sheet that cannot step aside)}.
  *  Nothing to say → the box hides. */
-export function paintPk(box, { fa = null, err = null, retry = null, setup = true, noKey = false } = {}) {
+export function paintPk(box, { fa = null, err = null, retry = null, setup = true, noKey = false, localOnly = false } = {}) {
   if (!box) return;
-  if (noKey) return paintNoKey(box);
+  if (noKey) return paintNoKey(box, localOnly);
   const f = faState(fa);
   const key = err ? failKey(err, f) : hintKey(f);
   box.dataset.state = err ? 'fail' : f || '';
@@ -61,12 +61,12 @@ button('pkassist__setup', key === 'p0285.pk.incomplete' ? 'p561.pk.reset' : err 
 // another remote that has it can approve. A key on record but not found here stays P561's 「钥匙找不到了」 (err path).
 // P563 追加 7 (说明在上、按钮在下): this block is only the words now — the line and the note; 「去设置」 is the card's own
 // button (#apprGo in .apprbtns, beside 「拒绝」) and relay.js puts this block above that row.
-function paintNoKey(box) {
+function paintNoKey(box, localOnly = false) {
   box.dataset.state = 'nokey';
   const line = mk('p', 'pkassist__text', t('p561.card.noKey'));
   line.dataset.k = 'p561.card.noKey';
-  const note = mk('p', 'pkassist__note', t('p561.card.elsewhere'));
-  note.dataset.k = 'p561.card.elsewhere';
+  const note = mk('p', 'pkassist__note', t(localOnly ? 'p0300.pk.localOnly' : 'p561.card.elsewhere'));
+  note.dataset.k = localOnly ? 'p0300.pk.localOnly' : 'p561.card.elsewhere';
   box.replaceChildren(line, note);
   box.hidden = false;
 }
@@ -101,7 +101,14 @@ export function setupStepsAside(box, away) {
 }
 /** The shared confirm sheet (ui.js confirmSheet) with the quiet line under its buttons (#confirm-pk) — the keys page, 「Agent J
  *  主机上的命令」, the approval switches, 恢复, 「让这台也能用」 all ask for the passkey from this sheet. confirmSheet clears it. */
+/** Display-only preflight: the host explicitly places this key on another device. No WebAuthn call or decision is sent. */
+export function offerLocalSetup(fa) {
+  if (faState(fa) !== 'borrowed') return false;
+  toastAction(withBio('p539.hint.borrowed'), t('p539.pk.setup'), () => scrollToPkRow(), 10000);
+  return true;
+}
 export function pkSheet(fa, ...args) {
+  if (offerLocalSetup(fa)) return Promise.resolve(false);
   const shown = confirmSheet(...args);
   document.getElementById('confirm').dataset.popupKind = 'grow';
   const box = document.getElementById('confirm-pk');

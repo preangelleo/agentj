@@ -27,6 +27,61 @@ def _defaults():
 
 
 _said: set[str] = set()
+_fresh_setups = {}
+
+
+class _FreshStateSetup:
+    """One process's actual mkdir, not authority recovered from migrated.json."""
+    def __init__(self, root, created):
+        self.path = os.path.abspath(root)
+        self.pid = os.getpid()
+        self.directory, self.marker = self._snapshot()
+        if self.directory[:2] != (created.st_dev, created.st_ino):
+            raise ValueError('new migration directory replaced')
+
+    def _snapshot(self):
+        import hashlib
+        import stat
+        from pathlib import Path
+        root = Path(self.path)
+        d = root.lstat()
+        p = root / 'migrated.json'
+        before = p.lstat()
+        if (not stat.S_ISDIR(d.st_mode) or d.st_uid != os.getuid() or not stat.S_ISREG(before.st_mode)
+                or before.st_nlink != 1 or before.st_uid != os.getuid() or before.st_size > 8192):
+            raise ValueError('fresh migration identity changed')
+        def generation(s):
+            return (s.st_dev, s.st_ino, s.st_mode, s.st_uid, s.st_gid,
+                    s.st_nlink, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+        data = p.read_bytes()
+        after = p.lstat()
+        if generation(before) != generation(after):
+            raise ValueError('fresh migration marker changed')
+        return ((d.st_dev, d.st_ino, d.st_mode, d.st_uid, d.st_gid),
+                (generation(before), hashlib.sha256(data).digest()))
+
+    def live(self, root, *, initialised=False):
+        try:
+            from pathlib import Path
+            expected = ['config.json', 'devices.json', 'host.log', 'host_ed25519.key',
+                        'host_x25519.key', 'migrated.json'] if initialised else ['migrated.json']
+            return (self.pid == os.getpid() and self.path == os.path.abspath(root)
+                    and sorted(p.name for p in Path(root).iterdir()) == expected
+                    and (self.directory, self.marker) == self._snapshot())
+        except (OSError, ValueError):
+            return False
+
+
+def _consume_fresh_setup(root):
+    setup = _fresh_setups.pop(os.path.abspath(root), None)
+    if setup is None:
+        return None
+    try:
+        from pathlib import Path
+        only_marker = sorted(p.name for p in Path(root).iterdir()) == ['migrated.json']
+        return setup if type(setup) is _FreshStateSetup and only_marker and setup.live(root) else False
+    except OSError:
+        return False
 
 
 def _say(msg: str, out=None, key: str | None = None) -> None:
@@ -317,12 +372,21 @@ def _move(old, new, out=None) -> str:
 def _fresh(old, new, out=None) -> str:
     """The owner chose a new identity: create the empty new state directory (so this is never asked again) and leave
     the old one exactly where it is."""
+    _fresh_setups.pop(os.path.abspath(new), None)
     try:
         os.mkdir(new, 0o700)
     except FileExistsError:
         return "fresh"
+    created = os.lstat(new)
     os.chmod(new, 0o700)
     _write_record(State(new), {"v": 1, "legacy_left": str(old), "at": int(time.time()), "version": __version__})
+    # Only this successful mkdir may bridge its own bookkeeping into init.
+    try:
+        setup = _FreshStateSetup(new, created)
+        if sorted(p.name for p in State(new).root.iterdir()) == ['migrated.json']:
+            _fresh_setups[setup.path] = setup
+    except (OSError, ValueError):
+        pass
     _say(f"Agent J：用全新身份；旧目录 {tilde(old)} 原样留着，没动（不再问）。不要了可以自己删掉。/ starting fresh; the old "
          f"directory {tilde(old)} is left untouched (you will not be asked again)", out)
     return "fresh"

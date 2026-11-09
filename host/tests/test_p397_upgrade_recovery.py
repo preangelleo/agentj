@@ -159,6 +159,9 @@ au.minisign.verify = lambda *a: 'agentj-host/v1 version=9.9.9 sha256='+hashlib.s
 au.enabled = lambda st: True
 from agentj import service_recovery
 service_recovery.cleanup_job = lambda st: None
+# First-init bookkeeping now loads humane; evict it to retain the original
+# post-deletion cold-import failure shape rather than skipping the guard.
+sys.modules.pop('agentj.humane', None)
 assert 'agentj.humane' not in sys.modules
 assert Path(au.__file__).is_relative_to(sys.argv[1])
 def run(argv):

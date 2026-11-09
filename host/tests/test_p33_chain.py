@@ -60,6 +60,14 @@ class _Chain(unittest.TestCase):
     KIND = "?"
 
     def setUp(self):
+        # Preferences are per fixture: another test's working root is not initial setup.
+        from tempfile import TemporaryDirectory as _ConfigDirectory
+        from unittest.mock import patch as _config_patch
+        self._config_tmp = _ConfigDirectory(prefix='aj-0300-config-')
+        self.addCleanup(self._config_tmp.cleanup)
+        _config_env = _config_patch.dict('os.environ', {'XDG_CONFIG_HOME': self._config_tmp.name})
+        _config_env.start()
+        self.addCleanup(_config_env.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.st = _state(self.tmp.name)
         self.work = pathlib.Path(self.tmp.name) / "work"
@@ -310,7 +318,7 @@ class _Chain(unittest.TestCase):
         self.assertIsNone(m.get("shared_status"))
         self.assertFalse(m["heartbeat_usage"]["available"])
         self.assertIsNone(m["heartbeat_usage"]["total_tokens"])
-        self.assertEqual(set(m) - {"t", "shared_follow", "heartbeat_usage"}, {"model", "model_name", "effort", "ctx", "h5", "week", "at", "shared_status", "shared_writer"})
+        self.assertEqual(set(m) - {"t", "shared_follow", "heartbeat_usage"}, {"model", "model_name", "effort", "ctx", "h5", "week", "at", "shared_status", "shared_writer", "reset_credits"})
 
 
 # ------------------------------------------------------------------ Claude Code

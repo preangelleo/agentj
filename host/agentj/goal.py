@@ -1572,80 +1572,34 @@ class Goals:
 
     # ---------------------------------------------------------- the opening card
     async def propose(self, prop, wait: bool = True) -> dict:
-        import asyncio
+        from . import application_ingress
         h = self.host
         if h.stopped():
             raise GoalError("stopped", "Stop everything is on")
         if self.current():
             raise GoalError("active", "a goal is already running: `agentj goal stop` first, or finish it")
         if self.waiting:
-            raise GoalError("pending", "a goal card is already waiting on the phone")
+            raise GoalError("pending", "a goal request is already waiting")
         g = validate(prop)
-        if not h._approvers():
-            raise GoalError("no_device", "no paired phone that can sign")
-        lang = prop.get("lang") if isinstance(prop, dict) and prop.get("lang") in ("zh", "en") else self.lang()
         gid = new_id()
-        d = {"v": 1, "id": gid, "state": "proposed", **g, "digest": digest(g), "proposed_at": int(time.time()),
+        text = card_text(g, self.lang())
+        answer = await h.ask(TOOL, {"goal": gid, "digest": digest(g), "card": text}, batch=False, grant_info=True)
+        if answer.get('behavior') != 'allow' or not application_ingress.allowed(h):
+            return refusal_result(answer, gid, h.stopped())
+        # A proposed work plan is task state, not an approval-policy grant.
+        d = {"v": 1, "id": gid, **g, "state": "active", "digest": digest(g),
+             "proposed_at": int(time.time()), "started": int(time.time()),
+             "proposed_grants": g.get('grants', []), "grants": [],
              "counts": {}, "used": {}, "blocked": [], "milestones": []}
         save(self.st, d)
-        self.st.log("goal_propose", id=gid, grants=len(g["grants"]))
-        self.host.activity("goal_propose", text=g["goal"][:120], grants=len(g["grants"]))
-        text = card_text(g, lang)
-        pre = self._preauth(g)
-        if pre is not None:                     # P336: the owner's signed 「设了目标就不弹窗」 is the signature — no card
-            return self._start(d, g, pre, text)
-        self.waiting = gid
-
-        async def card() -> dict:
-            try:
-                ans = await h.ask(TOOL, {"goal": gid, "digest": d["digest"], "card": text}, batch=False, grant_info=True,
-                                  ttl=5 * h.ask_ttl)
-            finally:
-                self.waiting = None
-            cur = load(self.st)
-            if not cur or cur.get("id") != gid or cur.get("state") != "proposed":
-                return {"result": "gone", "id": gid}
-            info = ans.get("grant_info") or {}
-            if ans.get("behavior") != "allow" or not info.get("device") or h.stopped():
-                refusal = refusal_result(ans, gid, h.stopped())
-                cur.update(state="declined", reason=refusal["reason"], ended_at=int(time.time()))
-                save(self.st, cur)
-                self.host.activity("goal_declined", text=g["goal"][:120], reason=refusal["reason"])
-                return refusal_result(ans, gid, h.stopped())
-            cur.update(state="active", started=int(time.time()),
-                       grant={"rid": info.get("rid"), "device": info["device"], "sk_sha": sk_sha(info.get("sign_pub"))})
-            save(self.st, cur)
-            self.st.log("goal_start", id=gid, device=info["device"])
-            self.host.activity("goal_start", text=g["goal"][:120], grants=len(g["grants"]))
-            self.host.emit("goal_start", id=gid)
-            if hasattr(self.host, "status_changed"):
-                self.host.status_changed()
-            en = self.lang() == "en"
-            self.host.agent_notice((f"🎯 Goal mode on until {_when(g['deadline'])}: " if en else
-                                    f"🎯 目标模式开始，截止 {_when(g['deadline'])}：") + g["goal"])
-            return {"result": "active", "id": gid, "deadline": int(g["deadline"])}
-
-        if wait:
-            return await card()
-        task = asyncio.ensure_future(card())
-
-        def told(t):
-            if t.cancelled() or t.exception() is not None:
-                return
-            res = t.result()
-            if h.agent is not None and not h.stopped():
-                from .capability import ReadBackSend
-                en = self.lang() == "en"
-                note = (f"[Agent J system note, not the owner's words] Your goal card: {res['result']}; reason: {res.get('reason', 'approved')}. "
-                        + ("Start the work now." if res["result"] == "active" else res.get("detail", "Nothing was granted; inspect the reason before retrying."))) if en else \
-                    (f"〔Agent J 系统提示，不是主人说的话〕你的目标授权卡结果：{res['result']}，原因：{res.get('reason', 'approved')}。"
-                     + ("现在开工。" if res["result"] == "active" else res.get("detail", "尚未授权，请按返回原因处理。")))
-                try:
-                    h.agent.submit(ReadBackSend(note))
-                except Exception:  # noqa: BLE001
-                    pass
-        task.add_done_callback(told)
-        return {"result": "pending", "id": gid, "ttl": int(5 * h.ask_ttl)}
+        self.st.log("goal_start", id=gid, actor=application_ingress.actor(h), how='application')
+        h.activity("goal_start", text=g['goal'][:120], grants=0)
+        h.emit("goal_start", id=gid)
+        h.status_changed()
+        en = self.lang() == 'en'
+        h.agent_notice((f"🎯 Goal mode on until {_when(g['deadline'])}: " if en else
+                        f"🎯 目标模式开始，截止 {_when(g['deadline'])}：") + g['goal'])
+        return {"result": "active", "id": gid, "deadline": int(g['deadline'])}
 
     def _start(self, d: dict, g: dict, pre: dict, text: str) -> dict:
         """P336: start a proposal at once under the signed switch: approvals.log `reason: goal_preauth` (grant = the

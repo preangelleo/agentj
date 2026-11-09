@@ -761,7 +761,7 @@ class WheelInstall(unittest.TestCase):
             os.symlink(self.venv + "/bin/agentj", d + "/jarvis")
             r = subprocess.run([d + "/jarvis", "--version"], capture_output=True, text=True, env=self.env, cwd="/")
             self.assertEqual(r.stdout.strip(), f"agentj {agentj.__version__}", r.stderr)
-            self.assertIn("`jarvis` is now `agentj`", r.stderr)
+            self.assertIn("Use `agentj`; the old command remains compatible.", r.stderr)
         r = subprocess.run([self.venv + "/bin/python", "-P", "-m", "jarvis_host.cli", "--version"], capture_output=True, text=True,
                            env=self.env, cwd="/")
         self.assertEqual(r.stdout.strip(), f"agentj {agentj.__version__}", r.stderr)
@@ -819,7 +819,7 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v26:", core["summary"])
+            self.assertIn("core v28:", core["summary"])
 
     def test_fenced_chain_against_the_installed_package(self):
         # Installed wheel identity is checked before the V2 contract; no checkout fallback.

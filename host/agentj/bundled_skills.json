@@ -100,7 +100,9 @@
       "SKILL.md"
     ],
     "agentj-hooks": [
-      "SKILL.md"
+      "SKILL.md",
+      "automation-report.en.md",
+      "automation-report.zh.md"
     ],
     "agentj-imessage": [
       "SKILL.md"

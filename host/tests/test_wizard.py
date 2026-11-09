@@ -197,10 +197,18 @@ class Install(Base):
         self.assertIn(docsrule.block("en"), text)
         self.assertEqual(text.count(docsrule.BEGIN), 1)
         self.assertNotIn("AGENTS.md", self.manifest(), "the human's file stays theirs")
-        for _ in range(2):                                  # idempotent, also with another language asked for
+        # v28 owns only its complete core-reference block; changing its language
+        # replaces that one block, preserving the human prefix and docs rule.
+        expected = wizard.merge_core_reference(text.encode(), wizard.core_reference("zh").encode()).decode()
+        for i in range(2):
             rows = {r["path"]: r["status"] for r in wizard.install(self.root, ["codex"], "zh")}
-            self.assertEqual(rows["AGENTS.md"], "unchanged")
-            self.assertEqual((self.root / "AGENTS.md").read_text(), text)
+            self.assertEqual(rows["AGENTS.md"], "added" if i == 0 else "unchanged")
+            actual = (self.root / "AGENTS.md").read_text()
+            self.assertEqual(actual, expected)
+            self.assertTrue(actual.startswith(mine + "\n\n"))
+            self.assertEqual(actual.count(wizard.CORE_REF), 1)
+            self.assertEqual(actual.count(docsrule.BEGIN), 1)
+            self.assertIn(docsrule.block("en"), actual)
 
     def test_docs_rule_the_human_edited_is_left_alone(self):
         from agentj import docsrule

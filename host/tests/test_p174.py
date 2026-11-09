@@ -24,6 +24,49 @@ M = session_choice.LEGACY_MIGRATION
 OLD = ("202610040001", "202610050047")
 
 
+def _approve_preferences(test, st, raw):
+    """Actual config controller and device UV; deliberately not a CLI transport mock."""
+    import asyncio
+    from _p541_device import Phone, _owner_host
+    from test_l1 import _ready
+    async def apply():
+        sent, replies = [], []
+        host = _owner_host(st, sent)
+        phone = Phone(st, with_passkey=True)
+        session = _ready(host, phone)
+        host.ask_ttl = 2
+        class Writer:
+            def write(self, data): replies.append(json.loads(data))
+            async def drain(self): pass
+            def is_closing(self): return False
+        before = preferences.path().read_bytes()
+        try:
+            await host._ctl_config_from_agent(Writer(), raw)
+            if replies[-1].get('ok') is True:
+                return
+            test.assertEqual(replies[-1]['code'], 'owner_approval')
+            for _ in range(200):
+                if host.asks: break
+                await asyncio.sleep(.005)
+            ask = next(iter(host.asks.values()))
+            test.assertTrue(ask.require_passkey)
+            answer = phone.answer(host._ask_msg(ask, session), True)
+            unsigned_uv = dict(answer); unsigned_uv.pop('fa')
+            await host._answer(session, unsigned_uv)
+            test.assertFalse(ask.fut.done())
+            test.assertEqual(preferences.path().read_bytes(), before)
+            await host._answer(session, answer)
+            await asyncio.wait_for(asyncio.gather(*list(host._ctl_bg)), 3)
+            test.assertEqual(preferences.validate(preferences.read()[1]), preferences.validate(preferences.parse(raw)))
+        finally:
+            for ask in list(host.asks.values()):
+                if not ask.fut.done(): ask.fut.set_result(('deny',None,None,None))
+            await asyncio.gather(*list(getattr(host,'_ctl_bg',())), return_exceptions=True)
+            host.elevate.cancel_all('stopped')
+            await asyncio.gather(*list(host.elevate.review_requests), return_exceptions=True)
+    asyncio.run(apply())
+
+
 class _Env(unittest.TestCase):
     def setUp(self):
         self.tmp = pathlib.Path(tempfile.mkdtemp(prefix="aj-p174-", dir="/tmp"))
@@ -37,6 +80,15 @@ class _Env(unittest.TestCase):
         self.addCleanup(env.stop)
         self.st = State()
         self.st.init(relay="ws://127.0.0.1:1")
+
+    def approve_mode(self, value):
+        if not self.st.config().get("agent"):
+            self.st.set_agent_config("claude", str(self.work))
+        before = self.st.agent_config()["session_mode"]
+        raw = preferences.edit(preferences.read()[0], "agent.session_mode", value, remove=value is None)
+        with mock.patch("agentj.claude_auth.available", return_value=True):
+            _approve_preferences(self, self.st, raw)
+        return session_choice.explain(value or "independent", before, "zh")
 
     # an install as an earlier version left it
     def old_install(self, config_text=None, markers=OLD, log_modes=(), agent=True):
@@ -183,46 +235,61 @@ class Switching(_Env):
     def test_config_set_explains_and_names_the_undo(self):
         self.migrate()
         self.st.set_agent_config("claude", str(self.work))
-        code, res = self.config("set", "agent.session_mode", "shared")
-        self.assertEqual(code, 0, res)
-        self.assertEqual((res["old"], res["new"]), ("independent", "shared"))
-        self.assertEqual(res["notice"]["rollback"], "agentj config set agent.session_mode independent")
-        self.assertEqual(res["notice"]["restart"], "agentj service restart")
-        self.assertIn("advanced", res["notice"]["text_en"])
-        self.assertEqual(self.st.agent_config()["session_mode"], "shared")
+        for value, old in (("shared","independent"),("independent","shared")):
+            before = preferences.path().read_bytes()
+            code, res = self.config("set", "agent.session_mode", value)
+            self.assertEqual(code, 3, res)
+            self.assertEqual(preferences.path().read_bytes(), before)
+            self.assertIn("fresh paired-device UV", res["error"])
+            notice = self.approve_mode(value)
+            self.assertEqual(notice["rollback"], "agentj config set agent.session_mode " + old)
+            self.assertEqual(notice["restart"], "agentj service restart")
+            self.assertIn("advanced" if value=="shared" else "Independent", notice["text_en"])
+            self.assertEqual(self.st.agent_config()["session_mode"], value)
         code, res = self.config("set", "agent.session_mode", "independent")
         self.assertEqual(code, 0, res)
-        self.assertEqual(res["notice"]["rollback"], "agentj config set agent.session_mode shared")
-        self.assertEqual(self.st.agent_config()["session_mode"], "independent")
-        code, res = self.config("set", "agent.session_mode", "independent")
         self.assertNotIn("notice", res, "no change, nothing to explain")
 
     def test_alias_and_bad_value(self):
         self.migrate()
         code, res = self.config("set", "会话模式", "shared")
-        self.assertEqual((code, res["key"]), (0, "agent.session_mode"))
+        self.assertEqual((code, res["key"]), (3, "agent.session_mode"))
+        self.assertIsNone(self.file_mode())
+        self.approve_mode("shared")
         code, res = self.config("set", "agent.session_mode", "attached")
         self.assertNotEqual(code, 0)
         self.assertEqual(self.file_mode(), "shared", "a rejected value changes nothing")
 
     def test_agent_flags_print_the_meaning_once(self):
         self.migrate()
-        text = self.agent("claude", "--dir", str(self.work), "--shared")
-        self.assertIn("agentj config set agent.session_mode independent", text)
-        text = self.agent("claude", "--dir", str(self.work), "--shared")
-        self.assertNotIn("agentj config set agent.session_mode independent", text, "already shared: nothing to explain")
-        text = self.agent("claude", "--dir", str(self.work), "--independent")
-        self.assertIn("独立会话（默认）", text)
+        self.st.set_agent_config("claude", str(self.work))
+        # A protected mode switch now requires owner UV even for a CLI flag.
+        for value in ("shared", "independent"):
+            before = preferences.path().read_bytes()
+            out = io.StringIO()
+            with mock.patch("agentj.claude_auth.available", return_value=True), contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                with self.assertRaises(SystemExit) as refused:
+                    cli.main(["agent", "claude", "--dir", str(self.work), "--"+value])
+            self.assertIn("fresh paired-device UV", str(refused.exception.code)+out.getvalue())
+            self.assertEqual(preferences.path().read_bytes(), before)
+            notice = self.approve_mode(value)
+            self.assertIn("agentj config set agent.session_mode", notice["text"])
+            text = self.agent("claude", "--dir", str(self.work), "--"+value)
+            self.assertNotIn("agentj config set agent.session_mode", text, "already selected: no repeated notice")
         self.assertEqual(self.file_mode(), "independent")
 
     def test_migrated_owner_can_switch_and_back(self):
         self.old_install()
         self.migrate()
         code, res = self.config("unset", "agent.session_mode")
-        self.assertEqual(code, 0, res)
+        self.assertEqual(code, 3, res)
+        self.assertEqual(self.st.agent_config()["session_mode"], "shared")
+        notice = self.approve_mode(None)
         self.assertEqual(self.st.agent_config()["session_mode"], "independent", "unset = the new default, no legacy guard")
-        self.assertEqual(res["notice"]["rollback"], "agentj config set agent.session_mode shared")
+        self.assertEqual(notice["rollback"], "agentj config set agent.session_mode shared")
         code, res = self.config("set", "agent.session_mode", "shared")
+        self.assertEqual(code, 3, res)
+        self.approve_mode("shared")
         self.assertEqual(self.st.agent_config()["session_mode"], "shared")
 
 

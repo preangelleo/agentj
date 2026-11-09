@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.28.26
+version: 0.28.27
 released: 2026-11-08
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.28.6
-source_tag: v0.28.6
-host_wheel: agentj-0.28.6-py3-none-any.whl
-host_wheel_sha256: d2d1617cc89fea6b80eb0f9ed6bd9834eb748ecb028f5ea36ee7772745cc35d9
-host_sdist: agentj-0.28.6.tar.gz
-host_sdist_sha256: 5c37d318919bec2980574ce23a59ab8aac0b6ccbfe9a1be90822f6d8350c648e
+host_version: 0.30.0
+source_tag: v0.30.0
+host_wheel: agentj-0.30.0-py3-none-any.whl
+host_wheel_sha256: 5f8c6dea4c7d9e5ebf4b31aec53eb2d063b4d313d1b2b5741070422c2bb18206
+host_sdist: agentj-0.30.0.tar.gz
+host_sdist_sha256: 9e4b86498c90e41091cc8688b84bdc745100ef26f11cebeb6356daaf4c34bc47
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 docs_index: https://agentj.app/llms.txt (also https://agentj.app/docs/index.json; every page as raw Markdown at https://agentj.app/docs/<slug>/en.md and /zh.md)
@@ -731,7 +731,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.28.6` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.30.0` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -773,13 +773,13 @@ uv tool install "./$W"          # the wheel; its dependencies come from PyPI or 
 `https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.9`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.28.6#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.0#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.28.6#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.0#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.28.6`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.0`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1480,9 +1480,9 @@ welcome from Step 11a — let them answer it first; its tour covers points 3 and
 1. Send 「list the files in this folder」 (any language) → a reply from their Claude Code (or Codex, or OpenCode) arrives.
 2. **Claude Code or OpenCode:** ask it to create a file `scratch.txt` and then delete it. If the underlying tool asks,
    the phone shows **「拒绝」 ("Deny")** and **「批准」 ("Approve")** → tap Approve → done. Agent J adds no card for an
-   ordinary action the tool did not stop. Only cards requiring owner verification — spending money, showing or sending
-   a real password or key, unrecoverable deletion, trust-root changes or rewriting approval files/hooks — use Face ID,
-   a fingerprint or the device passkey. A reversible action uses a button; downloading and running also uses a button.
+   ordinary action the tool did not stop. Only Agent J commands and matching phone operations on the explicit `agentj uv list` use Face ID,
+   a fingerprint or the device passkey. Ordinary tool confirmations use buttons and follow the native harness,
+   including in background, heartbeat, webhook and mail turns.
    A card listing several exact actions in this task is signed once, with owner verification if any listed action requires it;
    approval never extends to other actions of the same kind. No answer within 120 s = denied.
    **Codex:** ask it to create a file `scratch.txt`. With no `sandbox_mode` of the human's (the default: directly on the
@@ -1790,7 +1790,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.28.6#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.0#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -3813,3 +3813,10 @@ This fix was tested with isolated Linux subprocesses/owner sockets and a real Ch
 本地图片与文件展示验证边界：在当前获准的主人手机回合运行 `agentj file show PATH --label LABEL --json`，没有有效回合就会失败。不能指定设备、群、好友或另建外发消息。`queued` 只是排队，后续 `FILE_SHOW_RESULT` 的 `attached_to_page` 表示已附到页面，`failure` 表示失败；它们都不证明客户端已下载或主人已看到。完整本地图片引用可在回合进行中显示。
 
 本修复已用 Linux 隔离子进程、主人套接字和真实 Chromium 合成图片页面验证，回合未结束即可成图。实体手机、macOS、WSL 和 Claude Code/Codex/OpenCode 真实模型回合端到端未验；Kimi/Qwen ACP 未接入或验收 file show。Windows 须使用 WSL。只安装新版正式签名工件；此前 0.26.3a1 INTERNAL 轮子不是已发布升级包。
+
+
+### Explicit verification list / 明确指纹清单
+
+Ordinary tools follow your AI coding tool: when it allows an action Agent J adds no card; when it asks, the phone shows ordinary Confirm, Deny and I have a question buttons without fingerprint verification. Only Agent J commands and matching phone operations explicitly listed by `agentj uv list` require in-person owner verification on a paired device: secret display, delivery and entry, device and passkey management, approval and other security settings, and registered high-risk functions. Ordinary tools in background-completion, heartbeat, compaction-recovery, webhook and mail turns follow native permissions too; friends and visitors retain their isolated sandboxes. External content cannot replace owner verification. For an occasional transfer or data-deletion program, register `agentj fn add <name> -- <command> <args>` and execute `agentj fn run <name>`; adding, running and removing require verification, while `agentj fn list` is read-only. See [Phone approvals](/docs/phone/#confirm-tiers).
+
+普通工具跟随底层 AI 编程工具：它放行的，Agent J 不加卡；它要确认的，手机显示「确认」「拒绝」「我有疑问」普通按钮，不要求指纹。只有 `agentj uv list` 明确列出的 Agent J 命令及对应手机操作，才要求主人在已配对设备上当场验证，包括秘密显示、发送与填入，设备与通行密钥管理，审批等安全设置和用户注册的高危函数。后台完成、心跳、压缩恢复、Webhook 和邮件回合中的普通工具也按底层权限走；好友访客仍保留隔离沙箱。外部内容不能代替本人验证。要保护自己的低频转账或删数据程序，可用 `agentj fn add <name> -- <command> <args>` 注册，再用 `agentj fn run <name>` 执行；注册、执行和删除都须现场验证，`agentj fn list` 只读。完整说明见[手机审批](/docs/phone/#confirm-tiers)。

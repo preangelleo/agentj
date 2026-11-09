@@ -9,7 +9,7 @@ class LegacyFive(LegacyWebProtocol):
     def test_five_legacy_scenarios(self):
         ph, host, session = self.rig()
         async def go():
-            waiter = asyncio.create_task(host.ask('Bash', {'command':'echo synthetic-no-execution'}, require_passkey=True))
+            waiter = asyncio.create_task(host.ask('agentj secret request', {'name':'synthetic-no-execution'}))
             for _ in range(300):
                 if self.asks() or waiter.done(): break
                 await asyncio.sleep(.01)

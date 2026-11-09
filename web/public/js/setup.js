@@ -27,6 +27,7 @@ let H = { openPanel: () => {}, view: () => null };
 let initialization = [], installing = false;
 let S = null, busy = false, wired = false, pendingClose = false;
 const HIDE_KEY = 'aj.setup.hidden';
+const expanded = new Set();
 function hiddenHere() { try { return localStorage.getItem(HIDE_KEY) === '1'; } catch { return false; } }
 function hideHere(on) { try { if (on) localStorage.setItem(HIDE_KEY, '1'); else localStorage.removeItem(HIDE_KEY); } catch { /* blocked storage: host flag only */ } }
 
@@ -61,7 +62,7 @@ export function card(m) {
   render();
 }
 
-export function clear() { initialization = []; installing = false; S = null; busy = false; pendingClose = false; render(); }
+export function clear() { expanded.clear(); initialization = []; installing = false; S = null; busy = false; pendingClose = false; render(); }
 export const isOpen = () => H.view() === 'setup';
 
 /** The page: from the banner (already have the snapshot) or the menu (reopen: a closed checklist shows again). */
@@ -145,7 +146,7 @@ function renderBanner() {
 // ---------------------------------------------------------------- the page
 function whereTag(i) {
   if (i.state === 'unsupported') return t('setup.where.unsupported');
-  const w = i.state === 'waiting_local' ? 'local' : i.where;   // "waiting for you" is never "I handle it"
+  const w = ['browser', 'phone', 'exit', 'google'].includes(i.id) ? 'phone' : i.where;   // placement follows the actual owner action, not a legacy state name
   return t('setup.where.' + (WHERE.includes(w) ? w : 'local'));
 }
 
@@ -182,7 +183,7 @@ function nextButtons(row, i) {
   return list.length > 0;
 }
 
-function actions(box, i) {
+function actions(box, i, inline = false) {
   const row = mk('div', 'ajrow setup-actions');
   const optional = i.need !== 'required';
   const unused = () => row.append(btn('', t('setup.unused'), () => mark(i.id, 'unused'), 'setup-unused'));
@@ -205,8 +206,22 @@ function actions(box, i) {
     if (i.state !== 'unsupported') row.append(btn('aj-action--primary', t('setup.check'), () => refresh(true, i.id), 'setup-check'));
     if (optional) unused();
   }
-  if (i.id !== 'exit' && i.state !== 'deferred') row.append(btn('aj-action--quiet', t('setup.later'), () => mark(i.id, 'later'), 'setup-later'));
+  if (inline && !['exit', 'browser'].includes(i.id) && i.choice === 'undecided' && !row.querySelector('#setup-use')) row.prepend(btn('aj-action--primary', t('setup.use'), () => mark(i.id, 'selected'), 'setup-use'));
+  if (i.id !== 'exit' && (inline || i.state !== 'deferred')) row.append(btn('aj-action--quiet', t('setup.later'), () => mark(i.id, 'later'), 'setup-later'));
+  if (inline) for (const b of row.querySelectorAll('[id]')) b.id += '-' + i.id;
+  row.dataset.item = i.id;
   box.appendChild(row);
+}
+
+function instructions(box, i) {
+  box.appendChild(pageCopy(mk('p', 'setup-hint', pick(i.hint), 'aj-setup')));
+  const key = ['seat', 'harness', 'desktop', 'phone', 'passkey', 'phonepermissions', 'sudo', 'awake', 'service', 'network', 'updates', 'keyring', 'files', 'macfiles', 'browser', 'google', 'fda', 'accessibility', 'automation', 'screen', 'hardware', 'tg', 'wx', 'botkey', 'exit'].includes(i.id) ? i.id
+    : ['gmail', 'youtube', 'bili', 'douyin', 'wechat', 'sites'].includes(i.id) ? 'login' : null;
+  if (key) box.appendChild(pageCopy(mk('p', 'setup-step', t('setup.step.' + key), 'aj-setup')));
+  if (i.explain) for (const k of ['fact', 'effect']) {
+    const text = pick(i.explain[k]);
+    if (text) box.appendChild(pageCopy(mk('p', 'setup-' + k, text, 'aj-setup')));
+  }
 }
 
 function overview(box) {
@@ -229,7 +244,20 @@ function overview(box) {
       li.dataset.id = i.id;
       const name = mk('span', 'setup-name', pick(i.title));
       if (i.choice !== 'unused' && i.state !== 'verified' && i.state !== 'not_applicable') name.appendChild(mk('span', 'setup-tag', whereTag(i)));
-      li.append(name, mk('span', 'setup-st', st));
+      const status = mk('span', 'setup-st', st);
+      const actionable = i.choice !== 'unused' && (i.choice === 'undecided' || !['verified', 'not_applicable'].includes(i.state));
+      if (actionable) {
+        const detail = mk('details', 'setup-detail');
+        detail.open = expanded.has(i.id);
+        const summary = mk('summary', 'setup-summary');
+        summary.append(name, status);
+        const body = mk('div', 'setup-detail-body');
+        instructions(body, i);
+        actions(body, i, true);
+        detail.append(summary, body);
+        detail.addEventListener('toggle', () => { if (!detail.isConnected) return; if (detail.open) expanded.add(i.id); else expanded.delete(i.id); });
+        li.append(detail);
+      } else li.append(name, status);
       ul.appendChild(li);
     }
     wrap.appendChild(ul);
@@ -302,7 +330,8 @@ function renderPage() {
     if (un.length) box.appendChild(pageCopy(mk('p', 'setup-note', t('setup.notEnabled', { list: un.join(lang() === 'en' ? ', ' : '、') }), 'aj-setup')));
   } else if (cur) {
     const where = pageCopy(mk('p', 'setup-where', whereTag(cur) + ' · ' + stateText(cur.state), 'aj-setup')); where.id = 'setup-where';
-    box.append(where, pageCopy(mk('p', 'setup-hint', pick(cur.hint), 'aj-setup')));
+    box.append(where);
+    instructions(box, { ...cur, explain: null });
     if (cur.explain) {
       const f = pageCopy(mk('p', 'setup-fact', pick(cur.explain.fact), 'aj-setup')); f.id = 'setup-fact';
       const e = pageCopy(mk('p', 'setup-effect', pick(cur.explain.effect), 'aj-setup')); e.id = 'setup-effect';

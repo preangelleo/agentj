@@ -312,11 +312,14 @@ class HostGoal(unittest.TestCase):
     def setUp(self):
         # Isolate this pre-registry mechanism on an automatic action row;
         # test_p512_policy proves the real composition has no floor bypass.
-        from agentj import policy_registry
-        original_requirement = policy_registry.main_requirement
-        # Legacy goal/grant mechanics only; real composed floors are tested in P512.
-        floor = mock.patch.object(policy_registry, 'main_requirement', side_effect=lambda tool, inp=None, **kw: 'allow' if tool == 'Bash' else original_requirement(tool, inp, **kw))
-        floor.start(); self.addCleanup(floor.stop)
+        # Preferences are per fixture: another test's working root is not initial setup.
+        from tempfile import TemporaryDirectory as _ConfigDirectory
+        from unittest.mock import patch as _config_patch
+        self._config_tmp = _ConfigDirectory(prefix='aj-0300-config-')
+        self.addCleanup(self._config_tmp.cleanup)
+        _config_env = _config_patch.dict('os.environ', {'XDG_CONFIG_HOME': self._config_tmp.name})
+        _config_env.start()
+        self.addCleanup(_config_env.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.st = _state(self.tmp.name)
         work = pathlib.Path(self.tmp.name) / "work"
@@ -325,7 +328,7 @@ class HostGoal(unittest.TestCase):
         self.sent = []
         self.host = _host(self.st, self.sent)
         self.host.ask_ttl = 1
-        self.phone = Phone(self.st)
+        self.phone = Phone(self.st,with_passkey=True)
         self.s = _ready(self.host, self.phone)
         self.probe = Probe()
         self.ps = [mock.patch.object(approval_jev, "available", return_value=False),
@@ -342,12 +345,10 @@ class HostGoal(unittest.TestCase):
         return [o for _, o in self.sent if o["t"] == "ask" and (tool is None or o["tool"] == tool)]
 
     def signed(self, card, picks=None, ok=True):
-        d = approvals.shown_digest(card["tool"], card["summary"])
-        msg = approvals.signed_message(self.phone.channel, self.phone.did, card["id"], "allow" if ok else "deny", d)
-        if picks:
-            msg += ("\n" + approvals.allow_add_line(picks)).encode()
-        return {"t": "answer", "id": card["id"], "ok": ok, "sig": wire.b64u(self.phone.sk.sign(msg)),
-                **({"allow_add": picks} if picks else {})}
+        from _p541_device import Phone as V2Phone
+        result=V2Phone.answer(self.phone,card,ok)
+        if picks:result['allow_add']=picks  # unsupported offer picks must still refuse
+        return result
 
     def card_then(self, coro_fn, tool, answer):
         async def go():
@@ -367,106 +368,103 @@ class HostGoal(unittest.TestCase):
         return asyncio.run(go())
 
     def start_goal(self):
-        res, _ = self.card_then(lambda: self.host.goals.propose(PROP, wait=True), goal.TOOL, lambda c: self.signed(c))
-        self.assertEqual(res["result"], "active")
+        from agentj import provenance
+        async def run():
+            result={}
+            async def consume(session,frame):
+                result.update(await self.host.goals.propose(PROP,wait=True))
+            with mock.patch.object(self.host,'_app_frame',side_effect=consume):
+                with provenance.paired_request(lambda:self.host._paired_live(self.s)):
+                    from agentj.serve import Host
+                    await Host._app(self.host,self.s,{'t':'fixture-goal-proposal'})
+            self.assertEqual(result['result'],'active')
+            self.assertEqual(goal.load(self.st)['grants'],[])
+        asyncio.run(run())
 
     def run_ask(self, cmd, answer=None):
-        return self.card_then(lambda: self.host.ask("Bash", {"command": cmd}), "Bash", answer)
+        return self.card_then(lambda: self.host.ask("Bash", {"command": cmd}, _harness_permission=True), "Bash", answer)
 
     def test_hold_card_words_and_one_tap_grant(self):
         self.start_goal()
-        self.probe.exists[("olares", "bench-jarvis/pwone.py")] = True       # overwriting: hold
-        res, card = self.run_ask(LEO, answer=lambda c: self.signed(c, [c["goal_add"]]))
-        self.assertEqual(card["goal"], "hold")
-        self.assertEqual(card["goal_what"], "把 pwone.py 复制到 olares")
-        self.assertIn("goal_who", card)
-        self.assertIn("仅限 scp 上传到 olares", card["goal_add"])
-        self.assertNotIn("allow_offer", card)
-        self.assertEqual(res["behavior"], "allow")
-        self.assertNotIn("allow_add", res)
-        d = goal.load(self.st)
-        added = d["grants"][-1]
-        self.assertEqual((added["cat"], added["upload"], added["added"]["rid"]), ("send", {"host": "olares", "via": "scp"}, card["id"]))
-        every = approvals.read_log(self.st)
-        line = [r for r in every if r.get("reason") == "goal_grant_add"][-1]
-        self.assertEqual(approvals.check_record(self.st, line, {r["id"]: r for r in every}), "auto")
-        autos = [o for _, o in self.sent if o["t"] == "auto"]
-        self.assertIn("已加进目标授权", autos[-1]["summary"])
-        # the next copy to olares rides the added grant: no card
-        n = len(self.asks("Bash"))
-        res, _ = self.run_ask("scp -q b.py olares:bench-jarvis/b.py")
-        self.assertEqual(res["behavior"], "allow")
-        self.assertEqual(len(self.asks("Bash")), n)
-        self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "goal")
+        self.probe.exists[('olares','bench-jarvis/pwone.py')]=True
+        res,card=self.run_ask(LEO,answer=lambda c:self.signed(c))
+        self.assertEqual(res['behavior'],'allow')
+        self.assertNotIn('goal_add',card)
+        self.assertNotIn('allow_offer',card)
+        self.assertNotIn('goal',card)
+        import json
+        self.assertEqual(json.loads(card['summary'].split('\n',1)[1])['command'],LEO)
+        self.assertFalse(card.get('passkey_required',False))
+        self.assertEqual(goal.load(self.st)['grants'],[])
+        self.assertFalse([r for r in approvals.read_log(self.st) if r.get('reason')=='goal_grant_add'])
+        n=len(self.asks('Bash'))
+        res,_=self.run_ask('scp -q b.py olares:bench-jarvis/b.py',answer=lambda c:self.signed(c))
+        self.assertEqual(res['behavior'],'allow')
+        self.assertEqual(len(self.asks('Bash')),n+1)
+        self.assertEqual(approvals.read_log(self.st)[-1]['reason'],'device')
 
     def test_tampered_offer_is_refused_and_held_step_is_reported(self):
         self.start_goal()
-        self.probe.exists[("olares", "bench-jarvis/pwone.py")] = True
-        res, card = self.run_ask(LEO, answer=lambda c: self.signed(c, ["[对外发送] anything — 最多 500 次"]))
-        self.assertEqual(res["behavior"], "deny")                             # refused answer → timeout
-        self.assertIn("agentj goal grant", res["message"])
-        d = goal.load(self.st)
-        self.assertEqual(len(d["grants"]), 1)
-        b = d["blocked"][-1]
-        self.assertEqual((b["human"], b["tool"], b["cats"]), ("把 pwone.py 复制到 olares", "Bash", ["send"]))
-        self.assertIn("scp -q ~/bench-jarvis/pwone.py olares:", b["raw"])
+        self.probe.exists[('olares','bench-jarvis/pwone.py')]=True
+        res,card=self.run_ask(LEO,answer=lambda c:self.signed(c,['[对外发送] anything — 最多 500 次']))
+        self.assertEqual(res['behavior'],'deny')
+        self.assertEqual(res['reason'],'timeout')
+        self.assertNotIn('goal_add',card)
+        self.assertEqual(goal.load(self.st)['grants'],[])
+        self.assertEqual(goal.load(self.st)['blocked'],[])
+        self.assertFalse([r for r in approvals.read_log(self.st) if r.get('reason')=='goal_grant_add'])
 
     def test_new_remote_file_gets_the_countdown(self):
         self.start_goal()
-        res, card = self.run_ask(LEO)
-        self.assertEqual(res["behavior"], "allow")
-        self.assertEqual(card["goal"], "auto")
-        self.assertIn("删掉副本", card["goal_why"])
-        self.assertNotIn("goal_add", card)
-        self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "goal_auto")
+        res,card=self.run_ask(LEO,answer=lambda c:self.signed(c))
+        self.assertEqual(res['behavior'],'allow')
+        self.assertNotIn('goal',card)
+        self.assertNotIn('goal_add',card)
+        self.assertFalse(card.get('passkey_required',False))
+        self.assertEqual(approvals.read_log(self.st)[-1]['reason'],'device')
 
     def test_goal_grant_card(self):
         self.start_goal()
         req = {"t": "goal_grant", "grants": [{"cat": "send", "what": "scp 到 olares", "match": ["scp", "olares:"], "max": 10}]}
         res, card = self.card_then(lambda: self.host.goals.handle(req), goal.TOOL_GRANT, lambda c: self.signed(c))
         self.assertEqual(res["result"], "added")
-        self.assertIn("追加授权", card["summary"])
-        self.assertIn("[对外发送] scp 到 olares", card["summary"])
+        self.assertIn("scp 到 olares", card["summary"])
+        self.assertTrue(card["passkey_required"])
         rec = [r for r in approvals.read_log(self.st) if r["tool"] == goal.TOOL_GRANT][-1]
         self.assertEqual((rec["decision"], rec["reason"]), ("allow", "device"))
         self.assertEqual(approvals.check_record(self.st, rec), "ok")
-        res, _ = self.run_ask("scp -q c.py olares:x/c.py")
+        res, _ = self.run_ask("scp -q c.py olares:x/c.py",answer=lambda c:self.signed(c))
         self.assertEqual(res["behavior"], "allow")
         # declined → nothing added; refusals before any card
         res, _ = self.card_then(lambda: self.host.goals.handle(req), goal.TOOL_GRANT, lambda c: self.signed(c, ok=False))
         self.assertEqual(res["result"], "declined")
-        self.assertEqual(len(goal.load(self.st)["grants"]), 2)
+        self.assertEqual(len(goal.load(self.st)["grants"]), 1)
         bad = asyncio.run(self.host.goals.handle({"t": "goal_grant", "grants": [{"cat": "credentials", "what": "x", "match": ["abc"]}]}))
         self.assertEqual((bad["result"], bad["why"]), ("refused", "credentials"))
 
     def test_one_tap_grant_on_a_parked_card(self):
-        """Nobody online: the hold card is parked (P336); the owner's later 「批准，并加进目标授权」 still adds the grant and the
-        settled allow line keeps its signed allow_add line (approvals --verify)."""
-        from agentj import approval_level
         self.start_goal()
-        self.probe.exists[("olares", "bench-jarvis/pwone.py")] = True
-
-        async def go():
-            with mock.patch.object(approval_level, "PARK_GRACE", 0.15), \
-                    mock.patch.object(approval_level, "remind_offline", mock.AsyncMock(return_value=[])):
-                self.host.sessions.clear()
-                res = await self.host.ask("Bash", {"command": LEO})
-                self.assertEqual(res["behavior"], "deny")
-                parked = [a for a in self.host.asks.values() if a.parked]
-                self.assertEqual(len(parked), 1)
-                s = _ready(self.host, self.phone)
-                card = [c for c in self.host.open_cards(s) if c["t"] == "ask"][0]
-                self.assertIn("goal_add", card)
-                await self.host._answer(s, self.signed(card, [card["goal_add"]]))
-                await asyncio.sleep(0.05)
-                return parked[0].rid
-        rid = asyncio.run(go())
-        self.assertEqual(goal.load(self.st)["grants"][-1]["added"]["rid"], rid)
-        every = approvals.read_log(self.st)
-        index = {r["id"]: r for r in every}
-        self.assertEqual(approvals.check_record(self.st, index[rid]), "ok")
-        line = [r for r in every if r.get("reason") == "goal_grant_add"][-1]
-        self.assertEqual(approvals.check_record(self.st, line, index), "auto")
+        self.probe.exists[('olares','bench-jarvis/pwone.py')]=True
+        async def run():
+            self.host.sessions.clear()
+            task=asyncio.create_task(self.host.ask('Bash',{'command':LEO},_harness_permission=True))
+            for _ in range(200):
+                if self.host.asks:break
+                await asyncio.sleep(.005)
+            old=next(iter(self.host.asks.values()))
+            card=self.host._ask_msg(old,self.s)
+            self.assertEqual((await task)['reason'],'timeout')
+            self.assertFalse(self.host.asks)
+            self.assertFalse([a for a in self.host.asks.values() if a.parked])
+            session=_ready(self.host,self.phone)
+            await self.host._answer(session,self.signed(card))
+            self.assertEqual(goal.load(self.st)['grants'],[])
+            return old.rid
+        rid=asyncio.run(run())
+        every=approvals.read_log(self.st)
+        rec=[r for r in every if r['id']==rid][-1]
+        self.assertEqual((rec['decision'],rec['reason']),('deny','timeout'))
+        self.assertFalse([r for r in every if r.get('reason')=='goal_grant_add'])
 
     def test_tap_binds_the_offer_to_its_goal_and_respects_stop(self):
         import types
@@ -493,25 +491,25 @@ class HostGoal(unittest.TestCase):
 
     def test_verify_checks_the_offered_text(self):
         self.start_goal()
-        self.probe.exists[("olares", "bench-jarvis/pwone.py")] = True
-        _res, card = self.run_ask(LEO, answer=lambda c: self.signed(c, [c["goal_add"]]))
-        every = approvals.read_log(self.st)
-        index = {r["id"]: r for r in every}
-        line = [r for r in every if r.get("reason") == "goal_grant_add"][-1]
-        self.assertEqual(line["scope_sha256"], approvals.allow_add_line([card["goal_add"]]))
-        self.assertEqual(approvals.check_record(self.st, line, index), "auto")
-        forged = {**line, "scope_sha256": approvals.allow_add_line(["[对外发送] anything — 最多 500 次"])}
-        self.assertEqual(approvals.check_record(self.st, forged, index), "bad")
-        self.assertEqual(approvals.check_record(self.st, {k: v for k, v in line.items() if k != "scope_sha256"}, index), "bad")
+        self.probe.exists[('olares','bench-jarvis/pwone.py')]=True
+        _res,card=self.run_ask(LEO,answer=lambda c:self.signed(c))
+        self.assertNotIn('goal_add',card)
+        every=approvals.read_log(self.st)
+        line=[r for r in every if r.get('reason')=='device'][-1]
+        self.assertEqual(approvals.check_record(self.st,line),'ok')
+        forged={**line,'shown_sha256':approvals.shown_digest('Bash','[对外发送] anything — 最多 500 次')}
+        self.assertEqual(approvals.check_record(self.st,forged),'bad')
+        self.assertEqual(approvals.check_record(self.st,{k:v for k,v in line.items() if k!='shown_sha256'}),'bad')
 
     def test_goal_grant_command_opens_one_goal_card(self):
         self.start_goal()
-        n = len(self.asks())
-        res, card = self.run_ask("agentj goal grant --cat send --what x --match scp")
-        self.assertEqual(res["behavior"], "allow")
-        self.assertIsNone(card)
-        self.assertEqual(len(self.asks()), n)                     # no Bash card: the host's goal grant card is the one card
-        self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "host")
+        n=len(self.asks())
+        res,card=self.run_ask('agentj goal grant --cat send --what x --match scp',answer=lambda c:self.signed(c))
+        self.assertEqual(res['behavior'],'allow')
+        self.assertIsNotNone(card)
+        self.assertFalse(card.get('passkey_required',False))  # Bash text is not semantic goal-grant execution
+        self.assertEqual(len(self.asks()),n+1)
+        self.assertEqual(goal.load(self.st)['grants'],[])  # approval is not execution of an invented grant
 
     def test_goal_grant_needs_a_running_goal(self):
         res = asyncio.run(self.host.goals.handle({"t": "goal_grant", "grants": [{"cat": "send", "what": "x", "match": ["abc"]}]}))

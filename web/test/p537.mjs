@@ -10,6 +10,7 @@ const web=await startWebServer({port:0,...(before?{publicDir:'/tmp/p537-baseline
 const fake=await startFakeHost(),B=await launch();
 const click=(p,id)=>ev(p,`document.getElementById(${JSON.stringify(id)}).click()`);
 const shot=async(p,n)=>writeFileSync(out+'/'+n+'.png',await shoot(p,''));
+const diag=async(p,tag)=>console.log('P537_DIAGNOSTIC '+JSON.stringify({tag,...await ev(p,`({editorHidden:document.getElementById('fsEd').hidden,toastOn:document.getElementById('toast').classList.contains('on'),toastText:document.getElementById('toast').textContent,active:document.activeElement?.id,corners:window.p537Corners,openResult:window.p537OpenResult,value:document.getElementById('fsText').value})`)}));
 let checks=0;const ok=(v,m)=>{assert.ok(v,m);checks++;};
 try{
  for(const lang of ['zh','en'])for(const [w,h] of [[390,844],[1440,1000]]){
@@ -55,10 +56,11 @@ try{
   await ev(p,`document.getElementById('p537-ml').nextElementSibling.remove();document.getElementById('p537-ml').remove()`);
   await ev(p,`import('./js/settings.js').then(m=>m.close())`);await click(p,'tFull');
   ok(await ev(p,`document.getElementById('fsText').value==='keep composer'&&!document.getElementById('fsSlash').hidden`),'composer original actions restored');
-  await shot(p,lang+'-'+w+'-composer');await key(p,'Escape');
+  await shot(p,lang+'-'+w+'-composer');await diag(p,'before-composer-Escape');await key(p,'Escape');await diag(p,'after-composer-Escape');
   // All four corners are caller-configurable; one shared DOM/keyboard owner.
-  await ev(p,`import('./js/text-editor.js').then(m=>{window.p537Corners=[];const corner=k=>({label:k,icon:k,action:({setValue})=>{window.p537Corners.push(k);setValue(k)}});m.open({value:'custom',corners:{topLeft:corner('A'),topRight:corner('B'),bottomLeft:corner('C'),bottomRight:corner('D')}})})`);
-  for(const id of ['fsExit','fsClear','fsSlash','fsSend'])await click(p,id);
+  await ev(p,`import('./js/text-editor.js').then(m=>{window.p537Corners=[];const corner=k=>({label:k,icon:k,action:({setValue})=>{window.p537Corners.push(k);setValue(k)}});window.p537OpenResult=m.open({value:'custom',corners:{topLeft:corner('A'),topRight:corner('B'),bottomLeft:corner('C'),bottomRight:corner('D')}})})`);
+  await diag(p,'after-custom-open');
+  for(const id of ['fsExit','fsClear','fsSlash','fsSend']){await click(p,id);await diag(p,'after-'+id);}
   ok(await ev(p,`window.p537Corners.join('')==='ABCD'&&document.getElementById('fsText').value==='D'`),'four corner labels, icons and actions configurable');await key(p,'Escape');
   await ev(p,`(()=>{const field=document.createElement('textarea');field.id='p537-dynamic';field.value=${JSON.stringify('first\nsecond')};document.getElementById('settings').append(field)})()`);
   await waitFor(p,`document.getElementById('p537-dynamic').type==='hidden'`);

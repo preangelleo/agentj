@@ -122,7 +122,14 @@ class State:
             raise
 
     # ------------------------------------------------------------ init
-    def init(self, relay: str = DEFAULT_RELAY, web: str = DEFAULT_WEB, force: bool = False) -> dict:
+    def init(self, relay: str = DEFAULT_RELAY, web: str = DEFAULT_WEB, force: bool = False, *, _setup_root=None) -> dict:
+        # Only a genuinely absent/empty state can bootstrap a selected root.
+        # A damaged former identity and --force must never become a fresh setup.
+        self._initial_root_setup = None
+        from .migrate import _consume_fresh_setup
+        migration_setup = _consume_fresh_setup(self.root)
+        fresh = not force and migration_setup is not False and (bool(migration_setup) or not self.root.exists()
+                              or (self.root.is_dir() and not any(self.root.iterdir())))
         if self.exists() and not force:
             raise FileExistsError(f"already initialised: {self.root}")
         self.root.mkdir(parents=True, exist_ok=True)
@@ -137,6 +144,9 @@ class State:
         if not self.devices_path.exists() or force:
             _write_private(self.devices_path, b"{}")
         self.log("init", channel=cfg["channel"])
+        if fresh and _setup_root is not None and (migration_setup is None or migration_setup.live(self.root, initialised=True)):
+            from .working_root import _InitialRootSetup
+            self._initial_root_setup = _InitialRootSetup(self, _setup_root)
         return cfg
 
     @staticmethod

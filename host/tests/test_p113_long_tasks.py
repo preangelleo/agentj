@@ -97,6 +97,14 @@ def answer(ph: Phone, msg: dict, *, action="submit", picks=None, enable=True, br
 
 class Base(unittest.TestCase):
     def setUp(self):
+        # Preferences are per fixture: another test's working root is not initial setup.
+        from tempfile import TemporaryDirectory as _ConfigDirectory
+        from unittest.mock import patch as _config_patch
+        self._config_tmp = _ConfigDirectory(prefix='aj-0300-config-')
+        self.addCleanup(self._config_tmp.cleanup)
+        _config_env = _config_patch.dict('os.environ', {'XDG_CONFIG_HOME': self._config_tmp.name})
+        _config_env.start()
+        self.addCleanup(_config_env.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.st = _state(self.tmp.name)
         self.work = pathlib.Path(self.tmp.name) / "work"
@@ -637,6 +645,15 @@ class WizardGoalMode(Base):
 
 
 class BriefScope(Base):
+    async def native(self,h,tool,inp,permission=False):
+        from agentj.shared import SharedClaudeAgent
+        actor=SharedClaudeAgent(h,{**self.cfg,'_workflow_ceo':True})
+        actor.session={'sessionId':'brief-native-fixture'}
+        h.agent=actor
+        return await actor.hook_event({'session_id':'brief-native-fixture',
+            'hook_event_name':'PermissionRequest' if permission else 'PreToolUse',
+            'tool_name':tool,'tool_input':inp})
+
     def test_only_own_outputs_and_public_reads_without_a_card(self):
         d = workflow(self.work)
         e = tasks.find(str(self.work), d.name)
@@ -684,8 +701,8 @@ class BriefScope(Base):
             self.assertFalse(sw(root, "Write", {"file_path": bad}), bad)
         self.assertFalse(sw(None, "Write", {"file_path": str(self.work / ".agentj/wizard-staging/x")}), "a CEO run: never")
         h = self.host()
-        r = asyncio.run(h.ask("Bash", {"command": "agentj capability list --json"}))
-        self.assertEqual(r["behavior"], "allow", "ordinary owner action adds no registry card")
+        r = asyncio.run(self.native(h,"Bash", {"command": "agentj capability list --json"}))
+        self.assertEqual(r, {}, "ordinary native observer adds no Agent J card; harness owns execution")
 
     def test_serve_ask_allows_inside_the_brief_and_cards_the_rest(self):
         d = workflow(self.work)
@@ -693,11 +710,11 @@ class BriefScope(Base):
         b = json.loads((d / "brief.json").read_text())
         capability.add_receipt(self.st, d.name, {"mode": "signed", "scope_digest": capability.scope_digest(b)})
         h.brief_scope = capability.brief_scope_for(self.st, tasks.find(str(self.work), d.name))
-        r = asyncio.run(h.ask("Write", {"file_path": str(d / "reports" / "weekly.md"), "content": "# 简报"}))
-        self.assertEqual(r["behavior"], "allow", "ordinary owner action adds no registry card")
+        r = asyncio.run(self.native(h,"Write", {"file_path": str(d / "reports" / "weekly.md"), "content": "# 简报"}))
+        self.assertEqual(r, {}, "ordinary native observer adds no Agent J card; brief is not a new permission grant")
         self.assertEqual([o for _, o in self.sent if o.get("t") == "ask"], [], "no paired owner means no approval card and no execution")
-        r = asyncio.run(h.ask("Bash", {"command": "curl -X POST https://example.com/send -d @reports/weekly.md"}))
-        self.assertEqual(r["behavior"], "deny", "outside the brief: the usual path (no paired phone here → denied)")
+        r = asyncio.run(self.native(h,"Bash", {"command": "curl -X POST https://example.com/send -d @reports/weekly.md"}, permission=True))
+        self.assertEqual(r["hookSpecificOutput"]["decision"]["behavior"], "deny", "actual native permission needs a paired approver, never a brief bypass")
         h.brief_scope = None
         r = asyncio.run(h.ask("Write", {"file_path": str(d / "reports" / "weekly.md"), "content": "x"}))
         self.assertEqual(r["behavior"], "deny", "no brief scope (chat turn): the usual card path")

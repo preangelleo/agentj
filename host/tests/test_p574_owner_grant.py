@@ -421,6 +421,23 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
         await self.h._answer(self.s,self.phone.answer(self.h._ask_msg(ask,self.s),True))
         return await asyncio.wait_for(task,2)
 
+    async def native_permission(self, command, approve, **extra):
+        """A native permission prompt needs its own signed tap; OTG never answers it."""
+        from _p541_device import Phone as ReviewPhone
+        task=asyncio.create_task(self.h.ask('Bash',{'command':command},_harness_permission=True,**extra))
+        try:
+            for _ in range(100):
+                if self.h.asks or task.done():break
+                await asyncio.sleep(.002)
+            self.assertFalse(task.done(),'a grant must not silently answer a native permission prompt')
+            ask=next(iter(self.h.asks.values()))
+            self.assertFalse(ask.require_passkey,'ordinary native prompts use signed taps, not UV')
+            await self.h._answer(self.s,ReviewPhone.answer(self.phone,self.h._ask_msg(ask,self.s),approve))
+            return await asyncio.wait_for(task,1)
+        finally:
+            if not task.done():task.cancel()
+            await asyncio.gather(task,return_exceptions=True)
+
     async def test_real_host_ask_signs_once_and_only_origin_remote(self):
         res=await self.sign_plan({'title':'Release','why':'Remove obsolete build','steps':[{'host':'B','cat':'delete','what':'Remove old build','paths':['/tmp/p574-old-build'],'max':2}]})
         self.assertEqual(res['result'],'signed')
@@ -517,19 +534,13 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
             self.svc.xfer.accept_grant(fid,g,proof(g,self.phone.auth))
             tids=self.svc.xfer.live_for(fid,[g['tid']],f'task-{cat}')
             self.send.source={'kind':'same_owner','role':'task','fid':fid,'otg':tids}
-            r=await asyncio.wait_for(self.h.ask('Bash',{'command':allowed}),1)
+            r=await self.native_permission(allowed,True)
             self.assertEqual(r['behavior'],'allow',cat)
             self.assertFalse(self.h.asks,cat)
             async def cannot_auto(command):
-                t=asyncio.create_task(self.h.ask('Bash',{'command':command},ttl=.03))
-                try:
-                    try:r=await asyncio.wait_for(t,.4)
-                    except asyncio.TimeoutError:return
-                    self.assertNotEqual(r['behavior'],'allow',command)
-                finally:
-                    if not t.done():t.cancel()
-                    await asyncio.gather(t,return_exceptions=True)
-                self.assertFalse(self.h.asks, "the receiving peer must never ask another remote for this OTG task")
+                r=await self.native_permission(command,False)
+                self.assertNotEqual(r['behavior'],'allow',command)
+                self.assertFalse(self.h.asks)
             await cannot_auto(blocked)
             await cannot_auto(allowed) # counter exhausted
 
@@ -545,7 +556,7 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
         for earlier in [{'kind':'same_owner','role':'task','fid':'c'*32,'otg':['d'*32]},
                         {'kind':'same_owner','role':'task','fid':fid,'otg':['d'*32]}]:
             with provenance.request_source(earlier):
-                r=await asyncio.wait_for(self.h.ask('Bash',{'command':'rm -rf /tmp/p574-qa-borrow/old'},ttl=.03),.4)
+                r=await self.native_permission('rm -rf /tmp/p574-qa-borrow/old',False)
                 self.assertNotEqual(r['behavior'],'allow','Earlier request borrowed current turn grant')
 
 
@@ -592,12 +603,16 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
                 out,err=await asyncio.wait_for(proc.communicate(),3)
                 self.fail(f'No CLI card: exit={proc.returncode}, stdout={out.decode()}, stderr={err.decode()}')
             ask=next(iter(self.h.asks.values()))
-            await self.h._answer(self.s,self.phone.answer(self.h._ask_msg(ask,self.s),True))
             if not host_bound_origin:
-                self.assertFalse(ask.fut.done(),'unbound callback cannot use the current owner origin')
                 self.assertFalse(ask.envelope['source']['verified'])
-                self.assertIn('unverified_trigger',[m.get('why') for _,m in self.sent if m.get('t')=='answer_refused'])
-                return
+                answer=self.phone.answer(self.h._ask_msg(ask,self.s),True)
+                answer.pop('fa',None)
+                await self.h._answer(self.s,answer)
+                self.assertFalse(ask.fut.done(),'unknown source never waives fresh UV for a listed command')
+                self.assertIn('passkey_required',[m.get('why') for _,m in self.sent if m.get('t')=='answer_refused'])
+            # The source stays unknown; only this exact displayed command's
+            # fresh paired-owner UV can authorize it in the explicit-list model.
+            await self.h._answer(self.s,self.phone.answer(self.h._ask_msg(ask,self.s),True))
             self.assertTrue(ask.fut.done(),json.dumps({'refusals':[m.get('why') for _,m in self.sent if m.get('t')=='answer_refused'],
                 'source':{k:ask.envelope['source'].get(k) for k in ('channel','verified','suspicious','message_id','root_message_id','session')}}))
             out,err=await asyncio.wait_for(proc.communicate(),5)
@@ -805,22 +820,21 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
         signed=await self.sign_plan({'title':'One local and remote task','why':'Perform these exact release steps','steps':steps})
         self.assertEqual(signed['result'],'signed')
         async def denied(command):
-            res=await asyncio.wait_for(self.h.ask('Bash',{'command':command},ttl=.03),2)
+            res=await self.native_permission(command,False)
             self.assertEqual(res['behavior'],'deny')
         for cat,_,allowed,blocked in cases:
-            res=await asyncio.wait_for(self.h.ask('Bash',{'command':allowed}),1)
+            res=await self.native_permission(allowed,True)
             self.assertEqual(res['behavior'],'allow',cat);self.assertFalse(self.h.asks)
             await denied(blocked)
             self.send.sid='unrelated-task';await denied(allowed);self.send.sid='origin-task'
             for source in [{'kind':'same_owner','role':'task'}, {'kind':'scheduled_task','role':'task'}, {'kind':'unknown','role':'group'}]:
                 with provenance.request_source(source):await denied(allowed)
-            res=await asyncio.wait_for(self.h.ask('Bash',{'command':allowed}),1)
+            res=await self.native_permission(allowed,True)
             self.assertEqual(res['behavior'],'allow',cat)
             await denied(allowed)
         rec=self.svc.xfer._grants_out()[signed['grant']]
-        self.assertEqual(rec['used'],{str(i):2 for i in range(4)})
-        self.assertTrue(any(row.get('original_error')=='group_source' for row in recovery.rows.values()))
-        self.assertGreater(recovery_save.call_count,0,'real refusal still records its diagnostic')
+        self.assertEqual(rec['used'],{},'native taps neither borrow nor consume the legacy exact-action grant')
+        self.assertFalse(any(row.get('original_error')=='group_source' for row in recovery.rows.values()))
 
     async def test_revoked_roster_credential_cannot_return_from_old_valid_list(self):
         root=self.bound_entry(self.phone)
@@ -834,7 +848,7 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_requested_remote_grant_is_denied_without_card(self):
         self.send.source={'kind':'same_owner','role':'task','fid':'b'*32,'otg':[],'otg_required':True}
-        res=await asyncio.wait_for(self.h.ask('Bash',{'command':'rm -rf /tmp/p574-invalid'},ttl=.03),.5)
+        res=await self.native_permission('rm -rf /tmp/p574-invalid',False)
         self.assertEqual(res['behavior'],'deny');self.assertFalse(self.h.asks)
 
     async def test_avatar_and_independent_background_never_borrow_origin_grant(self):
@@ -843,22 +857,33 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
                        {'secret':'DEPLOY_KEY','from':'B','to':'self','dest':'file:/tmp/p574-never'}]})
         self.assertEqual(signed['result'],'signed')
         for extra in [{'avatar':'mail'},{'background':'order'}]:
-            res=await asyncio.wait_for(self.h.ask('Bash',{'command':'rm -rf /tmp/p574-avatar/old'},ttl=.03,**extra),.5)
+            res=await self.native_permission('rm -rf /tmp/p574-avatar/old',False,**extra)
             self.assertNotEqual(res['behavior'],'allow')
         self.assertEqual(self.svc.xfer._grants_out()[signed['grant']]['used'],{})
 
     async def test_estop_after_origin_worker_result_still_refuses_allow(self):
+        from agentj.bounded_plan import OperationOnce
+        from _p541_device import Phone as ReviewPhone
         self.h.stopped=lambda:False
-        def race(*args,**kwargs):
+        reserve=OperationOnce.reserve
+        def race(book,*args,**kwargs):
+            result=reserve(book,*args,**kwargs)
             self.h.stopped=lambda:True
-            return {'tid':'a'*32,'steps':[0],'by':'phone','origin':'Origin'}
-        with patch.object(self.svc.xfer,'origin_tier',race):
-            res=await self.h.ask('Bash',{'command':'rm -rf /tmp/p574-worker-race'})
+            return result
+        task=asyncio.create_task(self.h.ask('Bash',{'command':'rm -rf /tmp/p574-worker-race'},ttl=.03,_harness_permission=True))
+        for _ in range(100):
+            if self.h.asks:break
+            await asyncio.sleep(.002)
+        ask=next(iter(self.h.asks.values()))
+        with patch.object(OperationOnce,'reserve',race):
+            await self.h._answer(self.s,ReviewPhone.answer(self.phone,self.h._ask_msg(ask,self.s),True))
+        self.assertFalse(ask.fut.done(),'emergency stop during reservation must invalidate the signed allow')
+        res=await task
         self.assertEqual(res['behavior'],'deny');self.assertFalse(self.h.asks)
 
     async def test_receiving_task_strict_level_never_falls_back_to_peer_card(self):
         from agentj import approval_level
         self.send.source={'kind':'same_owner','role':'task','fid':'b'*32,'otg':[],'otg_required':True}
         with patch.object(approval_level,'level',return_value='safe'):
-            res=await asyncio.wait_for(self.h.ask('Bash',{'command':'ls /tmp'},ttl=.03),.5)
+            res=await self.native_permission('ls /tmp',False)
         self.assertEqual(res['behavior'],'deny');self.assertFalse(self.h.asks)

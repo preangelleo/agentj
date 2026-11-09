@@ -441,16 +441,22 @@ class HookService:
 
     # ------------------------------------------------------------ hooks.sock (agentj hook …)
     async def on_client(self, r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
+        pid = uid = None
         try:
             sock = w.get_extra_info("socket")
             if sock is not None and hasattr(socket, "SO_PEERCRED"):
-                _, uid, _ = struct.unpack("3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+                pid, uid, _ = struct.unpack("3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
                 if uid != os.getuid():
                     return
             req = None
             try:
                 req = json.loads(await asyncio.wait_for(r.readline(), 10))
-                res = await self.cli(req) if isinstance(req, dict) else {"ok": False, "why": "shape"}
+                from . import application_ingress
+                if pid is None and sys.platform == 'darwin':
+                    from .core.process_evidence import peer_pid, uid as peer_uid
+                    pid = peer_pid(w); uid = peer_uid(pid)
+                with application_ingress.native(self.host, w, req, pid, uid):
+                    res = await self.cli(req) if isinstance(req, dict) else {"ok": False, "why": "shape"}
             except (ValueError, asyncio.TimeoutError, asyncio.LimitOverrunError):
                 res = {"ok": False, "why": "shape"}
             self.log("hook_cli", kind=str(req.get("t"))[:12] if isinstance(req, dict) else None,
@@ -578,45 +584,29 @@ class HookService:
             if h["auth"]["kind"] == "token":
                 out["url_secret"] = self.url(h, key.decode())
         if h["life"] == "resident":
-            self._card(h)
-            out["pending"] = True
+            if not self._card(h):
+                self.store.end(h, "revoked")
+                return {"ok": False, "why": "application_ingress_unverified"}
+            out["hook"] = self.view(h)
         else:
             self.ensure_net()
         self.changed()
         return out
 
-    def _card(self, h: dict) -> None:
+    def _card(self, h: dict) -> bool:
+        from . import application_ingress
         text = hooks.card_text(h, self.url(h), self.lang)
-
-        async def card():
-            try:
-                ans = await self.host.ask(TOOL, {"card": text, "hook": h["id"]}, batch=False, grant_info=True)
-            except Exception as e:  # noqa: BLE001
-                ans = {"behavior": "deny"}
-                self.log("hook_card_error", err=type(e).__name__)
-            cur = self.store.get(h["id"])
-            if cur is None or cur["state"] != "pending":
-                return
-            if ans.get("behavior") == "allow":
-                cur["state"] = "active"
-                g = ans.get("grant") or {}
-                cur["approved"] = {"device": g.get("device") if isinstance(g, dict) else None, "at": round(self.clock())}
-                self.store.save()
-                self.ensure_net()
-                self.log("hook_approved", hook=h["id"][:8])
-                msg = (f"常驻 Webhook「{h['name']}」已批准，开始接收：{self.url(h)}" if self.lang != "en"
-                       else f"Resident webhook 「{h['name']}」 approved and receiving: {self.url(h)}")
-            else:
-                self.store.end(cur, "revoked")
-                self.log("hook_denied", hook=h["id"][:8])
-                msg = (f"主人没有批准常驻 Webhook「{h['name']}」，它已作废。" if self.lang != "en"
-                       else f"The owner did not approve resident webhook 「{h['name']}」; it was dropped.")
-            self.changed()
-            self._to_agent("〔Agent J 系统提示〕" + msg + "\n请用一句人话回执，说明结果与是否需要主人处理。" if self.lang != "en" else
-                           "[Agent J system notice] " + msg + "\nGive a plain-language receipt: the result and whether the owner needs to act.", h["id"])
-        task = asyncio.ensure_future(card())
-        self.cards.add(task)
-        task.add_done_callback(self.cards.discard)
+        answer = application_ingress.ordinary(self.host, TOOL, {"card": text, "hook": h['id']})
+        cur = self.store.get(h['id'])
+        if answer['behavior'] != 'allow' or cur is None or cur['state'] != 'pending':
+            return False
+        cur['state'] = 'active'
+        cur['approved'] = {'actor': application_ingress.actor(self.host), 'at': round(self.clock())}
+        self.store.save()
+        self.ensure_net()
+        self.log('hook_approved', hook=h['id'][:8], actor=application_ingress.actor(self.host))
+        self.changed()
+        return True
 
     async def _update(self, h: dict, req: dict) -> dict:
         u = req.get("set") if isinstance(req.get("set"), dict) else {}
@@ -664,8 +654,10 @@ class HookService:
             new.update(life="resident", expires=None, state="pending")
             h.update(new)
             self.store.save()
-            self._card(h)
-            return {"ok": True, "hook": self.view(h), "pending": True}
+            if not self._card(h):
+                self.store.end(h, "revoked")
+                return {"ok": False, "why": "application_ingress_unverified"}
+            return {"ok": True, "hook": self.view(h)}
         if widen and h["life"] == "resident":
             # a resident hook widened (back on, IPs opened, re-routed): the owner's card; on allow only the fields it showed
             # are applied, and only when none of them changed meanwhile (a pause from the phone is never undone silently)
@@ -676,29 +668,22 @@ class HookService:
                 return {"ok": False, "why": "pending"}
             self.widening.add(h["id"])
 
-            async def card():
-                try:
-                    text = hooks.card_text(pend, self.url(pend), self.lang, plain_again=bool(h.get("e2e")) and not pend.get("e2e"))
-                    try:
-                        ans = await self.host.ask(TOOL, {"card": text, "hook": h["id"], "update": True}, batch=False)
-                    except Exception:  # noqa: BLE001 — no card, no change
-                        return
-                    cur = self.store.get(h["id"])
-                    if ans.get("behavior") == "allow" and cur is not None and cur["state"] == "active" \
-                            and all(cur.get(k) == v for k, v in base.items()):
-                        cur.update({k: pend[k] for k in fields})
-                        if not cur.get("e2e"):
-                            self.store.drop_seal(cur)
-                        self.store.save()
-                        self.changed()
-                    elif ans.get("behavior") == "allow":
-                        self.log("hook_card_stale", hook=h["id"][:8])
-                finally:
-                    self.widening.discard(h["id"])
-            task = asyncio.ensure_future(card())
-            self.cards.add(task)
-            task.add_done_callback(self.cards.discard)
-            return {"ok": True, "hook": self.view(h), "pending": True}
+            try:
+                text = hooks.card_text(pend, self.url(pend), self.lang, plain_again=bool(h.get("e2e")) and not pend.get("e2e"))
+                answer = await self.host.ask(TOOL, {"card": text, "hook": h['id'], "update": True}, batch=False)
+                from . import application_ingress
+                cur = self.store.get(h['id'])
+                if (answer.get('behavior') != 'allow' or not application_ingress.allowed(self.host)
+                        or cur is None or cur['state'] != 'active' or not all(cur.get(k) == v for k, v in base.items())):
+                    return {'ok': False, 'why': 'application_ingress_unverified'}
+                cur.update({k: pend[k] for k in fields})
+                if not cur.get('e2e'):
+                    self.store.drop_seal(cur)
+                self.store.save()
+                self.changed()
+                return {'ok': True, 'hook': self.view(cur)}
+            finally:
+                self.widening.discard(h['id'])
         was = bool(h.get("e2e"))
         h.update(new)
         if not h.get("e2e"):
@@ -749,6 +734,28 @@ class HookService:
         if h["id"] in self.widening:
             return {"ok": False, "why": "pending"}
         self.widening.add(h["id"])
+        import hashlib
+        from . import approval_review
+        new = key or hooks.new_secret()
+        target = dest or f"file:{SECRET_DIR}/{h['id']}.secret"
+        kind, _, location = target.partition(':')
+        path, sep, envkey = location.partition('#') if kind == 'env' else (location, '', '')
+        target = kind+':'+os.path.abspath(os.path.expanduser(path))+(sep+envkey if sep else '')
+        before_hook = approval_review.digest(h)
+        def generation():
+            path = self.store._key_path(h['id'])
+            try:
+                before = path.stat()
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                after = path.stat()
+                fields = lambda st: (st.st_dev, st.st_ino, st.st_mtime_ns, st.st_size)
+                return (*fields(before), digest) if fields(before) == fields(after) else None
+            except OSError:
+                return None
+        before_keys = generation()
+        bound = {'hook': h['id'], 'rotate': True, 'destination': target,
+                 'replacement_sha256': hashlib.sha256(new).hexdigest(), 'grace': grace,
+                 'hook_sha256': before_hook, 'key_generation': approval_review.digest(before_keys)}
         text = (f"给常驻 Webhook「{h['name']}」换密钥（旧密钥再有效 {grace // 3600} 小时）。新密钥{'来自你在密钥卡里存的文件' if key else '由 Agent J 主机生成，写进本机文件'}。"
                 if self.lang != "en" else f"Rotate the secret of resident webhook 「{h['name']}」 (the old one stays valid "
                 f"{grace // 3600} h). The new secret {'comes from the file you saved with a secret card' if key else 'is generated and written to a file on this computer'}.")
@@ -756,16 +763,17 @@ class HookService:
         async def card():
             try:
                 try:
-                    ans = await self.host.ask(TOOL, {"card": text, "hook": h["id"], "rotate": True}, batch=False)
+                    ans = await self.host.ask("agentj secret request", {"card": text, **bound}, batch=False)
                 except Exception:  # noqa: BLE001
                     return
                 cur = self.store.get(h["id"])
-                if ans.get("behavior") != "allow" or cur is None or cur["state"] != "active":
+                if (ans.get("behavior") != "allow" or cur is None or cur["state"] != "active"
+                        or self.host.stopped() or before_keys is None or generation() != before_keys
+                        or approval_review.digest(cur) != before_hook):
                     return
-                new = key or hooks.new_secret()
                 if key is None:
                     try:
-                        where = _write_secret(dest, new.decode(), h["id"])
+                        where = _write_secret(target, new.decode(), h["id"])
                     except SystemExit:
                         self.log("hook_rotate_failed", hook=h["id"][:8])
                         return

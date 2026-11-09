@@ -4,6 +4,7 @@ import { specialQuestioned, clearSpecialApprovals } from './js/approval-special5
 import * as sessionHelp from './js/session-help.js';
 import * as wechat from './js/wechat.js';
 import { floatAuthAsk } from './js/auth-overlay.js';
+import { pkTestResult } from './js/pk-test-result.js';
 import { showPairGuide, noteRemotes } from './js/pair-guide.js';
 import { copyButton } from './js/copycode.js';
 
@@ -767,7 +768,7 @@ function selfCheck() {
 // lose it); a pass changes nothing. A failure says why, with 「重新设置」 (the same set-up, no unpairing). NOT async before get().
 function testFaceId() {
   const c = pkNow && pkNow.ch === session.channel() ? pkNow.chk : null;
-  if (!c || !passkey.canAssert()) { toast(pkassist.withBio('p566.pk.testNone'), 5000); return; }
+  if (!c || !passkey.canAssert()) { testPkNotice('p566.pk.testNone'); return; }
   const ch0 = pkNow.ch;
   pkNow.chk = null; paintPkRow();                     // one challenge, one try (the Agent J host sends a fresh one)
   const reset = () => { setupFaceId().catch(() => {}); };
@@ -777,12 +778,21 @@ function testFaceId() {
     const { aa, ...proof } = fa;
     let m = await session.ask1({ t: 'pk_check', n: c.n, fa: proof, ...(aa ? { aa } : {}) }, 'pk_check_res', 10000);
     if (m.t === 'offline' && await session.whenReady(30000) && session.channel() === ch0) m = await session.ask1({ t: 'pk_check', n: c.n, fa: proof, ...(aa ? { aa } : {}) }, 'pk_check_res', 10000);   // review N2: the same computer
-    if (m.ok === true) toast(pkassist.withBio('p566.pk.testOk'), 5000, 'success');
-    else toastAction(pkassist.withBio(m.t === 'pk_check_res' ? 'p566.pk.testBad' : 'p566.notSent'), t('p561.pk.reset'), reset, 10000);
+    const result = pkTestResult(m);
+    testPkNotice(result.key, result.success, result.setup ? reset : result.retry ? testFaceId : null, result.setup);
   }, (e) => {
     const n = pkassist.errName(e);
-    toastAction(pkassist.withBio(n === 'WrongSeatKey' ? 'p566.pk.wrongSeat' : n === 'AbortError' ? 'p539.fail.abort' : 'p539.fail.cancel'), t('p561.pk.reset'), reset, 10000);
+    if (pkNow?.ch === ch0 && !pkNow.chk) { pkNow.chk = c; paintPkRow(); } // No assertion was sent; allow a fresh user tap.
+    testPkNotice(n === 'WrongSeatKey' ? 'p566.pk.wrongSeat' : n === 'AbortError' ? 'p539.fail.abort' : 'p539.fail.cancel', false, reset, true);
   });
+}
+function testPkNotice(key, success = false, action = null, setup = false) {
+  const box = notify({kind:success?'success':'warn', text:pkassist.withBio(key), shape:action?'rect':'circle',
+    ms:action?10000:5000, actions:action?[{label:t(setup?'p0300.pk.setup':'p539.fail.retry'),fn:action}]:[]});
+  if (!box) return;
+  document.body.appendChild(box); // Settings' transformed scroll container cannot clip this viewport notice.
+  box.dataset.pkTest = '1';
+  if (action) { box.classList.remove('rect'); box.classList.add('square'); }
 }
 // P561 追加 11/12: 「这个浏览器不支持 Face ID」 only when this browser cannot make a key at all (passkey.setupSupport) — never the
 // pickup card's 「请到…手机上领取」 (sout.noFaceId), never a word that the owner said no

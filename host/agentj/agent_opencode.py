@@ -67,6 +67,8 @@ def _own_dir_rule(rule: dict) -> bool:
 
 
 def session_rules(agent_rules, research: bool = False, subagents=()) -> list[dict]:
+    if not research:
+        return list(agent_rules or [])  # Preserve native permission rules and bypass settings.
     agent_rules = [r for r in (agent_rules or []) if isinstance(r, dict) and all(isinstance(r.get(k), str)
                                                                                 for k in ("permission", "pattern", "action"))]
     own = [_rule(r["permission"], r["pattern"], r["action"]) for r in agent_rules if _own_dir_rule(r)]
@@ -732,7 +734,38 @@ class OpenCodeAgent(Agent):
                          if getattr(self.host, "lang", "zh").startswith("en") else
                          "暂时无法确认 OpenCode 是否收到了这条消息，系统不会自动重发。请先查看回复，再决定是否重试。")
 
+    async def _prepare_control_paths(self):
+        if hasattr(self, 'risk_channel'):
+            return  # shared adapters own their existing native plugin/channel
+        from . import shared_hook, shared_risk, shared_opencode_hook, main_opencode_hook
+        if getattr(self, '_control_channel', None) is None:
+            self.host.st.perm_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            directory = tempfile.mkdtemp(prefix='control-', dir=self.host.st.perm_dir)
+            channel = shared_hook.Channel(shared_risk.NativePathGuard(self), shared_hook.channel_path(directory, 'opencode'))
+            await channel.start()
+            self._control_channel = channel
+        installer = main_opencode_hook.install if self.v2 else shared_opencode_hook.install
+        installer(self.cfg['dir'], self._control_channel.path)
+
+    async def _stop_control_paths(self):
+        channel = getattr(self, '_control_channel', None)
+        if channel:
+            await channel.stop()
+            with contextlib.suppress(OSError):
+                channel.path.parent.rmdir()
+            self._control_channel = None
+
     async def _spawn(self) -> bool:
+        if hasattr(self, 'risk_channel'):
+            return await self._spawn_native()
+        # Project plugin files name their instance channel. Serialize only cold
+        # loading in this cwd until the native loader has acknowledged the plugin.
+        locks = self.host.__dict__.setdefault('_control_plugin_load_locks', {})
+        lock = locks.setdefault(os.path.realpath(self.cfg['dir']), asyncio.Lock())
+        async with lock:
+            return await self._spawn_native()
+
+    async def _spawn_native(self) -> bool:
         if not _bin("AGENTJ_OPENCODE_BIN", "opencode"):
             self.failed_start = True
             from .startup_help import guidance
@@ -758,6 +791,7 @@ class OpenCodeAgent(Agent):
             self.fail_notice("OpenCode 的模型要写成「服务商/模型」，例如 zhipuai/glm-5.3：在Agent J 主机终端重新运行 "
                                    "`agentj agent opencode --dir … --model zhipuai/glm-5.3`。")
             return False
+        await self._prepare_control_paths()
         port, password = free_port(), secrets.token_urlsafe(32)
         argv = await self.authorized_launch_argv(self.argv(port))
         if argv is None:
@@ -849,6 +883,9 @@ class OpenCodeAgent(Agent):
             self.client = Client(port, password)
             try:
                 await self._prepare()
+                channel = getattr(self, '_control_channel', None)
+                if channel:
+                    await asyncio.wait_for(channel.adapter.ready.wait(), CONNECT_WAIT)
                 await self.refresh_models()
                 self.meter(model=self.cur_model(), model_name=self.model_name(self.cur_model()))
             except (OSError, HTTPError, ValueError, KeyError, TypeError, AttributeError, asyncio.TimeoutError) as e:
@@ -1075,7 +1112,7 @@ class OpenCodeAgent(Agent):
         """Inside _src_ctx: a source that may not ask the owner anything (a group member, a guest, unknown) — B1."""
         a = getattr(self.host, "agent", None)
         a = a if a is not None else self
-        return provenance.untrusted_turn(a) and not provenance.delegated_turn(a)
+        return False  # Main tools follow native permissions; isolated friend/guest agents retain their fences.
 
     def subagent_state(self) -> dict:
         """settings / doctor / status: on (names) · native (OpenCode's own rules: default mode, shared) · off (why)."""
@@ -1559,7 +1596,7 @@ class OpenCodeAgent(Agent):
                     broker.register(call, name, inp, wd or self.cfg["dir"], raw=secret_raw)
                 ans = await broker.execute(name, inp, call, gone) if broker else None
                 ans = ans if ans is not None else ({"behavior": "allow"} if low_risk_pass(self.host, self.cfg, name, inp)
-                       else await self.host.ask(name, inp, gone, **({"origin": o} if o else {}),
+                       else await self.host.ask(name, inp, gone, _harness_permission=True, **({"origin": o} if o else {}),
                                          **({"background": "task"} if self.cfg.get("_workflow_ceo") else {})))   # P552
             if ans.get("behavior") == "allow":
                 reply = "once"
@@ -1952,6 +1989,7 @@ class OpenCodeAgent(Agent):
         self.proc = None
         for t in list(self.tasks):
             t.cancel()
+        await self._stop_control_paths()
 
     async def interrupt_request(self, p) -> None:
         """OpenCode's own `POST /session/{id}/abort` (ends the running prompt and its tool), then ≤ 2 s for the idle event;
@@ -1975,6 +2013,7 @@ class OpenCodeAgent(Agent):
                 await self._kill(self.proc)
             for t in list(self.tasks):
                 t.cancel()
+            await self._stop_control_paths()
 
     # ------------------------------------------------ slash commands (slash.py)
     async def quota_model(self) -> str | None:

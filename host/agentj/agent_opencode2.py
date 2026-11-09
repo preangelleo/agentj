@@ -255,7 +255,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
                        if p.get("assistantMessageID") is not None and p.get("ordinal") is not None
                        else f"step:{self.steps_seen}")
                 self.use_put(key, use_mod.tokens_opencode(p["tokens"]), p.get("cost"), self.cfg.get("model"))
-                self.phase("gen")
+                self.use_phase("gen")
                 from .heartbeat_check import sample
                 tok = self.step_tokens
                 cache = tok.get('cache') or {}

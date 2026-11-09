@@ -20,7 +20,7 @@ export function attachSpecial(m,c,repaint){
   c.envelope_verified=true;repaint();
  }).catch(()=>{c.envelope_verified=false;repaint();});
 }
-export function canSpecialApprove(c){return c?.approval_v!==2||(c.envelope_verified===true&&c.review_state!=='questioned'&&(c.envelope?.source?.verified===true&&c.envelope.source.suspicious!==true||c.pickup_uv_allowed===true&&c.envelope?.special?.tool==='SecretPickup'&&c.envelope.special.pickup_uv_allowed===true&&c.envelope?.source?.channel==='unknown'&&!['unknown_external','external_advice'].includes(c.envelope.source.role)));}
+export function canSpecialApprove(c){return c?.approval_v!==2||(c.envelope_verified===true&&c.review_state!=='questioned');}
 export function forgetSpecial(id,result){const entry=records.get(id);if(entry&&['expired','timeout'].includes(result)){entry.c.state='expired';entry.c.collapsed=true;expired.set(id,entry);while(expired.size>64)expired.delete(expired.keys().next().value);}else expired.delete(id);records.delete(id);refreshSpecialVisibility();}
 export const specialApprovalById=id=>(records.get(id)||expired.get(id))?.c;
 export function clearSpecialApprovals(){records.clear();expired.clear();refreshSpecialVisibility();}

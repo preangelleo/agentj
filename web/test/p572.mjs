@@ -18,6 +18,8 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync, mkdtempSync } from 
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
 import { startWebServer } from './serve.mjs';
 import { startFakeHost } from './fakehost.mjs';
 import { launch, newPage, evaluate, navigate, waitFor, waitState, shoot, sleep } from './browser.mjs';
@@ -53,7 +55,7 @@ async function paired(w, h, scheme, lang) {
   await sleep(300);
   return p;
 }
-const box = (p, id) => ev(p, `(()=>{const e=document.getElementById(${JSON.stringify(id)});if(!e||e.hidden||!e.offsetParent)return null;const r=e.getBoundingClientRect();return {top:Math.round(r.top),h:Math.round(r.height),bottom:Math.round(r.bottom)}})()`);
+const box = (p, id) => ev(p, `(()=>{const e=document.getElementById(${JSON.stringify(id)});if(!e||e.hidden||!e.offsetParent)return null;const r=e.getBoundingClientRect();return {top:Math.round(r.top),h:Math.round(r.height),bottom:Math.round(r.bottom),left:r.left,right:r.right,w:r.width}})()`);
 
 const CARDS = [
   // name, fixture key, passkey, reason
@@ -79,6 +81,66 @@ async function pixelDiff(a, b, skip = []) {
       if(S.some((r)=>px>=r.x&&px<r.x+r.w&&py>=r.y&&py<r.y+r.h))continue;if(Math.abs(A.data[k]-B.data[k])>16||Math.abs(A.data[k+1]-B.data[k+1])>16||Math.abs(A.data[k+2]-B.data[k+2])>16)d++}
     return d/(A.width*A.height)})()`);
 }
+
+// Real input events for copy/approval. No direct clipboard calls or source/verification injection.
+async function trustedTap(p, selector) {
+  const point=await ev(p,`(()=>{const n=document.querySelector(${JSON.stringify(selector)});n.scrollIntoView({block:'center'});const r=n.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+  await p.send('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',clickCount:1});
+  await p.send('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1});
+}
+async function currentV2Contract() {
+  const py=spawn(process.env.P0300_PYTHON||'host/.venv/bin/python',[fileURLToPath(new URL('./p0300-account-host.py',import.meta.url))],{stdio:['pipe','pipe','pipe'],env:process.env});
+  let stderr='',pending=[],spawnError=null;py.on('error',e=>spawnError=e);py.stderr.on('data',b=>stderr+=b);
+  createInterface({input:py.stdout}).on('line',line=>{if(line.startsWith('0300RPC:'))pending.shift()?.(JSON.parse(line.slice(8)));});
+  async function rpc(req){let timer;try{return await Promise.race([new Promise((resolve,reject)=>{if(spawnError)return reject(spawnError);pending.push(resolve);py.stdin.write(JSON.stringify(req)+'\n');}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('p572 Host RPC: '+stderr.slice(-1000))),15000);})]).then(r=>{assert.ok(r.ok,(r.error||'')+' '+(r.trace||''));return r;});}finally{clearTimeout(timer);}}
+  const traces=[];let serial=0;
+  try{for(const [width,height,theme,lang,scenario] of [[390,844,'light','zh','allow'],[1440,900,'dark','en','allow'],[390,844,'dark','zh','missing-uv'],[390,844,'dark','en','forged']]){
+    fake.reset();const local=web.url.replace('127.0.0.1','localhost'),p=await newPage(B,width,height,theme,{allow:[local,fake.relay+'/']});
+    const trace={width,height,theme,lang,scenario,frames:[]};traces.push(trace);let latest,ask,poll,polling;
+    const forward=async r=>{latest=r;trace.executions=r.executions;trace.audits=r.audits;for(const frame of r.frames){if(frame.t==='ask')ask=frame;trace.frames.push({t:frame.t,tool:frame.tool,why:frame.why,ok:frame.ok,approval_v:frame.approval_v});await fake.send(frame);}};
+    try{
+      await navigate(p,fake.newPairing(local+'?lang='+lang));await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'ready');
+      const keys=await ev(p,`(async()=>{const s=await import('./js/store.js'),w=await import('./proto/wire.js');return{pub:w.b64u((await s.deviceKey()).pub),sk:w.b64u((await s.signKey()).pub)}})()`);
+      const setup=await rpc({op:'setup',serial:++serial,...keys,device:fake.devs.at(-1).id,channel:fake.channel,has_key:true});
+      await p.send('WebAuthn.enable',{enableUI:false});const {authenticatorId}=await p.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,automaticPresenceSimulation:true}});await p.send('WebAuthn.addCredential',{authenticatorId,credential:setup.credential});await fake.send(setup.pk_state);
+      fake.st.onApp=async(c,m)=>{if(!['acct_get','auth_get','auth_start','answer'].includes(m.t))return false;if(m.t==='answer')trace.frames.push({t:'answer',has_uv:!!m.fa,signature_shape:typeof m.sig==='string'});await forward(await rpc({op:'frame',frame:m}));return true;};
+      poll=setInterval(()=>{if(!polling)polling=rpc({op:'drain'}).then(forward).catch(e=>trace.pollError=String(e)).finally(()=>polling=null);},100);
+      await ev(p,`document.getElementById('phone-env-dismiss')?.click();document.getElementById('a2hs-ok')?.click();document.getElementById('setBtn').click();document.getElementById('set-accts-nav').click();`);
+      await waitFor(p,`!!document.querySelector('#acct-list [data-kind=codex] .acctadd')`);await trustedTap(p,'#acct-list [data-kind=codex] .acctadd');await trustedTap(p,'#acct-list [data-kind=codex] .acctform button');
+      await waitFor(p,`document.body.dataset.sheet==='1'&&document.getElementById('sheet').dataset.approvalV==='2'`);
+      check(ask?.approval_v===2&&ask.tool==='AuthRescue'&&ask.envelope?.details,'current v2 comes from real Host listed operation with canonical details');
+      const id=ask.id;
+      check(await ev(p,`import('./js/snap.js').then(m=>m.approvalById(${JSON.stringify(id)})?.envelope_verified===true)`),'real client verified Host envelope, never fixture-supplied verified flag');
+      check(await ev(p,`(async()=>{const t=await import('./js/t.js');return document.getElementById('action541').textContent===t.t('p0287.reason.missingFields')})()`),'real AuthRescue honestly states unsupported independent reason fields');
+      check(await ev(p,`document.getElementById('cmdReason').hidden&&document.getElementById('details541').contains(document.getElementById('cmdBox'))&&!document.getElementById('details541').open`),'current v2 places command in folded details and hides the old reason line');
+      check(await ev(p,`(()=>{const ids=['source541','action541','details541','apprBtns'],r=ids.map(id=>document.getElementById(id).getBoundingClientRect());return r.every(x=>x.width>0&&x.left>=0&&x.right<=innerWidth)&&r.every((x,i)=>!i||x.top>=r[i-1].bottom)&&['apprAllow','doubt541c','apprDeny'].every(id=>{const n=document.getElementById(id),x=n.getBoundingClientRect();return !n.hidden&&x.width>=44&&x.height>=44&&x.top>=0&&x.bottom<=innerHeight})})()`),'current v2 source/reason/details/actions do not overlap and all three actions remain reachable');
+      await trustedTap(p,'#details541 summary');await trustedTap(p,'#detailsFull541');await waitFor(p,`document.getElementById('full541').open`);
+      check(await ev(p,`document.querySelector('#full541 pre').textContent.includes(${JSON.stringify(ask.envelope.details)})`),'fullscreen retains actual Host canonical details in full');
+      await trustedTap(p,'#full541 pre');
+      await waitFor(p,`navigator.clipboard.readText().then(x=>x.includes(${JSON.stringify(ask.envelope.details)}))`);
+      check((await ev(p,`navigator.clipboard.readText()`)).includes(ask.envelope.details),'real fullscreen copy retains canonical details, not a fixture-created summary');
+      writeFileSync(`${OUT}/v2-${width}-${theme}-${lang}-${scenario}.png`,await shoot(p,''));
+      await trustedTap(p,'#full541 button');await waitFor(p,`!document.getElementById('full541').open&&document.body.dataset.sheet==='1'`);
+      if(scenario==='allow'){
+        await trustedTap(p,'#apprAllow');await waitFor(p,`!!document.querySelector('#acct-flow .arcode')`);
+        check(latest.executions===1&&latest.audits.includes('ok')&&trace.frames.filter(x=>x.t==='answer'&&x.has_uv).length===1,'real fresh native UV executes once with Host-verified audit');
+      }else{
+        // Sign the actual client-verified card with this paired device, omitting UV on purpose.
+        // No source, envelope field or verified bit is constructed or changed for this negative control.
+        const answer=await ev(p,`(async()=>{const snap=await import('./js/snap.js'),wire=await import('./proto/wire.js'),store=await import('./js/store.js'),session=await import('./js/session.js'),api=await import('./js/api.js'),card=snap.approvalById(${JSON.stringify(id)}),msg=await wire.approvalV2Message(session.channel(),await api.myDeviceId(),card,'allow',[]),sig=wire.b64u(new Uint8Array(await crypto.subtle.sign({name:'Ed25519'},(await store.signKey()).priv,msg)));return{t:'answer',id:card.id,ok:true,sig,approval_v:2,revision:card.revision,envelope_sha256:card.envelope_sha256}})()`);
+        if(scenario==='forged')answer.sig='A'.repeat(86);
+        await ev(p,`import('./js/session.js').then(s=>s.sendApp(${JSON.stringify(answer)}))`);
+        await sleep(150);await forward(await rpc({op:'drain'}));
+        check(latest.executions===0&&latest.pending===1,`${scenario}: real Host refuses the answer and executes nothing`);
+        check(trace.frames.some(x=>x.t==='answer'&&!x.has_uv),`${scenario}: negative went through real Noise without UV`);
+        check(trace.frames.some(x=>x.t==='answer_refused'&&x.why===(scenario==='missing-uv'?'passkey_required':'bad_signature')),`${scenario}: Host rejects the precise tested boundary, not an unrelated invalid fixture`);
+        await trustedTap(p,'#apprDeny');await sleep(150);await forward(await rpc({op:'drain'}));check(latest.executions===0,`${scenario}: cleanup refusal cannot execute`);
+      }
+      check(!p.problems.some(x=>x.startsWith('exception:')),'current v2 has no uncaught client exception');
+    }finally{clearInterval(poll);if(polling)await polling;fake.st.onApp=null;await p.dispose();}
+  }}finally{try{await rpc({op:'stop'});}catch{}py.kill();writeFileSync(`${OUT}/v2-host-contract.json`,JSON.stringify({traces,stderr},null,2)+'\n');}
+}
+
 let n = 0;
 try {
   for (const [w, h, scheme, lang] of [[390, 844, 'light', 'zh'], [390, 844, 'dark', 'zh'], [390, 844, 'light', 'en'], [390, 844, 'dark', 'en'], [1440, 900, 'light', 'zh'], [1440, 900, 'dark', 'zh']]) {
@@ -104,7 +166,9 @@ try {
         // the approved draft, screen by screen: the CSS-decided geometry is font-independent, so it holds on any machine
         const A = approvedMetrics[name], gap = (x) => ({ pre: x.pre.h, above: x.reason.top - x.cmdBox.bottom, below: x.allow.top - x.reason.bottom });
         const got = gap(m), want = gap(A);
-        for (const k of Object.keys(want)) check(Math.abs(got[k] - want[k]) <= 2, `${name}: ${k} ${got[k]} px = approved ${want[k]} px (±2)`);
+        // 7aa5df0687 (formal 0286): a visible legacy-source box now separates code/reason.
+        // Keep the historic code height and still-adjacent lower gap; never rewrite 10 as 95.
+        for (const k of ['pre','below']) check(Math.abs(got[k] - want[k]) <= 2, `${name}: ${k} ${got[k]} px = approved ${want[k]} px (±2)`);
       }
       if (TAG === 'after' && APPROVED && existsSync(`${APPROVED}/${name}.png`)) {
         const rectOf = (id) => ev(p, `(()=>{const e=document.getElementById(${JSON.stringify(id)});if(!e||e.hidden||!e.offsetParent)return null;const r=e.getBoundingClientRect();return {x:Math.floor(r.left)-2,y:Math.floor(r.top)-2,w:Math.ceil(r.width)+4,h:Math.ceil(r.height)+4}})()`);
@@ -119,10 +183,19 @@ try {
         const want = (lang === 'en' ? "Agent's note: " : 'Agent 说明： ') + (SHOWN(card, lang, reason) || (lang === 'en' ? 'The agent gave no reason' : 'Agent 没说明理由'));
         check(txt === want, `${name}: the reason line reads ${JSON.stringify(want)}`);
         check(m.reason && m.allow && m.reason.bottom <= m.allow.top && m.reason.top >= m.cmdBox.bottom, `${name}: reason sits between the code block and the buttons`);
+        const source = await box(p, 'approvalSource572');
+        check(source && source.h > 0 && source.w > 0 && source.left >= 0 && source.right <= w && m.cmdBox.bottom <= source.top && source.bottom <= m.reason.top, `${name}: honest legacy source is between command and reason without overlap`);
+        check(await ev(p, `document.getElementById('approvalSource572').textContent`) === (lang === 'en' ? 'This host has not supplied a source record bound to the approval signature.' : '当前 Agent J 主机未提供已绑定签名的来源记录。'), `${name}: legacy source is not presented as verified provenance`);
+        check(await ev(p, `(()=>{const c=getComputedStyle(document.getElementById('cmdBox')),r=getComputedStyle(document.getElementById('cmdReason')),s=getComputedStyle(document.getElementById('approvalSource572'));return c.marginBottom==='10px'&&r.marginTop==='0px'&&s.marginTop==='12px'&&s.marginBottom==='12px'&&s.paddingTop==='12px'&&s.paddingBottom==='12px'&&s.borderTopWidth==='1px'})()`), `${name}: component spacing keeps the original command gap and formal legacy-source styles`);
+        m.legacySource = source; m.historicalAbove = {got:m.reason.top-m.cmdBox.bottom,prototype:approvedMetrics?.[name] ? approvedMetrics[name].reason.top-approvedMetrics[name].cmdBox.bottom : null,contract:'non-adjacent since formal 0286 7aa5df0687'};
+
         check(await ev(p, `document.getElementById('cmdReason').classList.contains('none')`) === !SHOWN(card, lang, reason), `${name}: fallback is marked (.none, lighter weight)`);
-        check(await ev(p, `getComputedStyle(document.getElementById('cmdReason')).fontFamily`) !== await ev(p, `getComputedStyle(document.querySelector('.cmd .tool')).fontFamily`), `${name}: reason is not monospace`);
+        check(await ev(p, `getComputedStyle(document.getElementById('cmdReason')).fontFamily`) !== await ev(p, `getComputedStyle(document.querySelector('#cmdBox.aj-approval-command .tool')).fontFamily`), `${name}: reason is not monospace`);
         check(await ev(p, `document.getElementById('cmd').textContent.includes('Request SHA-256')`), `${name}: SHA stays inside the code block`);
         check(await ev(p, `!document.getElementById('cmdMore').hidden && !document.getElementById('cmdCopy').hidden`), `${name}: 展开全部 + copy icon present`);
+        await trustedTap(p, '#cmdCopy');
+        await waitFor(p, `navigator.clipboard.readText().then(x=>x===${JSON.stringify(FIX[`${lang}-${fk}`])})`);
+        check(await ev(p, `navigator.clipboard.readText()`) === FIX[`${lang}-${fk}`], `${name}: real copy action preserves the entire summary`);
         check(await ev(p, `document.getElementById('cmdDesc').hidden`), `${name}: no gist line over the code when the host sent reason`);
         if (passkey && w < 500 && card !== 'unsigned') {
           // 展开全部 → the whole summary is reachable (up to the old 30vh, scrolling inside)
@@ -181,6 +254,7 @@ try {
       await p.dispose();
     }
   }
+  if (TAG === 'after') await currentV2Contract();
   // an older host (no `reason`): the Touch ID card renders exactly as before — no reason line, never folded
   if (TAG === 'after') {
     const p = await paired(390, 844, 'light', 'zh');

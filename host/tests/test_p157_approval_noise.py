@@ -105,6 +105,18 @@ def indep(cmd):
     return danger.classify("Bash", {"command": cmd})
 
 
+
+# Each test owns its first-init preferences; another case's root is not authority.
+import os as _cfg_os
+import tempfile as _cfg_tmp
+from unittest.mock import patch as _cfg_patch
+
+def _isolate_config(test):
+    config = _cfg_tmp.TemporaryDirectory(prefix="p0300-config-")
+    test.addCleanup(config.cleanup)
+    env = _cfg_patch.dict(_cfg_os.environ, {"XDG_CONFIG_HOME": config.name})
+    env.start(); test.addCleanup(env.stop)
+
 class LayerOne(unittest.TestCase):
     def test_todays_four_commands_no_longer_ask(self):
         for name, cmd in TODAY.items():
@@ -241,6 +253,7 @@ class HostLayerTwo(unittest.TestCase):
     """serve.ask: gray + Jev p ≥ threshold → allowed, no card, logged `jev`; a clear danger never reaches Jev."""
 
     def setUp(self):
+        _isolate_config(self)
         # This fixture owns only the legacy Jev mechanism after the registry.
         # Changing NATIVE_TOOLS cannot isolate a parameter-aware shell floor.
         # test_p512_policy uses the real table/Host.ask to prove no floor bypass.

@@ -3,23 +3,20 @@ import json
 import hashlib
 
 
-def summary(tool: str, inp: dict, *, credentials: bool = False, lang: str = "en",
-            workdir: str | None = None, presentation: bool = False) -> str | dict:
-    """Redact original values before serialization; bind the unchanged raw request.
+def display_normalizer(*, lang: str = "en", workdir: str | None = None):
+    """Existing bounded structured/encoded display projection, shared by cards.
 
-    SecretIndex is the existing local .env/process fragment detector. It retains
-    salted hashes only. Structured values are decoded before fragment checks on their leaves.
-    Bounded recursive decoding also checks JSON strings, forms, URLs and base64.
+    Build the local fragment index in an I/O worker; the returned projector
+    retains salted hashes and never edits authority or execution input.
     """
     import base64
     import binascii
     import os
     import re
     from urllib.parse import unquote_plus
-    from .privacy import redact, _CRED_NAMES, R
+    from .privacy import redact_with_report, _CRED_NAMES, R
     from .peer_guard import SecretIndex
 
-    raw = json.dumps(inp, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
     index = SecretIndex.build(workdir=workdir or os.getcwd(), fragment_size=8)
     names = re.compile(r"(?:" + _CRED_NAMES + r"|key|authorization|cookie|set-cookie)", re.I)
     pairs = re.compile(r"(?<![\w-])(" + names.pattern + r"[\"']?\s*[:：=]\s*)(\"(?:\\.|[^\"\\])*\"|'[^']*'|[^\s&;,\"'<>}]+)", re.I)
@@ -28,14 +25,31 @@ def summary(tool: str, inp: dict, *, credentials: bool = False, lang: str = "en"
     # Eight decoded ASCII characters need at least eleven base64 characters.
     encoded = re.compile(r"(?<![\w+/-])[A-Za-z0-9_+/-]{11,}={0,2}(?![\w+/-])")
     decoder = json.JSONDecoder()
+    cli_password_flags = frozenset(('--password', '--passwd', '--passphrase'))
+    def cli_password_flag(key, match, start):
+        # Only a literal CLI flag at a shell word boundary delegates to the
+        # shared whole-argument grammar. Form/query/JSON credential keys retain
+        # their existing projection, including URL-encoded flag-like keys.
+        return key.lower() in cli_password_flags and (start == 0 or match.string[start - 1] in ' \t\n')
 
-    def visible(value, depth=0):
+    def visible(value, depth=0, sensitive=None):
+        def note(kind):
+            if sensitive is not None:
+                sensitive.add(kind)
         if depth > 32:
             raise ValueError("approval value nesting limit")
         if isinstance(value, dict):
-            return {k: R if names.fullmatch(str(k)) else visible(v, depth + 1) for k, v in value.items()}
+            out = {}
+            for key, item in value.items():
+                if names.fullmatch(str(key)):
+                    if item != R:
+                        note('credential_field')
+                    out[key] = R
+                else:
+                    out[key] = visible(item, depth + 1, sensitive)
+            return out
         if isinstance(value, list):
-            return [visible(v, depth + 1) for v in value]
+            return [visible(v, depth + 1, sensitive) for v in value]
         if not isinstance(value, str) or value == R:
             return value
         # Parse the raw spelling, before outer JSON introduces backslashes.
@@ -45,7 +59,7 @@ def summary(tool: str, inp: dict, *, credentials: bool = False, lang: str = "en"
             pass
         else:
             if parsed != value and isinstance(parsed, (dict, list, str)):
-                return json.dumps(visible(parsed, depth + 1), ensure_ascii=False)
+                return json.dumps(visible(parsed, depth + 1, sensitive), ensure_ascii=False)
 
         def embedded(m):
             token = m.group(0)
@@ -53,7 +67,7 @@ def summary(tool: str, inp: dict, *, credentials: bool = False, lang: str = "en"
                 decoded = json.loads(token)
             except ValueError:
                 return token
-            safe = visible(decoded, depth + 1)
+            safe = visible(decoded, depth + 1, sensitive)
             return json.dumps(safe, ensure_ascii=False) if safe != decoded else token
 
         # Shell payloads may contain JSON objects or escaped JSON string literals.
@@ -66,7 +80,7 @@ def summary(tool: str, inp: dict, *, credentials: bool = False, lang: str = "en"
                 except ValueError:
                     pass
                 else:
-                    out.append(json.dumps(visible(obj, depth + 1), ensure_ascii=False))
+                    out.append(json.dumps(visible(obj, depth + 1, sensitive), ensure_ascii=False))
                     pos = end
                     continue
             out.append(value[pos]); pos += 1
@@ -76,15 +90,33 @@ def summary(tool: str, inp: dict, *, credentials: bool = False, lang: str = "en"
         # Decode each component before testing names or nested payloads.
         def form(m):
             prefix, key, val = m.group(1), m.group(2), m.group(3)
+            if cli_password_flag(key, m, m.start(2)):
+                return m.group(0)
             decoded = unquote_plus(val)
-            safe = R if names.fullmatch(unquote_plus(key)) else visible(decoded, depth + 1)
+            if names.fullmatch(unquote_plus(key)):
+                safe = R
+                if decoded != R:
+                    note('credential_form')
+            else:
+                safe = visible(decoded, depth + 1, sensitive)
             return prefix + key + "=" + (safe if safe != decoded else val)
         text = re.sub(r"(^|[?&\s\"'])([^=\s?&\"']+)=([^&\s\"']*)", form, text)
-        text = headers.sub(lambda m: m.group(1) + R, text)
+        def header(m):
+            result = m.group(1) + R
+            if result != m.group(0):
+                note('credential_header')
+            return result
+        text = headers.sub(header, text)
         def pair(m):
+            label = m.group(1).rstrip()
+            if label.endswith('=') and cli_password_flag(label[:-1].rstrip(), m, m.start(1)):
+                return m.group(0)
             val = m.group(2)
             quote = val[0] if val[0] in "\"'" and val[-1] == val[0] else ""
-            return m.group(1) + quote + R + quote
+            result = m.group(1) + quote + R + quote
+            if result != m.group(0):
+                note('credential_assignment')
+            return result
         text = pairs.sub(pair, text)
 
         def wrapped(m):
@@ -93,7 +125,7 @@ def summary(tool: str, inp: dict, *, credentials: bool = False, lang: str = "en"
                 decoded = base64.b64decode(token + "=" * (-len(token) % 4), altchars=b"-_", validate=True).decode("utf-8")
             except (ValueError, UnicodeError, binascii.Error):
                 return token
-            safe = visible(decoded, depth + 1)
+            safe = visible(decoded, depth + 1, sensitive)
             if safe == decoded:
                 return token
             label = "decoded" if str(lang).lower().startswith("en") else "已解码"
@@ -103,11 +135,41 @@ def summary(tool: str, inp: dict, *, credentials: bool = False, lang: str = "en"
         # leaves. Mask any remaining known fragment in an opaque token, preserving
         # surrounding commands and effects. Split/normalised hits still fail shut.
         if index.hits(text):
+            note('known_fragment')
             text = re.sub(r"[^\s\"';&|]+", lambda m: R if index.hits(m.group(0)) else m.group(0), text)
             if index.hits(text):
                 return R
-        return redact(text, owner=True)
+        result, hits = redact_with_report(text, owner=True)
+        for kind, count in hits.items():
+            if count and kind != 'home_path':
+                note(kind)
+        return result
 
+    def sensitive_kinds(value):
+        # Names only. The same walker/index performs the same projection; this
+        # per-call set never retains values or contaminates another request.
+        try:
+            index.require_complete()
+        except OSError:
+            return frozenset({'incomplete_index'})
+        found = set()
+        visible(value, sensitive=found)
+        return frozenset(found)
+    visible.sensitive_kinds = sensitive_kinds
+    return visible
+
+
+def summary(tool: str, inp: dict, *, credentials: bool = False, lang: str = "en",
+            workdir: str | None = None, presentation: bool = False) -> str | dict:
+    """Redact original values before serialization; bind the unchanged raw request.
+
+    SecretIndex is the existing local .env/process fragment detector. It retains
+    salted hashes only. Structured values are decoded before fragment checks on their leaves.
+    Bounded recursive decoding also checks JSON strings, forms, URLs and base64.
+    """
+    raw = json.dumps(inp, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    visible = display_normalizer(lang=lang, workdir=workdir)
+    from .privacy import R
     safe = visible(inp)
     # A plain unlabelled credential-file body has no reviewable structure. Only
     # that body is opaque; paths, command structure and effect metadata survive.
@@ -251,7 +313,7 @@ def _mail_summary(target: dict, lang: str) -> str:
                       *(changes or [tr('设置未改变', 'Settings unchanged')])])
 
 
-CLI_REASONS = frozenset(('level_harness', 'unknown', 'offline', 'no_device', 'host_unavailable', 'estop', 'group_source', 'owner_grant_scope',
+CLI_REASONS = frozenset(('application_ingress_unverified', 'level_harness', 'unknown', 'offline', 'no_device', 'host_unavailable', 'estop', 'group_source', 'owner_grant_scope',
                          'timeout', 'device', 'serve_stop', 'agent_gone', 'superseded', 'too_many'))
 
 

@@ -3,8 +3,8 @@ name: agentj-recall
 description: Continue earlier work without a conversation list — 「接着昨天那件事」「上次那个」「继续刚才的」「那个 xx 项目」「重来」「换个说法」, "continue yesterday's thing", "that project", "redo", "say it differently". Finds the thread with `agentj recall`, the harness's own history and the working root, says in one line what it found, and carries on.
 ---
 
-主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
-Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+默认派 CEO/子 Agent，写验收、复验、汇报；主人明确要求亲做就照办。指纹清单、凭据规则和 harness 硬限制不变。
+Delegate by default; follow explicit owner requests to work personally. Verify and report; UV, credential rules and harness limits remain.
 
 The phone has no conversation list, project picker or regenerate button on purpose: the user just says it, you do it.
 

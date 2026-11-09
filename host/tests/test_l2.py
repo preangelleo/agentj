@@ -359,6 +359,14 @@ class ControlSockets(unittest.TestCase):
 
 class FenceConfig(unittest.TestCase):
     def setUp(self):
+        # Preferences are per fixture: another test's working root is not initial setup.
+        from tempfile import TemporaryDirectory as _ConfigDirectory
+        from unittest.mock import patch as _config_patch
+        self._config_tmp = _ConfigDirectory(prefix='aj-0300-config-')
+        self.addCleanup(self._config_tmp.cleanup)
+        _config_env = _config_patch.dict('os.environ', {'XDG_CONFIG_HOME': self._config_tmp.name})
+        _config_env.start()
+        self.addCleanup(_config_env.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.st = _state(self.tmp.name)
 
@@ -371,7 +379,12 @@ class FenceConfig(unittest.TestCase):
             with self.assertRaises(ValueError) as e:
                 self.st.set_agent_config("claude", str(d))
             self.assertEqual(str(e.exception), "protected_dir")
-        self.st.set_agent_config("claude", str(PKG))  # F14 self-maintenance allowed
+        # Self-maintenance and a normal first selection are independent fresh
+        # installs; switching an existing protected working root is not setup.
+        with tempfile.TemporaryDirectory() as first, mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": first+"/config"}):
+            pkg_state = _state(first)
+            pkg_state.set_agent_config("claude", str(PKG))
+            self.assertEqual(pkg_state.agent_config()["dir"], str(PKG))
         work = pathlib.Path(self.tmp.name) / "w"
         work.mkdir()
         self.st.set_agent_config("claude", str(work))

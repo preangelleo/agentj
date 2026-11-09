@@ -1255,7 +1255,7 @@ class ClaudeAgent(Agent):
             return False
         from .proxy import environment
         env = environment(os.environ, self.host.preferences)
-        env.update(self.host.new_perm_env())
+        env.update(self.host.new_perm_env(cwd=self.cfg["dir"]))
         src = source_root()
         if src:   # a source checkout (launcher + PYTHONPATH): the tool must import this same package
             env["PYTHONPATH"] = src + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")

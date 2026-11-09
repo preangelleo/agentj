@@ -347,8 +347,16 @@ def set_language(st, lang, at):
     return result
 
 
-def transact(st,newraw):
-    candidate=validate(parse(newraw))
+def transact(st,newraw, *, _working_root_record=False):
+    # Consume even a rejected attempt; no string/JSON flag can mint this receipt.
+    from .working_root import _consume_initial_setup
+    try:
+        candidate=validate(parse(newraw))
+    except Exception:
+        if _working_root_record:
+            st._initial_root_setup = None
+        raise
+    initial_setup = _consume_initial_setup(st, candidate) if _working_root_record else False
     from .names import ctl_call, ServeBusy
     try:
         result=ctl_call(st,{'cmd':'config_apply','raw':newraw},10) if st.exists() else None
@@ -369,12 +377,26 @@ def transact(st,newraw):
             except ServeBusy as e:result['reloaded']=e.response()
             if (result['reloaded'] or {}).get('ok'):result['needs']=[n for n in result.get('needs',[]) if n!='reload']
         return result
+    if result is None:
+        from . import ctl_auth, uv_list
+        current = effective(st)
+        security = uv_list.config_keys(ctl_auth.security_changes(current, candidate))
+        # Initial root bookkeeping, called only by working_root.record. It
+        # cannot edit approval.* or reopen a host with pairing history.
+        bootstrap_root = (_working_root_record and set(security) == {'agent.working_root'}
+            and not get(current,'agent.working_root','') and not st.devices() and not st.removed_ledger()
+            and not st.removed_path.exists()
+            and get(candidate,'agent.working_root','') == (st.config().get('agent') or {}).get('dir'))
+        if security and not (bootstrap_root or initial_setup):
+            raise ConfigError(security[0], 'security settings require a running host and fresh paired-device UV; no offline change was written', code=3)
     # The running host owns provider/channel dependencies in its service environment.
     # Only an offline write is validated against this CLI process's environment.
     from .voice import validate_runtime
     validate_runtime(candidate)
     from . import claude_auth
     claude_auth.require_transition(st, effective(st), candidate)
+    if initial_setup and not initial_setup.live(st, candidate):
+        raise ConfigError('agent.working_root', 'initial setup changed before commit; no configuration was written', code=3)
     commit_files(st,newraw,candidate)
     from . import claude_inbound, claude_statusline
     claude_statusline.ensure_default(st)            # P127: same moment as the inbound default; never raises

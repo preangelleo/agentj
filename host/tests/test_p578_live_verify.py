@@ -33,6 +33,7 @@ class LiveVerify(unittest.TestCase):
                    "P578_HELLO_WAIT": "2", "P578_HOST_DIR": str(host)}
             for scenario in ("phone-lost", "status-reconnect"):
                 with self.subTest(scenario=scenario):
+                    env.update({f'XDG_{key}_HOME':str(root/scenario/key.lower()) for key in ('CONFIG','DATA','STATE','CACHE')})
                     out = root / (scenario + ".json")
                     r = subprocess.run([sys.executable, str(driver), "agent",
                                         "doubao-seed-2.1-pro", scenario, str(out)], env=env, cwd=tree,

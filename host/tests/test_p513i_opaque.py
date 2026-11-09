@@ -1,10 +1,14 @@
-"""P513i: actual Host.ask, signed Full and real synthetic WebAuthn verification."""
+"""Actual native permission taps, native-allowed PreToolUse and frozen interpreter diagnostics."""
 import _hermetic
 import asyncio
 import tempfile
 import unittest
 from agentj import approval_jev, approval_level, danger, goal
-from test_l1 import Phone, _owner_host, _ready
+from test_l1 import _ready
+from _p541_device import Phone, _owner_host
+from unittest.mock import patch
+from types import SimpleNamespace
+from agentj.shared_risk import RiskGuard
 from test_p336_approval_level import sign, PROP
 from test_p513h_opaque import _state
 
@@ -19,8 +23,9 @@ class OpaqueMixed(unittest.IsolatedAsyncioTestCase):
             h.agent.approval_env = env
         ph = Phone(st, with_passkey=True)
         s = _ready(h, ph)
-        # P552: 「全放行」 is merged into 「减少弹窗」 (`harness`) — the signed switch the owner now uses. Opaque commands under it
-        # follow the harness (P550, chairman 10-26); the fresh-UV invariant is checked under the default level
+        # The released switch is harness. Ordinary tools follow native policy;
+        # actual native PermissionRequest still needs its own signed plain tap.
+        # Opaque diagnostics do not create an additional Agent J card or UV tier.
         if level == 'standard':
             h.preferences['approval'] = {'level': 'standard'}
             return h, ph, s
@@ -52,7 +57,7 @@ class OpaqueMixed(unittest.IsolatedAsyncioTestCase):
                 with self.subTest(shared=shared, cmd=cmd), tempfile.TemporaryDirectory() as tmp:
                     h, ph, s = self.full(tmp, shared, level='standard')
                     inp = {'command': cmd}
-                    t = asyncio.create_task(h.ask('Bash', inp))
+                    t = asyncio.create_task(h.ask('Bash', inp, _harness_permission=True))
                     try:
                         for _ in range(100):
                             if h.asks or t.done(): break
@@ -60,7 +65,8 @@ class OpaqueMixed(unittest.IsolatedAsyncioTestCase):
                         self.assertTrue(h.asks, 'Full bypassed opaque subcommand')
                         a = next(iter(h.asks.values()))
                         card = h._ask_msg(a, s)
-                        # P573 (#386 ⑤): an opaque step is one signed button (was Face ID) — still a card at standard
+                        # A real native PermissionRequest needs one signed tap,
+                        # independently of the diagnostic/legacy preference label.
                         self.assertNotIn('passkey_required', card)
                         self.assertNotIn('batch', card)
                         self.assertIn(cmd, card['summary'].replace('\\', ''))
@@ -78,8 +84,8 @@ class OpaqueMixed(unittest.IsolatedAsyncioTestCase):
                 h, _, _ = self.full(tmp, True)
                 h.agent_cfg['approvals'] = mode
                 inp = {'command': 'pwd ' + 'x ' * 33000}
-                self.assertIn('too_long', h._classify('Bash', inp).rules)
-                ans = await h.ask('Bash', inp)
+                self.assertIn('too_long', danger.classify('Bash', inp, env=getattr(h.agent,'approval_env',None)).rules)
+                ans = await h.ask('Bash', inp, _harness_permission=True)
                 self.assertEqual(ans['behavior'], 'deny')
                 self.assertIn('too large', ans['message'])
                 self.assertFalse(h.asks)
@@ -114,17 +120,28 @@ class OpaqueMixed(unittest.IsolatedAsyncioTestCase):
                         goal.save(h.st, d)
                         self.assertIsNotNone(h.goals.current())
                     inp = {'command': cmd}
-                    self.assertFalse(h._classify('Bash', inp).danger)
-                    ans = await h.ask('Bash', inp)
-                    self.assertEqual(ans['behavior'], 'allow')
-                    self.assertEqual(ans['updatedInput'], inp)
+                    self.assertFalse(danger.classify('Bash', inp, env=getattr(h.agent,'approval_env',None)).danger)
+                    # Native already allowed this PreToolUse. Observe it through
+                    # the actual shared adapter guard, rather than manufacturing
+                    # a second PermissionRequest and expecting it to auto-answer.
+                    adapter = SimpleNamespace(host=h, kind='codex', cfg={**h.agent_cfg, 'shared_session_id':'fixture'})
+                    guard = RiskGuard(adapter)
+                    with patch.object(h, 'ask', wraps=h.ask) as ask:
+                        ans = await guard.hook_event({'hook_event_name':'PreToolUse','session_id':'fixture',
+                                                     'tool_name':'Bash','tool_input':inp})
+                        self.assertIsNone(ans.get('hookSpecificOutput',{}).get('permissionDecision'))
+                        ask.assert_not_awaited()
+                    self.assertEqual(inp, {'command':cmd})
                     self.assertFalse(h.asks)
 
     async def test_independent_low_risk_gate_uses_frozen_interpreter_env(self):
         with tempfile.TemporaryDirectory() as tmp:
             h, _, _ = self.full(tmp, env={'PY':'/usr/bin/python3'})
             cfg={'session_mode':'independent','high_risk_warnings':True}
-            self.assertTrue(approval_jev.low_risk_pass(h,cfg,'Bash',{'command':'$PY -m pytest'}))
+            # Diagnostics still resolve the frozen environment, but may not
+            # answer a real native PermissionRequest automatically.
+            self.assertFalse(danger.classify('Bash', {'command':'$PY -m pytest'}, env=h.agent.approval_env).danger)
+            self.assertFalse(approval_jev.low_risk_pass(h,cfg,'Bash',{'command':'$PY -m pytest'}))
             self.assertFalse(approval_jev.low_risk_pass(h,cfg,'Bash',{'command':'$UNKNOWN -m pytest'}))
             self.assertFalse(approval_jev.low_risk_pass(h,cfg,'Bash',{'command':'PY=rm; $PY target'}))
 

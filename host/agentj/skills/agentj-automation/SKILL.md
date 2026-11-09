@@ -3,8 +3,8 @@ name: agentj-automation
 description: Explain an automation selected on the read-only Automation card, including `/agentj-automation @<unique-name>`, 「这个自动化做什么」「这个任务几点跑」, "what does this automation do", "when does this job run". Resolves the source-qualified job identity on the Agent J host and answers from scheduler facts; never changes a job just because it was mentioned. Also continues a failed multi-step automation from the failed step — 「从失败处继续」「接着跑」「从第 N 步继续」, "continue from where it failed", "resume the automation". Also sets up a new scheduled automation on the system scheduler, headless — 「做个定时任务」「把 agentj tasks 迁到系统定时」, "run this every morning".
 ---
 
-主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
-Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+默认派 CEO/子 Agent，写验收、复验、汇报；主人明确要求亲做就照办。指纹清单、凭据规则和 harness 硬限制不变。
+Delegate by default; follow explicit owner requests to work personally. Verify and report; UV, credential rules and harness limits remain.
 
 The official card `automation` shows a bounded read-only catalogue. The @ action puts this skill and the unique
 source-qualified name in the composer; the owner adds a question before sending. No question → ask what they want

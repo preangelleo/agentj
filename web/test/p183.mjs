@@ -119,6 +119,13 @@ const card = (mid) => `document.querySelector('#words .mcard[data-mid="${mid}"],
 async function loadAll(p, items) {
   for (const m of items) { await ev(p, `${card(m.mid)}.scrollIntoView({ block: 'center' })`); await waitFor(p, `${card(m.mid)}.dataset.state === 'ready'`, 15000); }
 }
+// Real input checks the icon's hit target and its unchanged preview action, not just its label.
+async function trustedFileTap(p, mid) {
+  const point=await ev(p,`(()=>{const n=${card(mid)}.querySelector('.mact.pv');n.scrollIntoView({block:'center'});const r=n.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2,w:r.width,h:r.height,hit:n.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)),name:n.getAttribute('aria-label')}})()`);
+  assert.ok(point.hit&&point.w>=44&&point.h>=44&&point.name==='全屏查看','icon fullscreen has a real named reachable 44px target');
+  await p.send('Input.dispatchMouseEvent',{type:'mousePressed',x:point.x,y:point.y,button:'left',clickCount:1});
+  await p.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:point.x,y:point.y,button:'left',clickCount:1});
+}
 async function preview(p, mid, mode = 'doc') {
   await ev(p, `${card(mid)}.querySelector('.mact.pv').click()`);
   await waitFor(p, `!!document.querySelector('.mview') && !document.querySelector('.mview').hidden && document.querySelector('.mview').dataset.mode === '${mode}'`, 15000);
@@ -157,13 +164,16 @@ try {
       assert.equal(look.bg, 'rgba(0, 0, 0, 0)', 'no fill');
       assert.equal(look.style, 'dashed'); assert.equal(look.toolStyle, 'dashed');
       assert.equal(look.color, look.tool, 'the same outline colour as the composer\'s tool buttons');
-      assert.equal(look.btn[1], look.read[1], 'full-screen action retains the icon target height'); assert.ok(look.btn[0] >= look.read[0], 'visible label widens its target');
+      assert.equal(look.btn[1], look.read[1], 'full-screen action retains the icon target height'); assert.ok(look.btn[0] >= 44 && look.btn[1] >= 44, 'icon-only file fullscreen keeps a 44px touch target');
       // P251: reply slots are elastic (24px floor, 46px desktop pitch); file targets stay fixed.
       assert.ok(look.read[0] >= 24 && look.read[0] <= 46, 'reply target follows the P251 elastic range');
       assert.deepEqual(look.svg, look.rsvg, 'same glyph size and stroke');
       assert.equal(look.btnBg, look.readBg); assert.equal(look.ink, look.readInk);
       assert.deepEqual(look.labels, ['全屏查看|全屏查看', '下载|下载'], 'icons with labels; no share sheet in headless, no mail / Telegram without P184 / tgfile');
-      assert.equal(look.text, '全屏查看', 'P260 visible full-screen entry; other actions stay icons');
+      assert.equal(look.text, '', 'ADR-573 / 7f38011d41: file fullscreen is icon-only; its accessible name stays in aria-label/title');
+      await trustedFileTap(p, id('P'));
+      await waitFor(p, `!!document.querySelector('.mview')&&!document.querySelector('.mview').hidden`, 15000);
+      await closeEsc(p);
       // the big PDF: not fetched, its size on the button
       assert.equal(await ev(p, `${card(id('B'))}.dataset.state`), 'idle');
       assert.equal(await ev(p, `${card(id('B'))}.querySelector('.mtap').textContent`), '点一下加载 · 6.0 MB');

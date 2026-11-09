@@ -251,7 +251,7 @@ class OwnerWeChat(unittest.IsolatedAsyncioTestCase):
     async def test_channel_connect_and_unbind_cards_are_buttons_not_face_id(self):
         seen = []
 
-        async def approval(summary, target, ttl=300, *, rid=None, pk=True):
+        async def approval(summary, target, ttl=300, *, rid=None, pk=True, receipt=None):
             seen.append(pk)
             return False
         self.c.approval = approval
@@ -293,7 +293,7 @@ class SupportTicket(unittest.TestCase):
         rc, out = self.send(api, env={"OPENROUTER_API_KEY": OR_KEY}, transport=PersonJev(0.9))
         self.assertEqual(rc, support.EXIT_BLOCKED)
         self.assertEqual(api.sent, [])
-        self.assertIn("--owner-confirmed", out)
+        self.assertIn("explicit existing owner consent", out)
         rc, out = self.send(api, env={"OPENROUTER_API_KEY": OR_KEY}, transport=PersonJev(0.9), owner_confirmed=True)
         self.assertEqual(rc, support.EXIT_PENDING)
         self.assertEqual(len(api.sent), 1)
@@ -311,18 +311,67 @@ class SupportTicket(unittest.TestCase):
         for env, transport in (({}, None), ({"OPENROUTER_API_KEY": OR_KEY}, FakeJev(status=503))):
             api = FakeAPI(self.st)
             rc, out = self.send(api, env=env, transport=transport)
-            self.assertEqual(rc, support.EXIT_UNAVAILABLE)
-            self.assertEqual(api.sent, [])
-            self.assertIn("--owner-confirmed", out)
-            rc, _ = self.send(api, env=env, transport=transport, owner_confirmed=True)
             self.assertEqual(rc, support.EXIT_PENDING)
             self.assertEqual(len(api.sent), 1)
+            self.assertIn("local rule redaction; not model-reviewed", out)
+            rc, _ = self.send(api, env=env, transport=transport, owner_confirmed=True)
+            self.assertEqual(rc, support.EXIT_PENDING)
+            self.assertEqual(len(api.sent), 2)
 
     def test_clean_text_sends_without_confirmation(self):
         api = FakeAPI(self.st)
         rc, _ = self.send(api, env={"OPENROUTER_API_KEY": OR_KEY}, transport=FakeJev(0.1))
         self.assertEqual(rc, support.EXIT_PENDING)
         self.assertEqual(len(api.sent), 1)
+
+    def test_real_broker_source_failure_and_model_503_are_distinct(self):
+        import os
+        import subprocess
+        import sys
+        import time
+        from agentj import privacy_host, peer_origin, approval_material
+        from _p541_device import _owner_host
+        original_layer2 = privacy.layer2
+        h = _owner_host(self.st, [])
+        h.agent.session = {'sessionId':'support-synthetic-native', 'pid':os.getpid(),
+                           'procStart':peer_origin._stat(Path('/proc'),os.getpid())[2]}
+        from agentj import approval_review
+        origin = approval_review.snapshot(h)
+        h.agent.phone_turn = h.agent.phone_seen = True
+        h.agent.cur_send = NS(created=time.monotonic(), approval_origin=origin, source={'kind':'phone','role':'owner'})
+        async def go():
+            await asyncio.sleep(.03)
+            child = subprocess.Popen([sys.executable, '-c', 'import sys;sys.stdin.buffer.read()'],
+                                     stdin=subprocess.PIPE, start_new_session=True)
+            try:
+                self.assertIsNotNone(approval_material.verified_caller_origin(h,child.pid))
+                api = FakeAPI(self.st)
+                fake = FakeJev(status=503)
+                def model(draft, **kw):
+                    return original_layer2(draft, gate=kw['gate'], _host=True,
+                                           env={'OPENROUTER_API_KEY':OR_KEY}, transport=fake)
+                with patch.object(privacy, 'layer2', side_effect=model):
+                    with privacy_host.broker_scope(h,child.pid):
+                        rc,out = await asyncio.to_thread(self.send,api)
+                    self.assertEqual(rc,support.EXIT_PENDING)
+                    self.assertEqual(len(api.sent),1)
+                    self.assertIn('local rule redaction; not model-reviewed',out)
+                    self.assertEqual(len(fake.seen),1)
+                    with privacy_host.broker_scope(h,None):
+                        rc,out = await asyncio.to_thread(self.send,api,owner_confirmed=True)
+                    self.assertEqual(rc,support.EXIT_UNAVAILABLE)
+                    self.assertEqual(len(api.sent),1)
+                    self.assertIn('authenticated privacy broker/source check failed',out)
+                    self.assertEqual(len(fake.seen),1, 'unverified broker never reaches model transport')
+            finally:
+                child.stdin.close()
+                try:
+                    await asyncio.to_thread(child.wait,timeout=5)
+                except subprocess.TimeoutExpired:
+                    import signal
+                    os.killpg(child.pid,signal.SIGKILL)
+                    await asyncio.to_thread(child.wait,timeout=5)
+        asyncio.run(go())
 
     def test_cli_flag(self):
         import argparse

@@ -42,7 +42,9 @@ class Bounded(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(task.done(),task.result() if task.done() else '')
         ask=next(iter(self.h.asks.values()))
         self.addAsyncCleanup(self.stop,task,ask)
-        self.assertTrue(ask.require_passkey)
+        # Approved explicit-list contract: the plan card is a signed tap;
+        # no command-shape / network-cost heuristic may manufacture UV.
+        self.assertFalse(ask.require_passkey)
         await self.h._answer(self.s,self.ph.answer(self.h._ask_msg(ask,self.s),True))
         result=await task
         self.assertTrue(result['ok'],result)
@@ -165,7 +167,7 @@ class Bounded(unittest.IsolatedAsyncioTestCase):
         step={'kind':'https_auth','credential':'secret:SYNTHETIC_AUTH','url':'https://receiver.example.invalid/collect'}
         sealed=await asyncio.to_thread(self.manager.seal,[step])
         self.assertIn('sensitive_delivery',sealed.steps[0]['effects'])
-        self.assertTrue(sealed.steps[0]['individual_uv'])
+        self.assertFalse(sealed.steps[0]['individual_uv'])
         file=self.path/'ordinary-report.txt'
         file.write_text('API_KEY='+'sk_live_'+os.urandom(32).hex())
         upload={**step,'method':'POST','content_type':'multipart/form-data','file':{'path':str(file),'field':'file'}}
@@ -257,7 +259,8 @@ class Bounded(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.calls[-1][1].endswith('/owned-token-id'))
         self.assertNotIn('synthetic-temporary-value',json.dumps(self.sent,default=str))
         records=[r for r in approvals.read_log(self.st) if r.get('reason')=='device']
-        self.assertEqual(len(records),3)  # plan, create root and revoke root; no root mutation inherits the plan UV
+        self.assertEqual(len(records),1)  # one signed ordinary plan; its sealed steps execute once, no heuristic UV
+        self.assertNotIn('fa', records[0])
         self.assertTrue(all(approvals.check_record(self.st,r)=='ok' for r in records))
 
     async def test_concurrent_spend_expiry_revocation_task_end_and_restart(self):
@@ -416,7 +419,7 @@ class Bounded(unittest.IsolatedAsyncioTestCase):
                 blocked=await self.execute(plan2,0)
                 self.assertFalse(blocked['ok'],(sample,blocked));self.assertEqual(len(self.calls),before)
                 results.append({'sample':sample,'kind':kind,'concretized_positive':all(successes),'negative_blocked':not blocked['ok'],
-                                'unknown_cost_or_root_individual_uv':kind in ('model-test','upload','lifecycle','network')})
+                                'unknown_cost_or_root_individual_uv':False})
         target=pathlib.Path(__file__).resolve().parents[3]/'reports/qa/541-implement/host/business26-results.json'
         target.parent.mkdir(parents=True,exist_ok=True);target.write_text(json.dumps(results,indent=2)+'\n')
         self.assertEqual(len(results),26)

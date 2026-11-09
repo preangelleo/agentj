@@ -7,8 +7,22 @@ import unittest
 import test_p541_approval_review as fixture
 
 
+
+# Each test owns its first-init preferences; another case's root is not authority.
+import os as _cfg_os
+import tempfile as _cfg_tmp
+from unittest.mock import patch as _cfg_patch
+
+def _isolate_config(test):
+    config = _cfg_tmp.TemporaryDirectory(prefix="p0300-config-")
+    test.addCleanup(config.cleanup)
+    env = _cfg_patch.dict(_cfg_os.environ, {"XDG_CONFIG_HOME": config.name})
+    env.start(); test.addCleanup(env.stop)
+
 class AnswerRace(unittest.IsolatedAsyncioTestCase):
-    asyncSetUp = fixture.Review.asyncSetUp
+    async def asyncSetUp(self):
+        _isolate_config(self)
+        await fixture.Review.asyncSetUp(self)
     open = fixture.Review.open
     stop = fixture.Review.stop
 

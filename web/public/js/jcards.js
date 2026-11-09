@@ -1,9 +1,10 @@
 import { readNoteTextFile, NOTE_FILE_MAX } from './note-text-file.js';
 import { copyButton } from './copycode.js';
+import {todoItems, todoPage, TODO_BATCH, todoClosed} from './todo-view.js';
 // P360 Agent J Cards (PROTOCOL §34, spec agentjarvis/docs/specs/AGENTJ-CARDS-SPEC.md): cards 6, 7, 8 … in the logo menu.
 // The computer does the work; this page only draws one of the built-in templates from what the computer read and turns a
 // button into a chat message — shown in full on the official confirm card, sent only on the owner's tap (or put in the
-// message box as a draft). No card code runs here, no card can style the confirm card, nothing is stored on the phone.
+// message box as a draft). No card code runs here, no card can style the confirm card, only display preferences are stored on the phone.
 import {drawCalendar} from './calendar.js';
 import {ask1, peer, isReady} from './session.js';
 import {RelayMD} from './md.js';
@@ -17,6 +18,8 @@ import {save as saveMedia} from './media.js';
 
 let system = [], list = null, busy = null, epoch = 0, view = 0;
 const subs = [];
+let todoScroll = null;
+const todoViews = new WeakMap(), todoLimits = new Map();
 export const available = () => !!peer.jcards1;
 export const cards = () => list || [];
 export const namedCards = () => [...system, ...deck()];
@@ -24,7 +27,7 @@ export const namedCards = () => [...system, ...deck()];
 export const deck = () => cards().filter((c) => c.on);
 export const nameOf = (c) => pick(c && c.name);
 export function onChange(fn) { subs.push(fn); }
-export function clear() { resetPalettes(); system = []; list = null; busy = null; epoch++; view++; resetColors(); for(const d of document.querySelectorAll('.jc-dialog'))d.dispatchEvent(new Event('cancel',{cancelable:true})); }
+export function clear() { todoScroll?.abort(); todoScroll = null; todoLimits.clear(); hideDoneChoice = undefined; filterOf.clear(); resetPalettes(); system = []; list = null; busy = null; epoch++; view++; resetColors(); for(const d of document.querySelectorAll('.jc-dialog'))d.dispatchEvent(new Event('cancel',{cancelable:true})); }
 // P360 (every card has a unique internal URL): a card's address is its id — card/<id>[#<anchor>] (the name may
 // repeat). ID / ANCHOR mirror host jcards.ID_RE / ANCHOR_RE.
 export const ID = /^[a-z][a-z0-9-]{1,31}$/, ANCHOR = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
@@ -162,6 +165,7 @@ async function web(href) {
 
 /** Draws card `id` into `body` (the five-pages page). hooks: { title(text), say(text), draft(text), nav(jlink), at? }. */
 export async function render(body, id, hooks, {automationPage = 0} = {}) {
+  todoScroll?.abort(); todoScroll = null;
   const e = ++view, c = cards().find((x) => x.id === id), again = () => { if (e === view && body.isConnected) render(body, id, hooks, {automationPage}); };
   body.replaceChildren();
   hooks.title(c ? nameOf(c) : '');
@@ -173,6 +177,7 @@ export async function render(body, id, hooks, {automationPage = 0} = {}) {
   box.dataset.card = id; box.dataset.template = m.template || ''; box.dataset.anchor = 'top';
   body.append(box);
   if (!m.ok) { box.append(node('p', t(PROBLEM[m.why] || (m.t === 'offline' || m.t === 'timeout' ? 'p360.offline' : 'p360.gone')), 'jc-note')); return; }
+  if(id==='todo'&&m.todo?.capacity?.near_limit)box.append(node('p',t('p0287.todo.nearLimit'),'jc-note'));
   if (m.problem) box.append(node('p', t(PROBLEM[m.problem] || 'p360.unreadable'), 'jc-note'));
   if (m.template === 'calendar') {
     drawCalendar(box,m,hooks,()=>render(body,id,hooks));
@@ -259,11 +264,10 @@ export async function render(body, id, hooks, {automationPage = 0} = {}) {
     const prose = node('div', undefined, 'fp-prose jc-notes');
     prose.append(RelayMD.toDOM(RelayMD.parse(String(m.text)), document));
     box.append(prose);
-  } else if (m.template === 'checklist' && Array.isArray(m.items) && m.items.length) {
+  } else if (m.template === 'checklist' && Array.isArray(m.items) && (m.items.length || m.todo)) {
     const todo = !!(m.todo && typeof m.todo === 'object');
     const ul = node('ul', undefined, 'jc-list');
-    if (todo) box.append(todoFilter(id, ul, m.todo.counts || {}));
-    for (const it of m.items) {
+    const makeItem = it => {
       const li = node('li', undefined, 'jc-item'), acts = Array.isArray(it.acts) ? it.acts : [];
       li.dataset.item = it.id; li.dataset.done = it.done ? '1' : '0';
       const main = button('', acts[0] ? () => run(acts[0], hooks, id, it.id, again) : null, 'jc-row');
@@ -284,7 +288,7 @@ export async function render(body, id, hooks, {automationPage = 0} = {}) {
               if (e !== view || !body.isConnected) return false;
               const r = await ask1({t:'jcard_note',id,op,entry:it.id,revision:m.revision,text}, 'jcard_note',15000);
               if (e !== view || !body.isConnected) return false;
-              if (!r.ok) { toast(t(r.why === 'looks_like_a_secret' ? 'p415.secret' : r.why === 'conflict' ? 'p386.changed' : 'p386.failed')); return false; }
+              if (!r.ok) { toast(t(r.why === 'too_large' ? 'p0287.todo.tooLarge' : r.why === 'looks_like_a_secret' ? 'p415.secret' : r.why === 'conflict' ? 'p386.changed' : 'p386.failed')); return false; }
               render(body,id,hooks); return true;
             };
             if (op === 'edit') editNote(it.text, save); else await save();
@@ -295,10 +299,13 @@ export async function render(body, id, hooks, {automationPage = 0} = {}) {
         }
       }
       for (const a of acts.slice(1)) li.append(button(a.label, () => run(a, hooks, id, it.id, again), 'jc-chip'));
-      ul.append(li);
-    }
-    box.append(ul);
-    if (todo) applyFilter(id, ul);
+      return li;
+    };
+    if (todo) {
+      ul.dataset.todoList = '1';
+      const state = mountTodo(box, ul, m.items, id, makeItem, hooks, () => e === view && body.isConnected);
+      todoViews.set(body, state);
+    } else { for (const it of m.items) ul.append(makeItem(it)); box.append(ul); }
   }
   if (m.cut) box.append(node('p', t('p360.cut'), 'jc-note'));
   if (c?.official && ['notes','todo'].includes(id)) {
@@ -338,6 +345,8 @@ export async function render(body, id, hooks, {automationPage = 0} = {}) {
 // drawn as one block of prose (an older computer) gets the in-text find. → { n, unit: 'entry' | 'hit' }.
 const RAW = new WeakMap();
 export function filter(body, q) {
+  const todo = todoViews.get(body);
+  if (todo && todo.box.isConnected) return todo.search(q);
   const ts = PF.terms(q), units = body ? [...body.querySelectorAll('.jc-entry, .jc-item')] : [];
   for (const u of units) {
     const on = !ts.length || PF.matches(u.textContent + ' ' + (RAW.get(u) || ''), ts);
@@ -365,18 +374,52 @@ export const draftText = (text) => /(?:^|\s)[/\uFF0F][a-z0-9][a-z0-9-]{1,63}$/.t
 // filter lives in this page's memory (nothing is stored on the phone).
 const FILTERS = ['all', 'agent', 'owner'], filterOf = new Map();
 const FLAG = { overdue: 'p394.overdue', due_soon: 'p394.dueSoon', end_met: 'p394.endMet', ready: 'p394.ready' };   // a free-text condition shows as its words
-function todoFilter(id, ul, counts) {
-  const row = node('div', undefined, 'jc-filter'); row.setAttribute('role', 'group'); row.setAttribute('aria-label', t('p394.filter'));
-  for (const w of FILTERS) {
-    const b = button(t('p394.f.' + w) + (Number.isFinite(counts[w]) ? ' ' + counts[w] : ''), () => { filterOf.set(id, w); applyFilter(id, ul); }, 'jc-chip jc-filter-chip');
-    b.dataset.filter = w; row.append(b);
-  }
-  return row;
+// localStorage is already seat-scoped by the app storage adapter. Blocked storage keeps this visit's choice.
+let hideDoneChoice;
+function hideDone() {
+  if (hideDoneChoice === undefined) { try { hideDoneChoice = localStorage.getItem('aj.todo.hideDone') !== '0'; } catch { hideDoneChoice = true; } }
+  return hideDoneChoice;
 }
-function applyFilter(id, ul) {
-  const w = filterOf.get(id) || 'all';
-  for (const li of ul.querySelectorAll('.jc-item')) { if (w === 'all' || li.dataset.owner === w) delete li.dataset.ownerOut; else li.dataset.ownerOut = '1'; }
-  for (const b of ul.parentNode ? ul.parentNode.querySelectorAll('.jc-filter-chip') : []) b.setAttribute('aria-pressed', String(b.dataset.filter === w));
+function mountTodo(box, ul, items, id, makeItem, hooks, live) {
+  let query = '', limit = todoLimits.get(id) || TODO_BATCH, filtered = [];
+  const row = node('div', undefined, 'jc-filter'); row.setAttribute('role','group'); row.setAttribute('aria-label',t('p394.filter'));
+  const choice = node('label', undefined, 'jc-hide-done'), check = node('input'); check.type = 'checkbox'; check.checked = hideDone(); check.dataset.todoHideDone = '1';
+  choice.append(check,node('span',t('p0287.hideDone')));
+  for (const owner of FILTERS) {
+    const b = button('', () => { filterOf.set(id,owner); limit = TODO_BATCH; paint(); }, 'jc-chip jc-filter-chip'); b.dataset.filter = owner; row.append(b);
+  }
+  box.append(row,choice,ul);
+  const matches = it => !query || PF.matches([it.text,it.note,t(it.owner === 'agent'?'p394.byAgent':'p394.byOwner'),...((it.flags||[]).map(f=>FLAG[f]?t(FLAG[f]):'')),when(it.start,'start'),when(it.end,'end')].join(' '),PF.terms(query));
+  function paint() {
+    const owner = filterOf.get(id) || 'all';
+    filtered = todoItems(items,{owner,hideDone:check.checked,matches});
+    ul.replaceChildren(...todoPage(filtered,limit).map(makeItem));
+    for (const b of row.querySelectorAll('.jc-filter-chip')) {
+      const key = b.dataset.filter;
+      b.textContent = t('p394.f.'+key)+' '+todoItems(items,{owner:key,hideDone:check.checked}).length;
+      b.setAttribute('aria-pressed',String(key === owner));
+    }
+    ul.dataset.loaded = String(Math.min(filtered.length,limit)); ul.dataset.total = String(filtered.length);
+    todoLimits.set(id,limit);
+    if(query) PF.mark(box,query); else PF.clearMarks();
+  }
+  check.onchange = () => { hideDoneChoice = check.checked; try { localStorage.setItem('aj.todo.hideDone',check.checked?'1':'0'); } catch {} limit=TODO_BATCH; paint(); };
+  // A requested internal anchor is explicit navigation, including to a completed or later item.
+  const at = hooks.at === 'latest' ? items.at(-1)?.id : hooks.at, anchor = items.find(it=>it.id===at);
+  if(anchor) {
+    filterOf.set(id,'all'); if(todoClosed(anchor))check.checked=false;
+    const eligible=todoItems(items,{hideDone:check.checked});
+    limit=Math.max(limit,Math.ceil((eligible.indexOf(anchor)+1)/TODO_BATCH)*TODO_BATCH);
+  }
+  paint();
+  const scroller = box.closest('#five-page');
+  todoScroll = new AbortController();
+  scroller?.addEventListener('scroll', () => {
+    if(!live() || scroller.hidden || filtered.length <= limit)return;
+    const edge = ul.getBoundingClientRect().bottom, bottom = scroller.getBoundingClientRect().bottom;
+    if(scroller.scrollTop > 0 && edge <= bottom + 80) { limit += TODO_BATCH; paint(); }
+  }, {passive:true,signal:todoScroll.signal});
+  return {box,search(q) { const next=String(q||''); if(next!==query)limit=TODO_BATCH; query=next; paint(); return {n:query?filtered.length:0,unit:'entry'}; }};
 }
 function when(c, kind) {
   if (!c || typeof c !== 'object') return '';
@@ -535,7 +578,7 @@ export async function directAdd(id, hooks) {
     if (generation !== epoch) return false;
     const r = await ask1({t:'jcard_note', id, op:'add', ...(fields?text:{text})}, 'jcard_note', 15000);
     if (generation !== epoch) return false;
-    if (!r.ok) { toast(t(r.why === 'looks_like_a_secret' ? 'p415.secret' : 'p386.failed')); return false; }
+    if (!r.ok) { toast(t(r.why === 'too_large' ? 'p0287.todo.tooLarge' : r.why === 'looks_like_a_secret' ? 'p415.secret' : 'p386.failed')); return false; }
     toast(t('p415.saved')); hooks.nav('card/' + id + (id === 'notes' ? '#latest' : '#' + r.item.id)); return true;
   }, t(id === 'notes' ? 'p415.addNote' : 'p415.addTodo'), fields ? {title:''} : null, id === 'notes');
 }

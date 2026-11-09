@@ -7,7 +7,7 @@ import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
 const frozenHash=execFileSync(process.execPath,['web/build.mjs','--print-hash'],{encoding:'utf8'}).trim();
 const pw=createRequire(import.meta.url)('/tmp/aj-webmcp-playwright/node_modules/playwright');
-const baseline=process.argv.includes('--baseline'),out=`reports/qa/p470/${baseline?'red':'after'}`;
+const baseline=process.argv.includes('--baseline'),out=process.env.P470_OUT||`reports/qa/p470/${baseline?'red':'after'}`;
 mkdirSync(out,{recursive:true});
 const failures=[],matrix=[],ok=(v,s)=>{if(!v)failures.push(s)},noir=[44,43,38];
 const web=await startWebServer(),fake=await startFakeHost(),browser=await pw.webkit.launch();
@@ -44,12 +44,13 @@ try{
    const {applyViewport}=await import('./js/viewport.js');applyViewport();const {paintIOSChrome}=await import('./js/ios-chrome.js');paintIOSChrome();
   },{state,view,offset,height,waterMode});await p.waitForFunction(y=>Math.abs(window.scrollY-y)<1,offset?160:0,{timeout:5000});await p.waitForTimeout(110);
   const m=await p.evaluate(()=>{
-   const cs=e=>getComputedStyle(e),rgb=e=>{const c=document.createElement('canvas').getContext('2d');c.fillStyle=cs(e).backgroundColor;c.fillRect(0,0,1,1);return [...c.getImageData(0,0,1,1).data].slice(0,3)};
-   return{root:rgb(document.documentElement),body:rgb(document.body),water:rgb(document.getElementById('water')),page:rgb(document.getElementById('chromeProbe')),bottom:cs(document.getElementById('sabband')).backgroundColor,scrollY,offsetTop:visualViewport.offsetTop,height:visualViewport.height,bandTop:document.getElementById('satband').getBoundingClientRect().top,meta:[...document.querySelectorAll('meta[name="theme-color"]')].map(e=>e.content),composerBottom:document.querySelector('.composer').getBoundingClientRect().bottom};
+   const cs=e=>getComputedStyle(e),w=document.getElementById('water'),wr=w.getBoundingClientRect(),ws=cs(w),edge=document.body.getBoundingClientRect().bottom,rgb=e=>{const c=document.createElement('canvas').getContext('2d');c.fillStyle=cs(e).backgroundColor;c.fillRect(0,0,1,1);return [...c.getImageData(0,0,1,1).data].slice(0,3)};
+   return{waterRect:wr.toJSON(),waterVisible:ws.display!=='none'&&ws.visibility!=='hidden'&&Number(ws.opacity)>0&&wr.height>0&&wr.top<edge&&wr.bottom>=edge-1,meterTop:document.getElementById('m5h').getBoundingClientRect().top,root:rgb(document.documentElement),body:rgb(document.body),water:rgb(document.getElementById('water')),page:rgb(document.getElementById('chromeProbe')),bottom:cs(document.getElementById('sabband')).backgroundColor,scrollY,offsetTop:visualViewport.offsetTop,height:visualViewport.height,bandTop:document.getElementById('satband').getBoundingClientRect().top,meta:[...document.querySelectorAll('meta[name="theme-color"]')].map(e=>e.content),composerBottom:document.querySelector('.composer').getBoundingClientRect().bottom};
   });
   const label=`${device}-${waterMode}-${state}-${view}-${offset}`,path=`${out}/${label}.png`;await p.screenshot({path});
   const raw=execFileSync('magick',[path,'-depth','8','rgb:-']);const pixel=(x,y)=>[...raw.slice((y*390+x)*3,(y*390+x)*3+3)],same=(a,b)=>a.length===3&&a.every((v,i)=>Math.abs(v-b[i])<=1);
-  const target=view==='home'?(waterMode==='visible'?m.water:m.page):noir;
+  const target=view==='home'?(m.waterVisible?m.water:m.page):noir;
+  if(!baseline&&view==='home'&&waterMode!=='visible')ok(m.waterVisible&&m.waterRect.top<=m.meterTop+1,label+' approved zero/unknown visual floor remains above 5h');
   const topBad=Array.from({length:47},(_,i)=>i).filter(i=>[2,195,387].some(x=>!same(pixel(x,offset+i),noir)));
   const exposed=pixel(2,offset+height+10);
   if(device==='safari')ok(same(m.root,target)&&same(m.body,target),label+' html/body root visible layer/Noir');

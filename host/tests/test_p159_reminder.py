@@ -20,7 +20,7 @@ import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
@@ -51,8 +51,8 @@ class Text(unittest.TestCase):
 
 class Core(unittest.TestCase):
     def test_v11_and_compressed(self):
-        self.assertEqual(main_identity.VERSION, 27)                       # P244: v12 (@folder dispatch + /skill naming)
-        self.assertEqual(main_identity.verify_core()["version"], 27)
+        self.assertEqual(main_identity.VERSION, 28)                       # P244: v12 (@folder dispatch + /skill naming)
+        self.assertEqual(main_identity.verify_core()["version"], 28)
         # P159: v10 was zh 4359 / en 13148 characters; the same rules ~10 % shorter
         # P186 added the chairman philosophy and moved bot / auto-update / long-task detail to their skills: zh stays ~flat
         # (the phone-turn additionalContext must stay inline under HOOK_MAX), en grows a little (it goes to the file anyway)
@@ -211,6 +211,14 @@ def _own_tests_only(cls):
 class CodexChain(p57._Prep):
     KIND = "codex"
 
+    def setUp(self):
+        super().setUp()
+        # This fake owns reminder RPC ordering, not native protected-hook loading.
+        # test_uv_list_native_fix1 owns the actual hook handshake and its negatives.
+        control = patch.object(agent_codex.CodexAgent, '_prepare_control_paths', AsyncMock())
+        control.start()
+        self.addCleanup(control.stop)
+
     def test_inject_items_right_before_every_turn_start(self):
         async def script(c):
             for t in ("一", "二"):
@@ -230,6 +238,13 @@ class CodexChain(p57._Prep):
 
 @_own_tests_only
 class OpenCodeV2(p60.V2Chain):
+    def setUp(self):
+        super().setUp()
+        # The HTTP fake exercises synthetic/prompt ordering, not the native plugin loader.
+        control = patch.object(agent_opencode.OpenCodeAgent, '_prepare_control_paths', AsyncMock())
+        control.start()
+        self.addCleanup(control.stop)
+
     def test_synthetic_right_before_the_prompt(self):
         async def script(c):
             await c.say("你好")

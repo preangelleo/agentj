@@ -156,9 +156,13 @@ async def mail_draw(host, words: str, subject: str):
     text, images = await draw(channel, host, "mail", ask)
     if text is None:
         return False
-    page = page_for(host, "mail", ask, text, await channel.place_images("mail", images))
+    paths = await channel.place_images("mail", images)
+    page = page_for(host, "mail", ask, text)
     if page is None or type(page.get("id")) is not int:
         return False
+    from .channel_card import attach
+    if (media_task := attach(host, page, paths)) is not None:
+        await media_task
     return SimpleNamespace(turn=page["id"], reply=Reply(text, images))
 
 

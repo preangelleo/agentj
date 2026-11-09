@@ -51,7 +51,7 @@ import { upgrade as upgradeWords, forget as forgetRendered } from './render.js';
 import { cmdGist } from './cmdgist.js';
 import { approvalNote } from './approval-note.js';
 import { originBreadcrumb } from './order-cards.js';
-import { paintPk, preauthShown, preauthLabelKey, mergeDraft, failKey, scrollToPkRow } from './pkassist.js';   // P539   // P341: the approval card's plain line when the Agent gave none
+import { paintPk, preauthShown, preauthLabelKey, mergeDraft, failKey, scrollToPkRow, setupStepsAside } from './pkassist.js';   // P539   // P341: the approval card's plain line when the Agent gave none
 import { t, lang, onLang, fillText, both } from './t.js';
 import { el, toast, executionToast, toastOff, toastAction, human, stamp, mmss, confirmSheet } from './ui.js';
 import * as sfx from './sfx.js';
@@ -681,9 +681,10 @@ function renderPermission(card, p){
   // them (the card's own .apprbtns, 「去设置」 in 「批准」's slot); every other passkey line stays under the buttons (P539)
   const goShown = !!(p && open && sign && noKey);
   el("apprGo").hidden = !goShown;
+  if (goShown) el("apprGo").textContent = t('p0300.pk.setup');
   el("apprGo").disabled = apprBusy;
   if (goShown && !apprBusy) el("askState").before(el("apprPk")); else el("apprBtns").after(el("apprPk"));
-  paintPk(el("apprPk"), goShown && !apprBusy ? {noKey: true}
+  paintPk(el("apprPk"), goShown && !apprBusy ? {noKey: true, localOnly: rescueAsk && !el('settings')?.hidden}
     : p && open && sign && p.passkey_required && p.fa && !apprBusy ? {fa: p.fa_s, err: pkFail, retry: () => apprPost(p, "allow")} : {});
   el("elsewhereText").textContent = handoffAsk ? t("wc.confirmNote") : ppAsk && open ? t('ppReset.where') : pairAsk && open ? t('pair.card.where') : !p ? t('r.appr.elsewhere') : p.local_only ? t('r.appr.st.localOnlyShort') : open ? t('r.appr.elsewhereLive') : t('r.appr.elsewhere');
   paintTags(p || null);
@@ -815,7 +816,7 @@ function toggleCmd(){
   measureCmd();
 }
 /** P561 追加 17: the Agent J host holds no key for this remote (a Face ID card without `fa`). */
-const cardNoKey = (p) => !!(p && p.passkey_required && !p.fa && !p.local_only && !isTV());
+const cardNoKey = (p) => !!(p && p.passkey_required && (!p.fa || p.fa_s === "borrowed") && !p.local_only && !isTV());
 async function apprPost(p, action){
   if(action!=="deny"&&waitsForNewRequest(p.id))return; // UI-only hold after an explicit refusal; never retry the old card.
   if(action!=="deny"&&cardNoKey(p))return;   // P561 追加 17: nothing to confirm with here — the card already says where
@@ -994,16 +995,17 @@ let postCompact = false;
 function paintCompacting(on){
   const w = el("water"), was = w.dataset.compacting === "1";
   if (on === was) return;
-  if (on){ w.style.transform = ""; w.dataset.compacting = "1"; postCompact = true; return; }
+  if (on){ w.style.height = ""; w.style.transform = ""; w.dataset.compacting = "1"; postCompact = true; return; }
   if (w.dataset.post === "1" && matchMedia("(prefers-reduced-motion: reduce)").matches){
     w.style.transition = "none"; w.dataset.compacting = "0"; w.style.transform = "";
     void w.offsetHeight; w.style.transition = "";
     return;
   }
-  const tr = getComputedStyle(w).transform;
-  w.style.transform = tr === "none" ? "" : tr;
+  // Preserve the animated height before returning to the current reading; the floor still clamps both ends.
+  w.style.height = getComputedStyle(w).height;
   w.dataset.compacting = "0";
   void w.offsetHeight;
+  w.style.height = "";
   w.style.transform = "";
 }
 // P303: the reset time the harness reported for a window (unix s; Claude Code / Codex), or null
@@ -1727,9 +1729,6 @@ function showPage(){
   if (chan) { el("cmdx").replaceChildren(); el("cmdx").hidden = true; }
   else if (p.cont) paintCont(el("cmdx"), p, ps);         // 0.26.9 #471: 「继续见下方」 — this card gets nothing more
   else if (!chatheal.paint(el("cmdx"), p, HEAL)){ paintCmdx(p); chatheal.tail(el("cmdx"), p, HEAL); }   // 0.26.9: 重新登录 / 已等 N 分钟 / 强制结束这一轮
-  if (p.source?.k === 'cmd' && p.card?.kind === 'refused') {
-    commandLinks(el('words'), cmd => phoneCmd(cmd));
-  }
   C.termCard?.(p);                                       // P414 (§37.12): a 「!」 page's terminal result card (js/bang.js)
   if (key !== shownKey){
     const moved = shownKey !== null && shownKey.split("|")[0] !== key.split("|")[0];
@@ -1767,6 +1766,9 @@ function showPage(){
   setStuck(hist.turns.slice(-6).some(x => { const q = selfheal.queueOf(x); return !!q && (x.end === "open" || x === hist.turns[hist.turns.length - 1]) && selfheal.canEnd(q, selfheal.waitedNow(x.id, q, true)); }));
   paintThinking(visibleReply(p) && !hostWait ? progress : "");
   el("words").classList.toggle("empty", !visibleReply(p));
+  if (p.source?.k === 'cmd' && p.card?.kind === 'refused') {
+    commandLinks(el('words'), cmd => phoneCmd(cmd));
+  }
   enhanceReplySurface(el("words"),p);
   if (rdAt && rdAt.key === shownKey && !rdAt.file) enhanceReplySurface(el("rdWords"),p,true);   // P59: the reader's slots, same Blobs
   if (rdOpen()) rdSync();                                                   // P273: the reader follows every jump
@@ -5186,6 +5188,7 @@ export function init(ctx){
   // sheet
   el("apprDeny").addEventListener("click", () => { const p = apprLive(); if (p) apprPost(p, "deny"); });
   el("apprGo").addEventListener("click", () => { if (document.body.dataset.sheet === "1") el("sheetClose").click(); scrollToPkRow(); });   // P561 追加 17 · P563 追加 7: fold the card (it stays pending), then Settings' row
+  setupStepsAside(el("apprPk"), () => { if (document.body.dataset.sheet === "1") el("sheetClose").click(); });
   el("cmdMore").addEventListener("click", toggleCmd);
   el("cmdCopy").addEventListener("click", () => copyOut(cmdFull, t('r.appr.cmdCopied')));
   tapToApprove(el("apprAllow"), "allow");   // @ix appr.approve (+ apprHotkey: ⌘ / Ctrl+Enter)

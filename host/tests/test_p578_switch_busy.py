@@ -61,6 +61,8 @@ class Kept(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="p578-st-")
         self.addCleanup(self.tmp.cleanup)
+        prefs=mock.patch.dict(os.environ,{'XDG_CONFIG_HOME':str(pathlib.Path(self.tmp.name)/'config')})
+        prefs.start();self.addCleanup(prefs.stop)
         unit = pathlib.Path(self.tmp.name) / "units"
         p = mock.patch.object(sw, "receipt_path", side_effect=lambda name=sw.RECEIPT: unit / ("agentj." + name))
         p.start()

@@ -740,7 +740,7 @@ class SharedCodexAgent(CodexAgent):
             await self.risk_channel.stop()
 
     async def _spawn(self):
-        if not self.read_probe and danger.shared_guard(self.cfg) and not self.risk_channel:   # P198: on by default
+        if not self.read_probe and not self.risk_channel:   # P198: on by default
             self.risk_channel=shared_hook.Channel(self.risk,shared_hook.channel_path(self.host.st.root,'codex'))
             await self.risk_channel.start()
             shared_hook.install(self.cfg['dir'],self.risk_channel.path,family='codex')
@@ -789,8 +789,9 @@ class SharedCodexAgent(CodexAgent):
                 covered |= hook.get('eventName') == 'preToolUse'
         if not covered:
             self.degraded('shared pre-execution hook unavailable',
-                          '这次没有高危提醒，Codex 自己的审批和沙箱照常生效。', 'Codex native approvals and sandbox still apply.')
-            return None
+                          '受保护控制文件的执行前守卫未就绪，这条消息没有交给 Codex。',
+                          'The protected control-file guard is unavailable; this message was not submitted to Codex.')
+            raise RPCError({'message': 'protected control-file PreToolUse hook unavailable'})
         self.host.emit('shared_guard_ready',agent=self.kind,scope='thread',hooks=len(trusted))
         return {'hooks.state':trusted}
 

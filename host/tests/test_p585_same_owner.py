@@ -191,6 +191,54 @@ from test_p562_acceptance import _Real
 
 
 class ChannelProjection(_Real):
+    async def signed_claim(self, channel, record):
+        """Real selected held controller + paired signature, never a bool grant."""
+        from agentj import approvals, wire
+        if channel not in (self.host.wechat, self.host.external_channels):
+            self.host.wechat = channel
+        before = approvals.input_digest(record)
+        submitted = len(self.sends())
+        for receipt in (None, {'approved':True,'sig':'not-an-authority'}):
+            denied = await channel.claim(record['id'], approved=True, _approval=receipt)
+            self.assertEqual(denied, {'ok':False,'why':'approval_changed'})
+            self.assertEqual(approvals.input_digest(record), before)
+            self.assertEqual(len(self.sends()), submitted)
+        receipt = {}
+        task = asyncio.create_task(channel.approval('Forward held data only: '+record['text'],
+            {'id':record['id']}, ttl=2, pk=False, receipt=receipt))
+        try:
+            for _ in range(200):
+                if record['id'] in channel.cards or task.done():break
+                await asyncio.sleep(.005)
+            self.assertFalse(task.done(), 'real controller must wait for its signed device decision')
+            ask = channel.cards[record['id']]
+            self.assertEqual(self.host.__dict__['_held_channel_asks'][ask.rid][0], ask)
+            card = self.host._ask_msg(ask,self.s)
+            answer = self.phone.answer(card,True)
+            wrong = {**answer,'sig':wire.b64u(bytes(64))}
+            await self.host._app(self.s,wrong)
+            self.assertFalse(ask.fut.done())
+            self.assertFalse(task.done())
+            self.assertEqual(approvals.input_digest(record), before)
+            self.assertEqual(len(self.sends()), submitted)
+            await self.host._app(self.s,answer)
+            self.assertTrue(await asyncio.wait_for(task,2))
+            result = await channel.claim(record['id'], approved=True, _approval=receipt)
+            self.assertTrue(result['ok'],result)
+            self.assertEqual(len(self.sends()), submitted+1)
+            await self.host._app(self.s,answer)
+            self.assertFalse((await channel.claim(record['id'], approved=True, _approval=receipt))['ok'])
+            self.assertEqual(len(self.sends()), submitted+1, 'used signature/receipt cannot replay a handoff')
+            self.assertFalse(self.host.__dict__.get('_held_channel_asks'))
+            self.assertFalse(channel.__dict__.get('_approval_receipts'))
+            signed = [row for row in approvals.read_log(self.st) if row.get('id')==ask.rid][-1]
+            self.assertEqual(approvals.check_record(self.st,signed),'ok')
+            return result
+        finally:
+            if not task.done():task.cancel()
+            await asyncio.gather(task,return_exceptions=True)
+            channel.discard_approval(receipt)
+
     async def test_notice_and_avatar_reply_share_real_history_turn(self):
         from agentj import channel_card
         for source, kind in [('wechat','wechat'), ('telegram','telegram'), ('mail','email')]:
@@ -211,7 +259,7 @@ class ChannelProjection(_Real):
         record = channel.store.put('legacy-fallback', [], original)
         record['state'] = 'pending'
         channel.store.save()
-        result = await channel.claim(record['id'], approved=True)
+        result = await self.signed_claim(channel,record)
         self.assertTrue(result['ok'])
         row = self.host.hist.get(record['turn'])
         self.assertNotIn(synthetic, row['src']['text'])
@@ -255,7 +303,7 @@ class ChannelProjection(_Real):
                                     admission={'generation': cfg['generation'], 'addr': 'boss@corp.example'})
         record = list(channel.store.data['records'].values())[-1]
         page_id = record['page']
-        result = await channel.claim(record['id'], approved=True)
+        result = await self.signed_claim(channel,record)
         self.assertTrue(result['ok'])
         self.assertEqual(record['turn'], page_id)
         row = self.host.hist.get(page_id)

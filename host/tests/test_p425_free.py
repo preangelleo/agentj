@@ -17,6 +17,18 @@ from agentj.serve import Host
 CARD = approvals.norm_questions([{"question": "Your answer?", "options": [{"label": "A"}, {"label": "B"}]}])
 TEXT = "我自己填写\nemoji 🐈 and ;1,2"
 
+
+# Each test owns its first-init preferences; another case's root is not authority.
+import os as _cfg_os
+import tempfile as _cfg_tmp
+from unittest.mock import patch as _cfg_patch
+
+def _isolate_config(test):
+    config = _cfg_tmp.TemporaryDirectory(prefix="p0300-config-")
+    test.addCleanup(config.cleanup)
+    env = _cfg_patch.dict(_cfg_os.environ, {"XDG_CONFIG_HOME": config.name})
+    env.start(); test.addCleanup(env.stop)
+
 class FreeAnswers(unittest.TestCase):
     def test_validation_and_legacy_numbers(self):
         for value in [TEXT, "x" * 2000, "🐈" * 1000]:
@@ -92,6 +104,10 @@ console.log(JSON.stringify({hex:Buffer.from(m).toString('hex'),bad:['','x'.repea
 from test_p33_chain import _Chain
 
 class _NativeFree:
+    def setUp(self):
+        _isolate_config(self)
+        super().setUp()
+
     def test_free_answer_reaches_native_tool(self):
         text="my custom answer"
         async def script(c):

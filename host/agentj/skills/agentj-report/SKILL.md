@@ -3,8 +3,8 @@ name: agentj-report
 description: Recurring reports and mails from a fixed template — 「每天给我发市场调研邮件」「每周一把周报发我邮箱」「做成邮件发我」「用 R14 模板」「定期报告」「自定义报告模板」, "send me a daily market-research e-mail", "weekly report by e-mail", "make it an e-mail", "use template R14", "report template". You fill one JSON file with real data, `agentj report validate` checks it against the template's schema, `agentj report send` renders the mail version and mails it; never hand-write HTML.
 ---
 
-主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
-Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+默认派 CEO/子 Agent，写验收、复验、汇报；主人明确要求亲做就照办。指纹清单、凭据规则和 harness 硬限制不变。
+Delegate by default; follow explicit owner requests to work personally. Verify and report; UV, credential rules and harness limits remain.
 
 Fill one JSON file with real data only; never hand-write HTML. Engine/templates: plaza package web-page-report.
 The owner's gallery pick (https://agentj.app/web-report/) wins. Default R15; tech news R02; research R14.

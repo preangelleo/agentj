@@ -12,6 +12,43 @@ from agentj.state import State, DEFAULT_RELAY, DEFAULT_WEB
 from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 
 
+def apply_with_real_uv(testcase, st, changes):
+    """Actual agent config controller, signature+WebAuthn verification, then real commit."""
+    import asyncio
+    from test_l1 import _review_owner_host, _ready
+    from _p541_device import Phone
+    async def run():
+        preferences.ensure()
+        sent=[];host=_review_owner_host(st,sent)
+        phone=Phone(st,with_passkey=True);session=_ready(host,phone)
+        raw=preferences.read()[0]
+        for key,value in changes.items():raw=preferences.edit(raw,key,value)
+        original=preferences.path().read_bytes()
+        class Writer:
+            def write(self,data):pass
+            async def drain(self):pass
+        await host._ctl_config_from_agent(Writer(),raw)
+        for _ in range(200):
+            if host.asks:break
+            await asyncio.sleep(.005)
+        testcase.assertTrue(host.asks,'security config must reach real paired UV controller')
+        ask=next(iter(host.asks.values()))
+        testcase.assertTrue(ask.require_passkey)
+        answer=phone.answer(host._ask_msg(ask,session),True)
+        testcase.assertIn('fa',answer)
+        no_uv=dict(answer);no_uv.pop('fa')
+        await host._answer(session,no_uv)
+        testcase.assertFalse(ask.fut.done())
+        testcase.assertEqual(preferences.path().read_bytes(),original)
+        await host._answer(session,answer)
+        await asyncio.wait_for(asyncio.gather(*list(host._ctl_bg)),3)
+        for key,value in changes.items():testcase.assertEqual(preferences.get(preferences.effective(st),key),value)
+        pending=list(host._bg_tasks)
+        for task in pending:task.cancel()
+        await asyncio.gather(*pending,return_exceptions=True)
+    asyncio.run(run())
+
+
 class WorkingRoot(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='aj-root-', dir=TEST_TMP)
@@ -47,7 +84,7 @@ class WorkingRoot(unittest.TestCase):
         raw = preferences.edit(preferences.read()[0], 'agent.instructions', 'First line\n第二行')
         raw = preferences.edit(raw, 'appearance.language', 'en')
         preferences.transact(self.st, raw)
-        root = self.home/'coding'; working_root.record(self.st, root)
+        root = self.home/'coding'; apply_with_real_uv(self,self.st,{'agent.working_root':str(root)})
         cfg = self.st.agent_config()
         self.assertEqual(cfg['dir'], str(root))
         self.assertEqual(cfg['instructions'], 'First line\n第二行')
@@ -58,9 +95,10 @@ class WorkingRoot(unittest.TestCase):
     def test_explicit_agent_setter_replaces_stale_preference_root(self):
         self.st.init()
         old = self.home/'previous'; old.mkdir()
-        working_root.record(self.st, old)
+        self.st.set_agent_config('codex', str(old))
         old.rmdir()
         chosen = self.home/'chosen'; chosen.mkdir()
+        apply_with_real_uv(self,self.st,{'agent.working_root':str(chosen)})
         self.st.set_agent_config('codex', str(chosen))
         self.assertEqual(preferences.get(preferences.effective(self.st), 'agent.working_root'), str(chosen))
         self.assertEqual(self.st.agent_config()['dir'], str(chosen))
@@ -70,8 +108,9 @@ class WorkingRoot(unittest.TestCase):
         self.st.init(); old = self.home/'old-project'; old.mkdir()
         sentinel = old/'RUN.md'; sentinel.write_text('owner business instructions')
         self.st.set_agent_config('claude', str(old))
-        before = {p:p.read_bytes() for p in (self.st.x25519_path, self.st.ed25519_path, self.st.devices_path)}
         root = self.home/'coding'
+        apply_with_real_uv(self,self.st,{'agent.working_root':str(root)})
+        before = {p:p.read_bytes() for p in (self.st.x25519_path, self.st.ed25519_path, self.st.devices_path)}
         args = SimpleNamespace(working_root=str(root), force=False, relay=DEFAULT_RELAY, web=DEFAULT_WEB)
         with patch('agentj.cli._alias_auto'), patch('sys.stdin.isatty', return_value=False), patch('sys.stdout',new_callable=io.StringIO):
             cli.cmd_init(args)
@@ -104,12 +143,12 @@ class WorkingRoot(unittest.TestCase):
             with self.subTest(raw=raw), self.assertRaises(preferences.ConfigError): preferences.parse(raw)
 
     def test_doctor_no_evidence_matching_and_stale_audit(self):
-        self.st.init(); root = self.home/'coding'
+        root = self.home/'coding'; self.st.init(_setup_root=root)
         working_root.record(self.st, root); wizard.bootstrap_root(root)
         self.st.set_agent_config('claude', str(root))
         def rows(): return {x['id']:x for x in doctor.check_main_identity(self.st)}
         self.assertEqual(rows()['main-core']['status'], 'ok')
-        self.assertIn('core v27:', rows()['main-core']['summary'])
+        self.assertIn('core v28:', rows()['main-core']['summary'])
         self.assertEqual(rows()['main-inject']['status'], 'warn')
         cfg = self.st.agent_config(); main_identity.audit(cfg, 'claude', self.st, 'fake-session')
         self.assertEqual(rows()['main-inject']['status'], 'ok')
@@ -124,7 +163,7 @@ class WorkingRoot(unittest.TestCase):
         self.assertEqual(rows()['main-inject']['status'], 'warn')
 
     def test_doctor_existing_unrelated_structure_warns_modern_invalid_fails(self):
-        self.st.init(); root = self.home/'coding'; root.mkdir()
+        root = self.home/'coding'; self.st.init(_setup_root=root); root.mkdir()
         (root/'documentation').mkdir()
         (root/'CLAUDE.md').write_text('Existing owner instructions')
         (root/'AGENTS.md').write_text('Existing owner instructions')

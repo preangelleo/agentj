@@ -3,8 +3,8 @@ name: agentj-calendar
 description: Manage the official Calendar card with the owner. Use for calendar events, agendas, reminders, Google Calendar / iCloud two-way sync, 日历、日程、预约、提醒、同步谷歌/苹果日历 and ICS subscriptions.
 ---
 
-主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
-Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+默认派 CEO/子 Agent，写验收、复验、汇报；主人明确要求亲做就照办。指纹清单、凭据规则和 harness 硬限制不变。
+Delegate by default; follow explicit owner requests to work personally. Verify and report; UV, credential rules and harness limits remain.
 
 The owner and Agent J keep one local calendar at card/calendar. No connection is needed. A new session, recovery,
 heartbeat and morning briefing first run `agentj card cal due --json` alongside the To-do due check. These are records,
@@ -40,7 +40,7 @@ Two-way sync (optional; only when the owner asks). Names are lowercase, e.g. goo
   (--calendar NAME picks a calendar; default the first). Key names: ICLOUD_…_SECRET for iCloud, CALDAV_…_SECRET for another CalDAV
   server, which works only after the owner adds its hostname to `<state>/calendar/caldav-hosts` on the Agent J host
   (why server_not_allowed): ask the owner, never edit that file yourself.
-- Each remote create/update needs a fresh long-press card bound to the event and destination; each delete needs the owner's Face ID. Offline edits stay queued; reconnecting never substitutes for approval. Now: `agentj card cal sync --name google --json`;
+- Remote writes retain exact-event/destination confirmation through the existing application flow; create, update and delete are ordinary signed confirmations, not fingerprint-list commands. Offline edits stay queued; reconnecting never substitutes for approval. Now: `agentj card cal sync --name google --json`;
   waiting: `agentj card cal queue --json`; new event there: `add ... --to google`; revert the newest change:
   `agentj card cal undo [--entry <id>] --json` (again = redo); stop: `agentj card cal disconnect --name google --json` keeps
   the events as local ones and drops unsent changes.
@@ -57,4 +57,4 @@ Two-way sync (optional; only when the owner asks). Names are lowercase, e.g. goo
 带时间的日程必须明确时区。ICS 订阅只读、手动刷新、默认关闭，远端胜出；私密订阅网址只经密钥卡按名存取，不进对话。
 主人要同步时：Google 先走 agentj-google 授权再 connect；iCloud 让主人用密钥卡存 Apple ID 和 App 专用密码（名字须 ICLOUD_ 开头）再 connect；
 其他 CalDAV 服务器密钥名用 CALDAV_ 开头，要主人把主机名写进 Agent J 主机上的 <state>/calendar/caldav-hosts，你不要自己改。
-每次远端新增、修改都需主人对具体日程和目的端长按确认，删除需 Face ID；离线改动留在队列，重连不会免确认补发；两边都改时卡片先用远端版本、保留主人版本，有冲突就告诉主人。断开后日程留在本地。
+远端写入仍按现有应用流程核对具体日程和目的端；新增、修改和删除使用普通签名确认，不属于指纹清单命令；离线改动留在队列，重连不会免确认补发；两边都改时卡片先用远端版本、保留主人版本，有冲突就告诉主人。断开后日程留在本地。

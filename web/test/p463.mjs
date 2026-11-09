@@ -1,12 +1,13 @@
-// P463: local paired fixtures; real browser clicks; P458 before/after, notes pixel equality.
+// P463 / 0.28.7: local paired fixtures; real browser clicks, notes pixel equality.
+// P463_BASE allows later scoped changes to compare with their own released base.
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {mkdirSync,writeFileSync,readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
-const pw=createRequire(import.meta.url)('/tmp/aj-webmcp-playwright/node_modules/playwright');
-const out='reports/qa/p463',base='e96cc19ae',results=[],unchanged=new Map(),heights=new Map();
+const pw=createRequire(import.meta.url)(process.env.P463_PLAYWRIGHT || '/tmp/aj-webmcp-playwright/node_modules/playwright');
+const out='reports/qa/p463',base=process.env.P463_BASE || 'e96cc19ae',results=[],unchanged=new Map(),heights=new Map();
 const web=await startWebServer(),fake=await startFakeHost(),B=await pw.chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']});
 try{for(const width of [390,1280])for(const lang of ['zh','en'])for(const theme of ['light','dark'])for(const which of ['before','after']){
  const key=`${width}-${lang}-${theme}`;mkdirSync(`${out}/${which}`,{recursive:true});
@@ -25,13 +26,13 @@ try{for(const width of [390,1280])for(const lang of ['zh','en'])for(const theme 
  await p.evaluate(theme=>{document.getElementById('phone-env-dismiss')?.click();document.getElementById('a2hs-ok')?.click();document.documentElement.dataset.theme=theme;const s=document.createElement('style');s.textContent='*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}';document.head.append(s)},theme);
  await p.evaluate(()=>import('./js/jcards.js').then(m=>m.refresh()));
  for(const surface of ['notes','todo']){
- await p.evaluate(id=>import('./js/five-pages.js').then(m=>m.openTarget(id)),surface);await p.locator(`.jc-body[data-card=${surface}]`).waitFor();await p.waitForTimeout(150);
+ await p.evaluate(id=>import('./js/five-pages.js').then(m=>m.openTarget(id)),surface);await p.locator(`.jc-body[data-card=${surface}]`).waitFor();await p.waitForTimeout(150);if(which==='after'&&surface==='todo')await p.locator('.jc-hide-done input').uncheck();
  const shot=await p.locator('#five-page').screenshot({path:`${out}/${which}/${key}-${surface}.png`});
  if(surface==='notes'){if(which==='before')unchanged.set(key,shot);else assert.ok(shot.equals(unchanged.get(key)),'notes pixel equality '+key);continue;}
  const rowHeights=await p.locator('.jc-item').evaluateAll(rows=>rows.map(e=>e.getBoundingClientRect().height));
  if(which==='before')heights.set(key,rowHeights);
  if(which==='after'){
- rowHeights.forEach((h,i)=>assert.ok(h<=heights.get(key)[i]+1,'no extra row height '+key+' row '+i+': '+h+' vs '+heights.get(key)[i]));
+ rowHeights.forEach((h,i)=>assert.ok(h>=heights.get(key)[i]+11,'authorized top padding '+key+' row '+i+': '+h+' vs '+heights.get(key)[i]));
  const geometry=await p.locator('.jc-item').first().evaluate(li=>{const r=e=>{const b=e.getBoundingClientRect();return {x:b.x,y:b.y,right:b.right,bottom:b.bottom,width:b.width,height:b.height}};const main=li.querySelector('.jc-row'),text=li.querySelector('.jc-text'),a=[...li.querySelectorAll('[data-todo-op]')];return {li:r(li),main:r(main),text:r(text),buttons:a.map(e=>({op:e.dataset.todoOp,rect:r(e),label:e.getAttribute('aria-label'),title:e.title,words:e.textContent,bg:getComputedStyle(e).backgroundColor,border:getComputedStyle(e).borderWidth,svg:getComputedStyle(e.querySelector('svg')).width})),overflow:li.scrollWidth>li.clientWidth}});
  assert.ok(!geometry.overflow);assert.ok(Math.abs(geometry.main.right-geometry.li.right)<2);assert.ok(geometry.text.width>geometry.li.width-70);
  for(const b of geometry.buttons){assert.ok(b.rect.width>=40&&b.rect.height>=40);assert.ok(b.rect.y>=geometry.text.bottom);assert.ok(b.label&&b.label===b.title);assert.equal(b.words,'');assert.equal(b.border,'0px');assert.equal(b.bg,'rgba(0, 0, 0, 0)');assert.equal(b.svg,'21px');assert.ok(b.rect.bottom<=geometry.li.bottom+1)}

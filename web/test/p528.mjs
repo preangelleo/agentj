@@ -36,10 +36,12 @@ try {
     const text=await evaluate(p, 'document.body.innerText');
     assert.ok(text.includes(lang==='zh'?'退出码 1':'exit code 1'));
     writeFileSync(`${out}/sudo-command-${lang}.png`, await shoot(p, 'unused'));
-    const title = lang==='zh' ? 'Synthetic TB 派来任务' : 'Synthetic TB sent a task';
+    // P585: the source name is data; the client supplies the localized Agent attribution.
+    const title = 'Synthetic TB';
+    const label = lang==='zh' ? '来自 Agent · Synthetic TB' : 'From Agent · Synthetic TB';
     const task=await fake.addTurn({k:'task',via:'same-owner',name:title,text:lang==='zh'?'检查合成数据服务':'Check the synthetic data service'}, lang==='zh'?'正在办理，敏感步骤会请你批准。':'Working on it. Sensitive steps require your approval.', 'open');
     await waitFor(p, `document.body.innerText.includes(${JSON.stringify('Check the synthetic data service')}) || document.body.innerText.includes('检查合成数据服务')`);
-    await waitFor(p, `document.querySelector('#omLabel')?.textContent === ${JSON.stringify(title)}`);
+    await waitFor(p, `document.querySelector('#omLabel')?.textContent === ${JSON.stringify(label)}`);
     await waitFor(p, `!document.querySelector('#toast')?.classList.contains('on')`);
     writeFileSync(`${out}/task-${lang}.png`, await shoot(p,'unused'));
     await fake.updateTurn(task.id,{end:'failed',reply:{text:lang==='zh'?'任务未完成，请在接收设备查看状态。':'The task did not complete. Check the receiving device.'}});

@@ -205,7 +205,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
 .water .wave2{fill:rgba(20,20,20,.07);height:18px;
   animation:aj-status-drift 17s linear infinite reverse;opacity:.9}
 @keyframes aj-status-drift{to{transform:translateX(-50%)}}
-.water[data-known="0"]{display:none}
+.water[data-known="0"]{display:block}
 @media (prefers-reduced-motion: reduce){ .water .wave{animation:none} }
 /* Compacting (G11 / 2b): the context window is being squeezed, so the water
    itself says so — the surface sinks from where it is (transform only: the
@@ -213,7 +213,7 @@ button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
    the waves churn: faster drift, taller swell. Purely visual; nothing here is
    state. Reduced motion: no churn, the level just eases down. */
 .water[data-compacting="1"]{animation:aj-status-sink 14s cubic-bezier(.25,.5,.45,1) forwards}
-@keyframes aj-status-sink{to{transform:translateY(62%)}}
+@keyframes aj-status-sink{to{height:var(--water-floor,0px)}}
 @media (prefers-reduced-motion: no-preference){
   .water[data-compacting="1"] .wave{transform-origin:50% 100%;animation:aj-status-churn 2.4s linear infinite}
   .water[data-compacting="1"] .wave2{animation:aj-status-churn 3.1s linear infinite reverse}
@@ -2338,7 +2338,7 @@ audio.mplayer{width:min(560px,92vw)}
 .mpvtable{max-width:none}
 .mpvtable table{border-collapse:collapse;font:400 calc(13px*var(--fz))/1.45 var(--font-body)}
 .mpvtable th,.mpvtable td{border:1px solid var(--line);padding:.35em .65em;text-align:left;vertical-align:top;white-space:pre-wrap;max-width:28em}
-.mpvtable th{background:var(--surface);font-weight:600;position:sticky;top:-16px}
+.mpvtable th{background:var(--pg,var(--c-noir));font-weight:600;position:sticky;top:-16px}
 .mpvtabs{display:flex;gap:6px;overflow-x:auto;padding:0 0 10px}
 .mpvtab{flex:none;min-height:40px;padding:0 14px;border-radius:12px;border:1px dashed var(--line);background:none;color:var(--ink);font:500 calc(13px*var(--fz))/1 var(--font-body);cursor:pointer}
 .mpvtab[aria-selected=true]{border-style:solid;border-color:var(--ink)}
@@ -2734,7 +2734,7 @@ body:has(>.gdlg:not([hidden])) .ajmodal.hlp{z-index:104}   /* P549 (#316): help 
 .setup-banner__open:focus-visible,.setup-banner__x:focus-visible{outline:2px solid var(--focus, currentColor);outline-offset:-3px}
 #setup-view .sub-head h1{flex:1;min-width:0}
 .setup-x{flex:none;min-height:44px;margin-top:0;white-space:nowrap}
-.setup-sticky{position:sticky;top:0;z-index:2;margin:var(--sp-3) 0 0;padding:var(--sp-2) var(--sp-3);border-radius:12px;
+.setup-sticky{position:static;margin:var(--sp-3) 0 0;padding:var(--sp-2) var(--sp-3);border-radius:12px;
   background:var(--surface);border:1px solid var(--line);font-weight:600}
 .setup-kicker{margin:var(--sp-4) 0 var(--sp-2);font-size:var(--fs-sm);letter-spacing:.04em;color:var(--text-muted)}
 .setup-main h2{margin:0}
@@ -2745,7 +2745,7 @@ body:has(>.gdlg:not([hidden])) .ajmodal.hlp{z-index:104}   /* P549 (#316): help 
 .setup-effect{margin:var(--sp-1) 0 0;color:var(--text-muted)}
 .setup-act{margin:var(--sp-3) 0 0;padding:var(--sp-2) var(--sp-3);border-left:3px solid var(--state);border-radius:8px 0 0 8px}
 .setup-note{margin:var(--sp-3) 0 0;white-space:pre-wrap}
-.setup-actions{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-3)}
+.setup-actions{--aj-action-min-height:56px;--aj-icon-action-min-height:56px;--aj-navigation-action-min-height:56px;display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-3)}
 .setup-actions .aj-action{flex:var(--aj-action-flex,1 1 9rem);min-height:var(--aj-action-min-height,56px);margin-top:var(--aj-action-margin-top,0);white-space:var(--aj-action-white-space,normal)}
 /* #577 aj-icon-action: independent equal initial contract. */
 .setup-actions .aj-icon-action{flex:var(--aj-icon-action-flex,1 1 9rem);min-height:var(--aj-icon-action-min-height,56px);margin-top:var(--aj-icon-action-margin-top,0);white-space:var(--aj-icon-action-white-space,normal)}
@@ -4009,6 +4009,7 @@ html[data-ios-safari="1"] body::before{content:"";position:absolute;inset:0;back
 .pkassist__btn:focus-visible{outline:2px solid currentColor;outline-offset:2px;border-radius:6px}
 .pkassist[data-state="fail"] .pkassist__text{color:inherit;font-weight:600}
 #sheet .pkassist{color:var(--ink-soft);margin:0 2px var(--ui-space-control)}
+#sheet #apprBtns+.pkassist{margin-top:var(--ui-space-content)}
 #sheet .pkassist .pkassist__btn{color:var(--ink)}
 .elev .pkassist,.sout .pkassist{margin-bottom:var(--sp-1)}
 #confirm .pkassist{color:inherit}
@@ -4470,5 +4471,37 @@ body:has(#sheet.aj-layer-covered) .scrim{visibility:hidden;pointer-events:none}
 /* Preserve the native parent's center while its existing ontop child uses the viewport. */
 :is(dialog,#full541).aj-shared-popup:modal:has(>.ontop-float){transform:none;top:calc(var(--popup-center) - var(--popup-native-height,0px)/2);overflow:visible}
 
-/* 0.28.6: reuse the existing stale-data slot while the live link catches up. */
-body[data-conn=on] .stale.syncing{display:block}
+/* 0287: the quota boundary is the permanent wet floor, including unknown history and compact. */
+.water{min-height:var(--water-floor,0px);background:var(--water-color)}
+:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="grow"]>:is(.sq,.box),
+#sheet.aj-shared-popup[data-popup-system="grow"]{background:var(--popup-water,var(--water-color))}
+
+/* Settings uses the standard Noir B shell through every passkey setup step. */
+.ajmodal.pkp.aj-shared-popup[data-popup-context="settings"]>.box{outline:0}
+/* Keep the existing dlgcard size/radius; the viewport veil is sized separately. */
+:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-context="settings"][data-popup-system="center"]>:is(.sq,.box){border-radius:var(--dlg-radius);max-height:calc(var(--popup-height) - 32px)}
+#pkp.aj-shared-popup[data-popup-context="settings"] .pkp-code{margin-top:var(--sp-4)}
+#pkp.aj-shared-popup[data-popup-context="settings"] .pkp-acts{margin-top:var(--sp-4)}
+#pkp.aj-shared-popup[data-popup-context="settings"] .pkp-details{margin-top:var(--sp-4)}
+
+/* 0.28.7: each unfinished checklist row expands in place; the introduction scrolls with its page. */
+.setup-detail{width:100%;min-width:0}
+.setup-summary{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);min-height:56px;cursor:pointer;list-style:none}
+.setup-summary::-webkit-details-marker{display:none}
+.setup-summary::after{content:"";width:8px;height:8px;flex:none;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);margin:0 6px 5px}
+.setup-detail[open]>.setup-summary::after{transform:rotate(225deg);margin-bottom:0}
+.setup-summary:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:8px}
+.setup-summary>.setup-name{flex:1}
+.setup-detail-body{padding:0 0 var(--sp-3)}
+.setup-step{margin:var(--sp-3) 0 0;white-space:pre-wrap;font-weight:600}
+
+/* 0.30.0: login credential approval stays in the Settings B system. */
+#sheet.auth-approval.aj-shared-popup[data-popup-context="settings"][data-popup-system="center"]{background:var(--noir);color:var(--lotion);border-radius:var(--dlg-radius);max-height:calc(var(--popup-height) - 32px)}
+body[data-sheet="1"]:has(#sheet.auth-approval[data-popup-system="center"]) .scrim.auth-approval{background:var(--dlg-scrim);backdrop-filter:blur(var(--dlg-blur));-webkit-backdrop-filter:blur(var(--dlg-blur))}
+/* Only the Settings passkey self-test result: centred copy and the existing logo green. */
+#toast[data-pk-test="1"]{border:1.5px solid var(--emerald-oasis);text-align:center;align-items:center}
+#toast.square[data-pk-test="1"]{width:min(340px,calc(100vw - 40px));min-height:220px;padding:28px;pointer-events:auto}
+#toast[data-pk-test="1"] .nt-acts{margin:12px 0 0;justify-content:center;flex-wrap:wrap}
+#toast[data-pk-test="1"] .nt-text{align-items:center}
+
+#sheet.auth-approval .buttons541c #apprGo:not([hidden]){grid-column:1/-1;flex:1 0 100%;width:100%;white-space:normal}

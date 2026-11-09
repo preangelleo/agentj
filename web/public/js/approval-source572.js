@@ -29,7 +29,7 @@ export function paint(p) {
   }
   box.hidden = !box.childNodes.length;
   if(p.approval_v===2)document.getElementById('action541')?.after(box);
-  if (p.approval_invalid || (p.approval_v === 2 && (!p.envelope_verified || p.envelope?.source?.verified !== true || p.envelope?.source?.suspicious === true))) {
+  if (p.approval_invalid || (p.approval_v === 2 && !p.envelope_verified)) {
     document.getElementById('apprAllow').disabled=true;
     document.getElementById('apprBatch').hidden=true;
   }

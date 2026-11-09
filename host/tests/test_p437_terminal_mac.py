@@ -242,14 +242,18 @@ class History(unittest.TestCase):
     KEY = "export GH_TOKEN=ghp_" + "a" * 36
 
     def test_zsh_file_keeps_metafied_bytes_and_drops_whole_entries(self):
+        home = mock.patch.dict(os.environ, {"HOME": "/" + "home/history-owner"})
+        home.start()
+        self.addCleanup(home.stop)
         with tmpdir() as d:
             p = pathlib.Path(d) / "history"
             body = [b"ls -la", meta("echo 中文"), self.KEY.encode(), b"cd /" + b"home/someone/x", b"echo one \\", b"Bearer " +
-                    b"abcDEF123" * 4, b"git status"]
+                    b"abcDEF123" * 4, b"git status", b"cd " + os.path.expanduser("~/x").encode()]
             p.write_bytes(b"\n".join(body) + b"\n")
             os.chmod(p, 0o644)
             self.assertEqual(term_mac.scrub_history(p, zsh=True), 3)
-            self.assertEqual(p.read_bytes(), b"ls -la\n" + meta("echo 中文") + b"\ngit status\n")
+            # #439 keeps another user's path; this owner's path above is removed.
+            self.assertEqual(p.read_bytes(), b"ls -la\n" + meta("echo 中文") + b"\ncd /" + b"home/someone/x\ngit status\n")
             self.assertEqual(oct(p.stat().st_mode & 0o777), "0o600")
             self.assertEqual(term_mac.scrub_history(p, zsh=True), 0)          # clean: untouched
             self.assertEqual(term_mac.scrub_history(pathlib.Path(d) / "none"), 0)

@@ -137,7 +137,6 @@ export function configureApprove(h) { H = h || {}; }
  *  「以后发给 X 不用再确认」 addresses, in the card's order — signed with the allow (mailAllowMessage). */
 export async function approve(p, action, allowAdd) {
   if (!p || typeof p !== "object") return {ok:false,why:"invalid_envelope"};
-  if (action !== "deny" && p.approval_v === 2 && (p.envelope?.source?.verified !== true || p.envelope?.source?.suspicious === true)) return {ok:false,why:"unverified_trigger"};
   if (p.approval_invalid || (p.approval_v !== undefined && p.approval_v !== 2) || (p.approval_v === 2 && !p.envelope_verified)) return {ok:false,why:"invalid_envelope"};
   touch(p.id);
   const g = gen();

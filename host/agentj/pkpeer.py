@@ -269,7 +269,10 @@ class Desk:
             h.st.passkey_count(s.device, pk["id"], passkey.verify_assertion(pk, f, ch))
         except (passkey.PasskeyError, ValueError, TypeError) as e:
             h.st.log("pk_check", device=s.device, result="fail", reason=getattr(e, "detail", type(e).__name__))
-            await h.send_app(s, {**res, "ok": False})
+            reason = getattr(e, 'detail', None)
+            reason = {'rp_origin':'origin', 'rp_hash':'rp', 'flags':'uv', 'sign_count':'counter'}.get(reason, reason)
+            why = reason if reason in ('no_check', 'credential', 'rp', 'origin', 'signature', 'uv', 'counter', 'challenge') else 'verification_failed'
+            await h.send_app(s, {**res, "ok": False, "why": why})
             # P566 (#346): a fresh challenge for the next 「测试一下」 / self-check (each one answers once)
             return await h.send_app(s, {"t": "pk_state", "s": h.st.passkey_state(s.device), **self.check_fields(s)})
         local = passkey.attachment(obj.get("aa")) != "cross-platform"

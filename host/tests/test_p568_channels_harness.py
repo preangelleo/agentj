@@ -58,10 +58,13 @@ class Policy(unittest.TestCase):
     def test_connector_reads_and_writes_never_enable_channels(self):
         for tool,expected in [('search_threads','allow'),('get_message','allow'),('list_files','allow'),('read_document','allow'),('send_email','hold'),('delete_message','uv'),('get_secret','uv'),('read_api_key','uv'),('execute_script','hold')]:   # P573: by name a button
             name='mcp__claude_ai_Gmail__'+tool
-            self.assertEqual(policy.main_requirement(name,{}),expected)
+            self.assertEqual(policy.main_requirement(name,{}),'allow')  # historical category is diagnostic, not native admission
             self.assertIn(policy.channel_tool_decision(name),('deny','handoff'))
-        self.assertEqual(policy.main_requirement('invented_action',{}),'deny')
-        self.assertEqual(policy.main_requirement('mcp__bad__search__inject',{}),'deny')
+        self.assertEqual(policy.main_requirement('invented_action',{}),'allow')
+        self.assertEqual(policy.main_requirement('mcp__bad__search__inject',{}),'allow')
+        self.assertIn(policy.channel_tool_decision('invented_action'), ('deny','handoff'))
+        self.assertIn(policy.channel_tool_decision('mcp__bad__search__inject'), ('deny','handoff'))
+        self.assertEqual(policy.main_requirement('agentj secret request',{}),'uv')
 
     def test_pretooluse_connector_read_write_and_injected_command(self):
         import io, json
@@ -72,7 +75,19 @@ class Policy(unittest.TestCase):
             with patch('sys.stdin',io.StringIO(json.dumps({'tool_name':'mcp__claude_ai_Gmail__'+tool,'tool_input':inp}))),patch('sys.stdout',out):
                 self.assertEqual(danger.hook_main([]),0)
             decision=json.loads(out.getvalue())['hookSpecificOutput']['permissionDecision'] if out.getvalue() else None
-            self.assertEqual(decision,want)
+            self.assertIsNone(decision)  # native-allowed observer is not a second approval
+
+        # Closed control operands, including their ancestor, remain UV. These
+        # are actual tool shapes/cwd, not inferred connector-name danger tiers.
+        for command in ('rm -rf ~','sudo rm -rf ~'):
+            self.assertEqual(policy.main_requirement('Bash',{'command':command}),'uv')
+        with tempfile.TemporaryDirectory() as cwd:
+            event={'tool_name':'Write','tool_input':{'file_path':'.codex/config.toml','content':'# fixture'},'cwd':cwd}
+            out=io.StringIO()
+            with patch('sys.stdin',io.StringIO(json.dumps(event))),patch('sys.stdout',out):
+                self.assertEqual(danger.hook_main([]),0)
+            self.assertEqual(json.loads(out.getvalue())['hookSpecificOutput']['permissionDecision'],'ask')
+            self.assertEqual(policy.main_requirement('Write',event['tool_input'],cwd=cwd),'uv')
 
     def test_protected_macos_working_folders(self):
         for name in ('Downloads/编程','Desktop/x','Documents/x','Library/Mobile Documents/com~apple~CloudDocs/x'):

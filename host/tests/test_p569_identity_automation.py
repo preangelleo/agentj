@@ -20,17 +20,17 @@ def core(lang):
     return (main_identity.DATA / f"core.{lang}.md").read_text()
 
 
-class IdentityV23(unittest.TestCase):   # P571: the core is v26 now (0.26.9 E5); the v23 rules below must survive it
+class IdentityV23(unittest.TestCase):   # 0.30.0: core v28; the v23 rules below must survive it
     def test_manifest_version_and_hashes(self):
         man = json.loads((main_identity.DATA / "manifest.json").read_text())
-        self.assertEqual(man["version"], 26)
-        self.assertEqual(main_identity.VERSION, 26)
-        self.assertEqual(main_identity.verify_core()["version"], 26)
+        self.assertEqual(man["version"], 28)
+        self.assertEqual(main_identity.VERSION, 28)
+        self.assertEqual(main_identity.verify_core()["version"], 28)
         for lang in ("zh", "en"):
             digest = hashlib.sha256((main_identity.DATA / f"core.{lang}.md").read_bytes()).hexdigest()
             self.assertEqual(man["hashes"][lang], digest)
             self.assertEqual(main_identity.HASHES[lang], digest)
-            self.assertTrue(core(lang).splitlines()[0].endswith("v26"))
+            self.assertTrue(core(lang).splitlines()[0].endswith("v28"))
 
     def test_update_check_comes_before_support_and_father(self):
         for lang, persist in (("zh", "仍在"), ("en", "If it persists")):

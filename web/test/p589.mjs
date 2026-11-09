@@ -6,7 +6,7 @@ import {startFakeHost} from './fakehost.mjs';
 import {launch,newPage,evaluate as ev,navigate,waitFor,waitState,shoot,key,sleep} from './browser.mjs';
 const before=process.argv.includes('before');
 const out=resolve(process.env.P589_OUT || 'reports/qa/p589',before?'before':'after');mkdirSync(out,{recursive:true});
-const web=await startWebServer({port:0,...(before?{publicDir:'/tmp/p589-baseline/web/public'}:{})});
+const web=await startWebServer({port:0,...(process.env.P589_PUBLIC?{publicDir:process.env.P589_PUBLIC}:before?{publicDir:'/tmp/p589-baseline/web/public'}:{})});
 const fake=await startFakeHost(),B=await launch();let checks=0;
 const ok=(v,m)=>{assert.ok(v,m);checks++;};
 const click=(p,id)=>ev(p,`document.getElementById(${JSON.stringify(id)}).click()`);
@@ -34,7 +34,13 @@ for(const lang of ['zh','en'])for(const theme of ['light','dark'])for(const [w,h
  await shot(p,`${lang}-${theme}-${w}-usage`);
  if(!before){
   ok(await ev(p,`document.getElementById('usageList').textContent.includes('12,300')&&document.getElementById('usageList').textContent.includes('12,000')`),'real meter heartbeat usage survives snapshot');
-  await key(p,'Escape');ok(await ev(p,`document.getElementById('usageDlg').hidden`),'Escape closes usage');
+  const escapeBefore=process.env.P589_DIAGNOSTIC==='1'?await ev(p,`(()=>{window.__p589keys=[];window.addEventListener('keydown',e=>window.__p589keys.push({key:e.key,code:e.code,trusted:e.isTrusted,composing:e.isComposing,focus:document.hasFocus()}),true);const n=document.getElementById('toast');return{toastClass:n.className,toastText:n.textContent}})()`):null;
+  await key(p,'Escape');const usageClosed=await ev(p,`document.getElementById('usageDlg').hidden`);
+  if(process.env.P589_DIAGNOSTIC==='1'){
+   const capture=async label=>({label,usageClosed,escapeBefore,live:await ev(p,`(async()=>{const l=await import('./js/layers.js'),a=l.activeLayer();return {usageHidden:document.getElementById('usageDlg').hidden,activeLayer:a?.element()?.id,focus:document.activeElement?.id,pageFocus:document.hasFocus(),keys:window.__p589keys,toastClass:document.getElementById('toast').className,dialogs:[...document.querySelectorAll('[role=dialog],dialog,.ajmodal,#confirm')].filter(n=>!n.hidden&&(n.open||n.getClientRects().length)).map(n=>({id:n.id,covered:n.classList.contains('aj-layer-covered'),popup:n.dataset.popupSystem,card:n.dataset.card,tag:n.tagName})),keysHidden:document.getElementById('keys').hidden}})()`)});
+   const diag=[await capture('after-original-check')];await sleep(150);diag.push(await capture('150ms'));await sleep(850);diag.push(await capture('1000ms'));if(!usageClosed){await key(p,'Escape');diag.push(await capture('second-Escape'));}writeFileSync(out+'/escape-diagnostic.json',JSON.stringify(diag,null,2));
+  }
+  ok(usageClosed,'Escape closes usage');
   await fake.send({t:'meter',model:'test',heartbeat_usage:{available:true,input_tokens:12000,output_tokens:300,total_tokens:12300,turns:3,measured_turns:2,complete:false}});await sleep(150);await click(p,'mWeek');
   ok(await ev(p,`document.getElementById('usageList').textContent.includes(${JSON.stringify(lang==='zh'?'总量不完整':'Total is incomplete')})&&document.getElementById('usageList').textContent.includes(${JSON.stringify(lang==='zh'?'2/3':'2 of 3')})`),'mixed measured and unknown usage marked incomplete');
   await shot(p,`${lang}-${theme}-${w}-usage-partial`);await key(p,'Escape');
@@ -45,3 +51,6 @@ for(const lang of ['zh','en'])for(const theme of ['light','dark'])for(const [w,h
 }
 console.log(`P589 ${before?'baseline':checks+' checks PASS'} → ${out}`);
 }finally{await B.close();await fake.stop();await web.stop();}
+// Keep the existing phase's original heartbeat/usage assertions and add its
+// Escape-ownership regression only after the first browser/transport is closed.
+if(!before){process.env.P0300_ESCAPE_OUT ||= resolve(out,'escape-ownership');await import('./p0300-escape.mjs');}

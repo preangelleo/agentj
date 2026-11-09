@@ -26,7 +26,7 @@ import { mk, toast, toastAction, notify, toastOff, confirmSheet, pageCopy } from
 import { SVG } from './icons.js';
 import { registerLayer } from './layers.js';
 import { elevateChallenge, approve, canAssert, keysDigest } from './faceid.js';
-import { paintPk, pkSheet, failNotice, faState, webauthnErr } from './pkassist.js';   // P539: no own passkey here · why a tap failed
+import { offerLocalSetup, paintPk, pkSheet, failNotice, faState, webauthnErr } from './pkassist.js';   // P539: no own passkey here · why a tap failed
 
 export const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 export const NAME_MAX = 64;
@@ -377,6 +377,7 @@ async function checkRow(name) {
 }
 async function writeSetup(op,name) {
   if (busy || !S) return;
+  if (!S.button_ops && offerLocalSetup(S.fa_s)) return;
   if (!S.button_ops && (!S.fa || !canAssert())) { toast(t('p450.passkey'),4500); return; }
   const ch=chs.get(op+'\n'+name);
   if (!S.button_ops && !ch) { toast(t('p450.again'),4000); return; }
@@ -469,6 +470,7 @@ function pkFailed(res, name, retry) {
 }
 /** 拷贝: approve() and clipboard.write() both start in this tap. */
 function copy(r, ch, button, vendor) {
+  if (offerLocalSetup(S?.fa_s)) return;
   let give, drop;
   const value = new Promise((ok, no) => { give = ok; drop = no; });
   const blob = value.then((v) => new Blob([v], { type: 'text/plain' }));

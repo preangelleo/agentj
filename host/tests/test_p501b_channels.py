@@ -94,10 +94,15 @@ class Routing(unittest.IsolatedAsyncioTestCase):
         cfg = mail.blank_config()
         cfg.update(enabled=True, address='agent@example.test', generation='fixture', allow=[{'addr':'owner@example.test', 'role':'owner'}])
         avatar = NS(receive_owner=AsyncMock(return_value='分身答复'))
-        host = NS(stopped=lambda:False, agent_cfg={}, external_channels=avatar, _accept=AsyncMock(return_value=NS(turn=7)), hist_add=lambda *a:{'id':1})
+        import tempfile
+        from pathlib import Path
+        from agentj.state import State
+        td = tempfile.TemporaryDirectory(); self.addCleanup(td.cleanup)
+        st = State(Path(td.name)); st.init()
+        host = NS(st=st, stopped=lambda:False, agent_cfg={}, external_channels=avatar, _accept=AsyncMock(return_value=NS(turn=7)), hist_add=lambda *a:{'id':1})
         manager = object.__new__(mail.Mail)
-        manager.host=host;manager.st=NS();manager.lang=lambda:'zh';manager.reply=AsyncMock()
-        verdict=NS(addr='owner@example.test', role='owner', auth=auth, name='')
+        manager.host=host;manager.st=st;manager.lang=lambda:'zh';manager.reply=AsyncMock()
+        verdict=mail.Verdict(addr='owner@example.test', role='owner', auth=auth, name='', notice=None)
         from unittest.mock import patch
         state={'routes':{}}
         with patch.object(mail,'read_config',return_value=cfg), patch.object(mail,'read_state',return_value=state), patch.object(mail,'save_state'):

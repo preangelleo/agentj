@@ -15,9 +15,14 @@ from agentj import cli, serve  # noqa: E402
 
 dump = os.environ.pop("AGENTJ_WIRE_DUMP", None)   # never inherited by the agent
 if dump:
-    out = os.fdopen(os.open(dump, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), "a", buffering=1)
+    # Initial CLI setup must see the same pristine State as the shipped entry
+    # point. A recorder file is not part of a new host until traffic exists.
+    out = None
 
     def _tap(self, direction, data):
+        global out
+        if out is None:
+            out = os.fdopen(os.open(dump, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600), "a", buffering=1)
         raw = data.encode() if isinstance(data, str) else data
         out.write(json.dumps({"dir": direction, "t": "text" if isinstance(data, str) else "bin",
                               "b64": base64.b64encode(raw).decode()}) + "\n")

@@ -598,7 +598,7 @@ class AcpAgent(Agent):
             name = harness_tool(tool)
             from .approval_jev import low_risk_pass
             r = ({"behavior": "allow"} if not self.research and low_risk_pass(self.host, self.cfg, name, inp, batch)
-                 else await self.host.ask(name, inp, gone, batch=batch,
+                 else await self.host.ask(name, inp, gone, _harness_permission=True, batch=batch,
                                          **({"background": "task"} if self.cfg.get("_workflow_ceo") else {})))   # P552
             if r.get("behavior") == "allow":
                 ans = yes

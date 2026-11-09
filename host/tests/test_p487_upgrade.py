@@ -109,7 +109,9 @@ class Failures(_Env):
         result = self.rollback_verify(broken=True)
         self.assertEqual((result['result'], result['reason']), ('failed', 'rollback_failed'))
         self.assertIn('recover', result)
-        self.assertIn('回滚也没成功', au.notice(result))
+        self.assertIn('自动回滚也未完成', au.notice(result))
+        self.assertIn('紧急修复', au.notice(result))
+        self.assertIn('rollback_failed', au.notice(result))
 
     def test_installer_unclassified_exception_is_fixed_and_redacted(self):
         self.prepare()

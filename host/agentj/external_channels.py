@@ -126,18 +126,24 @@ class ExternalChannels(WeChat):
                             router_bound=bound, model=req.get('model'))
         except ValueError as e:
             return {'ok': False, 'why': str(e)}
-        if not await self.approval('更换外部通道分身套餐 / Change external-channel plan: ' + str(wanted), {'op':'avatar','config':config},
-                                   pk=False):   # P573 (#386 ⑤): reversible — one signed button, no Face ID
-            return {'ok':False, 'why':'denied'}
-        await self.sessions.stop_all()
-        if getattr(self.h, 'wechat', None):
-            await self.h.wechat.sessions.stop_all()
-            self.h.wechat.store.data['sessions'] = {}
-            self.h.wechat.store.save()
-        self.store.data['avatar'] = {'asked':True, **({} if wanted == 'shared' else {'config':config})}
-        self.store.data['sessions'] = {}
-        self.store.save()
-        return {'ok': True, 'kind':config.get('kind'), 'model':config.get('model')}
+        receipt = {}
+        target = {'op':'avatar','config':config}
+        try:
+            if not await self.approval('更换外部通道分身套餐 / Change external-channel plan: ' + str(wanted),
+                                       target,pk=False,receipt=receipt):
+                return {'ok':False,'why':'denied'}
+            await self.sessions.stop_all()
+            if getattr(self.h,'wechat',None):
+                await self.h.wechat.sessions.stop_all()
+            if not self.consume_approval(receipt,target):return {'ok':False,'why':'approval_changed'}
+            if getattr(self.h,'wechat',None):
+                self.h.wechat.store.data['sessions'] = {}
+                self.h.wechat.store.save()
+            self.store.data['avatar'] = {'asked':True, **({} if wanted == 'shared' else {'config':config})}
+            self.store.data['sessions'] = {}
+            self.store.save()
+            return {'ok':True,'kind':config.get('kind'),'model':config.get('model')}
+        finally:self.discard_approval(receipt)
 
     def admitted(self, record):
         admission = record.get('admission') or {}

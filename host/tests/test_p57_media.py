@@ -62,8 +62,21 @@ def _get(host, s, mid, timeout=10.0):
     return go()
 
 
+
+# Each test owns its first-init preferences; another case's root is not authority.
+import os as _cfg_os
+import tempfile as _cfg_tmp
+from unittest.mock import patch as _cfg_patch
+
+def _isolate_config(test):
+    config = _cfg_tmp.TemporaryDirectory(prefix="p0300-config-")
+    test.addCleanup(config.cleanup)
+    env = _cfg_patch.dict(_cfg_os.environ, {"XDG_CONFIG_HOME": config.name})
+    env.start(); test.addCleanup(env.stop)
+
 class _Base(unittest.TestCase):
     def setUp(self):
+        _isolate_config(self)
         self.tmp = tempfile.TemporaryDirectory()
         self.st = _state(self.tmp.name)
         self.work = pathlib.Path(self.tmp.name) / "work"
@@ -163,7 +176,7 @@ class Refusals(_Base):
         # here): a text file holding a real key goes as its MASKED copy — an ordinary card — and only the value is carded
         self.assertEqual([(s["name"], s["why"]) for s in skips], [
             (".env", "key_file"), (".env.local", "key_file"), ("server.pem", "key_file"), ("a.png", "key_file"),
-            ("x.png", "private")])
+            ("这份资料", "private")])
         self.assertEqual([i["name"] for i in items], ["x.png", "a.png", "notes.md", "page.html", "ok.html"],
                          "a data: picture inside html is not a key")
         for it in items[2:4]:
@@ -345,6 +358,10 @@ class HostWire(_Base):
 
 # ------------------------------------------------------------------ the three harnesses
 class _MediaChain(_Chain):
+    def setUp(self):
+        _isolate_config(self)
+        super().setUp()
+
     def test_reply_with_a_local_image_gets_media(self):
         data = png(60_000)
         (self.work / "out").mkdir()

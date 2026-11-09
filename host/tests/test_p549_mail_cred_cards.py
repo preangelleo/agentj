@@ -176,7 +176,8 @@ class CardsFold(unittest.IsolatedAsyncioTestCase):
     """#314: the Agent's key card is open on the Mac, the owner saves the same key from the phone's Settings."""
 
     async def asyncSetUp(self):
-        from test_l1 import Phone, _owner_host, _ready
+        from test_l1 import _ready
+        from _p541_device import Phone, _owner_host
         self.tmp = tempfile.TemporaryDirectory(prefix="p549c-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.st = State(Path(self.tmp.name) / "s"); self.st.init()
@@ -197,7 +198,10 @@ class CardsFold(unittest.IsolatedAsyncioTestCase):
             new = set(self.h.elevate.cards) - before
             if new:
                 return task, self.h.elevate.cards[new.pop()]
+            if task.done():
+                self.fail(f"credential request finished before card: {task.result()}")
             await asyncio.sleep(.005)
+        task.cancel();await asyncio.gather(task,return_exceptions=True)
         self.fail("no card")
 
     async def test_saved_on_the_phone_folds_the_agents_card_everywhere(self):

@@ -90,7 +90,7 @@ class Cost(Decide):
 
     def test_native_codex_two_heartbeats_exclude_owner_and_prior_history(self):
         from agentj.shared_codex import SharedCodexAgent
-        a = SharedCodexAgent.__new__(SharedCodexAgent)
+        a = SharedCodexAgent(self.host, {'dir':self.tmp.name,'_workflow_ceo':True})
         a.host, a.tid, a.usage = self.host, 'thread', None
         a.touch = Mock()
         a.research, a.persist = True, False
@@ -124,7 +124,7 @@ class Cost(Decide):
 
     def test_native_claude_includes_cache_input(self):
         from agentj.agent import ClaudeAgent
-        a = ClaudeAgent.__new__(ClaudeAgent)
+        a = ClaudeAgent(self.host, {'dir':self.tmp.name,'_workflow_ceo':True})
         a.host, a.touch, a.turn_done = self.host, Mock(), None
         self.host.agent = a
         u = self.h.usage
@@ -170,7 +170,7 @@ class Cost(Decide):
         from agentj.shared import SharedOpenCodeAgent
         from agentj.shared_opencode2 import SharedOpenCodeV2Agent
         async def run(cls, v2):
-            a = cls.__new__(cls)
+            a = cls(self.host, {'dir':self.tmp.name,'_workflow_ceo':True})
             a.host, a.sid, a._kids, a.touch = self.host, 's', {}, Mock()
             a.message_roles = {}
             self.host.agent = a
@@ -192,6 +192,26 @@ class Cost(Decide):
             self.assertEqual(u.data['total_tokens']-before, 138)
         asyncio.run(run(SharedOpenCodeAgent, False))
         asyncio.run(run(SharedOpenCodeV2Agent, True))
+
+    def test_v2_step_preserves_usage_phase_and_heartbeat_sampling(self):
+        from agentj.agent_opencode2 import OpenCodeV2Agent
+        a=OpenCodeV2Agent(self.host,{'dir':self.tmp.name,'model':'fixture/model'})
+        a.sid='synthetic';self.host.agent=a
+        self.host.agent_phase=Mock();self.host.turn_use=Mock()
+        async def run():
+            usage=self.h.usage
+            usage.start(SimpleNamespace(heartbeat_key='fixture'))
+            a.on_event({'type':'session.step.ended','data':{'sessionID':'synthetic',
+                'assistantMessageID':'step','ordinal':1,'cost':0.0002,
+                'tokens':{'input':10,'output':20,'reasoning':3,'cache':{'read':100,'write':5}}}})
+            usage.end();await usage.task
+        asyncio.run(run())
+        self.host.agent_phase.assert_called_with('gen',None)
+        self.assertEqual(self.host.turn_use.call_args.args[0],'step:step:1')
+        self.assertEqual(self.host.turn_use.call_args.args[2],0.0002)
+        self.assertEqual(self.h.usage.view()['input_tokens'],115)
+        self.assertEqual(self.h.usage.view()['output_tokens'],23)
+        self.assertEqual(self.h.usage.view()['total_tokens'],138)
 
 # Avoid inheriting superseded unconditional-timer tests; retain their fixture only.
 for name in dir(Decide):

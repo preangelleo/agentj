@@ -73,7 +73,7 @@ try {
         await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'Agent J' });
         await ev(p, "document.getElementById('phone-env-dismiss')?.click()"); await sleep(250);
         await ev(p, "import('./js/jcards.js').then(m=>m.refresh())");
-        const open = async () => { await ev(p, `import('./js/five-pages.js').then(m=>m.openTarget('todo'))`); await waitFor(p, `document.querySelectorAll('.jc-body[data-card=todo] .jc-item').length===5`); await sleep(150); };
+        const open = async () => { await ev(p, `import('./js/five-pages.js').then(m=>m.openTarget('todo'))`); await waitFor(p, `!!document.querySelector('.jc-body[data-card=todo] .jc-hide-done input')`); await ev(p, `(()=>{const c=document.querySelector('.jc-hide-done input');if(c.checked)c.click();})()`); await sleep(150); };
         await open();
         const order = await ev(p, "[...document.querySelectorAll('.jc-item')].map(li=>li.dataset.item).join()");
         check(order === 't4,t3,t1,t5,t2', `card order: overdue, due soon, open, waiting, done (${order}) ${tag}`);

@@ -59,8 +59,17 @@ def _re(pattern: str, flags: int = 0) -> re.Pattern:
 # Names whose value is a secret (case-insensitive): the server scan's list, plus (review SS-04) pass / pw / auth / credentials
 # and any NAME ending in KEY / SECRET / TOKEN — `DB_PASS`, `MAILGUN_API_KEY`, `stripeSecret`, `x-auth-token` (a lower-case
 # suffix needs a `_` / `-` before it, so `monkey` is not a name; upper or Capitalised suffixes may follow letters directly).
-_CRED_NAMES = (r"(?:api[ _-]?key|apikey|x[_-]api|secret|token|password|passwd|pass|pwd|pw|auth|credentials?|access[ _-]?key|client[ _-]?secret"
+_CRED_NAMES = (r"(?:api[ _-]?key|apikey|x[_-]api|secret|token|password|passwd|passphrase|pass|pwd|pw|auth|credentials?|access[ _-]?key|client[ _-]?secret"
                r"|private[ _-]?key|secret[ _-]?key|私钥|密钥|密码|口令|令牌|秘密|访问令牌|助记词|恢复短语|mnemonic|(?:seed|recovery|secret recovery)[ _-]?phrase|[A-Za-z0-9_-]*[_-](?:key|secret|token|pass|passwd|pwd|pw)|[A-Za-z0-9]*(?-i:KEY|SECRET|TOKEN|Key|Secret|Token))")
+# Finite shell literal-word grammar for explicitly labelled CLI passwords.
+# The disjoint alternatives consume an entire quote pair or one bare/escaped
+# character. Quoted newlines and escaped line continuations are data; an outside
+# newline stays a command boundary. No variable/process/command/arithmetic
+# substitution is a literal. ANSI-C and locale quote prefixes are explicit.
+_CLI_PASSWORD_LITERAL = _re(
+    r"(?<![^ \t\n])(--(?:password|passwd|passphrase)(?:=|[ \t]+(?!(?:\\\n)*[-#])))"
+    r"(?:\$'(?:\\[\s\S]|[^'\\])*'|\$?\"(?:\\[\s\S]|[^\"\\$`])*\"|'[^']*'|\\[\s\S]|[^ \t\n'\"\\$`;&|<>()])+"
+    r"(?=$|[ \t\n;&|<>()])", re.I)
 _SECRETS: list[tuple[str, re.Pattern, str]] = [
     ("private_key", _re(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----(?:[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----|[\s\S]*)"), R),
     # P326: a scheme is at most 32 characters — unbounded, a long "a.b.c…" run was scanned once per position (quadratic)
@@ -86,6 +95,7 @@ _SECRETS: list[tuple[str, re.Pattern, str]] = [
     ("mailgun_key", _re(r"\bkey-[0-9a-f]{32}\b"), R),
     ("authorization_header", _re(r"\b(Authorization\s*:\s*(?:Bearer|Basic|token)\s+)(?!<redacted>|\$\(|\$\{|\$[A-Z_])[^\s\"'<>\u3000-\u303f\uff00-\uffef]+", re.I),
      r"\1" + R),
+    ("credential_assignment", _CLI_PASSWORD_LITERAL, r"\1" + R),
     ("credential_assignment", _re(
         r"(?<![A-Za-z0-9])(" + _CRED_NAMES + r"[\"']?\s*[:：=]\s*)([\"'`])(?!<[^<>\r\n]+>\2|\$\(|\$\{|\$[A-Z_])(?:(?!\2)[^\n`\u3000-\u303f\u3400-\u9fff\uff00-\uffef]){6,}\2", re.I),
      r"\1\2" + R + r"\2"),                                                     # a quoted value, spaces allowed
@@ -235,8 +245,29 @@ def _code_value(v: str) -> bool:
     return "." in callee or "_" in callee or callee.split(".")[-1] in _CODE_CALLEES
 
 
+def _cli_password_kind(match: re.Match) -> bool | None:
+    """True: complete literal CLI argument; False: dynamic CLI; None: other label."""
+    if match.re is _CLI_PASSWORD_LITERAL:
+        return True
+    # Generic assignment patterns also see the name after the two dashes.
+    # They must not hide a substitution rejected by the whole-word grammar.
+    for size in (0, 1, 2):
+        start = max(0, match.start() - size)
+        candidate = match.string[start:match.end()]
+        # A JSON/header colon or quoted key is never a raw CLI flag. Only the
+        # actual unquoted flag word at a shell blank/start boundary may defer
+        # generic assignment handling to the whole-argument grammar.
+        if ((start == 0 or match.string[start - 1] in " \t\n")
+                and re.match(r"--(?:password|passwd|passphrase)=", candidate, re.I)):
+            return _CLI_PASSWORD_LITERAL.fullmatch(candidate) is not None
+    return None
+
+
 def _not_value(match: re.Match, repl: str, owner: bool = False) -> bool:
     """Recognize whole shell/code/name references; owner channels also accept name-shaped environment identifiers."""
+    cli = _cli_password_kind(match)
+    if cli is not None:
+        return not cli
     rendered = match.expand(repl)
     pre = rendered.partition(R)[0]
     rest = match.string[match.start() + len(pre):]
@@ -254,7 +285,7 @@ def _not_value(match: re.Match, repl: str, owner: bool = False) -> bool:
 
 
 VALUE_KINDS = frozenset(("credential_assignment", "authorization_header", "bearer_token"))
-_PW_LABEL = re.compile(r"(?:password|passwd|pass|pwd|pw|密码|口令|助记词|恢复短语|mnemonic|(?:seed|recovery)[ _-]?phrase)[\"'`\s:：=]*$", re.I)
+_PW_LABEL = re.compile(r"(?:password|passwd|passphrase|pass|pwd|pw|密码|口令|助记词|恢复短语|mnemonic|(?:seed|recovery)[ _-]?phrase)[\"'`\s:：=]*$", re.I)
 # (seed words keep their strength too: a mnemonic is lower-case words, never "digit or symbol")
 _PLACEHOLDER_VALUES = frozenset(("true", "false", "null", "none", "undefined", "password", "changeme", "your_api_key", "your_token",
                                  "replace_me", "placeholder", "redacted", "example", "secret", "not_set"))
@@ -320,6 +351,16 @@ def credential_value(match: re.Match, repl: str) -> bool:
     if _not_value(match, repl, True):
         return False
     pre, value, quoted = _label_value(match, repl)
+    cli = _cli_password_kind(match)
+    if cli is not None:
+        if not cli:
+            return False
+        # The literal grammar, rather than generic reference/path heuristics,
+        # proves these are argument bytes. '$HOME' inside single quotes is a
+        # literal password too. Keep the existing explicit placeholder spelling.
+        plain = value[1:-1] if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0] else value
+        return bool(plain) and not (R in plain or plain.lower() in _PLACEHOLDER_VALUES
+                or _PLACEHOLDER_WORD.fullmatch(plain) or re.fullmatch(r"[*xX•.…_-]+", plain))
     return is_secret(value, bool(_PW_LABEL.search(pre)), quoted, bool(_HEADER_LABEL.search(pre)))
 
 

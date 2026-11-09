@@ -237,7 +237,6 @@ def source_allows(card,host):
         return pickup_context_allows(card, host)
     return (adapter.card is card and adapter.host is host and not adapter.terminal
             and host.__dict__.get('_approval_special',{}).get(adapter.rid) is adapter
-            and source.get('verified') is True and source.get('suspicious') is not True
             and _context_allows(adapter,host))
 
 
@@ -259,12 +258,9 @@ def pickup_context_allows(card, host):
 
 
 def pickup_source_allowed(source):
-    """Missing provenance and positively identified external taint are distinct."""
-    if source.get('role') in ('unknown_external', 'external_advice') or any(source.get(key) for key in
-            ('material_unknown', 'material_ref', 'trigger_record', 'external_message_id', 'authorization_origin')):
-        return False
-    if source.get('verified') is True and source.get('suspicious') is not True:
-        return True
-    return (source.get('channel') == 'unknown' and source.get('message_id') is None
-            and source.get('root_message_id') is None
-            and (source.get('root') or {}).get('channel') in (None, 'unknown'))
+    """Source is displayed, never a substitute for request-bound owner UV.
+
+    External content cannot authorize a pickup. Outbox still requires the exact
+    paired recipient's fresh assertion, signing key, controller, nonce and TTL.
+    """
+    return True

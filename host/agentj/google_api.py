@@ -167,7 +167,9 @@ def refusal(agent, host=None) -> dict | None:
     if provenance.owner_grant_required(agent):
         return {"ok": False, "why": "owner_grant_scope",
                 "detail": "授权单未覆盖这一步或已失效，请回发起主机补授权 / the grant does not cover this step; ask the originating host"}
-    from . import approval_level
+    from . import approval_level, application_ingress
+    if host is not None and application_ingress.allowed(host):
+        return None
     if (host is not None and approval_level.level(getattr(host, "preferences", {}), host.st) == "harness"
             and provenance.unattended_turn(agent) in ("system", "same_host", "scheduled_task")):
         return None
@@ -246,7 +248,8 @@ async def card(host, st, tool: str, text: str, zh: bool = True) -> dict:
         text += "\n" + MAIL[1 if zh else 0]
     ans = await host.ask(tool, {"summary": text}, batch=False, grant_info=True, always_ask=True,
                          _company_proposal=policy_registry.HOST_CARD)
-    ok = isinstance(ans, dict) and ans.get("behavior") == "allow" and isinstance(ans.get("grant_info"), dict)
+    from . import application_ingress
+    ok = isinstance(ans, dict) and ans.get("behavior") == "allow" and application_ingress.allowed(host)
     st.log("google_api_card", tool=tool, result="allow" if ok else "deny",
            reason=(ans or {}).get("reason") if isinstance(ans, dict) and not ok else None)
     return {"ok": ok}
@@ -293,7 +296,11 @@ async def serve(host, st, req: dict) -> dict:
         zh = str(getattr(host, "lang", "zh")).startswith("zh")
         if not (await card(host, st, TOOLS[op], summary(op, req, f, zh), zh))["ok"]:
             return {"ok": False, "why": "denied", "detail": "the owner did not allow it on a paired device"}
-        return await asyncio.to_thread(run, st, req, f)
+        from . import application_ingress
+        try:
+            return await application_ingress.run(host, run, st, req, f)
+        except application_ingress.Expired:
+            return {'ok': False, 'why': 'application_ingress_unverified'}
     finally:
         if f is not None:
             with contextlib.suppress(OSError):

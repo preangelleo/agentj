@@ -1,6 +1,7 @@
 """P578b: rollback state, stale producers and native OpenCode default projection; no live provider calls."""
 import _hermetic  # noqa: F401
 import asyncio
+import os
 import pathlib
 import tempfile
 import unittest
@@ -14,6 +15,9 @@ from test_p423_146 import _agent, PROV
 
 class StateConsistency(unittest.TestCase):
     def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory(prefix='p578b-config-');self.addCleanup(self.tmp.cleanup)
+        config=mock.patch.dict(os.environ,{'XDG_CONFIG_HOME':self.tmp.name})
+        config.start();self.addCleanup(config.stop)
         p = mock.patch("agentj.working_root.record")
         p.start()
         self.addCleanup(p.stop)

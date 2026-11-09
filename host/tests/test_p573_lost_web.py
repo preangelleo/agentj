@@ -159,26 +159,28 @@ class SettingsUVScope(unittest.IsolatedAsyncioTestCase):
         import asyncio
         session=N(cid=1,state='ready',device='phone',pub=b'paired')
         st=N(sign_key=lambda _:b'k'*32,passkey_of_device=lambda _:{'id':'p','alg':-7,'spki':'public','rp':'agentj.app'},log=Mock())
-        host=N(st=st,channel='channel',stopped=lambda:False,stopping=asyncio.Event(),sessions={1:session},ask=AsyncMock(return_value={'behavior':'allow'}))
+        host=N(st=st,channel='channel',stopped=lambda:False,stopping=asyncio.Event(),sessions={1:session},
+               hist=N(epoch='synthetic'),kp=N(pub=b'host'),ask_ttl=2,ask=AsyncMock(return_value={'behavior':'allow'}))
         host._paired_live=lambda sess:host.sessions.get(sess.cid) is sess and sess.state=='ready'
         return host,session
 
     def verified(self,sess):
         return N(settings_uv_at=__import__('time').monotonic(),host_card=True,tool='AuthRescue',settings_session=sess,require_passkey=True,uv_ok=True,only=sess.device,rid='r')
 
-    async def test_valid_scope_skips_only_same_session_settings_confirmation(self):
+    async def test_legacy_scope_never_skips_a_new_listed_settings_confirmation(self):
         from agentj import auth_settings_uv as uv
         from unittest.mock import patch
         host,sess=self.setup_host()
         rescue=object.__new__(auth_rescue.Rescue);rescue.host=host
+        host.auth_rescue=rescue
         with patch.object(uv.time,'monotonic',return_value=100):
             self.assertTrue(uv.mint(host,sess,self.verified(sess)))
         with patch.object(uv.time,'monotonic',return_value=399):
             self.assertTrue(await rescue._confirm('codex','Backup',remote=sess))
-            host.ask.assert_not_awaited()
+            host.ask.assert_awaited_once()
             self.assertFalse(uv.reuse(host,sess,'delete'))
             self.assertTrue(await rescue._confirm('codex','Backup'))
-            host.ask.assert_awaited_once()  # Agent/CLI has no live requesting session
+            self.assertEqual(host.ask.await_count,2)  # each listed invocation requires fresh UV
         host.ask.reset_mock()
         with patch.object(uv.time,'monotonic',return_value=400):
             self.assertFalse(uv.reuse(host,sess,'add'))
@@ -204,16 +206,18 @@ class SettingsUVScope(unittest.IsolatedAsyncioTestCase):
                 if change=='stopped':host.stopped=lambda:True
                 self.assertFalse(uv.reuse(host,sess,'login'),change)
 
-    async def test_first_card_binds_session_uv_and_discloses_scope(self):
+    async def test_first_card_binds_session_and_requires_fresh_uv(self):
         host,sess=self.setup_host();host.lang='en'
         rescue=object.__new__(auth_rescue.Rescue);rescue.host=host
+        host.auth_rescue=rescue
         self.assertTrue(await rescue._confirm('codex','Backup',remote=sess))
         kw=host.ask.call_args.kwargs
         self.assertIs(kw['_settings_session'],sess)
         self.assertTrue(kw['require_passkey'])
         self.assertEqual(kw['only'],'phone')
-        self.assertIn('5 minutes',host.ask.call_args.args[1]['summary'])
-        self.assertIn('adding another AI account',host.ask.call_args.args[1]['summary'])
+        self.assertNotIn('5 minutes',host.ask.call_args.args[1]['summary'])
+        self.assertIn('Add another',host.ask.call_args.args[1]['summary'])
+        self.assertTrue(kw['_settings_context'].live(host))
 
     async def test_cancel_and_explicit_clear_invalidate_without_sliding_expiry(self):
         from agentj import auth_settings_uv as uv

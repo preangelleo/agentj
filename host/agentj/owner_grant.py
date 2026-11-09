@@ -193,6 +193,56 @@ def card_text(otg: dict) -> str:
     return "\n".join(lines)
 
 
+def typed_plan_display(inp, normalizer):
+    """Project only a checked Host plan template; never trust a tool's summary.
+
+    The raw v1 template is protocol data. Check every untrusted displayed leaf
+    with this ask's existing projector/index before retaining canonical bytes.
+    Other input objects and strings keep the ordinary full privacy projection.
+    """
+    if type(inp) is not dict or set(inp) != {'grant', 'card', 'summary', 'otg'} or type(inp['otg']) is not dict:
+        return normalizer
+    otg = inp['otg']
+    try:
+        check(otg)
+    except (GrantError, KeyError, TypeError, ValueError):
+        return normalizer
+    expected = card_text(otg)
+    if inp['grant'] != otg['tid'] or inp['card'] != expected or inp['summary'] != expected:
+        return normalizer
+    from . import approval_review
+    if not callable(getattr(normalizer, 'sensitive_kinds', None)):
+        raise ValueError('missing secret-plan safety projector')
+    fields = [otg['title'], otg['why'], otg['tid'], *otg['hosts'].values()]
+    identifiers = list(otg['hosts'])
+    for step in otg['steps']:
+        if step['cat'] == 'secret':
+            fields.extend(step[key] for key in ('name', 'src', 'dest'))
+            identifiers.extend(step[key] for key in ('from', 'to'))
+        else:
+            fields.extend(step.get(key, '') for key in ('what', 'exact'))
+            for key in ('match', 'paths', 'prefix'):
+                fields.extend(step.get(key, []))
+            fields.extend((step.get('upload') or {}).get(key, '') for key in ('via', 'host'))
+            identifiers.append(step['host'])
+    if (any(approval_review.display_text(text, lambda value: value) != text for text in fields)
+            or normalizer.sensitive_kinds(fields)):
+        raise ValueError('unsafe secret-plan display metadata')
+    # Schema-validated peer identifiers are public protocol IDs, not opaque
+    # credential guesses. Known fragments and explicit secret shapes still fail.
+    if (any(approval_review.display_text(text, lambda value: value) != text for text in identifiers)
+            or normalizer.sensitive_kinds(identifiers) - {'high_entropy'}):
+        raise ValueError('unsafe secret-plan identifier')
+    frozen = jcs(inp)
+    def project(value):
+        if value is inp or (type(value) is str and value == expected):
+            if jcs(inp) != frozen:
+                raise ValueError('secret-plan display input changed')
+            return value
+        return normalizer(value)
+    return project
+
+
 # ---------------------------------------------------------------- proof (the card's Face ID assertion), checked by any host
 def proof_of(otg: dict, info: dict) -> dict:
 

@@ -3,8 +3,8 @@ name: agentj-add-note
 description: Add one dated note atomically at the top of the owner's Notebook/记事本; report in one line. Trigger: `/agentj-add-note <words>`, "add a note", 「记一下」「帮我记一条」. The card's Collaborate button prefills `/agentj-add-note `.
 ---
 
-主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
-Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+默认派 CEO/子 Agent，写验收、复验、汇报；主人明确要求亲做就照办。指纹清单、凭据规则和 harness 硬限制不变。
+Delegate by default; follow explicit owner requests to work personally. Verify and report; UV, credential rules and harness limits remain.
 
 Notebook is card `notes`, backed by existing notes.md. + / Add a note save directly without AI; Collaborate with Agent J invokes this skill. Card edits/deletions also bypass AI.
 `/agentj-add-note add <words>` or words without an operation adds a note. With no words, ask what to note.

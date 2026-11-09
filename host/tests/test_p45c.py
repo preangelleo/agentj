@@ -124,7 +124,7 @@ class Cli(unittest.TestCase):
         # file here: only its presence is checked; no credential)
         (d / "cfg").mkdir()
         (d / "cfg/.credentials.json").write_text("{}")
-        self.run_("init", "--relay", "ws://127.0.0.1:1")
+        self.run_("init", "--relay", "ws://127.0.0.1:1", "--working-root", str(self.work))
 
     def run_(self, *a, inp="", ok=True):
         r = subprocess.run([AGENTJ, *a], env=self.env, input=inp, capture_output=True, text=True, timeout=60)
@@ -140,31 +140,51 @@ class Cli(unittest.TestCase):
         self.run_("agent", "claude", "--dir", str(self.work), "--unfenced")
         self.assertFalse(State(self.d / "state").agent_config()["fence"])
 
+    def approve_preferences(self, key=None, value=None, *, remove=False, reset=False):
+        import test_p174 as owner_fixture
+        with patch.dict(os.environ, self.env):
+            raw = preferences.template() if reset else preferences.edit(preferences.read()[0],key,value,remove=remove)
+            owner_fixture._approve_preferences(self,State(self.d/"state"),raw)
+
     def test_isolation_and_docker_preferences(self):
         self.run_("agent", "claude", "--dir", str(self.work))
-        self.run_("config", "set", "agent.isolation", "false")
-        self.run_("config", "set", "agent.allow_docker", "true")
+        for key, value in (("agent.isolation",False),("agent.allow_docker",True)):
+            before = pathlib.Path(self.env["XDG_CONFIG_HOME"],"agentj/config.json5").read_bytes()
+            r=self.run_("config","set",key,str(value).lower(),ok=False)
+            self.assertEqual(r.returncode,3,r.stdout+r.stderr)
+            self.assertEqual(pathlib.Path(self.env["XDG_CONFIG_HOME"],"agentj/config.json5").read_bytes(),before)
+            self.approve_preferences(key,value)
         with patch.dict(os.environ, {"XDG_CONFIG_HOME": self.env["XDG_CONFIG_HOME"]}):
-            c = State(self.d / "state").agent_config()
-            self.assertEqual((c["fence"], c["docker"]), (False, True))
-            self.run_("config", "unset", "agent.isolation")
-            self.assertTrue(State(self.d / "state").agent_config()["fence"])
+            c=State(self.d/"state").agent_config()
+            self.assertEqual((c["fence"],c["docker"]),(False,True))
+            self.assertEqual(self.run_("config","unset","agent.isolation",ok=False).returncode,3)
+            self.approve_preferences("agent.isolation",remove=True)
+            self.assertTrue(State(self.d/"state").agent_config()["fence"])
 
     def test_reset_all_with_yes_on_a_pipe(self):
-        self.run_("config", "set", "appearance.theme", "dark")
-        r = self.run_("config", "reset", "--all", ok=False)
-        self.assertEqual(r.returncode, 1)
-        self.assertIn("--yes", r.stdout)
-        self.assertNotIn('"needs": ["human"]', r.stdout)
-        self.run_("config", "reset", "--all", "--yes")
-        with patch.dict(os.environ, {"XDG_CONFIG_HOME": self.env["XDG_CONFIG_HOME"]}):
-            self.assertIsNone(preferences.get(preferences.read()[1], "appearance.theme"))
+        self.run_("config","set","appearance.theme","dark")
+        r=self.run_("config","reset","--all",ok=False)
+        self.assertEqual(r.returncode,1)
+        self.assertIn("--yes",r.stdout)
+        self.assertNotIn('"needs": ["human"]',r.stdout)
+        r=self.run_("config","reset","--all","--yes",ok=False)
+        self.assertEqual(r.returncode,3,r.stdout+r.stderr)
+        with patch.dict(os.environ, {"XDG_CONFIG_HOME":self.env["XDG_CONFIG_HOME"]}):
+            self.assertEqual(preferences.get(preferences.read()[1],"appearance.theme"),"dark")
+        self.approve_preferences(reset=True)
+        with patch.dict(os.environ, {"XDG_CONFIG_HOME":self.env["XDG_CONFIG_HOME"]}):
+            self.assertEqual(preferences.get(preferences.read()[1],"appearance.theme"),"system")
 
     def test_human_tier_keeps_only_devices_and_account(self):
         human = sorted(k for k, m in preferences.SCHEMA.items() if m["tier"] == "human")
-        self.assertEqual(human, ["human.devices", "human.relay", "human.remote_unbind", "human.web"])
+        self.assertEqual(human, ["agent.model", "human.devices", "human.relay", "human.remote_unbind", "human.web"])
         for k in ("human.danger_extra", "human.report_hostname", "human.fence"):
-            self.run_("config", "set", k, "x")
+            r=self.run_("config","set",k,"x",ok=False)
+            if k=="human.fence":
+                self.assertEqual(r.returncode,3,r.stdout+r.stderr)
+                self.assertIn("fresh paired-device UV",r.stdout)
+            else:
+                self.assertEqual(r.returncode,0,r.stdout+r.stderr)
         r = self.run_("config", "set", "human.devices", "x", ok=False)
         self.assertEqual(r.returncode, 2)
 

@@ -27,7 +27,7 @@ if (BEFORE) {
   const dir = join(homedir(), '.cache/p393/reconnect/before');
   if (existsSync(dir)) rmSync(dir, { recursive: true });
   mkdirSync(dir, { recursive: true });
-  const tar = execFileSync('git', ['archive', 'HEAD', 'web/public'], { maxBuffer: 1 << 30 });
+  const tar = execFileSync('git', ['archive', '8b9a9ed252^', 'web/public'], { maxBuffer: 1 << 30 });
   execFileSync('tar', ['-x', '-C', dir], { input: tar });
   publicDir = join(dir, 'web/public/');
 }
@@ -40,19 +40,23 @@ const S = {
     next: /turns green by itself[\s\S]*phone network[\s\S]*support\.agentj\.app/, at: /: still no link$/, sumOk: /^Last run: done \(\d\d:\d\d\)$/, details: 'Details', close: 'Close command result' },
 };
 // one recorder per page: every moment the disconnected card / Settings red / the 「连接已断开」 notice became visible
-const RECORDER = `(()=>{const R=window.__p393={pops:[],reds:[],lost:[],relink:false,t0:performance.now()};
-  const card=document.getElementById('offDlg'),conn=document.getElementById('set-connection'),toast=document.getElementById('toast');
+const RECORDER = `(()=>{const before=${BEFORE};const R=window.__p393={pops:[],reds:[],lost:[],recovered:[],states:[],relink:false,t0:performance.now()};
+  const conn=document.getElementById('set-connection'),toast=document.getElementById('toast');
+  if(!conn||!toast)throw new Error('P393 real connection/notification surfaces missing');
   const at=()=>Math.round(performance.now()-R.t0);
-  new MutationObserver(()=>{if(!card.hidden)R.pops.push({t:at(),vis:document.visibilityState})}).observe(card,{attributes:true,attributeFilter:['hidden']});
-  new MutationObserver(()=>{if(conn.dataset.online==='false')R.reds.push(at())}).observe(conn,{attributes:true,attributeFilter:['data-online']});
-  new MutationObserver(()=>{if(/连接已断开|Connection lost/.test(toast.textContent))R.lost.push(at())}).observe(toast,{childList:true,subtree:true,characterData:true});
+  const forbidden=()=>{const old=document.getElementById('offDlg'),blur=document.body.hasAttribute('data-offline-card');if((before ? old&&!old.hidden : old)||blur)R.pops.push({t:at(),vis:document.visibilityState,exists:!!old,blur})};
+  // Formal 0286 8b9a9ed252 removed this overlay. Observe its forbidden re-creation, not a null retired node.
+  new MutationObserver(records=>{for(const record of records){for(const n of record.addedNodes||[]){if(!before&&n.nodeType===1&&(n.id==='offDlg'||n.querySelector('#offDlg,[data-offline-card]')||n.hasAttribute('data-offline-card')))R.pops.push({t:at(),vis:document.visibilityState,transientInsertion:true});}if(record.attributeName==='data-offline-card'&&record.oldValue!==null)R.pops.push({t:at(),vis:document.visibilityState,transientBlur:true});}forbidden();}).observe(document.body,{childList:true,subtree:true,attributes:true,attributeOldValue:true,attributeFilter:['hidden','data-offline-card']});forbidden();
+  R.lastOnline=conn.dataset.online;
+  new MutationObserver(()=>{const on=conn.dataset.online;if(on===R.lastOnline)return;R.lastOnline=on;R.states.push({t:at(),online:on});if(on==='false')R.reds.push(at())}).observe(conn,{attributes:true,attributeFilter:['data-online']});
+  new MutationObserver(()=>{const text=toast.textContent;if(/连接已断开|Connection lost/.test(text))R.lost.push(at());if(/已恢复连接|Connection restored|本次断开|unknown reason|原因未知/.test(text))R.recovered.push(at())}).observe(toast,{childList:true,subtree:true,characterData:true});
   new MutationObserver(()=>{if(document.body.hasAttribute('data-relink')){R.relink=true;if(R.relinkAt==null)R.relinkAt=at()}}).observe(document.body,{attributes:true,attributeFilter:['data-relink']});
-  R.wakes=[];for(const [tg,ev] of [[window,'online'],[window,'pageshow'],[document,'resume'],[document,'visibilitychange']])tg.addEventListener(ev,()=>{if(!document.hidden)R.wakes.push({ev,t:at()})});
-  navigator.connection?.addEventListener?.('change',()=>{if(!document.hidden)R.wakes.push({ev:'connection',t:at()})});
+  R.wakes=[];for(const [tg,ev] of [[window,'online'],[window,'pageshow'],[document,'resume'],[document,'visibilitychange']])tg.addEventListener(ev,()=>{forbidden();if(!document.hidden)R.wakes.push({ev,t:at()})});
+  navigator.connection?.addEventListener?.('change',()=>{forbidden();if(!document.hidden)R.wakes.push({ev:'connection',t:at()})});
   let beat=performance.now();R.maxGap=0;setInterval(()=>{const n=performance.now();R.maxGap=Math.max(R.maxGap,Math.round(n-beat));beat=n},100);
   return true})()`;
 const rec = (p) => evaluate(p, `JSON.parse(JSON.stringify(window.__p393))`);
-const reArm = (p) => evaluate(p, `(()=>{const R=window.__p393;R.pops=[];R.reds=[];R.lost=[];R.relink=false;R.relinkAt=null;R.maxGap=0;R.wakes=[];R.t0=performance.now();return true})()`);
+const reArm = (p) => evaluate(p, `(()=>{const R=window.__p393;R.pops=[];R.reds=[];R.lost=[];R.recovered=[];R.states=[];R.lastOnline=document.getElementById('set-connection').dataset.online;R.relink=false;R.relinkAt=null;R.maxGap=0;R.wakes=[];R.t0=performance.now();return true})()`);
 const setHidden = (p, hidden) => evaluate(p, `(()=>{Object.defineProperty(document,'visibilityState',{configurable:true,get:()=>'${hidden ? 'hidden' : 'visible'}'});
   Object.defineProperty(document,'hidden',{configurable:true,get:()=>${hidden}});document.dispatchEvent(new Event('visibilitychange'));return true})()`);
 
@@ -80,7 +84,7 @@ async function chatTimings(p, lang, tag) {
   let r = await rec(p);
   out.short = r;
   if (!BEFORE) {
-    check(r.pops.length === 0 && r.reds.length === 0 && r.lost.length === 0, 'A: a 3.5 s drop shows no card / red / notice ' + tag + ' ' + JSON.stringify(r));
+    check(r.pops.length === 0 && r.reds.length === 0 && r.lost.length === 0 && r.recovered.length === 0, 'A: a 3.5 s drop shows no card / red / notice ' + tag + ' ' + JSON.stringify(r));
     check(out.shortDot && r.relink, 'A: only the header dot said so (data-relink) ' + tag);
     check(!(await evaluate(p, `document.body.hasAttribute('data-relink')`)), 'A: dot back to normal ' + tag);
   }
@@ -96,7 +100,7 @@ async function chatTimings(p, lang, tag) {
   fake.setUp(true); await waitState(p, 'ready', 15000); await sleep(500);
   r = await rec(p);
   out.lock = { ...r, hiddenPops };
-  if (!BEFORE) check(r.pops.length === 0, 'B: unlock + reconnect within a second → the card never appears ' + tag + ' ' + JSON.stringify(r.pops));
+  if (!BEFORE) check(r.pops.length === 0 && r.recovered.length === 0, 'B: unlock + reconnect within a second → the card never appears ' + tag + ' ' + JSON.stringify(r.pops));
   else console.log('BEFORE B (lock):', JSON.stringify(r.pops), r.pops.length ? '→ flash reproduced' : '→ not reproduced');
   // C · a frozen page (web lifecycle), host down while frozen, thawed and reconnected
   await sleep(300); await reArm(p);
@@ -108,35 +112,44 @@ async function chatTimings(p, lang, tag) {
   fake.setUp(true); await waitState(p, 'ready', 15000); await sleep(500);
   r = await rec(p);
   out.freeze = { frozen, ...r };
-  if (!BEFORE && frozen === true) check(r.pops.length === 0, 'C: thawed + reconnected → no card ' + tag + ' ' + JSON.stringify(r.pops));
+  if (!BEFORE && frozen === true) check(r.pops.length === 0 && r.recovered.length === 0, 'C: thawed + reconnected → no card ' + tag + ' ' + JSON.stringify(r.pops));
   if (frozen !== true) console.log('C: CDP freeze unavailable here:', frozen);
   return out;
 }
 
 async function outage(p, tag, s) {
-  // D · persists → the card after five seconds, not before
+  // 8b9a9ed252 replaced the old mandatory overlay with silent indicators and an operable page.
+  // Keep the four-second lower-bound probe and the original real five-second gate timing.
   await sleep(300); await reArm(p);
-  const t0 = Date.now();
-  fake.setUp(false); fake.kick(1001);
+  const t0=Date.now();fake.setUp(false);fake.kick(1001);
   await sleep(4000);
-  check((await rec(p)).pops.length === 0, 'D: nothing in the first four seconds ' + tag);
-  await waitFor(p, `!${$('offDlg')}.hidden`, 6000);
-  const ms = Date.now() - t0;
-  // Measured in the page: from the drop the page saw (data-relink) to the card. A page timer that fires > LATE_MS late
-  // (renderer starved or throttled to 1 Hz — seen right after the C freeze/thaw step inside precheck) restarts the window by
-  // design (reconnect.js), so the upper bound then allows one more window + the measured stall. The 100 ms heartbeat sees a
-  // stall to within one beat, hence >= 900. The lower bound (never before five seconds) is unconditional.
-  // A foreground / resume / network event during the outage also starts the window again (app.js wakeLink): the upper bound
-  // counts from the last such start; the lower bound always counts from the drop.
-  const d = await rec(p), from = d.relinkAt ?? 0, pop = d.pops[0].t, gap = pop - from, late = d.maxGap >= 900;
-  const restart = Math.max(from, ...d.wakes.filter((w) => w.t > from && w.t < pop).map((w) => w.t));
-  const upper = (late ? 7500 + 5000 + d.maxGap : 7500) + (restart - from);
-  check(ms >= 4900 && gap >= 4900 && gap <= upper,
-    `D: the card after five seconds (page ${gap} ms, wall ${ms} ms, max timer stall ${d.maxGap} ms, wakes ${JSON.stringify(d.wakes)}, bound ${upper}) ${tag}`);
-  writeFileSync(`${OUT}/web-${tag}-offline-card.png`, await shoot(p, ''));
-  fake.setUp(true); await waitState(p, 'ready', 15000);
-  await waitFor(p, `${$('offDlg')}.hidden`, 3000);
+  let d=await rec(p);
+  check(d.pops.length===0&&d.reds.length===0&&d.lost.length===0&&d.recovered.length===0,'D: no overlay/red/notice in the first four seconds '+tag);
+  await waitFor(p,`${$('set-connection')}.dataset.online==='false'`,6000);
+  const ms=Date.now()-t0;d=await rec(p);
+  const from=d.relinkAt??0,down=d.reds[0],gap=down-from,late=d.maxGap>=900;
+  const restart=Math.max(from,...d.wakes.filter(w=>w.t>from&&w.t<down).map(w=>w.t));
+  const upper=(late?7500+5000+d.maxGap:7500)+(restart-from);
+  check(ms>=4900&&gap>=4900&&gap<=upper,`D: real down indicator after five seconds (page ${gap} ms, wall ${ms} ms, max stall ${d.maxGap} ms, bound ${upper}) ${tag}`);
+  check(d.reds.length===1&&d.pops.length===0&&d.lost.length===0&&d.recovered.length===0,'D: one down transition, never a retired overlay/blur or automatic notice '+tag);
+  check(await evaluate(p,`!document.getElementById('offDlg')&&!document.body.hasAttribute('data-offline-card')&&!!document.getElementById('outbox')&&!!document.getElementById('status')&&window.__ajState!=='ready'`),'D: truthful offline state and outbox survive without the removed blocking overlay '+tag);
+  const executionMessages=()=>fake.log.filter(m=>['say','reset','slash','cmd_run','answer'].includes(m.t)).length;const sent=executionMessages();
+  // A genuine click must still enter and leave Settings while offline; no Host action is requested.
+  await realTap(p,'#setBtn');await waitFor(p,`!${$('settings')}.hidden`);
+  await evaluate(p,`import('./js/settings.js').then(m=>m.close())`);await waitFor(p,`${$('settings')}.hidden`);
+  check(executionMessages()===sent,'D: offline navigation does not execute or queue a host action '+tag);
+  writeFileSync(`${OUT}/web-${tag}-offline-no-overlay.png`,await shoot(p,''));
+  fake.setUp(true);await waitState(p,'ready',15000);await sleep(400);
+  d=await rec(p);
+  check(d.pops.length===0&&d.recovered.length===0&&d.lost.length===0&&!await evaluate(p,`document.body.hasAttribute('data-relink')`),'D: reconnect restores the indicator with no flashed overlay or duplicate automatic notice '+tag);
+  check(d.states.filter(x=>x.online==='false').length===1&&d.states.filter(x=>x.online==='true').length===1,'D: connection down/up transitions are not duplicated '+tag);
   return ms;
+}
+async function realTap(p,selector){
+ const point=await evaluate(p,`(()=>{const n=document.querySelector(${JSON.stringify(selector)});n.scrollIntoView({block:'center'});const r=n.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2,hit:n.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}})()`);
+ check(point.hit,'offline navigation button is reachable: '+selector);
+ await p.send('Input.dispatchMouseEvent',{type:'mousePressed',x:point.x,y:point.y,button:'left',clickCount:1});
+ await p.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:point.x,y:point.y,button:'left',clickCount:1});
 }
 
 async function repair(p, lang, tag, s, realFold) {
@@ -159,7 +172,7 @@ async function repair(p, lang, tag, s, realFold) {
   await waitFor(p, `${$('rs-reset')}.dataset.state==='ok'`, 5000);
   check(resetCalls.length === 1 && resetCalls[0] === true, 'E: …and ran once connected (a signed reset) ' + tag);
   let r = await rec(p);
-  check(r.reds.length === 0 && r.lost.length === 0 && r.pops.length === 0, 'E: a short drop in Settings: no red, no notice, no card ' + tag + ' ' + JSON.stringify(r));
+  check(r.reds.length === 0 && r.lost.length === 0 && r.pops.length === 0 && r.recovered.length === 0, 'E: a short drop in Settings: no red, no notice, no card ' + tag + ' ' + JSON.stringify(r));
   // × = the P380 close: same words, ≥ 44 px, clears the result
   const x = await evaluate(p, `(()=>{const b=document.getElementById('rs-reset-close');const r=b.getBoundingClientRect();return {label:b.getAttribute('aria-label'),w:r.width,h:r.height,cls:b.className}})()`);
   check(x.label === s.close && x.w >= 44 && x.h >= 44 && /rscmdclose/.test(x.cls), 'E: the × is the P380 close, 44 px ' + tag + ' ' + JSON.stringify(x));
@@ -172,7 +185,7 @@ async function repair(p, lang, tag, s, realFold) {
   await waitFor(p, `${$('set-connection')}.dataset.online==='false'`, 13000);   // 5 s window; one late-timer restart (reconnect.js LATE_MS) can add another 5 s
   r = await rec(p);
   check(r.reds.length === 1 && r.reds[0] >= 4800, 'E: Settings red only after five seconds ' + tag + ' ' + JSON.stringify(r.reds));
-  check(r.pops.length === 0, 'E: the card stays behind full-screen Settings ' + tag);
+  check(r.pops.length === 0, 'E: the retired disconnected card stays absent, including behind Settings ' + tag);
   await evaluate(p, `${$('rs-reset-go')}.click()`);
   await waitFor(p, `${$('rs-reset')}.dataset.state==='fail'`);
   check(await evaluate(p, `${$('rs-reset-msg')}.classList.contains('rsfail')`), 'E: why (red) ' + tag);
@@ -232,6 +245,7 @@ try {
       res.cardMs = await outage(p, tag, s);
       await repair(p, lang, tag, s, tag === 'zh-dark-390');
       check(!p.problems.filter((x) => !/WebSocket|ERR_CONNECTION|net::/i.test(x)).length, 'no console errors ' + tag + ' ' + JSON.stringify(p.problems.slice(0, 3)));
+      check((await rec(p)).pops.length===0&&(await rec(p)).recovered.length===0,'E: no retired overlay or automatic recovery notice during active repair '+tag);
       results.push(res); i++;
       console.log('PASS P393 reconnect ' + tag);
     } finally { await p.close(); }

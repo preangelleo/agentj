@@ -1,7 +1,7 @@
 import { attachSpecial, canSpecialApprove, decorateSpecial, forgetSpecial, refreshSpecialVisibility, reviewSpecial } from './approval-special541.js';
 import { paintScope } from './cardplace.js';   // 0.26.9 #472 ②: class + why the task scope does not cover it
 import { copyButton } from './copycode.js';
-import { paintPk, faState, errName } from './pkassist.js';   // P539: no own passkey here · why a passkey tap failed
+import { offerLocalSetup, paintPk, faState, errName } from './pkassist.js';   // P539: no own passkey here · why a passkey tap failed
 import {phoneConfirmation} from './tvremote.js';
 // F32 (P73, ADR-A180, PROTOCOL §18): the secret pickup card. The owner asked their own Agent for something that holds a secret
 // (an ss:// link, a proxy YAML with a password); the Agent ran `agentj secret send`. The card arrives WITHOUT the value: name,
@@ -234,6 +234,7 @@ async function openCard() {
   const c = cards.get(shownId);
   if (!c || opened || !canSpecialApprove(c)) return;
   if (busy || c.sending) { toast(t(c.sending ? 'p566.handing' : 'p566.busy'), 3000); return; }   // P566 (#354): never a silent tap
+  if (offerLocalSetup(c.fa_s)) return;
   if ((!c.fa || !canAssert()) && phoneConfirmation(!c.fa)) return;
   if (!c.fa) { toast(t('sout.noPasskey'), 4200); return; }
   if (!canAssert()) { toast(t('elev.fa.none'), 5000); return; }

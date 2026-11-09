@@ -3,8 +3,8 @@ name: agentj-contacts
 description: The owner's address book and sending e-mail to people — 「发邮件给张三」「把这个文件发给李总」「转给老王」「记一下他的邮箱」「存个联系人」「导入通讯录」「导出联系人」「张三的邮箱是多少」, "email this to Zhang", "send it to my accountant", "save this contact", "import my contacts CSV / vCard". Look the person up first (`agentj contacts find`, pinyin and homophones included); nobody found → say so and put a contact card on the phone; send only through `agentj mail send` (mail only to the owner goes with no card; anyone else waits for a one-tap approval card on the phone). Also 「发给我自己」「发我邮箱」 "send it to me": slot 0 = the owner.
 ---
 
-主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
-Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+默认派 CEO/子 Agent，写验收、复验、汇报；主人明确要求亲做就照办。指纹清单、凭据规则和 harness 硬限制不变。
+Delegate by default; follow explicit owner requests to work personally. Verify and report; UV, credential rules and harness limits remain.
 
 # Address book and e-mail (通讯录)
 

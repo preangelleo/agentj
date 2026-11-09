@@ -93,6 +93,7 @@ class StartupProgress(unittest.IsolatedAsyncioTestCase):
             host=Mock();host.lang="en";host.st=Mock()
             a=oc.OpenCodeAgent(host,{"dir":"/var/tmp","_workflow_ceo":True,"fence":False})
             a.launch_argv=Mock(return_value=['fake']);a._kill=AsyncMock()
+            a._prepare_control_paths=AsyncMock()  # timing unit: no installation of real project plugins
             a._prepare=AsyncMock(side_effect=ValueError('stop after proven startup'))
             # Keep the same 80ms idle / 600ms total policy, but drive an adapter-local
             # clock and real StreamReader explicitly: CPU scheduling is not provider silence.

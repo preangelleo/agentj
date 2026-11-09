@@ -12,8 +12,9 @@
       "owner": "aj-status",
       "file": "public/app.css",
       "previousName": "sink",
-      "originalBodySha256": "0c162a2553e78e740d7c712ad24e235508aa717f9ddc3c41639e7229a4e82514",
-      "evidence": "reviewed exact component/class ownership and matching producer"
+      "originalBodySha256": "f0737e6a7479d6cc75143d05c4c4fac088c9e92be4c2496552aeaff9c63e3188",
+      "evidence": "0287 item12: animate owned water height to the measured 5h floor; previous transform body hash retained. p0287-batch2 / independent QA geometry cover compact, exit and resize.",
+      "previousBodySha256": "0c162a2553e78e740d7c712ad24e235508aa717f9ddc3c41639e7229a4e82514"
     },
     "aj-status-churn": {
       "owner": "aj-status",

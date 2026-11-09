@@ -8,7 +8,7 @@ import {startWebServer,PUBLIC_DIR} from './serve.mjs';
 import {parityRecorder} from '../../parity/lib.mjs';
 import {startFakeHost} from './fakehost.mjs';
 const {chromium}=process.env.PLAYWRIGHT_MODULE ? await import(process.env.PLAYWRIGHT_MODULE) : createRequire(import.meta.url)(process.env.AJ_PLAYWRIGHT_MODULE || '/tmp/aj-webmcp-playwright/node_modules/playwright');
-const out=fileURLToPath(new URL('../../../reports/qa/p422/',import.meta.url));mkdirSync(out,{recursive:true});
+const out=process.env.P422_OUT||fileURLToPath(new URL('../../../reports/qa/p422/',import.meta.url));mkdirSync(out,{recursive:true});
 const rec=parityRecorder('web/test/p422.mjs');
 const web=await startWebServer(),fake=await startFakeHost();
 const B=await chromium.launch({executablePath:process.env.CHROMIUM||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream']});
@@ -17,6 +17,8 @@ const ios='Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/60
 const android='Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/147.0.0.0 Mobile Safari/537.36';
 const states={idle:{status:'idle',kind:'',conn:'on'},working:{status:'working',kind:'',conn:'on'},waiting:{status:'waiting',kind:'permission',conn:'on'},question:{status:'waiting',kind:'question',conn:'on'},offline:{status:'unknown',kind:'',conn:'off'}};
 const rgb=h=>h.startsWith('#')?[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)):h.startsWith('color(srgb')?h.match(/[0-9.]+/g).slice(0,3).map(v=>Math.round(Number(v)*255)):h.match(/[0-9.]+/g).slice(0,3).map(Number);
+// Independent expected visible page layer, never derived from the safe-area band's own colour token.
+async function visibleBottom(p){return p.evaluate(()=>{const w=document.getElementById('water'),r=w.getBoundingClientRect(),s=getComputedStyle(w),edge=document.body.getBoundingClientRect().bottom,visible=s.display!=='none'&&s.visibility!=='hidden'&&Number(s.opacity)>0&&r.height>0&&r.top<edge&&r.bottom>=edge-1,c=document.createElement('canvas').getContext('2d');c.fillStyle=getComputedStyle(visible?w:document.getElementById('chromeProbe')).backgroundColor;c.fillRect(0,0,1,1);return{color:[...c.getImageData(0,0,1,1).data],visibleWater:visible,waterRect:r.toJSON(),meterTop:document.getElementById('m5h').getBoundingClientRect().top};});}
 async function pair(name,w,h,scheme,ua,standalone=true){
  fake.reset();await fake.addTurn({k:'phone',dev:'X',name:'Remote',text:'Read this'},('Message to scroll. '.repeat(400)),'done');
  const ctx=await B.newContext({viewport:{width:w,height:h},colorScheme:scheme,isMobile:true,hasTouch:true,userAgent:ua,permissions:['microphone']});
@@ -79,8 +81,8 @@ try{
     const color=await p.evaluate(state=>getComputedStyle(document.body).getPropertyValue('--c-'+state).trim(),state);
     const robot=await pixels(p);assert.deepEqual(robot.slice(0,3),rgb(color),`${device} ${scheme} ${state} robot`);
     const sample=await screenshotPixel(p,join(out,`${device}-${scheme}-${state}.png`),[[3,0],[3,h-1]]);
-    const chrome=await p.locator('#chromeProbe').evaluate(e=>getComputedStyle(e).backgroundColor);
-    for(const [i,px] of sample.entries())assert.deepEqual(px,device.startsWith('iphone')?(i===0?[44,43,38,255]:[...rgb(chrome),255]):[20,20,20,255],`${device}/${scheme}/${state} safe area`);
+    const chrome=await visibleBottom(p);if(device.startsWith('iphone'))assert.ok(chrome.visibleWater&&chrome.waterRect.top<=chrome.meterTop+1,'approved unknown-context floor remains visible at 5h');
+    for(const [i,px] of sample.entries())assert.deepEqual(px,device.startsWith('iphone')?(i===0?[44,43,38,255]:chrome.color):[20,20,20,255],`${device}/${scheme}/${state} safe area`);
     assert.deepEqual(await p.locator('meta[name=theme-color]').evaluateAll(ms=>ms.map(m=>m.content)),device.startsWith('iphone')?['#2c2b26']:['#141414']);
     results.push({device,scheme,state,robot,color,edges:sample});
    }
@@ -93,8 +95,8 @@ try{
    await p.waitForFunction(prior=>document.getElementById('orb').src.startsWith('blob:')&&document.getElementById('orb').getAttribute('src')!==prior,prior);
    assert.deepEqual((await pixels(p)).slice(0,3),rgb('#335577'),'root theme variable writes repaint the robot without a status frame');
    const edges=await screenshotPixel(p,join(out,`${device}-${scheme}-custom-theme.png`),[[3,0],[3,h-1]]);
-   const pageColor=await p.locator('#chromeProbe').evaluate(e=>getComputedStyle(e).backgroundColor);
-   for(const [i,px] of edges.entries())assert.deepEqual(px,device.startsWith('iphone')?(i===0?[44,43,38,255]:[...rgb(pageColor),255]):[20,20,20,255],'P459 iOS page chrome / unchanged non-iOS Sooty');
+   const pageColor=await visibleBottom(p);
+   for(const [i,px] of edges.entries())assert.deepEqual(px,device.startsWith('iphone')?(i===0?[44,43,38,255]:pageColor.color):[20,20,20,255],'P459 iOS page chrome / unchanged non-iOS Sooty');
    const own=readFileSync(join(PUBLIC_DIR,'brand/img/status/logo-question.png')).toString('base64');
    await p.evaluate(async({own,custom})=>{const {applyTheme}=await import('./js/theme.js');applyTheme({t:'theme',v:1,id:'p422-own',colors:{state:custom},logo:{png:own}});},{own,custom});
    assert.deepEqual((await pixels(p)).slice(0,3),rgb('#827dbd'),'custom image never tinted');
