@@ -350,7 +350,8 @@ def run_send(kind: str, text: str, *, thread: str | None = None, attach_doctor=F
         print("NOT SENT — model review denied the draft; explicit existing owner consent is required for noncredential findings.", file=out)
         return EXIT_BLOCKED
     if v.status == "unavailable" and not degraded:
-        print("NOT SENT — authenticated privacy broker/source check failed; keep the draft and verify the active session.", file=out)
+        print("NOT SENT — authenticated privacy broker/source check failed; keep the draft and verify the active session."
+              + privacy.source_hint(v), file=out)
         return EXIT_UNAVAILABLE
     fields: dict = {"kind": kind, "body": draft["body"]}
     if "attach" in draft:

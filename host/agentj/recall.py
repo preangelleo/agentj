@@ -321,6 +321,10 @@ class Server:
                 _, uid, _ = struct.unpack("3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
                 if uid != os.getuid():
                     return
+            elif sock is not None and sys.platform == "darwin":
+                from .core.process_evidence import peer_uid
+                if peer_uid(sock) not in (None, os.getuid()):      # #0302: macOS LOCAL_PEERCRED
+                    return
             try:
                 req = check(json.loads(await asyncio.wait_for(r.readline(), 10)))
                 hits = await asyncio.to_thread(lambda: search(self.turns(), **req))

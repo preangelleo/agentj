@@ -121,9 +121,9 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         from . import provenance
         return provenance.paired_request(lambda: self.h._paired_live(s))
 
-    def _notice(self, zh: str, en: str) -> None:
+    def _notice(self, zh: str, en: str, card: dict | None = None) -> None:
         with contextlib.suppress(Exception):
-            self.h.agent_notice(f"{zh} / {en}")
+            self.h.agent_notice(f"{zh} / {en}", **({"card": card} if card else {}))
 
     def _prefs(self) -> None:
         with contextlib.suppress(Exception):
@@ -597,7 +597,8 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             self.watch = self.h._bg(self._watch(), "term_watch")
         self.st.log("term_open", device=x.device, result="ready", status=mode, kind=x.kind)
         self._notice(f"网页终端已打开（{self.h._dname(x.device) or x.device}，最长 {cfg['minutes']} 分钟）",
-                     f"Web terminal opened ({self.h._dname(x.device) or x.device}, up to {cfg['minutes']} min)")
+                     f"Web terminal opened ({self.h._dname(x.device) or x.device}, up to {cfg['minutes']} min)",
+                     {"term": "open"})   # 0.30.3 (董事长 14:5x): the phone that opened it gets 「进入终端」 under this line
         m = {"t": "term_ready", "r": r, "id": x.id, "expires_at": x.expires_at, "idle_s": store.IDLE_S, "sudo": mode,
              "cwd": service.tilde(cwd), "mode": x.kind}
         x.ready_msg = dict(m)

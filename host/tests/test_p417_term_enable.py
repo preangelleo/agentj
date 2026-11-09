@@ -130,7 +130,7 @@ class RemoteEnable(Kind):
             c1 = await self.enable_step1()
             await self.enable_step2(c1)
             self.assertEqual((await self.finish(c1))["t"], "term_ready")
-        with mock.patch.object(self.desk, "_notice", side_effect=lambda zh, en: said.append(zh)):
+        with mock.patch.object(self.desk, "_notice", side_effect=lambda zh, en, card=None: said.append(zh)):
             self.run_async(go)
         self.assertTrue(term_store.read_config(self.st)["entries"][0]["web"])
         self.assertTrue(any("网页版遥控器" in z and "agentj terminal disable" in z for z in said), said)   # security review A1

@@ -249,7 +249,7 @@ def run_check(draft: pathlib.Path, threshold: float = privacy.THRESHOLD, *, tran
     if v.status == "blocked":
         print("next: residual credential flagged; remove it and run check again. Owner confirmation cannot bypass credentials." if v.kind in ("credential", None) else f"next: after owner consent: agentj feedback send {dest} --owner-confirmed (automatic redaction; credentials cannot be bypassed)", file=out)
         return EXIT_BLOCKED
-    print(UNAVAILABLE_NEXT.format(dest=dest), file=out)
+    print(UNAVAILABLE_NEXT.format(dest=dest) + privacy.source_hint(v), file=out)
     return EXIT_UNAVAILABLE
 
 
@@ -327,7 +327,7 @@ def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_fi
                   "after they read it and said yes.", file=out)
         return EXIT_BLOCKED
     if v.status == "unavailable" and not privacy.optional_review(v):
-        print("refused: authenticated privacy broker/source check failed; keep the draft", file=out)
+        print("refused: authenticated privacy broker/source check failed; keep the draft" + privacy.source_hint(v), file=out)
         return EXIT_UNAVAILABLE
     if privacy.optional_review(v):
         obj['problem'] = privacy.LOCAL_REVIEW_NOTE + "\n" + obj['problem']

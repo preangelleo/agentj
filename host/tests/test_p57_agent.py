@@ -317,7 +317,9 @@ class _Prep(_Chain):
             self.assertIn(compactprep.PROGRESS["zh"], [t["reply"]["text"] for t in page], "「先写交接，再压缩」 on the page")
             self.assertTrue(page[-1]["reply"]["text"].startswith("已压缩"))
             self.after_compact_order(ho)
-            # 2. the next message carries the note once
+            # 2. #0303: no next message needed — the host's own turn carries the note right after the compaction, once
+            await c["wait"](lambda: self.notes() == [compactprep.NOTE["zh"].format(path=ho)])
+            await c["idle"]()
             await c["say"]("二")
             await c["wait"](lambda: any(m["text"] == "ECHO: 二" for m in c["msgs"]()))
             await c["idle"]()
@@ -335,12 +337,14 @@ class _Prep(_Chain):
             self.assertIn("交接已写好", comp2["text"])
             self.assertEqual(len(self.prep_seen(c)), n, "already prepared: no preparation turn")
             self.assertEqual(ho.read_text(), "# Handover\nwritten by the Agent on request\n")
+            await c["wait"](lambda: len(self.notes()) == 2)     # #0303: this compaction's own handover turn
+            await c["idle"]()
             # 4. /clear: a new conversation starts clean (no note for its first message)
             await c["cmd"]("clear", confirm=True)
             await c["say"]("四")
             await c["wait"](lambda: any(m["text"] == "ECHO: 四" for m in c["msgs"]()))
             await c["idle"]()
-            self.assertEqual(len(self.notes()), 1)
+            self.assertEqual(len(self.notes()), 2)
             # 5. typed 「压缩」 is /compact too (a new conversation: prepared afresh into its own file)
             await c["say"]("压缩")
             await c["wait"](lambda: len(c["cards"]("compact")) == 3 and "已压缩" in c["cards"]("compact")[-1]["text"])

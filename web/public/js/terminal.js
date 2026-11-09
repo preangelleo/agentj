@@ -535,6 +535,9 @@ function ready(m) {
   S.phase = 'ready'; S.resume = null; S.id = m.id; S.expires = m.expires_at; S.seq = 0; S.atPrompt = true; S.login = null;
   status('');
   paintChrome();
+  // 0.30.3 (董事长 14:5x): the first switch-on asks the host password in the shared popup over the chat (root hidden,
+  // goChat) — once it opens, come back to the terminal page, as a remembered open already does. A 「!」 line stays in chat.
+  if (!S.pendBang && root.hidden) show();
   clearInterval(tick); tick = setInterval(onTick, 1000);
   if (S.pty) ptyStart();   // 0.26.9 #463: the shell prints its own prompt (and cwd)
   else if (typeof m.cwd === 'string' && m.cwd) out(t('p408.cwd', { cwd: m.cwd.slice(0, 300) }) + '\n');

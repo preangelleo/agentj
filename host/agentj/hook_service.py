@@ -453,8 +453,8 @@ class HookService:
                 req = json.loads(await asyncio.wait_for(r.readline(), 10))
                 from . import application_ingress
                 if pid is None and sys.platform == 'darwin':
-                    from .core.process_evidence import peer_pid, uid as peer_uid
-                    pid = peer_pid(w); uid = peer_uid(pid)
+                    from .core.process_evidence import peer_pid, peer_uid
+                    pid = peer_pid(w); uid = peer_uid(w.get_extra_info('socket'))   # #0302 kernel LOCAL_PEERCRED
                 with application_ingress.native(self.host, w, req, pid, uid):
                     res = await self.cli(req) if isinstance(req, dict) else {"ok": False, "why": "shape"}
             except (ValueError, asyncio.TimeoutError, asyncio.LimitOverrunError):

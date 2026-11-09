@@ -1126,8 +1126,8 @@ class WeChat:
 
     async def claim(self, rid, *, source=None, approved=False, autonomous=False, _approval=None):
         async with self.handoff_lock:
-            if not approved and not (isinstance(source, dict) and source.get('kind') == 'phone' and source.get('role') == 'owner'):
-                return {'ok': False, 'why': 'owner_phone_required'}
+            if not approved and not (isinstance(source, dict) and provenance.owner_intent(source)):   # #0303 R1
+                return {'ok': False, 'why': 'owner_phone_required', 'detail': provenance.outsider_detail()}
             r = self.store.data['records'].get(rid)
             if not r or r['state'] != 'pending' or r['until'] <= self.clock() or self.h.stopped() or self.closed:
                 return {'ok': False, 'why': 'not_pending'}
@@ -1174,10 +1174,9 @@ class WeChat:
             return {'ok': True, **self.status()}
         if op == 'pending':
             agent = getattr(self.h, 'agent', None)
-            source = getattr(getattr(agent, 'cur_send', None), 'source', None)
-            if (provenance.untrusted_turn(agent) or not isinstance(source, dict)
-                    or source.get('kind') != 'phone' or source.get('role') != 'owner'):
-                return {'ok': False, 'why': 'owner_phone_required'}
+            # #0303 R1: the owner at the phone, the terminal or their own Telegram / WeChat / verified mailbox
+            if not provenance.owner_speaking(agent) or not provenance.owner_intent(provenance.turn_source(agent)):
+                return {'ok': False, 'why': 'owner_phone_required', 'detail': provenance.outsider_detail()}
             own = {'ok': True, 'items': [dict(id=r['id'], text=r['text'], paths=r['paths'], until=r['until'], source=r.get('source', 'wechat'), untrusted=True, execute=False)
                     for r in self.store.data['records'].values() if r['state'] == 'pending' and r['until'] > self.clock()]}
             if external is not None and external is not self:
@@ -1187,13 +1186,13 @@ class WeChat:
             return own
         if op == 'claim':
             agent = getattr(self.h, 'agent', None)
-            source = getattr(getattr(agent, 'cur_send', None), 'source', None)
-            if provenance.untrusted_turn(agent):
-                return {'ok': False, 'why': 'owner_phone_required'}
+            source = provenance.turn_source(agent)
+            if not provenance.owner_speaking(agent) or not provenance.owner_intent(source):    # #0303 R1
+                return {'ok': False, 'why': 'owner_phone_required', 'detail': provenance.outsider_detail()}
             return await self.claim(req.get('id'), source=source)
         if op in ('setup', 'unbind'):
-            if provenance.untrusted_turn(getattr(self.h, 'agent', None)):
-                return {'ok': False, 'why': 'owner_required'}
+            if not provenance.owner_speaking(getattr(self.h, 'agent', None)):    # #0303 R1; setup still needs the UV card below
+                return {'ok': False, 'why': 'owner_required', 'detail': provenance.outsider_detail()}
             summary = ('连接微信 ClawBot，仅服务扫码者本人。' if op == 'setup' else '解除这台主机的微信通道绑定。') if self.h.lang == 'zh' else ('Connect WeChat ClawBot for the scanning owner only.' if op == 'setup' else 'Unbind this host from WeChat.')
             # #520: unbinding is reversible; setup establishes a new channel trust root and requires UV.
             receipt = {}

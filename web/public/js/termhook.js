@@ -192,6 +192,8 @@ export function msg(m) {
 /** app.js onHostGone: the Noise session this terminal rode is gone (the host closes it: relay_lost). */
 export function gone() { if (mod) mod.gone(); }
 export const isOpen = () => !!(mod && mod.isOpen());
+/** 0.30.3: 「进入终端」 under the opened notice — bring this phone's open terminal page back to the front (nothing new opens). */
+export function reveal() { return Promise.resolve(isOpen() ? mod.open('', termInfo()) : false); }
 // tests
 export const _debug = () => ({ info: info && { ...info }, loaded: !!mod, state: state() });
 export const _page = () => (mod ? { dbg: mod._debug(), link: mod._link } : null);   // 0.26.9 L-2 (tests): the loaded terminal page

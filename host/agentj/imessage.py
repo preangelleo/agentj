@@ -541,9 +541,9 @@ class IMessage:
             return await self.check()
         # changes: never while a message that is not the owner's is being handled (a text message, a group member …)
         from . import approval_level
-        if provenance.untrusted_turn(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)) and not approval_level.autonomous(self.host):
+        if not provenance.owner_speaking(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)) and not approval_level.autonomous(self.host):
             self.host.st.log("imessage_refused", op=str(op)[:16], reason="untrusted_turn")
-            return {"ok": False, "why": "untrusted_turn"}
+            return {"ok": False, "why": "untrusted_turn", "detail": provenance.outsider_detail()}
         if provenance.delegated_turn(getattr(self.host, "agent", None)):
             ans = await self.host.ask("AgentJSameOwnerAction", {"summary": "Same owner: imessage " + str(op), "request": req}, batch=False)
             if ans.get("behavior") != "allow":

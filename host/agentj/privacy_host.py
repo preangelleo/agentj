@@ -22,11 +22,11 @@ def broker_scope(host, peer_pid):
     from . import approval_material
     loop=asyncio.get_running_loop()
     state,agent=host.st,getattr(host,'agent',None)
-    origin=approval_material.verified_caller_origin(host,peer_pid) if peer_pid is not None else None
+    origin=_origin(host,peer_pid)
     active=True
     def live():
         return (active and host.st is state and getattr(host,'agent',None) is agent
-                and approval_material.verified_caller_origin(host,peer_pid) == origin)
+                and _origin(host,peer_pid) == origin)
     async def review(draft,gate):
         if gate != 'feedback':return failure('bad_request')
         if origin is None:return failure('peer_unverified')
@@ -54,6 +54,21 @@ def broker_scope(host, peer_pid):
 
 
 
+def _origin(host, peer_pid):
+    """Strict live-turn proof first; else (#0302) a same-uid live local process during the owner's own turn.
+
+    macOS harness helpers and the owner's background jobs often cannot prove exact current-turn descent; the
+    chairman's rule is that the owner's ordinary requests are not blocked. Guest / friend / group turns still fail.
+    """
+    from . import approval_material, application_ingress
+    if peer_pid is None:
+        return None
+    origin = approval_material.verified_caller_origin(host, peer_pid)
+    if origin is None and application_ingress._process(peer_pid) and application_ingress._owner_tree(host, peer_pid, getattr(host, 'agent', None)):
+        origin = {'verified': True, 'owner_local': True, 'peer': peer_pid}
+    return origin
+
+
 def failure(why):
     return {'status': 'unavailable', 'reason': 'privacy-check/' + why,
             'probability': None, 'kind': None}
@@ -74,7 +89,7 @@ async def handle(host, req, *, peer_pid=None):
             why = 'bad_request'
     agent = getattr(host, 'agent', None)
     owner = session_key(agent)
-    origin = approval_material.verified_caller_origin(host, peer_pid) if peer_pid is not None else None
+    origin = _origin(host, peer_pid)
     if why is None:
         if origin is None:
             why = 'peer_unverified'
@@ -91,7 +106,7 @@ async def handle(host, req, *, peer_pid=None):
             v = privacy.Verdict('unavailable', reason='privacy-check/backend_unavailable')
         try:
             same_authority = (not host.stopped() and host.agent is agent and session_key(agent) == owner
-                              and approval_material.verified_caller_origin(host, peer_pid) == origin)
+                              and _origin(host, peer_pid) == origin)
         except Exception:
             same_authority = False
         if not same_authority:

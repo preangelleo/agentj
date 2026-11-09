@@ -52,6 +52,9 @@ class PaidLibrary(unittest.IsolatedAsyncioTestCase):
         elif ingress == 'revoked_root':
             # Revoke the actual Host-held launch root, not a JSON/source label.
             host.__dict__.get('_approval_origins', {}).pop(host.desktop_turn, None)
+            # #0302 (chairman 2026-11-09): a missing root alone no longer refuses the owner's own session process
+            # (owner_local). It stays refused when the process was born while a non-owner turn was open.
+            host._nonowner_floor, host._nonowner_spans = float('-inf'), [[float('-inf'), None]]   # child born in a guest turn
         else:
             self.assertEqual(ingress, 'valid')
         seen=[]

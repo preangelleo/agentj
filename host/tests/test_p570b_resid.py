@@ -97,7 +97,9 @@ class Shared(unittest.IsolatedAsyncioTestCase):
                     await a._handoff_prep()
             else:
                 a._registry_quiet = lambda: quiet
-                with mock.patch.object(handoff, "RECOVER_DELAY", 0):
+                with mock.patch.object(handoff, "RECOVER_DELAY", 0), mock.patch.object(handoff, "RECOVER_TRIES", 1), \
+                        mock.patch.object(handoff, "RECOVER_START_WAIT", 0), mock.patch.object(handoff, "RECOVER_GAP", 0), \
+                        mock.patch.object(handoff, "RECOVER_BUSY_WAIT", 5.0):   # #0303 timers: one attempt, the old 5 s look
                     await a._recover("compact", True, a.turn_began_at)
             if how == "recover" and not quiet:
                 cs.assert_not_called()

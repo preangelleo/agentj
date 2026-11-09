@@ -36,8 +36,7 @@ def group_refusal(src) -> dict:
     from . import provenance
     kind = provenance.normalize(src)["kind"]
     out = {"ok": False, "why": "group_source", "source": kind}
-    if kind == "unknown":
-        out["detail"] = _UNVERIFIED
+    out["detail"] = _UNVERIFIED if kind == "unknown" else provenance.outsider_detail()   # #0303: always say what to do
     return out
 
 
@@ -490,7 +489,7 @@ class ContactService:
         # stricter request source; it never turns outside mail into owner intent.
         full_system = (approval_level.follow_harness(getattr(self.host, "preferences", {}), self.st)
                        and provenance.unattended_turn(agent) == "system")
-        if provenance.untrusted_turn(agent) and not provenance.delegated_turn(agent) \
+        if not provenance.owner_speaking(agent) and not provenance.delegated_turn(agent) \
                 and not _chain_turn(agent) and not full_system:
             return group_refusal(provenance.turn_source(getattr(self.host, "agent", None)))
         recips, missing = [], []
@@ -632,8 +631,8 @@ class ContactService:
         from . import provenance
         if self.host.stopped():
             return {"result": "stopped"}
-        if provenance.untrusted_turn(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)):
-            return {"result": "group_source"}
+        if not provenance.owner_speaking(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)):
+            return {"result": "group_source", "detail": provenance.outsider_detail()}
         base = None
         own = req.get("owner") is True or (req.get("id") == C.OWNER_ID and C.owner(C.read(self.st)) is not None)
         if own:                                 # P194: the owner card — slot 0, saved only by the owner's tap

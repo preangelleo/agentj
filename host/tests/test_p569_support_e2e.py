@@ -239,6 +239,9 @@ class OfficialReplyReachesIsolatedAgent(unittest.IsolatedAsyncioTestCase):
     async def test_unknown_original_peer_context_cannot_review_or_send(self):
         host=self.el.host
         host.desktop_turn=-1  # no Host-held owner input for this actual child
+        # #0302: the owner's own session child is no longer refused for that alone (owner_local); a child born while
+        # a non-owner turn was open still is.
+        host._nonowner_floor,host._nonowner_spans=float('-inf'),[[float('-inf'),None]]   # child born in a guest turn
         self.jev_mock.reset_mock()
         rc,out,err=await self.agent('claude','feedback','Synthetic denied request','--wait','0')
         self.assertEqual(rc,support.EXIT_UNAVAILABLE,(out,err))

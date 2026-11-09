@@ -2014,7 +2014,7 @@ def _perm_lines(perm: dict, inferred: bool, allow, src: str, extra: list, under:
 
 
 REFUSALS = ("denied", "timeout", "no_signature", "no_device", "estop", "serve_stop", "group_source", "owner_grant_scope",
-            "too_many", "busy", "secret_path", "queue_full")
+            "too_many", "busy", "secret_path", "queue_full", "application_ingress_unverified")
 
 
 def _next_step(name, *, version, harness, workspace, params, params_file, sign_as, replace) -> str:

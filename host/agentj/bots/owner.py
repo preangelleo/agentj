@@ -13,6 +13,7 @@ import re
 import secrets
 import socket
 import struct
+import sys
 import time
 from pathlib import Path
 from .. import controls,wire
@@ -393,6 +394,9 @@ class Manager:
             if sock is not None and hasattr(socket,'SO_PEERCRED'):
                 _,uid,_=struct.unpack('3i',sock.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
                 if uid!=os.getuid():return
+            elif sock is not None and sys.platform=='darwin':
+                from ..core.process_evidence import peer_uid
+                if peer_uid(sock) not in (None,os.getuid()):return   # #0302: macOS LOCAL_PEERCRED
             req=json.loads(await asyncio.wait_for(reader.readline(),10))
             op=req.get('op')
             if op=='telegram_key' and set(req)!={'op','id'}:raise BotError('invalid_request')

@@ -89,7 +89,9 @@ class Wechat520(unittest.IsolatedAsyncioTestCase):
         f = self.f
         f.h.agent.cur_send = type('Send', (), {'source': provenance.telegram_group(-1, 2, 'group', 3)})()
         with self.full():
-            self.assertEqual(await f.c.agent_request({'op': 'unbind'}), {'ok': False, 'why': 'owner_required'})
+            res = await f.c.agent_request({'op': 'unbind'})
+            self.assertEqual((res['ok'], res['why']), (False, 'owner_required'))
+            self.assertIn('Web App', res['detail'])        # #0303: the refusal says what to do
         self.assertTrue(f.c.store.data['account'])
 
 

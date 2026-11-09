@@ -9,6 +9,7 @@ import contextlib
 import contextvars
 import os
 import sys
+import time
 from . import codex_procs, ctl_auth, provenance
 
 _CURRENT = contextvars.ContextVar('agentj_application_frame', default=None)
@@ -105,15 +106,137 @@ def native(host, writer, frame, pid, uid):
     if scope is not None and scope.get('kind') == 'unknown_agent':
         scope = None
     terminal = bool(start and ctl_auth.refusal(pid, os.getpid(), host._agent_pids()) is None and ctl_auth.has_tty(pid))
+    # #0302 (chairman 2026-11-09: outside the UV list we do not block what the harness allows). The strict
+    # _direct_scope/_darwin_scope proof needs every hop born after the *current* turn began, so the owner's own background
+    # jobs, Codex persistent exec shells and macOS harness helpers were refused (Linux included per Jarvis 15:4x). owner_local admits a kernel same-uid live caller that descends from the live session
+    # process with no hop born inside a non-owner turn span (host-held spans), during an owner turn.
+    # Liveness only: UV, bounded plans and approval proofs keep their strict origin checks.
+    owner_local = bool(start and not terminal and scope is None and _owner_tree(host, pid, agent))
     def check():
         if not start or _process(pid) != start or writer.is_closing():
             return False
         if terminal:
             return ctl_auth.refusal(pid, os.getpid(), host._agent_pids()) is None and ctl_auth.has_tty(pid)
+        if owner_local:
+            return (host.agent is agent and getattr(agent, 'session', None) is session
+                    and binding == _session_binding(host, agent) and _owner_tree(host, pid, agent))
         return (host.agent is agent and getattr(agent, 'session', None) is session
                 and not _sandboxed(agent) and binding == _session_binding(host, agent)
                 and scope is not None and approval_material._scope_live(host, scope, pid))
-    return _enter(host, writer, frame, check, 'terminal' if terminal else 'native')
+    return _enter(host, writer, frame, check, 'terminal' if terminal else 'owner_local' if owner_local else 'native')
+
+
+SPAN_MARGIN = 0.05     # seconds; widens every non-owner span (clock granularity), always toward refusing
+SPAN_KEEP = 256
+
+
+def open_span(host, native=False):
+    """A non-owner turn (friend / visitor / group / external channel / webhook / harness turn on foreign content) began:
+    every process born from now until it ends is guest-born and can never get the owner_local frame.
+    native=True (security r4 N5): the host only notices a harness-started turn after the fact, so the span starts at
+    the previous span close (the owner's previous turn's jobs were born before it) instead of "now"."""
+    from .core.process_evidence import now
+    spans = host.__dict__.setdefault('_nonowner_spans', [])
+    if not spans or spans[-1][1] is not None:
+        start = now()
+        if native:
+            start = min(start, host.__dict__.get('_span_closed_at') or host.__dict__.get('_nonowner_floor') or start)   # r4b note 1
+        spans.append([start, None])
+    while len(spans) > SPAN_KEEP:                      # forgotten history only ever refuses more
+        dropped = spans.pop(0)
+        host.__dict__['_nonowner_floor'] = max(host.__dict__.get('_nonowner_floor') or 0.0, dropped[1] or now())
+
+
+def close_span(host):
+    from .core.process_evidence import now
+    spans = host.__dict__.get('_nonowner_spans') or []
+    t = now()
+    if spans and spans[-1][1] is None:
+        spans[-1][1] = t
+    host.__dict__['_span_closed_at'] = t
+
+
+def close_native_span(agent):
+    """Native Stop / idle: close only when no non-owner Send is pending (security r4 C2); otherwise agent_turn_end does."""
+    host = getattr(agent, 'host', None)
+    send = getattr(agent, 'cur_send', None)
+    if host is not None and (send is None or _owner_source(getattr(send, 'source', None), send)):
+        close_span(host)
+
+
+def note_turn(host, send):
+    if not _owner_source(getattr(send, 'source', None), send):
+        open_span(host)
+
+
+def _guest_born(host, born):
+    """Born before this serve's history (floor) or inside any non-owner span (open spans run to now)."""
+    floor = host.__dict__.get('_nonowner_floor')
+    if floor is None or born < floor + SPAN_MARGIN:
+        return True
+    return any(start - SPAN_MARGIN <= born and (end is None or born <= end + SPAN_MARGIN)
+               for start, end in host.__dict__.get('_nonowner_spans') or [])
+
+
+def _owner_source(src, send=None):
+    """One predicate for spans, owner_local and the shared-session helper (security r3/r4 merge requirement):
+    same-owner device tasks, provenance.owner_intent (paired phone, owner terminal, the owner's verified Telegram DM /
+    own WeChat / DMARC-DKIM-aligned mail — never a webhook body), or the host's own system turns without hook_notice."""
+    s = provenance.normalize(src)
+    if s.get('kind') == 'same_owner':
+        return True
+    if provenance.owner_intent(src, send):
+        return True
+    return s.get('kind') == 'system' and s.get('role') == 'owner' and not getattr(send, 'hook_notice', None)
+
+
+def _owner_tree(host, pid, agent):
+    """owner_local admission: descends from the live session / owned Agent process (no serve children such as avatars
+    or bots, no environment-variable claims), no hop born inside a non-owner turn span, during an owner turn."""
+    if sys.platform != 'darwin' and not sys.platform.startswith('linux') or agent is None or type(pid) is not int:
+        return False
+    try:
+        from .core.process_evidence import row as darwin_row
+        session = getattr(agent, 'session', None)
+        if isinstance(session, dict) and type(session.get('pid')) is int:
+            anchor, row = session['pid'], darwin_row(session['pid'])
+            if not row or str(row[2]) != str(session.get('procStart')):
+                return False
+        else:                                 # an Agent serve launched itself: its live child process is the anchor
+            proc = getattr(agent, 'proc', None)
+            anchor = getattr(proc, 'pid', None)
+            if type(anchor) is not int or getattr(proc, 'returncode', None) is not None or not darwin_row(anchor):
+                return False
+        if host.__dict__.get('_nonowner_floor') is None:   # nothing remembered before this serve: serve-era only
+            me = darwin_row(os.getpid())
+            if not me:
+                return False
+            host.__dict__['_nonowner_floor'] = me[1]
+        current, seen = pid, set()
+        while current != anchor:
+            if type(current) is not int or current <= 1 or current in seen or len(seen) >= 64:
+                return False
+            seen.add(current)
+            hop = darwin_row(current)
+            if not hop or _guest_born(host, hop[1]):
+                return False
+            current = hop[0]
+        if not seen:
+            return False                      # the session process itself is the native path, not this fallback
+    except Exception:   # noqa: BLE001 — unknown ancestry is not the owner's
+        return False
+    return _owner_turn(agent)
+
+
+def _owner_turn(agent):
+    """The current turn is the owner's own (paired remote / owner terminal / a same-owner device task /
+    a host system turn such as background_done or heartbeat), never a friend / guest / group / external channel."""
+    if agent is None or _sandboxed(agent) or getattr(agent, 'untrusted_foreign', False):
+        return False                      # security r2 N2: a harness turn reacting to guest content is not the owner's
+    try:
+        return provenance.owner_speaking(agent) or _owner_source(provenance.turn_source(agent), getattr(agent, 'cur_send', None))
+    except Exception:   # noqa: BLE001 — unknown provenance is not the owner's
+        return False
 
 
 def paired(host, session, frame):

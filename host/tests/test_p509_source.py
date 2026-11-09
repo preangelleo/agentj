@@ -271,11 +271,13 @@ class Consumers(unittest.IsolatedAsyncioTestCase):
         a.__dict__.update(cur_send=None, native_source=p.terminal(), phone_turn=False, turn_began_at=None,
                session={'sessionId': 'owner'}, native_turn=False, state=NS(status='idle'),
                host=NS(stopped=lambda: False, st=Mock(), lang='en', agent_notice=Mock()),
-               _registry_quiet=lambda: True, untrusted_state=None, untrusted_at=0.0)
+               _registry_quiet=lambda: True, untrusted_state=None, untrusted_at=0.0, turn_gen=0)
         def delivery(*args):
             self.assertEqual(a.native_source, p.system())
             self.assertTrue(p.untrusted_turn(a))
-        with patch('agentj.handoff.RECOVER_DELAY', 0), patch('agentj.shared.claude_send', side_effect=delivery) as sent:
+        with patch('agentj.handoff.RECOVER_DELAY', 0), patch('agentj.handoff.RECOVER_TRIES', 1), \
+                patch('agentj.handoff.RECOVER_START_WAIT', 0), patch('agentj.handoff.RECOVER_GAP', 0), \
+                patch('agentj.shared.claude_send', side_effect=delivery) as sent:   # #0303: one attempt, no turn start
             await SharedClaudeAgent._recover(a, 'compact', True, None)
             sent.assert_called_once()
 

@@ -694,6 +694,16 @@ class Verdict:
 LOCAL_REVIEW_NOTE = '本机规则脱敏，未经模型审核 / Local rule redaction; not model-reviewed'
 
 
+def source_hint(v) -> str:
+    """#0302: an actionable tail for a broker/source refusal — never silent, always the reason code."""
+    reason = (getattr(v, 'reason', None) or 'unknown').replace('privacy-check/', '')
+    return (f" [{reason}] Only the owner's own session can send this (paired remote, owner terminal, same-owner device, "
+            "or a background job the owner's Agent started); friend / visitor / group turns cannot. Retry from the owner's "
+            "session; if it still fails run `agentj doctor` and tell the owner this reason code. / "
+            f"原因码 {reason}：只有主人自己的会话能外发（遥控器、本机终端、同主人设备、主人 Agent 派出的后台任务），"
+            "好友、访客、群聊回合不能。请在主人会话里重试；仍失败就运行 agentj doctor 并把原因码告诉主人。")
+
+
 def optional_review(v):
     """Only model absence/failure is optional; broker/source authority failures are not."""
     if v.status != 'unavailable':

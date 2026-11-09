@@ -1446,6 +1446,22 @@ def check_wechat(st):
               error_hint(code, "zh") + " / " + error_hint(code, "en"))
 
 
+def check_mail_owner(st):
+    """#0302 security r5 M1: owner mail counts as the owner only with a pinned trusted mail server (auth_servid)."""
+    from . import mail
+    try:
+        cfg = mail.read_config(st)
+    except Exception:  # noqa: BLE001 — no / unreadable mail config: nothing to say here
+        return None
+    if not cfg.get("enabled") or cfg.get("auth_servid") or not any(
+            isinstance(r, dict) and r.get("role") == "owner" for r in cfg.get("allow") or []):
+        return None
+    return _c("mail-owner", WARN,
+              "主人邮件暂按普通来信处理：还没固定校验服务器 / owner mail is treated as ordinary mail until its check server is pinned",
+              "设置→邮件：先「测试连接」，再点「只认这台服务器写的校验结果」 / Settings → Mail: run the connection test, then tap "
+              "\"Trust only this server's check results\"")
+
+
 def check_local_files(st):
     from . import local_files
     if sys.platform != "darwin":
@@ -1486,7 +1502,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     mig = check_migration(st)
     if mig:
         out.append(mig)
-    out += list(filter(None, [check_local_files(st), check_wechat(st), check_install_dir()]))
+    out += list(filter(None, [check_local_files(st), check_wechat(st), check_mail_owner(st), check_install_dir()]))
     out += [check_agent(st), check_heartbeat_prompt()]
     setup_row = check_harness_setup(st)
     if setup_row:

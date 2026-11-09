@@ -254,8 +254,9 @@ class Channel(unittest.IsolatedAsyncioTestCase):
         self.c.store.expire();self.assertEqual(r['state'],'expired')
     async def test_natural_owner_claim_requires_explicit_phone_provenance(self):
         r=await self.pending()
-        for src in (None,{},provenance.system(),{'kind':'friend_task','role':'task'},provenance.telegram_owner(1)):
+        for src in (None,{},provenance.system(),{'kind':'friend_task','role':'task'},provenance.telegram_forward(1)):
             self.assertFalse((await self.c.claim(r['id'],source=src))['ok'])
+        # #0303 R1 (chairman 11-09): telegram_owner left this list — the owner's own DM may claim (test_0303_owner_channels)
         self.h.agent.cur_send=NS(source=provenance.phone())
         self.assertTrue((await self.c.agent_request({'op':'claim','id':r['id']}))['ok'])
         await asyncio.sleep(.02);self.h.agent.submit.assert_called_once()
@@ -375,9 +376,11 @@ class Channel(unittest.IsolatedAsyncioTestCase):
         from agentj.serve import Host, Session
         from agentj import compose
         row=await self.pending()
-        for source in (None,provenance.system(),{'kind':'wechat_task','role':'task'},provenance.telegram_owner(1)):
+        for source in (None,provenance.system(),{'kind':'wechat_task','role':'task'},provenance.telegram_forward(1)):
             self.h.agent.cur_send=NS(source=source)
             self.assertFalse((await self.c.agent_request({'op':'pending'}))['ok'])
+        self.h.agent.cur_send=NS(source=provenance.telegram_owner(1))    # #0303 R1: the owner's own Telegram DM may list
+        self.assertTrue((await self.c.agent_request({'op':'pending'}))['ok'])
         self.h._setup_round_trip=AsyncMock();self.h.emit=MagicMock();self.h._remember=MagicMock()
         self.h.sessions={};self.h.speaker_note=lambda *_:'';self.h.onboarding_note=lambda:'';self.h.key_import_note=AsyncMock(return_value='')
         self.h.skill_turn_note=lambda *_:'';self.h.native_text=False;self.h.sends=compose.Sends()

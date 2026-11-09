@@ -314,7 +314,11 @@ def _mail_summary(target: dict, lang: str) -> str:
 
 
 CLI_REASONS = frozenset(('application_ingress_unverified', 'level_harness', 'unknown', 'offline', 'no_device', 'host_unavailable', 'estop', 'group_source', 'owner_grant_scope',
-                         'timeout', 'device', 'serve_stop', 'agent_gone', 'superseded', 'too_many'))
+                         'timeout', 'device', 'serve_stop', 'agent_gone', 'superseded', 'too_many',
+                         # #0303: the real source / ingress codes pass through (enumerated, so no free text leaks)
+                         'untrusted_turn', 'untrusted_source', 'task_plan', 'unverified_plan_producer', 'peer_unverified',
+                         'source_denied', 'session_changed', 'not_ordinary_application', 'owner_phone_required',
+                         'owner_required', 'source', 'caller', 'not_owner_agent'))
 
 
 def confirm_cli(action: str, params: dict, *, st=None, receipt=None) -> bool:

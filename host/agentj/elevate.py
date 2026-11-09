@@ -73,6 +73,15 @@ NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 _ID = re.compile(r"[0-9a-f]{32}")
 
 
+
+def external_support(host, op) -> bool:
+    """support / feedback_send refused as "external data": an OTG grant turn, or a turn that is not the owner's own
+    (#0303 R1: the owner's Telegram DM / WeChat / verified mailbox count as the owner) unless signed Full access."""
+    from . import approval_level, provenance
+    agent = getattr(host, "agent", None)
+    return op in ("support", "feedback_send") and (
+        provenance.owner_grant_required(agent) or (not provenance.owner_speaking(agent) and not approval_level.autonomous(host)))
+
 class Refused(Exception):
 
     def __init__(self, why: str, detail: str = ""):
@@ -2027,9 +2036,9 @@ class Elevator:
             req = json.loads(line)
             from . import application_ingress
             if peer is None and sys.platform == 'darwin':
-                from .core.process_evidence import peer_pid, uid as peer_uid
+                from .core.process_evidence import peer_pid, peer_uid
                 peer = peer_pid(w)
-                uid = peer_uid(peer)
+                uid = peer_uid(w.get_extra_info('socket'))   # #0302 kernel LOCAL_PEERCRED
             app_scope = application_ingress.native(self.host, w, line, peer, uid)
             app_scope.__enter__()
             if isinstance(req, dict) and req.get("t") in ("sudo", "secret", "secret_out", "fn"):
@@ -2097,10 +2106,7 @@ class Elevator:
                 return
             if isinstance(req, dict) and req.get("t") == "host_diagnostics":
                 from . import host_diagnostics, approval_level, provenance, approval_material, privacy_host
-                external_send = req.get("op") in ("support", "feedback_send") and (
-                    provenance.owner_grant_required(getattr(self.host, "agent", None)) or (
-                        provenance.untrusted_turn(getattr(self.host, "agent", None))
-                        and not approval_level.autonomous(self.host)))
+                external_send = external_support(self.host, req.get("op"))
                 why = host_diagnostics.caller_refusal(req, sock, self.host)
                 broker = getattr(getattr(getattr(self.host, 'peers', None), 'xfer', None), 'broker', None)
                 if req.get('op') == 'support' and broker is not None and broker.feedback_applicable() and not external_send:
@@ -2109,7 +2115,7 @@ class Elevator:
                     res = host_diagnostics.refused(why)
                 else:
                     with approval_material.capture(self.host, peer, req) as captured, privacy_host.broker_scope(self.host, peer):
-                        res = ({"exit": 1, "output": "External data cannot authorize support or feedback sending.\n"} if external_send
+                        res = ({"exit": 1, "output": "External data cannot authorize support or feedback sending. " + provenance.outsider_detail() + "\n"} if external_send
                                else await asyncio.to_thread(host_diagnostics.execute, self.st, req))
                     res = approval_material.finish_capture(self.host, captured, peer, req, res)
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())

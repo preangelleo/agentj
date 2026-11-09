@@ -1,0 +1,218 @@
+{
+ "_doc": "#0303 reviewed source/identity refusal codes. New codes fail tests/test_0303_refusal_allowlist.py until listed here with Jarvis' OK. Categories: uv, anti_injection, frozen, state, not_a_refusal.",
+ "removed": [],
+ "codes": {
+  "application_ingress_unverified": {
+   "category": "anti_injection",
+   "why": "No live owner request frame: caller is a friend/visitor/group turn, a guest-born process, or not in the owner session tree (owner_local admits the owner's own jobs since 0.30.3). Actionable text via humane/plaza template."
+  },
+  "awaiting_owner_verification": {
+   "category": "state",
+   "why": "Completion recovery waits for the owner to verify a result; a state, not a source refusal."
+  },
+  "backend_binary_untrusted": {
+   "category": "state",
+   "why": "Native scheduler backend binary failed its integrity check; host safety, not a judgement on the requester."
+  },
+  "caller": {
+   "category": "anti_injection",
+   "why": "capability_pause / self_compact: caller process is not the current main conversation (another session or guest process)."
+  },
+  "corrupt_original": {
+   "category": "not_a_refusal",
+   "why": "Scheduler control: original record unreadable; data integrity, name matched by the scanner filter."
+  },
+  "fresh_owner_uv_required": {
+   "category": "uv",
+   "why": "Function runs a UV-list operation; needs the owner's fresh fingerprint card."
+  },
+  "group_source": {
+   "category": "anti_injection",
+   "why": "Request text came from a group chat, forwarded/external data or an unverified sender posing as the owner; owner TG/WeChat/verified mail are owner since 0.30.3 (R1)."
+  },
+  "level_harness": {
+   "category": "not_a_refusal",
+   "why": "Full-access allow label (harness level), not a refusal."
+  },
+  "missing_source": {
+   "category": "not_a_refusal",
+   "why": "Bounded plan input validation: a move/copy step without a source path."
+  },
+  "no_owner_address": {
+   "category": "state",
+   "why": "Owner has no mail address configured; actionable setup state."
+  },
+  "no_owner_session": {
+   "category": "state",
+   "why": "No owner session exists to deliver to; availability."
+  },
+  "not_owner": {
+   "category": "anti_injection",
+   "why": "Official assist / admin action requested by a non-owner identity."
+  },
+  "owner_at_computer_required": {
+   "category": "frozen",
+   "why": "Local files: switching a protected root needs the owner at the computer (pairing-level local presence)."
+  },
+  "owner_denied_before": {
+   "category": "state",
+   "why": "The owner already denied this exact request; repeat is not re-asked."
+  },
+  "owner_grant": {
+   "category": "frozen",
+   "why": "Signed owner grant is required/used (frozen signed-grant layer)."
+  },
+  "owner_grant_scope": {
+   "category": "frozen",
+   "why": "Action outside a signed same-owner/owner grant scope (frozen signed-grant layer); Jarvis decision pending on narrowing to UV steps."
+  },
+  "owner_hosts_commands_unavailable": {
+   "category": "state",
+   "why": "Owner host-commands feature not available on this host."
+  },
+  "owner_later": {
+   "category": "not_a_refusal",
+   "why": "First-run checklist label: owner chose later."
+  },
+  "owner_only": {
+   "category": "anti_injection",
+   "why": "Admin operation requested by a non-owner identity."
+  },
+  "owner_paused": {
+   "category": "state",
+   "why": "Owner paused this subscription."
+  },
+  "owner_phone_required": {
+   "category": "anti_injection",
+   "why": "WeChat setup/claim needs the owner's paired phone (setup is UV-backed); not used for owner channels' ordinary requests."
+  },
+  "owner_required": {
+   "category": "anti_injection",
+   "why": "Friend report / WeChat pending needs an owner source; guests refused."
+  },
+  "owner_revoked": {
+   "category": "state",
+   "why": "Owner revoked this subscription."
+  },
+  "owner_scope": {
+   "category": "frozen",
+   "why": "Approval scope tied to the owner's signed card (frozen card envelope)."
+  },
+  "owner_signature_required": {
+   "category": "frozen",
+   "why": "Subscription change needs the owner's signature (frozen signing layer)."
+  },
+  "owner_slot": {
+   "category": "not_a_refusal",
+   "why": "Contacts: reserved owner slot label."
+  },
+  "owner_source": {
+   "category": "anti_injection",
+   "why": "Secret transfer requested by a non-owner source; secrets never move on guest text."
+  },
+  "owner_turn_required": {
+   "category": "anti_injection",
+   "why": "Local files root change from a non-owner turn."
+  },
+  "owner_unavailable": {
+   "category": "state",
+   "why": "Owner unavailable for the subscription confirmation."
+  },
+  "owner_unreachable": {
+   "category": "state",
+   "why": "OpenCode start: owner cannot be reached for a decision."
+  },
+  "owner_unused": {
+   "category": "not_a_refusal",
+   "why": "First-run checklist label."
+  },
+  "paired_owner_required": {
+   "category": "frozen",
+   "why": "Completion recovery needs a paired owner device (pairing layer)."
+  },
+  "peer_gone": {
+   "category": "state",
+   "why": "Peer socket closed."
+  },
+  "peer_required": {
+   "category": "state",
+   "why": "Request needs a connected peer."
+  },
+  "peer_unverified": {
+   "category": "anti_injection",
+   "why": "Caller pid unreadable or not provable as the owner session (fail closed); owner_local fallback admits the owner's own jobs since 0.30.3."
+  },
+  "pending_owner_decision": {
+   "category": "state",
+   "why": "Waiting for the owner's decision."
+  },
+  "provenance": {
+   "category": "anti_injection",
+   "why": "core/hostside: request provenance is a guest/group/external source."
+  },
+  "same_owner_required": {
+   "category": "anti_injection",
+   "why": "Peer action allowed only for a same-owner device; strangers refused."
+  },
+  "same_owner_run_directly": {
+   "category": "not_a_refusal",
+   "why": "Guidance for same-owner turns: run steps directly; UV steps pop the owner card. Not a block."
+  },
+  "source": {
+   "category": "anti_injection",
+   "why": "capability_pause: pause requested from a guest/group source."
+  },
+  "source_changed": {
+   "category": "anti_injection",
+   "why": "Local files: the request source changed mid-flight (another turn took over)."
+  },
+  "source_denied": {
+   "category": "anti_injection",
+   "why": "Privacy broker / feedback: verified origin is suspicious or a guest; owner_local covers the owner's own jobs."
+  },
+  "source_exists_destination_absent_required": {
+   "category": "not_a_refusal",
+   "why": "Bounded plan input validation for move steps."
+  },
+  "source_has_pending_control": {
+   "category": "not_a_refusal",
+   "why": "Scheduler: source job already has a pending control; state."
+  },
+  "task_plan": {
+   "category": "anti_injection",
+   "why": "Batch action list from a guest/group/scheduled turn; message tells the agent to run steps directly (UV steps pop the owner card)."
+  },
+  "trusted_owner_task_required": {
+   "category": "anti_injection",
+   "why": "Bounded plan from a non-owner task."
+  },
+  "unreadable_or_unverified": {
+   "category": "not_a_refusal",
+   "why": "Skill link target unreadable; file integrity."
+  },
+  "untrusted_source": {
+   "category": "anti_injection",
+   "why": "Capability dispatch from a guest/group/external source; owner channels are owner since 0.30.3 (R1)."
+  },
+  "untrusted_turn": {
+   "category": "anti_injection",
+   "why": "Heartbeat/accounts/iMessage action from a guest/group/external turn; owner channels are owner since 0.30.3 (R1)."
+  },
+  "untrusted_turn_live": {
+   "category": "anti_injection",
+   "why": "Shared session: untrusted (foreign) input is live in the native turn."
+  },
+  "unverified_plan_producer": {
+   "category": "anti_injection",
+   "why": "Action list not tied to the owner's current turn; message offers running steps directly."
+  },
+  "unverified_service": {
+   "category": "state",
+   "why": "Service identity check for a host service socket failed; host integrity."
+  },
+  "workflow_source": {
+   "category": "anti_injection",
+   "why": "Workflow mail from a non-owner/unverified source."
+  }
+ }
+}

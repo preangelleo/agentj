@@ -38,7 +38,9 @@ class Source(_Svc):
                     {"kind": "automation", "role": "data", "name": "story"},
                     {"kind": "owner_session", "role": "owner"}):          # forged kind → unknown
             res = await self.refused(src)
-            self.assertNotIn("detail", res) if res["source"] != "unknown" else None
+            if res["source"] != "unknown":      # #0303: every refusal says what to do (ask from the owner's own chat)
+                self.assertNotIn("agentj tasks enable", res["detail"])
+                self.assertIn("Web App", res["detail"])
 
     async def test_scheduled_task_reaches_the_card_not_no_card(self):
         self.turn(None)

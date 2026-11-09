@@ -173,7 +173,7 @@ def refusal(agent, host=None) -> dict | None:
     if (host is not None and approval_level.level(getattr(host, "preferences", {}), host.st) == "harness"
             and provenance.unattended_turn(agent) in ("system", "same_host", "scheduled_task")):
         return None
-    if not provenance.untrusted_turn(agent) or provenance.delegated_turn(agent):
+    if provenance.owner_speaking(agent) or provenance.delegated_turn(agent):   # #0303 R1: owner TG / WeChat / verified mail = owner
         return None
     s = provenance.turn_source(agent)
     o = provenance._REQUEST.get()
@@ -183,7 +183,7 @@ def refusal(agent, host=None) -> dict | None:
     return {"ok": False, "why": "group_source", "source": s["kind"],
             "detail": f"这一轮来自{zh}，不是主人本人或委托任务：Google 的读和写都不执行，也没有发卡片；不是主人拒绝 / this turn "
                       f"came from {en}, not the owner or a delegated task: no Google call runs and no card was sent; the owner "
-                      "did not refuse it"}
+                      "did not refuse it. " + provenance.outsider_detail()}
 
 
 def _turn(host) -> tuple:

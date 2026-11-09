@@ -184,7 +184,7 @@ class _Base(unittest.IsolatedAsyncioTestCase):
                 return {'id': self.turn}
         self.host.hist_add = page
         cfg = M.blank_config()
-        cfg.update(enabled=True, address=AGENT, username=AGENT, allow=[{"addr": BOSS, "role": "owner"}],
+        cfg.update(enabled=True, address=AGENT, username=AGENT, auth_servid="mx.example.cn", allow=[{"addr": BOSS, "role": "owner"}],
                    imap={"host": "127.0.0.1", "port": self.imap.port, "security": "plain"},
                    smtp={"host": "127.0.0.1", "port": self.smtp.port, "security": "plain"})
         self.m.set_config(cfg)
@@ -420,7 +420,7 @@ class RealHost(unittest.IsolatedAsyncioTestCase):
             host.agent = SimpleNamespace(kind="claude", status="idle", halting=False, submit=Mock())
             host.mail = M.Mail(host)
             cfg = M.blank_config()
-            cfg.update(enabled=True, address=AGENT, allow=[{"addr": BOSS, "role": "owner"}],
+            cfg.update(enabled=True, address=AGENT, auth_servid="mx.example.cn", allow=[{"addr": BOSS, "role": "owner"}],
                        imap={"host": "127.0.0.1", "port": imap.port, "security": "plain"},
                        smtp={"host": "127.0.0.1", "port": smtp.port, "security": "plain"})
             host.mail.set_config(cfg)

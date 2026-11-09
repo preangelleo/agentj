@@ -201,6 +201,7 @@ async def compact(agent, fn, arg):
         await compacted(agent, prev_at=prev_at)
         p = probe(agent.cfg["dir"], FILE)
         res.text += "\n" + (FAILED[L] if failed or not p else DONE[L].format(path=path))
+        resume(agent)
     elif failed:
         res.text += "\n" + FAILED[L]
     return res
@@ -351,6 +352,44 @@ async def proactive(agent) -> bool:
         save(st, d)
     _log(agent, "compact_auto_prep", result="ok" if ok is True else ("stopped" if ok == "stopped" else "failed"))
     return ok is True
+
+
+def resume(agent) -> bool:
+    """#0303 (chairman 11-09 15:3x): after the owner's /compact (phone, Telegram, self-compact) the handover pointer used to
+    wait for the NEXT message (decorate) while the Agent sat idle. Queue it now as one host turn (system provenance, its own
+    page, after this command): the note moves from the record into that turn, so decorate never adds it twice. The queue is
+    in-process; a turn that fails or is uncertain is not replayed (as every host send). True = queued."""
+    host = agent.host
+    try:
+        if getattr(host, "agent", agent) is not agent or getattr(agent, "halting", False):
+            return False
+        stopper = getattr(host, "stopped", None)
+        if callable(stopper) and stopper() is True:
+            return False
+        add, submit = getattr(host, "hist_add", None), getattr(agent, "submit", None)
+        key = session_key(agent)
+        if key is None or not callable(add) or not callable(submit):
+            return False
+        st = host.st
+        d, r = record(st, key)
+        if not r.get("note") or not probe(agent.cfg["dir"], FILE):
+            return False                           # nothing written before the compaction: nothing to read
+        import secrets
+        from . import privacy, provenance
+        from .compose import Send
+        text = NOTE[lang(agent)].format(path=r["note"])
+        r["note"] = None
+        save(st, d)
+        page = add({"k": "agent", "via": "compact", "text": privacy.owner_text(text)}, "", "open")
+        s = Send("compact", secrets.token_urlsafe(16), page["id"], text=text, by="compact_resume")
+        s.source = provenance.system()
+        s.compact_resume = True
+        submit(s)
+    except Exception as e:  # noqa: BLE001 — the compaction itself already succeeded; the note stays for the next message
+        _log(agent, "compact_resume", result="error", why=type(e).__name__)
+        return False
+    _log(agent, "compact_resume", result="queued")
+    return True
 
 
 def cleared(agent, key: str | None) -> None:

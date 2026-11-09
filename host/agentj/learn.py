@@ -523,8 +523,8 @@ class Learner:
         from . import provenance
         if self.host.stopped():
             return LearnError("stopped").out()
-        if provenance.untrusted_turn(getattr(self.host, "agent", None)):
-            return LearnError("group_source").out()
+        if not provenance.owner_speaking(getattr(self.host, "agent", None)):
+            return LearnError("group_source", provenance.outsider_detail()).out()
         try:
             if t == "learn_draft":
                 note = req.get("note") if isinstance(req.get("note"), str) else ""

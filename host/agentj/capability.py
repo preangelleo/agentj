@@ -1330,18 +1330,18 @@ class Capabilities:
         def autonomous():
             agent = getattr(self.host, "agent", None)
             return (approval_level.level(getattr(self.host, "preferences", {}), self.st) == "harness"
-                    and (not provenance.untrusted_turn(agent)
+                    and (provenance.owner_speaking(agent)
                          or provenance.unattended_turn(agent) in ("system", "same_host", "scheduled_task")))
-        if not autonomous() and (getattr(self.host, "task_label", None) is not None or provenance.untrusted_turn(getattr(self.host, "agent", None))):
-            raise CapError("untrusted_source", "dispatch requires an explicit current owner source")
+        if not autonomous() and (getattr(self.host, "task_label", None) is not None or not provenance.owner_speaking(getattr(self.host, "agent", None))):
+            raise CapError("untrusted_source", "dispatch requires an explicit current owner source. " + provenance.outsider_detail())
         sch = self.host.scheduler
         if sch.current_id == wf or any(t == wf for t, _ in sch.waiting):
             audit(self.st, "dispatch", wf_sha=sha(wf)[:16], result="already_running")
             return {"result": "already_running", "workflow": wf, "running": sch.current_id == wf, "next": "end_turn",
                     "detail": END_TURN}
         plan = await asyncio.to_thread(plan_card, self.st, self.cfg(), wf, [], adapters=self.adapters)
-        if not autonomous() and (getattr(self.host, "task_label", None) is not None or provenance.untrusted_turn(getattr(self.host, "agent", None))):
-            raise CapError("untrusted_source", "the owner turn changed while planning")
+        if not autonomous() and (getattr(self.host, "task_label", None) is not None or not provenance.owner_speaking(getattr(self.host, "agent", None))):
+            raise CapError("untrusted_source", "the owner turn changed while planning; ask again from the owner's own chat")
         b = plan["brief"]["full"]
         if b["confirmation"]["mode"] == "signed" and plan["brief"]["confirm"] and not autonomous():
             raise CapError("unconfirmed", "the owner has not confirmed this brief: prepare a card")
@@ -1454,8 +1454,8 @@ class Capabilities:
             else:
                 from . import application_ingress
                 if pid is None and sys.platform == 'darwin':
-                    from .core.process_evidence import peer_pid, uid as peer_uid
-                    pid = peer_pid(w); uid = peer_uid(pid)
+                    from .core.process_evidence import peer_pid, peer_uid
+                    pid = peer_pid(w); uid = peer_uid(w.get_extra_info('socket'))   # #0302 kernel LOCAL_PEERCRED
                 with application_ingress.native(self.host, w, req, pid, uid):
                     res = await self.handle(req)
         except CapError as e:

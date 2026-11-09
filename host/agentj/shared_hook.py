@@ -297,7 +297,9 @@ def peer_pid(sock):
             pid, uid, _ = struct.unpack('3i', sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
             return pid, uid
     with contextlib.suppress(OSError, AttributeError, struct.error):
-        return struct.unpack('i', sock.getsockopt(0, 2, 4))[0], None     # macOS SOL_LOCAL / LOCAL_PEERPID
+        pid = struct.unpack('i', sock.getsockopt(0, 2, 4))[0]            # macOS SOL_LOCAL / LOCAL_PEERPID
+        from .core.process_evidence import peer_uid
+        return pid, peer_uid(sock)                                        # #0302: LOCAL_PEERCRED, None if unreadable
     return None, None
 
 

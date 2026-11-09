@@ -133,6 +133,9 @@ def _run(engine: pathlib.Path, args: list[str], capture=False) -> subprocess.Com
             code = {'offline':'interaction_unavailable', 'no_device':'interaction_unavailable', 'host_unavailable':'interaction_unavailable',
                     'device':'authorization_denied', 'timeout':'authorization_timeout', 'estop':'execution_stopped',
                     'group_source':'authorization_source_refused', 'application_ingress_unverified':'authorization_source_refused',
+                    **dict.fromkeys(('untrusted_turn', 'untrusted_source', 'task_plan', 'unverified_plan_producer', 'peer_unverified',
+                                     'source_denied', 'session_changed', 'not_ordinary_application', 'owner_phone_required',
+                                     'owner_required', 'source', 'caller', 'not_owner_agent'), 'authorization_source_refused'),
                     'owner_grant_scope':'authorization_scope_missing',
                     'serve_stop':'interaction_interrupted', 'agent_gone':'interaction_interrupted',
                     'superseded':'interaction_interrupted', 'too_many':'interaction_unavailable'}.get(reason, 'authorization_unknown')

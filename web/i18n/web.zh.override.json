@@ -3915,6 +3915,7 @@
   "setup.step.files": "在手机聊天里告诉 Agent 要使用哪个工作文件夹，请它检查读写权限，再回这里点「检查」。",
   "setup.step.macfiles": "在 Agent J 主机上打开终端，运行 agentj files prepare --at-computer，逐个允许下载、桌面、文稿与 Finder 权限，然后在手机点「检查」。",
   "p0300.pk.setup": "在本机设置 Face ID",
+  "p0303.term.enter": "进入终端",
   "p0300.pk.testExpired": "这次测试已过期，请再点一次。",
   "p0300.pk.testRejected": "这次通行密钥验证未通过。可以在本机重新设置。",
   "p0300.pk.testIncomplete": "这次验证未完成，请再试一次。",

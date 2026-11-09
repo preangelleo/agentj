@@ -233,6 +233,14 @@ def claude_send(session: dict, text: str, source: dict | None = None) -> None:
 BACKGROUND_WAIT = 150     # P552: a headless child's Face ID card waits less than the hook's own 170 s socket timeout
 
 
+def application_ingress_span(agent):
+    """#0302 r3: a native turn whose source is not the owner's opens a guest span (processes born in it never act as owner)."""
+    from . import application_ingress
+    host = getattr(agent, "host", None)
+    if host is not None and not application_ingress._owner_source(getattr(agent, "native_source", None)):
+        application_ingress.open_span(host, native=True)
+
+
 class SharedClaudeAgent(Agent):
     kind = "claude"
 
@@ -346,6 +354,7 @@ class SharedClaudeAgent(Agent):
         self.turn_began_at = None       # wall clock of the current turn's start (UserPromptSubmit / harness turn)
         self.recover_at = 0.0           # wall clock of the last scheduled recovery (PostCompact + SessionStart = one)
         self.compact_handoff = None     # True/False: a fresh handoff existed at PreCompact; None = no PreCompact seen
+        self.compact_trigger = None     # #0303: PreCompact's trigger ("manual" / "auto"); an auto one may be inside a turn
         self.recover_task = None
         self.system_done = asyncio.Event()   # the end of a turn the host itself started (handoff prep)
         self.ctx_reminded = -1          # compaction epoch the 「上下文过半」 handoff reminder went out in
@@ -408,6 +417,8 @@ class SharedClaudeAgent(Agent):
         emit = getattr(self.host, "emit", None)
         if emit:
             emit("shared_stop", agent="claude", phone=self.phone_turn, phone_input=self.phone_turn and self.phone_seen, source=source)
+        from . import application_ingress
+        application_ingress.close_native_span(self)   # #0302 r4 C2: not while a non-owner send is pending
         self.native_turn = self.peer_low = self.untrusted_foreign = False
         self._native_approval_origin = None
         self._limit_check(reply)
@@ -903,13 +914,16 @@ class SharedClaudeAgent(Agent):
                 self.turn_began_at = handoff.now()
             elif name == "PreCompact":
                 self.compact_handoff = handoff.fresh(self.turn_began_at)
+                self.compact_trigger = str(event.get("trigger") or "")[:16] or None
                 self.host.st.log("shared_precompact", handoff=self.compact_handoff,
                                  trigger=str(event.get("trigger") or "?")[:16])
             if name == "PostCompact" or (name == "SessionStart" and event.get("source") == "compact"):
                 if handoff.now() - self.recover_at > 10:
                     has = self.compact_handoff if self.compact_handoff is not None else handoff.fresh(self.turn_began_at)
                     self.compact_handoff = None
-                    self._schedule_recover("compact", has)
+                    trigger = str(event.get("trigger") or "")[:16] or self.compact_trigger
+                    self.compact_trigger = None
+                    self._schedule_recover("compact", has, trigger)
             elif name == "SessionStart" and event.get("source") == "clear" and handoff.mtime(handoff.CLEAR) is not None:
                 self._schedule_recover("clear", True)
         if (name == "UserPromptSubmit" or (name == "SessionStart" and event.get("source") == "clear")) and not event.get("agent_id"):
@@ -927,6 +941,7 @@ class SharedClaudeAgent(Agent):
             if not self._phone_echo(event, prompt) and not (self.native_source.get("kind") == "same_host"
                                                             and prompt.strip() == self.__dict__.get("_peer_text")):
                 self.native_source = provenance.terminal_input(event, prompt, prompt)
+                application_ingress_span(self)   # #0302 r4 C1: terminal_input may be unknown (peer origin / envelope tag)
         elif name in ("SessionStart", "PreCompact") and not event.get("agent_id"):
             self.native_source = provenance.normalize(None)
         self._note_background(name, event)
@@ -2099,6 +2114,8 @@ class SharedClaudeAgent(Agent):
                         else:
                             self.native_source = provenance.system()
                             self.untrusted_foreign = self.peer_low = True   # P570; #455 B1
+                            from . import application_ingress
+                            application_ingress.open_span(self.host)        # #0302 r2: guest-content harness turn
                         shared_turn_origin.completed(self, ids, provenance.unattended_turn(self) == "system",
                             successful=bool(ids) and re.findall(r"<status>([^<]*)</status>", text)==["completed"]*len(ids))
                         self.native_turn = True
@@ -2121,6 +2138,7 @@ class SharedClaudeAgent(Agent):
                         continue
                     if not human_input(item, blocks, text):
                         self.native_source = provenance.normalize(None)
+                        application_ingress_span(self)   # #0302 r3: non-owner native turn opens a span
                         self.peer_low = self.peer_low or self.native_turn
                         continue
                     self.stop_since_end = False   # P151: a new turn begins
@@ -2130,6 +2148,7 @@ class SharedClaudeAgent(Agent):
                         self._mark_untrusted("running", provenance.names_untrusted(text, True))   # a native version that runs it without UserPromptSubmit
                     if self._from_phone(item, text):
                         self.native_source = provenance.normalize(None)  # labels cannot authenticate a new request
+                        application_ingress_span(self)   # #0302 r3: non-owner native turn opens a span
                         self.peer_low = self.peer_low or self.native_turn
                         if self.phone_turn and self.pending_text in text:
                             self.phone_seen = True
@@ -2141,6 +2160,7 @@ class SharedClaudeAgent(Agent):
                     if self._control_echo(text):
                         continue
                     self.native_source = provenance.terminal_input(item, blocks, text)
+                    application_ingress_span(self)   # #0302 r4 C1: terminal_input may be unknown (peer origin / envelope tag)
                     self.host.desktop_input(public_text(text))
                 # Assistant prose is emitted only by the committed Stop payload.
                 # Transcript timing is not a completion/ownership signal.
@@ -2198,6 +2218,7 @@ class SharedClaudeAgent(Agent):
                         asyncio.get_running_loop().run_in_executor(None, launches.save)
         self.peer_low = self.peer_low or src["kind"] != "same_host"
         self.native_source = src
+        application_ingress_span(self)           # #0302 r3: peer (same-host or unverified) native turn
         self._peer_text = text.strip() if src["kind"] == "same_host" else None
         self.host.st.log("shared_peer_source", result=src["kind"], reason=why)
         return True
@@ -2449,7 +2470,7 @@ class SharedClaudeAgent(Agent):
                 "如果找不到，它已在同一目录改名为 " + handoff.CLEAR_USED + "，读那个。")
         return ""
 
-    def _schedule_recover(self, kind, has):
+    def _schedule_recover(self, kind, has, trigger=None):
         loop = self.loop
         if loop is None:
             with contextlib.suppress(RuntimeError):
@@ -2459,19 +2480,21 @@ class SharedClaudeAgent(Agent):
         self.recover_at = handoff.now()
         if self.recover_task and not self.recover_task.done():
             self.recover_task.cancel()
-        self.recover_task = loop.create_task(self._recover(kind, has, self.turn_began_at))
+        self.recover_task = loop.create_task(self._recover(kind, has, self.turn_began_at, trigger))
 
-    async def _recover(self, kind, has, began):
-
-        await asyncio.sleep(handoff.RECOVER_DELAY)
-        why = None
+    async def _recover_ready(self, kind, began, gen, patient):
+        """None = idle, nobody else started a turn: send now; else why not. #0303: a manual /compact or a /clear waits
+        RECOVER_BUSY_WAIT for the session to settle (it used to give up after 5 s — TB 10-13…10-17: `busy`, the owner
+        waited); an automatic compaction keeps the 5 s look (a running turn goes on by itself)."""
         stale = 0
-        for _ in range(20):
-            if self.turn_began_at != began or self.phone_turn:
-                why = "new_turn"
-            elif self.session is None or self.host.stopped() is True:
-                why = "offline"
-            elif self.state.status not in ("idle", "none"):
+        tries = int(handoff.RECOVER_BUSY_WAIT / 0.25) if patient else 20
+        why = None
+        for _ in range(max(1, tries)):
+            if self.turn_began_at != began or getattr(self, "turn_gen", 0) != gen or self.phone_turn:
+                return "new_turn"
+            if self.session is None or self.host.stopped() is True:
+                return "offline"
+            if self.state.status not in ("idle", "none"):
                 why = "busy"            # Claude Code's automatic compaction inside a turn: the turn goes on by itself
             elif not await asyncio.to_thread(self._registry_quiet):
                 why = "busy"
@@ -2484,35 +2507,67 @@ class SharedClaudeAgent(Agent):
                 if self.native_turn:
                     self.native_turn = False
                     self.host.st.log("shared_native_turn_stale", why="recover", kind=kind)
-                why = None
-                break
-            if why != "busy":
-                break
+                return None
             await asyncio.sleep(0.25)
-        if why:
-            self.host.st.log("shared_handoff_recover", kind=kind, result=why, handoff=bool(has))
-            return
+        return why
+
+    async def _recover(self, kind, has, began, trigger=None):
+        """P151 + #0303: the host's own 〔Agent J 系统提示〕 after a compaction / a /clear, delivered without waiting for the
+        owner. A socket write is not a turn: the phone line 「…在翻交接笔记…」 is posted only once Claude Code started the
+        native turn (UserPromptSubmit → turn_gen moves, the page turns blue). No start within RECOVER_START_WAIT or a
+        failed write → re-send, RECOVER_TRIES attempts in all, each logged; then a truthful 「没能自动送到」 line."""
+        await asyncio.sleep(handoff.RECOVER_DELAY)
+        patient = trigger != "auto"
+        gen = getattr(self, "turn_gen", 0)
         lang = getattr(self.host, "lang", "zh")
         where = None
-        if kind == "clear":
-            where = handoff.take_clear()
-            if where is None:
+        sent_once = False
+        for attempt in range(1, handoff.RECOVER_TRIES + 1):
+            why = await self._recover_ready(kind, began, gen, patient)
+            if why == "new_turn" and sent_once:
+                why = None              # our earlier write was taken late: that turn is the recovery
+                started = True
+            elif why:
+                self.host.st.log("shared_handoff_recover", kind=kind, result=why, handoff=bool(has), attempt=attempt)
+                return                  # busy after a write: the session is working (blue) — no claim either way
+            else:
+                started = False
+            if not started:
+                if kind == "clear" and where is None:
+                    where = handoff.take_clear()
+                    if where is None:
+                        return
+                text = handoff.recover_text(lang, kind, bool(has), where)
+                try:
+                    peers = getattr(self.host, "peers", None)
+                    recovery = getattr(getattr(peers, "xfer", None), "recovery_source", None)
+                    candidate = recovery(self) if callable(recovery) else None
+                    from .owner_grant import resume_source
+                    source = resume_source(candidate) if isinstance(candidate, dict) else provenance.system()
+                    self._host_turn()
+                    self.pending_source = self.native_source = source
+                    gen = getattr(self, "turn_gen", 0)
+                    await asyncio.to_thread(claude_send, self.session, text, source)
+                except (OSError, ConnectionError, KeyError, TypeError):
+                    self.host.st.log("shared_handoff_recover", kind=kind, result="send_failed", handoff=bool(has),
+                                     attempt=attempt)
+                    await asyncio.sleep(handoff.RECOVER_GAP)
+                    continue
+                sent_once = True
+                self.host.st.log("shared_handoff_recover", kind=kind, result="sent", handoff=bool(has), attempt=attempt)
+                deadline = asyncio.get_running_loop().time() + handoff.RECOVER_START_WAIT
+                while getattr(self, "turn_gen", 0) == gen and asyncio.get_running_loop().time() < deadline:
+                    await asyncio.sleep(0.1)
+                started = getattr(self, "turn_gen", 0) != gen
+            if started:
+                self.host.st.log("shared_handoff_recover", kind=kind, result="started", handoff=bool(has), attempt=attempt)
+                self.host.agent_notice(handoff.phone_line(lang, kind))
                 return
-        text = handoff.recover_text(lang, kind, bool(has), where)
-        try:
-            peers = getattr(self.host, "peers", None)
-            recovery = getattr(getattr(peers, "xfer", None), "recovery_source", None)
-            candidate = recovery(self) if callable(recovery) else None
-            from .owner_grant import resume_source
-            source = resume_source(candidate) if isinstance(candidate, dict) else provenance.system()
-            self._host_turn()
-            self.pending_source = self.native_source = source
-            await asyncio.to_thread(claude_send, self.session, text, source)
-        except (OSError, ConnectionError, KeyError, TypeError):
-            self.host.st.log("shared_handoff_recover", kind=kind, result="send_failed", handoff=bool(has))
-            return
-        self.host.st.log("shared_handoff_recover", kind=kind, result="sent", handoff=bool(has))
-        self.host.agent_notice(handoff.phone_line(lang, kind))
+            self.host.st.log("shared_handoff_recover", kind=kind, result="not_started", handoff=bool(has), attempt=attempt)
+            began, gen = self.turn_began_at, getattr(self, "turn_gen", 0)
+            await asyncio.sleep(handoff.RECOVER_GAP)
+        self.host.st.log("shared_handoff_recover", kind=kind, result="gave_up", handoff=bool(has))
+        self.host.agent_notice(humane.say("recover.stalled", lang))
 
     async def _handoff_prep(self) -> bool:
 
@@ -3361,6 +3416,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
             self.message_roles[mid] = None if info.get("synthetic") or info.get("ignored") else info.get("role")
             if info.get("role") == "user" and self.message_roles[mid] is None:
                 self.native_source = self.out_src = provenance.normalize(None)
+                application_ingress_span(self)   # #0302 r3: OpenCode synthetic/ignored user turn
         if ev.get("type") == "message.part.updated":
             part = p.get("part") or {}
             mid = part.get("messageID")
@@ -3374,6 +3430,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
                         self.desktop_turn = True
                         self.risk.reset(mid)
                         self.native_source = provenance.terminal_input(part, [part], part.get("text") or "")
+                        application_ingress_span(self)   # #0302 r4 C1: terminal_input may be unknown (peer origin / envelope tag)
                         self.out_src = self.native_source
                         self.host.desktop_input(public_text(part.get("text") or ""))
                 return
@@ -3394,6 +3451,8 @@ class SharedOpenCodeAgent(OpenCodeAgent):
             if ev.get("type") == "session.idle" or (p.get("status") or {}).get("type") == "idle":
                 self.host.desktop_end()
                 self.desktop_turn = False
+                from . import application_ingress
+                application_ingress.close_native_span(self)   # #0302 r4 C2: not while a non-owner send is pending
         super().on_event(ev)
 
     def _text_part(self, part):
@@ -3488,6 +3547,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
             self.message_roles[mid] = None if info.get("synthetic") or info.get("ignored") else info.get("role")
             if info.get("role") == "user" and self.message_roles[mid] is None:
                 self.native_source = self.out_src = provenance.normalize(None)
+                application_ingress_span(self)   # #0302 r3: OpenCode synthetic/ignored user turn
             for part in message.get("parts") or []:
                 if info.get("role") == "user":
                     self.on_event({"type": "message.part.updated", "properties": {"part": part}})

@@ -25,7 +25,7 @@ _UNSUPPORTED = ("method not found", "unknown method", "unknown variant", "requir
 NOT_RUNNING = "codex app-server is not running"      # agent_codex._send: raised before anything is written
 UNCERTAIN = "uncertain"
 _HOST_SENDS = ("heartbeat_key", "bot_handoff_id", "official_notice_id", "quota_resume_id", "auto_notify", "hook_notice",
-               "background_done_ids", "completed")
+               "background_done_ids", "completed", "compact_resume")
 
 
 def unsupported(err) -> bool:

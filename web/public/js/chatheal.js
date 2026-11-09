@@ -12,6 +12,7 @@
 // (H.stop()) on an older one. The host notice offers it once stuck or after END_AFTER_S; the owner's own queued page at once
 // (as P481 did).
 import { t } from './t.js';
+import * as termhook from './termhook.js';   // 0.30.3: 「进入终端」 under the opened notice
 import { loginOf, queueOf, waitedNow, prevText, canEnd, keepTicking } from './selfheal.js';
 import { open as openLogin } from './loginsheet.js';
 import { endTurn, flowState, clearEndTurn, onChange, openBlock, whyLine } from './rescue.js';
@@ -43,6 +44,13 @@ function waitedLine(sec) {
 /** true = the box is ours this time (login button, or the waited line with its end-turn button / result). */
 export function paint(box, p, H) {
   repaint = H.repaint;
+  // 0.30.3 (董事长 14:5x): 「网页终端已打开」 — on the phone whose terminal is open, a way back into it
+  if (p && p.card && p.card.term === 'open' && termhook.isOpen()) {
+    box.replaceChildren(); box.hidden = false;
+    const b = button('sh-term', t('p0303.term.enter'), () => termhook.reveal()); b.dataset.termEnter = '1';
+    box.append(b);
+    return true;
+  }
   const login = loginOf(p);
   if (login) {
     box.replaceChildren(); box.hidden = false;

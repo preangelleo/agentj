@@ -25,6 +25,25 @@ def peer_pid(writer):
     return None
 
 
+def peer_uid(sock):
+    """Kernel uid of a unix-socket peer. Linux SO_PEERCRED; macOS LOCAL_PEERCRED (struct xucred: cr_version, cr_uid).
+
+    0.30.2 (#0302): macOS Python has no SO_PEERCRED, so every gate comparing the peer uid with ours used to see None
+    and refused the owner's own calls. None still means "unknown" and callers keep refusing on None.
+    """
+    try:
+        if sys.platform.startswith('linux'):
+            return struct.unpack('3i', sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))[1]
+        if sys.platform == 'darwin':
+            # Apple XNU bsd/sys/un.h: SOL_LOCAL=0, LOCAL_PEERCRED=0x001; XUCRED_VERSION=0.
+            raw = sock.getsockopt(0, 0x001, 76)
+            if len(raw) >= 8 and struct.unpack_from('I', raw, 0)[0] == 0:
+                return struct.unpack_from('I', raw, 4)[0]
+    except (AttributeError, OSError, TypeError, ValueError, struct.error):
+        pass
+    return None
+
+
 def uid(pid):
     if type(pid) is not int or pid <= 1:
         return None
@@ -63,6 +82,35 @@ def descendant(peer, anchor, token):
             return row[0] == token and all(snapshot(p) == evidence for p, evidence in reversed(chain))
         pid = row[2]
     return False
+
+
+def linux_row(pid):
+    """/proc: (parent, start in CLOCK_BOOTTIME seconds, raw starttime ticks token) for a live same-uid process, or None."""
+    if not sys.platform.startswith('linux') or type(pid) is not int or pid <= 1:
+        return None
+    try:
+        if os.stat(f'/proc/{pid}').st_uid != os.getuid():
+            return None
+        with open(f'/proc/{pid}/stat', 'rb') as fh:
+            s = fh.read().decode('utf-8', 'replace').rsplit(')', 1)[1].split()
+        if s[0] in ('Z', 'X'):
+            return None
+        return int(s[1]), int(s[19]) / os.sysconf('SC_CLK_TCK'), s[19]     # boottime seconds (same clock as now())
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def now():
+    """The clock row() start times are in: CLOCK_BOOTTIME on Linux (immune to wall-clock jumps), wall clock on macOS."""
+    import time
+    if sys.platform.startswith('linux') and hasattr(time, 'CLOCK_BOOTTIME'):
+        return time.clock_gettime(time.CLOCK_BOOTTIME)
+    return time.time()
+
+
+def row(pid):
+    """Platform process row (parent, start epoch seconds, start token)."""
+    return darwin_row(pid) if sys.platform == 'darwin' else linux_row(pid)
 
 
 def darwin_row(pid):

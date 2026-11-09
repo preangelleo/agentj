@@ -181,6 +181,33 @@ def owner_channel_turn(agent) -> str | None:
     return via
 
 
+def owner_intent(src, send=None) -> bool:
+    """#0303 R1: THE "owner speaking" predicate (pure). Phone / terminal, or an owner channel source the adapter built only
+    after its strict check (Telegram owner DM, bound WeChat, mail.owner_source); a webhook body never. See ADR-0303."""
+    if send is not None and getattr(send, "hook_notice", None):
+        return False
+    s = normalize(src)
+    return is_owner(s) or owner_channel(s) is not None
+
+
+def owner_speaking(agent) -> bool:
+    """#0303 R1: module gates use this instead of `not untrusted_turn(agent)`; same rule as serve.ask's channel divert."""
+    return not untrusted_turn(agent) or (owner_channel_turn(agent) is not None
+                                         and owner_intent(turn_source(agent), getattr(agent, "cur_send", None)))
+
+
+OUTSIDER_NEXT = ("这一轮不是主人本人发的消息（群聊、转发、访客邮件、好友 / 委托任务、自动化数据或系统提示），所以没有执行、也没有发卡片；"
+                 "不是主人拒绝。请主人在 Agent J 网页、本机终端，或自己绑定的 Telegram 私聊 / 微信 / 已核验的主人邮箱里直接说这件事",
+                 "This turn is not the owner's own message (a group, a forward, guest mail, a friend / delegated task, automation "
+                 "data or a system notice), so nothing ran and no card was sent; the owner did not refuse it. Ask the owner to "
+                 "say it directly in the Agent J Web App, the local terminal, or their own bound Telegram DM / WeChat / "
+                 "verified owner mailbox")
+
+
+def outsider_detail() -> str:
+    return OUTSIDER_NEXT[0] + " / " + OUTSIDER_NEXT[1]
+
+
 def rank(src) -> int:
     s = normalize(src)
     return 0 if is_owner(s) else (1 if s["kind"] in TASK_KINDS else 2)

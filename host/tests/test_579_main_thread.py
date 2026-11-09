@@ -27,16 +27,18 @@ class Budget(unittest.TestCase):
         self.assertFalse(self.guard.snapshot()['owner_waiting'])
         self.assertNotEqual(generation,self.guard.session)
 
-    def test_first_native_context_then_deny_and_real_background_unblocks(self):
+    def test_first_native_context_then_reminders_never_deny(self):
+        # #0302 (0.30.2): advisory only — the chairman's rule is no Agent J block outside the UV list.
         self.assertEqual(self.guard.check('Write',{'content':'a'}),{})
         warning=self.guard.check('Write',{'content':'b'})['hookSpecificOutput']
         self.assertIn('additionalContext',warning);self.assertNotIn('permissionDecision',warning)
-        refused=self.guard.check('Write',{'content':'c'})['hookSpecificOutput']
-        self.assertEqual(refused['permissionDecision'],'deny');self.assertIn('agentj busy run --help',refused['permissionDecisionReason'])
+        self.assertIn('agentj busy run --help',warning['additionalContext'])
+        self.assertEqual(self.guard.check('Write',{'content':'c'}),{})
+        again=self.guard.check('Write',{'content':'d'})['hookSpecificOutput']
+        self.assertIn('additionalContext',again);self.assertNotIn('permissionDecision',again)
         self.host.busy.items=lambda:[{'status':'running'}]
-        self.assertEqual(self.guard.check('Write',{'content':'d'}),{})
-        self.host.busy.items=lambda:[{'status':'unknown'}]
-        self.assertEqual(self.guard.check('Write',{})['hookSpecificOutput']['permissionDecision'],'deny')
+        self.assertEqual(self.guard.check('Write',{'content':'e'}),{})
+        self.assertFalse(self.guard.snapshot()['blocked'])
 
     def test_read_acceptance_dispatch_and_reply_for_thirty_minutes_are_exempt(self):
         for stamp in range(0,1801,30):

@@ -796,8 +796,8 @@ class FormService:
         from . import provenance
         if self.host.stopped():
             return {"ok": False, "result": "stopped"}
-        if provenance.untrusted_turn(getattr(self.host, "agent", None)):
-            return {"ok": False, "result": "group_source"}
+        if not provenance.owner_speaking(getattr(self.host, "agent", None)):
+            return {"ok": False, "result": "group_source", "detail": provenance.outsider_detail()}
         try:
             spec, converted = normalize(req.get("form"), self.lang(), req.get("mode"))
         except FormError as e:

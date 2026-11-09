@@ -658,6 +658,19 @@ def judge(msg, cfg: dict, seen: list[str], raw: bytes = b"") -> Verdict:
     return Verdict(ok=True, reason="ok", detail="", addr=addr, role=row["role"], auth=how, name=row.get("name", ""), notice=why)
 
 
+def owner_source(v, notice=False, servid="") -> dict:
+    """#0303: the only place an owner mail source is built. Owner = allowlist role owner AND judge()'s authenticate()
+    passed with an aligned DMARC / DKIM (SPF at level standard) result — VERIFIED; a From header alone, auth "off" or the
+    mailbox-to-itself "self" stay the guest envelope. provenance.owner_intent trusts email role owner because of this.
+    #0302 security r5 M1: only with a pinned trusted mail server (auth_servid). Without it authenticate() trusts the first
+    Authentication-Results header, which a sender can write himself when the provider adds none — such mail stays guest
+    until the owner pins it (Settings → Mail 「只认这台服务器写的校验结果」, from the sampled server)."""
+    from . import provenance
+    if getattr(v, "ok", True) and v.role == "owner" and v.auth in VERIFIED and not notice and servid:
+        return provenance.email_owner(v.addr)
+    return provenance.email_guest(v.addr)
+
+
 def owner_request(msg, cfg: dict, state: dict, addr: str) -> str | None:
     """Sender authentication proves who, not whom the owner is asking (#513)."""
     if any(k.lower().startswith("resent-") for k in msg.keys()):
@@ -1716,7 +1729,7 @@ class Mail:
         for name, mime, data in attachments(msg):
             put(name, mime, data)
         notice = bool(getattr(v, "notice", None))   # P565: an allowlisted automatic sender — data for the owner, never a task
-        source = provenance.email_owner(v.addr) if v.role == "owner" and v.auth in VERIFIED and not notice else provenance.email_guest(v.addr)
+        source = owner_source(v, notice, cfg.get("auth_servid") or "")   # #0302 r5 M1: pinned trusted server only
         lines = [T[lang]["notice"] if notice else "", f"Subject: {subject}" if subject else ""]
         lines.append((owner_text if v.role == "owner" or notice else redact)(clean(words, TEXT_MAX)))   # P194 / P565: addresses kept for judging
         if fwds:

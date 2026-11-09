@@ -40,7 +40,8 @@ def _peer(sock) -> tuple[int | None, int | None]:
         return pid, uid
     if sys.platform == "darwin":
         pid = struct.unpack("i", sock.getsockopt(0, 0x002, 4))[0]        # SOL_LOCAL, LOCAL_PEERPID
-        return pid, None
+        from .core.process_evidence import peer_uid
+        return pid, peer_uid(sock)                                        # #0302: LOCAL_PEERCRED
     return None, None
 
 

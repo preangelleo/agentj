@@ -1,10 +1,14 @@
-"""#579 main-session work budget. This can add context or deny, never grant authority."""
+"""#579 main-session work budget. Advisory only since 0.30.2 (#0302): it adds a reminder, never denies and never grants.
+
+The chairman's rule: outside the UV fingerprint list Agent J does not block what the harness would allow."""
 import asyncio
 import os
 import secrets
 import time
 from . import controls, danger, preferences
 
+# Replies and status reads to the owner's other devices / friends are the main thread's job, not implementation work.
+REPLY = frozenset(('tell','list','history','status','reports','asks'))
 DELEGATE = frozenset(('Agent','Task','TaskOutput','TaskStop','AskUserQuestion','spawn_agent','send_message','followup_task','wait_agent','agent.dispatch','agent.session','file.read','web.search'))
 WORK = frozenset(('Write','Edit','MultiEdit','Delete','NotebookEdit','apply_patch'))
 MESSAGE = {
@@ -41,7 +45,8 @@ def work_call(tool, inp):
     for parsed in commands:
         words = parsed.words
         if (words and os.path.basename(words[0]) == 'agentj' and not parsed.redirs and not parsed.subst and not parsed.heredoc
-                and (words[1:3] == ['busy','run'] or len(words) > 1 and words[1] in ('status','doctor','validate','handoff'))):
+                and (words[1:3] == ['busy','run'] or len(words) > 1 and words[1] in ('status','doctor','validate','handoff')
+                     or len(words) > 2 and words[1] == 'friends' and words[2] in REPLY)):
             continue
         unpacked = danger.unwrap(parsed)
         if not unpacked:
@@ -56,6 +61,8 @@ def work_call(tool, inp):
         if name == 'agentj' and len(words) > 2 and words[1:3] == ['busy','run']:
             continue
         if name == 'agentj' and len(words) > 1 and words[1] in ('status','doctor','validate','handoff'):
+            continue
+        if name == 'agentj' and len(words) > 2 and words[1] == 'friends' and words[2] in REPLY:
             continue
         if name == 'relay' and len(words) > 1 and words[1] in ('validate','qa','doctor','handoff'):
             continue
@@ -169,17 +176,17 @@ class Guard:
         self.calls += 1
         if self.calls < limit and self.clock()-self.started < seconds:
             return {}
+        # #0302: remind once at the threshold and again every `limit` work calls; never deny (blocked stays False).
+        if self.warned and (self.calls - limit) % limit:
+            return {}
         a = self.adapter
         message = MESSAGE['en' if str(getattr(a.host,'lang','zh')).startswith('en') else 'zh']
-        output = {'hookEventName':'PreToolUse'}
-        if not self.warned:
-            self.warned = True
-            output['additionalContext'] = message
-        else:
-            self.blocked = True
-            output.update(permissionDecision='deny',permissionDecisionReason=message)
+        self.warned = True
+        emit = getattr(a.host,'emit',None)
+        if callable(emit):
+            emit('main_thread_guard', result='remind', calls=self.calls)
         self.changed()
-        return {'hookSpecificOutput':output}
+        return {'hookSpecificOutput':{'hookEventName':'PreToolUse','additionalContext':message}}
 
 
 def of(adapter):

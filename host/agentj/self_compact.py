@@ -109,7 +109,9 @@ def owner_channel(src):
     if not isinstance(src, dict):
         return False
     src = provenance.normalize(src)
-    return src['role'] == 'owner' and src['kind'] == 'phone'
+    # #0302: the owner terminal is the owner too. A shared Claude session's native source is the terminal, so after the
+    # turn ended every queued owner compaction was refused (TB 2026-11-09 14:39, phone menu /compact).
+    return src['role'] == 'owner' and src['kind'] in ('phone', 'terminal')
 
 
 def guard(agent, cmd):

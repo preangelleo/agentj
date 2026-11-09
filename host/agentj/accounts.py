@@ -974,7 +974,7 @@ async def handle(host, req: dict) -> dict:
             return {"ok": False, "why": "rate"}
         last[h] = time.monotonic()
         res = await use(host, h, req.get("ref"), device="cli",
-                        untrusted=bool(provenance.untrusted_turn(getattr(host, "agent", None))))
+                        untrusted=not provenance.owner_speaking(getattr(host, "agent", None)))
     elif op == "account_rename":
         res = await rename(host, h, req.get("ref"), req.get("name"), device="cli")
     elif op == "account_remove":

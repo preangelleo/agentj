@@ -314,7 +314,7 @@ def _verdict_line(v: privacy.Verdict) -> str:
     if v.status == "blocked":
         return (f"layer 2 (Jev, plaza criteria): FLAGGED — {v.reason}; most likely: {v.kind or '?'} "
                 f"({privacy.kind_text(v.kind, gate='plaza')})")
-    return privacy.LOCAL_REVIEW_NOTE if privacy.optional_review(v) else "authenticated privacy broker/source check failed"
+    return privacy.LOCAL_REVIEW_NOTE if privacy.optional_review(v) else "authenticated privacy broker/source check failed" + privacy.source_hint(v)
 
 
 def run_publish(kind: str, *, title: str | None, body_file: str, target: str | None = None, show_name=False,

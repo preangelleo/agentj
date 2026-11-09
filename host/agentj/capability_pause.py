@@ -42,12 +42,12 @@ def handle(host, req, pid):
         return {'result':'refused', 'why':'shape'}
     if agent is None or type(pid) is not int or not (self_compact.roots(agent) & set(shared_hook.ancestors(pid))):
         return {'result':'refused', 'why':'caller'}
-    if (host.stopped() or provenance.untrusted_turn(agent) or provenance.delegated_turn(agent)
+    if (host.stopped() or not provenance.owner_speaking(agent) or provenance.delegated_turn(agent)
             or provenance.owner_grant_required(agent) or getattr(host, 'task_label', None)):
-        return {'result':'refused', 'why':'source'}
+        return {'result':'refused', 'why':'source', **({} if host.stopped() else {'detail':provenance.outsider_detail()})}
     source = self_compact.turn_source(agent)
-    if source is self_compact._UNKNOWN or provenance.normalize(source).get('kind') not in ('phone', 'terminal'):
-        return {'result':'refused', 'why':'source'}
+    if source is self_compact._UNKNOWN or not provenance.owner_intent(source):      # #0303 R1: owner channels too
+        return {'result':'refused', 'why':'source', 'detail':provenance.outsider_detail()}
     directory = (getattr(agent, 'cfg', None) or {}).get('dir')
     if not directory:
         return {'result':'refused', 'why':'workdir'}

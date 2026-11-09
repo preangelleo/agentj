@@ -1,5 +1,5 @@
 {
-  "version": "0.30.2",
-  "zh": "热修：网页终端输入主机密码后，即使 Agent 还在继续工作，也不再卡在「正在核对密码」或提示「已取消」。",
-  "en": "Hotfix: the web terminal no longer fails after you type the host password while the Agent keeps working."
+  "version": "0.30.3",
+  "zh": "热修：Mac 主机上从广场安装、联系客服、批量确认不再被误拦；你自己的 Telegram、微信按你本人处理，邮箱要先在 设置→邮件 固定校验服务器；压缩对话后自动接着干活；网页终端首次开启后直接进入终端页。",
+  "en": "Hotfix: Mac hosts stop blocking plaza installs and support; your Telegram, WeChat and pinned-server mail count as you; work resumes after compacting."
 }

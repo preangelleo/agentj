@@ -45,6 +45,20 @@ REWRITE_HINT = "Agent 之间不传密钥 / Agents never pass keys to each other"
 REWRITE_ROUNDS = 2
 _HEX16 = re.compile(r"[0-9a-f]{16}")
 _RID = re.compile(r"[0-9a-f]{32}")
+
+
+def _task_plan_detail(h, actions) -> str:
+    """#0303: the refusal says why and what to do (it used to be a bare `task_plan`)."""
+    from . import provenance
+    if not isinstance(actions, list) or not actions or not isinstance(actions[0], dict):
+        return "动作清单必须是非空的对象列表 / actions must be a non-empty list of objects"
+    if h.cur_turn is None:
+        return ("主机还没看到这一轮开始；请在主人的这条消息里重试 / the host has not seen this turn start yet; retry within "
+                "the owner's message")
+    if h.task_label is not None or provenance.unattended_turn(h.agent):
+        return ("定时任务或系统提示不能申请批量确认：直接一步步做，指纹清单上的步骤会单独弹卡 / a scheduled task or system notice "
+                "cannot ask for a batch plan: run the steps directly; a fingerprint-list step asks on its own card")
+    return provenance.outsider_detail()
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 HIST_S = ("got", "replied", "queued_for_owner")
 
@@ -1680,9 +1694,15 @@ class PeerService:
     async def approve_actions(self, actions, target=None):
         from . import approvals, provenance, bounded_plan
         h = self.host
+        if (h.cur_turn is not None and h.task_label is None and provenance.turn_source(h.agent).get("kind") == "same_owner"
+                and not (isinstance(actions, list) and actions and bounded_plan.continuation_allowed(h, actions))):
+            # #0302: a same-owner device task needs no batch list. Each step runs directly; a step on the UV
+            # fingerprint list pops the owner's own UV card at that moment (list_approval), anything else is
+            # not gated by Agent J. Nothing is granted here.
+            return {"ok": False, "why": "same_owner_run_directly"}
         if (not isinstance(actions, list) or not actions or not isinstance(actions[0], dict)
-                or h.cur_turn is None or (provenance.untrusted_turn(h.agent) and not bounded_plan.continuation_allowed(h, actions)) or h.task_label is not None or (provenance.unattended_turn(h.agent) and not bounded_plan.continuation_allowed(h, actions))):
-            return {"ok": False, "why": "task_plan"}
+                or h.cur_turn is None or (not provenance.owner_speaking(h.agent) and not bounded_plan.continuation_allowed(h, actions)) or h.task_label is not None or (provenance.unattended_turn(h.agent) and not bounded_plan.continuation_allowed(h, actions))):
+            return {"ok": False, "why": "task_plan", "detail": _task_plan_detail(h, actions)}
         if all(isinstance(step, dict) and "kind" in step for step in actions):
             return await bounded_plan.manager(h).approve(actions)
         h.agent_notice("这件事预计需要你确认 1 次；仅清单内具体动作有效，范围变化时会再请你确认。" if h.lang != "en" else "This task is expected to need one confirmation for the listed exact actions; scope changes will ask again.")
@@ -1732,6 +1752,10 @@ class PeerService:
             if sock is not None and hasattr(socket, "SO_PEERCRED"):
                 _, uid, _ = struct.unpack("3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
                 if uid != os.getuid():
+                    return
+            elif sock is not None and sys.platform == "darwin":
+                from .core.process_evidence import peer_uid
+                if peer_uid(sock) not in (None, os.getuid()):      # #0302: macOS LOCAL_PEERCRED, same rule as Linux
                     return
             req = None
             try:
@@ -1964,7 +1988,7 @@ def where_text(w) -> str:
     return f"第 {w['line']} 行第 {w.get('col', 1)} 列，{w.get('hint', '')}，{w.get('len', 0)} 个字符 / line {w['line']}, column {w.get('col', 1)}"
 
 
-WHY_ZH = {"root_reconfirm": "请重新确认同主人审批根后重试 / Reconfirm the same-owner approval key and retry", "not_friend": "找不到这个好友", "ambiguous": "名字对上了不止一个好友，用 ID 或更长的名字", "bad_id": "ID 不对",
+WHY_ZH = {"unverified_plan_producer": "主机没能确认这份动作清单来自主人当前这一轮的会话（unverified_plan_producer）。不用清单也能办：直接执行每一步，指纹清单里的动作主机会当场弹主人指纹卡；仍要清单就在主人会话里重试，失败运行 agentj doctor 把原因码告诉主人 / the host could not tie this action list to the owner's current turn; run each step directly instead (UV-list steps pop the owner's card), or retry from the owner's session", "task_plan": "这一轮不是主人本人发起的（好友、访客、群聊或计划任务），不能用批量清单；直接执行每一步，指纹清单里的动作会当场弹主人指纹卡 / not an owner turn: run each step directly; UV-list steps pop the owner's card", "same_owner_run_directly": "同主人设备任务不用批量清单：直接执行这一步。它在指纹清单里时，主机会当场给主人手机弹指纹卡，批了才执行；不在清单里就照常执行，主机不另设关卡 / Same-owner task: no batch list needed — run the step directly; a fingerprint-list (UV) action pops the owner's UV card at that moment, anything else runs as usual", "root_reconfirm": "请重新确认同主人审批根后重试 / Reconfirm the same-owner approval key and retry", "not_friend": "找不到这个好友", "ambiguous": "名字对上了不止一个好友，用 ID 或更长的名字", "bad_id": "ID 不对",
           "self": "这是你自己的 ID", "exists": "已经是好友了", "off": "好友功能关着（agentj friends on）",
           "bad_group": "没有这个组", "builtin": "预置组不能删", "no_group": "没有这个组", "too_many": "组太多了",
           "gate": "这句话里像有密钥或「绝不外说」的内容，没有发出", "stopped": "已急停，恢复后再发",

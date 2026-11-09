@@ -178,10 +178,14 @@ class MailFinalExecution(HostExecution):
         # An answer naming a nonexistent/replayed card cannot send again.
         await self.h._answer(self.session,{'id':'f'*32,'ok':True,'sig':'AA'})
         self.assertEqual(len(smtp.sent),1)
+        # #0302: a missing Host root alone no longer refuses the owner's own session child (owner_local); a child born
+        # while a non-owner turn was open still has zero effect.
+        self.h._nonowner_floor,self.h._nonowner_spans=float('-inf'),[[float('-inf'),None]]
         for ingress in ('invalid_start','revoked_root'):
             result=await RealMailEffectsUV.native_transport(self,self.h,self.st,req,transport='elevate',ingress=ingress)
             self.assertFalse(result['ok'],result)
             self.assertEqual(len(smtp.sent),1)
+        del self.h._nonowner_floor,self.h._nonowner_spans
         # Keep the real historical system-origin refusal as a zero-effect control.
         self.h.desktop_input('Fixture Host-held root for the independent system mail negative.')
         result,seen=await PaidLibrary.native_call(self,self.st,self.h,body)

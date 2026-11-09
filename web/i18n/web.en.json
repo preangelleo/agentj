@@ -5925,6 +5925,7 @@
   "p0287.todo.tooLarge": "To-do content exceeds capacity. Complete and archive older items, or shorten this note, then retry.",
   "p0287.reason.emptyOrRepeated": "The supplied reason is empty or repeats the action title; it does not explain why confirmation is needed. Expand the details to review it.",
   "p0300.pk.setup": "Set up Face ID here",
+  "p0303.term.enter": "Go to terminal",
   "p0300.pk.testExpired": "This test has expired. Tap again to retry.",
   "p0300.pk.testRejected": "This passkey verification failed. You can set it up again here.",
   "p0300.pk.testIncomplete": "Verification did not finish. Please try again.",

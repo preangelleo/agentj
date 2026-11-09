@@ -4883,6 +4883,8 @@ class Host:
         return web, machine
 
     def agent_turn_start(self, text: str, send=None) -> None:
+        from . import application_ingress
+        application_ingress.note_turn(self, send)     # #0302: guest-born processes never get the owner_local frame
         if (peers := getattr(self, "peers", None)) is not None:
             peers.xfer.begin_execution(send)
         self._fallback_error, self._fallback_used = "", False
@@ -4925,7 +4927,7 @@ class Host:
         # P282: the Agent took this say off the queue (a shared Codex may need ~1 min before turn/start): no longer "queued"
         if send is not None and isinstance(getattr(send, "sid", None), str) and not any(
                 getattr(send, k, None) for k in ("heartbeat_key", "bot_handoff_id", "official_notice_id", "quota_resume_id",
-                                                 "auto_notify", "hook_notice")):
+                                                 "auto_notify", "hook_notice", "compact_resume")):
             self._post(self._send_device, send.device, {"t": "say_state", "sid": send.sid, "s": "taken"})
 
     def _foreign_seen(self, value=None) -> bool:
@@ -4952,7 +4954,8 @@ class Host:
             observer.first_output()
 
     def agent_turn_end(self) -> None:
-        from . import main_thread
+        from . import application_ingress, main_thread
+        application_ingress.close_span(self)          # #0302 r2: a non-owner turn's span ends with the turn
         main_thread.completed(self)
         if getattr(self, "voice_stream", None) is not None and self.voice_stream.wants_reply(getattr(self.agent, "cur_send", None)):
             self._post(self.voice_stream.reply, getattr(self.agent, "cur_send", None), "", True)
@@ -7762,7 +7765,8 @@ class Host:
         if getattr(item, "background_done_ids", None):
             self.background_done.complete(item)
         if getattr(item, "heartbeat_key", None) or getattr(item, "background_done_ids", None) \
-                or getattr(item, "quota_resume_id", None) or getattr(item, "auto_notify", None) or getattr(item, "hook_notice", None):
+                or getattr(item, "quota_resume_id", None) or getattr(item, "auto_notify", None) or getattr(item, "hook_notice", None) \
+                or getattr(item, "compact_resume", None):
             item.state = "cancelled"
             self.hist_update(item.turn, end="stopped")
             return
@@ -9179,6 +9183,9 @@ class Host:
         if getattr(send, 'heartbeat_key', None):
             self.st.log("heartbeat_delivery", outcome="delivered")
             return
+        if getattr(send, 'compact_resume', None):      # #0303: compactprep.resume — no phone, no attachments
+            self.st.log("compact_resume_delivery", outcome="delivered")
+            return
         if getattr(send, 'quota_resume_id', None):     # P314: no phone, no attachments
             self.st.log("quota_resume_delivery", outcome="delivered")
             return
@@ -9225,6 +9232,9 @@ class Host:
             return
         if getattr(send, 'heartbeat_key', None):
             self.st.log("heartbeat_delivery", outcome="uncertain")
+            return
+        if getattr(send, 'compact_resume', None):      # #0303: never replayed
+            self.st.log("compact_resume_delivery", outcome="uncertain")
             return
         if getattr(send, 'quota_resume_id', None):     # P314: never replayed
             self.st.log("quota_resume_delivery", outcome="uncertain")

@@ -23,8 +23,8 @@ def _blocked(host) -> dict | None:
     try:
         from .. import provenance
         ag = getattr(host, "agent", None)
-        if provenance.untrusted_turn(ag) and not provenance.delegated_turn(ag):
-            return {"result": "group_source"}
+        if not provenance.owner_speaking(ag) and not provenance.delegated_turn(ag):     # #0303 R1
+            return {"result": "group_source", "detail": provenance.outsider_detail()}
     except Exception:  # noqa: BLE001 — cannot tell who asks: refuse
         return {"result": "refused", "why": "provenance"}
     return None

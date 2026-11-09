@@ -5924,6 +5924,7 @@
   "p0287.todo.tooLarge": "待办内容超过容量。请先完成并归档旧条目，或缩短本次备注后重试。",
   "p0287.reason.emptyOrRepeated": "提供的理由为空或与操作标题重复，尚未说明为何需要确认；请展开详情核对。",
   "p0300.pk.setup": "在本机设置 Face ID",
+  "p0303.term.enter": "进入终端",
   "p0300.pk.testExpired": "这次测试已过期，请再点一次。",
   "p0300.pk.testRejected": "这次通行密钥验证未通过。可以在本机重新设置。",
   "p0300.pk.testIncomplete": "这次验证未完成，请再试一次。",

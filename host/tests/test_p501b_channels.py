@@ -92,7 +92,7 @@ class Routing(unittest.IsolatedAsyncioTestCase):
         from agentj import mail
         msg = Parser(policy=ep.default).parsestr('From: owner@example.test\nTo: agent@example.test\nMessage-ID: <one@example.test>\nSubject: Hello\n\nHello')
         cfg = mail.blank_config()
-        cfg.update(enabled=True, address='agent@example.test', generation='fixture', allow=[{'addr':'owner@example.test', 'role':'owner'}])
+        cfg.update(enabled=True, address='agent@example.test', generation='fixture', auth_servid='mx.example.test', allow=[{'addr':'owner@example.test', 'role':'owner'}])   # #0302 r5 M1: owner mail needs a pinned server
         avatar = NS(receive_owner=AsyncMock(return_value='分身答复'))
         import tempfile
         from pathlib import Path

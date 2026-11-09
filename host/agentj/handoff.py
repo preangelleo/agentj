@@ -28,6 +28,10 @@ from . import state
 DIR = "handoff"
 COMPACT, CLEAR, CLEAR_USED = "compact.md", "clear.md", "clear-used.md"
 RECOVER_DELAY = 1.5         # s after PostCompact / SessionStart without a new turn → the host's recovery message
+RECOVER_BUSY_WAIT = 60.0    # s #0303: after the owner's /compact or a /clear, wait this long for an idle session (not 5 s)
+RECOVER_START_WAIT = 20.0   # s #0303: a sent recovery must start a native turn (UserPromptSubmit) within this, else re-send
+RECOVER_TRIES = 3           # #0303: delivery attempts (send error or no turn start), each logged; then a truthful notice
+RECOVER_GAP = 2.0           # s #0303: pause before a re-send
 PREP_WAIT = 300.0           # s: the phone /compact's handoff turn
 FRESH = 900.0               # s: with no known turn start, a handoff older than this is stale (compactprep.FRESH)
 TAG = {"zh": "〔Agent J 系统提示〕", "en": "[Agent J system note]"}

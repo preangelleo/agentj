@@ -295,7 +295,7 @@ class MailAcceptance(_Real):
         self.addAsyncCleanup(self.host.external_channels.stop)
         self.host.mail = M.Mail(self.host)
         cfg = M.blank_config()
-        cfg.update(enabled=True, address=self.agent_addr, allow=[{'addr': self.boss, 'role': 'owner'}],
+        cfg.update(enabled=True, address=self.agent_addr, auth_servid='mx.example.cn', allow=[{'addr': self.boss, 'role': 'owner'}],
                    imap={'host': '127.0.0.1', 'port': self.imap.port, 'security': 'plain'},
                    smtp={'host': '127.0.0.1', 'port': self.smtp.port, 'security': 'plain'})
         self.host.mail.set_config(cfg)

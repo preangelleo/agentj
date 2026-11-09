@@ -73,7 +73,11 @@ class Recover(unittest.IsolatedAsyncioTestCase):
             p.start()
             self.addCleanup(p.stop)
         self.sent = []
-        p = patch.object(shared, "claude_send", side_effect=lambda s, text, src=None: self.sent.append((text, src)))
+
+        def send(s, text, src=None):     # #0303: like Claude Code, an accepted write starts a native turn
+            self.sent.append((text, src))
+            self.a.loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self.ev("UserPromptSubmit", prompt=text)))
+        p = patch.object(shared, "claude_send", side_effect=send)
         p.start()
         self.addCleanup(p.stop)
         self.a = shared.SharedClaudeAgent(self.host, {"kind": "claude", "dir": str(self.work), "_workflow_ceo": True,
