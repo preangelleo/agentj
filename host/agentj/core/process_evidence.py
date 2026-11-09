@@ -113,6 +113,31 @@ def row(pid):
     return darwin_row(pid) if sys.platform == 'darwin' else linux_row(pid)
 
 
+_LSTART = '%a %b %e %H:%M:%S %Y'   # `ps -o lstart` / ctime layout
+
+
+def start_matches(expected, row):
+    """The one predicate for "this registered session start (`procStart`) is the live process in row(pid)".
+
+    Linux: exact token (raw /proc starttime ticks), unchanged. macOS: the token rendered in local time, or the same second
+    rendered in UTC. ADR-03031: Claude Code (2.1.317, checked on a real Mac 2026-11-09) writes ~/.claude/sessions/<pid>.json
+    `procStart` as `ps -o lstart` under TZ=UTC, while darwin_row renders local time, so a non-UTC Mac never matched its own
+    owner session. Exactly these two renderings of the kernel start second; no other format, no tolerance.
+    None / empty / non-string / no row is False.
+    """
+    if not isinstance(expected, str) or not expected or not row or len(row) < 3:
+        return False
+    if expected == str(row[2]):
+        return True
+    if sys.platform != 'darwin':
+        return False
+    try:
+        import time
+        return expected == time.strftime(_LSTART, time.gmtime(int(row[1])))
+    except (TypeError, ValueError, OverflowError, OSError):
+        return False
+
+
 def darwin_row(pid):
     """XNU PROC_PIDTBSDINFO: stable same-user parent/start evidence, no argv or fork.
 
@@ -135,6 +160,6 @@ def darwin_row(pid):
         sec, usec = struct.unpack_from('2Q', buf.raw, 120)
         if actual != pid or status in (0, 5) or {uid, real, saved} != {os.getuid()} or not sec or usec >= 1000000:
             return None
-        return parent, sec + usec / 1000000, time.strftime('%a %b %e %H:%M:%S %Y', time.localtime(sec))
+        return parent, sec + usec / 1000000, time.strftime(_LSTART, time.localtime(sec))
     except (OSError, AttributeError, TypeError, ValueError, struct.error):
         return None

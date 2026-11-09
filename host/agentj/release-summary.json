@@ -1,5 +1,5 @@
 {
-  "version": "0.30.3",
-  "zh": "热修：Mac 主机上从广场安装、联系客服、批量确认不再被误拦；你自己的 Telegram、微信按你本人处理，邮箱要先在 设置→邮件 固定校验服务器；压缩对话后自动接着干活；网页终端首次开启后直接进入终端页。",
-  "en": "Hotfix: Mac hosts stop blocking plaza installs and support; your Telegram, WeChat and pinned-server mail count as you; work resumes after compacting."
+  "version": "0.30.4",
+  "zh": "热修：时区不是 UTC 的 Mac 上，你自己在 Claude 里发起的广场安装、联系客服、批量确认不再被「无法确认来源」挡住。",
+  "en": "Hotfix: on Mac hosts outside UTC, plaza installs, support requests and batch approvals you start in Claude are no longer refused."
 }

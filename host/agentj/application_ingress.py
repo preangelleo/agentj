@@ -196,11 +196,11 @@ def _owner_tree(host, pid, agent):
     if sys.platform != 'darwin' and not sys.platform.startswith('linux') or agent is None or type(pid) is not int:
         return False
     try:
-        from .core.process_evidence import row as darwin_row
+        from .core.process_evidence import row as darwin_row, start_matches
         session = getattr(agent, 'session', None)
         if isinstance(session, dict) and type(session.get('pid')) is int:
             anchor, row = session['pid'], darwin_row(session['pid'])
-            if not row or str(row[2]) != str(session.get('procStart')):
+            if not start_matches(session.get('procStart'), row):   # ADR-03031: macOS procStart is UTC lstart
                 return False
         else:                                 # an Agent serve launched itself: its live child process is the anchor
             proc = getattr(agent, 'proc', None)

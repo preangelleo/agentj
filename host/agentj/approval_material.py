@@ -169,7 +169,7 @@ def _direct_scope(host, peer):
 
 def _darwin_scope(host, peer):
     """Exact current-turn descendants only; an old background child cannot borrow a newer owner."""
-    from .core.process_evidence import darwin_row
+    from .core.process_evidence import darwin_row, start_matches
     agent = getattr(host, 'agent', None)
     session, send = getattr(agent, 'session', None), getattr(agent, 'cur_send', None)
     if not isinstance(session, dict) or type(peer) is not int:
@@ -185,7 +185,7 @@ def _darwin_scope(host, peer):
         return None
     anchor = session.get('pid')
     row = darwin_row(anchor)
-    if _root(source) is None or str(host.hist.epoch) != str(source.get('session')) or not row or session.get('procStart') != row[2]:
+    if _root(source) is None or str(host.hist.epoch) != str(source.get('session')) or not start_matches(session.get('procStart'), row):
         return None
     began = time.time() - (time.monotonic() - created)
     current, chain = peer, []

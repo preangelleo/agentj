@@ -50,6 +50,13 @@ def authority(host, peer=None, internal=None):
             anchor, token = session.get('pid'), session.get('procStart')
             if session.get('sessionId') != sid:
                 raise orders.OrderError('session')
+            if process_evidence.sys.platform == 'darwin':
+                # ADR-03031: macOS procStart is UTC lstart while descendant() compares this serve's `ps -o lstart`;
+                # prove the session start on the kernel row, then pin the same live process's own token.
+                before = process_evidence.row(anchor)
+                token = process_evidence.codex_procs.start_token(anchor) if process_evidence.start_matches(token, before) else None
+                if not token or process_evidence.row(anchor) != before:
+                    raise orders.OrderError('peer')
         elif proc is not None and proc.poll() is None:
             anchor = proc.pid
             token = process_evidence.codex_procs.start_token(anchor)
