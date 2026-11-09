@@ -93,6 +93,14 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         with contextlib.suppress(Exception):
             controls.log(self.st, action=action, device=device, result=result, obj=obj, **kw)
 
+    def h_paired(self, s):
+        """0.30.0 hotfix (董事长 11-09): the login / vault-share card is asked from a background task spawned by this
+        session's signed + UV-checked term_open. 0.30.0's elevate.request only accepts the paired frame's own task, so the
+        card was refused (authority_changed → 「已取消」) on every phone. Re-bind the same paired authority to this task:
+        the verifier is the same live check as the frame's (this session still ready, allowed, a phone)."""
+        from . import provenance
+        return provenance.paired_request(lambda: self.h._paired_live(s))
+
     def _notice(self, zh: str, en: str) -> None:
         with contextlib.suppress(Exception):
             self.h.agent_notice(f"{zh} / {en}")
@@ -467,7 +475,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             return {"result": "saved", "receipt": {"name": "login", "dest": "terminal", "length": 0, "verify": "ok"}}
         card = {"kind": "login", "term": r, "only": device, "sink": sink, "cwd": "/"}
         from .approval_review import origin_scope
-        with origin_scope(pend.get('approval_origin') or {}):
+        with origin_scope(pend.get('approval_origin') or {}), self.h_paired(s):
             res = await self.h.elevate.request(card)
         if res.get("result") == "saved" and "pw" in keep:
             res["_pw"] = keep.pop("pw")

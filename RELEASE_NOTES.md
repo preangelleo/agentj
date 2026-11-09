@@ -1,5 +1,5 @@
-# Agent J v0.30.0
+# Agent J v0.30.1
 
-Native AI tool permissions, fingerprint checks for listed actions, clearer to-dos and setup, and improved account login guidance.
+Hotfix: the web terminal opens again on iPhone, Android and tablets; Settings on phones no longer drifts sideways and scrolls and taps smoothly.
 
-工具权限跟随所用 AI，清单操作逐次验证指纹；改进待办卡、首次准备和账号登录引导，保留三按钮确认。
+热修：网页终端在 iPhone、安卓和平板上又能打开；手机上的设置页不再左右漂移，滚动和点按更顺。

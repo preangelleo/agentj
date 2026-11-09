@@ -4473,6 +4473,12 @@ body:has(#sheet.aj-layer-covered) .scrim{visibility:hidden;pointer-events:none}
 
 /* 0287: the quota boundary is the permanent wet floor, including unknown history and compact. */
 .water{min-height:var(--water-floor,0px);background:var(--water-color)}
+/* 0.30.0 hotfix (董事长 11-09): the water now shows before the level is known, and its waves are 200% wide and drift
+   sideways — clip them on the x axis only (the crest above the water stays visible) so no page can scroll sideways. */
+.water{overflow-x:clip}
+/* …and Settings covers the chat completely: the waves do not drift behind it (two infinite 200%-wide layers kept
+   repainting under every Settings scroll on a phone). */
+body:has(#settings:not([hidden])) .water .wave{animation-play-state:paused}
 :is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="grow"]>:is(.sq,.box),
 #sheet.aj-shared-popup[data-popup-system="grow"]{background:var(--popup-water,var(--water-color))}
 

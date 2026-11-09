@@ -155,7 +155,7 @@ class VshareDesk:
                         "paired": int(pa) if isinstance(pa, (int, float)) and not isinstance(pa, bool) else 0,
                         "flags": self._vshare_flags(me), "only": peers, "sink": sink}
                 from .approval_review import origin_scope
-                with origin_scope(pend.get('approval_origin') or {}):
+                with origin_scope(pend.get('approval_origin') or {}), self.h_paired(s):
                     res = await self.h.elevate.request(card)
                 rs = res.get("result")
                 why = None if rs == "saved" else {"denied": "denied", "timeout": "timeout", "stopped": "estop"}.get(

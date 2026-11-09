@@ -101,6 +101,11 @@ class _Desk(Desk):
     def login_guard(self):
         return self.a.live() and self.a.desk is self and self.a.gid == self.grant_id
 
+    def h_paired(self, s):
+        # 0.30.1 hotfix (security review N1): an official assist open is not the owner's phone frame — never
+        # borrow the phone's paired label for its cards; the assist grant + login_guard stay its authority.
+        return contextlib.nullcontext()
+
     def _pty_write(self, x, text):
         # Includes held Enter, queued typeahead, color replies and async flushes.
         if not self.login_guard() or self.term is not x or x.closing or self.clock() >= x.expires:
