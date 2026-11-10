@@ -1453,13 +1453,28 @@ def check_mail_owner(st):
         cfg = mail.read_config(st)
     except Exception:  # noqa: BLE001 — no / unreadable mail config: nothing to say here
         return None
+    try:                                  # 0304 A4 security r1 M2: an automatic pin is said while it stands
+        auto = bool(cfg.get("auth_servid")) and mail.servid_status(cfg, mail.read_state(st))["source"] == "auto"
+    except Exception:  # noqa: BLE001 — no readable mail state: no info line
+        auto = False
+    if auto:
+        return _c("mail-owner", OK, mail.SERVID_AUTOPIN_ZH.format(servid=cfg["auth_servid"]) + " / "
+                  + mail.SERVID_AUTOPIN_EN.format(servid=cfg["auth_servid"]))
     if not cfg.get("enabled") or cfg.get("auth_servid") or not any(
             isinstance(r, dict) and r.get("role") == "owner" for r in cfg.get("allow") or []):
         return None
+    hint = mail.servid_hint(cfg)          # 0304 A4: known providers pin themselves; Outlook / custom servers do not
+    if hint == "unpinned_outlook":
+        how = ("Outlook 的校验结果不写服务器名，暂时不能自动或手动固定，主人邮件会一直按普通来信处理 / Outlook's check results "
+               "carry no server name, so it cannot be pinned (automatically or by hand) yet; owner mail stays ordinary mail")
+    else:
+        how = (("Gmail 会自动固定，这里的固定被清空了；" if hint == "unpinned_known" else "自建或其他邮箱需要手动固定；")
+               + "设置→邮件：先「测试连接」，再点「只认这台服务器写的校验结果」 / "
+               + ("Gmail pins itself; this pin was cleared. " if hint == "unpinned_known" else "Custom and other providers are pinned by hand. ")
+               + "Settings → Mail: run the connection test, then tap \"Trust only this server's check results\"")
     return _c("mail-owner", WARN,
               "主人邮件暂按普通来信处理：还没固定校验服务器 / owner mail is treated as ordinary mail until its check server is pinned",
-              "设置→邮件：先「测试连接」，再点「只认这台服务器写的校验结果」 / Settings → Mail: run the connection test, then tap "
-              "\"Trust only this server's check results\"")
+              how)
 
 
 def check_local_files(st):

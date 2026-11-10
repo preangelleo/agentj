@@ -164,7 +164,7 @@ class Notifier:
                         "log_tail": privacy.redact(v.get("log_tail") or "", paths=True)[-2048:]}
                        if v.get("delivery") in ("unfinished", "delivered") else {}),
                     "report_path": (v.get("report") or "") if privacy.owner_text(v.get("report") or "") == (v.get("report") or "") else "", "task_id": privacy.owner_text(v["key"]), "generation": v.get("generation"), "ended": v["ended"],
-                    **self.restart_identity(v),
+                    **self.restart_identity(v), **ending(v),
                     **({"stop_reason": "sigterm"} if v.get("stop_reason") == "sigterm" and (v.get("exit_code") in (-15, 143, None) or (v.get("exit_code") == 0 and v.get("stop_signal") == 15)) else {}),
                     **({"chain": str(v["chain"])[:32]} if v.get("foreign") is False and v.get("chain") else {}),
                 }
@@ -300,9 +300,18 @@ class Notifier:
             seconds = max(0, int(v["ended"] - v["since"]))
             code = v["exit_code"] if v["exit_code"] is not None else ("未知" if zh else "unknown")
             label = one_line(v["label"])          # security r5 (F6 note): job text cannot break out of its line
-            lines.append(f"后台活『{label}』已结束（用时 {seconds} 秒，退出码 {code}）。" if zh else
-                         f"Background job '{label}' ended ({seconds}s, exit code {code}).")
-            if v.get("delivery") == "unfinished":
+            if v["exit_code"] is None and v.get("outcome") != "completed":     # ADR-0305: never read as done
+                lines.extend(unknown_lines(label, seconds, v, zh))
+            else:
+                lines.append(f"后台活『{label}』已结束（用时 {seconds} 秒，退出码 {code}）。" if zh else
+                             f"Background job '{label}' ended ({seconds}s, exit code {code}).")
+            if v.get("delivery") == "unfinished" and v.get("delivery_reason") == "report_missing_or_empty":
+                # security A1: only the owner_text-checked path, redacted — never the raw job field in the host's words
+                where = one_line(privacy.redact(v.get("report_path") or "", paths=True))
+                lines.append((f"约定的报告没有生成或为空{'：' + where if where else ''}。未交付；先核对退出原因与日志，不自动重放未知结果任务。") if zh else
+                             (f"The agreed report was not created or is empty{': ' + where if where else ''}. Unfinished; inspect "
+                              "exit evidence and logs; never automatically replay an unknown outcome."))
+            elif v.get("delivery") == "unfinished":
                 lines.append("未交付；先核对退出原因与日志，不自动重放未知结果任务。" if zh else
                              "Unfinished; inspect exit evidence and logs; never automatically replay an unknown outcome.")
                 if v.get("log_tail"):
@@ -330,7 +339,6 @@ class Notifier:
                      "the actual reports and evidence, then report the result to the owner in one or two sentences; never "
                      "infer success from an exit code. Say when a report is missing; never automatically replay unknown outcomes, "
                      "and ask the original worker to reconcile delivery evidence first.")
-        from . import privacy
         page = self.host.hist_add({"k": "agent", "via": "background_done", "text": privacy.owner_text("\n".join(lines))}, "", "open")
         send = CompletionSend(page["id"], "\n".join(lines), [k for k, _ in batch])
         send.report_paths = [v["report_path"] for _, v in batch if v.get("report_path")]   # #450: own_report scope
@@ -344,6 +352,39 @@ class Notifier:
         self.save()
         self.host.st.log("background_done_queued", count=len(batch))
         return send
+
+
+def ending(v) -> dict:
+    """ADR-0305: the Board's outcome / end_reason (host-made codes, never job text) and the harness it ran in."""
+    from .busy import OUTCOMES, _REASON
+    return {**({"outcome": v["outcome"]} if v.get("outcome") in OUTCOMES else {}),
+            **({"end_reason": v["end_reason"]} if isinstance(v.get("end_reason"), str) and _REASON.fullmatch(v["end_reason"]) else {}),
+            **({"harness": v["harness"]} if v.get("harness") in ("codex", "claude", "opencode") else {})}
+
+
+def unknown_lines(label, seconds, v, zh) -> list:
+    """ADR-0305 (customer M1): an ending without an exit code or a completion event is 「结果不明」, plus the next step."""
+    why, outcome = v.get("end_reason"), v.get("outcome")
+    who = "Codex" if v.get("harness") == "codex" else "Agent"
+    if why == "process_ended":
+        zh_r, en_r = f"它所在的 {who} 进程已结束，没有收到它的完成事件", f"the {who} process it ran in has ended without its completion event"
+    elif why == "thread_idle":
+        zh_r, en_r = "它已停止运行，但没有收到完成事件", "it stopped running, but no completion event arrived"
+    elif outcome == "interrupted":
+        zh_r, en_r = "它被中断了", "it was interrupted"
+    elif outcome == "failed":
+        zh_r, en_r = "它报告失败", "it reported a failure"
+    else:
+        zh_r, en_r = "没有收到它的完成事件", "no completion event arrived for it"
+    if zh:
+        return [f"后台活『{label}』结果不明（用时 {seconds} 秒，退出码未知）：{zh_r}。不要当作完成，也不会自动重放。",
+                "下一步：先只读核对派单约定的报告或产物；不存在就告诉主人「未交付」并说明缺什么，由主人决定是否重派；"
+                "需要立即交付的小事在主线程前台做完。"]
+    return [f"Background job '{label}' has an unknown result ({seconds}s, exit code unknown): {en_r}. Do not treat it as "
+            "done; it will not be replayed automatically.",
+            "Next: first check, read-only, the report or output the dispatch agreed on; if it is missing, tell the owner it "
+            "was not delivered and what is missing, and let the owner decide whether to dispatch it again; a small thing "
+            "needed right away is done in the foreground on the main thread."]
 
 
 def owner_chain(host, batch) -> dict | None:

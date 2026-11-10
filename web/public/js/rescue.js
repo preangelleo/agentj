@@ -27,9 +27,9 @@ import * as assist from './assist.js';   // 0.26.9 #468 (§B2): ② gains 「请
 import { registerLayer } from './layers.js';
 
 export const HELPER_CMD = 'curl -fsSL https://agentj.app/rescue | sh';
-export const STEPS = { reset: 4, help: 3, offer: 1, restart: 1, restart_session: 2, clear: 1, ark: 1, end_turn: 1, takeover: 4, repair: 4, stop_hard: 1, new_chat: 1, report: 1 };          // §33: the reset ladder has four steps, the help flow three
+export const STEPS = { reset: 4, help: 3, offer: 1, restart: 1, restart_session: 2, clear: 1, ark: 1, end_turn: 1, takeover: 4, repair: 4, stop_hard: 1, new_chat: 1, report: 1, deep_repair: 4, rollback: 1 };          // §33: the reset ladder has four steps, the help flow three
 export const FIRST_MS = 30000;                       // no answer at all this long → the host is stuck or too old
-export const IDLE_MS = { reset: 120000, help: 240000, offer: 240000, restart: 200000, restart_session: 180000, clear: 120000, ark: 240000, end_turn: 120000, takeover: 200000, repair: 240000, stop_hard: 120000, new_chat: 180000, report: 240000 };   // then: silence this long between two messages = no answer
+export const IDLE_MS = { reset: 120000, help: 240000, offer: 240000, restart: 200000, restart_session: 180000, clear: 120000, ark: 240000, end_turn: 120000, takeover: 200000, repair: 240000, stop_hard: 120000, new_chat: 180000, report: 240000, deep_repair: 600000, rollback: 240000 };   // then: silence this long between two messages = no answer
 const WHY = ['shape', 'stale', 'no_key', 'bad_signature', 'replay', 'busy', 'unavailable'];
 const STATES = ['run', 'ok', 'fail', 'skip'];
 const TICKET = /^st_[A-Za-z0-9_-]{8,40}$/;
@@ -48,9 +48,9 @@ let H = { openSettings() {}, closeSettings() {}, toChat() {}, linkState: () => (
 const fresh = () => ({ st: 'idle', step: 0, text: '', steps: [], details: [], ticket: '', old: '', why: '', r: null, timer: 0, heard: false, dropped: false,
   offers: [], used: [], name: '', advice: false, fold: false, foldTimer: 0, wait: false, at: 0,
   resume: false, next: '', report: false, cont: '', contSent: false });   // #585: what the host says to do next
-const S = { reset: fresh(), help: fresh(), offer: fresh(), restart: fresh(), restart_session: fresh(), clear: fresh(), ark: fresh(), end_turn: fresh(), takeover: fresh(), repair: fresh(), stop_hard: fresh(), new_chat: fresh(), report: fresh(), stuck: false, failedOnce: false, askFirst: false, rescue: null, auth: null, authFold: '', authHide: '', bannerHide: '' };
-const FLOWS = ['reset', 'help', 'offer', 'restart', 'restart_session', 'clear', 'ark', 'end_turn', 'takeover', 'repair', 'stop_hard', 'new_chat', 'report'];
-const CONTS = ['probe', 'repair_cont', 'takeover', 'repair'];
+const S = { reset: fresh(), help: fresh(), offer: fresh(), restart: fresh(), restart_session: fresh(), clear: fresh(), ark: fresh(), end_turn: fresh(), takeover: fresh(), repair: fresh(), stop_hard: fresh(), new_chat: fresh(), report: fresh(), deep_repair: fresh(), rollback: fresh(), stuck: false, failedOnce: false, askFirst: false, rescue: null, auth: null, authFold: '', authHide: '', bannerHide: '' };
+const FLOWS = ['reset', 'help', 'offer', 'restart', 'restart_session', 'clear', 'ark', 'end_turn', 'takeover', 'repair', 'stop_hard', 'new_chat', 'report', 'deep_repair', 'rollback'];
+const CONTS = ['probe', 'repair_cont', 'takeover', 'repair', 'deep_repair_cont'];
 const CONT_MS = 600000;                 // a card waits at most 10 min for the owner's Resume          // #585: what the page sends once the link / the stop switch is back
 const NEXTS = ['restart', 'restart_session', 'repair', 'help'];
 
@@ -151,12 +151,18 @@ function finish(flow, m) {
   const old = str(m.old_session, 80);
   F.old = ok && OLD.test(old) ? old : '';
   F.why = ok ? '' : String(m.why || 'failed');
-  F.text = str(m.text, flow === 'help' ? 1600 : 400);
+  // Repair/rollback results are fixed host sentences in the owner's language. An older or misconfigured host may
+  // still answer a Chinese phone in English: then show our own plain sentence instead of the raw status.
+  const said = str(m.text, flow === 'help' ? 1600 : 400);
+  F.text = (flow === 'deep_repair' || flow === 'rollback') && (!said || (lang() !== 'en' && !/[㐀-鿿]/.test(said)))
+    ? tx(ok ? (flow === 'rollback' ? 'p0304.rollback.restored' : 'p0304.deep.done') : 'p0304.deep.failed') : said;
   const d = str(m.detail, 600);
   if (d) F.details.push(d);
   F.resume = !ok && m.resume === true; F.cont = F.resume && CONTS.includes(m.cont) ? m.cont : '';
   F.next = !ok && NEXTS.includes(m.next) ? m.next : ''; F.report = !ok && m.report === true;
-  if (FIX[flow] || flow === 'takeover') F.steps = F.steps.filter((x) => x.state !== 'run');   // #585: progress rows end with the run
+  if (FIX[flow] || flow === 'takeover') F.steps = F.steps.filter((x) => x.state !== 'run');
+  // The host alone decides whether a rollback is safe; an offline or unsigned failure cannot offer one.
+  F.rollback = flow === 'deep_repair' && !ok && m.rollback === true;
   F.st = ok ? 'ok' : 'fail'; F.wait = false; F.at = Date.now();
   if (ok && isReady()) foldLater(flow);
   if (flow === 'help' && F.text && (m.advice === true || ADVICE.test(F.text))) F.advice = true;
@@ -460,10 +466,12 @@ function paintMode() {
 // restart service → new conversation and stops at the first rung where the Agent answers a test line.
 const FIX = {
   repair: { id: 'rs-repair', title: 'p585.repair.title', note: 'p585.repair.note', go: 'p585.repair.go', primary: true },
+  deep_repair: { id: 'rs-deep-repair', title: 'p0304.deep.title', note: 'p0304.deep.note', go: 'p0304.deep.go', confirm: 'p0304.deep.confirm' },
   stop_hard: { id: 'rs-stop', title: 'p585.stop.title', note: 'p585.stop.note', go: 'p585.stop.title', confirm: 'p585.stop.confirm' },
   restart_session: { id: 'rs-session', title: 'p435.session', note: 'p435.sessionNote', go: 'p435.session', confirm: 'p435.sessionConfirm' },
   restart: { id: 'rs-restart', title: 'p385.restart.go', note: 'p385.restart.note', go: 'p385.restart.go', confirm: 'p585.restart.confirm' },
   new_chat: { id: 'rs-newchat', title: 'p585.new.title', note: 'p585.new.note', go: 'p585.new.title', confirm: 'p585.new.confirm' },
+  rollback: { id: 'rs-rollback', title: 'p0304.rollback.go', note: 'p0304.rollback.note', go: 'p0304.rollback.go', confirm: 'p0304.rollback.confirm' },
 };
 const P585_WHY = ['estop', 'no_reply', 'desktop_live', 'foreign', 'not_installed', 'all_failed'];   // a headline that names the real cause
 const ORDER = ['stop_hard', 'restart_session', 'restart', 'new_chat'];      // the ladder's rungs, under ① 重置连接
@@ -501,6 +509,10 @@ async function go(flow) {
     const text = tx('p585.repair.confirm') + (estop.on ? '\n\n' + tx('p585.repair.confirmStop') : '');
     if (!await confirmSheet(tx('p585.repair.title'), text, tx('p585.repair.go'))) return;
   } else if (c && c.confirm && !await confirmSheet(tx(c.title), tx(c.confirm), tx(c.go))) return;
+  if (flow === 'rollback') {
+    if (!S.deep_repair.rollback || S.deep_repair.st !== 'fail') return;
+    S.deep_repair.rollback = false; // one owner-confirmed offer; do not leave a duplicate action on the failed card
+  }
   start(flow, flow === 'report' ? 'report' : flow);
 }
 async function sendReport(from) {
@@ -516,6 +528,7 @@ function extras(flow, F) {
   if (F.st === 'fail' && F.next) bs.push(btn('rs-' + flow + '-next', tx('p585.next.' + F.next), F.resume ? '' : 'aj-action--primary', () => {
     if (F.next === 'help') { S.failedOnce = true; start('help'); el('rs-help')?.scrollIntoView({ block: 'nearest' }); } else go(F.next);
   }));
+  if (flow === 'deep_repair' && F.st === 'fail' && F.rollback) bs.push(btn('rs-deep-rollback-go', tx('p0304.rollback.go'), '', () => go('rollback')));
   if (F.st === 'fail' && F.report) bs.push(btn('rs-' + flow + '-report', tx('p585.report.go'), 'aj-action--primary', () => sendReport(flow)));
   if (F.st === 'ok') bs.push(backBtn(flow));
   return bs;
@@ -542,10 +555,17 @@ function paintFix(flow) {
   const c = FIX[flow], F = S[flow];
   let card = el(c.id);
   if (!card) {
-    card = node(flow === 'repair' ? 'div' : 'li', 'rscard' + (flow === 'repair' ? ' rsrepair' : '')); card.id = c.id;
+    card = node(flow === 'repair' || flow === 'deep_repair' || flow === 'rollback' ? 'div' : 'li', 'rscard' + (flow === 'repair' ? ' rsrepair' : '')); card.id = c.id;
     if (flow === 'repair') { const list = el('set-s-rescue')?.querySelector('.rscards'); if (!list) return; list.before(card); }
+    if (flow === 'deep_repair') { const block = el('set-s-rescue'); if (!block) return; block.append(card); }
+    if (flow === 'rollback') { const deep = el('rs-deep-repair'); if (!deep) return; deep.after(card); }
   }
-  if (flow !== 'repair') {        // ladder order under ①: stop · restart Agent · restart service · new conversation
+  if (flow === 'rollback') { card.hidden = S.rollback.st === 'idle'; }
+  if (flow === 'deep_repair') {
+    const clear = el('rs-clear');
+    if (clear && clear.nextElementSibling !== card) clear.after(card);
+  }
+  if (flow !== 'repair' && flow !== 'deep_repair' && flow !== 'rollback') {        // ladder order under ①: stop · restart Agent · restart service · new conversation
     const i = ORDER.indexOf(flow), prev = i === 0 ? el('rs-reset') : el(FIX[ORDER[i - 1]].id);
     if (prev && prev.nextElementSibling !== card) prev.after(card);
   }
@@ -558,7 +578,7 @@ function paintFix(flow) {
   if (F.fold && F.st === 'ok') { card.replaceChildren(title, ...folded(flow, F, logOf(F), () => clearFlow(flow)), acts(goBtn(tx(c.go), ''))); return; }
   if (F.st === 'run') { parts.push(bar(flow, F, STEPS[flow])); const l = stepList(flow, F); if (l) parts.push(l); }
   if (F.st === 'ok' || F.st === 'fail') {
-    const first = F.st === 'ok' ? node('p', 'rsok', tx('p332.ok')) : node('p', 'rsmsg rsfail', whyText(F.why) || (P585_WHY.includes(F.why) ? tx('p585.why.' + F.why) : tx('p585.fail.' + flow)));
+    const first = F.st === 'ok' ? node('p', 'rsok', tx('p332.ok')) : node('p', 'rsmsg rsfail', whyText(F.why) || (flow === 'deep_repair' || flow === 'rollback' ? tx('p0304.fail') : P585_WHY.includes(F.why) ? tx('p585.why.' + F.why) : tx('p585.fail.' + flow)));
     first.id = c.id + '-msg';
     parts.push(headBar(flow, first, () => clearFlow(flow)));
     const l = stepList(flow, F); if (l) parts.push(l);
@@ -568,7 +588,7 @@ function paintFix(flow) {
     parts.push(acts(...extras(flow, F), F.st === 'fail' ? goBtn(tx('p332.again'), '') : null));
     if (F.st === 'fail' && F.why === 'offline') parts.push(helperLine(c.id + '-helper'));
   }
-  if (F.st === 'idle') parts.push(acts(goBtn(tx(c.go), c.primary || (flow === 'restart' && estop.on) ? 'aj-action--primary' : '')));
+  if (F.st === 'idle' && flow !== 'rollback') parts.push(acts(goBtn(tx(c.go), c.primary || (flow === 'restart' && estop.on) ? 'aj-action--primary' : '')));
   card.replaceChildren(...parts);
 }
 function paintClear() {
@@ -587,6 +607,7 @@ export function paint() {
   paintReset(); paintHelp(); assist.paintCard(el('rs-help-body')); assistTerminal.paintCard(el('rs-help-body')); paintAuth(); paintMode();
   for (const f of ['repair', ...ORDER]) paintFix(f);
   paintClear(); paintTakeover(); paintArk();
+  for (const f of ['deep_repair', 'rollback']) paintFix(f);
   const block = el('set-s-rescue');
   if (block && !el('rs-detail-help')) block.append(helperLine('rs-detail-help'));
   const sup = el('rs-support-box');   // P400: 在线客服 (index.html) stays the block's last line, under the cards painted here
@@ -609,8 +630,8 @@ export function onRescue(m) {
 }
 /** app.js: a broadcast `reset_done` (another remote's run, or an answer that outlived its request). */
 export function onDone(m) {
-  const own = m && (m.flow === 'repair_cont' ? 'repair' : m.flow === 'probe' ? FLOWS.find((f) => S[f].st === 'run' && S[f].cont === 'probe')
-    : ['repair', 'stop_hard', 'new_chat', 'report'].includes(m.flow) ? m.flow : '');
+  const own = m && (m.flow === 'repair_cont' ? 'repair' : m.flow === 'deep_repair_cont' ? 'deep_repair' : m.flow === 'probe' ? FLOWS.find((f) => S[f].st === 'run' && S[f].cont === 'probe')
+    : ['repair', 'stop_hard', 'new_chat', 'report', 'deep_repair', 'rollback'].includes(m.flow) ? m.flow : '');
   if (own) { if (S[own].st === 'run' && (S[own].dropped || S[own].cont)) finish(own, m); return; }
   const flow = m && (m.flow === 'end_turn' || m.flow === 'takeover') ? m.flow : m && m.flow === 'restart_session' ? 'restart_session' : m && /^ark_fix_[0-9a-f]{24}$/.test(m.flow || '') ? 'ark' : m && m.flow === 'clear_friend_asks' ? 'clear' : m && m.flow === 'restart' ? 'restart' : m && m.flow === 'help' ? 'help' : m && OFFERS.includes(m.flow) ? 'offer' : 'reset';
   if (flow === 'offer' && m.flow !== S.offer.name) return;
@@ -626,8 +647,8 @@ export function onReady() {
     const F = S[flow];
     if (F.st === 'run' && F.wait) { F.st = 'idle'; F.wait = false; start(flow, F.name); continue; }   // P393: tapped while reconnecting
     if (F.st === 'run' && F.cont && !peer.rescue) { if (!F.contSent) sendCont(flow); continue; }   // #585: back after the restart
-    if (!['ark', 'end_turn', 'takeover'].includes(flow) && F.st === 'fail' && F.why === 'offline' && !peer.rescue) finish(flow, { ok: true, text: tx('p392.restored') });
-    if (flow !== 'ark' && F.st === 'run' && F.dropped && !peer.rescue) finish(flow, { ok: true, step: F.step, ticket: F.ticket, text: tx('p332.reset.back') });
+    if (!['ark', 'end_turn', 'takeover', 'deep_repair', 'rollback'].includes(flow) && F.st === 'fail' && F.why === 'offline' && !peer.rescue) finish(flow, { ok: true, text: tx('p392.restored') });
+    if (!['ark', 'deep_repair', 'rollback'].includes(flow) && F.st === 'run' && F.dropped && !peer.rescue) finish(flow, { ok: true, step: F.step, ticket: F.ticket, text: tx('p332.reset.back') });
     if ((F.st === 'ok' || F.st === 'fail') && !F.fold && !F.foldTimer) foldLater(flow);   // the link is back: ended results fold
   }
   refreshArk();

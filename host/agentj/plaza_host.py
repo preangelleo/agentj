@@ -284,7 +284,12 @@ def _deps_task(host, names: list, en: bool) -> dict:
     if not recs:
         return {}
     cli = {n: [c.get("name") for c in (r.get("requires") or {}).get("cli") or () if isinstance(c, dict)] for n, r in recs.items()}
-    text = "\n\n".join(plaza_deps.task_text(n, r["version"], [{"name": d, "user": plaza_deps.user_copies(d)}
+    py = {n: (r["verify"].get("python") if isinstance(r["verify"].get("python"), dict) else {}) for n, r in recs.items()}
+    agreed = {n: isinstance(r["verify"].get("python_prep"), dict) and py[n].get("prep") not in ("no_consent", "host_only")
+              for n, r in recs.items()}      # F1: the card's yes to uv, as reverify judged it (market.run_reverify)
+    text = "\n\n".join(plaza_deps.task_text(n, r["version"], [{"name": d, "user": plaza_deps.user_copies(d),   # ADR-0305: + found / prep
+                                                               "found": py[n].get("found"), "prep": py[n].get("prep"),
+                                                               "consent": agreed[n]}
                                                               for d in r["verify"]["missing"]], en, market.VERIFY_PATH, cli[n])
                         for n, r in recs.items())
     try:

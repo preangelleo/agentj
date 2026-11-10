@@ -31,7 +31,9 @@ def wheel(st, version):
     p = st.root / 'upgrade-cache' / f'agentj-{version}-py3-none-any.whl'
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_bytes(b'old-wheel-bytes')
-    p.with_suffix('.verified.json').write_text(json.dumps({'sha256': hashlib.sha256(b'old-wheel-bytes').hexdigest()}))
+    # Same receipt shape as auto_update's installed-RECORD cache writer (unsigned legacy lane).
+    p.with_suffix('.verified.json').write_text(json.dumps({'sha256': hashlib.sha256(b'old-wheel-bytes').hexdigest(),
+                                                           'signed': False, 'installed_record': True}))
     return p
 
 
@@ -39,9 +41,11 @@ class Runner:
     """Fake installer: `--version` answers whatever was installed last."""
     def __init__(self, current='9.9.9', fail=()):
         self.calls, self.current, self.fail = [], current, fail
+        self.wheels = []   # (name, bytes) of each wheel at install time: rollback installs a private scratch copy
 
     def __call__(self, argv, **kw):
         self.calls.append(list(argv))
+        self.wheels += [(Path(a).name, Path(a).read_bytes()) for a in map(str, argv) if a.endswith('.whl') and Path(a).is_file()]
         if argv[-1] == '--version':
             return subprocess.CompletedProcess(argv, 0, f'agentj {self.current}', '')
         if any(f in argv for f in self.fail):
@@ -114,7 +118,8 @@ class RecoveryWorker(Base):
         self.assertEqual(service_recovery.read(self.st)['reason'], 'rolled_back')
         self.assertEqual(service_recovery.read(self.st)['status'], 'rolled_back')
         self.assertEqual(len(installs), 2, 'new service, then the old one again')
-        self.assertTrue(any(str(old) in c for c in run.calls), 'the cached old wheel was installed')
+        self.assertIn((old.name, old.read_bytes()), run.wheels, 'the cached old wheel was installed')
+        self.assertFalse(any(str(old) in c for c in run.calls), 'the mutable cache path never reaches the installer')
         self.assertFalse((self.st.root / update.UPGRADED).exists(), 'nothing announces the failed version')
         self.assertIn('rolled back', service_recovery.failure_text(service_recovery.read(self.st)))
 

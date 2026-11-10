@@ -213,6 +213,29 @@ def wait_ready(st, *, limit=READY_LIMIT, poll=READY_POLL, ctl=None, sleep=time.s
         sleep(poll)
 
 
+STABLE_S = 12.0   # ticket U33rz: launchd shows `running` for the half second a crash-looping serve lives (ThrottleInterval 5)
+
+
+def stays_up(status, timeout: float, stable: float | None = None) -> None:
+    """The new service is active AND stays active for `stable` s in a row (≤ a quarter of the timeout), else
+    ServiceError('recovery_inactive') — so a crash loop after an upgrade rolls back instead of being recorded as ok."""
+    from . import service
+    stable = min(STABLE_S, timeout / 4) if stable is None else stable
+    end = time.monotonic() + timeout
+    since = None
+    while True:
+        now = time.monotonic()
+        if status().get('active') == 'active':
+            since = now if since is None else since
+            if now - since >= stable:
+                return
+        else:
+            since = None
+        if now >= end + (stable if since is not None else 0):
+            raise service.ServiceError('recovery_inactive')
+        time.sleep(.25)
+
+
 def run(st, target, *, timeout=45, install=None, status=None, ready=None, runner=None):
     from . import __version__
     record(st, 'running', target)
@@ -234,11 +257,7 @@ def run(st, target, *, timeout=45, install=None, status=None, ready=None, runner
             update.write_marker(st, pending['from'] if pending else target, target)
         try:
             (install or service.install)(st)
-            end = time.monotonic() + timeout
-            while (status or service.status)().get('active') != 'active':
-                if time.monotonic() >= end:
-                    raise service.ServiceError('recovery_inactive')
-                time.sleep(.25)
+            stays_up(status or service.status, timeout)
         except Exception:
             # P142 (B15): the new service did not come up — auto_update's cached-wheel rollback, then the old service.
             if pending and pending.get('old') and isinstance(pending.get('install'), dict):
@@ -246,11 +265,7 @@ def run(st, target, *, timeout=45, install=None, status=None, ready=None, runner
                 st.log('upgrade_rollback', status='ok' if ok else 'failed', reason='recovery_inactive')
                 if ok:
                     (install or service.install)(st)
-                    end = time.monotonic() + timeout
-                    while (status or service.status)().get('active') != 'active':
-                        if time.monotonic() >= end:
-                            raise service.ServiceError('recovery_inactive')
-                        time.sleep(.25)
+                    stays_up(status or service.status, timeout)
                     record(st, 'rolled_back', target, 'rolled_back')
                     return 1
             raise

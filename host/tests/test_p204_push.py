@@ -57,12 +57,12 @@ class Kinds(unittest.TestCase):
 
 class Messages(unittest.TestCase):
     def host(self, d):
-        h = SimpleNamespace(st=St(d))
+        h = SimpleNamespace(st=St(d), push_generation={}, send_app=mock.AsyncMock())
         return h
 
     def app(self, h, dev, obj):
         s = SimpleNamespace(state="ready", device=dev, p33=True, pub=b"k", cid=1)
-        asyncio.run(Host._app(h, s, obj))
+        asyncio.run(Host._app_frame(h, s, obj))
 
     def test_pref_is_stored_and_survives_a_resubscribe(self):
         with tempfile.TemporaryDirectory() as d:
@@ -95,7 +95,7 @@ class Notify(unittest.TestCase):
                 f = mock.Mock()
                 f.add_done_callback = lambda cb: None
                 return f
-            h = SimpleNamespace(st=st, sessions={}, push_last={}, push_key=object())
+            h = SimpleNamespace(st=st, sessions={}, push_last={}, push_generation={}, push_key=object())
             h._push_key = lambda: h.push_key
             with mock.patch.object(serve, "in_daemon_thread", fake):
                 Host.push_notify(h, "reply")

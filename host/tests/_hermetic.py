@@ -56,6 +56,8 @@ os.environ.setdefault("AGENTJ_UPGRADE_REPORT", "off")
 os.environ.setdefault("AGENTJ_REACH_PROBE", "off")
 # P298: `opencode models` (the free-model list) is never asked of a stand-in opencode; test_p298 turns it on.
 os.environ.setdefault("AGENTJ_OC_FREE_LIST", "off")
+# ADR-0305: a plaza self-check never asks the developer's real uv to download a Python; test_p0305 turns it on with a stand-in.
+os.environ.setdefault("AGENTJ_PLAZA_UV", "off")
 
 # P143: P142's diskq hands host.log lines to its writer thread for BUFFER_FOR s after one slow append. On a loaded test machine
 # an in-process test that then reads host.log directly found no file yet — or a partial log, where "secret not in the log"

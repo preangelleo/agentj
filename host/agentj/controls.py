@@ -73,6 +73,71 @@ NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
 
 
+_SURROGATE = re.compile(r"[\ud800-\udfff]")     # raw: the source holds no surrogate (static string scans)
+
+
+def _js_number(x) -> str:
+    """0.30.5 (ADR-0305): a number exactly as JavaScript's JSON.stringify writes it (ECMA-262 Number::toString), so a float
+    the host stored (mail triage usd_per_day 0.0) hashes like the page's copy after JSON.parse ("0"). Python writes 0.0 /
+    1e-05 / 1e+21 / -0.0. Values the page cannot hold exactly are refused (ValueError -> check() "shape"), never hashed
+    to a digest the page would not produce: NaN / ±Infinity, and an int whose JS spelling differs from its digits."""
+    if isinstance(x, bool):
+        return "true" if x else "false"
+    if isinstance(x, int):
+        s = str(int(x))
+        if abs(x) > 2 ** 53:        # beyond 2^53 JS reads a nearby double: keep only ints it reads AND writes back exactly
+            try:
+                exact = float(x) == x and _js_number(float(x)) == s
+            except OverflowError:
+                exact = False
+            if not exact:
+                raise ValueError("integer not exactly representable in JavaScript")
+        return s
+    if x != x or x in (float("inf"), float("-inf")):
+        raise ValueError("non-finite number")
+    if x == 0:
+        return "0"
+    m = re.fullmatch(r"(-?)(\d+)(?:\.(\d+))?(?:e([+-]\d+))?", repr(float(x)))
+    sign, ip, fp, e = m.group(1), m.group(2), m.group(3) or "", int(m.group(4) or 0)
+    digits = (ip + fp).lstrip("0")
+    point = len(ip) + e - (len(ip + fp) - len(digits))   # value = 0.digits × 10^point
+    digits = digits.rstrip("0")
+    k = len(digits)
+    if k <= point <= 21:
+        return sign + digits + "0" * (point - k)
+    if 0 < point <= 21:
+        return sign + digits[:point] + "." + digits[point:]
+    if -6 < point <= 0:
+        return sign + "0." + "0" * -point + digits
+    exp = point - 1
+    return sign + digits[0] + ("." + digits[1:] if k > 1 else "") + "e" + ("+" if exp >= 0 else "-") + str(abs(exp))
+
+
+def _js_string(s: str) -> str:
+    if _SURROGATE.search(s):       # JS writes a lone surrogate as \udXXX, Python cannot UTF-8 it: refuse, don't diverge
+        raise ValueError("lone surrogate")
+    return json.dumps(s, ensure_ascii=False)
+
+
+def canonical_json(o) -> str:
+    """wire.js canonicalJson, byte for byte (ADR-0305): keys sorted by UTF-16 code units, no spaces, UTF-8, JS number
+    spelling. TypeError for a non-JSON value / non-string key, ValueError for a value the page cannot reproduce."""
+    if isinstance(o, dict):
+        if not all(isinstance(k, str) for k in o):
+            raise TypeError("not JSON: non-string key")
+        return "{" + ",".join(_js_string(k) + ":" + canonical_json(o[k])
+                              for k in sorted(o, key=lambda k: k.encode("utf-16-be", "surrogatepass"))) + "}"
+    if isinstance(o, (list, tuple)):
+        return "[" + ",".join(canonical_json(v) for v in o) + "]"
+    if isinstance(o, str):
+        return _js_string(o)
+    if o is None:
+        return "null"
+    if isinstance(o, (bool, int, float)):
+        return _js_number(o)
+    raise TypeError("not JSON")
+
+
 def object_text(action: str, obj: dict) -> str:
     """The exact text whose SHA-256 the phone signs for each action (the phone builds the same string from what it shows).
 
@@ -116,7 +181,7 @@ def object_text(action: str, obj: dict) -> str:
     if action == "fr_report_remark":
         return f"{obj['friend']}\n{obj['name']}"
     if action in ("host_write", "heartbeat_write", "event_write", "owner_hosts_set"):
-        return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        return canonical_json(obj)      # 0.30.5 ADR-0305: was json.dumps — "0.0" ≠ the page's "0" (bad_signature on mail_set)
     if action in ("bots_write", "mail_fwd", "private_file_get", "private_file_revoke", "main_thread_interrupt"):
         return json.dumps(obj["request"], sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     if action == "setup_cancel":

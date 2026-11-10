@@ -428,14 +428,15 @@ export function canonicalJson(o) {
   return JSON.stringify(o === undefined ? null : o);
 }
 /** §17.7 the bytes a device signs to answer a friend_request card: approveMessage, plus — for allow with a group — one more
- *  line hex(SHA-256("group:" + group)), so the host knows the owner picked THAT group. peer_question allow may sign group:colleague; ctx stays friend_request-only. */
+ *  line hex(SHA-256("group:" + group)), so the host knows the owner picked THAT group. peer_question allow may sign group:colleague; ctx stays friend_request-only.
+ *  ADR-0304: peer_question allow + group:main-agent = 「交给主 Agent 来办」 (one delegated friend_task turn on this host, cards as usual; any friend). */
 export const GROUP_ID_RE = /^[a-z0-9-]{1,32}$/;
 /** Which of group / ctx a friend answer signs (null = no line): allow only; group on friend_request / peer_question; ctx on
  *  friend_request only. Shared by friendAnswerMessage and friendAnswer so the signed lines and the sent fields cannot part. */
 function friendLines(tool, decision, group, ctx) {
   const on = ['friend_request', 'peer_question'].includes(tool) && decision === 'allow';
   const g = on && group != null && group !== '' ? group : null;
-  if (g !== null && (!GROUP_ID_RE.test(g) || (tool === 'peer_question' && !['colleague', 'main'].includes(g)))) throw new Error('bad group');
+  if (g !== null && (!GROUP_ID_RE.test(g) || (tool === 'peer_question' && !['colleague', 'main', 'main-agent'].includes(g)))) throw new Error('bad group');
   const c = on && tool === 'friend_request' && typeof ctx === 'string' && ctx !== '' ? ctx : null;
   if (c !== null && [...c].length > FRIEND_CTX_MAX) throw new Error('ctx too long');
   return { group: g, ctx: c };

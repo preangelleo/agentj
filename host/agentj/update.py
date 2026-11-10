@@ -550,7 +550,7 @@ def rollback_wheel(st):
         return None
 
 
-def roll_back(st, info: dict, wheel, frm: str, run) -> bool:
+def roll_back(st, info: dict, wheel, frm: str, run, *, signed_only=False) -> bool:
     """Reinstall the cached old wheel (auto_update.install_commands, hash re-checked) and confirm `--version`. The marker
     and the pending record go: nothing may announce the failed version."""
     run = _pinned(run)          # P423 (#193): the old wheel goes back into the same uv tool directory
@@ -565,12 +565,34 @@ def roll_back(st, info: dict, wheel, frm: str, run) -> bool:
         from pathlib import Path
         from . import auto_update
         p = Path(wheel)
-        rec = json.loads(p.with_suffix(".verified.json").read_text())
-        if hashlib.sha256(p.read_bytes()).hexdigest() != rec["sha256"]:
+        if p != st.root / "upgrade-cache" / f"agentj-{frm}-py3-none-any.whl":
             return False
-        for cmd in auto_update.install_commands(info, p):
-            if run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True).returncode:
+        # The legacy upgrade rollback may have a RECORD-verified, unsigned
+        # current wheel. Explicit phone/CLI rollback never selects that lane.
+        sealed_bytes = auto_update.signed_cached_bytes(st, frm)
+        if sealed_bytes is None:
+            if signed_only:
                 return False
+            rec = json.loads(p.with_suffix(".verified.json").read_text())
+            if rec.get("signed") is not False:
+                return False
+            sealed_bytes = p.read_bytes()
+            if hashlib.sha256(sealed_bytes).hexdigest() != rec["sha256"]:
+                return False
+        # Copy the verified bytes to a private wheel pathname. The mutable
+        # cache path is never passed to an installer.
+        import contextlib
+        with contextlib.ExitStack() as stack:
+            import tempfile
+            scratch = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="agentj-rollback-")))
+            scratch.chmod(0o700)
+            wheel_copy = scratch / f"agentj-{frm}-py3-none-any.whl"
+            with open(wheel_copy, "xb") as dst:
+                dst.write(sealed_bytes)
+            wheel_copy.chmod(0o400)
+            for cmd in auto_update.install_commands(info, wheel_copy):
+                if run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True).returncode:
+                    return False
         v = run(new_argv(info) + ["--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
         return not v.returncode and frm in ((v.stdout or "") + " " + (v.stderr or "")).split()
     except Exception as e:  # noqa: BLE001 — a failed rollback is reported, never raised
@@ -1312,6 +1334,71 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
     if out.get("health") == "unverifiable":
         return {**out, "result": "ok", "reason": "unverifiable_in_fence", "exit": 0}
     return {**out, "result": "ok", "reason": "upgraded", "exit": 0}
+
+
+
+def repair_install(st, *, target=None, runner=None, service_installed=None, plan_fn=None, info=None):
+    """Explicit same-version repair; signed published wheel, never a Git checkout.
+
+    The service is rebuilt only if previously installed; the state directory is untouched.
+    """
+    from . import auto_update, service
+    runner = runner or subprocess.run
+    target = target or __version__
+    result = {"from": __version__, "to": target, "service": "unchanged"}
+    def finish(reason, **extra):
+        return {**result, **extra, "reason": reason, "result": "ok" if reason == "reinstalled" else "failed",
+                "exit": 0 if reason == "reinstalled" else 1}
+    if market_managed():
+        return market_result()
+    if parse(target) is None or target != __version__:
+        return finish("unsupported_install")
+    info = info or install_kind()
+    if info.get("kind") == "checkout" or info.get("legacy") or not writable(info.get("where")):
+        return finish("unsupported_install")
+    if service_installed is None:
+        try:
+            service_installed = bool(service.status().get("installed") or service.legacy_status().get("installed"))
+        except Exception:
+            service_installed = False
+    try:
+        import contextlib
+        import tempfile
+        from .state import State
+        with contextlib.ExitStack() as stack:
+            if plan_fn is not None:  # injected isolated tests; production always seals the published bytes
+                plan = plan_fn(st, info, target)
+            else:
+                verified_plan(st, info, target)  # fetch/hash/signature/identity before any install
+                cache_root = Path(os.environ.get('XDG_CACHE_HOME') or Path.home()/'.cache') / 'agentj-upgrade'
+                sealed_bytes = auto_update.signed_cached_bytes(State(cache_root), target)
+                if sealed_bytes is None:
+                    return finish("artifact_signature_mismatch")
+                scratch = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="agentj-reinstall-")))
+                scratch.chmod(0o700)
+                wheel_copy = scratch / f"agentj-{target}-py3-none-any.whl"
+                with open(wheel_copy, "xb") as dst:
+                    dst.write(sealed_bytes)
+                wheel_copy.chmod(0o400)
+                plan = auto_update.install_commands(info, wheel_copy)
+            _pre_snapshot(st)
+            for cmd in plan:
+                if runner(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=300).returncode:
+                    return finish("uv_failed")
+        v = runner(new_argv(info) + ["--version"], stdin=subprocess.DEVNULL,
+                   capture_output=True, text=True, timeout=30)
+        if v.returncode or target not in ((v.stdout or "") + " " + (v.stderr or "")).split():
+            return finish("not_upgraded")
+        if service_installed:
+            svc = runner(new_argv(info) + ["service", "install", "--deferred", target], stdin=subprocess.DEVNULL,
+                         capture_output=True, text=True, timeout=120)
+            if svc.returncode:
+                return finish("service_restart_failed", service="failed")
+            result["service"] = "restart_scheduled"
+        return finish("reinstalled")
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        from .upgrade_diag import plan_reason
+        return finish(plan_reason(e) if "plan" not in locals() else "self_check_failed")
 
 
 def host_op(st, req: dict, mem: dict, run=None) -> dict:

@@ -154,7 +154,10 @@ class Completion(unittest.TestCase):
         got = busy.unit_end("agentj-p262.service", lambda *a, **kw: SimpleNamespace(returncode=1, stdout="LoadState=not-found\n"))
         self.assertIsNone(got["exit_code"])
         self.finish(code=None)
-        self.assertIn("退出码 未知", self.n.tick(now=1000).text)
+        text = self.n.tick(now=1000).text   # ADR-0305: an unknown exit code is 「结果不明」, never 「已结束」
+        self.assertIn("结果不明（用时", text)
+        self.assertIn("退出码未知", text)
+        self.assertNotIn("已结束", text)
 
     def test_short_headless_receipt_real_exit_code(self):
         env = dict(os.environ, AGENTJ_STATE_DIR=str(self.root),

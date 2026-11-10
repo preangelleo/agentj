@@ -198,17 +198,20 @@ def remember(st, thread: str, kind: str, seq: int) -> None:
 
 
 # ------------------------------------------------------------------ outgoing text
-def doctor_text() -> str:
-    """`agentj doctor` (offline checks + version) as plain lines — redacted by the caller like everything else."""
-    from . import DIST, __version__, doctor
+def doctor_text(st=None, checks=None) -> str:
+    """`agentj doctor` (offline checks + version) as plain lines — redacted by the caller like everything else.
+    ADR-0305-doctor-attach: rows go through doctor_attach (host identifiers, owner file names and the owner notice out)
+    before layer 1. `st` / `checks` are test seams; by default the live state and `doctor.run(offline=True)`."""
+    from . import DIST, __version__, doctor, doctor_attach
     try:
-        checks = doctor.run(offline=True)
+        if st is None:
+            from .state import State
+            st = State()
+        rows = doctor.run(st, offline=True) if checks is None else (checks() if callable(checks) else checks)
+        body = doctor_attach.support_rows(rows, st)
     except Exception as e:  # a broken install is exactly when support is asked: send what we can
         return f"{DIST} {__version__}\ndoctor failed: {type(e).__name__}"
-    lines = [f"{DIST} {__version__} · python {sys.version.split()[0]} · {sys.platform}"]
-    for c in checks:
-        lines.append(f"{doctor.MARK.get(c.get('status'), '?')} {c.get('id', '')}: {c.get('summary', '')}" + (f" → {c['hint']}" if c.get("hint") and c.get("status") != doctor.OK else ""))
-    return "\n".join(lines)
+    return "\n".join([f"{DIST} {__version__} · python {sys.version.split()[0]} · {sys.platform}", *body])
 
 
 def redact_paths(text: str) -> str:

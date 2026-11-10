@@ -406,6 +406,8 @@ class Uploads:
             return out + [self._fail(b, "unsafe_inbox")], None
         except OSError:
             return out + [self._fail(b, "disk")], None
+        if b.origin == "recording" and b.mime.startswith("audio/"):
+            inbox.note_voice(self.st, b.path, "phone")      # #0304: a voice original — voice_retention_hours applies
         if self.is_recording(b):
             # P33-C02: the verified bytes stay private in the state dir (the fenced Agent cannot reach it); say-time
             # transcription reads this copy, never the inbox file the Agent could swap for a link or a playlist

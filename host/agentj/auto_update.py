@@ -391,6 +391,64 @@ def _cached_wheel(st, version, *, fetch, require_signature, evidence):
     return path
 
 
+
+
+def signed_cached_bytes(st, version):
+    """Read signature and wheel from no-follow file descriptors, not replaceable paths."""
+    import stat
+    if update.parse(version) is None:
+        return None
+    root = st.root
+    cache = root / 'upgrade-cache'
+    try:
+        mode = root.lstat()
+        if not stat.S_ISDIR(mode.st_mode) or mode.st_uid != os.geteuid() or mode.st_mode & 0o077:
+            return None
+        name = f'agentj-{version}-py3-none-any.whl'
+        rootfd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            dirfd = os.open('upgrade-cache', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=rootfd)
+        finally:
+            os.close(rootfd)
+        try:
+            mode = os.fstat(dirfd)
+            if mode.st_uid != os.geteuid() or mode.st_mode & 0o077:
+                return None
+            def read(name, limit):
+                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dirfd)
+                try:
+                    meta = os.fstat(fd)
+                    if not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.geteuid() or meta.st_mode & 0o077 or meta.st_size > limit:
+                        return None
+                    with os.fdopen(fd, 'rb', closefd=False) as inp:
+                        data = inp.read(limit + 1)
+                    return data if len(data) <= limit else None
+                finally:
+                    os.close(fd)
+            receipt = read(name[:-4] + '.verified.json', minisign.MAX_SIG + 1024)
+            data = read(name, MAX_WHEEL)
+        finally:
+            os.close(dirfd)
+        if not receipt or not data:
+            return None
+        rec = json.loads(receipt)
+        digest = hashlib.sha256(data).hexdigest()
+        if rec.get('signed') is not True or rec.get('sha256') != digest or not isinstance(rec.get('signature'), str):
+            return None
+        if minisign.verify(data, rec['signature'], minisign.keyring('release')) != f'agentj-host/v1 version={version} sha256={digest}':
+            return None
+        return data
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+
+
+def signed_cached_wheel(st, version):
+    """Offline signed wheel candidate, verified from no-follow private file descriptors."""
+    if signed_cached_bytes(st, version) is None:
+        return None
+    return st.root / 'upgrade-cache' / f'agentj-{version}-py3-none-any.whl'
+
+
 def installed_wheel(st, version):
     import base64, importlib.metadata, io, zipfile
     dist = importlib.metadata.distribution('agentj')

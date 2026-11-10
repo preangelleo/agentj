@@ -765,6 +765,9 @@ class WeChat:
                     input_images.append(data)
                 path = await asyncio.to_thread(self.store.place, wd, data, name, mime)
                 paths.append(path)
+                if typ == 3:   # #0304: a WeChat voice original — voice_retention_hours applies
+                    from .inbox import note_voice
+                    note_voice(self.h.st, path, 'wechat')
                 if typ == 2:
                     self.h.st.log('wechat_image_in', result='stored', bytes=len(data), mime=mime)
                 placed.append((path, name, mime, len(data), typ))

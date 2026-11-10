@@ -66,7 +66,9 @@ class Auth(unittest.TestCase):
         self.assertFalse(M.authenticate(parse(raw), BOSS, "standard")[0])
         # with a pinned authserv-id, other servers' results are ignored entirely
         self.assertEqual(M.authenticate(parse(mail()), BOSS, "standard", "mx.other.example"), (False, "servid"))
-        self.assertEqual(M.authenticate(parse(mail()), BOSS, "standard", "example.cn")[0], True)
+        # 0304 A4 (F7): exact match on the topmost header only — a parent-domain pin no longer accepts a subdomain
+        self.assertEqual(M.authenticate(parse(mail()), BOSS, "standard", "example.cn"), (False, "servid"))
+        self.assertEqual(M.authenticate(parse(mail()), BOSS, "standard", "MX.example.cn")[0], True)
 
     def test_outlook_header_without_servid_and_org_domains(self):
         ar = "spf=pass (sender IP is 1.2.3.4) smtp.mailfrom=corp.com.cn; dkim=pass (signature was verified) header.d=corp.com.cn;dmarc=pass action=none header.from=corp.com.cn;"

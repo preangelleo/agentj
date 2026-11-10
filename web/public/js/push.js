@@ -5,6 +5,106 @@ import { t, lang, fillText } from './t.js';
 import { el } from './ui.js';
 
 let pushKey = null;
+// Explicit off is local to this browser; permission alone is not consent to turn alerts back on.
+const OFF_KEY = 'aj.pushExplicitOff';
+let localOff = false;
+const explicitlyOff = () => { try { return localOff || localStorage.getItem(OFF_KEY) === '1'; } catch { return true; } };
+// A write failure may be temporary while reads still work. Mirror the revocation in IndexedDB and
+// check both stores before any automatic subscribe. A failure of both stores is never reported as success.
+function offDb(value) {
+  const name = globalThis.AJSeat?.db?.('aj-push-intent');
+  if (!name) return Promise.reject(new Error('seat scope unavailable'));
+  return new Promise((resolve, reject) => {
+    let db, settled = false;
+    const timer = setTimeout(() => finish(false, new Error('push intent store timeout')), 2000);
+    const finish = (ok, result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { db?.close(); } catch { /* closed */ }
+      ok ? resolve(result) : reject(result);
+    };
+    try {
+      const req = indexedDB.open(name, 1);
+      req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains('flags')) req.result.createObjectStore('flags'); };
+      req.onerror = () => finish(false, req.error);
+      req.onblocked = () => finish(false, new Error('push intent store blocked'));
+      req.onsuccess = () => {
+        db = req.result;
+        try {
+          const tx = db.transaction('flags', value === undefined ? 'readonly' : 'readwrite');
+          const r = value === undefined ? tx.objectStore('flags').get('off') : tx.objectStore('flags').put(value, 'off');
+          r.onsuccess = () => { if (value === undefined) finish(true, r.result === true); };
+          r.onerror = () => finish(false, r.error);
+          tx.oncomplete = () => { if (value !== undefined) finish(true, true); };
+          tx.onerror = () => finish(false, tx.error);
+          tx.onabort = () => finish(false, tx.error);
+        } catch (e) { finish(false, e); }
+      };
+    } catch (e) { finish(false, e); }
+  });
+}
+async function storedOff() {
+  let ls;
+  try { ls = localStorage.getItem(OFF_KEY) === '1'; } catch { return true; }
+  if (ls) return true;
+  try { return localOff || await offDb(); } catch { return true; }
+}
+async function markOff(off) {
+  localOff = off;
+  let ls = false, db = false;
+  try { localStorage.setItem(OFF_KEY, off ? '1' : '0'); ls = true; } catch { /* IndexedDB fallback */ }
+  try { db = await offDb(off); } catch { /* localStorage fallback */ }
+  if (off || !ls || !db) localOff = true;
+  else localOff = false;
+  // A conflicting old marker is unsafe: never declare enable successful until both stores agree.
+  return off ? ls || db : ls && db;
+}
+let hostEnabled = null; // The host's per-device record, not a guess from browser permission.
+let lastKey = null;
+let intent = 0;
+let offSend = null, pendingOff = null, hostOnSerial = 0;
+// A socket write is not a Host acknowledgement. Bind the reply to this request so stale on:false
+// from a prior connection cannot be mistaken for successful revocation.
+function retryOff() {
+  if (!explicitlyOff() || !isReady() || offSend) return offSend;
+  const r = crypto.randomUUID(), at = hostOnSerial;
+  offSend = new Promise(resolve => {
+    const timer = setTimeout(() => finish(false), 3000);
+    const finish = ok => {
+      if (pendingOff?.r !== r) return;
+      pendingOff = null;
+      clearTimeout(timer);
+      resolve(ok);
+    };
+    pendingOff = { r, finish };
+    sendApp({ t: 'push_off', r }).catch(() => finish(false));
+  }).finally(() => {
+    offSend = null;
+    // A newer host-on can arrive between this ack and cleanup. Do not lose that revocation.
+    if (explicitlyOff() && hostEnabled === true && hostOnSerial !== at && isReady()) queueMicrotask(() => retryOff());
+  });
+  return offSend;
+}
+// Ignore delayed acknowledgements after a local off; an older host-on reply cannot grant consent.
+export function gotPushStatus(enabled, r) {
+  if (typeof enabled !== 'boolean') return;
+  if (enabled && explicitlyOff()) ++hostOnSerial;
+  if (!enabled && pendingOff && r === pendingOff.r && explicitlyOff()) pendingOff.finish(true);
+  if (explicitlyOff()) {
+    hostEnabled = enabled;
+    pushUi('offer');
+    if (enabled) retryOff();
+    return;
+  }
+  // The IndexedDB marker may outlive a failed localStorage write across reloads.
+  if (enabled) storedOff().then(off => { if (off) { localOff = true; ++intent; pushUi('offer'); retryOff(); } });
+  if (hostEnabled === enabled) return; // push_sub acknowledgement is not a new intent
+  hostEnabled = enabled;
+  ++intent;
+  if (!enabled) pushUi('offer');
+  else if (lastKey && pushState !== 'on') gotPushKey(lastKey);
+}
 export const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && window.isSecureContext;
 export const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent);
 const isAndroid = () => /Android/.test(navigator.userAgent);
@@ -12,8 +112,10 @@ export const standalone = () => matchMedia('(display-mode: standalone)').matches
 let swReg = null;
 export async function registration() {
   if (swReg) return swReg;
-  swReg = await navigator.serviceWorker.register('sw.js' + (lang() === 'en' ? '?lang=en' : ''), { scope: './' });
-  return swReg;
+  // A failed register must not poison later retries with a rejected cached promise.
+  const reg = await navigator.serviceWorker.register('sw.js' + (lang() === 'en' ? '?lang=en' : ''), { scope: './' });
+  swReg = reg;
+  return reg;
 }
 export function reregister() {                       // the worker's two notification sentences follow the language
   if (!pushSupported()) return;
@@ -65,48 +167,92 @@ export async function gotPushKey(k) {
   try { key = Uint8Array.from(atob(k.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((k.length + 3) % 4)), (c) => c.charCodeAt(0)); } catch { return; }
   if (key.length !== 65) return;
   pushKey = key;
+  lastKey = k;
+  if (explicitlyOff()) { retryOff(); return pushUi('offer'); }
+  const generation = ++intent;
+  const current = () => generation === intent && !explicitlyOff() && hostEnabled !== false && isReady();
   if (!pushSupported()) return pushUi(isIOS() && !standalone() ? 'ios' : 'none');
   if (Notification.permission === 'denied') return pushUi('denied');
+  let created = null;
   try {
+    if (!current() || await storedOff()) { if (current()) { pushUi('offer'); retryOff(); } return; }
     const reg = await registration();
-    const sub = await reg.pushManager.getSubscription();
-    if (sub && sameKey(sub, key) && Notification.permission === 'granted') {
-      await sendApp(subMsg(sub));                    // re-sent on every connect; the host keeps one per device
-      await sendKinds();
-      return pushUi('on');
+    if (!current() || await storedOff()) { retryOff(); return; }
+    let sub = await reg.pushManager.getSubscription();
+    if (!current() || await storedOff()) { retryOff(); return; }
+    if (Notification.permission === 'granted') {
+      if (sub && !sameKey(sub, key)) {
+        await sub.unsubscribe(); sub = null;
+        if (!current()) return;
+      }
+      // Permission alone is not opt-in. Only a host-enabled device can restore a missing subscription.
+      if (!sub && hostEnabled === true && current() && !await storedOff()) {
+        created = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+        sub = created;
+      }
+      if (!current() || await storedOff()) { if (created) await created.unsubscribe(); retryOff(); return; }
+      if (sub) {
+        await sendApp(subMsg(sub));
+        if (!current()) { if (created) await created.unsubscribe(); return; }
+        await sendKinds();
+        if (current()) pushUi('on');
+        return;
+      }
     }
-  } catch { /* fall through to the offer */ }
-  pushUi('offer');
+  } catch { if (!current()) { if (created) await created.unsubscribe().catch(() => {}); return; } return pushUi('failed'); }
+  if (current()) pushUi('offer');
 }
 export async function enablePush() {
   if (!pushKey || !isReady()) return;
+  const generation = ++intent;
+  const current = () => generation === intent;
+  let created = null;
   try {
-    if ((await Notification.requestPermission()) !== 'granted') return pushUi(Notification.permission === 'denied' ? 'denied' : 'offer');
+    if ((await Notification.requestPermission()) !== 'granted') {
+      if (current()) pushUi(Notification.permission === 'denied' ? 'denied' : 'offer');
+      return;
+    }
+    if (!current()) return;
     const reg = await registration();
+    if (!current()) return;
     let sub = await reg.pushManager.getSubscription();
+    if (!current()) return;
     if (sub && !sameKey(sub, pushKey)) { await sub.unsubscribe(); sub = null; }
-    sub = sub ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: pushKey });
+    if (!current()) return;
+    if (!sub) { created = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: pushKey }); sub = created; }
+    if (!current()) { if (created) await created.unsubscribe(); return; }
+    // Persist the new owner's intent BEFORE the host can acknowledge push_sub.
+    if (!await markOff(false) || !current()) { if (created) await created.unsubscribe().catch(() => {}); return pushUi('failed'); }
     await sendApp(subMsg(sub));
+    if (!current()) { if (created) await created.unsubscribe(); retryOff(); return; }
     await sendKinds();
+    if (!current()) { if (created) await created.unsubscribe(); retryOff(); return; }
+    hostEnabled = true;
     pushUi('on');
   } catch {
-    pushUi('failed');
+    if (!current() && created) await created.unsubscribe().catch(() => {});
+    if (!current()) retryOff();
+    if (current()) pushUi('failed');
   }
 }
 
 /** Settings → 锁屏提醒 → 关闭: drop this browser's subscription and tell the host (§9 `push_off`). → true when done. */
 export async function disablePush() {
+  ++intent;
+  localOff = true; // revoke in memory synchronously, before any await
+  hostEnabled = false;
+  pushUi(pushKey ? 'offer' : 'none');
+  const durable = await markOff(true);
+  let browserOff = true;
   try {
     const reg = await registration();
     const sub = await reg.pushManager.getSubscription();
     if (sub) await sub.unsubscribe();
-    if (isReady()) await sendApp({ t: 'push_off' });
-    pushUi(pushKey ? 'offer' : 'none');
-    return true;
-  } catch {
-    pushUi('failed');
-    return false;
-  }
+  } catch { browserOff = false; }
+  // Unsubscribe failure must not prevent the host from dropping its device record.
+  const sent = await retryOff();
+  if (!durable || !browserOff || sent !== true || !isReady()) { pushUi('failed'); return false; }
+  return true;
 }
 
 // ---------------------------------------------------------------- Add to Home Screen hint

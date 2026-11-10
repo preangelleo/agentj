@@ -233,7 +233,9 @@ def reason(text: str) -> str:
 
 
 def mail_config(old: dict, raw: dict) -> dict:
-    """One effective settings merge for both the approval preview and execution."""
+    """One effective settings merge for both the approval preview and execution. It includes the known-provider check
+    server pin (mail.servid_merge, 0304 A4 security r1 M1): a function of (old, raw) only, so the summary, the signed
+    target {before, cfg} and on_mail's execution give the same auth_servid / servid_optout."""
     from . import mail
     new = {**old, **{k: v for k, v in raw.items() if k != 'generation'}}
     if raw.get('preset') and raw.get('address'):
@@ -242,7 +244,7 @@ def mail_config(old: dict, raw: dict) -> dict:
         new = mail.apply_preset(new, raw['preset'], raw['address'])
         if raw['preset'] == 'custom':
             new.update({k: raw[k] for k in ('imap', 'smtp') if k in raw})
-    return mail.validate(new)
+    return mail.validate(mail.servid_merge(old, mail.validate(new)))
 
 
 def mail_role_downgrade(target: dict) -> bool:
@@ -285,11 +287,13 @@ def _mail_summary(target: dict, lang: str) -> str:
               ('poll_minutes', tr('检查频率', 'Check interval')), ('enabled', tr('邮件通道', 'Mail channel')),
               ('mark_processed_read', tr('处理后标为已读', 'Mark processed mail as read')),
               ('auth', tr('发件人校验', 'Sender verification')), ('auth_servid', tr('可信邮件服务器', 'Trusted mail server')),
+              ('servid_optout', tr('不自动固定校验服务器', 'No automatic check-server pin')),
               ('allow', tr('允许的发件人', 'Allowed senders')), ('reply_per_hour', tr('每小时回复上限', 'Replies per hour'))]
     def value(key, val):
         if key == 'preset':
             if val == 'gmail': return 'Gmail'
             return mail.PRESETS[val][0 if zh else 1] if val in mail.PRESETS else tr('未设置', 'Not set')
+        if key == 'servid_optout': return '、'.join(val) or tr('无', 'None')
         if key in ('imap', 'smtp'): return f"{val['host'] or '—'}:{val['port']} ({val['security']})"
         if key == 'poll_minutes': return f'每 {val} 分钟' if zh else f'Every {val} minutes'
         if key == 'enabled': return tr('启用', 'On') if val else tr('关闭', 'Off')

@@ -135,7 +135,7 @@ class PythonInstall(tm.Base):
         rc, out = self.preview_and_confirm(accept_unverified=True)
         self.assertEqual(rc, market.EXIT_OK, out)
         v = market.read_installed(self.e.st)[0]["verify"]
-        self.assertEqual((v["state"], v["missing"]), ("pending", ["python3.99"]))
+        self.assertEqual((v["state"], v["missing"]), ("pending", ["Python ≥ 3.99"]))   # ADR-0305: named as a Python version
 
 
 class Chrome(unittest.TestCase):

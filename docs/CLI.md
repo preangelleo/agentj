@@ -7498,16 +7498,18 @@ agentj update --help
 ```
 
 ```text
-usage: agentj update [-h] [--yes] [--json] [--authorization AJUP-…]
-                     [--from-email FILE|-] [--version VERSION]
-                     {check,apply,auto} [{on,off,status}]
+usage: agentj update [-h] [--reinstall] [--yes] [--json]
+                     [--authorization AJUP-…] [--from-email FILE|-]
+                     [--version VERSION]
+                     {check,apply,auto,rollback} [{on,off,status}]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--reinstall` | `false` | false | — | `reinstall signed current version` |
 | `--yes` | `false` | false | — | `skip the check of what a restart now would interrupt` |
-| `mode` | `null` | true | `check`, `apply`, `auto` | `` |
+| `mode` | `null` | true | `check`, `apply`, `auto`, `rollback` | `` |
 | `switch` | `"status"` | false | `on`, `off`, `status` | `for auto` |
 | `--json` | `false` | false | — | `machine-readable check` |
 | `--authorization` | `null` | false | — | `the authorization code from the owner's upgrade email` |
@@ -15411,16 +15413,18 @@ agentj update --help
 ```
 
 ```text
-usage: agentj update [-h] [--yes] [--json] [--authorization AJUP-…]
-                     [--from-email FILE|-] [--version VERSION]
-                     {check,apply,auto} [{on,off,status}]
+usage: agentj update [-h] [--reinstall] [--yes] [--json]
+                     [--authorization AJUP-…] [--from-email FILE|-]
+                     [--version VERSION]
+                     {check,apply,auto,rollback} [{on,off,status}]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--reinstall` | `false` | false | — | `重新安装当前已签名版本` |
 | `--yes` | `false` | false | — | `跳过升级前确认：现在会打断的事照样打断` |
-| `mode` | `null` | true | `check`, `apply`, `auto` | `` |
+| `mode` | `null` | true | `check`, `apply`, `auto`, `rollback` | `` |
 | `switch` | `"status"` | false | `on`, `off`, `status` | `auto 的开关` |
 | `--json` | `false` | false | — | `check 的机器可读输出` |
 | `--authorization` | `null` | false | — | `主人升级邮件里的授权码` |

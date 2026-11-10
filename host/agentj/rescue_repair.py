@@ -245,6 +245,22 @@ def write_marker(st, flow: str, r: str, device, steps=None) -> None:
     st.write_private(st.root / MARKER, json.dumps(rec).encode())
 
 
+def probe_marker(st) -> dict | None:
+    """Observe only ordinary reset markers; deep-repair continuation stays one-shot.
+
+    An ordinary signed `probe` must not consume the repair marker before its
+    device-bound, separately signed `deep_repair_cont` arrives.
+    """
+    path = st.root / MARKER
+    try:
+        rec = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if isinstance(rec, dict) and rec.get("flow") == "deep_repair":
+        return None
+    return take_marker(st)
+
+
 def take_marker(st) -> dict | None:
     """The restart this serve came up after (once; removed when read). None = none, stale or unreadable."""
     path = st.root / MARKER

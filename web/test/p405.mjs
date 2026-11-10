@@ -19,16 +19,17 @@ try {
    const id=String(i).repeat(32), before=fake.st.answers.length;
    await fake.ask({t:'ask',id,tool:'peer_question',summary:'好友任务：检查后台进展',ttl:120,cat:['send'],pq:{friend:'AJ-PH8E-AJT4-26GJ-ACQ9',name:'Kai',text:'检查后台进展',draft:'',same_owner:same}});
    await waitFor(p,`!!document.getElementById('frQSend')`);
-   check(await evaluate(p,`!!document.getElementById('frQMain')`)===same,`${lang}: main visible only for same owner`);
+   check(await evaluate(p,`!!document.getElementById('frQMain')`),`${lang}: main visible for every friend (ADR-0304)`);
    check(await evaluate(p,`!document.getElementById('frQMainAuto')`),`${lang}: no obsolete automatic option`);
    const {data:openCard}=await p.send('Page.captureScreenshot',{format:'png'});writeFileSync(out+`${lang}-${i}-open.png`,Buffer.from(openCard,'base64'));
-   if(same){
+   {
     check(await evaluate(p,`document.querySelector('.fr-askbtns').firstElementChild.id`)==='frQMain',`${lang}: main first`);
     await evaluate(p,`document.getElementById('frQMain').click()`);
     for(let j=0;j<60 && fake.st.answers.length===before;j++)await sleep(50);
     // the fake host pushes the answer before its async signature check: wait for that verdict too (P417: under load it raced)
     for(let j=0;j<60 && fake.st.sigOk.length<fake.st.answers.length;j++)await sleep(50);
-    check(fake.st.answers.at(-1)?.group==='main',`${lang}: signed handover scope`);
+    // Same owner keeps its own route; any other friend signs the one-shot owner turn (ADR-0304-friend-card-main-agent)
+    check(fake.st.answers.at(-1)?.group===(same?'main':'main-agent'),`${lang}: signed handover scope`);
     check(fake.st.sigOk.at(-1)===true,`${lang}: real signature verified`);
    }
    const {data}=await p.send('Page.captureScreenshot',{format:'png'});writeFileSync(out+`${lang}-${i}.png`,Buffer.from(data,'base64'));

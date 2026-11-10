@@ -16,6 +16,13 @@ Retention: day folders older than RETAIN_DAYS go at serve start and daily; over 
 Cleanup walks and deletes through the same O_NOFOLLOW dir-fd chain as the write (P33-C01): agentj runs unfenced, so a link
 the Agent planted at .agentj, inbox or below must never steer a delete outside — a linked .agentj / inbox removes nothing.
 The Agent may read, move or delete its inbox files — they are the human's gift to it, nothing of agentj's.
+
+#0304 voice originals (Chairman 11-09: 「最多也只保存二十四小时」): `reap_voice` deletes only voice originals older than
+`inbox.voice_retention_hours` (default 24; 0 = never) — files agentj recorded as voice when it placed them (`note_voice`: a
+phone recording, a Telegram voice note, a WeChat voice; private ledger `<state>/inbox-voice.json`), plus, for files placed
+before that ledger existed, the legacy names `<HHMMSS>-<6 hex>-语音|Voice|voice….<audio ext>`. Age = the placement time in
+the day folder + HHMMSS (local time; mtime is the Agent's to touch). Regular files of this user only, unlinked by name under
+the O_NOFOLLOW day fd (a link is skipped, never followed); staged / claimed files are kept. Other files: RETAIN_DAYS + QUOTA.
 """
 from __future__ import annotations
 
@@ -26,6 +33,7 @@ import re
 import secrets
 import shutil
 import stat
+import threading
 import time
 import unicodedata
 
@@ -406,3 +414,148 @@ def clear(workdir: str, log=None) -> int:
     except Unsafe:
         _log_unsafe(log, "clear")
         raise
+
+
+# ------------------------------------------------------------ #0304: voice originals expire after voice_retention_hours
+VOICE_HOURS = (0, 1, 6, 24, 72, 168, 720)       # 0 = never auto-delete
+VOICE_DEFAULT = 24
+VOICE_LEDGER = "inbox-voice.json"
+_VOICE_LEGACY = re.compile(r"\d{6}-[0-9a-f]{6}-(?:语音|Voice|voice)(?:-[^/]*)?\.(?:wav|webm|m4a|ogg|mp3|aac|opus|caf|amr)")
+_PLACED_AT = re.compile(r"(\d{2})(\d{2})(\d{2})-[0-9a-f]{6}-")
+_LEDGER_LOCK = threading.Lock()
+
+
+def voice_hours(prefs) -> int:
+    v = ((prefs or {}).get("inbox") or {}).get("voice_retention_hours", VOICE_DEFAULT) if isinstance(prefs, dict) else None
+    return v if type(v) is int and v in VOICE_HOURS else VOICE_DEFAULT
+
+
+def _ledger_read(st) -> dict:
+    """→ the ledger; absent → since None (the upgrade's first run). One that exists but cannot be used carries `bad`
+    ("io": unreadable, "parse": not a ledger) — #0304 sec B2: callers fail closed, `since` is never reset to now."""
+    import json
+    try:
+        d = json.loads((st.root / VOICE_LEDGER).read_text())
+    except FileNotFoundError:
+        return {"since": None, "files": {}}
+    except OSError:
+        return {"since": None, "files": {}, "bad": "io"}
+    except ValueError:
+        return {"since": None, "files": {}, "bad": "parse"}
+    if isinstance(d, dict) and type(d.get("since")) in (int, float) and isinstance(d.get("files"), dict):
+        return d
+    return {"since": None, "files": {}, "bad": "parse"}
+
+
+def _ledger_write(st, d: dict) -> None:
+    import json
+    st.write_private(st.root / VOICE_LEDGER, json.dumps(d, ensure_ascii=False).encode())
+
+
+def _name_hash(name: str) -> str:
+    import hashlib
+    return hashlib.sha256(name.encode("utf-8", "surrogateescape")).hexdigest()[:8]   # accounts.name_hash style
+
+
+def _day_name(path: str) -> str | None:
+    p = str(path or "")
+    day, name = os.path.basename(os.path.dirname(p)), os.path.basename(p)
+    return f"{day}/{name}" if _DAY.fullmatch(day) and _PLACED_AT.match(name) else None
+
+
+def note_voice(st, path: str, src: str, now: float | None = None) -> None:
+    """Record at placement time that `path` (what `place` returned) is a voice original (src: phone | telegram | wechat).
+    Never raises: a missed note only means the file keeps the 30-day rule."""
+    key = _day_name(path)
+    if not key:
+        return
+    with contextlib.suppress(Exception), _LEDGER_LOCK:
+        d = _ledger_read(st)
+        if d.get("bad") == "io":
+            return                      # unreadable: never written over (the reaper deletes nothing meanwhile)
+        if d.pop("bad", None):          # not a ledger: start a fresh one with no legacy window (upgrade time unknown)
+            d["since"] = 0
+        d["since"] = d["since"] if d["since"] is not None else (now if now is not None else time.time())
+        d["files"][key] = src
+        _ledger_write(st, d)
+
+
+def _placed_at(day: str, name: str) -> float | None:
+    m = _PLACED_AT.match(name)
+    if not m:
+        return None
+    try:
+        return time.mktime(time.strptime(day + " " + ":".join(m.groups()), "%Y-%m-%d %H:%M:%S"))
+    except (ValueError, OverflowError):
+        return None
+
+
+def reap_voice(workdir: str, st, hours: int, keep: set[str] | None = None, now: float | None = None,
+               log=None) -> list[tuple[str, str, int]]:
+    """Delete expired voice originals under `<workdir>/.agentj/inbox/<day>/`; returns [(day, name, bytes)]. hours = 0 →
+    nothing. Each removal logs `inbox_voice_reaped` (day, name_hash = sha256 8 hex of the basename, bytes); never a name,
+    a path outside the inbox or content. A ledger that exists but cannot be read → nothing deleted, `inbox_unsafe
+    op=voice_ledger`, the file left as it is."""
+    now = now if now is not None else time.time()
+    with _LEDGER_LOCK:
+        d = _ledger_read(st)
+        if d.get("bad"):                # #0304 sec B2: fail closed — no legacy rule, no provenance, `since` kept
+            if hours in VOICE_HOURS and hours:
+                _log_unsafe(log, "voice_ledger")
+            return []
+        if d["since"] is None:          # first run after the upgrade: everything placed before now is legacy
+            d["since"] = now
+            with contextlib.suppress(OSError):
+                _ledger_write(st, d)
+    since, files = d["since"], dict(d["files"])
+    if hours not in VOICE_HOURS or hours == 0:
+        return []
+    cutoff = now - hours * 3600
+    held = {_day_name(p) for p in (keep or ())}
+    gone, seen, opened = [], set(), set()
+    try:
+        with _inbox_fd(workdir) as ib:
+            if ib is None:
+                return []
+            listed = sorted(n for n in os.listdir(ib) if _DAY.fullmatch(n))
+            for day in listed:
+                try:
+                    dd = _open_dir(day, ib, False)
+                except (OSError, Unsafe):
+                    continue                      # a linked / foreign day folder: never entered
+                opened.add(day)
+                try:
+                    for name in os.listdir(dd):
+                        key = f"{day}/{name}"
+                        seen.add(key)
+                        at = _placed_at(day, name)
+                        if at is None or at > cutoff or key in held:
+                            continue
+                        if key not in files and not (at < since and _VOICE_LEGACY.fullmatch(name)):
+                            continue
+                        try:
+                            s = os.stat(name, dir_fd=dd, follow_symlinks=False)
+                            if not stat.S_ISREG(s.st_mode) or s.st_uid != os.getuid():
+                                continue          # a link (or anything not a plain file of ours) is not a voice original
+                            os.unlink(name, dir_fd=dd)
+                        except OSError:
+                            continue
+                        gone.append((day, name, s.st_size))
+                        if log:
+                            with contextlib.suppress(Exception):
+                                log("inbox_voice_reaped", day=day, name_hash=_name_hash(name), bytes=s.st_size)
+                finally:
+                    os.close(dd)
+    except (Unsafe, OSError):
+        _log_unsafe(log, "voice")
+        return gone
+    done = {f"{x[0]}/{x[1]}" for x in gone}
+    # ledger rows from the snapshot whose file is gone (reaped, moved by the Agent, day removed by `retain`)
+    drop = {k for k in files if k in done or k not in seen and (k.split("/")[0] in opened or k.split("/")[0] not in listed)}
+    if drop:
+        with contextlib.suppress(Exception), _LEDGER_LOCK:
+            cur = _ledger_read(st)
+            if not cur.get("bad"):
+                cur["files"] = {k: v for k, v in cur["files"].items() if k not in drop}
+                _ledger_write(st, cur)
+    return gone

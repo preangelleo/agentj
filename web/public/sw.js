@@ -3,7 +3,7 @@
 // kind ("reply" | "ask" | "security"), encrypted by the host to this browser's subscription keys.
 // SW_VERSION changes with every redesign of the shell: a changed sw.js is what makes phones install the new worker
 // (skipWaiting + clients.claim take over at once, so notification text / icons follow the new shell without a second visit).
-const SW_VERSION = 'aj-web-2026-10-12-p166-any-file';
+const SW_VERSION = 'aj-web-2026-11-09-0304-push';
 // The notification text follows the page language: the page registers sw.js?lang=en when English is chosen (the worker
 // cannot read the page's localStorage). Still only these three fixed sentences per language — never any content.
 const BODY = {

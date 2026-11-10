@@ -298,8 +298,11 @@ class RemoteForward(unittest.IsolatedAsyncioTestCase):
         from test_p184_contacts import OWNER
         fx = self.fx
         fx.host.agent = SimpleNamespace(kind="claude", native_source=provenance.telegram_group(-100, 7, None, 1), cur_send=None)
-        res = await fx.svc.agent_send({"to": [OWNER], "subject": "x", "body": "y"})
+        res = await fx.svc.agent_send({"to": ["friend.p549@example.com"], "subject": "x", "body": "y"})
         self.assertEqual(res["why"], "group_source")
+        fx.ask.assert_not_awaited()
+        mine = await fx.svc.agent_send({"to": [OWNER], "subject": "x", "body": "y"})   # #0304: the owner only → sent, no card
+        self.assertTrue(mine["ok"] and mine["no_card"], mine)
         fx.ask.assert_not_awaited()
 
     async def test_agent_mail_to_others_still_asks_with_a_card(self):

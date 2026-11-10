@@ -88,6 +88,7 @@
     "stop.what_task": {"zh": "正在跑的定时任务", "en": "the running scheduled task"},
     "stop.what_both": {"zh": "这一轮和正在跑的定时任务", "en": "this turn and the running scheduled task"},
     "stop.none": {"zh": "现在没有在跑的一轮，不用停。", "en": "Nothing is running right now."},
+    "stop.children": {"zh": "这一轮早已结束；已停止 {n} 个还在跑的子 Agent。", "en": "The turn had already ended; stopped {n} sub-agent(s) still running."},
     "update.started": {"zh": "我去升级了，服务会重启一下，回来就告诉您结果。", "en": "Upgrading now — the service will restart; I'll report back when I'm up."},
     "update.current": {"zh": "已经是最新的 {to}，不用升级。", "en": "Already on the latest, {to}."},
     "update.auto_ok": {"zh": "{title}，我夜里自己升级到 {to} 了：{summary}。", "en": "{title}, I updated myself to {to} overnight: {summary}."},

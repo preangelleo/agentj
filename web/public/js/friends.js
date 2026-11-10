@@ -963,7 +963,7 @@ export function renderAsk(p, ctx) {
   // Peer and host gate explanations are not this Agent's own note.
   const note = () => mk('p', 'reason none', t('p572.label') + ' ' + t('p572.noReason'));
   const st = !ctx.open ? p.state : sentAsk.get(p.id) || 'open';
-  const final = { approved: 'allow', denied: 'deny', timeout: 'timeout', ended: 'ended', stopped: 'stopped', terminal: 'ended' }[p.state];
+  const final = { approved: 'allow', main: 'main', denied: 'deny', timeout: 'timeout', ended: 'ended', stopped: 'stopped', terminal: 'ended' }[p.state];
   if (kind === 'friend_request') {
     const f = frOf(p);
     el('sheetTitle').textContent = t('fr.ask.title');
@@ -1073,7 +1073,8 @@ export function renderAsk(p, ctx) {
       acts.append(send, btn('', t('fr.q.skip'), () => answerQuestion(p, 'deny', x, ctx), 'frQSkip'),
         btn('', t('fr.q.tell'), () => answerQuestion(p, 'tell', x, ctx), 'frQTell'));
       acts.append(btn('', t('fr.q.auto'), () => answerFriend(p, true, 'colleague', ctx), 'frQAuto'));
-      if (x.sameOwner) acts.prepend(btn('', t('fr.q.main'), () => answerFriend(p, true, 'main', ctx), 'frQMain'));
+      // ADR-0304: every friend gets 「交给主 Agent 来办」; Same owner keeps its own route, others sign group:main-agent (one owner turn)
+      acts.prepend(btn('', t('fr.q.main'), () => answerFriend(p, true, x.sameOwner ? 'main' : 'main-agent', ctx), 'frQMain'));
 
       box.append(acts);
     }

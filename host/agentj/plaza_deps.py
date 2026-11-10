@@ -75,6 +75,9 @@ def _howto(en: bool) -> str:   # round 4 N4-5: never a link to a user path / shi
 
 
 def label(n: str, declared, en: bool) -> str:   # N4-6: only a name the manifest declares under `cli` is shown bare
+    from .plaza_python import NAME
+    if NAME.fullmatch(n or ""):                 # ADR-0305: host words for a declared `requires.cli` python version
+        return n
     n = n if _PROG.fullmatch(n or "") else "?"
     return n if n in (declared or ()) else n + (" (reported by the package)" if en else "（包自检报告的）")
 
@@ -83,10 +86,16 @@ def task_text(name: str, version: str, deps: list[dict], en: bool, path: str, de
     lines = [("[Agent J system task] Plaza package {n} {v} is installed, but its self-check is missing dependencies. "
               "Status: {s}.") if en else "〔Agent J 系统任务〕广场包 {n} {v} 已装好，但自检缺依赖。状态：{s}。"]
     lines[0] = lines[0].format(n=name, v=version, s=PENDING[1 if en else 0])
+    from .plaza_python import NAME, fix_text
+    other = False
     for d in deps or [{"name": "?", "user": []}]:
         rc = re.fullmatch(r"\? \((exit \d{1,3})\)", d["name"] or "")
+        py = NAME.fullmatch(d["name"] or "")
+        other = other or not py
         d = {**d, "name": label(d["name"], declared, en)}
-        if rc:
+        if py:
+            lines.append(fix_text(name, (3, int(py.group(1))), d.get("found"), d.get("prep"), en, bool(d.get("consent"))))
+        elif rc:
             lines.append(f"- the self-test failed ({rc.group(1)}) without naming a missing program: run `agentj plaza verify {name}` "
                          "to see its output." if en else f"- 自检没通过（{rc.group(1)}），没说缺什么：先运行 `agentj plaza verify {name}` 看输出。")
         elif any(p.startswith(("/opt/homebrew/", "/home/linuxbrew/")) for p in d["user"]):
@@ -100,13 +109,18 @@ def task_text(name: str, version: str, deps: list[dict], en: bool, path: str, de
                          f"- {d['name']}：自检的系统 PATH（{path}）里没有；你的用户目录里有（{'、'.join(d['user'])}），但自检沙箱看不到用户目录。")
         else:
             lines.append(f"- {d['name']}: not found on this computer." if en else f"- {d['name']}：本机没找到。")
+    tell = ("When it passes, Agent J updates the install message on the owner's phone itself: say nothing more. Only if you "
+            "give up, tell the owner in one sentence what is still missing." if en else
+            "通过后 Agent J 会自己更新主人手机上那条安装消息，你不用再说；只有补不齐、放弃时，才用一句话告诉主人还缺什么。")
+    if not other:                 # ADR-0305: only the declared Python — its line above already is the one step
+        consent = all(d.get("consent", True) for d in deps or ())
+        lines.append((("The rerun is the same package and digest, no new signature. " if en else "重跑是同一个包、同一个 digest，不用再签名。")
+                      if consent else "") + tell)   # 0305 QA O2: a --replace step asks for a new card
+        return "\n".join(lines)
     lines.append(("Fix it with your normal permissions (sudo goes through the sudo card): " + _howto(True)
-                  + f". Then run `agentj plaza verify {name}` — the same package and digest, no new signature. When it passes, "
-                  "Agent J updates the install message on the owner's phone itself: say nothing more. Only if you give up, tell "
-                  "the owner in one sentence what is still missing.") if en else
+                  + f". Then run `agentj plaza verify {name}` — the same package and digest, no new signature. " + tell) if en else
                  ("用你的常规权限补齐（要 sudo 的走 sudo 确认卡）：" + _howto(False)
-                  + f"。然后运行 `agentj plaza verify {name}` 重跑自检（同一个包、同一个 digest，不用再签名）。通过后 Agent J 会自己更新"
-                  "主人手机上那条安装消息，你不用再说；只有补不齐、放弃时，才用一句话告诉主人还缺什么。"))
+                  + f"。然后运行 `agentj plaza verify {name}` 重跑自检（同一个包、同一个 digest，不用再签名）。" + tell))
     return "\n".join(lines)
 
 

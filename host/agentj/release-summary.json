@@ -1,5 +1,5 @@
 {
-  "version": "0.30.4",
+  "version": "0.30.5",
   "zh": "热修：时区不是 UTC 的 Mac 上，你自己在 Claude 里发起的广场安装、联系客服、批量确认不再被「无法确认来源」挡住。",
   "en": "Hotfix: on Mac hosts outside UTC, plaza installs, support requests and batch approvals you start in Claude are no longer refused."
 }

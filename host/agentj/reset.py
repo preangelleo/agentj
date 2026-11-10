@@ -37,7 +37,7 @@ from .text import pick
 OK_AGENT = ("idle", "working", "waiting", "compacting")
 RESCUE_ACTIONS = ("help", "report", "reconnect", "restart", "linger", "rollback", "new_session", "clear_friend_asks", "restart_session",
                   "end_turn", "takeover",    # 0269 (#461): owner-signed only — never offered, never run by support
-                  "stop_hard", "probe", "repair", "repair_cont", "new_chat")   # #585: owner-signed only, never support
+                  "stop_hard", "probe", "repair", "repair_cont", "deep_repair", "deep_repair_cont", "new_chat")   # #585: owner-signed only, never support
 RESET_CMDS = ("reset",)
 UNDO = "reset_undo.json"
 RELAY_WAIT = 25.0        # s: the relay link back after a re-dial
@@ -178,12 +178,13 @@ def run_linger(st, *, runner=subprocess.run, system=platform.system, user=None) 
 def previous_wheel(st, current: str | None = None):
     """(version, path) of the newest verified cached wheel older than `current`, else None."""
     from . import __version__, update
+    from .auto_update import signed_cached_wheel
     cur = current or __version__
     best = None
     for p in (st.root / "upgrade-cache").glob("agentj-*-py3-none-any.whl"):
         v = p.name[len("agentj-"):-len("-py3-none-any.whl")]
         pv = update.parse(v)
-        if pv is None or update.compare(v, cur) != -1 or not p.with_suffix(".verified.json").is_file():
+        if pv is None or update.compare(v, cur) != -1 or signed_cached_wheel(st, v) != p:
             continue
         if best is None or pv > best[0]:
             best = (pv, v, p)
@@ -197,7 +198,10 @@ def run_rollback(st, *, runner=subprocess.run, current=None) -> dict:
         if not found:
             return {"ok": False, "why": "unavailable"}
         version, wheel = found
-        ok = update.roll_back(st, update.install_kind(), wheel, version, runner)
+        from .auto_update import signed_cached_wheel
+        if signed_cached_wheel(st, version) != wheel:
+            return {"ok": False, "why": "unavailable"}
+        ok = update.roll_back(st, update.install_kind(), wheel, version, runner, signed_only=True)
         st.log("upgrade_rollback", status="ok" if ok else "failed", reason="rescue", version=version)
         return {"ok": True, "version": version} if ok else {"ok": False, "why": "failed", "version": version}
     except Exception as e:  # noqa: BLE001
@@ -550,7 +554,7 @@ class HostOps:
 
 
 # ------------------------------------------------------------------ #585: buttons that prove what they promise
-P585_FLOWS = ("stop_hard", "probe", "repair", "repair_cont", "new_chat", "new_session", "restart")
+P585_FLOWS = ("stop_hard", "probe", "repair", "repair_cont", "deep_repair", "deep_repair_cont", "new_chat", "new_session", "restart")
 TAKE_WHY = {   # 「接管」's real reason and what to do next (chairman: never a silent failure)
     "estop": ("现在是「全部停下」状态，接管不会动它。点下面的「恢复」，Agent J 会接着自动接管。",
               "Agent J is stopped (Stop everything), so take-over does nothing. Tap Resume below and Agent J takes over by itself."),
@@ -593,6 +597,41 @@ class _Rescue585:
     """#585 flows of Desk (stop_hard · probe · repair · repair_cont · new_chat / new_session · restart)."""
     async def _p585(self, device, r, flow, emit, finish, ops, lang) -> bool:
         h = self.h
+        if flow in ("deep_repair", "deep_repair_cont"):
+            original_finish = finish
+            async def finish(res):
+                if res.get("pending"):
+                    await original_finish(res)
+                else:
+                    await original_finish({**res, **await self._deep_report(lang, res)})
+        if flow == "deep_repair":
+            # Serve is responsive: the watchdog's takeover is not active. Still use the exact
+            # signed owner action and the published-wheel verifier, never a phone-supplied URL.
+            from . import update
+            await emit(1, "run", pick(lang, "正在核验并重装 Agent J…", "Verifying and reinstalling Agent J…"))
+            rescue_repair.write_marker(h.st, "deep_repair", r, device)
+            installed = await asyncio.to_thread(update.repair_install, h.st)
+            if installed.get("result") != "ok":
+                with contextlib.suppress(OSError):
+                    (h.st.root / rescue_repair.MARKER).unlink()
+                await finish({"ok": False, "step": 1, "why": "repair_failed", "text": pick(lang, "重装未完成。", "Reinstall did not complete."),
+                              "rollback": bool(previous_wheel(h.st))})
+                return False
+            await emit(1, "ok", pick(lang, "重装完成。", "Reinstallation finished."))
+            if installed.get("service") == "restart_scheduled":
+                await finish({"ok": True, "step": 2, "pending": True, "cont": "deep_repair_cont",
+                              "text": pick(lang, "正在等待服务恢复，随后检查 AI 会话。", "Waiting for the service to return, then checking the AI session.")})
+                return False
+            with contextlib.suppress(OSError):
+                (h.st.root / rescue_repair.MARKER).unlink()
+            return await self._deep_finish(emit, finish, lang)
+        if flow == "deep_repair_cont":
+            marker = rescue_repair.take_marker(h.st)
+            if (not marker or marker.get("flow") != "deep_repair" or marker.get("device") != device
+                    or not marker.get("restarted")):
+                await finish({"ok": False, "step": 2, "why": "unavailable", "text": _t(lang, NOT_FIXED)})
+                return False
+            return await self._deep_finish(emit, finish, lang)
         if flow == "stop_hard":
             await emit(1, "run", _t(lang, REPAIR_RUN[1])[2:])
             res = await rescue_repair.stop_hard(h, device)
@@ -602,7 +641,7 @@ class _Rescue585:
             await finish({"ok": bool(res.get("ok")), "step": 1, "text": text, **({"why": res["why"]} if res.get("why") else {}), **extra})
             return False
         if flow == "probe":
-            rec = rescue_repair.take_marker(h.st)
+            rec = rescue_repair.probe_marker(h.st)
             lines = [_t(lang, RESTARTED if rec.get("restarted") else NOT_RESTARTED)] if rec else []
             await emit(1, "run", _t(lang, rescue_repair.PROBE_RUN))
             pr = await rescue_repair.probe(h)
@@ -667,6 +706,34 @@ class _Rescue585:
             return await self._step4(device, finish, emit, steps, lang)
         return False
 
+
+    async def _deep_report(self, lang, result):
+        """Send a bounded, redacted host diagnostic after the signed repair."""
+        from . import rescue_kit
+        why = result.get("why")
+        reason = why if why in ("repair_failed", "session_failed", "no_reply", "estop") else "unknown"
+        try:
+            ticket, _, _ = await asyncio.to_thread(rescue_kit.report_only, lang, "deep_repair_" + reason)
+            return {"ticket": ticket} if ticket else {}
+        except Exception:  # noqa: BLE001 — support availability never authorizes or blocks repair
+            return {}
+
+    async def _deep_finish(self, emit, finish, lang) -> bool:
+        from . import phone_restart
+        await emit(3, "run", pick(lang, "正在恢复当前 AI 会话…", "Restarting the current AI session…"))
+        res = await phone_restart.run(self.h)
+        if not res.get("ok"):
+            await finish({"ok": False, "step": 3, "why": "session_failed",
+                          "text": pick(lang, "AI 会话尚未恢复。", "The AI session has not recovered."),
+                          "rollback": bool(previous_wheel(self.h.st))})
+            return False
+        await emit(3, "ok", pick(lang, "AI 会话已重启。", "The AI session restarted."))
+        pr = await self._probe_step(4, emit, lang)
+        await finish({"ok": bool(pr.get("ok")), "step": 4,
+                      "text": rescue_repair.probe_line(pr, lang),
+                      **({} if pr.get("ok") else {"why": pr.get("why") or "no_reply",
+                                                 "rollback": bool(previous_wheel(self.h.st))})})
+        return False
 
     async def _step4(self, device, finish, emit, steps, lang) -> bool:
         ok, res = await self._new_chat(device, 4, emit, lang, label=_t(lang, REPAIR_RUN[4]))

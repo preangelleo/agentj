@@ -1791,6 +1791,17 @@
    "verify": "agentj config validate --json",
    "since": "0.28.4",
    "aliases": ["主线程工作秒数阈值", "main thread seconds"]
+  },
+  "inbox.voice_retention_hours": {
+   "type": "integer",
+   "default": 24,
+   "enum": [0, 1, 6, 24, 72, 168, 720],
+   "description": "Hours a voice message's original audio stays in the Agent's inbox (phone recordings, Telegram voice notes, WeChat voice); 0 = keep (other files: 30 days); the words stay in the conversation / 语音消息原始录音在收件箱里保留几小时（手机录音、Telegram 语音、微信语音）；0 = 不自动删（其他文件仍是 30 天）；转写的文字一直留在对话里",
+   "tier": "user",
+   "apply": "hot",
+   "verify": "agentj inbox",
+   "since": "0.30.6",
+   "aliases": ["语音保留时长", "语音原文件保留", "voice retention", "voice retention hours"]
   }
  }
 }

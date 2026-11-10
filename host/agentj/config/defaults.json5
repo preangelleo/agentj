@@ -231,4 +231,10 @@
     // Offer once to save a task done 3 times in 14 days as a skill / 同类事做满 3 次主动问要不要存成技能; default=true
     "suggest": true,
   },
+  // #0304: voice originals (phone recordings, Telegram / WeChat voice) in the Agent's inbox; other files keep 30 days.
+  "inbox":
+  {
+    // Hours a voice original is kept: 0 (never delete), 1, 6, 24, 72, 168, 720 / 语音原始录音保留小时数; default=24
+    "voice_retention_hours": 24,
+  },
 }

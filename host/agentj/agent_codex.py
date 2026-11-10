@@ -890,8 +890,8 @@ class CodexAgent(Agent):
                 continue
             thread = (result or {}).get("thread") or {}
             status = thread.get("status") or {}
-            if status.get("type") in ("idle", "notLoaded", "systemError"):
-                b.stop(key)
+            if status.get("type") in ("idle", "notLoaded", "systemError"):     # ADR-0305: not running ≠ delivered
+                b.stop(key, outcome="unknown", end_reason={"idle": "thread_idle", "notLoaded": "thread_not_loaded"}.get(status["type"], "thread_error"))
             elif status.get("type") == "active" and proc is not None:
                 value["pid"] = proc.pid
                 b.annotate(key, model=thread.get("model"), effort=thread.get("reasoningEffort"))

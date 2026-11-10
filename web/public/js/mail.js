@@ -82,11 +82,30 @@ function render(form = true) {
   if (d.expect) el('mail-today').textContent += ' · ' + t('mail.todayExpect', { found: d.expect_found || 0, timeout: d.expect_timeout || 0, rejected: d.expect_rejected || 0 });
   renderTriage(view, save, lang() === 'en', busy, form);
   // sender-check sample from the last connection test
-  const smp = view.auth_sample;
-  el('mail-sample').textContent = !smp || !smp.checked ? '' : smp.with_results
-    ? t('mail.sampleYes', { n: smp.with_results, m: smp.checked, id: smp.servid || '—' }) : t('mail.sampleNo', { m: smp.checked });
-  el('mail-pin').hidden = !(smp && smp.servid && smp.servid !== c.auth_servid);
-  el('mail-pinned').textContent = c.auth_servid ? t('mail.pinned', { id: c.auth_servid }) : '';
+  const status = view.servid_status || {};
+  const smp = status.sample || view.auth_sample;
+  const checked = Number.isInteger(smp?.checked) && smp.checked >= 0 ? smp.checked : 0;
+  const withResults = Number.isInteger(smp?.with_results) && smp.with_results >= 0 ? smp.with_results : 0;
+  const detected = typeof status.detected === 'string' ? status.detected : null;
+  el('mail-sample').textContent = !checked ? '' : withResults < checked
+    ? t('p0304.mailSampleIncomplete', { n: withResults, m: checked })
+    : t('p0304.mailSampleComplete', { n: withResults, m: checked });
+  // A sampled id on a custom server can be sender-written. Never offer a one-tap pin
+  // from mail content; known Gmail pins on the host, Outlook has no usable id.
+  const pinned = status.pinned === true || (!view.servid_status && !!c.auth_servid);
+  const value = status.value || c.auth_servid || '';
+  const source = status.source === 'auto' ? t('p0304.mailSourceAuto') : t('p0304.mailSourceManual');
+  el('mail-pinned').textContent = pinned
+    ? t('p0304.mailPinnedSource', { id: value, source })
+    : t('p0304.mailTrustedUnset');
+  el('mail-detected').textContent = detected ? t('p0304.mailDetected', { id: detected }) : '';
+  // A4 status projection only: do not infer permission to write from the checkbox.
+  el('mail-trusted-check').checked = pinned;
+  // Only the host's explicit auto-pin provenance on the exact Gmail IMAP host earns this note.
+  const gmailAuto = pinned && status.source === 'auto' &&
+    String(c.imap?.host || '').trim().toLowerCase().replace(/\.$/, '') === 'imap.gmail.com';
+  el('mail-gmail-pinned').hidden = !gmailAuto;
+  el('mail-gmail-pinned').textContent = gmailAuto ? t('p0305.mailGmailPinned') : '';
   // toggle
   const tg = el('mail-on');
   tg.setAttribute('aria-checked', String(!!c.enabled));
@@ -214,7 +233,6 @@ export function configure() {
   });
   el('mail-enable-next').addEventListener('click', () => save({ enabled: true }));
   el('mail-on').addEventListener('click', () => save({ enabled: !cfg().enabled }));
-  el('mail-pin').addEventListener('click', () => { const s = view && view.auth_sample; if (s && s.servid) save({ auth_servid: s.servid }); });
   el('mail-add-addr').addEventListener('input', () => {
     const domain = el('mail-add-addr').value.trim().startsWith('@');
     el('mail-add-role').disabled = domain;

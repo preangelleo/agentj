@@ -31,6 +31,7 @@ import sys
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 VERSION = "1"
@@ -42,7 +43,7 @@ HOME = pathlib.Path.home()
 DIR = pathlib.Path(os.environ.get("AGENTJ_RESCUE_DIR") or HOME / ".agentj-rescue")
 MAX_BODY, MAX_ATTACH = 7800, 15800              # server: body ≤ 8000, attach ≤ 16000
 INTERESTING = ("loop_stall", "relay_down", "relay_up", "serve_start", "serve_stop", "report_fail", "telegram_fail",
-               "agent_read_failed", "bg_task_failed", "upgrade_wait", "seat_cert")
+               "agent_read_failed", "bg_task_failed", "upgrade_wait", "seat_cert", "serve_crash")
 OK, WARN, FAIL, INFO = "ok", "warn", "fail", "info"
 MARK = {OK: "✓", WARN: "!", FAIL: "✗", INFO: "·"}
 _THREAD = re.compile(r"st_[A-Za-z0-9_-]{22}")
@@ -420,7 +421,9 @@ def check_sleep(r: Report):
 _UNIT_PROPS = ("LoadState", "ActiveState", "SubState", "UnitFileState", "NRestarts", "Result", "ExecMainStatus",
                "ActiveEnterTimestamp")
 _SAFE = re.compile(r"[A-Za-z0-9_.:-]{1,40}")
-HOSTLOG_KEYS = ("ts", "ev", "code", "phase", "why", "status", "count", "ms", "result", "proc_ready", "client_ready")
+_WHERE = re.compile(r"[A-Za-z0-9_./:< -]{1,200}")      # serve_crash `where`: "agentj/x.py:12 < json/decoder.py:355"
+HOSTLOG_KEYS = ("ts", "ev", "code", "phase", "why", "status", "count", "ms", "result", "proc_ready", "client_ready",
+                "exception_type", "where", "version")   # ticket U33rz: serve_crash says what and where (file:line, no message)
 _JOURNAL = re.compile(r"^(\S+)\s+\S+\s+(\S+?)(?:\[\d+\])?:\s+(.*)$")
 _MANAGER_MSG = re.compile(r"(?i)\b(?:start|stop|fail|exit|restart|deactivat|result|status=|code=|kill|consumed|dump)")
 
@@ -481,9 +484,91 @@ def hostlog_line(e) -> str | None:
             out[k] = v
         elif isinstance(v, (int, float)) and not isinstance(v, bool):
             out[k] = v
+        elif k == "where" and isinstance(v, str) and _WHERE.fullmatch(v):
+            # same fixed origin categories as a service.log traceback: no basename, no line number leaves the host
+            out[k] = " < ".join(_frame_path(f.strip().rsplit(":", 1)[0]) for f in v.split(" < ") if f.strip())
+        elif k == "exception_type" and isinstance(v, str):
+            out[k] = v if v in _CRASH_TYPES else "other_error"
         elif isinstance(v, str) and _SAFE.fullmatch(v):
             out[k] = v
     return json.dumps(out, ensure_ascii=True) if out else None
+
+
+# ------------------------------------------------------------------ crash loop: why does serve exit? (ticket U33rz)
+_TB_START = "Traceback (most recent call last):"
+_TB_FRAME = re.compile(r'^\s*File "([^"]+)", line (\d+), in ([A-Za-z0-9_<>.]{1,60})')
+_TB_LAST = re.compile(r"^([A-Za-z_][A-Za-z0-9_.]{0,80}(?:Error|Exception|Exit|Interrupt|Warning|Fault|Failure|Timeout)|"
+                      r"[A-Za-z_][A-Za-z0-9_.]{0,80}Error)(?::\s?(.*))?$")
+
+
+def _frame_path(path: str) -> str:
+    """Only a fixed origin category; basename and package components may be customer-controlled."""
+    parts = pathlib.PurePath(path).parts
+    if "agentj" in parts:
+        return "agentj"
+    if "site-packages" in parts:
+        return "dependency"
+    return "other"
+
+
+_CRASH_TYPES = frozenset(("RuntimeError", "ValueError", "TypeError", "OSError", "ImportError",
+                          "ModuleNotFoundError", "PermissionError", "FileNotFoundError",
+                          "TimeoutError", "ConnectionError", "KeyError", "AttributeError", "json.decoder.JSONDecodeError",
+                          "AssertionError", "SystemExit", "KeyboardInterrupt"))
+
+
+def last_traceback(text: str, max_frames: int = 12) -> list:
+    """The last traceback → bounded fixed origin categories and allowlisted exception types only."""
+    lines = text.splitlines()
+    starts = [i for i, l in enumerate(lines) if l.strip().endswith(_TB_START)]
+    if not starts:
+        return []
+    block, out = lines[starts[-1] + 1:starts[-1] + 400], []
+    exc = None
+    for l in block:
+        m = _TB_FRAME.match(l)
+        if m:
+            out.append(_frame_path(m.group(1)))
+            continue
+        m = _TB_LAST.match(l.strip())
+        if m and not l.startswith((" ", "\t")):
+            exc = m.group(1) if m.group(1) in _CRASH_TYPES else "other_error"
+            break
+    if len(out) > max_frames:
+        out = out[:2] + [f"… {len(out) - max_frames} frames …"] + out[-(max_frames - 2):]
+    return out + ([exc] if exc else [])
+
+
+def service_log_tail(max_bytes: int = 256 * 1024) -> str:
+    """The service's own stdout/stderr file (macOS launchd StandardErrorPath = <state>/service.log)."""
+    p = state_dir() / "service.log"
+    try:
+        if p.is_symlink() or not p.is_file():
+            return ""
+        with p.open("rb") as f:
+            f.seek(max(0, p.stat().st_size - max_bytes))
+            return f.read().decode(errors="replace")
+    except OSError:
+        return ""
+
+
+def check_crash(r: Report):
+    """Ticket U33rz (2026-11-09): a crash loop (launchd `spawn` / systemd `activating`, exit 1 every few seconds) left its
+    reason only in service.log, which the report never carried — five tickets in a day said "no reason in host.log". Now:
+    the last traceback's fixed origin categories + allowlisted exception type go into the report, and so does the last
+    `serve_crash` line host.log has since 0.30.4."""
+    k = r.facts.get("os_kind")
+    text = service_log_tail()
+    if k in ("linux", "wsl") and has("journalctl"):
+        rc, out = run(["journalctl", "--user", "-u", f"{service_name()}.service", "-n", "400", "--no-pager", "-o", "cat"], 10)
+        if rc == 0:
+            text += "\n" + out
+    tb = last_traceback(text)
+    r.facts["crash_traceback"] = bool(tb)
+    if tb:
+        r.add("crash_reason", INFO, f"服务最近一次报错退出：{tb[-1][:120]}", f"the service's last error exit: {tb[-1][:120]}")
+        r.detail("service.log last traceback (fixed categories only)", "\n".join(tb))
+
 
 
 def check_agentj(r: Report):
@@ -587,6 +672,9 @@ def check_service(r: Report):
 def resolve(host: str, timeout: float = 8.0, lookup=None) -> str | None:
     """None = `host` resolves; else the error's class name ("timeout" when it takes longer than `timeout`). The lookup runs
     in a daemon worker thread joined with a timeout: no process-wide socket default changes (this runs inside serve)."""
+    # Only the real resolver is refused in a test process; an injected lookup never reaches the network.
+    if lookup is None and os.environ.get("AGENTJ_TEST") == "1" and host not in ("localhost", "127.0.0.1", "::1"):
+        return "disabled_in_test"
     box = {}
     fn = lookup or socket.getaddrinfo
 
@@ -605,6 +693,12 @@ def resolve(host: str, timeout: float = 8.0, lookup=None) -> str | None:
 
 
 def check_network(r: Report):
+    # Diagnostics bypass _http's test transport guard; do not probe public DNS/TLS/HTTP in a test process.
+    if os.environ.get("AGENTJ_TEST") == "1" and (SITE_HOST not in ("localhost", "127.0.0.1", "::1") or
+                                                 RELAY_HOST not in ("localhost", "127.0.0.1", "::1")):
+        r.facts["https"] = False
+        r.add("network", INFO, "测试环境跳过外部网络检查", "external network checks skipped in tests")
+        return
     proxies = [k for k in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy") if os.environ.get(k)]
     r.facts["proxy"] = bool(proxies)
     r.add("proxy", INFO, "终端设置了代理：" + ", ".join(sorted({p.upper() for p in proxies})) if proxies else "终端没设代理",
@@ -727,7 +821,7 @@ def check_doctor(r: Report):
 def diagnose(with_doctor=True) -> Report:
     r = Report()
     say("\n" + T("【1/3】检查这台Agent J 主机（只读，不改任何东西）", "[1/3] Checking the Agent J host (read-only)"))
-    for fn in (check_system, check_agentj, check_service, check_network, check_hostlog, check_sleep, check_harness):
+    for fn in (check_system, check_agentj, check_service, check_crash, check_network, check_hostlog, check_sleep, check_harness):
         try:
             fn(r)
         except Exception as e:   # noqa: BLE001 — one broken check never stops the rescue
@@ -848,6 +942,13 @@ def compose(before: Report, fixes: list, after: Report | None, tag: str = "") ->
 
 
 def _http(method, url, token=None, body=None, timeout=30):
+    # A test importing the rescue module must never open a real Father ticket.
+    # Test transport seams may still inject a fake http callback; the default network
+    # transport is restricted to loopback regardless of its configured API URL.
+    if os.environ.get("AGENTJ_TEST") == "1":
+        host = urllib.parse.urlsplit(url).hostname
+        if host not in ("localhost", "127.0.0.1", "::1"):
+            raise RuntimeError("rescue support network disabled in tests")
     data = json.dumps(body).encode() if body is not None else (b"" if method == "POST" else None)
     h = {"user-agent": f"agentj-rescue/{VERSION}", "accept": "application/json"}
     if body is not None:

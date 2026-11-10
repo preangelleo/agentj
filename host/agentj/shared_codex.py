@@ -30,6 +30,10 @@ from .shared_risk import RiskGuard
 UUID = re.compile(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}')
 DESKTOP_WAIT = 30*60        # s a phone message waits for a running desktop turn
 KEEP_WAIT = 10              # P282: s a kept app-server waits for the queued next phone turn before it is released anyway
+# ADR-0305: s an app-server is kept past the phone turn for its own running native sub-agents (they die with it). A tunable
+# product trade-off: meanwhile the desktop may not get this thread's writer; past the cap it is ended as before.
+CHILD_KEEP_MAX = 2 * 3600
+CHILD_POLL = 2              # ADR-0305: s between checks whether those sub-agents are still running
 DISCOVER_LIMIT = 400        # newest rollouts inspected when no thread is selected
 HEAL_GAP = 10*60            # P330: s the newest thread must lead the next one by to be followed without asking
 HEAL_CHOICES = 4            # P330: threads offered on the 「接哪个」 card
@@ -352,6 +356,8 @@ class SharedCodexAgent(CodexAgent):
         self.writer = {}                 # ADR-A178: who held the writer at the last refusal ({"kind", "pid", "how"})
         self.perm_source = "pending"     # F30: desktop / config / agentj / codex, known once the thread is resumed
         self.kept = False                # P282: the app-server stayed up for the next queued phone turn (thread still loaded)
+        self.keep_gen = 0                # ADR-0305: which keep a release timer belongs to
+        self.stop_asked = False          # ADR-0305: a person asked /stop — a kept app-server's sub-agents end too
         self.dead_turn = None            # #461: (rollout, size) whose open turn has no writer: deliver past it
         self.desktop_wait = False        # P328: a phone message is waiting behind the owner's desktop turn (wait_desktop)
         self.heal_release = False        # 0269: the turn watchdog judged that desktop turn stuck: deliver past it
@@ -1038,7 +1044,17 @@ class SharedCodexAgent(CodexAgent):
         self.lost_pin=None
         return True
 
+    def live_children(self) -> int:
+        """ADR-0305: this app-server's native sub-agents still running on the busy board (they end with its process)."""
+        b, scope = getattr(self.host, 'busy', None), self.busy_scope()
+        try:
+            return sum(1 for k, v in list(b.mem.items()) if ':th:' in k and v.get('session') == scope)
+        except (AttributeError, TypeError):
+            return 0
+
     async def turn(self,text):
+        hung = False
+        self.stop_asked = False
         try:
             self.turn_done=asyncio.Event()
             if not await self._ready(): return
@@ -1062,12 +1078,12 @@ class SharedCodexAgent(CodexAgent):
             # P282 (Mac 10-14: 46–65 s per spawn + resume on a busy machine): a phone message already waiting keeps this
             # app-server and its loaded thread for the very next turn; released after KEEP_WAIT s in any case.
             self.kept = not self.halting and not self.q.empty() and self.shared_status != 'desktop_writer'
-            if self.kept: self._bg(self._release_kept(self.proc))
         except Stopped:
             pass
         except (ValueError,RPCError,OSError) as error:
             if isinstance(error, asyncio.TimeoutError) and not self.halting:
                 self.noack_at = time.time()     # #484: turn/start never answered (the finally ends our own app-server)
+                hung = True
             reason=brief(error)
             self.note('shared_refused', reason)
             zh, en = REASONS.get(reason, (None, None))
@@ -1086,6 +1102,15 @@ class SharedCodexAgent(CodexAgent):
         finally:
             # Release this actor after its turn so the native desktop can resume
             # the same rollout. The observer stays alive between actors.
+            # ADR-0305 (customer M1): Codex's native sub-agents run inside this app-server — kept while they run
+            kids = 0 if hung or self.halting or self.stop_asked or self.proc is None else self.live_children()
+            if kids and not self.kept:
+                self.kept = True
+                with contextlib.suppress(Exception):
+                    self.host.st.log('shared_keep_children', agent=self.kind, count=kids)
+            if self.proc is not None and self.kept:
+                self.keep_gen += 1
+                self._bg(self._release_kept(self.proc, self.keep_gen, kids))
             if self.proc is not None and not self.kept:
                 await self._kill(self.proc)
             self.phone_turn=False
@@ -1115,11 +1140,37 @@ class SharedCodexAgent(CodexAgent):
         self.note('shared_wait_preempted', 'clear')
         self.host.agent_notice(humane.of(self, 'codex.cant_stop_withdrawn'))
 
-    async def _release_kept(self, p):
+    async def _release_kept(self, p, gen=None, kids=0):
+        """P282 + ADR-0305: released after KEEP_WAIT s unless the next phone turn took it — but never while its native
+        sub-agents run (checked every CHILD_POLL s) — until they end, /stop, or CHILD_KEEP_MAX s."""
+        t0 = time.monotonic()
         await asyncio.sleep(KEEP_WAIT)
-        if self.kept and self.proc is p and not self.phone_turn:
+        while self.kept and self.proc is p and not self.phone_turn and (gen is None or gen == self.keep_gen):
+            n = self.live_children()
+            why = ('stop' if self.halting or self.stop_asked else 'done' if not n else
+                   'cap' if time.monotonic() - t0 >= CHILD_KEEP_MAX else None)
+            if why is None:
+                kids = max(kids, n)
+                await asyncio.sleep(CHILD_POLL)
+                continue
             self.kept = False
+            if kids:
+                with contextlib.suppress(Exception):
+                    self.host.st.log('shared_release_children', agent=self.kind, reason=why, count=n)
             await self._kill(p)
+            return
+
+    async def release_children(self, why) -> int:
+        """ADR-0305: /stop ends a kept app-server (and its sub-agents) at once, as before. → how many were still running."""
+        p = self.proc
+        if self.kept and p is not None and not self.phone_turn:
+            self.kept = False
+            n = self.live_children()
+            with contextlib.suppress(Exception):
+                self.host.st.log('shared_release_children', agent=self.kind, reason=why, count=n)
+            await self._kill(p)
+            return n
+        return 0
 
     def _emit(self,text):
         super()._emit(public_text(text))
@@ -1135,6 +1186,10 @@ class SharedCodexAgent(CodexAgent):
                 item=self.q.get_nowait()
                 if getattr(self.host,'queue_dropped',None):self.host.queue_dropped(item)
         asked=clear_queue or self.halt_quiet      # a person asked (/stop, stop-everything) — not a task / compaction making room
+        if asked and expected_target is None:
+            self.stop_asked = True                # ADR-0305: never kept for sub-agents after a /stop
+            if n := await self.release_children('stop'):     # the turn had ended: /stop's answer says what it did stop
+                self.halt_note = humane.of(self, 'stop.children', n=n)
         waiting=asked and busy and self.desktop_wait and not self.phone_turn
         if waiting and self.rollout is not None:     # 0269: a stuck desktop turn is ended for the phone, not 「按 Esc」
             from .turn_heal import desktop_stuck

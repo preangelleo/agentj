@@ -1080,6 +1080,7 @@
               <button type="button" id="set-wake" class="tgl" role="switch" aria-checked="false" data-pref="voice.wake_enabled" data-i18n-attr="aria-label=set.wake" aria-label="语音唤起" data-aj-owner="aj-settings-control"><i></i></button>
               <p class="setnote" data-i18n="set.wakeNote">说出唤醒词就能开始说话。只在 Agent J 的安卓 App 里起作用，网页版没有这个功能。</p>
             </div>
+            <div class="setrow" id="set-voice-keep-row" hidden><label class="setlab" for="set-voice-keep" data-i18n="p0304.voiceKeep">语音原文件保留</label><select id="set-voice-keep" class="aj-select" data-pref="inbox.voice_retention_hours" data-aj-owner="aj-settings"><option value="1" data-i18n="p0304.h1">1 小时</option><option value="6" data-i18n="p0304.h6">6 小时</option><option value="24" data-i18n="p0304.h24">24 小时（默认）</option><option value="72" data-i18n="p0304.d3">3 天</option><option value="168" data-i18n="p0304.d7">7 天</option><option value="720" data-i18n="p0304.d30">30 天</option><option value="0" data-i18n="p0304.never">不自动删</option></select><p class="setnote" data-i18n="p0304.voiceKeepNote">转写文字一直留在对话里，只删 Agent J 主机收件箱里的录音原文件。</p></div>
             <div id="set-asr" class="setsection" hidden>
               <h4 class="setg" data-i18n="asr440.title" data-aj-owner="aj-settings">语音转写</h4>
               <div class="setrow"><label class="setlab" for="set-asr-mode" data-i18n="asr440.source">转写来源</label><select id="set-asr-mode" class="aj-select" data-aj-owner="aj-settings"><option value="local" data-i18n="asr440.local">本机内置模型</option><option value="cloud" data-i18n="asr440.cloud">已配置的服务商</option><option value="custom" data-i18n="asr440.custom">自定义转写端点</option></select></div>
@@ -1388,8 +1389,11 @@
               <option value="off" data-i18n="mail.authOff">关闭：只看白名单（不推荐）</option></select></label>
             <p class="setnote maildanger" id="mail-auth-off" hidden data-i18n="mail.authOffWarn">关闭后，别人只要冒充白名单里的地址发信，就能把内容交给 Agent。只在你的邮箱服务商不写校验结果时才这样用。</p>
             <p class="setnote" id="mail-sample"></p>
+            <label class="mailf mailchk" id="mail-trusted-status"><input type="checkbox" id="mail-trusted-check" disabled data-aj-owner="aj-channel" aria-describedby="mail-gmail-pinned mail-pinned"><span data-i18n="p0304.mailTrusted">只信任已确认的邮件服务器</span></label>
+            <p class="setnote" id="mail-gmail-pinned" hidden></p>
             <p class="setnote" id="mail-pinned"></p>
-            <p class="setlinks"><button type="button" id="mail-pin" class="setlink" hidden data-i18n="mail.pin" data-aj-owner="aj-channel">只认这台服务器写的校验结果</button><a href="https://agentj.app/docs/email/" target="_blank" rel="noopener" data-i18n="mail.docs" data-aj-owner="aj-channel">怎么获取授权码</a></p>
+            <p class="setnote" id="mail-detected"></p>
+            <p class="setlinks"><a href="https://agentj.app/docs/email/" target="_blank" rel="noopener" data-i18n="mail.docs" data-aj-owner="aj-channel">怎么获取授权码</a></p>
 
             <h3 class="setg" id="mail-blocked-h" hidden data-i18n="mail.gBlocked" data-aj-owner="aj-settings">最近被挡下的发件人</h3>
             <ul class="setphones mailallow" id="mail-blocked"></ul>

@@ -471,9 +471,9 @@ class Flows(unittest.TestCase):
             return n
         n = asyncio.run(go())
         to_b = [o for c, o in self.sent[:n] if c == 12]
-        self.assertEqual([o["t"] for o in to_b], ["status", "call_capability", "estop_state", "push_key", "msg", "msg"])
-        self.assertEqual((to_b[4]["from"], to_b[4]["name"]), ("device", "A"))
-        self.assertEqual(to_b[5]["from"], "agent")
+        self.assertEqual([o["t"] for o in to_b], ["status", "call_capability", "estop_state", "push_state", "push_key", "msg", "msg"])
+        self.assertEqual((to_b[5]["from"], to_b[5]["name"]), ("device", "A"))
+        self.assertEqual(to_b[6]["from"], "agent")
         to_a = [o for c, o in self.sent[n:] if c == 11]
         self.assertEqual([o.get("seq") for o in to_a if o["t"] == "msg"], [2])
         self.assertEqual(to_a[0], {"t": "status", "s": "none", "agent": None, "name": None, "goal_active": False})

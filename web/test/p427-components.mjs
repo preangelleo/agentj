@@ -26,8 +26,8 @@ try{for(const lang of ['zh','en'])for(const theme of ['light','dark'])for(const 
  assert.equal(await evaluate(p,`!!document.querySelector('#words [data-component=chart] polyline')`),theme==='dark');
  assert.equal(await evaluate(p,`[...document.querySelectorAll('#words [data-component=flowchart] li')].some(x=>x.textContent==='检查库存并整理供应商报价之后生成采购清单')`),true,'full long node labels remain readable below the graph');
  const before=fake.st.says.length;
- await evaluate(p,`document.querySelector('#words [data-component="confirm"] button').click()`);
- assert.match(await evaluate(p,`document.getElementById('input').value`),/Prepare order/);assert.equal(fake.st.says.length,before,'confirmation only drafts');
+ await evaluate(p,`document.querySelector('#words [data-component="confirm"] button').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}))`);
+ assert.match(await evaluate(p,`document.getElementById('input').value`),/Prepare order/);assert.equal(fake.st.says.length,before,'confirmation secondary edit drafts');
  await evaluate(p,`(()=>{const e=document.querySelector('#words [data-component="form"] input');e.value='<script>alert(1)</script>';document.querySelector('#words [data-component=form] select').value='B';document.querySelector('#words [data-component=form] input[type=checkbox]').checked=true;document.querySelector('#words [data-component=form] input[type=date]').value='2026-10-21';document.querySelector('#words [data-component="form"] button').click();})()`);
  assert.match(await evaluate(p,`document.getElementById('input').value`),/<script>alert/);assert.equal(fake.st.says.length,before,'form only drafts');
  assert.match(await evaluate(p,`document.getElementById('input').value`),/Choice: B/);assert.match(await evaluate(p,`document.getElementById('input').value`),/2026-10-21/);

@@ -605,6 +605,9 @@ def install_card_text(info: dict, en: bool, index=None) -> str:
                                                      if len(files) > 15 else ""))
     if info.get("verify"):
         out.append(verify_text(info, en))
+    if info.get("python_prep"):             # ADR-0305: Agent J prepares the declared Python with uv after the allow
+        from .plaza_python import card_line
+        out.append(card_line(info["python_prep"], en))
     if info.get("deps"):                    # #466: known before the allow; installs anyway, the Agent adds them after
         d = ", ".join(clean_line(str(x), 40) for x in info["deps"][:10])
         out.append(f"Missing dependencies (not a blocker): {d} — the Agent adds them after the install, then reruns the self-check"
@@ -658,7 +661,9 @@ def group_card_text(infos: list, en: bool, index=None, failed=(), gsha: str = ""
         kd = k.get(i["type"], ("包", "package"))[1 if en else 0]
         out.append(f"{n}. {kd} {i['name']} {i['version']} · {sig} · {pubt}")
         out.append("   " + (f"beyond your Agent: {ex} · audit blocks {blk} · " if en else f"超出权限：{ex} · 审计拦截 {blk} · ")
-                   + verify_text(i, en, short=True) + " · " + (f"to ({i['harness']}): {tgt}" if en else f"装到（{i['harness']}）：{tgt}")
+                   + verify_text(i, en, short=True) + ((f" · uv prepares Python ≥ 3.{i['python_prep']['want'][1]}" if en else f" · 用 uv 准备 Python ≥ 3.{i['python_prep']['want'][1]}")
+                      if i.get("python_prep") else "")
+                   + " · " + (f"to ({i['harness']}): {tgt}" if en else f"装到（{i['harness']}）：{tgt}")
                    + ((" (replaces)" if en else "（替换旧版）") if i.get("replace") else ""))
         out.append(f"   digest {i['digest']} · sha256 {i['sha256'][:16]}…"
                    + (" · ⚠ " + clean_line(i["downgrade"], 80) if i.get("downgrade") else ""))

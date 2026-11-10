@@ -260,7 +260,11 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
     'getItem(ORDER_KEY)', 'setItem(ORDER_KEY)',
     // P575 (#390): the switched-off sounds (OFF_KEY = "aj.cueOff", a comma list of cue ids; removed when all are on)
     'getItem(OFF_KEY)', 'setItem(OFF_KEY)', 'removeItem(OFF_KEY)',
-    'getItem(PUSH_KINDS_KEY)', 'setItem(PUSH_KINDS_KEY)'].sort());
+    'getItem(PUSH_KINDS_KEY)', 'setItem(PUSH_KINDS_KEY)',
+    // 0304: push.js's explicit-off marker (OFF_KEY = "aj.pushExplicitOff", "1"/"0" only; mirrored in a seat-scoped IndexedDB)
+    'getItem(OFF_KEY)', 'getItem(OFF_KEY)', 'setItem(OFF_KEY)'].sort());
+  assert.match(read(pub('js/push.js')), /const OFF_KEY = 'aj\.pushExplicitOff';/);
+  assert.match(read(pub('js/push.js')), /localStorage\.setItem\(OFF_KEY, off \? '1' : '0'\)/, '0304: the explicit-off marker is a boolean, never subscription or key bytes');
   assert.match(OURS, /const VER_KEY='aj\.verRefresh';/);
   assert.match(read(pub('js/unread.js')), /JSON\.stringify\(\{e:st\.e,m:st\.m\}\)/);
   assert.match(OURS, /export const UNREAD_KEY = 'aj\.unread';/);
@@ -269,7 +273,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.match(OURS, /const ORDER_KEY = 'aj\.toolOrder';/);
   assert.match(read(pub('js/push.js')), /const PUSH_KINDS_KEY = 'aj\.pushKinds';/);
   assert.match(OURS, /export const OFF_KEY = 'aj\.cueOff';/);
-  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 46, '0.28.7 adds exactly two boolean To-do preference calls; #538c adds only two same-seat preference reads; P422 removes both aj.chrome calls; localStorage appears only in these calls (P575: aj.cueOff get + set + remove; P340: aj.toolOrder get + set; P346: aj.recDim gone; P247: host-scoped numeric read receipts; P302 #29: aj.verUpdated consumed + aj.verUpdatedSeen.<version>; P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
+  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 49, '0304 adds the push explicit-off marker get + get + set; 0.28.7 adds exactly two boolean To-do preference calls; #538c adds only two same-seat preference reads; P422 removes both aj.chrome calls; localStorage appears only in these calls (P575: aj.cueOff get + set + remove; P340: aj.toolOrder get + set; P346: aj.recDim gone; P247: host-scoped numeric read receipts; P302 #29: aj.verUpdated consumed + aj.verUpdatedSeen.<version>; P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
   assert.match(OURS, /const IID_KEY = 'aj\.iid';/);
   assert.match(OURS, /const PAIRED_KEY = 'aj\.paired';/);
   assert.match(OURS, /const FONT_KEY = 'aj\.fontScale';/);
@@ -731,7 +735,7 @@ test('F13 Settings: the gear replaced the bulb; s / ⌘, / Ctrl+, / ? wired; pre
   assert.match(SET, /export const FONT_STEPS = \[0\.8, 0\.9, 1, 1\.1, 1\.25, 1\.4, 1\.6\];/);
   assert.match(read(pub('app.css')), /\.words\{font-size:calc\(18px\*var\(--fz\)\*var\(--rs\)\)/);
   // push off is the §9 message, inside the session
-  assert.match(read(pub('js/push.js')), /sendApp\(\{ t: 'push_off' \}\)/);
+  assert.match(read(pub('js/push.js')), /sendApp\(\{ t: 'push_off', r \}\)/);   // 0304: correlated by a random request id
 });
 
 // Licensed vector data is deterministic build input, not an additional network request.

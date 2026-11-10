@@ -71,6 +71,7 @@ export const CARDS = Object.freeze({
 export const NOT_CARDS = Object.freeze([
   'owner_hosts_state', // paired-host configuration metadata; updates an existing Settings section.
   'term_prefill_res', // Terminal draft acknowledgement; no standalone card or content surface.
+  'push_state', // 0304: host's subscription on/off ack for this seat; updates the existing Settings push row.
   'pair_guide', 'cmds_state', 'preferences', 'status', 'busy', 'res', 'theme', 'pair_ev', 'jcard_open', 'fr_changed', 'hook_changed',
   'reset_step', 'assist_task', 'msg_steered', 'devs', 'dev_pending', 'dev_pair_end', 'host_moved', 'pk_reg_res', 'pk_state', 'preauth',
   'draft_restore', 'rt', 'push_key', 'hist_read', 'hist_meta', 'hist_turn', 'models', 'msg', 'budget_state',

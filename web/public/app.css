@@ -2514,6 +2514,16 @@ body[data-view="scan"] .top{display:none}
 
 /* #577 aj-navigation-action: independent equal initial contract. */
 .fr-askbtns--3 .aj-navigation-action{flex:var(--aj-navigation-action-flex,1 1 30%);min-width:var(--aj-navigation-action-min-width,6rem);padding:var(--aj-navigation-action-padding,0 8px);font-size:var(--aj-navigation-action-font-size,calc(15px*var(--fz)))}
+/* 0.30.6 (#0304 QA): the friend question card's five actions stacked into five 56 px rows on a phone. Keep the shared
+   phone contract (base.css stacks action groups) but, through its own layout hooks, put the short actions two to a row:
+   the primary 「让分身自己回」 keeps a full row, and a label longer than half a row (fit-content) takes a whole one and may
+   wrap to two lines instead of running out of the button. DOM order unchanged. */
+@media (max-width:600px){
+  .fr-askbtns--3:has(>:nth-child(5)){--aj-friends-layout-flex-direction:row;--aj-friends-layout-flex-wrap:wrap;
+    --aj-action-layout-flex:1 1 calc(50% - var(--space-control));--aj-action-layout-width:auto;--aj-action-layout-min-width:fit-content;--aj-action-layout-white-space:normal;
+    --aj-action-composition-flex:1 1 calc(50% - var(--space-control));--aj-action-composition-width:auto;--aj-action-composition-min-width:fit-content;--aj-action-composition-white-space:normal}
+  .fr-askbtns--3:has(>:nth-child(5))>.aj-action--primary{--aj-action-layout-flex:1 1 100%;--aj-action-composition-flex:1 1 100%}
+}
 
 .fr-ctx{min-height:96px}
 .fr-count[data-over="1"]{color:var(--danger, #b42318)}
@@ -2578,6 +2588,9 @@ body[data-view="scan"] .top{display:none}
 .history-corner:focus-visible{outline:2px solid var(--noir);outline-offset:2px}
 
 @media(max-width:600px){
+ /* A native select's intrinsic width must not squeeze its label into character-by-character wraps. */
+ .setrow:has(> select){grid-template-columns:minmax(0,1fr)}
+ .setrow>select{grid-column:1 / -1;justify-self:stretch;width:100%}
  .setrow:has(.seg){grid-template-columns:minmax(0,1fr)}
  .setrow>.seg{grid-column:1 / -1}
  .seg button+button{border-left:0;border-top:1px solid var(--border)}
@@ -2929,7 +2942,7 @@ i.bd.still{animation:none}
 @media (hover:hover) and (pointer:fine){.setesc{display:inline-block}}
 .setstatus{flex:none;margin:0;padding:var(--sp-2) max(var(--gutter), calc((100% - var(--page-wide)) / 2));background:var(--callout-info);
   color:var(--callout-fg);font-size:var(--fs-sm)}
-.setmain,.setsub{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+.setmain,.setsub{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;
   padding:var(--space-section) max(var(--gutter), calc((100% - var(--page-wide)) / 2)) var(--page-end)}
 .setmain[hidden],.setsub[hidden]{display:none}
 .setmain{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-section);align-items:start}
@@ -2938,13 +2951,48 @@ i.bd.still{animation:none}
 .setmain{grid-auto-rows:max-content}
 .setside{display:none}
 .setcards{min-width:0}
-.setcard{break-inside:avoid;margin:0 0 var(--space-section);padding:var(--space-section);border:1px solid var(--border);
+.setcard{break-inside:avoid;min-width:0;margin:0 0 var(--space-section);padding:var(--space-section);border:1px solid var(--border);
   border-radius:var(--r-lg);background:var(--surface-1);color:var(--text)}
 .setcard[hidden]{display:none}
 .setcard>.setg{margin:0 0 var(--sp-2)}
 .setcard>.setg:focus{outline:none}
 .setcard>:is(.setrow,.setnav):last-child,.setcard>:is(.setrow,.setnav):has(+ .setfoot){border-bottom:0}
-.setcard>.setnote,.setcard>.setlinks,.setcard>.setcmd{margin-top:var(--space-control)}
+/* Settings rhythm: prose before any control or control group uses the same 16px separation.
+   Grid rows need a row gap (child margins cannot change grid track spacing). */
+.setpage{--set-paragraph-gap:var(--space-content)}
+.setcard>.setnote,.setcard>.setlinks,.setcard>.setcmd{margin-top:var(--set-paragraph-gap)}
+/* One rule per owner (#577 namespace lint): settings rows, mail fields, rescue cards, actions, bare labels. */
+.setpage .setnote + :is(.setrow,.setnav,.setg,.setlinks,.sethb-prompt,label){margin-top:var(--set-paragraph-gap)}
+.setpage .setnote + :is(.mailf,.mailadv,.mailadd){margin-top:var(--set-paragraph-gap)}
+.setpage .setnote + .rscard{margin-top:var(--set-paragraph-gap)}
+.setpage .setnote + .aj-action{margin-top:var(--set-paragraph-gap)}
+.setpage .setnote + .aj-select{margin-top:var(--set-paragraph-gap)}
+.setpage .setrow:has(> .setnote){row-gap:var(--set-paragraph-gap)}
+/* Empty live status prose must remain measurable; prevent its margins collapsing through the next control. */
+.setpage .setnote:empty{min-height:1px}
+.setpage :is(.setnote,.setval,.setlinks,.setrow){min-width:0;overflow-wrap:anywhere}
+.setpage .mailf{min-width:0;overflow-wrap:anywhere}
+/* Selects carry .aj-select, already capped by menu.css `#settings :is(.aj-input,.aj-select,.aj-textarea)`. */
+.setpage :is(input,textarea){max-width:100%;min-width:0}
+.setmail .mail-triage-card{min-width:0;margin-top:var(--space-section)}
+.setmail .mail-triage-card > .setnote{margin-top:var(--set-paragraph-gap)}
+.setmail .mail-triage-card #mail-triage-fields{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-control)}
+/* The card is inserted inside the status .setrow grid: span both tracks like the sibling sections. */
+.setmail .setrow>.mail-triage-card{grid-column:1 / -1}
+/* Triage controls carry .aj-input/.aj-select (mailbox font, border and select chevron). */
+.setmail .mail-triage-card :is(.aj-input,.aj-select){width:100%}
+/* Nested disclosures keep the parent card's native marker (.mailadv summary is flex, which drops it). */
+.setmail .mail-triage-card .mailadv>summary{display:list-item;align-content:center}
+/* Read-only trusted-server status: Chromium greys a disabled native checkbox; draw it in text-on-panel colours. */
+.setmail #mail-trusted-check:disabled{appearance:none;-webkit-appearance:none;flex:none;display:grid;place-content:center;width:18px;height:18px;margin:0;border:2px solid var(--menu-muted);border-radius:4px;background:transparent;cursor:default}
+.setmail #mail-trusted-check:disabled:checked{border-color:var(--menu-text);background:var(--menu-text)}
+.setmail #mail-trusted-check:disabled:checked::before{content:"";width:10px;height:10px;background:var(--menu-bg);clip-path:polygon(14% 44%,0 65%,50% 100%,100% 16%,80% 0%,43% 62%)}
+.setmail #mail-trusted-status:has(> :disabled){cursor:default}
+.setmail .mail-triage-card #mail-triage-save{min-height:44px;margin-top:var(--set-paragraph-gap)}
+.setmail .mail-triage-card #mail-triage-status{margin-top:var(--space-control);overflow-wrap:anywhere}
+.setmail .mail-triage-card #mail-triage-items{list-style:none;padding:0;margin:var(--space-control) 0 0}
+.setmail .mail-triage-card #mail-triage-items li{min-width:0;padding:var(--space-control) 0;border-top:1px solid var(--border-soft);overflow-wrap:anywhere}
+.setmail .mail-triage-card #mail-triage-items p{margin:var(--space-control) 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
 .setacts{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-control);margin-top:var(--space-content)}
 .setacts:empty{display:none}
 .setnav[hidden]{display:none}
@@ -3573,7 +3621,7 @@ code[data-cc],pre[data-cc],[data-cc-field],.cc-in{cursor:copy}
 body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]) #srchBtn{display:grid}
 /* P368 (#78): the Agent's one-tap answers ([派](reply:派), js/replybtn.js) — pills in the words' own ink, room around the
    label; tapped → that one stays marked, the group greys out with 「已回复：…」. #tags = .fp-link's underline, dotted (a search, not a page). */
-.words .rbtn{display:inline-flex;align-items:center;justify-content:center;gap:.4em;text-align:center;min-height:44px;margin:var(--sp-2) var(--space-control) var(--sp-2) 0;padding:.3em .95em;
+.words .rbtn{display:inline-flex;align-items:center;justify-content:center;gap:.4em;text-align:center;min-height:44px;margin:var(--sp-2) var(--space-control) var(--sp-2) 0;padding:.3em 20px;
   border:0;border-radius:999px;background:#2c2b26;color:#faf9f5;
   font:600 .92em/1.3 var(--font-body);letter-spacing:.02em;cursor:pointer;vertical-align:baseline;touch-action:manipulation}
 .words .rbtn:active{background:#141414}
@@ -3787,7 +3835,12 @@ html[data-standalone="1"] #main{overscroll-behavior-y:none}
 .reply-component{margin:1em 0;padding:1em;border:1px solid currentColor;border-radius:12px;overflow:auto;max-width:100%}
 .reply-component h3{margin:0 0 .7em;font-size:1em}.reply-component svg{display:block;width:100%;min-width:300px;height:auto;font-family:inherit}
 .reply-component label{display:block;margin:.7em 0}.reply-component input,.reply-component select{display:block;box-sizing:border-box;max-width:100%;width:100%;min-height:56px;font:inherit;color:inherit;background:transparent;border:1px solid currentColor;border-radius:8px;padding:.5em}
-.reply-component input[type=checkbox]{width:56px}.reply-component button{font:inherit;min-height:56px;margin:.3em;padding:.5em 1em;border:1px solid currentColor;border-radius:8px;color:inherit;background:transparent}.reply-component :disabled{opacity:.55}.reply-component .rc-note{font-size:.85em;opacity:.8}
+.reply-component input[type=checkbox]{width:56px}.reply-component button{font:inherit;min-height:56px;margin:.3em;padding:.5em 1em;border:1px solid currentColor;border-radius:8px;color:inherit;background:transparent}
+/* Reply-only controls: same Noir/Lotion action token as reply:; form remains draft-only. */
+.words .reply-component :is(.rc-draft,.rc-confirm){font:700 .92em/1.3 var(--font-body);min-height:56px;max-width:100%;margin:var(--sp-2) var(--space-control) var(--sp-2) 0;padding:.5em 20px;border:0;border-radius:8px;color:var(--lotion);background:var(--noir);cursor:pointer;overflow-wrap:anywhere;touch-action:manipulation}
+.words .reply-component :is(.rc-draft,.rc-confirm):active{background:var(--sooty)}
+.words .reply-component .rc-confirm{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.reply-component :disabled{opacity:.55}.reply-component .rc-note{font-size:.85em;opacity:.8}
 
 /* P440 / #209 #211: two notice placements. Internal cards share the reply text's inset.
    The notice stack scrolls independently so expanded output cannot hide the reply actions/composer. */
@@ -3946,6 +3999,12 @@ html[data-ios-safari="1"] body::before{content:"";position:absolute;inset:0;back
 .rm #words .reply-component svg text[text-anchor]{fill:var(--lotion);color:var(--lotion)}
 /* Navigation text-buttons can have currentColor borders inside components: paint only their glyphs. */
 .rm #words .fp-link{-webkit-text-fill-color:var(--lotion)}
+
+/* P0304: external links and flowchart navigation remain readable without retinting P477's text contract. */
+.rm #words a[href^="http"]:not(.mtap):not(.mcard a){color:var(--xlink)}
+.rm #words .fp-link:where([href]){-webkit-text-fill-color:var(--xlink)}
+.rd #rdWords .fp-link{color:var(--xlink);-webkit-text-fill-color:var(--xlink)}
+.rd #rdWords a:not(.mtap):not(.mcard a){color:var(--xlink);text-decoration:underline}
 
 /* P517 preview: the same Lotion circle / logo-green digit in both entry points. */
 .remote-count-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;
@@ -4431,6 +4490,11 @@ body[data-conn="off"] .connection-help{display:flex}
 #sheet.aj-shared-popup[data-popup-system="grow"]{
   top:auto;left:0;right:auto;bottom:calc(100dvh - var(--popup-top) - var(--popup-height));
   width:100vw;max-width:100vw;transform:none;border-radius:28px 28px 0 0;background:var(--pg);color:var(--ink);box-shadow:none;
+  /* 0.30.6 (#0304 QA): the grown sheet is position:fixed, so menu.css's `#stage>.sheet{max-height:calc(100% - …)}` resolved
+     against the whole viewport while the bottom sits on the reading area's floor — a tall card (five friend actions) rose past
+     the screen top and 收起 went under the header. Cap = from its bottom edge up to the sheet ceiling (fit.js --ui-sheet-ceil),
+     never above the reading area top or the status-bar safe area; the rest scrolls inside. */
+  max-height:max(44px,calc(var(--popup-top) + var(--popup-height) - max(var(--popup-top),var(--ui-sheet-ceil,0px),env(safe-area-inset-top,0px))));
 }
 /* The quota rule is the common floor; neither the card nor its veil covers the input area. */
 body[data-sheet="1"] .scrim{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}

@@ -172,7 +172,7 @@ function enhanceReplySurface(root,p,reader=false){
  if(!replyDataOnly(p))linkSlash(root,{run:phoneCmd,fill:text=>appendText(text)},t);
  (reader?renderReaderMedia:renderMedia)(root,p);
  renderForm(root,p);
- wireComponents(root,replyBtn.agentWords(p)&&p.end!=='open',text=>{appendText('\n'+text+'\n');if(reader)closeReader();});
+ wireComponents(root,replyBtn.agentWords(p)&&p.end!=='open'&&!reader,text=>{appendText('\n'+text+'\n');if(reader)closeReader();},words=>sayReply(words,replyBtn.older(p,pages())?p:null));
  replyBtn.paint(root,p,{pages,say:reader?async(words,parent)=>{const ok=await sayReply(words,parent);if(ok)closeReader();return ok;}:sayReply,find:search.find});
  terminalCommands(root,p);
  if(p.end!=='open')approval541.reopenButton(root,p,approvalById,approvalOptions());
@@ -559,7 +559,7 @@ function renderCard(s){
 // 拒绝 and 批准 are one tap each (P573: no hold any more); a Face ID card (passkey_required) still asks for the passkey.
 // Both are Ed25519-signed by this device's non-extractable key over exactly what the sheet shows (tool + summary; the
 // batch scope for 批量).
-const APPR_FINAL = ["approved", "denied", "terminal", "timeout", "expired", "ended", "stopped"];
+const APPR_FINAL = ["approved", "main", "denied", "terminal", "timeout", "expired", "ended", "stopped"];
 let apprSent = {id: null, state: null}, apprBusy = false, apprToasted = null, apprDismissed = null;
 // P154 追加: the remote that sends the answer puts the card away at once (other remotes close when the host says so).
 // apprOpt = {id, key, action} while the host has not confirmed; apprFail = the reason the card came back (shown on it).
@@ -570,7 +570,7 @@ function apprState(p){
   if (!p) return null;
   return p.state === "open" && apprSent.id === p.id ? apprSent.state : p.state;
 }
-const FR_DONE = {approved: "allow", denied: "deny", timeout: "timeout", expired: "timeout", ended: "ended", stopped: "stopped", terminal: "ended"};
+const FR_DONE = {approved: "allow", main: "main", denied: "deny", timeout: "timeout", expired: "timeout", ended: "ended", stopped: "stopped", terminal: "ended"};
 function apprText(p){
   const st = apprState(p);
   if (friendAsk(p) && p.pq && p.pq.pairing === true && FR_DONE[st] === "ended") return t('p417.so.closed');   // #186

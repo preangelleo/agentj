@@ -77,6 +77,94 @@ PRESETS = {
     "yahoo": ("Yahoo 邮箱", "Yahoo Mail", "imap.mail.yahoo.com", 993, "ssl", "smtp.mail.yahoo.com", 465, "ssl", ("yahoo.com", "ymail.com", "rocketmail.com"), "yahoo"),
     "custom": ("其他邮箱（手动填写）", "Other (enter servers)", "", 993, "ssl", "", 465, "ssl", (), "custom"),
 }
+# 0304 A4: trusted check server (auth_servid) pinned automatically, keyed by the EXACT normalized IMAP host the owner
+# configured. Each value comes from a real sample of that provider's own topmost Authentication-Results header, never from
+# received mail. Adding a provider = one row. Outlook is deliberately absent: its AR headers carry no authserv-id (parse_ar).
+KNOWN_SERVID = {
+    "imap.gmail.com": "mx.google.com",
+}
+# security r1 M2: said once when a pin is set automatically and the allowlist has an owner row (Mail.note) and by doctor.
+SERVID_AUTOPIN_ZH = "已按收信服务器自动固定校验服务器 {servid}：白名单里的主人邮箱且校验通过的邮件，现在按主人消息进主对话；不需要可在设置→邮件清除"
+SERVID_AUTOPIN_EN = ("Check server {servid} was pinned automatically from your incoming mail server: mail from the owner "
+                     "address on the allowlist that passes the check now reaches the main conversation as the owner's "
+                     "message. If you don't want this, clear it in Settings → Mail")
+OUTLOOK_IMAP = frozenset({"outlook.office365.com", "imap-mail.outlook.com"})
+
+
+def _imap_host(cfg) -> str:
+    return str(((cfg or {}).get("imap") or {}).get("host") or "").strip().lower().rstrip(".")
+
+
+def servid_autopin(cfg: dict, old: dict | None = None) -> str:
+    """The servid the known-provider pin adds to `cfg` now, or "". It never acts when a value is set, on a host in the owner's
+    opt-out set (`cfg.servid_optout`, kept per IMAP host across host round trips), or when this save clears a pin on the
+    same server. The pin narrows which headers are accepted AND enables owner recognition (owner_source needs a pin), so
+    every save-time pin goes through `servid_merge` inside action_policy.mail_config / the CLI: the phone summary, the
+    agentj mail card, widening() and execution all see it (0304 A4 security r1 M1/M2/L1)."""
+    host = _imap_host(cfg)
+    pin = KNOWN_SERVID.get(host, "")
+    if not pin or (cfg.get("auth_servid") or "") or host in (cfg.get("servid_optout") or []):
+        return ""
+    if old is not None and _imap_host(old) == host and (old.get("auth_servid") or ""):
+        return ""
+    return pin
+
+
+def servid_merge(old: dict | None, new: dict) -> dict:
+    """The auth_servid step of the ONE effective settings merge (action_policy.mail_config, `agentj mail` CLI): clearing the
+    pin on a known host records that host in `servid_optout`; otherwise a known host with no pin and no opt-out gets its
+    provider's servid. Pure: depends only on (old, new), so the signed target {before, cfg} fixes the result."""
+    out = dict(new)
+    host = _imap_host(new)
+    opt = list(new.get("servid_optout") or [])
+    if (old is not None and host in KNOWN_SERVID and _imap_host(old) == host and (old.get("auth_servid") or "")
+            and not (new.get("auth_servid") or "") and host not in opt):
+        opt.append(host)
+    out["servid_optout"] = opt
+    if pin := servid_autopin(out, old):
+        out["auth_servid"] = pin
+    return out
+
+
+def servid_status(cfg: dict, state: dict | None) -> dict:
+    """0304 A4, read-only for Settings → Mail: {detected, pinned, value, source, sample}. detected = the servid of the latest
+    connection sample, else the known provider's value for the configured IMAP host, else None — on a custom provider that
+    adds no header of its own the sample's topmost header may be sender-written, so the page shows the value and offers no
+    one-tap pin when sample.with_results < sample.checked. source: "auto" (pinned by servid_autopin), "manual" (the owner /
+    CLI), None (not pinned). sample: {checked, with_results} of auth_seen, None without a sample."""
+    state = state or {}
+    value = cfg.get("auth_servid") or ""
+    sample = state.get("auth_seen") if isinstance(state.get("auth_seen"), dict) else {}
+    detected = sample.get("servid") if isinstance(sample.get("servid"), str) and sample.get("servid") else None
+    host = _imap_host(cfg)
+    detected = detected or KNOWN_SERVID.get(host)
+    source = None
+    if value:
+        rec = state.get("servid_pin") if isinstance(state.get("servid_pin"), dict) else {}
+        auto = state.get("servid_auto") if isinstance(state.get("servid_auto"), dict) else {}
+        if rec.get("value") == value and rec.get("host") == host and rec.get("source") in ("auto", "manual"):
+            source = rec["source"]
+        elif auto.get("servid") == value and auto.get("host") == host:
+            source = "auto"
+        else:
+            source = "manual"          # set before 0.30.5, by hand or by the CLI
+    smp = None
+    if isinstance(sample.get("checked"), int) and isinstance(sample.get("with_results"), int):
+        smp = {"checked": sample["checked"], "with_results": sample["with_results"]}
+    return {"detected": detected, "pinned": bool(value), "value": value, "source": source, "sample": smp}
+
+
+def servid_hint(cfg: dict) -> str | None:
+    if cfg.get("auth_servid"):
+        return None
+    host = _imap_host(cfg)
+    if host in KNOWN_SERVID:
+        return "unpinned_known"
+    if host in OUTLOOK_IMAP or cfg.get("preset") == "outlook":
+        return "unpinned_outlook"
+    return "unpinned_custom"
+
+
 NOTES = {
     "yahoo": ("Yahoo 账号安全 → 生成并管理应用专用密码。", "Yahoo Account Security → generate and manage app passwords."),
     "qq": ("网页版 QQ 邮箱 → 设置 → 账号 → 开启「IMAP/SMTP 服务」→ 按提示发短信 → 生成授权码（16 位）。",
@@ -139,6 +227,7 @@ T = {
            "notes_sent": "📧 会议纪要已发到：{to}", "notice": "〔通知邮件〕",
            "trashed": "🗑 Agent J 判断 1 封通知邮件是钓鱼 / 地址投毒，已移进邮箱废纸篓（在废纸篓里可以恢复）。",
            "pw_lost": "邮件授权码打不开了（{why}），收发已暂停，请到「设置 → 邮件通道」重新填写。",
+           "servid_autopin": SERVID_AUTOPIN_ZH,
            "pw_why": {"absent": "文件不在了", "legacy": "旧版格式", "unreadable": "设置改过或文件损坏"}},
     "en": {"subject_re": "Re: ", "stopped": "Stopped: {n} e-mail(s) were not given to Agent J and are not queued.",
            "limited": "E-mail replies are over the hourly limit; this one was not sent ({to}).",
@@ -149,6 +238,7 @@ T = {
            "notes_sent": "📧 Meeting notes sent to: {to}", "notice": "[Notification mail]",
            "trashed": "🗑 Agent J judged 1 notification mail to be phishing / address poisoning and moved it to the mailbox's trash (recoverable there).",
            "pw_lost": "The mail app password no longer opens ({why}); mail is paused. Enter it again in Settings → E-mail channel.",
+           "servid_autopin": SERVID_AUTOPIN_EN,
            "pw_why": {"absent": "file gone", "legacy": "old format", "unreadable": "settings changed or file damaged"}},
 }
 
@@ -188,7 +278,7 @@ def blank_config() -> dict:
     return {"enabled": False, "preset": "", "address": "", "username": "",
             "imap": {"host": "", "port": 993, "security": "ssl"}, "smtp": {"host": "", "port": 465, "security": "ssl"},
             "poll_minutes": POLL_DEFAULT, "auth": "standard", "auth_servid": "", "allow": [], "reply_per_hour": REPLY_PER_HOUR,
-            "generation": "", "mark_processed_read": True, "triage": blank()}
+            "generation": "", "servid_optout": [], "mark_processed_read": True, "triage": blank()}
 
 
 def read_config(st) -> dict:
@@ -209,7 +299,8 @@ def read_state(st) -> dict:
     d = _read_json(st.root / DIR / STATE, {})
     base = {"uidvalidity": None, "last_uid": None, "seen": [], "sent": [], "routes": {}, "blocked": [], "counts": {},
             "hour": {}, "last_check": None, "last_ok": None, "last_error": None, "auth_seen": None, "allow_seen": None,
-            "pw_state": None, "owner_threads": []}
+            "pw_state": None, "owner_threads": [], "servid_auto": None, "servid_pin": None, "servid_migrated": False,
+            "servid_noticed": []}
     base.update({k: v for k, v in d.items() if k in base})
     return base
 
@@ -383,6 +474,10 @@ def validate(cfg) -> dict:
     if not isinstance(out["auth_servid"], str) or not SERVID.fullmatch(out["auth_servid"]):
         raise MailError("auth_servid")
     out["auth_servid"] = out["auth_servid"].lower()
+    opt = out["servid_optout"]          # 0304 A4 L1: IMAP hosts where the owner cleared the known-provider pin
+    if not isinstance(opt, list) or len(opt) > 16 or any(not isinstance(h, str) or not HOST.fullmatch(h.rstrip(".")) for h in opt):
+        raise MailError("servid_optout")
+    out["servid_optout"] = list(dict.fromkeys(h.lower().rstrip(".") for h in opt))
     if type(out["reply_per_hour"]) is not int or not 0 <= out["reply_per_hour"] <= 100:
         raise MailError("reply_per_hour")
     allow, seen = [], set()
@@ -457,6 +552,8 @@ def widening(old: dict, new: dict) -> list[str]:
         out.append("auth=" + new["auth"])
     if (new.get("auth_servid") or "") != (old.get("auth_servid") or ""):
         out.append("auth_servid")
+    if set(old.get("servid_optout") or []) - set(new.get("servid_optout") or []):
+        out.append("servid_optout")          # 0304 A4: dropping an opt-out lets a later save pin (= owner recognition)
     if new.get("enabled") and not old.get("enabled"):
         out.append("enabled")
     for side in ("imap", "smtp"):
@@ -523,13 +620,9 @@ def authenticate(msg, from_addr: str, level: str, servid: str = "") -> tuple[boo
     if not headers:
         return False, "no_results"
     parsed = [parse_ar(str(h)) for h in headers]
-    if servid:
-        mine = [p for p in parsed if p["servid"] == servid or p["servid"].endswith("." + servid)]
-        if not mine:
-            return False, "servid"
-        ar = mine[0]
-    else:
-        ar = parsed[0]
+    ar = parsed[0]          # 0304 A4 (F7): only the topmost header — the receiving server's own; never a lower or a suffix match
+    if servid and ar["servid"] != servid.lower():
+        return False, "servid"
     fd = _dom(from_addr)
     res = ar["results"]
     if not res:
@@ -1246,8 +1339,8 @@ def extract_links(msg, text: str) -> list[str]:
 def auth_detail(msg, servid: str = "") -> dict:
     """See ARCHITECTURE."""
     headers = [parse_ar(str(h)) for h in (msg.get_all("Authentication-Results") or [])]
-    if servid:
-        headers = [p for p in headers if p["servid"] == servid or p["servid"].endswith("." + servid)]
+    if servid:              # 0304 A4 (F7): like authenticate — the topmost header, exactly the pinned server, or nothing
+        headers = headers[:1] if headers and headers[0]["servid"] == servid.lower() else []
     out = {"spf": None, "dkim": None, "dmarc": None}
     for m, r, _ in (headers[0]["results"] if headers else []):
         if out.get(m) is None:
@@ -1500,6 +1593,30 @@ class Mail:
         with contextlib.suppress(Exception):
             if migrate_legacy_secret(self.st) == "migrated":
                 self.log("password", result="migrated")
+        with contextlib.suppress(Exception), self._config_lock:      # 0304 A4: ONCE per install (the upgrade), empty pin only
+            if read_state(self.st).get("servid_migrated"):
+                return
+            cfg = read_config(self.st)
+            if pin := servid_autopin(cfg):
+                cfg = save_config(self.st, {**cfg, "auth_servid": pin})
+                self._autopinned(cfg, pin, "upgrade")
+            s = read_state(self.st)
+            s["servid_migrated"] = True       # later configs pin only through the previewed merge (security r1 M1)
+            save_state(self.st, s)
+
+    def _autopinned(self, cfg: dict, pin: str, via: str) -> None:
+        host = _imap_host(cfg)
+        s = read_state(self.st)
+        s["servid_auto"] = {"host": host, "servid": pin}
+        s["servid_pin"] = {"host": host, "value": pin, "source": "auto"}
+        notice = any(r.get("role") == "owner" for r in cfg.get("allow") or []) and host not in (s.get("servid_noticed") or [])
+        if notice:                            # security r1 M2: the pin turns verified owner-address mail into owner turns
+            s["servid_noticed"] = [*(s.get("servid_noticed") or []), host][-16:]
+        save_state(self.st, s)
+        self.log("servid_autopin", host=host, servid=pin, via=via)
+        if notice:
+            self.note(T[self.lang()]["servid_autopin"].format(servid=pin))
+            self.log("servid_notice", host=host, via=via)
 
     async def _lost(self, cfg: dict) -> str | None:
         """See ARCHITECTURE."""
@@ -1528,7 +1645,9 @@ class Mail:
         """See ARCHITECTURE."""
         cfg, s = read_config(self.st), read_state(self.st)
         c = s["counts"] if s["counts"].get("day") == _day() else {}
+        pin = servid_status(cfg, s)
         return {"config": cfg, "password_upgrade_required":secret_upgrade_required(self.st),
+                "servid_hint": servid_hint(cfg), "servid_status": pin, "servid_auto": pin["source"] == "auto",
                 "password_state": secret_status(self.st, cfg["address"]) if cfg["address"] else "absent", "has_password": bool(cfg["address"]) and has_secret(self.st, cfg["address"]),
                 "last_check": s["last_check"], "last_ok": s["last_ok"], "error": s["last_error"],
                 "today": {k: v for k, v in c.items() if k != "day"}, "blocked": s["blocked"][-KEEP_BLOCKED:],
@@ -2254,7 +2373,15 @@ class Mail:
             save_state(self.st, st2)
         else:
             new.setdefault("generation", old.get("generation") or uuid.uuid4().hex)
-        cfg = save_config(self.st, new)
+        cfg = save_config(self.st, new)      # 0304 A4 M1: no pin is added here — the previewed merge (servid_merge) did it
+        if cfg["auth_servid"] and cfg["auth_servid"] != (old.get("auth_servid") or "") and \
+                servid_autopin({**cfg, "auth_servid": ""}, old) == cfg["auth_servid"]:
+            self._autopinned(cfg, cfg["auth_servid"], "save")
+        elif cfg["auth_servid"] != (old.get("auth_servid") or ""):   # 0304 A4: the owner's own pin / clear (opt-out: servid_optout)
+            s4 = read_state(self.st)
+            s4["servid_pin"] = {"host": _imap_host(cfg), "value": cfg["auth_servid"], "source": "manual"}
+            save_state(self.st, s4)
+            self.log("servid_set", host=_imap_host(cfg), pinned=bool(cfg["auth_servid"]))
         self._watch_allow(cfg)
         if credential_destination(old) != credential_destination(cfg):
             if (root(self.st) / SECRET).exists():     # P549: never a silent loss
@@ -2503,6 +2630,10 @@ def cmd(a) -> int:
         if res is None:
             res = {"ok": True, **Mail(SimpleNamespace(st=st)).view(), "serve": "not_running"}
         res.pop("presets", None)
+        ss = res.get("servid_status") or {}
+        if ss:                               # 0304 A4: the pinned check server and who set it, one line beside the JSON
+            human(("校验服务器 / check server: " + ss["value"] + (" (自动 / auto)" if ss.get("source") == "auto" else " (手动 / manual)"))
+                  if ss.get("pinned") else "校验服务器 / check server: 未固定 / not pinned")
         return out(res)
     if a.action == "test":
         cfg = read_config(st)
@@ -2556,7 +2687,7 @@ def cmd(a) -> int:
     if a.action == "password":
         res = call({"cmd": "mail_key"}, 700)
         return out(res if res is not None else {"ok": False, "why": "not_running", "detail": why_text("not_running", lang)})
-    cfg = read_config(st)
+    cfg, old_cfg = read_config(st), read_config(st)
     try:
         if a.action == "setup":
             if not a.address:
@@ -2584,7 +2715,7 @@ def cmd(a) -> int:
             cfg["allow"] = [r for r in cfg["allow"] if not _same(r["addr"], addr)]
         elif a.action in ("on", "off"):
             cfg["enabled"] = a.action == "on"
-        cfg = validate(cfg)
+        cfg = validate(servid_merge(old_cfg, validate(cfg)))   # 0304 A4 M1: the pin is in what the card shows and applies
     except MailError as e:
         return out({"ok": False, "why": e.why, "detail": why_text(e.why, lang)})
     # P296: from inside an Agent a widening change (e.g. `allow`) waits for the owner's card on the phone (≤ ASK_TTL)

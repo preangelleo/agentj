@@ -219,6 +219,43 @@ def cmd_serve(a) -> None:
         # Preserve Host's existing last-good recovery for a manually broken JSON5 file.
         # Migration rollback already restored disk; doctor reports the pending step.
         st.log("config_migration_failed")
+    try:
+        _serve_main(a, st, Host)
+    except BaseException as e:  # noqa: BLE001 — logged once, then re-raised: launchd / systemd still see the exit code
+        if not isinstance(e, (KeyboardInterrupt, SystemExit)) or (isinstance(e, SystemExit) and e.code not in (None, 0)):
+            _log_serve_crash(st, e)
+        raise
+
+
+def crash_where(e: BaseException) -> str:
+    """Ticket U33rz (2026-11-09): where a start-up exception came from, as file:line only — never the message (it can hold
+    a path, a name or a value). The innermost Agent J frame, then the innermost frame of all (often the stdlib)."""
+    import pathlib, traceback
+    frames = traceback.extract_tb(e.__traceback__) if e.__traceback__ else []
+
+    def short(f) -> str:
+        parts = pathlib.PurePath(f.filename).parts
+        tail = parts[parts.index("agentj"):] if "agentj" in parts else parts[-2:]
+        return "/".join(tail)[-80:] + f":{f.lineno}"
+    ours = [f for f in frames if "agentj" in pathlib.PurePath(f.filename).parts]
+    out = [short(ours[-1])] if ours else []
+    if frames and (not ours or frames[-1] is not ours[-1]):
+        out.append(short(frames[-1]))
+    return " < ".join(out)[:200]
+
+
+def _log_serve_crash(st, e: BaseException) -> None:
+    """One `serve_crash` line in host.log (type + file:line, no message) so a crash loop is diagnosable from the rescue
+    report without service.log (ticket U33rz: 11880 `serve_start` a day and no reason anywhere the report could see)."""
+    with contextlib.suppress(Exception):
+        from . import diskq
+        diskq.flush(5)
+        code = e.code if isinstance(e, SystemExit) and isinstance(e.code, int) else 1
+        st.log("serve_crash", exception_type=type(e).__name__, where=crash_where(e), code=code, version=__version__)
+        diskq.flush(5)
+
+
+def _serve_main(a, st, Host) -> None:
     host = Host(st, events=a.events, read_stdin=not a.no_stdin)
 
     async def main():
@@ -2559,6 +2596,15 @@ def cmd_history(a) -> None:
         print(f"  #{t['id']:<5} {t['src'].get('k'):6} {clean(first, 60)}")
 
 
+def _voice_hours() -> int:
+    """#0304: the configured voice-original retention (default when the config cannot be read)."""
+    from . import inbox, preferences
+    try:
+        return inbox.voice_hours(preferences.effective())
+    except Exception:  # noqa: BLE001 — a status line never fails on a broken config
+        return inbox.VOICE_DEFAULT
+
+
 def cmd_inbox(a) -> None:
     """`agentj inbox [list|clear|path]` (PROTOCOL §10.4): what the phone uploaded into the Agent's folder."""
     if a.mode == "avatar-log":
@@ -2585,11 +2631,15 @@ def cmd_inbox(a) -> None:
         return
     ds = inbox.days(wd)
     if a.json:
-        print(json.dumps({"path": inbox.inbox_dir(wd), "days": [{"day": d, "files": f, "bytes": b} for d, f, b in ds]},
+        print(json.dumps({"path": inbox.inbox_dir(wd), "days": [{"day": d, "files": f, "bytes": b} for d, f, b in ds],
+                          "voice_retention_hours": _voice_hours()},
                          ensure_ascii=False))
         return
     print(f"{inbox.inbox_dir(wd)}  （保留 {inbox.RETAIN_DAYS} 天，最多 {inbox.QUOTA // 1024 ** 3} GiB / kept "
           f"{inbox.RETAIN_DAYS} days, ≤ {inbox.QUOTA // 1024 ** 3} GiB）")
+    vh = _voice_hours()
+    print(f"语音原始录音：{'不自动删除' if vh == 0 else f'保留 {vh} 小时'}，文字留在对话里（inbox.voice_retention_hours）/ voice "
+          f"originals: {'never deleted automatically' if vh == 0 else f'kept {vh} h'}; the words stay in the conversation")
     if not ds:
         print("空的 / empty")
     for d, f, b in ds:
@@ -3142,6 +3192,28 @@ def cmd_update(a) -> None:
                if on else "关：serve 不查新版本（`agentj update check` 仍可手动查）。")
               + " / daily update check " + ("on" if on else "off"))
         return
+    reinstall = getattr(a, "reinstall", False) is True
+    if reinstall and a.mode != "apply":
+        sys.exit("✗ --reinstall 只用于 apply / reinstall requires apply")
+    if a.mode == "rollback":
+        if a.authorization or a.from_email or a.version:
+            sys.exit("✗ rollback 不接受授权码或目标版本 / rollback is cached-only")
+        from .reset import run_rollback, run_restart_serve
+        st = State()
+        res = run_rollback(st)
+        if res.get("ok"):
+            service_result = run_restart_serve(st)
+            if not service_result.get("ok") and service_result.get("why") != "not_installed":
+                res = {"ok": False, "why": "service_restart_failed"}
+        print("rollback: " + ("ok" if res.get("ok") else res.get("why", "failed")))
+        raise SystemExit(0 if res.get("ok") else 1)
+    if a.mode == "apply" and reinstall:
+        if a.authorization or a.from_email or a.version:
+            sys.exit("✗ --reinstall 不接受授权码或目标版本 / repair uses the installed version only")
+        st = State()
+        res = update.repair_install(st)
+        print(update.result_block(res))
+        raise SystemExit(res["exit"])
     if a.mode == "apply" and (a.authorization or a.from_email):
         return _update_authorized(a)
     if a.mode != "apply" and (a.authorization or a.from_email or a.version):
@@ -3549,8 +3621,9 @@ def main(argv=None) -> None:
     rs.set_defaults(fn=cmd_rescue)
     up = sub.add_parser("update", help="check 查版本 · apply Agent 自升级（无需终端）· auto on|off",
                         description="apply needs no y/N or terminal, restarts and runs doctor. F12 authorization remains optional.")
+    up.add_argument("--reinstall", action="store_true", help="重新安装当前已签名版本 / reinstall signed current version")
     up.add_argument("--yes", action="store_true", help="跳过升级前确认：现在会打断的事照样打断 / skip the check of what a restart now would interrupt")
-    up.add_argument("mode", choices=["check", "apply", "auto"])
+    up.add_argument("mode", choices=["check", "apply", "auto", "rollback"])
     up.add_argument("switch", nargs="?", choices=["on", "off", "status"], default="status", help="auto 的开关 / for auto")
     up.add_argument("--json", action="store_true", help="check 的机器可读输出 / machine-readable check")
     up.add_argument("--authorization", metavar="AJUP-…", help="主人升级邮件里的授权码 / the authorization code from the owner's upgrade email")

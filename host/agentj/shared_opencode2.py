@@ -135,7 +135,7 @@ class SharedOpenCodeV2Agent(OpenCodeV2Agent):
         self.sid = sid
         self.cfg["shared_session_id"] = sid
         self.host.st.set_agent_session(self.kind, sid)
-        self.meter()  # P98: announce successful native selection without waiting for a turn.
+        self.meter(model=self.cur_model(), model_name=self.model_name(self.cur_model()))  # native shared session, not stale config
 
     async def _initial(self) -> bool:
         initial = getattr(self, "attach_task", None)
@@ -231,7 +231,7 @@ class OwnerOpenCodeV2Agent(SharedOpenCodeV2Agent):
         self.session_model = s.get("model") if isinstance(s.get("model"), dict) else None
         self.sid = sid
         self.host.st.set_agent_session(self.kind, sid)
-        self.meter()  # P98: announce successful native selection without waiting for a turn.
+        self.meter(model=self.cur_model(), model_name=self.model_name(self.cur_model()))  # native shared session, not stale config
 
     async def _session_ok(self) -> bool:
         return self.sid is not None

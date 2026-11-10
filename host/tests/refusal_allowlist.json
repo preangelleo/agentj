@@ -28,7 +28,7 @@
   },
   "group_source": {
    "category": "anti_injection",
-   "why": "Request text came from a group chat, forwarded/external data or an unverified sender posing as the owner; owner TG/WeChat/verified mail are owner since 0.30.3 (R1)."
+   "why": "Request text came from a group chat, forwarded/external data or an unverified sender posing as the owner; owner TG/WeChat/verified mail are owner since 0.30.3 (R1); since 0.30.6 (#0304) `agentj mail send` whose every final To/Cc/Bcc is an owner address (slot 0 / owner allowlist rows, exact match) passes from any turn."
   },
   "level_harness": {
    "category": "not_a_refusal",

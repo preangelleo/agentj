@@ -40,6 +40,13 @@ LOAD_STEP = 0.05              # … and the change that is worth a message
 GENERIC = {"", "general-purpose", "general", "explore", "plan", "claude", "fork", "task", "agent", "default",
            "worker", "explorer", "subagent", "build"}      # P160: Codex's built-in roles / OpenCode's default agents too
 CODEX_FINAL = ("completed", "errored", "shutdown", "interrupted", "notFound")
+# ADR-0305: why an entry ended (outcome + short ASCII end_reason) rides into its finished record and the completion notice
+OUTCOMES = ("completed", "failed", "interrupted", "unknown")
+CODEX_OUTCOME = {"completed": "completed", "errored": "failed", "shutdown": "interrupted", "interrupted": "interrupted",
+                 "notFound": "unknown", "failed": "failed"}
+NATIVE_OUTCOME = {"completed": "completed", "succeeded": "completed", "failed": "failed", "error": "failed",
+                  "stopped": "interrupted", "killed": "interrupted", "cancelled": "interrupted", "interrupted": "interrupted"}
+_REASON = re.compile(r"[a-z0-9_]{1,32}")
 OC_SUFFIX = re.compile(r"\s*\(@([\w.-]{1,40}) subagent\)\s*$")     # OpenCode titles a child "<description> (@<agent> subagent)"
 AGENT_TOOLS = ("Agent", "Task")
 UNIT_RE = re.compile(r"^agentj-p\d+[\w.-]*\.service$")
@@ -1005,27 +1012,27 @@ class Board:
                 self.mem[key] = it
                 self.on_change()
 
-    def stop(self, key, exit_code=None, fg=False, ended=None) -> None:
+    def stop(self, key, exit_code=None, fg=False, ended=None, outcome=None, end_reason=None) -> None:
         it = self.mem.pop(key, None)
         if it is not None:
-            self.finish(it, exit_code=exit_code, fg=fg, ended=ended)
+            self.finish(it, exit_code=exit_code, fg=fg, ended=ended, outcome=outcome, end_reason=end_reason)
             self.on_change()
 
-    def finish(self, it, exit_code=None, ended=None, fg=False):
-
-
+    def finish(self, it, exit_code=None, ended=None, fg=False, outcome=None, end_reason=None):
         fg = (fg or it.get("fg") is True) and not it.get("bg")
-        self.finished.append({**it, "ended": ended or time.time(), "exit_code": exit_code, "fg": fg})
+        why = {**({"outcome": outcome} if outcome in OUTCOMES else {}),
+               **({"end_reason": end_reason} if isinstance(end_reason, str) and _REASON.fullmatch(end_reason) else {})}
+        self.finished.append({**it, "ended": ended or time.time(), "exit_code": exit_code, "fg": fg, **why})
 
     def mark_bg(self, key) -> None:
         key = self.alias.get(key, key)
         if key in self.mem:
             self.mem[key] = {**self.mem[key], "bg": True}
 
-    def stop_where(self, pred, fg=False) -> None:
+    def stop_where(self, pred, fg=False, outcome=None, end_reason=None) -> None:
         gone = [k for k, v in self.mem.items() if pred(k, v)]
         for k in gone:
-            self.finish(self.mem.pop(k), fg=fg)
+            self.finish(self.mem.pop(k), fg=fg, outcome=outcome, end_reason=end_reason)
         if gone:
             self.on_change()
 
@@ -1094,7 +1101,7 @@ class Board:
         elif name == "SubagentStop":
             aid = clean(ev.get("agent_id"), 80)
             if aid:            # P426: foreground unless it was launched / listed as background work
-                self.stop(f"{scope}:{sid}:{aid}", fg=True)
+                self.stop(f"{scope}:{sid}:{aid}", fg=True, outcome="completed", end_reason="subagent_stop")
         elif name == "PostToolUse" and not ev.get("agent_id"):
 
             # (backgroundTaskId) is an item of its own; an async Agent whose SubagentStart never arrived is caught up here
@@ -1109,7 +1116,7 @@ class Board:
             elif ev.get("tool_name") in ("TaskStop", "KillShell", "KillBash"):
                 for k in ("task_id", "shell_id", "bash_id"):
                     if ti.get(k):
-                        self.stop(f"{scope}:{sid}:{clean(str(ti[k]), 80)}")
+                        self.stop(f"{scope}:{sid}:{clean(str(ti[k]), 80)}", outcome="interrupted", end_reason="task_stop")
         elif name == "SessionEnd":
             self.stop_where(lambda k, v: v.get("session") == f"{scope}:{sid}")
         elif name == "Stop" and not ev.get("agent_id") and isinstance(ev.get("background_tasks"), list):
@@ -1121,6 +1128,9 @@ class Board:
                     self.mark_bg(f"{scope}:{sid}:{clean(str(t.get('id')), 80)}")
                 if isinstance(t, dict) and t.get("id") and t.get("status") not in BG_DONE:
                     live.add(self._background(scope, sid, t, True))
+                elif isinstance(t, dict) and t.get("id"):      # ADR-0305: its listed final status is the outcome
+                    self.stop(f"{scope}:{sid}:{clean(str(t.get('id')), 80)}", fg=True,
+                              outcome=NATIVE_OUTCOME.get(t.get("status")), end_reason="stop_hook")
 
             self.stop_where(lambda k, v: v.get("session") == f"{scope}:{sid}" and k not in live, fg=True)
 
@@ -1189,16 +1199,18 @@ class Board:
                 self.start(f"{scope}:task:{tid}", None, "temp", ev.get("description") or "", session=scope,
                            **({"role": "shell"} if ev.get("task_type") == "local_bash" else {}))
         elif t == "system" and ev.get("subtype") == "task_updated":
-            if ((ev.get("patch") or {}).get("status") if isinstance(ev.get("patch"), dict) else None) in BG_DONE:
-                self.stop(f"{scope}:task:{clean(ev.get('task_id'), 80)}")
+            status = (ev.get("patch") or {}).get("status") if isinstance(ev.get("patch"), dict) else None
+            if status in BG_DONE:
+                self.stop(f"{scope}:task:{clean(ev.get('task_id'), 80)}", outcome=NATIVE_OUTCOME.get(status), end_reason="task_updated")
         elif t == "system" and ev.get("subtype") == "task_notification":
             if ev.get("status") in ("completed", "failed", "stopped", "killed", "error"):
-                self.stop(f"{scope}:task:{clean(ev.get('task_id'), 80)}")
+                self.stop(f"{scope}:task:{clean(ev.get('task_id'), 80)}", outcome=NATIVE_OUTCOME.get(ev["status"]),
+                          end_reason="task_notification")
 
     def session_gone(self, scope: str = "own") -> None:
 
 
-        self.stop_where(lambda k, v: v.get("session") == scope)
+        self.stop_where(lambda k, v: v.get("session") == scope, outcome="unknown", end_reason="process_ended")
         self.claude_transcripts.pop(scope, None)
         for k in [k for k in self.child if k.startswith(scope + ":")]:
             del self.child[k]
@@ -1217,7 +1229,7 @@ class Board:
                 tid = clean(it.get("agentThreadId"), 80)
                 k = f"{scope}:th:{tid}"
                 if it.get("kind") in ("completed", "interrupted"):
-                    self.stop(k)
+                    self.stop(k, outcome=it["kind"], end_reason="subagent_activity")
                 elif it.get("kind") == "started" and tid:
 
 
@@ -1248,7 +1260,8 @@ class Board:
             c = self.child[k]
             self.start(k, c.get("who"), "temp", c.get("label") or "", session=scope, **task_meta(c))
         elif method == "turn/completed" and th:
-            self.stop(f"{scope}:th:{th}")
+            t = p.get("turn") if isinstance(p.get("turn"), dict) else {}
+            self.stop(f"{scope}:th:{th}", outcome=CODEX_OUTCOME.get(t.get("status"), "unknown"), end_reason="turn_completed")
 
     def _codex_collab(self, method: str, it: dict, scope: str) -> None:
         tool, status = it.get("tool"), it.get("status")
@@ -1286,10 +1299,10 @@ class Board:
         states = it.get("agentsStates") if isinstance(it.get("agentsStates"), dict) else {}
         for tid, st in list(states.items())[:32]:
             if isinstance(st, dict) and st.get("status") in CODEX_FINAL:
-                self.stop(f"{scope}:th:{clean(tid, 80)}")
+                self.stop(f"{scope}:th:{clean(tid, 80)}", outcome=CODEX_OUTCOME[st["status"]], end_reason="agent_state")
         if tool == "closeAgent" and method == "item/completed" and status == "completed":
-            for r in recv:
-                self.stop(f"{scope}:th:{r}")
+            for r in recv:     # closed by the main Agent: its result is not known to be delivered
+                self.stop(f"{scope}:th:{r}", outcome="interrupted", end_reason="close_agent")
 
 
     def opencode_event(self, ev: dict, sid, scope: str = "opencode", turn_on: bool = False) -> None:
@@ -1323,7 +1336,7 @@ class Board:
                     if isinstance(meta.get("sessionId"), str):
                         self._alias(f"{scope}:s:{clean(meta['sessionId'], 80)}", k)
                 elif st.get("status") in ("completed", "error"):
-                    self.stop(k, fg=turn_on)   # P426: ended inside our turn = foreground
+                    self.stop(k, fg=turn_on, outcome=NATIVE_OUTCOME[st["status"]], end_reason="task_part")   # P426: ended inside our turn = foreground
             elif isinstance(part.get("sessionID"), str):
                 self.note(f"{scope}:s:{clean(part['sessionID'], 80)}", tool_desc(part.get("tool"), inp) or clean(st.get("title"), 200))
         elif t == "session.created":
@@ -1365,7 +1378,7 @@ class Board:
         if not cid or k not in self.child:
             return
         if t in ("session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"):
-            self.stop(k, fg=turn_on)
+            self.stop(k, fg=turn_on, outcome=NATIVE_OUTCOME[t.rsplit(".", 1)[1]], end_reason="session_execution")
         elif t == "session.execution.started":
             self.start(k, self.child[k].get("who"), "temp", self.child[k].get("label") or "", session=scope)
 

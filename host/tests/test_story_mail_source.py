@@ -1,5 +1,7 @@
 """2026-11-02 story-channel: a background caller (no turn) is refused at the source gate with the real source kind and
-the remedy; group / guest / forwarded turns stay refused before SMTP; a scheduled-task turn reaches the card, never no-card."""
+the remedy; group / guest / forwarded turns stay refused before SMTP; a scheduled-task turn reaches the card, never no-card.
+#0304: mail whose every recipient is the owner's own address is no longer refused from these sources (owner-direct, no
+card); the refusals below now mail a third party (test_p0304_mail_to_owner has the owner-only side)."""
 import _hermetic  # noqa: F401,I001
 import pathlib
 import sys
@@ -19,11 +21,15 @@ class Source(_Svc):
 
     async def refused(self, src):
         self.turn(src)
-        res = await self.svc.agent_send({"to_owner": True, "subject": "s", "body": "b"})
+        res = await self.svc.agent_send({"to": ["outsider.story@example.com"], "subject": "s", "body": "b"})
         self.assertFalse(res["ok"], res)
         self.assertEqual(res["why"], "group_source")
         self.ask.assert_not_awaited()
         self.assertEqual(self.smtp.sent, [])
+        mine = await self.svc.agent_send({"to_owner": True, "subject": "s", "body": "b"})   # #0304: to the owner: sent
+        self.assertTrue(mine["ok"] and mine["owner_direct"] and mine["no_card"], mine)
+        self.ask.assert_not_awaited()
+        self.smtp.sent.clear()
         return res
 
     async def test_background_caller_gets_unknown_and_remedy(self):

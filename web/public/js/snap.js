@@ -167,7 +167,7 @@ export function answerRefused(m) {
   onChange();
 }
 // P417 #186: 0.25.0a1 hosts close friend / same-owner cards with `ended` — accept it as well as `gone`.
-const ASK_RESULT = { allow: 'approved', deny: 'denied', timeout: 'timeout', expired: 'expired', gone: 'ended', ended: 'ended', stopped: 'stopped' };
+const ASK_RESULT = { allow: 'approved', main: 'main', deny: 'denied', timeout: 'timeout', expired: 'expired', gone: 'ended', ended: 'ended', stopped: 'stopped' };
 export function askDone(m) {
   const a = S.asks.get(m.id);
   if (!a || !ASK_RESULT[m.result]) return;

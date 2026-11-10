@@ -1,4 +1,4 @@
-# Agent J v0.30.4
+# Agent J v0.30.5
 
 Hotfix: on Mac hosts outside UTC, plaza installs, support requests and batch approvals you start in Claude are no longer refused.
 

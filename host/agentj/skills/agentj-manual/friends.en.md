@@ -263,6 +263,8 @@ Ask your Agent to use `agentj friends relay-policy --per-minute 30 --claim-secon
 
 List pending friend cards with `agentj friends asks --json`. Use `agentj friends asks --dismiss <ID>` for one, or `agentj friends asks --dismiss all` for all. Emergency repair on the phone also dismisses pending friend cards; it never approves them or sends a reply. Ordinary friend questions expire after two minutes.
 
+On a friend question card, tap “Hand to main Agent J” to pass that question to the main Agent J. It does not reply to the friend automatically; sensitive actions still need your approval.
+
 ## Peer reports in your main conversation
 
 Friends still use isolated peer sessions. Their completed report cards appear in your one main conversation by default and notify you. A card displays the peer session’s result without starting a main-Agent tool turn. Decisions, commitments, blocks and failures are reported promptly; ordinary updates batch for one minute. Each batch holds up to eight items, with at most three batches per friend and twenty across all friends per minute. Rate-limited reports remain pending.

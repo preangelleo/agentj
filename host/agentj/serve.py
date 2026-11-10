@@ -168,6 +168,7 @@ METER_GAP = 2.0                             # ≤ 1 meter message per 2 s
 HIST_READY = 50                             # turns a p33 device gets on ready (it pages for more)
 SWEEP_EVERY = 60
 RETAIN_EVERY = 86_400
+VOICE_EVERY = 900          # #0304: expired voice originals go within 15 min of their retention
 P33_ONLY = ("web_preview_attest", "say", "say_cancel", "say_sync", "cmd_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
             "q_answer", "tts_get", "pref_set", "notice_read", "media_get", "provider_get", "provider_key", "asr_install", "models_get", "ark_plan_get", "ping",
             "tg_fwd", "wx_fwd", "turn_wait", "res_watch", "busy_get",   # P181 (§22.1) load card resources; P160 (§22) one 「在办」 row's detail
@@ -204,6 +205,7 @@ PREF_SET_KEYS += ("imessage.enabled", "imessage.interval_minutes", "imessage.del
                   "imessage.quiet_hours", "imessage.strictness", "imessage.codes", "imessage.groups", "imessage.llm")
 PREF_SET_KEYS += ("notify.enabled",)             # P365: 「允许自动化往这里发消息」 master switch (notify.py)
 PREF_SET_KEYS += ("quota.auto_switch",)          # P302: the phone's 「额度告警时交给其他 AI 账号」 switch (P254 drew it, never whitelisted)
+PREF_SET_KEYS += ("inbox.voice_retention_hours",)   # #0304: how long voice originals stay in the inbox (schema enum)
 METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week", "quota_windows", "shared_status", "shared_writer", "source_at", "reset_credits")
 Q_CANCEL = "用户在手机上取消了这个问题，没有选择任何选项。请不要替他做选择，停下来等他直接输入文字。"
 Q_TIMEOUT = "没有人作答，请改用文字列出选项"
@@ -682,6 +684,7 @@ class Host:
         self.turn_at = (0.0, 0.0, False)            # P326: last turn's start / end (epoch) + failed-or-empty, for status
         self.push_key = None
         self.push_last: dict[tuple, float] = {}
+        self.push_generation: dict[str, int] = {}   # process-local: invalidate in-flight POSTs on every opt-in / opt-out
         self.post_q: asyncio.Queue | None = None
         self.danger_extra = danger.parse_extra(self.cfg.get("danger_extra"))[0]
         if self.agent_cfg:
@@ -1371,6 +1374,7 @@ class Host:
             sub = webpush.parse_sub(obj)
             if sub is None:
                 self.st.log("push_sub_refused", device=s.device)
+                await self.send_app(s, {"t": "push_state", "on": s.device in webpush.load_subs(self.st)})
                 return
             subs = webpush.load_subs(self.st)
             old = subs.get(s.device) or {}
@@ -1380,6 +1384,8 @@ class Host:
                 subs[s.device] = sub
                 webpush.save_subs(self.st, subs)
                 self.st.log("push_sub", device=s.device)
+            self.push_generation[s.device] = self.push_generation.get(s.device, 0) + 1
+            await self.send_app(s, {"t": "push_state", "on": True})
         elif t == "push_pref":                 # P204 (§9): which kinds this device wants (审批 ask / 完成 reply / 告警 security)
             kinds = webpush.parse_kinds(obj)
             subs = webpush.load_subs(self.st)
@@ -1395,6 +1401,14 @@ class Host:
             if subs.pop(s.device, None):
                 webpush.save_subs(self.st, subs)
                 self.st.log("push_off", device=s.device)
+            self.push_generation[s.device] = self.push_generation.get(s.device, 0) + 1
+            # Correlation is an echo to this paired session only, never stored or logged.
+            r = obj.get("r")
+            ack = {"t": "push_state", "on": False}
+            if (isinstance(r, str) and re.fullmatch(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", r)):
+                ack["r"] = r
+            await self.send_app(s, ack)
         elif t == "vis" and isinstance(obj.get("fg"), bool):
             s.fg = obj["fg"]
         elif t == "grant_off":          # take a batch approval back (narrows only: any ready, paired device may)
@@ -3184,6 +3198,8 @@ class Host:
             await self.send_app(s, {"t": "auth_rescue", "view": await asyncio.to_thread(self.auth_rescue.view)})
         if s.p33 and self.quota_resume.items:            # P314 (§32): 「额度用完，预计 HH:MM 自动继续」
             await self.send_app(s, self.quota_resume.msg())
+        # Host persistence is authoritative on reconnect; announce it before the key prompts browser recovery.
+        await self.send_app(s, {"t": "push_state", "on": s.device in await asyncio.to_thread(webpush.load_subs, self.st)})
         await self.send_app(s, {"t": "push_key", "k": webpush.b64u(webpush.vapid_public(self._push_key()))})
         if s.p33:                       # §10.5: history pages instead of §8's msg replay; meters, models (§10.10 / §10.11)
             await self.send_app(s, self._meter_msg())
@@ -6718,13 +6734,47 @@ class Host:
         await self._answer(session,obj,_held_channel=ask)
         return True
 
+    def _friend_main(self, s: Session, agent_text: str, label: str) -> str | None:
+        """ADR-0304-friend-card-main-agent: a verified signed 「交给主 Agent 来办」 from paired session `s` → ONE delegated
+        turn with the existing owner-approved friend-handover source `{"kind": "friend_task", "role": "task"}` (same_owner
+        ForwardSend approved=True; assist.py): the main Agent works with the owner's tools, but Host.ask treats the turn as
+        delegated — no batch, goal, parked, Full-access or Jev exemptions; every sensitive step is a fresh card; sudo asks.
+        Never `phone()`: the friend's words are in it. No automatic reply to the friend (the Agent's own `friends tell`).
+        `agent_text` = PeerService.main_text; `label` = the host-written chat line (page src `phone`: the owner tapped it;
+        its approval origin is unverified + suspicious). Submitted synchronously, last: None = queued."""
+        if self.stopped():
+            return "estop"
+        if not self._paired_live(s):
+            return "not_paired"
+        if not self.agent:
+            return "no_agent"
+        if self.sends.full(s.device):
+            return "too_many"
+        source = {"kind": "friend_task", "role": "task"}
+        turn = self.hist_add({"k": "phone", "dev": s.device, "name": (s.name or s.device)[:64], "text": label}, "", "open")
+        send = compose.Send("friend-main", secrets.token_urlsafe(16), turn["id"], text=agent_text, by=s.name or s.device,
+                            source=source)
+        send.auto_notify = True              # no phone say receipts / replay for this send (like ForwardSend, AssistSend)
+        from . import approval_context
+        send.approval_origin = approval_context.remember(self, turn, source)
+        send.approval_origin = approval_review.remember(self, turn, source)     # verified False, suspicious True
+        try:
+            self.agent.submit(send)
+        except Exception:  # noqa: BLE001 — an adapter that raised on submit cannot deliver this instance
+            send.state = "cancelled"
+            self.hist_update(turn["id"], end="failed")
+            return "submit_failed"
+        self.st.log("friend_main_turn", device=s.device, id=turn["id"])          # ids only
+        return None
+
     async def _answer(self, s: Session, obj: dict, *, _held_channel=None) -> None:
         if _held_channel is None and getattr(self, "wechat", None) is not None and await self.wechat.answer(s, obj):
             return
         if _held_channel is None and getattr(self, "external_channels", None) is not None and await self.external_channels.answer(s, obj):
             return
         refused = []
-        if _held_channel is None and self.peers is not None and self.peers.answer(s.device, obj, refuse=refused.append):
+        if _held_channel is None and self.peers is not None and self.peers.answer(
+                s.device, obj, refuse=refused.append, handoff=lambda text, label: self._friend_main(s, text, label)):
             for receipt in refused:
                 await self.send_app(s, receipt)
             return                         # P71: a friend card (friend_request / peer_question), decided by its own rules
@@ -8429,7 +8479,8 @@ class Host:
             return await self._ctl_send(w, {"ok": False, "error": "not_running"})
         old = mail_mod.read_config(self.st)
         try:
-            new = mail_mod.validate({**old, **{k: v for k, v in (req.get("cfg") or {}).items() if k != "generation"}})
+            # 0304 A4 r2 N1: the server runs the same servid merge, so a raw ctl clear still records the opt-out.
+            new = mail_mod.validate(mail_mod.servid_merge(old, mail_mod.validate({**old, **{k: v for k, v in (req.get("cfg") or {}).items() if k != "generation"}})))
         except mail_mod.MailError as e:
             return await self._ctl_send(w, {"ok": False, "error": e.why})
         keys = mail_mod.widening(old, new)
@@ -9581,10 +9632,18 @@ class Host:
 
     async def sweep_loop(self) -> None:
 
-        last_retain = 0.0
+        last_retain = last_voice = 0.0
         while True:
             with contextlib.suppress(Exception):
                 self.uploads.sweep()
+            if (time.monotonic() - last_voice > VOICE_EVERY or not last_voice) and self.agent_cfg:
+                last_voice = time.monotonic()
+                with contextlib.suppress(Exception):
+                    gone = await asyncio.to_thread(inbox.reap_voice, self.agent_cfg["dir"], self.st,
+                                                   inbox.voice_hours(self.preferences), self.uploads.staged_paths(),
+                                                   log=self.st.log)
+                    if gone:
+                        self.st.log("inbox_voice_reap", count=len(gone), bytes=sum(x[2] for x in gone))
             if time.monotonic() - last_retain > RETAIN_EVERY or not last_retain:
                 last_retain = time.monotonic()
                 if self.agent_cfg:
@@ -9614,9 +9673,10 @@ class Host:
                 continue
             self.push_last[(did, kind)] = now
             fut = in_daemon_thread(webpush.send, self._push_key(), sub, kind, "high" if kind in ("ask", "security") else "normal")
-            fut.add_done_callback(lambda f, did=did: self._push_done(did, f))
+            generation = self.push_generation.get(did, 0)
+            fut.add_done_callback(lambda f, did=did, sub=sub, generation=generation: self._push_done(did, f, sub, generation))
 
-    def _push_done(self, did: str, f) -> None:
+    def _push_done(self, did: str, f, sent_sub: dict | None = None, generation: int | None = None) -> None:
         try:
             status = f.result()
         except Exception:  # noqa: BLE001
@@ -9625,7 +9685,10 @@ class Host:
                     status=cloud.status_class(status) if status else "network")
         if status in (404, 410):            # the browser dropped this subscription
             subs = webpush.load_subs(self.st)
-            if subs.pop(did, None):
+            # A reconnect can replace (or re-register identical bytes after off) while this POST is in flight.
+            if (sent_sub is not None and generation is not None
+                    and self.push_generation.get(did, 0) == generation and subs.get(did) == sent_sub):
+                subs.pop(did)
                 webpush.save_subs(self.st, subs)
 
     async def stdin_loop(self) -> None:

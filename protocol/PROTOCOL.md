@@ -522,7 +522,7 @@ App messages (all inside §3 transport messages):
 | host → device | `{"t":"msg","id","text","ts","seq":n,"from":"agent"\|"host"\|"you"\|"device"\|"notice"[,"name"]}` | chat; `seq` increases per serve run; `you` = this device said it, `device` = another paired device (`name` = its label), `notice` = a host-side note (agent missing / exited / turn failed) |
 | host → device | `{"t":"status","s":"none"\|"idle"\|"working"\|"compacting"\|"waiting"\|"down"\|"stopped","agent":"claude"\|"codex"\|"opencode"\|null,"name":"<Agent name>"\|null}` | 未接 / 空闲 / 干活中 / 压缩中 / 等你批准 / 没在运行 / 已急停 (phone controls); sent on ready and on every change. `name` (0.10, additive): the Agent's display name (null = unnamed → show "Agent J"); sent again whenever it changes (`agentj name`, admin page, Dashboard rename) — older phones ignore it |
 | host → device | `{"t":"ask","id":"<32 hex>","tool":"<≤ 64>","summary":"<≤ 2000>","ttl":<s left>,"cat":[…],"why":"<≤ 200>"[,"why_en":"<≤ 200>"][,"cred":"read"\|"change"][,"batch":"<scope>","batch_max":20,"batch_secs":600][,"task":"<≤ 80>"]}` | a permission request; `summary` = what the phone shows (command / path / compact JSON), in ONE language — the host's `appearance.language` (P128; it is what the phone signs); `cat` = danger categories (`[]` = low risk; `opaque` = Agent J can't tell what the command does, P137), `why` = the rule that fired (Chinese; an `opaque` card also shows the decoded / expanded part it could read), `why_en` its English twin (the phone shows one of them by its language), `cred` = whether a `credentials` card only shows one (`read` → 查看密码或密钥) or changes one (`change` → 改密码或密钥); `batch` (low risk only) = the scope a batch approval would cover; `task` = the scheduled task it comes from (display only, not signed) |
-| host → device | `{"t":"ask_done","id","result":"allow"\|"deny"\|"timeout"\|"gone"\|"stopped"}` | decided (by any phone, the timeout, the agent withdrawing / serve stopping, or 全部停下) |
+| host → device | `{"t":"ask_done","id","result":"allow"\|"deny"\|"timeout"\|"gone"\|"stopped"}` | decided (by any phone, the timeout, the agent withdrawing / serve stopping, or 全部停下); `"main"` = a friend card handed to the main Agent (ADR-0304, §17.7) |
 | device → host | `{"t":"answer","id","ok":bool,"sig":"<b64url 64 B>"[,"batch":true]}` | the human's decision, signed; `batch:true` (with `ok:true`) = `allow_batch`: this one and the rest of this turn's calls of that scope |
 | host → device | `{"t":"auto","id","tool","summary":"<first line ≤ 200>","grant":"<id>"}` | a call approved by a batch grant (shown as one line 「已按你的授权自动批准：…」; no card, no push) |
 | host → device | `{"t":"grant","id":"<the signed request id>","scope","left":n,"secs":s}` / `{"t":"grant_end","id","why":"turn_end"\|"revoked"\|"limit"\|"expired"\|"device_gone"}` | a live batch approval / its end; live ones are re-sent after ready |
@@ -675,7 +675,13 @@ App messages (all inside §3 transport messages):
   public key)}` on ready. A browser that the human lets show notifications subscribes with that key
   (`userVisibleOnly: true`) and sends `{"t":"push_sub","endpoint","p256dh","auth"}` inside the session (`{"t":"push_off"}` drops
   it). The host keeps one subscription per device in `push.json` (0600), drops it on revoke and when the push service answers
-  404 / 410. **The subscription never reaches our servers.**
+  404 / 410 (only if the rejected subscription is still the stored one). **The subscription never reaches our servers.**
+- On ready the host sends `{"t":"push_state","on":bool}` for this device's persisted record before `push_key`. It also sends
+  `push_state` after `push_sub` (true only when accepted) or `push_off` (false). With browser notification permission granted,
+  the page may re-send an existing subscription; it may silently create a missing subscription only when the host confirms
+  `on:true` for that device. Permission alone cannot opt in. An explicit off persists seat-scoped local off intent (localStorage, with bounded IndexedDB fallback), unsubscribes and sends
+  `push_off` with a UUID `r`; only the paired Host's `push_state {on:false,r}` with that same UUID confirms success. Missing
+  acknowledgement fails visibly and the off request retries on reconnect; a later explicit on is required to resume.
 - Endpoints are accepted only on `https` (default port, no credentials) at `fcm.googleapis.com`, `updates.push.services.mozilla.com`,
   `push.services.mozilla.com`, `web.push.apple.com`, `*.push.apple.com`, `*.notify.windows.com` — so a device cannot make the host
   post to arbitrary URLs. (Tests add one exact local origin through `AGENTJ_TEST_PUSH_ORIGIN`.)
@@ -836,7 +842,7 @@ a revoke in the middle stops the message there (P33-X07).
   customer's git), every component opened with `O_NOFOLLOW` / `O_DIRECTORY` relative to the previous one, the file with
   `O_CREAT|O_EXCL|O_NOFOLLOW`, 0600, written to `.part-<bid>` then renamed. A component that is a symlink, not a directory or
   not owned by the user → `unsafe_inbox`, nothing written (the Agent can write in its folder, so it could plant a link).
-- Retention: day folders older than **30 days** are removed at `serve` start and daily; over 2 GiB the oldest day goes first,
+- Retention: voice originals from phone recordings and Telegram/WeChat voice are checked every 15 minutes and removed after `inbox.voice_retention_hours` (default 24 hours; 0 disables this voice cleanup); staged or claimed files are not removed by the voice sweep. Other day folders older than **30 days** are removed at `serve` start and daily; over 2 GiB the oldest day goes first,
   never today's. `agentj inbox [list|clear|path]`. The Agent may read, move or delete its inbox files — they are the human's
   gift to it, nothing of agentj's. Every cleanup (retention, quota, `inbox clear`, the listing / usage, deleting a staged file
   nobody was told about) goes through the same `O_NOFOLLOW` directory-fd chain as the write and removes entries relative to
@@ -3376,6 +3382,18 @@ signed. The host never trusts it: on `bad_signature` it only logs `status` = `dg
 variant the signature does fit (`unsigned_group` · `unsigned_ctx` · `decision` · `group_not_sent` · `none`); no text, not
 in the receipt. The web builds every friend answer with `wire.friendAnswer`, which sends `group` / `ctx` exactly when their
 line is signed and throws otherwise. Older hosts ignore `dg`; the signed bytes are unchanged.
+
+ADR-0304-friend-card-main-agent addition to §17.7 (0.30.6): a `peer_question` allow may carry `group:"main-agent"` for ANY
+friend (「交给主 Agent 来办」; Same owner keeps `group:"main"`). Signed exactly like `colleague`: approve text + one line
+`"\n" + hex(SHA-256("group:main-agent"))`; refused with `shape` on a deny, a `handover` or pairing card, or a host without the
+hook. The host turns it into ONE delegated turn for the main Agent with the owner-approved friend-handover source
+`{"kind":"friend_task","role":"task"}` (as an approved `handover` card; never `phone`: no batch, goal or Full-access
+exemption, every sensitive step a fresh card); the friend's words — exactly the card-shown, signed text (≤ 4000 characters)
+— go in as a fenced untrusted JSON line between per-turn nonce markers, never as the owner's words. `ask_done.result` =
+`"main"` (older phones leave the card open until it expires; the host has already consumed it). Serve refusals before the
+decision, card left open: `estop` · `not_paired` · `no_agent` · `too_many` · `submit_failed` · `handoff_error` ·
+`not_friend` · `blocked`. The friend gets nothing from the host; the main Agent replies with
+`agentj friends tell <friend> --reply-to <mid> <text>` (that friend only).
 
 
 ### §17.10 — Same owner (P405, quiet source candidate)

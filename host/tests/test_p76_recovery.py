@@ -96,7 +96,7 @@ class Recovery(unittest.TestCase):
                 caller=subprocess.Popen([sys.executable,str(script)],start_new_session=True)
                 try:
                     self.assertEqual(caller.wait(timeout=15),-signal.SIGTERM)
-                    end=time.monotonic()+10
+                    end=time.monotonic()+25   # U33rz: recovery now waits STABLE_S of continuous "active"
                     while time.monotonic()<end and (not active.exists() or service_recovery.read(self.st).get('status')!='ok'):
                         time.sleep(.05)
                     self.assertEqual(active.read_text(),__version__)

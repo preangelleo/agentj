@@ -76,7 +76,8 @@ class _Env(unittest.TestCase):
         old = self.st.root / "upgrade-cache" / f"agentj-{__version__}-py3-none-any.whl"
         old.parent.mkdir(parents=True, exist_ok=True)
         old.write_bytes(b"old")
-        old.with_suffix(".verified.json").write_text(json.dumps({"sha256": hashlib.sha256(b"old").hexdigest()}))
+        old.with_suffix(".verified.json").write_text(json.dumps({"sha256": hashlib.sha256(b"old").hexdigest(),
+                                                                 "signed": False, "installed_record": True}))
         return old
 
     def apply(self, run, old=None, svc_on=False):

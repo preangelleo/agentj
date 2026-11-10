@@ -205,6 +205,7 @@ PREF_KEYS.push('heartbeat.daily_at');   // P207 §3: 「每天固定时间唤醒
 PREF_KEYS.push('ui.card_hot_action');   // P285: the reply card's bottom-left hot key (hotkey.js writes it from its own sheet)
 PREF_KEYS.push(toolorder.TOOL_KEY);     // P340: the composer buttons' order (toolsort.js writes it; an older host: this device only)
 PREF_KEYS.push(ntf.PREF_KEY);           // P365: 「允许自动化往这里发消息」 (notify.js; host ≥ P365 lists it in settable)
+PREF_KEYS.push('inbox.voice_retention_hours');   // 0.30.6: 「语音原文件保留」 hours (0 = never); shown only when the host lists it
 // P207 §3 (was P156's ⇄ stepper): the idle interval is a dropdown of these (minutes) + a custom number 5–1440; a value set
 // elsewhere (agentj heartbeat set 45m) shows as 「自定义」 with that number
 export const HB_STEPS = [30, 60, 120, 180, 240, 360, 480, 720, 1440];
@@ -453,6 +454,10 @@ export function render() {
   for (const b of document.querySelectorAll('[data-set-theme]')) b.setAttribute('aria-pressed', String(b.dataset.setTheme === theme));
   tgl('set-speak', pget('voice.speak_replies', false) === true);
   tgl('set-wake', pget('voice.wake_enabled', false) === true);
+  const vk = el('set-voice-keep');   // 0.30.6: voice-original retention (host enum 0/1/6/24/72/168/720, default 24)
+  el('set-voice-keep-row').hidden = !H.paired() || !prefSettable('inbox.voice_retention_hours');
+  if (document.activeElement !== vk) vk.value = String(pget('inbox.voice_retention_hours', 24));
+  if (vk.selectedIndex < 0) vk.value = '24';
   renderRemoteNames(pget(REMOTE_NAMES, []), prefSettable(REMOTE_NAMES), setPref);
   renderAsr({ get: pget, paired: H.paired(), settable: prefSettable, t });
   renderFont();
@@ -783,6 +788,7 @@ export function configure(hooks) {
       if (right !== isRight()) { twoWay(id, right); pick(right); }
     });
   }
+  el('set-voice-keep').addEventListener('change', () => setPref('inbox.voice_retention_hours', Number(el('set-voice-keep').value)).then((ok) => { if (!ok) { explainPrefFail(); render(); } }));
   el('set-hb-every').addEventListener('change', () => {
     const v = el('set-hb-every').value;
     el('set-hb-custom').hidden = v !== 'custom';

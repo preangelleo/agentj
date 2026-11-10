@@ -869,7 +869,7 @@ class State:
                   "tier", "ret", "age_h",   # P559: P551's ask `tier` (uv | hold | card) was dropped before this; wechat_forward ret / age_h
                   "mode", "types", "server", "bound",   # #420: a refused Codex elicitation's mode / field types / MCP server name / bound (no values)
                   "harness", "op", "name_hash",   # #427: account add / use / rename / remove (name as sha256 8 hex, never a token)
-                  "into", "uncertain", "outcome"}   # w2-sec R3-6: msg_steered's target turn id + uncertain flag; bot_handoff outcome word
+                  "into", "uncertain", "outcome", "day"}   # w2-sec R3-6: msg_steered's target turn id + uncertain flag; bot_handoff outcome word; #0304 inbox day folder
 
     def log(self, ev: str, **kw) -> None:
         from .diagnostic_log import record

@@ -228,7 +228,7 @@ With Codex, as long as you never wrote `sandbox_mode` at the top of `~/.codex/co
   computer browser.
 - Hold "File" to paste the clipboard's text at the cursor. Into an empty box, text over 2,000 characters becomes a .txt attachment; if the box already has words, it goes in unless together they pass the single-message limit, and then only the pasted part becomes the attachment. Hold "Photos" to add the clipboard's image as an attachment. An iPhone may first show its own small paste bubble — tap it.
 - Up to 10 attachments at a time, 200 MB each, of any file type. Recordings and videos are transcribed on the Agent J host and the Agent gets the original too. Pasted text follows the same rule: words already in the box → it goes in unless the total passes the single-message limit; an empty box → over 2,000 characters becomes an attachment.
-- Attachments travel encrypted straight to the Agent J host, into the Agent's working folder, and are removed after 30 days.
+- Attachments travel encrypted straight to the Agent J host, into the Agent's working folder, and other attachments are removed after 30 days. Originals of phone recordings and Telegram and WeChat voice messages are kept for 24 hours by default. Change this in Settings → Reading and voice → Voice original retention (0, 1, 6, 24, 72, 168 or 720 hours; 0 means no automatic cleanup).
 
 ## Voice: tap to lock, hold to talk and release to send
 

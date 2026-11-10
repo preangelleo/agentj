@@ -54,7 +54,15 @@ function graph(v,doc){
 export function renderComponent(v,doc){
  if(RENDERERS[v.component]!==v.component)throw new Error('unregistered renderer');
  const box=el(doc,'section',undefined,'reply-component');box.dataset.component=v.component;box.append(el(doc,'h3',v.title));
- const action=(label,text)=>{const b=el(doc,'button',label,'rc-draft');b.type='button';b.disabled=true;b.addEventListener('click',e=>{e.stopPropagation();const c=ctx.get(box);if(c?.on)c.draft(t('components.prefix')+' '+text());});return b;};
+ const action=(label,text,send=false)=>{const b=el(doc,'button',label,send?'rc-confirm':'rc-draft');b.type='button';b.disabled=true;
+  if(send){
+   let held=false,timer=0,start=0;
+   const cancel=()=>{clearTimeout(timer);timer=0;};
+   b.addEventListener('pointerdown',e=>{if(e.button!==0||b.disabled)return;held=false;start=Date.now();cancel();timer=setTimeout(()=>{timer=0;held=true;const c=ctx.get(box);if(c?.on)c.draft(t('components.prefix')+' '+text());},600);});
+   for(const event of ['pointerup','pointercancel','pointerleave'])b.addEventListener(event,cancel);
+   b.addEventListener('contextmenu',e=>{e.preventDefault();cancel();if(held)return;held=true;const c=ctx.get(box);if(c?.on)c.draft(t('components.prefix')+' '+text());});
+   b.addEventListener('click',async e=>{e.stopPropagation();cancel();if(held||(start&&Date.now()-start>=600)){held=false;return;}const c=ctx.get(box);if(!c?.on||box.dataset.sent==='1'||box.dataset.sending==='1')return;box.dataset.sending='1';for(const choice of box.querySelectorAll('.rc-confirm'))choice.disabled=true;try{if(await c.say(text()))box.dataset.sent='1';}finally{delete box.dataset.sending;if(ctx.get(box)===c&&c.on&&box.dataset.sent!=='1')for(const choice of box.querySelectorAll('.rc-confirm'))choice.disabled=false;}});
+  }else b.addEventListener('click',e=>{e.stopPropagation();const c=ctx.get(box);if(c?.on)c.draft(t('components.prefix')+' '+text());});return b;};
  if(v.component==='flowchart'||v.component==='chart'){
   box.append(graph(v,doc));
   if(v.component==='flowchart'){const nodes=el(doc,'ul');for(const n of v.nodes)nodes.append(el(doc,'li',n.label));box.append(nodes);}
@@ -63,7 +71,7 @@ export function renderComponent(v,doc){
  }else if(v.component==='steps'){
   const list=el(doc,'ol');for(const x of v.items){const li=el(doc,'li',`${t('components.'+x.status)} · ${x.label}`);if(x.status==='active')li.setAttribute('aria-current','step');list.append(li);}box.append(list);
  }else if(v.component==='confirm'){
-  box.append(el(doc,'p',v.message));for(const choice of v.choices)box.append(action(choice,()=>`${v.title}: ${choice}`));
+  box.append(el(doc,'p',v.message));for(const choice of v.choices)box.append(action(choice,()=>`${v.title}: ${choice}`,true));
  }else if(v.component==='form'){
   const fields=[];
   for(const f of v.fields){const label=el(doc,'label',f.label),input=el(doc,f.type==='select'?'select':'input');
@@ -72,7 +80,7 @@ export function renderComponent(v,doc){
   }
   box.append(action(t('components.prepare'),()=>v.title+'\n'+fields.map(([f,i])=>f.label+': '+(f.type==='checkbox'?(i.checked?t('components.yes'):t('components.no')):i.value.slice(0,1000))).join('\n')));
  }
- if(v.component==='form'||v.component==='confirm')box.append(el(doc,'p',t('components.draftOnly'),'rc-note'));
+ if(v.component==='form'||v.component==='confirm')box.append(el(doc,'p',t(v.component==='confirm'?'components.confirmHint':'components.draftOnly'),'rc-note'));
  return box;
 }
 export function upgradeComponents(root){
@@ -83,11 +91,11 @@ export function upgradeComponents(root){
   try{wrap.replaceWith(renderComponent(v,root.ownerDocument));count++;}catch{/* A failed block keeps its source; the next block still renders. */}
  }
 }
-export function wireComponents(root,on,draft){
+export function wireComponents(root,on,draft,say){
  for(const box of root.querySelectorAll('.reply-component')){
   const inQuote=box.parentElement?.closest('blockquote');
   const enabled=!!on&&(!inQuote||inQuote===root);
-  ctx.set(box,{on:enabled,draft});
-  for(const b of box.querySelectorAll('button,input,select'))b.disabled=!enabled;
+  ctx.set(box,{on:enabled,draft,say});
+  for(const b of box.querySelectorAll('button,input,select'))b.disabled=!enabled||(b.classList.contains('rc-confirm')&&box.dataset.sent==='1');
  }
 }

@@ -309,6 +309,16 @@ class Whitelist(Base):
             self.assertEqual(self.wd.do("rollback", "en", emit)["why"], "unavailable")
         self.assertEqual(self.calls, [])
 
+    def test_signed_reinstall_is_fixed_and_not_support_executable(self):
+        steps = []
+        with patch("agentj.update.repair_install", return_value={"result": "ok"}) as repair:
+            self.assertIn("reinstall", self.wd.available())
+            self.assertNotIn("reinstall", rw.HELP_ACTIONS)
+            result = self.wd.do("reinstall", "en", lambda *a: steps.append(a))
+        self.assertTrue(result["ok"])
+        self.assertEqual(steps[-1][1], "ok")
+        repair.assert_called_once_with(self.st)
+
     def test_restart_texts_are_plain(self):
         steps = []
         res = self.wd.do("restart", "zh", lambda *a: steps.append(a))

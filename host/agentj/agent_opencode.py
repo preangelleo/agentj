@@ -562,6 +562,8 @@ class OpenCodeAgent(Agent):
     def cur_model(self) -> str | None:
         m = self.cfg.get("model")
         native = getattr(self, "session_model", None) or {}
+        if self.cfg.get("session_mode") == "shared" and isinstance(native, dict) and native.get("providerID") and native.get("id"):
+            m = None  # shared native session owns its model, not the configured default
         if not m and isinstance(native, dict):
             pid, mid = native.get("providerID"), native.get("id")
             m = f"{pid}/{mid}" if isinstance(pid, str) and isinstance(mid, str) else None
@@ -620,6 +622,9 @@ class OpenCodeAgent(Agent):
     def _recovered(self, model, previous):
         self.model_recovery = {"from": previous, "to": model}
         self.cfg["model"] = model
+        # A shared native session's model wins in cur_model(); clear the failed one so the new
+        # choice shows now and _model() re-posts it to the session before the next prompt.
+        self.session_model = None
         self.meter(model=model, model_name=self.model_name(model), ctx=None, quota_windows=[])
 
     async def _free_before_prompt(self):
@@ -666,8 +671,7 @@ class OpenCodeAgent(Agent):
             return
         zh = self.cfg.get("language", "en").startswith("zh")
         if not models:
-            self.host.agent_notice("[切回 Codex](reply:切回 Codex)" if zh else "[Switch back to Codex](reply:Switch back to Codex)")
-            return
+            return  # the failure notice already points to phone model selection; no duplicate fallback notice
         if not card or not turn:
             return
         card("model", Result("点一个能用的模型换上（之后的对话都用它）：" if zh else "Tap a working model (used from now on):", "info",
@@ -1752,7 +1756,7 @@ class OpenCodeAgent(Agent):
                 box["st"], _ = await client.request("POST", path, request_body, **({"timeout": 600} if native else {}))
                 if box["st"] in (200, 204):             # §10.2: prompt_async accepted = delivered
                     return True
-                # 4xx: OpenCode refused it (never delivered); anything else may have been taken (P33-X08)
+                # HTTP 500 does NOT prove non-delivery: native execution could have started before the error.
                 return False if isinstance(box["st"], int) and 400 <= box["st"] < 500 else UNCERTAIN
             try:
                 if native:
@@ -1766,13 +1770,28 @@ class OpenCodeAgent(Agent):
                     await self._kill(self.proc)
                 self._delivery_uncertain()
                 return  # the native request may already have executed; never replay it
-            if st == 404 and not attempt and not native:                 # the conversation is gone: a fresh one
+            if st == 500:
+                # Neither a missing busy event nor repeated HTTP 500 proves non-execution.
+                # Leave the send uncertain; no new session or automatic resend, even on an owned server.
+                if hasattr(self.host, '_fallback_used'):
+                    self.host._fallback_used = True  # do not append a second diagnostic fallback to this same failure
+                self.host.st.log("agent_delivery_uncertain", agent=self.kind, phase="prompt", code="http_500")
+                self.fail_notice("OpenCode 返回了错误，暂时无法确认是否已处理这条消息。不会自动重发；请先查看回复，再在手机切换模型。" if
+                                 self.cfg.get('language', 'en').startswith('zh') else
+                                 "OpenCode reported an error. We cannot confirm whether it processed this message, so it will not be resent. Check for a reply, then switch models on your phone if needed.")
+                self._offer_models()
+                return
+            if st == 404 and not attempt and not native and self.owns_harness():
+                # A missing conversation: one bounded retry with a fresh session.
                 if self.persist:
                     self.host.st.set_agent_session(self.kind, None)
                 await self._kill(self.proc)
                 continue
             if st not in (200, 204):
-                self.fail_notice(f"OpenCode 没有接这条消息（HTTP {st}）。")
+                self.fail_notice("OpenCode 暂时没能处理这条消息。请在手机切换模型后再试。" if
+                                 self.cfg.get('language', 'en').startswith('zh') else
+                                 "OpenCode could not handle this message. Switch models on your phone and try again.")
+                self._offer_models()
                 return
             if self.persist and not self.cfg.get("_workflow_ceo") and not native:
                 main_identity.audit(self.cfg, self.kind, self.host.st, self.sid)
@@ -2097,12 +2116,11 @@ class OpenCodeAgent(Agent):
         return sum(x for x in parts if isinstance(x, int)) if any(isinstance(x, int) for x in parts) else None
 
     def _model_of(self, info: dict) -> dict | None:
-        m = split_model(self.cfg.get("model"))
-        if m:
-            return m
-        if isinstance(info.get("providerID"), str) and isinstance(info.get("modelID"), str):
+        if self.cfg.get("session_mode") == "shared" and isinstance(info.get("providerID"), str) and isinstance(info.get("modelID"), str):
             return {"providerID": info["providerID"], "modelID": info["modelID"]}
-        return None
+        return split_model(self.cur_model()) or (  # native session first in shared mode; configured selection in independent mode
+            {"providerID": info["providerID"], "modelID": info["modelID"]}
+            if isinstance(info.get("providerID"), str) and isinstance(info.get("modelID"), str) else None)
 
     async def cmd_compact(self, arg: str) -> Result:
         if not self.host.st.agent_session(self.kind):

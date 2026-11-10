@@ -273,7 +273,8 @@ class B15Rollback(unittest.TestCase):
         run = Runner(current="1.0.0")
         res = self.authorized(run, old)
         self.assertEqual((res["reason"], res["rollback"]), ("not_upgraded", "ok"))
-        self.assertTrue(any(str(old) in " ".join(map(str, c)) for c in run.calls), "the old wheel went back")
+        self.assertIn((old.name, old.read_bytes()), run.wheels, "the old wheel went back")
+        self.assertFalse(any(str(old) in " ".join(map(str, c)) for c in run.calls), "verified scratch copy, not the cache path")
         self.assertFalse((self.st.root / update.PENDING).exists())
 
     def test_authorized_service_failure_rolls_back(self):

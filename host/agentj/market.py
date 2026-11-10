@@ -364,7 +364,9 @@ def _summary_lines(s: dict) -> list[str]:
         for c in s["cli"]:
             out += _t(f"{c['name']} {c['version']}".strip() + (" （可选 optional）" if c["optional"] else ""))
     if s["python_requirements"]:
-        out += [f"{META}Python 依赖文件 python requirements（agentj 不安装 / not installed by agentj）:", *_t(s["python_requirements"])]
+        out += [f"{META}Python 依赖文件 python requirements（只有官方签名的包、在 Agent J 为自检准备的 Python 里才由 agentj 安装 / "
+                f"installed by agentj only for an officially signed package, into the Python Agent J prepares for the self-check）:",
+                *_t(s["python_requirements"])]
     if s["env"]:
         out.append(f"{META}环境变量 env（值只填在你本机，绝不经广场 / values stay on your machine）:")
         for e in s["env"]:
@@ -1196,7 +1198,7 @@ def _hidden_dirs(paths) -> list[str]:
     return out
 
 
-def verify_bwrap_argv(scratch, pkg_root, *, hide=(), homes=None, bwrap=None) -> list[str]:
+def verify_bwrap_argv(scratch, pkg_root, *, hide=(), homes=None, bwrap=None, expose=()) -> list[str]:
     """The strict bubblewrap prefix for install.verify (ends with "--"): the whole system read-only; an empty tmpfs over
     $HOME, the real home, agentj's state (`hide`), /tmp, /run, /var/tmp; then the scratch folder bound back read-write on
     top (it may live under /tmp); a fresh /dev and /proc; every namespace unshared (network included); killed with agentj;
@@ -1205,13 +1207,15 @@ def verify_bwrap_argv(scratch, pkg_root, *, hide=(), homes=None, bwrap=None) -> 
     a = [bwrap or shutil.which("bwrap") or "bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]
     for d in _hidden_dirs([*(homes if homes is not None else _homes()), *hide, "/tmp", "/run", "/var/tmp"]):
         a += ["--tmpfs", d]
+    for d in dict.fromkeys(os.path.realpath(p) for p in expose):     # ADR-0305: Agent J's prepared Python, read-only
+        a += ["--ro-bind", d, d]
     a += ["--bind", s, s, "--unshare-all", "--die-with-parent", "--new-session", "--clearenv"]
     for k, v in verify_env(s).items():
         a += ["--setenv", k, v]
     return a + ["--chdir", os.path.realpath(pkg_root), "--"]
 
 
-def verify_sbpl_profile(scratch, *, hide=(), homes=None) -> tuple[str, dict]:
+def verify_sbpl_profile(scratch, *, hide=(), homes=None, expose=()) -> tuple[str, dict]:
     """(profile, -D parameters) for `sandbox-exec` (macOS). Paths travel as parameters, never spliced into the profile (as in
     fence.sbpl_profile). Later rules win: no network; no write anywhere but the scratch folder (and /dev/null & co.); the
     homes and agentj's state unreadable, the scratch folder and the system paths python needs readable again."""
@@ -1221,6 +1225,12 @@ def verify_sbpl_profile(scratch, *, hide=(), homes=None) -> tuple[str, dict]:
     for i, p in enumerate(deny):
         params[f"HIDE_{i}"] = p
     q = lambda p: '"' + p.replace("\\", "\\\\").replace('"', '\\"') + '"'  # noqa: E731  (constants only)
+    ex = list(dict.fromkeys(os.path.realpath(p) for p in expose if p))
+    up = sorted({a for p in ex for a in _ancestors(p)} - set(ex))
+    for i, p in enumerate(ex):
+        params[f"EXPOSE_{i}"] = p
+    for i, p in enumerate(up):
+        params[f"EXPOSE_UP_{i}"] = p
     lines = [
         "(version 1)",
         "(allow default)",
@@ -1231,6 +1241,9 @@ def verify_sbpl_profile(scratch, *, hide=(), homes=None) -> tuple[str, dict]:
         ' (regex #"^/dev/fd/[0-9]+$"))',
         *([] if not deny else ["(deny file-read*", *[f'  (subpath (param "HIDE_{i}"))' for i in range(len(deny))], ")"]),
         '(allow file-read* (subpath (param "SCRATCH")))',
+        *([] if not ex else [";; ADR-0305: Agent J's prepared Python (read and run only; writes stay denied above)",
+                             "(allow file-read* process-exec" + "".join(f' (subpath (param "EXPOSE_{i}"))' for i in range(len(ex))) + ")"]
+          + (["(allow file-read-metadata" + "".join(f' (literal (param "EXPOSE_UP_{i}"))' for i in range(len(up))) + ")"] if up else [])),
         "(allow file-read* " + " ".join(f"(subpath {q(p)})" for p in _MAC_SYSTEM) + ")",
         "(allow file-read-metadata (literal \"/\")" + "".join(f' (literal (param "HIDE_{i}"))' for i in range(len(deny))) + ")",
         "(deny signal)",
@@ -1244,11 +1257,19 @@ def verify_sbpl_profile(scratch, *, hide=(), homes=None) -> tuple[str, dict]:
     return "\n".join(lines) + "\n", params
 
 
-def verify_sandbox_argv(kind: str, scratch, pkg_root, *, hide=()) -> list[str]:
+def _ancestors(p: str) -> list[str]:
+    out = []
+    while os.path.dirname(p) != p:
+        p = os.path.dirname(p)
+        out.append(p)
+    return out
+
+
+def verify_sandbox_argv(kind: str, scratch, pkg_root, *, hide=(), expose=()) -> list[str]:
     if kind == "bubblewrap":
-        return verify_bwrap_argv(scratch, pkg_root, hide=hide)
+        return verify_bwrap_argv(scratch, pkg_root, hide=hide, expose=expose)
     if kind == "sandbox-exec":
-        prof, params = verify_sbpl_profile(scratch, hide=hide)
+        prof, params = verify_sbpl_profile(scratch, hide=hide, expose=expose)
         a = [SANDBOX_EXEC, "-p", prof]
         for k, v in params.items():
             a += ["-D", f"{k}={v}"]
@@ -1307,31 +1328,46 @@ def min_python(m) -> tuple[int, int] | None:
 def pick_python(want, prefix, env, cwd, deadline=None) -> str | None:
     """#478: the first python3 / python3.N on the self-check PATH whose version (asked inside the same sandbox) is ≥ `want`.
     Security r1 L3: each probe ≤ min(10 s, what is left of the self-check `deadline`); a spent deadline probes nothing."""
-    seen = []
-    for n in ["python3", *(f"python3.{x}" for x in range(20, want[1] - 1, -1))]:
-        exe = shutil.which(n, path=VERIFY_PATH)
-        if not exe or os.path.realpath(exe) in seen:
+    return _pick(_system_pythons(want), want, prefix, env, cwd, deadline)[0]
+
+
+def _system_pythons(want) -> list[str]:
+    return [e for n in ["python3", *(f"python3.{x}" for x in range(20, want[1] - 1, -1))] if (e := shutil.which(n, path=VERIFY_PATH))]
+
+
+def _pick(cands, want, prefix, env, cwd, deadline=None) -> tuple[str | None, str | None, str | None]:
+    """→ (the first candidate ≥ want, its version "3.x.y", the newest version seen) — every probe inside `prefix`."""
+    seen, best = [], None
+    for exe in cands:
+        if os.path.realpath(exe) in seen:
             continue
         seen.append(os.path.realpath(exe))
         left = 10.0 if deadline is None else min(10.0, deadline - _now_mono())
         if left <= 0:
-            return None
+            return None, None, best and ".".join(map(str, best))
         try:
-            r = subprocess.run(prefix + [exe, "-I", "-S", "-c", "import sys;print(*sys.version_info[:2])"], cwd=cwd, env=env,
+            r = subprocess.run(prefix + [exe, "-I", "-S", "-c", "import sys;print(*sys.version_info[:3])"], cwd=cwd, env=env,
                                stdin=subprocess.DEVNULL, capture_output=True, timeout=left, start_new_session=True)
-            if r.returncode == 0 and tuple(map(int, r.stdout.split())) >= want:
-                return exe
+            v = tuple(map(int, r.stdout.split()))
+            if r.returncode != 0 or not 2 <= len(v) <= 3:
+                continue
+            best = max(best or v, v)
+            if v >= want:
+                return exe, ".".join(map(str, v)), ".".join(map(str, best))
         except (OSError, ValueError, subprocess.SubprocessError):
             continue
-    return None
+    return None, None, best and ".".join(map(str, best))
 
 
 def run_verify(cmd: str, pkg_root: pathlib.Path, scratch: pathlib.Path, timeout: float | None = None, *, kind: str,
-               hide=(), certified: bool = False, python=None) -> tuple[int, str]:
+               hide=(), certified: bool = False, python=None, prep=None, used=None, prep_first=False) -> tuple[int, str]:
     """Run `install.verify` in `pkg_root` (inside `scratch`) in the `kind` sandbox, with PATH + a temporary HOME / TMPDIR +
-    LANG and nothing else. → (exit code, last output). Timeout → (124, …). There is no unsandboxed path."""
+    LANG and nothing else. → (exit code, last output). Timeout → (124, …). There is no unsandboxed path.
+    ADR-0305-plaza-python: no declared Python on the PATH → `prep()` (host side, outside the sandbox: plaza_python.prepare)
+    may give one; its folders are then mounted read-only. `used` gets {source, version, path} or {python_missing, found, prep}."""
     if kind not in SANDBOX_TEXT:
         raise ValueError("run_verify needs a sandbox")
+    used = {} if used is None else used
     cmds = parse_verify(cmd, certified=certified)
     env = verify_env(scratch)
     for d in ("home", "tmp"):
@@ -1346,11 +1382,20 @@ def run_verify(cmd: str, pkg_root: pathlib.Path, scratch: pathlib.Path, timeout:
             if not os.path.isfile(exe):
                 return 127, f"{prog}: not in the package"
         elif python and prog in ("python3", "python"):
-            exe = pick_python(python, prefix, env, pkg_root, deadline)
+            exe, best = used.get("path"), None
+            if not exe and prep is not None and prep_first:          # certified + requirements: their own environment first
+                exe, prefix, deadline = _try_prep(prep, used, python, kind, scratch, pkg_root, hide, prefix, env, deadline, True)
+            if not exe:
+                exe, ver, best = _pick(_system_pythons(python), python, prefix, env, pkg_root, deadline)
+                if exe:
+                    used.update(source="system", version=ver, path=exe)
+            if not exe and prep is not None and not prep_first and deadline - _now_mono() > 0:
+                exe, prefix, deadline = _try_prep(prep, used, python, kind, scratch, pkg_root, hide, prefix, env, deadline)
             if not exe and deadline - _now_mono() <= 0:
                 return 124, "timeout"
             if not exe:
-                return 127, f"python3.{python[1]}: not found on PATH (needs Python ≥ {python[0]}.{python[1]})"
+                used.update(python_missing=list(python), found=best)
+                return 127, f"no Python ≥ {python[0]}.{python[1]} on the self-check PATH"
         else:
             exe = shutil.which(prog, path=VERIFY_PATH)
             if not exe:
@@ -1376,6 +1421,28 @@ def run_verify(cmd: str, pkg_root: pathlib.Path, scratch: pathlib.Path, timeout:
         if p.returncode != 0:
             return p.returncode, tail
     return 0, tail
+
+
+def _try_prep(prep, used, python, kind, scratch, pkg_root, hide, prefix, env, deadline, want_req=False):
+    """ADR-0305: prepare (host side; its time is not the self-test's) → (python | None, sandbox prefix, deadline)."""
+    t0 = _now_mono()
+    probe = lambda g: _pick([g["path"]], python, verify_sandbox_argv(kind, scratch, pkg_root, hide=hide, expose=g["expose"]),  # noqa: E731
+                            env, pkg_root)[0] is not None      # P1: asked inside the same sandbox prefix that will run it
+    got = prep(probe)
+    deadline += _now_mono() - t0
+    used["prep"] = "ok" if got.get("ok") else got.get("why")
+    used["requirements"] = got.get("requirements") if got.get("ok") else ("not_prepared" if want_req else None)
+    if not got.get("ok"):
+        return None, prefix, deadline
+    pre = verify_sandbox_argv(kind, scratch, pkg_root, hide=hide, expose=got["expose"])
+    exe, ver, _ = _pick([got["path"]], python, pre, env, pkg_root, deadline)
+    if not exe:
+        used["prep"] = "failed"
+        if used.get("requirements") == "installed":       # F3: the system Python runs it, without those wheels
+            used["requirements"] = "not_prepared"
+        return None, prefix, deadline
+    used.update(source="agentj_uv", version=ver, path=exe)
+    return exe, pre, deadline
 
 
 def _now_mono() -> float:
@@ -1628,7 +1695,24 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
     elif params or params_file:
         raise PlazaError("技能没有参数 / a skill takes no --param")
     shown_params = {k: v for k, v in values.items() if k not in auto}
-    flags = {"replace": bool(replace), "sign_as": sign_as, "skip_verify": bool(skip_verify), "publisher": pubr["fp"]}
+    sandbox = None if (skip_verify or not s["verify"]) else sandbox_kind()
+    vref, vcmds = None, []            # #437: the grammar is judged BEFORE any card; refused → the self-test is skipped
+    if s["verify"] and not skip_verify:
+        try:
+            vcmds = parse_verify(m["install"]["verify"], certified=certified)
+            _verify_files_shipped(m, files)
+        except VerifyRefused as e:
+            vref, sandbox = e, None
+    deps = plaza_deps.missing(plaza_deps.wanted(s, vcmds), VERIFY_PATH)     # #466: known before the card; never a blocker
+    from . import plaza_python
+    want = min_python(m)                      # ADR-0305: a declared Python the PATH lacks → prepared with uv, or ONE named dependency
+    plan = _py_plan(st, m, files, vcmds, sandbox, certified) if sandbox and not vref and not _starter else None
+    py_auto = bool(plan and plan["uv"])       # F1: only then does the card / preview show the uv line — and only then is it run
+    deps = _py_deps(deps, want, {"source": "uv"} if py_auto or (plan and plan["system"]) else
+                    {"found": plan["found"], "prep": plan["no_prep"]} if plan else {},
+                    bool(plan) and not py_auto)
+    flags = {"replace": bool(replace), "sign_as": sign_as, "skip_verify": bool(skip_verify), "publisher": pubr["fp"],
+             **({"python_prep": plan["consent"]} if py_auto else {})}      # F1: the digest the owner confirms covers the uv line
     dg = install_digest(sha, target, h, shown_params, flags)
     install_date = str(values.get("install_date") or now.date().isoformat())
     if not _DATE.fullmatch(install_date):
@@ -1650,15 +1734,6 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
     owned = exists and _owned(st, target, m["name"])
     if exists and replace and not owned:
         raise PlazaError(f"{target}: {NOT_OURS}")
-    sandbox = None if (skip_verify or not s["verify"]) else sandbox_kind()
-    vref, vcmds = None, []            # #437: the grammar is judged BEFORE any card; refused → the self-test is skipped
-    if s["verify"] and not skip_verify:
-        try:
-            vcmds = parse_verify(m["install"]["verify"], certified=certified)
-            _verify_files_shipped(m, files)
-        except VerifyRefused as e:
-            vref, sandbox = e, None
-    deps = plaza_deps.missing(plaza_deps.wanted(s, vcmds), VERIFY_PATH)     # #466: known before the card; never a blocker
 
     if not owner_confirmed:
         out_lines = [FENCE_OPEN, f"{META}{NOTE}",
@@ -1685,6 +1760,8 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                 "self-test is NOT run (not at confirm either)")
         if deps:
             out_lines.append(_deps_line(deps))
+        if py_auto:
+            out_lines.append(f"{META}{plaza_python.card_line(plan, False)} / {plaza_python.card_line(plan, True)}")
         out_lines += [f"{META}装到 target ({h}): {target}" + ("（已存在 EXISTS）" if exists else ""),
                       f"{META}将写入的文件 files to write（{len(rendered)} 个，装到 target 下的相对路径 / paths under the target）:",
                       *_t("\n".join(sorted(rendered, key=lambda x: x.encode())))]
@@ -1749,6 +1826,7 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                         "target": str(target), "harness": h, "replace": bool(exists and replace),
                         "verify": ("skip" if skip_verify else "refused" if vref else sandbox or "none") if s["verify"] else None,
                         "verify_why": vref.short if vref else None, "os_warning": os_warning(s["os"]), "deps": [x["name"] for x in deps],
+                        **({"python_prep": {k: plan[k] for k in ("want", "req", "req_ok", "names", "count")}} if py_auto else {}),
                         "params": {k: _as_text(v) for k, v in shown_params.items()}, "sign_as": sign_as,
                         "downgrade": downgrade, "files": sorted(rendered, key=lambda x: x.encode())})
         if not res.get("ok"):
@@ -1789,7 +1867,7 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
             print("和".join(z for z, _ in what) + "：主人已在手机上签名允许 / the owner allowed " + " and ".join(e for _, e in what)
                   + " on the phone (signed)", file=out)
 
-    vran = False
+    vran, used = False, {}
     # 1. install.verify — in a throw-away copy of the raw package (before rendering, FORMAT §7.7), only inside a real sandbox
     if s["verify"]:
         if skip_verify:
@@ -1802,8 +1880,18 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                 print(f"install.verify: {NO_SANDBOX} / no usable sandbox on this machine: the package's self-test was not run",
                       file=out)
             else:
-                rc, tail = _sandboxed(st, m, files, sandbox, certified)
-                if _dep_exit(rc, tail):        # #466: "not found" is a dependency to add, not a broken package
+                if py_auto:                    # F1: the uv line was on the card / the confirmed preview: the owner's yes
+                    used["consent"] = True
+                elif plan and not plan["system"]:
+                    used["prep"] = plan["no_prep"]          # not prepared, and why (no uv / off / inside the Agent's fence)
+                rc, tail = _sandboxed(st, m, files, sandbox, certified, sha if py_auto and not _starter else None, used)
+                deps = _py_deps(deps, want, used, False)
+                _py_lines(used, out)
+                if rc == 127 and used.get("python_missing"):     # ADR-0305: the declared Python is a dependency, named as such
+                    rc = 0
+                    print(f"install.verify: {plaza_python.label(want)} 不在自检 PATH 上，安装继续 / not on the self-check PATH, "
+                          "the install goes on", file=out)
+                elif _dep_exit(rc, tail):        # #466: "not found" is a dependency to add, not a broken package
                     deps = _add_tail(deps, tail)
                     rc = 0
                     print(f"install.verify: exit 127 — 缺依赖 {', '.join(x['name'] for x in deps)}，安装继续 / missing "
@@ -1865,7 +1953,8 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
            "permissions": perm, **({"perm_grant": grant} if grant else {}), **({"publisher_grant": pub_grant} if pub_grant else {}),
            **({"audit_grant": audit_grant} if audit_grant else {}),
            "verify": {"state": "pending" if deps else "ok" if vran else "not_run", "missing": [x["name"] for x in deps],
-                      "digest": dg, "files": plaza_deps.tree_sha(rendered), "paths": sorted(rendered, key=lambda x: x.encode())}}
+                      "digest": dg, "files": plaza_deps.tree_sha(rendered), "paths": sorted(rendered, key=lambda x: x.encode()),
+                      **_py_record(want, used), **({"python_prep": plan["consent"]} if py_auto else {})}}
     from . import initialization
     init_doc = initialization.from_bundle(m, files)
     if init_doc is not None:
@@ -1884,16 +1973,98 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
     except PlazaError as e:
         print(f"warning: 安装计数没报上去（不影响安装）/ the install count was not reported (the install is fine): {e}", file=out)
     _todo(m, s, target, workspace, st, out)
-    _verify_outcome(m["name"], m["version"], deps, vran, out)
+    _verify_outcome(m["name"], m["version"], deps, vran, out, used, m["type"])
     return EXIT_OK
 
 
-def _sandboxed(st, m, files, sandbox, certified) -> tuple[int, str]:
+def _sandboxed(st, m, files, sandbox, certified, sha=None, used=None) -> tuple[int, str]:
     with tempfile.TemporaryDirectory(prefix="agentj-verify-") as tmp:
         scratch = pathlib.Path(tmp)
         write_tree(scratch / "pkg", files)
         return run_verify(m["install"]["verify"], scratch / "pkg", scratch, kind=sandbox, hide=[str(st.root)], certified=certified,
-                          python=min_python(m))
+                          python=min_python(m), prep=_py_prep(st, m, files, sha, certified) if sha else None, used=used,
+                          prep_first=bool(sha) and _req_ok(m, files, certified))
+
+
+def _req_ok(m, files, certified) -> bool:
+    """A certified package whose declared requirements file is shipped and plain → its own prepared environment."""
+    from . import plaza_python
+    req = summarize(m)["python_requirements"]
+    return bool(req and certified and files.get(req) is not None and plaza_python.req_lines(files[req]) is not None)
+
+
+def _py_prep(st, m, files, sha, certified):
+    """ADR-0305-plaza-python: the host-side preparation run_verify calls when the PATH has no declared Python."""
+    want, req = min_python(m), summarize(m)["python_requirements"]
+    if not want or fence.inside():          # only the host, outside the Agent's fence (its view of the state is a tmpfs)
+        return None
+    from . import plaza_python
+    return lambda probe=None: plaza_python.prepare(st, m["name"], sha, want, req=(req, files.get(req)) if req else None,
+                                                   certified=certified, probe=probe)
+
+
+def _py_plan(st, m, files, vcmds, sandbox, certified) -> dict | None:
+    """Before the card: the declared Python is not on the self-check PATH (asked inside the sandbox, as at confirm) →
+    {want, found, uv, req, req_ok} (GAP-0269-w4-3 closed for Python)."""
+    want = min_python(m)
+    if not (want and sandbox and any(a[0] in ("python3", "python") for a in vcmds)):
+        return None
+    with tempfile.TemporaryDirectory(prefix="agentj-verify-py-") as tmp:
+        scratch = pathlib.Path(tmp)
+        for d in ("pkg", "home", "tmp"):
+            (scratch / d).mkdir(mode=0o700)
+        pre = verify_sandbox_argv(sandbox, scratch, scratch / "pkg", hide=[str(st.root)])
+        exe, _, best = _pick(_system_pythons(want), want, pre, verify_env(scratch), scratch / "pkg", _now_mono() + 20)
+    from . import plaza_python
+    req_ok = _req_ok(m, files, certified)
+    if exe and not req_ok:
+        return None
+    uv = plaza_python.uv_binary() is not None
+    names, count = plaza_python.req_names(_req_list(m, files) if req_ok else [])
+    return {"want": want, "found": best, "uv": uv and not fence.inside(), "req": summarize(m)["python_requirements"],
+            "req_ok": req_ok, "system": bool(exe), "names": names, "count": count, "consent": _py_consent(m, files, certified),
+            # F8: inside the Agent's fence nothing is prepared (serve's `agentj plaza request` does), so the preview never says so
+            "no_prep": "host_only" if uv and fence.inside() else "no_uv" if plaza_python.enabled() else "off"}
+
+
+def _req_list(m, files) -> list[str]:
+    from . import plaza_python
+    req = summarize(m)["python_requirements"]
+    return (plaza_python.req_lines(files[req]) or []) if req and files.get(req) is not None else []
+
+
+def _py_consent(m, files, certified) -> dict | None:
+    """F1: the uv preparation plan as the card shows it (floor, requirements file, whether / which lines are installed)."""
+    from . import plaza_python
+    want = min_python(m)
+    if not want:
+        return None
+    ok = _req_ok(m, files, certified)
+    return plaza_python.consent(want, summarize(m)["python_requirements"], ok, _req_list(m, files) if ok else [])
+
+
+def _py_deps(deps: list, want, used: dict, missing: bool) -> list:
+    """The declared Python as ONE dependency named 「Python ≥ 3.N」 (never `python3.N`), or none once a Python was found."""
+    if not want:
+        return deps
+    from . import plaza_python
+    py = [d for d in deps if d["name"] in ("python3", "python") or plaza_python.NAME.fullmatch(d["name"] or "")]
+    deps = [d for d in deps if d not in py]
+    if used.get("source"):
+        return deps
+    if missing or py or used.get("python_missing"):
+        deps = [{"name": plaza_python.label(want), "user": [], "found": used.get("found"), "prep": used.get("prep"),
+                 "consent": bool(used.get("consent"))}, *deps]
+    return deps
+
+
+def _py_record(want, used: dict) -> dict:
+    if used.get("source"):
+        return {"python": {k: used[k] for k in ("source", "version", "path")},
+                **({"requirements": used["requirements"]} if used.get("requirements") else {})}
+    if want and (used.get("python_missing") or used.get("prep")):
+        return {"python": {"want": f"{want[0]}.{want[1]}", "found": used.get("found"), "prep": used.get("prep") or "off"}}
+    return {}
 
 
 def _dep_exit(rc: int, tail: str) -> bool:
@@ -1906,19 +2077,38 @@ def _add_tail(deps: list, tail: str, rc: int = 127) -> list:
     return deps or [{"name": f"? (exit {rc})", "user": []}]       # unnamed: still pending, never "ok"
 
 
+_VER = re.compile(r"\d{1,2}\.\d{1,3}(?:\.\d{1,4})?")
+
+
 def _deps_line(deps: list) -> str:
-    zh = "；".join(x["name"] + (f"（另有副本：{'、'.join(x['user'])}，未进入自检 PATH，请检查目录权限/真实路径）" if x["user"] else "（本机没找到）") for x in deps)
+    zh = "；".join(x["name"] + (f"（另有副本：{'、'.join(x['user'])}，未进入自检 PATH，请检查目录权限/真实路径）" if x["user"] else
+                              f"（系统里找到的是 {x['found']}）" if isinstance(x.get("found"), str) and _VER.fullmatch(x["found"]) else
+                              "（本机没找到）") for x in deps)
     return (f"{META}依赖待补 dependencies missing on the self-check PATH {VERIFY_PATH}: {zh}。不阻断安装：装好后 Agent 补齐再重跑自检，"
             "不用再签名 / not a blocker: after the install the Agent adds them and reruns the self-check, no new signature")
 
 
-def _verify_outcome(name, version, deps, vran, out) -> None:
+def _verify_outcome(name, version, deps, vran, out, used=None, kind="skill") -> None:
     if deps:
         print(f"状态 status: {plaza_deps.PENDING[0]} / {plaza_deps.PENDING[1]}", file=out)
         print(plaza_deps.task_text(name, version, deps, False, VERIFY_PATH), file=out)
         print(plaza_deps.task_text(name, version, deps, True, VERIFY_PATH), file=out)
     elif vran:
         print(f"{plaza_deps.PASSED[0]} / {plaza_deps.PASSED[1]} · {plaza_deps.ACCEPT[0]} / {plaza_deps.ACCEPT[1]}", file=out)
+    if vran and (used or {}).get("source") == "agentj_uv":       # ADR-0305 (7): the Agent runs the skill with this Python
+        from . import plaza_python
+        print(plaza_python.agent_line(used, kind, False), file=out)
+        print(plaza_python.agent_line(used, kind, True), file=out)
+
+
+def _py_lines(used: dict, out) -> None:
+    from . import plaza_python
+    if used.get("source") == "agentj_uv":
+        print(f"install.verify: 用 Agent J 准备的 Python {used['version']} 运行（uv）/ runs with the Python {used['version']} "
+              "Agent J prepared (uv)", file=out)
+    if used.get("requirements") in plaza_python.REQ_STATE:
+        z, e = plaza_python.REQ_STATE[used["requirements"]]
+        print(f"install.verify: {z} / {e}", file=out)
 
 
 def pending_of(st, name: str) -> dict | None:
@@ -1973,21 +2163,37 @@ def run_reverify(name: str, *, harness=None, st=None, out=None, local=False, pos
     except VerifyRefused:
         vcmds = None
     deps, sandbox, vran = plaza_deps.missing(plaza_deps.wanted(s, vcmds), VERIFY_PATH), sandbox_kind(), False
+    want, used = min_python(m), {}
+    deps = _py_deps(deps, want, {}, False)
+    # F1: uv prepares again only under the owner's recorded yes to this same plan (installed.json verify.python_prep)
+    agreed = isinstance(v.get("python_prep"), dict) and v["python_prep"] == _py_consent(m, files, bool(r["certified"]))
+    if want and agreed:
+        used["consent"] = True
+    elif want:
+        from . import plaza_python
+        used["prep"] = ("no_uv" if plaza_python.uv_binary() is None else "host_only" if fence.inside() else "no_consent") \
+            if plaza_python.enabled() else "off"
     if vcmds and sandbox:
-        rc, tail = _sandboxed(st, m, files, sandbox, bool(r["certified"]))
-        if _dep_exit(rc, tail):
+        rc, tail = _sandboxed(st, m, files, sandbox, bool(r["certified"]), r["sha256"] if agreed else None, used)
+        deps = _py_deps(deps, want, used, False)
+        _py_lines(used, out)
+        if rc == 127 and used.get("python_missing"):
+            pass
+        elif _dep_exit(rc, tail):
             deps = _add_tail(deps, tail)
         elif rc != 0:
             print(f"install.verify 失败（exit {rc}）/ failed (exit {rc}). Its output (data):", file=out)
             print("\n".join([FENCE_OPEN, *_t("\n".join(tail.splitlines()[-20:])), FENCE_CLOSE]), file=out)
-            _record_install(st, {**r, "verify": {**v, "state": "failed", "missing": []}})
+            _record_install(st, {**r, "verify": {**{k: x for k, x in v.items() if k not in ("python", "requirements")}, "state": "failed",
+                                                 "missing": [], **_py_record(want, used)}})
             return EXIT_ERROR
         else:
             vran = True
-    _record_install(st, {**r, "verify": {**v, "state": "pending" if deps else "ok" if vran else "not_run",
-                                         "missing": [x["name"] for x in deps]}})
+    _record_install(st, {**r, "verify": {**{k: x for k, x in v.items() if k not in ("python", "requirements")},
+                                         "state": "pending" if deps else "ok" if vran else "not_run",
+                                         "missing": [x["name"] for x in deps], **_py_record(want, used)}})
     st.log("plaza_pkg_verify", name=name, result="pending" if deps else "ok")
-    _verify_outcome(name, r["version"], deps, vran, out)
+    _verify_outcome(name, r["version"], deps, vran, out, used, r["type"])
     if not deps and not vran:
         print("自检没有运行（没有自检命令或本机没有沙箱）/ the self-check did not run (none declared, or no sandbox here)", file=out)
     return EXIT_ERROR if deps else EXIT_OK

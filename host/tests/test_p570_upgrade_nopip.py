@@ -45,7 +45,8 @@ class PlainVenvInstaller(unittest.TestCase):
             self.assertNotEqual(subprocess.run([str(py), '-m', 'pip', '--version'], capture_output=True).returncode, 0)
             info = {'kind': 'pip', 'where': str(py.parents[1]), 'legacy': False}
             def wheel(version):
-                path = root/f'agentj-{version}-py3-none-any.whl'
+                path = root/'upgrade-cache'/f'agentj-{version}-py3-none-any.whl'   # the real cache path roll_back requires
+                path.parent.mkdir(exist_ok=True)
                 meta = f'agentj-{version}.dist-info'
                 with zipfile.ZipFile(path, 'w') as z:
                     z.writestr('agentj/__init__.py', '')
@@ -53,7 +54,8 @@ class PlainVenvInstaller(unittest.TestCase):
                     z.writestr(meta+'/METADATA', f'Metadata-Version: 2.1\nName: agentj\nVersion: {version}\n')
                     z.writestr(meta+'/WHEEL', 'Wheel-Version: 1.0\nGenerator: p570-test\nRoot-Is-Purelib: true\nTag: py3-none-any\n')
                     z.writestr(meta+'/RECORD', '')
-                path.with_suffix('.verified.json').write_text(json.dumps({'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}))
+                path.with_suffix('.verified.json').write_text(json.dumps({'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+                                                                          'signed': False, 'installed_record': True}))
                 return path
             old, new = wheel('1.0'), wheel('1.1')
             def run(argv, **kw):

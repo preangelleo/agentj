@@ -1196,5 +1196,14 @@ def _needs_privilege(controller, target):
 def _root_helper_peer(writer):
     import socket
     import struct
-    peer = writer.get_extra_info('socket').getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize('3i'))
-    return struct.unpack('3i', peer)[1] == 0
+    try:
+        sock = writer.get_extra_info('socket')
+        if sock is None or not hasattr(socket, 'SO_PEERCRED'):
+            return False
+        peer = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize('3i'))
+        if len(peer) != struct.calcsize('3i'):
+            return False
+        pid, uid, _gid = struct.unpack('3i', peer)
+        return pid > 0 and uid == 0
+    except (OSError, AttributeError, TypeError, ValueError, struct.error):
+        return False

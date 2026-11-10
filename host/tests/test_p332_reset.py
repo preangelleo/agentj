@@ -351,10 +351,17 @@ class Executors(unittest.TestCase):
             (cache / f"agentj-{v}-py3-none-any.whl").write_bytes(b"w")
             (cache / f"agentj-{v}-py3-none-any.verified.json").write_text("{}")
         (cache / "agentj-0.22.0a9-py3-none-any.whl").write_bytes(b"unverified")
-        self.assertEqual(reset.previous_wheel(self.st, "0.22.1")[0], "0.22.0")
-        with mock.patch("agentj.update.roll_back", return_value=True) as rb, mock.patch("agentj.update.install_kind", return_value={}):
+        self.assertIsNone(reset.previous_wheel(self.st, "0.22.1"), "a receipt without a trusted signature is not a rollback")
+        def signed(st, v):
+            p = cache / f"agentj-{v}-py3-none-any.whl"
+            return p if v == "0.22.0" else None
+        with mock.patch("agentj.auto_update.signed_cached_wheel", side_effect=signed), \
+                mock.patch("agentj.update.roll_back", return_value=True) as rb, \
+                mock.patch("agentj.update.install_kind", return_value={}):
+            self.assertEqual(reset.previous_wheel(self.st, "0.22.1")[0], "0.22.0")
             self.assertEqual(reset.run_rollback(self.st, current="0.22.1"), {"ok": True, "version": "0.22.0"})
             self.assertEqual(rb.call_args[0][3], "0.22.0")
+            self.assertTrue(rb.call_args.kwargs["signed_only"])
 
     def test_restart_serve(self):
         calls = []

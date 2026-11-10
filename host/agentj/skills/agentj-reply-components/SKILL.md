@@ -9,9 +9,9 @@ Generated from web/reply-components.json. Use ordinary Markdown first. Do not us
 
 优先用普通 Markdown。不要输出 HTML、JS、外部脚本或工具回调。组件写错或未写完只显示原文，不能拿它代替权限审批。
 
-For structured components use one complete JSON object per fenced `agentj` block. No secrets in forms. Form and confirmation buttons ONLY append a draft; the owner reviews and presses Send. Existing reply: links retain their explicitly requested one-tap-send behavior. Persistent to-dos remain the owner's official card, not a form.
+For structured components use one complete JSON object per fenced `agentj` block. No secrets in forms. Form buttons only append a draft; confirm choices and existing reply: links send ordinary owner replies on one tap. Hold a confirm choice to put it into the draft for editing. Confirm never grants tool permission. Persistent to-dos remain the owner's official card, not a form.
 
-结构化组件每个 `agentj` 围栏只放一个完整 JSON 对象。表单不收密码、密钥或其他秘密。表单、确认卡按钮只填入草稿，主人检查后按发送；已有 reply: 选项保持单击发送。持久待办继续用官方待办卡。
+结构化组件每个 `agentj` 围栏只放一个完整 JSON 对象。表单不收密码、密钥或其他秘密。表单按钮只填草稿；确认卡选项和 reply: 选项单击发送普通回复，长按确认卡选项则填草稿编辑。确认卡不能批准工具权限。持久待办继续用官方待办卡。
 
 Local files / 本地文件：Write a complete Markdown link or image reference; absolute paths and ~/ both work. For a deterministic current-page attachment, run `agentj file show PATH --label LABEL --json` in the admitted owner phone turn. It reuses host path/type/secret checks and cannot select a device, group or friend. No live owner turn returns failure (including standalone desktop turns). `queued` is pending; wait for FILE_SHOW_RESULT with `attached_to_page` or `failure`. All carry client_downloaded:false: never claim the owner saw it. Do not use owner-only notify/send as a fallback. `PATH` accepts absolute paths and `~/`; it still must stay within the admitted working root. Failure reasons: `broker_unavailable` means the local attachment service cannot be reached; `no_owner_session` means the current owner turn or its context could not be confirmed; `native_admission_missing` means this exact request has not been admitted by the AI tool; `native_admission_expired` means its admission is no longer valid; `native_admission_ambiguous` means more than one valid admission matches. These failures do not attach a file. Keep the current owner turn and report the reason; do not change the target page or bypass the checks.
 
@@ -190,7 +190,7 @@ Example / 示例：
 
 ## confirm
 
-Draft only, never a permission approval / 只填草稿，不是权限批准
+Tap sends an ordinary reply; hold drafts for editing, never a permission approval / 单击发送普通回复，长按编辑草稿，不是权限批准
 
 Renderer: confirm.
 

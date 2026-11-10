@@ -325,7 +325,7 @@
       "name": "confirm",
       "syntax": "agentj",
       "renderer": "confirm",
-      "description": "Draft only, never a permission approval / 只填草稿，不是权限批准",
+      "description": "Tap sends an ordinary reply; hold drafts for editing, never a permission approval / 单击发送普通回复，长按编辑草稿，不是权限批准",
       "schema": {
         "type": "object",
         "properties": {

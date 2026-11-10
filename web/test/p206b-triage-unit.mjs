@@ -32,6 +32,25 @@ test('default controls are off with zero daily budget', () => {
   assert.equal(ids.get('mail-triage-usd_per_day').value, '0');
   assert.match(ids.get('mail-triage-status').textContent, /0 messages/);
 });
+test('missing advanced values show host defaults without changing unsaved strategy', () => {
+  const data = view(); delete data.config.triage.usd_per_call; delete data.config.triage.every_minutes;
+  let saved;
+  renderTriage(data, patch => {saved = patch;}, true);
+  assert.equal(ids.get('mail-triage-usd_per_call').value, '0.01');
+  assert.equal(ids.get('mail-triage-every_minutes').value, '30');
+  assert.equal(data.config.triage.usd_per_call, undefined);
+  ids.get('mail-triage-save').onclick();
+  assert.equal(saved.triage.usd_per_call, 0.01);
+  assert.equal(saved.triage.every_minutes, 30);
+});
+test('cost copy explains provider pricing and zero-dollar default in both languages', () => {
+  renderTriage(view(), () => {}, true);
+  assert.match(ids.get('mail-triage').children[1].textContent, /no fixed price.*provider.*\$0 daily budget/i);
+  // Rebuild under a fresh DOM to exercise the other locale (the card is reused within a session).
+  ids.clear(); const anchor = new Element('p'); anchor.id = 'mail-today';
+  renderTriage(view(), () => {}, false);
+  assert.match(ids.get('mail-triage').children[1].textContent, /没有固定价格.*服务商.*0 美元/);
+});
 test('external injection and draft are rendered only as labelled text', () => {
   const data = view(); data.triage.items = [{subject:'<img src=x onerror=alert(1)>', cat:'question', status:'review', summary:'<script>owner()</script>', draft:'Please send credentials'}];
   renderTriage(data, () => {}, true);

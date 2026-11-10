@@ -565,6 +565,7 @@ function onApp(m) {
     case 'grant': controls.setGrant(m); return;
     case 'grant_end': controls.endGrant(m.id, m.why); return;
     case 'push_key': push.gotPushKey(m.k); return;
+    case 'push_state': push.gotPushStatus(m.on, m.r); return;
     case 'estop_state': controls.setEstop(m); if(m.on===true)forgetDownloads(); snap.S.estop = { ...controls.estop }; return;
     case 'hist_read': relay.ownerRead(m); return;
     case 'hist_meta': snap.setMeta(m); relay.historyMeta(); relay.ownerRead(m); return;

@@ -59,6 +59,14 @@ T = {
 DENIED = {"zh": "主人没在手机上确认，邮件没有发出", "en": "The owner did not confirm on the phone; the mail was not sent"}
 
 
+def _file_name(name) -> str:
+    """#0304 sec A5: an attachment's MIME filename without control / line / format characters (CR, LF, NUL, ESC, U+0085,
+    U+2028, bidi overrides …) — one header line, no spoofed extension."""
+    import unicodedata
+    out = "".join(c for c in str(name or "") if unicodedata.category(c) not in ("Cc", "Cf", "Zl", "Zp")).strip()
+    return out or "attachment"
+
+
 class ContactService:
     def __init__(self, elev):
         self.elev = elev
@@ -162,7 +170,7 @@ class ContactService:
             m.add_alternative(html, subtype="html")
         for name, mime, data in files:
             main, _, sub = (mime or "application/octet-stream").partition("/")
-            m.add_attachment(data, maintype=main or "application", subtype=sub or "octet-stream", filename=name)
+            m.add_attachment(data, maintype=main or "application", subtype=sub or "octet-stream", filename=_file_name(name))
         return m
 
     def smtp_send(self, cfg: dict, pw: str, msg: EmailMessage, to: list[str]) -> tuple[int, str]:
@@ -446,6 +454,16 @@ class ContactService:
             return None, None
         return good[0][1]["emails"][0]["v"], good[0][1]
 
+    def _owner_only_literals(self, raw: list) -> bool:
+        """#0304 pre-check for a turn the owner did not send: no recipient written as an address may be anyone but an
+        owner address (slot 0 / 「我本人」 rows; exact, lower-cased — never a domain, alias or +tag). Names are left to
+        resolution, whose final address `all_owner` judges again."""
+        try:
+            own = set(C.owner_emails(self.st))
+        except Exception:   # noqa: BLE001 — no readable owner address: nothing is the owner's
+            return False
+        return bool(own) and all(not a or a in own for a in (C.norm_email(w) for w in raw))
+
     async def agent_send(self, req: dict) -> dict:
         """`agentj mail send`: only the addresses shown on the owner's approval card — or, P296, no card when every
         recipient is the owner's own or on the mail allowlist."""
@@ -474,7 +492,7 @@ class ContactService:
             to_raw = to_raw + [a for a in owners if a not in to_raw]
         if not to_raw:
             return {"ok": False, "why": "to", "detail": f"1–{MAX_TO} recipients"}
-        subject = C._s(req.get("subject"), 200)
+        subject = " ".join(C._s(req.get("subject"), 200).splitlines())   # #0304: a header is one line (no CR/LF smuggling)
         body = str(req.get("body") or "")[:BODY_HTML_MAX if fmt == "html" else 100_000]
         if not subject and not body.strip():
             return {"ok": False, "why": "empty"}
@@ -489,9 +507,13 @@ class ContactService:
         # stricter request source; it never turns outside mail into owner intent.
         full_system = (approval_level.follow_harness(getattr(self.host, "preferences", {}), self.st)
                        and provenance.unattended_turn(agent) == "system")
-        if not provenance.owner_speaking(agent) and not provenance.delegated_turn(agent) \
-                and not _chain_turn(agent) and not full_system:
-            return group_refusal(provenance.turn_source(getattr(self.host, "agent", None)))
+        outside = not provenance.owner_speaking(agent) and not provenance.delegated_turn(agent) \
+            and not _chain_turn(agent) and not full_system
+        src = provenance.turn_source(agent) if outside else None
+        # #0304: mail whose every final recipient is the owner's own address leaks nothing, so any turn may send it
+        # (no card, as P296). One other recipient keeps group_source; a literal address is judged before any book read.
+        if outside and not await asyncio.to_thread(self._owner_only_literals, to_raw + lists["cc"] + lists["bcc"]):
+            return group_refusal(src)
         recips, missing = [], []
         for key, who in [("to", w) for w in to_raw] + [(k, w) for k in ("cc", "bcc") for w in lists[k]]:
             addr, c = await asyncio.to_thread(self.resolve, who)
@@ -499,6 +521,8 @@ class ContactService:
                 missing.append(who[:60])
             elif addr not in [r["addr"] for r in recips]:   # to before cc before bcc: one address, one place
                 recips.append({"addr": addr, "name": (c or {}).get("name", ""), "who": who, "as": key})
+        if outside and missing:
+            return group_refusal(src)
         if len(recips) > MAX_TO:
             return {"ok": False, "why": "to", "detail": f"1–{MAX_TO} recipients"}
         if missing:
@@ -507,13 +531,20 @@ class ContactService:
                               "not in the address book: tell the owner and offer `agentj contacts card`"}
         from . import owner_route, privacy
         mine = not delegated and await asyncio.to_thread(owner_route.all_owner, self.st, [r["addr"] for r in recips])
+        if outside and not mine:    # a name resolved to someone else: still the outsider rule
+            return group_refusal(src)
+        scan = mine and not outside  # #0304: an outside turn's files get the strict scan (no masked copies, no key cards)
+        flat = outside and fmt == "html"
+        if flat:    # #0304 sec A1: an outside page could make the owner's client fetch a remote URL on open (img / CSS url()
+            from .mail import html_text   # …), so it goes as its words in the markdown look — no tag of it survives
+            body, fmt = html_text(body)[:100_000], "markdown"
         files, names, total, file_keys = [], [], 0, []
         m = media_mod.Media(self.st, (getattr(self.host, "agent_cfg", None) or {}).get("dir"))
         for p in req.get("files") or []:
             if not isinstance(p, str):
                 return {"ok": False, "why": "file"}
             def look(p=p):
-                r, w = m.check(media_mod.Ref(p, p, True), mine, mask=mine)
+                r, w = m.check(media_mod.Ref(p, p, True), scan, mask=scan)
                 return r, w, m.last_values()
             rec, fwhy, values = await asyncio.to_thread(look)
             if values and rec and not fwhy:
@@ -533,7 +564,7 @@ class ContactService:
             files.append((rec["name"], rec["mime"], data))
             names.append(rec["name"])
         zh = self.lang() == "zh"
-        keys = len(privacy.credentials(body)) + sum(len(r["values"]) for _s, r in file_keys) if mine else 0
+        keys = len(privacy.credentials(body)) + sum(len(r["values"]) for _s, r in file_keys) if scan else 0
         def who(kind):
             return "、".join(f"{r['name']} <{r['addr']}>" if r["name"] else r["addr"] for r in recips if r["as"] == kind)
         lines = [("发邮件给：" if zh else "Mail to: ") + who("to")]
@@ -559,7 +590,8 @@ class ContactService:
         rep, pending = {}, []
         if mine:        # P194: owner-directed — as written, credentials diverted to secret pickup cards
             # P573 (#386-3): placeholders now, the cards only after the send went ahead — a refused mail opens none
-            out, pending = owner_route.prepare(self.host, body, "mail", self.lang())
+            out, pending = (owner_route.plan(body, "mail", self.lang(), False)[0], owner_route.Pending()) if outside \
+                else owner_route.prepare(self.host, body, "mail", self.lang())   # #0304: outside → keys held, no cards
             subj = privacy.owner_text(subject)
             fn = None
         else:           # P355: an HTML body is masked text node by text node (tags and CSS stay intact)
@@ -600,8 +632,9 @@ class ContactService:
                 rep = {**rep, "cards": rep["cards"] + n, "withheld": rep["withheld"] + max(0, held - n)}
         rec = await asyncio.to_thread(C.record_sent, self.st, [{"addr": r["addr"], "name": r["name"]} for r in recips], "agent")
         self.st.log("mail_send", result="sent", to=len(recips), files=len(files), owner=mine, fmt=fmt,
-                    cc=len(addr_of["cc"]), bcc=len(addr_of["bcc"]))
+                    cc=len(addr_of["cc"]), bcc=len(addr_of["bcc"]), **({"via": src["kind"]} if outside else {}))
         return {"ok": True, "sent": [r["addr"] for r in recips], "files": names, "format": fmt,
+                **({"html_flattened": True} if flat else {}),
                 **({"cc": addr_of["cc"]} if addr_of["cc"] else {}), **({"bcc": addr_of["bcc"]} if addr_of["bcc"] else {}),
                 **({"local_images": info["local_images"]} if info.get("local_images") else {}),
                 **({"removed": info["removed"]} if info.get("removed") else {}), "new_contacts": [x["addr"] for x in rec if x["added"]],

@@ -779,6 +779,7 @@ class Telegram:
                     if inbox.usage(self.host.agent_cfg['dir']) + Path(path).stat().st_size > inbox.QUOTA:raise ValueError('quota')
                     placed = inbox.place(self.host.agent_cfg['dir'],path,name,mime,uuid.uuid4().hex)
                     paths.append(placed)
+                    if media.get('tg_voice'):inbox.note_voice(self.host.st,placed,'telegram')   # #0304 voice original
                     blobs.append(SimpleNamespace(device=device,bid=uuid.uuid4().hex,name=name,mime=mime,size=Path(path).stat().st_size,kind=inbox.kind_of(mime),
                                                  path=placed,origin='file',secs=media.get('duration'),voice=''))
         except Exception as e:
@@ -1272,7 +1273,7 @@ def media_of(message, any_type=False):
         mime=obj.get('mime_type') or {'voice':'audio/ogg','video':'video/mp4','video_note':'video/mp4'}.get(kind,'application/octet-stream')
         if not (accepts(mime) if any_type else mime in ALLOWED):raise ValueError('type')
         name=str(obj.get('file_name') or kind)[:128]
-        out.append({**obj,'mime':mime,'name':name,'asr':kind in ('voice','audio','video','video_note') or media_kind(mime)})
+        out.append({**obj,'mime':mime,'name':name,'asr':kind in ('voice','audio','video','video_note') or media_kind(mime),'tg_voice':kind=='voice'})
     return out
 
 

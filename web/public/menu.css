@@ -1169,6 +1169,10 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 #settings .setrow:has(>.segrow){grid-template-columns:minmax(0,1fr) auto}
 #settings .setrow>.segrow{grid-column:2;justify-self:end}
 @media (max-width:420px){ #settings .setrow:has(>.segrow){grid-template-columns:minmax(0,1fr)} #settings .setrow>.segrow{grid-column:1 / -1;justify-self:start} }
+/* 0.30.6 (#0304 QA): 「语音原文件保留」's select is as wide as its longest option, which squeezed the English label to one
+   word's width and broke it mid-word ("recordi/ngs"). The label column keeps at least its longest word; the select gives way
+   (it still shows the chosen option in full). */
+#settings #set-voice-keep-row{grid-template-columns:minmax(min-content,1fr) auto}
 /* P552 (#325 ③) / P556: the approval level has three options (安全 · 中等 · 全放行) — on a phone one row
    of equal cells across the card, so no language overflows 360 px; a wider screen keeps the row at the end. */
 @media (max-width:420px){

@@ -655,6 +655,26 @@ def dev_args(dev: str = "/dev") -> list[str]:
     return a
 
 
+def plaza_python_dirs(st, root: str) -> list[str]:
+    """GAP-0305-1 (ADR-0305-plaza-python): exactly the folders the plaza self-check showed — each installed package's
+    `<state>/plaza/python/envs/<key>` and the one `interpreters/cpython-3.N.P-…` folder it uses (plaza_python.fence_dirs
+    checks both) — never cache / home / .lock or the whole python folder; real paths inside the state root only."""
+    try:
+        from .plaza_python import fence_dirs
+        dirs = fence_dirs(st)
+    except Exception:  # noqa: BLE001 - the fence never fails on plaza state
+        return []
+    return [d for d in dirs if isinstance(d, str) and d == _real(d) and _under(d, root) and d != root and os.path.isdir(d)]
+
+
+def _parents(p: str) -> list[str]:
+    out = []
+    while os.path.dirname(p) != p:
+        p = os.path.dirname(p)
+        out.append(p)
+    return out
+
+
 def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = None, allow_docker: bool = False,
                environ=None) -> list[str]:
     """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
@@ -701,6 +721,8 @@ def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = 
     if os.path.isdir(prefs) and visible(prefs):
         a += ["--tmpfs", prefs]
     a += ["--tmpfs", root, "--bind", perm, perm]
+    for d in plaza_python_dirs(st, root):      # GAP-0305-1: after the state's tmpfs, read-only (the host's uv runs that python)
+        a += ["--ro-bind", d, d]
     for k in hide_env(env, allow_docker):
         a += ["--unsetenv", k]
     a += ["--setenv", FENCED_ENV, "1", "--chdir", work, "--"]
@@ -733,6 +755,12 @@ def sbpl_profile(st, workdir: str, home: str | None = None, uid: int | None = No
     for i, p in enumerate(pin):
         params[f"PIN_{i}"] = p
     n_ro = len(ro)
+    py = plaza_python_dirs(st, params["STATE"])         # GAP-0305-1: read + exec only (writes stay denied by rule 1)
+    for i, p in enumerate(py):
+        params[f"PYEX_{i}"] = p
+    up = sorted({x for p in py for x in _parents(p) if _under(x, params["STATE"])} - set(py))   # lookups only (metadata)
+    for i, p in enumerate(up):
+        params[f"PYUP_{i}"] = p
     ctl = g["control"]   # absent ones too: a server may start later
     for i, p in enumerate(ctl):
         params[f"CTL_{i}"] = p
@@ -747,6 +775,9 @@ def sbpl_profile(st, workdir: str, home: str | None = None, uid: int | None = No
                                                f'(deny network-outbound (remote unix-socket (subpath (param "STATE_ALT_{i}"))))')],
         '(allow file-read* file-write* (subpath (param "PERM")))',
         '(allow network-outbound (remote unix-socket (subpath (param "PERM"))))',
+        *([] if not py else [";; 1b. the plaza Python Agent J prepared (ADR-0305): read and run, never write (the host's uv runs it)",
+                             "(allow file-read* process-exec" + "".join(f' (subpath (param "PYEX_{i}"))' for i in range(len(py))) + ")"]
+          + (["(allow file-read-metadata" + "".join(f' (literal (param "PYUP_{i}"))' for i in range(len(up))) + ")"] if up else [])),
         ";; 2. credential files (authorized_keys, .Xauthority, .ssh/environment): read-only (also when absent)",
         "(deny file-write*",
         *[f'  (subpath (param "RO_{i}"))' for i in range(n_ro)],

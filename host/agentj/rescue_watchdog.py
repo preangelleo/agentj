@@ -43,13 +43,17 @@ HANDBACK = 2
 FLAP_S = 60.0            # a 4001 this soon after our takeover = serve is alive: back off (review P332 LOW-7)
 MAX_BACKOFF_S = 600.0    # the takeover threshold never grows past 10 min of polls
 RESTART_WAIT = 60.0
+# Ticket U33rz (2026-11-09): a serve in a crash loop answers `status` for the half second between binding its control socket
+# and exiting 1 (launchd ThrottleInterval 5) — one "ok" probe said "back" twice on a host that never came back. Serve must
+# answer for STABLE_S in a row (longer than the throttle + start) before a restart counts.
+STABLE_S = 12.0
 HS_TTL = 30.0
 AUTH_TIMEOUT = 8.0
 OPEN_TIMEOUT = 10.0
 MAX_SESSIONS = 64
 LOG_MAX = 256 * 1024
 CLOSE_REPLACED, CLOSE_SEAT = 4001, 4002
-ACTIONS = ("help", "report", "reconnect", "restart", "linger", "rollback", "new_session")
+ACTIONS = ("help", "report", "reconnect", "restart", "linger", "rollback", "reinstall", "deep_repair", "new_session")
 # #585: when serve itself is stuck, every button that needs serve can only mean "restart it" — the watchdog runs its
 # restart, then the page's `probe` (answered by the restarted serve) proves the Agent answers. Signed over the name sent.
 SERVE_ACTIONS = {"repair": "restart", "stop_hard": "restart", "restart_session": "restart", "new_chat": "restart",
@@ -72,6 +76,12 @@ TEXT = {
     "linger": ("正在设置：Agent J 主机重启后不用登录，Agent J 也会自己运行…", "Setting Agent J to start after a reboot without a login…"),
     "linger_ok": ("已设置好：Agent J 主机重启后不用登录，Agent J 也会自己运行。", "Done: Agent J now starts after a reboot without a login."),
     "linger_fail": ("没能设置开机自动运行。可以请 Agent J Father 远程帮忙。", "Could not set Agent J to start at boot. Ask Agent J Father for remote help."),
+    "deep_repair": ("正在校验并重新安装 Agent J…", "Verifying and reinstalling Agent J…"),
+    "deep_repair_wait": ("已安排服务重建，等待 Agent J 上线后继续检查 AI 会话。", "Service rebuild scheduled; waiting for Agent J to check the AI session."),
+    "deep_repair_fail": ("彻底修复没有完成，可以请 Agent J Father 远程帮忙。", "Full repair did not finish. You can ask Agent J Father for help."),
+    "reinstall": ("正在重新安装当前版本的 Agent J…", "Reinstalling this version of Agent J…"),
+    "reinstall_ok": ("已重新安装当前版本的 Agent J。", "This version of Agent J has been reinstalled."),
+    "reinstall_fail": ("没能重新安装当前版本。可以请 Agent J Father 远程帮忙。", "Could not reinstall this version. Ask Agent J Father for help."),
     "rollback": ("正在换回上一个版本的 Agent J…", "Going back to the previous version of Agent J…"),
     "rollback_ok": ("已换回上一个版本的 Agent J。", "Agent J is back on the previous version."),
     "rollback_none": ("这台Agent J 主机上没有可以换回的旧版本。", "There is no earlier version on the Agent J host to go back to."),
@@ -478,6 +488,7 @@ class Watchdog:
             out.append("linger")
         if _reset_fn("run_rollback"):
             out.append("rollback")
+        out.extend(("reinstall", "deep_repair"))
         return out
 
     def rescue_msg(self) -> dict:
@@ -524,7 +535,7 @@ class Watchdog:
             if not isinstance(name, str) or (name not in ACTIONS and name not in SERVE_ACTIONS):   # never the phone's string in the log (review LOW-6)
                 return await self.refuse(s, r, "reset", t, "shape", "unknown")
             action, target = "rescue_do", {"action": name}
-        flow = "help" if name in ("help", "report") else "reset"
+        flow = name if name in ("deep_repair", "rollback") else "help" if name in ("help", "report") else "reset"
         why = "shape" if not s.p33 else check(self.st, self.nonces, self.channel, s.device, obj, action, target)
         if why is None and self.busy:
             why = "busy"
@@ -569,7 +580,7 @@ class Watchdog:
         lang = await asyncio.to_thread(self.lang_fn)
         emit = self._emit(s, r, flow)
         try:
-            done = await asyncio.to_thread(self.do, name, lang, emit)
+            done = await asyncio.to_thread(self.do, name, lang, emit, r, s.device)
         except Exception as e:  # noqa: BLE001 — never takes the watchdog down
             self.log("result", action=name, result="error", why=type(e).__name__)
             done = {"ok": False, "step": 1, "text": say("help_fail" if flow == "help" else "restart_fail", lang)}
@@ -577,8 +588,12 @@ class Watchdog:
             self.busy = False
         self.log("result", device=s.device, action=name, result="ok" if done.get("ok") else "fail",
                  why=done.get("why"), step=done.get("step"))
+        if name == "deep_repair":
+            ticket = await asyncio.to_thread(self._deep_report, lang, done)
+            if ticket:
+                done["ticket"] = ticket
         msg = {"t": "reset_done", "r": r, "flow": flow, **{k: v for k, v in done.items() if k in
-                                                            ("ok", "step", "text", "why", "ticket", "category")}}
+                                                            ("ok", "step", "text", "why", "ticket", "category", "rollback", "pending", "cont")}}
         offer = _offer(done.get("offer"))
         if offer:
             msg["offer"] = offer
@@ -591,7 +606,7 @@ class Watchdog:
                     await self.send_app(o, msg)
 
     # ------------------------------------------------------------ the whitelist (blocking; in a worker thread)
-    def do(self, name: str, lang: str, emit) -> dict:
+    def do(self, name: str, lang: str, emit, request=None, device=None) -> dict:
         if name == "restart":
             return self._restart(lang, emit)
         if name == "linger":
@@ -599,6 +614,36 @@ class Watchdog:
             ok = bool(self.linger_fn())
             emit(1, "ok" if ok else "fail", say("linger_ok" if ok else "linger_fail", lang))
             return {"ok": ok, "step": 1, "text": say("linger_ok" if ok else "linger_fail", lang)}
+        if name == "deep_repair":
+            from . import update, reset, rescue_repair
+            emit(1, "run", say("deep_repair", lang))
+            if not request or not device:
+                return {"ok": False, "step": 1, "why": "shape", "text": say("deep_repair_fail", lang)}
+            rescue_repair.write_marker(self.st, "deep_repair", request, device)
+            res = update.repair_install(self.st)
+            if res.get("result") != "ok":
+                (self.st.root / rescue_repair.MARKER).unlink(missing_ok=True)
+                emit(1, "fail", say("deep_repair_fail", lang))
+                return {"ok": False, "step": 1, "why": "repair_failed", "text": say("deep_repair_fail", lang),
+                        "rollback": bool(reset.previous_wheel(self.st))}
+            emit(1, "ok", say("reinstall_ok", lang))
+            if res.get("service") != "restart_scheduled":
+                (self.st.root / rescue_repair.MARKER).unlink(missing_ok=True)
+                # No manager: the watchdog cannot start the owner harness; do not pretend success.
+                return {"ok": False, "step": 2, "why": "not_installed", "text": say("deep_repair_fail", lang),
+                        "rollback": bool(reset.previous_wheel(self.st))}
+            # The pre-install private marker survives a service handoff racing this thread.
+            emit(2, "run", say("deep_repair_wait", lang))
+            return {"ok": True, "step": 2, "pending": True, "cont": "deep_repair_cont",
+                    "text": say("deep_repair_wait", lang)}
+        if name == "reinstall":
+            from . import update
+            emit(1, "run", say("reinstall", lang))
+            res = update.repair_install(self.st)
+            ok = res.get("result") == "ok"
+            key = "reinstall_ok" if ok else "reinstall_fail"
+            emit(1, "ok" if ok else "fail", say(key, lang))
+            return {"ok": ok, "step": 1, "text": say(key, lang)}
         if name == "rollback":
             fn = _reset_fn("run_rollback")
             if fn is None:
@@ -609,6 +654,10 @@ class Watchdog:
             except Exception:  # noqa: BLE001
                 res = {"ok": False}
             ok = _norm(res)[0]
+            if ok:
+                restarted = self._restart(lang, emit)
+                if not restarted.get("ok"):
+                    return {"ok": False, "step": 2, "why": "restart_failed", "text": restarted["text"]}
             key = "rollback_ok" if ok else "rollback_none" if isinstance(res, dict) and res.get("why") == "unavailable" \
                 else "rollback_fail"
             emit(1, "ok" if ok else "fail", say(key, lang))
@@ -631,11 +680,18 @@ class Watchdog:
             return {"ok": False, "step": 1, "text": say("restart_fail", lang)}
         emit(1, "ok", say("restarted", lang))
         emit(2, "run", say("wait", lang))
+        stable = min(STABLE_S, self.restart_wait / 5)
         end = time.monotonic() + self.restart_wait
-        while time.monotonic() < end:
+        ok_since = None
+        while time.monotonic() < end + (stable if ok_since is not None else 0):
+            now = time.monotonic()
             if self.probe_fn() == "ok":
-                emit(2, "ok", say("back", lang))
-                return {"ok": True, "step": 2, "text": say("back", lang)}
+                ok_since = now if ok_since is None else ok_since
+                if now - ok_since >= stable:
+                    emit(2, "ok", say("back", lang))
+                    return {"ok": True, "step": 2, "text": say("back", lang)}
+            else:
+                ok_since = None                      # it answered, then went away again: a crash loop, not "back"
             time.sleep(min(1.0, max(0.05, self.restart_wait / 60)))
         emit(2, "fail", say("not_back", lang))
         return {"ok": False, "step": 2, "text": say("not_back", lang)}
@@ -645,6 +701,22 @@ class Watchdog:
             return self.kit
         from . import rescue_kit
         return rescue_kit
+
+    def _deep_report(self, lang: str, result: dict) -> str | None:
+        """Owner-initiated repair sends the existing bounded, locally redacted diagnosis.
+
+        The only added outcome fields are fixed codes; no wheel path, command,
+        device, request handle, exception text or conversation reaches Father.
+        """
+        try:
+            from . import rescue_kit
+            reason = result.get("why") if isinstance(result.get("why"), str) else "unknown"
+            if reason not in ("repair_failed", "not_installed", "session_failed", "no_reply", "unknown"):
+                reason = "unknown"
+            ticket, _healthy, _error = rescue_kit.report_only(lang, tag="deep_repair_" + reason)
+            return ticket
+        except Exception:  # noqa: BLE001 — reporting never changes repair outcome
+            return None
 
     def _report(self, lang: str, emit) -> dict:
         emit(1, "run", say("report", lang))

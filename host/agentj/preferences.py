@@ -82,7 +82,7 @@ def validate(doc,raw=''):
         typ=m['type']
         valid={'boolean':type(v) is bool,'integer':type(v) is int,'number':type(v) in (int,float) and math.isfinite(v),'string':isinstance(v,str),'array':isinstance(v,list),'object':isinstance(v,dict)}.get(typ,False)
         if not valid: raise ConfigError(k,'expected '+typ,line)
-        if 'enum' in m and v not in m['enum']: raise ConfigError(k,'allowed: '+', '.join(m['enum']),line)
+        if 'enum' in m and v not in m['enum']: raise ConfigError(k,'allowed: '+', '.join(map(str,m['enum'])),line)
         if isinstance(v,str):
             if any(ord(c)<32 and not (k in ('agent.instructions','imessage.instructions') and c in '\n\t') for c in v) or len(v)>m.get('maxLength',1000): raise ConfigError(k,'invalid characters or length',line)
             if m.get('pattern') and not re.fullmatch(m['pattern'],v): raise ConfigError(k,'expected '+m['patternHint'] if m.get('patternHint') else 'expected environment variable NAME, never a secret',line)
