@@ -213,8 +213,10 @@ def low_risk_pass(host, cfg, tool, tool_input, batch: bool = True) -> bool:
             return False
         from . import provenance
         actor = getattr(host, "agent", None)
-        if provenance.untrusted_turn(actor) and not (provenance.turn_source(actor)["kind"] == "scheduled_task"
-                                                     and provenance.delegated_turn(actor)):
+        # 0304 A2-③ (dead while the return above stands): owner_speaking, not untrusted_turn, so a rollback treats the
+        # owner's authenticated TG DM / WeChat / pinned owner mail like the phone; forwards / guests stay out.
+        if not provenance.owner_speaking(actor) and not (provenance.turn_source(actor)["kind"] == "scheduled_task"
+                                                         and provenance.delegated_turn(actor)):
             return False
         goals = getattr(host, "goals", None)
         if goals is not None and goals.current() is not None:

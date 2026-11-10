@@ -132,6 +132,8 @@ class SameOwner:
         self.waiters = {}
         self.queued = {}
         self.retry_at = 0.0
+        self.any_signer = True        # 0304 A1: this host speaks scope v4 (tests model an older peer by clearing it)
+        self.conts = {}               # 0306 A5: one-time binding continuation tickets (memory only, ≤ CONT_TTL s)
 
     def row(self, fid):
         return self.svc.store._read('same-owner.json', {}).get(fid, {})
@@ -155,6 +157,8 @@ class SameOwner:
         if v == 'pending':
             out['same_owner_code'] = self.code(fid) or ''
             out['same_owner_wait'] = bool(r.get('token') or (r.get('init') and (r.get('remote_v2') or not r.get('remote_nonce'))))
+            if self.too_old(fid, r):
+                out['same_owner_why'] = self.too_old_why(fid, r)    # 0304 R-F1: the other computer acts first
         elif v == 'none':
             end = r.get('end') if isinstance(r.get('end'), list) and len(r['end']) == 2 else None
             why = 'expired' if r.get('nonce') else end[0] if end and self.svc.clock() - end[1] < 86400 else None
@@ -162,13 +166,19 @@ class SameOwner:
                 out['same_owner_end'] = why
         return out
 
-    def scope(self, fid):
-        r = self.row(fid)
+    def scope(self, fid, r=None):
+        r = self.row(fid) if r is None else r
         if not all(r.get(k) for k in ('nonce', 'pub', 'remote_nonce', 'remote_pub')):
             return None
         friend = self.svc.store.get(fid)
         if not friend:
             return None
+        if self.v4(fid, r):
+            # 0304 A1: no single signer — each end is (host id, host Ed key, nonce, roster snapshot); the six digits
+            # cover both complete rosters. The tag keeps v4 bytes apart from every v3 scope.
+            ends = sorted([[self.svc.keys.id, wire_pub(self.svc.keys.ed_pub), r['nonce'], r.get('roster', [])],
+                           [fid, friend['pk'], r['remote_nonce'], r.get('remote_roster', [])]], key=lambda e: e[0])
+            return json.dumps([SCOPE_V4, *ends], separators=(',', ':'))
         ends = [(self.svc.keys.id, wire_pub(self.svc.keys.ed_pub), r['pub'], r['nonce']),
                 (fid, friend['pk'], r['remote_pub'], r['remote_nonce'])]
         if r.get('roster_v') == 3 and r.get('remote_roster_v') == 3:
@@ -176,8 +186,16 @@ class SameOwner:
         ends.sort()
         return json.dumps(ends, separators=(',', ':'))
 
-    def challenge(self, fid):
-        scope = self.scope(fid)
+    def v4(self, fid, r=None):
+        """0304 A1: this round uses the any-signer scope only when BOTH hosts latched it for this round (each side's
+        `so_v` is set with its nonce; the peer's comes from its same_owner packet). Anything else is v3/v2 — the
+        stricter designated-signer rule. Active relations made before 0304 keep their v3 challenge."""
+        r = self.row(fid) if r is None else r
+        return (r.get('roster_v') == 3 and r.get('remote_roster_v') == 3
+                and r.get('so_v') == 4 and r.get('remote_so_v') == 4)
+
+    def challenge(self, fid, r=None):
+        scope = self.scope(fid, r)
         return hashlib.sha256(scope.encode()).hexdigest()[:32] if scope else None
 
     def code(self, fid):
@@ -196,7 +214,8 @@ class SameOwner:
             if (roster and r.get('roster_v') != 3) or (init and init.get('pub') != r.get('pub')) or not r.get('nonce') or r.get('expires', 0) <= self.svc.clock():
                 r.update(nonce=secrets.token_hex(16), pub=pub, token='', proof=None, init=init, end=None,
                          verified=None, expires=self.svc.clock() + 86400, seq=r.get('seq', 0) + 1,
-                         roster=roster, roster_v=3 if roster else None)
+                         roster=roster, roster_v=3 if roster else None,
+                         so_v=4 if roster and self.any_signer else None)   # 0304 A1: latched with this nonce
             elif init and not r.get('token'):
                 r['init'] = init
         settled = self.settle(fid)
@@ -210,6 +229,9 @@ class SameOwner:
         r = self.row(fid)
         # A 0.25.0a1 peer only accepts a signed confirm of the code (not the start), so it keeps the old two-card flow.
         if r.get('roster_v') == 3 and r.get('remote_roster_v') == 3:
+            return False
+        # 0304 R-F1: once this host can do UV at all, a start tap is never consent (no v2 downgrade).
+        if self.uv_host():
             return False
         if r.get('init') and r.get('remote_v2') and not r.get('token') and self.challenge(fid):
             if self.svc.host.stopped():
@@ -230,7 +252,11 @@ class SameOwner:
 
     def pair_card(self, fid):
         code, challenge = self.code(fid), self.challenge(fid)
-        live = code and not self.row(fid).get('token')
+        # 0306 preview fr_set: while the other computer still has to bind / upgrade (too_old → every confirm here is
+        # refused with peer_binding_required / peer_too_old) no six-digit card goes out, and an open one closes — a
+        # card that can never succeed only sends the owner round in circles. The friends page carries same_owner_why;
+        # the peer's next same_owner packet with a roster re-runs pair_card and the card appears then.
+        live = code and not self.row(fid).get('token') and not self.too_old(fid)
         if live and any(a.data.get('friend') == fid and a.extra.get('pairing') and a.extra.get('challenge') == challenge
                         for a in self.svc.asks.values()):
             return
@@ -246,27 +272,41 @@ class SameOwner:
         end = r.get('end') if isinstance(r.get('end'), list) and len(r['end']) == 2 else None
         self.svc._send(fid, {'t': 'same_owner', 'seq': r.get('seq', 0), 'token': r.get('token', ''),
                              'echo': r.get('remote', ''), 'proof': r.get('proof'),
-                             'nonce': r.get('nonce', ''), 'pub': r.get('pub', ''), 'v': 2, 'caps': OTG_CAPS, 'roster_v': r.get('roster_v'), 'roster': r.get('roster', []),
+                             'nonce': r.get('nonce', ''), 'pub': r.get('pub', ''), 'v': 2,
+                             'caps': OTG_CAPS + ([ANY_SIGNER] if r.get('so_v') == 4 else []), 'roster_v': r.get('roster_v'), 'roster': r.get('roster', []),
                              **({'why': end[0]} if end and not r.get('nonce') and end[0] in ENDS else {})})
 
     def consent(self, fid, on, proof=None, end=None):
+        """Record (on) or withdraw this side's consent. → False when a confirm was not recorded."""
         had_authority = self.active(fid) or bool(self.row(fid).get("token"))
         with self.svc.store._edit('same-owner.json', {}) as d:
             r = d.setdefault(fid, {})
-            if on and r.get('roster_v') == 3 and r.get('remote_roster_v') == 3 and (not isinstance(proof, dict) or proof.get('pub') != r.get('pub')):
-                return
+            if on and self.v4(fid, r):
+                # 0304 A1 / R-F11: first wins, checked inside the same critical section as the token write — once
+                # this round is confirmed nothing recomputes the token or re-emits. The signer must be one entry of
+                # this round's roster snapshot (the caller also checked it is bound now: round_signer).
+                if r.get('token') and r.get('verified') == self.challenge(fid, r):
+                    return False
+                if not isinstance(proof, dict) or not any(e.get('sign_pub') == proof.get('pub') and e.get('dev') == proof.get('device')
+                                                          for e in r.get('roster') or []):
+                    return False
+            elif on and r.get('roster_v') == 3 and r.get('remote_roster_v') == 3 and (not isinstance(proof, dict) or proof.get('pub') != r.get('pub')):
+                return False
             if not on and r.get('remote'):
                 r['spent'] = (r.get('spent', []) + [r['remote']])[-128:]
             token = hashlib.sha256(json.dumps(proof, sort_keys=True).encode()).hexdigest()[:32] if on else ''
             r.update(token=token, proof=proof if on else None, seq=r.get('seq', 0) + 1,
-                     verified=self.challenge(fid) if on else None)
+                     verified=self.challenge(fid, r) if on else None)
             if not on:
                 r.update(nonce='', pub='', remote='', echo='', remote_nonce='', remote_pub='', init=None,
                          end=[end, self.svc.clock()] if end else None)
         self.emit(fid)
         if not on:
             self.svc.xfer.forget(fid, revoke=had_authority)          # P574
+        elif self.active(fid):
+            self.svc.xfer.pin_ceremony(fid)        # 0304 A1: completed here → pin the code-covered peer roster now
         self.svc.log('same_owner', result='pending' if on else 'revoked')
+        return True
 
     def verify_proof(self, fid, proof):
         from . import controls, wire
@@ -278,7 +318,8 @@ class SameOwner:
             if not self.challenge(fid) or len(wire.unb64u(proof['pub'])) != 32:
                 return False
             v3 = self.row(fid).get('roster_v') == 3 and self.row(fid).get('remote_roster_v') == 3
-            if v3 and proof['pub'] != self.row(fid).get('remote_pub'):
+            v4 = v3 and self.v4(fid)
+            if v3 and not v4 and proof['pub'] != self.row(fid).get('remote_pub'):
                 return False
             targets = ({'friend': self.svc.keys.id, 'op': 'owner-confirm-v3' if v3 else 'owner-confirm', 'value': self.challenge(fid)},
                        {'friend': self.svc.keys.id, 'op': 'group', 'value': 'same-owner'})
@@ -287,6 +328,13 @@ class SameOwner:
                 roots = [e for e in self.row(fid).get('remote_roster', []) if e.get('sign_pub') == proof['pub']]
                 if len(roots) != 1 or not self.uv_proof(proof, targets[0], roots[0]):
                     return False
+                if v4:
+                    # 0304 A1: any member of the peer's roster snapshot in this scope (exactly one match, binding
+                    # verified on receipt) — never only the peer's starter. A roster already pinned here narrows it.
+                    from .owner_grant import binding_ok
+                    pinned = self.svc.xfer.pinned(fid)
+                    if not binding_ok(roots[0]) or (pinned is not None and not any(e.get('id') == roots[0].get('id') for e in pinned)):
+                        return False
             return any(controls.verify(wire.unb64u(proof['pub']), wire.unb64u(proof['sig']), proof['channel'],
                                        proof['device'], 'fr_set', proof['n'], proof['ts'], controls.object_digest('fr_set', target))
                        for target in targets)
@@ -321,6 +369,10 @@ class SameOwner:
                 return
             if token and roster != old.get('remote_roster'):
                 return
+        caps = obj.get('caps') if isinstance(obj.get('caps'), list) else []
+        so_v = 4 if obj.get('roster_v') == 3 and ANY_SIGNER in caps else None
+        if token and so_v != old.get('remote_so_v'):
+            return                      # 0304 A1: the scope version of a confirmed round never flips
         if seq <= old.get('remote_seq', 0):
             return
         nonce, pub = obj.get('nonce', ''), obj.get('pub', '')
@@ -338,20 +390,27 @@ class SameOwner:
                     or token in old.get('spent', [])):
                 return
         was_active = self.active(fid)
+        # 0304 R-F1: a consent this host recorded before 0.30.6 for a peer without a roster (the start tap counted
+        # as consent, no UV) never completes the round; the owner confirms again once the peer has a roster.
+        drop_ours = bool(token) and not was_active and bool(old.get('token')) and obj.get('roster_v') != 3 and bool(self.svc.xfer.my_roster())
         why = obj.get('why') if obj.get('why') in ENDS else None
         changed = old.get('remote', '') != token or old.get('remote_nonce', '') != nonce or old.get('remote_pub', '') != pub
         with self.svc.store._edit('same-owner.json', {}) as d:
             r = d.setdefault(fid, {})
-            caps = obj.get('caps') if isinstance(obj.get('caps'), list) else []
             r.update(remote_seq=seq, remote=token, echo=echo, remote_nonce=nonce, remote_pub=pub, remote_v2=obj.get('v') == 2,
+                     remote_so_v=so_v,
+                     # 0304 R-F4: who confirmed on the peer (verified above); the pin must contain it
+                     remote_signer=({'pub': obj['proof']['pub'], 'device': obj['proof']['device']} if token else None),
                      remote_caps=[c for c in caps if isinstance(c, str) and len(c) <= 16][:8],
                      remote_roster_v=obj.get('roster_v'), remote_roster=roster if isinstance(roster, list) else [])   # P574
-            if old.get('remote_nonce') and old.get('remote_nonce') != nonce:
+            if (old.get('remote_nonce') and old.get('remote_nonce') != nonce) or drop_ours:
                 r.update(token='', proof=None, verified=None)
             if not nonce:
                 if old.get('remote_nonce') or old.get('remote'):
                     r['end'] = ['ended' if was_active else why or 'declined', self.svc.clock()]
                 r.update(token='', proof=None, verified=None, nonce='', pub='', init=None)
+            if drop_ours:
+                changed = True
             if changed:
                 r['seq'] = r.get('seq', 0) + 1
         if nonce and not self.row(fid).get('nonce'):
@@ -368,6 +427,7 @@ class SameOwner:
         if was_active and not self.active(fid):
             self.svc.xfer.forget(fid)          # P574: its pinned remotes and grants end with Same owner
         elif self.active(fid):
+            self.svc.xfer.pin_ceremony(fid)    # 0304 A1: the code-covered roster, before any roster packet
             self.svc.xfer.roster_tick()        # P574: a fresh Same owner learns our remotes right away
         self.svc.log('same_owner', result=self.view(fid))
         self.svc.changed(fid)
@@ -413,6 +473,218 @@ class SameOwner:
                                    proof['ts'], controls.object_digest('fr_set', target))
         except (ValueError, TypeError, KeyError):
             return False
+
+    def round_signer(self, fid, device, proof, target):
+        """0304 A1 (v4 local confirm): the confirming remote must be ① in THIS round's roster snapshot of this end
+        (exactly one entry with its signing key and device id), ② still bound right now (unrevoked, roster-bound
+        passkey, same credential as the snapshot) and ③ have answered with UV over exactly this write against its
+        current binding entry. The caller already verified the Ed signature (may_confirm) and controls' fresh nonce.
+        → None or the refusal code."""
+        xfer = self.svc.xfer
+        if not isinstance(device, str) or not isinstance(proof, dict) or not xfer.bound(device):
+            return 'roster_binding_required'
+        snap = [e for e in self.row(fid).get('roster') or [] if isinstance(e, dict) and e.get('sign_pub') == proof.get('pub')]
+        live = xfer.binding_entry(device)
+        if (len(snap) != 1 or snap[0].get('dev') != device or not live
+                or any(snap[0].get(k) != live.get(k) for k in ('id', 'alg', 'spki', 'rp', 'dev', 'sign_pub'))):
+            return 'roster_changed'
+        if not self.uv_proof(proof, target, live):
+            return 'passkey_required'
+        return None
+
+    def device_gone(self, did):
+        """0304 A1-2: a revoked remote's unfinished rounds end at once — one it started (`init`) or one whose consent on
+        this side it signed — and every remote's card for them closes (`gone`). Active roster relations stay; the peer
+        learns the shorter roster from the immediate roster_tick.
+        Security impl r1 M1: an ACTIVE relation that is roster-less on this side (`roster_v` != 3: a legacy v2/v3-less
+        ceremony, Ed signature only) rests on nothing but the remote that started or consented to it here — what the
+        peer says does not matter. When that remote is revoked the relation ends too, and the owner is told which
+        friend, why, and how to add it again."""
+        for fid, r in list(self.svc.store._read('same-owner.json', {}).items()):
+            if not isinstance(r, dict):
+                continue
+            init, proof = r.get('init'), r.get('proof')
+            by_it = ((isinstance(init, dict) and init.get('device') == did)
+                     or (r.get('token') and isinstance(proof, dict) and proof.get('device') == did))
+            if self.active(fid):
+                if by_it and r.get('roster_v') != 3:
+                    name = self.svc.store.name_of(fid)
+                    self.consent(fid, False, end='ended')
+                    self.clear_requests(fid)
+                    self.svc.changed(fid)
+                    self.svc.log('same_owner', result='legacy_ended', reason='consenting_remote_revoked')
+                    self.legacy_ended_notice(name)
+                continue
+            if r.get('nonce') and by_it:
+                self.consent(fid, False, end='declined')
+                self.clear_requests(fid)
+                self.svc.changed(fid)
+
+    def legacy(self):
+        """Names of the active Same owner relations that are roster-less on this side (legacy, no UV behind them)."""
+        return [self.svc.store.name_of(fid) for fid, r in self.svc.store._read('same-owner.json', {}).items()
+                if isinstance(r, dict) and r.get('roster_v') != 3 and self.active(fid)]
+
+    def legacy_ended_notice(self, name):
+        from .text import pick
+        self.svc.xfer._owner_notice(pick(
+            self.svc.lang,
+            f"已解除和「{name}」的「同一个主人」关系：这段关系是旧式建立的（没有通行密钥），在本机只靠刚被移除的那台遥控器的同意成立；"
+            f"那台遥控器一移除，这段关系也就不再可信。要继续，请在好友页对「{name}」重新选择「同一个主人」，"
+            f"用已绑定通行密钥的遥控器核对六位数字。",
+            f"Same owner with “{name}” has ended: it was set up the old way (no passkey) and on this computer rested only on "
+            f"the remote you just removed, so it can no longer be trusted. To keep it, choose Same owner for “{name}” "
+            f"again on the Friends page and compare the six digits with a remote that has a bound passkey."))
+
+    def legacy_deviceless(self):
+        """Security r2 N2: legacy relations whose row names no consenting remote here (no init.device / proof.device:
+        formed before those were recorded). Removing a remote never ends these (revoked_device matches by device)."""
+        out = []
+        for fid, r in self.svc.store._read('same-owner.json', {}).items():
+            if not isinstance(r, dict) or r.get('roster_v') == 3 or not self.active(fid):
+                continue
+            init, proof = r.get('init'), r.get('proof')
+            if not ((isinstance(init, dict) and init.get('device')) or (isinstance(proof, dict) and proof.get('device'))):
+                out.append(self.svc.store.name_of(fid))
+        return out
+
+    def legacy_notice(self):
+        """Security impl r1 M1: the first time this host has a passkey or a roster-bound remote (serve._pk_reg,
+        xfer.bind_phone), ONE owner notice lists the Same owner relations still standing on the legacy ceremony and
+        suggests confirming them again with a bound remote. Once per host (same-owner-meta.json). Security r2 N2: also
+        called at every serve start (PeerService.start) — a host upgraded with a passkey already in place gets it once
+        too — and device-less legacy rows are named apart: removing a remote will not end those."""
+        if not self.uv_host():
+            return
+        with self.svc.store._edit('same-owner-meta.json', {}) as m:
+            if m.get('legacy_noticed'):
+                return
+            m['legacy_noticed'] = int(self.svc.clock())
+        names = self.legacy()
+        self.svc.log('same_owner', result='legacy_notice', count=len(names))
+        if not names:
+            return
+        from .text import pick
+        zh, en = '、'.join(f'「{n}」' for n in names[:20]), ', '.join(f'“{n}”' for n in names[:20])
+        bare = self.legacy_deviceless()
+        zh_bare = (f"其中{'、'.join(f'「{n}」' for n in bare[:20])}没有记录是哪台遥控器同意的，移除遥控器也不会自动解除，"
+                   f"请务必重新确认或解除。" if bare else '')
+        en_bare = (f" No remote is recorded as having agreed to {', '.join(f'“{n}”' for n in bare[:20])}, so removing a "
+                   f"remote will not end it; confirm again or remove it." if bare else '')
+        self.svc.xfer._owner_notice(pick(
+            self.svc.lang,
+            f"这台电脑现在有了通行密钥。下面这些「同一个主人」关系是旧式建立的（当时没有通行密钥，只靠遥控器签名）：{zh}。"
+            f"{zh_bare}"
+            f"建议到好友页对它们重新选择「同一个主人」，用已绑定通行密钥的遥控器核对一次六位数字；不再需要的可以直接解除。",
+            f"This computer now has a passkey. These Same owner relations were set up the old way (no passkey, remote "
+            f"signature only): {en}.{en_bare} We suggest choosing Same owner for each of them again on the Friends page and "
+            f"comparing the six digits with a remote that has a bound passkey; remove the ones you no longer need."))
+
+    def plan_roster(self, fid):
+        """0304 A1-9 / R-F6: who may sign a cross-host task plan for this relation, as this host knows the peer's
+        remotes — the pinned roster only (ceremony + verified additions, minus removals). The frozen ceremony row is
+        never read here: a remote the peer revoked after the ceremony stops at once. Not pinned yet → nobody."""
+        return self.svc.xfer.pinned(fid) or []
+
+    def plan_signer(self, fid, sk, device):
+        """Peer side: the plan's signing key belongs to a remote on the pinned roster (any of them). Legacy relations
+        without a roster keep the old rule: the key inside the ceremony code."""
+        from .owner_grant import binding_ok
+        r = self.row(fid)
+        if self.svc.xfer.pinned(fid) is None and not (r.get('roster_v') == 3 and r.get('remote_roster_v') == 3):
+            return sk == r.get('remote_pub')
+        return any(e.get('sign_pub') == sk and e.get('dev') == device and binding_ok(e) for e in self.plan_roster(fid))
+
+    def local_plan_signer(self, fid, device, sk):
+        """Origin side: any of this host's roster-bound remotes may sign a plan for a roster relation; a v3 relation
+        also keeps its ceremony signer, a legacy relation keeps only that one."""
+        r = self.row(fid)
+        if not (r.get('roster_v') == 3 and r.get('remote_roster_v') == 3):
+            return sk == r.get('pub')
+        if any(e.get('dev') == device and e.get('sign_pub') == sk for e in self.svc.xfer.my_roster()):
+            return True
+        return not self.v4(fid, r) and sk == r.get('pub')
+
+    def uv_host(self):
+        """0304 R-F1: this host has a UV boundary to defend — a roster-bound remote, or any remote with a passkey.
+        Then Same owner starts and confirms only from roster-bound remotes and never through the v2 flow. A host
+        where no remote has a passkey has no UV anywhere (every approval there is Ed-signature only) and keeps the
+        legacy v2 ceremony between two such hosts."""
+        st = self.svc.st
+        return bool(self.svc.xfer.my_roster()) or any(st.passkey_of_device(d) for d in st.devices())
+
+    def too_old(self, fid, r=None):
+        """0304 R-F1: this host has a roster-bound remote, so a peer round without a roster snapshot (roster_v < 3:
+        a host from before 0.25.x, or one claiming to be) is refused — no designated-signer-less v2 consent."""
+        r = self.row(fid) if r is None else r
+        return bool(r.get('remote_nonce')) and r.get('remote_roster_v') != 3 and bool(self.svc.xfer.my_roster())
+
+    def too_old_why(self, fid, r=None):
+        """Which refusal the page shows: a peer that announces owner grants (P574 caps) has the roster code but no
+        bound remote yet → bind one there; anything else is an older Agent J → upgrade it."""
+        r = self.row(fid) if r is None else r
+        return 'peer_binding_required' if 'otg1' in (r.get('remote_caps') or []) else 'peer_too_old'
+
+    def roster_moved(self):
+        """0304 R-F11: this host's roster changed. A pending round whose snapshot holds a remote that is no longer
+        bound restarts (new nonce → new code on both hosts, earlier consent void); one whose roster went empty ends.
+        A round taken while this host had no bound remote restarts once it has one, if the peer needs a roster."""
+        mine = {(e.get('dev'), e.get('sign_pub'), e.get('id')) for e in self.svc.xfer.my_roster()}
+        for fid, r in list(self.svc.store._read('same-owner.json', {}).items()):
+            if (not isinstance(r, dict) or self.active(fid) or not r.get('nonce')
+                    or r.get('expires', 0) <= self.svc.clock()):
+                continue
+            snap = r.get('roster') or []
+            gone = any((e.get('dev'), e.get('sign_pub'), e.get('id')) not in mine for e in snap if isinstance(e, dict))
+            upgrade = not snap and mine and r.get('remote_roster_v') == 3
+            if gone and not mine:
+                self.consent(fid, False, end='declined')
+                self.clear_requests(fid)
+                self.svc.changed(fid)
+            elif gone or upgrade:
+                self.restart(fid)
+
+    def restart(self, fid):
+        roster = self.svc.xfer.my_roster()
+        with self.svc.store._edit('same-owner.json', {}) as d:
+            r = d.setdefault(fid, {})
+            r.update(nonce=secrets.token_hex(16), token='', proof=None, verified=None, end=None,
+                     expires=self.svc.clock() + 86400, seq=r.get('seq', 0) + 1,
+                     roster=roster, roster_v=3 if roster else None, so_v=4 if roster and self.any_signer else None)
+        self.emit(fid)
+        self.pair_card(fid)
+        self.svc.log('same_owner', result='restarted')
+        self.svc.changed(fid)
+
+    # ---------------------------------------------------------------- 0306 A5: binding → start auto-continue
+    def cont_issue(self, device, session, fid):
+        """A host-random one-time ticket handed out with `roster_binding_required` on a Same owner start: after the
+        remote binds (its own UV), the page re-sends the signed start with it. It never grants anything — the start
+        is still the remote's own signed control write and the six-digit confirm still needs a fresh UV."""
+        now = self.svc.clock()
+        self.conts = {k: v for k, v in self.conts.items() if v['exp'] > now and not v['used']}
+        while len(self.conts) >= CONT_MAX:
+            self.conts.pop(next(iter(self.conts)))
+        ticket = secrets.token_hex(16)
+        self.conts[ticket] = {'device': device, 'session': session, 'friend': fid, 'exp': now + CONT_TTL, 'used': False}
+        return ticket
+
+    def cont_take(self, ticket, device, session, fid):
+        """Spend a continuation ticket. → None when it is accepted, else the refusal reason. Any presentation burns it
+        (single use); a mismatch only means the request takes the normal path."""
+        rec = self.conts.pop(ticket, None) if isinstance(ticket, str) else None
+        if rec is None or rec['used']:
+            return 'unknown'
+        rec['used'] = True
+        if rec['exp'] <= self.svc.clock():
+            return 'expired'
+        if rec['device'] != device or rec['session'] != session:
+            return 'other_remote'
+        if rec['friend'] != fid:
+            return 'other_friend'
+        if not self.svc.xfer.bound(device):
+            return 'unbound'
+        return None
 
     def on_app(self, fid, obj):
         t, rid = obj.get('t'), obj.get('r')
@@ -478,7 +750,7 @@ class SameOwner:
                     or target != {"sender": fid, "receiver": self.svc.keys.id,
                                   "relationship": self.challenge(fid),
                                   "text_sha256": hashlib.sha256(data["text"].encode()).hexdigest()}
-                    or proof["sk"] != self.row(fid).get("remote_pub")):
+                    or not self.plan_signer(fid, proof["sk"], proof["device"])):
                 return None
             if proof.get("approval_v") == 2:
                 from . import approval_review
@@ -496,7 +768,7 @@ class SameOwner:
                 from . import passkey, owner_grant
                 try:
                     assertion = passkey.approval_fields(proof.get("fa"))
-                    entry = next((e for e in self.row(fid).get("remote_roster", [])
+                    entry = next((e for e in self.plan_roster(fid)
                                   if e.get("id") == assertion["id"] and e.get("dev") == proof["device"]
                                   and e.get("sign_pub") == proof["sk"] and owner_grant.binding_ok(e)), None)
                     if entry is None or proof.get("pk_kind") not in ("sandbox", "perm"):
@@ -754,6 +1026,10 @@ class SameOwner:
 
 ENDS = ('declined', 'expired', 'ended')
 OTG_CAPS = ['otg1', 'sx1']     # P574 (§17.13): this host takes owner grants and key transfers (= owner_grant.CAPS)
+CONT_TTL = 120                 # 0306 A5: a binding continuation ticket lives this long (seconds)
+CONT_MAX = 32
+ANY_SIGNER = 'any_signer'      # 0304 A1: same_owner packet cap — this round may be confirmed by any roster member
+SCOPE_V4 = 'agentj-same-owner-v4'
 
 
 def number(v):

@@ -183,7 +183,8 @@ P33_ONLY = ("web_preview_attest", "say", "say_cancel", "say_sync", "cmd_cancel",
             "keys_get", "keys_op", "keys_set",   # P352: 「模型和 API Key」 key manager (keys.py)
             "notify_get", "notify_set", "hook_list", "hook_set", "news_get", "news_set",
             "news_email", "news_verify",          # P365: the settings list of automations allowed to post (notify.py)
-            "preauth_list", "preauth_revoke")     # P539: 「Computer Use 免问」 list / revoke (narrowing only)
+            "preauth_list", "preauth_revoke",     # P539: 「Computer Use 免问」 list / revoke (narrowing only)
+            "automation_grants", "automation_grant_revoke")   # 0304 A3: 「自动化外发授权」 list / revoke (narrowing only)
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
 PREF_SET_KEYS += tuple("voice.asr."+key for key in ("mode", "engine", "provider", "base_url", "model", "key_env", "hotwords", "corrections"))
@@ -2185,6 +2186,8 @@ class Host:
                 with self.peers.store._edit("roster-via.json", {}) as rows:
                     rows.setdefault(rec["id"], {})["bind"] = binding["bind"]
                 self.peers.xfer.roster_tick()
+            with contextlib.suppress(Exception):
+                self.peers.same_owner.legacy_notice()   # 0304 security impl r1 M1: first passkey → legacy relations listed once
         self.pk_offers.pop(s.device, None)            # P565 追加 A: a key was taken — the device's other offers end with it
         self.st.log("pk_reg", cid=s.cid, device=s.device, result="ok")
         await self.send_app(s, {"t": "pk_reg_res", "ok": True})
@@ -2909,6 +2912,38 @@ class Host:
             await self.remotes.changed()
         return removed, n
 
+    def _revoked_authority(self, did: str) -> None:
+        """0304 A1-2/A1-7: a removed remote loses its pending authority at once, not at TTL. Every open card only it
+        could answer is denied (list_approval then sends ask_done to every remote); same-owner rounds it started or
+        consented to end with their cards (`gone`); same-owner peers get the shorter roster now, not in ≤30 s."""
+        for a in list(self.asks.values()):
+            if getattr(a, "only", None) == did and not a.fut.done():
+                a.fut.set_result(("deny", None, None, None))
+        # Q3: the special review cards bound to it (terminal login / sudo / secret input / key manager / mail
+        # password — all elevate cards with `only`) end the same way a deny from the phone ends them.
+        for ad in list(self.__dict__.get("_approval_special", {}).values()):
+            only = getattr(ad, "only", None)
+            mine = only == did or (isinstance(only, list) and bool(only) and set(only) <= {did})   # vshare: only=[did]
+            if (mine and not getattr(ad, "terminal", True) and not ad.fut.done()
+                    and not ad.card.get("busy")):     # a card already executing finishes on its own
+                # security impl r1 L7: the same order as a deny from the phone (approval_special.on_phone / elevate
+                # deny): the review deny event first, then the controller's finish.
+                with contextlib.suppress(Exception):
+                    if callable(getattr(ad, "denied", None)):
+                        ad.denied()
+                with contextlib.suppress(Exception):
+                    ad.finish("declined" if ad.tool == "SecretPickup" else "denied")
+                    self.st.log("ask_revoked", id=ad.rid, tool=ad.tool)
+        peers = getattr(self, "peers", None)
+        if peers is None:
+            return
+        with contextlib.suppress(Exception):
+            peers.same_owner.device_gone(did)
+        with contextlib.suppress(Exception):
+            peers.same_owner.roster_moved()      # R-F11: rounds whose snapshot held it restart (new code)
+        with contextlib.suppress(Exception):
+            peers.xfer.roster_tick()
+
     async def _drop_device(self, did: str, why: str, removed: bool = True) -> int:
         if removed:
             # Subscription lifecycle only; the existing pairing/authentication decision is unchanged.
@@ -2917,6 +2952,7 @@ class Host:
                 router(self).revoke_device(did)
             except (ValueError, OSError):
                 self.st.log('event_revoke', reason='persistence_failed')
+            self._revoked_authority(did)
 
         victims = [c for c, s in list(self.sessions.items()) if s.device == did]
         for c in victims:
@@ -5541,6 +5577,9 @@ class Host:
                     with provenance.task_request(task_scope):
                         broker = self.peers.xfer.broker if self.peers is not None and not background and task_scope is None else None
                         ans = await broker.execute(tool, tool_input, m.get("tool_use_id"), gone.get(rid)) if broker else None
+                        if ans is None and not background and task_scope is None and self.perm_w is w:
+                            from . import host_turns   # ADR-0306-host-turn-reads: heartbeat / system turn reads, no card
+                            ans = await host_turns.admit(self, clean_line_tool(tool), tool_input, getattr(launch_context, "cwd", None))
                         if ans is None:
                             ans = await self.ask(clean_line_tool(tool), tool_input, gone.get(rid), _harness_permission=True, _native_context=launch_context,
                                                  **({"background": background} if background else {}))
@@ -5573,7 +5612,8 @@ class Host:
                   ttl: float | None = None, grant_info: bool = False, origin: str | None = None,
                   allow_offer: list | None = None, _company_proposal=None, bind: dict | None = None,
                   avatar: str | None = None, background: str | None = None, always_ask: bool = False, task_actions: list | None = None, task_target: dict | None = None, only: str | None = None, _receipt: dict | None = None,
-                  known_recipients: bool = False, _host_card: bool = False, _settings_session=None, _learn_proposal=None, _plan_only: bool = False, _bounded_context=None, _harness_permission=False, _native_context=None, _settings_context=None) -> dict:
+                  known_recipients: bool = False, _host_card: bool = False, _settings_session=None, _learn_proposal=None, _plan_only: bool = False, _bounded_context=None, _harness_permission=False, _native_context=None, _settings_context=None,
+                  _front: dict | None = None) -> dict:
 
         # Chairman 2026-11-08: main approval is explicit-list only. The legacy
         # implementation below is retained for rollback, never called here.
@@ -5589,7 +5629,8 @@ class Host:
         return await list_approval.ask(self, Ask, tool, tool_input, gone=gone, ttl=ttl,
             grant_info=grant_info, receipt=_receipt, only=only, host_card=_host_card,
             settings_session=_settings_session, bounded_context=_bounded_context, harness_permission=_harness_permission,
-            task_actions=task_actions, task_target=task_target, native_context=_native_context, settings_context=_settings_context)
+            task_actions=task_actions, task_target=task_target, native_context=_native_context, settings_context=_settings_context,
+            front=_front)
 
         def observe(reason, shown=None):
             if type(_receipt) is dict:
@@ -6758,6 +6799,8 @@ class Host:
         from . import approval_context
         send.approval_origin = approval_context.remember(self, turn, source)
         send.approval_origin = approval_review.remember(self, turn, source)     # verified False, suspicious True
+        from . import friend_handoff
+        friend_handoff.mint(self, send, agent_text)          # ADR-0306: its mail to others = a UV card naming the friend
         try:
             self.agent.submit(send)
         except Exception:  # noqa: BLE001 — an adapter that raised on submit cannot deliver this instance
@@ -6794,6 +6837,14 @@ class Host:
             return
         if a.only and a.only != s.device:
             return await self._answer_refused(s, a, "wrong_remote")
+        if (ok and a.tool == "agentj secret grant" and self.peers is not None
+                and not self.peers.xfer.bound(s.device)):
+            # 0304 R-F5: the same-owner grant card is signable by any roster-bound remote; an unbound remote's
+            # allow does not consume it (the card stays open for the others) and is offered the binding instead.
+            entry = self.peers.xfer.binding_entry(s.device)
+            if entry:
+                await self.send_app(s, {"t": "roster_bind_offer", "entry": entry})
+            return await self._answer_refused(s, a, "roster_binding_required")
         if batch and (not ok or a.scope is None or a.cats):
             await self._answer_refused(s, a, "no_batch")
             return
@@ -6999,6 +7050,14 @@ class Host:
             self.st.log("control_refused", device=s.device, action=t, reason=why)
             controls.log(self.st, action=t, device=s.device, result="refused:" + why)
             return await self._ctl_res(s, r, t, False, why=why)
+        so_start = t == "fr_set" and target.get("op") == "group" and target.get("value") == "same-owner"
+        if so_start and obj.get("cont") is not None:
+            # 0306 A5: the page continues a Same owner start after binding. The ticket grants nothing — this is
+            # still this remote's own signed start (checked above) and the code confirm still needs a fresh UV.
+            from .peer import parse_id
+            pid = parse_id(target["friend"]) or target["friend"]
+            miss = self.peers.same_owner.cont_take(obj.get("cont"), s.device, s.cid, pid)
+            self.st.log("same_owner_continue", device=s.device, result=miss or "ok")
         try:
             ok, why, fid = await self.peers.write(t, target, device=s.device, proof={
                 "channel": self.channel, "device": s.device, "pub": wire.b64u(self.st.sign_key(s.device)),
@@ -7009,7 +7068,14 @@ class Host:
         self.st.log("control", device=s.device, action=t, result=result)
         controls.log(self.st, action=t, device=s.device, result=result, obj=target, sig=obj.get("sig"), n=obj.get("n"),
                      ts=obj.get("ts"))
-        await self._ctl_res(s, r, t, ok, **({} if ok else {"why": why}))
+        extra = {}
+        if so_start and not ok and why == "roster_binding_required":
+            # 0306 A5: first use of this remote — bind (Touch ID once), then the page sends the start again with `cont`
+            if self.st.passkey_of_device(s.device):
+                extra = {"next": "bind", "cont": self.peers.same_owner.cont_issue(s.device, s.cid, fid)}
+            else:
+                extra = {"next": "passkey"}
+        await self._ctl_res(s, r, t, ok, **({} if ok else {"why": why, **extra}))
         if ok:
             self.peers.changed(fid if t in ("fr_set", "fr_ctx") else None)
 
@@ -8443,7 +8509,7 @@ class Host:
         if t == "mail_key":                 # one answer, when the card ends (the page waits up to the card's 10 minutes)
             async def card():
                 with provenance.paired_request(lambda: self._paired_live(s)):
-                    res = await self.mail.secret_card(recover=False, only=s.device)
+                    res = await self.mail.secret_card(recover=False, only=s.device, settings=True)
                 receipt = res.get("receipt") or {}
                 await answer(res.get("result") == "saved", None if res.get("result") == "saved" else
                              (res.get("detail") or res.get("why") or res.get("result")), card=res.get("result"), verify=receipt.get("verify"), detail=receipt.get("detail"))
@@ -8555,6 +8621,9 @@ class Host:
             return await self.forms.on_phone(s, obj)
         if t in ("preauth_list", "preauth_revoke"):   # P539
             return await self.on_preauth(s, t, obj)
+        if t in ("automation_grants", "automation_grant_revoke"):   # 0304 A3: same narrowing-only control as preauth
+            from . import automation_grant
+            return await automation_grant.on_phone(self, s, t, obj)
         if t == "ark_plan_get":
             if wire.is_rid(obj.get("r")):
                 from . import ark_plan_fix
@@ -8758,7 +8827,7 @@ class Host:
                         if self._paired_live(s):
                             replied = await self.send_app(s, {"t": "provider_res", "r": r, "ok": True,
                                                               "card": self.elevate.card_msg(c, s)})
-                    res = await provider_runtime.request_key(self, pid, session=s, on_card=opened)
+                    res = await provider_runtime.request_key(self, pid, session=s, on_card=opened, settings=True)
                     if not replied:
                         await self.send_app(s, {"t": "provider_res", "r": r, "ok": False, "why": res.get("result", "failed")})
                 self._bg(provider_card(), "request_key")

@@ -174,8 +174,9 @@ class Xfer:
                 return False
             proof = rec["proof"]
             device = proof["device"]
-            e = self.binding_entry(device)
-            return bool(e) and bool(og.verify(rec["otg"], proof, [e]))
+            # 0304 R-F5: the signer must still be roster-bound here (not only paired with a passkey)
+            e = [x for x in self.my_roster() if x.get("dev") == device]
+            return bool(e) and bool(og.verify(rec["otg"], proof, e))
         except (og.GrantError, KeyError, TypeError):
             return False
 
@@ -435,11 +436,13 @@ class Xfer:
             scope = rec.get("task", "")
             if scope.startswith("task:"):
                 row = self.svc.store._read("owner-ordinary-tasks.json", {}).get(scope[5:], {})
-                return (row.get("active") and row.get("device") == rec["proof"]["device"]
+                return (row.get("active") and row.get("device") == device
                         and row.get("session") == self.task_session() and row.get("exp", 0) > time.time())
             return self.task_scope() == scope
-        device = rec["proof"]["device"] if rec else None
-        online = any(s.device == device and s.state == "ready" for s in h.sessions.values())
+        # 0304 A1: the task belongs to the remote that started it (`device`, older records: the signer); the new
+        # card may be signed by any roster-bound remote that is online.
+        device = (rec.get("device") or rec["proof"]["device"]) if rec else None
+        online = any(s.state == "ready" and s.device and self.bound(s.device) for s in h.sessions.values())
         if authorized() and online:
             with self.svc.store._edit("owner-more-seen.json", {}) as seen:
                 for key in list(seen):
@@ -775,11 +778,8 @@ class Xfer:
         retired = set(previous.get("retired") or [])
         sent = [e for e in sent if isinstance(e, dict) and e.get("id") not in retired]
         if old is None:
-            ceremony = self.svc.same_owner.row(fid)
-            if ceremony.get("roster_v") != 3 or ceremony.get("remote_roster_v") != 3:
-                return
-            pinned = [e for e in ceremony.get("remote_roster", []) if e.get("sign_pub") == ceremony.get("remote_pub") and og.binding_ok(e)]
-            if len(pinned) != 1:
+            pinned = self.ceremony_roster(fid)
+            if not pinned:
                 return
             with self.svc.store._edit("owner-roster.json", {}) as d:
                 d[fid] = {"list": pinned, "at": int(time.time())}
@@ -803,6 +803,55 @@ class Xfer:
         elif added:
             self._owner_notice(pick(self.svc.lang, f"「{name}」新增可签授权的遥控器：{'、'.join(added)[:120]}（由它已认可的遥控器 Face ID 批准）。",
                                     f"“{name}” added a remote that may sign grants: {', '.join(added)[:120]} (approved by Face ID on a known one)."))
+
+    def ceremony_roster(self, fid: str) -> list | None:
+        """The first pinned roster comes only from the code-verified ceremony scope, never from a roster packet.
+        0304 R-F4: it is read from the scope BYTES whose digest is this host's recorded `verified` challenge (the
+        six digits both owners compared), not from the row's `remote_roster` field. v3: its unique signer. v4: the
+        peer's whole roster snapshot — every entry entry_ok + binding_ok, and the remote that confirmed on the peer
+        among them — once the relation is active."""
+        so = self.svc.same_owner
+        c = so.row(fid)
+        if c.get("roster_v") != 3 or c.get("remote_roster_v") != 3 or not so.active(fid):
+            return None
+        scope = so.scope(fid, c)
+        if not scope or hashlib.sha256(scope.encode()).hexdigest()[:32] != c.get("verified"):
+            return None
+        try:
+            ends = json.loads(scope)
+            if so.v4(fid, c):
+                from .same_owner import SCOPE_V4
+                if ends[0] != SCOPE_V4:
+                    return None
+                peer = [e for e in ends[1:] if e[0] == fid]
+                roster = peer[0][3] if len(peer) == 1 else None
+            else:
+                peer = [e for e in ends if e[0] == fid]
+                roster = [e for e in (peer[0][4] if len(peer) == 1 else []) if e.get("sign_pub") == peer[0][2]]
+        except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+            return None
+        if not isinstance(roster, list) or not roster or len(roster) > og.ROSTER_MAX:
+            return None
+        if not all(isinstance(e, dict) and og.entry_ok(e) and og.binding_ok(e) for e in roster):
+            return None
+        if not so.v4(fid, c):
+            return roster if len(roster) == 1 else None
+        signer = c.get("remote_signer") if isinstance(c.get("remote_signer"), dict) else {}
+        if not any(e.get("sign_pub") == signer.get("pub") and e.get("dev") == signer.get("device") for e in roster):
+            return None
+        return roster
+
+    def pin_ceremony(self, fid: str) -> None:
+        """0304 A1: pin the peer's ceremony roster the moment Same owner becomes active (not on its first packet)."""
+        if self.pinned(fid) is not None:
+            return
+        pinned = self.ceremony_roster(fid)
+        if not pinned:
+            return
+        with self.svc.store._edit("owner-roster.json", {}) as d:
+            if not isinstance(d.get(fid), dict):
+                d[fid] = {"list": pinned, "at": int(time.time())}
+        self.svc.log("owner_roster", result="pinned", n=len(pinned), added=0, removed=0)
 
     def _send_revoke(self, fid: str, tid: str) -> None:
         net = getattr(self.svc, "net", None)
@@ -872,6 +921,10 @@ class Xfer:
         # Existing ceremonies retain their signed roster snapshot. Binding only affects future
         # ceremonies; it neither withdraws consent nor adds a trusted OTG root to an old one.
         self.roster_tick()
+        with contextlib.suppress(Exception):
+            self.svc.same_owner.roster_moved()      # 0304 R-F11: a round taken with no bound remote restarts with one
+        with contextlib.suppress(Exception):
+            self.svc.same_owner.legacy_notice()     # 0304 security impl r1 M1: once per host, list legacy relations
         return await h.send_app(session, {"t": "roster_bind_res", "ok": True})
 
     # ------------------------------------------------------------ the CLI (elevate.sock {"t": "sx", "op": …})
@@ -1014,8 +1067,10 @@ class Xfer:
         gate = await self.svc._outbound(og.card_text(otg))
         if not gate.ok:
             return {"result":"refused", "why":"secret_policy"}
+        # 0304 A1: the grant card goes to every remote; any roster-bound one signs it with UV (first answer decides).
+        # `device` stays the starting remote: it is the task/session binding, not a signing privilege.
         ans = await h.ask(og.TOOL, {"grant": otg["tid"], "card": og.card_text(otg), "summary":og.card_text(otg), "otg":otg}, batch=False, grant_info=True,
-                          require_passkey=True, ttl=5 * h.ask_ttl, only=device,
+                          require_passkey=True, ttl=5 * h.ask_ttl,
                           _company_proposal=policy_registry.HOST_CARD if continuation else None)
         if self.task_scope() != scope or (not continuation and getattr(getattr(h.agent, "cur_send", None), "device", None) != device):
             return {"result":"refused", "why":"owner_source"}
@@ -1023,8 +1078,12 @@ class Xfer:
             return {"result": "refused", "why": "owner"}
         try:
             proof = og.proof_of(otg, ans.get("grant_info") or {})
-            entry = self.binding_entry(device)
-            og.verify(otg, proof, [entry] if entry else [])
+            # 0304 R-F5: verified against THIS host's roster entry of the remote that signed (any bound one);
+            # serve refuses an unbound remote's answer before it reaches here (the card stays open).
+            entries = [e for e in self.my_roster() if e.get("dev") == proof.get("device")]
+            if not entries or not self.bound(proof.get("device")):
+                return {"result": "refused", "why": "roster_binding_required"}
+            og.verify(otg, proof, entries)
             if not self.local_live({"otg": otg, "proof": proof}):
                 raise og.GrantError("bad_proof", "current credential or grant epoch changed")
         except og.GrantError as e:
@@ -1038,7 +1097,7 @@ class Xfer:
             now = time.time()
             for k in [k for k, v in d.items() if not isinstance(v, dict) or v.get("exp", 0) <= now]:
                 d.pop(k)
-            d[otg["tid"]] = {"otg": otg, "proof": proof, "exp": otg["exp"], "used": {}, "at": int(now), "task": scope}
+            d[otg["tid"]] = {"otg": otg, "proof": proof, "exp": otg["exp"], "used": {}, "at": int(now), "task": scope, "device": device}
         if scope.startswith("goal:"):
             with self.svc.store._edit("owner-task-context.json", {}) as d:
                 now = time.time()

@@ -194,6 +194,9 @@ class Transfers(unittest.IsolatedAsyncioTestCase):
                 d['B' if fid=='A' else 'A']={'list':[entry(self.auth)]}
         self.services['A'].st.devices=lambda:{'phone':{'pk':pk_record(self.auth),'name':'phone'}}
         self.services['A'].st.sign_key=lambda did:self.auth._test_approval_key.public_key().public_bytes_raw()
+        # 0304 R-F5: the origin's signing remote is roster-bound (its UV binding), as a live grant requires
+        with self.services['A'].store._edit('roster-via.json',{}) as d:
+            e=entry(self.auth);d[e['id']]={'bind':e['bind']}
         self.a,self.b=self.services['A'].xfer,self.services['B'].xfer
         from agentj.compose import Send
         self.services['A'].host.agent=SimpleNamespace(kind='codex',session='transfer-fixture',
@@ -398,6 +401,9 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
         self.svc.store.name_of=lambda fid:'Desktop'
         with self.svc.store._edit('owner-roster.json',{}) as d:
             d['B']={'list':[entry(self.phone.auth,self.phone.did)]}
+        # 0304 A1: a grant signer must be a roster-bound remote of this host (any of them), so the origin remote is bound.
+        e=self.bound_entry(self.phone)
+        with self.svc.store._edit('roster-via.json',{}) as rows:rows[e['id']]={'bind':e['bind']}
 
     async def asyncTearDown(self):
         self.h.stopping.set()
@@ -414,10 +420,9 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
         ask=next(iter(self.h.asks.values()))
         self.assertEqual(self.h._ask_msg(ask,self.s)['owner_grant']['tid'],ask.tool_input['otg']['tid'])
         await asyncio.sleep(.01)
-        self.assertFalse(any(cid==12 and obj.get('id')==ask.rid and obj.get('t')=='ask' for cid,obj in self.sent))
-        self.assertFalse(any(obj.get('id')==ask.rid for obj in self.h.open_cards(self.other_s)))
-        await self.h._answer(self.other_s,self.other.answer(self.h._ask_msg(ask,self.other_s),True))
-        self.assertFalse(ask.fut.done(),'another remote cannot answer the origin card')
+        # 0304 A1: the grant card fans out to every remote (no origin-only card); any roster-bound one signs it.
+        self.assertIsNone(ask.only)
+        self.assertTrue(any(obj.get('id')==ask.rid for obj in self.h.open_cards(self.other_s)))
         await self.h._answer(self.s,self.phone.answer(self.h._ask_msg(ask,self.s),True))
         return await asyncio.wait_for(task,2)
 
@@ -438,7 +443,7 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
             if not task.done():task.cancel()
             await asyncio.gather(task,return_exceptions=True)
 
-    async def test_real_host_ask_signs_once_and_only_origin_remote(self):
+    async def test_real_host_ask_signs_once_any_bound_remote(self):
         res=await self.sign_plan({'title':'Release','why':'Remove obsolete build','steps':[{'host':'B','cat':'delete','what':'Remove old build','paths':['/tmp/p574-old-build'],'max':2}]})
         self.assertEqual(res['result'],'signed')
         rec=self.svc.xfer._grants_out()[res['grant']]
@@ -455,6 +460,7 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(scope,'goal:persistent-goal')
 
     async def test_legacy_key_binding_keeps_credential_and_rejects_spki_substitution(self):
+        with self.svc.store._edit('roster-via.json',{}) as rows:rows.clear()   # this test's premise: a not-yet-bound key
         records=self.st.devices()
         records[self.phone.did]['pk'].update(vault_wrap={'ct':'synthetic-wrap','version':1},prf={'salt':'synthetic-salt'})
         self.st.write_private(self.st.devices_path,json.dumps(records).encode())
@@ -666,10 +672,21 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
         e['bind']=wire.b64u(phone.sk.sign(b'agentj-owner-roster-v1\n'+og.jcs({k:e[k] for k in ('id','alg','spki','rp','dev')})))
         return e
 
+    def code_covered(self, ceremony):
+        """0304 R-F4: the first pin is parsed from the scope bytes the six digits cover (sha256 == `verified`) of an
+        active relation, so a faked ceremony row must be a code-verified one."""
+        import hashlib
+        scope=json.dumps([['A','hostA',wire.b64u(b'\1'*32),'1'*32,[]],
+                          ['B','hostB',ceremony['remote_pub'],'2'*32,ceremony['remote_roster']]],separators=(',',':'))
+        ceremony['verified']=hashlib.sha256(scope.encode()).hexdigest()[:32]
+        self.svc.same_owner.row=lambda fid:ceremony
+        self.svc.same_owner.scope=lambda fid,r=None:scope
+        self.svc.same_owner.active=lambda fid:True
+
     async def test_ceremony_only_pins_actual_signer_not_fake_extra_device(self):
         root=self.bound_entry(self.phone);extra=self.bound_entry(self.other)
         ceremony={'roster_v':3,'remote_roster_v':3,'remote_roster':[root,extra],'remote_pub':root['sign_pub']}
-        self.svc.same_owner.row=lambda fid:ceremony
+        self.code_covered(ceremony)
         with self.svc.store._edit('owner-roster.json',{}) as d:d.pop('B')
         self.svc.xfer._on_roster('B',{'list':[root,extra],'caps':og.CAPS})
         self.assertEqual([e['id'] for e in self.svc.xfer.pinned('B')],[root['id']])
@@ -838,7 +855,7 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
 
     async def test_revoked_roster_credential_cannot_return_from_old_valid_list(self):
         root=self.bound_entry(self.phone)
-        self.svc.same_owner.row=lambda fid:{'roster_v':3,'remote_roster_v':3,'remote_roster':[root],'remote_pub':root['sign_pub']}
+        self.code_covered({'roster_v':3,'remote_roster_v':3,'remote_roster':[root],'remote_pub':root['sign_pub']})
         with self.svc.store._edit('owner-roster.json',{}) as d:d.pop('B')
         self.svc.xfer._on_roster('B',{'list':[root],'caps':og.CAPS})
         self.assertEqual(len(self.svc.xfer.pinned('B')),1)

@@ -53,6 +53,8 @@ def refused_word(why: str) -> str:
 
     if why.startswith("passkey"):
         return "passkey"
+    if why == "unverified_trigger":
+        return "context"     # hotfix 2026-11-10: was "shape" → 「主机没有收下这次的回答」, which sent the owner to refresh in vain
     return why if why in ("late", "stale", "replay", "bad_signature", "no_key") else "shape"
 
 
@@ -74,13 +76,16 @@ _ID = re.compile(r"[0-9a-f]{32}")
 
 
 
-def external_support(host, op) -> bool:
+def external_support(host, op, req=None) -> bool:
     """support / feedback_send refused as "external data": an OTG grant turn, or a turn that is not the owner's own
     (#0303 R1: the owner's Telegram DM / WeChat / verified mailbox count as the owner) unless signed Full access."""
     from . import approval_level, provenance
     agent = getattr(host, "agent", None)
-    return op in ("support", "feedback_send") and (
-        provenance.owner_grant_required(agent) or (not provenance.owner_speaking(agent) and not approval_level.autonomous(host)))
+    step = {"support": "agentj support", "feedback_send": "agentj feedback"}.get(op)   # 0304 A2-②: grant gate = UV steps only
+    # security r1 F9: UV is decided from the actual step input; no input → a UV step (fail closed), never `{}`
+    need = (provenance.owner_grant_required(agent, step, {k: v for k, v in req.items() if k != "t"})
+            if isinstance(req, dict) else provenance.owner_grant_required(agent))
+    return step is not None and (need or (not provenance.owner_speaking(agent) and not approval_level.autonomous(host)))
 
 class Refused(Exception):
 
@@ -320,6 +325,16 @@ _SYS_PW_TEXT = re.compile(r"(?:电脑|本机|这台(?:电脑|机器|主机)?|sud
 def system_password_ask(name: str, purpose: str) -> bool:
 
     return bool(_SYS_PW_NAME.search(name or "") or _SYS_PW_TEXT.search(purpose or ""))
+
+
+def settings_origin(host, card: dict) -> dict:
+    """0.30.6: the source of a secret card the owner opened on a live paired Settings page (keys, provider, mail)."""
+    en = str(getattr(host, 'lang', 'zh')).startswith('en')
+    what = str(card.get('purpose') or card.get('name') or '')[:200]
+    return {'session': str(host.hist.epoch), 'message_id': None, 'root_message_id': None, 'channel': 'phone',
+            'sender': 'You' if en else '你', 'text': ('Settings · you: ' if en else '设置页 · 你本人：') + what,
+            'verified': True, 'suspicious': False, 'initiator': '遥控器设置 / Remote settings', 'task_record': '',
+            'chain': [{'kind': 'settings', 'id': str(card.get('name') or '')[:80]}]}
 
 
 def norm_secret(req: dict, state_root: pathlib.Path) -> dict:
@@ -826,6 +841,12 @@ def check_record(st, r: dict) -> str:
 
 
 
+
+def _pins_live_context(c: dict) -> bool:
+    """P541 pin scope (0.30.6): only a reviewed secret card that writes to a destination (the key-validation wait).
+    The owner's terminal login / sink cards keep the 0.30.1 rule — the Agent's turn moving on never refuses them."""
+    return bool(c.get('review_adapter') is not None and c.get('kind') == 'secret' and not callable(c.get('sink')))
+
 class Elevator:
 
 
@@ -1121,9 +1142,13 @@ class Elevator:
             if adapter is None:
                 return True
             source = adapter.envelope['source']
+            # security r1 F12: the 541 rule. A verified owner turn that QUOTED material (suspicious, root.verified True)
+            # is still the owner's request: the card labels the material, and the paired signature + the sudo password
+            # typed on this card decide. A guest / group / forward / unknown origin (verified False) stays refused.
+            quoted_by_owner = source.get('suspicious') is True and (source.get('root') or {}).get('verified') is True
             return (adapter.card is card and adapter.host is self.host and not adapter.terminal
                     and self.host.__dict__.get('_approval_special', {}).get(adapter.rid) is adapter
-                    and source.get('verified') is True and source.get('suspicious') is not True)
+                    and source.get('verified') is True and (source.get('suspicious') is not True or quoted_by_owner))
         except Exception:
             return False
 
@@ -1136,6 +1161,18 @@ class Elevator:
             if source is provenance._UNSET or not provenance.is_owner(source):
                 return {'result': 'refused', 'why': 'authority_changed'}
             creator_live = paired[1]  # real creator checked above; never infer owner from worker context
+        # 0.30.6: the worker task below cannot resolve the creator's paired scope, so its snapshot used the main chat
+        # thread (an unrelated message, or an unverified turn that later moved on → save refused). A card a Settings
+        # caller marked (keys.py, provider_runtime, serve mail_key) inside a live paired owner request carries the
+        # host-built Settings origin instead; other paired frames keep their old source. Display only, never a grant.
+        settings = (approval_review.origin_scope(settings_origin(self.host, card))
+                    if creator_live is not None and card.get('kind') == 'secret' and card.get('settings_origin') is True
+                    else contextlib.nullcontext())
+        with settings:
+            return await self._request_scoped(card, gone, on_card, creator_live)
+
+    async def _request_scoped(self, card, gone, on_card, creator_live):
+        from . import approval_review
         binding = card
         callback_entry = None
         callbacks = self.__dict__.setdefault('_review_callbacks', [])
@@ -1394,6 +1431,10 @@ class Elevator:
 
 
             await self.host.send_app(s, {"t": "elev_refused", "id": c["id"], "why": refused_word(why)})
+            if why == "unverified_trigger" and c["kind"] == "secret" and not c.get("busy") and self._signed_by(s, c, obj):
+                # hotfix 2026-11-10: a secret card refused for authority (Agent switched, history cleared, Stop
+                # everything) can never be saved again — retire it now so it neither lingers nor blocks a new request.
+                self._finish(c, {"result": "refused", "why": "authority_changed"})
             return
         sk = self.st.sign_key(s.device)
         ok = obj["ok"]
@@ -1407,6 +1448,11 @@ class Elevator:
                 c['review_adapter'].denied()
             audit(self.st, c, result="denied", reason="device", **signed)
             return self._finish(c, {"result": "denied", "_logged": True})
+        if _pins_live_context(c):
+            from . import approval_special
+            # security r4 N4a: pin only once the answer passed every check (signature, nonce, not busy) — a later
+            # frame for the same card can never re-pin it.
+            c['_live_at_answer'] = approval_special.live_context(self.host)
         c["busy"] = True
         c["want_grant"] = obj.get("grant") if ok else None
         c["started"] = time.monotonic()
@@ -1723,6 +1769,20 @@ class Elevator:
         c["busy"] = False
         self._finish(c, res)
 
+    def _signed_by(self, s, c: dict, obj: dict) -> bool:
+        """Security review S3: only an answer this paired device really signed (current nonce) may retire a card."""
+        try:
+            ok, sk = obj.get("ok"), self.st.sign_key(s.device)
+            if not isinstance(ok, bool) or not sk or obj.get("n") != c["nonce"] or type(obj.get("ts")) is not int:
+                return False
+            ct_sha = hashlib.sha256(wire.unb64u(obj["ct"])).hexdigest() if ok and "ct" in obj else None
+            msg = signed_message(self.host.channel, s.device, c["id"], c["kind"], "allow" if ok else "deny", obj["n"],
+                                 obj["ts"], c["digest"], ct_sha, obj.get("grant"))
+            Ed25519PublicKey.from_public_bytes(sk).verify(wire.unb64u(obj.get("sig") or ""), msg)
+            return True
+        except (InvalidSignature, ValueError, TypeError, KeyError):
+            return False
+
     def _check(self, s, c: dict, obj: dict) -> str | None:
         from . import approval_special
         if obj.get('ok') is True and not self._source_allows(c):
@@ -1833,12 +1893,20 @@ class Elevator:
 
     def _save(self, c: dict, value: bytearray) -> dict:
         from . import approval_special
+        # 0.30.6 (P541 vs hotfix d87bfdfebf): an owner secret card may be answered after its turn ended, but the live
+        # task / source at the moment the answer was accepted (_check) is pinned — a new owner turn during the key
+        # validation wait still stops the write.
+        pinned = c.get('_live_at_answer') if _pins_live_context(c) else None
+        if _pins_live_context(c) and pinned is None:
+            raise approval_special.AuthorityChanged()
         def ensure_source():
             if c.get('review_adapter') is not None:
                 guard=c.get('_approval_execution_guard')
                 if not callable(guard):raise approval_special.AuthorityChanged()
                 guard()
             if not self._source_allows(c):raise approval_special.AuthorityChanged()
+            if pinned is not None and approval_special.live_context(self.host) != pinned:
+                raise approval_special.AuthorityChanged()
         ensure_source()
         if len(value) > MAX_VALUE:
             return {"result": "failed", "why": "value"}
@@ -1969,7 +2037,7 @@ class Elevator:
                 return {"ok": False, "why": "shape", "detail": bad}
             if req["op"] in ("connect", "disconnect", "install", "on", "off"):    # #436 round 1 (L1): google_api's turn gate
                 from .google_api import refusal
-                no = refusal(getattr(self.host, "agent", None))
+                no = refusal(getattr(self.host, "agent", None), op=req["op"], inp=req)
                 if no:
                     self.st.log("google_cli", result=no["why"])
                     return no
@@ -2106,7 +2174,7 @@ class Elevator:
                 return
             if isinstance(req, dict) and req.get("t") == "host_diagnostics":
                 from . import host_diagnostics, approval_level, provenance, approval_material, privacy_host
-                external_send = external_support(self.host, req.get("op"))
+                external_send = external_support(self.host, req.get("op"), req)
                 why = host_diagnostics.caller_refusal(req, sock, self.host)
                 broker = getattr(getattr(getattr(self.host, 'peers', None), 'xfer', None), 'broker', None)
                 if req.get('op') == 'support' and broker is not None and broker.feedback_applicable() and not external_send:
@@ -2301,6 +2369,13 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
+            if isinstance(req, dict) and req.get("t") == "automation_grant":   # 0304 A3: agentj automation grant|grants|revoke
+                from . import automation_grant
+                res = await automation_grant.control(self.host, req, peer)
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
             if isinstance(req, dict) and (req.get("t") == "workflow_mail" or
                                           req.get("t") == "mail_send" and "delivery_manifest" in req):
                 from . import workflow_mail
@@ -2329,7 +2404,7 @@ class Elevator:
                     w.write((json.dumps({"t": "card", "id": c["id"], "kind": "contact", "ttl": 600}) + "\n").encode())
                     await w.drain()
                 if req["t"] == "mail_send":
-                    res = await self.contacts.agent_send(req)
+                    res = await self.contacts.agent_send(req, peer)   # 0304 A3: kernel peer → task/hook identity
                 elif req.get("op") == "card":
                     res = await self.contacts.card(req, early if req.get("early") is True else None)
                 else:

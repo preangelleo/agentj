@@ -35,7 +35,11 @@ MIN_CEILING = 4096          # smaller numbers in that test are counts, not byte 
 # 4,587,732 B (combined = wheel bytes, hatchling reproducible); cap = measured + 8 KiB = 4,595,924 B. Final tip after the four
 # regression fixes (w3-policy rm card, approval_policy.py): 4,587,777 B → cap = measured + 8 KiB = 4,595,969 B.
 # Remove this row in the slimming ticket.
-WIDER = {'combined bounded allocations': 4595969}   # P0269_BUDGET_WAIVER
+# P0306_BUDGET_WAIVER (贾维斯 2026-11-10 追认，0.30.6 集成单): P170 mail row carries the 0.30.5 A4 signed mail-settings fix,
+# Gmail auto-pin and servid_status (a6ff2dfaaa, 92503677f9): measured 43,151 B on release/0306-integrate 448637c8f4 (+17.05 %
+# over 36,864); cap = measured + 1 KiB = 44,175 B. Remove in the slimming ticket.
+WIDER = {'combined bounded allocations': 4595969,   # P0269_BUDGET_WAIVER
+         'P170 e-mail channel allocation (+ P206 A mail expect) is bounded': 44175}   # P0306_BUDGET_WAIVER
 
 
 def judge(measured: int, ceiling: int, strict: bool, label: str = '') -> str:

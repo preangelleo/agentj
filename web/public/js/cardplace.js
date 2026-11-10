@@ -46,6 +46,8 @@ export const CARDS = Object.freeze({
   confirm:       { place: 'own', surface: '#confirm', msgs: ['upg_card', 'upg_card_done', 'pk_offer', 'roster_bind_offer', 'roster_bind_res'], was: 'centred dialog over the whole screen', why: OWN_WHY },
   version_notice:{ place: 'exception', surface: '#version-notice', msgs: [], was: 'centred square over the whole screen',
                    why: 'the page\'s own 「我升级了 · 刷新」 notice about this web page (P150), not a card from the Agent J host; it never takes focus' },
+  offline:       { place: 'exception', surface: '#connDlg, #session-help', msgs: [], was: 'rows under the header (#514 #connection-help, #514b #session-help)',
+                   why: 'the page\'s own connection notices (0.30.6, chairman 11-10 12:14: offline after 10 s down, session not attached), not cards from the Agent J host; centred, never take focus' },
   notice:        { place: 'reply', surface: '#toast', msgs: ['auto', 'approval_resign', 'owner_grant_notice'], was: 'reply notice slot (P440 rect); short status = centred circle (P461, not a card)' },
   banner:        { place: 'reply', surface: '#setup-banner, #qr-banner, #rescue-banner, #estop-banner, #grant-bar, #ar-renew, #shared-status, #version-later, #share-notice, #assist-banner',
                    msgs: ['setup_card', 'quota_resume', 'rescue', 'ark_plan', 'reset_done', 'estop_state', 'grant', 'grant_end', 'assist_state', 'assist_notice'], was: 'reply notice slot (P440)' },
@@ -75,6 +77,7 @@ export const NOT_CARDS = Object.freeze([
   'pair_guide', 'cmds_state', 'preferences', 'status', 'busy', 'res', 'theme', 'pair_ev', 'jcard_open', 'fr_changed', 'hook_changed',
   'reset_step', 'assist_task', 'msg_steered', 'devs', 'dev_pending', 'dev_pair_end', 'host_moved', 'pk_reg_res', 'pk_state', 'preauth',
   'draft_restore', 'rt', 'push_key', 'hist_read', 'hist_meta', 'hist_turn', 'models', 'msg', 'budget_state',
+  'automation_grants', // #0304 A3: Settings → 安全 list (and the reply to a revoke); no card
 ]);
 
 /** Dialog-shaped roots that are pages, not cards (the test's surface scan skips exactly these). */

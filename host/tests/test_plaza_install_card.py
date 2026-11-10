@@ -337,7 +337,11 @@ class InstallCard(CardFixture):
 
     def test_delegated_owner_grant_cannot_open_receiving_host_card(self):
         self.harness()
-        self.package()
+        # 0304 A2-②: the grant gate covers UV steps only; granting the package a secret is one (non-secret installs
+        # follow the ordinary same-owner rules: test_0304_owner_grant_uv_only).
+        self.package(requires={"harness": ["codex"], "env": [{"name": "OPTIONAL_TOKEN", "required": False,
+            "secret": True, "description_zh": "可选", "how_to_get": "example.com"}]},
+            permissions={"tools": ["WebFetch"], "secrets": ["OPTIONAL_TOKEN"]})
         self.host.agent.native_source = {"kind": "same_owner", "role": "task", "fid": "synthetic-peer", "otg_required": True}
         rc, out = self.install_flow()
         self.assertEqual(rc, market.EXIT_PERMISSION, out)

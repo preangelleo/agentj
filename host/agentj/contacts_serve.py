@@ -464,7 +464,7 @@ class ContactService:
             return False
         return bool(own) and all(not a or a in own for a in (C.norm_email(w) for w in raw))
 
-    async def agent_send(self, req: dict) -> dict:
+    async def agent_send(self, req: dict, peer: int | None = None) -> dict:
         """`agentj mail send`: only the addresses shown on the owner's approval card — or, P296, no card when every
         recipient is the owner's own or on the mail allowlist."""
         from . import media as media_mod
@@ -510,9 +510,22 @@ class ContactService:
         outside = not provenance.owner_speaking(agent) and not provenance.delegated_turn(agent) \
             and not _chain_turn(agent) and not full_system
         src = provenance.turn_source(agent) if outside else None
-        # #0304: mail whose every final recipient is the owner's own address leaks nothing, so any turn may send it
-        # (no card, as P296). One other recipient keeps group_source; a literal address is judged before any book read.
-        if outside and not await asyncio.to_thread(self._owner_only_literals, to_raw + lists["cc"] + lists["bcc"]):
+        # 0.30.6 order for a turn the owner did not send (0304-small + 0304-frozen A3):
+        #   1. every final recipient is the owner's own address → passes (no card, as P296; it leaks nothing);
+        #   2. otherwise a live automation grant must cover every NON-owner to/cc/bcc → passes;
+        #   3. anything else → group_source refusal.
+        # The automation identity is host-held (webhook hook_notice + caller process, or the scheduled run's pinned process
+        # tree) — never turn text. Without one, a literal non-owner address is refused before any address-book read.
+        from . import automation_grant as AG
+        auto = await asyncio.to_thread(AG.identity, self.host, peer)
+        from . import friend_handoff as FH   # ADR-0306-friend-handoff-mail: the owner's 「交给主 Agent 来办」 turn
+        hand = None if auto is not None else await asyncio.to_thread(FH.current, self.host, agent, getattr(self.host, "peers", None))
+        if hand is False:
+            self.st.log("mail_send", result="denied", why="friend_handoff_unverified")
+            return dict(FH.REFUSED)
+        if hand:      # friend material: the outside rules (owner-only pass, strict scan, no key cards), else the UV card
+            outside, src = True, provenance.turn_source(agent)
+        if outside and auto is None and not hand and not await asyncio.to_thread(self._owner_only_literals, to_raw + lists["cc"] + lists["bcc"]):
             return group_refusal(src)
         recips, missing = [], []
         for key, who in [("to", w) for w in to_raw] + [(k, w) for k in ("cc", "bcc") for w in lists[k]]:
@@ -521,7 +534,7 @@ class ContactService:
                 missing.append(who[:60])
             elif addr not in [r["addr"] for r in recips]:   # to before cc before bcc: one address, one place
                 recips.append({"addr": addr, "name": (c or {}).get("name", ""), "who": who, "as": key})
-        if outside and missing:
+        if outside and missing and not hand:
             return group_refusal(src)
         if len(recips) > MAX_TO:
             return {"ok": False, "why": "to", "detail": f"1–{MAX_TO} recipients"}
@@ -530,8 +543,21 @@ class ContactService:
                     "detail": "没找到这些人，请告诉主人「没找到叫 X 的人」，并用 agentj contacts card 请主人保存 / "
                               "not in the address book: tell the owner and offer `agentj contacts card`"}
         from . import owner_route, privacy
-        mine = not delegated and await asyncio.to_thread(owner_route.all_owner, self.st, [r["addr"] for r in recips])
-        if outside and not mine:    # a name resolved to someone else: still the outsider rule
+        granted = None
+        g_action = "mail+files" if req.get("files") else "mail"     # F8: attachments are a separate grant action
+        g_account = AG.account_of(cfg)                                 # F8: the grant is bound to this SMTP account
+        g_rid = secrets.token_hex(8)                                   # F13: one id for this send (activity + use log)
+        all_own = await asyncio.to_thread(owner_route.all_owner, self.st, [r["addr"] for r in recips])
+        if auto is not None and not all_own:
+            # step 2: a live grant must cover every NON-owner to/cc/bcc (owner addresses in a mixed list need none).
+            verdict = await asyncio.to_thread(AG.check, self.host, auto, [r["addr"] for r in recips], g_action, outside, g_account)
+            if verdict.get("ok"):
+                granted = verdict["grant"]
+            elif outside:
+                return verdict                  # automation_grant_required / _stale / _invalid, with the fix
+            # a non-gated task turn without cover keeps its existing owner-card path
+        mine = (not delegated or bool(hand)) and granted is None and all_own
+        if outside and not all_own and granted is None and not hand:    # step 3: a name resolved to someone else, no grant cover
             return group_refusal(src)
         scan = mine and not outside  # #0304: an outside turn's files get the strict scan (no masked copies, no key cards)
         flat = outside and fmt == "html"
@@ -567,7 +593,8 @@ class ContactService:
         keys = len(privacy.credentials(body)) + sum(len(r["values"]) for _s, r in file_keys) if scan else 0
         def who(kind):
             return "、".join(f"{r['name']} <{r['addr']}>" if r["name"] else r["addr"] for r in recips if r["as"] == kind)
-        lines = [("发邮件给：" if zh else "Mail to: ") + who("to")]
+        lines = [FH.line(hand, zh)] if hand else []
+        lines += [("发邮件给：" if zh else "Mail to: ") + who("to")]
         lines += [lab + who(k) for k, lab in (("cc", "抄送：" if zh else "Cc: "), ("bcc", "密送：" if zh else "Bcc: "))
                   if any(r["as"] == k for r in recips)]
         lines.append(("标题：" if zh else "Subject: ") + subject)
@@ -605,20 +632,46 @@ class ContactService:
         from . import mail as M
         target = M.send_target(cfg,msg,[r["addr"] for r in recips])
         target["summary"] = "\n".join(lines)
+        if hand:      # uv_list.required: a handed friend turn's third-party mail is a signed UV card (display name only)
+            target["friend_handoff"] = hand["name"] or ("一位好友" if zh else "a friend")
         if mine:        # no card, but the owner still sees it in the activity list (as P296's no-card sends)
             ans = {"behavior": "allow"}
             with contextlib.suppress(Exception):
                 self.host.activity("auto", id=secrets.token_hex(8), tool="agentj mail send", summary=target["summary"],
                                    by="owner_self")
+        elif granted:   # 0304 A3: the owner's signed automation grant is the approval (outward masking stays on). Not
+            # application_ingress.ordinary: a hook/task caller has no owner request frame; identity + grant are the proof.
+            ans = {"behavior": "allow"}
+            with contextlib.suppress(Exception):
+                self.host.activity("auto", id=g_rid, tool="agentj mail send", summary=target["summary"],
+                                   by="automation_grant", grant=granted)
         else:
             known = await asyncio.to_thread(self.known, [r["addr"] for r in recips])
-            ans = await self.host.ask("agentj mail send", target, batch=False, known_recipients=known)
+            from . import approval_review as AR   # ADR-0306: a handed turn's card names the owner's tap + the friend
+            o = FH.origin(hand, zh) if hand else None
+            tok = AR.ORIGIN.set(o) if o else None
+            try:
+                ans = await self.host.ask("agentj mail send", target, batch=False, known_recipients=known,
+                                          **({"_front": FH.front(hand)} if hand else {}))
+            finally:
+                if tok is not None:
+                    AR.ORIGIN.reset(tok)
         if ans.get("behavior") != "allow":
             self.st.log("mail_send",result="denied",to=len(recips))
             return {"ok":False,"why":"denied","detail":DENIED[self.lang()]}
         if M.read_config(self.st) != cfg or self.host.stopped():
             return {"ok":False,"why":"stale"}
         added = await asyncio.to_thread(self.allow_add, ans.get("allow_add") or [])
+        # F8: last step before SMTP, after every await: reserve the use against the FINAL to/cc/bcc (the same list
+        # smtp_send gets), the current SMTP account, Stop everything and the attachment action.
+        no = (await asyncio.to_thread(AG.consume, self.host, auto, granted, [r["addr"] for r in recips], g_action,
+                                      AG.account_of(cfg), g_rid) if granted else None)
+        if no:          # revoked / changed / used up between the check and now: nothing goes out
+            self.st.log("mail_send", result="denied", to=len(recips), why=no)
+            return AG.refusal(no, auto, self.lang())
+        if granted and (self.host.stopped() or M.read_config(self.st) != cfg):
+            self.st.log("mail_send", result="denied", to=len(recips), why="stale")
+            return {"ok": False, "why": "stale"}
         try:
             await asyncio.to_thread(self.smtp_send, cfg, pw, msg, [r["addr"] for r in recips])
         except M.MailError as e:
@@ -632,13 +685,14 @@ class ContactService:
                 rep = {**rep, "cards": rep["cards"] + n, "withheld": rep["withheld"] + max(0, held - n)}
         rec = await asyncio.to_thread(C.record_sent, self.st, [{"addr": r["addr"], "name": r["name"]} for r in recips], "agent")
         self.st.log("mail_send", result="sent", to=len(recips), files=len(files), owner=mine, fmt=fmt,
-                    cc=len(addr_of["cc"]), bcc=len(addr_of["bcc"]), **({"via": src["kind"]} if outside else {}))
+                    cc=len(addr_of["cc"]), bcc=len(addr_of["bcc"]), **({"id": granted, "via": "automation_grant"} if granted
+                       else {"via": src["kind"]} if outside else {}))
         return {"ok": True, "sent": [r["addr"] for r in recips], "files": names, "format": fmt,
                 **({"html_flattened": True} if flat else {}),
                 **({"cc": addr_of["cc"]} if addr_of["cc"] else {}), **({"bcc": addr_of["bcc"]} if addr_of["bcc"] else {}),
                 **({"local_images": info["local_images"]} if info.get("local_images") else {}),
                 **({"removed": info["removed"]} if info.get("removed") else {}), "new_contacts": [x["addr"] for x in rec if x["added"]],
-                "owner_direct": mine, "no_card": bool(mine), **({"allowlisted": added} if added else {}), **({"card_failed": rep["failed"], "detail": owner_route.failed_note(rep, self.lang())} if rep.get("failed") else {}),
+                "owner_direct": mine, "no_card": bool(mine or granted), **({"automation_grant": granted} if granted else {}), **({"allowlisted": added} if added else {}), **({"card_failed": rep["failed"], "detail": owner_route.failed_note(rep, self.lang())} if rep.get("failed") else {}),
                 **({"secret_cards": rep["cards"], "withheld": rep["withheld"]} if rep.get("cards") or
                                           rep.get("withheld") else {})}
 

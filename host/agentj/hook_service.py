@@ -89,6 +89,8 @@ class HookService:
     def __init__(self, host, store: hooks.Store | None = None, orders: OrderSink | None = None, clock=time.time):
         self.host, self.st, self.clock = host, host.st, clock
         self.store = store or hooks.Store(self.st.root, clock=clock)
+        with contextlib.suppress(AttributeError):
+            self.store.on_end = self._grants_gone   # 0304 A3 F8: an ended / revoked hook takes its send grants with it
         from .external_mcp import Service
         self.mcp = Service(self)
         self.orders = orders or OrderSink(self.st.root)
@@ -112,6 +114,11 @@ class HookService:
     def log(self, ev: str, **kw) -> None:
         with contextlib.suppress(Exception):
             self.st.log(ev, **kw)
+
+    def _grants_gone(self, hid: str) -> None:
+        from . import automation_grant
+        with contextlib.suppress(Exception):
+            automation_grant.target_gone(self.st, "hook", hid)
 
     def hb(self) -> str | None:
         k = self._keys()
@@ -714,7 +721,7 @@ class HookService:
         if h["life"] == "resident" and h.get("secret_set", True):
             # review M2: a resident hook's secret decides who may post into the owner's phone — a new one is the owner's card.
             # Exception: the first Stripe whsec_ after creation (until then nothing could verify).
-            return self._rotate_card(h, req["secret"].encode() if given else None, grace, req.get("secret_out"))
+            return await self._rotate_card(h, req["secret"].encode() if given else None, grace, req.get("secret_out"))
         if given:
             key = req["secret"].encode()
             self.store.set_key(h["id"], key, grace)
@@ -730,9 +737,41 @@ class HookService:
             out["url_secret"] = self.url(h, key.decode())
         return out
 
-    def _rotate_card(self, h: dict, key: bytes | None, grace: int, dest) -> dict:
+    def _stale_rotate_card(self, hid: str) -> bool:
+        """Hotfix 2026-11-10 (chairman 12:49 deadlock): withdraw this hook's open rotate card when the turn that asked for
+        it is over. Such a card can only be refused 「操作上下文已变化」, yet it kept every new rotate at 「有一张卡在等主人
+        批准」 until its TTL. A withdrawal is a deny (never a grant); a card still in its live turn is left alone."""
+        asks = getattr(self.host, "asks", None) or {}
+        for a in list(asks.values()):
+            inp = getattr(a, "tool_input", None) or {}
+            if getattr(a, "tool", None) != "agentj secret request" or inp.get("hook") != hid or not inp.get("rotate"):
+                continue
+            fut = getattr(a, "fut", None)
+            if fut is None or fut.done() or getattr(a, "parked", False):   # review S1: never cut an owner's open question
+                continue
+            live = getattr(self.host, "_approval_live_authority", None)
+            moved = (getattr(a, "review_agent", self.host.agent) is not self.host.agent
+                     or (getattr(a, "envelope", None) or {}).get("session") not in (None, str(self.host.hist.epoch))
+                     or (callable(live) and getattr(a, "review_live_authority", None) is not None
+                         and live() != a.review_live_authority))
+            if not moved:
+                return False
+            a.withdrawn = "superseded"
+            fut.set_result(("deny", None, None, None))
+            self.log("hook_rotate_card", hook=hid[:8], result="superseded")
+            return True
+        return False
+
+    async def _rotate_card(self, h: dict, key: bytes | None, grace: int, dest) -> dict:
         if h["id"] in self.widening:
-            return {"ok": False, "why": "pending"}
+            if not self._stale_rotate_card(h["id"]):
+                return {"ok": False, "why": "pending"}
+            for _ in range(50):                      # let the withdrawn card's ask unwind and release `widening`
+                if h["id"] not in self.widening:
+                    break
+                await asyncio.sleep(0.02)
+            if h["id"] in self.widening:
+                return {"ok": False, "why": "pending"}
         self.widening.add(h["id"])
         import hashlib
         from . import approval_review
@@ -760,37 +799,39 @@ class HookService:
                 if self.lang != "en" else f"Rotate the secret of resident webhook 「{h['name']}」 (the old one stays valid "
                 f"{grace // 3600} h). The new secret {'comes from the file you saved with a secret card' if key else 'is generated and written to a file on this computer'}.")
 
-        async def card():
+        # Hotfix 2026-11-10: the card is asked and awaited inside the caller's request, so it is bound to the turn that
+        # is still waiting on `agentj hook rotate` (was: a detached task after the CLI had already printed 「已发审批卡」;
+        # the turn ended, and every Touch ID was refused 「操作上下文已变化」).
+        try:
             try:
+                ans = await self.host.ask("agentj secret request", {"card": text, **bound}, batch=False)
+            except Exception:  # noqa: BLE001
+                return {"ok": False, "why": "card_failed"}
+            cur = self.store.get(h["id"])
+            if ans.get("behavior") != "allow":
+                return {"ok": False, "why": "not_approved", "detail": str(ans.get("reason") or "")[:40]}
+            if (cur is None or cur["state"] != "active" or self.host.stopped() or before_keys is None
+                    or generation() != before_keys or approval_review.digest(cur) != before_hook):
+                return {"ok": False, "why": "changed"}
+            where = None
+            if key is None:
                 try:
-                    ans = await self.host.ask("agentj secret request", {"card": text, **bound}, batch=False)
-                except Exception:  # noqa: BLE001
-                    return
-                cur = self.store.get(h["id"])
-                if (ans.get("behavior") != "allow" or cur is None or cur["state"] != "active"
-                        or self.host.stopped() or before_keys is None or generation() != before_keys
-                        or approval_review.digest(cur) != before_hook):
-                    return
-                if key is None:
-                    try:
-                        where = _write_secret(target, new.decode(), h["id"])
-                    except SystemExit:
-                        self.log("hook_rotate_failed", hook=h["id"][:8])
-                        return
-                    if h["auth"]["kind"] == "token":
-                        with contextlib.suppress(SystemExit):
-                            _write_secret(f"file:{os.path.dirname(where.split('#')[0])}/{h['id']}.url", self.url(h, new.decode()), h["id"])
-                self.store.set_key(h["id"], new, grace)
-                self.log("hook_rotated", hook=h["id"][:8], src="card")
-                self._to_agent(("〔Agent J 系统提示〕主人批准了给「{n}」换密钥，新密钥已生效（文件里）。请用一句人话回执，FYI，无需处理。"
-                                if self.lang != "en" else "[Agent J system notice] The owner approved the new secret for 「{n}」; it "
-                                "is in effect (in its file). Give a plain-language receipt: FYI, no action needed.").format(n=h["name"]), h["id"])
-            finally:
-                self.widening.discard(h["id"])
-        task = asyncio.ensure_future(card())
-        self.cards.add(task)
-        task.add_done_callback(self.cards.discard)
-        return {"ok": True, "hook": self.view(h), "pending": True}
+                    where = _write_secret(target, new.decode(), h["id"])
+                except SystemExit:
+                    self.log("hook_rotate_failed", hook=h["id"][:8])
+                    return {"ok": False, "why": "write_failed"}
+                if h["auth"]["kind"] == "token":
+                    with contextlib.suppress(SystemExit):
+                        _write_secret(f"file:{os.path.dirname(where.split('#')[0])}/{h['id']}.url", self.url(h, new.decode()), h["id"])
+            self.store.set_key(h["id"], new, grace)
+            h["secret_set"] = True
+            self.store.save()
+            self.log("hook_rotated", hook=h["id"][:8], src="card")
+            self.changed()
+            return {"ok": True, "hook": self.view(cur), "secret_source": "file" if key else "generated",
+                    **({"secret_file": where} if where else {})}
+        finally:
+            self.widening.discard(h["id"])
 
     async def _test(self, h: dict, req: dict) -> dict:
         """Sign a delivery the way this hook's sender would and run it through the same pipeline (no quota)."""
@@ -887,6 +928,21 @@ class HookService:
         await self.host.send_app(s, {"t": "hook_list_res", "r": r, "ok": True, **body})
 
 
+# 0304-frozen A3: what an automation send grant binds. The hook's identity and everything that decides who may post into
+# it, where its deliveries go and what the Agent is told about it: auth method (`auth` holds the method, headers and
+# algorithm, never the secret, which lives in secrets/<id>.json), source-IP allow list, delivery target, life, preset,
+# e2e, and the note (the text the Agent reads as the hook's purpose, hooks.envelope). Not counters / last / fails / count
+# / seal / name / enabled / approved, which are volatile or change nothing a sender controls. Secret rotation does not
+# void a grant (security r1 F8: rotation only narrows who can post). (_rotate_card hashes the whole record: it guards
+# one card's few seconds, not a durable grant.)
+GRANT_FIELDS = ("id", "preset", "life", "auth", "ip_allow", "target", "e2e", "note")
+
+
+def grant_digest(h: dict) -> str:
+    from .workflow_mail import digest
+    return digest({k: h.get(k) for k in GRANT_FIELDS})
+
+
 def auth_text(keys, n, cert: str) -> str:
     """The hook socket's answer to the relay challenge (§17.2's shape, its own prefix)."""
     import re
@@ -956,6 +1012,10 @@ WHY = {
     "stopped": "已急停，恢复后再用 / stopped", "pending": "这个 hook 有一张卡在等主人批准，批完再改 / a card is waiting for the owner",
     "e2e_needs_hmac": "端到端加密只配 HMAC 且签 {时间戳}.{原文}（--auth hmac --signed ts.body；Bearer / URL 令牌会在密文旁明文经过；Stripe、GitHub 不能加密）/ --encrypt needs --auth hmac --signed ts.body",
     "not_e2e": "这个 hook 不是端到端加密的（agentj hook update <id> --encrypt）/ not an end-to-end hook",
+    "not_approved": "主人没有批准（拒绝或 2 分钟内没确认），密钥没换；要换就再运行一次并请主人当场确认 / not approved, secret unchanged",
+    "changed": "批准期间这个 hook 变了，密钥没换，请重新运行 / the hook changed meanwhile; nothing rotated",
+    "write_failed": "新密钥写不进目标文件，密钥没换 / could not write the new secret; nothing rotated",
+    "card_failed": "审批卡发不出去，密钥没换 / the approval card could not be sent; nothing rotated",
     "busy": "等这个 hook 的进程太多了（最多 8 个）/ too many waiters on this hook", "gone": "hook 已作废 / the hook has ended", "shape": "参数不对 / bad request",
 }
 
@@ -1176,7 +1236,10 @@ def cmd_hook(a) -> None:
         req = {"t": "rotate", **base, "grace": a.grace, **({"enc_key": True} if a.enc_key else {})}
         if a.secret_file:
             req["secret"] = _read_secret(a.secret_file)
-        res = _call(req)
+        # hotfix 2026-11-10: a resident hook's rotate now waits for the owner's card (≤ approval TTL, 120 s)
+        print("  （常驻 hook 换密钥要主人在手机上批准，本命令最多等 2 分钟 / a resident hook waits up to 2 min for the owner's card）",
+              file=sys.stderr, flush=True)
+        res = _call(req, timeout=300)
         if res.get("ok") and res.get("secret"):
             res["secret_file"] = _write_secret(a.secret_out, res.pop("secret"), res["hook"]["id"])
             if res.get("url_secret"):

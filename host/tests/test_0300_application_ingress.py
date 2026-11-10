@@ -334,8 +334,7 @@ assert r.get('ok') if sys.argv[2]=='ordinary fixture' else r.get('why')=='secret
                 service.store.add(hook, b'fixture-old-key')
                 target = 'file:'+str(Path(self.st.root).parent/'fixture-unused.secret')
                 with patch.object(service, '_to_agent'):
-                    service._rotate_card(hook, new_key, 0, target)
-                    pending = list(service.cards)
+                    pending = [asyncio.ensure_future(service._rotate_card(hook, new_key, 0, target))]   # hotfix 2026-11-10: awaited in the request
                     try:
                         for _ in range(100):
                             if self.h.asks: break

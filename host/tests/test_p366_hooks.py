@@ -293,7 +293,7 @@ class Review(unittest.TestCase):
             await asyncio.gather(*s.cards)
             return hid, old, rr
         hid, old, rr = run(flow())
-        self.assertTrue(rr["pending"])
+        self.assertEqual(rr["why"], "not_approved")      # hotfix 2026-11-10: the request waits for the card's answer
         self.assertNotIn("secret", rr)
         self.assertEqual(host.ask.call_args.args[0], hook_service.TOOL)
         self.assertEqual(s.store.keys(hid), old)               # denied: unchanged

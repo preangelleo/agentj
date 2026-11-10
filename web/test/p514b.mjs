@@ -37,6 +37,7 @@ try {
    await fake.send({t:'status',s:'down',agent:'claude'});await waitFor(p,"document.body.dataset.agent==='down'");
    if(before){writeFileSync(`${out}/${lang}-${theme}-${width}-before.png`,await shoot(p));continue;}
    assert.equal(await evaluate(p,"document.getElementById('session-help')?.hidden"),false,'ready host but disconnected Claude has persistent help');
+   assert.ok(await evaluate(p,"document.getElementById('session-help').classList.contains('gdlg') && !document.getElementById('chat-view').contains(document.getElementById('session-help'))"),'0.30.6: a centred dialog, not a row under the header');
    assert.equal(await evaluate(p,"document.body.dataset.conn"),'on','transport stays online');
    assert.ok(await evaluate(p,`document.getElementById('session-help').textContent.includes(${JSON.stringify(lang==='zh'?'Claude 会话没接上':'Claude session is disconnected')})`));
    writeFileSync(`${out}/${lang}-${theme}-${width}-session.png`,await shoot(p));
@@ -69,7 +70,7 @@ try {
    assert.equal(await evaluate(p,"document.getElementById('session-help').hidden"),false,'explicit none also needs reconnect');
    fake.setUp(false);await waitState(p,'waiting-host');await waitFor(p,"document.body.dataset.conn==='off'");
    assert.equal(await evaluate(p,"document.getElementById('session-help').hidden"),true,'true relay offline uses separate connection guide');
-   assert.equal(await evaluate(p,"getComputedStyle(document.getElementById('connection-help')).display"),'flex');
+   await waitFor(p,"!document.getElementById('connDlg').hidden && document.getElementById('connDlg').dataset.state==='down'",15000);   // 0.30.6: centred, after 10 s
    assert.equal(p.problems.length,0);
    assert.ok(await evaluate(p,"!document.getElementById('session-help').textContent.includes('agentj doctor')"),'remote customer guidance never requires host terminal');
   }finally{await p.dispose();}

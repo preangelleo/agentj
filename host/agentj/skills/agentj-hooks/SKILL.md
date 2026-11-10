@@ -164,7 +164,8 @@ Owner-target hooks may already appear on the phone (and Telegram); still give th
 
 `agentj hook list [--all]` · `show <id>` (definition + last 10) · `logs <id> [--show <delivery>]` · `update <id> --name …
 --target … --ttl 48h --ip … / --no-ip --enable/--disable --encrypt/--no-encrypt` (opening up a resident hook again → the owner's card) ·
-`rotate <id> [--grace 24h]` (old secret still valid during the grace) · `revoke <id>` (at once; 410 afterwards) ·
+`rotate <id> [--grace 24h]` (old secret still valid during the grace; a resident hook's rotate waits ≤ 2 min for the owner's card —
+run it with a Bash timeout of 180 s and tell the owner to confirm now; `not_approved` = nothing changed, run it again) · `revoke <id>` (at once; 410 afterwards) ·
 `test <id>` (signs one delivery like the real sender; no quota). The owner sees every live hook, recent deliveries and a
 pause / revoke switch in the phone's settings → Webhook.
 
@@ -175,6 +176,17 @@ log it; signatures are checked only on this computer. An `--encrypt` hook: the b
 URL, the headers (signature, timestamp), size, time and source IP. For anything sensitive that cannot be encrypted, recommend the self-built route. With `bearer` and URL-token hooks the secret itself travels in every request, so prefer
 `stripe`, `github` or `hmac --signed ts.body` whenever the sender can sign; use bearer / token only when it cannot. While this computer is offline senders get 503 and must retry (Stripe and
 GitHub do; for one that never retries, use a self-built entry). A sender's retry is deduplicated, never handled twice.
+
+## Mail to other people / 给别人发信
+
+A hook turn that mails anyone but the owner needs an automation send grant; without it the send is refused
+(`automation_grant_required`: nothing sent, no card). Ask for it while setting the hook up, in the owner's own chat:
+`agentj automation grant --hook <name> --to <address> [--domain <domain>] [--files] [--expires 30d] [--max N]` = one
+fingerprint card. Public mailbox domains and public suffixes (gmail.com, co.uk …) go only as exact `--to` addresses.
+Out of scope → give the owner the exact extend command from the refusal; never send another way. Changing the hook's
+auth, IPs, target or note voids the grant (rotating its secret does not). The owner revokes in Settings → Safety →
+「自动化外发授权」, or `agentj automation revoke <id>` in their own turn.
+中文：Webhook 回合给主人以外的人发信，先在主人自己的对话里申请 `agentj automation grant`（一次指纹卡）；公共邮箱、公共后缀只能写完整地址；超范围被拒就把补授权命令转告主人，不换路发送。
 
 ## Automation reports / 自动化报告
 

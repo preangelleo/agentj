@@ -391,6 +391,8 @@ class PeerService:
         await self._start_sock()
         await self.apply()
         self.restore_asks()
+        with contextlib.suppress(Exception):
+            self.same_owner.legacy_notice()   # security r2 N2: a host that already has a passkey at start lists them once
         self.house = asyncio.create_task(self._housekeeping())
 
     async def apply(self) -> None:
@@ -1057,7 +1059,7 @@ class PeerService:
         summary = self.tx("pq_summary", name=name, text=text, draft=draft or self.tx("no_draft"))
         a = FriendAsk(secrets.token_hex(16), "peer_question", summary, approvals.shown_digest("peer_question", summary),
                       (self.same_owner.row(fid).get("expires", self.clock() + 86400) if pairing else self.clock() + PQ_TTL), reason, {**({"handover": True} if handover else {}), "friend": fid, "name": name, "text": text, "draft": draft,
-                                                      **({"same_owner": True} if self.same_owner.active(fid) else {}), **({"pairing": True, "code": self.same_owner.code(fid), "challenge": self.same_owner.challenge(fid), **({"pairing_scope": self.same_owner.scope(fid)} if self.same_owner.row(fid).get("roster_v") == 3 and self.same_owner.row(fid).get("remote_roster_v") == 3 else {})} if pairing else {}), "reason": reason, "high_risk": reason.startswith(self.tx("r_gate", rule="").split("(")[0].split("（")[0])},
+                                                      **({"same_owner": True} if self.same_owner.active(fid) else {}), **({"pairing": True, "code": self.same_owner.code(fid), "challenge": self.same_owner.challenge(fid), **({"pairing_scope": self.same_owner.scope(fid)} if self.same_owner.row(fid).get("roster_v") == 3 and self.same_owner.row(fid).get("remote_roster_v") == 3 else {}), **({"pairing_v": 4} if self.same_owner.v4(fid) else {})} if pairing else {}), "reason": reason, "high_risk": reason.startswith(self.tx("r_gate", rule="").split("(")[0].split("（")[0])},
                       {"friend": fid, "mid": m["mid"], "thread": m["thread"], "ctx": m.get("ctx"), "draft": draft, "text": m["text"], "relay": m.get("relay"), "handover": handover})
         if handover:
             a.exp = self.clock() + self.store.settings()["relay_pending_seconds"]
@@ -1549,9 +1551,11 @@ class PeerService:
                     return True, None, pid
                 if self.net is None:
                     self._ensure_net(run=False)
-                if self.st.passkey_of_device(device) and not self.xfer.bound(device):
-                    entry = self.xfer.binding_entry(device)
-                    self.host.peer_broadcast({"t": "roster_bind_offer", "entry": entry})
+                if not self.xfer.bound(device) and self.same_owner.uv_host():
+                    # 0304 R-F1: on a host with any UV (a bound roster or any remote's passkey) only a roster-bound
+                    # remote starts Same owner — a passkey-less one too. 0306 A5: serve adds the continuation ticket.
+                    if self.st.passkey_of_device(device):
+                        self.host.peer_broadcast({"t": "roster_bind_offer", "entry": self.xfer.binding_entry(device)})
                     return False, "roster_binding_required", pid
                 self.same_owner.propose(pid, proof["pub"], init=proof)   # P417 #186: the start is the consent
                 return True, None, pid
@@ -1564,18 +1568,38 @@ class PeerService:
                     self.same_owner.clear_stale(pid)     # P417 #186: an older round's card closes on every phone
                     return False, "expired", pid
                 if op in ("owner-confirm", "owner-confirm-v3"):
+                    if self.same_owner.too_old(pid, r):    # 0304 R-F1: the other computer must upgrade / bind first
+                        return False, self.same_owner.too_old_why(pid, r), pid
+                    if (r.get("remote_roster_v") == 3 or self.same_owner.uv_host()) and r.get("roster_v") != 3 and not self.xfer.bound(device):
+                        if self.st.passkey_of_device(device):    # the peer needs our roster; this remote has none yet
+                            self.host.peer_broadcast({"t": "roster_bind_offer", "entry": self.xfer.binding_entry(device)})
+                        return False, "roster_binding_required", pid
                     v3 = r.get("roster_v") == 3 and r.get("remote_roster_v") == 3
+                    v4 = v3 and self.same_owner.v4(pid, r)
                     if (op == "owner-confirm-v3") != v3:
                         return False, "scope_required", pid
-                    if r.get("roster_v") == 3 and r.get("remote_roster_v") == 3 and proof.get("pub") != r.get("pub"):
+                    if v4:
+                        # 0304 A1: first wins; then any remote of this round's roster snapshot that is still bound
+                        # and answers with UV — no designated signer, no token recompute after the first.
+                        if r.get("token") and r.get("verified") == value:
+                            self.same_owner.clear_requests(pid)
+                            return False, "already_confirmed", pid
+                        why = self.same_owner.round_signer(pid, device, proof, target)
+                        if why:
+                            if why == "roster_binding_required" and self.st.passkey_of_device(device):
+                                self.host.peer_broadcast({"t": "roster_bind_offer", "entry": self.xfer.binding_entry(device)})
+                            return False, why, pid
+                    elif v3 and proof.get("pub") != r.get("pub"):
                         return False, "wrong_remote", pid
-                    if v3:
+                    if v3 and not v4:
                         entry = self.xfer.binding_entry(device)
                         if not entry or not self.same_owner.uv_proof(proof, target, entry):
                             return False, "passkey_required", pid
                     if self.same_owner.peer_old(pid, proof):
                         return False, "peer_old", pid    # a 0.25.0a1 peer accepts only the key inside the code
-                    self.same_owner.consent(pid, True, proof)
+                    if not self.same_owner.consent(pid, True, proof) and v4:
+                        self.same_owner.clear_requests(pid)
+                        return False, "already_confirmed", pid      # R-F11: first wins inside consent's _edit
                 else:
                     self.same_owner.consent(pid, False, end='declined')
                 self.same_owner.clear_requests(pid)
@@ -1730,8 +1754,9 @@ class PeerService:
             if not self.same_owner.active(fid) or target["relationship"] != self.same_owner.challenge(fid):
                 return {"ok": False, "why": "authority_changed"}
             signer = self.st.sign_key(proof["proof"].get("device"))
-            if (proof["proof"].get("sk") != self.same_owner.row(fid).get("pub")
-                    or not signer or wire.b64u(signer) != proof["proof"].get("sk")):
+            # 0304 A1-9: any roster-bound remote of this host may sign the plan (not only the ceremony's starter).
+            if (not signer or wire.b64u(signer) != proof["proof"].get("sk")
+                    or not self.same_owner.local_plan_signer(fid, proof["proof"].get("device"), proof["proof"].get("sk"))):
                 from .same_owner import PLAN_ROOT_NOTE
                 return {"ok": False, "why": "root_reconfirm", "message": PLAN_ROOT_NOTE["zh" if self.lang == "zh" else "en"]}
             extra = {**(extra or {}), "task_plan": True, "task_proof": proof["proof"]}

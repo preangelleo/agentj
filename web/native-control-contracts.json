@@ -445,54 +445,6 @@
       ]
     },
     {
-      "id": "native-41",
-      "file": "public/app.css",
-      "selector": ".connection-help button",
-      "context": [],
-      "occurrence": 0,
-      "bodySha256": "a26157a1cea5ce37c923a7bdca9d16efe6cb9b16535a9c2fcc3a03b51e7605b5",
-      "scopeIds": [
-        "connection-help"
-      ]
-    },
-    {
-      "id": "native-42",
-      "file": "public/app.css",
-      "selector": ".connection-help button",
-      "context": [
-        "@media(max-width:600px)"
-      ],
-      "occurrence": 0,
-      "bodySha256": "0fd943ffe4c56bbc10db6b7a848b163abc2440545a15362d586584dc010f06bf",
-      "scopeIds": [
-        "connection-help"
-      ]
-    },
-    {
-      "id": "native-43",
-      "file": "public/app.css",
-      "selector": ".session-help button",
-      "context": [],
-      "occurrence": 0,
-      "bodySha256": "a26157a1cea5ce37c923a7bdca9d16efe6cb9b16535a9c2fcc3a03b51e7605b5",
-      "scopeIds": [
-        "session-help"
-      ]
-    },
-    {
-      "id": "native-44",
-      "file": "public/app.css",
-      "selector": ".session-help button",
-      "context": [
-        "@media(max-width:600px)"
-      ],
-      "occurrence": 0,
-      "bodySha256": "0fd943ffe4c56bbc10db6b7a848b163abc2440545a15362d586584dc010f06bf",
-      "scopeIds": [
-        "session-help"
-      ]
-    },
-    {
       "id": "native-45",
       "file": "public/cards.css",
       "selector": ".jc-dialog>button:not(.jc-dialog-close)",
@@ -1177,6 +1129,58 @@
         "wechat-panel"
       ],
       "reason": "Current Root WeChat dialog has private wc-close/channel and explicit aj-action controls; old broad native rule no longer exists. Removing stale contract is not runtime coverage."
+    },
+    {
+      "id": "native-41",
+      "file": "public/app.css",
+      "selector": ".connection-help button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "a26157a1cea5ce37c923a7bdca9d16efe6cb9b16535a9c2fcc3a03b51e7605b5",
+      "scopeIds": [
+        "connection-help"
+      ],
+      "reason": "0.30.6 (chairman 11-10 12:14): the #514 connection row and #514b session row under the header became centred .gdlg dialogs (#connDlg, #session-help) with aj-dialog-action buttons; the old row button rule no longer exists. Removing stale contract is not runtime coverage."
+    },
+    {
+      "id": "native-42",
+      "file": "public/app.css",
+      "selector": ".connection-help button",
+      "context": [
+        "@media(max-width:600px)"
+      ],
+      "occurrence": 0,
+      "bodySha256": "0fd943ffe4c56bbc10db6b7a848b163abc2440545a15362d586584dc010f06bf",
+      "scopeIds": [
+        "connection-help"
+      ],
+      "reason": "0.30.6 (chairman 11-10 12:14): the #514 connection row and #514b session row under the header became centred .gdlg dialogs (#connDlg, #session-help) with aj-dialog-action buttons; the old row button rule no longer exists. Removing stale contract is not runtime coverage."
+    },
+    {
+      "id": "native-43",
+      "file": "public/app.css",
+      "selector": ".session-help button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "a26157a1cea5ce37c923a7bdca9d16efe6cb9b16535a9c2fcc3a03b51e7605b5",
+      "scopeIds": [
+        "session-help"
+      ],
+      "reason": "0.30.6 (chairman 11-10 12:14): the #514 connection row and #514b session row under the header became centred .gdlg dialogs (#connDlg, #session-help) with aj-dialog-action buttons; the old row button rule no longer exists. Removing stale contract is not runtime coverage."
+    },
+    {
+      "id": "native-44",
+      "file": "public/app.css",
+      "selector": ".session-help button",
+      "context": [
+        "@media(max-width:600px)"
+      ],
+      "occurrence": 0,
+      "bodySha256": "0fd943ffe4c56bbc10db6b7a848b163abc2440545a15362d586584dc010f06bf",
+      "scopeIds": [
+        "session-help"
+      ],
+      "reason": "0.30.6 (chairman 11-10 12:14): the #514 connection row and #514b session row under the header became centred .gdlg dialogs (#connDlg, #session-help) with aj-dialog-action buttons; the old row button rule no longer exists. Removing stale contract is not runtime coverage."
     }
   ]
 }

@@ -647,6 +647,9 @@ def cmd_automation(a) -> None:
     import sys
     from . import capability, names
     from .state import State
+    if a.automation_cmd in ("grant", "grants", "revoke"):   # 0304 A3: automation outbound-send grants
+        from . import automation_grant
+        return automation_grant.cmd(a)
     req = {"run": a.run}
     if a.automation_cmd == "resume":
         req["yes"] = bool(a.yes)
@@ -680,7 +683,7 @@ def cmd_automation(a) -> None:
 
 
 def add_parser(sub) -> None:
-    p = sub.add_parser("automation", help="分步自动化：status · resume（从失败的步骤继续）/ multi-step automations: continue a failed run")
+    p = sub.add_parser("automation", help="分步自动化：status · resume（从失败的步骤继续）· grant · grants · revoke（自动化外发授权）/ multi-step automations: status, resume a failed run; grant, grants, revoke automation send grants")
     ps = p.add_subparsers(dest="automation_cmd", required=True)
     x = ps.add_parser("resume", help="从失败的步骤继续，已完成的步骤不重跑 / continue from the failed step")
     x.add_argument("run", help="运行 id（或前缀）或自动化 id / run id (or prefix) or automation id")
@@ -689,4 +692,6 @@ def add_parser(sub) -> None:
     x = ps.add_parser("status", help="这次运行每一步的状态 / each step of a run")
     x.add_argument("run")
     x.add_argument("--json", action="store_true")
+    from . import automation_grant
+    automation_grant.add_parsers(ps)           # 0304 A3: grant · grants · revoke
     p.set_defaults(fn=cmd_automation)

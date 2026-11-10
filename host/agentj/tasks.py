@@ -557,6 +557,7 @@ class Scheduler:
         self.offer: asyncio.Task | None = None   # the open "run once?" card (one at a time)
         self.plans: dict[str, dict] = {}     # P426 #181-5: tid → the resume plan its next `resume` run follows (wfrun.py)
         self.step_state: dict | None = None  # P426: the running multi-step run's checkpoint record (wfrun.py)
+        self.present: set | None = None      # 0304 L3: task ids the last _due discovered (automation-grant sweep)
 
     @property
     def st(self):
@@ -732,6 +733,14 @@ class Scheduler:
                 self._due()
             except Exception as exc:  # noqa: BLE001 — a schedule check failing must not starve 「立即运行」 / dispatch
                 self._error("due", exc)
+        present, self.present = getattr(self, "present", None), None
+        if present is not None:              # 0304 security impl r1 L3: a deleted task's send grants are revoked for good
+            from . import automation_grant
+            if (self.st.root / automation_grant.FILE).exists():
+                try:
+                    await asyncio.to_thread(automation_grant.sweep_tasks, self.host, present)
+                except Exception as exc:  # noqa: BLE001
+                    self._error("grant_sweep", exc)
         while self.waiting and not self.host.stopped():
             tid, trigger = self.waiting.pop(0)
             self.current_id = tid
@@ -776,7 +785,9 @@ class Scheduler:
         if not self.host.agent_cfg:
             return
         d = load(self.st)
-        for r in rows(self.st, self.workdir()):
+        found = rows(self.st, self.workdir())
+        self.present = {r["id"] for r in found}
+        for r in found:
             if not r["enabled"] or uncertain_run(self.st, r["id"]):
                 continue
             try:

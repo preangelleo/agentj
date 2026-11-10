@@ -103,6 +103,10 @@ fix and repeat until they confirm; show the next run (`systemctl --user list-tim
 card; read their reports in the heartbeat. To put a result on the phone, `run.sh` may end with
 `agentj notify --from <name> --title "…" --file <report>` after the owner registers the name (see agentj-capability).
 
+An Agent J task (`agentj tasks`) that mails anyone but the owner needs `agentj automation grant --task <id> --to …
+[--domain …]`, asked for in the owner's own chat while setting it up (one fingerprint card; rules in agentj-hooks).
+中文：Agent J 定时任务要给主人以外的人发信，设置时在主人自己的对话里申请 `agentj automation grant --task <id>`（一次指纹卡）。
+
 ## Move an `agentj tasks` task to the system scheduler
 To move an existing Agent J task to the system scheduler, as Agent J recommends for recurring work: `agentj tasks migrate <id>`
 (`--all`). Show the `--dry-run` plan; a real run, yours or the owner's, only sends the phone's plain host approval card

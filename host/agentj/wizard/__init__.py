@@ -337,6 +337,11 @@ def core_reference(lang: str | None = None) -> str:
 def merge_core_reference(current: bytes, reference: bytes) -> bytes:
     """Replace complete historical blocks in place; preserve all bytes outside markers."""
     pattern = re.compile(rb"<!-- agentj:main-core v[0-9]+ -->.*?<!-- /agentj:main-core -->", re.S)
+    # A truncated or owner-edited marker is not ours to replace. In particular,
+    # appending a new block after a missing closing marker grows the entry on
+    # every upgrade and can swallow personal instructions into the core section.
+    if current.count(b"<!-- agentj:main-core") != len(pattern.findall(current)):
+        return current
     reference = reference.strip(b"\n")
     found = False
     def replace(match):

@@ -41,9 +41,13 @@ class GatedNow(hi.HostRequest):
         self.assertEqual(self.host.__dict__.get("_plaza_installing", set()), set(), "no queue slot")
         self.assertFalse(self.installed())
         self.host.agent.native_source = {"kind": "same_owner", "role": "task", "fid": "synthetic-peer", "otg_required": True}
+        # 0304 A2-②: a grant task's install without a secret is not a UV step → not owner_grant_scope (and not gated);
+        # this fixture has no live application frame, so the next ordinary gate answers, still before any fetch or card.
+        self.assertFalse(plaza_perms.turn_gate(self.host)["gated"])
         with mock.patch.object(market, "run_install", side_effect=run_install):
             res, _ = self.run_host(self.req())
-        self.assertEqual((res["why"], calls, self.cards()), ("owner_grant_scope", [], []))
+        self.assertNotEqual(res["why"], "owner_grant_scope")
+        self.assertEqual((calls, self.cards()), ([], []))
 
     def test_gated_owner_confirmed_card_refused_before_the_card_queue(self):
         self.host.agent.native_source = GROUP_TURN

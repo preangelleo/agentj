@@ -43,6 +43,7 @@ export async function introductionChallenge(m, channel, dev) {
 /** Both hosts' exact ceremony bytes, with the local approving device independently present. */
 export async function pairingScope(pq, signingPublicKey, device, localEntry) {
   if (typeof pq.pairing_scope !== 'string' || pq.pairing_scope.length > 48000) throw new Error('pairing scope');
+  if (pq.pairing_v === 4) return pairingScopeV4(pq, signingPublicKey, device, localEntry);
   const ends = JSON.parse(pq.pairing_scope);
   if (!Array.isArray(ends) || ends.length !== 2 || !ends.every(e => Array.isArray(e) && e.length === 5 && Array.isArray(e[4]))) throw new Error('pairing scope');
   if (!ends.some(e => e[0] === pq.friend)) throw new Error('pairing friend');
@@ -66,6 +67,40 @@ export async function pairingScope(pq, signingPublicKey, device, localEntry) {
     return { here: e === own, trusted, pending, remotes: trusted.map(label), pendingRemotes: pending.map(label) };
   });
   result.code = code;
+  return result;
+}
+
+export const SCOPE_V4 = 'agentj-same-owner-v4';
+const shortDev = (dev) => dev.slice(0, 8);   // contract-a1 §4.6: at least the first 8 characters
+function signerLabel(r) {
+  if (typeof r.name !== 'string' || typeof r.dev !== 'string' || !r.name || r.name.length > 64 || r.dev.length > 64) throw new Error('pairing entry');
+  return r.name + ' · ' + shortDev(r.dev);
+}
+/** #0304 A1 (contract-a1-scope-v4 §4): any bound remote of either end may sign. The received bytes are hashed as-is (the host
+ *  escapes non-ASCII, JSON.stringify would not); every entry of BOTH rosters must carry a valid binding, or nothing is signable;
+ *  there is no designated signer (`e[2]` is the nonce). This remote signs only as exactly one entry of the "here" roster equal to
+ *  its own stored descriptor. Errors: 'pairing bind needed' (no local binding) · 'pairing roster changed' (bound, not in this
+ *  round's snapshot) · anything else = the card is not signable. */
+async function pairingScopeV4(pq, signingPublicKey, device, localEntry) {
+  const arr = JSON.parse(pq.pairing_scope);
+  if (!Array.isArray(arr) || arr.length !== 3 || arr[0] !== SCOPE_V4) throw new Error('pairing scope');
+  const ends = arr.slice(1);
+  if (!ends.every(e => Array.isArray(e) && e.length === 4 && typeof e[0] === 'string' && Array.isArray(e[3]))) throw new Error('pairing scope');
+  if (ends.filter(e => e[0] === pq.friend).length !== 1) throw new Error('pairing friend');
+  const own = ends.find(e => e[0] !== pq.friend);
+  for (const end of ends) for (const entry of end[3]) if (!(await verifyBinding(entry))) throw new Error('pairing binding');
+  const labels = ends.map(e => e[3].map(signerLabel));
+  if ((await sha256hex(new TextEncoder().encode(pq.pairing_scope))).slice(0,32) !== pq.challenge) throw new Error('pairing digest');
+  const code = pairingCode(pq.challenge);
+  if (pq.code !== undefined && pq.code !== code) throw new Error('pairing code');
+  if (!device || !localEntry) throw new Error('pairing bind needed');
+  if (localEntry.sign_pub !== signingPublicKey || localEntry.dev !== device || !(await verifyBinding(localEntry))) throw new Error('pairing local key');
+  const mine = own[3].filter(e => e.sign_pub === signingPublicKey && e.dev === device);
+  if (mine.length > 1) throw new Error('pairing local key');
+  // Not in this round's snapshot, or its credential changed since: this round can never be signed here — start again.
+  if (!mine.length || JSON.stringify(rosterCore(mine[0])) !== JSON.stringify(rosterCore(localEntry))) throw new Error('pairing roster changed');
+  const result = ends.map((e, i) => ({ here: e === own, entries: e[3], remotes: labels[i], pendingRemotes: [] }));
+  result.code = code; result.v = 4;
   return result;
 }
 

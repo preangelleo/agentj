@@ -265,7 +265,7 @@ export function refused(m) {
   if (m.why === 'late' || m.why === 'gone') done({ id: c.id, result: m.why === 'late' ? 'timeout' : 'gone' });
 }
 const REFUSED = { passkey: 'elev.fa.refused', late: 'p566.r.late', stale: 'p566.r.clock', replay: 'p566.r.replay', gone: 'p566.r.gone',
-  bad_signature: 'p566.r.sig', no_key: 'p566.r.sig', shape: 'p566.r.shape' };
+  bad_signature: 'p566.r.sig', no_key: 'p566.r.sig', shape: 'p566.r.shape', context: 'p0284.refusal.context' };
 /** P566: the card's own reason line (key + vars; null clears it). */
 function setErr(c, key, vars) {
   if (!c) return;

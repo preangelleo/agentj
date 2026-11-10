@@ -66,9 +66,10 @@ class Gate(T.Adapter):
         self.assertEqual(h.asked, [])
         otg = Host(self.st, self.work, T.ALLOW, {"kind": "same_owner", "role": "task", "fid": "synthetic-peer",
                                                   "otg_required": True})
-        self.assertEqual(self.api(otg, op="drive_ls")["why"], "owner_grant_scope")
         self.assertEqual(len(self.calls()), gog)
         self.assertTrue(self.api(h, op="drive_ls")["ok"], "the owner's own turn still reads")
+        # 0304 A2-②: a same-owner grant task needs its grant only for UV steps; a Google read follows the delegated rule.
+        self.assertTrue(self.api(otg, op="drive_ls")["ok"])
 
     def test_cli_has_no_in_process_fallback(self):
         import argparse

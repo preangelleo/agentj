@@ -872,3 +872,66 @@ while more=true, allowing traversal over other grants without disclosing them.
 Official local registries retain authenticated end tombstones only until the original invitation expiry. After an end marker,
 read/input/open for that old gid return ended, and a fresh customer grant on the same Agent identity is independent immediately.
 Display/ready/end processing and queued input guards bind exact gid as well as the customer peer identity.
+
+## 0.30.6 (0304-frozen) — any-signer Same owner, first-binding continue, automation send grants
+
+ADRs: `agentjarvis/ARCHITECTURE.md` ADR-0304-any-signer, ADR-0306-binding-continue, ADR-0304-A3. All additions are additive;
+older pages ignore the new fields and fail closed on the v4 card shape.
+
+### Same owner scope v4: every roster-bound remote signs (amends §17.13)
+
+- When both hosts latched it for the round (`so_v == 4` here, the peer's `same_owner` packet carries cap `any_signer`, and
+  `roster_v` 3 on both), `pairing_scope` is `["agentj-same-owner-v4", END, END]` with END = `[host_id, host_ed_pub, nonce,
+  roster]`, sorted by host id: no single signer. Challenge and six digits are derived from the scope as in §17.13, so the
+  code covers both complete rosters. Otherwise the v3 / v2 rules of §17.13 apply unchanged; relations recorded before 0.30.6
+  keep their v3 challenge.
+- `fr_set {op:"owner-confirm-v3"}` (op name kept; the version is inside the challenge) is accepted from any remote that is
+  roster-bound now and is exactly one entry of this round's roster snapshot, with a fresh UV. First wins: a later confirm
+  answers `already_confirmed`. Both confirm cards list every entry of both rosters as "will be able to sign".
+- The peer pins the whole code-verified roster when the relation becomes active. Owner Task Grants, cross-host plans and
+  incoming OTG grants verify against any pinned entry; `root_reconfirm` only when the signer is outside it.
+- The OTG grant card has no `only`: every remote sees it. An allow from a remote that is not roster-bound gets
+  `{t:"answer_refused", id, why:"roster_binding_required", ask}`, preceded by `{t:"roster_bind_offer", entry}` when that
+  remote has a passkey; the card stays open.
+- New refusals on the confirm write (`ctl_res.why`): `roster_binding_required` (this remote is not roster-bound),
+  `peer_too_old` (the peer has no roster support), `peer_binding_required` (the peer has the code but no bound remote). A
+  friends row may carry `same_owner_why: "peer_too_old" | "peer_binding_required"` while `same_owner === "pending"`.
+- Revoke (unbind, replace, revoke of a device record): every open card bound to that remote (`only`) is denied at once and
+  folded on every remote (`ask_done`); unfinished rounds it started or consented to end (`declined`); the shorter roster
+  is sent to every Same owner peer at once. An active roster-less relation that rested on that remote ends, with one owner
+  notice. Any bound remote may unbind another with its own UV (unchanged).
+
+### First binding continues into the pairing (ADR-0306)
+
+`fr_set {friend, op:"group", value:"same-owner"}` from a remote that is not roster-bound answers:
+
+| remote | `ctl_res` |
+|---|---|
+| has a passkey | `{ok:false, why:"roster_binding_required", next:"bind", cont:<32 hex>}` plus the existing `roster_bind_offer` broadcast |
+| no passkey (host with any UV) | `{ok:false, why:"roster_binding_required", next:"passkey"}` (no `cont`) |
+
+`cont` is a host-memory ticket bound to this device, this connection and the resolved friend id, valid 120 s, single use.
+After `{t:"roster_bind_res", ok:true}` the page re-sends a fresh signed start with `cont` outside the signed object:
+`fr_set {r, friend, op:"group", value:"same-owner", cont, n, ts, sig}`. The host accepts it only after `controls.check`, when
+device, session and friend match, the ticket is unexpired and unused, and the remote is roster-bound now; then the start runs
+as a normal one (propose → six digits). A rejected ticket is not reported: the answer is the normal start answer (`ok:true`,
+or `roster_binding_required` with a fresh `cont`). The ticket grants nothing; the six-digit confirm still needs its own UV.
+
+### Automation send grants (ADR-0304-A3; Settings, same path as `preauth_list` / `preauth_revoke`, §P539)
+
+- client → host `{t:"automation_grants"}`.
+- host → client `{t:"automation_grants", items:[{id, kind:"hook"|"task", target, actions:["mail"] | ["mail","mail+files"],
+  to:[…], domains:[…], expires:<epoch s|null>, permanent:<bool>, max_uses:<int|null>, uses:<int>, created:<epoch s>,
+  state}]}`. `id` is 32 lowercase hex; `target` is the webhook's display name at grant time or the task id; `domains` are
+  punycode; `permanent` is `expires === null`; `state` is one of `live | expired | stale | revoked | used_up` (`stale` also
+  covers an unverifiable record, a deleted hook or task, Stop everything after issuance and a changed sending account). Live
+  first, then newest; at most 100 items.
+- client → host `{t:"automation_grant_revoke", id}` from any ready paired remote (signature only, no UV). The answer is the
+  refreshed `automation_grants` list; on success it goes to every ready P33 remote, on an unknown id only to the asker. A newly
+  approved grant also pushes the list to every ready P33 remote.
+- Issuing is the CLI `agentj automation grant` (elevate.sock `{t:"automation_grant", op:"grant"|"list"|"revoke"}`), an owner
+  turn only, one fingerprint card (`uv_list`). Refusals on `agentj mail send` from a hook or task turn:
+  `automation_grant_required` (with `missing`, or `reason:"mail+files"`), `automation_grant_stale` (`reason` `estop` /
+  `account` / changed target), `automation_grant_invalid`; issuance refusals `automation_grant_owner_turn`,
+  `automation_grant_domain_refused {domain, reason}`, `automation_grant_context {reason}`. Logs carry ids, counts and an
+  address hash only. Host: `host/agentj/automation_grant.py`.

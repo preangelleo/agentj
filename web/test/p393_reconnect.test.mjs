@@ -140,7 +140,8 @@ test('P393 wiring: every 「连不上」 surface reads the gate', () => {
   // Settings: pending = amber 「正在重新连接…」, no notice
   assert.match(SET, /n\.dataset\.online = 'pending'; n\.textContent = t\('p393\.reconnecting'\)/);
   assert.match(MENU, /\.setconnection\[data-online="pending"\]\{color:var\(--c-peachy-feeling\)\}/);
-  assert.match(CSS, /body\[data-relink\] \.dot\{background:transparent;box-shadow:inset 0 0 0 2px var\(--c-peachy-feeling\)/);
+  // 0.30.6 (chairman 11-10 12:14): a short drop = the header dot turns grey (was an amber ring), nothing else
+  assert.match(CSS, /body\[data-relink\] \.dot\{background:var\(--c-offline\);box-shadow:none;animation:none\}/);
   // Emergency repair: a tap during the quiet window waits; past it, the reason + next step + check time
   assert.match(RESCUE, /H\.linkState\(\) === 'quiet'\) \{ F\.wait = true;/);
   assert.match(RESCUE, /export function onLinkDown\(\)/);

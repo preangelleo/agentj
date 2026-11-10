@@ -46,7 +46,7 @@ import * as pagefind from './pagefind.js';   // P363 (#70): in-place find on a S
 import * as ntf from './notify.js';      // P365: Settings → 自动化消息 (`agentj notify`)
 import * as localFiles from './local-files.js';
 import * as news from './news.js';         // P374: 账号和帮助 → 「Daily AI News」 (news_get / news_set → news_res)
-import { preauthItems, paintPreauth, pkSheet, failNotice } from './pkassist.js';   // P539: 安全 → 「免问的动作」
+import { preauthItems, paintPreauth, pkSheet, failNotice, automationGrantItems, paintAutomationGrants } from './pkassist.js';   // P539: 安全 → 「免问的动作」
 import * as seatxfer from './seatxfer.js';   // P547: Agent 与遥控器 → 转移席位到另一台 Agent J 主机
 
 let H = { agentName: () => 'Agent J', paired: () => false, connected: () => false, unpair: () => {}, reload: () => location.reload(),
@@ -361,7 +361,7 @@ export async function faceIdStep(res, txt = {}) {
   const grab = () => { p = faApprove(unb64u(res.fa_ch), res.fa); p.catch(() => {}); };
   yes.addEventListener('click', grab);
   say('');
-  const ok = await pkSheet(res.fa_s, t(txt.title || 'p336.faTitle'), t(txt.text || 'p336.faText'), t(txt.yes || 'p336.faYes'));   // P539: + the line when the passkey is elsewhere
+  const ok = await pkSheet(res.fa_s, txt.titleText ?? t(txt.title || 'p336.faTitle'), txt.textText ?? t(txt.text || 'p336.faText'), t(txt.yes || 'p336.faYes'));   // P539: + the line when the passkey is elsewhere · 0304 r2: ready-made texts (with a name)
   yes.removeEventListener('click', grab);
   if (!ok || !p) return null;
   say(t('set.saving'), true);
@@ -634,6 +634,7 @@ export function open(page = 'main', add = false) {
   else if (H.paired()) seatxfer.offline();          // 0.26.9 #434: host offline → the row stays findable and says where to go
   if (H.paired()) news.load();   // P374: one news_get per opening (the account may have changed it in between)
   if (H.paired() && isReady()) sendApp({ t: 'preauth_list' }).catch(() => {});   // P539: the host answers `preauth`
+  if (H.paired() && isReady()) sendApp({ t: 'automation_grants' }).catch(() => {});   // #0304 A3: the host answers `automation_grants`
   rescue.foldEnded();            // P393: earlier repair results open as one line each (their log under 「详情」)
   cmdrun.foldEnded();
 }
@@ -650,6 +651,31 @@ async function revokePre(item) {
   } catch { toast(t('elev.fail'), 3000); }
 }
 onLang(paintPre);
+// ---------------------------------------------------------------- #0304 A3 「自动化外发授权」 (webhook / task mail grants)
+let agItems = null;   // null = the Agent J host has not answered (an older host: the row stays hidden)
+let agRevoking = null;   // 0304 r2: {id, timer} — a revoke sent, waiting for the host's fresh list to show it revoked
+const AG_CONFIRM_MS = 10000;
+function paintAg() { paintAutomationGrants(el('set-autogrant-row'), el('set-autogrant-list'), el('set-autogrant-empty'), H.paired() ? agItems : null, revokeAg, agRevoking?.id ?? null); }
+/** Host `{t:'automation_grants', items:[…]}`: the whole list (also the reply to a revoke). 0304 r2 (QA scene 4): 「已撤销」 is
+ *  said only when this list shows the grant revoked (or gone) — never on sending. */
+export function automationGrants(m) {
+  agItems = automationGrantItems(m);
+  const w = agRevoking, x = w && agItems.find((i) => i.id === w.id);
+  if (w && (!x || x.state === 'revoked')) { clearTimeout(w.timer); agRevoking = null; toast(t('p0304.ag.revoked'), 2600); }
+  paintAg();
+}
+async function revokeAg(item) {
+  if (agRevoking) return;
+  // Narrowing: a plain message on this paired remote's session, like preauth_revoke (no Face ID); the reply is the fresh list
+  try { await sendApp({ t: 'automation_grant_revoke', id: item.id }); }
+  catch { toast(t('elev.fail'), 3000); return; }
+  const w = agRevoking = { id: item.id, timer: setTimeout(() => {
+    if (agRevoking !== w) return;
+    agRevoking = null; paintAg(); toast(t('p0304r2.ag.notConfirmed'), 6000);
+  }, AG_CONFIRM_MS) };
+  paintAg();
+}
+onLang(paintAg);
 export function back() { if (sub === 'accts' && accounts.escape()) return; if (sub !== 'main') showSub('main'); else close(); }   // #427: Esc / Back puts an open name field away first
 /** P184: 「转发到邮箱」 with no mailbox yet → Settings → 邮件通道. */
 export function openMail() { open(); if (isOpen()) showSub('mail'); }
@@ -853,7 +879,6 @@ export function configure(hooks) {
       if (!list.length) say(t('set.pushKindsNone'));
     });
   }
-  el('connection-refresh').addEventListener('click', () => refreshApp());
   el('set-refresh').addEventListener('click', () => refreshApp());   // @ix app.refresh_web
   el('set-a2hs').addEventListener('click', onA2hs);
   el('set-mail-nav').addEventListener('click', () => showSub('mail'));   // P170

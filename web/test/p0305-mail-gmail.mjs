@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Read-only Gmail auto-pin note, rendered by the real paired client against synthetic host views.
+// Gmail auto-pin note, rendered by the real paired client against synthetic host views (no mailuv1 → display-only box;
+// the 0.30.6 signed tick/untick is p0306-mail-servid-toggle.mjs).
 import assert from 'node:assert/strict';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';

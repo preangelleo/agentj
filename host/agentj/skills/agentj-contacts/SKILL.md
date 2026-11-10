@@ -23,7 +23,7 @@ a command.
    the owner declined (do not send another card for the same person) · `timeout` / `gone` = ask again later.
 4. Send: `agentj mail send --to '<name or address>' [--to …] --subject '…' --body-file - [--attach <file>]` (body on
    stdin; files only from your working folder). It goes out only after
-   the approval card, confirmed with a long press (no Face ID). Owner-directed ordinary requests may send to the owner without a card; other recipients need confirmation. This does not authorize background workflow mail. / 主人本人发起的普通请求可给本人免卡发信；后台工作流不能借用这个来源权限。 Attachments are scanned before sending.
+   the approval card, confirmed with a long press (no Face ID). Owner-directed ordinary requests may send to the owner without a card; other recipients need confirmation. This does not authorize background workflow mail; a webhook or Agent J task mails others only under `agentj automation grant` (agentj-hooks). / 主人本人发起的普通请求可给本人免卡发信；后台工作流不能借用这个来源权限，Webhook 和定时任务对外发信要先有自动化外发授权。 Attachments are scanned before sending.
    `not_found` → step 3; `denied` (exit 1: declined or nobody confirmed in time) → tell the owner it was NOT sent;
    `mail_not_configured` / `no_password` → the mailbox is not set up: read the e-mail section of agentj-config.
    Every address that went out is remembered automatically (new ones as contacts with source `agent`).

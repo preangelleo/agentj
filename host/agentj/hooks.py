@@ -551,6 +551,9 @@ class Store:
         h["state"], h["ended"] = state, round(self.clock())
         self.drop_key(h["id"])
         self.save()
+        cb = self.__dict__.get("on_end")      # 0304 A3 F8: HookService revokes this hook's automation send grants
+        if callable(cb):
+            cb(h["id"])
 
     # secrets --------------------------------------------------------------
     def _key_path(self, hid: str) -> pathlib.Path:

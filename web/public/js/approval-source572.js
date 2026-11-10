@@ -18,13 +18,16 @@ export function paint(p) {
     if (label) { const strong=document.createElement('span');strong.className='source-label572';strong.textContent=label+'\n';line.append(strong); }
     line.append(document.createTextNode(value));box.append(line);
   };
-  if (p.approval_v !== 2) row('',t(p.approval_invalid ? 'p572source.invalid' : 'p572source.legacy'));
+  // 0.30.6: a card without a v2 source record says so plainly (was 「…未提供已绑定签名的来源记录」, read as an alarm); invalid stays a warning
+  if (p.approval_v !== 2) row('',t(p.approval_invalid ? 'p572source.invalid' : 'p0306.sourceNone'));
   else {
     const e=p.envelope, s=e?.source || {}, lines=sourceLines(e);
     // #0281: #541 already renders the human quote and confirmation reason.
     // Keep only the optional provenance chain here, with no missing-data filler.
     if(lines.chain) row(t('p572source.chain'),lines.chain);
-    if (s.verified !== true || s.suspicious === true) row('',t('p572source.external'));
+    // #0304 A2①: an owner turn quoting material is named by #541's warning line (channel + 「发起人是你」), not 「来源未经确认」
+    const quoted = s.suspicious === true && s.root?.verified === true;
+    if (!quoted && (s.verified !== true || s.suspicious === true)) row('',t('p572source.external'));
     if (!p.envelope_verified) row('',t('p572source.invalid'));
   }
   box.hidden = !box.childNodes.length;

@@ -96,7 +96,7 @@ class PermissionContext:
 
 
 async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
-              receipt=None, only=None, host_card=False, settings_session=None, bounded_context=None, harness_permission=False, task_actions=None, task_target=None, native_context=None, settings_context=None):
+              receipt=None, only=None, host_card=False, settings_session=None, bounded_context=None, harness_permission=False, task_actions=None, task_target=None, native_context=None, settings_context=None, front=None):
     # JSON from a native transport must normalize before inventory/path checks,
     # settings-input hashes or display hashes. Never echo exception repr/values.
     try:
@@ -165,7 +165,7 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
     # Only concrete Host executors own these historical display/proof strings.
     # Native tool parameters may contain a model-authored summary: always show
     # their actual canonical arguments instead of trusting that field.
-    host_summary = (not harness_permission and tool in ('agentj mail workflow-grant','agentj secret grant','AuthRescue','AgentJBoundedPlan')
+    host_summary = (not harness_permission and tool in ('agentj mail workflow-grant','agentj automation grant','agentj secret grant','AuthRescue','AgentJBoundedPlan')
                     and isinstance(inp.get('summary'),str))
     # Privacy scanning is awaited I/O. Pin the request's real subject before
     # yielding; an old native request cannot bind to the next owner turn.
@@ -240,6 +240,10 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
     a.task_scope = plan_scope
     a.tg_plan_only = task_actions is not None
     a.bounded_plan = bounded_context
+    # 0304 QA scene 3: a host-summary card (host-authored text, verbatim) may carry a host-built one-line front
+    # (title / reason, zh + en). Display only: it joins the signed envelope; the details stay the exact summary.
+    a.front = ({k: v for k, v in front.items() if k in ('title', 'title_en', 'reason', 'reason_en') and isinstance(v, str)}
+               if (host_summary or (tool == 'agentj mail send' and inp.get('friend_handoff'))) and isinstance(front, dict) else None)
     if bounded_context is not None:
         bounded_context.rid = a.rid
     # A source label never grants authority. Unknown/external labels are retained
@@ -266,7 +270,7 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
             return host._park(a,base,summary,host._park_key(tool,isha),None,why='question')
         if a.fut in done:
             decision,did,sk,sig = a.fut.result()
-            reason = 'device' if did else 'estop' if host.stopped() else 'serve_stop'
+            reason = 'device' if did else 'estop' if host.stopped() else getattr(a,'withdrawn',None) or 'serve_stop'
         else:
             decision,did,sk,sig = 'deny',None,None,None
             reason = 'agent_gone' if gone is not None and gone in done else 'timeout'

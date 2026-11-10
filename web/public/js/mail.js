@@ -2,14 +2,19 @@
 // check interval; 「设置授权码」 opens the host's sealed secret card (the code never travels in these messages); 「测试连接」
 // and 「立即检查」 run on the computer. Everything here is inside the Noise session; addresses are shown with textContent only.
 import { mailServers } from './mail-servers.js';
-import { t, lang } from './t.js';
+import { t, lang, onLang } from './t.js';
 import { renderTriage } from './mail-triage.js';
 import { el, toast, notify } from './ui.js';
 import { signed } from './controls.js';
 import { ask1, isReady, peer } from './session.js';
+// 0.30.6: the select shows short names; the chosen level's full meaning sits on the line under it.
+const AUTH_WHY = { standard: 'mail.authStd', strict: 'mail.authStrict', off: 'mail.authOff' };
+function authWhy() { const n = el('mail-auth-why'), s = el('mail-auth'); if (n && s) n.textContent = t(AUTH_WHY[s.value] || AUTH_WHY.standard); }
+onLang(authWhy);
 
 let view = null;          // the host's last `mail_res.view`
 let busy = false;
+let trustWant = null;     // 0.30.6: the owner's tick while its signed save is open (render shows host truth otherwise)
 let testedConnection = null;
 const connectionKey = () => JSON.stringify([cfg().address, cfg().username, cfg().imap, cfg().smtp, cfg().auth]);
 const ADDR = /^[A-Za-z0-9._%+'=-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
@@ -36,6 +41,16 @@ async function call(obj, ms = 20000) {
 export async function load() { say(t('mail.loading')); const m = await call({ t: 'mail_get' }); if (m) say(''); }
 
 function cfg() { return (view && view.config) || {}; }
+const imapHost = (c) => String(c.imap?.host || '').trim().toLowerCase().replace(/\.+$/, '');   // = mail._imap_host
+
+/** 0.30.6: the signed patch for a trusted-server tick (want=true) or untick, or null when this state offers none. */
+export function trustPatch(v, want) {
+  const c = (v && v.config) || {}, s = (v && v.servid_status) || {};
+  if (!want) return s.pinned === true ? { auth_servid: '' } : null;
+  if (s.pinned === true || v?.servid_hint !== 'unpinned_known') return null;
+  const host = imapHost(c);
+  return { servid_optout: (Array.isArray(c.servid_optout) ? c.servid_optout : []).filter((h) => h !== host) };
+}
 function preset() { const id = el('mail-preset').value; return ((view && view.presets) || []).find((p) => p.id === id); }
 
 function renderPresetNote() {
@@ -62,6 +77,7 @@ function render(form = true) {
   el('mail-poll').value = String(c.poll_minutes || 5);
   el('mail-auth').value = c.auth || 'standard';
   el('mail-auth-off').hidden = c.auth !== 'off';
+  authWhy();
   renderPresetNote();
   }
   el('mail-enable-next').hidden = c.enabled || testedConnection !== connectionKey() || !c.address;
@@ -99,11 +115,20 @@ function render(form = true) {
     ? t('p0304.mailPinnedSource', { id: value, source })
     : t('p0304.mailTrustedUnset');
   el('mail-detected').textContent = detected ? t('p0304.mailDetected', { id: detected }) : '';
-  // A4 status projection only: do not infer permission to write from the checkbox.
-  el('mail-trusted-check').checked = pinned;
+  // 0.30.6: the box is the host's state; a tick/untick is a signed `mail_set` (host_write + Face ID), never a local flag.
+  // Untick clears the pin (the host's servid_merge records the opt-out); tick on a known provider only drops this host from
+  // servid_optout and the host pins its own table value. Custom / Outlook ids would come from mail, so they stay untickable.
+  const box = el('mail-trusted-check');
+  const known = !pinned && view.servid_hint === 'unpinned_known';
+  const optedOut = known && (Array.isArray(c.servid_optout) ? c.servid_optout : []).includes(imapHost(c));
+  const writable = !!view.servid_status && peer.mailuv1 === true;
+  box.checked = trustWant ?? pinned;
+  box.disabled = busy || !writable || !(pinned || known);
+  el('mail-trusted-how').textContent = !writable ? '' : pinned ? t('p0306.mailTrustedClear')
+    : known ? t(optedOut ? 'p0306.mailTrustedOptout' : 'p0306.mailTrustedPin')
+    : view.servid_hint === 'unpinned_outlook' ? t('p0306.mailTrustedOutlook') : t('p0306.mailTrustedCustom');
   // Only the host's explicit auto-pin provenance on the exact Gmail IMAP host earns this note.
-  const gmailAuto = pinned && status.source === 'auto' &&
-    String(c.imap?.host || '').trim().toLowerCase().replace(/\.$/, '') === 'imap.gmail.com';
+  const gmailAuto = pinned && status.source === 'auto' && imapHost(c) === 'imap.gmail.com';
   el('mail-gmail-pinned').hidden = !gmailAuto;
   el('mail-gmail-pinned').textContent = gmailAuto ? t('p0305.mailGmailPinned') : '';
   // toggle
@@ -190,7 +215,8 @@ export function configure() {
     if (el('mail-user').value === cfg().address) el('mail-user').value = '';
     el('mail-preset').dispatchEvent(new Event('change'));
   });
-  el('mail-auth').addEventListener('change', () => { el('mail-auth-off').hidden = el('mail-auth').value !== 'off'; });
+  el('mail-auth').addEventListener('change', () => { el('mail-auth-off').hidden = el('mail-auth').value !== 'off'; authWhy(); });
+  authWhy();
   el('mail-save').addEventListener('click', () => {
     const f = formCfg();
     if (!ADDR.test(f.address)) { say(t('mail.why.address')); el('mail-addr').focus(); return; }
@@ -232,6 +258,12 @@ export function configure() {
       : t('mail.testFail', { why: why(m.why) }));
   });
   el('mail-enable-next').addEventListener('click', () => save({ enabled: true }));
+  el('mail-trusted-check').addEventListener('change', async () => {
+    const want = el('mail-trusted-check').checked, patch = busy ? null : trustPatch(view, want);
+    if (!patch) { render(false); return; }
+    trustWant = want;
+    try { await save(patch); } finally { trustWant = null; render(false); }
+  });
   el('mail-on').addEventListener('click', () => save({ enabled: !cfg().enabled }));
   el('mail-add-addr').addEventListener('input', () => {
     const domain = el('mail-add-addr').value.trim().startsWith('@');

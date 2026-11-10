@@ -14,6 +14,14 @@ export function safeDetails(e){
  return [String(e?.details||''),source.root_message_id?t('p541.rootRef',{id:source.root_message_id}):'',source.message_id?t('p541.triggerRef',{id:source.message_id}):'',source.root?.text?t('p541.rootText',{text:source.root.text}):'',chain?t('p541.chain',{chain}):'',source.task_record?t('p541.task',{task:source.task_record}):''].filter(Boolean).join('\n\n');
 }
 export const enabled=p=>p?.approval_v===2;
+// #0304 A2①: the owner's own (verified) turn quoted outside material — say where the material came from, not 「外部消息」.
+// Guest / group / unknown roots (root missing or not verified) keep #541's wording. Display only: Allow rules do not read this.
+const QUOTE_CH=new Set(['email','wechat','telegram','friend_report','support']);
+export const quotedMaterial=src=>src?.suspicious===true&&src?.root?.verified===true;
+export function warnText(src){
+ if(!quotedMaterial(src))return t(src?.suspicious?'p541.suspicious':'p541.unknown');
+ return t('p0304.quote',{ch:t('p0304.qch.'+(QUOTE_CH.has(src.channel)?src.channel:'other'))});
+}
 export function reset(){
  active=false;current=null;el("sheet").removeAttribute("data-approval-v");
  for(const id of ['warn541','source541','action541','details541','doubt541c'])el(id).hidden=true;
@@ -25,15 +33,15 @@ export function paint(p, options){
  if(!enabled(p)){reset();return;}
  active=true;current=p;hooks=options;el("sheet").dataset.approvalV="2";
  const e=p.envelope||{},src=e.source||{},outside=src.history_outside_window===true;
- const suspect=src.suspicious===true||src.verified!==true;
+ const suspect=src.suspicious===true||src.verified!==true,quoted=quotedMaterial(src);
  if(key!==p.id){key=p.id;el('details541').open=false;}
  for(const id of detailIds){const n=el(id);if(!homes.has(id)){const mark=document.createComment('541 details home');n.before(mark);homes.set(id,mark);}el('details541').append(n);}
  el('details541').hidden=false;
- const warn=el('warn541');warn.hidden=!suspect;warn.textContent=t(src.suspicious?'p541.suspicious':'p541.unknown');
+ const warn=el('warn541');warn.hidden=!suspect;warn.textContent=warnText(src);warn.dataset.quote=quoted?'1':'';
  const source=el('source541');source.hidden=false;source.replaceChildren();
  const channel=t('p541.channel.'+src.channel),label=channel.startsWith('p541.')?String(src.channel||''):channel;
  const tm=Number(src.time),time=Number.isFinite(tm)&&tm>0?new Date(tm<1e12?tm*1000:tm).toLocaleTimeString(lang()==='zh'?'zh-CN':'en-GB',{hour:'2-digit',minute:'2-digit',hour12:false}):'';
- const who=suspect?t('p541.external'):String(src.sender||t('p541.you'));
+ const who=quoted?t('p541.you'):suspect?t('p541.external'):String(src.sender||t('p541.you'));   // #0304 A2①: the owner's own turn quoting material still started with the owner
  const meta=text('span','srcmeta541','');meta.append(text('span','srcsender541',outside?t('p541.initiator',{name:src.initiator||src.sender||'Agent J'}):[label,who].filter(Boolean).join(' · ')+(time?' · '+time:'')));
  if(!outside&&src.message_id)meta.append(text('span','',t('p541.source')));
  source.append(meta,text('span','srctext541',outside?t('p541.older'):src.text||t('p541.unknown')),text('span','srcid541',outside?t('p541.task',{task:src.task_record||''}):'Message ID · '+(src.message_id||'—')));

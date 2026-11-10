@@ -2392,7 +2392,7 @@ class Mail:
         self.triage.wake.set()
         return cfg
 
-    async def secret_card(self, *, recover: bool = True, only: str | None = None) -> dict:
+    async def secret_card(self, *, recover: bool = True, only: str | None = None, settings: bool = False) -> dict:
         """See ARCHITECTURE."""
         cfg = read_config(self.st)
         if not cfg["address"] or not cfg["imap"]["host"] or not cfg["smtp"]["host"]:
@@ -2439,6 +2439,8 @@ class Mail:
             return {"result": "refused", "why": "no_elevate"}
         if only is not None:
             card["only"] = only
+        if settings:
+            card["settings_origin"] = True      # 0.30.6: Settings → mail channel (elevate.settings_origin)
         res = await el.request(card)
         self.log("password", result=res.get("result"))
         return {k: v for k, v in res.items() if k in ("result", "why", "detail", "id", "receipt")}

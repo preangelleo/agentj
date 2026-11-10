@@ -30,6 +30,21 @@ class Recovery(Base):
             doctor.run_upgrade(self.st)
         check.assert_called_once()
 
+    def test_intel_mac_handoff_receipt_rollback_and_acknowledgement(self):
+        # Synthetic launchd receipt in the fixture HOME, never on a customer Mac.
+        # A failed target survives an older installed package until the owner starts it.
+        with patch.object(service, 'platform', return_value='macos'):
+            sr.record(self.st, 'failed', '99.0.0a1', 'rolled_back', external=True)
+            self.assertTrue(sr.receipt_path().exists())
+            self.assertEqual(self.row('inactive')['status'], 'fail')
+            self.assertEqual(self.row()['status'], 'warn')
+            with patch.object(service, 'status', return_value={'installed': True, 'active': 'active'}), \
+                    patch.object(service, '_rescue_start'):
+                service.start(self.st)
+            self.assertFalse(sr.receipt_path().exists())
+            self.assertEqual(sr.read(self.st)['status'], 'ok')
+            self.assertIsNone(self.row())
+
     def test_rollback_not_active_still_fails(self):
         sr.record(self.st, 'rolled_back', '99.0.0a1', 'rolled_back')
         self.assertEqual(self.row('failed')['status'], 'fail')

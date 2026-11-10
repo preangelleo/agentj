@@ -1,4 +1,5 @@
-import { ensureForCeremony } from './rosterbind.js';
+import { ensureForCeremony, isBinding, requestOffer } from './rosterbind.js';
+import { createSameOwnerStart, install as installSameOwnerStart } from './sameowner-start.js';
 import { copyButton } from './copycode.js';
 import { S, touch, askDone, retryPairingPreparation } from './snap.js';
 // Agent friends (PROTOCOL §17.7, 0.16): the /friends page and the two cards the host puts in the main chat.
@@ -15,13 +16,14 @@ import { myDeviceId } from './api.js';
 import { signedWrite, commandFa, whyText } from './controls.js';
 import { qrSvg } from './qr.js';
 import { t, locale, fillText } from './t.js';
-import { el, mk, toast, notify, confirmSheet, pageCopy } from './ui.js';
+import { el, mk, toast, toastAction, notify, confirmSheet, pageCopy } from './ui.js';
 import { approve as passkeyApprove } from './faceid.js';
 import { copyable } from './copycode.js';   // P292
+import { offerSetupHere } from './pkassist.js';   // #0306 A5: no passkey yet → the 「在本机设置」 offer
 import { mentionAt } from './five-pages.js';   // P426 #170: the same @ detection as the main chat's mentions
 const cmdNote = (cls, key) => { const p = pageCopy(mk('p', cls, undefined, 'aj-friends')); fillText(p, t(key)); return p; };   // P292: `agentj friends on` as code + ⧉
 
-let H = { openPanel: () => {}, agentName: () => 'Agent J' };
+let H = { openPanel: () => {}, agentName: () => 'Agent J', foldCard: () => {} };
 export function configure(h) { H = { ...H, ...h }; }
 
 const V = { view: 'list', friend: null, group: null, addId: '', addNote: '', sent: false };
@@ -88,6 +90,8 @@ function normList(m) {
       holdForOwner: f.hold_for_owner === true, sameOwner: ['active', 'pending'].includes(f.same_owner) ? f.same_owner : 'none',
       // P417 #186: the code shown in place (null = a host that does not send it), whether this side already said yes, why it ended
       soCode: typeof f.same_owner_code === 'string' ? (/^\d{6}$/.test(f.same_owner_code) ? f.same_owner_code : '') : null,
+      // #0306 A5 R-F1: why this pending round cannot be confirmed here (the other computer's Agent J is too old / has no bound remote)
+      soWhy: f.same_owner === 'pending' && SO_PEER_WHY.includes(f.same_owner_why) ? f.same_owner_why : '',
       soWait: f.same_owner_wait === true, soEnd: ['declined', 'expired', 'ended'].includes(f.same_owner_end) ? f.same_owner_end : '', state: str(f.state, 32), blocked: f.blocked === true, last: lastOf(f.last), unread: Number.isInteger(f.unread) ? f.unread : f.unread ? 1 : 0 })),
     pending: (Array.isArray(m.pending) ? m.pending : []).filter((p) => p && typeof p.id === 'string').slice(0, 100).map((p) => ({
       id: p.id.slice(0, 64), state: str(p.state, 32), ts: Number(p.ts) || 0, dir: p.dir === 'in' ? 'in' : 'out' })),
@@ -471,7 +475,8 @@ function sameOwnerState(box, f) {
     if (code) { const c = pageCopy(mk('p', 'fr-owner-code', code, 'aj-friends')); c.id = 'fr-so-code'; c.setAttribute('aria-label', t('p417.so.codeLabel') + ' ' + code.split('').join(' ')); so.append(c);
       if (!verified) so.append(pageCopy(mk('p', 'small', t('p574.referenceCode'), 'aj-friends')));
     }
-    if (f.soWait) so.append(pageCopy(mk('p', 'fr-so__state', t('p417.so.wait'), 'aj-friends')), pageCopy(mk('p', 'small', t(f.soCode ? 'p417.so.waitHint' : 'p417.so.reaching'), 'aj-friends')));
+    if (f.soWhy) so.append(pageCopy(mk('p', 'fr-so__state fr-so__peer', t(SO_PEER_KEY[f.soWhy]), 'aj-friends')));
+    else if (f.soWait) so.append(pageCopy(mk('p', 'fr-so__state', t('p417.so.wait'), 'aj-friends')), pageCopy(mk('p', 'small', t(f.soCode ? 'p417.so.waitHint' : 'p417.so.reaching'), 'aj-friends')));
     else so.append(pageCopy(mk('p', 'fr-so__state', t('p417.so.yourTurn'), 'aj-friends')), pageCopy(mk('p', 'small', t('p417.so.onCard'), 'aj-friends')));
   } else if (f.soEnd) {
     so.append(pageCopy(mk('p', 'small', t('p417.so.end.' + f.soEnd), 'aj-friends')));
@@ -508,9 +513,10 @@ function viewDetail(box) {
     if (sel.value === 'same-owner' && !await confirmSheet(t('fr.sameOwner'), t('fr.sameOwner.confirm'), t('fr.sameOwner.start'))) { refresh(); return; }
     if (f.sameOwner === 'active' && sel.value !== 'same-owner' && !await confirmSheet(t('fr.sameOwner'), t('p0284.so.endConfirm'), t('p0284.so.end'))) { refresh(); return; }
     sel.disabled = true;
-    const res = await write('fr_set', { friend: f.id, op: 'group', value: sel.value });
+    // #0306 A5: 「同一个主人」 goes through the start flow — a first-time remote binds once (one UV) and continues by itself
+    const res = sel.value === 'same-owner' ? await sameOwnerStart.begin(f.id) : await write('fr_set', { friend: f.id, op: 'group', value: sel.value });
     sel.disabled = false;
-    toast(res.ok ? (sel.value === 'same-owner' ? t('p417.so.started') : t('fr.detail.groupDone', { group: groupName(groupById(sel.value)) })) : t('fr.fail', { why: why(res.why) }), 3000);
+    if (!res.quiet) toast(res.ok ? (sel.value === 'same-owner' ? t('p417.so.started') : t('fr.detail.groupDone', { group: groupName(groupById(sel.value)) })) : t('fr.fail', { why: why(res.why) }), 3000);
     refresh();
   });
   row.append(sel);
@@ -900,7 +906,31 @@ const WRITE_MSG = {
   fr_gsay: (o) => ({ t: 'fr_gsay', text: o.text }),                  // P426 #170: 「我的设备」
 };
 const write = (action, o) => signedWrite(action, o, WRITE_MSG[action](o));
-const FR_WHY = ['not_friend', 'builtin', 'in_use', 'self', 'off', 'exists', 'too_many', 'too_long', 'bad_id', 'no_devices', 'gate'];
+// #0306 A5: the continuation ticket rides beside the signed {friend, op, value}; the host checks it against this device/session/friend
+export const sameOwnerStart = installSameOwnerStart(createSameOwnerStart({
+  write: (target, extra = {}) => signedWrite('fr_set', target, { ...WRITE_MSG.fr_set(target), ...extra }),
+  bind: () => requestOffer(),
+  binding: () => isBinding(),
+  say: (key) => toast(t(key), 5000),
+  sayRetry: (key, label, fn) => toastAction(t(key), t(label), fn, 15000),
+  needPasskey: (friend) => { soAfterKey = { friend, until: Date.now() + SO_AFTER_KEY_MS }; offerSetupHere('p0306.so.needPasskey'); },
+  fail: (code) => toast(t('fr.fail', { why: why(code) }), 5000),
+  started: () => refresh(),
+  settle: () => refresh(),
+}));
+// 0304 r2 (QA scene 6): 「同一个主人」 on a remote with no passkey → 「在本机设置」; once THIS page saved that passkey (pk_reg_res
+// ok, app.js → passkeySaved) the same start runs once by itself — the owner's tap on 同一个主人 was the intent, the setup was
+// the missing piece. Same friend, within 10 minutes (a peer approval of the new key may take a while), once; never a UV here.
+const SO_AFTER_KEY_MS = 600000;
+let soAfterKey = null;
+export async function passkeySaved() {
+  const p = soAfterKey; soAfterKey = null;
+  if (!p || !p.friend || Date.now() > p.until || !isReady()) return;
+  const res = await sameOwnerStart.begin(p.friend);
+  if (!res.quiet) toast(res.ok ? t('p417.so.started') : t('fr.fail', { why: why(res.why) }), 5000);
+  refresh();
+}
+const FR_WHY = ['not_friend', 'builtin', 'in_use', 'self', 'off', 'exists', 'too_many', 'too_long', 'bad_id', 'no_devices', 'gate', 'roster_binding_required', 'roster_changed', 'peer_too_old'];
 const why = (code) => (FR_WHY.includes(code) ? t('fr.why.' + code) : whyText(code));
 
 // ---------------------------------------------------------------- the two cards in the main chat (§17.7)
@@ -917,19 +947,50 @@ export function answerRefused(m) {
 }
 /** P417 #186: a Same-owner confirm / reject that did not take effect says why and what to do next. A card whose code
  *  is no longer the current one (`expired`) is closed here — tapping it again can never work. */
-const SO_WHY = { expired: 'p417.so.stale', phone_required: 'p417.so.thisPhone', peer_old: 'p417.so.peerOld', offline: 'p417.so.offline', io: 'p417.so.offline' };
+const SO_WHY = { expired: 'p417.so.stale', phone_required: 'p417.so.thisPhone', peer_old: 'p417.so.peerOld', offline: 'p417.so.offline', io: 'p417.so.offline',
+  roster_changed: 'p0304.so.rosterChanged', roster_binding_required: 'p0284.so.bindNeeded', scope_required: 'p0284.so.notReady',   // #0304 A1 v4
+  peer_too_old: 'p0306.so.peerTooOld', peer_binding_required: 'p0306.so.peerBinding' };                                               // #0306 R-F1
+/** #0306 A5 R-F1 (contract-a5 DEVIATION 3): the other computer cannot take part yet — the code is not confirmable here. */
+const SO_PEER_WHY = ['peer_too_old', 'peer_binding_required'];
+const SO_PEER_KEY = { peer_too_old: 'p0306.so.peerTooOld', peer_binding_required: 'p0306.so.peerBinding' };
+const peerWhy = (p, friend) => (SO_PEER_WHY.includes(p.pairing_peer_why) ? p.pairing_peer_why : friendOf(friend)?.soWhy || '');
 export function pairingRefused(p, code) {
   if (!sentAsk.has(p.id)) return;
   sentAsk.delete(p.id);
   clearTimeout(receiptTimers.get(p.id)); receiptTimers.delete(p.id);
-  const say = () => toast(t(SO_WHY[code] || 'p417.so.failed'), 8000);
+  // #0304 A1: another remote of this host confirmed first — the host folds every card with ask_done. 0304 r2: the card goes
+  // away at once (no greyed digits left behind) with the one short line that says where it was confirmed.
+  if (code === 'already_confirmed') { H.foldCard(p.id, true); askDone({ id: p.id, result: 'gone' }); toast(t('p0304r2.so.elsewhere'), 4000); return; }
+  if (SO_PEER_WHY.includes(code)) p.pairing_peer_why = code;   // R-F1: retrying here can never help — the card says so and Allow stays off
+  const signer = code === 'wrong_remote' ? p.pairing_roster?.find((r) => r.here)?.remotes?.[0] : null;   // v3: the designated one
+  const say = () => toast(signer ? t('p0304.so.wrongRemote', { remote: signer }) : t(SO_WHY[code] || 'p417.so.failed'), 8000);
   if (code !== 'expired') return say();
+  H.foldCard(p.id);
   askDone({ id: p.id, result: 'gone' });
   setTimeout(say, 0);                   // after the closed card's own short note, so this reason is what stays on screen
 }
 export function answerDone(m) {
   clearTimeout(receiptTimers.get(m.id)); receiptTimers.delete(m.id);
+  const mine = sentAsk.get(m.id);
   sentAsk.delete(m.id);
+  // 0304 r2 (QA scene 1): a Same-owner card the host closed (`gone`: confirmed on one remote, a newer round, ended) never stays
+  // on screen as greyed digits — it goes away at once. Called before snap.askDone, so the sheet never paints the ended card.
+  // Answered here → the card's usual closing line (P417 #186 「这张卡已处理…」); not answered here → that line is replaced by
+  // 「已在另一台遥控器确认」 when it is true, else nothing.
+  const a = S.asks.get(m.id);
+  if (m.result !== 'gone' || !a || !pqOf(a).pairing) return;
+  H.foldCard(m.id, !mine);
+  if (!mine) soNotice(pqOf(a).friend).catch(() => {});
+}
+/** 0304 r2: after a folded Same-owner card this remote did not answer, one short line — only when the Agent J host's own list
+ *  says this side said yes (so another remote confirmed; never a newer round or an ended one). */
+async function soNotice(friend) {
+  if (!friend || !isReady()) return;
+  const m = await ask1({ t: 'fr_list' }, 'fr_list_res', 4000);
+  if (m.t !== 'fr_list_res') return;
+  const f = normList(m).friends.find((x) => x.id === friend);
+  if (!f || !(f.sameOwner === 'active' || (f.sameOwner === 'pending' && f.soWait))) return;
+  toast(t('p0304r2.so.elsewhere'), 4000);
 }
 function pending(p, action, ctx) {
   touch(p.id);
@@ -960,8 +1021,8 @@ function pqOf(p) {
 export function renderAsk(p, ctx) {
   const box = el('frAsk'); box.replaceChildren();
   const kind = askKind(p);
-  // Peer and host gate explanations are not this Agent's own note.
-  const note = () => mk('p', 'reason none', t('p572.label') + ' ' + t('p572.noReason'));
+  // Peer and host gate explanations are not this Agent's own note, and a friend card never carries one: 0.30.6 (Jarvis's
+  // 0.30.5 review) drops the always-empty 「Agent 说明：Agent 没说明理由」 line instead of printing a filler.
   const st = !ctx.open ? p.state : sentAsk.get(p.id) || 'open';
   const final = { approved: 'allow', main: 'main', denied: 'deny', timeout: 'timeout', ended: 'ended', stopped: 'stopped', terminal: 'ended' }[p.state];
   if (kind === 'friend_request') {
@@ -994,7 +1055,6 @@ export function renderAsk(p, ctx) {
       cta.addEventListener('input', () => pickedCtx.set(p.id, cta.value));
       more.append(cta, mk('p', 'small', t('fr.ask.ctxHint', { max: FRIEND_CTX_MAX })));
       box.append(more);
-      box.append(note());
       const acts = mk('div', 'fr-askbtns');
       acts.append(btn('', t('fr.ask.deny'), () => answerFriend(p, false, null, ctx), 'frAskDeny'),
         btn('aj-action--primary', t('fr.ask.allow'), () => answerFriend(p, true, sel.value, ctx, cta.value), 'frAskAllow'));
@@ -1004,20 +1064,36 @@ export function renderAsk(p, ctx) {
   } else {
     const x = pqOf(p);
     if (x.pairing) {
-      el('sheetTitle').textContent = t('fr.sameOwner');
+      el('sheetTitle').textContent = t('p0304r2.so.title', { name: x.name });   // 0304 r2: the card front says what and with whom
       const more = mk('details', 'fr-owner-details');
       more.append(mk('summary', '', t('p339.details')));
       more.append(mk('p', 'fr-askcard__note', t('fr.sameOwner.request', { name: x.name })));
       const modern = p.pq?.pairing_scope !== undefined;
       box.append(mk('p', 'fr-owner-code', modern ? p.pairing_code || '' : x.code));
-      if (p.pairing_roster) for (const roster of p.pairing_roster) {
+      if (p.pairing_roster?.v === 4) {
+        // #0304 R-F4: v4 has no designated signer — every remote of BOTH ends (the six digits cover them all) is listed as one set
+        const list = mk('div', 'fr-owner-signers'); list.id = 'frOwnerSigners';
+        list.append(mk('p', 'fr-askcard__name fr-owner-signers__title', t('p0304.so.signers')));
+        for (const roster of [...p.pairing_roster].sort((a, b) => Number(b.here) - Number(a.here))) {
+          list.append(mk('p', 'fr-askcard__note fr-owner-signers__end', roster.here ? t('p0304.so.signersHere') : t('p0304.so.signersPeer', { name: x.name })));
+          if (!roster.remotes.length) list.append(mk('p', 'fr-askcard__note fr-owner-signer', t('p574.rosterEmpty')));
+          for (const label of roster.remotes) list.append(mk('p', 'fr-askcard__note fr-owner-signer', label));
+        }
+        more.append(list);
+      } else if (p.pairing_roster) for (const roster of p.pairing_roster) {
         more.append(mk('p', 'fr-askcard__note', t(roster.here ? 'p574.rosterHere' : 'p574.rosterPeer', { remotes: roster.remotes.join(' · ') || t('p574.rosterEmpty') })));
         if (roster.pendingRemotes.length) more.append(mk('p', 'small', t('p574.rosterPending', { remotes: roster.pendingRemotes.join(' · ') })));
       }
       more.append(mk('p', 'small fr-owner-order', t('p417.so.order')));   // #186: one tap here finishes it
       box.append(more);
+      const blocked = peerWhy(p, x.friend);
       if (st === 'open' && ctx.sign) {
-        if (modern && p.pairing_scope_ok !== true) {
+        if (blocked) {
+          box.append(mk('p', 'fr-askcard__note fr-owner-changed fr-owner-peer', t(SO_PEER_KEY[blocked])));
+        } else if (modern && p.pairing_scope_ok !== true && p.pairing_roster_changed) {
+          // #0304 A1 v4: retrying can never help — this round's roster was frozen before this remote was bound
+          box.append(mk('p', 'fr-askcard__note fr-owner-changed', t('p0304.so.rosterChanged')));
+        } else if (modern && p.pairing_scope_ok !== true) {
           more.append(mk('p', 'small', t(p.pairing_bind_needed ? 'p0284.so.bindNeeded' : p.pairing_prepare_failed ? 'p0284.so.notReady' : 'p0284.so.preparing')));
           box.append(btn('', t(p.pairing_bind_needed ? 'p0284.so.bind' : 'p0284.so.retry'), async () => {
             await ensureForCeremony(p); retryPairingPreparation();
@@ -1025,7 +1101,7 @@ export function renderAsk(p, ctx) {
         }
         const acts = mk('div', 'fr-askbtns');
         const decide = async (on) => {
-          if (on && p.pairing_scope_ok === false) return;
+          if (on && (p.pairing_scope_ok === false || peerWhy(p, x.friend))) return;
           const prepared = p.owner_confirm;
           if (on && modern && (!prepared || Date.now() - prepared.obj.ts > 90000)) return;
           // The prepared challenge and actual local credential are ready before this tap. No host challenge is signed.
@@ -1041,7 +1117,7 @@ export function renderAsk(p, ctx) {
         };
         acts.append(btn('', t('fr.ask.deny'), () => decide(false), 'frOwnerDeny'),
           btn('aj-action--primary', t('fr.sameOwner.confirmAction'), () => decide(true), 'frOwnerAllow'));
-        if (modern && p.pairing_scope_ok !== true) acts.querySelector('#frOwnerAllow').disabled = true;
+        if ((modern && p.pairing_scope_ok !== true) || blocked) acts.querySelector('#frOwnerAllow').disabled = true;
         box.append(acts);
       }
       return;
@@ -1050,8 +1126,7 @@ export function renderAsk(p, ctx) {
       el('sheetTitle').textContent = t('fr.hold.title', { name: x.name });
       box.append(mk('p', 'fr-askcard__note', x.text), mk('p', 'small', t('fr.hold.scope')));
       if (st === 'open' && ctx.sign) {
-        box.append(note());
-        const acts = mk('div', 'fr-askbtns');
+          const acts = mk('div', 'fr-askbtns');
         acts.append(btn('', t('fr.ask.deny'), () => answerQuestion(p, 'deny', x, ctx), 'frHoldDeny'),
           btn('aj-action--primary', t('fr.hold.allow'), () => answerQuestion(p, 'allow', x, ctx), 'frHoldAllow'));
         box.append(acts);
@@ -1066,7 +1141,6 @@ export function renderAsk(p, ctx) {
     if (!p.pq) card.append(copyable(mk('pre', 'fr-askcard__raw', p.summary, 'aj-friends'), { click: false }));   // P292
     box.append(card);
     if (st === 'open' && ctx.sign) {
-      box.append(note());
       const acts = mk('div', 'fr-askbtns fr-askbtns--3');
       const send = btn('aj-action--primary', t('fr.q.send'), () => answerQuestion(p, 'allow', x, ctx), 'frQSend');
 

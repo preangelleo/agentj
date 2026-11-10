@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// A4 read-only pin projection through the paired real web client, with synthetic host views.
+// A4 pin projection through the paired real web client, with synthetic host views. This fake host does not advertise
+// mailuv1, so the box stays display-only here; the 0.30.6 signed tick/untick is p0306-mail-servid-toggle.mjs.
 import assert from 'node:assert/strict';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';

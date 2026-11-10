@@ -185,7 +185,7 @@ try {
         check(m.reason && m.allow && m.reason.bottom <= m.allow.top && m.reason.top >= m.cmdBox.bottom, `${name}: reason sits between the code block and the buttons`);
         const source = await box(p, 'approvalSource572');
         check(source && source.h > 0 && source.w > 0 && source.left >= 0 && source.right <= w && m.cmdBox.bottom <= source.top && source.bottom <= m.reason.top, `${name}: honest legacy source is between command and reason without overlap`);
-        check(await ev(p, `document.getElementById('approvalSource572').textContent`) === (lang === 'en' ? 'This host has not supplied a source record bound to the approval signature.' : '当前 Agent J 主机未提供已绑定签名的来源记录。'), `${name}: legacy source is not presented as verified provenance`);
+        check(await ev(p, `document.getElementById('approvalSource572').textContent`) === (lang === 'en' ? 'This card carries no source record.' : '这张卡没有附带来源记录。'), `${name}: legacy source is not presented as verified provenance`);
         check(await ev(p, `(()=>{const c=getComputedStyle(document.getElementById('cmdBox')),r=getComputedStyle(document.getElementById('cmdReason')),s=getComputedStyle(document.getElementById('approvalSource572'));return c.marginBottom==='10px'&&r.marginTop==='0px'&&s.marginTop==='12px'&&s.marginBottom==='12px'&&s.paddingTop==='12px'&&s.paddingBottom==='12px'&&s.borderTopWidth==='1px'})()`), `${name}: component spacing keeps the original command gap and formal legacy-source styles`);
         m.legacySource = source; m.historicalAbove = {got:m.reason.top-m.cmdBox.bottom,prototype:approvedMetrics?.[name] ? approvedMetrics[name].reason.top-approvedMetrics[name].cmdBox.bottom : null,contract:'non-adjacent since formal 0286 7aa5df0687'};
 
@@ -248,8 +248,9 @@ try {
       const p = await paired(390,844,'light','zh');
       await fake.ask({t:'ask',id:hex(57700 + ++n),tool,summary:'peer card',reason:'',ttl:600,cat:['friend'],why:'host gate explanation',
         ...(tool === 'friend_request' ? {fr:{id:'AJ-RQCZ-QGZK-REZD-0S3C',name:'Peer',note:'Peer note',groups:[{id:'friend',name:'Friends'}]}} : {pq:{name:'Peer',text:'Question',draft:'Reply',reason:'host gate explanation'}})});
-      await waitFor(p, `!document.getElementById('frAsk').hidden && !!document.querySelector('#frAsk .reason')`);
-      check(await ev(p, `document.querySelector('#frAsk .reason').textContent`) === 'Agent 说明： Agent 没说明理由', `${tool}: peer/host wording is not this Agent's reason`);
+      await waitFor(p, `!document.getElementById('frAsk').hidden && !!document.querySelector('#frAsk .fr-askbtns')`);
+      // 0.30.6: a friend card has no Agent reason, so no 「Agent 说明」 line at all; the peer / host wording never becomes one
+      check(await ev(p, `!document.querySelector('#frAsk .reason') && !document.getElementById('frAsk').textContent.includes('Agent 说明') && ![...document.querySelectorAll('#frAsk .reason')].some(n=>n.textContent.includes('host gate explanation'))`), `${tool}: peer/host wording is not this Agent's reason (no filler reason line; the host's why stays its own footer)`);
       writeFileSync(`${OUT}/${tool}-fallback.png`, await shoot(p,''));
       await p.dispose();
     }

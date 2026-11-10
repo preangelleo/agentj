@@ -1246,6 +1246,9 @@ class CodexAgent(Agent):
             child_secret = codex_children.is_child(self) and native_secret_call(name, inp, self.cfg['dir']) is not None
             r = ({"behavior": "deny", "message": "No live native secret-call admission"} if child_secret else
                  await broker.execute(name, inp, self.__dict__.get("secret_native_calls", {}).pop(str(rid), None), gone) if broker else None)
+            if r is None and getattr(self.host, "agent", None) is self and not self.research and not self.cfg.get("_workflow_ceo") and not codex_children.is_child(self):
+                from . import host_turns                  # ADR-0306-host-turn-reads: heartbeat / system turn reads, no card
+                r = await host_turns.admit(self.host, name, inp, self.cfg["dir"])
             r = r if r is not None else ({"behavior": "allow"} if not self.research and low_risk_pass(self.host, self.cfg, name, inp, batch)
                  else await self.host.ask(name, inp, gone, _harness_permission=True, batch=batch, **({"bind": bind} if bind else {}),
                                          **({"background": "task"} if self.cfg.get("_workflow_ceo") else {})))   # P552

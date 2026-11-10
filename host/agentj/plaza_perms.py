@@ -339,6 +339,8 @@ async def serve_card(host, req: dict, emit=None) -> dict:  # noqa: C901
                     and (TOOL.fullmatch(i["name"]) or ENV.fullmatch(i["name"])) for i in items)):
         return {"ok": False, "why": "bad_request"}
     items = [{"kind": i["kind"], "name": i["name"]} for i in items]
+    if gate.get("otg") and any(i["kind"] == "secret" for i in items):
+        return gate_refused(host, None, req, "owner_grant_scope")   # 0304 A2-②: a secret grant is a UV step (credentials)
     pub = {"prev": pub.get("prev"), "new": pub.get("new")} if pub is not None else None
     audit = [{"rule": a["rule"], "path": a["path"], "line": a["line"]} for a in audit] if audit else None
     under = bool(req.get("under")) and bool(items)
@@ -411,12 +413,17 @@ def turn_gate(host) -> dict:
         return {"gated": False, "via": None, "why": None}
     via = (provenance.unattended_turn(agent) or ("delegated" if provenance.delegated_turn(agent) else None)
            or ("owner_channel" if provenance.owner_channel_turn(agent) else None))
-    otg = bool(provenance.owner_grant_required(agent))
+    otg = bool(provenance.owner_grant_required(agent, CARD_TOOL, {}))   # 0304 A2-②: UV steps only (#537 list)
     from . import application_ingress
     gated = otg or (not application_ingress.allowed(host) and bool(provenance.untrusted_turn(agent) and not via))
     from .google_api import mail_read
     return {"gated": gated, "via": via, "why": ("owner_grant_scope" if otg else "group_source") if gated else None,
-            "mail": mail_read(host)}
+            "mail": mail_read(host), "otg": _otg_source(host)}
+
+
+def _otg_source(host) -> bool:
+    from .owner_grant import owner_grant_source
+    return owner_grant_source(getattr(host, "agent", None))
 
 
 def gate_refused(host, name, tool_input, why: str) -> dict:
@@ -440,6 +447,8 @@ async def signed_card(host, name: str, tool_input: dict, emit=None, gate: dict |
     gate = gate or turn_gate(host)
     if gate["gated"]:
         return gate_refused(host, name, tool_input, gate["why"])
+    if require_passkey and (gate["otg"] if "otg" in gate else _otg_source(host)):
+        return gate_refused(host, name, tool_input, "owner_grant_scope")    # 0304 A2-②: a UV card (secret) keeps the grant
     try:
         async with card_turn(host, emit):
             return await _signed_card(host, name, tool_input, emit, require_passkey=require_passkey)

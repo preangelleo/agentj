@@ -543,7 +543,7 @@ function renderCard(s){
     return;
   }
   if (presult){ renderPermission(null, p); return; }
-  if (!pending){ el("askCancel").hidden = true; paintLeft(null); return; }
+  if (!pending){ el("askCancel").hidden = true; el("frAsk").replaceChildren(); paintLeft(null); return; }   // 0304 r2: a folded friend card leaves no buttons behind
   el("pendText").textContent = card.kind === "question" ? t('r.pend.question') : t('r.pend.permission');
   const q = card.kind === "question";
   el("askText").textContent = q ? t('r.ask.answer') : t('r.ask.nod');
@@ -845,15 +845,19 @@ async function apprPost(p, action){
   if (cur) renderCard(cur);
 }
 // P396: refusal is a retryable failure, never a terminal decision and never proof of approval.
-export function answerRefused(m) {
+export function answerRefused(m, say) {
   if (apprSent.id === m.id) apprSent = {id: null, state: null};
   if (apprOpt && apprOpt.id === m.id) apprOpt = null;
   apprDismissed = null; foldedCard = null;
-  const text=rememberRefusal(m.id,m.why,cur?.hostStatus);
+  const text=say||rememberRefusal(m.id,m.why,cur?.hostStatus);   // 0304 R-F5: the caller's own line (the binding prompt)
   apprFail = {id:m.id,text};
   return text;
 }
 export const approvalEnded=id=>forgetRefusal(id);
+/** 0304 r2: a card that ends now goes away at once instead of showing its ended state (a Same-owner card closed by the host). */
+export function foldEnded(id,quiet=false){apprDismissed=id;if(quiet)apprToasted=id;if(cur)renderCard(cur);}   // quiet: friends.js says its own line instead of the generic 「这张卡已处理」
+/** 0304 R-F5: the binding the card asked for landed — the card goes back to its own text (the next 「批准」 tap works). */
+export function clearRefusal(id){if(apprFail&&apprFail.id===id){apprFail=null;if(cur)renderCard(cur);}}
 // P154 追加 2 (owner, 2026-10-12): on a computer ⌘+Enter (Mac) / Ctrl+Enter = a tap on 批准 — the same apprPost, so the
 // same device signature and passkey check; never a way around them. Only while the card is up; it wins over the text
 // box's Enter-to-send. Esc puts the card away (layers.js). Phones (no fine pointer) show no hint.
@@ -2947,7 +2951,7 @@ export function setConn(on, text){
 export function refreshBlocked({allowSettings=false}={}){
   return !!((document.body?.dataset?.view && document.body.dataset.view !== "chat") || !C?.connected() || ptt || asrBusy || sending || atts.length || quotes.length || askBusy || apprBusy || apprHold ||
     (askState(cur?.ask) === "open" && askSel.id === cur?.ask?.id && askSel.picks.some(p => p.length)) ||
-    [...document.querySelectorAll('.gdlg:not([hidden]):not(#version-notice),.ajmodal:not([hidden]),.sheet')].some(n => !(allowSettings && n.id === 'settings') && n.getClientRects().length && getComputedStyle(n).visibility !== 'hidden') ||
+    [...document.querySelectorAll('.gdlg:not([hidden]):not(#version-notice):not(#connDlg):not(#session-help),.ajmodal:not([hidden]),.sheet')].some(n => !(allowSettings && n.id === 'settings') && n.getClientRects().length && getComputedStyle(n).visibility !== 'hidden') ||
     (document.activeElement && document.activeElement !== input && document.activeElement.matches('input,textarea,[contenteditable=true]')));
 }
 

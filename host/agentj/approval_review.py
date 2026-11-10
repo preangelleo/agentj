@@ -261,6 +261,14 @@ def bind(host, ask, origin=None):
                         'goal_add': safe_text(ask.goal_add['text'], 24000) if getattr(ask, 'goal_add', None) else None},
            'plan': json.loads(ask.task_scope) if ask.task_scope else None,
            'expires_at': ask.review_expires_at}
+    front = getattr(ask, 'front', None)
+    if isinstance(front, dict):          # 0304 QA scene 3: host-built card front (list_approval host_summary tools only)
+        for key in ('title', 'title_en'):
+            if isinstance(front.get(key), str) and front[key].strip():
+                env[key] = shown(front[key], 160)
+        for key in ('reason', 'reason_en'):
+            if isinstance(front.get(key), str) and front[key].strip():
+                env[key] = shown(front[key], 600)
     trusted = getattr(ask, 'bounded_plan', None)
     if trusted is not None:
         from .bounded_plan import SealedPlan, manager

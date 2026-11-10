@@ -6,6 +6,10 @@
    "category": "anti_injection",
    "why": "No live owner request frame: caller is a friend/visitor/group turn, a guest-born process, or not in the owner session tree (owner_local admits the owner's own jobs since 0.30.3). Actionable text via humane/plaza template."
   },
+  "automation_grant_owner_turn": {
+   "category": "anti_injection",
+   "why": "0304 A3: an automation send grant (agentj automation grant) is requested/widened only in the owner's own turn (Web App, owner terminal, verified owner channel); a webhook/task/guest/group/friend turn asking for its own wider card is refused with no card and told to ask the owner. Same-owner/friend/wechat/assist/chain turns are refused here too (security r1 F13). Security impl r1 L1: the CLI `agentj automation revoke` over elevate.sock is refused with this code outside the owner's turn too (the CLI list then shows counts only; the phone's Settings revoke is unchanged). Siblings, not listed because the scanner word filter does not match them: automation_grant_required/_stale/_invalid (scope results carrying the exact extend command; _stale also covers deleted target, Stop everything and a changed SMTP account), automation_grant_domain_refused (F2: a public suffix or consumer mailbox domain may only be granted as exact addresses), automation_grant_context (F13: no issuance inside a goal grant, batch approval or bounded-plan continuation), automation_grant_idn_ambiguous (impl r1 M2: a domain IDNA 2003 and UTS-46 would map differently must be typed as its exact punycode)."
+  },
   "awaiting_owner_verification": {
    "category": "state",
    "why": "Completion recovery waits for the owner to verify a result; a state, not a source refusal."
@@ -25,6 +29,10 @@
   "fresh_owner_uv_required": {
    "category": "uv",
    "why": "Function runs a UV-list operation; needs the owner's fresh fingerprint card."
+  },
+  "friend_handoff_unverified": {
+   "category": "anti_injection",
+   "why": "ADR-0306-friend-handoff-mail: `agentj mail send` in a friend_task turn whose host-held 「交给主 Agent 来办」 handoff record (serve._friend_main → friend_handoff.mint, keyed by the F3 nonce, bound to that Send) is not live — replayed onto another Send, never minted, past its TTL, or the friend removed/blocked; no card, nothing sent. A live handoff gets the owner's UV card for third-party mail and the owner-only pass."
   },
   "group_source": {
    "category": "anti_injection",
@@ -64,7 +72,7 @@
   },
   "owner_grant_scope": {
    "category": "frozen",
-   "why": "Action outside a signed same-owner/owner grant scope (frozen signed-grant layer); Jarvis decision pending on narrowing to UV steps."
+   "why": "A same-owner (OTG) task asked for a UV step (uv_list.required / #537 list, or a UV card such as a plaza secret grant) outside its signed grant (frozen signed-grant layer); non-UV steps follow the ordinary same-owner rules since 0304 A2-2."
   },
   "owner_hosts_commands_unavailable": {
    "category": "state",

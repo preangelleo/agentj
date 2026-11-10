@@ -89,7 +89,7 @@ class Repairs(HostFlows):
         self.assertTrue(self.h.asks)
         self.assertFalse(peer.h.asks, 'receiving host must not show an approval card')
         card = next(iter(self.h.asks.values()))
-        self.assertEqual(card.only, self.phone.did)
+        self.assertIsNone(card.only)   # 0304 A1: the follow-up grant card goes to every remote, any bound one signs
         self.assertIn('NEW_KEY', card.summary)
         await self.h._answer(self.s, self.phone.answer(self.h._ask_msg(card,self.s), True))
         answer = await asyncio.wait_for(request, 3)

@@ -28,6 +28,12 @@ def _current_context(host):
         for variable,token in reversed(tokens):variable.reset(token)
 
 
+def live_context(host):
+    """(live task id, digest of the live source) — pinned by Elevator._save across its validation wait."""
+    source, task = _current_context(host)
+    return task, review.digest(source)
+
+
 def _current_source(host):
     return _current_context(host)[0]
 
@@ -142,8 +148,12 @@ class Adapter:
             return await self.host.send_app(session, self.events[event_key])
         if obj.get('revision') != self.review_revision or obj.get('envelope_sha256') != self.digest:
             return await refuse('stale_revision')
-        if not (pickup_context_allows(self.card, self.host) if self.tool == 'SecretPickup' and op != 'renew'
-                else _context_allows(self,self.host)):
+        # Hotfix 2026-11-10: a signed deny only ends the card (never grants), so a card whose turn moved on can still
+        # be closed by its owner instead of sitting there blocking a fresh request until it times out.
+        context_ok = (pickup_context_allows(self.card, self.host) if self.tool == 'SecretPickup' and op != 'renew'
+                      else secret_input_context_allows(self.card, self.host) if self.tool == 'SecretInput' and op != 'renew'
+                      else _context_allows(self,self.host))
+        if op != 'deny' and not context_ok:
             return await refuse('authority_changed')
         if op == 'renew':
             if self.review_state != 'expired' or self.card.get('busy') or not self.terminal:
@@ -157,7 +167,8 @@ class Adapter:
             return await refuse('expired' if time.monotonic() >= self.deadline else 'gone')
         elif op == 'deny':
             self.review_device = session.device
-            self.denied()
+            if context_ok:      # security review S2: an out-of-context deny only closes the card; no event into today's history
+                self.denied()
             self.finish('declined' if self.tool == 'SecretPickup' else 'denied')
             result.update(ok=True, event_id=eid, state='denied')
         elif op == 'question':
@@ -235,6 +246,8 @@ def source_allows(card,host):
     source=adapter.envelope['source']
     if adapter.tool == 'SecretPickup':
         return pickup_context_allows(card, host)
+    if adapter.tool == 'SecretInput':
+        return secret_input_context_allows(card, host)
     return (adapter.card is card and adapter.host is host and not adapter.terminal
             and host.__dict__.get('_approval_special',{}).get(adapter.rid) is adapter
             and _context_allows(adapter,host))
@@ -254,6 +267,30 @@ def pickup_context_allows(card, host):
     return bool(owner_or_unknown and adapter.card is card and adapter.host is host and not adapter.terminal
                 and host.__dict__.get('_approval_special', {}).get(adapter.rid) is adapter
                 and not host.stopped() and host.agent is adapter.review_agent
+                and str(host.hist.epoch) == adapter.envelope['session'])
+
+
+def secret_input_context_allows(card, host):
+    """Hotfix 2026-11-10 (STARAY / chairman 12:52): a secret-input card is owner delivery into a pinned destination.
+
+    `agentj secret request` waits 100 s and then tells the Agent the card stays valid for its whole TTL; binding it to
+    the live turn/source digest refused every save made after that turn ended (shown as 「主机没有收下」). Like a
+    sealed pickup, the card's own identity, the same Agent and history session and the paired signature (+ Face ID
+    when required, checked in Elevator._check) decide; the turn that asked is not required to still be running.
+    The source label stays displayed as captured and never grants anything.
+    """
+    adapter = card.get('review_adapter')
+    if adapter is None or adapter.tool != 'SecretInput' or card.get('kind') != 'secret':
+        return False
+    own = bool(adapter.card is card and adapter.host is host and not adapter.terminal
+               and host.__dict__.get('_approval_special', {}).get(adapter.rid) is adapter)
+    source = adapter.envelope['source']
+    if source.get('verified') is not True or source.get('suspicious') is True:
+        # Security review R1: a card raised by an unverified / external turn keeps the live-turn rule — it must never
+        # outlive that turn into the owner's next one, where an Agent-chosen destination / verify URL could be mistaken
+        # for the owner's own request. (Host-held snapshot; the Agent cannot set `verified`.)
+        return bool(own and _context_allows(adapter, host))
+    return bool(own and not host.stopped() and host.agent is adapter.review_agent
                 and str(host.hist.epoch) == adapter.envelope['session'])
 
 

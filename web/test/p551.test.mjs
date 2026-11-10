@@ -100,8 +100,10 @@ test('#318 ③ unbinding another remote / WeChat: the Face ID two-step, no_passk
   assert.match(r, /export const FA_UNBIND = \{ title: 'p551\.faUnbindTitle', text: 'p551\.faUnbindText', yes: 'p551\.unbindFa' \};/);
   assert.match(r, /if \(w === 'no_passkey'\) return t\('p551\.unbindNoPasskey'\);/);
   // THIS remote unbinding itself: unchanged (plain signedWrite); another remote: signedWriteFa + 「用 Face ID 解绑」
-  assert.match(r, /const res = self \? await signedWrite\('dev_unbind', \{ device: d\.id \}, \{ t: 'dev_unbind', device: d\.id \}\)\n\s+: await signedWriteFa\('dev_unbind', \{ device: d\.id \}, \{ t: 'dev_unbind', device: d\.id \}, faceIdUnbind\);/);
-  assert.match(r, /t\(self \? 'rm\.unbind' : 'p551\.unbindFa'\), true\);/);
+  // 0304 r2 (QA scene 2): the two steps read differently — 「解绑」 (says Face ID comes next), then 「最后一步：用 Face ID 确认」
+  assert.match(r, /const res = self \? await signedWrite\('dev_unbind', \{ device: d\.id \}, \{ t: 'dev_unbind', device: d\.id \}\)\n\s+: await signedWriteFa\('dev_unbind', \{ device: d\.id \}, \{ t: 'dev_unbind', device: d\.id \}, faceIdUnbindOther\(nm\)\);/);
+  assert.match(r, /t\(self \? 'rm\.unbindSelfText' : 'p0304r2\.rm\.unbindText'\), t\('rm\.unbind'\), true\);/);
+  assert.match(r, /titleText: t\('p0304r2\.rm\.faTitle'\), textText: t\('p0304r2\.rm\.faText', \{ name: nm \}\), yes: 'p336\.faYes'/);
   // WeChat: only `unbind` goes through Face ID; setup / verify stay plain signed writes
   assert.match(w, /const r = op === 'unbind' \? await signedWriteFa\('wechat', target, \{t:'wechat', \.\.\.target\}, faceIdUnbind\)\n\s+: await signedWrite\('wechat', target, \{t:'wechat', \.\.\.target\}\);/);
 });

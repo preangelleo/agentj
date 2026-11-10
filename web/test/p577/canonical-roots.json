@@ -185,7 +185,7 @@
     "evidence": "index.html:848; component-23"
   },
   {
-    "selector": "#offDlg,.offdlg,.asbanner,.estop-banner,.grant-bar,.connection-help,.session-help",
+    "selector": "#offDlg,.offdlg,#connDlg,.conndlg,.asbanner,.estop-banner,.grant-bar,.session-help",
     "owner": "aj-recovery",
     "evidence": "js/offline-card.js/controls.js; component-40"
   },

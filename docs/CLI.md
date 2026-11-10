@@ -592,7 +592,7 @@ usage: agentj assist [-h] [--file FILE] [--lines LINES] [--summary SUMMARY]
 ### agentj automation
 
 ```text
-分步自动化：status · resume（从失败的步骤继续）/ multi-step automations: continue a failed run
+分步自动化：status · resume（从失败的步骤继续）· grant · grants · revoke（自动化外发授权）/ multi-step automations: status, resume a failed run; grant, grants, revoke automation send grants
 ```
 
 ```bash
@@ -600,12 +600,59 @@ agentj automation --help
 ```
 
 ```text
-usage: agentj automation [-h] {resume,status} ...
+usage: agentj automation [-h] {resume,status,grant,grants,revoke} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj automation grant
+
+```text
+授权一个自动化对外发信（一次指纹卡，仅主人回合）/ let one automation mail listed recipients (one fingerprint card, owner turn only)
+```
+
+```bash
+agentj automation grant --help
+```
+
+```text
+usage: agentj automation grant [-h] (--hook HOOK | --task TASK) [--to TO]
+                               [--domain DOMAIN] [--expires EXPIRES]
+                               [--max MAX] [--files] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--hook` | `null` | false | — | `webhook name or id` |
+| `--task` | `null` | false | — | `scheduled task id` |
+| `--to` | `[]` | false | — | `允许的收件人地址（可重复）/ allowed recipient address (repeatable)` |
+| `--domain` | `[]` | false | — | `允许的域名，含子域名（可重复；内置清单上的公共邮箱域名和公共后缀（如 gmail.com、co.uk）只能写精确地址；清单并不完整——请核对卡片上的域名）/ allowed domain incl. subdomains (repeatable; public mailbox domains and public suffixes on the built-in list (e.g. gmail.com, co.uk) only as exact addresses; the list is not complete — check the domain on the card)` |
+| `--expires` | `null` | false | — | `有效期，如 30d / 12h（默认直到撤销）/ lifetime, e.g. 30d or 12h (default: until revoked)` |
+| `--max` | `null` | false | — | `maximum number of sends` |
+| `--files` | `false` | false | — | `也允许带附件（另一项动作，默认不允许）/ also allow attachments (a separate action, off by default)` |
+| `--json` | `false` | false | — | `` |
+
+### agentj automation grants
+
+```text
+list automation send grants
+```
+
+```bash
+agentj automation grants --help
+```
+
+```text
+usage: agentj automation grants [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj automation resume
 
@@ -626,6 +673,26 @@ usage: agentj automation resume [-h] [--yes] [--json] run
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `run` | `null` | true | — | `run id (or prefix) or automation id` |
 | `--yes` | `false` | false | — | `确认重跑不可重复的步骤（仅主人终端）/ confirm re-running steps not safe to repeat` |
+| `--json` | `false` | false | — | `` |
+
+### agentj automation revoke
+
+```text
+revoke an automation send grant
+```
+
+```bash
+agentj automation revoke --help
+```
+
+```text
+usage: agentj automation revoke [-h] [--json] id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj automation status
@@ -8507,7 +8574,7 @@ usage: agentj assist [-h] [--file FILE] [--lines LINES] [--summary SUMMARY]
 ### agentj automation
 
 ```text
-分步自动化：status · resume（从失败的步骤继续）/ multi-step automations: continue a failed run
+分步自动化：status · resume（从失败的步骤继续）· grant · grants · revoke（自动化外发授权）/ multi-step automations: status, resume a failed run; grant, grants, revoke automation send grants
 ```
 
 ```bash
@@ -8515,12 +8582,59 @@ agentj automation --help
 ```
 
 ```text
-usage: agentj automation [-h] {resume,status} ...
+usage: agentj automation [-h] {resume,status,grant,grants,revoke} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj automation grant
+
+```text
+授权一个自动化对外发信（一次指纹卡，仅主人回合）/ let one automation mail listed recipients (one fingerprint card, owner turn only)
+```
+
+```bash
+agentj automation grant --help
+```
+
+```text
+usage: agentj automation grant [-h] (--hook HOOK | --task TASK) [--to TO]
+                               [--domain DOMAIN] [--expires EXPIRES]
+                               [--max MAX] [--files] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--hook` | `null` | false | — | `Webhook 名称或 id` |
+| `--task` | `null` | false | — | `定时任务 id` |
+| `--to` | `[]` | false | — | `允许的收件人地址（可重复）/ allowed recipient address (repeatable)` |
+| `--domain` | `[]` | false | — | `允许的域名，含子域名（可重复；内置清单上的公共邮箱域名和公共后缀（如 gmail.com、co.uk）只能写精确地址；清单并不完整——请核对卡片上的域名）/ allowed domain incl. subdomains (repeatable; public mailbox domains and public suffixes on the built-in list (e.g. gmail.com, co.uk) only as exact addresses; the list is not complete — check the domain on the card)` |
+| `--expires` | `null` | false | — | `有效期，如 30d / 12h（默认直到撤销）/ lifetime, e.g. 30d or 12h (default: until revoked)` |
+| `--max` | `null` | false | — | `最多使用次数` |
+| `--files` | `false` | false | — | `也允许带附件（另一项动作，默认不允许）/ also allow attachments (a separate action, off by default)` |
+| `--json` | `false` | false | — | `` |
+
+### agentj automation grants
+
+```text
+列出自动化外发授权
+```
+
+```bash
+agentj automation grants --help
+```
+
+```text
+usage: agentj automation grants [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj automation resume
 
@@ -8541,6 +8655,26 @@ usage: agentj automation resume [-h] [--yes] [--json] run
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `run` | `null` | true | — | `运行 id（或前缀）或自动化 id` |
 | `--yes` | `false` | false | — | `确认重跑不可重复的步骤（仅主人终端）/ confirm re-running steps not safe to repeat` |
+| `--json` | `false` | false | — | `` |
+
+### agentj automation revoke
+
+```text
+撤销一个自动化外发授权
+```
+
+```bash
+agentj automation revoke --help
+```
+
+```text
+usage: agentj automation revoke [-h] [--json] id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj automation status

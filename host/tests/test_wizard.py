@@ -210,6 +210,39 @@ class Install(Base):
             self.assertEqual(actual.count(docsrule.BEGIN), 1)
             self.assertIn(docsrule.block("en"), actual)
 
+    def test_three_installer_upgrades_deduplicate_both_owner_entries(self):
+        from unittest.mock import patch
+        from agentj import docsrule
+        prefix = b"# Owner notes\r\n\t  \n"
+        suffix = b"\r\nPersonal footer  \n"
+        old = [f"<!-- agentj:main-core v{v} -->\nlegacy {v}\n<!-- /agentj:main-core -->".encode()
+               for v in (19, 20, 21, 22)]
+        for entry in wizard.ENTRY_FILES:
+            (self.root / entry).write_bytes(prefix + b"\n".join(old) + suffix)
+        for version in (23, 24, 25):
+            with patch.object(wizard, "CORE_REF", f"<!-- agentj:main-core v{version} -->"):
+                wizard.install(self.root, ["claude", "codex"], "zh")
+                for entry in wizard.ENTRY_FILES:
+                    actual = (self.root / entry).read_bytes()
+                    self.assertEqual(actual.count(b"<!-- agentj:main-core v"), 1, entry)
+                    self.assertEqual(actual.count(f"<!-- agentj:main-core v{version} -->".encode()), 1, entry)
+                    self.assertEqual(actual.count(docsrule.BEGIN.encode()), 1, entry)
+                    self.assertTrue(actual.startswith(prefix), entry)
+                    self.assertIn(suffix, actual, entry)
+                snapshot = [(self.root / entry).read_bytes() for entry in wizard.ENTRY_FILES]
+                wizard.install(self.root, ["claude", "codex"], "zh")
+                self.assertEqual(snapshot, [(self.root / entry).read_bytes() for entry in wizard.ENTRY_FILES])
+        self.assertNotIn("CLAUDE.md", self.manifest(), "pre-existing owner entry is not claimed")
+        self.assertNotIn("AGENTS.md", self.manifest(), "pre-existing owner entry is not claimed")
+
+    def test_incomplete_core_marker_is_not_followed_by_another_core(self):
+        from agentj import docsrule
+        partial = b"# Owner notes\n<!-- agentj:main-core v19 -->\nowner's unfinished block\n"
+        (self.root / "CLAUDE.md").write_bytes(partial + docsrule.block("zh").encode())
+        for _ in range(3):
+            wizard.install(self.root, ["claude"], "zh")
+            self.assertEqual((self.root / "CLAUDE.md").read_bytes(), partial + docsrule.block("zh").encode())
+
     def test_docs_rule_the_human_edited_is_left_alone(self):
         from agentj import docsrule
         edited = "# mine\n\n" + docsrule.BEGIN + "\n先问我，再查文档。\n" + docsrule.END + "\n"

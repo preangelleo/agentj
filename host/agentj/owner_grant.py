@@ -450,13 +450,34 @@ def owner_task_source(agent) -> bool:
     return req is p._UNSET or p.normalize(req) == src
 
 
-def owner_grant_required(agent) -> bool:
+ANY_STEP = object()      # caller cannot name its step → treated as a UV step (fail closed)
+
+
+def owner_grant_source(agent) -> bool:
+    """The turn (or the active request) is a same-owner task that arrived under a signed OTG grant (P574)."""
     from . import provenance as p
     sources = [p.turn_source(agent)]
     request = p._REQUEST.get()
     if request is not p._UNSET:
         sources.append(p.normalize(request))
     return any(s.get("kind") == "same_owner" and (s.get("otg") or s.get("otg_required")) for s in sources)
+
+
+def owner_grant_required(agent, tool=ANY_STEP, tool_input=None, *, cwd=None, env=None, uv=None) -> bool:
+    """0304 A2-②: an OTG source needs its signed grant only for a UV step. UV = `uv` when the caller's own card decides
+    it, else policy_registry.main_requirement (= uv_list.required, the #537 list); no step named = UV. Non-UV steps
+    follow the ordinary same-owner rules (provenance.delegated_turn / application_ingress._owner_source)."""
+    if not owner_grant_source(agent):
+        return False
+    if uv is not None:
+        return bool(uv)
+    if tool is ANY_STEP:
+        return True
+    from .policy_registry import main_requirement
+    try:
+        return main_requirement(tool, tool_input if isinstance(tool_input, dict) else {}, env=env, cwd=cwd) == "uv"
+    except Exception:  # noqa: BLE001 — unreadable step: keep the grant requirement
+        return True
 
 
 def owner_grants(agent) -> tuple[str, list] | None:

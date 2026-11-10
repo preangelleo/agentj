@@ -1,5 +1,5 @@
-# Agent J v0.30.5
+# Agent J v0.30.6
 
-Hotfix: on Mac hosts outside UTC, plaza installs, support requests and batch approvals you start in Claude are no longer refused.
+Any paired remote can sign cards and unbind a lost one; automation mail gets a one-time fingerprint grant; saving a key from a card works again.
 
-热修：时区不是 UTC 的 Mac 上，你自己在 Claude 里发起的广场安装、联系客服、批量确认不再被「无法确认来源」挡住。
+任一已确认的遥控器都能签卡，丢机可在另一台上解绑；自动化外发邮件一次指纹授权；从卡片保存 key 又能成功，设置页的密钥卡来源写「你本人」。

@@ -1612,7 +1612,7 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 /* P392: palette Emerald Oasis / Strawberry Red; dot remains visible in the fixed header. */
 .setconnection{display:flex;align-items:center;gap:6px;font-size:12px;line-height:1.3;max-width:160px;color:var(--c-strawberry-field)}
 .setconnection::before{content:"";width:9px;height:9px;border-radius:50%;background:currentColor;flex-shrink:0}
-.setconnection[data-online="true"]{color:var(--c-lotion)}
+.setconnection[data-online="true"]{color:var(--menu-text,var(--c-lotion))}   /* 0.30.6 fix1: a light theme repaints the header (colors.menu) — Lotion words vanished on it */
 .setconnection[data-online="true"]::before{background:var(--c-shield)}   /* P393: the dot keeps the green; 12 px words on Noir need 4.5:1 (Shield is 4.3) */
 @media(max-width:520px){.setconnection{max-width:9px;font-size:0;gap:0}.sethead .setesc{display:none}}
 

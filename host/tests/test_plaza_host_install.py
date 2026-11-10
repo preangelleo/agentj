@@ -53,7 +53,10 @@ class Reasons(base.CardFixture):
         self.assertNotIn("你已在手机上拒绝", out)
 
     def test_delegated_owner_grant_scope_says_originating_host(self):
-        self.package()
+        # 0304 A2-②: the grant gate covers UV steps only; a package that is granted a secret is one.
+        self.package(requires={"harness": ["codex"], "env": [{"name": "OPTIONAL_TOKEN", "required": False,
+            "secret": True, "description_zh": "可选", "how_to_get": "example.com"}]},
+            permissions={"tools": ["WebFetch"], "secrets": ["OPTIONAL_TOKEN"]})
         self.host.agent.native_source = {"kind": "same_owner", "role": "task", "fid": "synthetic-peer", "otg_required": True}
         rc, out = self.install_flow()
         self.assertEqual(self.replies[-1]["why"], "owner_grant_scope")
@@ -239,7 +242,7 @@ class HostRequest(base.CardFixture):
         self.assertEqual(res["why"], "group_source")
         self.host.agent.native_source = {"kind": "same_owner", "role": "task", "fid": "synthetic-peer", "otg_required": True}
         res, _ = self.run_host(self.req())
-        self.assertEqual(res["why"], "owner_grant_scope")
+        self.assertNotEqual(res["why"], "owner_grant_scope", "0304 A2-②: no secret → not a UV step → no grant gate")
         self.assertEqual(self.cards(), [])
         self.assertFalse(self.installed())
 

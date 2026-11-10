@@ -30,6 +30,9 @@ const whyText = (w) => (WHY[w] ? t(WHY[w]) : t('rm.fail', { why: String(w ?? '?'
 // signed request `passkey_required` {fa, fa_ch}; the same signed object goes again with `fa` (controls.signedWriteFa).
 export const FA_UNBIND = { title: 'p551.faUnbindTitle', text: 'p551.faUnbindText', yes: 'p551.unbindFa' };
 export const faceIdUnbind = (res) => import('./settings.js').then((m) => m.faceIdStep(res, FA_UNBIND));
+/** 0304 r2: the second step of unbinding another remote, by name — clearly not the first sheet again. */
+const faceIdUnbindOther = (nm) => (res) => import('./settings.js').then((m) => m.faceIdStep(res,
+  { titleText: t('p0304r2.rm.faTitle'), textText: t('p0304r2.rm.faText', { name: nm }), yes: 'p336.faYes' }));
 /** the toast for a refused Face ID unbind; null = the owner cancelled (say nothing) */
 export function unbindFaWhy(w) {
   if (w === 'cancel') return null;
@@ -78,18 +81,24 @@ export function close() {
 }
 /** P165: the P153 card for a new remote reached this remote while its add view is open (app.js closes Settings next). */
 export function onPairCard() { if (add) add.card = true; }
+// 0304 r2 (QA scene 5): Settings asks dev_list when it opens and again when this page opens. A request that times out must
+// not undo a newer answer — the first ask (sent while the host was still busy after pairing) used to time out ~6 s later and
+// turn a live list read-only (no 改名 / 解绑). Only the newest request decides, and a timeout never overrides any `devs`
+// answer that came after it was sent.
+let asked = 0, answered = 0, heardAt = 0;   // request counter · newest request answered · when any `devs` last arrived
 export async function refresh() {
   if (!isReady()) { render(); return; }
-  const current = generation;
+  const current = generation, mine = ++asked, sentAt = performance.now();
   const m = await ask1({ t: 'dev_list' }, 'devs', 6000);
   if (current !== generation) return;
-  if (m.t === 'devs') { legacy = false; snap = take(m); }
-  else if (m.t === 'timeout') { legacy = true; snap = fromPrefs() || snap; }
+  if (m.t === 'devs') { heardAt = performance.now(); if (mine < answered) return; answered = mine; legacy = false; snap = take(m); }
+  else if (m.t === 'timeout') { if (mine !== asked || heardAt >= sentAt) return; legacy = true; snap = fromPrefs() || snap; }
   render();
 }
 /** app.js: an unsolicited `devs` (any remote changed the list). */
 export function onDevs(m) {
   if (m.r) return;
+  heardAt = performance.now();
   legacy = false;
   snap = take(m);
   if (shown) render();
@@ -208,11 +217,14 @@ async function rename(d, value) {
 async function unbind(d) {
   const self = d.me === true;
   const nm = clean(d.name) || d.id;
+  // 0304 r2 (QA scene 2): unbinding ANOTHER remote reads as one flow in two different steps — 「解绑」 (decide; says Face ID
+  // comes next), then 「最后一步：用 Face ID 确认」. The Face ID sheet stays its own tap: the host's challenge only exists after
+  // the signed request, and iOS needs the tap right before get(). The first sheet never says 「用 Face ID 解绑」 any more.
   const ok = await confirmSheet(t(self ? 'rm.unbindSelfTitle' : 'rm.unbindTitle', { name: nm }),
-    t(self ? 'rm.unbindSelfText' : 'rm.unbindText'), t(self ? 'rm.unbind' : 'p551.unbindFa'), true);
+    t(self ? 'rm.unbindSelfText' : 'p0304r2.rm.unbindText'), t('rm.unbind'), true);
   if (!ok) return;
   const res = self ? await signedWrite('dev_unbind', { device: d.id }, { t: 'dev_unbind', device: d.id })
-    : await signedWriteFa('dev_unbind', { device: d.id }, { t: 'dev_unbind', device: d.id }, faceIdUnbind);
+    : await signedWriteFa('dev_unbind', { device: d.id }, { t: 'dev_unbind', device: d.id }, faceIdUnbindOther(nm));
   if (!res.ok) {
     const fa = unbindFaWhy(res.why);
     if (fa === null) return;

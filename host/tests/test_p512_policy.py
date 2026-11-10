@@ -47,7 +47,8 @@ P553_UNKNOWN_BEFORE = frozenset({
 # Reviewed semantic Host entries, independent of the registry's historical
 # category projection. Native spellings/command text do not become executors.
 P0300_UV_HOST = frozenset({'pair_device','AuthRescue','agentj mail workflow-grant',
-                         'agentj goal grant','agentj secret grant'})
+                         'agentj goal grant','agentj secret grant',
+                         'agentj automation grant'})   # 0304 A3: automation outbound-send grant (UV list)
 P0300_REVIEWED_ACTIONS = {'plan.bounded': {'main':'uv','channel':'handoff','friend':'handoff','support':'deny'}}
 
 

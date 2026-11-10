@@ -294,11 +294,18 @@ try {
       await openRemotes(p);
       await press(p, OTHER, touch);
       await waitFor(p, `!document.getElementById('confirm').hidden`); await sleep(150);
-      check(await ev(p, `document.getElementById('confirm-yes').textContent`) === L('用 Touch ID 解绑', 'Unbind with Touch ID'), 'the unbind button says Face ID ' + name);
+      // 0304 r2 (QA scene 2): step one decides (「解绑」, says Face ID comes next); step two is the clearly different Face ID sheet
+      check(await ev(p, `document.getElementById('confirm-yes').textContent`) === L('解绑', 'Unbind'), 'step one: the plain unbind button ' + name);
+      const next = await ev(p, `document.getElementById('confirm-text').textContent`);
+      check(next === await ev(p, `import('./js/t.js').then(m=>m.t('p0304r2.rm.unbindText'))`), 'step one says Face ID comes next ' + name + ' :: ' + next);
       writeFileSync(OUT + `c1-unbind-confirm-${name}.png`, await shoot(p, ''));
       await press(p, '#confirm-yes', touch);
-      await waitFor(p, `!document.getElementById('confirm').hidden && document.getElementById('confirm-title').textContent===${J(L('用 Touch ID 确认解绑', 'Confirm unbinding with Touch ID'))}`);
+      // the page's own words (t.js names this system's unlock: P559)
+      const T2 = await ev(p, `import('./js/t.js').then(m=>[m.t('p0304r2.rm.faTitle'),m.t('p336.faYes')])`);
+      await waitFor(p, `!document.getElementById('confirm').hidden && document.getElementById('confirm-title').textContent.startsWith(${J(L('最后一步：', 'Last step: '))})`);
       await sleep(150);
+      check(await ev(p, `document.getElementById('confirm-title').textContent`) === T2[0], 'step two: its own title ' + name);
+      check(await ev(p, `document.getElementById('confirm-yes').textContent`) === T2[1], 'step two: a different button ' + name);
       writeFileSync(OUT + `c2-unbind-faceid-${name}.png`, await shoot(p, ''));
       check(await ev(p, `document.activeElement.id==='confirm-yes'`) && await ev(p, TOP('#confirm .box', '#confirm-yes')), 'Face ID sheet on top, focused ' + name);
       check(fake.st.remotes.items.length === 2, 'nothing unbound before Face ID ' + name);

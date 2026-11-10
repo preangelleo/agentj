@@ -269,7 +269,7 @@ ERR = {
     "os": "这台 Agent J 主机的系统暂不支持网页终端（现在支持 Linux、macOS 和 Windows 的 WSL；Windows 本身下一版）。/ Not on this system yet "
           "(Linux, macOS and WSL now; native Windows next).",
     "no_passkey": "没有设了通行密钥（Face ID / 指纹）的已配对遥控器：先在手机上「设置 → 安全」里开通行密钥。/ No paired remote with a passkey: "
-                  "turn one on in the phone's Settings → Security first.",
+                  "turn one on in the phone's Settings → Safety first.",
     "choose_device": "有好几台带通行密钥的遥控器：用 --device 选一台（agentj terminal status 列出它们）。/ Several remotes have a passkey: "
                      "pick one with --device (listed by agentj terminal status).",
     "unknown_device": "没有这台遥控器（agentj terminal status 列出已配对的）。/ No such remote.",
@@ -483,7 +483,7 @@ def _print(op: str, res: dict) -> None:
             print("  操作日志 / operation log: " + c)
     elif op in WIDEN:
         print("✓ 已确认：网页终端" + ("已打开" if op == "enable" else "已临时允许") + "。手机上「设置 → 安全 → 网页终端」进入。/ Confirmed: "
-              "open it from the phone's Settings → Security → Web terminal.")
+              "open it from the phone's Settings → Safety → Web terminal.")
     elif op == "forget":
         print(f"✓ 已清除记住的 Agent J 主机登录密码（{res.get('deleted', 0)} 份）。/ Cached Agent J host login password(s) deleted.")
     else:

@@ -12,6 +12,9 @@ export * from './pkrules.js';
 let H = { setupFaceId() {}, openSettings: null };
 /** app.js: {setupFaceId(), openSettings()} — the F20 offer (pk_offer_req), the same one the Settings row uses. */
 export function configure(h) { H = { ...H, ...h }; }
+/** #0306 A5 (contract-a5 DEVIATION 1): this remote has no passkey yet, so it cannot be bound — the 「在本机设置」 offer (the same F20
+ *  entry as Settings), never the binding sheet, never a code. key holds a {bio} slot (this system's own unlock name). */
+export function offerSetupHere(key) { toastAction(withBio(key), t('p539.pk.setup'), () => H.setupFaceId(), 12000); }
 
 /** The name of a pre-authorized action in a list (unknown → the raw action, it is short and [a-z.] only). */
 export const preauthName = (action) => (Object.hasOwn(NAME, actionOf(action)) ? t(NAME[actionOf(action)]) : actionOf(action));
@@ -155,21 +158,84 @@ export function paintPkRow(state, { row, label, note, setupBtn, oldBtn, failed =
   if (oldBtn) oldBtn.dataset.pkRow = '1';
 }
 
+/** One revocable grant row (Settings → 安全): bold title, a small muted line, one small 撤销-style button.
+ *  Shared by 「免问的动作」 and #0304 「自动化外发授权」 (#393: one component per meaning). Text is textContent only. */
+function grantItem(title, sub, label, onClick, busy = false) {
+  const li = mk('li', 'preauth__item');
+  const txt = mk('div', 'preauth__txt');
+  txt.append(mk('b', '', title));
+  for (const line of [].concat(sub).filter(Boolean)) txt.append(mk('small', '', line, 'aj-passkey'));
+  li.append(txt);
+  if (onClick) {
+    const b = mk('button', 'aj-action aj-action--sm', label, 'aj-action', 'dialog');
+    b.type = 'button';
+    b.addEventListener('click', onClick);
+    if (busy) b.disabled = true;   // 0304 r2: waiting for the Agent J host to confirm
+    li.append(b);
+  }
+  return li;
+}
+
 /** Settings → 安全 → 「免问的动作」. Empty → the block hides. revoke(item) sends preauth_revoke. */
 export function paintPreauth(row, list, items, revoke) {
   if (!row || !list) return;
   row.hidden = !items.length;
   list.replaceChildren(...items.map((x) => {
-    const li = mk('li', 'preauth__item');
-    li.dataset.action = x.action;
-    const txt = mk('div', 'preauth__txt');
-    txt.append(mk('b', '', preauthName(x.action)));
     const when = x.at ? new Date(x.at * 1000).toLocaleDateString(lang() === 'en' ? 'en-GB' : 'zh-CN') : '';
-    txt.append(mk('small', '', [x.name || x.device || t('p539.pre.thisRemote'), when && t('p539.pre.since', { d: when })].filter(Boolean).join(' · '), 'aj-passkey'));
-    const b = mk('button', 'aj-action aj-action--sm', t('p539.pre.revoke'), 'aj-action', 'dialog');
-    b.type = 'button';
-    b.addEventListener('click', () => revoke(x));   // {action, device}: only this remote's grant
-    li.append(txt, b);
+    const li = grantItem(preauthName(x.action), [x.name || x.device || t('p539.pre.thisRemote'), when && t('p539.pre.since', { d: when })].filter(Boolean).join(' · '),
+      t('p539.pre.revoke'), () => revoke(x));   // {action, device}: only this remote's grant
+    li.dataset.action = x.action;
+    return li;
+  }));
+}
+
+// ---------------------------------------------------------------- #0304 A3 「自动化外发授权」
+export const AG_STATES = ['live', 'expired', 'stale', 'revoked', 'used_up'];
+const agClean = (v, n) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, '').slice(0, n) : '');
+const agInt = (v) => (Number.isInteger(v) && v >= 0 ? v : null);
+/** Host `{t:'automation_grants', items:[{id, kind, target, actions, to, domains, expires, permanent, max_uses, uses, created, state}]}`
+ *  → clean rows (≤ 100, the host's cap; rows without an id or a known kind are dropped; unknown state → 'stale', i.e. not shown as in force). */
+export function automationGrantItems(m) {
+  const items = Array.isArray(m?.items) ? m.items : [];
+  const list = (v, n) => (Array.isArray(v) ? v.map((x) => agClean(x, 254)).filter(Boolean).slice(0, n) : []);
+  return items.slice(0, 100).filter((x) => x && /^[A-Za-z0-9_-]{1,64}$/.test(String(x.id ?? '')) && ['hook', 'task'].includes(x.kind)).map((x) => ({
+    id: String(x.id), kind: x.kind, target: agClean(x.target, 120), actions: list(x.actions, 8), to: list(x.to, 50), domains: list(x.domains, 50),
+    // contract-a3 (security r1): `permanent` = no expiry (an older host omits it: then expires === null says the same)
+    expires: agInt(x.expires) || null, permanent: x.permanent === true || (x.permanent !== false && !agInt(x.expires)), max_uses: agInt(x.max_uses), uses: agInt(x.uses) ?? 0, created: agInt(x.created) || null,
+    state: AG_STATES.includes(x.state) ? x.state : 'stale',
+  }));
+}
+// 0304 r2 (QA scene 4): never 12/10/2026 — the month in words (「2026年10月12日」 / "12 Oct 2026")
+const agDate = (s) => new Date(s * 1000).toLocaleDateString(lang() === 'en' ? 'en-GB' : 'zh-CN', { day: 'numeric', month: lang() === 'en' ? 'short' : 'long', year: 'numeric' });
+/** Rows that still have something to revoke: in force, or waiting to be granted again (an expired / used-up / revoked one has
+ *  nothing left — no button). */
+const AG_REVOCABLE = ['live', 'stale'];
+/** The words of one grant: [title, lines…]. */
+export function automationGrantLines(x) {
+  const title = t(x.kind === 'hook' ? 'p0304.ag.hook' : 'p0304.ag.task', { name: x.target || x.id });
+  // 'mail+files' (contract-a3): the grant may also carry attachments — its own action, off by default
+  const acts = x.actions.map((a) => { const k = 'p0304.ag.act.' + (a === 'mail+files' ? 'mailFiles' : a), s = t(k); return s === k ? a : s; }).join(' · ');
+  const sep = lang() === 'en' ? ', ' : '、';
+  const lines = [
+    [acts, x.to.length && t('p0304.ag.to', { list: x.to.join(sep) }), x.domains.length && t('p0304.ag.domains', { list: x.domains.map((d) => '@' + d.replace(/^@/, '')).join(sep) })].filter(Boolean).join(' · '),
+    [x.permanent || !x.expires ? t('p0304.ag.noExpiry') : t('p0304.ag.expires', { d: agDate(x.expires) }),
+      x.max_uses != null ? t('p0304.ag.uses', { n: x.uses, max: x.max_uses }) : t('p0304.ag.usesOpen', { n: x.uses }),
+      t('p0304.ag.st.' + x.state)].join(' · '),
+  ];
+  if (x.state === 'stale') lines.push(t('p0304r2.ag.staleHint'));   // 0304 r2: how to get it back
+  return [title, lines];
+}
+/** Settings → 安全 → 「自动化外发授权」: hidden until the Agent J host answers (an older host never does); then the list or the
+ *  empty line. revoke(item) sends automation_grant_revoke; a revoked row has no button. */
+export function paintAutomationGrants(row, list, empty, items, revoke, busy = null) {
+  if (!row || !list) return;
+  if (items == null) { row.hidden = true; list.replaceChildren(); return; }
+  row.hidden = false;
+  if (empty) empty.hidden = !!items.length;
+  list.replaceChildren(...items.map((x) => {
+    const [title, lines] = automationGrantLines(x);
+    const li = grantItem(title, lines, t('p0304.ag.revoke'), AG_REVOCABLE.includes(x.state) ? () => revoke(x) : null, busy === x.id);
+    li.dataset.grant = x.id; li.dataset.state = x.state;
     return li;
   }));
 }

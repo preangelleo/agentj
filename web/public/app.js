@@ -48,7 +48,8 @@ import * as push from './js/push.js';
 import * as relay from './js/relay.js';
 import * as sfx from './js/sfx.js';   // P575: the first tap / key unlocks the sounds (see unlockSounds)
 import * as settings from './js/settings.js';
-import {initVersionNotice,setHostVersion} from './js/version-notice.js';
+import {initVersionNotice,setHostVersion,yieldTo as versionYield,offerVersion} from './js/version-notice.js';
+import * as conndlg from './js/conn-dlg.js';   // 0.30.6: the offline notice = the centred dialog after 10 s (no row under the header)
 import {initShare, onShareReady, forgetShare} from './js/share.js';
 import * as elevate from './js/elevate.js';     // F17: sudo / secret cards (§11)
 import * as authrescue from './js/authrescue.js';   // P258: AI 登录救援 (red dot + pushes)
@@ -224,6 +225,7 @@ const link = createGate({ ms: QUIET_MS, onChange: (v) => {
   document.body.toggleAttribute('data-relink', v === 'quiet');
   if (v === 'down') { quietPaint = false; paintStatus(); rescue.onLinkDown(); }
   else settings.connectionChanged(state === 'ready', v === 'quiet');
+  conndlg.update();
 } });
 /** Foreground / resume / network change: a drop that is not over gets a fresh silent window (no flash on unlock). */
 function wakeLink() { link.restart(); }
@@ -260,6 +262,7 @@ function paintStatus() {
   paintOffHint();
   renderLogo();
   rerender();
+  conndlg.update();
 }
 // P287: 「电脑离线」 for a while → one line in the page's own words on why and what to do (js/offhint.js). Only the relay's
 // "computer offline" counts (our own network drop is 「正在恢复连接…」), only on the chat screen, never while connected.
@@ -304,6 +307,7 @@ function show(v) {
   push.renderA2hs(v);
   renderPhoneEnvironment();
   renderLogo();
+  conndlg.update();
 }
 function renderLogo() { paintHeader(); if (view === "chat") rerender(); }
 let renderQueued = false;
@@ -449,7 +453,7 @@ controls.configure({ faceId: settings.faceIdStep, show, estopChanged: () => { re
 setkeys.configure();
 bots.configure({openPanel:controls.openPanel});
 setupcard.configure({ openPanel: controls.openPanel, view: () => view });   // P131: the checklist page + chat banner
-friends.configure({ openPanel: controls.openPanel, leave: () => leavePage(), agentName: () => displayAgentName() });
+friends.configure({ openPanel: controls.openPanel, leave: () => leavePage(), agentName: () => displayAgentName(), foldCard: (id, quiet) => relay.foldEnded(id, quiet) });
 api.configureKeyCards({ open: elevate.openSecret, reopen: elevate.reopenSecret });
 elevate.configure({ onSecretSaved: keys.saved, recover: () => cardsync.sync() }); // P392: no circular module dependency
 contacts.configure({ openSettingsMail: () => settings.openMail() });   // P184: no mailbox yet → Settings → 邮件通道
@@ -490,14 +494,17 @@ function onApp(m) {
       if (snap.addAsk(m)) { frontAsk(m); rosterbind.ensureForCeremony(m).catch(() => {}); }
       return;
     case 'approval_questioned': specialQuestioned(m); snap.approvalQuestioned(m); relay.approvalQuestioned(m); return;
-    case 'ask_done': relay.approvalEnded(m.id); friends.answerDone(m); snap.askDone(m); pkhandin.answered('ask:' + m.id); return;   // P566: a handed-in approval ended
-    case 'answer_refused': {const text=relay.answerRefused(m);friends.answerRefused(m);snap.answerRefused(m);toast(text,5000);return;}
+    case 'ask_done': relay.approvalEnded(m.id); friends.answerDone(m); snap.askDone(m); pkhandin.answered('ask:' + m.id); rosterbind.grantEnded(m.id); return;   // P566: a handed-in approval ended
+    case 'answer_refused': {
+      // 0304 R-F5: a same-owner grant from a remote not on the roster yet — the binding prompt, the card stays open (never 「没生效」)
+      const bind=m.why==='roster_binding_required'&&(snap.S.asks.get(m.id)?.tool||m.ask?.tool)==='agentj secret grant'?rosterbind.grantRefused(m):null;
+      const text=relay.answerRefused(m,bind?.text);friends.answerRefused(m);snap.answerRefused(m);if(!bind?.quiet)toast(text,5000);return;}
     case 'pair_ev': settings.onPairEv(m); return;    // P153 (§3.3): how the pairing this remote opened went
     case 'bots_tool_request': bots.toolRequest(m); return;
     case 'bots_proposal': bots.proposal(m); return;
     case 'jcard_open': fivePages.pushOpen(m.id, m.at); return;   // P360 (§34): `agentj card open` — go to that card / place
     case 'roster_bind_offer': rosterbind.offer(m).catch(() => {}); return;
-    case 'roster_bind_res': rosterbind.result(m); if (m.ok === true) snap.retryPairingPreparation(); return;
+    case 'roster_bind_res': { const g = rosterbind.grantWaiting(); rosterbind.result(m); if (m.ok === true) { snap.retryPairingPreparation(); if (g) relay.clearRefusal(g); } return; }
     case 'owner_grant_notice': friends.ownerGrantNotice(m); return;
     case 'fr_changed': friends.changed(m); return;   // §17.7: something changed on the computer → the friends page re-reads
     case 'hook_changed': webhooks.changed(); return;   // P366: a webhook changed on the computer → the open Webhook page re-reads
@@ -551,6 +558,7 @@ function onApp(m) {
     case 'approval_resign': if (typeof m.text === 'string') toastAction(m.text.slice(0, 300), t('p552.resign'), () => settings.resign(), 12000); return;
     case 'pk_state': pkStateGot(m).catch(() => {}); return;   // P539: this remote's own passkey — none / local / borrowed / unknown
     case 'preauth': settings.preauth(m); return;              // P539: Settings → 安全 → 「免问的动作」
+    case 'automation_grants': settings.automationGrants(m); return;   // #0304 A3: Settings → 安全 → 「自动化外发授权」
     case 'draft_restore': draftBack(m); return;               // P539 (#299): 「改一改再发」 — the words go back into the box (never logged)
     case 'lt_card': longtask.add(m); return;          // 0.18 (§20): the one opening card
     case 'lt_done': longtask.done(m); return;
@@ -945,6 +953,7 @@ async function pkSaved(m) {
   if (m.ok && pkRegId) seats.setInstallHints({ pk: pkRegId });   // P545: this seat's passkey, for its Home Screen app (P547 peer keys too)
   pkRegId = null;
   await updHost((h) => h && h.approved && h.channel === session.channel() && { ...h, pk: true });
+  friends.passkeySaved().catch(() => {});   // 0304 r2: a 「同一个主人」 start that was waiting for this passkey goes on by itself
 }
 // P547 (PASSKEY-SEAT-MODEL §3 ④): the old host checked the new host's arrival with the transfer code and says where this
 // remote goes now. Same device keys (the new host took them over with the handover list); a new computer, no passkey there
@@ -1583,6 +1592,11 @@ function wire() {
   };
   $('unpair').addEventListener('click', unpairAsk);
   initVersionNotice(settings.refreshApp, {blocked: relay.refreshBlocked, save: relay.saveDraft});
+  conndlg.init({
+    link: () => link.state(), elapsed: () => link.elapsed(), painted: () => painted, paired: () => PAIRED_VIEWS.includes(view),
+    offer: offerVersion, yieldTo: versionYield, refresh: () => settings.refreshApp(),
+    retry: () => { if (session.retryInfo().nextAt) session.reconnectNow('manual'); else resume().catch(() => {}); },
+  });
   mainThread.init();
   busy.init({ name: () => displayAgentName(), prompt: (k) => relay.sayPreset(k), detail: api.busyDetail, mention: (text) => relay.insertText(text), orderMain: relay.sayOrder, orderStopped: () => controls.estop.on });   // P160: a row → its read-only card
   agentname.init({ name: () => agentName ?? DEFAULT_NAME, canRename: () => session.isReady() });

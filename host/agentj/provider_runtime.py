@@ -126,7 +126,7 @@ def probe(provider):
     return coding_usage.parse(plan[0], data) if plan else windows(data)
 
 
-async def request_key(host, provider, *, session=None, on_card=None):
+async def request_key(host, provider, *, session=None, on_card=None, settings=False):
     from . import elevate
     name = key_name(provider)
     if not name:
@@ -159,6 +159,8 @@ async def request_key(host, provider, *, session=None, on_card=None):
         if session is not None:
             from . import provenance
             card['only'] = session.device
+            if settings:                           # 0.30.6: only the Settings → provider page (serve provider_card)
+                card['settings_origin'] = True
             with provenance.paired_request(lambda: host._paired_live(session)):
                 return await host.elevate.request(card, **({"on_card": on_card} if on_card else {}))
         return await host.elevate.request(card, **({"on_card": on_card} if on_card else {}))

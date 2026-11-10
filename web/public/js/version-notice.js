@@ -22,7 +22,11 @@ export async function readWebVersion(){
  const manifest=JSON.parse(raw);
  return manifest.v===1&&compareVersion(manifest.version,manifest.version)===0?manifest.version:null;
 }
-let hostVersion=null,webVersion=null,dismissed=null,refresh=null,webChecked=false;
+let hostVersion=null,webVersion=null,dismissed=null,refresh=null,webChecked=false,yielded=false;
+// 0.30.6: while the offline card (#connDlg) offers 更新并刷新 itself, this dialog steps aside (one card, not two).
+export function yieldTo(on){if(yielded===!!on)return;yielded=!!on;render();}
+/** The newer web page a refresh would deliver (null = none): the offline card's 「需要更新」 state. */
+export function offerVersion(){return state().offer;}
 // P240 (Leo 10-13 23:13, a Huawei host updated by hand before batch B): a refresh only helps when the page it fetches is newer.
 // The dialog offers what version.json serves (`webVersion`), never what the host runs: a host ahead of every page that can be
 // fetched gets one quiet line under the header (ver.later_line) instead of a dialog whose 刷新 reloads the same page forever.
@@ -76,7 +80,7 @@ async function follow(){
 function render(){
  const box=document.getElementById('version-notice');if(!box)return;
  const {offer,later}=state();
- box.hidden=!!autoTarget()||!offer||offer===dismissed;
+ box.hidden=yielded||!!autoTarget()||!offer||offer===dismissed;
  // P150: the global centred dialog 「服务器已升级」 + 刷新 (it used to be a card pressed down from the top).
  document.getElementById('version-notice-text').textContent=t('ver.body',{v:offer||''});
  document.getElementById('version-refresh').textContent=t('ver.refresh');

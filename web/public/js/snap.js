@@ -128,8 +128,9 @@ export function addAsk(m) {
         a.pairing_refresh_timer = setTimeout(() => { prepare().catch(() => {}); }, 60000); // keep the signed request fresh while this card stays open
       }
     };
-    a.prepare_pairing = () => Promise.resolve().then(prepare).catch(() => {
-      if (S.asks.get(m.id) === a) { a.pairing_prepare_failed = true; onChange(); }
+    a.prepare_pairing = () => Promise.resolve().then(prepare).catch((e) => {
+      // #0304 A1 v4: bound after this round started (or credential changed) → this round is never signable here; start again
+      if (S.asks.get(m.id) === a) { a.pairing_prepare_failed = true; a.pairing_roster_changed = e?.message === 'pairing roster changed'; onChange(); }
     });
     a.prepare_pairing();
   }
@@ -161,6 +162,9 @@ export function answerRefused(m) {
     addAsk(m.ask);
     const fresh = S.asks.get(a.id);
     if (fresh) fresh.touched = true;
+    // 0304 R-F5: the same card, kept open while this remote binds — not a new confirmation, so ontop.js must not lift it (and
+    // the keyboard focus) over the binding sheet the host offered just before this refusal
+    if (fresh && m.why === 'roster_binding_required') fresh.at = a.at;
   }
   const current = S.asks.get(m.id);
   if (current) { current.touched = true; current.answer_failed = true; }

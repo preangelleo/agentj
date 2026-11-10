@@ -160,11 +160,16 @@ SRC = {"telegram": ("群聊或转发的消息", "a group or forwarded message"),
        "system": ("系统提示", "a system notice")}
 
 
-def refusal(agent, host=None) -> dict | None:
+def refusal(agent, host=None, op=None, inp=None) -> dict | None:
     """Round 1 (H1 / L1): the turn gate for every Google op. A group / outside turn (not the owner, not a delegated task) or
-    a delegated task whose grant needs the originating host → refused here, before Google, a card or a file."""
+    a delegated task whose grant needs the originating host → refused here, before Google, a card or a file.
+    0304 A2-②: the grant gate only for a UV step (`agentj google <op>` on the #537 list; none today)."""
     from . import provenance
-    if provenance.owner_grant_required(agent):
+    step = TOOLS.get(op) or ("agentj google " + op if isinstance(op, str) and op else "agentj google")
+    # security r1 F9: UV from the actual step input (paths, ids); no input → UV (fail closed), never `{}`
+    need = (provenance.owner_grant_required(agent, step, {k: v for k, v in inp.items() if k != "t"})
+            if isinstance(inp, dict) else provenance.owner_grant_required(agent))
+    if need:
         return {"ok": False, "why": "owner_grant_scope",
                 "detail": "授权单未覆盖这一步或已失效，请回发起主机补授权 / the grant does not cover this step; ask the originating host"}
     from . import approval_level, application_ingress
@@ -261,7 +266,7 @@ async def serve(host, st, req: dict) -> dict:
     if bad:
         return {"ok": False, "why": "shape", "detail": bad}
     op = req["op"]
-    no = refusal(getattr(host, "agent", None), host)
+    no = refusal(getattr(host, "agent", None), host, op, req)
     if no:
         st.log("google_api", kind=op, result=no["why"])
         return no

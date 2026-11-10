@@ -121,12 +121,13 @@ def credential_reads(tool, inp, *, host=None, cwd=None, env=None):
 
 COMMANDS = MappingProxyType({
     'agentj mail workflow-grant': 'Create a durable delegation allowing a workflow to send mail to the owner.',
+    'agentj automation grant': 'Create a durable grant letting one webhook / scheduled task mail listed third-party recipients.',
     'AuthRescue': 'Insert or replace AI account login credentials in the host settings.',
     'owner_hosts_set': 'Change cross-host trust and secret-routing peers.',
     'security_begin': 'Begin a paired-device or credential trust-root rotation.',
     'security_verify': 'Verify replacement device/key authority during rotation.',
     'security_retire': 'Retire an old trusted device/key during rotation.',
-    'fr_set [op=owner-confirm-v3]': 'Bind another host as the same owner.',
+    'fr_set [op=owner-confirm-v3]': 'Bind another host as the same owner (scope v3 and v4 rounds; the version is inside the signed challenge).',
     'pk_peer_answer': 'Sponsor registration or replacement of another remote verification key.',
     'native_scheduler_control [scope!=user]': 'Authorize system-level scheduled-job control.',
     'host_write [kind=mail_set|mail_test, except mail_role_downgrade]': 'Insert or change mail credentials and forwarding routes; narrowing a role stays a signed tap.',
@@ -189,6 +190,8 @@ def required(tool, tool_input=None, *, cwd=None, env=None):
     if tool == 'agentj config' and isinstance(tool_input, dict):
         changes = tool_input.get('changes') or {}
         return isinstance(changes,dict) and bool(config_keys(changes))
+    if tool == 'agentj mail send' and isinstance(tool_input, dict):
+        return bool(tool_input.get('friend_handoff'))     # ADR-0306-friend-handoff-mail: set host-side by agent_send only
     return False
 
 

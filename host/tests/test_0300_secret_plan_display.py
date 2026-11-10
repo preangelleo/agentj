@@ -105,7 +105,7 @@ class SecretPlanDisplay(unittest.IsolatedAsyncioTestCase):
                     self.assertIn(otg['hosts']['A'],card['summary'])
                     self.assertIn(otg['hosts']['B'],card['summary'])
                     self.assertIn('file:'+str(dest),card['summary'])
-                    self.assertFalse(any(cid==self.f.other_s.cid and obj.get('t')=='ask' and obj.get('id')==ask.rid for cid,obj in self.sent))
+                    self.assertTrue(any(cid==self.f.other_s.cid and obj.get('t')=='ask' and obj.get('id')==ask.rid for cid,obj in self.sent))   # 0304 A1: fan-out
                     answer=await self.approve(ask,card)
                     result=await asyncio.wait_for(task,2)
                     self.assertEqual(result['result'],'signed')
