@@ -47,7 +47,7 @@ order: 2
 
 - 中途哪一步失败，屏幕上会写一行「怎么办：…」。修好后**粘贴同一条命令**，做完的步骤会跳过。
 - 安装码只能用一次，24 小时内有效（卡片上写着到期时间）。
-- 只差 AI 没接上：在「Ubuntu」里再运行一次 `curl -fsSL https://agentj.app/install.sh | bash`（不用带码），它只补这一步。
+- 已经装好、只差 AI，或旧版升不上去：在「Ubuntu」里再运行一次 `curl -fsSL https://agentj.app/install.sh | bash`（不用带码）。它先看版本：旧版会直接从 agentj.app 下载签名安装包修复升级（不用旧版的 `agentj update`，不连 GitHub；席位、配对和设置都保留），再只补接 AI 这一步。
 - 确认 systemd 已开启：后台服务靠它运行。在「Ubuntu」里运行 `ps -p 1 -o comm=`，应该显示 `systemd`。不是的话，在「Ubuntu」里运行 `printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf`（文件里 `[boot]` 下已经有 `systemd=true` 就跳过），再在 PowerShell 里运行 `wsl --shutdown`，重新打开「Ubuntu」后运行 `agentj service install`。安装命令会自己做这两步；`agentj service install` 和升级遇到没开 systemd 时，也会用一句话告诉你这两步。
 
 ### ② 让Agent J 主机上的 AI 帮你装 {#windows-ai}
@@ -129,7 +129,7 @@ agentj support ask "<你的问题>" --attach-doctor
 
 - 中途哪一步失败，屏幕上会写一行「怎么办：…」。修好后**粘贴同一条命令**，做完的步骤会跳过。
 - 安装码只能用一次，24 小时内有效（卡片上写着到期时间）。
-- 只差 AI 没接上：再运行一次 `curl -fsSL https://agentj.app/install.sh | bash`（不用带码），它只补这一步。
+- 已经装好、只差 AI，或旧版升不上去：再运行一次 `curl -fsSL https://agentj.app/install.sh | bash`（不用带码）。它先看版本：旧版会直接从 agentj.app 下载签名安装包修复升级（不用旧版的 `agentj update`，不连 GitHub；席位、配对和设置都保留），再只补接 AI 这一步。
 
 ### ② 让Agent J 主机上的 AI 帮你装 {#macos-ai}
 
@@ -210,7 +210,7 @@ agentj support ask "<你的问题>" --attach-doctor
 
 - 中途哪一步失败，屏幕上会写一行「怎么办：…」。修好后**粘贴同一条命令**，做完的步骤会跳过。
 - 安装码只能用一次，24 小时内有效（卡片上写着到期时间）。
-- 只差 AI 没接上：再运行一次 `curl -fsSL https://agentj.app/install.sh | bash`（不用带码），它只补这一步。
+- 已经装好、只差 AI，或旧版升不上去：再运行一次 `curl -fsSL https://agentj.app/install.sh | bash`（不用带码）。它先看版本：旧版会直接从 agentj.app 下载签名安装包修复升级（不用旧版的 `agentj update`，不连 GitHub；席位、配对和设置都保留），再只补接 AI 这一步。
 
 ### ② 让Agent J 主机上的 AI 帮你装 {#linux-ai}
 
@@ -326,7 +326,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装Agent J 主机端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.30.8#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.30.9#subdirectory=host"
 agentj doctor
 ```
 
@@ -529,7 +529,7 @@ macOS「登录项与扩展」中的 Agent J 使用带名字、图标和开发者
 <!-- generated: Relay/Codex/P581, 2026-10-29 -->
 升级后，主 Agent 播报和手机更新说明只显示适用于你当前 AI 编程工具的内容；所有工具通用的变化仍会显示。
 
-普通主机先运行 `agentj update apply`，再核对 `agentj --version` 和 `agentj doctor`。只有命令不存在或旧更新器失败时，才到账户席位卡复制当前安装命令，在同一系统用户、同一实例上重跑。配置与绑定保留，不要 unlink、删除状态或另建席位。Olares Market 应用仍从 Market 升级。
+普通主机先运行 `agentj update apply`，再核对 `agentj --version` 和 `agentj doctor`。只有命令不存在或旧更新器失败（例如提示连不上 GitHub）时，在同一系统用户下再运行一次 `curl -fsSL https://agentj.app/install.sh | bash`（不用带码）：它按同一套哈希和发行签名从 agentj.app 修复升级；以前用 sudo 留下了不归你账号的文件夹时，它会给出一条 `sudo chown` 命令，问过你再运行。配置与绑定保留，不要 unlink、删除状态或另建席位。Olares Market 应用仍从 Market 升级。
 
 ## 自动升级没成功怎么办 {#upgrade-failed}
 

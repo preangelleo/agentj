@@ -1,5 +1,5 @@
-# Agent J v0.30.8
+# Agent J v0.30.9
 
-Settings fills the whole screen again; keys, QR codes and confirmations started from Settings now open as centered dialogs.
+Rerunning the installer on macOS no longer fails with "unbound variable"; installed computers upgrade first (signed download from agentj.app, no GitHub).
 
-设置页恢复铺满整屏；设置里发起的密钥、扫码、确认改为居中弹层。
+macOS 上重跑安装命令不再报 unbound variable；已装好的电脑重跑安装命令会先把旧版修复升级到最新（从 agentj.app 签名下载，不依赖 GitHub）。

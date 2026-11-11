@@ -47,7 +47,7 @@ If something goes wrong:
 
 - If a step fails, the screen says what to do. Fix it and **paste the same command again**; finished steps are skipped.
 - The installation code works once and expires after 24 hours (the card shows the time).
-- Only the AI is missing? In "Ubuntu" run `curl -fsSL https://agentj.app/install.sh | bash` again (no code): it does just that step.
+- Already installed, but the AI is missing or an old version will not upgrade? In "Ubuntu" run `curl -fsSL https://agentj.app/install.sh | bash` again (no code). It checks the version first: an older Agent J is repaired forward with the signed package from agentj.app (not the old `agentj update`, no GitHub; seat, pairing and settings stay), then only the AI step runs.
 - Confirm systemd is on: the background service runs on it. In "Ubuntu" run `ps -p 1 -o comm=`; it should print `systemd`. If not, in "Ubuntu" run `printf '[boot]\nsystemd=true\n' | sudo tee -a /etc/wsl.conf` (skip it when the file already has `systemd=true` under `[boot]`), then in PowerShell run `wsl --shutdown`, reopen "Ubuntu" and run `agentj service install`. The install command does both steps itself; `agentj service install` and upgrades also name these two steps in one sentence when systemd is off.
 
 ### ② Let the AI on the Agent J host install it {#windows-ai}
@@ -129,7 +129,7 @@ If something goes wrong:
 
 - If a step fails, the screen says what to do. Fix it and **paste the same command again**; finished steps are skipped.
 - The installation code works once and expires after 24 hours (the card shows the time).
-- Only the AI is missing? Run `curl -fsSL https://agentj.app/install.sh | bash` again (no code): it does just that step.
+- Already installed, but the AI is missing or an old version will not upgrade? Run `curl -fsSL https://agentj.app/install.sh | bash` again (no code). It checks the version first: an older Agent J is repaired forward with the signed package from agentj.app (not the old `agentj update`, no GitHub; seat, pairing and settings stay), then only the AI step runs.
 
 ### ② Let the AI on the Agent J host install it {#macos-ai}
 
@@ -210,7 +210,7 @@ If something goes wrong:
 
 - If a step fails, the screen says what to do. Fix it and **paste the same command again**; finished steps are skipped.
 - The installation code works once and expires after 24 hours (the card shows the time).
-- Only the AI is missing? Run `curl -fsSL https://agentj.app/install.sh | bash` again (no code): it does just that step.
+- Already installed, but the AI is missing or an old version will not upgrade? Run `curl -fsSL https://agentj.app/install.sh | bash` again (no code). It checks the version first: an older Agent J is repaired forward with the signed package from agentj.app (not the old `agentj update`, no GitHub; seat, pairing and settings stay), then only the AI step runs.
 
 ### ② Let the AI on the Agent J host install it {#linux-ai}
 
@@ -337,7 +337,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.30.8#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.30.9#subdirectory=host"
 agentj doctor
 ```
 
@@ -543,7 +543,7 @@ First remote: use Add a remote on the account-page seat card, or run `agentj pai
 <!-- generated: Relay/Codex/P581, 2026-10-29 -->
 After an upgrade, your main Agent's announcement and the phone's update notes show only changes for your current AI coding tool, together with changes shared by all tools.
 
-On an ordinary host, first run `agentj update apply`, then check `agentj --version` and `agentj doctor`. Only when that command is unavailable or the old updater fails, copy the current install command from the account seat card and rerun it as the same OS user and instance. Keep configuration and bindings; do not unlink, delete state or create another seat. Olares Market applications still update through Market.
+On an ordinary host, first run `agentj update apply`, then check `agentj --version` and `agentj doctor`. Only when that command is unavailable or the old updater fails (for example it cannot reach GitHub), run `curl -fsSL https://agentj.app/install.sh | bash` again as the same OS user (no code): it repairs forward from agentj.app with the same hash and release-signature checks; if an earlier sudo run left folders to another account, it prints one `sudo chown` command and asks before running it. Keep configuration and bindings; do not unlink, delete state or create another seat. Olares Market applications still update through Market.
 
 ## When an automatic upgrade fails {#upgrade-failed}
 
