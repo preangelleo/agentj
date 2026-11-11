@@ -14,7 +14,9 @@ export function layoutPopups(roots) {
  if(water&&quotaRect?.height>0){const floor=Math.max(0,bodyRect.bottom-quotaRect.top)+'px';if(water.style.getPropertyValue('--water-floor')!==floor)water.style.setProperty('--water-floor',floor);}
  for(const root of roots){
   if(!visible(root))continue;
-  const settingPasskey=settings&&root.matches('.ajmodal.pkp,#confirm,#sheet.auth-approval');
+  // 0308 (chairman 11-10 13:5x, INCOMING-0306): on Settings every interaction it starts — secret/auth-code card (#elev),
+  // QR (.lqr), secret-out (.sout), passkey, confirm — is a centred popup; a card grown from the quota line exists only in chat.
+  const settingPasskey=settings&&root.matches('.ajmodal,#confirm,#sheet.auth-approval');
   const system=settingPasskey?'center':root.matches('#sheet,.approval-special541,.ajmodal.pkp,#elev,.ajmodal.sout:not(.sout-full),.ajmodal.lqr')||root.dataset.popupKind==='grow'?'grow':'center';
   if(system==='grow'){const wet='color-mix(in srgb,var(--sooty) 13%,'+getComputedStyle(document.body).backgroundColor+')';if(root.style.getPropertyValue('--popup-water')!==wet)root.style.setProperty('--popup-water',wet);}
   if(root.dataset.popupSystem!==system)root.dataset.popupSystem=system;

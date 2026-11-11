@@ -1750,7 +1750,6 @@ html:root #rm-copy > svg{width:21px;height:21px;flex:none}
   bottom:calc(env(safe-area-inset-bottom,0px) + var(--ui-space-content,16px))}
 body:has(:is(#settings,#badge-panel,#silent,#keys,#rd,#fsEd):not([hidden])) .asbanner--float:not([hidden]){display:flex}
 body[data-assist] .setpage .box.setbox{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 76px)}
-body[data-assist] #settings.setpage>.box.setbox{padding-bottom:0}
 body[data-assist] .menupage{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 76px)}
 
 .asbanner[hidden],.asview[hidden]{display:none}

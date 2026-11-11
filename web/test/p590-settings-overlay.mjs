@@ -12,8 +12,9 @@ let checks=0;
 const check=(yes,what)=>{assert.ok(yes,what);checks++};
 try {
  const css=readFileSync(new URL('../public/app.css',import.meta.url),'utf8');
- check(/#settings\.setpage\{display:grid;place-items:center/.test(css),'Settings is centered');
- check(!/\.setpage\{display:block;padding:0;background:var\(--bg\)/.test(css),'full-screen Settings rule removed');
+ // 0308 hotfix: Settings is again the 0.30.6 full-screen page; only interactions it starts are centred (p0308-settings-fullscreen.mjs)
+ check(/\.setpage\{display:block;padding:0;background:var\(--bg\)/.test(css),'full-screen Settings rule restored');
+ check(!/#settings\.setpage\{display:grid;place-items:center/.test(css),'no fixed centred Settings panel');
  for(const lang of ['zh','en'])for(const theme of ['light','dark'])for(const [width,height] of [[390,844],[1440,900]]) {
   fake.reset();fake.st.prefSet=true;fake.st.prefs={appearance:{language:lang,theme}};
   const p=await newPage(browser,width,height,theme,{touch:width===390,allow:[web.url,fake.relay+'/']});
@@ -22,9 +23,7 @@ try {
    await evaluate(p,`document.getElementById('phone-env-dismiss')?.click();document.getElementById('a2hs-ok')?.click();document.getElementById('setBtn').click();true`);
    await waitFor(p,`!document.getElementById('settings').hidden`);
    const r=await evaluate(p,`(()=>{const e=document.querySelector('#settings>.setbox'),o=document.getElementById('settings'),r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,viewport:innerWidth,night:getComputedStyle(e).backgroundColor,mode:getComputedStyle(o).display,text:getComputedStyle(e).color}})()`);
-   check(r.mode==='grid'&&r.x>=0&&r.y>=0&&r.x+r.w<=width+1&&r.y+r.h<=height+1,`${lang} ${theme} ${width}: panel inside viewport`);
-   check(Math.abs(r.x-(width-r.w)/2)<2&&Math.abs(r.y-(height-r.h)/2)<2,`${lang} ${theme} ${width}: centered`);
-   check(r.night==='rgb(44, 43, 38)'&&r.text==='rgb(250, 249, 245)',`${lang} ${theme} ${width}: Noir and Lotion`);
+   check(r.mode==='block'&&r.x<=1&&r.y<=1&&r.w>=0.9*width&&r.h>=0.9*height,`${lang} ${theme} ${width}: Settings follows the whole screen ${JSON.stringify(r)}`);
    await shot(p,`settings-${lang}-${theme}-${width}`);
    for(const [state,open] of Object.entries({rescue:'set-s-rescue',look:'set-s-look',help:'set-s-help',remotes:'set-remotes-open',mail:'set-mail-nav',auth:'set-auth-nav'})) {
     if(open.startsWith('set-s-')) await evaluate(p,`document.getElementById(${JSON.stringify(open)}).scrollIntoView({block:'start'});true`);
@@ -35,9 +34,9 @@ try {
     await shot(p,`settings-${state}-${lang}-${theme}-${width}`);
     if(!open.startsWith('set-s-')) await evaluate(p,`document.getElementById('set-back').click();true`);
    }
-   // The overlay frame must remain centered with the assist banners enabled (no inherited bottom padding).
+   // 0.30.6 behaviour restored: with the floating assist banner the full-screen page keeps room for it at the bottom.
    await evaluate(p,`document.body.dataset.assist='1';document.body.dataset.assistTerminal='1';true`);
-   check(await evaluate(p,`getComputedStyle(document.querySelector('#settings>.setbox')).paddingBottom==='0px'`),`${lang} ${theme} ${width}: assist does not add frame padding`);
+   check(await evaluate(p,`parseFloat(getComputedStyle(document.querySelector('#settings>.setbox')).paddingBottom)>=76`),`${lang} ${theme} ${width}: assist banner keeps its room at the page bottom`);
    await shot(p,`settings-assist-${lang}-${theme}-${width}`);
    await evaluate(p,`delete document.body.dataset.assist;delete document.body.dataset.assistTerminal;true`);
    await key(p,'Escape');await waitFor(p,`document.getElementById('settings').hidden`);

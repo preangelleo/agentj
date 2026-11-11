@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 0.30.7 N4b inside the centered Noir Settings overlay: Settings → 邮件 → 「设置邮箱授权码」 (mail_key). The host shows the
+// 0.30.7 N4b inside Settings (full-screen page again since the 0308 hotfix; the secret card is the centred popup): Settings → 邮件 → 「设置邮箱授权码」 (mail_key). The host shows the
 // secret card (AGENTJ_MAIL_PASSWORD); a new task starts before the write → the card ends `elev_done {result:'unknown', why}`
 // and the Settings request ends `mail_res {ok:false, why}` (host serve.py mail_key → answer(detail or why)), why =
 // new_task | new_task_during_validation (approval_special.LiveContextMoved.REASONS). The page must say
@@ -100,7 +100,7 @@ const GEOM = (key) => `(async()=>{const {t}=await import('./js/t.js');const want
   const msg=document.getElementById('mail-msg');msg.scrollIntoView({block:'center'});await new Promise(r=>setTimeout(r,250));
   const m=msg.getBoundingClientRect(),hit=document.elementFromPoint(m.left+Math.min(m.width/2,40),m.top+m.height/2);
   const n=document.getElementById('toast'),tr=n.getBoundingClientRect();
-  return {centered:Math.abs(box.x-(vw-box.width)/2)<2&&Math.abs(box.y-(vh-box.height)/2)<2,inView:box.x>=0&&box.y>=0&&box.right<=vw+1&&box.bottom<=vh+1,
+  return {centered:box.width>=0.9*vw&&box.height>=0.9*vh,inView:box.x>=0&&box.y>=0&&box.right<=vw+1&&box.bottom<=vh+1,
     line:msg.textContent===want,lineInBox:m.left>=box.left-1&&m.right<=box.right+1&&m.top>=box.top&&m.bottom<=box.bottom,
     lineClipped:msg.scrollWidth>msg.clientWidth+1,lineOnTop:!!hit&&(hit===msg||msg.contains(hit)),
     toastOn:n.classList.contains('on'),toastText:n.textContent.includes(want),toastInView:tr.left>=0&&tr.right<=vw+1&&tr.top>=0&&tr.bottom<=vh+1,
@@ -134,7 +134,7 @@ try {
       await save(p, (why === 'new_task' ? 'n3a-new-task' : 'n4a-new-task-validated') + '-as-answered', name, `why=${why}: exactly what the page shows when the answer lands — the sentence once, in the panel line (no scrolling; line ${asIs ? 'in view' : 'NOT in view'}; repeated notice seen: ${echo})`);
       const g = await ev(p, GEOM(K[why]));
       check(g.line, `${why}: in-panel line is the N4b sentence ${name}`);
-      check(g.centered && g.inView, `${why}: overlay still centered and inside the viewport ${name} ${J(g)}`);
+      check(g.centered && g.inView, `${why}: Settings still full-screen (0308) and inside the viewport ${name} ${J(g)}`);
       check(g.lineInBox && !g.lineClipped, `${why}: line inside the overlay frame, not clipped ${name} ${J(g)}`);
       check(g.lineOnTop, `${why}: line not covered ${name} ${J(g)}`);
       check(!(g.toastOn && g.toastText), `${why}: no notice repeating the in-panel sentence while the overlay is open ${name} ${J(g)}`);
