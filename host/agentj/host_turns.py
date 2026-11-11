@@ -1,5 +1,8 @@
 """0.30.6 (ADR-0306-host-turn-reads): a host-injected system turn reads without a card.
 
+0.30.7: superseded by ADR-0307-offlist (approval_offlist.py) — no off-list request opens a card from any source. Only
+`kind()` (which host-built Send is running) is still used, by approval_offlist.source(); `admit()` has no caller.
+
 Heartbeat, background-done, compaction recovery and the approval-explanation turn are queued by the host itself
 (HeartbeatSend / CompletionSend / the compact_resume Send / the approval-review Send). Their kind is read from the
 host-built Send object of the turn that is running now, never from turn text, a tool field or `source` alone (a webhook

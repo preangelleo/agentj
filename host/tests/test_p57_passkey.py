@@ -370,7 +370,7 @@ class HostLevel(unittest.TestCase):
         self.assertNotIn(wire.b64u(a.id), log, "host.log never holds the credential (or any assertion field)")
         # A comes back: told replaced; B resumes normally afterwards (plain RESUME, no passkey)
         self.sent.clear()
-        self.assertEqual(self.resume_plain(11, kpA), [{"t": "removed", "why": "replaced"}])
+        self.assertEqual(self.resume_plain(11, kpA), [{"t": "removed", "why": "replaced", "moved": True}])
         self.assertEqual(self.resume_plain(12, kpB)[0]["t"], "ready")
         # a third context C with the same Face ID credential: still one record
         kpC, _, got = self.restore(13, a)

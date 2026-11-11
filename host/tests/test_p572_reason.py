@@ -127,6 +127,9 @@ class Reason(unittest.TestCase):
 class OnTheCard(Base):
     def setUp(self):
         super().setUp()
+        # 0.30.7 ADR-0307-offlist: the subject is the reason on the card; keep the Bash vehicle a listed card.
+        from _listed_cards import listed
+        listed(self, 'Bash')
         p = mock.patch.object(approval_level, "PARK_GRACE", 0.15)
         p.start()
         self.addCleanup(p.stop)

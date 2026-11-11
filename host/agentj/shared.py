@@ -911,6 +911,11 @@ class SharedClaudeAgent(Agent):
             elif name == "UserPromptSubmit":
                 self.stop_since_end = False
                 self._turn_begins()
+                recover_prompt = getattr(self, "_compact_recover_prompt", None)
+                if recover_prompt and event.get("prompt") == recover_prompt and handoff.fresh(None):
+                    self._compact_read_wait = self.turn_gen
+                else:
+                    self._compact_read_wait = None
                 self.turn_began_at = handoff.now()
             elif name == "PreCompact":
                 self.compact_handoff = handoff.fresh(self.turn_began_at)
@@ -1019,6 +1024,19 @@ class SharedClaudeAgent(Agent):
             if self.host.stopped() or self.host.st.sign_key(grant["device"]) != grant["sign_pub"]:
                 self.permissions.discard(cat)
                 self.risk_grants.pop(cat, None)
+        # A native turn starting is not proof that it read the handoff. Only a successful
+        # main-thread Read of the fresh file in this recovery turn may claim that.
+        if name == "PostToolUse" and not event.get("agent_id"):
+            waiting = getattr(self, "_compact_read_wait", None)
+            inp = event.get("tool_input") if isinstance(event.get("tool_input"), dict) else {}
+            response = event.get("tool_response")
+            if (waiting and self.turn_gen == waiting and event.get("tool_name") == "Read"
+                    and inp.get("file_path") == str(handoff.path(handoff.COMPACT))
+                    and isinstance(response, dict) and not response.get("is_error")
+                    and not response.get("interrupted") and handoff.fresh(None)):
+                self._compact_read_wait = None
+                self._compact_recover_prompt = None
+                self.host.agent_notice(handoff.phone_line(getattr(self.host, "lang", "zh"), "compact"))
         if name in ("PostToolUse", "PostToolUseFailure") and not event.get("agent_id") and getattr(self.host, "peers", None) is not None:
             response = event.get("tool_response") or {}
             success = name == "PostToolUse" and isinstance(response, dict) and not response.get("is_error") and not response.get("interrupted") and response.get("exitCode", response.get("exit_code", 0)) == 0
@@ -2460,7 +2478,7 @@ class SharedClaudeAgent(Agent):
     def _handoff_context(self, source) -> str:
 
         lang = getattr(self.host, "lang", "zh")
-        if source == "compact" and handoff.mtime(handoff.COMPACT) is not None:
+        if source == "compact" and handoff.fresh(None):
             return "\n\n" + handoff.recover_text(lang, "compact", True)
         if source == "clear" and handoff.mtime(handoff.CLEAR) is not None:
             # P198: the host's recovery renames it a moment later (applies once) — measured on 2.1.296, the Agent then
@@ -2478,6 +2496,7 @@ class SharedClaudeAgent(Agent):
         if loop is None:
             return
         self.recover_at = handoff.now()
+        self._compact_read_wait = None
         if self.recover_task and not self.recover_task.done():
             self.recover_task.cancel()
         self.recover_task = loop.create_task(self._recover(kind, has, self.turn_began_at, trigger))
@@ -2545,6 +2564,7 @@ class SharedClaudeAgent(Agent):
                     from .owner_grant import resume_source
                     source = resume_source(candidate) if isinstance(candidate, dict) else provenance.system()
                     self._host_turn()
+                    self._compact_recover_prompt = text if kind == "compact" and has and handoff.fresh(None) else None
                     self.pending_source = self.native_source = source
                     gen = getattr(self, "turn_gen", 0)
                     await asyncio.to_thread(claude_send, self.session, text, source)
@@ -2561,7 +2581,13 @@ class SharedClaudeAgent(Agent):
                 started = getattr(self, "turn_gen", 0) != gen
             if started:
                 self.host.st.log("shared_handoff_recover", kind=kind, result="started", handoff=bool(has), attempt=attempt)
-                self.host.agent_notice(handoff.phone_line(lang, kind))
+                if kind == "compact":
+                    if not has or not handoff.fresh(None):
+                        self._compact_read_wait = None
+                        self.host.agent_notice("没找到新交接（文件不存在或已超过 24 小时）。" if lang != "en" else
+                                               "No fresh handoff found (missing or older than 24 hours).")
+                else:
+                    self.host.agent_notice(handoff.phone_line(lang, kind))
                 return
             self.host.st.log("shared_handoff_recover", kind=kind, result="not_started", handoff=bool(has), attempt=attempt)
             began, gen = self.turn_began_at, getattr(self, "turn_gen", 0)

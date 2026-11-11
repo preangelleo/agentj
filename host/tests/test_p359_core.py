@@ -431,7 +431,9 @@ class CeoRun(Tmp):
         (self.proj / "build").mkdir()
         asked = []
 
-        async def host_ask(tool, inp, gone=None, *, origin=None, batch=True, background=None):
+        async def host_ask(tool, inp, gone=None, *, origin=None, batch=True, background=None, _harness_permission=False):
+            # ADR-0307-offlist: an order's request is a harness permission (off-list → no card, listed → UV card)
+            self.assertTrue(_harness_permission)
             asked.append((tool, inp, origin, batch))
             return {"behavior": "deny", "message": "主人拒绝"}
 
@@ -498,7 +500,8 @@ class Bridge(Tmp):
     def test_token_finished_order_and_host_built_origin(self):
         asked = []
 
-        async def host_ask(tool, inp, gone=None, *, origin=None, batch=True, background=None):
+        async def host_ask(tool, inp, gone=None, *, origin=None, batch=True, background=None, _harness_permission=False):
+            self.assertTrue(_harness_permission)     # ADR-0307-offlist: askbridge forwards as a harness permission
             asked.append(origin)
             return {"behavior": "allow"}
 

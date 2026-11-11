@@ -86,7 +86,7 @@ class Base(unittest.TestCase):
 
 class Whitelist(unittest.TestCase):
     def test_one_constant_each_with_a_reason_and_nothing_dangerous(self):
-        self.assertEqual(set(cmdrun.RUN_CMDS), {"doctor", "reconnect", "status", "service_status", "rescue_status", "update_check", "version", *["switch_"+h for h in ("claude","codex","opencode","kimi","qwen","dsh")]})
+        self.assertEqual(set(cmdrun.RUN_CMDS), {"doctor", "reconnect", "status", "service_status", "rescue_status", "update_check", "version", "codex_full_access", *["switch_"+h for h in ("claude","codex","opencode","kimi","qwen","dsh")]})
         bad = {"stop", "uninstall", "revoke", "unlink", "reset", "restart", "apply", "set", "remove", "clear", "rm",
                "install", "import-key", "passphrase", "pair", "rollback", "undo", "send", "config", "serve"}
         for name, (args, why) in cmdrun.RUN_CMDS.items():

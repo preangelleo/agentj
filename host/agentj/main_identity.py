@@ -25,7 +25,7 @@ VERSION = 28  # 0.30.0: delegation is the default; owner working preferences may
 # v9 (P113, ADR-A193): long tasks — preflight card, brief, CEO routing, report read-back
 # v8 (P82): owner-authorized customer-service bot management
 # v5 (P64): a workflow with a CEO is always dispatched — never run or edited by the main Agent; read-only reporting stays
-HASHES = {'en': 'cccd6d0544e97defdb949916063d65e5c25d77e72a60e2cd3238d4cdc181f687', 'zh': 'b3bf56217ae8fc8a8ec90ddc8a8ba15849ac63de0ad4c45adb74671f926961e1'}
+HASHES = {'en': '34bb2cb538a10e19dac264bee4c08765b6537537e5a9affe31d865ccea6079f3', 'zh': '76f59582206eb1f6d65289b7f938796abcb9e4b1941898c4bdb2a2da4c797232'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system",
               "kimi": "acp.resource", "qwen": "acp.resource", "dsh": "acp.text"}   # P329: dsh takes no embedded resources (acp._block)   # P305: ACP has no system-prompt field — an embedded resource block (acp.prompt_blocks)
 

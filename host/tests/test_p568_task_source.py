@@ -33,6 +33,15 @@ async def signed_adapter(test, awaitable, *, approve=True):
         await asyncio.gather(task, return_exceptions=True)
 
 
+async def off_list(test, awaitable):
+    """0.30.7 ADR-0307-offlist: an off-list native request is answered at once, audited, without any card."""
+    before = len([o for _, o in test.sent if o.get('t') == 'ask'])
+    result = await asyncio.wait_for(awaitable, 3)
+    test.assertFalse(test.host.asks, 'no card is opened')
+    test.assertEqual(len([o for _, o in test.sent if o.get('t') == 'ask']), before, 'no card is sent')
+    return result
+
+
 async def guest_boundary(test):
     """Actual PeerSessions launch, real OS fence, fake vendors, no owner data."""
     import json
@@ -111,6 +120,10 @@ class TaskSource(Base):
         self.assertEqual(len(seen), 2, 'a disabled schedule never gets task authority')
 
     def test_codex_decline_delivers_host_reason_to_model_and_owner(self):
+        # 0.30.7 ADR-0307-offlist: the subject is the owner's decline reaching model and owner; keep Bash a listed card.
+        from _listed_cards import listed
+        listed(self, 'Bash')
+        self.host.ask_ttl = 5   # the signed deny path awaits the operation ledger; 0.4 s races it on a loaded host (main too)
         async def run():
             a = CodexAgent(self.host, self.host.agent_cfg, persist=False)
             a._answer = Mock()
@@ -133,39 +146,46 @@ class TaskSource(Base):
             with provenance.request_source(provenance.normalize(None)):
                 self.assertFalse(approval_jev.low_risk_pass(self.host, cfg, 'Bash', {'command': 'date'}))
         from test_p512_policy import native_tap
-        for source in (provenance.email_guest('guest@example.com'), provenance.telegram_group(-1, 2, 'proxy', 1), None):
+        # 0.30.7 ADR-0307-offlist: these native requests are off the card list, so none waits for a tap any more; a
+        # guest / group / unlabeled turn is external / unknown trust and an off-list write is refused at once.
+        def ask(command):
+            return asyncio.run(off_list(self, self.host.ask('Bash', {'command': command}, _harness_permission=True)))
+        for source, trust in ((provenance.email_guest('guest@example.com'), 'external'),
+                              (provenance.telegram_group(-1, 2, 'proxy', 1), 'external'), (None, 'unknown')):
             self.host.agent.native_source = source
             self.assertFalse(approval_jev.low_risk_pass(self.host, cfg, 'Bash', {'command': 'date'}))
-            result, card = asyncio.run(native_tap(self.host, self.phone, self.s, 'Bash', {'command': 'date'}))
-            self.assertEqual(result['behavior'], 'allow')
-            self.assertFalse(card.get('passkey_required', False))
+            result = ask('date')
+            self.assertEqual((result['behavior'], result['reason']), ('deny', 'off_list_write_' + trust), source)
             self.assertEqual(self.host.agent.native_source, source, 'historical label is never promoted to owner')
         # These are native permissions in the served owner harness. Live peer
         # execution is separately restricted by the real NoTools/fence boundary.
         asyncio.run(guest_boundary(self))
         self.host.agent.native_source = provenance.system()
         self.assertFalse(approval_jev.low_risk_pass(self.host, cfg, 'Bash', {'command': 'date'}))
-        result, _ = asyncio.run(native_tap(self.host, self.phone, self.s, 'Bash', {'command': 'date'}))
-        self.assertEqual(result['behavior'], 'allow')
+        result = ask('date')     # a system notice is host_read: verified host, read-only
+        self.assertEqual((result['behavior'], result['reason']), ('deny', 'off_list_write_host_read'))
         from agentj.heartbeat import HeartbeatSend
         self.host.agent.cur_send = HeartbeatSend(0, 'heartbeat', 'k', 'd')
         self.assertFalse(approval_jev.low_risk_pass(self.host, cfg, 'Bash', {'command': 'date'}))
-        result, _ = asyncio.run(native_tap(self.host, self.phone, self.s, 'Bash', {'command': 'date'}))
+        result = ask('date')     # the heartbeat is host trust: answered as the owner's own harness would
         self.assertEqual(result['behavior'], 'allow')
+        self.assertEqual(self.last()['reason'], 'off_list')
 
     def test_task_outward_secret_delete_need_cards_even_with_background_flag(self):
         from test_p512_policy import native_tap
         with provenance.task_run():
-            for command in ('git push origin main', 'cat .env', 'rm -rf ' + shlex.quote(str(Path(tempfile.gettempdir()) / 'task-output'))):
-                n = len(self.cards())
-                result, card = asyncio.run(native_tap(self.host, self.phone, self.s, 'Bash', {'command': command}, background='task'))
-                self.assertEqual(result['behavior'], 'allow')
-                self.assertEqual(len(self.cards()), n + 1, command)
-                self.assertFalse(card.get('passkey_required', False))
-            result, card = asyncio.run(native_tap(self.host, self.phone, self.s, 'Bash', {'command': 'rm -rf ~/Documents/old'}, background='task'))
-            self.assertEqual(result['behavior'], 'allow')
-            self.assertFalse(card.get('passkey_required', False))
+            # 0.30.7 ADR-0307-offlist: off-list requests in a live scheduled task (host trust) never card: allowed as the
+            # owner's own harness would run them, except a credential read, which is refused for every source.
+            for command, behavior, reason in (('git push origin main', 'allow', 'off_list'),
+                                              ('cat .env', 'deny', 'off_list_credential'),
+                                              ('rm -rf ' + shlex.quote(str(Path(tempfile.gettempdir()) / 'task-output')), 'allow', 'off_list'),
+                                              ('rm -rf ~/Documents/old', 'allow', 'off_list')):
+                result = asyncio.run(off_list(self, self.host.ask('Bash', {'command': command}, _harness_permission=True,
+                                                                  background='task')))
+                self.assertEqual(result['behavior'], behavior, command)
+                self.assertEqual(self.last()['reason'], reason, command)
             # Control-root ancestors remain listed, independent of background.
+            self.host.ask_ttl = 5   # signed deny path awaits the operation ledger; 0.4 s races it on a loaded host (main too)
             result, card = asyncio.run(native_tap(self.host, self.phone, self.s, 'Bash', {'command': 'rm -rf ~'}, approve=False, background='task'))
             self.assertTrue(card['passkey_required'])
             self.assertEqual(result['behavior'], 'deny')
@@ -178,22 +198,26 @@ class TaskSource(Base):
                     a = CodexAgent(self.host, cfg, persist=False)
                     a._answer = Mock()
                     a.call = AsyncMock()
-                    await signed_adapter(self, a._decide(1, tool, inp, {'decision': 'accept'}, {'decision': 'decline'}, True))
-                    self.assertNotEqual(self.last()['reason'], 'group_source')
-                    a._answer.assert_called_once()
+                    # 0.30.7 ADR-0307-offlist: off-list, so no card on any of the three paths; each must still carry the
+                    # live task scope (host trust → allow) rather than an unknown / group source (→ refused).
+                    await off_list(self, a._decide(1, tool, inp, {'decision': 'accept'}, {'decision': 'decline'}, True))
+                    self.assertEqual(self.last()['reason'], 'off_list')
+                    a._answer.assert_called_once_with(1, {'decision': 'accept'})
                     oc = OpenCodeAgent(self.host, cfg, persist=False)
                     oc.client = NS(request=AsyncMock())
                     oc._reply_permission = AsyncMock()
                     req = {'permission': 'bash' if tool == 'Bash' else 'edit', 'patterns': ['date' if tool == 'Bash' else '/tmp/task.txt']}
                     if tool == 'Write':
                         req['metadata'] = {'diff': '--- /dev/null\n+++ /tmp/task.txt\n@@ -0,0 +1 @@\n+notes'}
-                    await signed_adapter(self, oc._decide('r', req, asyncio.get_running_loop().create_future()))
-                    self.assertNotEqual(self.last()['reason'], 'group_source')
+                    await off_list(self, oc._decide('r', req, asyncio.get_running_loop().create_future()))
+                    self.assertEqual(self.last()['reason'], 'off_list')
                     oc._reply_permission.assert_awaited_once()
+                    self.assertEqual(oc._reply_permission.await_args.args[1], 'once')
                     # Claude arrives on a different socket-handler Task, carrying only its spent claim's scope.
                     w = object()
                     self.host.perm_w = w
                     self.host._perm_send = AsyncMock()
-                    await signed_adapter(self, self.host._perm_ask(w, {'id': 3, 'tool': tool, 'input': inp}, {}, task_scope=scope))
-                    self.assertNotEqual(self.last()['reason'], 'group_source')
+                    await off_list(self, self.host._perm_ask(w, {'id': 3, 'tool': tool, 'input': inp}, {}, task_scope=scope))
+                    self.assertEqual(self.last()['reason'], 'off_list')
+                    self.assertEqual(self.host._perm_send.await_args.args[1]['behavior'], 'allow')
         asyncio.run(run())

@@ -303,11 +303,14 @@ def download(url, limit, *, sleep=time.sleep, opener=None):
     return data
 
 
-def cached_wheel(st, version, *, fetch=download, require_signature=True):
+def cached_wheel(st, version, *, fetch=download, require_signature=True, fallback=None, path_kind=None):
     from . import upgrade_diag
     evidence = {'artifact_stage': 'cache', 'cache_status': 'miss'}
+    if path_kind:
+        evidence['cache_path'] = path_kind      # #0307: xdg | home | tmp — the kind of folder, never the folder
     try:
-        return _cached_wheel(st, version, fetch=fetch, require_signature=require_signature, evidence=evidence)
+        return _cached_wheel(st, version, fetch=fetch, require_signature=require_signature, evidence=evidence,
+                             fallback=fallback)
     except Exception as exc:  # Attach only fixed metadata; preserve original exception compatibility.
         import zipfile
         if isinstance(exc, zipfile.BadZipFile):
@@ -318,7 +321,7 @@ def cached_wheel(st, version, *, fetch=download, require_signature=True):
         raise
 
 
-def _cached_wheel(st, version, *, fetch, require_signature, evidence):
+def _cached_wheel(st, version, *, fetch, require_signature, evidence, fallback=None):
     """Published /dl wheel, SHA256, optional minisign bound to host/version/hash.
     Auto installs always require signature. Rollback accepts the previously cached
     verified bytes even if their release has since left the site's latest pointer.
@@ -385,10 +388,55 @@ def _cached_wheel(st, version, *, fetch, require_signature, evidence):
             evidence['subreason'] = 'identity_mismatch'
             raise ValueError('artifact_identity_mismatch')
     evidence.update(artifact_stage='cache', subreason='internal_error')
+    body = json.dumps({'sha256': digest, 'signed': signed, 'signature': signature if signed else None}).encode()
+    try:
+        _store(st, path, receipt, data, body)
+    except OSError as exc:
+        # #0307 (paid macOS host, 0.28.6 → 0.30.5 EACCES): an earlier sudo run left the cache folder to root. The bytes are
+        # already verified; keep them in a fresh private folder this account owns. Never sudo, never a weaker check.
+        evidence.update(cache_diagnostic(st.root, filename))
+        if fallback is None:
+            raise
+        evidence['cache_fallback'] = 'tmp'
+        try:
+            alt = fallback()
+            path = alt.root / 'upgrade-cache' / filename
+            receipt = path.with_suffix('.verified.json')
+            _store(alt, path, receipt, data, body)
+        except OSError:
+            raise exc from None
+    return path
+
+
+def _store(st, path, receipt, data, body):
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     st.write_private(path, data)
-    st.write_private(receipt, json.dumps({'sha256': digest, 'signed': signed, 'signature': signature if signed else None}).encode())
-    return path
+    st.write_private(receipt, body)
+
+
+def _owner_kind(uid):
+    return 'self' if uid == os.geteuid() else 'root' if uid == 0 else 'other'
+
+
+def cache_diagnostic(root, filename=None):
+    """#0307: which cache folder refused the write and whether this account owns it — fixed words only, never a path or a
+    user name. `cache_level`: cache_dir (upgrade-cache) | upgrade_root (agentj-upgrade) | cache_base (the folder above,
+    ~/.cache) | file (every folder writable: the wheel itself, a lock, a full disk); `cache_owner`: self | root | other.
+    `self` together with a refusal means a mode, a read-only mount or a lock — not ownership."""
+    root = Path(root)
+    for level, p in (('cache_dir', root / 'upgrade-cache'), ('upgrade_root', root), ('cache_base', root.parent)):
+        try:
+            meta = p.stat()
+        except OSError:
+            continue
+        if not os.access(p, os.W_OK | os.X_OK):
+            return {'cache_level': level, 'cache_owner': _owner_kind(meta.st_uid)}
+    for p in ([root / 'upgrade-cache' / filename] if filename else []) + [root / 'upgrade-cache', root]:
+        try:
+            return {'cache_level': 'file', 'cache_owner': _owner_kind(p.stat().st_uid)}
+        except OSError:
+            continue
+    return {'cache_level': 'file'}
 
 
 
@@ -570,8 +618,8 @@ def finish(st, result, diag=None):
     result.update(upgrade_diag.exception_fields(diag or {}))
     if (diag or {}).get('step') == 'download':
         result.update(step='download', detail=diag.get('detail', 'Exception'))
-    if result.get('result') != 'ok' and (diag or {}).get('failure') == 'permission_denied':   # #475: who owns the files
-        own = update.owner_check({'reason': 'permission_denied'})
+    if result.get('result') != 'ok' and (diag or {}).get('failure') in ('permission_denied', 'not_owner'):
+        own = update.owner_check({'reason': (diag or {})['failure']})
         result.update({k: own[k] for k in ('owner_kind', 'fix') if k in own})
     with st.config_lock():
         _finish(st, result)
@@ -669,7 +717,7 @@ def fixed_reasons():
     from . import upgrade_diag
     return {'install_failed', 'version_mismatch', 'restart_failed', 'upgrade_self_check_failed', 'worker_interrupted',
             'artifact_hash_mismatch', 'artifact_signature_mismatch', 'artifact_identity_mismatch', 'unsupported_install',
-            'upgrade_cache_unreadable', 'revocation_downgrade_blocked', *upgrade_diag.CATEGORY.values(), *upgrade_diag.REASON_WORDS}
+            'upgrade_cache_unreadable', 'revocation_downgrade_blocked', 'not_owner', *upgrade_diag.CATEGORY.values(), *upgrade_diag.REASON_WORDS}
 
 
 def failure_reason(e, d):
@@ -816,6 +864,9 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             job = {'attempt': secrets.token_hex(16), 'from': __version__, 'to': latest['latest'], 'install': info,
                    'argv': update.new_argv(info), 'when': 'idle' if read(st).get('decision') == 'idle' else 'night'}
             install_commands(info, '/unused.whl')
+            own = upgrade_owner.blocked()
+            if own:
+                raise ValueError('not_owner')
             # Rollback old releases predate artifact signatures; retain hash-verified wheel.
             old = cache(st, job['from'], require_signature=False)
             job['old'] = str(old)
@@ -872,9 +923,10 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 'self_check_failed' if job.get('phase') == 'installed' else upgrade_diag.plan_reason(e))
         if job.get('phase') is None:
             # Download failures have identical P277 reason/detail/metadata in both entry paths.
-            reason = upgrade_diag.plan_reason(e) if reason not in ('unsupported_install',) else reason
+            reason = upgrade_diag.plan_reason(e) if reason not in ('unsupported_install', 'not_owner') else reason
             diag.update(upgrade_diag.plan_fields(e))
-            diag['detail'] = upgrade_diag.plan_detail(e)
+            if reason != 'not_owner':
+                diag['detail'] = upgrade_diag.plan_detail(e)
         result['reason'] = reason
         diag['failure'] = reason
         diag.setdefault('step', 'service' if reason in ('restart_failed', 'service_restart_failed') else {

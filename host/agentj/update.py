@@ -214,10 +214,40 @@ def verified_plan(st, info, target):
     from .state import State
     from . import auto_update
     require_native_install(info)
-    root = Path(os.environ.get('XDG_CACHE_HOME') or Path.home()/'.cache') / 'agentj-upgrade'
-    root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    wheel = auto_update.cached_wheel(State(root), target, require_signature=True)
-    return auto_update.install_commands(info, wheel)
+    from .upgrade_owner import blocked
+    if blocked():
+        raise ValueError('not_owner')
+    return auto_update.install_commands(info, verified_wheel(target))
+
+
+def upgrade_cache_root():
+    """(folder, kind): $XDG_CACHE_HOME/agentj-upgrade (kind `xdg`) else ~/.cache/agentj-upgrade (`home`)."""
+    from pathlib import Path
+    xdg = os.environ.get('XDG_CACHE_HOME')
+    return (Path(xdg) if xdg else Path.home()/'.cache') / 'agentj-upgrade', 'xdg' if xdg else 'home'
+
+
+def _private_tmp_cache():
+    """#0307: a fresh 0700 folder only this account owns (mkdtemp under $TMPDIR — never a fixed, guessable name)."""
+    import tempfile
+    from pathlib import Path
+    from .state import State
+    return State(Path(tempfile.mkdtemp(prefix='agentj-upgrade-')))
+
+
+def verified_wheel(target):
+    """The published, hash + signature + identity verified wheel for `target`. #0307: when the cache folder cannot be
+    written (an earlier `sudo` run left it to root; a 0.28.6 paid host failed here with EACCES after the hashes matched)
+    the same verified bytes go to a private temporary folder instead — no sudo, no check skipped."""
+    from .state import State
+    from . import auto_update
+    root, kind = upgrade_cache_root()
+    try:
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    except OSError:
+        pass                    # cached_wheel reads a miss, then stores through the fallback below
+    return auto_update.cached_wheel(State(root), target, require_signature=True, fallback=_private_tmp_cache,
+                                    path_kind=kind)
 
 
 def new_argv(info: dict) -> list[str]:
@@ -1014,7 +1044,7 @@ def owner_check(res: dict, prefix=None) -> dict:
         return res
     denied = res.get("reason") == "uv_failed" and any(n in str(res.get("stderr_tail") or "").lower()
                                                      for n in ("permission denied", "os error 13", "operation not permitted"))
-    if res.get("reason") not in ("read_only", "permission_denied") and not denied:
+    if res.get("reason") not in ("read_only", "permission_denied", "not_owner") and not denied:
         return res
     try:
         from .upgrade_owner import blocked
@@ -1092,6 +1122,8 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
         plan = (plan_fn or verified_plan)(st, info, target)
     except Exception as e:  # noqa: BLE001 — P277: download vs signature/hash, the exception type kept (never its text)
         from .upgrade_diag import exception_evidence
+        if isinstance(e, ValueError) and str(e) == 'not_owner':
+            return done('not_owner')
         return done(plan_reason(e), detail=plan_detail(e), **plan_fields(e), **exception_evidence(e, "download"))
     _pre_snapshot(st)
     # P192 (B15): the same cached-wheel rollback as `apply` — this path used to leave a half-installed version behind
@@ -1236,6 +1268,8 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
         plan = (plan_fn or verified_plan)(st, info, target)
     except Exception as e:  # noqa: BLE001 — P277: download vs signature/hash, the exception type kept (never its text)
         from .upgrade_diag import exception_evidence
+        if isinstance(e, ValueError) and str(e) == 'not_owner':
+            return done('not_owner')
         return done(plan_reason(e), detail=plan_detail(e), **plan_fields(e), **exception_evidence(e, "download"))
     if not fenced:
         _pre_snapshot(st)          # P207 (inside the fence the state directory is an empty mount; serve snapshots at start)
@@ -1369,9 +1403,9 @@ def repair_install(st, *, target=None, runner=None, service_installed=None, plan
             if plan_fn is not None:  # injected isolated tests; production always seals the published bytes
                 plan = plan_fn(st, info, target)
             else:
-                verified_plan(st, info, target)  # fetch/hash/signature/identity before any install
-                cache_root = Path(os.environ.get('XDG_CACHE_HOME') or Path.home()/'.cache') / 'agentj-upgrade'
-                sealed_bytes = auto_update.signed_cached_bytes(State(cache_root), target)
+                require_native_install(info)
+                wheel = verified_wheel(target)  # fetch/hash/signature/identity before any install
+                sealed_bytes = auto_update.signed_cached_bytes(State(wheel.parent.parent), target)
                 if sealed_bytes is None:
                     return finish("artifact_signature_mismatch")
                 scratch = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="agentj-reinstall-")))

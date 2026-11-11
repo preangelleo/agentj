@@ -19,6 +19,7 @@ class SettingsContext:
     nonce: str
     until: float
     binding: object
+    page: tuple = ('AI 账户登录', 'AI account login')   # 0.30.7: the Settings page this context belongs to
     @classmethod
     def capture(cls, host, owner, session, inp):
         if owner is not getattr(host, 'auth_rescue', None) or not host._paired_live(session):
@@ -96,7 +97,7 @@ class PermissionContext:
 
 
 async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
-              receipt=None, only=None, host_card=False, settings_session=None, bounded_context=None, harness_permission=False, task_actions=None, task_target=None, native_context=None, settings_context=None, front=None):
+              receipt=None, only=None, host_card=False, settings_session=None, bounded_context=None, harness_permission=False, task_actions=None, task_target=None, native_context=None, settings_context=None, front=None, background=None):
     # JSON from a native transport must normalize before inventory/path checks,
     # settings-input hashes or display hashes. Never echo exception repr/values.
     try:
@@ -123,6 +124,17 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
         return {'behavior':'deny', 'reason':'native_context_changed', 'message':'Native session context changed; no operation executed.'}
     cwd = native_context.cwd if native_context is not None else (getattr(host, 'agent_cfg', None) or {}).get('dir')
     uv = uv_list.required(tool, inp, cwd=cwd, env=uv_list.host_environment(host))
+    if (not uv and settings_context is None and task_actions is None
+            and (harness_permission or tool not in policy_registry.HOST_TOOLS) and uv_list.charge_command(tool, inp)):
+        # #537② (Jarvis 2026-11-11, merge review S2): an owner / host turn's off-list shell call that really moves money
+        # (uv_list.CHARGE_COMMANDS) gets the fingerprint card instead of the off-list allow. Only where the off-list
+        # decision itself would allow it: credential / private-state reads and unresolved launchers stay refused, and
+        # any other source keeps the off-list refusal (a doubtful source never conjures a card).
+        from . import approval_offlist
+        typed = approval_offlist.source(host, settings_context=settings_context, background=background)
+        if typed.get('trust') in ('owner', 'host'):
+            decided = await asyncio.to_thread(approval_offlist.decide, host, tool, inp, cwd, typed)
+            uv = decided[0] == 'allow'
     def refused(reason, message):
         # No card was displayed. Keep the original request's metadata-only
         # audit linkage without collecting source text or inventing a signer.
@@ -150,9 +162,18 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
         if isinstance(receipt,dict):
             receipt.update(reason='request_continuation',approval_card_shown=False)
         return {'behavior':'allow','updatedInput':inp,**({'grant_info':resumed} if grant_info else {})}
+    # 0.30.7 ADR-0307-offlist: the card list is uv_list.required() + approval_offlist.CARD_LIST (host executors'
+    # own explicit cards; a native request may only name AskUserQuestion) + legacy exact-action plans. Anything
+    # else never opens a card from any source: answered here, audited, with the reason when refused.
+    from . import approval_offlist
+    listed = bool(uv) or task_actions is not None or tool in (approval_offlist.NATIVE_CARDS if harness_permission
+                                                              else approval_offlist.CARD_LIST)
+    if not listed and (harness_permission or tool not in policy_registry.HOST_TOOLS):
+        return await approval_offlist.answer(host, tool, inp, cwd, receipt=receipt, settings_context=settings_context,
+                                             background=background)
     # Host commands that are not on the list add no second permission layer.
     # Native permission requests reach this adapter only after the harness asks.
-    if not harness_permission and not uv and tool in policy_registry.HOST_TOOLS and tool not in ('AskUserQuestion','SandboxOnce','AuthRescue','AgentJBoundedPlan') and task_actions is None:
+    if not harness_permission and not listed and tool in policy_registry.HOST_TOOLS and task_actions is None:
         from . import application_ingress
         result = application_ingress.ordinary(host, tool, inp)
         if result['behavior'] != 'allow':
@@ -175,6 +196,7 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
     request_epoch = str(host.hist.epoch)
     request_authority = settings_context.binding if settings_context else host._approval_live_authority()
     request_origin = None if settings_context else copy.deepcopy(approval_review.snapshot(host))
+    request_typed = approval_offlist.source(host, settings_context=settings_context, background=background)
     def subject_live():
         return (not host.stopped() and not host.stopping.is_set()
                 and (gone is None or not gone.done())
@@ -248,13 +270,15 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
         bounded_context.rid = a.rid
     # A source label never grants authority. Unknown/external labels are retained
     # honestly; the paired signature and (for list entries) fresh UV decide.
-    approval_review.bind(host, a, origin=settings_context.origin(origin_summary) if settings_context else request_origin)
+    approval_review.bind(host, a, origin=settings_context.origin(origin_summary) if settings_context else request_origin,
+                         typed=request_typed)
     a.review_live_authority = request_authority
     a.review_request_source = approval_review.digest(request_origin) if request_origin is not None else approval_review.digest(approval_review.snapshot(host))
     host.asks[rid] = a
     base = dict(rid=rid, agent=getattr(host.agent,'kind','?'), tool=tool,
                 input_sha256=isha, shown_sha256=digest, cats=[])
-    host.st.log('ask', id=rid, tool=tool, kind='danger' if uv else 'low', tier='uv' if uv else 'hold')
+    host.st.log('ask', id=rid, tool=tool, kind='danger' if uv else 'low', tier='uv' if uv else 'hold',
+                source_type=request_typed['type'], trust=request_typed['trust'], card=True)
     host.activity('ask', id=rid, tool=tool, cats=[], summary=summary, task=host.task_label)
     host.emit('ask', id=rid, tool=tool, summary=summary)
     host._post(lambda fn: host._send_ready(lambda s: fn(s) if not only or only == s.device else None),

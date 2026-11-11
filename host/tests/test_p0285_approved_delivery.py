@@ -33,26 +33,37 @@ class ApprovedDelivery(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(self.cleanup_tasks)
 
     async def cleanup_tasks(self):
-        tasks = list(self.h._bg_tasks)
+        tasks = list(getattr(self.h, '_bg_tasks', ()))   # Host._bg creates the set lazily; zero-card runs never call it
         for task in tasks: task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    async def request(self, inp, allow=True, tool='Bash'):
-        event = {'session_id':'delivery-owner','tool_name':tool,'tool_input':inp,'tool_use_id':'delivery-call'}
-        await self.a.hook_event(dict(event, hook_event_name='PreToolUse'))
-        before = len(self.sent); task = asyncio.create_task(self.a.hook_event(dict(event, hook_event_name='PermissionRequest')))
+    async def phase(self, event, allow):
+        """One hook phase; a card it opens (PreToolUse UV gate or PermissionRequest) is answered on the paired phone."""
+        before = len(self.sent); task = asyncio.create_task(self.a.hook_event(event))
         for _ in range(500):
             cards = [m for _, m in self.sent[before:] if m.get('t') == 'ask']
             if cards or task.done(): break
             await asyncio.sleep(.005)
         if cards:
             await self.h._app(self.s, self.ph.answer(cards[-1], allow))
-        return (await task)['hookSpecificOutput']['decision'], len(cards)
+        return await task, len(cards)
+
+    async def request(self, inp, allow=True, tool='Bash'):
+        event = {'session_id':'delivery-owner','tool_name':tool,'tool_input':inp,'tool_use_id':'delivery-call'}
+        pre, early = await self.phase(dict(event, hook_event_name='PreToolUse'), allow)
+        self.pre_cards = early
+        hso = pre.get('hookSpecificOutput') or {}
+        if hso.get('permissionDecision') == 'deny':      # Claude Code stops here: no PermissionRequest follows
+            return {'behavior':'deny','message':hso.get('permissionDecisionReason','')}, early
+        out, late = await self.phase(dict(event, hook_event_name='PermissionRequest'), allow)
+        return out['hookSpecificOutput']['decision'], early + late
 
     async def test_approved_service_and_literal_output_reaches_native_execution(self):
+        # ADR-0307-offlist: an off-list command in an owner turn (owner_terminal here) is allowed at once, zero cards.
         command = 'systemctl --user start qa-never-executed.service; printf ready'
         decision, cards = await self.request({'command':command})
-        self.assertEqual(cards, 1); self.assertEqual(decision['behavior'], 'allow')
+        self.assertEqual(cards, 0); self.assertEqual(decision['behavior'], 'allow')
+        self.assertNotIn('updatedInput', decision)   # the harness runs the unchanged input
         self.assertFalse(self.a.risk_denied)
         # Native shell executes the unchanged approved input; its private CLI fixture
         # replaces only systemctl and cannot touch any actual service or owner HOME.
@@ -62,21 +73,32 @@ class ApprovedDelivery(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((result.returncode,result.stdout), (0,'ready'))
         follow, _ = await self.request({'file_path':str(pathlib.Path.home()/'.config/systemd/user/qa-never-written.service'),'content':'[Service]\nExecStart=/usr/bin/true\n'}, tool='Write')
         self.assertEqual(follow['behavior'],'allow')
+        # A listed (UV) action still opens exactly one card, and the owner's signed allow reaches the harness unchanged.
+        listed, cards = await self.request({'file_path':str(self.h.st.root / 'devices.json'),'content':'{}'}, True, tool='Write')
+        self.assertEqual(self.pre_cards, 1); self.assertGreaterEqual(cards, 1); self.assertEqual(listed, {'behavior':'allow'})
 
     async def test_timer_list_filter_is_not_secret_output(self):
         decision, _ = await self.request({'command':"systemctl --user daemon-reload; systemctl --user list-timers --all --no-pager | grep -E 'qa-never'"})
         self.assertEqual(decision['behavior'],'allow'); self.assertFalse(self.a.risk_denied)
 
     async def test_secret_route_after_uv_does_not_cache_owner_refusal(self):
-        decision, _ = await self.request({'command':'systemctl --user start qa.service; cat ~/.env'})
-        self.assertEqual(decision['behavior'],'allow')  # ordinary native read follows the harness, no heuristic UV/secret-route rewrite
-        self.assertNotIn('主人在已配对设备上拒绝',decision.get('message','')); self.assertFalse(self.a.risk_denied)
+        # ADR-0307-offlist: a credential read is refused for every source, owner included — without a card, and the
+        # refusal is the host's, never worded as the owner's, and never cached as an Agent-wide lock.
+        decision, cards = await self.request({'command':'systemctl --user start qa.service; cat ~/.env'})
+        self.assertEqual((cards, decision['behavior']), (0, 'deny'))
+        self.assertNotIn('主人在已配对设备上拒绝',decision.get('message','')); self.assertIn('未确认是主人拒绝', decision['message'])
+        self.assertFalse(self.a.risk_denied)
+        after, cards = await self.request({'command':'systemctl --user start qa.service; printf ready'})
+        self.assertEqual((cards, after['behavior']), (0, 'allow'))
 
     async def test_actual_owner_denial_still_caches(self):
-        decision, _ = await self.request({'command':'systemctl --user start qa.service; printf ready'}, False)
-        self.assertEqual(decision['behavior'],'deny'); self.assertFalse(self.a.risk_denied)  # refusal is request-local, not an Agent-wide lock
-        follow, cards = await self.request({'command':'systemctl --user start qa-other.service'}, True)
-        self.assertEqual(cards,1); self.assertEqual(follow['behavior'],'allow')  # new exact request needs its own real signed decision
+        # Since ADR-0307-offlist only a listed action reaches the owner; a protected state write is one.
+        target = str(self.h.st.root / 'devices.json')
+        decision, cards = await self.request({'file_path':target,'content':'{}'}, False, tool='Write')
+        self.assertEqual((cards, decision['behavior']), (1, 'deny')); self.assertIn('The owner denied', decision['message'])
+        self.assertFalse(self.a.risk_denied)  # refusal is request-local, not an Agent-wide lock
+        follow, cards = await self.request({'file_path':target,'content':'{"x":1}'}, True, tool='Write')
+        self.assertEqual(self.pre_cards,1); self.assertEqual(follow['behavior'],'allow')  # new exact request needs its own real signed decision
 
 class DisplayBoundary(unittest.TestCase):
     def test_unknown_and_secret_producers_stay_on_controlled_route(self):

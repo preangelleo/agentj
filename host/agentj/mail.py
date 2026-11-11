@@ -2411,24 +2411,30 @@ class Mail:
                 return {"result": "failed", "why": "value"}
             if not pw or any(ord(c) < 32 for c in pw) or len(pw) > 512:
                 return {"result": "failed", "why": "value"}
+            # Gmail display spaces are not password bytes.
+            if password_provider(cfg) == "gmail":
+                pw = "".join(pw.split())
+            if not pw:
+                return {"result": "failed", "why": "value"}
+            if read_config(self.st) != cfg:
+                return {"result": "failed", "why": "stale"}
+            # 0.30.7 N5a: check first, then the pinned authority / live task, then the write (was: write, then check).
+            res = test_connection(cfg, pw)  # read-only: no SMTP DATA / sendmail
+            from . import elevate
             with self._config_lock:
                 if read_config(self.st) != cfg:
                     return {"result": "failed", "why": "stale"}
-                # Gmail display spaces are not password bytes.
-                if password_provider(cfg) == "gmail":
-                    pw = "".join(pw.split())
-                if not pw:
-                    return {"result": "failed", "why": "value"}
+                # r1 B-1: the pin re-check sits inside the lock, after the stale re-check, right before the store
+                elevate.sink_write_gate(validated=bool(res.get("ok")))
                 store_secret(self.st, bytearray(pw.encode("utf-8")), cfg["address"])
-            res = test_connection(cfg, pw)  # read-only: no SMTP DATA / sendmail
-            if read_config(self.st) != cfg:
-                return {"result": "failed", "why": "stale"}
             st2 = read_state(self.st)
             st2["auth_seen"], st2["last_error"] = res.get("auth_sample"), None if res["ok"] else (res["imap"] if res["imap"] != "ok" else res["smtp"])
             save_state(self.st, st2)
             self.wake.set()
             return {"result": "saved", "receipt": {"name": "AGENTJ_MAIL_PASSWORD", "dest": "mail", "length": len(value),
                                                    "verify": "ok" if res["ok"] else "fail", "detail": "IMAP+SMTP" if res["ok"] else st2["last_error"]}}
+        from . import elevate as _elevate
+        _elevate.validating_sink(sink)            # r1 B-2: checks before it writes → must pass the N5a gate
         card = {"kind": "secret", "name": "AGENTJ_MAIL_PASSWORD",
                 "purpose": password_purpose(cfg, self.lang()),
                 "dest": "Agent J 邮件通道（本机加密）" if zh else "Agent J mail channel (encrypted on the Agent J host)",
@@ -2440,7 +2446,7 @@ class Mail:
         if only is not None:
             card["only"] = only
         if settings:
-            card["settings_origin"] = True      # 0.30.6: Settings → mail channel (elevate.settings_origin)
+            card["settings_origin"] = "mail"    # 0.30.6 / 0.30.7: Settings → mail channel page (elevate.settings_origin)
         res = await el.request(card)
         self.log("password", result=res.get("result"))
         return {k: v for k, v in res.items() if k in ("result", "why", "detail", "id", "receipt")}

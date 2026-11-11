@@ -280,15 +280,22 @@ class Units(unittest.TestCase):
         c = " ".join(cx.argv())
         for bad in ("dangerously", "bypass", "--sandbox", "-s ", "approval", "-c", "--enable", "--disable"):
             self.assertNotIn(bad, c)
-        # Unset parent policy stays the native harness default. Neither warnings
-        # nor unsupported granular config may manufacture a different policy.
-        self.assertEqual(cx.policy(), {})
+        # ADR-0307-codex-default-sandbox + merge review S1: an unset owner sandbox is Agent J's FULL default on the
+        # owner's thread only (start/resume name it); no approval policy is ever manufactured — neither warnings nor
+        # unsupported granular config change that. A non-owner thread (the channel avatar) keeps Codex's native sandbox.
+        full = {"sandbox": "danger-full-access"}
+        self.assertEqual(cx.policy(), full)
         cx.cfg["high_risk_warnings"] = True
-        self.assertEqual(cx.policy(), {})
+        self.assertEqual(cx.policy(), full)
         granular = {"granular": {"rules": False, "sandbox_approval": False, "mcp_elicitations": False}}
         cx.human = {"approval_policy": granular}
-        self.assertEqual(cx.policy(), {})
+        self.assertEqual(cx.policy(), full)
         self.assertEqual(cx.human['approval_policy'], granular)
+        avatar = CodexAgent(None, {"kind": "codex", "dir": "/tmp", "model": None}, persist=False)
+        avatar.owner_thread = False
+        self.assertEqual(avatar.policy(), {})
+        avatar.human = {"sandbox_mode": "read-only"}            # the owner's explicit setting still applies everywhere
+        self.assertEqual(avatar.policy(), {"sandbox": "read-only"})
         for sandbox in ('read-only','workspace-write','danger-full-access'):
             for policy in ('never','on-request','untrusted'):
                 cx.human={'sandbox_mode':sandbox,'approval_policy':policy,'approvals_reviewer':'auto_review'}
@@ -301,6 +308,9 @@ class Units(unittest.TestCase):
 # ------------------------------------------------------------------ approval flows (no relay)
 class Flows(unittest.TestCase):
     def setUp(self):
+        # 0.30.7 ADR-0307-offlist: these flows test the card machinery (signing, log, timeout); keep Bash a listed card.
+        from _listed_cards import listed
+        listed(self, 'Bash')
         self.tmp = tempfile.TemporaryDirectory()
         self.st = _state(self.tmp.name)
         self.sent = []
@@ -482,6 +492,9 @@ class Flows(unittest.TestCase):
 # ------------------------------------------------------------------ the whole chain with a stand-in claude
 class Chain(unittest.TestCase):
     def setUp(self):
+        # 0.30.7 ADR-0307-offlist: the chain's subject is the card round trip; keep the native Bash a listed card.
+        from _listed_cards import listed
+        listed(self, 'Bash')
         self.tmp = tempfile.TemporaryDirectory()
         from unittest.mock import patch
         config = patch.dict(os.environ, {'XDG_CONFIG_HOME':str(pathlib.Path(self.tmp.name)/'config')})

@@ -31,11 +31,12 @@ class PeerPlan(_SameOwnerTests):
                                sk=self.osk,did=self.odid,channel=host.channel)
 
     async def native_tap(self, host, phone, session, command):
-        task=asyncio.create_task(host.ask('Bash',{'command':command},_harness_permission=True))
-        card=await self.wait_card(host,task)
-        self.assertFalse(card.require_passkey)
-        await host._answer(session,Phone.answer(phone,host._ask_msg(card,session),True))
-        self.assertEqual((await task)['behavior'],'allow')
+        # 0.30.7 ADR-0307-offlist: these native Bash requests are off the card list. In the received same-owner turn
+        # (external trust) the plan proof is still no grant: the off-list write is refused at once, without a card.
+        before=set(host.asks)
+        result=await asyncio.wait_for(host.ask('Bash',{'command':command},_harness_permission=True),5)
+        self.assertEqual(set(host.asks),before,'no card')
+        self.assertEqual((result['behavior'],result['reason']),('deny','off_list_write_external'),command)
 
     async def test_p573_signed_plan_roundtrip_and_negative_boundaries(self):
         self.clock.t = time.time()
@@ -113,10 +114,12 @@ class PeerPlan(_SameOwnerTests):
             await self.native_tap(h,receiver_phone,receiver_session,command)
         await self.native_tap(h,receiver_phone,receiver_session,'stripe charges create --amount 501')
         rows=approvals.read_log(h.st)
-        self.assertEqual(approvals.check_record(h.st,rows[-1]),'ok')
+        # 0.30.7 ADR-0307-offlist: the last row is the off-list refusal — audited, but no device signed anything.
+        self.assertEqual(rows[-1]['reason'],'off_list_write_external')
+        self.assertEqual(approvals.check_record(h.st,rows[-1]),'unsigned')
         self.assertNotIn('task_grant',[r['reason'] for r in rows])
-        # The historical task_id field is metadata for this native tap, never a reusable grant.
-        self.assertEqual(approvals.check_record(h.st,{**rows[-1],'task_id':'different-turn'}),'ok')
+        # The historical task_id field is metadata, never a reusable grant (it cannot make the row a signed one).
+        self.assertEqual(approvals.check_record(h.st,{**rows[-1],'task_id':'different-turn'}),'unsigned')
         # A new message-id may not spend an already claimed signature again.
         self.svc.on_app(self.b, {**msg,'mid':'fa'*8})
         await settle_pending(self.svc)
@@ -153,8 +156,11 @@ class PeerPlan(_SameOwnerTests):
         h.cur_turn = send.turn + 1
         self.assertIsNone(self.svc.same_owner.authorized(send,'Bash',{'command':commands[0]},json.loads(scope)['actions'][0]['class']))
         # Revoking the receiver signer invalidates an otherwise current native card.
-        task=asyncio.create_task(h.ask('Bash',{'command':commands[0]},_harness_permission=True))
-        card=await self.wait_card(h,task)
+        # 0.30.7 ADR-0307-offlist: card-mechanics subject; the Bash vehicle is put on the card list for this part only.
+        from agentj import approval_offlist
+        with patch.object(approval_offlist,'NATIVE_CARDS',approval_offlist.NATIVE_CARDS|{'Bash'}):
+            task=asyncio.create_task(h.ask('Bash',{'command':commands[0]},_harness_permission=True))
+            card=await self.wait_card(h,task)
         answer=receiver_phone.answer(h._ask_msg(card,receiver_session),True)
         self.assertTrue(h.st.remove_device(receiver_phone.did))
         await h._answer(receiver_session,answer)

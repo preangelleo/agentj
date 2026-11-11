@@ -1524,6 +1524,11 @@ class Rescue:
                                                        "length": 0, "verify": "ok"}}
             return self._store_token(tok, outcome)
 
+        if route != "login":
+            # r1 B-2: the token route checks then writes through _store_token (gated). The /login route validates and
+            # writes inside Claude's own process in one step (B-3 accepted residual, n5a-design.md): not marked.
+            from . import elevate
+            elevate.validating_sink(sink)
         card = self._card("CLAUDE_AUTH_CODE",
                           "Claude 官方授权页给出的授权码（Authentication Code）：只在这张卡里粘贴，不要发到聊天"
                           if self.lang() == "zh" else
@@ -1554,6 +1559,8 @@ class Rescue:
             tok = bytearray(bytes(value).strip())
             return self._store_token(tok, outcome)
 
+        from . import elevate
+        elevate.validating_sink(sink)             # r1 B-2: live check → gate → write (_store_token)
         card = self._card("CLAUDE_CODE_OAUTH_TOKEN",
                           "在任何一台装了 Claude Code 的Agent J 主机运行 `claude setup-token` 得到的长期 token（sk-ant-oat01-…）；先实测再存进本机服务 env 文件（0600）"
                           if self.lang() == "zh" else
@@ -1588,6 +1595,11 @@ class Rescue:
             if not live_claude(tok):
                 outcome["why"] = "verify"
                 return {"result": "failed", "why": "verify", "detail": self.why("verify")}
+            # 0.30.7 N5a: after the live check, before any write — the authority / live task pinned at the answer must
+            # still hold (elevate.sink_write_gate raises inside the card's save; no-op outside it).
+            outcome["why"] = "authority_changed"
+            elevate.sink_write_gate()
+            outcome.pop("why", None)
             acct = (self.flow or {}).get("account")
             if acct:                                   # #427: a new account's slot; the service env file is untouched
                 from . import accounts

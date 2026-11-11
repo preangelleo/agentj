@@ -19,11 +19,14 @@ comments and every other key).
 """
 from __future__ import annotations
 
+import contextlib
+import errno
 import json
 import os
 import pathlib
-import shutil
+import stat
 import sys
+import tempfile
 import time
 
 MODES = ("read-only", "workspace-write", "danger-full-access")
@@ -222,34 +225,120 @@ def edit(text: str, mode: str | None, drop_misplaced: bool = True) -> str:
     return out
 
 
-def _write(path: pathlib.Path, text: str) -> str | None:
-    """Atomic, mode kept (0600 for a new file); the previous file is kept as config.toml.agentj-<time>.bak."""
+class NotRegular(OSError):
+    """config.toml is a symlink (or another non-regular file): Agent J does not edit through it — the owner manages that
+    file (dotfiles); `config_invalid` to the phone, a plain message in the CLI."""
+
+
+def _read(path: pathlib.Path) -> tuple[str | None, int | None]:
+    """(text, permission bits) of config.toml without following a symlink; (None, None) when there is none.
+    A symlink / non-regular file → NotRegular. The text comes from the same descriptor that was checked."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0))
+    except FileNotFoundError:
+        if os.path.lexists(path):                # a dangling symlink
+            raise NotRegular(f"{path.name} is a symlink") from None
+        return None, None
+    except OSError as e:
+        if e.errno == errno.ELOOP:
+            raise NotRegular(f"{path.name} is a symlink") from None
+        raise
+    try:
+        fs = os.fstat(fd)
+        if not stat.S_ISREG(fs.st_mode):
+            raise NotRegular(f"{path.name} is not a regular file")
+        chunks = []
+        while True:
+            b = os.read(fd, 1 << 16)
+            if not b:
+                break
+            chunks.append(b)
+        return b"".join(chunks).decode("utf-8"), fs.st_mode & 0o777
+    finally:
+        os.close(fd)
+
+
+def is_regular_or_absent(env=None) -> bool:
+    """False when config.toml is a symlink or another non-regular file (the one-tap reset will not edit it)."""
+    try:
+        st_ = os.lstat(config_path(env))
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return stat.S_ISREG(st_.st_mode)
+
+
+def _write(path: pathlib.Path, text: str, old: str | None = None, mode: int | None = None) -> str | None:
+    """Atomic, mode kept (0600 for a new file); the previous file is kept as config.toml.agentj-<time>.bak.
+    0.30.7 r1 (A-1): nothing here follows a symlink — the original is read by a no-follow descriptor (a symlinked /
+    non-regular config.toml is refused: NotRegular), the backup is created O_CREAT|O_EXCL|O_NOFOLLOW (an existing or
+    planted name, dangling link included, is skipped to the next free name) and filled with the bytes read, the new
+    text goes to a fresh mkstemp file in the same directory (O_EXCL, random name) and is renamed over config.toml."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    if old is None and mode is None:
+        old, mode = _read(path)
     backup = None
-    mode = 0o600
-    if path.exists():
-        mode = path.stat().st_mode & 0o777
+    if old is not None:
         stamp, n = time.strftime('%Y%m%d-%H%M%S'), 0
-        backup = path.with_name(f"{path.name}.agentj-{stamp}.bak")
-        while backup.exists():           # two edits in one second keep both originals
-            n += 1
-            backup = path.with_name(f"{path.name}.agentj-{stamp}-{n}.bak")
-        shutil.copy2(path, backup)
-        os.chmod(backup, 0o600)
-    tmp = path.with_name(f".{path.name}.agentj-tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        fh.write(text)
-    os.replace(tmp, path)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        while True:                      # two edits in one second keep both originals
+            name = path.with_name(f"{path.name}.agentj-{stamp}{'-' + str(n) if n else ''}.bak")
+            try:
+                bfd = os.open(name, flags, 0o600)
+                break
+            except FileExistsError:
+                n += 1
+                if n > 999:
+                    raise
+        with os.fdopen(bfd, "wb") as fh:
+            fh.write(old.encode("utf-8"))
+            os.fchmod(fh.fileno(), 0o600)
+        backup = name
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.agentj-", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fchmod(fh.fileno(), mode if mode is not None else 0o600)
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
     return str(backup) if backup else None
 
 
 def set_mode(mode: str | None, env=None) -> dict:
     p = config_path(env)
-    old = p.read_text(encoding="utf-8") if p.exists() else ""
-    new = edit(old, mode)
-    backup = _write(p, new) if new != old else None
-    return {"path": str(p), "changed": new != old, "backup": backup, **parse(new)}
+    old, perm = _read(p)
+    new = edit(old or "", mode)
+    backup = _write(p, new, old, perm) if new != (old or "") else None
+    return {"path": str(p), "changed": new != (old or ""), "backup": backup, **parse(new)}
+
+
+def selected_profile(env=None) -> dict:
+    """0.30.7 r1 (A-2): {"profile": name|None, "mode": its sandbox_mode|None} — a `profile = "<p>"` selected at the top
+    level whose `[profiles.<p>]` sets sandbox_mode. Codex applies the profile's value over the top-level one, so removing
+    the top-level key does not bring that profile back to full access."""
+    import tomllib
+    try:
+        text, _ = _read(config_path(env))
+        data = tomllib.loads(text or "")
+    except (OSError, UnicodeDecodeError, ValueError):
+        return {"profile": None, "mode": None}
+    name = data.get("profile")
+    profs = data.get("profiles")
+    table = profs.get(name) if isinstance(name, str) and isinstance(profs, dict) else None
+    m = table.get("sandbox_mode") if isinstance(table, dict) else None
+    return {"profile": name if isinstance(name, str) else None, "mode": m if isinstance(m, str) else None}
+
+
+def profile_restricts(env=None) -> dict | None:
+    """The selected profile when it keeps a sandbox (any sandbox_mode other than danger-full-access), else None."""
+    sp = selected_profile(env)
+    return sp if sp["mode"] and sp["mode"] != FULL else None
 
 
 def fix(env=None) -> dict:
@@ -257,7 +346,8 @@ def fix(env=None) -> dict:
     removed); else the value from the last table in the file (the line the owner appended) moves up."""
     import tomllib
     p = config_path(env)
-    old = p.read_text(encoding="utf-8") if p.exists() else ""
+    raw, perm = _read(p)
+    old = raw or ""
     info = parse(old)
     if info["error"]:
         raise ValueError("config.toml is not valid TOML")
@@ -281,7 +371,7 @@ def fix(env=None) -> dict:
         grab(data, [])
         want = next((v for v in reversed(vals) if v in MODES), None)
     new = edit(old, want)
-    backup = _write(p, new) if new != old else None
+    backup = _write(p, new, raw, perm) if new != old else None
     return {"path": str(p), "changed": new != old, "backup": backup, **parse(new)}
 
 
@@ -304,7 +394,16 @@ def doctor_row(st, env=None) -> dict | None:
     if info["misplaced"]:
         return {"id": "codex_perm", "status": "warn", "summary": "写了但没生效 / written but not in effect — " + misplaced_text(info["misplaced"]),
                 "hint": "agentj codex-sandbox fix   (然后 / then: agentj service restart) — " + main}
-    return {"id": "codex_perm", "status": "ok", "summary": main, "hint": ""}
+    # Informational only: neither doctor nor this hint changes Codex config or approvals.
+    # S4 (0.30.7 merge review): the owner's own config.toml restriction is not a fault — no "restore the default" nudge.
+    hint = ("查看：agentj codex-sandbox status（这是你在 config.toml 里自己设的限制）/ inspect: agentj codex-sandbox status "
+            "(your own config.toml setting)" if src == "config" else
+            "查看：agentj codex-sandbox status；改回 Agent J 默认：agentj codex-sandbox default，"
+            "然后 agentj service restart / inspect: agentj codex-sandbox status; "
+            "restore Agent J default: agentj codex-sandbox default, then agentj service restart")
+    if shared:
+        hint = "共享模式先核对桌面 App 当前对话权限 / in shared mode check the desktop thread permissions first; " + hint
+    return {"id": "codex_perm", "status": "ok", "summary": main, "hint": hint}
 
 
 def cmd(a) -> None:
@@ -320,6 +419,10 @@ def cmd(a) -> None:
             r = fix()
         else:
             r = config_info()
+    except NotRegular as e:
+        raise SystemExit(f"Agent J：没有改 config.toml——它是符号链接或不是普通文件（多半由你的 dotfiles 管理），Agent J 不替你改它；"
+                         f"请直接改它指向的那个文件 / config.toml unchanged: it is a symlink or not a regular file (likely managed "
+                         f"by your dotfiles); edit the file it points to yourself") from e
     except (OSError, ValueError) as e:
         raise SystemExit(f"Agent J：没有改 config.toml（{type(e).__name__}）/ config.toml unchanged") from e
     src = "config" if r.get("top") in MODES else "agentj"

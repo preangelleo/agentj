@@ -216,6 +216,8 @@ export function vaultOf(v) {
 }
 const RESULT = { done: 'elev.r.done', saved: 'elev.r.saved', denied: 'elev.r.denied', timeout: 'elev.r.timeout', gone: 'elev.r.gone',
   stopped: 'elev.r.stopped', locked: 'elev.r.locked', bad_password: 'elev.r.badPassword', failed: 'elev.r.failed' };
+/** 0.30.7 N4b: typed host reasons (approval_special.LiveContextMoved.REASONS) → one clear sentence each. */
+export const NEW_TASK = { new_task: 'p0307.secret.newTask', new_task_during_validation: 'p0307.secret.newTaskValidated' };
 /** The card ended (§11 `elev_done`). */
 export function done(m) {
   forgetSpecial(m.id,m.result);
@@ -231,6 +233,8 @@ export function done(m) {
       until: Date.now() + 12000 };
   }
   const key = RESULT[m.result];
+  // 0.30.7 N4b: the host refused the write because a new task started between the confirmation and the save
+  if (c && m.result === 'unknown' && NEW_TASK[m.why]) notify({ kind: 'error', text: t(NEW_TASK[m.why]), ms: 8000, shape: 'rect' });
   if (key && c) {
     let text = t(key, { code: m.code ?? '' });
     if (m.result === 'done' && Number.isInteger(m.code) && m.code !== 0) text = t('elev.r.doneFail', { code: m.code }) + (typeof m.summary === 'string' && m.summary ? ' ' + m.summary.slice(0,600) : '');

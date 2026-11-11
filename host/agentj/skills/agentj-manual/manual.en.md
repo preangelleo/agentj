@@ -102,8 +102,8 @@ one line.
 
 The handoff path is fixed and copyable from the phone: `~/.local/state/agentj/handoff/compact.md` in shared mode,
 `<work folder>/.agentj/handover/compact.md` for Agent J's own main conversation. If you send nothing after a compaction,
-Agent J itself reminds the Agent to read the handoff and carry on, and the phone shows one line about it. See the
-compaction and handoff page.
+Agent J itself reminds the Agent to read the handoff and carry on. In shared mode the phone shows one line about it only
+after the Agent has actually read the handoff file. See the compaction and handoff page.
 
 `/clear` starts a new conversation. It asks first, and you can undo it until you send your next message; once the new
 conversation has begun, the button turns into a short "The new conversation has started — too late to undo (the old one is saved on the Agent J host)" line and the old one stays on the Agent J host. To keep

@@ -32,9 +32,14 @@ RUN_CMDS = {
     "rescue_status": (("rescue", "status"), "read-only: the rescue watchdog's state and whitelisted log metadata"),
     "update_check": (("update", "check"), "read-only: compares versions, installs nothing"),
     "version": (("--version",), "#584 read-only: prints the installed version"),
+    # 0.30.7 (chairman 11-10): 「改回全放行并重启」 — the shown line only; what runs is codex_full_access.apply in process
+    # (never this argv): config.toml's top-level sandbox_mode removed, then the installed service restarts. Face ID.
+    "codex_full_access": (("codex-sandbox", "default"), "owner-confirmed with Face ID (approval_widen tier); a fixed "
+                          "in-process config.toml edit + service restart, audited, receipt after the restart"),
 }
 for _h in harness.SUPPORTED:
     RUN_CMDS["switch_" + _h] = (("agent", "switch", _h, "--force"), "owner-confirmed emergency AI switch")
+IN_PROCESS = frozenset({"codex_full_access"})
 
 
 def available_commands():
@@ -59,6 +64,7 @@ def command_harnesses(*, detect=False):
 READ_CMDS = frozenset(('doctor', 'version'))
 TIMEOUT = 120          # s per run (doctor --reconnect may wait for the relay)
 PENDING_MS = 150000    # what the phone waits after `ctl_pending`
+RESTART_GRACE = 0.5    # s between codex_full_access's answer and the restart
 OUT_MAX = 12000        # characters sent back (the tail is cut, `cut: true`)
 _ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|[\x00-\x08\x0b-\x1f\x7f]")
 
@@ -90,6 +96,8 @@ def clean(text: str) -> tuple[str, bool]:
 def run(name: str, *, runner=None) -> dict:
     """→ {"code", "out", "cut"?, "ms"} — never raises (a timeout is code -1, an error -2)."""
     t0 = time.monotonic()
+    if name in IN_PROCESS:              # never a subprocess: only Desk._full_access runs it (signed + Face ID)
+        return {"code": -2, "out": "", "ms": 0}
     env = {**os.environ, "NO_COLOR": "1", "TERM": "dumb", "PYTHONIOENCODING": "utf-8"}
     try:
         r = (runner or subprocess.run)(argv(name), capture_output=True, text=True, timeout=TIMEOUT, stdin=subprocess.DEVNULL, env=env,
@@ -128,8 +136,12 @@ class Desk:
             controls.log(h.st, action="cmd_run", device=s.device, result="refused:shape")
             return await res(False, why="shape")
         target = {"cmd": name}
-        # P573 (#386 ⑤): reconnect / an AI switch is recoverable — the signed control is the owner's button; no Face ID
+        # P573 (#386 ⑤): reconnect / an AI switch is recoverable — the signed control is the owner's button; no Face ID.
+        # 0.30.7: codex_full_access widens the Agent's power → the confirm_tier row of approval_widen decides (UV).
         require_uv = False
+        if name in IN_PROCESS:
+            from . import codex_full_access
+            require_uv = codex_full_access.requires_uv()
         if require_uv:
             pk = h.st.passkey_of_device(s.device)
             if not pk:
@@ -156,6 +168,9 @@ class Desk:
         controls.log(h.st, action="cmd_run", device=s.device, result="start", obj=target, sig=obj.get("sig"), n=n,
                      ts=obj.get("ts"))
         self.busy = name
+        if name in IN_PROCESS:
+            h._bg(self._full_access(s, r, {"rid": r, "n": n, "ts": obj.get("ts"), "sig": obj.get("sig")}), "cmd_run")
+            return
         h._bg(self._run(s, r, name), "cmd_run")         # first: its `finally` always clears `busy` (review M1)
         with contextlib.suppress(Exception):            # the link may drop right now; the result still finds the phone
             await h.send_app(s, {"t": "ctl_pending", "r": r, "action": "cmd_run", "timeout_ms": PENDING_MS})
@@ -177,3 +192,30 @@ class Desk:
             sent = await h.send_app(s, m)               # the asking session …
         if not sent:                                    # … else the same phone after a reconnect (review L3)
             await h._send_device(device, m)
+
+    async def _full_access(self, s, r, sig) -> None:
+        """0.30.7: the fixed in-process action. The answer goes out first, then the restart (the receipt waits on disk)."""
+        from . import codex_full_access as cfa
+        h, device = self.h, s.device
+        try:
+            out = await asyncio.to_thread(cfa.apply, h.st, device, sig)
+        finally:
+            self.busy = None
+        h.st.log("cmd_run", device=device, cmd=cfa.NAME, code=out["code"])
+        m = {"t": "ctl_res", "r": r, "action": "cmd_run", "ok": out["code"] == 0, "cmd": cfa.NAME, "code": out["code"],
+             "out": "", "ms": 0, "restart": out["restart"], **({"why": out["why"]} if out.get("why") else {})}
+        sent = False
+        with contextlib.suppress(Exception):
+            sent = await h.send_app(s, m)
+        if not sent:
+            with contextlib.suppress(Exception):
+                await h._send_device(device, m)
+        note = cfa.refusal_text(out, getattr(h, "lang", "zh"))     # r1: profile / symlinked config → say why plainly
+        if note:
+            with contextlib.suppress(Exception):
+                h.agent_notice(note)
+        if out["restart"] == "requested":
+            await asyncio.sleep(RESTART_GRACE)           # let the answer leave before serve goes down
+            await asyncio.to_thread(cfa.restart_now, h.st, device, out)
+        if out["restart"] in ("manual", "failed"):
+            cfa.deliver(h)                               # serve stays up: the receipt now

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import ctypes
 import hashlib
 import json
@@ -327,12 +328,19 @@ def system_password_ask(name: str, purpose: str) -> bool:
     return bool(_SYS_PW_NAME.search(name or "") or _SYS_PW_TEXT.search(purpose or ""))
 
 
+# 0.30.7: each Settings caller names its page (closed set; the page word is host code, never a wire field).
+SETTINGS_PAGES = {'keys': ('密钥', 'Keys'), 'mail': ('邮件通道', 'Mail channel'),
+                  'provider': ('模型和 API Key', 'Models & API keys'), 'auth': ('AI 账户登录', 'AI account login')}
+
+
 def settings_origin(host, card: dict) -> dict:
     """0.30.6: the source of a secret card the owner opened on a live paired Settings page (keys, provider, mail)."""
     en = str(getattr(host, 'lang', 'zh')).startswith('en')
     what = str(card.get('purpose') or card.get('name') or '')[:200]
+    page = SETTINGS_PAGES.get(card.get('settings_origin'), ('通用', 'General'))
     return {'session': str(host.hist.epoch), 'message_id': None, 'root_message_id': None, 'channel': 'phone',
-            'sender': 'You' if en else '你', 'text': ('Settings · you: ' if en else '设置页 · 你本人：') + what,
+            'settings_page': page,
+            'sender': 'You' if en else '你', 'text': (f'Settings · {page[1]} · you: ' if en else f'设置页 · {page[0]} · 你本人：') + what,
             'verified': True, 'suspicious': False, 'initiator': '遥控器设置 / Remote settings', 'task_record': '',
             'chain': [{'kind': 'settings', 'id': str(card.get('name') or '')[:80]}]}
 
@@ -847,6 +855,42 @@ def _pins_live_context(c: dict) -> bool:
     The owner's terminal login / sink cards keep the 0.30.1 rule — the Agent's turn moving on never refuses them."""
     return bool(c.get('review_adapter') is not None and c.get('kind') == 'secret' and not callable(c.get('sink')))
 
+
+def _pins_sink_write(c: dict) -> bool:
+    """0.30.7 N5a: a reviewed secret card with a host sink. The live task / source is recorded when the answer is accepted
+    (so answering after the Agent's turn moved on still works — the 0.30.1 rule) and re-checked only when a validating sink
+    calls `sink_write_gate()` between its check and its write. Login / vshare cards are never pinned."""
+    return bool(c.get('review_adapter') is not None and c.get('kind') == 'secret' and callable(c.get('sink')))
+
+
+_SINK_WRITE_GATE = contextvars.ContextVar('agentj_sink_write_gate', default=None)
+
+
+def sink_write_gate(validated: bool = True) -> None:
+    """0.30.7 N5a: a validating secret sink calls this after its network check and right before its write. Inside
+    Elevator._save it raises approval_special.AuthorityChanged / LiveContextMoved when the authority or the live task /
+    source moved since the answer was accepted; called anywhere else (tests, direct calls) it does nothing."""
+    gate = _SINK_WRITE_GATE.get()
+    if gate is not None:
+        gate(validated)
+
+
+_VALIDATING_SINK = '_agentj_validating_sink'
+
+
+def validating_sink(fn):
+    """0.30.7 r1 B-2: host code marks a sink that validates the value (network check) before writing it — the mail app
+    password and the Claude setup-token / auth-code store. Such a sink must call `sink_write_gate()` between its check
+    and its write; a pinned card whose validating sink returns `saved` without having invoked the gate fails closed in
+    `Elevator._save` (a sink moved into an uncopied thread / context would otherwise lose the pin silently).
+    A function attribute: only host code builds callables (anything off the wire is refused as invalid_sink)."""
+    setattr(fn, _VALIDATING_SINK, True)
+    return fn
+
+
+def is_validating_sink(fn) -> bool:
+    return getattr(fn, _VALIDATING_SINK, False) is True
+
 class Elevator:
 
 
@@ -1166,7 +1210,7 @@ class Elevator:
         # caller marked (keys.py, provider_runtime, serve mail_key) inside a live paired owner request carries the
         # host-built Settings origin instead; other paired frames keep their old source. Display only, never a grant.
         settings = (approval_review.origin_scope(settings_origin(self.host, card))
-                    if creator_live is not None and card.get('kind') == 'secret' and card.get('settings_origin') is True
+                    if creator_live is not None and card.get('kind') == 'secret' and card.get('settings_origin') in SETTINGS_PAGES
                     else contextlib.nullcontext())
         with settings:
             return await self._request_scoped(card, gone, on_card, creator_live)
@@ -1345,6 +1389,8 @@ class Elevator:
                 done_msg["summary"] = await asyncio.to_thread(stderr_summary, res.get("stderr", ""))
         if c["kind"] == "secret" and res.get("receipt"):
             done_msg["verify"] = res["receipt"]["verify"]
+        if c["kind"] == "secret" and res.get("result") == "unknown" and res.get("why") in ("new_task", "new_task_during_validation"):
+            done_msg["why"] = res["why"]      # 0.30.7 N4b: closed set (approval_special.LiveContextMoved.REASONS)
         if res.get("elsewhere"):
             done_msg["elsewhere"] = 1
         if c["kind"] == "sudo" and res.get("saved"):
@@ -1448,7 +1494,7 @@ class Elevator:
                 c['review_adapter'].denied()
             audit(self.st, c, result="denied", reason="device", **signed)
             return self._finish(c, {"result": "denied", "_logged": True})
-        if _pins_live_context(c):
+        if _pins_live_context(c) or _pins_sink_write(c):
             from . import approval_special
             # security r4 N4a: pin only once the answer passed every check (signature, nonce, not busy) — a later
             # frame for the same card can never re-pin it.
@@ -1564,11 +1610,13 @@ class Elevator:
 
                 await worker
                 raise
-        except approval_special.AuthorityChanged:
+        except approval_special.AuthorityChanged as e:
             c['cancel'].set()
             c['busy']=False
             audit(self.st,c,result='unknown',reason='authority_changed',**signed)
-            self._finish(c,{'result':'unknown','why':'authority_changed','_logged':True})
+            # 0.30.7 N4b: a pin refusal (new task between the accepted answer and the write) keeps its typed reason.
+            why = e.why if isinstance(e, approval_special.LiveContextMoved) else 'authority_changed'
+            self._finish(c,{'result':'unknown','why':why,'_logged':True})
         except Exception:
             c["busy"] = False
             audit(self.st, c, result="failed", reason="execution", **signed)
@@ -1896,31 +1944,51 @@ class Elevator:
         # 0.30.6 (P541 vs hotfix d87bfdfebf): an owner secret card may be answered after its turn ended, but the live
         # task / source at the moment the answer was accepted (_check) is pinned — a new owner turn during the key
         # validation wait still stops the write.
-        pinned = c.get('_live_at_answer') if _pins_live_context(c) else None
-        if _pins_live_context(c) and pinned is None:
+        # 0.30.7 N5a: a reviewed sink card is pinned the same way, re-checked by the sink itself (sink_write_gate) after
+        # its validation and right before its write.
+        pins = _pins_live_context(c) or _pins_sink_write(c)
+        pinned = c.get('_live_at_answer') if pins else None
+        if pins and pinned is None:
             raise approval_special.AuthorityChanged()
-        def ensure_source():
+        def ensure_source(validated=False):
             if c.get('review_adapter') is not None:
                 guard=c.get('_approval_execution_guard')
                 if not callable(guard):raise approval_special.AuthorityChanged()
                 guard()
             if not self._source_allows(c):raise approval_special.AuthorityChanged()
             if pinned is not None and approval_special.live_context(self.host) != pinned:
-                raise approval_special.AuthorityChanged()
+                raise approval_special.LiveContextMoved(validated)   # N4b: typed reason, never 「主机没有收下」
         ensure_source()
         if len(value) > MAX_VALUE:
             return {"result": "failed", "why": "value"}
         if callable(c.get("sink")):
+            gate_calls = []                     # r1 B-2: did the sink reach its gate in this save?
+
+            def gate(validated=True):
+                gate_calls.append(bool(validated))
+                ensure_source(bool(validated))
+            token = _SINK_WRITE_GATE.set(gate)
             try:
-                return c["sink"](value)
+                res = c["sink"](value)
+            except approval_special.AuthorityChanged:
+                raise
             except Exception:
                 return {"result": "failed", "why": "io"}
+            finally:
+                _SINK_WRITE_GATE.reset(token)
+            if pins and is_validating_sink(c["sink"]) and not gate_calls \
+                    and isinstance(res, dict) and res.get("result") == "saved":
+                # fail closed: the pin was never re-checked (the gate ran in another context or not at all) — never a
+                # 「已保存」 receipt for a write the owner's pinned authority did not cover. Name only, never the value.
+                self.st.log("secret_sink_gate_skipped", name=str(c.get("name") or "")[:64])
+                raise approval_special.AuthorityChanged()
+            return res
         verified = None
         if c.get('verify_before_write'):
             verified = verify_secret(c, value)
             if verified.get('verify') != 'ok':
                 return {'result': 'failed', 'why': 'verify', 'detail': verified.get('detail', ''), **_key_hint(c, value)}
-        ensure_source()
+        ensure_source(verified is not None)
         try:
             write_secret(c["dest_spec"], value)
         except Refused as e:

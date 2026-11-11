@@ -59,7 +59,7 @@
     "compact.handover_ok": {"zh": "交接已写好：{path}", "en": "Handover saved: {path}"},
     "compact.handover_fail": {"zh": "交接没来得及写，已经直接压缩了。", "en": "I couldn't write the handover first; compacted anyway."},
     "compact.stopped": {"zh": "好，停下了，这次没压缩。", "en": "Stopped — nothing was compacted."},
-    "recover.compact": {"zh": "压缩好了，我在翻交接笔记，马上接上思路。", "en": "Compacted. I'm reading my handover notes to pick up the thread."},
+    "recover.compact": {"zh": "压缩好了，已读完交接，接着做。", "en": "Compacted. I've read the handover; carrying on."},
     "recover.clear": {"zh": "清空好了，我在读交接笔记，一会儿就接上。", "en": "Cleared. I'm reading my handover notes and will pick up shortly."},
     "recover.stalled": {"zh": "交接提醒没能自动送到 Agent；发一句话它就会接着做。", "en": "The handover reminder didn't reach the Agent by itself; send it a line and it will carry on."},
     "cmd.after_turn": {"zh": "收到，等这一轮忙完就办。", "en": "Got it — I'll do it when this turn finishes."},

@@ -568,8 +568,10 @@ class ServeHandoff(unittest.IsolatedAsyncioTestCase):
                 with self.subTest(lv=lv, cmd=cmd), mock.patch.object(approval_level, "level", return_value=lv):
                     n = len(approvals.read_log(self.st))
                     got, res = await self.ask_in(send, "Bash", {"command": cmd})
-                    self.assertEqual(got, "card", res)                   # a fresh card, never an automatic allow
-                    self.assertEqual(self.reasons()[n:], ["device"])     # decided on the card only (here: denied)
+                    # 0.30.7 ADR-0307-offlist: off-list → no card; the handed friend turn is external trust, so the
+                    # write is refused at once — still never an automatic allow from the access level.
+                    self.assertEqual((got, res["behavior"]), ("done", "deny"), res)
+                    self.assertEqual(self.reasons()[n:], ["off_list_write_external"])
                     self.assertFalse({"level_harness", "level_full", "batch", "goal", "owner_scope"} & set(self.reasons()))
 
     async def test_owner_only_paths_see_an_unverified_suspicious_delegated_turn(self):
@@ -600,7 +602,8 @@ class ServeHandoff(unittest.IsolatedAsyncioTestCase):
         self.host.agent.cur_send = send
         self.assertIsNone(self.host._grant_for("Bash", sc[:2]))
         got, res = await self.ask_in(send, "Bash", cmd)
-        self.assertEqual(got, "card", res)
+        # 0.30.7 ADR-0307-offlist: off-list → no card; external (friend) turn → refused, the grant is not spent.
+        self.assertEqual((got, res["behavior"], res["reason"]), ("done", "deny", "off_list_write_external"), res)
         self.assertNotIn("batch", self.reasons())
         self.assertEqual(self.host.grants["g" * 32].left, 5)
         # control: the owner's own phone turn IS matched by that live batch grant
@@ -615,7 +618,8 @@ class ServeHandoff(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(self.host.goals, "current", return_value=goal), \
                 mock.patch.object(goal_mod, "tier", return_value=("granted", [0])) as tier:
             got, res = await self.ask_in(send, "Bash", {"command": "touch p0304-goal.txt"})
-            self.assertEqual(got, "card", res)
+            # 0.30.7 ADR-0307-offlist: off-list → no card; external (friend) turn → refused, no goal consulted.
+            self.assertEqual((got, res["behavior"], res["reason"]), ("done", "deny", "off_list_write_external"), res)
             self.assertFalse(tier.called, "a goal was consulted for a handed friend turn")
             self.assertFalse({"goal", "goal_nocard"} & set(self.reasons()))
 

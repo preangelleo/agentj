@@ -30,7 +30,7 @@ import { parsePairing as parseLink } from './proto/wire.js';
 import VERSION from './version.js';
 import {probeEnvironment, publicPhoneLink} from './js/phone-env.js';
 import { t, lang, fillText, plain, applyStatic, onLang } from './js/t.js';
-import { el, toast, toastOff, toastAction, executionToast, notify, noticeSheet, confirmSheet, closeConfirm } from './js/ui.js';
+import { el, toast, toastOff, toastAction, executionToast, notify, noticeSheet, confirmSheet, closeConfirm, reloadStoppedNotice } from './js/ui.js';
 import { dbGet, dbPut, dbDel, deviceKey, signKey, wipeLocal, installId, markPaired, wasPaired, askPersist, adoptRootStore, rootHost, markRootMoved, dropRootPairing, copyToSeat } from './js/store.js';
 import * as seats from './js/seats.js';         // P545 (§40): m.agentj.app/<seat id> — this seat's own page
 import { b64u, unb64u } from './proto/wire.js';
@@ -45,9 +45,17 @@ import * as media from './js/media.js';       // F21: files the Agent shows (§1
 import * as controls from './js/controls.js';
 import * as setkeys from './js/setkeys.js';   // P561 追加 16: Settings shows a button's key from the shortcut table
 import * as push from './js/push.js';
+import * as twoid from './js/twoid.js';            // 0.30.7: Safari + Home Screen app = two remotes that push each other out
 import * as relay from './js/relay.js';
 import * as sfx from './js/sfx.js';   // P575: the first tap / key unlocks the sounds (see unlockSounds)
 import * as settings from './js/settings.js';
+import { createReloadGuard } from './js/reload-guard.js';
+import { watchPreviewFailure } from './js/preview-failure.js';
+const reloadGuard = createReloadGuard({
+  notice: () => reloadStoppedNotice(),   // 0.30.7: 15 s · Esc · its own close button (ui.js)
+  report: reason => session.sendApp({t:'web_reload_stopped', reason}).catch(() => {})
+});
+settings.setReloadGuard(reloadGuard);
 import {initVersionNotice,setHostVersion,yieldTo as versionYield,offerVersion} from './js/version-notice.js';
 import * as conndlg from './js/conn-dlg.js';   // 0.30.6: the offline notice = the centred dialog after 10 s (no row under the header)
 import {initShare, onShareReady, forgetShare} from './js/share.js';
@@ -343,7 +351,7 @@ async function leaveLegacyHost() {
   let paired = false;
   try { const h = await dbGet('host'); paired = !!(h && h.approved); } catch { /* no storage → nothing to keep here */ }
   if (paired) return false;
-  location.replace(WEB_ORIGIN + location.pathname + location.search + (pendingLink ?? location.hash));
+  reloadGuard('seat.origin', {mode:'replace', url:WEB_ORIGIN + location.pathname + location.search + (pendingLink ?? location.hash)});
   return true;
 }
 const parsePairing = (input) => parseLink(input, undefined, allowRelay);
@@ -614,14 +622,14 @@ async function backfillPairing() {
   if (h && h.approved && typeof h.dk !== 'string' && h.channel === session.channel()) await dbPut('host', { ...h, dk: b64u((await deviceKey()).pub) });
 }
 // why (0.15.1, PROTOCOL §3 `removed`): 'replaced' = a newer pairing took this phone's place on a full computer.
-async function revoked(why = 'revoked') {
+async function revoked(why = 'revoked', moved = false) {
   session.closeSession();
   const hadDraft = !!$('input').value.trim() || !!(await dbGet('draft').catch(() => null));
   await forgetLocal();
   // this computer no longer knows the phone: the record stays only to say so after a reload (no resume, no network);
   // a new QR for the same computer pairs again (main() resumes instead only for a still-approved pairing)
   const h = await dbGet('host').catch(() => null);
-  if (h && (h.approved || h.removed !== why)) await dbPut('host', { ...h, approved: false, removed: why }).catch(() => {});
+  if (h && (h.approved || h.removed !== why || !!h.removedMoved !== moved)) await dbPut('host', { ...h, approved: false, removed: why, removedMoved: moved }).catch(() => {});
   takeoverWith = null;
   markPaired(false);
   ticketQueue(renew.clear);                           // P122: a removed / replaced phone's ticket is dead on the host anyway
@@ -634,6 +642,7 @@ async function revoked(why = 'revoked') {
   applyStatic($('revoked-view'));
   show('revoked');
   $('revoked-draft').hidden = !hadDraft;
+  twoid.paint($('revoked-twoid'), why, moved);
   $('takeover-note').hidden = true;
   $('takeover-pk').hidden = true;
   if (replaced) renderTakeover(h && { ...h, approved: false, removed: why }).catch(() => { $('takeover-pk').hidden = true; });
@@ -716,7 +725,7 @@ function startPairing(input) {
     // the same 8 letters but another channel (40 bits can be searched for): never replaces this seat's pairing
     if (id === seats.SEAT && own && own.approved && own.channel !== p.channel) { pairFailed(); return; }
     if (id === seats.SEAT) session.openSession('pair', p);
-    else location.assign(seats.seatHref(id) + (at >= 0 ? raw.slice(at) : '#p=' + raw));
+    else reloadGuard('seat.pair', {mode:'assign', url:seats.seatHref(id) + (at >= 0 ? raw.slice(at) : '#p=' + raw)});
   }, () => pairFailed());
 }
 // P190 (§27): this page was scanned by a paired remote, which handed it the pairing link: same pairing, other words on the
@@ -988,7 +997,7 @@ async function hostMoved(m) {
       await dbPut('host', { ...h, movedTo: nid });
       await ticketQueue(renew.clear);                 // this seat's renewal ticket was the old computer's
       seats.forgetSeat(seats.SEAT); seats.remember(nid, mv.name || '');
-      location.replace(seats.seatHref(nid));
+      reloadGuard('seat.move', {mode:'replace', url:seats.seatHref(nid)});
       return;
     }
   }
@@ -1085,7 +1094,7 @@ async function seatRoute() {
   const root = seats.SEAT ? null : await rootHost().catch(() => null);
   if (link && seats.SEAT) {                           // the root page pairs any link it is given, exactly as before
     const id = await seats.seatId(link.channel);
-    if (id !== seats.SEAT) { location.replace(seats.seatHref(id) + location.search + pendingLink); return true; }
+    if (id !== seats.SEAT) { reloadGuard('seat.link', {mode:'replace', url:seats.seatHref(id) + location.search + pendingLink}); return true; }
     const own = await dbGet('host').catch(() => null);  // same 8 letters, another channel: refused (see startPairing)
     if (own && own.approved && own.channel !== link.channel) { pendingLink = null; toast(t('pair.badLink'), 6000); }
     return false;
@@ -1096,14 +1105,14 @@ async function seatRoute() {
     const known = seats.knownSeats();
     const to = root && root.approved && seats.SEAT_RE.test(root.movedTo || '') ? root.movedTo
       : !root && !pendingLink && known.length === 1 ? known[0].s : null;
-    if (to) { location.replace(seats.seatHref(to) + location.pathname.replace(/^\/+/, '') + location.search + location.hash); return true; }
+    if (to) { reloadGuard('seat.follow', {mode:'replace', url:seats.seatHref(to) + location.pathname.replace(/^\/+/, '') + location.search + location.hash}); return true; }
     return false;
   }
   // a seat's page with no pairing of its own: the root page's pairing, when it is this seat's, moves here (a copy)
   const own = await dbGet('host').catch(() => null);
   if (own && own.approved) {
     // P550 (P545 × P547): this seat moved to a new host = another seat's page (hostMoved copied the records there)
-    if (seats.SEAT_RE.test(own.movedTo || '') && own.movedTo !== seats.SEAT) { location.replace(seats.seatHref(own.movedTo) + location.search); return true; }
+    if (seats.SEAT_RE.test(own.movedTo || '') && own.movedTo !== seats.SEAT) { reloadGuard('seat.moved', {mode:'replace', url:seats.seatHref(own.movedTo) + location.search}); return true; }
     const age = Date.now() - (Number(own.moving) || 0);   // just arrived from the old seat's page: the same 「扫码配对新主机」 wait
     if (own.moving && age >= 0 && age < MOVE_MS) { movePending = true; clearTimeout(moveTimer); moveTimer = setTimeout(moveFailed, MOVE_MS - age); }
     return false;
@@ -1149,7 +1158,7 @@ function copySeatUrl(id, btn = null) {
 function moveToSeat(id) {
   if (!seats.SEAT_RE.test(id || '')) return;
   session.closeSession();
-  location.assign(seats.seatHref(id));
+  reloadGuard('seat.open', {mode:'assign', url:seats.seatHref(id)});
 }
 /** The root page's 「选择要连接的席位」: the seats this browser has opened, newest first; a tap opens that seat's page. */
 function renderSeatPick(extra = null) {
@@ -1664,7 +1673,7 @@ function wire() {
     connected: () => state === 'ready',
     myId: api.myIdSync,
     unpair: unpairAsk,
-    reload: async () => { if (await relay.saveDraft()) location.reload(); else toast(t('set.refreshFail'), 3200); },
+    reload: async () => { if (await relay.saveDraft()) reloadGuard('conn.manual', {manual:true}); else toast(t('set.refreshFail'), 3200); },
     view: () => view,
     forget: forgetHost,                               // P171: this remote unbound itself from 遥控器管理
     setupFaceId: () => { setupFaceId().catch(() => {}); },   // P547: 转移席位 on a remote without Face ID
@@ -1681,7 +1690,7 @@ function wire() {
   $('repair').addEventListener('click', forgetHost);   // keeps the device key
   $('retry').addEventListener('click', () => {
     const a = $('retry').dataset.action;
-    if (a === 'resume') resume(); else if (a === 'reload') location.reload(); else showIdle();
+    if (a === 'resume') resume(); else if (a === 'reload') reloadGuard('retry.manual', {manual:true}); else showIdle();
   });
   addEventListener('hashchange', () => {             // a QR opened while this page is already open
     if (takeAddHash()) {                              // a friend's link opened while the page is open
@@ -1723,6 +1732,7 @@ async function main() {
   if (await seatRoute()) return;                      // P545: this pairing / this record belongs on a seat's own page
   copycode.init();   // P292: every code / pre on the page can be copied (the static ones in index.html, then all later)
   applyStatic();
+  watchPreviewFailure();
   renderName();
   wire();
   initSeatUi();
@@ -1796,7 +1806,7 @@ async function main() {
     toast(t('pair.already'));
   }
   if (host && host.approved && !lost) { askPersist(); show('chat'); resume(); openFriendsWanted(); return; }
-  if (host && !host.approved && ['replaced', 'revoked'].includes(host.removed)) return revoked(host.removed);
+  if (host && !host.approved && ['replaced', 'revoked'].includes(host.removed)) return revoked(host.removed, host.removedMoved === true);
   if (await tryTicket()) { openFriendsWanted(); return; }   // P122: no pairing here, but this phone's ticket cookie is
   showIdle();
   if (lost) autoPasskey().catch(() => {});

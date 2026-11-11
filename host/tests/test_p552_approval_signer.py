@@ -304,8 +304,11 @@ class Background(Fixture):
     def test_the_source_is_the_request_not_a_host_flag(self):
         # review S3: while a workflow runs (task_label set) the shared session's own turn is NOT background
         self.host.task_label = "周报"
-        self.ask("git push origin main")
-        self.assertEqual(len(self.cards()), 1)
+        res = self.ask("git push origin main")
+        # 0.30.7 ADR-0307-offlist: off-list → no card; the source is still the request (the owner turn → allow
+        # 'off_list'), not the host's task_label (a background task would be refused as an unknown-source write).
+        self.assertEqual(self.cards(), [])
+        self.assertEqual((res["behavior"], self.last()["reason"]), ("allow", "off_list"))
         self.host.task_label = None
 
     def test_task_claim_marks_its_connection(self):
@@ -366,9 +369,13 @@ class Background(Fixture):
 
     def test_safe_level_keeps_every_card(self):
         self.host.preferences = preferences.validate({**self.host.preferences, "approval": {"level": "safe"}})
-        self.ask("git push origin main", background="task")
-        self.ask(Headless.YES[0])
-        self.assertEqual(len(self.cards()), 2)
+        # 0.30.7 ADR-0307-offlist: a stricter level never conjures a card for an off-list request; the background
+        # task's write (unknown source) is refused with the reason, the owner turn's dispatch is answered at once.
+        res = self.ask("git push origin main", background="task")
+        self.assertEqual((res["behavior"], self.last()["reason"]), ("deny", "off_list_write_unknown"))
+        res = self.ask(Headless.YES[0])
+        self.assertEqual((res["behavior"], self.last()["reason"]), ("allow", "off_list"))
+        self.assertEqual(self.cards(), [])
 
 
 class SharedChild(unittest.IsolatedAsyncioTestCase):

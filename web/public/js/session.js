@@ -233,6 +233,7 @@ async function onApp(s, m) {
   }
   if (m.t === 'removed' && s.mode === 'resume') {     // §3: the host says why it will close this device (then closes)
     s.removed = m.why === 'replaced' ? 'replaced' : 'revoked';
+    s.removedMoved = s.removed === 'replaced' && m.moved === true;   // 0.30.7: this phone's other copy took over
     return;
   }
   if (m.t === 'pair_wait') {                          // P153 (§3.3): a card is on the paired remotes; nothing to type here
@@ -342,7 +343,7 @@ function onClose(s, ev) {
     // A replaced browser must yield to the other one rather than taking it back.
     if (s.removed === 'replaced' || removalProbe) {
       removalProbe = false;
-      return H.onRevoked(s.removed);
+      return H.onRevoked(s.removed, s.removedMoved === true);
     }
     removalProbe = true; // one silent confirmation using the existing record/key
   }

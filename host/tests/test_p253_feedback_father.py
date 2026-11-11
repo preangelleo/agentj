@@ -84,12 +84,15 @@ class Father(unittest.TestCase):
 
     def test_strict_local_redaction_body_and_doctor(self):
         key="sk-"+"K"*48
-        body=f"Problem {key} user@private.invalid +8613812345678 /srv/客户甲/秘密合同.docx C:\\Users\\Alice\\private.txt ~/客户乙/财报.txt"
+        body=f"Problem /srv/客户甲/秘密合同.docx C:\\Users\\Alice\\private.txt ~/客户乙/财报.txt\n{key} user@private.invalid +8613812345678"
         draft,hits=support.prepare(body,body,identity=("host-private","Alice"))
         for text in draft.values():
             for raw in (key,"user@private.invalid","13812345678","客户甲","客户乙","private.txt","财报"):
                 self.assertNotIn(raw,text)
-            self.assertIn("<redacted-path>",text)
+        # Secret-bearing lines are removed whole; paths on a separate safe line
+        # must still be replaced in both the body and the doctor attachment.
+        self.assertIn("<redacted-path>", draft["body"])
+        self.assertIn("<redacted-path>", draft["attach"])
 
         public, _ = support.prepare("Typing /model then /clear fails; file /model/private-customer.txt", None, identity=("host-private", "Alice"))
         self.assertIn("/model then /clear", public["body"])

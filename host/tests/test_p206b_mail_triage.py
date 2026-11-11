@@ -268,6 +268,12 @@ class Settings(unittest.TestCase):
         old = M.blank_config(); new = dict(old, triage=dict(T.blank(), preset='rules'))
         self.assertIn('triage', M.widening(old, new))
 
+    def test_parser_accepts_json_code_fence_only(self):
+        payload = json.dumps(dict(category='question', sure=0.8, summary='x', reply='y'))
+        self.assertEqual(T.parse_answer('```json\n' + payload + '\n```')['category'], 'question')
+        with self.assertRaises(ValueError):
+            T.parse_answer('```json\n' + payload + '\n```\nextra')
+
     def test_parser_whitelists_fields_and_rejects_nan_and_nonfinite_confidence(self):
         row = T.parse_answer(json.dumps(dict(category='question', sure=0.8, summary='x', reply='y', trusted=True)))
         self.assertNotIn('trusted', row)

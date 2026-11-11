@@ -47,13 +47,16 @@ class _Shared(unittest.IsolatedAsyncioTestCase):
             notice(text)
         self.host.agent_notice = seen
 
-    def take_later(self, delay, prompt):
+    def take_later(self, delay, prompt, read=True):
         """Claude Code takes the message `delay` s after the write (UserPromptSubmit)."""
         async def go():
             await asyncio.sleep(delay)
             self.timeline.append(("before_start", list(self.host.notices)))
             await self.ev("UserPromptSubmit", prompt=prompt)
             self.timeline.append(("started", self.a.state.status))
+            if read:
+                await self.ev("PostToolUse", tool_name="Read", tool_input={"file_path": str(handoff.path(handoff.COMPACT))},
+                              tool_response={"content": "handoff"})
         self.a.loop.call_soon_threadsafe(lambda: asyncio.ensure_future(go()))
 
     async def compact_done(self, trigger="manual"):
@@ -82,10 +85,14 @@ class SharedRecovery(_Shared):
 
         def send(s, text, src=None):
             self.sent.append((text, src))
-            self.take_later(0.3, text)
+            self.take_later(0.3, text, read=False)
         with patch.object(shared, "claude_send", side_effect=send):
             t0 = time.monotonic()
             await self.compact_done()
+            await self.until(lambda: self.results()[-1:] == ["started"])
+            self.assertNotIn(READING, self.host.notices)
+            self.timeline.append(("read_called", None))
+            await self.ev("PostToolUse", tool_name="Read", tool_input={"file_path": str(handoff.path(handoff.COMPACT))}, tool_response={"content": "handoff"})
             await self.until(lambda: READING in self.host.notices)
             took = time.monotonic() - t0
         self.assertLess(took, 60.0)
@@ -100,8 +107,48 @@ class SharedRecovery(_Shared):
         self.assertNotIn(notice[0][1], ("idle", "none"), "the reading line only while the turn runs (blue)")
         started = [i for i, x in enumerate(self.timeline) if x[0] == "started"]
         self.assertEqual(len(started), 1)
-        self.assertLess(started[0], self.timeline.index(notice[0]), "turn start first, then the reading line")
+        self.assertLess(started[0], self.timeline.index(("read_called", None)))
+        self.assertLess(self.timeline.index(("read_called", None)), self.timeline.index(notice[0]),
+                        "successful Read callback must precede the phone acknowledgement")
         self.assertEqual(self.results(), ["sent", "started"])
+
+    async def test_no_read_or_failed_read_never_acknowledges(self):
+        self.takes = False
+        def send(s, text, src=None):
+            self.sent.append((text, src))
+            self.take_later(0.05, text, read=False)
+        with patch.object(shared, "claude_send", side_effect=send):
+            await self.compact_done()
+            await self.until(lambda: self.results()[-1:] == ["started"])
+            path = str(handoff.path(handoff.COMPACT))
+            for kw in ({"tool_name": "Read", "tool_input": {"file_path": path + ".old"}, "tool_response": {"content": "other"}},
+                       {"tool_name": "Read", "tool_input": {"file_path": path}, "tool_response": {"is_error": True}},
+                       {"tool_name": "Read", "tool_input": {"file_path": path}, "tool_response": {"interrupted": True}},
+                       {"tool_name": "Read", "tool_input": {"file_path": path}, "tool_response": {"content": "child"}, "agent_id": "child"}):
+                await self.ev("PostToolUse", **kw)
+            self.assertNotIn(READING, self.host.notices)
+            await self.ev("Stop", last_assistant_message="未读")
+            await self.ev("UserPromptSubmit", prompt="别的回合")
+            await self.ev("PostToolUse", tool_name="Read", tool_input={"file_path": path}, tool_response={"content": "late"})
+            self.assertNotIn(READING, self.host.notices)
+
+    async def test_missing_or_older_than_24h_never_directs_read(self):
+        for old in (False, True):
+            with self.subTest(old=old):
+                self.takes = False
+                await self.ev("UserPromptSubmit", prompt="继续")
+                await self.ev("Stop", last_assistant_message="好")
+                if old:
+                    self.write_handoff()
+                    then = time.time() - handoff.FRESH - 10
+                    os.utime(handoff.path(handoff.COMPACT), (then, then))
+                await self.ev("PreCompact", trigger="manual")
+                self.assertFalse(self.a.compact_handoff)
+                self.assertNotIn("先读交接文件", self.a._handoff_context("compact"))
+                self.assertIn("没找到新交接", handoff.recover_text("zh", "compact", True))
+                self.assertNotIn("Read the handoff", handoff.recover_text("en", "compact", True))
+                if old:
+                    self.assertFalse(handoff.fresh(self.a.turn_began_at))
 
     async def test_a_write_that_starts_no_turn_never_claims_reading_and_is_resent_bounded(self):
         self.takes = False
@@ -127,6 +174,7 @@ class SharedRecovery(_Shared):
             await self.compact_done()
             await self.until(lambda: READING in self.host.notices, limit=30)
         self.assertEqual(len(calls), 2)
+        await self.until(lambda: self.results()[-1:] == ["started"])
         self.assertEqual(self.results(), ["send_failed", "sent", "started"])
 
     async def test_a_late_take_is_not_sent_twice(self):
@@ -140,6 +188,7 @@ class SharedRecovery(_Shared):
             await self.compact_done()
             await self.until(lambda: READING in self.host.notices, limit=30)
         self.assertEqual(len(self.sent), 1)
+        await self.until(lambda: self.results()[-1:] == ["started"])
         self.assertEqual(self.results(), ["sent", "not_started", "started"])
 
     async def test_a_manual_compaction_waits_past_the_old_5s_busy_window(self):
@@ -150,6 +199,9 @@ class SharedRecovery(_Shared):
             return len(polls) > 24                  # 25 × 0.25 s > the old 20-poll limit
         with patch.object(self.a, "_registry_quiet", side_effect=quiet):
             await self.compact_done()
+            await self.until(lambda: self.results()[-1:] == ["started"], limit=30)
+            await self.ev("PostToolUse", tool_name="Read", tool_input={"file_path": str(handoff.path(handoff.COMPACT))},
+                          tool_response={"content": "handoff"})
             await self.until(lambda: READING in self.host.notices, limit=30)
         self.assertGreater(len(polls), 20)
         self.assertEqual(self.results(), ["sent", "started"])

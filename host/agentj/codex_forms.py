@@ -125,7 +125,7 @@ async def answer(agent, rid, p, card, *, approval=None):
     try:
         if approval is not None:
             tool, args, _item, bind = approval
-            decision = await agent.host.ask(harness_tool(tool), args, gone, batch=False, **({'bind': bind} if bind else {}))
+            decision = await agent.host.ask(harness_tool(tool), args, gone, batch=False, _harness_permission=True, **({'bind': bind} if bind else {}))
             if decision.get('behavior') != 'allow':
                 return
         outcome, picks = await agent.host.question(card, gone, task=getattr(agent.host, 'task_label', None))

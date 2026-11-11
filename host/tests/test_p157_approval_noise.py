@@ -254,6 +254,9 @@ class HostLayerTwo(unittest.TestCase):
 
     def setUp(self):
         _isolate_config(self)
+        # 0.30.7 ADR-0307-offlist: the subject is the Jev layer in front of a card; keep the Bash vehicle a listed card.
+        from _listed_cards import listed
+        listed(self, 'Bash')
         # This fixture owns only the legacy Jev mechanism after the registry.
         # Changing NATIVE_TOOLS cannot isolate a parameter-aware shell floor.
         # test_p512_policy uses the real table/Host.ask to prove no floor bypass.

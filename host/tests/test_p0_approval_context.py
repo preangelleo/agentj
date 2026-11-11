@@ -6,6 +6,7 @@ from agentj import approval_review as review
 import test_p541_approval_review as fixture
 
 class ContextSubmission(unittest.IsolatedAsyncioTestCase):
+    setUp=fixture.Review.setUp   # 0.30.7 ADR-0307-offlist: card-context machinery; Bash vehicle stays a listed card
     asyncSetUp=fixture.Review.asyncSetUp
     open=fixture.Review.open
     stop=fixture.Review.stop
@@ -105,6 +106,7 @@ class ReservationRelease(unittest.TestCase):
             self.assertFalse(reopened.reserve('operation','first'))
 
 class LiveAuthorityRace(unittest.IsolatedAsyncioTestCase):
+    setUp=fixture.Review.setUp   # 0.30.7 ADR-0307-offlist: card-context machinery; Bash vehicle stays a listed card
     import test_p541_answer_race as _race
     asyncSetUp=fixture.Review.asyncSetUp
     open=fixture.Review.open

@@ -265,6 +265,7 @@ class Session:
     iid: str = ""                 # 0.15.1: the browser install's per-host id from the pairing msg1 (same browser → replace)
     ready_at: float = 0.0         # P129: monotonic time the session became ready (dev_gone logs how long it lived)
     rc: tuple = ()                # P129: the page's own account of its previous drop (why, close code, ms offline), logged
+    gone_moved: bool = False      # 0.30.7: "replaced" by the same phone's other identity (passkey / ticket restore)
     gone: str = ""                # 0.15.1: a removed device that resumed: "replaced" | "revoked" — told so after its hello
     pk_offer: tuple | None = None  # F20 (§12): (nonce, monotonic issue time, P547 peer request id | None) of the one open pk_offer
     since: object = None          # F20: a passkey restore's hello `since`, used once the restore is accepted
@@ -627,6 +628,8 @@ class Host:
         self._news_inflight = 0           # P374: /v1/host/news calls running (on_news)
         self.ws = None
         self.sessions: dict[int, Session] = {}
+        self.reload_loads: dict[str, deque[float]] = {}  # P0307: process-local, per paired device
+        self.reload_storm_at: dict[str, float] = {}
         from .remote_pair import RemotePair
         self.remote_pair = RemotePair(self)
         from .remotes import Remotes
@@ -1204,6 +1207,7 @@ class Host:
             s.send, s.recv, s.h = hs.split()
             s.pub, s.device, s.mode, s.state = hs.rs, did, "gone", "hello"
             s.gone = self.st.removed_why(did) or "revoked"
+            s.gone_moved = s.gone == "replaced" and self.st.removed_moved(did)
             await self._op(wire.OP_DATA, s.cid, bytes([wire.HS_RESP]) + msg2)
             return
         try:
@@ -1234,7 +1238,7 @@ class Host:
             if t != "hello":
                 return await self.close_cid(s.cid, "expected_hello")
             if s.mode == "gone":
-                await self.send_app(s, {"t": "removed", "why": s.gone})
+                await self.send_app(s, {"t": "removed", "why": s.gone, **({"moved": True} if s.gone_moved else {})})
                 return await self.close_cid(s.cid, "unknown_device")
             caps = obj.get("caps")
             s.p33 = isinstance(caps, list) and wire.CAP_P33 in caps[:16]
@@ -1977,6 +1981,22 @@ class Host:
         except Exception:  # noqa: BLE001 — a failed card never costs the welcome
             self.st.log("owner_card", result="error")
 
+    def _track_reload_load(self, device: str, why: str | None) -> None:
+        if why != "load" or not device:
+            return
+        now = time.monotonic()
+        loads = self.reload_loads.setdefault(device, deque())
+        while loads and now - loads[0] > 60:
+            loads.popleft()
+        loads.append(now)
+        if len(loads) < 5 or now - self.reload_storm_at.get(device, float("-inf")) < 600:
+            return
+        self.reload_storm_at[device] = now
+        self.st.log("reload_storm", device=device, n=len(loads), window=60)
+        self.local_notice(pick(self.lang,
+            "遥控器网页在一分钟内多次重新加载；已记录异常，请检查自动刷新或预览页。",
+            "The remote page reloaded repeatedly within one minute; check automatic refresh or preview."))
+
     async def _accept_resume(self, s: Session, since) -> None:
 
         s.provenance = provenance.phone()
@@ -1987,6 +2007,7 @@ class Host:
         s.ready_at = time.monotonic()
         why, code, down = s.rc or (None, None, None)
         self.st.log("resume_ok", cid=s.cid, device=s.device, why=why, code=code, ms=down)
+        self._track_reload_load(s.device, why)
         self._bg(asyncio.to_thread(self._touch_seen, s.device), "touch_seen")   # P292: ≤ 1 write a minute, off the loop
         self.emit("ready", device=s.device, name=s.name)
         self.reporter.trigger("online")
@@ -2050,7 +2071,7 @@ class Host:
             return await self._pk_fail(s, e.why)
         if old != new:
             self.st.log("auto_unbind", device=old, reason="passkey")
-            await self._drop_device(old, "replaced")
+            await self._drop_device(old, "replaced", moved=True)   # 0.30.7: same remote, new browser storage
         s.device, s.mode = new, "resume"
         s.name = self._dev_label(new)
         self.st.log("pk_restore", cid=s.cid, device=new, result="ok", id=old)
@@ -2089,7 +2110,7 @@ class Host:
             return await self._pk_fail(s, e.why)
         if old != new:
             self.st.log("auto_unbind", device=old, reason="ticket")
-            await self._drop_device(old, "replaced")
+            await self._drop_device(old, "replaced", moved=True)
         s.device, s.mode = new, "resume"
         s.name = self._dev_label(new)
         self.st.log("rt_restore", cid=s.cid, device=new, result="ok", id=old)
@@ -2912,7 +2933,7 @@ class Host:
             await self.remotes.changed()
         return removed, n
 
-    def _revoked_authority(self, did: str) -> None:
+    def _revoked_authority(self, did: str, moved: bool = False) -> None:
         """0304 A1-2/A1-7: a removed remote loses its pending authority at once, not at TTL. Every open card only it
         could answer is denied (list_approval then sends ask_done to every remote); same-owner rounds it started or
         consented to end with their cards (`gone`); same-owner peers get the shorter roster now, not in ≤30 s."""
@@ -2937,14 +2958,18 @@ class Host:
         peers = getattr(self, "peers", None)
         if peers is None:
             return
-        with contextlib.suppress(Exception):
-            peers.same_owner.device_gone(did)
+        if not moved:
+            # 0.30.7 (preview-frset): a seat MOVE (the same remote proved the same passkey / renewal ticket from another
+            # browser storage) is not a removal — its rounds and the legacy relations it consented to stay. Cards only
+            # the old id could answer still end above (the old id can no longer answer them).
+            with contextlib.suppress(Exception):
+                peers.same_owner.device_gone(did)
         with contextlib.suppress(Exception):
             peers.same_owner.roster_moved()      # R-F11: rounds whose snapshot held it restart (new code)
         with contextlib.suppress(Exception):
             peers.xfer.roster_tick()
 
-    async def _drop_device(self, did: str, why: str, removed: bool = True) -> int:
+    async def _drop_device(self, did: str, why: str, removed: bool = True, moved: bool = False) -> int:
         if removed:
             # Subscription lifecycle only; the existing pairing/authentication decision is unchanged.
             from .subscriptions import router
@@ -2952,7 +2977,7 @@ class Host:
                 router(self).revoke_device(did)
             except (ValueError, OSError):
                 self.st.log('event_revoke', reason='persistence_failed')
-            self._revoked_authority(did)
+            self._revoked_authority(did, moved=moved)
 
         victims = [c for c, s in list(self.sessions.items()) if s.device == did]
         for c in victims:
@@ -3212,6 +3237,9 @@ class Host:
         with contextlib.suppress(OSError):
             bailian.notify_retired(self)
         from . import auto_update
+        from . import codex_full_access     # 0.30.7: the receipt of a 「改回全放行并重启」 tap made before the restart
+        with contextlib.suppress(OSError):
+            codex_full_access.deliver(self)
         note = auto_update.take_notice(self.st, self.lang, self.preferences, notices.release_notes.current(self.st, self.agent))
         if note:
             self.agent_notice(note,repair="reconnect")
@@ -4725,11 +4753,12 @@ class Host:
         except RuntimeError:            # not inside the loop (a unit test calling it directly): no cards, the text stands
             attach().close()
 
-    def local_notice(self, text: str) -> None:
+    def local_notice(self, text: str, card: dict | None = None) -> None:
 
         self.notice_local = True
         try:
-            self.agent_notice(text)
+            # a card-less notice keeps the one-argument call (stand-ins and older overrides of agent_notice)
+            self.agent_notice(text, card=card) if card else self.agent_notice(text)
         finally:
             self.notice_local = False
 
@@ -5577,12 +5606,13 @@ class Host:
                     with provenance.task_request(task_scope):
                         broker = self.peers.xfer.broker if self.peers is not None and not background and task_scope is None else None
                         ans = await broker.execute(tool, tool_input, m.get("tool_use_id"), gone.get(rid)) if broker else None
-                        if ans is None and not background and task_scope is None and self.perm_w is w:
-                            from . import host_turns   # ADR-0306-host-turn-reads: heartbeat / system turn reads, no card
-                            ans = await host_turns.admit(self, clean_line_tool(tool), tool_input, getattr(launch_context, "cwd", None))
+                        # 0.30.6's host_turns.admit shortcut is absorbed by ADR-0307-offlist (list_approval → approval_offlist).
                         if ans is None:
+                            # security r1 M1: a request on a permission connection that is no longer the main one never
+                            # borrows the main thread's current turn (typed unknown → reads only, no card).
+                            stale = not background and task_scope is None and self.perm_w is not w
                             ans = await self.ask(clean_line_tool(tool), tool_input, gone.get(rid), _harness_permission=True, _native_context=launch_context,
-                                                 **({"background": background} if background else {}))
+                                                 **({"background": background} if background else {"background": "detached"} if stale else {}))
         finally:
             gone.pop(rid, None)
             if side is not None or self.perm_w is w:
@@ -5630,7 +5660,7 @@ class Host:
             grant_info=grant_info, receipt=_receipt, only=only, host_card=_host_card,
             settings_session=_settings_session, bounded_context=_bounded_context, harness_permission=_harness_permission,
             task_actions=task_actions, task_target=task_target, native_context=_native_context, settings_context=_settings_context,
-            front=_front)
+            front=_front, background=("avatar", str(avatar)[:40]) if avatar is not None else background)
 
         def observe(reason, shown=None):
             if type(_receipt) is dict:
@@ -6611,7 +6641,7 @@ class Host:
         # owner path. Sandbox-specific classifiers remain independently owned.
         return danger.Verdict()
 
-    def policy_refused(self, tool: str, tool_input: dict, why: str, notice: str) -> None:
+    def policy_refused(self, tool: str, tool_input: dict, why: str, notice: str, fix: str | None = None) -> None:
 
         rid = secrets.token_hex(16)
         v = self._classify(tool, tool_input)
@@ -6623,7 +6653,12 @@ class Host:
         self.activity("decision", id=rid, tool=tool, result="policy", reason="policy", why=why, cats=v.cats,
                       task=self.task_label, summary=summary[:200])
         self.emit("ask_done", id=rid, result="deny", reason="policy")
-        self.local_notice(f"{notice}（{why}：{summary.splitlines()[0][:120]}）")
+        from . import codex_full_access        # 0.30.7: typed host metadata for the one button, never inferred from the text
+        text = f"{notice}（{why}：{summary.splitlines()[0][:120]}）"
+        if fix == codex_full_access.NAME:
+            self.local_notice(text, card={"fix": codex_full_access.NAME})
+        else:
+            self.local_notice(text)
 
     def _open_grant(self, a: Ask, did: str) -> None:
         if a.scope is None:
@@ -8612,6 +8647,7 @@ class Host:
             from . import web_preview
             signature = await asyncio.to_thread(web_preview.attest, self.st, self.channel, s.pub, obj.get("message"))
             if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
+                self.st.log("preview_attest", device=s.device, ok=signature is not None)
                 await self.send_app(s, {"t": "web_preview_proof", "r": obj["r"], "ok": signature is not None,
                                         **({"signature": signature} if signature else {})})
             return

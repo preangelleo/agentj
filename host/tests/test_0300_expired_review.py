@@ -4,10 +4,15 @@ import asyncio
 import unittest
 from agentj import approval_review as review, approvals
 import test_p541_approval_review as fixture
+from _listed_cards import listed
 
 
 class TerminalReview(unittest.IsolatedAsyncioTestCase):
-    asyncSetUp = fixture.Review.asyncSetUp
+    async def asyncSetUp(self):
+        # 0.30.7 ADR-0307-offlist: off-list Bash no longer cards; these tests are about review/expiry card mechanics,
+        # so the vehicle is a listed (tap) card again.
+        listed(self, 'Bash')
+        await fixture.Review.asyncSetUp(self)
     open = fixture.Review.open
     stop = fixture.Review.stop
     intent = fixture.Review.intent

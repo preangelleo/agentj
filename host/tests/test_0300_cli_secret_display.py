@@ -123,6 +123,10 @@ class NoiseCards(unittest.IsolatedAsyncioTestCase):
         self.h.ask_ttl=3
         self.ph=Phone(self.st,with_passkey=True);self.ph.policy_host=self.h
         self.s=_ready(self.h,self.ph);real_outbound(self.h,self.s,self.sent)
+        # 0.30.7 ADR-0307-offlist: off-list native Bash no longer cards; the subject is the card's safe display and
+        # input binding, so the native Bash vehicle is put on the card list.
+        from _listed_cards import listed
+        listed(self,'Bash')
 
     async def open(self,tool,inp):
         task=asyncio.create_task(self.h.ask(tool,inp,_harness_permission=(tool=='Bash'),grant_info=True))

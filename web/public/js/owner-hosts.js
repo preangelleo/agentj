@@ -115,7 +115,7 @@ function showError() { $('owner-hosts-message').textContent = t('ownerHosts.fail
 export function init() {
   const anchor = $('set-budget-row'); if (!anchor) return;
   const root = node('section', '', 'owner-hosts'); root.id = 'owner-hosts'; root.hidden = true;
-  const title = node('h3', ''); title.dataset.title = '';
+  const title = node('h3', '', 'setg'); title.dataset.title = '';
   const note = node('p', '', 'setnote'); note.dataset.note = '';
   const list = node('div', ''); list.id = 'owner-hosts-list';
   const add = node('button', '', 'aj-btn'); add.id = 'owner-hosts-add'; add.type = 'button'; add.addEventListener('click', () => fill());

@@ -329,9 +329,9 @@ class LoopTick(unittest.IsolatedAsyncioTestCase):
                                     "message": {"content": "# Autonomous loop tick (dynamic pacing)"}}) + "\n")
             a.read_transcript()
             a.session = {"sessionId": "owner"}
-            # Historical loop metadata remains system provenance. A native
-            # PermissionRequest belongs to the served harness and needs a real
-            # paired tap; it is not an AJ source-wide second approval gate.
+            # ADR-P570b + ADR-0307-offlist: a loop tick is a host system notice (host_read), not the owner. An off-list
+            # write is refused at once, without a card and not as the owner's refusal; the Agent is pointed at a
+            # scheduled task and the owner is told once (LOOP_OWNER, at most every 6 h).
             from test_p551_confirm_levels import Base
             import test_p568_task_source as source_fixture
             rig = Base()
@@ -339,11 +339,17 @@ class LoopTick(unittest.IsolatedAsyncioTestCase):
             try:
                 a.host = rig.host
                 rig.host.agent = a
+                rig.host.proactive_via = "loop"
+                told = []
+                rig.host.task_notice = lambda text, guide=None: told.append(guide)
                 for _ in range(2):
-                    decision, card = await source_fixture.signed_adapter(rig, self.perm(a))
-                    self.assertEqual(decision['behavior'], 'allow')
-                    self.assertFalse(card.get('passkey_required', False))
+                    decision = await source_fixture.off_list(rig, self.perm(a))
+                    self.assertEqual(decision['behavior'], 'deny')
+                    self.assertIn('不是主人', decision['message'])
+                    self.assertIn('定时任务', decision['message'])
+                    self.assertIn('scheduled task', decision['message'])
                     self.assertFalse(provenance.is_owner(provenance.turn_source(a)))
+                self.assertEqual(told, ['loop'], 'the owner is told once, not on every refused step')
                 await source_fixture.guest_boundary(self)
             finally:
                 rig.doCleanups()

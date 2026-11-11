@@ -67,6 +67,10 @@ def sign(ph, target, *, n=None, ts=None, key=None):
 
 class Base(unittest.TestCase):
     def setUp(self):
+        # 0.30.7 ADR-0307-offlist: the subject is the level / goal / offline-park card machinery; an off-list native Bash
+        # was only its vehicle, so keep it a listed (tap) card here.
+        from _listed_cards import listed
+        listed(self, 'Bash')
         # Preferences are per fixture: another test's working root is not initial setup.
         from tempfile import TemporaryDirectory as _ConfigDirectory
         from unittest.mock import patch as _config_patch
@@ -190,14 +194,22 @@ class Matrix(Base):
         n=len(self.cards())
         self.assertEqual(self.ask('stripe charges create --amount 500')['behavior'],'deny')
         self.assertEqual(len(self.cards()),n+1)
-        self.assertFalse(self.cards()[-1].get('passkey_required',False))
+        # #537② (Jarvis 2026-11-11, pending the chairman): a real charge in an owner turn is a fingerprint card
+        self.assertTrue(self.cards()[-1].get('passkey_required',False))
 
     def test_full_keeps_host_cards_and_needs_an_approver(self):
         self.full()
-        for tool, inp in (("pair_device", {"summary": "新遥控器"}), ("agentj config", {"changes": "approval.level → full"})):
-            n = len(self.cards())
-            self.ask(inp, tool=tool, batch=False)
-            self.assertEqual(len(self.cards()), n + 1, tool)
+        n = len(self.cards())
+        self.ask({"summary": "新遥控器"}, tool="pair_device", batch=False)
+        self.assertEqual(len(self.cards()), n + 1, "pair_device")
+        # 0.30.7 ADR-0307-offlist: a NATIVE request naming the host tool `agentj config` is off the card list (a native
+        # request may only name AskUserQuestion) → answered at once, audited, no card. The level itself only changes
+        # through the signed approval_set (test_full_needs_the_signed_switch).
+        n = len(self.cards())
+        res = self.ask({"changes": "approval.level → full"}, tool="agentj config", batch=False)
+        self.assertEqual(len(self.cards()), n, "agentj config")
+        self.assertEqual(self.last()["reason"], "off_list")
+        self.assertEqual(res["behavior"], "allow")
         for tool in ("DoomLoop", "SandboxOnce", "AuthRescue"):   # P551 (#321): OpenCode `task` (a sub-agent) is ①
             self.assertEqual(approval_level.host_card(tool),tool == "AuthRescue", tool)
         self.st.remove_device(self.phone.did)
@@ -508,7 +520,8 @@ class GoalNoCard(Base):
             n=len(self.cards())
             self.assertEqual(self.ask(cmd)['behavior'],'deny',cmd)
             self.assertEqual(len(self.cards()),n+1,cmd)
-            self.assertFalse(self.cards()[-1].get('passkey_required',False))
+            # #537② (Jarvis 2026-11-11): only the real charge is a fingerprint card; the goal switch never lowers it
+            self.assertEqual(self.cards()[-1].get('passkey_required',False),cmd.startswith('stripe charges'),cmd)
         self.assertEqual(self.cards(goal.TOOL),[])
 
     def test_the_signing_remote_must_stay_paired(self):

@@ -361,11 +361,13 @@ class State:
         return {k: v for k, v in d.items() if isinstance(k, str) and isinstance(v, dict) and v.get("why") in ("replaced", "revoked")} \
             if isinstance(d, dict) else {}
 
-    def note_removed(self, did: str, why: str) -> None:
+    def note_removed(self, did: str, why: str, moved: bool = False) -> None:
+        """moved (0.30.7 preview-frset): the SAME phone's other identity took this record over (passkey / renewal-ticket
+        restore) — e.g. Safari and the iOS Home Screen app, which keep separate storage. Lets that page say so."""
         with self.devices_lock():
             d = self.removed_ledger()
             d.pop(did, None)
-            d[did] = {"why": why, "at": int(time.time())}
+            d[did] = {"why": why, "at": int(time.time()), **({"moved": True} if moved else {})}
             keep = sorted(d.items(), key=lambda kv: _num(kv[1].get("at")))[-self.REMOVED_KEEP:]
             _write_private(self.removed_path, json.dumps(dict(keep)).encode())
 
@@ -378,6 +380,10 @@ class State:
     def removed_why(self, did: str) -> str | None:
         v = self.removed_ledger().get(did)
         return v["why"] if v else None
+
+    def removed_moved(self, did: str) -> bool:
+        v = self.removed_ledger().get(did)
+        return bool(v and v["why"] == "replaced" and v.get("moved") is True)
 
     def sign_key(self, did: str) -> bytes | None:
         v = self.devices().get(did, {}).get("sk")
@@ -566,7 +572,7 @@ class State:
             d[new] = rec
             _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
         if new != old:
-            self.note_removed(old, "replaced")
+            self.note_removed(old, "replaced", moved=True)
         self.forget_removed(new)
         return new
 
@@ -612,7 +618,7 @@ class State:
             d[new] = rec
             _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
         if new != old:
-            self.note_removed(old, "replaced")
+            self.note_removed(old, "replaced", moved=True)
         self.forget_removed(new)
         return new
 
@@ -869,7 +875,8 @@ class State:
                   "tier", "ret", "age_h",   # P559: P551's ask `tier` (uv | hold | card) was dropped before this; wechat_forward ret / age_h
                   "mode", "types", "server", "bound",   # #420: a refused Codex elicitation's mode / field types / MCP server name / bound (no values)
                   "harness", "op", "name_hash",   # #427: account add / use / rename / remove (name as sha256 8 hex, never a token)
-                  "into", "uncertain", "outcome", "day"}   # w2-sec R3-6: msg_steered's target turn id + uncertain flag; bot_handoff outcome word; #0304 inbox day folder
+                  "into", "uncertain", "outcome", "day",
+                  "source_type", "trust", "card"}   # 0.30.7 ADR-0307-offlist: typed source word (enum), trust tier, card shown (bool)   # w2-sec R3-6: msg_steered's target turn id + uncertain flag; bot_handoff outcome word; #0304 inbox day folder
 
     def log(self, ev: str, **kw) -> None:
         from .diagnostic_log import record

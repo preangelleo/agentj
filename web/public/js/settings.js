@@ -712,6 +712,8 @@ export function close() {
 /** Update / refresh the app: ask the browser for a fresh service worker, unregister every one of ours, drop every Cache
  *  Storage entry, then reload (the page itself is `no-store`, so the reload fetches the new files). The metadata-only
  *  version notice checks version.json; this action remains an explicit owner choice. */
+let guardedReload = null;
+export function setReloadGuard(guard) { guardedReload = guard; }
 export async function refreshApp({silent=false, beforeReload=null} = {}) {
   if (!silent) say(t('set.refreshGo'));
   try {
@@ -726,8 +728,7 @@ export async function refreshApp({silent=false, beforeReload=null} = {}) {
     if (!silent) say(t('set.refreshFail'), false, 'set.refreshFail');
   }
   if (beforeReload && !await beforeReload()) return false;
-  H.reload();
-  return true;
+  return guardedReload ? guardedReload(silent ? 'version.follow' : 'settings.manual', {manual:!silent}) : (H.reload(), true);
 }
 
 // ---------------------------------------------------------------- side navigation (wide screens)

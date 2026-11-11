@@ -659,15 +659,21 @@ class Cards(_KeyEnv, unittest.IsolatedAsyncioTestCase):
         a = next((a for a in self.h.asks.values() if not a.fut.done()), None)
         return t, a
 
+    async def offlist(self, tool, inp):
+        """0.30.7 ADR-0307-offlist: an off-list native request is answered at once, no card; (result, receipt)."""
+        receipt = {}
+        res = await self.h.ask(tool, inp, _harness_permission=True, _receipt=receipt)
+        return res, receipt
+
     async def test_danger_action_opens_the_owners_card(self):
+        # 0.30.7 ADR-0307-offlist: an assist turn is external; an off-list write is refused at once (not the owner's
+        # refusal), and no card is sent to the owner.
         for cmd in ("git push origin main", "rm -rf ~/Documents/p0269-assist", "sudo apt-get install -y jq"):
-            t, a = await self.open_card("Bash", {"command": cmd})
-            self.assertIsNotNone(a, cmd)
-            self.assertFalse(t.done(), cmd)
-            await self.h._answer(self.s, __import__("_p541_device").Phone.answer(self.ph, self.h._ask_msg(a,self.s), False))
-            res = await t
-            self.assertEqual(res["behavior"], "deny")
-            self.assertTrue(any(o["t"] == "ask" for _, o in self.sent))
+            res, receipt = await self.offlist("Bash", {"command": cmd})
+            self.assertEqual((res["behavior"], res["reason"]), ("deny", "off_list_write_external"), cmd)
+            self.assertFalse(receipt["approval_card_shown"], cmd)
+            self.assertFalse(any(not a.fut.done() for a in self.h.asks.values()), cmd)
+        self.assertFalse(any(o["t"] == "ask" for _, o in self.sent))
 
     async def test_level_harness_or_full_does_not_free_an_assist_turn(self):
         # a signed full (= harness) level lets the owner's own turn follow the harness; a delegated turn (friend_task and
@@ -676,20 +682,19 @@ class Cards(_KeyEnv, unittest.IsolatedAsyncioTestCase):
             with mock.patch.object(approval_level, "level", return_value=lv):
                 for src in ({"kind": "friend_task", "role": "task"}, self.send.source):
                     self.h.agent.cur_send = SimpleNamespace(source=src) if src["kind"] == "friend_task" else self.send
-                    t, a = await self.open_card("Bash", {"command": "git push origin main"})
-                    self.assertIsNotNone(a, (lv, src["kind"]))
-                    await self.h._answer(self.s, __import__("_p541_device").Phone.answer(self.ph, self.h._ask_msg(a,self.s), False))
-                    self.assertEqual((await t)["behavior"], "deny")
+                    # 0.30.7 ADR-0307-offlist: no card any more; the delegated turn's off-list write is refused at once
+                    res, _ = await self.offlist("Bash", {"command": "git push origin main"})
+                    self.assertEqual((res["behavior"], res["reason"]), ("deny", "off_list_write_external"), (lv, src["kind"]))
+        self.assertFalse(any(o["t"] == "ask" for _, o in self.sent))
         self.h.agent.cur_send = self.send
 
     async def test_preauth_mian_wen_is_never_consulted_on_an_assist_turn(self):
         from agentj import preauth
         cu = "mcp__computer-use__click"
         with mock.patch.object(preauth, "live", return_value=None) as live:
-            t, a = await self.open_card(cu, {"x": 1, "y": 2})
-            self.assertIsNotNone(a)
-            await self.h._answer(self.s, __import__("_p541_device").Phone.answer(self.ph, self.h._ask_msg(a,self.s), False))
-            await t
+            # 0.30.7 ADR-0307-offlist: off-list on an assist turn → refused at once, no card
+            res, _ = await self.offlist(cu, {"x": 1, "y": 2})
+            self.assertEqual((res["behavior"], res["reason"]), ("deny", "off_list_write_external"))
             self.assertFalse(live.called, "免问 looked up for an official-assist turn")
             self.h.agent.cur_send = None                         # the owner's own turn: the grant IS consulted
             t, a = await self.open_card(cu, {"x": 1, "y": 2})
@@ -700,10 +705,9 @@ class Cards(_KeyEnv, unittest.IsolatedAsyncioTestCase):
         self.h.agent.cur_send = self.send
 
     async def test_no_same_owner_auto_path(self):
-        t, a = await self.open_card("AgentJSameOwnerAction", {"summary": "Same owner: heartbeat on", "request": {"op": "on"}})
-        self.assertIsNotNone(a)
-        await self.h._answer(self.s, __import__("_p541_device").Phone.answer(self.ph, self.h._ask_msg(a,self.s), False))
-        await t
+        # 0.30.7 ADR-0307-offlist: a native request naming the action is off the native card list → refused at once
+        res, _ = await self.offlist("AgentJSameOwnerAction", {"summary": "Same owner: heartbeat on", "request": {"op": "on"}})
+        self.assertEqual((res["behavior"], res["reason"]), ("deny", "off_list_write_external"))
         self.assertNotIn("same_owner", [r.get("reason") for r in approvals.read_log(self.st)])
 
 

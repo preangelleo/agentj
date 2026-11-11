@@ -1,6 +1,6 @@
 """P309: Codex behind a third-party relay (agentsrelay etc.) — a 429 / limit must point at the relay's dashboard, not at
-ChatGPT → Settings → Usage; a bare 429 is a momentary limit (one automatic retry), not a used-up allowance; a thread loaded
-before config.toml changed is told to start a new conversation.
+ChatGPT → Settings → Usage; a bare 429 is a momentary limit (not automatically replayable), not a used-up allowance; a thread loaded
+before config.toml changed is told to start a new conversation. A completed failed turn is never replayed automatically.
 
 The relay 429 sample is what Codex 0.162.1's app-server really sends when a custom provider answers 429 (measured against a
 local mock relay: the relay's own body is dropped)."""
@@ -121,6 +121,9 @@ def bare_agent():
     a.cfg = {"model": "gpt-6"}; a.thread = {"modelProvider": "agentsrelay"}; a.human = {}; a.models_cache = []
     a.unavailable_models = set(); a.halting = False; a.tid = "t"; a.meter = Mock(); a.tasks = set(); a.thread_at = None
     a.rate_retry, a.rate_retried = False, False
+    a.proc = None  # Codex child provenance is tied to the owning app-server process.
+    a.touch = Mock(); a.items = {}; a.research = False; a.persist = False
+    a.first_output = Mock(); a.turn_id = None; a.turn_status = None
     a.open_items, a.said, a.last_note, a.tail_cut, a.pending = set(), False, 0.0, None, {}   # P282 turn-tail fields (P290 merge)
     a.host = SimpleNamespace(lang="zh", turn_failed=Mock(), agent_notice=Mock(), models_changed=Mock(),
                              st=SimpleNamespace(log=Mock()))
@@ -144,35 +147,24 @@ class Agent(unittest.TestCase):
         codex_perm.provider.assert_called_with("agentsrelay")
         self.assertIn("中转服务 api.agentsrelay.example", a.host.agent_notice.call_args.args[0])
 
-    def test_one_automatic_retry_then_the_notice(self):
-        async def go(second_fails):
-            a = bare_agent()
-            a.proc = a.turn_proc = object()
-            a.RATE_RETRY_WAIT = 0
-            calls = []
+    def test_completed_429_never_replays_the_turn(self):
+        a = bare_agent()
+        a.turn_done = asyncio.Event()
+        a.call = mock.AsyncMock(side_effect=AssertionError("completed turn must never replay"))
+        a._on_note("turn/completed", FAILED_429)
+        self.assertTrue(a.turn_done.is_set())
+        self.assertFalse(a.rate_retry)
+        self.assertEqual(a.call.await_count, 0)
+        self.assertIn("429", a.host.agent_notice.call_args.args[0])
 
-            async def call(method, params, timeout=None):
-                calls.append((method, params))
-                if method == "turn/start":
-                    asyncio.get_running_loop().call_soon(
-                        a._on_note, "turn/completed",
-                        FAILED_429 if second_fails else {"threadId": "t", "turn": {"status": "completed"}})
-                return {"turn": {"id": "x"}}
-            a.call = call
-            a.rate_retry, a.turn_done = None, asyncio.Event()
-            a._on_note("turn/completed", FAILED_429)        # the first 429: held back, no notice yet
-            self.assertFalse(a.host.agent_notice.called)
-            why, a.rate_retry = a.rate_retry, False
-            await a._retry_rate(why)
-            return a, calls
-        a, calls = asyncio.run(go(second_fails=False))
-        self.assertEqual([c[0] for c in calls], ["turn/start"])
-        self.assertIn("自动重试", calls[0][1]["input"][0]["text"])
-        self.assertFalse(a.host.agent_notice.called)
-        self.assertEqual((a.rate_retry, a.rate_retried), (False, False))
-        a, calls = asyncio.run(go(second_fails=True))
-        self.assertEqual(len(calls), 1)                      # once, never a loop
-        self.assertIn("已自动重试过一次", a.host.agent_notice.call_args.args[0])
+    def test_old_retry_entry_does_not_replay_an_ambiguous_turn(self):
+        a = bare_agent()
+        a.rate_retry = "429 Too Many Requests"
+        a.call = mock.AsyncMock(side_effect=AssertionError("unknown acceptance must never replay"))
+        asyncio.run(a._retry_rate(a.rate_retry))
+        self.assertFalse(a.rate_retry)
+        self.assertEqual(a.call.await_count, 0)
+        self.assertIn("429", a.host.agent_notice.call_args.args[0])
 
     def test_non_rate_failure_is_told_at_once(self):
         a = bare_agent()
@@ -180,7 +172,7 @@ class Agent(unittest.TestCase):
         a._on_note("turn/completed", {"threadId": "t", "turn": {"status": "failed", "error": {
             "message": "unexpected error", "codexErrorInfo": "usageLimitExceeded"}}})
         self.assertTrue(a.host.agent_notice.called)
-        self.assertIsNone(a.rate_retry)
+        self.assertFalse(a.rate_retry)
 
     def test_config_changed_after_the_thread_loaded_is_stale(self):
         d = tempfile.mkdtemp(prefix="p309-stale-")

@@ -17,6 +17,15 @@ class Parity(LiveCards):
         out = []
         for tool, inp in REQUESTS:
             self.turn(row, source)
+            if tool == 'Bash':
+                # 0.30.7 ADR-0307-offlist: an off-list request is answered at once without a card (owner → allow;
+                # external → refused with the reason). Same (card shown, UV required, result) shape.
+                before = len(self.cards())
+                result = await self.h.ask(tool, inp)
+                self.assertFalse(self.h.asks)
+                self.assertEqual(len(self.cards()), before)
+                out.append((False, False, result.get('behavior')))
+                continue
             out.append(await self.decide(tool, inp))
         return out
 
@@ -24,7 +33,7 @@ class Parity(LiveCards):
         phone = await self.decisions({'k': 'phone', 'name': '你', 'text': 'run it'}, provenance.phone())
         tg = await self.decisions({'k': 'telegram', 'name': 'owner', 'text': 'run it'}, provenance.telegram_owner(OWNER_TG))
         self.assertEqual(phone, tg)
-        self.assertEqual(phone, [(True, False, 'allow'), (True, True, 'allow')])
+        self.assertEqual(phone, [(False, False, 'allow'), (True, True, 'allow')])   # 0.30.7 ADR-0307-offlist: Bash off-list
         self.turn({'k': 'telegram', 'name': 'owner', 'text': 'run it'}, provenance.telegram_owner(OWNER_TG))
         self.assertTrue(provenance.owner_speaking(self.h.agent))
         self.assertTrue(self.h.agent.cur_send.approval_origin['verified'])
@@ -35,9 +44,10 @@ class Parity(LiveCards):
         self.assertFalse(provenance.owner_speaking(self.h.agent))
         self.assertFalse(provenance.owner_intent(fwd))
         self.assertFalse(self.h.agent.cur_send.approval_origin['verified'])
-        # A source label never grants authority: the card and its UV rule are the same, only the label differs.
+        # A source label never grants authority: the listed card and its UV rule are the same, only the label differs.
+        # 0.30.7 ADR-0307-offlist: the off-list Bash write from a forwarded (external) turn is refused, no card.
         self.assertEqual(await self.decisions({'k': 'telegram', 'name': 'fwd', 'text': 'x'}, fwd),
-                         [(True, False, 'allow'), (True, True, 'allow')])
+                         [(False, False, 'deny'), (True, True, 'allow')])
 
     async def test_unpinned_owner_mail_is_guest(self):
         v = SimpleNamespace(ok=True, role='owner', auth='dmarc', addr='owner@example.com')

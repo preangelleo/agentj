@@ -57,26 +57,13 @@ class OpaqueMixed(unittest.IsolatedAsyncioTestCase):
                 with self.subTest(shared=shared, cmd=cmd), tempfile.TemporaryDirectory() as tmp:
                     h, ph, s = self.full(tmp, shared, level='standard')
                     inp = {'command': cmd}
-                    t = asyncio.create_task(h.ask('Bash', inp, _harness_permission=True))
-                    try:
-                        for _ in range(100):
-                            if h.asks or t.done(): break
-                            await asyncio.sleep(.001)
-                        self.assertTrue(h.asks, 'Full bypassed opaque subcommand')
-                        a = next(iter(h.asks.values()))
-                        card = h._ask_msg(a, s)
-                        # A real native PermissionRequest needs one signed tap,
-                        # independently of the diagnostic/legacy preference label.
-                        self.assertNotIn('passkey_required', card)
-                        self.assertNotIn('batch', card)
-                        self.assertIn(cmd, card['summary'].replace('\\', ''))
-                        tap = ph.answer(card, True)
-                        tap.pop('fa', None)
-                        await h._answer(s, tap)
-                        self.assertEqual((await t)['behavior'], 'allow')
-                    finally:
-                        if not t.done(): t.cancel()
-                        await asyncio.gather(t, return_exceptions=True)
+                    # 0.30.7 ADR-0307-offlist: an off-list native request no longer waits for a tap; on the owner's
+                    # turn it is allowed at once, audited, and no card (and no extra UV tier) is created.
+                    receipt = {}
+                    res = await asyncio.wait_for(h.ask('Bash', inp, _harness_permission=True, _receipt=receipt), 3)
+                    self.assertEqual((res['behavior'], receipt['reason'], receipt['approval_card_shown']),
+                                     ('allow', 'off_list', False))
+                    self.assertFalse(h.asks)
 
     async def test_shared_too_long_denied_before_card(self):
         for mode in ('standard', 'strict', 'safe'):
@@ -85,9 +72,11 @@ class OpaqueMixed(unittest.IsolatedAsyncioTestCase):
                 h.agent_cfg['approvals'] = mode
                 inp = {'command': 'pwd ' + 'x ' * 33000}
                 self.assertIn('too_long', danger.classify('Bash', inp, env=getattr(h.agent,'approval_env',None)).rules)
-                ans = await h.ask('Bash', inp, _harness_permission=True)
-                self.assertEqual(ans['behavior'], 'deny')
-                self.assertIn('too large', ans['message'])
+                # 0.30.7 ADR-0307-offlist: "too large" was the card's display limit; an off-list native request has
+                # no card, so the owner's turn is answered at once (allow) and nothing is opened.
+                receipt = {}
+                ans = await h.ask('Bash', inp, _harness_permission=True, _receipt=receipt)
+                self.assertEqual((ans['behavior'], receipt['reason']), ('allow', 'off_list'))
                 self.assertFalse(h.asks)
 
     async def test_resolved_interpreters_have_no_card(self):

@@ -454,6 +454,10 @@ def stall_text(kind: str, reason: str, excerpt: str, secs: int, lang: str = "zh"
 
 class Agent:
 
+    def readiness(self) -> dict:
+        """Adapters without a native transport probe are unverified, not disconnected."""
+        return {"ready": False, "code": "unverified"}
+
     kind = "?"
     halt_quiet = False      # P328: serve.stop_turn is asking — the reason goes into /stop's own answer, not a second notice
     halt_note = None        # P328: why the last halt() could not stop the running turn (None = it could, or nothing ran)

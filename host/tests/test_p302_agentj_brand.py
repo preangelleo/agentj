@@ -55,8 +55,9 @@ class AgentJBrand(unittest.TestCase):
 
     def test_compaction_and_clear_lines(self):
         # P290 merge: P280's humane.json speaks in the first person (no bare "Agent" left to brand)
-        self.assertEqual(handoff.phone_line("zh", "compact"), "压缩好了，我在翻交接笔记，马上接上思路。")
-        self.assertEqual(handoff.phone_line("en", "compact"), "Compacted. I'm reading my handover notes to pick up the thread.")
+        # ADR-0307-compact-read-ack: the compact line is posted only after the handoff Read succeeded → past tense
+        self.assertEqual(handoff.phone_line("zh", "compact"), "压缩好了，已读完交接，接着做。")
+        self.assertEqual(handoff.phone_line("en", "compact"), "Compacted. I've read the handover; carrying on.")
         self.assertBranded([handoff.phone_line(lang, k) for lang in ("zh", "en") for k in ("compact", "clear")], "handoff")
 
     def test_host_message_tables(self):

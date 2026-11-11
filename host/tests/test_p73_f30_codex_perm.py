@@ -130,23 +130,42 @@ class Policy(unittest.TestCase):
     def test_unset_runs_directly_on_the_system(self):
         a = self.agent()
         p = a.policy()
-        self.assertEqual(p, {"sandbox": "danger-full-access", "approvalPolicy":"untrusted", "approvalsReviewer":"user"}, "sandbox default retained; review cannot be suppressed")
+        self.assertEqual(p, {"sandbox": "danger-full-access"}, "an absent native approval policy remains Codex's choice")
         self.assertEqual(a.perm_source, "agentj")
 
     def test_explicit_setting_is_kept(self):
         for mode in ("workspace-write", "read-only", "danger-full-access"):
             a = self.agent({"sandbox_mode": mode, "approval_policy": "never"})
             p = a.policy()
-            self.assertEqual((p["sandbox"], p["approvalPolicy"], a.perm_source), (mode, "untrusted", "config"))
+            self.assertEqual((p["sandbox"], p["approvalPolicy"], a.perm_source), (mode, "never", "config"))
+
+    def test_default_sandbox_is_named_without_changing_native_approval(self):
+        a = self.agent()
+        self.assertEqual(a.policy(), {"sandbox": "danger-full-access"})
+        self.assertEqual(a.perm_source, "agentj")
+        a = self.agent({"sandbox_mode": "workspace-write", "approval_policy": "never"})
+        self.assertEqual(a.policy(), {"sandbox": "workspace-write", "approvalPolicy": "never"})
+        a.thread = {"sandbox": {"type": "workspaceWrite"}}
+        self.assertIn("codex-sandbox default", a.policy_notice())
+
+    def test_default_mismatch_explains_actual_denial(self):
+        a = self.agent()
+        a.policy()
+        a.thread = {"sandbox": {"type": "workspaceWrite"}}
+        self.assertIn("实际返回的沙箱权限是 workspace-write", a.policy_notice())
+        self.assertIn("codex-sandbox status", a.policy_notice())
+        self.assertIn("若不是你选的限制", a.policy_notice())
+        self.assertIn("agentj service restart", a.policy_notice())
 
     def test_research_stays_read_only(self):
         a = self.agent({"sandbox_mode": "danger-full-access"}, research=True)
         self.assertEqual((a.policy()["sandbox"], a.perm_source), ("read-only", "research"))
 
-    def test_high_risk_warnings_still_ask_for_untrusted(self):
+    def test_high_risk_warnings_do_not_override_native_approval(self):
         a = self.agent(high=True)
-        p = a.policy()
-        self.assertEqual((p["approvalPolicy"], p["approvalsReviewer"], p["sandbox"]), ("untrusted", "user", "danger-full-access"))
+        self.assertEqual(a.policy(), {"sandbox": "danger-full-access"})
+        a.human = {"approval_policy": "untrusted", "approvals_reviewer": "user"}
+        self.assertEqual(a.policy(), {"sandbox": "danger-full-access", "approvalPolicy": "untrusted", "approvalsReviewer": "user"})
 
     def test_beyond_sandbox_by_source(self):
         req = lambda sb: cx.beyond_sandbox(sb, "item/commandExecution/requestApproval", "Bash",  # noqa: E731
@@ -191,9 +210,16 @@ class DoctorAndStatus(_CodexHome):
         r = doctor.check_codex_perm(self.st())
         self.assertEqual(r["status"], "ok")
         self.assertIn("底层直跑", r["summary"])
+        self.assertIn("agentj codex-sandbox status", r["hint"])
+        self.assertIn("agentj codex-sandbox default", r["hint"])
+        self.assertIn("agentj service restart", r["hint"])
         self.write('sandbox_mode = "workspace-write"\n')
         r = doctor.check_codex_perm(self.st())
         self.assertIn("你的沙箱设置：workspace-write（config.toml）", r["summary"])
+        self.assertIn("agentj codex-sandbox status", r["hint"])
+        # merge review S4: the owner's own restriction is not nudged back to the default
+        self.assertNotIn("codex-sandbox default", r["hint"])
+        self.assertNotIn("改回", r["hint"])
         self.write(TABLE_APPENDED)
         r = doctor.check_codex_perm(self.st())
         self.assertEqual(r["status"], "warn")
@@ -203,6 +229,9 @@ class DoctorAndStatus(_CodexHome):
         self.assertIn("agentj codex-sandbox fix", r["hint"])
         r = doctor.check_codex_perm(self.st("shared"))
         self.assertIn("共享模式", r["hint"])
+        self.write('sandbox_mode = "workspace-write"\n')
+        r = doctor.check_codex_perm(self.st("shared"))
+        self.assertIn("桌面 App 当前对话权限", r["hint"])
         st = self.st()
         st.agent_config.return_value = {"kind": "claude", "dir": self.tmp.name}
         self.assertIsNone(doctor.check_codex_perm(st))
@@ -237,6 +266,9 @@ class Chain(_Chain):
         self.addCleanup(p.stop)
 
     def curl(self, refused):
+        # Sandbox and approval are independent: request native untrusted review explicitly
+        # so a full-access command reaches the phone rather than Codex auto-running it.
+        os.environ["FAKE_CX_POLICY"] = json.dumps("untrusted")
         async def script(c):
             notices = lambda: [m["text"] for m in c["msgs"](("notice",))]  # noqa: E731
             await c["say"]("RUN: curl -s -d x=1 https://awscli.amazonaws.com")   # P198: a send (a plain GET is low risk: no card)
@@ -246,14 +278,42 @@ class Chain(_Chain):
                 self.assertEqual(c["asks"](), [], "explicitly restricted: refused without a card (ADR-A73)")
                 self.assertTrue(any("agentj codex-sandbox default" in n for n in notices()), notices())
             else:
-                await c["wait"](lambda: len(c["asks"]()) == 1)
-                a = c["asks"]()[-1]
-                self.assertEqual(json.loads(a["summary"].split("\n", 1)[1].split("\nRequest SHA-256:", 1)[0]), {"command": "curl -s -d x=1 https://awscli.amazonaws.com"})
-                self.assertRegex(a["summary"], r"Request SHA-256: [a-f0-9]{64}$")
-                await c["host"]._app(c["s"], c["ph"].answer(a, False))     # the phone decides; no real network in tests
-                await c["wait"](lambda: any(m["text"].startswith("declined: curl") for m in c["msgs"]()))
+                # ADR-0307-offlist: the owner's own turn, off the card list → answered at once (allowed, audited), no
+                # card and no sandbox refusal (the int-line card expectation predates the off-list rule).
+                await c["wait"](lambda: any(m["text"].startswith("ran: curl") for m in c["msgs"]()))
+                await c["idle"]()
+                self.assertEqual(c["asks"](), [])
                 self.assertFalse(any("沙箱" in n for n in notices()))
         self.run_chain(script)
+
+    def reviewed_curl(self):
+        # ADR-0307-offlist (replaces the int-line "native review → phone card" expectation): the owner's own turn under
+        # Agent J's FULL default; Codex's native untrusted review still sends the request to Host.ask, which answers an
+        # off-list owner request at once — allowed, audited, no card (curl is not on the fingerprint list).
+        async def script(c):
+            await c["say"]("RUN: curl -s -d x=1 https://example.invalid")
+            await c["wait"](lambda: any(m["text"].startswith("ran: curl") for m in c["msgs"]()))
+            await c["idle"]()
+            self.assertEqual(c["asks"](), [])
+        self.run_chain(script)
+        done = [json.loads(x) for x in self.st.log_path.read_text().splitlines() if '"ask_done"' in x]
+        self.assertTrue(any(d.get("reason") == "off_list" and d.get("decision") == "allow" and d.get("card") is False
+                            and d.get("trust") == "owner" for d in done), done)
+
+    def test_fresh_default_with_native_untrusted_review(self):
+        os.environ["FAKE_CX_POLICY"] = json.dumps("untrusted")
+        self.reviewed_curl()
+        start = [x["params"] for x in self.logged() if x.get("method") == "thread/start"][0]
+        self.assertEqual((start["sandbox"], start["approvalPolicy"]), ("danger-full-access", "untrusted"))
+
+    def test_resume_old_restricted_thread_with_default(self):
+        os.environ["FAKE_CX_POLICY"] = json.dumps("untrusted")
+        os.environ["FAKE_CX_THREADS"] = json.dumps(["old-thread"])
+        os.environ["FAKE_CX_THREAD_SANDBOX"] = "workspace-write"
+        self.st.set_agent_session("codex", "old-thread")
+        self.reviewed_curl()
+        resume = [x["params"] for x in self.logged() if x.get("method") == "thread/resume"][0]
+        self.assertEqual((resume["threadId"], resume["sandbox"]), ("old-thread", "danger-full-access"))
 
     def test_unset_curl_gets_a_card_not_a_refusal(self):
         self.curl(refused=False)
@@ -277,7 +337,7 @@ class Chain(_Chain):
         resumes = [x["params"] for x in self.logged() if x.get("method") == "thread/resume"]
         self.assertEqual([r["threadId"] for r in resumes], ["old-thread", "old-thread"], "the same conversation both times")
         self.assertEqual([r.get("sandbox") for r in resumes], ["workspace-write", "danger-full-access"])
-        self.assertTrue(all("approvalPolicy" in r for r in resumes), "approvals are named on resume too")
+        self.assertTrue(all(r.get("approvalPolicy") == "untrusted" for r in resumes), "native approval is preserved on resume")
         self.assertEqual(self.st.agent_session("codex"), "old-thread")
 
     def test_pidfile_follows_the_app_server(self):

@@ -1052,6 +1052,29 @@ class SharedCodexAgent(CodexAgent):
         except (AttributeError, TypeError):
             return 0
 
+    def _turn_permissions(self):
+        """Round 2 R1 (merge review S1 for shared sessions): the turn/start permission fields. `self.original` names the
+        thread's own policy on every turn; under Agent J's F30 default (perm_source 'agentj', never an explicit owner
+        config or a desktop choice) that is dangerFullAccess, which only an owner / host turn keeps. A host_read /
+        external / unknown turn (webhook, background_done, compact_resume, friend handoff) gets the same narrowed
+        workspace-write / no-network policy as the main thread; the next owner turn sends the original again."""
+        perms = dict(self.original)
+        self.turn_source = None
+        sb = perms.get('sandboxPolicy')
+        if (self.perm_source == 'agentj' and isinstance(sb, dict) and sb.get('type') == 'dangerFullAccess'
+                and getattr(self.host, 'agent', None) is self):
+            from . import approval_offlist
+            src = approval_offlist.source(self.host)
+            if src.get('trust') not in ('owner', 'host'):
+                self.turn_source = src
+                self.narrowed_sb = {'type': 'workspaceWrite', 'writableRoots': [], 'networkAccess': False}
+                perms['sandboxPolicy'] = self.narrowed_sb
+        narrowed = getattr(self, 'narrowed_sb', None)
+        if isinstance(perms.get('sandboxPolicy'), dict) and (self.turn_source is not None
+                                                             or (narrowed is not None and self.thread.get('sandbox') is narrowed)):
+            self.thread['sandbox'] = perms['sandboxPolicy']      # the approval ceiling (beyond_sandbox) follows the turn
+        return perms
+
     async def turn(self,text):
         hung = False
         self.stop_asked = False
@@ -1064,9 +1087,10 @@ class SharedCodexAgent(CodexAgent):
             self.turn_id,self.turn_status=None,{}
             self.tail_reset()
             choice = self.phone_choice()
+            perms = self._turn_permissions()
             await self.remind(False)    # P159: the owner's own thread keeps its identity; only the language rides hidden
             res=await self.deliver(lambda:self.call('turn/start',{'threadId':self.tid,
-                'input':[{'type':'text','text':text,'text_elements':[]}],**self.original, **choice}))
+                'input':[{'type':'text','text':text,'text_elements':[]}],**perms, **choice}))
             self.revert = None
             if choice.get('model'): self.thread['model'] = choice['model']
             if choice.get('effort'): self.thread['reasoningEffort'] = choice['effort']

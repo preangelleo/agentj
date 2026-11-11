@@ -102,7 +102,13 @@ class Recover(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.sent[0][0].startswith("〔Agent J 系统提示〕压缩完成。"))
         self.assertFalse(self.a.native_turn)
         self.assertEqual(self.host.logged("shared_native_turn_stale")[0]["why"], "recover")
-        self.assertEqual(self.host.notices, ["压缩好了，我在翻交接笔记，马上接上思路。"])   # P280 humane.json recover.compact
+        # ADR-0307-compact-read-ack: the turn starting is not proof of reading — no phone line until the main thread's
+        # successful Read of the fresh handoff in that recovery turn
+        self.assertEqual(self.host.notices, [])
+        await self.ev("PostToolUse", tool_name="Read", tool_input={"file_path": str(handoff.path("compact.md"))},
+                      tool_response={"content": "# 交接"})
+        self.assertEqual(self.host.notices, [handoff.phone_line("zh", "compact")])   # humane.json recover.compact
+        self.assertEqual(self.host.notices, ["压缩好了，已读完交接，接着做。"])
 
     async def test_clear_recovers_although_native_turn_was_set(self):
         handoff.ensure()

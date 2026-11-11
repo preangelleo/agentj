@@ -99,6 +99,13 @@ class Summary(unittest.TestCase):
 
 
 class HostCards(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        # 0.30.7 ADR-0307-offlist: off-list native requests no longer card. These tests' subject is the card itself
+        # (display, redaction, signing, size limits), so the native vehicles are put on the card list.
+        from _listed_cards import listed
+        listed(self, 'Bash', 'Write', 'exec_command', 'mcp__shell__execute_command', 'AuthRescue', 'agentj goal',
+               'AgentJHook', 'SandboxOnce')
+
     async def test_opaque_preview_uses_project_secret_index(self):
         from test_l1 import _state
         with tempfile.TemporaryDirectory() as d:

@@ -119,6 +119,34 @@ class Serve(unittest.TestCase):
                          ["refused:shape", "refused:bad_signature", "refused:bad_signature", "ok", "bad_name", "gone"])
         self.assertIn("Pixel 9 Pro", [r.get("text") for r in activity.all_since(self.st) if r["k"] == "decision"])
 
+    def test_0307_one_card_flag_and_its_promise(self):
+        """0.30.7 one-card unbind: the host advertises `unbind_one` only while unbinding another remote is a UV action, and
+        then the page's early signed request (no `fa`) never runs — it only returns the host-bound challenge. The target
+        remote cannot use the same step to unbind the owner's remote back without its own Face ID."""
+        from unittest import mock
+        from agentj import confirm_tier
+        ph, (other,), host, s = self.setup_host(1)
+        so = _ready(host, other, cid=21)
+        so.p33 = True
+        self.assertIs(host.remotes.snapshot(s)["unbind_one"], True)
+        with mock.patch.object(confirm_tier, "owner_action", return_value="tap"):
+            self.assertIs(host.remotes.snapshot(s)["unbind_one"], False)
+        fa_id = wire.b64u(b"\x07" * 16)
+        for p in (ph, other):
+            self.st.set_passkey(p.pub, {"id": fa_id if p is ph else wire.b64u(b"\x08" * 16), "pub": wire.b64u(os.urandom(77)),
+                                        "alg": -7, "count": 0, "rp": "m.agentj.app", "at": int(time.time())})
+        tgt, back = {"device": other.did}, {"device": ph.did}
+
+        async def go():
+            await host._app(s, sign(ph, "dev_unbind", tgt, {"t": "dev_unbind", "r": "pre", **tgt}))
+            await host._app(so, sign(other, "dev_unbind", back, {"t": "dev_unbind", "r": "back", **back}))
+        asyncio.run(go())
+        self.assertEqual(self.res("pre")["why"], "passkey_required")
+        self.assertTrue(self.res("pre").get("fa_ch"), "the challenge comes from the host")
+        self.assertEqual(self.res("back")["why"], "passkey_required")
+        self.assertIn(other.did, self.st.devices())
+        self.assertIn(ph.did, self.st.devices())
+
     def test_unbind_another_and_itself(self):
         ph, (other, third), host, s = self.setup_host(2)
         so = _ready(host, other, cid=21)

@@ -72,7 +72,13 @@ def validate(raw) -> dict:
 def parse_answer(text: str) -> dict:
     if not isinstance(text, str) or len(text) > 12000:
         raise ValueError('answer')
-    obj = json.loads(text)
+    stripped = text.strip()
+    if stripped.startswith('```'):
+        match = re.fullmatch(r'```(?:json)?\s*\n(.*?)\n```', stripped, re.S | re.I)
+        if not match:
+            raise ValueError('answer')
+        stripped = match.group(1)
+    obj = json.loads(stripped)
     if not isinstance(obj, dict) or obj.get('category') not in CATS:
         raise ValueError('answer')
     sure = obj.get('sure')
@@ -279,10 +285,40 @@ class Triage:
         state['ledger'][key] = dict(status='calling')
         tsave(self.st, state)
         try:
-            result = await asyncio.to_thread(self.model_call, p, messages, None, 900)
-            if getattr(result, 'tools', None):
+            from .structured import retry_format
+
+            def call(hint):
+                if hint:
+                    # Reserve each paid retry before the invocation, with no budget bypass.
+                    state = tread(self.st)
+                    used = state['hour'][1] if state['hour'][0] == hour else 0
+                    spend = state['spend'] if state['spend'].get('day') == day else dict(day=day, usd=0.0, calls=0)
+                    if used >= strategy['per_hour'] or round(spend['usd'] + strategy['usd_per_call'], 6) > strategy['usd_per_day']:
+                        raise ValueError('format_retry_capped')
+                    state['hour'] = [hour, used + 1]
+                    state['spend'] = dict(day=day, usd=round(spend['usd'] + strategy['usd_per_call'], 6), calls=spend['calls'] + 1)
+                    tsave(self.st, state)
+                prompt = messages if not hint else [*messages, dict(role='user', content=hint)]
+                return self.model_call(p, prompt, None, 900)
+
+            def parse(result):
+                return parse_answer(result.text)
+
+            first = await asyncio.to_thread(self.model_call, p, messages, None, 900)
+            if getattr(first, 'tools', None):
                 raise ValueError('tools')
-            ans = parse_answer(result.text)
+
+            def safe_call(hint):
+                result = first if not hint else call(hint)
+                if getattr(result, 'tools', None):
+                    raise RuntimeError('tools')  # a tool attempt is not a format error to retry
+                return result
+
+            ans = await asyncio.to_thread(retry_format, safe_call, parse,
+                                          'The previous answer had an invalid JSON format. Return exactly one valid JSON object only.',
+                                          on_fail=lambda exc: unsure)
+            if ans is unsure:
+                raise ValueError('format_exhausted')
         except Exception:
             state = tread(self.st)
             state['attempts'][key] = state['attempts'].get(key, 0) + 1

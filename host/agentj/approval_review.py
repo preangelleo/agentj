@@ -184,7 +184,7 @@ def display_text(value, normalizer):
     return ''.join(c for c in text if c in '\n\t' or unicodedata.category(c) not in ('Cc', 'Cf', 'Cs'))
 
 
-def bind(host, ask, origin=None):
+def bind(host, ask, origin=None, typed=None):
     from . import goal
     # The Host UV-list controller built this projector before signing, using
     # the actual launch/Host cwd. Original source records remain untouched.
@@ -214,6 +214,16 @@ def bind(host, ask, origin=None):
         source['history_outside_window'] = (type(source.get('message_id')) is int and source.get('channel') != 'unknown' and not source.get('material_unknown') and (source['session'] != str(host.hist.epoch) or source['message_id'] not in set(list(host.hist.turns)[-500:])))
         if source['history_outside_window']:
             source['text'] = ''
+    if isinstance(typed, dict) and typed.get('type'):
+        # 0.30.7 ADR-0307-offlist: the injector's typed label, display and audit only. `verified` / `suspicious`
+        # keep their owner-message meaning (authority checks read them); a host turn is labelled, never "external".
+        source['source_type'] = typed['type']
+        source['source_trust'] = typed.get('trust')
+        source['source_label'] = typed.get('label', '')
+        source['source_label_en'] = typed.get('label_en', '')
+        if not raw_record and typed.get('trust') in ('host', 'host_read', 'owner'):
+            source.update(channel='host', sender=typed.get('label', ''), text=typed.get('label', ''),
+                          initiator=typed.get('label', ''), suspicious=False)
     if 'root' not in source:
         source['root'] = {'text':source.get('text','') if source.get('verified') else '',
                           'message_id':source.get('root_message_id'), 'channel':source.get('channel')}

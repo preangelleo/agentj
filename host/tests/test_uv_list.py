@@ -10,6 +10,7 @@ from agentj import approval_review, approvals, policy_registry, provenance, uv_l
 from agentj.serve import Host
 from _p541_device import Phone, _owner_host
 from test_l1 import _state, _ready
+from _listed_cards import listed
 
 class ListApproval(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -69,11 +70,13 @@ class ListApproval(unittest.IsolatedAsyncioTestCase):
             result=await self.h.ask('agentj fn run',{'name':'synthetic'})
         self.assertEqual(result['reason'],'no_device')
     async def test_native_permission_card_is_plain_even_for_delete(self):
+        listed(self,'Bash')  # 0.30.7 ADR-0307-offlist: card mechanics; off-list Bash no longer cards, so list it
         task,a=await self.open('Bash',{'command':'rm -rf /synthetic/nonexistent'})
         self.assertFalse(a.require_passkey)
         await self.h._answer(self.s,self.ph.answer(self.h._ask_msg(a,self.s),True))
         self.assertEqual((await task)['behavior'],'allow')
     async def test_background_permission_plain_not_group_source(self):
+        listed(self,'Bash')  # 0.30.7 ADR-0307-offlist: card mechanics; off-list Bash no longer cards, so list it
         with approval_review.origin_scope({}):
             task,a=await self.open('Bash',{'command':'systemctl --user list-timers'})
         self.assertFalse(a.require_passkey)
@@ -88,6 +91,7 @@ class ListApproval(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(uv_list.required('agentj config',{'changes':{'approval.level':'full'}}))
         self.assertFalse(uv_list.required('agentj config',{'changes':{'language':'en'}}))
     async def test_old_caller_uv_flag_cannot_upgrade_native_tool(self):
+        listed(self,'Bash')  # 0.30.7 ADR-0307-offlist: card mechanics; off-list Bash no longer cards, so list it
         task=asyncio.create_task(self.h.ask('Bash',{'command':'ls'},require_passkey=True,always_ask=True))
         for _ in range(100):
             if self.h.asks:break
@@ -142,6 +146,7 @@ class ListApproval(unittest.IsolatedAsyncioTestCase):
         await self.h._answer(self.s,self.ph.answer(self.h._ask_msg(a,self.s),False))
         self.assertEqual((await task)['behavior'],'deny')
     async def test_repeated_native_invocations_are_independent_requests(self):
+        listed(self,'Bash')  # 0.30.7 ADR-0307-offlist: card mechanics; off-list Bash no longer cards, so list it
         keys=[]
         for _ in range(2):
             task,a=await self.open('Bash',{'command':'ls /synthetic'})
@@ -168,14 +173,13 @@ class ListApproval(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['behavior'],'deny')
 
     async def test_native_host_alias_is_not_autoallowed(self):
-        task=asyncio.create_task(self.h.ask('DoomLoop',{'tool':'Bash'},_harness_permission=True))
-        for _ in range(100):
-            if self.h.asks:break
-            await asyncio.sleep(.002)
-        a=next(iter(self.h.asks.values()));self.addAsyncCleanup(self.close,task,a)
-        self.assertFalse(a.require_passkey)
-        await self.h._answer(self.s,self.ph.answer(self.h._ask_msg(a,self.s),False))
-        self.assertEqual((await task)['behavior'],'deny')
+        # 0.30.7 ADR-0307-offlist: a native request may only card as AskUserQuestion; a host-tool alias is an ordinary
+        # off-list native request (no host-executor shortcut, no card), answered at once by the owner turn's trust.
+        result=await self.h.ask('DoomLoop',{'tool':'Bash'},_harness_permission=True)
+        self.assertFalse(self.h.asks)
+        self.assertFalse([o for _,o in self.sent if o.get('t')=='ask'])
+        self.assertEqual(result['behavior'],'allow')
+        self.assertEqual(approvals.read_log(self.st)[-1]['reason'],'off_list')
     async def test_legacy_plan_remains_in_signed_envelope_and_audit(self):
         self.h.cur_turn=7
         file=self.st.root.parent/'ordinary-plan-file';file.write_text('ordinary contents')
@@ -202,6 +206,7 @@ class ListApproval(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(uv_list.required('agentj config',{'changes':{key:False}}))
 
     async def test_large_ascii_input_is_rejected_before_display_truncation(self):
+        listed(self,'Bash')  # 0.30.7 ADR-0307-offlist: card mechanics; off-list Bash no longer cards, so list it
         result=await self.h.ask('Bash',{'command':'A'*24001},_harness_permission=True)
         self.assertEqual(result['reason'],'too_large')
         self.assertFalse(self.h.asks)
@@ -251,6 +256,7 @@ class ListApproval(unittest.IsolatedAsyncioTestCase):
         second,new=await self.open('agentj fn run',inp)
         self.assertNotEqual(new.rid,a.rid);self.assertTrue(new.require_passkey)
     async def test_question_plain_native_resumes_once_and_cannot_borrow_other_input(self):
+        listed(self,'Bash')  # 0.30.7 ADR-0307-offlist: card mechanics; off-list Bash no longer cards, so list it
         inp={'command':'rm /synthetic'}
         a,resume=await self.question_approve('Bash',inp)
         other,new=await self.open('Bash',{'command':'rm /other-synthetic'})
@@ -275,6 +281,7 @@ class ListApproval(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(list_approval.take_resume(self.h,a.tool,inp,True,a.list_resume_context,None))
 
     async def test_real_shared_permission_callback_preserves_exact_phone_source(self):
+        listed(self,'Bash')  # 0.30.7 ADR-0307-offlist: card mechanics; off-list Bash no longer cards, so list it
         from agentj.shared import SharedClaudeAgent
         actor=SharedClaudeAgent(self.h,{**(self.h.agent_cfg or {}),'session_mode':'shared','dir':str(self.st.root.parent)})
         actor.session={'sessionId':'synthetic-native'}

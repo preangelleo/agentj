@@ -202,16 +202,26 @@ class MainExecution(unittest.IsolatedAsyncioTestCase):
             h._grant_for=lambda *args: self.fail('legacy batch grant answered a native request')
             for action, legacy_uv in (('settings.write',False),('Delete',True),('Bash',True),('memory.restore',False),('mcp__mail__send_email',True),('company.write',True)):
                 with self.subTest(action=action), patch('agentj.approval_level.level',return_value='full'):
+                    if action != 'Bash':
+                        # 0.30.7 ADR-0307-offlist: a native request off the card list (a native request may only name
+                        # AskUserQuestion; these are not UV-listed) is answered at once on the owner turn — no card.
+                        before = len(st.log_path.read_text()) if st.log_path.exists() else 0
+                        result = await asyncio.wait_for(h.ask(action,{'path':'fixture.txt','command':'rm -rf ~'},
+                                                              _harness_permission=True,batch=True),3)
+                        self.assertFalse(h.asks)
+                        self.assertEqual(result['behavior'],'allow')
+                        self.assertIn('"reason": "off_list"', st.log_path.read_text()[before:])
+                        continue
                     result, card = await native_tap(h,ph,session,action,{'path':'fixture.txt','command':'rm -rf ~'},approve=False,batch=True)
-                    # The exact Bash operand ~ includes protected control files;
-                    # the other tool names do not turn this incidental text into a shell.
+                    # The exact Bash operand ~ includes protected control files (UV-listed: still a card).
                     self.assertEqual(bool(card.get('passkey_required')), action == 'Bash')
                     self.assertNotIn('batch',card)
                     self.assertEqual(result['behavior'],'deny')
             for unknown in ('invented.action','mcp__fs__unregistered_read','mcp__execute'):
-                result,card=await native_tap(h,ph,session,unknown,{},approve=False)
-                self.assertEqual(result['behavior'],'deny')
-                self.assertEqual(card['tool'],unknown)
+                # 0.30.7 ADR-0307-offlist: an unknown native tool is off the card list → answered at once, no card.
+                result=await asyncio.wait_for(h.ask(unknown,{},_harness_permission=True),3)
+                self.assertFalse(h.asks)
+                self.assertEqual(result['behavior'],'allow')
 
     async def test_real_ask_keeps_argument_floor_when_jev_allows(self):
         import tempfile
@@ -231,10 +241,12 @@ class MainExecution(unittest.IsolatedAsyncioTestCase):
                          patch.object(approval_jev,'judge',return_value=approval_jev.Result('allow',.99,'fixture')) as judge, \
                          patch.object(approval_level,'level',return_value=level), \
                          patch.object(p,'main_requirement',wraps=p.main_requirement) as lookup:
-                        result,card=await native_tap(h,ph,session,tool,inp)
+                        # 0.30.7 ADR-0307-offlist: none of these is on the card list → answered at once (owner turn:
+                        # allow), no card; Jev and the legacy category floor are still never consulted.
+                        result=await asyncio.wait_for(h.ask(tool,inp,_harness_permission=True),3)
                     self.assertEqual(result['behavior'],'allow')
-                    self.assertFalse(card.get('passkey_required'))
-                    self.assertEqual(len([obj for _,obj in sent if obj['t']=='ask']),1)
+                    self.assertFalse(h.asks)
+                    self.assertEqual(len([obj for _,obj in sent if obj['t']=='ask']),0)
                     judge.assert_not_called()
                     lookup.assert_not_called()  # uv_list, not the legacy category floor
 
@@ -250,8 +262,10 @@ class MainExecution(unittest.IsolatedAsyncioTestCase):
             auth=Authenticator();st.set_passkey(ph.pub,pk_record(auth));ph.auth=auth;h.ask_ttl=2
             # Preserve the old canonical company proposal input as a plain native
             # permission vector, without inventing a company-to-main UV exemption.
-            result,card=await native_tap(h,ph,session,'company.write',{'digest':'a'*64,'summary':'sample'})
-            self.assertEqual(result['behavior'],'allow');self.assertFalse(card.get('passkey_required'))
+            # 0.30.7 ADR-0307-offlist: as a NATIVE request it is off the card list → answered at once, no card; with no
+            # agent (h.agent=None) nothing host-held names the turn → unknown trust → an off-list write is refused.
+            result=await asyncio.wait_for(h.ask('company.write',{'digest':'a'*64,'summary':'sample'},_harness_permission=True),3)
+            self.assertEqual((result['behavior'],result.get('reason')),('deny','off_list_write_unknown'));self.assertFalse(h.asks)
             task=asyncio.create_task(h.ask('agentj fn run',{'name':'synthetic-test-only'}))
             try:
                 for _ in range(200):
@@ -486,7 +500,8 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
                      ('settings.write', {}, 'ask'), ('mcp__unknown', {}, 'deny')]
             for tool, inp, want in cases:
                 # Preserve the actual protected ancestor write vector as UV.
-                want = 'ask' if tool == 'Bash' and inp.get('command') == 'rm -rf ~' else None
+                # #537② (Jarvis 2026-11-11): a listed real charge is routed to Host.ask (fingerprint card there) too.
+                want = 'ask' if tool == 'Bash' and inp.get('command') in ('rm -rf ~', 'stripe payment_intents create') else None
                 if research and tool != 'Read' and not (tool == 'Bash' and inp.get('command') in ('printf hello','ls','git status')):
                     want = 'deny'
                 with self.subTest(warnings=warnings, research=research, tool=tool, inp=inp):
@@ -532,7 +547,8 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
                 out = io.StringIO()
                 with patch('sys.stdin', io.StringIO(json.dumps({'tool_name': tool, 'tool_input': inp}))), redirect_stdout(out):
                     self.assertEqual(danger.hook_main(args), 0)
-                if protected:
+                charge = tool == 'Bash' and inp.get('command') == 'stripe payment_intents create'   # #537②
+                if protected or charge:
                     self.assertEqual(json.loads(out.getvalue())['hookSpecificOutput']['permissionDecision'], 'ask')
                 else:
                     self.assertEqual(out.getvalue(), '')

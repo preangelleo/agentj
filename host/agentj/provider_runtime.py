@@ -160,7 +160,7 @@ async def request_key(host, provider, *, session=None, on_card=None, settings=Fa
             from . import provenance
             card['only'] = session.device
             if settings:                           # 0.30.6: only the Settings → provider page (serve provider_card)
-                card['settings_origin'] = True
+                card['settings_origin'] = 'provider'   # 0.30.7: Settings → models & API keys page
             with provenance.paired_request(lambda: host._paired_live(session)):
                 return await host.elevate.request(card, **({"on_card": on_card} if on_card else {}))
         return await host.elevate.request(card, **({"on_card": on_card} if on_card else {}))

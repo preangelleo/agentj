@@ -404,6 +404,10 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
         # 0304 A1: a grant signer must be a roster-bound remote of this host (any of them), so the origin remote is bound.
         e=self.bound_entry(self.phone)
         with self.svc.store._edit('roster-via.json',{}) as rows:rows[e['id']]={'bind':e['bind']}
+        # 0.30.7 ADR-0307-offlist: off-list native Bash no longer cards; these flows prove an owner grant never answers
+        # a permission card (and the card's signing / estop race), so Bash is a listed (tap) card again.
+        from _listed_cards import listed
+        listed(self,'Bash')
 
     async def asyncTearDown(self):
         self.h.stopping.set()
@@ -436,7 +440,13 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
                 await asyncio.sleep(.002)
             self.assertFalse(task.done(),'a grant must not silently answer a native permission prompt')
             ask=next(iter(self.h.asks.values()))
-            self.assertFalse(ask.require_passkey,'ordinary native prompts use signed taps, not UV')
+            # #537② (Jarvis 2026-11-11, pending the chairman): a listed real charge in an owner / host turn is a
+            # fingerprint card; every other ordinary native prompt stays a signed tap (no UV). (A doubtful source's
+            # charge is refused off-list in production; this fixture lists Bash to keep exercising the card.)
+            from agentj import uv_list
+            trusted=(getattr(ask,'review_origin',None) or {}).get('source_trust') in ('owner','host')
+            self.assertEqual(ask.require_passkey,trusted and bool(uv_list.charge_command('Bash',{'command':command})),
+                             ('ordinary native prompts use signed taps, not UV; a real owner charge uses UV',command))
             await self.h._answer(self.s,ReviewPhone.answer(self.phone,self.h._ask_msg(ask,self.s),approve))
             return await asyncio.wait_for(task,1)
         finally:

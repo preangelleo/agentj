@@ -85,6 +85,18 @@ class Unattended(Base):
         self.assertEqual(self.parked(), [], 'expired native permission cannot create a durable parked grant')
         return res
 
+    def off_list(self, inp, decision, reason, tool="Bash", **kw):
+        """0.30.7 ADR-0307-offlist: an off-list native request is answered at once by the turn's trust — no card, no park."""
+        n = len(self.cards())
+        res, took = self.timed(inp, tool=tool, **kw)
+        self.assertEqual((res['behavior'], self.last()['reason']), (decision, reason))
+        self.assertEqual(len(self.cards()), n, 'no card is sent')
+        self.assertFalse(self.host.asks, 'no card is opened or parked')
+        self.assertLess(took, 0.6)
+        if decision == 'deny':
+            self.assertNotIn(OWNER_NO, res['message'])
+        return res
+
     def host_log(self, ev):
         out = []
         for line in self.st.log_path.read_text().splitlines():
@@ -132,14 +144,20 @@ class Unattended(Base):
 
     def test_harness_four_kinds_park_with_nobody_text(self):
         self.harness(); self.away(); self.heartbeat_turn()
-        for cmd in ("rm -rf ~/Documents/owner-notes", "stripe charges create --amount 500 --currency usd"):
-            self.native_timeout(cmd)
+        # 0.30.7 ADR-0307-offlist: off-list (not UV-listed) → no card / park; the heartbeat is host trust → allow.
+        self.off_list("rm -rf ~/Documents/owner-notes", 'allow', 'off_list')
+        # #537② (Jarvis 2026-11-11, pending the chairman): a real charge is a fingerprint card even in a host turn; with
+        # nobody online it expires as a refusal (never run, never a durable parked grant).
+        n = len(self.cards())
+        self.native_timeout("stripe charges create --amount 500 --currency usd")
+        self.assertTrue(all(c.get("passkey_required") for c in self.cards()[n:]))
         self.assertEqual(self.no_device_deny(), [])
 
     def test_harness_task_run_four_kinds_park(self):
         self.harness(); self.away()
         with self.task_run():
-            self.native_timeout("rm -rf ~/Documents/owner-notes", background="task")
+            # 0.30.7 ADR-0307-offlist: off-list → no card / park; the owner's own scheduled task is host trust → allow.
+            self.off_list("rm -rf ~/Documents/owner-notes", 'allow', 'off_list', background="task")
         self.assertEqual(self.no_device_deny(), [])
 
     def test_parked_face_id_allow_needs_its_face_id(self):
@@ -165,37 +183,42 @@ class Unattended(Base):
             a = CodexAgent(self.host, cfg, persist=False)
             a._answer, a.call = mock.Mock(), mock.AsyncMock()
             self.host.agent_notice = mock.Mock()
-            await source_fixture.signed_adapter(self, a._decide(1, "Bash", {"command": "git status"}, {"decision": "accept"}, {"decision": "decline"}, True))
+            # 0.30.7 ADR-0307-offlist: an off-list Codex approval opens no card and never parks. persist=False is a
+            # workflow-CEO thread (background="task") with no live task scope here, so its turn is `unknown` trust:
+            # the closed-list read is accepted at once, the delete is declined at once — not an owner refusal.
+            await asyncio.wait_for(a._decide(1, "Bash", {"command": "ls"}, {"decision": "accept"}, {"decision": "decline"}, True), 3)
             a._answer.assert_called_once_with(1, {"decision": "accept"})
+            self.assertEqual(self.last()['reason'], 'off_list_read')
             self.away()
             b = CodexAgent(self.host, cfg, persist=False)
             b._answer, b.call = mock.Mock(), mock.AsyncMock()
-            await b._decide(2, "Bash", {"command": "rm -rf ~/Documents/owner-notes"}, {"decision": "accept"}, {"decision": "decline"}, True)
+            await asyncio.wait_for(b._decide(2, "Bash", {"command": "rm -rf ~/Documents/owner-notes"}, {"decision": "accept"}, {"decision": "decline"}, True), 3)
             b._answer.assert_called_once_with(2, {"decision": "decline"})
-            self.assertEqual(self.last()['reason'], 'timeout')
-            told = self.host.agent_notice.call_args.args[0]
-            self.assertNotIn(OWNER_NO, told)
-            self.assertIn(told, str(b.call.call_args))
+            self.assertEqual(self.last()['reason'], 'off_list_write_unknown')
+            self.assertNotIn(OWNER_NO, str(b.call.call_args))
+            self.assertEqual(self.cards(), [])
+            self.assertEqual(self.parked(), [])
         asyncio.run(run())
 
     def test_standard_system_card_parks_not_group_source(self):
         self.away(); self.heartbeat_turn()
-        self.native_timeout("git push origin main")
+        # 0.30.7 ADR-0307-offlist: off-list → no card / park; the heartbeat is host trust (not a group source) → allow.
+        self.off_list("git push origin main", 'allow', 'off_list')
         self.assertEqual(self.no_device_deny(), [])
 
     def test_standard_task_run_card_parks_instead_of_timing_out(self):
         self.away()
-        with self.task_run(): self.native_timeout("git push origin main", background="task")
+        # 0.30.7 ADR-0307-offlist: off-list → no card / park / timeout; the scheduled task is host trust → allow.
+        with self.task_run(): self.off_list("git push origin main", 'allow', 'off_list', background="task")
 
     def test_standard_system_turn_does_not_ride_a_batch_grant(self):
         self.heartbeat_turn()
         g = SimpleNamespace(rid="g1", tool="Bash", scope=None, text="", device=self.phone.did, left=5, deadline=time.monotonic() + 60)
         with mock.patch.object(type(self.host), "_grant_for", return_value=g) as gf:
-            t0 = time.monotonic()
             self.host.ask_ttl = 0.3
-            res = self.ask("git push origin main", _harness_permission=True)
-            self.assertEqual(res["behavior"], "deny")         # online remote, nobody answers: the card's own lifetime
-            self.assertGreaterEqual(time.monotonic() - t0, 0.25)
+            # 0.30.7 ADR-0307-offlist: off-list → answered at once by the heartbeat's host trust, no card; a batch
+            # grant is still never consulted.
+            self.off_list("git push origin main", 'allow', 'off_list')
             gf.assert_not_called()
         self.assertNotEqual(self.last()["reason"], "batch")
 
@@ -205,16 +228,19 @@ class Unattended(Base):
         cases = []
         a = Send("notify", "s1", 0, text="feed item", by="notify")
         a.source = provenance.automation("rss")
-        cases.append(("automation", a))
+        cases.append(("automation", a, "host_read"))
         h = Send("hook", "s2", 0, text="webhook body", by="hook")
         h.source = provenance.system(); h.hook_notice = "hid"
-        cases.append(("webhook", h))
+        cases.append(("webhook", h, "external"))
         g = Send("mail", "s3", 0, text="guest", by="mail")
         g.source = provenance.email_guest("guest@example.com")
-        cases.append(("guest", g))
-        for name, send in cases:
+        cases.append(("guest", g, "external"))
+        for name, send, trust in cases:
             self.host.agent.cur_send = send
-            self.native_timeout("git status")
+            # 0.30.7 ADR-0307-offlist: no card for any of them; a closed-list read runs, an off-list write is refused
+            # at once with the source named (not an owner refusal).
+            self.off_list("ls", 'allow', 'off_list_read')
+            self.off_list("git push origin main", 'deny', 'off_list_write_' + trust)
             self.assertEqual(self.host.agent.cur_send.source, send.source)
             self.assertFalse(provenance.is_owner(send.source), name)
         self.host.agent.cur_send = a
@@ -274,18 +300,17 @@ class Unattended(Base):
         self.harness(); self.away()
         with self.task_run():
             for tool, inp in self.own_code_and_key_out():
-                self.native_timeout(inp, tool=tool, background="task")
+                # 0.30.7 ADR-0307-offlist: these legacy vectors are off-list (not UV) → no card; scheduled task = host.
+                self.off_list(inp, 'allow', 'off_list', tool=tool, background="task")
         self.assertFalse([r for r in approvals.read_log(self.st) if r["reason"] == "background"])
 
     def test_f1_order_background_keeps_the_harness_floor(self):
         self.harness()
         from test_p512_policy import native_tap
         for tool, inp in self.own_code_and_key_out():
-            n = len(self.cards())
-            res, card = asyncio.run(native_tap(self.host, self.phone, self.s, tool, inp, approve=False, background="order"))
-            self.assertEqual(res["behavior"], "deny")
-            self.assertEqual(len(self.cards()), n + 1)
-            self.assertFalse(card.get('passkey_required', False), 'legacy fence runtime-root/credential-word vectors are not control inventory')
+            # 0.30.7 ADR-0307-offlist: the legacy runtime-root / credential-word vectors are not control inventory
+            # (off-list) → no card; a background job the owner ordered is host trust → allow.
+            self.off_list(inp, 'allow', 'off_list', tool=tool, background="order")
         # The old fence.code_paths()[0] is the Python runtime root, not the
         # running Agent J package. Keep those original vectors and add the
         # actual closed controller path explicitly rather than reclassifying it.
@@ -325,6 +350,9 @@ class Unattended(Base):
         from agentj import cli
         from test_l1 import _ready
         from test_p512_policy import native_tap
+        # 0.30.7 ADR-0307-offlist: the subject is park rows / verify / retry of a card, so Bash is a listed card here.
+        from _listed_cards import listed
+        listed(self, 'Bash')
         self.away(); self.heartbeat_turn()
         self.native_timeout("git push origin main")
         old = self.last()['id']
@@ -354,8 +382,14 @@ class Unattended(Base):
         self.away()
         self.heartbeat_turn()
         self.host.agent.untrusted, self.host.agent.untrusted_foreign = (lambda: True), True
-        res, _ = self.timed("git status")
-        self.assertEqual((res["behavior"], self.last()["reason"]), ("deny", "timeout"))
+        # 0.30.7 ADR-0307-offlist: no card either way; the heartbeat cannot vouch while a group envelope may still run,
+        # so the turn is typed unknown — a closed local read runs, an off-list write is refused (never the owner's no).
+        from agentj import approval_offlist
+        self.assertEqual("unknown", approval_offlist.source(self.host)["type"])
+        res, _ = self.timed("ls")
+        self.assertEqual((res["behavior"], self.last()["reason"]), ("allow", "off_list_read"))
+        res, _ = self.timed("git push origin main")
+        self.assertEqual((res["behavior"], self.last()["reason"]), ("deny", "off_list_write_unknown"))
         self.assertNotIn(OWNER_NO, res["message"])
 
     def completion_after(self, launcher):
@@ -386,8 +420,9 @@ class Unattended(Base):
         owner.source = provenance.phone()
         send = self.completion_after(owner)
         self.assertEqual(provenance.unattended_turn(self.host.agent), "system")
-        res, _ = self.timed("git status")
-        self.assertEqual((res["behavior"], self.last()["reason"]), ("deny", "timeout"))
+        # 0.30.7 ADR-0307-offlist: a job-done turn is host_read: a closed-list read runs, a write is refused, no card.
+        self.off_list("ls", 'allow', 'off_list_read')
+        self.off_list("git push origin main", 'deny', 'off_list_write_host_read')
         self.assertEqual(send.source, provenance.system())
 
     def test_r3_group_launched_job_completion_is_refused(self):
@@ -396,11 +431,11 @@ class Unattended(Base):
         grp = Send("tg", "s", 0, text="x", by="tg")
         grp.source = provenance.telegram_group(-1, 2, "proxy", 1)
         send = self.completion_after(grp)
-        res, _ = self.timed("git status")
-        self.assertEqual((res["behavior"], self.last()["reason"]), ("deny", "timeout"))
+        # 0.30.7 ADR-0307-offlist: no card; only a closed-list read runs, the write is refused (not an owner refusal).
+        self.off_list("ls", 'allow', 'off_list_read')
+        res = self.off_list("git push origin main", 'deny', 'off_list_write_unknown')
         self.assertIsNone(provenance.unattended_turn(self.host.agent))
         self.assertEqual(send.source["kind"], "unknown")
-        self.assertNotIn(OWNER_NO, res["message"])
         self.assertNotIn(OWNER_NO, res["message"])
         self.assertEqual(self.cards(), [])
 
@@ -453,10 +488,14 @@ class Wakeups(unittest.IsolatedAsyncioTestCase):
                 rig.setUp()
                 try:
                     a.host = rig.host; rig.host.agent = a
-                    d, card = await source_fixture.signed_adapter(rig, a.hook_event({"hook_event_name": "PermissionRequest", "session_id": "owner",
-                                            "tool_name": "Bash", "tool_input": {"command": "git push origin"}}))
-                    self.assertEqual(d["hookSpecificOutput"]["decision"]["behavior"], "allow")
-                    self.assertFalse(card.get('passkey_required', False))
+                    # 0.30.7 ADR-0307-offlist: the wake-up is a host_read notice turn, never the owner: the off-list
+                    # write is refused at once without a card.
+                    d = await asyncio.wait_for(a.hook_event({"hook_event_name": "PermissionRequest", "session_id": "owner",
+                                            "tool_name": "Bash", "tool_input": {"command": "git push origin"}}), 3)
+                    self.assertEqual(d["hookSpecificOutput"]["decision"]["behavior"], "deny")
+                    self.assertEqual(rig.last()['reason'], 'off_list_write_host_read')
+                    self.assertEqual(rig.cards(), [])
+                    self.assertFalse(rig.host.asks)
                     self.assertEqual(a.native_source, provenance.system())
                     await source_fixture.guest_boundary(self)
                 finally: rig.doCleanups()

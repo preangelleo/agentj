@@ -81,6 +81,8 @@ class HostReceipt(unittest.IsolatedAsyncioTestCase):
         import json
         import test_0280_ordinary_maintenance as setup
         f=setup.Maintenance();await f.asyncSetUp();f._asyncioRunner=self._asyncioRunner;self.addCleanup(f.doCleanups)
+        # 0.30.7 ADR-0307-offlist: the subject is the card's timeout/cancel receipt; keep Bash a listed (tap) card.
+        from _listed_cards import listed;listed(self,'Bash')
         for cancelled in (False,True):
             receipt={};gone=asyncio.get_running_loop().create_future() if cancelled else None
             task=asyncio.create_task(f.host.ask('Bash',{'command':'stripe charges create --amount 100'},gone=gone,_receipt=receipt))

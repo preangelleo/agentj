@@ -361,6 +361,12 @@ export async function previewEndpoint(req: Request, env: WebEnv, seat: string, r
   if (rest !== PREVIEW_PATH + "/auth" || req.method !== "POST" || req.headers.get("origin") !== new URL(req.url).origin || !/^application\/json\b/i.test(req.headers.get("content-type") || "") || (req.headers.has("sec-fetch-site") && req.headers.get("sec-fetch-site") !== "same-origin")) return notFound();
   const raw = await previewBody(req); if (raw === null) return notFound();
   let body; try { body = JSON.parse(raw); } catch { return notFound(); }
+  if (body?.op === "has") {
+    // Browser credential inclusion is checked server-side; JS cannot read this HttpOnly cookie.
+    const proof = previewRead(req);
+    const present = !!proof && !!(await previewVerify(proof, req, seat, pin));
+    return previewReply({ has: present });
+  }
   if (body?.op === "clear") {
     const out = previewReply({ ok: true });
     for (const name of [PREVIEW_COOKIE, PREVIEW_SEEN]) out.headers.append("set-cookie", `${name}=; Path=/${seat}/; Max-Age=0; Secure; HttpOnly; SameSite=Strict`);
@@ -423,6 +429,7 @@ export async function previewAsset(req: Request, env: WebEnv, seat: string, rest
 
 // Runs only on publisher-listed seat HTML. Reads existing keys; never pairs, creates a database/key, or touches approvals.
 export const PREVIEW_BOOTSTRAP = `import * as session from '../../js/session.js';
+const {createReloadGuard}=await import('../../js/reload-guard.js');
 const seat=location.origin==='https://m.agentj.app'?/^\\/([a-z2-7]{8})\\//.exec(location.pathname)?.[1]:null;
 const enc=new TextEncoder();
 const b64=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');
@@ -442,8 +449,6 @@ async function records(){
 async function authorize(){
  const r=await records();if(!r)return false;
  if(!await session.whenReady(20000))return false;
- const endpoint='/'+seat+'/.aj/preview/auth';
- const post=async body=>{const r=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify(body)});if(!r.ok)throw Error('preview unavailable');return r.json()};
  const c=await post({op:'challenge',devicePublicKey:b64(r.key.pub)});
  const answer=await session.ask1({t:'web_preview_attest',message:c.message},'web_preview_proof',15000);
  if(!answer.ok||typeof answer.signature!=='string')return false;
@@ -451,13 +456,24 @@ async function authorize(){
  const a=await post({op:'authorize',proof:{message:c.message,deviceSignature:b64(signature),hostSignature:answer.signature}});
  return !!a.ok;
 }
+const endpoint='/'+seat+'/.aj/preview/auth';
+const post=async body=>{const r=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify(body)});if(!r.ok)throw Error('preview unavailable');return r.json()};
+const pendingKey='aj.preview.pending.'+seat;
+const failedKey='aj.preview.failed.'+seat;
+const report=why=>{try{if(sessionStorage.getItem(failedKey))return;sessionStorage.setItem(failedKey,'1')}catch{}session.sendApp({t:'web_preview_failed',why}).catch(()=>{})};
+const guard=createReloadGuard({notice:()=>{const n=document.createElement('p');n.textContent=document.documentElement.lang==='en'?'Page refresh did not take effect. Automatic refresh stopped.':'页面刷新没有生效，已停止自动刷新';n.setAttribute('role','status');document.body.append(n)},report});
+const fail=async why=>{try{sessionStorage.removeItem(pendingKey)}catch{}try{await post({op:'clear'})}catch{}report(why)};
 try {
  const active=document.querySelector('meta[name="agentj-web-preview"]');
- if(await authorize()){
-  if(!active)location.reload();
-  else {
+ let pending=false;try{pending=sessionStorage.getItem(pendingKey)==='1'}catch{}
+ if(pending){try{sessionStorage.removeItem(pendingKey)}catch{}if(!active)await fail('formal_after_reload')}
+ if((!pending || active) && !(sessionStorage.getItem(failedKey)) && await authorize()){
+  if(!active){
+   if((await post({op:'has'})).has){try{sessionStorage.setItem(pendingKey,'1')}catch{}if(!guard('preview.bootstrap'))await fail('reload_blocked')}
+   else await fail('cookie_missing');
+  } else {
    let flight=null;
-   const fallback=async()=>{try{await fetch('/'+seat+'/.aj/preview/auth',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',cache:'no-store',body:JSON.stringify({op:'clear'})})}catch{}location.reload()};
+   const fallback=async()=>{try{await post({op:'clear'});if((await post({op:'has'})).has){report('clear_failed');return}}catch{report('clear_unavailable');return}guard('preview.expired')};
    const renew=()=>flight||(flight=authorize().then(ok=>{if(!ok)return fallback()}).catch(fallback).finally(()=>{flight=null}));
    setInterval(renew,40000);
    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')renew()});

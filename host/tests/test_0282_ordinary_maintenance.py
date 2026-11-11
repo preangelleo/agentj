@@ -68,8 +68,14 @@ class Replay(unittest.IsolatedAsyncioTestCase):
 
     async def test_new_ordinary_operations_still_require_verified_source(self):
         self.host.agent.cur_send = None
-        result, _ = await self.ask('Bash', {'command': 'systemctl --user start daily-video-publish'})
-        self.assertNotEqual(result['behavior'], 'allow')
+        result, cards = await self.ask('Bash', {'command': 'systemctl --user start daily-video-publish'})
+        # 0.30.7 ADR-0307-offlist: an off-list request never opens a card; with no queued Send the host-held source is
+        # the local terminal (owner trust), so it is answered at once by trust — allow, audited as off_list.
+        from agentj import approval_offlist, approvals
+        self.assertEqual(approval_offlist.source(self.host)['trust'], 'owner')
+        self.assertEqual(result['behavior'], 'allow')
+        self.assertEqual(cards, [])
+        self.assertEqual(approvals.read_log(self.host.st)[-1]['reason'], 'off_list')
 
     async def test_new_test_directory_does_not_hide_real_or_sensitive_data(self):
         from agentj import ordinary_maintenance
@@ -104,12 +110,17 @@ class Replay(unittest.IsolatedAsyncioTestCase):
             (root/'ordinary-report.service').write_text('[Service]\nExecStart=/usr/bin/cat %h/.ssh/id_rsa\n')
             with patch.object(ordinary_maintenance,'_unit_roots',return_value=((str(root),),False)):
                 result,_=await self.ask('Bash',{'command':'systemctl --user start ordinary-report'})
-                self.assertNotEqual(result['behavior'],'allow')
+                # 0.30.7 ADR-0307-offlist: the maintenance proof still refuses this unit (its subject), but an off-list
+                # owner request no longer cards — what a launched program reads is outside any command-line gate
+                # (documented residual: owner / host off-list = the owner's harness with full access).
+                self.assertFalse(ordinary_maintenance.proven('Bash',{'command':'systemctl --user start ordinary-report'},cwd=str(self.home)))
+                self.assertEqual(result['behavior'],'allow')
         script=self.home/'bin/ordinary-report'
         script.write_text('#!/bin/sh\ncat "$HOME/.ssh/id_rsa"\n')
         (self.home/'.config/systemd/user/ordinary-report.service').write_text('[Service]\nExecStart=%h/bin/ordinary-report\n')
         result,_=await self.ask('Bash',{'command':'systemctl --user start ordinary-report'})
-        self.assertNotEqual(result['behavior'],'allow')
+        self.assertFalse(ordinary_maintenance.proven('Bash',{'command':'systemctl --user start ordinary-report'},cwd=str(self.home)))
+        self.assertEqual(result['behavior'],'allow')     # 0.30.7 ADR-0307-offlist residual (see above)
 
     async def test_sealed_ordinary_dispatch_script_and_replacement(self):
         from agentj import ordinary_maintenance

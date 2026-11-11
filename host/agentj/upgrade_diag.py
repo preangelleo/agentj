@@ -180,7 +180,14 @@ def artifact_fields(res):
         out['download_attempts'] = value
     if res.get('owner_kind') in OWNER_KINDS:        # #475: never the paths or the account name
         out['owner_kind'] = res['owner_kind']
+    for key, allowed in CACHE_FIELDS.items():        # #0307: the kind of cache folder that refused and who owns it
+        if isinstance(res.get(key), str) and res[key] in allowed:
+            out[key] = res[key]
     return out
+
+
+CACHE_FIELDS = {'cache_path': ('xdg', 'home'), 'cache_level': ('cache_dir', 'upgrade_root', 'cache_base', 'file'),
+                'cache_owner': ('self', 'root', 'other'), 'cache_fallback': ('tmp',)}
 
 
 OWNER_KINDS = ('root', 'other')
@@ -431,6 +438,9 @@ META_FIELDS = {
     "errno": lambda v: v.isdigit() and int(v) in errno.errorcode,
     "artifact_sha256": lambda v: bool(re.fullmatch(r"[0-9a-f]{64}", v)),
     "stated_sha256": lambda v: bool(re.fullmatch(r"[0-9a-f]{64}", v)),
+    # #0307 (贾维斯 dispatch 2026-11-10): which kind of cache folder refused the write and whether this account owns it —
+    # closed words, never a path or an account name.
+    **{k: (lambda allowed: lambda v: v in allowed)(allowed) for k, allowed in CACHE_FIELDS.items()},
 }
 
 

@@ -19,7 +19,12 @@ import { usable as termUsable, state as termState } from './termhook.js';   // P
 
 const READ_CMDS = new Set(['doctor', 'version']);
 export const CMDS = { doctor: 'doctor', reconnect: 'doctor --reconnect', status: 'status', service_status: 'service status',
-  rescue_status: 'rescue status', update_check: 'update check', version: '--version' };
+  rescue_status: 'rescue status', update_check: 'update check', version: '--version',
+  codex_full_access: 'codex-sandbox default' };
+// 0.30.7: owner-only rows — the host runs them in process (codex_full_access: config.toml back to full access + restart,
+// Face ID). Never matched from a code block's text (nameOf), never the reply 「执行」 (exec): Settings and the host's typed
+// refusal-page button (fullAccess) only.
+export const OWNER_ONLY = new Set(['codex_full_access']);
 // #555: switch names come only from the host's registry-backed whitelist.
 const SWITCH_NAME = /^switch_([a-z][a-z0-9_-]{0,31})$/;
 let harnesses = new Map();
@@ -150,13 +155,22 @@ export async function run(name) {
 /** #584: the name of the whitelisted command this exact text is (`agentj doctor --reconnect` → 'reconnect'), or null. Pure. */
 export function nameOf(text) {
   const s = String(text || '').trim().replace(/\s+/g, ' ');
-  for (const n of Object.keys(CMDS)) if (!SWITCH_NAME.test(n) && s === line(n)) return n;
+  for (const n of Object.keys(CMDS)) if (!SWITCH_NAME.test(n) && !OWNER_ONLY.has(n) && s === line(n)) return n;
   return null;
 }
 /** #584: a reply code block's 「执行」 for a whitelisted command — the same signed cmd_run as Settings (a NAME, never the
  *  text), its result returned to the caller instead of Settings' box: {ok, code, out, cut, ms, why}. */
 export async function exec(name) {
-  if (!Object.hasOwn(CMDS, name) || !names.includes(name) || SWITCH_NAME.test(name)) return { ok: false, why: 'shape' };
+  if (!Object.hasOwn(CMDS, name) || !names.includes(name) || SWITCH_NAME.test(name) || OWNER_ONLY.has(name)) return { ok: false, why: 'shape' };
+  return execNamed(name);
+}
+/** 0.30.7: the refusal page's 「改回全放行并重启」 (repair-actions.js) — the same signed cmd_run + Face ID, by NAME only. */
+export async function fullAccess() {
+  const name = 'codex_full_access';
+  if (!names.includes(name)) return { ok: false, why: 'unsupported' };
+  return execNamed(name);
+}
+async function execNamed(name) {
   if (!READ_CMDS.has(name) && phoneConfirmation()) return { ok: false, why: 'cancel' };
   if (!isReady()) return { ok: false, why: 'offline' };
   const fa = async (res) => {
@@ -164,14 +178,16 @@ export async function exec(name) {
     const yes = el('confirm-yes'); let p = null;
     const grab = () => { p = faApprove(unb64u(res.fa_ch), res.fa); p.catch(() => {}); };
     yes.addEventListener('click', grab);
-    const ok = await pkSheet(res.fa_s, t('p361.faTitle'), t('p361.faText', { cmd: line(name) }), t('p361.faYes'));
+    const ok = await pkSheet(res.fa_s, t('p361.faTitle'), OWNER_ONLY.has(name) ? t('p0307.fix.faText') : t('p361.faText', { cmd: line(name) }),
+      t('p361.faYes'));
     yes.removeEventListener('click', grab);
     return ok && p ? p : null;
   };
   const m = await send(name, fa);
   const str = (v) => (typeof v === 'string' ? v.slice(0, 20000) : '');
   return { ok: !!m.ok, code: Number.isInteger(m.code) ? m.code : null, out: str(m.out), cut: m.cut === true,
-    ms: Number.isInteger(m.ms) ? m.ms : null, why: m.ok ? '' : String(m.why || '') };
+    ms: Number.isInteger(m.ms) ? m.ms : null, why: m.ok ? '' : String(m.why || ''),
+    restart: typeof m.restart === 'string' ? m.restart : '', unchanged: m.why === 'unchanged' };
 }
 /** P393 · settings.js open(): an ended result opens folded to one line (× still closes it). */
 export function foldEnded() { if (R && (R.st === 'done' || R.st === 'fail') && !R.fold) { R.fold = true; paint(); } }

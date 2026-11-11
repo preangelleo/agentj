@@ -4,7 +4,7 @@
 import { mailServers } from './mail-servers.js';
 import { t, lang, onLang } from './t.js';
 import { renderTriage } from './mail-triage.js';
-import { el, toast, notify } from './ui.js';
+import { el, toast, notify, settingsSaid } from './ui.js';
 import { signed } from './controls.js';
 import { ask1, isReady, peer } from './session.js';
 // 0.30.6: the select shows short names; the chosen level's full meaning sits on the line under it.
@@ -19,7 +19,8 @@ let testedConnection = null;
 const connectionKey = () => JSON.stringify([cfg().address, cfg().username, cfg().imap, cfg().smtp, cfg().auth]);
 const ADDR = /^[A-Za-z0-9._%+'=-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 
-function say(s) { el('mail-msg').textContent = s || ''; }
+// 0.30.7 (chairman 11-11): the panel line is the one place the sentence stays; a notice that only repeated it goes
+function say(s) { el('mail-msg').textContent = s || ''; settingsSaid(s); }
 const why = (w) => { const p = String(w || '').split(':'); const k = 'mail.why.' + (p[1] === 'self' ? 'self' : p[0]); const s = t(k); return s === k ? String(w || '?').slice(0, 60) : s; };
 
 async function call(obj, ms = 20000) {
@@ -240,7 +241,9 @@ export function configure() {
     testedConnection = m?.ok && m.verify === 'ok' ? connectionKey() : null;
     busy = false; render();
     if (m?.ok && m.verify === 'ok') notify({ kind: 'success', shape: 'circle', text: t('mail.passwordSaved'), ms: 2400 });
-    if (m) say(m.ok ? t(m.verify === 'fail' ? 'mail.testFail' : 'mail.testOk', {why: why(m.detail)}) : t('mail.keyFail', {why: why(m.why)}));
+    // 0.30.7 N4b: a new task started between the confirmation and the save → its own sentence, not the generic failure
+    const newTask = !m?.ok && { new_task: 'p0307.secret.newTask', new_task_during_validation: 'p0307.secret.newTaskValidated' }[m?.why];
+    if (m) say(m.ok ? t(m.verify === 'fail' ? 'mail.testFail' : 'mail.testOk', {why: why(m.detail)}) : newTask ? t(newTask) : t('mail.keyFail', {why: why(m.why)}));
   });
   el('mail-test').addEventListener('click', async () => {
     busy = true; render(); say(t('mail.testing'));

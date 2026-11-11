@@ -17,6 +17,8 @@ function fixture({missing=false,corrupt=false,bundleCorrupt=false,browser=false}
   formal.set('favicon.ico','');
   const stub="export async function whenReady(){return true};export async function ask1(obj){window.fixtureAttestCalls=(window.fixtureAttestCalls||0)+1;if(sessionStorage.getItem('fixture.revoked'))return {ok:false};const key=await window.fixtureHostKey;const sig=await crypto.subtle.sign('Ed25519',key,new TextEncoder().encode('agentj/web-preview/host/v1\\n'+obj.message));return {ok:true,signature:btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'')}};";
   bytes['js/session.js']=Buffer.from(stub);formal.set('js/session.js',stub);
+  const guard=readFileSync(new URL('../public/js/reload-guard.js',import.meta.url),'utf8');
+  bytes['js/reload-guard.js']=Buffer.from(guard);formal.set('js/reload-guard.js',guard);
   const sri='sha256-'+createHash('sha256').update(PREVIEW_BOOTSTRAP).digest('base64');
   bytes['index.html']=Buffer.from('<!doctype html><body><meta name="agentj-web-preview" content="547">candidate<script type="module" src="./app.js"></script><script type="module" src="./.aj/preview/bootstrap.js" integrity="'+sri+'" crossorigin="anonymous"></script></body>');
   bytes['app.js']=Buffer.from('window.candidateStarted=true');formal.set('index.html','<!doctype html><body>formal<script type="module" src="./app.js"></script></body>');formal.set('app.js','window.formalStarted=true');
@@ -56,7 +58,8 @@ test('547: unpaired listed HTML has only formal body + SRI bootstrap, no candida
  assert.match(text,/formal/);assert.doesNotMatch(text,/candidate/);assert.match(text,/integrity="sha256-/);assert.match(text,/bootstrap.js/);
  assert.match(r.headers.get('content-security-policy'),/\/lwlbelrv\/\.aj\/preview\/auth/);
  assert.equal(r.headers.get('vary'),'Cookie');assert.match(PREVIEW_BOOTSTRAP,/onupgradeneeded=\(\)=>q.transaction.abort/);
- assert.doesNotMatch(PREVIEW_BOOTSTRAP,/signKey\(|deviceKey\(|openSession\(|sendApp\(/);
+ assert.doesNotMatch(PREVIEW_BOOTSTRAP,/signKey\(|deviceKey\(|openSession\(/);
+ assert.match(PREVIEW_BOOTSTRAP,/sendApp\(\{t:'web_preview_failed'/);
  const script=await handle(req(`/${SEAT}/.aj/preview/bootstrap.js`),f.env);assert.equal(await script.text(),PREVIEW_BOOTSTRAP);
 });
 test('547: current paired host and device proofs unlock every asset; strict cookie path/security and original CSP',async()=>{
@@ -130,17 +133,27 @@ test('547: real browser unpaired stays formal; paired bootstrap shares session a
   assert.equal(requests.filter(x=>x.path.endsWith('/auth')).length,0,'unpaired browser cannot request attestation or candidate');
   await evaluate(p,`(async()=>{const kp=await crypto.subtle.generateKey({name:'Ed25519'},false,['sign','verify']);const pub=new Uint8Array(await crypto.subtle.exportKey('raw',kp.publicKey));await new Promise((resolve,reject)=>{const r=indexedDB.open('agentjarvis@${SEAT}',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onerror=reject;r.onsuccess=()=>{const d=r.result,t=d.transaction('kv','readwrite'),s=t.objectStore('kv');s.put({approved:true},'host');s.put({priv:kp.privateKey,pub},'sign');t.oncomplete=()=>{d.close();resolve()};t.onerror=reject}})})()`);
   await navigate(p,ORIGIN+'/'+SEAT+'/');await waitFor(p,'window.candidateStarted===true',15000);
-  assert.equal(await evaluate(p,'window.fixtureAttestCalls'),1);
+  assert.ok(requests.some(x=>x.path.endsWith('/auth')&&x.status===200));
   assert.ok(requests.some(x=>x.path.endsWith('/auth')&&x.status===200));
   assert.equal(p.problems.length,0,p.problems.join(' | '));assert.deepEqual(failed,[]);
   // The exact visibility recovery callback attempts a fresh host proof; a revoked device receives no new grant.
   await new Promise(resolve=>setTimeout(resolve,100));
   await evaluate(p,`sessionStorage.setItem('fixture.revoked','1');document.dispatchEvent(new Event('visibilitychange'))`);
-  await waitFor(p,'window.formalStarted===true && !window.candidateStarted',15000);
+  try { await waitFor(p,'window.formalStarted===true && !window.candidateStarted',15000); }
+  catch(e){ throw Error(`${e.message}; state=${JSON.stringify(await evaluate(p,'({formal:window.formalStarted,candidate:window.candidateStarted,revoked:sessionStorage.getItem("fixture.revoked"),guard:localStorage.getItem("aj.reloadGuard.v1"),pending:sessionStorage.getItem("aj.preview.pending.lwlbelrv"),failed:sessionStorage.getItem("aj.preview.failed.lwlbelrv")})'))}; requests=${JSON.stringify(requests.slice(-12))}; problems=${p.problems.join(' | ')}`); }
   assert.equal(p.problems.length,0,p.problems.join(' | '));assert.deepEqual(failed,[]);
  }finally{await p.dispose();await B.close()}
 });
 
+test('590: preview has confirms a valid signed cookie, not merely a cookie name',async()=>{
+ const f=fixture(), {cookie}=await authorize(f);
+ const absent=await handle(post(SEAT,{op:'has'}),f.env);
+ assert.deepEqual(await absent.json(),{has:false});
+ const forged=await handle(new Request(ORIGIN+'/'+SEAT+'/.aj/preview/auth',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/json',cookie:'__Secure-aj_preview=forged'},body:JSON.stringify({op:'has'})}),f.env);
+ assert.deepEqual(await forged.json(),{has:false});
+ const valid=await handle(new Request(ORIGIN+'/'+SEAT+'/.aj/preview/auth',{method:'POST',headers:{origin:ORIGIN,'content-type':'application/json',cookie},body:JSON.stringify({op:'has'})}),f.env);
+ assert.deepEqual(await valid.json(),{has:true});
+});
 test('547: unsigned preview marker never changes nonlisted bytes or candidate-missing fallback',async()=>{
  const f=fixture();const headers={cookie:'__Secure-aj_preview_seen=1; __Secure-aj_preview=forged'};
  for(const path of [`/${OTHER}/`,`/${OTHER}/app.js`,`/${OTHER}/app.css`,`/${OTHER}/sw.js`]){

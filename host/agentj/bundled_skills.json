@@ -29,6 +29,7 @@
     "agentj-pair",
     "agentj-recall",
     "agentj-reconnect",
+    "agentj-relay-check",
     "agentj-reply-components",
     "agentj-report",
     "agentj-screen-help",
@@ -137,6 +138,10 @@
     ],
     "agentj-reconnect": [
       "SKILL.md"
+    ],
+    "agentj-relay-check": [
+      "SKILL.md",
+      "check.py"
     ],
     "agentj-reply-components": [
       "SKILL.md"

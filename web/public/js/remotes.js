@@ -45,7 +45,7 @@ const clean = (s, n = 64) => String(s ?? '').replace(/[\u0000-\u001f\u007f]/g, '
 function take(m) {
   const items = Array.isArray(m.items) ? m.items.slice(0, 64).filter((d) => d && typeof d.id === 'string') : [];
   const limit = validLimit(m.limit);
-  return { limit, items, security_stage:m.security_stage, can_add: m.can_add !== false, busy: m.busy === true };
+  return { limit, items, security_stage:m.security_stage, can_add: m.can_add !== false, busy: m.busy === true, unbind_one: m.unbind_one === true };
 }
 /** From the `preferences` host block (older hosts, or before the first dev_list answer). */
 function fromPrefs() {
@@ -214,9 +214,18 @@ async function rename(d, value) {
   render();
   refresh();
 }
+/** 0.30.7 one-card unbind: the host advertised `unbind_one` (a signed dev_unbind of another remote without `fa` only returns
+ *  its challenge, never runs). The signed request goes first; ONE sheet — what happens + Face ID — follows, and its tap
+ *  is the get(). Without the flag (an older host) the page keeps the two steps below. Cancel → nothing ran. */
+const faceIdUnbindOne = (nm) => (res) => import('./settings.js').then((m) => m.faceIdStep(res,
+  { titleText: t('p0307.rm.oneTitle', { name: nm }), textText: t('p0307.rm.oneText'), yes: 'p0307.rm.oneYes' }));
 async function unbind(d) {
   const self = d.me === true;
   const nm = clean(d.name) || d.id;
+  if (!self && snap?.unbind_one === true) {
+    const res = await signedWriteFa('dev_unbind', { device: d.id }, { t: 'dev_unbind', device: d.id }, faceIdUnbindOne(nm));
+    return unbound(d, nm, res, false);
+  }
   // 0304 r2 (QA scene 2): unbinding ANOTHER remote reads as one flow in two different steps — 「解绑」 (decide; says Face ID
   // comes next), then 「最后一步：用 Face ID 确认」. The Face ID sheet stays its own tap: the host's challenge only exists after
   // the signed request, and iOS needs the tap right before get(). The first sheet never says 「用 Face ID 解绑」 any more.
@@ -225,9 +234,14 @@ async function unbind(d) {
   if (!ok) return;
   const res = self ? await signedWrite('dev_unbind', { device: d.id }, { t: 'dev_unbind', device: d.id })
     : await signedWriteFa('dev_unbind', { device: d.id }, { t: 'dev_unbind', device: d.id }, faceIdUnbindOther(nm));
+  return unbound(d, nm, res, self);
+}
+function unbound(d, nm, res, self) {
   if (!res.ok) {
     const fa = unbindFaWhy(res.why);
     if (fa === null) return;
+    // 0.30.7 r2: no answer to an unbind is 「Agent J 主机没有回应」, not the add flow's 「这次配对结束了」; the list is asked again
+    if (res.why === 'timeout') { refresh(); return toast(t('rm.fail', { why: ctlWhy('timeout') }), 6000); }
     return toast(fa ?? whyText(res.why), fa ? 8000 : 4000);
   }
   if (self) { H.forget(); return; }

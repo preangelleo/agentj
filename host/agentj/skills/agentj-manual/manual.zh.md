@@ -85,7 +85,7 @@ OpenCode 的水位优先采用模型提供的上下文上限；没有上限时�
 
 如果交接没写成，比如 Agent 卡住了，压缩照常进行。手机上会提示一行「交接没来得及写，已经直接压缩了。」
 
-交接文件路径固定、可以在手机上直接复制：共享模式是 `~/.local/state/agentj/handoff/compact.md`，Agent J 自己的主对话是 `<工作目录>/.agentj/handover/compact.md`。压缩完如果你没再发消息，Agent J 会自己提醒 Agent 先读交接再接着干，手机上显示一行「压缩好了，我在翻交接笔记，马上接上思路」。详见文档里的压缩与交接一页。
+交接文件路径固定、可以在手机上直接复制：共享模式是 `~/.local/state/agentj/handoff/compact.md`，Agent J 自己的主对话是 `<工作目录>/.agentj/handover/compact.md`。压缩完如果你没再发消息，Agent J 会自己提醒 Agent 先读交接再接着干。共享模式下，Agent 真的读完交接文件，手机上才显示一行「压缩好了，已读完交接，接着做。」详见文档里的压缩与交接一页。
 
 输入 `/clear` 会开一段新对话。开之前先问你一声；在你发出下一条消息之前还能「撤销清空」。新对话一开始，按钮就换成一行「新对话已经开始，来不及撤销了（旧对话存在Agent J 主机上）」，旧对话仍存在Agent J 主机上。想保留进度时用 `/compact`，别用 `/clear`。开新对话、压缩完成这类状态提示会用你设定的称呼（默认「董事长」），想换就运行 `agentj config set owner.address 老板`。
 

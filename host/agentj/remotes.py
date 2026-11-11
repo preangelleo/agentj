@@ -79,7 +79,12 @@ class Remotes:
         mine = bool(p and getattr(p, "phone", None) == s.device)
         from .security_rotation import view
         return {"security_rotation": True, "security_stage": view(h.st)["stage"], "limit": MAX_DEVICES, "items": rows(h.st, h._online(), s.device),
-                "can_add": remote_pair.enabled(h.st), "busy": bool(p) and not mine}
+                "can_add": remote_pair.enabled(h.st), "busy": bool(p) and not mine,
+                # 0.30.7 one-card unbind (REPORT-0304-frozen #2, chairman-approved design): this host promises that a
+                # signed dev_unbind of ANOTHER remote without `fa` never executes — it only answers passkey_required with
+                # a host-bound challenge. Only then may the page send that request before its single Face ID sheet.
+                # Advertised from the same run-time tier table the check reads; old hosts never send it → two steps.
+                "unbind_one": confirm_tier.owner_action("dev_unbind") == confirm_tier.UV}
 
     async def push_list(self) -> None:
         """Every ready p33 remote gets the fresh list (after any change, from any path)."""

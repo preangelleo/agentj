@@ -185,6 +185,15 @@ class HostDispatch572(unittest.TestCase):
                         cards=[obj for _,obj in sent if obj.get('t')=='ask' and obj['id'] in host.asks]
                         if cards or task.done():break
                         await asyncio.sleep(.005)
+                    if not uv:
+                        # 0.30.7 ADR-0307-offlist: the off-list credential-file write opens no card; it is refused at
+                        # once for every source (no secret path through an unasked tool).
+                        result=await asyncio.wait_for(task,2)
+                        self.assertEqual(result['hookSpecificOutput']['decision']['behavior'],'deny')
+                        from agentj import approvals
+                        self.assertEqual(approvals.read_log(self.st)[-1]['reason'],'off_list_credential')
+                        self.assertFalse([obj for _,obj in sent if obj.get('t')=='ask'])
+                        continue
                     self.assertFalse(task.done())
                     card=cards[-1]
                     self.assertEqual(bool(card.get('passkey_required')),uv)

@@ -181,6 +181,115 @@ def entries():
         + [{'command':'agentj config set '+key,'reason':reason} for key,reason in CONFIG_KEYS.items()])
 
 
+# #537② conservative list, Jarvis 2026-11-11 pending chairman; delete an entry to relax.
+# Third-party CLI shapes that really move money (charge, pay, transfer, refund, broadcast a transaction). Matched on the
+# parsed argv (danger.lex/unwrap: wrappers, `sh -c`, substitutions expanded) — program basename + the exact subcommand
+# words, never a pattern over the command line. Only an owner / host turn's off-list Bash that names one of these gets
+# the fingerprint card (list_approval.ask); every other source keeps the ADR-0307-offlist refusal. A speed bump against
+# the model's own mistakes, not a boundary: a script, a raw HTTP call or a variable-built argv is not recognised.
+CHARGE_COMMANDS = MappingProxyType({
+    'stripe': (('charges', 'create'), ('charges', 'capture'),
+               ('payment_intents', 'create'), ('payment_intents', 'confirm'), ('payment_intents', 'capture'),
+               ('invoices', 'pay'), ('subscriptions', 'create'), ('payouts', 'create'), ('transfers', 'create'),
+               ('topups', 'create'), ('refunds', 'create')),
+    'cast': (('send',), ('publish',)),                                    # Foundry: sign + broadcast a transaction
+    'solana': (('transfer',),),
+    'spl-token': (('transfer',),),
+    'bitcoin-cli': (('send',), ('sendall',), ('sendtoaddress',), ('sendmany',), ('sendrawtransaction',)),
+    'lncli': (('sendpayment',), ('payinvoice',), ('sendcoins',), ('sendmany',)),
+    'aptos': (('account', 'transfer'),),
+    'sui': (('client', 'pay'), ('client', 'pay-sui'), ('client', 'pay-all-sui'), ('client', 'transfer-sui'),
+            ('client', 'transfer')),
+})
+# `stripe post <path>`: the same Stripe effects through the generic API verb (exact /v1 resource paths only).
+STRIPE_POST_CREATE = frozenset({'charges', 'payment_intents', 'subscriptions', 'payouts', 'transfers', 'topups', 'refunds'})
+STRIPE_POST_ACTION = frozenset({('charges', 'capture'), ('payment_intents', 'confirm'), ('payment_intents', 'capture'),
+                                ('invoices', 'pay')})
+_SHELL_OPS = ('bash', 'exec_command', 'shell_command', 'execute_command', 'shell')
+
+
+def _stripe_post(words):
+    if len(words) < 2 or words[0] != 'post':
+        return False
+    segments = words[1].split('?', 1)[0].strip('/').split('/')
+    if not segments or segments[0] != 'v1':
+        return False
+    return ((len(segments) == 2 and segments[1] in STRIPE_POST_CREATE)
+            or (len(segments) == 4 and (segments[1], segments[3]) in STRIPE_POST_ACTION))
+
+
+def _charge_call(name, args):
+    import os
+    program = os.path.basename(name or '')
+    shapes = CHARGE_COMMANDS.get(program)
+    if not shapes:
+        return None
+    end = args.index('--') if '--' in args else len(args)
+    if '--help' in args[:end] or '-h' in args[:end]:      # help only as an option; after `--` it is an operand
+        return None
+    # Positional words in order; `skippable` = may be the value of the bare flag right before it
+    # (`stripe --api-key K charges create`, `stripe charges --api-key K create`, `sui client --client.config c pay-sui`).
+    # A shape word may skip only such values, never an ordinary positional (`bitcoin-cli help sendtoaddress`).
+    positional = []
+    for i, a in enumerate(args):
+        if i == end:
+            continue
+        if i > end:
+            positional.append((a, False))
+        elif not a.startswith('-'):
+            prev = args[i - 1] if i else ''
+            positional.append((a, prev.startswith('-') and '=' not in prev and prev != '--'))
+
+    def match(shape, k=0):
+        """Index after `shape` matched from positional k (skipping flag values only), or None."""
+        for word in shape:
+            while k < len(positional) and positional[k][0] != word:
+                if not positional[k][1]:
+                    return None
+                k += 1
+            if k >= len(positional):
+                return None
+            k += 1
+        return k
+
+    for shape in shapes:
+        if match(shape) is not None:
+            return program + ' ' + ' '.join(shape)
+    if program == 'stripe':
+        k = match(('post',))
+        while k is not None and k < len(positional) and positional[k][1] and not positional[k][0].startswith('/'):
+            k += 1
+        if k is not None and k < len(positional) and _stripe_post(['post', positional[k][0]]):
+            return 'stripe post ' + positional[k][0].split('?', 1)[0]
+    return None
+
+
+def charge_command(tool, tool_input):
+    """The CHARGE_COMMANDS shape a shell tool call runs ('stripe charges create'), or None. Never reads model text other
+    than the command itself; an unparseable command is not guessed at (it stays the off-list decision)."""
+    from . import danger, policy_registry
+    if not isinstance(tool, str) or not isinstance(tool_input, dict):
+        return None
+    operation = policy_registry.harness_tool(tool).rsplit('__', 1)[-1].rsplit('.', 1)[-1].lower()
+    if operation not in _SHELL_OPS:
+        return None
+    text = tool_input.get('command', tool_input.get('cmd', ''))
+    if isinstance(text, list):
+        import shlex
+        text = shlex.join(str(w) for w in text)
+    if not isinstance(text, str) or not text.strip():
+        return None
+    try:
+        for command in danger.lex(text):
+            for call in danger.unwrap(command):
+                hit = _charge_call(call.name, list(call.args))
+                if hit:
+                    return hit
+    except Exception:  # noqa: BLE001 — a parser failure is not a charge claim; the off-list rules still apply
+        return None
+    return None
+
+
 def required(tool, tool_input=None, *, cwd=None, env=None):
     """Semantic names only. Model text, command shape and origin never grant UV."""
     if protected_targets(tool, tool_input, cwd=cwd, env=env):

@@ -17,7 +17,9 @@ class SkillShadow(unittest.TestCase):
     def backup(self):return Path(sl._read(self.target.parent)[NAME]['backup'])
     def test_frozen_37_builtins_no_additions(self):
         expected=json.loads(p.SKILLS.with_name('bundled_skills.json').read_text())['skills']
-        self.assertEqual(len(expected),37)
+        # Frozen inventory; any addition is a deliberate, ticketed change. 0.30.7: +agentj-relay-check (integrate1,
+        # Agents Relay self-check, docs/agents-relay 「测中转」) — 37 → 38. Plaza remains the default for new skills.
+        self.assertEqual(len(expected),38)
         self.assertEqual(sorted(expected),sorted(x.name for x in p.SKILLS.iterdir() if x.is_dir()))
         self.assertEqual(set(x.name for x in p.SKILLS.iterdir()),set(expected)|{'aliases.json'})
         inventory=json.loads(p.SKILLS.with_name('bundled_skills.json').read_text())['logic_files']

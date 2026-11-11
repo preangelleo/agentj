@@ -44,7 +44,8 @@ class Secret(unittest.IsolatedAsyncioTestCase):
             host.elevate = El()
             def check(c, pw):
                 self.assertEqual(pw, "abcdefghijklmnop")
-                self.assertEqual(M.load_secret(st, c["address"]), pw, "saved before check")
+                # 0.30.7 N5a revises ADR-P256's order: check → pinned-authority gate → store (a failed check still saves)
+                self.assertIsNone(M.load_secret(st, c["address"]), "not stored before the check")
                 return dict(ok=False, imap="imap_login", smtp="ok", auth_sample=None)
             with patch.object(M, "test_connection", side_effect=check) as verify:
                 result = await mail.secret_card()

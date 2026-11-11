@@ -1,4 +1,5 @@
-import {paintRepair,repairOf,replyName} from './repair-actions.js';
+import {paintRepair,repairOf,replyName,paintFix} from './repair-actions.js';
+import {fullAccess, supports as cmdSupports} from './cmdrun.js';
 import {waitsForNewRequest,rememberRefusal,waitingText,forgetRefusal,forgetRefusals} from './approval-notice.js';
 import { useShort, phaseText } from './use.js';
 import { renderPage as renderForm, configure as configureForms, forgetAll as forgetForms } from './forms.js';
@@ -1833,6 +1834,7 @@ function paintCmdx(p){
   if (paintReportActions(box, p)) return;
   box.replaceChildren();
   if(paintRepair(box,p,{ready:()=>isReady()&&C.paired(),supported:()=>C.repairSupported?.()===true,run:()=>C.repairConnection?.()})){box.hidden=false;return;}
+  if(paintFix(box,p,{ready:()=>isReady()&&C.paired(),supported:()=>cmdSupports('codex_full_access'),run:()=>fullAccess(),say:(x)=>toast(x,8000)})){box.hidden=false;return;}
   if (p.source?.k === 'sys' && c?.recovery === 'restart_session') {
     box.hidden = false;
     const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-reply'); b.type = 'button'; b.className = 'cmdundo';

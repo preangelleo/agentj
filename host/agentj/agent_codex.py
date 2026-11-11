@@ -407,6 +407,11 @@ class CodexAgent(Agent):
     kind = "codex"
     said, last_note, tail_cut = False, 0.0, None          # P282 defaults (instance values set in __init__ / tail_reset)
     turn_review, steer_off, steer_n = False, None, 0      # 0269-w2-steer: review turn · pid without turn/steer · in flight
+    # S1 (0.30.7 merge review, Jarvis ruling ①): Agent J's FULL default (an absent owner sandbox_mode) is for the owner's
+    # own turns only. A thread that only ever carries outside data (the mail / WeChat / TG avatar) sets this False and
+    # keeps Codex's native sandbox; the main thread narrows a non-owner turn per turn (_turn_sandbox).
+    owner_thread = True
+    narrowed_sb, sent_sandbox, turn_source = None, None, None
 
     def __init__(self, host, cfg: dict, persist: bool = True, research: bool = False):
         if not persist:
@@ -672,8 +677,16 @@ class CodexAgent(Agent):
             p["approvalPolicy"] = "untrusted"
         elif isinstance(native_policy, str):
             p["approvalPolicy"] = native_policy
-        if self.research or self.human.get("sandbox_mode") is not None:
+        # Codex keeps an old thread's sandbox on resume unless this is named.
+        # An absent owner setting means Agent J's FULL default, not Codex's
+        # workspace-write default; explicit restrictions and research still win.
+        # S1: a non-owner thread (avatar) never gets that default — Codex's own native sandbox applies (0.30.6 shape).
+        if getattr(self, "owner_thread", True) or self.perm_source != "agentj":
             p["sandbox"] = sandbox
+        else:
+            self.perm_source = "codex"
+        with contextlib.suppress(AttributeError):     # a bare namespace used as `self` in unit fixtures
+            self.sent_sandbox = p.get("sandbox")
         if self.cfg.get("model"):
             p["model"] = self.cfg["model"]
         return p
@@ -1221,6 +1234,21 @@ class CodexAgent(Agent):
             return DESKTOP_NOTICE.format(mode=mode or "?")
         if src == "config":
             return POLICY_NOTICE + CONFIG_NOTICE.format(mode=mode or self.human.get("sandbox_mode") or "?")
+        turn = self.turn_source
+        if isinstance(turn, dict) and src in ("agentj", "codex"):
+            # S1: this turn was not the owner's — Codex's own sandbox applied on purpose; nothing to change in settings.
+            return (f"这一轮来自「{turn.get('label')}」，不是主人本人，按 Codex 原生沙箱运行；超出沙箱的这一步没有执行，也不发卡片"
+                    "（不是主人拒绝）。需要的话请主人在遥控器或本机终端里直接说。 / "
+                    f"This turn comes from “{turn.get('label_en')}”, not the owner, so it ran in Codex's native sandbox; this "
+                    "step was outside it and was not run, and no card was sent (the owner did not refuse). If it is needed, "
+                    "the owner can ask directly from a remote or the local terminal.")
+        if src == "agentj" and mode and mode != "danger-full-access":
+            return (f"Codex 实际返回的沙箱权限是 {mode}，与 Agent J 请求的默认完全访问不一致，已拒绝；"
+                    "请在主机运行 `agentj codex-sandbox status` 核对，再检查 Codex 的项目设置；"
+                    "若不是你选的限制，可运行 `agentj codex-sandbox default`，然后 `agentj service restart`。 / "
+                    f"Codex reported a {mode} sandbox, not the full access Agent J asked for by default, so this was refused. "
+                    "Run `agentj codex-sandbox status` on the host, then check Codex's project settings; if you did not choose "
+                    "this restriction, run `agentj codex-sandbox default`, then `agentj service restart`.")
         return POLICY_NOTICE
 
     def _refuse(self, rid, tool: str, inp: dict, no: dict, why: str, notice: str | None = None) -> None:
@@ -1228,6 +1256,10 @@ class CodexAgent(Agent):
         refused-by-policy record."""
         self._answer(rid, no)
         if not self.research:                  # a read-only task's refusals are expected; it reports in its answer
+            from . import codex_full_access    # 0.30.7: the owner's config.toml case alone gets the one-tap way back
+            if notice is None and codex_full_access.offered(getattr(self, "perm_source", None)):
+                return self.host.policy_refused(clean_line(tool, 64) or "?", inp, why, self.policy_notice(),
+                                                fix=codex_full_access.NAME)
             self.host.policy_refused(clean_line(tool, 64) or "?", inp, why, notice or self.policy_notice())
 
     async def _decide(self, rid, tool: str, inp: dict, yes: dict, no: dict, batch: bool, bind: dict | None = None) -> None:
@@ -1246,9 +1278,7 @@ class CodexAgent(Agent):
             child_secret = codex_children.is_child(self) and native_secret_call(name, inp, self.cfg['dir']) is not None
             r = ({"behavior": "deny", "message": "No live native secret-call admission"} if child_secret else
                  await broker.execute(name, inp, self.__dict__.get("secret_native_calls", {}).pop(str(rid), None), gone) if broker else None)
-            if r is None and getattr(self.host, "agent", None) is self and not self.research and not self.cfg.get("_workflow_ceo") and not codex_children.is_child(self):
-                from . import host_turns                  # ADR-0306-host-turn-reads: heartbeat / system turn reads, no card
-                r = await host_turns.admit(self.host, name, inp, self.cfg["dir"])
+            # 0.30.6's host_turns.admit shortcut is absorbed by ADR-0307-offlist (Host.ask → list_approval → approval_offlist).
             r = r if r is not None else ({"behavior": "allow"} if not self.research and low_risk_pass(self.host, self.cfg, name, inp, batch)
                  else await self.host.ask(name, inp, gone, _harness_permission=True, batch=batch, **({"bind": bind} if bind else {}),
                                          **({"background": "task"} if self.cfg.get("_workflow_ceo") else {})))   # P552
@@ -1283,6 +1313,37 @@ class CodexAgent(Agent):
         except (RPCError, ConnectionError, OSError, asyncio.TimeoutError) as e:
             self.host.st.log("agent_reminder_fail", agent=self.kind, error=type(e).__name__)
 
+    def _turn_sandbox(self) -> dict | None:
+        """S1: the turn/start `sandboxPolicy` for this turn, or None (leave the thread's own). Under Agent J's FULL default
+        only an owner / host turn runs with full access; a host_read / external / unknown turn on the main thread (or an
+        avatar thread that came back FULL) is narrowed to Codex's own default for an unset config (workspace-write, no
+        network), so beyond-sandbox requests reach the refusal paths instead of running. Codex keeps a turn's override
+        for later turns, so the next owner turn restores FULL — but only after our own narrowing: a restriction Codex or
+        a project setting returned is never widened here. Explicit owner config, desktop threads, research: untouched."""
+        from . import codex_perm
+        self.turn_source = None
+        if getattr(self, "research", False) or getattr(self, "perm_source", None) not in ("agentj", "codex"):
+            return None
+        if getattr(self, "owner_thread", True):
+            if (getattr(self, "cfg", None) or {}).get("_workflow_ceo") or getattr(getattr(self, "host", None), "agent", None) is not self:
+                return None
+            from . import approval_offlist
+            src = approval_offlist.source(self.host)
+        else:
+            from . import approval_offlist
+            src = approval_offlist._make("avatar", None, "host_read")
+        sb = (getattr(self, "thread", None) or {}).get("sandbox")
+        if src.get("trust") in ("owner", "host"):
+            if sb is not None and sb is getattr(self, "narrowed_sb", None):
+                return {"type": "dangerFullAccess"}
+            return None
+        self.turn_source = src
+        mode = codex_perm.mode_of(sb)
+        if mode == codex_perm.FULL or (mode is None and getattr(self, "sent_sandbox", None) == codex_perm.FULL):
+            self.narrowed_sb = {"type": "workspaceWrite", "writableRoots": [], "networkAccess": False}
+            return self.narrowed_sb
+        return None
+
     async def turn(self, text: str) -> None:
         self._quota_no_replay = True  # #398: even quota_resume must require a new owner message
         if not await self._ready():
@@ -1305,6 +1366,18 @@ class CodexAgent(Agent):
             params["model"] = self.cfg["model"]
         elif not review and rev and isinstance(rev.get("model"), str):
             params["model"] = rev["model"]
+        narrow = getattr(self, "_turn_sandbox", None)            # every CodexAgent has it (fixtures may run turn alone)
+        sandbox_turn = narrow() if callable(narrow) else None
+        if review and sandbox_turn is not None and isinstance(getattr(self, "turn_source", None), dict):
+            # Round 2 L2: review/start carries no sandboxPolicy, so a non-owner /review would run at the thread's full
+            # access. Refused (not rewritten into an ordinary turn: that is not what was asked); the owner can ask for it.
+            self.turn_done.set()
+            self.host.st.log("codex_review_refused", agent=self.kind, source_type=self.turn_source.get("type"))
+            self.fail_notice(self.policy_notice())
+            return
+        if not review and sandbox_turn is not None:              # S1: per turn; Codex keeps it for the next turns
+            params["sandboxPolicy"] = sandbox_turn
+            self.thread["sandbox"] = sandbox_turn                 # the approval ceiling (beyond_sandbox) follows the turn
         if not review and self.cfg.get("effort"):                 # §10.11: "for this turn and subsequent turns" (app-server 0.160)
             params["effort"] = self.cfg["effort"]
         elif not review and rev and isinstance(rev.get("effort"), str):
@@ -1506,6 +1579,8 @@ class CodexAgent(Agent):
             await self._spawn()
         from . import codex_perm
         sb = self.thread.get("sandbox")
+        if sb is not None and sb is self.narrowed_sb:
+            sb = {"type": "dangerFullAccess"}      # S1: a non-owner turn's narrowing; the owner's next turn runs FULL again
         sbt = codex_perm.mode_of(sb) or self.human.get("sandbox_mode")
         src = getattr(self, "perm_source", None) or codex_perm.main_sandbox(self.human.get("sandbox_mode"), self.research)[1]
         if not sb and src in ("agentj", "config", "research", "level"):

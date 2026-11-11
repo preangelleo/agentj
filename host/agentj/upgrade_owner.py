@@ -92,6 +92,12 @@ def _uv_cache(environ, home):
     return os.path.join(base, "uv")
 
 
+def _upgrade_cache(environ, home):
+    """#0307: where `agentj update` keeps the verified wheel (update.upgrade_cache_root) — a root-owned one refuses with EACCES."""
+    xdg = environ.get("XDG_CACHE_HOME") or ""
+    return os.path.join(os.path.expanduser(xdg) if xdg else os.path.join(home, ".cache"), "agentj-upgrade")
+
+
 def _user(uid):
     try:
         import pwd
@@ -100,7 +106,7 @@ def _user(uid):
         return str(uid)
 
 
-def blocked(prefix=None, *, uid=None, home=None, environ=None, lstat=None, limit=SCAN_MAX, user=None) -> dict | None:
+def blocked(prefix=None, *, uid=None, home=None, environ=None, lstat=None, limit=SCAN_MAX, user=None, state_root=None) -> dict | None:
     """{"owner_kind": "root"|"other", "paths": [...], "fix": "agentj sudo … -- chown -R -h <user> <paths>"} when program
     files under home belong to another account; None otherwise (fine, Windows, running as root, or installed outside home)."""
     if os.name != "posix":
@@ -116,25 +122,49 @@ def blocked(prefix=None, *, uid=None, home=None, environ=None, lstat=None, limit
     home = os.path.realpath(home)
     if home == os.sep:
         return None
+    explicit = prefix is not None
     prefix = _real(prefix or sys.prefix)
-    if not _inside(prefix, home):
+    if explicit and not _inside(prefix, home):
         return None
     found = []                                        # (path, owner uid) — every one real and strictly inside home
-    o = _owner(prefix, lstat)
-    inner = o if o is not None and o != uid else _foreign_inside(prefix, uid, lstat, limit)
-    if inner is not None:
-        found.append((prefix, inner))
-    for p in (os.path.dirname(prefix), _real(_entry_point(environ, home), link=True), _real(_uv_cache(environ, home))):
+    if _inside(prefix, home):
+        o = _owner(prefix, lstat)
+        inner = o if o is not None and o != uid else _foreign_inside(prefix, uid, lstat, limit)
+        if inner is not None:
+            found.append((prefix, inner))
+    from .owned_paths import inventory
+    from .state_paths import state_dir
+    # Shared harness configuration and service directories are inspected by name only;
+    # never recursively chown an unrelated customer's files inside them.
+    owned = inventory(home, environ, state_root if state_root is not None else state_dir())
+    recursive = {_real(str(p), link=True) for p in (owned[0], owned[1], owned[3], owned[4])}
+    for p in (os.path.dirname(prefix), *(str(x) for x in owned)):
+        p = _real(p, link=True)
         if not _inside(p, home):
             continue
         o = _owner(p, lstat)
         if o is not None and o != uid:
             found.append((p, o))
+        elif p in recursive and os.path.isdir(p) and not os.path.islink(p):
+            inner = _foreign_inside(p, uid, lstat, limit)
+            if inner is not None:
+                found.append((p, inner))
     if not found:
         return None
     tops = []
+    shared_files = {_real(str(p), link=True) for p in owned if str(p).endswith((
+        'settings.json', 'agentj-statusline.json', 'config.toml'))}
+    shared_files.update(_real(str(p), link=True) for p in owned if str(p).endswith(('opencode.json', 'opencode.jsonc', '.service', '.env', '.plist')))
+    shared_files.add(_real(str(owned[0] / 'host.log'), link=True))
+    shared_files.add(_real(_entry_point(environ, home), link=True))
+    # A foreign state/cache ancestor is not permission to recursively change
+    # unrelated files in ~/.local or ~/.config. Only the uv program tree retains
+    # the historical highest-foreign-ancestor repair contract.
+    shared_roots = {_real(str(p), link=True) for p in owned}
     for p, _ in found:
-        t = _top(p, home, uid, lstat)
+        # Never promote an individual shared configuration file to its parent:
+        # ~/.claude, ~/.codex and ~/.config can hold unrelated customer files.
+        t = p if p in shared_files or p in shared_roots else _top(p, home, uid, lstat)
         if not _inside(t, home):
             continue
         if not any(t == x or t.startswith(x + os.sep) for x in tops):

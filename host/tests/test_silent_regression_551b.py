@@ -21,7 +21,7 @@ MARKERS = ('〔不回群〕', '〔静默消息〕', '[silent]')
 class Regression(unittest.TestCase):
     def test_formal_web_suppresses_final_and_ready_history(self):
         # Preserve the exact released 0.27.1 reader and also check the merged reader.
-        root = Path(__file__).resolve().parents[3]
+        root = Path(__file__).resolve().parents[2]
         js = (root/'web/public/js/relay.js').read_text()
         predicate = re.search(r'const isSilent = [^;]+;', js).group()
         markers = re.search(r'const SILENT_MARKERS = [^;]+;', js)

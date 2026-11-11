@@ -47,7 +47,8 @@ class SettingsSecretCard(unittest.TestCase):
                                     'dest': f'env:{self.dest}#ARK_API_KEY'}, self.st.root)
         card['only'] = self.s.device
         if marked:
-            card['settings_origin'] = True
+            # 0.30.7 ADR-0307-offlist: the mark is now the Settings page key (elevate.SETTINGS_PAGES), not a bool.
+            card['settings_origin'] = 'keys'
         async def tap():
             with provenance.paired_request(lambda: self.host._paired_live(self.s)):
                 return await self.host.elevate.request(card)

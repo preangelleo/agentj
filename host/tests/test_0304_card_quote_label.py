@@ -13,6 +13,12 @@ MATERIAL = {'email': {'k': 'email', 'name': 'sender@example.com', 'text': 'Synth
 
 
 class QuoteLabel(LiveCards):
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        # 0.30.7 ADR-0307-offlist: the subject is the card's source envelope; the off-list Bash vehicle stays a listed card.
+        from _listed_cards import listed
+        listed(self, 'Bash')
+
     async def test_owner_quote_card_sent_with_material_label(self):
         for channel, row in MATERIAL.items():
             material = self.h.hist_add(dict(row), '', 'done')

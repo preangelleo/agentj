@@ -40,10 +40,11 @@ class IdentityV23(unittest.TestCase):   # 0.30.0: core v28; the v23 rules below 
             self.assertLess(text.index("agentj update check"), text.index("agentj update apply"))
             self.assertLess(text.index("agentj update apply"), text.index(persist))
             self.assertLess(text.index(persist), text.index("agentj support ask"))
-        self.assertIn("落后告知主人", core("zh"))
-        self.assertIn("全放行档自行脱敏提交", core("zh"))
+        # 0.30.7 self-help (a7bedaf6ba) compressed the zh line to the English wording to stay inside the identity hook
+        # budget (test_p376: 9699 of 9700 chars): "if behind, apply within the permission mode" — no separate tell-owner step.
+        self.assertIn("落后按权限档 `agentj update apply`", core("zh"))
+        self.assertIn("全放行档脱敏提交", core("zh"))
         self.assertIn("run `agentj update apply` within the current permission mode", core("en"))
-        self.assertIn("按当前权限档 `agentj update apply`", core("zh"))
         self.assertIn("full-access mode redacts and submits automatically", core("en"))
 
     def test_scheduler_default_is_in_the_core(self):

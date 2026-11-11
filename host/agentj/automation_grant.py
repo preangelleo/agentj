@@ -132,7 +132,7 @@ _SUFFIXES = frozenset((
     'amazonaws.com', 'elasticbeanstalk.com', 'onrender.com', 'fly.dev', 'glitch.me', 'repl.co', 'ngrok.io', 'ngrok.app',
     'ngrok-free.app', 'trycloudflare.com', 'duckdns.org', 'no-ip.org', 'ddns.net', 'dyndns.org', 'now.sh', 'surge.sh',
     'wixsite.com', 'weebly.com', 'wordpress.com', 'tumblr.com', 'myshopify.com', 'notion.site', 'deno.dev',
-    'railway.app', 'up.railway.app', 'azurestaticapps.net', 'r2.dev', 'supabase.co',
+    'railway.app', 'up.railway.app', 'azurestaticapps.net', 'cloudflareaccess.com', 'r2.dev', 'supabase.co',
     # security impl r1 L6: Russian regional private suffixes (PSL)
     'spb.ru', 'msk.ru',
 ))

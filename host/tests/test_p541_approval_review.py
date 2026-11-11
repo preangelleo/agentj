@@ -18,6 +18,13 @@ from _p541_device import _owner_host, Phone
 
 
 class Review(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        # 0.30.7 ADR-0307-offlist: these tests' subject is the approval-review card machinery (signing, review events,
+        # reopen, redaction); the native Bash request is only the vehicle, so keep it a listed (tap) card. In setUp,
+        # not asyncSetUp, so classes that borrow Review.asyncSetUp/open keep their own card-list choice.
+        from _listed_cards import listed
+        listed(self, 'Bash')
+
     async def asyncSetUp(self):
         # Preferences are per fixture: another test's working root is not initial setup.
         from tempfile import TemporaryDirectory as _ConfigDirectory
@@ -305,24 +312,22 @@ class Review(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('</untrusted-approval-context>',send.text)
         self.assertNotIn('password=abc',send.text)
         self.agent.cur_send=send
-        for tool,inp in [('Bash',{'command':'cat ~/.env'}),('Bash',{'command':'agentj telegram off'}),
-                         ('Write',{'file_path':'/tmp/report.txt','content':'changed'}),
-                         ('Bash',{'command':'echo changed > /tmp/report.txt'})]:
-            # The explanation quotes are not tool instructions. A real native
-            # permission request is still an exact signed tap; an explanation
-            # label cannot authorize it or replace the owner's decision.
-            pending=asyncio.create_task(self.h.ask(tool,inp,_harness_permission=True))
-            for _ in range(100):
-                if self.h.asks and any(not a.parked for a in self.h.asks.values()) or pending.done():break
-                await asyncio.sleep(.005)
-            self.assertFalse(pending.done())
-            request=next(a for a in self.h.asks.values() if not a.parked)
-            self.addAsyncCleanup(self.stop,pending,request)
-            self.assertFalse(request.require_passkey)
-            await self.h._answer(self.s,self.ph.answer(self.h._ask_msg(request,self.s),False))
-            result=await pending
-            self.assertEqual(result['behavior'],'deny')
-            self.assertEqual(result['reason'],'device')
+        # 0.30.7 ADR-0307-offlist: the explanation turn is host_read (approval_review); its off-list requests no
+        # longer card — a credential read is refused for everyone, a write is refused at once with the reason. The
+        # quoted explanation still cannot authorize anything. (Real card list, not the vehicle patch from setUp.)
+        from agentj import approval_offlist
+        with mock.patch.object(approval_offlist,'NATIVE_CARDS',frozenset({'AskUserQuestion'})), \
+                mock.patch.object(approval_offlist,'CARD_LIST',approval_offlist.CARD_LIST-{'Bash'}):
+            for tool,inp,reason in [('Bash',{'command':'cat ~/.env'},'off_list_credential'),
+                                    ('Bash',{'command':'agentj telegram off'},'off_list_write_host_read'),
+                                    ('Write',{'file_path':'/tmp/report.txt','content':'changed'},'off_list_write_host_read'),
+                                    ('Bash',{'command':'echo changed > /tmp/report.txt'},'off_list_write_host_read')]:
+                with self.subTest(tool=tool,inp=inp):
+                    before=set(self.h.asks)
+                    result=await asyncio.wait_for(self.h.ask(tool,inp,_harness_permission=True),5)
+                    self.assertEqual(set(self.h.asks),before,'no card')
+                    self.assertEqual(result['behavior'],'deny')
+                    self.assertEqual(result['reason'],reason)
         self.assertTrue(review.explanation_tool_allowed(self.h,'Read',{'file_path':'/tmp/ordinary-report.txt'}))
         self.assertFalse(review.explanation_tool_allowed(self.h,'Bash',{'command':'cat /tmp/ordinary-report.txt'}))
 

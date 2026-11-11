@@ -9,9 +9,15 @@ from agentj import action_policy, approval_jev, approval_level, goal, passkey, d
 from test_l1 import _ready, _state
 from _p541_device import Phone, _owner_host
 from test_p336_approval_level import sign, PROP
+from _listed_cards import listed
 
 
 class OpaqueFloor(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        # 0.30.7 ADR-0307-offlist: off-list Bash no longer cards; these tests are about card display bounds and
+        # that model / goal / old answers never approve a card, so the vehicle is a listed (tap) card again.
+        listed(self, 'Bash')
+
     async def test_opaque_never_uses_model_full_goal_or_old_answer(self):
         for mode in ('standard', 'full', 'goal', 'no_passkey'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as tmp:

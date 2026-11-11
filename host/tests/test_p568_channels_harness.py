@@ -114,7 +114,8 @@ class FormApproval(unittest.IsolatedAsyncioTestCase):
         h.question.assert_not_awaited();a._answer.assert_called_with(1,{'action':'decline'})
         h.ask.return_value={'behavior':'allow'}
         await codex_forms.answer(a,2,p,card,approval=ap)
-        h.ask.assert_awaited_with(ap[0],ap[1],unittest.mock.ANY,batch=False)
+        # ADR-0307-offlist (b50c9a8eeb): the Codex form's action floor is forwarded as a harness permission
+        h.ask.assert_awaited_with(ap[0],ap[1],unittest.mock.ANY,batch=False,_harness_permission=True)
         a._answer.assert_called_with(2,{'action':'accept','content':{'confirmed':True}})
 
 

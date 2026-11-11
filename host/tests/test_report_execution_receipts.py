@@ -9,6 +9,7 @@ from unittest.mock import patch
 from _testtmp import TEST_TMP
 from agentj import action_policy, report, report_local, elevate
 from test_p336_approval_level import Base
+from _listed_cards import listed
 
 
 class ReceiptCLI(unittest.TestCase):
@@ -62,7 +63,13 @@ class ReceiptCLI(unittest.TestCase):
 
 
 class AskObservation(Base):
+    def _listed(self):
+        # 0.30.7 ADR-0307-offlist: off-list Bash no longer cards; these tests are about card receipts (timeout /
+        # device deny / reuse), so the vehicle is a listed (tap) card again.
+        listed(self, 'Bash')
+
     def test_actual_initial_offline_and_reused_card_do_not_create_another_card(self):
+        self._listed()
         from agentj import approval_level
         self.host.sessions.clear()
         with patch.object(approval_level,'PARK_GRACE',.01):
@@ -94,6 +101,7 @@ class AskObservation(Base):
         asyncio.run(run())
 
     def test_reused_card_unknown_reason_does_not_claim_denial_or_shown(self):
+        self._listed()
         from unittest.mock import AsyncMock
         receipt={}
         # The list adapter never consults the legacy parked grant hooks. The
@@ -136,6 +144,7 @@ class AskObservation(Base):
         self.assertEqual(self.cards(),[])
 
     def test_actual_timeout_and_signed_device_deny_are_distinct(self):
+        self._listed()
         self.host.ask_ttl=.02
         receipt={}
         timed=self.ask('git push origin main',_receipt=receipt)

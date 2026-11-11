@@ -158,7 +158,7 @@ class Server:
                 # P552 (#325 ②): an order is background work — no card but the four ③ kinds (Host.ask `background`)
                 if self._live(meta):
                     pending = asyncio.create_task(self.ask(tool[:64], inp, gone.get(m["id"]),
-                        origin=origin(meta, m.get("who")), batch=False, background="order"))
+                        origin=origin(meta, m.get("who")), batch=False, background="order", _harness_permission=True))
                     try:
                         until = time.monotonic() + 900
                         while not pending.done():

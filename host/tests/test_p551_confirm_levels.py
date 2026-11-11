@@ -31,6 +31,13 @@ PK_ID = wire.b64u(b"\x07" * 16)
 FA = {"id": PK_ID, "cd": "e30", "ad": "AA", "sig": "AA"}
 
 
+def native_offlist(host, tool, inp):
+    """0.30.7 ADR-0307-offlist: an off-list native PermissionRequest is answered at once (no card); returns (res, receipt)."""
+    receipt = {}
+    res = asyncio.run(host.ask(tool, inp, _harness_permission=True, _receipt=receipt))
+    return res, receipt
+
+
 def sign(ph, target, *, n=None):
     n = n or os.urandom(16).hex()
     ts = int(time.time() * 1000)
@@ -213,10 +220,10 @@ class HarnessAsk(Base):
         res=self.ask({"summary":"发给 a@example.com"},tool="agentj mail send",batch=False)
         self.assertEqual((res['behavior'],res['reason']),('deny','application_ingress_unverified'))
         self.assertEqual(len(self.cards()),n)
-        from test_p512_policy import native_tap
-        res,card=asyncio.run(native_tap(self.host,self.phone,self.s,'Bash',{'command':'ls -la'}))
-        self.assertEqual(res['behavior'],'allow');self.assertFalse(card.get('passkey_required',False))
-        self.assertEqual(len(self.cards()),n+1)
+        # 0.30.7 ADR-0307-offlist: an off-list native request on an owner turn is allowed at once, no card.
+        res,receipt=native_offlist(self.host,'Bash',{'command':'ls -la'})
+        self.assertEqual((res['behavior'],receipt['reason'],receipt['approval_card_shown']),('allow','off_list',False))
+        self.assertEqual(len(self.cards()),n)
 
     def test_agent_js_own_cards_are_off(self):
         self.harness()
@@ -239,22 +246,24 @@ class HarnessAsk(Base):
 
     def test_harness_prompt_is_answered_by_agent_j(self):
         self.harness()
-        from test_p512_policy import native_tap
-        res,card=asyncio.run(native_tap(self.host,self.phone,self.s,'Bash',{'command':'ls -la'}))
+        # 0.30.7 ADR-0307-offlist: off-list native prompts no longer wait for a tap; Agent J answers each one itself
+        # (owner turn → allow), audited per request, and no card is sent.
+        res,first=native_offlist(self.host,'Bash',{'command':'ls -la'})
         self.assertEqual(res['behavior'],'allow')
-        self.assertEqual(self.last()['reason'],'device')
-        self.assertFalse(card.get('passkey_required',False))
-        res,other=asyncio.run(native_tap(self.host,self.phone,self.s,'Bash',{'command':'ls -la'},approve=False))
-        self.assertEqual(res['behavior'],'deny')
-        self.assertNotEqual(card['id'],other['id'],'first tap cannot authorize a second native request')
+        self.assertEqual(self.last()['reason'],'off_list')
+        res,second=native_offlist(self.host,'Bash',{'command':'ls -la'})
+        self.assertEqual(res['behavior'],'allow')
+        self.assertNotEqual(first['id'],second['id'],'each native request gets its own audit row')
+        self.assertEqual(self.cards(),[])
 
     def test_harness_that_would_not_ask_runs(self):
         self.harness()
         self.assertIsNone(HookHarness.run_hook(self,[danger.encode_extra([]),'policy-only','harness'],'Bash',{'command':'ls -la'}))
         self.assertEqual(self.cards(),[])
-        from test_p512_policy import native_tap
-        res,card=asyncio.run(native_tap(self.host,self.phone,self.s,'Bash',{'command':'rm -rf ~/build'},approve=False))
-        self.assertEqual(res['behavior'],'deny');self.assertFalse(card.get('passkey_required',False))
+        # 0.30.7 ADR-0307-offlist: an off-list native request is answered at once (owner turn → allow), no card.
+        res,receipt=native_offlist(self.host,'Bash',{'command':'rm -rf ~/build'})
+        self.assertEqual((res['behavior'],receipt['reason']),('allow','off_list'))
+        self.assertEqual(self.cards(),[])
         inp={"operation":"delete","summary":"x"}
         res=self.ask(inp,tool='agentj calendar',batch=False)
         self.assertEqual(res['reason'],'application_ingress_unverified')
@@ -265,7 +274,7 @@ class HarnessAsk(Base):
             self.assertEqual(result['behavior'],'allow')
             self.assertFalse(set(result)&{'grant_info','device','sig','uv'})
         asyncio.run(frames.ApplicationFrames.frame(SimpleNamespace(h=self.host,s=self.s),app))
-        self.assertEqual(len(self.cards()),1,'calendar delete adds no category UV card')
+        self.assertEqual(len(self.cards()),0,'calendar delete adds no category UV card')   # 0.30.7: no native card before it
 
     def test_group_turn_is_still_refused(self):
         self.harness()
@@ -287,18 +296,19 @@ class LessNoise(Base):
 
     def test_dispatch_never_asks_in_any_level(self):
         inp = {"subagent_type": "general-purpose", "prompt": "write a report", "description": "x"}
-        from test_p512_policy import native_tap
+        # 0.30.7 ADR-0307-offlist: a native dispatch prompt is off the card list → answered at once in every level
+        # (owner turn → allow), no card.
         for tool in ("Agent", "Task"):
             self.assertIsNone(HookHarness.run_hook(self,[danger.encode_extra([])],tool,inp))
-            res,card=asyncio.run(native_tap(self.host,self.phone,self.s,tool,inp))
-            self.assertEqual(res['behavior'],'allow');self.assertFalse(card.get('passkey_required',False))
+            res,receipt=native_offlist(self.host,tool,inp)
+            self.assertEqual((res['behavior'],receipt['reason']),('allow','off_list'),tool)
         self.harness()
-        res,card=asyncio.run(native_tap(self.host,self.phone,self.s,'Agent',inp))
+        res,receipt=native_offlist(self.host,'Agent',inp)
         self.assertEqual(res['behavior'],'allow')
         self.host.preferences=preferences.validate({**self.host.preferences,'approval':{'level':'safe'}})
-        res,other=asyncio.run(native_tap(self.host,self.phone,self.s,'Agent',inp,approve=False))
-        self.assertEqual(res['behavior'],'deny');self.assertNotEqual(card['id'],other['id'])
-        self.assertEqual(len(self.cards()),4,'native asks remain separate; no level grant')
+        res,other=native_offlist(self.host,'Agent',inp)
+        self.assertEqual(res['behavior'],'allow');self.assertNotEqual(receipt['id'],other['id'])
+        self.assertEqual(self.cards(),[])
 
     def test_hook_lets_dispatch_through(self):
         extra = danger.encode_extra([])

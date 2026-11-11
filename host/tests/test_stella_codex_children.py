@@ -185,6 +185,9 @@ class RealHost(unittest.IsolatedAsyncioTestCase):
         self.h.agent_cfg = a.cfg
 
     async def test_child_danger_real_signed_card_after_parent_done(self):
+        # 0.30.7 ADR-0307-offlist: the subject is the child card's bound source; keep the Bash vehicle a listed card.
+        from _listed_cards import listed
+        listed(self, 'Bash')
         a = self.agent
         Children.spawn(self, a); a.cur_send = None
         a._on_request(dict(id=101, method='item/commandExecution/requestApproval', params=dict(

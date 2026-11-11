@@ -451,11 +451,11 @@ class WheelInstall(unittest.TestCase):
                   "agentj/admin/brand/img/shield-64.png"):
             self.assertIn(f, names_)
         self.assertFalse([n for n in names_ if n.endswith(".src.json") or "shield-source" in n], "no copy source, no big logo source")
-        # Preserve bounded allocations: P118 core ceiling 2.26 MB approved by Jarvis; bots retain their 64 KiB increment.
+        # Preserve bounded allocations: P118 core ceiling 2.26 MB approved by Jarvis; bot allocation 76 KiB (贾维斯 11-11 批).
         # Includes ZIP local/central name/header overhead, not just compressed source bytes.
         bot_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename.startswith(('agentj/bots/','agentj/skills/agentj-bots/'))]
         bot_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in bot_entries)
-        self.assertLessEqual(bot_bytes,65536,'P82 bot package allocation is bounded; no models or knowledge ship')
+        self.assertLessEqual(bot_bytes,77824,'P82 bot package allocation is bounded; no models or knowledge ship')
         # P113 (0.18, ADR-A194): an explicit bounded 48 KiB increment for long tasks (P250 owner-approved growth) (registry, schemas, skill); same accounting.
         lt_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename in ('agentj/capability.py','agentj/ltschema.py')
                     or i.filename.startswith(('agentj/longtask_schemas/','agentj/skills/agentj-capability/'))]
@@ -744,8 +744,10 @@ class WheelInstall(unittest.TestCase):
         combined_core = core_0200  # P571b: combined allocation unchanged
         core_0200 = 4229529  # P571b approved 0.26 core baseline; P570c prompt #7
         self.assertLess(pathlib.Path(self.wheel).stat().st_size-allocs,core_0200,'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0) + P198 (0.20.1) + 0.20.2 increments (P201 P203 P205 P207 P211 P214 P215 P217 + P218 integration) + 0.20.3 increments (P219 P221 + P240 integration) + P254')
-        self.assertLess(pathlib.Path(self.wheel).stat().st_size,combined_core+65536+49152+49152+32768+4096+12288+8192+16384+20480+49152+24576+8192+12288+28672+4096+20480+8192+12288+12288+8192+28672+20480,   # + P244 bounded catalogue + P275 avatar
-                        'combined bounded allocations')
+        # 0.30.7: signed 0.30.6 wheel = 4,924,880 B (already above the historical 4,595,969 B cap).
+        # 贾维斯 11-11 批: candidate 4,934,498 B + 5% rounded up = 5,181,223 B named total cap.
+        # Keep the per-feature allocations above; do not silently loosen those boundaries.
+        self.assertLessEqual(pathlib.Path(self.wheel).stat().st_size,5_181_223,'0.30.7 combined wheel cap (贾维斯 11-11 批)')
         # flagged to Jarvis.
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
         ep = next(n for n in names_ if n.endswith("entry_points.txt"))

@@ -14,7 +14,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from agentj import approval_review, compose, host_turns, jcards_todo, provenance, uv_list
+from agentj import approval_offlist, approval_review, compose, host_turns, jcards_todo, provenance, uv_list
 from agentj.agent_codex import CodexAgent
 from agentj.background_done import CompletionSend
 from agentj.heartbeat import HeartbeatSend
@@ -128,16 +128,16 @@ class ClaudePath(_Base):
                 self.assertEqual('none', kind); self.assertEqual('allow', answers[-1]['behavior'])
                 kind, _, _ = await self.ask(make(), 'Bash', {'command': 'head -n 50 ' + self.skill()})
                 self.assertEqual('none', kind)
-                # Security r2 N1: no log is read without a card in 0.30.6, not even Agent J's own (deferred to 0.30.7).
-                kind, _, _ = await self.ask(make(), 'Bash', {'command': 'tail -n 50 ' + str(self.logs / 'job.log')})
-                self.assertEqual('card', kind)
+                # 0.30.7: a raw log in Agent J's state dir is refused (security r2 N1) — still no card.
+                kind, _, answers = await self.ask(make(), 'Bash', {'command': 'tail -n 50 ' + str(self.logs / 'job.log')})
+                self.assertEqual('none', kind); self.assertEqual('deny', answers[-1]['behavior'])
 
     async def test_explain_turn_reads_agentj_config_without_card(self):
         kind, _, answers = await self.ask(self.explain(self.h.agent), 'Read', {'file_path': self.skill('.claude/skills')})
         self.assertEqual('none', kind); self.assertEqual('allow', answers[-1]['behavior'])
-        # The explanation turn is narrower: logs keep the card.
-        kind, _, _ = await self.ask(self.explain(self.h.agent), 'Read', {'file_path': str(self.logs / 'job.log')})
-        self.assertEqual('card', kind)
+        # 0.30.7: the private state dir is refused without a card.
+        kind, _, answers = await self.ask(self.explain(self.h.agent), 'Read', {'file_path': str(self.logs / 'job.log')})
+        self.assertEqual('none', kind); self.assertEqual('deny', answers[-1]['behavior'])
 
     async def test_heartbeat_writes_and_uv_list_are_not_borrowed(self):
         for tool, inp in (('Bash', {'command': 'rm -rf ' + str(self.root / 'nothing')}),
@@ -152,8 +152,12 @@ class ClaudePath(_Base):
                           ('Read', {'file_path': str(self.cwd / 'notes.md')}),
                           ('Write', {'file_path': self.skill('.claude/skills'), 'content': 'x'})):
             with self.subTest(inp=inp):
+                # 0.30.7 ADR-0307-offlist: a heartbeat is 「已核实 · 主机」 — an off-list action never opens a card.
+                # Credential files are refused for every source; other off-list actions run as the harness would.
                 kind, _, answers = await self.ask(self.heartbeat(), tool, inp)
-                self.assertEqual('card', kind, answers)
+                self.assertEqual('none', kind, answers)
+                cred = 'id_synthetic' in str(inp) or '.env' in str(inp)
+                self.assertEqual('deny' if cred else 'allow', answers[-1]['behavior'], inp)
         target = str(self.st.root / 'devices.json')
         self.assertTrue(uv_list.required('Write', {'file_path': target, 'content': '{}'}, cwd=str(self.cwd),
                                          env=uv_list.host_environment(self.h)))
@@ -184,7 +188,9 @@ class ClaudePath(_Base):
                               ('journal plain', 'journalctl --user -n 5')):
             with self.subTest(case=name):
                 kind, _, answers = await self.ask(self.heartbeat(), 'Bash', {'command': command})
-                self.assertEqual('card', kind, answers)
+                self.assertEqual('none', kind, answers)          # 0.30.7: zero cards off the list
+                if str(self.logs) in command:
+                    self.assertEqual('deny', answers[-1]['behavior'], command)   # private state dir: refused
         self.assertFalse((self.root / 'pwn').exists())
         # Security r2 N1: third-party stores under the state dir (a Chromium login profile's LevelDB log).
         leveldb = self.st.root / 'browser' / 'profile' / 'Default' / 'Local Storage' / 'leveldb'
@@ -194,27 +200,36 @@ class ClaudePath(_Base):
                           ('Bash', {'command': 'cat ' + __import__('shlex').quote(str(leveldb / '000003.log'))}),
                           ('Bash', {'command': 'tail -n 20 ' + str(self.st.root / 'host.log')})):
             with self.subTest(log=inp):
-                kind, _, _ = await self.ask(self.heartbeat(), tool, inp)
-                self.assertEqual('card', kind)
-        kind, _, _ = await self.ask(self.heartbeat(), 'Read', {'file_path': str(self.outside / 'job.log')})
-        self.assertEqual('card', kind)
+                kind, _, answers = await self.ask(self.heartbeat(), tool, inp)
+                self.assertEqual('none', kind)
+                # host.log is the one closed, host-written, redacted file (ADR-0307-offlist); the rest is refused.
+                self.assertEqual('allow' if 'host.log' in str(inp) else 'deny', answers[-1]['behavior'], inp)
+        kind, _, answers = await self.ask(self.heartbeat(), 'Read', {'file_path': str(self.outside / 'job.log')})
+        self.assertEqual(('none', 'allow'), (kind, answers[-1]['behavior']))
 
     async def test_unchanged_for_unknown_source_and_webhook_turns(self):
         for make in (self.unknown, self.webhook):
             with self.subTest(turn=make.__name__):
-                kind, _, _ = await self.ask(make(), 'Bash', {'command': 'agentj card todo due'})
-                self.assertEqual('card', kind)
+                kind, _, answers = await self.ask(make(), 'Bash', {'command': 'agentj card todo due'})
+                self.assertEqual(('none', 'deny'), (kind, answers[-1]['behavior']))     # 0.30.7 r1 H2: owner data, not for outsiders
+                kind, _, answers = await self.ask(make(), 'Bash', {'command': 'agentj card todo add --text x'})
+                self.assertEqual(('none', 'deny'), (kind, answers[-1]['behavior']))     # off-list write: refused, no card
 
     async def test_forged_attributes_do_not_make_a_heartbeat(self):
         s = compose.Send('dev', 'sid', 1, text='x', by='heartbeat')
         s.source = provenance.system(); s.heartbeat_key = 'key'; s.compact_resume = 'yes'
-        kind, _, _ = await self.ask(s, 'Bash', {'command': 'agentj card todo due'})
-        self.assertEqual('card', kind)
+        self.h.agent.cur_send = s
+        self.assertIsNone(host_turns.kind(self.h))
+        self.assertEqual(('host_system', 'host_read'), (approval_offlist.source(self.h)['type'], approval_offlist.source(self.h)['trust']))
+        kind, _, answers = await self.ask(s, 'Bash', {'command': 'agentj card todo add --text x'})
+        self.assertEqual(('none', 'deny'), (kind, answers[-1]['behavior']))   # 0.30.7: not a heartbeat → no write; no card
         # A phone turn whose Send says by='approval-review' without a host outbox record is no explanation turn.
         s = compose.Send('approval-review', 'f' * 32, 1, text='x', by='approval-review')
         s.source = provenance.system(); s.approval_review = {'id': 'x', 'event_id': 'f' * 32, 'op': 'question'}
-        kind, _, _ = await self.ask(s, 'Read', {'file_path': self.skill('.claude/skills')})
-        self.assertEqual('card', kind)
+        self.h.agent.cur_send = s
+        self.assertIsNone(host_turns.kind(self.h))
+        kind, _, answers = await self.ask(s, 'Write', {'file_path': str(self.cwd / 'x.md'), 'content': 'x'})
+        self.assertEqual(('none', 'deny'), (kind, answers[-1]['behavior']))
 
     async def test_task_scope_inside_heartbeat_keeps_card(self):
         self.h.agent.cur_send = self.heartbeat()
@@ -273,19 +288,25 @@ class CodexPath(_Base):
 
     async def test_writes_unknown_turns_and_other_adapters_keep_card(self):
         a = self.codex(); self.h.agent = a
-        for send, command in ((self.heartbeat(), 'agentj card todo add --text synthetic'),
-                              (self.heartbeat(), 'touch ' + str(self.root / 'x')),
-                              (self.heartbeat(), 'cat ' + str(self.secret)),
-                              (self.unknown(), 'agentj card todo due'),
-                              (self.webhook(), 'agentj card todo due')):
+        # 0.30.7 ADR-0307-offlist: zero cards; heartbeat writes run, credentials and external writes are refused.
+        for send, command, want in ((self.heartbeat(), 'agentj card todo add --text synthetic', 'accept'),
+                                    (self.heartbeat(), 'touch ' + str(self.root / 'x'), 'accept'),
+                                    (self.heartbeat(), 'cat ' + str(self.secret), 'decline'),
+                                    (self.unknown(), 'agentj card todo due', 'decline'),   # r1 H2
+                                    (self.unknown(), 'touch ' + str(self.root / 'x'), 'decline'),
+                                    (self.webhook(), 'agentj card todo due', 'decline'),
+                                    (self.webhook(), 'touch ' + str(self.root / 'x'), 'decline')):
             with self.subTest(command=command, by=send.by):
-                kind, _ = await self.request(a, send, command)
-                self.assertEqual('card', kind)
+                kind, result = await self.request(a, send, command)
+                self.assertEqual('none', kind)
+                self.assertEqual(want, result.get('decision'), result)
         # A workflow-CEO adapter asking while the main thread runs a heartbeat does not borrow that turn.
         ceo = self.codex({'_workflow_ceo': True})
         self.h.agent.cur_send = self.heartbeat()
-        kind, _ = await self.request(ceo, self.h.agent.cur_send, 'agentj card todo due')
-        self.assertEqual('card', kind)
+        kind, result = await self.request(ceo, self.h.agent.cur_send, 'ls')
+        self.assertEqual(('none', 'accept'), (kind, result.get('decision')))      # 0.30.7: a closed local read, no card
+        kind, result = await self.request(ceo, self.h.agent.cur_send, 'touch ' + str(self.root / 'ceo'))
+        self.assertEqual(('none', 'decline'), (kind, result.get('decision')))     # no scope → unknown → write refused
 
 
 class ReadShapes(unittest.TestCase):

@@ -204,6 +204,9 @@ class Material(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('material_unknown', old)
 
     async def test_history_500_window_keeps_safe_host_task_and_trigger_record(self):
+        # 0.30.7 ADR-0307-offlist: off-list Bash no longer cards; the subject is the card's trigger record, so list it.
+        from _listed_cards import listed
+        listed(self, 'Bash')
         output = await self.read()
         await self.after(output)
         source = review.snapshot(self.host)

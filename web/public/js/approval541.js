@@ -33,7 +33,11 @@ export function paint(p, options){
  if(!enabled(p)){reset();return;}
  active=true;current=p;hooks=options;el("sheet").dataset.approvalV="2";
  const e=p.envelope||{},src=e.source||{},outside=src.history_outside_window===true;
- const suspect=src.suspicious===true||src.verified!==true,quoted=quotedMaterial(src);
+ // 0.30.7 ADR-0307-offlist: the host's typed label. A host turn (heartbeat, system notice, own scheduled task) is
+ // 「已核实 · 主机」: never painted as an external / unknown source. Display only — Allow rules never read it.
+ const typed=typeof src.source_label==='string'&&src.source_label?((lang()==='en'&&src.source_label_en)||src.source_label):'';
+ const hostTyped=src.source_trust==='host'||src.source_trust==='host_read';
+ const suspect=!hostTyped&&(src.suspicious===true||src.verified!==true),quoted=quotedMaterial(src);
  if(key!==p.id){key=p.id;el('details541').open=false;}
  for(const id of detailIds){const n=el(id);if(!homes.has(id)){const mark=document.createComment('541 details home');n.before(mark);homes.set(id,mark);}el('details541').append(n);}
  el('details541').hidden=false;
@@ -42,7 +46,7 @@ export function paint(p, options){
  const channel=t('p541.channel.'+src.channel),label=channel.startsWith('p541.')?String(src.channel||''):channel;
  const tm=Number(src.time),time=Number.isFinite(tm)&&tm>0?new Date(tm<1e12?tm*1000:tm).toLocaleTimeString(lang()==='zh'?'zh-CN':'en-GB',{hour:'2-digit',minute:'2-digit',hour12:false}):'';
  const who=quoted?t('p541.you'):suspect?t('p541.external'):String(src.sender||t('p541.you'));   // #0304 A2①: the owner's own turn quoting material still started with the owner
- const meta=text('span','srcmeta541','');meta.append(text('span','srcsender541',outside?t('p541.initiator',{name:src.initiator||src.sender||'Agent J'}):[label,who].filter(Boolean).join(' · ')+(time?' · '+time:'')));
+ const meta=text('span','srcmeta541','');meta.append(text('span','srcsender541',outside?t('p541.initiator',{name:src.initiator||src.sender||'Agent J'}):(typed&&(hostTyped||src.verified!==true)?typed:[label,who].filter(Boolean).join(' · '))+(time?' · '+time:'')));
  if(!outside&&src.message_id)meta.append(text('span','',t('p541.source')));
  source.append(meta,text('span','srctext541',outside?t('p541.older'):src.text||t('p541.unknown')),text('span','srcid541',outside?t('p541.task',{task:src.task_record||''}):'Message ID · '+(src.message_id||'—')));
  // @ix appr.source

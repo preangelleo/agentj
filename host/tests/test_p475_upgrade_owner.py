@@ -334,7 +334,9 @@ class MetadataReport(_Mac):
     # 贾维斯 ruling (reports/decisions.jsonl ts 1793803157.003, P573 amended): Jev unavailable → only fixed-field metadata:
     # version, stage, error code, hash — no path, user name, body or attachment. This set is LOCKED: adding a key fails here.
     LOCKED = frozenset({"from", "to", "result", "reason", "step", "failure_stage", "artifact_stage", "subreason",
-                        "cache_status", "exception_type", "errno", "artifact_sha256", "stated_sha256"})
+                        "cache_status", "exception_type", "errno", "artifact_sha256", "stated_sha256",
+                        # #0307 (贾维斯 dispatch 2026-11-10): closed words for the cache folder kind / level / owner kind
+                        "cache_path", "cache_level", "cache_owner", "cache_fallback"})
 
     def test_ruling_locks_the_exact_field_whitelist(self):
         self.assertEqual(frozenset(upgrade_diag.META_FIELDS), self.LOCKED)
@@ -344,6 +346,7 @@ class MetadataReport(_Mac):
                       "exception": "URLError", "exception_type": "URLError", "errno": errno.ETIMEDOUT, "failure_stage": "download",
                       "failure_at": 1793800000, "artifact_stage": "wheel", "subreason": "internal_error",
                       "cache_status": "miss", "artifact_sha256": "a" * 64, "stated_sha256": "b" * 64,
+                      "cache_path": "home", "cache_level": "upgrade_root", "cache_owner": "root", "cache_fallback": "tmp",
                       "stderr_tail": "Permission denied /Users/catherine", "fix": "agentj sudo …"}
         body = upgrade_diag.metadata_body(everything, "uv")
         keys = {ln.split(": ", 1)[0] for ln in body.split("\n")[1:]}

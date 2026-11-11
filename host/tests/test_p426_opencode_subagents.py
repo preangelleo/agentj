@@ -606,17 +606,25 @@ class V2Chain(ChainBase, unittest.TestCase):
         self.assertEqual(len(starts), 1, "v2: nothing injected, no restart")
 
     def test_default_mode_routes_a_child_request(self):
+        # ADR-0307-offlist (frozen line, 0.30.7): the child's native request in the owner's turn is off the card list →
+        # answered at once (allowed, audited, no card) — still on the CHILD's own permission route, never the main one.
         async def script(c):
             await c.say("TASK: general :: RUN: echo kid")     # default mode: no rules of ours; the fake child still asks
-            await c.wait(lambda: len(c.asks()) == 1, 8000)
-            await c.host._app(c.s, c.ph.answer(c.asks()[-1], True))
-            await c.wait(lambda: "TASK DONE: OUT: kid" in c.msgs())
+            await c.wait(lambda: "TASK DONE: OUT: kid" in c.msgs(), 8000)
+            self.main = c.host.agent.sid
+            self.assertEqual(c.asks(), [])
         os.environ.update(FAKE_OC2_NO_INHERIT="1", FAKE_OC2_GENERAL_RULES='[{"action":"*","resource":"*","effect":"ask"}]')
         try:
             self.run_chain(script)
         finally:
             os.environ.pop("FAKE_OC2_NO_INHERIT", None)
             os.environ.pop("FAKE_OC2_GENERAL_RULES", None)
+        replies = [r["p"] for r in self.reqs() if r["p"].endswith("/reply") and "/permission/" in r["p"]]
+        self.assertEqual(len(replies), 1, "the child really asked and was answered")
+        self.assertFalse([p for p in replies if p.startswith(f"/api/session/{self.main}/")], "answered on the child's route")
+        done = [json.loads(x) for x in self.st.log_path.read_text().splitlines() if '"ask_done"' in x]
+        self.assertTrue(any(d.get("reason") == "off_list" and d.get("decision") == "allow" and d.get("card") is False
+                            and d.get("trust") == "owner" for d in done), done)
 
 
 if __name__ == "__main__":

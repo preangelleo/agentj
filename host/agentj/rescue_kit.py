@@ -789,7 +789,8 @@ def check_harness(r: Report):
     """Read the live adapter's readiness; relay connectivity alone is never AI evidence."""
     b = agentj_bin()
     ready = False
-    code = "unverified"
+    adapter_unverified = False      # WARN only when the live adapter itself says "unverified"; a missing status stays FAIL
+    code = "unverified" if b else "native_not_ready"
     if b:
         rc, out = run([b, "status", "--json"], 15)
         try:
@@ -797,11 +798,12 @@ def check_harness(r: Report):
             native = data.get("harness_readiness") if isinstance(data, dict) else None
             if isinstance(native, dict):
                 ready = data.get("ok") is True and native.get("ready") is True
-                code = "adapter_ready" if ready else "native_not_ready"
+                adapter_unverified = not ready and native.get("code") == "unverified"
+                code = "adapter_ready" if ready else ("unverified" if adapter_unverified else "native_not_ready")
         except (ValueError, TypeError):
             pass
     r.facts["harness_readiness"] = {"ready": ready, "code": code}
-    r.add("harness", OK if ready else FAIL,
+    r.add("harness", OK if ready else WARN if adapter_unverified else FAIL,
           "AI 会话已就绪（适配器状态检查；未测试模型回复）" if ready else "AI 会话尚未确认就绪；请在手机点「重启 Agent」，再发一条短消息验证",
           "AI session ready (adapter state checked; model reply not tested)" if ready else
           "AI session readiness is unconfirmed. Use Restart Agent on the phone, then send a short message to verify.")

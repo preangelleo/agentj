@@ -16,6 +16,11 @@ class ApprovalPaths(Base):
     def setUp(self):
         super().setUp()
         self.host.agent = SimpleNamespace(kind="claude", status="working", cur_send=SimpleNamespace(source=SOURCE))
+        # 0.30.7 ADR-0307-offlist: an off-list Bash from a same-owner turn is now refused at once without a card; these
+        # tests are about grants / goal / Jev never skipping a card and a tap covering one action, so Bash is a listed
+        # (tap) card again.
+        from _listed_cards import listed
+        listed(self, 'Bash')
 
     def test_source_is_data_never_owner(self):
         self.assertFalse(provenance.is_owner(SOURCE))

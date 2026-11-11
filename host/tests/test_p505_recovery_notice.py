@@ -35,7 +35,10 @@ class RecoveryNotice(Base):
         with mock.patch('agentj.handoff.own_state', return_value=False, create=True):
             result = self.ask({'file_path': str(pathlib.Path(self.tmp.name) / '.local/state/agentj/handoff/compact.md'), 'content': 'context'}, tool='Write')
         self.assertEqual(result['behavior'], 'deny')
-        self.assertEqual(self.last()['reason'], 'timeout')
+        # 0.30.7 ADR-0307-offlist: the system (host_read) turn's off-list write is refused at once, no card (was: a
+        # card that timed out). The subject — the next owner message stays silent — is unchanged.
+        self.assertEqual(self.last()['reason'], 'off_list_write_host_read')
+        self.assertEqual(self.cards(), [])
         self.owner_message().assert_not_called()
         book = completion_recovery.Book(self.host)
         self.assertIn(key, book.rows)

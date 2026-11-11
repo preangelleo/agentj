@@ -281,6 +281,9 @@ class Envelope(LiveCards):
         """The real host.ask → list_approval → approval_review.bind path puts the front into the signed envelope; a
         non-host-summary tool cannot carry one."""
         from agentj import approval_review
+        # 0.30.7 ADR-0307-offlist: the subject is the signed envelope's front; keep the Bash vehicle a listed card.
+        from _listed_cards import listed
+        listed(self, 'Bash')
         core = {'id': 'e' * 32, 'host': 'ch', 'target': {'kind': 'hook', 'id': '_hookid', 'digest': '9' * 64},
                 'name': 'orders', 'actions': ['mail'], 'to': [ALLY], 'domains': [], 'stop': 0, 'expires': None,
                 'account': {'address': 'owner@example.com', 'smtp': 'smtp.example.com:465', 'user': 'u' * 16},

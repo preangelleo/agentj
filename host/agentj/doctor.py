@@ -1272,8 +1272,9 @@ def check_plaza(st: State) -> dict | None:
 
 
 def check_install_dir() -> dict | None:
-    """#475: program files under home that another account (usually root) owns block every upgrade with read_only. Only
-    shown when that is the case (outside the fence, POSIX); the hint is the one agentj sudo line (a phone admin card)."""
+    """Agent J-owned state, cache, service and harness files with a foreign owner.
+    Read-only scan outside the fence; repair still requires the paired administrator card.
+    """
     if _fenced() or update.market_managed():
         return None
     from .upgrade_owner import blocked
@@ -1281,8 +1282,8 @@ def check_install_dir() -> dict | None:
     if not own:
         return None
     who = "root" if own["owner_kind"] == "root" else "另一个账号 / another account"
-    return _c("install-dir", WARN, f"程序目录属于 {who}，这个账号升级不了 / the program folder belongs to {who}: upgrades "
-              "cannot replace it", own["fix"] + "  （手机弹一张管理员密码卡 / one administrator card on the phone）")
+    return _c("install-dir", WARN, f"Agent J 自有路径属于 {who}，这个账号无法写入 / Agent J-owned path belongs to {who}: "
+              "this account cannot write it", own["fix"] + "  （手机弹一张管理员密码卡 / one administrator card on the phone）")
 
 
 def check_linger(svc: dict, environ=None) -> dict | None:

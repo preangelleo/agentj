@@ -12,20 +12,23 @@ def agent(src):
     return NS(cur_send=NS(source=src))
 
 
-async def actual_native_permission(case, adapter):
-    """Real Host/v2 tap for the served native request, with source left intact."""
+async def actual_native_permission(case, adapter, owner):
+    """Real Host answer for the served native request, with source left intact.
+
+    0.30.7 ADR-0307-offlist: `git push` is off the card list, so the real Host answers at once without a card: the
+    owner's own turn is allowed, an unknown / system (host_read) turn's off-list write is refused with the reason."""
     import test_p568_task_source as source_fixture
     from test_p551_confirm_levels import Base
     rig = Base(); rig.setUp()
     old_host, source = adapter.host, p.turn_source(adapter)
     try:
         adapter.host = rig.host; rig.host.agent = adapter
-        result, card = await source_fixture.signed_adapter(rig, adapter.hook_event({
+        result = await source_fixture.off_list(rig, adapter.hook_event({
             'hook_event_name':'PermissionRequest','session_id':'owner',
             'tool_name':'Bash','tool_input':{'command':'git push origin'}}))
-        case.assertEqual(result['hookSpecificOutput']['decision']['behavior'], 'allow')
+        case.assertEqual(result['hookSpecificOutput']['decision']['behavior'], 'allow' if owner else 'deny')
+        case.assertEqual(rig.last()['reason'], 'off_list' if owner else 'off_list_write_' + ('unknown' if source.get('kind') == 'unknown' else 'host_read'))
         case.assertEqual(p.turn_source(adapter), source)
-        case.assertFalse(card.get('passkey_required',False))
         if not getattr(case,'_real_peer_isolation_checked',False):
             await source_fixture.guest_boundary(case)
             case._real_peer_isolation_checked=True
@@ -256,8 +259,12 @@ class Consumers(unittest.IsolatedAsyncioTestCase):
                 oc = OpenCodeAgent(rig.host, {**rig.host.agent_cfg,'_workflow_ceo':True}, persist=False)
                 oc.out_src = p.normalize(src); oc._reply_permission=AsyncMock()
                 oc.client=NS(request=AsyncMock())
+                # 0.30.7 ADR-0307-offlist: off-list, no card; a workflow-CEO OpenCode outside a task scope is a background
+                # harness (typed unknown, never the main turn's source), so its off-list write is refused at once.
                 with p.request_source(src):
-                    await source_fixture.signed_adapter(rig, oc._decide('r', {'permission':'bash','patterns':['git push origin']}, asyncio.get_running_loop().create_future()))
+                    await source_fixture.off_list(rig, oc._decide('r', {'permission':'bash','patterns':['git push origin']}, asyncio.get_running_loop().create_future()))
+                self.assertEqual(oc._reply_permission.await_args.args[1], 'reject')
+                self.assertEqual(rig.last()['reason'], 'off_list_write_unknown')
                 self.assertEqual(oc.out_src,p.normalize(src))
             await source_fixture.guest_boundary(self)
         finally: rig.doCleanups()
@@ -311,8 +318,8 @@ class Consumers(unittest.IsolatedAsyncioTestCase):
                 a = SharedClaudeAgent(h, {'kind': 'claude', 'dir': td, '_workflow_ceo': True})
                 a.session = {'sessionId': 'owner'}
                 a.cur_send = NS(source=src)
-                result, actual_cards = await actual_native_permission(self,a)
-                self.assertEqual(actual_cards,1)
+                result, actual_cards = await actual_native_permission(self,a,owner)
+                self.assertEqual(actual_cards,0)   # 0.30.7 ADR-0307-offlist: off-list → no card
                 self.assertEqual(a.cur_send.source,src)
                 # A real native prompt provides terminal evidence; synthetic input revokes it.
                 a.cur_send = None
@@ -503,8 +510,8 @@ class ContinuationB(unittest.IsolatedAsyncioTestCase):
                             if timeout == 'input':
                                 read({'type': 'user', 'isMeta': meta, 'message': {'content': echo}})
                             self.assertEqual(p.untrusted_turn(a), not p.is_owner(src))
-                            decision, actual_cards = await actual_native_permission(self,a)
-                            self.assertEqual(actual_cards,1)
+                            decision, actual_cards = await actual_native_permission(self,a,p.is_owner(src))
+                            self.assertEqual(actual_cards,0)   # 0.30.7 ADR-0307-offlist: off-list → no card
                             # A same-body system readback is not this phone request's echo.
                             read({'type': 'user', 'isMeta': True,
                                   'message': {'content': p.envelope('fixture', body, p.system())}})

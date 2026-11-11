@@ -808,6 +808,9 @@
       <img src="brand/img/status/logo-offline.png" width="72" height="72" alt="">
       <h1 id="revoked-title" data-i18n="revoked.title" data-aj-owner="aj-recovery">这台手机已被Agent J 主机移除</h1>
       <p id="revoked-lead" class="lead" data-i18n="revoked.lead" data-aj-owner="aj-recovery" data-aj-page-copy>Agent J 主机不再认这台手机。要继续用，先在Agent J 主机上运行 agentj pair，再重新配对。</p>
+      <!-- 0.30.7 (preview-frset): Safari and the Home Screen app are two remotes on iOS and push each other out; said once (js/twoid.js) -->
+      <div id="revoked-twoid" class="twoid" role="note" hidden data-aj-owner="aj-recovery"><p class="twoid__t" data-i18n="p0307.twoid.title" data-aj-owner="aj-recovery" data-aj-page-copy>同一台手机上有两个 Agent J</p>
+        <p class="small" data-i18n="p0307.twoid.text" data-aj-owner="aj-recovery" data-aj-page-copy>如果你在 Safari 里和从主屏幕图标都打开过 Agent J，手机会把它们当成两台设备，一边连上就会把另一边挤下线。以后只用其中一个就好，推荐从主屏幕图标打开。</p></div>
       <p id="revoked-draft" class="small" data-i18n="revoked.draft" hidden data-aj-owner="aj-recovery" data-aj-page-copy>没发出去的草稿、输入记录和加密它们的密钥，都已从这台手机上删除。</p>
       <div class="ajrow"><button type="button" id="repair" class="aj-action aj-action--primary aj-action--block" data-i18n="revoked.btn" data-aj-owner="aj-action">重新配对</button>
         <!-- P198: the taken-over side takes the connection back here with the same Face ID (one button, no prompt) -->
@@ -1362,7 +1365,7 @@
               <p class="setnote" id="mail-status" aria-live="polite"></p>
               <p class="setnote" id="mail-today"></p>
             </div>
-            <button type="button" id="mail-enable-next" class="aj-btn" data-i18n="p574.mailEnable" hidden data-aj-owner="aj-action">连接正常，开启邮件通道</button>
+            <button type="button" id="mail-enable-next" class="aj-action aj-action--primary" data-i18n="p574.mailEnable" hidden data-aj-owner="aj-action">连接正常，开启邮件通道</button>
             <p class="setnote mailmsg" id="mail-msg" role="status" aria-live="polite"></p>
 
             <h3 class="setg" data-i18n="mail.gBox" data-aj-owner="aj-settings">Agent 用的邮箱</h3>
@@ -1411,7 +1414,7 @@
             <p class="setnote" id="mail-auth-why"></p>
             <p class="setnote maildanger" id="mail-auth-off" hidden data-i18n="mail.authOffWarn">关闭后，别人只要冒充白名单里的地址发信，就能把内容交给 Agent。只在你的邮箱服务商不写校验结果时才这样用。</p>
             <p class="setnote" id="mail-sample"></p>
-            <label class="mailf mailchk" id="mail-trusted-status"><input type="checkbox" id="mail-trusted-check" disabled data-aj-owner="aj-channel" aria-describedby="mail-gmail-pinned mail-pinned mail-trusted-how"><span data-i18n="p0304.mailTrusted">只信任已确认的邮件服务器</span></label>
+            <label class="mailf mailchk" id="mail-trusted-status"><input type="checkbox" class="aj-check-input" id="mail-trusted-check" disabled data-aj-owner="aj-channel" aria-describedby="mail-gmail-pinned mail-pinned mail-trusted-how"><span data-i18n="p0304.mailTrusted">只信任已确认的邮件服务器</span></label>
             <p class="setnote" id="mail-gmail-pinned" hidden></p>
             <p class="setnote" id="mail-pinned"></p>
             <p class="setnote" id="mail-trusted-how"></p>

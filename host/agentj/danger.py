@@ -1973,10 +1973,8 @@ def readonly(tool: str, tool_input) -> tuple[bool, str]:
             p = _positionals(s.args, {"-C", "-c", "--git-dir", "--work-tree"})
             if not p or p[0] not in _GIT_READ or any(a in ("--output", "-o") or a.startswith("--output=") for a in s.args):
                 return False, f"git {p[0] if p else ''} 不是只读的".replace("  ", " ")
-        if name == "sed" and (any(a == "-i" or a.startswith(("-i", "--in-place")) for a in s.args)
-                              or not any(a in ("-n", "--quiet", "--silent") for a in s.args)
-                              or any(re.search(r"(^|[;}\s])\s*[wWe]\b|/[wWe]\s", a) for a in s.args)):
-            return False, "sed 只允许 -n 打印（不能 -i 改文件、不能 w 写文件）"
+        if name == "sed" and not _sed_print_only(s.args):
+            return False, "sed 只允许 -n 加行号 / 区间的 p 打印（不能 -i、e、w、W、s///e 等）"
         if name == "curl":
             write, _ = _http_write("curl", s.args)
             if write or any(a in _CURL_WRITE or a.split("=", 1)[0] in _CURL_WRITE for a in s.args):
@@ -1987,6 +1985,37 @@ def readonly(tool: str, tool_input) -> tuple[bool, str]:
         if why:
             return False, why
     return True, ""
+
+
+# 0.30.7 (security 0306 F1): sed's script language can execute (`e`, `s///e`) and write (`w`, `W`, `s///w`). Only a
+# closed print grammar counts as read-only: `-n` plus scripts made of line-number / `$` addresses or ranges and `p`.
+_SED_ADDR = r"(?:\d+|\$)"
+_SED_PRINT = re.compile(r"^\s*(?:" + _SED_ADDR + r"(?:\s*,\s*" + _SED_ADDR + r")?)?\s*p\s*$")
+_SED_FLAGS = frozenset({"-n", "--quiet", "--silent", "-E", "-r", "--regexp-extended", "-s", "--separate", "-u", "--unbuffered"})
+
+
+def _sed_print_only(args: list) -> bool:
+    quiet, scripts, files, it = False, [], [], iter(args)
+    for a in it:
+        if a in ("-n", "--quiet", "--silent"):
+            quiet = True
+        elif a in ("-e", "--expression"):
+            v = next(it, None)
+            if v is None:
+                return False
+            scripts.append(v)
+        elif a.startswith("--expression="):
+            scripts.append(a.split("=", 1)[1])
+        elif a.startswith("-") and a != "-":
+            if a not in _SED_FLAGS:
+                return False             # -i, -f FILE, --in-place, -z … and every bundled short form
+        else:
+            files.append(a)
+    if not scripts:
+        if not files:
+            return False
+        scripts.append(files.pop(0))
+    return quiet and all(part.strip() and _SED_PRINT.match(part) for script in scripts for part in script.split(";"))
 
 
 def _ro_flag_write(name: str, args: list) -> str | None:
@@ -2000,6 +2029,11 @@ def _ro_flag_write(name: str, args: list) -> str | None:
                 next(it, None)
             elif not a.startswith("-"):
                 break
+    if name == "git" and any(a.startswith(("-O", "--open-files-in-pager", "--ext-diff", "--textconv", "--exec", "--upload-pack",
+                                           "--receive-pack")) for a in args):
+        return "git -O / --ext-diff / --textconv 会运行别的程序，不算只读"   # 0.30.7 security r1 C1 (`git grep -O<cmd>`)
+    if name in ("ag", "bat", "rg") and any(a.startswith(("--pager", "--pre", "--search-zip")) or a == "-z" for a in args):
+        return f"{name} --pager / --pre 会运行别的程序，不算只读"
     if name == "sort" and any(a == "-o" or a.startswith(("-o", "--output", "--compress-program")) for a in args):
         return "sort -o 会写文件"
     if name in ("uniq", "xxd") and len(_positionals(args)) > 1:
@@ -2088,6 +2122,10 @@ def hook_main(argv: list[str]) -> int:
             sys.stdout.write(json.dumps({'hookSpecificOutput': {
                 'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
                 'permissionDecisionReason': 'Agent J protected control file: owner verification required.'}}))
+        elif uv_list.charge_command(ev.get('tool_name'), ev.get('tool_input')):    # #537② (S2): money moves → Host.ask
+            sys.stdout.write(json.dumps({'hookSpecificOutput': {
+                'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
+                'permissionDecisionReason': 'Agent J: this command moves money; owner fingerprint confirmation required.'}}))
 
         return 0
     except Exception as e:  # noqa: BLE001 — fail closed

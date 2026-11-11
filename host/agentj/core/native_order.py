@@ -277,7 +277,7 @@ class Host:
         # Diagnostic text is data, never a command or a provenance source.
         self.order.event('native_notice', text=str(text)[:1000])
 
-    def policy_refused(self, tool, inp, why, notice=None):
+    def policy_refused(self, tool, inp, why, notice=None, fix=None):
         self.order.event('native_refused', tool=tool, why=str(why)[:300])
 
     async def question(self, *args, **kw):

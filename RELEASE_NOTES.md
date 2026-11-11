@@ -1,5 +1,5 @@
-# Agent J v0.30.6
+# Agent J v0.30.7
 
-Any paired remote can sign cards and unbind a lost one; automation mail gets a one-time fingerprint grant; saving a key from a card works again.
+Settings opens centered dialogs; phone reload loop fixed; Codex hosts default to full access, fewer approval cards; one-tap unbind; say "check relay" to test.
 
-任一已确认的遥控器都能签卡，丢机可在另一台上解绑；自动化外发邮件一次指纹授权；从卡片保存 key 又能成功，设置页的密钥卡来源写「你本人」。
+设置页操作改为居中弹层；手机刷新不再陷入死循环；Codex 主机默认全放行，审批卡更少；遥控器支持一键解绑；跟 Agent 说「测中转」即可自检中转连接。

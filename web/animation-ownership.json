@@ -254,13 +254,6 @@
       "originalBodySha256": "6fc17003f3eec2765ee19db868a070080614ed31846bd79402b203ef4ac6772e",
       "evidence": "reviewed exact component/class ownership and matching producer"
     },
-    "aj-recovery-off-pulse": {
-      "owner": "aj-recovery",
-      "file": "public/app.css",
-      "previousName": "off-pulse",
-      "originalBodySha256": "7552ae9e3baaa6ac44c8767f686822fedd8bbefcba5b7d28d62c8fe38c912880",
-      "evidence": "reviewed exact component/class ownership and matching producer"
-    },
     "aj-pairing-sf-sweep": {
       "owner": "aj-pairing",
       "file": "public/app.css",
@@ -921,16 +914,6 @@
       "previousName": "busy-blink",
       "property": "animation",
       "originalValue": "busy-blink 2.4s ease-in-out infinite",
-      "context": []
-    },
-    {
-      "file": "public/app.css",
-      "selector": ".offdlg[data-state=\"reconnecting\"] .off-icon svg",
-      "owner": "aj-recovery",
-      "name": "aj-recovery-off-pulse",
-      "previousName": "off-pulse",
-      "property": "animation",
-      "originalValue": "off-pulse 1.8s ease-in-out infinite",
       "context": []
     },
     {

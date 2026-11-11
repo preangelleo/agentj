@@ -422,8 +422,11 @@ class Flow(unittest.TestCase):
     def test_unknown_mcp_write_uses_owner_card(self):
         host, ph, s = self.host_phone()
         res = asyncio.run(self.run_card(host, s, "mcp__x__click", {}, lambda ask: self.signed(ph, host, ask, ok=False)))
-        self.assertEqual(res["behavior"], "deny")
-        self.assertEqual(len(self.cards()), 1)
+        # 0.30.7 ADR-0307-offlist: an unknown MCP tool is not on the card list, so the owner's turn runs it at once
+        # without a card (audited as off_list); the owner's decline never gets a card to tap.
+        self.assertEqual(res["behavior"], "allow")
+        self.assertEqual(len(self.cards()), 0)
+        self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "off_list")
 
     def test_offer_grant_use_and_revoke(self):
         host, ph, s = self.host_phone()

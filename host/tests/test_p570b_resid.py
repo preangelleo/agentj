@@ -66,6 +66,9 @@ class Shared(unittest.IsolatedAsyncioTestCase):
         import test_p568_task_source as source_fixture
         rig = Base()
         rig.setUp()
+        # 0.30.7 ADR-0307-offlist: the subject is the turn source; the native Bash card is only the vehicle → listed.
+        from _listed_cards import listed
+        listed(rig, 'Bash')
         before = provenance.turn_source(a)
         try:
             a.host = rig.host

@@ -6,8 +6,13 @@ import test_p541_approval_review as fixture
 
 
 class DisplayReceipt(unittest.IsolatedAsyncioTestCase):
-    asyncSetUp = fixture.Review.asyncSetUp
     stop = fixture.Review.stop
+
+    async def asyncSetUp(self):
+        await fixture.Review.asyncSetUp(self)
+        # 0.30.7 ADR-0307-offlist: the subject is card display receipts; keep the Bash vehicle a listed card.
+        from _listed_cards import listed
+        listed(self, 'Bash')
 
     async def pending(self, receipt):
         task = asyncio.create_task(self.h.ask('Bash', {'command': 'printf receipt-fixture'},

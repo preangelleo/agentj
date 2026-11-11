@@ -406,14 +406,22 @@ def refusal_text(agent) -> str:
               "automation": ("主人的自动化发来的数据", "Data posted by the owner's automation"),
               "telegram": ("群聊或转发", "Group or forwarded message")}.get(s["kind"], ("未核验来源", "Unverified source"))
     host = getattr(agent, "host", None)
-    if s["kind"] == "system" and getattr(host, "proactive_via", None) == "loop":
+    if s["kind"] == "system" and loop_refused(host):
         zh, en = LOOP
-        if time.monotonic() >= host.__dict__.get("_loop_told", 0):
-            host._loop_told = time.monotonic() + 21600
-            from .text import pick
-            host.task_notice(pick(getattr(host, "lang", "zh"), *LOOP_OWNER), guide="loop")
     return (zh + "：不能请求主人批准，没有发卡片；不是主人手动拒绝。 / " +
             en + ": cannot request owner approval; no card was sent. The owner did not reject this action.")
+
+
+def loop_refused(host) -> bool:
+    """ADR-P570b: a refused step of a loop wake-up (ScheduleWakeup / CronCreate). Tells the owner — at most every 6 h — to
+    use a scheduled task instead; the caller points the Agent at it with LOOP."""
+    if getattr(host, "proactive_via", None) != "loop":
+        return False
+    if time.monotonic() >= host.__dict__.get("_loop_told", 0):
+        host._loop_told = time.monotonic() + 21600
+        from .text import pick
+        host.task_notice(pick(getattr(host, "lang", "zh"), *LOOP_OWNER), guide="loop")
+    return True
 
 
 LOOP = ("循环唤醒（ScheduleWakeup / CronCreate）。要定时反复做的事请改用定时任务（agentj-automation 技能：系统定时，或 "

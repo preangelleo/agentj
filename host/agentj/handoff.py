@@ -33,7 +33,7 @@ RECOVER_START_WAIT = 20.0   # s #0303: a sent recovery must start a native turn 
 RECOVER_TRIES = 3           # #0303: delivery attempts (send error or no turn start), each logged; then a truthful notice
 RECOVER_GAP = 2.0           # s #0303: pause before a re-send
 PREP_WAIT = 300.0           # s: the phone /compact's handoff turn
-FRESH = 900.0               # s: with no known turn start, a handoff older than this is stale (compactprep.FRESH)
+FRESH = 24 * 3600.0         # s: a handoff older than 24 h must never be offered for recovery
 TAG = {"zh": "〔Agent J 系统提示〕", "en": "[Agent J system note]"}
 SKILL = "agentj-handoff"
 
@@ -71,7 +71,7 @@ def fresh(since: float | None) -> bool:
     """The compact handoff exists and was written at or after `since` (the current turn's start); with no known turn start,
     within the last FRESH seconds."""
     m = mtime(COMPACT)
-    return m is not None and m >= (since - 1 if since is not None else time.time() - FRESH)
+    return m is not None and time.time() - FRESH <= m <= time.time() + 60 and (since is None or m >= since - 1)
 
 
 def take_clear() -> Path | None:
@@ -107,18 +107,20 @@ def recover_text(lang: str, kind: str, has: bool, where: Path | None = None) -> 
 
 def _recover_text(lang: str, kind: str, has: bool, where: Path | None = None) -> str:
     p = shown(where or path(COMPACT))
+    if kind == "compact":
+        has = bool(has and fresh(None))
     if lang == "en":
         if kind == "clear":
             return TAG["en"] + " The conversation was cleared. Read the handoff " + p + " first, then carry on with that task."
         if has:
             return TAG["en"] + " Compaction finished. Read the handoff " + p + " first, then carry on with the task you were doing."
-        return (TAG["en"] + " Compaction finished; there was no handoff file this time. Carry on from the compaction summary, "
+        return (TAG["en"] + " Compaction finished; no fresh handoff was found (missing or older than 24 hours). Carry on from the compaction summary, "
                 "and write a fresh handoff to " + p + " with the " + SKILL + " skill as soon as you can.")
     if kind == "clear":
         return TAG["zh"] + "对话已清空。先读交接文件 " + p + "，再接着做那件事。"
     if has:
         return TAG["zh"] + "压缩完成。先读交接文件 " + p + "，再继续刚才的任务。"
-    return (TAG["zh"] + "压缩完成，本次没有交接文件。先按压缩摘要继续刚才的任务，并尽快按 " + SKILL + " 技能补写一份交接到 "
+    return (TAG["zh"] + "压缩完成，没找到新交接（文件不存在或已超过 24 小时）。先按压缩摘要继续刚才的任务，并尽快按 " + SKILL + " 技能补写一份交接到 "
             + p + "。")
 
 

@@ -28,6 +28,8 @@ export function bioWords(str, os, lng) {
   const label = bioLabel(os, lng);
   const cjk = CJK.test(label);
   let s = str.replace(/Face ID ?(?:\/|\u6216|or) ?Touch ID/g, 'Face ID');
+  // 0.30.7 r2: a label that already names the fingerprint (Android 「指纹或面容」) swallows the 「 / 指纹」 after it — never 「指纹或面容 / 指纹」
+  if (/\u6307\u7eb9|fingerprint/i.test(label)) s = s.replace(/Face ID ?\/ ?(?:\u6307\u7eb9|fingerprint)/g, 'Face ID');
   s = s.replace(/( ?)Face ID( ?)/g, (m, a, b, at, whole) => {
     const before = whole[at - 1] || '', after = whole[at + m.length] || '';
     let word = label;

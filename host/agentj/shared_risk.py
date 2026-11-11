@@ -86,7 +86,10 @@ class RiskGuard:
         a = self.adapter
         if credential_read_refusal(a.host, tool, inp, getattr(a, 'cfg', {}).get('dir')):
             return self._deny(uv_list.CREDENTIAL_READ_REASON)
-        if uv_list.protected_targets(tool, inp, cwd=getattr(a, 'cfg', {}).get('dir'), env=uv_list.host_environment(a.host)):
+        # #537② (Round 2 R2): a listed money-moving call in a shared session goes to Host.ask too — the owner / host
+        # turn's fingerprint card there, every other source's off-list refusal (list_approval.ask decides, not here).
+        if (uv_list.protected_targets(tool, inp, cwd=getattr(a, 'cfg', {}).get('dir'), env=uv_list.host_environment(a.host))
+                or uv_list.charge_command(tool, inp)):
             from .list_approval import NativeContext
             answer = await a.host.ask(tool, inp, batch=False, _harness_permission=True, _native_context=NativeContext.capture(a))
             if answer.get('behavior') != 'allow':
@@ -115,7 +118,7 @@ class RiskGuard:
                     return self._deny('denied_before')
                 epoch=self.epoch
                 receipt={}
-                answer=await a.host.ask(policy_registry.harness_tool(tool),inp,batch=False,require_passkey=requirement == 'uv',_receipt=receipt)
+                answer=await a.host.ask(policy_registry.harness_tool(tool),inp,batch=False,require_passkey=requirement == 'uv',_receipt=receipt,_harness_permission=True)
                 if answer.get('behavior') != 'allow':
                     if epoch == self.epoch and refusal_intent.owner_denied(receipt):
                         self.denied.update(keys)
@@ -146,7 +149,7 @@ class RiskGuard:
                 return True
             epoch=self.epoch
             receipt={}
-            answer=await a.host.ask(policy_registry.harness_tool(tool),inp,batch=False,risk_scope=True,_receipt=receipt)
+            answer=await a.host.ask(policy_registry.harness_tool(tool),inp,batch=False,risk_scope=True,_receipt=receipt,_harness_permission=True)
             if answer.get('behavior') != 'allow':
                 if self.epoch == epoch and refusal_intent.owner_denied(receipt):
                     self.denied.update(keys)
@@ -236,7 +239,10 @@ class NativePathGuard:
             tool = policy_registry.codex_hook_tool(tool)
         if (refusal := credential_read_refusal(a.host, tool, inp, a.cfg.get('dir'))) is not None:
             return refusal
-        if not uv_list.protected_targets(tool, inp, cwd=event.get('cwd') or a.cfg.get('dir'), env=uv_list.host_environment(a.host)):
+        # #537② (S2): a full-access thread runs most commands without a native approval request; a listed money-moving
+        # call (uv_list.CHARGE_COMMANDS) is sent to Host.ask here so list_approval can show the owner's fingerprint card.
+        if (not uv_list.protected_targets(tool, inp, cwd=event.get('cwd') or a.cfg.get('dir'), env=uv_list.host_environment(a.host))
+                and not uv_list.charge_command(tool, inp)):
             return {}
         sid = getattr(a, 'tid', None) if a.kind == 'codex' else getattr(a, 'sid', None)
         same_cwd = isinstance(event.get('cwd'), str) and os.path.realpath(event['cwd']) == os.path.realpath(a.cfg['dir'])

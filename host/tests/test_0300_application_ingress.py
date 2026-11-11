@@ -62,6 +62,11 @@ class ApplicationFrames(unittest.IsolatedAsyncioTestCase):
                 ('agentj secret request', {'name': 'fixture-only'}, False, True),
                 ('Bash', {'command': 'date'}, True, False)):
             with self.subTest(tool=tool):
+                if native:
+                    # 0.30.7 ADR-0307-offlist: an off-list native Bash never cards; the subject is "a paired frame does
+                    # not skip a listed native tap", so the Bash vehicle is put on the card list.
+                    from _listed_cards import listed
+                    listed(self, 'Bash')
                 async def control(s, obj):
                     result = await self.h.ask(tool, inp, _harness_permission=native)
                     self.assertEqual(result['behavior'], 'allow')
@@ -384,6 +389,9 @@ assert r.get('ok') if sys.argv[2]=='ordinary fixture' else r.get('why')=='secret
                 self.assertNotIn(sentinel, json.dumps(result))
                 self.assertNotIn(sentinel, self.st.log_path.read_text())
         # The complete final display is signed; raw input/hash stay canonical.
+        # 0.30.7 ADR-0307-offlist: card-display subject; the native Bash vehicle stays a listed (tap) card.
+        from _listed_cards import listed
+        listed(self, 'Bash')
         inp = {'command':'printf ok','note':'Unicode ✓','values':[None,True,1,-0.0]}
         task = asyncio.create_task(self.h.ask('Bash', inp, _harness_permission=True))
         try:
@@ -403,6 +411,9 @@ assert r.get('ok') if sys.argv[2]=='ordinary fixture' else r.get('why')=='secret
     async def test_display_worker_cannot_rebind_native_subject_but_settings_is_independent(self):
         from agentj import approval_review
         from agentj.list_approval import NativeContext, SettingsContext
+        # 0.30.7 ADR-0307-offlist: the subject is the card's live-subject binding; the native Bash stays a listed card.
+        from _listed_cards import listed
+        listed(self, 'Bash')
         for change in ('main_turn','gone','native_process','native_session','settings_main','settings_session','settings_stop'):
             with self.subTest(change=change):
                 entered, release = asyncio.Event(), asyncio.Event()
@@ -461,6 +472,8 @@ assert r.get('ok') if sys.argv[2]=='ordinary fixture' else r.get('why')=='secret
                     if task: await asyncio.gather(task,return_exceptions=True)
 
     async def test_ready_signed_answer_and_gone_same_tick_cannot_execute(self):
+        from _listed_cards import listed   # 0.30.7 ADR-0307-offlist: answer/gone race on a card; Bash vehicle listed
+        listed(self, 'Bash')
         gone=asyncio.get_running_loop().create_future()
         task=asyncio.create_task(self.h.ask('Bash',{'command':'date'},gone=gone,_harness_permission=True))
         try:

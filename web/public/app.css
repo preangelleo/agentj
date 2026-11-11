@@ -2927,13 +2927,14 @@ i.bd.still{animation:none}
 @keyframes aj-busy-busy-blink{0%,100%{background:var(--h)}50%{background:var(--l)}}
 @media(prefers-reduced-motion:reduce){i.bd{animation:none}}
 
-/* ---- P171 · Settings = ONE full-screen page (the ≡ menu's rows live here). Global rhythm only (palette.css): controls
-   12 px apart (--space-control), text/actions 16 (--space-content), sections/cards 24 (--space-section). Wide (≥ 900 px):
-   side navigation + section cards in two columns; narrow: one column, no fixed widths. Colours are theme tokens only. ---- */
-.setpage{display:block;padding:0;background:var(--bg);backdrop-filter:none;-webkit-backdrop-filter:none}
-.setpage[hidden]{display:none}
-.setpage .box.setbox{width:100%;height:100%;max-height:none;padding:env(safe-area-inset-top) 0 0;border-radius:0;box-shadow:none;
-  display:flex;flex-direction:column;overflow:hidden;background:var(--bg);font:400 var(--fs-sm)/1.5 var(--font-body)}
+/* Settings alone: centered Noir dialog. Keep the scrollable inner sections and all other .ajmodal sheets unchanged.
+   The viewport can shrink under the iOS keyboard; the frame stays within the visual viewport. */
+#settings.setpage{display:grid;place-items:center;padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom));
+  background:color-mix(in srgb,var(--c-noir) 75%,transparent);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+#settings.setpage[hidden]{display:none}
+#settings.setpage>.box.setbox{width:min(1040px,100%);height:min(820px,100%);max-height:100%;padding:0;
+  border:1px solid var(--menu-line);border-radius:20px;box-shadow:0 18px 48px color-mix(in srgb,var(--c-noir) 65%,transparent);
+  display:flex;flex-direction:column;overflow:hidden;background:var(--c-noir);color:var(--c-lotion);font:400 var(--fs-sm)/1.5 var(--font-body)}
 .setpage .box.setbox:focus{outline:none}
 .setpage .aj-action{margin-top:var(--aj-action-margin-top,0)}
 /* #577 aj-icon-action: independent equal initial contract. */
@@ -3078,7 +3079,8 @@ i.bd.still{animation:none}
 .rmempty{padding:var(--space-content) 0;color:var(--text-muted)}
 .rmitem{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:var(--space-control) var(--space-content);
   padding:var(--space-content) 0;border-bottom:1px dashed var(--border-soft)}
-.rmitem:last-child{border-bottom:0;padding-bottom:0}
+/* 0.30.7 r2: room for the last ID copy button's 48 px target (margin -14px) — at 0 the list scrolled 13 px and clipped the first name */
+.rmitem:last-child{border-bottom:0;padding-bottom:14px}
 .rmitem:first-child{padding-top:var(--sp-1)}
 .rmitem__head{display:flex;align-items:flex-start;gap:var(--space-control);min-width:0}
 .rmitem__txt{min-width:0}
@@ -3218,6 +3220,9 @@ button.aj-dialog-action:disabled{opacity:var(--aj-dialog-action-disabled-opacity
 .state-view .helpline+.helpline{margin-top:var(--sp-2)}
 .state-view .helpmail{margin:var(--sp-1) 0 0}
 .state-view .helpmail a{display:inline-flex;align-items:center;min-height:44px;font-weight:600}
+.state-view .twoid{width:100%;max-width:22rem;margin:var(--sp-4) 0 0;padding:var(--sp-3) var(--sp-4);border:1px solid var(--line);border-radius:var(--re);text-align:left}
+.state-view .twoid p{margin:0}
+.state-view .twoid__t{font-weight:600;margin-bottom:var(--sp-1)!important}
 .setcard>.rssupport{margin-top:var(--space-control)}
 /* ---- P179: rename this remote (long-press the source label) ---- */
 .om-first{-webkit-touch-callout:none}
@@ -4201,6 +4206,25 @@ html[data-ios-safari="1"] body::before{content:"";position:absolute;inset:0;back
 .sheet.ontop-float{position:fixed;left:0;right:0;bottom:0;z-index:calc(var(--z-confirm) + var(--ontop-n,0) + 1);
   max-height:85dvh;width:min(100%,720px);margin:auto}
 body[data-ontop="1"] #toast{z-index:var(--z-notice-top)!important}
+/* A preview bootstrap failure is page-level status, not a reply. Reuse the Noir notice skin and dismiss action. */
+#toast[data-preview-failure="1"].on{position:fixed;top:calc(env(safe-area-inset-top,0px) + 64px);left:50%;bottom:auto;
+  width:min(calc(100% - 32px),560px);max-width:calc(100% - 32px);z-index:var(--z-notice-top);
+  transform:translateX(-50%);pointer-events:auto}
+#toast[data-preview-failure="1"].rect:not(.on){display:none}
+/* 0.30.7 (S3, chairman 11-11): in the chat the strip sits in the flow between the header and the reply card (the card moves
+   down, its title stays readable); a confirmation card on top (body[data-ontop]) is always above it, never under it. */
+.chatv>#toast[data-preview-failure="1"].on{position:relative;top:auto;left:auto;bottom:auto;transform:none;flex:none;
+  width:auto;max-width:none;margin:8px var(--rg,16px) 4px;z-index:auto}
+@media (orientation: landscape){.chatv>#toast[data-preview-failure="1"].on{margin-inline:var(--card-side,56px)}}   /* lines up with the card */
+body[data-ontop="1"] #toast[data-preview-failure="1"]{z-index:calc(var(--z-confirm) - 1)!important}
+/* 0.30.7 (chairman 11-11): a held notice's own close button — a phone has no Esc. 44 px target, Lotion line on the Noir notice. */
+.toast.closable.on{pointer-events:auto}
+.toast .nt-close{flex:none;display:inline-grid;place-items:center;width:44px;height:44px;min-width:44px;min-height:44px;margin:-8px -10px -8px 4px;
+  padding:0;border:0;border-radius:50%;background:transparent;color:var(--dlg-fg);cursor:pointer;pointer-events:auto;-webkit-tap-highlight-color:transparent}
+.toast .nt-close svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.toast .nt-close:focus-visible{outline:2px solid var(--dlg-fg);outline-offset:-4px}
+.toast:is(.circle,.square).closable{padding-top:44px}
+.toast:is(.circle,.square) .nt-close{position:absolute;top:6px;right:6px;margin:0}
 /* #556: notices keep their centred/card placement even while a password/confirmation card is open.
    Never anchor a notice to the screen bottom: that is the composer and five-icon area. */
 .toast.rect.over-dlg{position:fixed;left:50%;right:auto;top:var(--aj-notice-center-y,50%);bottom:auto;

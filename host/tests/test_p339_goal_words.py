@@ -335,6 +335,10 @@ class HostGoal(unittest.TestCase):
                    mock.patch.object(goal, "PROBE", self.probe), mock.patch.object(goal, "ALIASES", lambda: {"olares"})]
         for p in self.ps:
             p.start()
+        # 0.30.7 ADR-0307-offlist: off-list native Bash no longer cards; these tests are about the card a goal shows
+        # (words, signing, offers, parking) and that a goal never approves it, so Bash is a listed (tap) card again.
+        from _listed_cards import listed
+        listed(self, 'Bash')
 
     def tearDown(self):
         for p in self.ps:

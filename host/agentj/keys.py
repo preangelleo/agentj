@@ -602,7 +602,7 @@ async def _set(host, s, r, obj: dict) -> None:
         try:
             with provenance.paired_request(lambda: host._paired_live(s)):
                 card["only"] = s.device
-                card["settings_origin"] = True        # 0.30.6: Settings → keys (elevate.settings_origin)
+                card["settings_origin"] = "keys"      # 0.30.6 / 0.30.7: Settings → keys page (elevate.settings_origin)
                 result = await host.elevate.request(card, on_card=opened)
             if not replied:
                 await host.send_app(s, {"t": "keys_res", "r": r, "ok": False, "op": "set",

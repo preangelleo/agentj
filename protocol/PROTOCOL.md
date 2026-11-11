@@ -121,6 +121,9 @@ First byte = message kind (visible to the relay — see §5):
    the close — `replaced` when a newer pairing took the device's place (step 9), `revoked` otherwise (a human removed it, or the
    host never knew it). Nothing else is answered on that session. The reason comes from `removed.json` (0600, device ids +
    reason + time, newest 64; an id re-paired is dropped from it).
+   **0.30.7**: `replaced` may carry `"moved":true` — the same phone's other identity took the record over (passkey or
+   renewal-ticket restore; on iOS Safari and the Home Screen app keep separate storage). The page then says once that the
+   phone holds two copies that push each other out. Older pages ignore the field; eviction and same-browser re-pairing never set it.
    **Device side (0.15.1)**: a close during pairing = the pairing failed (never "removed"); `removed` = removed, with that reason;
    a close without `removed` (4010, or a RESUME answered by a non-1006 close — an older host, or a hello deadline that ran out
    while the phone slept) = reconnect once, and only a second one in a row (no `ready` between) counts as removed.
@@ -1347,7 +1350,7 @@ SENSITIVE). `{"t":"serve_ping"}` → `{"ok":true,"serve":"answering"}` (`agentj 
 **Host → device.** `{"t":"elev","id":<32 hex>,"kind":"sudo"|"secret","n":<32 hex one-time nonce>,"epk":<b64url X25519, this
 card only>,"ttl":s,"tries":n[,"bad":k]` + sudo `"cmd","why","effect"` / secret `"name","purpose","dest","verify"`}` — sent
 to every ready allowlisted session and again after a resume; a wrong password re-sends the same id with a NEW `n` and `epk`.
-`{"t":"elev_done","id","result"[,"code"][,"verify"]}` ends it everywhere. Web Push kind `ask` wakes the phone.
+`{"t":"elev_done","id","result"[,"code"][,"verify"][,"why"]}` ends it everywhere (0.30.7: a secret card ending `unknown` because a new task started during the key check carries `why` = `new_task_during_validation` | `new_task`). Web Push kind `ask` wakes the phone.
 TTL: sudo 120 s, secret 600 s (from each arming; 300 s before P73, §18.1).
 
 P392: once a signed approval is accepted, its nonce is reserved before the receive handler returns.
@@ -3319,6 +3322,20 @@ The phone shows it as text only and stores nothing.
 
 **Log.** `controls.log`: `start` (with the signature), then `exit:<code>` / `timeout`, or `refused:<why>` — the name only (as
 `object_sha256`), never the output. `host.log`: `cmd_run {device, cmd, code, ms}`.
+
+**0.30.7 `codex_full_access` (「改回全放行并重启」 / "Back to full access & restart").** One more listed name, shown as
+`agentj codex-sandbox default`, but never a subprocess: the host runs a fixed in-process action (`codex_full_access.apply`:
+`codex_perm.set_mode(None)` on `$CODEX_HOME/config.toml`, backup kept; then `service.restart()` of the installed, active
+service only). It widens the Agent's power, so it always needs the passkey step (confirm_tier row `approval_widen`), even
+though P573 dropped it for the other repair names. Answer: `ctl_res {ok, cmd, code, out:"", ms, restart:"requested"|"manual"|
+"failed"|"none", why?:"unchanged"|"config_invalid"|"write_failed"}` — sent before the restart. A pending receipt (0600,
+`codex-full-access-receipt.json` in the state dir) is written before the restart; the restarted serve's first ready phone
+session gets it once as a system page (「已回到全放行」 / "Back to full access", re-checked against config.toml). Codex sandbox
+refusals whose cause is the owner's top-level `sandbox_mode` carry the typed history card `{"fix":"codex_full_access"}` on
+the `k:"sys"` page; the page's button sends this same signed `cmd_run` by NAME. The page never derives it from text, and
+never offers it for an Agent reply's code block. Audit: `controls.log` lines `ok` / `ok:unchanged` / `refused:*` /
+`restart_failed:*` / `receipt:*` with `cmd`, `before`, `after`, `restart`; one `approvals.log` line (tool
+`codex_full_access`, device, signature).
 ## 36. Webhooks — hosted entry, host registry, triage (P366; the number is provisional until the merge)
 
 Spec and security review: `agentjarvis/docs/specs/AGENTJ-HOOKS-SPEC.md`. Code: `relay/src/hooks.ts`, `host/agentj/hooks.py`,

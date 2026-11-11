@@ -5,6 +5,7 @@ import copy
 import threading
 import unittest
 import test_p541_approval_review as fixture
+from _listed_cards import listed
 
 
 
@@ -22,6 +23,9 @@ def _isolate_config(test):
 class AnswerRace(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         _isolate_config(self)
+        # 0.30.7 ADR-0307-offlist: off-list Bash no longer cards; the subject is the answer/reservation race, so the
+        # vehicle is a listed (tap) card again.
+        listed(self, 'Bash')
         await fixture.Review.asyncSetUp(self)
     open = fixture.Review.open
     stop = fixture.Review.stop

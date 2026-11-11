@@ -99,7 +99,14 @@ class SharedV2Chain(_DefaultMode, p60.V2Chain):
             self.assertFalse(any("尚未接入" in m for m in c.msgs()))
             sid = a.sid
             self.assertEqual((self.st.agent_session("opencode"), a.cfg["shared_session_id"]), (sid, sid))
-            # OpenCode's own question → a card on the phone; approve runs it, deny tells the model
+            # ADR-0307-offlist: OpenCode's own question for an off-list command in an owner turn runs at once, no card
+            await c.say("RUN: echo free-shared")
+            await c.wait(lambda: "OUT: free-shared" in c.msgs())
+            await c.idle()
+            self.assertEqual(c.asks(), [])
+            # A listed action (test-only list, _listed_cards) → a card on the phone; approve runs it, deny tells the model
+            from _listed_cards import listed
+            listed(self, 'Bash')
             await c.say("RUN: echo hi-shared")
             await c.wait(lambda: len(c.asks()) == 1)
             await approve_uv(c)

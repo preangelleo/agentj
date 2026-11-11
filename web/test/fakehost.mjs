@@ -478,7 +478,7 @@ export async function startFakeHost({ channelSeed, visualSeed, hostKeypair, ephe
   // verified like the real host (§8 control signature), applied and answered ctl_res; every write is recorded in .writes.
   function remotesSnap(c) {
     const R = st.remotes;
-    return { t: 'devs', limit: R.limit ?? 10, can_add: R.can_add !== false, busy: !!R.busy,
+    return { t: 'devs', limit: R.limit ?? 10, can_add: R.can_add !== false, busy: !!R.busy, ...(R.unbind_one ? { unbind_one: true } : {}),
       items: R.items.map((d) => ({ ...d, me: d.id === c.devId || d.me === true && !R.items.some((x) => x.id === c.devId) })) };
   }
   async function onRemotes(c, m) {
@@ -499,6 +499,9 @@ export async function startFakeHost({ channelSeed, visualSeed, hostKeypair, ephe
     if (m.t === 'dev_unbind' && m.device !== c.devId && !(d && d.me === true && !R.items.some((x) => x.id === c.devId))) {
       if (R.passkey === false) return reply({ t: 'ctl_res', action: m.t, ok: false, why: 'no_passkey' });
       if (R.passkey === true && !m.fa) return reply({ t: 'ctl_res', action: m.t, ok: false, why: 'passkey_required', ...FA_OFFER });
+      // 0.30.7 one-card unbind shots: the host refuses the Face ID answer (`faWhy`) or never answers it (`faSilent` → page timeout)
+      if (m.fa && R.faSilent) return;
+      if (m.fa && R.faWhy) return reply({ t: 'ctl_res', action: m.t, ok: false, why: R.faWhy });
     }
     if (m.t === 'dev_name') { if (!d) return reply({ t: 'ctl_res', action: m.t, ok: false, why: 'gone' }); d.name = m.name.trim(); }
     if (m.t === 'dev_unbind') { if (!d) return reply({ t: 'ctl_res', action: m.t, ok: false, why: 'gone' }); R.items = R.items.filter((x) => x !== d); }

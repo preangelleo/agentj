@@ -101,6 +101,10 @@ class HandoffMail(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(C.local(self.st, {"op": "owner_set", "owner_ok": True,
                                           "contact": {"name": "Owner", "emails": [OWNER]}})["ok"])
         self.mail = ContactService(type("E", (), {"host": self.host, "st": self.st})())
+        self.tree = True     # 0.30.7 F2: the caller is a process of the handed Agent turn unless a case says otherwise
+        from agentj import automation_grant as AG
+        patcher = mock.patch.object(AG, "hook_caller", side_effect=lambda host, peer: self.tree)
+        patcher.start(); self.addCleanup(patcher.stop)
         await self.mail.agent({"op": "add", "contact": {"name": "Bob Builder", "emails": [BOB]}})
         self.answer = "uv"
 
@@ -223,6 +227,18 @@ class HandoffMail(unittest.IsolatedAsyncioTestCase):
         res, card = await self.mail_send(to=[BOB])
         self.assertIsNotNone(card)
         self.assertFalse(res["ok"], res)
+        self.assertEqual(self.smtp.sent, [])
+
+    async def test_foreign_process_cannot_ride_the_handoff(self):
+        """0.30.7 (0306-integrate security F2): a same-user process outside the handed turn's process tree gets no card."""
+        send = await self.click()
+        self.run_turn(send)
+        self.tree = False
+        for to in ([BOB], [OWNER]):
+            with self.subTest(to=to):
+                res, card = await self.mail_send(to=to)
+                self.assertIsNone(card)
+                self.assertFalse(res["ok"], res)
         self.assertEqual(self.smtp.sent, [])
 
     async def test_handoff_turn_owner_only_passes_without_a_card(self):

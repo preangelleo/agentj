@@ -523,6 +523,12 @@ class ContactService:
         if hand is False:
             self.st.log("mail_send", result="denied", why="friend_handoff_unverified")
             return dict(FH.REFUSED)
+        # 0.30.7 (0306-integrate security F2): the handoff record belongs to the Agent's own process tree in this
+        # handed turn (descends from the live session, born inside the open non-owner span) — another same-user
+        # process calling mail_send meanwhile cannot ride the handoff's friend-named card.
+        if hand and not await asyncio.to_thread(AG.hook_caller, self.host, peer):
+            self.st.log("mail_send", result="denied", why="friend_handoff_foreign_process")
+            return dict(FH.REFUSED)
         if hand:      # friend material: the outside rules (owner-only pass, strict scan, no key cards), else the UV card
             outside, src = True, provenance.turn_source(agent)
         if outside and auto is None and not hand and not await asyncio.to_thread(self._owner_only_literals, to_raw + lists["cc"] + lists["bcc"]):

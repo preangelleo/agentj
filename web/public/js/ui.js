@@ -2,7 +2,7 @@
 // two-step confirm dialog of Agent J's signed writes.
 import { activeLayer } from './layers.js';
 import { initSurfaceOutlines } from './surface-outline.js';
-import { fillText } from './t.js';
+import { fillText, t as tr } from './t.js';
 import { SVG } from './icons.js';
 import { configureCopyNotice } from './copycode.js';
 import { slotShow } from './cardplace.js';   // 0.26.9 #472: a notice above a docked card scrolls only the reply's slot
@@ -113,12 +113,29 @@ export function executionToast(text, ms = 3600, kind = 'info') {
 if (typeof document !== 'undefined') {
   for (const id of ['shared-status', 'version-later', 'setup-banner', 'ar-renew', 'qr-banner', 'rescue-banner', 'estop-banner', 'grant-bar', 'share-notice']) replyNotice(el(id));
 }
+// 0.30.7 (chairman 11-11): Settings already says this exact sentence in its own status line (mail-msg …) → no second copy of it
+// as a notice on top of the overlay. Only plain sentences: a notice with a button is not an echo.
+function settingsLine(text) {
+  const s = text == null ? '' : String(text).trim(), page = el('settings');
+  if (!s || !page || page.hidden || !page.getClientRects().length) return null;
+  return [...page.querySelectorAll('[role="status"]')].find((n) => !n.closest('#toast') && n.getClientRects().length && n.textContent.trim() === s) || null;
+}
+/** A Settings status line now says `text`: put away a notice that only repeats it (the line arrived after the notice). */
+export function settingsSaid(text) {
+  const box = el('toast'), s = text == null ? '' : String(text).trim();
+  if (!s || !box?.classList.contains('on') || box.classList.contains('act') || !settingsLine(s)) return false;
+  if (box.querySelector('.nt-body')?.textContent.trim() !== s) return false;
+  toastOff();
+  return true;
+}
 export function notify(spec) {
   const f = notifyFormat(spec), box = el('toast');
   if (!box) return null;
+  if (!(spec.actions || []).length) { const line = settingsLine(spec.text); if (line) { line.scrollIntoView?.({ block: 'nearest' }); return null; } }
   delete box.dataset.sharedFollow;
   delete box.dataset.pkTest;
-  box.classList.remove('act', 'mail-saved', 'circle', 'square', 'rect', 'glance', 'over-dlg');
+  delete box.dataset.previewFailure;
+  box.classList.remove('act', 'mail-saved', 'circle', 'square', 'rect', 'glance', 'over-dlg', 'closable');
   box.classList.toggle('glance', !!spec.glance);
   box.dataset.kind = f.kind; box.style.setProperty('--nt-accent', 'var(' + f.accent + ')');
   box.setAttribute('role', f.kind === 'error' || f.kind === 'warn' ? 'alert' : 'status');
@@ -143,7 +160,19 @@ export function notify(spec) {
     }
     kids.push(row);
   }
+  // 0.30.7 (chairman 11-11): a phone has no Esc — a held notice may carry its own close button (spec.close = its label)
+  if (spec.close) {
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'nt-close'; x.setAttribute('data-aj-owner', 'aj-notice');
+    x.setAttribute('aria-label', String(spec.close)); x.title = String(spec.close);
+    const s = document.createElementNS(SVG, 'svg'); s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('aria-hidden', 'true');
+    for (const d of ['M6.5 6.5l11 11', 'M17.5 6.5l-11 11']) { const p = document.createElementNS(SVG, 'path'); p.setAttribute('d', d); s.appendChild(p); }
+    x.appendChild(s);
+    x.addEventListener('pointerdown', (e) => e.preventDefault());          // keep the field's focus
+    x.addEventListener('click', () => toastOff());
+    kids.push(x);
+  }
   box.replaceChildren(...kids);
+  box.classList.toggle('closable', !!spec.close);
   box._circleWanted = f.shape === 'circle';
   box.classList.add(f.shape);
   // #556: a visible password / confirmation card owns the stage; its results use a centred rounded card above it.
@@ -208,6 +237,9 @@ if (typeof document !== 'undefined') {
   }
 }
 // the glance: kind info (an upload holds its progress line by passing a long ms)
+/** P590 reload guard stopped automatic reloads: 15 s, Esc, and (0.30.7, chairman 11-11) its own close button — a phone has no Esc. */
+export const RELOAD_STOP_MS = 15000;
+export function reloadStoppedNotice() { return notify({ kind: 'info', shape: 'square', text: tr('reload.stopped'), ms: RELOAD_STOP_MS, close: tr('reload.close') }); }
 export function toast(t, ms, kind = 'info') { notify({ kind, text: t, ms: ms || FORMATS[kind]?.ms || 1800 }); }
 export function toastOff() { const n = el('toast'); if (!n) return; clearTimeout(n._t); delete n.dataset.hold; n.classList.remove('on', 'act', 'mail-saved'); }
 // A toast with one action button (undo, restore). Any later toast() replaces it.

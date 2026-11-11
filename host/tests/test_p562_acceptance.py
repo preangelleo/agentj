@@ -80,6 +80,10 @@ class _Real(unittest.IsolatedAsyncioTestCase):
     async def face_id_step(self, send, notice):
         """Actual native signed tap, then two independent listed calls with fresh UV."""
         from agentj import approval_review
+        # 0.30.7 ADR-0307-offlist: an off-list native Bash no longer cards; the subject is the signed tap and the card's
+        # source label on each owner channel, so the native vehicle is put on the card list.
+        from _listed_cards import listed
+        listed(self, 'Bash')
         self.host.agent.cur_send = send
         cards = []
         last_fa = None

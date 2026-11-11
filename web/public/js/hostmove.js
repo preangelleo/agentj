@@ -29,7 +29,7 @@ export function parseHostMoved(m, allowRelay) {
  *  ticket of the old computer is void (rtAt dropped → the new host issues one after ready). */
 export function movedRecord(h, mv) {
   const keep = { ...(h || {}) };
-  for (const k of ['rtAt', 'plat', 'boot', 'removed', 'moveStayed']) delete keep[k];
+  for (const k of ['rtAt', 'plat', 'boot', 'removed', 'removedMoved', 'moveStayed']) delete keep[k];
   return { ...keep, relay: mv.relay, channel: mv.channel, hostPub: mv.hostPub, approved: true, pk: false, pkAsked: false,
     ...(mv.name ? { name: mv.name } : {}) };
 }

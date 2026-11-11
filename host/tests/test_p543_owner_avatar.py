@@ -233,7 +233,8 @@ class CodexFull(unittest.TestCase):
             self.assertEqual(runner.tid, "thr-1")
             # the runner's approvals and failures: the avatar's, never the main page's
             asyncio.run(proxy.ask("Bash", {"command": "ls"}, None, batch=True))
-            self.assertEqual(asks, [("Bash", {"avatar": "来自邮件分身"})])
+            # 0.30.7 ADR-0307-offlist: an avatar's request is a native harness permission (typed avatar / host_read).
+            self.assertEqual(asks, [("Bash", {"avatar": "来自邮件分身", "_harness_permission": True})])
             proxy.turn_failed()
             proxy.agent_notice("Codex 登录过期")
             self.assertEqual(proxy.notes, ["Codex 登录过期"])
@@ -265,6 +266,10 @@ class Approvals(Base):
         self.assertEqual(res["behavior"], "deny")
 
     def test_ask_for_tells_the_channel_once_and_waits_for_the_device(self):
+        # 0.30.7 ADR-0307-offlist: with the real list an avatar's off-list `rm -rf build` is refused at once
+        # (off_list_write_host_read, no card); the subject here is the waiting-card notice, so Bash is a listed card.
+        from _listed_cards import listed
+        listed(self, 'Bash')
         told = []
 
         async def go():

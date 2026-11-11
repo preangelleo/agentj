@@ -138,6 +138,9 @@ class HarnessNotes(unittest.TestCase):
         from agentj import __version__, bailian, claude_inbound
         st = Mock(agent_config=Mock(return_value={'kind':'claude'}))
         st.config_lock.side_effect = contextlib.nullcontext
+        # ADR-0307-codex-full-access: on_ready first delivers a pending sandbox-reset receipt from st.root (none here)
+        root = tempfile.TemporaryDirectory(prefix='p581-'); self.addCleanup(root.cleanup)
+        st.root = Path(root.name)
         session = SimpleNamespace(cid='fixture')
         h = SimpleNamespace(st=st, sessions={'fixture':session}, lang='en', preferences={},
                             agent=SimpleNamespace(kind='future'), agent_notice=Mock())

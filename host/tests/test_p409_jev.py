@@ -80,6 +80,8 @@ class Modes(Base):
         msg=[o for _,o in self.sent if o['t']=='pref_res'][-1]
         self.assertEqual(msg['problem'],'not_allowed')
         self.choose('off')
+        # 0.30.7 ADR-0307-offlist: an off-list Bash never cards; the subject is "Jev off keeps a card", so use a listed one.
+        from _listed_cards import listed;listed(self,'Bash')
         self.ask('git push origin main')
         self.assertTrue(self.cards('Bash'))
     def test_onboarding_prompts_then_reports_signed_skip(self):

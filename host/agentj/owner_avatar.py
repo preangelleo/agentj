@@ -74,7 +74,7 @@ async def ask_for(host, origin: str, on_card, tool: str, tool_input: dict, gone=
     """One avatar request through the main approval path; `on_card` once the card is actually waiting. `stricter`: an
     adapter's own require_passkey / risk_scope / ttl, passed on unchanged (batch is always off for an avatar)."""
     kw = {k: v for k, v in stricter.items() if k in ("require_passkey", "risk_scope", "ttl")}
-    task = asyncio.ensure_future(host.ask(harness_tool(tool), tool_input, gone, avatar=origin, **kw))
+    task = asyncio.ensure_future(host.ask(harness_tool(tool), tool_input, gone, avatar=origin, **{"_harness_permission": True, **kw}))
     try:
         done, _ = await asyncio.wait({task}, timeout=CARD_NOTICE_AFTER)
         if not done and callable(on_card):
@@ -317,6 +317,7 @@ def _codex(host, cfg, sid):
 
     class AvatarCodex(CodexAgent):
         """The chat adapter with its own resumable thread and this avatar's developer instructions."""
+        owner_thread = False      # merge review S1: an avatar turn carries outside data — Codex's native sandbox, not FULL
 
         async def _thread(self) -> bool:
             if self.tid:

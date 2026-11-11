@@ -105,6 +105,9 @@ class Snapshot(Base):
         self.assertEqual(self.got("cards", "n1"), [])
 
     def test_card_made_offline_arrives_and_answered_elsewhere_disappears(self):
+        # 0.30.7 ADR-0307-offlist: off-list Bash no longer cards; the subject is the offline card snapshot, so list it.
+        from _listed_cards import listed
+        listed(self, 'Bash')
         a, b = Phone(self.st, "手机"), Phone(self.st, "平板")
 
         async def go():

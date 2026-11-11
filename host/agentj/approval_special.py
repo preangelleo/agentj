@@ -17,6 +17,17 @@ class AuthorityChanged(RuntimeError):
     pass
 
 
+class LiveContextMoved(AuthorityChanged):
+    """0.30.7 (P541 N4b / N5a): the live task / source pinned when the owner's answer was accepted moved before the write.
+    `why` is the typed reason the card ends with (elev_done / secret result / Settings answer): `new_task_during_validation`
+    once the value passed its check, `new_task` before any check passed. Never carries a value or a message text."""
+    REASONS = ('new_task', 'new_task_during_validation')
+
+    def __init__(self, validated: bool = False):
+        super().__init__()
+        self.why = self.REASONS[1] if validated else self.REASONS[0]
+
+
 def _current_context(host):
     # Compare Host-held live origin, not the request worker's frozen contextvars.
     from . import provenance

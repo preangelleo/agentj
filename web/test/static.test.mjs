@@ -298,7 +298,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   const STORE = read(pub('js/store.js'));
   assert.match(STORE, /export async function putSealed\(name, obj\) \{\n  const w = wipes;\n  const rec = await seal\(obj\);\n  if \(w === wipes\) await dbPut\(name, rec\);\n\}/, 'putSealed writes only ciphertext, and never after a wipe');
   // §10.14 / P33-X13: revoke wipes like unpair — drafts, history, the sealing key, and everything in memory
-  assert.match(APP, /async function revoked\(why = 'revoked'\) \{\n  session\.closeSession\(\);\n[^}]*await forgetLocal\(\);/, 'revoked() wipes local records');   // 0.15.1: + why
+  assert.match(APP, /async function revoked\(why = 'revoked', moved = false\) \{\n  session\.closeSession\(\);\n[^}]*await forgetLocal\(\);/, 'revoked() wipes local records');   // 0.15.1: + why; 0.30.7: + moved (two-identity hint, PROTOCOL §3)
   assert.match(APP, /async function forgetLocal\(\) \{\n  showPairGuide\(null\);\n  pkhandin\.reset\(\);[^\n]*\n  forgetShare\(\);\n  relay\.forgetLocal\(\);\n  friends\.forget\(\);\n  snap\.S\.touched\.clear\(\); snap\.S\.handledWaiting = false;\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  contacts\.clear\(\);\n  secretout\.clear\(\);\n  longtask\.clear\(\);\n  clearSpecialApprovals\(\);\n  logincard\.clear\(\);\n  wechat\.reset\(\);\n  helpcard\.clear\(\);\n  setupcard\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too; 0.16: the friends page's data too; F32: pickup cards (+ a shown value); 0.18: opening cards; P184: contact cards + the forward dialog; P411: screen-help cards
   assert.doesNotMatch(APP.slice(APP.indexOf('async function revoked('), APP.indexOf('async function revoked(')+700), /saveDraft/, 'revocation never saves the draft');
   assert.match(STORE, /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['encrypt', 'decrypt'\]\)/, 'sealing key not extractable');
@@ -642,7 +642,7 @@ test('app.js pins exactly our two relay hosts; the legacy host sends a visitor w
   assert.match(APP, /const ours = u\.protocol === 'wss:' && !u\.port && RELAY_HOSTS\.includes\(u\.hostname\);/);
   assert.match(APP, /const LEGACY_WEB_HOST = 'alpha-web\.agentjarvis\.net';/);
   assert.match(APP, /const WEB_ORIGIN = 'https:\/\/m\.agentj\.app';/);
-  assert.match(APP, /location\.replace\(WEB_ORIGIN \+ location\.pathname \+ location\.search \+ \(pendingLink \?\? location\.hash\)\)/);
+  assert.match(APP, /reloadGuard\('seat\.origin', \{mode:'replace', url:WEB_ORIGIN \+ location\.pathname \+ location\.search \+ \(pendingLink \?\? location\.hash\)\}\)/);
   assert.match(APP, /async function main\(\) \{\n  if \(await leaveLegacyHost\(\)\) return;/, 'the legacy check runs first (before any key is made there)');
   assert.doesNotMatch(APP, /startsWith\('alpha-relay\.'\)|replace\(\/\^alpha-web/, 'no relay derived from the page host any more');
 });
