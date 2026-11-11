@@ -2118,7 +2118,12 @@ def hook_main(argv: list[str]) -> int:
                                                 "把要做的事写进报告，由人决定。"}}, ensure_ascii=False))
                 return 0
         from . import uv_list
-        if uv_list.protected_targets(ev.get('tool_name'), ev.get('tool_input'), cwd=ev.get('cwd')):
+        if (text := uv_list.agentj_delete_refusal(ev.get('tool_name'), ev.get('tool_input'), cwd=ev.get('cwd'))):
+            # security r2 L3: `agentj delete <protected/credential>` is denied outright (put() would refuse it anyway)
+            sys.stdout.write(json.dumps({'hookSpecificOutput': {
+                'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
+                'permissionDecisionReason': text}}, ensure_ascii=False))
+        elif uv_list.protected_targets(ev.get('tool_name'), ev.get('tool_input'), cwd=ev.get('cwd')):
             sys.stdout.write(json.dumps({'hookSpecificOutput': {
                 'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
                 'permissionDecisionReason': 'Agent J protected control file: owner verification required.'}}))
@@ -2126,6 +2131,19 @@ def hook_main(argv: list[str]) -> int:
             sys.stdout.write(json.dumps({'hookSpecificOutput': {
                 'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
                 'permissionDecisionReason': 'Agent J: this command moves money; owner fingerprint confirmation required.'}}))
+        elif uv_list.irreversible_command(ev.get('tool_name'), ev.get('tool_input'), cwd=ev.get('cwd')):   # ADR-0308 D
+            sys.stdout.write(json.dumps({'hookSpecificOutput': {
+                'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
+                'permissionDecisionReason': 'Agent J: this cannot be undone; owner fingerprint confirmation required.'}}))
+        elif "real-delete" not in argv[1:]:
+            # ADR-0308 C: main thread / dispatched jobs delete through the Agent J trashbin (agentj delete); the host adds
+            # `real-delete` only to the hook of a user automation it launched (scheduled task). Deny, never rewrite.
+            from . import delete_redirect
+            prog = delete_redirect.native_delete(ev.get('tool_name'), ev.get('tool_input'))
+            if prog:
+                sys.stdout.write(json.dumps({'hookSpecificOutput': {
+                    'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
+                    'permissionDecisionReason': delete_redirect.hint(prog)}}, ensure_ascii=False))
 
         return 0
     except Exception as e:  # noqa: BLE001 — fail closed

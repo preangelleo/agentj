@@ -110,7 +110,9 @@ class ListApproval(unittest.IsolatedAsyncioTestCase):
         from agentj.shared_risk import RiskGuard
         adapter=SimpleNamespace(host=self.h)
         with mock.patch('agentj.danger.classify_shared',side_effect=AssertionError('effect classifier')):
-            self.assertTrue(await RiskGuard(adapter).check('Bash',{'command':'rm -rf /synthetic'}))
+            self.assertTrue(await RiskGuard(adapter).check('Bash',{'command':'mv /synthetic /synthetic.old'}))
+            # ADR-0308 C: a native rm is denied with the trashbin hint (no card, no classifier)
+            self.assertFalse(await RiskGuard(adapter).check('Bash',{'command':'rm -rf /synthetic'}))
     def test_terminal_does_not_classify_line_for_uv(self):
         from agentj.terminal import line_needs_face
         with mock.patch('agentj.confirm_tier.harness_keeps',side_effect=AssertionError('old classifier')):

@@ -103,8 +103,11 @@ class HookHarness(unittest.TestCase):
         self.assertIsNone(self.run_hook(h, "Bash", {"command": "ls"}))
         self.assertIsNone(self.run_hook(h, "Bash", {"command": "git push origin main"}))   # ② left to Claude Code
         self.assertIsNone(self.run_hook(h, "Edit", {"file_path": "a.txt", "old_string": "a", "new_string": "b"}))
-        self.assertIsNone(self.run_hook(h, "Bash", {"command": "rm -rf build"}))      # ③
-        self.assertIsNone(self.run_hook(h, "Bash", {"command": "sudo rm x"}))
+        # ③ ADR-0308 C: a main-thread native rm is denied with the `agentj delete` (trashbin) hint — still no card;
+        # a host-launched user automation (`real-delete`) keeps native rm
+        self.assertEqual(self.run_hook(h, "Bash", {"command": "rm -rf build"}), "deny")
+        self.assertEqual(self.run_hook(h, "Bash", {"command": "sudo rm x"}), "deny")
+        self.assertIsNone(self.run_hook(h + ["real-delete"], "Bash", {"command": "rm -rf build"}))
         self.assertIsNone(self.run_hook(h, "mcp__unknown_op", {}))              # unknown still fails closed
         # #537: ordinary outward effects share the standard/harness classification.
         self.assertIsNone(self.run_hook([extra, "policy-only"], "Bash", {"command": "git push origin main"}))

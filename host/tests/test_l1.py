@@ -547,20 +547,22 @@ class Chain(unittest.TestCase):
                 await wait(lambda: any(m["text"] == "ECHO: 列出当前目录" for m in msgs()))
                 await wait(lambda: statuses()[-1:] == ["idle"])
                 self.assertIn("working", statuses())
-                # 2. the agent wants rm → card → phone denies → file stays, agent told
-                await host._app(s, {"t": "msg", "id": "b" * 16, "text": "RUN: rm victim.txt", "ts": 0})
+                # 2. the agent wants to move the file → card → phone denies → file stays, agent told
+                # (ADR-0308 C: a native `rm` never reaches a card on the main thread — the hook denies it with the
+                # `agentj delete` hint; test_p0308_fingerprint_scope)
+                await host._app(s, {"t": "msg", "id": "b" * 16, "text": "RUN: mv victim.txt moved.txt", "ts": 0})
                 await wait(lambda: any(o["t"] == "ask" for _, o in sent))
                 self.assertEqual(statuses()[-1], "waiting")
                 ask = [o for _, o in sent if o["t"] == "ask"][-1]
                 self.assertEqual(ask["tool"], "Bash")
-                self.assertIn("rm victim.txt", ask["summary"])
-                self.assertEqual(ask["envelope"]["input_sha256"], approvals.input_digest({"command":"rm victim.txt"}))
+                self.assertIn("mv victim.txt moved.txt", ask["summary"])
+                self.assertEqual(ask["envelope"]["input_sha256"], approvals.input_digest({"command":"mv victim.txt moved.txt"}))
                 self.assertEqual(ask["envelope"]["details"],ask["summary"])
-                self.assertEqual(json.loads(ask["summary"].split("\n")[-1]), {"command":"rm victim.txt"})
+                self.assertEqual(json.loads(ask["summary"].split("\n")[-1]), {"command":"mv victim.txt moved.txt"})
                 from _p541_device import Phone as V2Phone
                 await host._app(s, V2Phone.answer(ph, ask, False))
                 await wait(lambda: any(m["text"].startswith("被拒绝") for m in msgs()))
-                self.assertTrue((self.work / "victim.txt").exists(), "denied rm did not run")
+                self.assertTrue((self.work / "victim.txt").exists(), "denied mv did not run")
                 # 3. approve → runs
                 await host._app(s, {"t": "msg", "id": "c" * 16, "text": "RUN: touch made.txt", "ts": 0})
                 await wait(lambda: len([o for _, o in sent if o["t"] == "ask"]) == 2)
@@ -572,7 +574,7 @@ class Chain(unittest.TestCase):
                 self.assertTrue((self.work / "made.txt").exists())
                 # 4. nobody answers → default deny after ask_ttl
                 t0 = time.monotonic()
-                await host._app(s, {"t": "msg", "id": "d" * 16, "text": "RUN: rm victim.txt", "ts": 0})
+                await host._app(s, {"t": "msg", "id": "d" * 16, "text": "RUN: mv victim.txt moved.txt", "ts": 0})
                 await wait(lambda: sum(m["text"].startswith("被拒绝") for m in msgs()) == 2, 10000)
                 self.assertGreaterEqual(time.monotonic() - t0, 2.5)
                 self.assertTrue((self.work / "victim.txt").exists())

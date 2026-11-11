@@ -5,7 +5,6 @@ import contextlib
 import io
 import os
 import pathlib
-import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -30,82 +29,53 @@ class Trash(unittest.TestCase):
         for command in ('trash --empty', 'gio trash --empty', 'rm ~/owner-notes.txt', 'agentj trash ~/.ssh/id_ed25519'):
             self.assertEqual(confirm_tier.agent_requirement('Bash', {'command': command}), 'uv', command)
 
-    def test_linux_exact_argv_and_suppressed_output(self):
-        with tempfile.TemporaryDirectory(dir=os.environ.get("TEST_TMP")) as d:
-            p = pathlib.Path(d) / '-rf $(touch innocent)'; p.touch()
-            with mock.patch.object(trash.sys, 'platform', 'linux'), mock.patch.object(trash.subprocess, 'run') as run:
-                run.return_value.returncode = 0
-                self.assertEqual(trash.move(str(p))['status'], 'trashed')
-                args, kw = run.call_args
-                self.assertEqual(args[0], ['/usr/bin/gio', 'trash', '--', str(p)])
-                self.assertEqual(kw['stdout'], subprocess.DEVNULL)
-                self.assertEqual(kw['stderr'], subprocess.DEVNULL)
-                self.assertFalse(kw.get('shell', False))
+    # 0.30.8 #1 (chairman 11-11): `agentj trash <path>` now moves into Agent J's own trashbin (24 h, `agentj trash
+    # restore <id>`) instead of the OS trash; the zero-tail guarantees below carry over (test_p0308_trashbin has the rest).
+    def _env(self, d):
+        home = pathlib.Path(d) / 'home'
+        (home / 'tmp').mkdir(parents=True)
+        env = mock.patch.dict(os.environ, {'HOME': str(home), 'AGENTJ_STATE_DIR': str(home / '.local/state/agentj'),
+                                           'TMPDIR': str(home / 'tmp')})
+        # security r2: the trashbin follows the passwd home (state_paths.account_home), never an environment variable
+        acct = mock.patch('agentj.state_paths.account_home', return_value=str(home))
+        stack = contextlib.ExitStack()
+        stack.enter_context(env)
+        stack.enter_context(acct)
+        return stack
 
-    def test_failure_preserves_file_and_fixed_error(self):
-        with tempfile.TemporaryDirectory(dir=os.environ.get("TEST_TMP")) as d:
+    def test_failure_preserves_file_and_never_permanent(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get("TEST_TMP")) as d, self._env(d):
             p = pathlib.Path(d) / 'sample'; p.write_text('retained')
-            for err in (FileNotFoundError('private backend message'), subprocess.TimeoutExpired('private', 60)):
-                with mock.patch.object(trash.subprocess, 'run', side_effect=err):
-                    result = trash.move(str(p))
-                self.assertNotEqual(result['status'], 'trashed')
-                self.assertNotIn('private', str(result))
-                self.assertEqual(p.read_text(), 'retained')
-            with mock.patch.object(trash.subprocess, 'run') as run:
-                run.return_value.returncode = 1
-                self.assertEqual(trash.move(str(p))['status'], 'failed')
+            with mock.patch.object(trash, '_rename', side_effect=PermissionError('private backend message')):
+                result = trash.put(str(p))
+            self.assertEqual(result['status'], 'failed')
+            self.assertNotIn('private', str(result))
             self.assertEqual(p.read_text(), 'retained')
+            self.assertEqual(trash.entries(), [])
 
     def test_no_unsupported_or_root_or_home_fallback(self):
-        with mock.patch.object(trash.subprocess, 'run') as run:
+        with tempfile.TemporaryDirectory(dir=os.environ.get("TEST_TMP")) as d, self._env(d):
             for raw in ('/', str(pathlib.Path.home())):
-                self.assertEqual(trash.move(raw)['status'], 'refused')
+                self.assertEqual(trash.put(raw)['status'], 'refused')
             with mock.patch.object(trash.sys, 'platform', 'win32'):
-                self.assertEqual(trash.move('/tmp/sample')['status'], 'unsupported')
-            run.assert_not_called()
-
-    def test_macos_script_is_constant_paths_only_argv(self):
-        with tempfile.TemporaryDirectory(dir=os.environ.get("TEST_TMP")) as d:
-            p = pathlib.Path(d) / 'quote"; do shell script "bad'; p.touch()
-            with mock.patch.object(trash.sys, 'platform', 'darwin'), mock.patch.object(trash.subprocess, 'run') as run:
-                run.return_value.returncode = 0
-                self.assertEqual(trash.move(str(p))['status'], 'trashed')
-                argv = run.call_args.args[0]
-                self.assertEqual(argv[:3], ['/usr/bin/osascript', '-e', trash.FINDER_SCRIPT])
-                self.assertNotIn(str(p), trash.FINDER_SCRIPT)
-                self.assertEqual(argv[-1], str(p))
-            link = pathlib.Path(d) / 'link'; link.symlink_to(p)
-            with mock.patch.object(trash.sys, 'platform', 'darwin'), mock.patch.object(trash.subprocess, 'run') as run:
-                self.assertEqual(trash.move(str(link))['status'], 'refused')
-                run.assert_not_called()
+                self.assertEqual(trash.put('/tmp/sample')['status'], 'unsupported')
 
     def test_parser_and_partial_exit_status(self):
         parser = argparse.ArgumentParser(); sub = parser.add_subparsers(dest='cmd'); trash.add_parser(sub)
         args = parser.parse_args(['trash', '--json', '--', 'one', 'two'])
-        with mock.patch.object(trash, 'move', side_effect=[{'status': 'trashed'}, {'status': 'failed'}]), contextlib.redirect_stdout(io.StringIO()) as out:
+        with mock.patch.object(trash, 'put', side_effect=[{'status': 'trashed', 'id': 'x'}, {'status': 'failed'}]), \
+             contextlib.redirect_stdout(io.StringIO()) as out:
             with self.assertRaises(SystemExit) as caught:
                 args.fn(args)
         self.assertEqual(caught.exception.code, 1)
         self.assertIn('"trashed"', out.getvalue())
         self.assertIn('"failed"', out.getvalue())
 
-    def test_native_linux_real_recoverable_payload(self):
-        if not os.path.isfile('/usr/bin/gio') or trash.sys.platform != 'linux':
-            self.skipTest('native GLib trash unavailable')
-        with tempfile.TemporaryDirectory(dir=os.environ.get("TEST_TMP")) as d:
-            root = pathlib.Path(d); data = root / 'xdg'; data.mkdir(mode=0o700)
-            original = root / 'sample.txt'; original.write_bytes(b'recoverable')
-            with mock.patch.dict(os.environ, {'XDG_DATA_HOME': str(data)}):
-                result = trash.move(str(original))
-                if result['status'] != 'trashed':
-                    self.assertEqual(original.read_bytes(), b'recoverable')
-                    self.skipTest('native filesystem does not support trash; refusal preserved source')
+    def test_real_recoverable_payload(self):
+        with tempfile.TemporaryDirectory(dir=os.environ.get("TEST_TMP")) as d, self._env(d):
+            original = pathlib.Path(d) / 'sample.txt'; original.write_bytes(b'recoverable')
+            result = trash.put(str(original))
+            self.assertEqual(result['status'], 'trashed')
             self.assertFalse(original.exists())
-            saved = list((data / 'Trash/files').iterdir())
-            self.assertEqual(len(saved), 1)
-            self.assertEqual(saved[0].read_bytes(), b'recoverable')
-            info = list((data / 'Trash/info').iterdir())
-            self.assertEqual(len(info), 1)
-            self.assertIn('sample.txt', info[0].read_text())
-            saved[0].rename(original)
+            self.assertEqual(trash.restore(result['id'])['status'], 'restored')
             self.assertEqual(original.read_bytes(), b'recoverable')

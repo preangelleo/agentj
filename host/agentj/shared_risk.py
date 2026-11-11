@@ -65,6 +65,8 @@ class RiskGuard:
         from . import uv_list
         if kind == uv_list.CREDENTIAL_READ_REASON:
             return kind + ': ' + uv_list.CREDENTIAL_READ_HINT
+        if kind == 'trash':                       # ADR-0308 C: the host's own fixed hint (delete_redirect.hint)
+            return msg
         lang=getattr(getattr(self.adapter,'host',None),'lang','zh')
         if kind=='host':
             msg=(msg or '').strip() or pick(lang,'主人没有批准（拒绝了，或没在时限内回答）。','The owner did not approve it (denied, or no answer in time).')
@@ -86,14 +88,25 @@ class RiskGuard:
         a = self.adapter
         if credential_read_refusal(a.host, tool, inp, getattr(a, 'cfg', {}).get('dir')):
             return self._deny(uv_list.CREDENTIAL_READ_REASON)
-        # #537② (Round 2 R2): a listed money-moving call in a shared session goes to Host.ask too — the owner / host
-        # turn's fingerprint card there, every other source's off-list refusal (list_approval.ask decides, not here).
-        if (uv_list.protected_targets(tool, inp, cwd=getattr(a, 'cfg', {}).get('dir'), env=uv_list.host_environment(a.host))
-                or uv_list.charge_command(tool, inp)):
+        if (text := uv_list.agentj_delete_refusal(tool, inp, cwd=getattr(a, 'cfg', {}).get('dir'))):
+            a.host.st.log('ask_done', agent=getattr(a, 'kind', '?'), tool=tool, decision='deny',
+                          reason=uv_list.AGENTJ_DELETE_REASON, card=False)
+            return self._deny('trash', text)        # security r2 L3: the host's fixed text, no card
+        # #537② (Round 2 R2) + ADR-0308: a listed money-moving / irreversible call in a shared session goes to Host.ask
+        # too — the main-thread fingerprint card there, every other source's refusal (list_approval.ask decides).
+        cwd = getattr(a, 'cfg', {}).get('dir')
+        if (uv_list.protected_targets(tool, inp, cwd=cwd, env=uv_list.host_environment(a.host))
+                or uv_list.fingerprint_command(tool, inp, cwd=cwd, env=uv_list.host_environment(a.host), host=a.host)):
             from .list_approval import NativeContext
             answer = await a.host.ask(tool, inp, batch=False, _harness_permission=True, _native_context=NativeContext.capture(a))
             if answer.get('behavior') != 'allow':
                 return self._deny('host', answer.get('message', 'Owner verification required.'))
+        else:
+            from . import delete_redirect
+            if (text := delete_redirect.denial(getattr(a, 'cfg', None), tool, inp)) is not None:
+                a.host.st.log('ask_done', agent=getattr(a, 'kind', '?'), tool=tool, decision='deny',
+                              reason=delete_redirect.REASON, card=False)
+                return self._deny('trash', text)        # ADR-0308 C: shared session = the owner's main thread
         return True
 
         a=self.adapter
@@ -239,10 +252,26 @@ class NativePathGuard:
             tool = policy_registry.codex_hook_tool(tool)
         if (refusal := credential_read_refusal(a.host, tool, inp, a.cfg.get('dir'))) is not None:
             return refusal
-        # #537② (S2): a full-access thread runs most commands without a native approval request; a listed money-moving
-        # call (uv_list.CHARGE_COMMANDS) is sent to Host.ask here so list_approval can show the owner's fingerprint card.
-        if (not uv_list.protected_targets(tool, inp, cwd=event.get('cwd') or a.cfg.get('dir'), env=uv_list.host_environment(a.host))
-                and not uv_list.charge_command(tool, inp)):
+        if (text := uv_list.agentj_delete_refusal(tool, inp, cwd=event.get('cwd') or a.cfg.get('dir'))):
+            # security r2 L3: `agentj delete <protected/credential>` is denied outright, no card
+            a.host.st.log('ask_done', agent=getattr(a, 'kind', '?'), tool=tool, decision='deny',
+                          reason=uv_list.AGENTJ_DELETE_REASON, card=False)
+            return {'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
+                                           'permissionDecisionReason': text}}
+        # #537② (S2) + ADR-0308: a full-access thread runs most commands without a native approval request; a listed
+        # money-moving / irreversible call (uv_list.fingerprint_command) is sent to Host.ask here so list_approval can
+        # show the main thread's fingerprint card (or refuse it for a scheduled task / background job, no card).
+        cwd = event.get('cwd') or a.cfg.get('dir')
+        if (not uv_list.protected_targets(tool, inp, cwd=cwd, env=uv_list.host_environment(a.host))
+                and not uv_list.fingerprint_command(tool, inp, cwd=cwd, env=uv_list.host_environment(a.host), host=a.host)):
+            from . import delete_redirect
+            if (text := delete_redirect.denial(a.cfg, tool, inp)) is not None:
+                # ADR-0308 C: the main thread / a dispatched job deletes through the trashbin (agentj delete). Deny,
+                # never rewrite; a scheduled task's adapter carries the host's `_delete_mode = real` mark.
+                a.host.st.log('ask_done', agent=getattr(a, 'kind', '?'), tool=tool, decision='deny',
+                              reason=delete_redirect.REASON, card=False)
+                return {'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
+                                               'permissionDecisionReason': text}}
             return {}
         sid = getattr(a, 'tid', None) if a.kind == 'codex' else getattr(a, 'sid', None)
         same_cwd = isinstance(event.get('cwd'), str) and os.path.realpath(event['cwd']) == os.path.realpath(a.cfg['dir'])

@@ -568,7 +568,7 @@ class Heartbeat:
             unknown.append("prompt")
         nighttime = quiet(getattr(self.host, "preferences", {}) or {}, now)
         self.last_precheck = {"at": now, "reasons": reasons, "unknown": unknown}
-        urgent = [r for r in reasons if r not in ("prompt_changed", "daily_schedule")]
+        urgent = [r for r in reasons if r not in ("prompt_changed", "daily_schedule", "trash_review")]   # held entries can wait for morning
         if not reasons or nighttime and not urgent:
             label = "quiet" if nighttime else "unknown" if unknown else "no_work"
             if self.last_wait != label:
@@ -671,6 +671,11 @@ class Heartbeat:
         with contextlib.suppress(Exception):          # P288: the Claude login inside its last 7 days → one line
             from . import auth_rescue
             g = auth_rescue.heartbeat_line(h.st, lang)
+            if g:
+                body += "\n" + g
+        with contextlib.suppress(Exception):          # 0.30.8 #1: trashbin entries kept by the sweep's review → one line
+            from . import trash
+            g = trash.heartbeat_line(lang)
             if g:
                 body += "\n" + g
         from . import privacy

@@ -586,7 +586,8 @@ def unit_dir(environ: dict | None = None) -> str:
 def env_file(n: str, environ: dict | None = None) -> str:
     """The optional environment file the human may create (0600). Lives next to the unit: read-only for the fenced Agent."""
     if platform() == "macos":
-        return os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", f"{n}.env")
+        e = os.environ if environ is None else environ
+        return os.path.join(e.get("HOME") or os.path.expanduser("~"), "Library", "LaunchAgents", f"{n}.env")
     return os.path.join(unit_dir(environ), f"{n}.env")
 
 

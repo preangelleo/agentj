@@ -66,6 +66,14 @@ import pathlib as _pl
 import sys as _sys
 _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[1]))
 from agentj import diskq as _diskq  # noqa: E402
+# 0.30.8 #1 + security r2: Agent J's trashbin lives at <passwd home>/.local/share/agentj-trash with no environment
+# override, and trash.guard's fixed inventory comes from the passwd home. In this process both use a throw-away account
+# home instead (state_paths.account_home is the one seam); a child process with AGENTJ_TEST=1 is refused the real
+# trashbin by state_paths.trash_dir itself.
+from agentj import state_paths as _state_paths  # noqa: E402
+_th = tempfile.mkdtemp(prefix="aj-tests-account-home-")
+atexit.register(shutil.rmtree, _th, True)
+_state_paths.account_home = lambda: _th
 DISKQ_BUFFER_FOR = _diskq.BUFFER_FOR
 _diskq.BUFFER_FOR = 0.0
 # P292: the loop never writes host.log itself — it waits ≤ LOOP_WAIT for the log thread to land its line. Tests wait longer

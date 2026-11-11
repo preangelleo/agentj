@@ -84,6 +84,22 @@ def order_available(o, root):
     return (admitted or o.meta.get('project')) == root and available_project(o.meta.get('project'), root)
 
 
+def turn_bound(host, peer=None, internal=None) -> bool:
+    """security 0310 H1-o/H1-o2: the caller belongs to the owner's CURRENT turn — the in-process core dispatch tool, or a
+    peer whose every hop was born after this turn began (approval_material._direct_scope kind agent / desktop; a hop
+    born earlier gives `unknown_agent`, a launch unit `unit` — neither counts). Never raises: cannot prove → False."""
+    if internal is not None and internal is getattr(host, 'agent', None):
+        return True
+    if peer is None:
+        return False
+    try:
+        from .. import approval_material
+        scope = approval_material._direct_scope(host, peer)
+        return isinstance(scope, dict) and scope.get('kind') in ('agent', 'desktop')
+    except Exception:  # noqa: BLE001
+        return False
+
+
 async def handle(host, req, *, peer=None, internal=None):
     try:
         parent, cfg = authority(host, peer, internal)
@@ -151,7 +167,12 @@ async def handle(host, req, *, peer=None, internal=None):
                                   title=args.get('title', ''), parent=parent, model=model, harness=harness,
                                   mode=mode, origin=parent['kind'], st_root=host.st.root, allowed_roots=[root],
                                   fence=cfg.get('fence', True), danger_extra=cfg.get('danger_extra'))
-                o.event('origin', parent=parent, source=source, available_root=root)
+                # security 0310 H1-o: owner-dispatched (card-free charge / IRREVERSIBLE later, 董事长 11-11 定) only when the
+                # caller is bound to the owner's CURRENT turn — the in-process core dispatch tool, or a peer whose every hop
+                # was born after this turn began (approval_material._direct_scope). A process left over from a heartbeat /
+                # background_done / other turn that dispatches while the owner is mid-turn is not.
+                owner_dispatch = parent.get('kind') == 'owner_turn' and turn_bound(host, peer, internal)
+                o.event('origin', parent=parent, source=source, available_root=root, owner_dispatch=owner_dispatch)
                 text = await asyncio.to_thread(dispatcher.launch, o, st_root=host.st.root)
                 return {'result': 'ok', 'id': o.id, 'text': text}
             if not isinstance(args.get('id'), str) or not orders.ID_RE.fullmatch(args['id']):
@@ -159,6 +180,11 @@ async def handle(host, req, *, peer=None, internal=None):
             o = orders.get(args['id'], host.st.root)
             if o.meta.get('parent') != parent or not order_available(o, root):
                 raise orders.OrderError('order_owner')
+            from .askbridge import owner_dispatched
+            if act in ('send', 'resume') and owner_dispatched(o) and not turn_bound(host, peer, internal):
+                # security 0310 H1-o3: steering an owner-dispatched order (its charges run card-free) needs the same
+                # current-turn binding as dispatching it; a leftover process cannot send / resume / answer gates
+                raise orders.OrderError('owner_binding')
             if act == 'resume' and o.state() == 'budget':
                 raise orders.OrderError('budget_requires_owner')
             if act == 'send' and ('gate' in args or 'answer' in args):

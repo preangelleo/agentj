@@ -119,7 +119,8 @@ def _from_normalized(host, src, send=None):
         return _make("automation", src.get("name"), "host_read")
     if kind == "scheduled_task":
         scope = provenance.task_scope()
-        return _make("scheduled_task", _task_name(host, scope) if isinstance(scope, dict) else "", "host")
+        return dict(_make("scheduled_task", _task_name(host, scope) if isinstance(scope, dict) else "", "host"),
+                    owner_dispatch=isinstance(scope, dict) and scope.get("owner") is True)
     if kind == "friend_task":
         out = _make("friend", _short(getattr(send, "fid", None) or src.get("relay") or "", 12), "external")
         row = _handoff(host, send)
@@ -169,30 +170,32 @@ def _handoff_reply(src, tool, inp):
             and not x.args[4].startswith("-") and not x.args[5].startswith("-"))   # security r2 N2: exactly one plain reply
 
 
-def source(host, *, settings_context=None, background=None):
-    """The typed label of the turn asking now. Host-held objects only; `unknown` only when none says who."""
+def source(host, *, settings_context=None, background=None, order_owner=False):
+    """The typed label of the turn asking now. Host-held objects only; `unknown` only when none says who.
+    `owner_dispatch` (security 0310 H1): True only where the owner created / started this work — settings pages, an
+    order the owner's own turn dispatched (host-held parent), a scheduled run the owner enabled / started."""
     from . import host_turns, provenance
     try:
         if settings_context is not None:
             page = getattr(settings_context, "page", None) or ("通用", "general")
-            return _make("settings", page, "host")
+            return dict(_make("settings", page, "host"), owner_dispatch=True)
         from . import approval_review
         inherited = approval_review.ORIGIN.get()
         if isinstance(inherited, dict) and isinstance(inherited.get('settings_page'), (tuple, list)):
             page = tuple(inherited['settings_page'])[:2]
             if len(page) == 2 and all(isinstance(x, str) for x in page):
-                return _make("settings", page, "host")
+                return dict(_make("settings", page, "host"), owner_dispatch=True)
         paired = provenance._paired_source()
         if paired is not provenance._UNSET:
             return _from_normalized(host, paired) if provenance.is_owner(paired) else _make("unknown", None, "unknown")
         agent = getattr(host, "agent", None)
         scope = provenance.task_scope()
         if scope is not None:
-            return (_make("scheduled_task", _task_name(host, scope), "host") if scope.get("live")
-                    else _make("unknown", None, "unknown"))
+            return (dict(_make("scheduled_task", _task_name(host, scope), "host"), owner_dispatch=scope.get("owner") is True)
+                    if scope.get("live") else _make("unknown", None, "unknown"))
         # A background harness (a workflow CEO, a side permission connection) never borrows the main thread's turn.
         if background == "order":
-            return _make("host_system", ("后台活", "background job"), "host")
+            return dict(_make("host_system", ("后台活", "background job"), "host"), owner_dispatch=order_owner is True)
         if isinstance(background, tuple) and len(background) == 2 and background[0] == "avatar":
             return _make("avatar", background[1], "host_read")     # security r1 M1: the avatar's own source
         if background is not None:
@@ -356,6 +359,39 @@ _REFUSALS = {
 }
 
 
+# security 0310 H1: a charge / IRREVERSIBLE call in background work the owner did NOT create / start (dispatched by a
+# heartbeat, a system notice, another local session, a schedule enabled outside the paired phone / account) is refused
+# without a card — otherwise any turn could launder it through a dispatch. 董事长 11-11 定 covers owner-made work only.
+_UNOWNED = ("这一轮来自「{label}」，这项后台工作不是主人亲自派发或启用的；花钱 / 不可逆的操作（{shape}）不弹卡，也不执行。"
+            "需要的话请主人在主线程里直接说，或由主人亲自派单 / 在手机上启用这个定时任务。",
+            "This turn comes from “{label_en}”, background work the owner did not dispatch or enable; a money-moving or "
+            "irreversible action ({shape}) is neither carded nor run. If it is needed, the owner can ask in the main "
+            "thread, or dispatch the job / enable the scheduled task from the phone.")
+
+
+def log_shape(shape):
+    """Fixed label for host.log: IRREVERSIBLE keys as they are, charge shapes cut to program + verb (security 0310 L1)."""
+    from . import uv_list
+    if shape in uv_list.IRREVERSIBLE:
+        return shape
+    return " ".join(str(shape or "").split()[:2])[:32]
+
+
+async def refuse_unowned(host, tool, inp, src, shape, *, receipt=None):
+    """Refuse a fingerprint-list call in background work the owner did not create / start: audited, never a card."""
+    import asyncio
+    reason = "fingerprint_unowned_" + (src.get("type") or "unknown")
+    rid, agent = await asyncio.to_thread(_record, host, tool, inp, "deny", reason)
+    host.st.log("ask_done", id=rid, agent=agent, tool=tool, decision="deny", reason=reason,
+                source_type=src.get("type"), trust=src.get("trust"), card=False, shape=log_shape(shape))
+    if isinstance(receipt, dict):
+        receipt.update(id=rid, reason=reason, approval_card_shown=False, source=src.get("type"))
+    label = log_shape(shape)
+    message = (_UNOWNED[0].format(label=src.get("label", ""), shape=label) + " / "
+               + _UNOWNED[1].format(label_en=src.get("label_en", ""), shape=label))
+    return {"behavior": "deny", "reason": reason, "message": message}
+
+
 def _record(host, tool, inp, decision, reason):
     from . import approvals
     rid = secrets.token_hex(16)
@@ -491,7 +527,8 @@ def decide(host, tool, inp, cwd, src):
     return "deny", "off_list_write_" + trust, "write"
 
 
-async def answer(host, tool, inp, cwd, *, receipt=None, settings_context=None, src=None, background=None):
+async def answer(host, tool, inp, cwd, *, receipt=None, settings_context=None, src=None, background=None,
+                 fingerprint=None):
     """The answer to an off-list request: audited, never a card. The source is read on the loop (paired requests and
     shared children are bound to the running task); filesystem checks and the audit row run off-loop."""
     import asyncio
@@ -509,9 +546,14 @@ async def answer(host, tool, inp, cwd, *, receipt=None, settings_context=None, s
     own = own_cfg is not None and await asyncio.to_thread(
         lambda: handoff.own_read(tool, inp, own_cfg) or handoff.own_state(tool, inp, own_cfg))
     decision, reason, key = ("allow", "own_handoff", None) if own else await asyncio.to_thread(decide, host, tool, inp, cwd, src)
+    if fingerprint and decision == "allow":
+        # 董事长 11-11 定: a charge / irreversible call in a headless job or automation follows its harness — no card, no
+        # refusal, only this log line (the shape label, never the command text).
+        reason = "fingerprint_headless"
     rid, agent = await asyncio.to_thread(_record, host, tool, inp, decision, reason)
     host.st.log("ask_done", id=rid, agent=agent, tool=tool, decision=decision, reason=reason,
-                source_type=src["type"], trust=src["trust"], card=False)
+                source_type=src["type"], trust=src["trust"], card=False,
+                **({"shape": log_shape(fingerprint)} if fingerprint else {}))
     if isinstance(receipt, dict):
         receipt.update(id=rid, reason=reason, approval_card_shown=False, source=src["type"])
     if decision == "allow":

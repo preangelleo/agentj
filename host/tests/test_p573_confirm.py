@@ -144,7 +144,7 @@ class StandardHook(unittest.TestCase):
         from agentj import danger
         extra = danger.encode_extra([])
         self.assertIsNone(self.run_hook([extra], "Bash", {"command": "git push origin main"}))
-        self.assertIsNone(self.run_hook([extra], "Bash", {"command": "rm -rf ~/Documents/x"}))
+        self.assertEqual(self.run_hook([extra], "Bash", {"command": "rm -rf ~/Documents/x"}), "deny")   # ADR-0308 C: trashbin hint, no card
         self.assertEqual(self.run_hook([extra], "Write", {"file_path": str(pathlib.Path.cwd()/".claude/settings.json"), "content":"{}"}), "ask")
         self.assertIsNone(self.run_hook([extra], "Bash", {"command": "ls -la"}))
 

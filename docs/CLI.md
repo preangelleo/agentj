@@ -147,7 +147,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,fn,uv,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding,usage,learn,form} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,delete,rm,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,fn,uv,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding,usage,learn,form} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2742,6 +2742,28 @@ usage: agentj decide [-h] [--why WHY] [--evidence EVIDENCE] [--phase PHASE]
 | `--dir` | `null` | false | — | `a workflow folder: writes <dir>/reports/decisions.jsonl; default the working root` |
 | `--since` | `null` | false | — | `list: 12h, 30m, 2d or a date (default today)` |
 | `--json` | `false` | false | — | `` |
+
+### agentj delete
+
+```text
+move into the Agent J trashbin (kept 24 h, restore with `agentj trash restore <id>`); the main thread, subagents and dispatched jobs delete with this, not rm. Deletions inside the owner's own tested automations stay real
+```
+
+```bash
+agentj delete --help
+```
+
+```text
+usage: agentj delete [-h] [--json] [-r] [-f] paths [paths ...]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `paths` | `null` | true | — | `local paths; put option-like names after --` |
+| `--json` | `false` | false | — | `` |
+| `-r / -R / --recursive` | `false` | false | — | `ignored: directories move whole` |
+| `-f / --force` | `false` | false | — | `ignored` |
 
 ### agentj devices
 
@@ -6506,6 +6528,28 @@ usage: agentj revoke [-h] device
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `device` | `null` | true | — | `` |
 
+### agentj rm
+
+```text
+move into the Agent J trashbin (kept 24 h, restore with `agentj trash restore <id>`); the main thread, subagents and dispatched jobs delete with this, not rm. Deletions inside the owner's own tested automations stay real (= agentj delete)
+```
+
+```bash
+agentj rm --help
+```
+
+```text
+usage: agentj rm [-h] [--json] [-r] [-f] paths [paths ...]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `paths` | `null` | true | — | `local paths; put option-like names after --` |
+| `--json` | `false` | false | — | `` |
+| `-r / -R / --recursive` | `false` | false | — | `ignored: directories move whole` |
+| `-f / --force` | `false` | false | — | `ignored` |
+
 ### agentj screen
 
 ```text
@@ -7519,7 +7563,7 @@ usage: agentj theme validate [-h] [--json] folder
 ### agentj trash
 
 ```text
-move to system trash, restore there
+the Agent J trashbin; a bare path = agentj delete (a file named list etc. goes after --)
 ```
 
 ```bash
@@ -7527,14 +7571,14 @@ agentj trash --help
 ```
 
 ```text
-usage: agentj trash [-h] [--json] paths [paths ...]
+usage: agentj trash [-h] [--json] ...
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `paths` | `null` | true | — | `local paths, use -- before option-like names` |
 | `--json` | `false` | false | — | `` |
+| `args` | `null` | false | — | `list \| restore \| review \| confirm \| sweep \| [--] <path>…` |
 
 ### agentj unlink
 
@@ -8129,7 +8173,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,fn,uv,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding,usage,learn,form} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,delete,rm,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,fn,uv,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding,usage,learn,form} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -10724,6 +10768,28 @@ usage: agentj decide [-h] [--why WHY] [--evidence EVIDENCE] [--phase PHASE]
 | `--dir` | `null` | false | — | `工作流目录：写到 <目录>/reports/decisions.jsonl；不写 = 工作根目录` |
 | `--since` | `null` | false | — | `list：12h、30m、2d 或日期（默认今天）` |
 | `--json` | `false` | false | — | `` |
+
+### agentj delete
+
+```text
+移进 Agent J 回收站（保留 24 小时，可 `agentj trash restore <id>` 恢复）；主线程、子 Agent、派出去的任务删除文件都用它，不用 rm。主人自己建好并测试过的自动化（systemd、launchd、cron、定时任务）里的删除照常是真删除，不经过这里
+```
+
+```bash
+agentj delete --help
+```
+
+```text
+usage: agentj delete [-h] [--json] [-r] [-f] paths [paths ...]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `paths` | `null` | true | — | `本机路径；以 - 开头的文件名放在 -- 后` |
+| `--json` | `false` | false | — | `` |
+| `-r / -R / --recursive` | `false` | false | — | `可省略：目录总是整个移入` |
+| `-f / --force` | `false` | false | — | `可省略` |
 
 ### agentj devices
 
@@ -14488,6 +14554,28 @@ usage: agentj revoke [-h] device
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `device` | `null` | true | — | `` |
 
+### agentj rm
+
+```text
+移进 Agent J 回收站（保留 24 小时，可 `agentj trash restore <id>` 恢复）；主线程、子 Agent、派出去的任务删除文件都用它，不用 rm。主人自己建好并测试过的自动化（systemd、launchd、cron、定时任务）里的删除照常是真删除，不经过这里
+```
+
+```bash
+agentj rm --help
+```
+
+```text
+usage: agentj rm [-h] [--json] [-r] [-f] paths [paths ...]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `paths` | `null` | true | — | `本机路径；以 - 开头的文件名放在 -- 后` |
+| `--json` | `false` | false | — | `` |
+| `-r / -R / --recursive` | `false` | false | — | `可省略：目录总是整个移入` |
+| `-f / --force` | `false` | false | — | `可省略` |
+
 ### agentj screen
 
 ```text
@@ -15501,7 +15589,7 @@ usage: agentj theme validate [-h] [--json] folder
 ### agentj trash
 
 ```text
-移入系统废纸篓（在系统废纸篓恢复）；不永久删除
+Agent J 回收站：list [--json] · restore <id>（只回原路径） · review · confirm <id>… · sweep [--dry-run] · [--] <path>…（= agentj delete；名叫 list、restore 的文件放在 -- 后）
 ```
 
 ```bash
@@ -15509,14 +15597,14 @@ agentj trash --help
 ```
 
 ```text
-usage: agentj trash [-h] [--json] paths [paths ...]
+usage: agentj trash [-h] [--json] ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `paths` | `null` | true | — | `本机路径；-- 后可放以 - 开头的文件名` |
 | `--json` | `false` | false | — | `` |
+| `args` | `null` | false | — | `list \| restore \| review \| confirm \| sweep \| [--] <path>…` |
 
 ### agentj unlink
 

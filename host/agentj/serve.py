@@ -4858,6 +4858,9 @@ class Host:
                 nightly = await asyncio.to_thread(nightly_report.check, self.st)
                 if nightly is not None:
                     self.reporter.trigger("nightly_update")
+                with contextlib.suppress(Exception):     # 0.30.8 #1: trashbin daily sweep (04:30) + disk watermark, off-loop
+                    from . import trash as trash_mod
+                    await asyncio.to_thread(trash_mod.tick, self.st)
                 idle_newer = auto_update.newer_known(self.st) and not auto_update.impact(self)
                 if auto_update.due(self.st, blocked=auto_update.busy(self), stopped=self.stopped(), newer=idle_newer):
                     job = auto_update.read(self.st, auto_update.JOB)
@@ -5643,7 +5646,7 @@ class Host:
                   allow_offer: list | None = None, _company_proposal=None, bind: dict | None = None,
                   avatar: str | None = None, background: str | None = None, always_ask: bool = False, task_actions: list | None = None, task_target: dict | None = None, only: str | None = None, _receipt: dict | None = None,
                   known_recipients: bool = False, _host_card: bool = False, _settings_session=None, _learn_proposal=None, _plan_only: bool = False, _bounded_context=None, _harness_permission=False, _native_context=None, _settings_context=None,
-                  _front: dict | None = None) -> dict:
+                  _front: dict | None = None, _order_owner: bool = False) -> dict:
 
         # Chairman 2026-11-08: main approval is explicit-list only. The legacy
         # implementation below is retained for rollback, never called here.
@@ -5660,7 +5663,8 @@ class Host:
             grant_info=grant_info, receipt=_receipt, only=only, host_card=_host_card,
             settings_session=_settings_session, bounded_context=_bounded_context, harness_permission=_harness_permission,
             task_actions=task_actions, task_target=task_target, native_context=_native_context, settings_context=_settings_context,
-            front=_front, background=("avatar", str(avatar)[:40]) if avatar is not None else background)
+            front=_front, background=("avatar", str(avatar)[:40]) if avatar is not None else background,
+            order_owner=_order_owner is True)
 
         def observe(reason, shown=None):
             if type(_receipt) is dict:

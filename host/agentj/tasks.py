@@ -676,6 +676,11 @@ class Scheduler:
                               and str(on.get("by", "")).startswith(("phone:", "account:")))
         rec["owner_notify"] = owner_schedule and notify.task_allowed(getattr(self.host, "preferences", None), tid, e["task"])
         rec["completion_known"] = owner_schedule or (trigger == "manual" and caller_known is True) or (trigger == "dispatch" and not provenance.untrusted_turn(getattr(self.host, "agent", None)))
+        # 董事长 11-11 定 + security 0310 H1/H1-r: a charge / IRREVERSIBLE call runs card-free in this run only when the
+        # OWNER enabled the schedule from the paired phone / account (host-held `on.by`, contract hash bound). Manual /
+        # dispatch / resumed runs are not marked: the requesting process is not bound to the owner (a background job
+        # could start one while the owner is mid-turn), so their charges are refused without a card (INCOMING-0311).
+        rec["owner_started"] = owner_schedule
         def change(d):
             if len(d["runs"]) >= 1000:
                 raise TaskError("busy", "运行记录已满；请先核对未确认的运行 / Run journal full; review uncertain runs first")
@@ -1007,7 +1012,7 @@ class Scheduler:
                         await host.agent.halt(clear_queue=False)   # resumes on the next message; queued controls stay
                     self.cur_resume, self.limit = resume, None
                     from . import provenance
-                    with provenance.task_run() as mail_scope:
+                    with provenance.task_run(owner=rec.get("owner_started") is True) as mail_scope:
                         if rid not in host.__dict__.get('_approval_task_refs',{}):
                             from . import approval_review
                             approval_review.register_task_origin(host,rid,tid)
@@ -1222,6 +1227,7 @@ class Scheduler:
             from .quota import alt_cfg
             cfg = alt_cfg(cfg, kind)
         cfg["_workflow_ceo"] = True
+        cfg["_delete_mode"] = "real"     # ADR-0308 C: the owner's own scheduled task keeps real deletion (delete_redirect)
         cfg.pop("working_root", None)
         cfg["dir"] = e["dir"]
         wd = cfg["dir"]

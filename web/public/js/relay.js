@@ -17,7 +17,7 @@ import { createSplit, pageKey, contIndex, contOfText } from './turnsplit.js';   
 import { isAssistSrc } from './assistsrc.js';   // 0.26.9 #468 (§B3): 「官方远程协助」 on a task's turn
 import { QueueWatch } from './queue-watch.js';
 import { paintIOSChrome } from './ios-chrome.js';
-import { createMicrophone } from './microphone.js';
+import { createMicrophone, hiddenTooLong } from './microphone.js';
 import { copyButton } from './copycode.js';
 import { shortFields } from './shortfields.js';
 import {phoneConfirmation, isTV} from './tvremote.js';
@@ -3298,6 +3298,7 @@ function camView(mode, msg){
   el("cam").dataset.mode = mode;
 }
 function closeCam(){
+  camHidAt = 0;
   if (camStream){ camStream.getTracks().forEach(tr => tr.stop()); camStream = null; }
   const v = el("camVideo"); try{ v.pause(); }catch(_){} v.srcObject = null;
   el("cam").hidden = true;
@@ -3308,9 +3309,10 @@ function camFallback(msg){
   if (navigator.userActivation && navigator.userActivation.isActive){ closeCam(); el("fCamera").click(); return; }
   camView("error", msg + t('r.dot'));
 }
+let camHidAt = 0;   // security r1 L3: when the page went hidden while the camera was still being asked for
 async function openCam(){
   const box = el("cam");
-  box.hidden = false; box.dataset.modalOpen = "1";
+  box.hidden = false; box.dataset.modalOpen = "1"; camHidAt = 0;
   camView("asking", t('r.cam.asking'));
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return camFallback(t('r.cam.noApi'));
   let s;
@@ -3321,7 +3323,7 @@ async function openCam(){
                      : n === "NotFoundError" || n === "OverconstrainedError" ? t('r.cam.none')
                      : n === "NotReadableError" ? t('r.cam.busy') : t('r.cam.fail'));
   }
-  if (box.hidden){ s.getTracks().forEach(tr => tr.stop()); return; }
+  if (box.hidden || document.visibilityState !== "visible" || hiddenTooLong(camHidAt)){ s.getTracks().forEach(tr => tr.stop()); if (!box.hidden) closeCam(); return; }   // 0.30.8: never live while hidden; L3: nor after a long hide
   camStream = s;
   const v = el("camVideo"); v.srcObject = s;
   try{ await v.play(); }catch(_){}
@@ -4284,7 +4286,7 @@ function pttTap(p){
   pttUI(p);
 }
 function pttLock(p){
-  clearTimeout(p.pend); p.pend = 0; p.tUp = 0; lastTapUp = -1e9; lockCount++;
+  clearTimeout(p.pend); clearTimeout(p.cancelWait); p.pend = 0; p.tUp = 0; lastTapUp = -1e9; lockCount++;
   p.locked = true; p.id = null; p.cancel = false; p.lockT0 = performance.now();
   if (p.rec) wakeOn(p);
   try{ if (navigator.vibrate) navigator.vibrate([15, 60, 15]); }catch(_){}
@@ -4405,6 +4407,7 @@ function pttStart(id, y){
   microphone.acquire().then(lease => {
     const stream = lease.stream;
     clearTimeout(p.openTimer);
+    if (!p.over && hiddenTooLong(p.openHidAt)) pttEnd(p, "cancel", true);   // L3: the return beat the visibilitychange event
     if (p.over){
       lease.release();
       return;
@@ -4426,14 +4429,29 @@ function pttStart(id, y){
     if (p.locked) wakeOn(p);
     try{ if (navigator.vibrate) navigator.vibrate(20); }catch(_){}
     pttUI(p);
-  }, () => {
+  }, err => {
     clearTimeout(p.openTimer);
     if (p.over) return;
     pttEnd(p, "cancel", true);
-    toast(t('r.ptt.noMic'), 3000);
+    if (err?.name !== "AbortError") toast(t('r.ptt.noMic'), 3000);   // 0.30.8: a grant stopped by a hidden page is no refusal
   });
 }
-function microphoneAway(){
+// 0.30.8 (chairman 11-11, Oppo home-screen app: 「点了就退出，点三四次才行」): a touch take whose microphone is still opening
+// (no stream yet, not slid to cancel) is waiting for the native permission prompt. Android Chrome takes the press away
+// (pointercancel / lost capture) before the window blur, and a system permission dialog can hide the page for a moment —
+// both used to end the take, so the grant arrived for a card that was already gone. Such a take is locked instead (the
+// #508 rule): 取消 / 结束 stay on screen, nothing is sent without a tap. Never once audio flows (p.rec), never for a keyboard
+// take, never after pagehide; a grant landing while hidden is still stopped by microphone.js (P496).
+// Security r1 L3: the hide is timed. Back after more than PROMPT_HIDE_MAX_MS (microphone.js) the take closes quietly —
+// a grant answered on return must not start a locked recording nobody tapped for.
+const PROMPT_WAIT_MS = 160;
+const micOpening = p => !!p && p.touch && !p.cancel && !p.rec && !p.stream && !p.over && typeof p.id !== "string";
+function microphoneAway(gone){
+  if (gone !== true && micOpening(ptt)){   // hidden by the permission dialog: wait (bounded, see microphoneBack)
+    if (!ptt.openHidAt) ptt.openHidAt = Date.now();
+    if (!ptt.locked) pttLock(ptt);
+    return;
+  }
   if (ptt){
     if (ptt.locked || ptt.seg){
       ptt.hidAt = performance.now();
@@ -4442,6 +4460,13 @@ function microphoneAway(){
     } else pttEnd(ptt, "cancel", true);
   }
   microphone.close();
+}
+function microphoneBack(){
+  const p = ptt;
+  if (!p || !p.openHidAt) return;
+  const long = hiddenTooLong(p.openHidAt);
+  p.openHidAt = 0;
+  if (long && micOpening(p)) pttEnd(p, "cancel", true);   // quiet: no 「no microphone」; pttEnd drops the pending request
 }
 function recOptions(){
   const o = {audioBitsPerSecond: REC_BPS};
@@ -4534,7 +4559,7 @@ function intNote(p, where){
 function pttEnd(p, reason, quiet){
   if (!p || p.over) return;
   p.over = true;
-  clearInterval(p.timer); clearTimeout(p.pend); clearTimeout(p.cap); clearTimeout(p.openTimer);
+  clearInterval(p.timer); clearTimeout(p.pend); clearTimeout(p.cap); clearTimeout(p.openTimer); clearTimeout(p.cancelWait);
   wakeOff(p);
   for (const off of p.trackOff || []) off();
   p.trackOff = [];
@@ -5552,7 +5577,15 @@ export function init(ctx){
   el("camFile").addEventListener("click", () => { closeCam(); el("fCamera").click(); });
   el("camCancel").addEventListener("click", closeCam);
   addEventListener("keydown", e => { if (e.key === "Escape" && !el("cam").hidden) closeCam(); });
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && !el("cam").hidden) closeCam(); });
+  // 0.30.8: a camera still asking (no stream yet) waits out a system permission dialog that hides the page for a moment;
+  // a grant landing while hidden is stopped in openCam. A live camera closes as before; pagehide always closes.
+  // Security r1 L3: that wait is bounded — back after more than PROMPT_HIDE_MAX_MS, a camera still asking closes quietly.
+  document.addEventListener("visibilitychange", () => {
+    const asking = !el("cam").hidden && !camStream;
+    if (document.visibilityState === "hidden"){ if (asking && !camHidAt) camHidAt = Date.now(); else if (!el("cam").hidden && camStream) closeCam(); return; }
+    const long = hiddenTooLong(camHidAt); camHidAt = 0;
+    if (long && asking) closeCam();
+  });
   addEventListener("pagehide", () => { if (!el("cam").hidden) closeCam(); });
   const ORIGIN = {fPhoto: "photo", fCamera: "camera", fDoc: "file"};
   for (const id of ["fPhoto", "fCamera", "fDoc"]){
@@ -5667,6 +5700,12 @@ export function init(ctx){
     if (!ptt) return;
     if (how === "touchend" ? typeof ptt.id !== "number" || e.touches.length : e.pointerId !== ptt.id) return;
     if (shortTap(ptt) && (how === "pointerup" || how === "touchend")){ pttLock(ptt); lastTapUp = performance.now(); return; }
+    // 0.30.8: the press was taken away while the microphone is still opening. A permission prompt takes the window's focus
+    // right after (blur / hidden → locked by those handlers, the #508 rule); a plain touch cancel does not, and still
+    // cancels (P272: cancellation never locks) once PROMPT_WAIT_MS pass without one.
+    if ((how === "pointercancel" || how === "lostpointercapture") && !ptt.locked && micOpening(ptt) && document.visibilityState === "visible"){
+      const p = ptt; p.id = null; p.cancelWait = setTimeout(() => { if (ptt === p && !p.locked) pttEnd(p, "cancel"); }, PROMPT_WAIT_MS); return;
+    }
     if (ptt.locked){
       if (how === "pointerup" || how === "touchend") pttEnd(ptt, "release");
       else { ptt.id = null; ptt.cancel = false; pttUI(ptt); }
@@ -5708,6 +5747,7 @@ export function init(ctx){
   // Preserve a locked/segmented take as an interruption; foreground return is passive.
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") microphoneAway();
+    else microphoneBack();
   });
   window.addEventListener("blur", () => {
     // #508: a native microphone permission sheet can blur a visible iOS page
@@ -5720,7 +5760,7 @@ export function init(ctx){
     }
     if (ptt && !ptt.locked && !ptt.pend && !ptt.seg) pttEnd(ptt, "cancel");
   });   // P181: not between the two taps; P182: not mid-take
-  window.addEventListener("pagehide", microphoneAway);
+  window.addEventListener("pagehide", () => microphoneAway(true));
 
   // native shell hooks (relay's window.relayNative, same four methods)
   window.relayNative = Object.freeze({

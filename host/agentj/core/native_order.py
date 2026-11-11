@@ -195,6 +195,8 @@ class Host:
         self.cfg = {'dir': m['project'], 'model': m.get('model'), 'fence': m['fence'],
                     'danger_extra': m.get('danger_extra'), '_workflow_ceo': True,
                     'high_risk_warnings': False, 'follow_harness': False}
+        # 0.30.8 security r1 M1: no `_delete_mode` mark — parent.kind 'task' means a main-session system / same-host turn
+        # (heartbeat, background_done, …), not a scheduled task (which cannot dispatch orders): orders always use the trashbin
         self.st = NativeState(order, self.cfg)
         self.origin_source = copy.deepcopy(next((e.get('source') for e in reversed(order.events()) if e.get('ev') in ('origin', 'resume_source')), None))
         self.heartbeat = SimpleNamespace(usage=Usage())

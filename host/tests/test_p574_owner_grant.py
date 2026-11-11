@@ -438,13 +438,24 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
             for _ in range(100):
                 if self.h.asks or task.done():break
                 await asyncio.sleep(.002)
+            from agentj import uv_list
+            if task.done() and not self.h.asks:
+                # security 0310 H1: a charge / irreversible call in background work the owner did not dispatch / enable
+                # (here: a scheduled-task source without the owner mark) is refused at once without a card.
+                res=task.result()
+                if (res.get('behavior')=='deny' and str(res.get('reason','')).startswith('fingerprint_unowned_')
+                        and uv_list.fingerprint_command('Bash',{'command':command})):
+                    return res
             self.assertFalse(task.done(),'a grant must not silently answer a native permission prompt')
             ask=next(iter(self.h.asks.values()))
             # #537② (Jarvis 2026-11-11, pending the chairman): a listed real charge in an owner / host turn is a
             # fingerprint card; every other ordinary native prompt stays a signed tap (no UV). (A doubtful source's
             # charge is refused off-list in production; this fixture lists Bash to keep exercising the card.)
             from agentj import uv_list
-            trusted=(getattr(ask,'review_origin',None) or {}).get('source_trust') in ('owner','host')
+            origin=getattr(ask,'review_origin',None) or {}
+            # 董事长 11-11 定: UV only on the main thread; a scheduled task / background job runs it card-free (this
+            # fixture lists Bash, so their prompt here is the ordinary signed tap)
+            trusted=origin.get('source_trust') in ('owner','host') and origin.get('source_type') in uv_list.FINGERPRINT_SOURCES
             self.assertEqual(ask.require_passkey,trusted and bool(uv_list.charge_command('Bash',{'command':command})),
                              ('ordinary native prompts use signed taps, not UV; a real owner charge uses UV',command))
             await self.h._answer(self.s,ReviewPhone.answer(self.phone,self.h._ask_msg(ask,self.s),approve))

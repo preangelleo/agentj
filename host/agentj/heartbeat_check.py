@@ -92,6 +92,12 @@ def collect(host, now):
             reasons.append('active_goal')
     except Exception:
         unknown.append('goal')
+    from . import trash
+    try:     # 0.30.8 #1: the daily sweep kept entries that may have been deleted by mistake → the main thread reviews them
+        if trash.pending_review():
+            reasons.append('trash_review')
+    except Exception:
+        unknown.append('trash')
     return reasons, unknown
 
 

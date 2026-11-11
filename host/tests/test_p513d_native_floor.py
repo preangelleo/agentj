@@ -185,12 +185,14 @@ class _LaunchReview(_Chain):
                         self.assertTrue(self.st.agent_session(self.KIND))
                         if resumed:
                             self.assertEqual(self.st.agent_session(self.KIND), stored)
-                        # Preserve the original .env deletion vector: its native
-                        # allow rule / never policy is authoritative for ordinary work.
+                        # The original .env deletion vector: ADR-0308 C — a main-thread native rm is refused by the
+                        # pre-tool hook with the `agentj delete` (trashbin) hint; no card, the file stays.
                         (self.work / '.env').write_text('synthetic fixture only\n')
+                        seen = len(c["msgs"]())
                         await c["say"]("RUN: rm .env")
-                        await c["wait"](lambda: not (self.work / '.env').exists())
+                        await c["wait"](lambda: len(c["msgs"]()) > seen, ms=6000)
                         await c["idle"]()
+                        self.assertTrue((self.work / '.env').exists())
                         self.assertEqual(c["asks"](), [])
                         # A real protected control-path write remains fresh UV.
                         await c["say"]("RUN: rm .codex/config.toml")

@@ -102,6 +102,7 @@ import { hintKey, hostKind, HINT_AFTER_MS } from './js/offhint.js';   // P287: t
 import { createGate, DOWN_DEBOUNCE_MS } from './js/reconnect.js';   // P393: the five-second rule (one constant for every 「连不上」)
 import { parseAgentId } from './proto/wire.js';
 import { SCAN_CONSTRAINTS, SCAN_FALLBACK, SCAN_SLOW_MS, scanFrame } from './js/scan.js';   // F29 (ADR-A177)
+import { hiddenTooLong } from './js/microphone.js';   // security r1 L3: the bounded wait behind a permission dialog
 import { classifyScan, RV_PREFIX } from './proto/wire.js';
 import * as rvpair from './js/rvpair.js';   // P190 (§27): be scanned on the pairing screen; scan a new device from a paired one
 import * as cardsync from './js/cardsync.js';   // P203 (§29.1): rebuild the cards from the computer's snapshot
@@ -1313,6 +1314,7 @@ async function forgetHost() {
 let scanStream = null;
 let scanGeneration = 0;
 let scanActive = false;
+let scanHidAt = 0;   // security r1 L3: when the page went hidden while the scanner was still asking for the camera
 let scanMode = 'pair';
 let scanBack = null;          // where a paired scan returns: 'chat' | 'remotes'
 async function startScan(mode = 'pair') {
@@ -1346,6 +1348,7 @@ async function startScan(mode = 'pair') {
     fillText(hint, t('pair.scanNoCam')); hint.hidden = false; stopScan(false); return;
   }
   if (generation !== scanGeneration) { stream.getTracks().forEach(tr => tr.stop()); return; }
+  if (document.hidden || hiddenTooLong(scanHidAt)) { stream.getTracks().forEach(tr => tr.stop()); stopScan(); return; }   // 0.30.8: never live while hidden; L3: nor after a long hide
   scanStream = stream; paintScanTrigger();
   const video = $('scan-video');
   video.srcObject = stream;
@@ -1392,7 +1395,7 @@ function paintScanTrigger() {
   if (scanStream && paused) document.body.dataset.scanPaused = '1'; else delete document.body.dataset.scanPaused;
 }
 function stopScan(leave = true) {
-  ++scanGeneration;
+  ++scanGeneration; scanHidAt = 0;
   if (scanStream) for (const tr of scanStream.getTracks()) tr.stop();
   scanStream = null;
   $('scan-video').srcObject = null;
@@ -1431,7 +1434,15 @@ function scanIcon() {
   if (state === 'ready' || PAIRED_VIEWS.includes(view)) { scanBack = null; startScan('any'); }
   else startScan('pair');
 }
-document.addEventListener('visibilitychange', () => { if (document.hidden) stopScan(); });
+// 0.30.8: a scanner still asking for the camera (no stream yet) waits out a system permission dialog that hides the page;
+// a grant landing while hidden is stopped in startScan. A live scan stops as before; pagehide always stops.
+// Security r1 L3: that wait is bounded — back after more than PROMPT_HIDE_MAX_MS, a scanner still asking closes quietly.
+document.addEventListener('visibilitychange', () => {
+  const asking = view === 'scan' && scanActive && !scanStream;
+  if (document.hidden) { if (!asking) stopScan(); else if (!scanHidAt) scanHidAt = Date.now(); return; }
+  const long = hiddenTooLong(scanHidAt); scanHidAt = 0;
+  if (long && asking) stopScan();
+});
 window.addEventListener('pagehide', () => stopScan());
 window.addEventListener('popstate', () => { if(view === 'scan') stopScan(); });
 function fitPairViewport() {

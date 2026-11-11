@@ -31,6 +31,17 @@ def sock_path(st_root=None) -> Path:
     return orders.root(st_root) / SOCK
 
 
+def owner_dispatched(o) -> bool:
+    """security 0310 H1-o: the host's own creation record (the FIRST `origin` event, written by order_host.handle) says
+    the owner's current turn dispatched this order; anything else / unreadable → False."""
+    try:
+        first = next((e for e in o.events() if e.get('ev') == 'origin'), None)
+        return bool(isinstance(first, dict) and first.get('owner_dispatch') is True
+                    and (o.meta.get('parent') or {}).get('kind') == 'owner_turn')
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def origin(meta: dict, who: str | None) -> str:
     par = meta.get("parent") or {}
     head = {"owner_turn": "主 Agent", "cli": "主 Agent", "task": "定时任务", "goal": "目标模式", "bot": "机器人"}.get(
@@ -128,6 +139,7 @@ class Server:
         meta = copy.deepcopy(o.meta)
         meta['_binding'] = {'pid': pid, 'start': start, 'token': tok,
                             'execution': self._generation(o)}
+        meta['_owner_dispatch'] = owner_dispatched(o)
         return meta
 
     @staticmethod
@@ -158,7 +170,9 @@ class Server:
                 # P552 (#325 ②): an order is background work — no card but the four ③ kinds (Host.ask `background`)
                 if self._live(meta):
                     pending = asyncio.create_task(self.ask(tool[:64], inp, gone.get(m["id"]),
-                        origin=origin(meta, m.get("who")), batch=False, background="order", _harness_permission=True))
+                        origin=origin(meta, m.get("who")), batch=False, background="order", _harness_permission=True,
+                        # security 0310 H1/H1-o: owner-dispatched only per the host's creation record (_admit)
+                        _order_owner=meta.get("_owner_dispatch") is True))
                     try:
                         until = time.monotonic() + 900
                         while not pending.done():

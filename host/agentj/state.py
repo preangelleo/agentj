@@ -144,6 +144,11 @@ class State:
         if not self.devices_path.exists() or force:
             _write_private(self.devices_path, b"{}")
         self.log("init", channel=cfg["channel"])
+        try:                     # 0.30.8 #1: Agent J's own trashbin exists from install on (also created on first use)
+            from . import trash
+            trash.ensure()
+        except Exception:  # noqa: BLE001 — never fails the install; `agentj delete` creates it later
+            pass
         if fresh and _setup_root is not None and (migration_setup is None or migration_setup.live(self.root, initialised=True)):
             from .working_root import _InitialRootSetup
             self._initial_root_setup = _InitialRootSetup(self, _setup_root)

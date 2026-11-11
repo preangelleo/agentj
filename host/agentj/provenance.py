@@ -238,8 +238,8 @@ def task_request(scope):
 
 
 @contextlib.contextmanager
-def task_run():
-    scope = {"live": True}
+def task_run(owner=False):
+    scope = {"live": True, "owner": owner is True}     # owner: the run's owner_started mark (tasks.Scheduler.request)
     try:
         with task_request(scope), request_source({"kind": "scheduled_task", "role": "task"}):
             yield scope

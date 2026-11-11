@@ -97,7 +97,7 @@ class PermissionContext:
 
 
 async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
-              receipt=None, only=None, host_card=False, settings_session=None, bounded_context=None, harness_permission=False, task_actions=None, task_target=None, native_context=None, settings_context=None, front=None, background=None):
+              receipt=None, only=None, host_card=False, settings_session=None, bounded_context=None, harness_permission=False, task_actions=None, task_target=None, native_context=None, settings_context=None, front=None, background=None, order_owner=False):
     # JSON from a native transport must normalize before inventory/path checks,
     # settings-input hashes or display hashes. Never echo exception repr/values.
     try:
@@ -124,17 +124,32 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
         return {'behavior':'deny', 'reason':'native_context_changed', 'message':'Native session context changed; no operation executed.'}
     cwd = native_context.cwd if native_context is not None else (getattr(host, 'agent_cfg', None) or {}).get('dir')
     uv = uv_list.required(tool, inp, cwd=cwd, env=uv_list.host_environment(host))
+    fingerprint = headless_fingerprint = headless_src = None
     if (not uv and settings_context is None and task_actions is None
-            and (harness_permission or tool not in policy_registry.HOST_TOOLS) and uv_list.charge_command(tool, inp)):
-        # #537② (Jarvis 2026-11-11, merge review S2): an owner / host turn's off-list shell call that really moves money
-        # (uv_list.CHARGE_COMMANDS) gets the fingerprint card instead of the off-list allow. Only where the off-list
-        # decision itself would allow it: credential / private-state reads and unresolved launchers stay refused, and
-        # any other source keeps the off-list refusal (a doubtful source never conjures a card).
+            and (harness_permission or tool not in policy_registry.HOST_TOOLS)):
+        # Parsed argv + a few stat calls on the closed credential inventory, like charge_command / required() above.
+        fingerprint = uv_list.fingerprint_command(tool, inp, cwd=cwd, env=uv_list.host_environment(host), host=host)
+    if fingerprint:
+        # #537② + ADR-0308-fingerprint-scope (chairman 2026-11-11): an off-list call that moves money
+        # (uv_list.CHARGE_COMMANDS) or cannot be undone (uv_list.IRREVERSIBLE) gets the fingerprint card — on the MAIN
+        # thread only (owner turns, host heartbeat: uv_list.FINGERPRINT_SOURCES) and only where the off-list decision
+        # itself would allow it (credential / private-state reads and unresolved launchers stay refused).
+        # 董事长 11-11 定: headless 派单与 automation（定时任务、后台单、设置页）运行中零卡、也不拒绝 — they follow their
+        # harness; the dangerous action was judged once when the owner created / dispatched them. So owner-made work
+        # (typed `owner_dispatch`) gets the ordinary off-list answer below (allowed, logged reason=fingerprint_headless);
+        # host-held work the owner did not create / start is refused without a card (security 0310 H1: no laundering
+        # through a dispatch); host_read / external / unknown → the same off-list refusal as any other write.
         from . import approval_offlist
-        typed = approval_offlist.source(host, settings_context=settings_context, background=background)
-        if typed.get('trust') in ('owner', 'host'):
+        typed = approval_offlist.source(host, settings_context=settings_context, background=background,
+                                        order_owner=order_owner)
+        if typed.get('type') in uv_list.FINGERPRINT_SOURCES and typed.get('trust') in ('owner', 'host'):
             decided = await asyncio.to_thread(approval_offlist.decide, host, tool, inp, cwd, typed)
             uv = decided[0] == 'allow'
+        elif typed.get('trust') in ('owner', 'host') and typed.get('owner_dispatch') is not True:
+            # security 0310 H1: host-held background work the owner did not dispatch / enable — refused, no card
+            return await approval_offlist.refuse_unowned(host, tool, inp, typed, fingerprint, receipt=receipt)
+        else:
+            headless_fingerprint, headless_src = fingerprint, typed
     def refused(reason, message):
         # No card was displayed. Keep the original request's metadata-only
         # audit linkage without collecting source text or inventing a signer.
@@ -170,7 +185,7 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
                                                               else approval_offlist.CARD_LIST)
     if not listed and (harness_permission or tool not in policy_registry.HOST_TOOLS):
         return await approval_offlist.answer(host, tool, inp, cwd, receipt=receipt, settings_context=settings_context,
-                                             background=background)
+                                             background=background, fingerprint=headless_fingerprint, src=headless_src)
     # Host commands that are not on the list add no second permission layer.
     # Native permission requests reach this adapter only after the harness asks.
     if not harness_permission and not listed and tool in policy_registry.HOST_TOOLS and task_actions is None:

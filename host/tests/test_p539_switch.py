@@ -231,7 +231,8 @@ class RiskReasons(unittest.IsolatedAsyncioTestCase):
 
     async def deny_text(self, g, tool="Bash", inp=None):
         r = await g.hook_event({"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": tool,
-                                "tool_input": inp or {"command": "rm -rf /tmp/agentj-fixture"}})
+                                "tool_input": inp or {"command": "mv /tmp/agentj-fixture /tmp/agentj-fixture.old"}})
+        # (ADR-0308 C: a native rm in a shared session is denied with the trashbin hint before any card)
         return r["hookSpecificOutput"]["permissionDecisionReason"]
 
     async def test_each_deny_says_why_and_what_next(self):

@@ -403,8 +403,9 @@ class Hook(unittest.TestCase):
         r = self.run_hook({"tool_name": "Bash", "tool_input": {"command": "rm -rf x"}})
         self.assertEqual(r.returncode, 0)
         out = json.loads(r.stdout)["hookSpecificOutput"]
-        self.assertEqual((out["hookEventName"], out["permissionDecision"]), ("PreToolUse", "ask"))
-        self.assertIn("删除", out["permissionDecisionReason"])
+        # ADR-0308 C: a main-thread native rm is denied with the trashbin hint (never a card)
+        self.assertEqual((out["hookEventName"], out["permissionDecision"]), ("PreToolUse", "deny"))
+        self.assertIn("agentj delete", out["permissionDecisionReason"])
         r = self.run_hook({"tool_name": "Bash", "tool_input": {"command": "ls"}})
         self.assertEqual(r.stdout, "", "ordinary shell keeps native rules")
         r = self.run_hook({"tool_name": "Read", "tool_input": {"file_path": "README.md"}})

@@ -1,5 +1,5 @@
 {
-  "version": "0.30.9",
-  "zh": "macOS 上重跑安装命令不再报 unbound variable；已装好的电脑重跑安装命令会先把旧版修复升级到最新（从 agentj.app 签名下载，不依赖 GitHub）。",
-  "en": "Rerunning the installer on macOS no longer fails with \"unbound variable\"; installed computers upgrade first (signed download from agentj.app, no GitHub)."
+  "version": "0.30.10",
+  "zh": "删除先进 Agent J 回收站、24 小时内可找回；后台任务和定时任务不再中途弹卡；安卓话筒一次就能打开。",
+  "en": "Deletions go to the Agent J trash, restorable for 24 hours; background and scheduled tasks no longer stop for a card; the Android mic opens on the first tap."
 }
