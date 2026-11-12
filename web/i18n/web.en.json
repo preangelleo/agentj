@@ -6066,5 +6066,10 @@
   "reload.close": "Close this notice",
   "p0311.todo.plan": "Agent plan",
   "p0311.todo.task": "Linked task",
-  "p0311.todo.report": "Linked report"
+  "p0311.todo.report": "Linked report",
+  "p0314.mic.denied": "Microphone access was denied. Allow it in Settings → Safari → Microphone, then tap again.",
+  "p0314.mic.busy": "The microphone is busy. Close other apps using it, then tap again.",
+  "p0314.mic.interrupted": "The microphone was interrupted. Tap again to record.",
+  "p0314.mic.timeout": "The microphone did not respond. Tap again to try.",
+  "p0314.mic.default": "Could not open the microphone. Check your device and tap again."
 }

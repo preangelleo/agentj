@@ -146,6 +146,10 @@ class Broker:
             return {'behavior':'deny', 'message':'Ambiguous native secret call'}
         cid, row = matches[0]
         if row.get('admitted'):
+            # PreToolUse observes the call even when native rules skip PermissionRequest.
+            # A later PermissionRequest for the *same* file call must not invalidate it.
+            if row['request']['t'] == 'file_show' and row['check']():
+                return {'behavior':'allow', 'updatedInput':inp}
             return {'behavior':'deny', 'message':'Native secret call already admitted'}
         execution = row['execution']
         def live():
@@ -290,7 +294,13 @@ class Broker:
         if len(rows) != 1:
             if req.get('t') == 'file_show':
                 execution = getattr(self.xfer, 'execution', None)
+                candidates = [row for row in self.calls.values() if row.get('admitted')
+                              and row['request'].get('t') == 'file_show']
                 why = ('native_admission_ambiguous' if len(rows) > 1 else 'native_admission_expired' if matching
+                       else 'native_admission_cwd_mismatch' if any(
+                           {k: v for k, v in row['request'].items() if k != 'cwd'} ==
+                           {k: v for k, v in req.items() if k != 'cwd'} for row in candidates)
+                       else 'native_admission_request_mismatch' if candidates
                        else 'native_admission_missing' if execution and execution.live and execution.send is not None
                        else 'no_owner_session')
                 return {'result': 'failure', 'why': why, 'client_downloaded': False}

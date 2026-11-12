@@ -943,7 +943,8 @@ class SharedClaudeAgent(Agent):
                     hb.forget("compact")
         if name == "UserPromptSubmit" and not event.get("agent_id"):
             prompt = str(event.get("prompt") or "")
-            if not self._phone_echo(event, prompt) and not (self.native_source.get("kind") == "same_host"
+            if not (self.native_request and self.native_request[0] == sid and self.phone_seen
+                    and self._phone_echo(event, prompt)) and not (self.native_source.get("kind") == "same_host"
                                                             and prompt.strip() == self.__dict__.get("_peer_text")):
                 self.native_source = provenance.terminal_input(event, prompt, prompt)
                 application_ingress_span(self)   # #0302 r4 C1: terminal_input may be unknown (peer origin / envelope tag)
@@ -1005,9 +1006,8 @@ class SharedClaudeAgent(Agent):
                 self._held_seen(str(event.get("prompt", "")))
                 if not event.get("agent_id"):
                     self.last_phone_prompt = None       # P539: a desktop prompt — no phone words to put back
-            if self.phone_turn and self.pending_text in str(event.get("prompt", "")):
+            if self.phone_turn and self.phone_seen and self.pending_text in str(event.get("prompt", "")):
                 self.last_phone_prompt = getattr(self, "cur_send", None)   # P539: the words a flag can hand back
-                self.phone_seen = True
                 self.input_seen.set()
                 prov = provenance.hook_context(self.pending_source)
                 tail = "\n\n" + reminder if reminder else ""
@@ -1043,6 +1043,31 @@ class SharedClaudeAgent(Agent):
             self.host.peers.xfer.broker.complete(event.get("tool_use_id"), success, response,
                 event.get("tool_name"), event.get("tool_input"), event.get("cwd") or self.cfg["dir"])
         if name == "PreToolUse":
+            # PermissionRequest is optional when Claude's native rules already allow Bash.
+            # Bind file-show to the host-read transcript here, without granting Bash permission.
+            from .owner_broker import parse as native_command
+            req = native_command(event.get("tool_name"), event.get("tool_input"), self.cfg["dir"]) if (
+                not aid and getattr(self.host, "peers", None) is not None) else None
+            if req:
+                if req['t'] == 'file_show':
+                    if getattr(self, "transcript", None) is not None:
+                        self.read_transcript()
+                        await self._await_native_call(event.get("tool_use_id"), gone)
+                    decision = await self.host.peers.xfer.broker.execute(
+                        event.get("tool_name"), event.get("tool_input"), event.get("tool_use_id"), gone)
+                    if decision is None or decision.get("behavior") != "allow":
+                        if not self.phone_turn or not self.phone_seen:
+                            reason = "No verified paired-phone message reached this session. 本会话没有已核实的配对手机消息。"
+                        elif (not self.native_request or not self.session
+                              or self.native_request[0] != self.session.get("sessionId")
+                              or self.native_request[1] is not self.cur_send):
+                            reason = "This command belongs to another session. 请在收到手机消息的同一会话执行。"
+                        else:
+                            reason = ((decision or {}).get("message") or "No exact live file-show admission")
+                            if reason == "No live native secret-call admission":
+                                reason = "This command was not registered by PreToolUse in this session. 本会话的 PreToolUse 未登记这条命令。"
+                        return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                            "permissionDecisionReason": reason}}
             from . import uv_list
             from .shared_risk import credential_read_refusal
             if (refusal := credential_read_refusal(self.host, event.get('tool_name'), event.get('tool_input') or {}, self.cfg.get('dir'))) is not None:
@@ -1075,7 +1100,7 @@ class SharedClaudeAgent(Agent):
                     self.read_transcript()
                     await self._await_native_call(event.get("tool_use_id"), gone)
                 decision = await self.host.peers.xfer.broker.execute(event.get("tool_name"), event.get("tool_input"), event.get("tool_use_id"), gone)
-                if decision is not None and decision.get("message") == "No live native secret-call admission" and self._owner_call_open():
+                if decision is not None and decision.get("message") == "No live native secret-call admission" and self._owner_call_open() and secret_command(event.get("tool_name"), event.get("tool_input"), self.cfg["dir"])['t'] != 'file_show':
                     decision = {**decision, "message": pick(getattr(self.host, "lang", "zh"), "这个会话是升级前开的，请在本机对它 /clear 或开新会话。",
                                                             "This session was opened before the upgrade: run /clear in it on this computer, or open a new session.")}
                 if decision is not None:
@@ -2117,9 +2142,12 @@ class SharedClaudeAgent(Agent):
                 if role == "user":
                     delivery_echo = shared_turn_origin.delivered(self, item, text)
                     from .transcript_input import human_input, proactive_origin
-                    if item.get("isMeta") and self._from_phone(item, text):
+                    if delivery_echo and item.get("isMeta") and self._from_phone(item, text):
                         self._held_seen(text)
-                        self._phone_anchor(text)  # P151b: 2.1.296 writes the peer (phone) message as an isMeta record
+                        if self.phone_turn:
+                            self.phone_seen = True
+                            self.input_seen.set()
+                        self._phone_anchor(text)  # Only the Host-bound peer envelope, not a phone-looking label.
                     via = proactive_origin(item, text)
                     ids = re.findall(r"<task-id>\s*([^<\s]+)\s*</task-id>", text) if via == "task" else []
                     for tid in ids:
@@ -2146,11 +2174,7 @@ class SharedClaudeAgent(Agent):
                             mark(via)
                             self.host.proactive_input = public_text(text)  # display only, never provenance
                         continue
-                    if delivery_echo or self._phone_echo(item, text):
-                        if self.phone_turn:
-                            self.phone_seen = True
-                            self.input_seen.set()
-                            self._phone_anchor(text)
+                    if delivery_echo:
                         continue
                     if self._peer_source(item, text):
                         continue
@@ -2168,12 +2192,9 @@ class SharedClaudeAgent(Agent):
                         self.native_source = provenance.normalize(None)  # labels cannot authenticate a new request
                         application_ingress_span(self)   # #0302 r3: non-owner native turn opens a span
                         self.peer_low = self.peer_low or self.native_turn
-                        if self.phone_turn and self.pending_text in text:
-                            self.phone_seen = True
-                            self.input_seen.set()
-                            self._phone_anchor(text)
-                        else:
-                            self._held_seen(text)
+                        # A phone-looking label without the exact Host peer envelope
+                        # cannot acknowledge a delivery or authorize a native call.
+                        self._held_seen(text)
                         continue
                     if self._control_echo(text):
                         continue
@@ -2207,7 +2228,10 @@ class SharedClaudeAgent(Agent):
         origin = item.get("origin")
         phone = any('from-name="' + name + '"' in text for name in names) or (
             isinstance(origin, dict) and origin.get("name") in names)
-        return (phone and not provenance.names_untrusted(text) and not proactive_origin(item, text)
+        # A phone-looking transcript label or prompt string is not an authenticated
+        # peer delivery (especially after /clear or in a resumed/forked session).
+        return (phone and shared_turn_origin.delivered(self, item, text) is True
+                and not provenance.names_untrusted(text) and not proactive_origin(item, text)
                 and send is not None and bool(body) and body == self.pending_text and body in text
                 and self.native_source == self.pending_source == provenance.phone()
                 and provenance.normalize(getattr(send, "source", None)) == provenance.phone()
@@ -2299,7 +2323,10 @@ class SharedClaudeAgent(Agent):
                 self.turn_thinking = (msg.get("id"), b["thinking"])
             elif b.get("type") == "tool_use" and isinstance(b.get("name"), str):
                 self._stream_texts()
-                if self.phone_turn and self.phone_seen and getattr(self.host, "peers", None) is not None:
+                if (self.phone_turn and self.phone_seen and self.native_request
+                        and self.session and self.native_request[0] == self.session.get("sessionId")
+                        and self.native_request[1] is self.cur_send
+                        and getattr(self.host, "peers", None) is not None):
                     # the native Bash cwd (Claude records it per line; the shell may have cd'd); attach keeps the root ceiling
                     self.host.peers.xfer.broker.register(b.get("id"), b["name"], b.get("input"),
                                                          cwd if isinstance(cwd, str) and os.path.isabs(cwd) else self.cfg["dir"])

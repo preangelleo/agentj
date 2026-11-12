@@ -17,10 +17,11 @@ import { createSplit, pageKey, contIndex, contOfText } from './turnsplit.js';   
 import { isAssistSrc } from './assistsrc.js';   // 0.26.9 #468 (§B3): 「官方远程协助」 on a task's turn
 import { QueueWatch } from './queue-watch.js';
 import { paintIOSChrome } from './ios-chrome.js';
-import { createMicrophone, hiddenTooLong } from './microphone.js';
+import { createMicrophone, hiddenTooLong, microphoneErrorKey } from './microphone.js';
 import { copyButton } from './copycode.js';
 import { shortFields } from './shortfields.js';
 import {phoneConfirmation, isTV} from './tvremote.js';
+import {canAssert} from './faceid.js';
 import {focusDraft, releaseDraft, touchComposer} from './composer-focus.js';
 import {pasteRoute, CLIP_TEXT_MAX} from './paste-route.js';
 import { termKey, backslashEnter, killed, forget as forgetKill } from './termkeys.js';   // P412 (#174)
@@ -817,7 +818,8 @@ function toggleCmd(){
   measureCmd();
 }
 /** P561 追加 17: the Agent J host holds no key for this remote (a Face ID card without `fa`). */
-const cardNoKey = (p) => !!(p && p.passkey_required && (!p.fa || p.fa_s === "borrowed") && !p.local_only && !isTV());
+// A UV card cannot offer Allow unless this remote can actually start a fresh assertion.
+const cardNoKey = (p) => !!(p && p.passkey_required && (!p.fa || !p.fa_ch || p.fa_s === "borrowed" || !canAssert()) && !isTV());
 async function apprPost(p, action){
   if(action!=="deny"&&waitsForNewRequest(p.id))return; // UI-only hold after an explicit refusal; never retry the old card.
   if(action!=="deny"&&cardNoKey(p))return;   // P561 追加 17: nothing to confirm with here — the card already says where
@@ -4401,10 +4403,13 @@ function pttStart(id, y){
     if (p.over || p.rec) return;
     window.dispatchEvent(new CustomEvent('agentj-audio-error', {detail: {stage: 'capture', error: 'TimeoutError'}}));
     pttEnd(p, "cancel", true);
-    toast(t('r.ptt.noMic'), 3000);
+    toast(t(microphoneErrorKey({name: 'TimeoutError'})), 7000);
   }, MIC_OPEN_MAX_MS);
-  p.ac = meterCtx();                                               // P205: made inside the gesture, so iOS lets it run
-  microphone.acquire().then(lease => {
+  // Ask for the microphone first in this pointer/key gesture; iOS can consume
+  // transient activation when the optional meter's AudioContext is resumed.
+  const opening = microphone.acquire();
+  p.ac = meterCtx();
+  opening.then(lease => {
     const stream = lease.stream;
     clearTimeout(p.openTimer);
     if (!p.over && hiddenTooLong(p.openHidAt)) pttEnd(p, "cancel", true);   // L3: the return beat the visibilitychange event
@@ -4433,7 +4438,9 @@ function pttStart(id, y){
     clearTimeout(p.openTimer);
     if (p.over) return;
     pttEnd(p, "cancel", true);
-    if (err?.name !== "AbortError") toast(t('r.ptt.noMic'), 3000);   // 0.30.8: a grant stopped by a hidden page is no refusal
+    // A cancelled/hidden request was already filtered by p.over. A real native
+    // AbortError while still foreground is an interruption, not a denial.
+    toast(t(microphoneErrorKey(err)), 7000);
   });
 }
 // 0.30.8 (chairman 11-11, Oppo home-screen app: 「点了就退出，点三四次才行」): a touch take whose microphone is still opening

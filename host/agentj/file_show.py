@@ -24,8 +24,23 @@ def cli(args):
         result = failure('broker_unavailable')
     if result.get('result') == 'unavailable':
         result = failure('broker_unavailable')
-    if result.get('why') == 'native_admission_missing':
-        result['hint'] = HINT
+    why = result.get('why')
+    if why == 'native_admission_missing':
+        result['hint'] = ('No matching admitted tool call was recorded for this owner turn; if already run as instructed, '
+                          'check the shared hook/transcript registration. '
+                          '本轮未记录到对应工具调用；若已按提示执行，请检查共享 hook/转录登记。 ' + HINT)
+    elif why == 'no_owner_session':
+        result['hint'] = ('No verified paired-phone owner turn is active in this session, or this command came from another session. '
+                          '本会话没有已核实的配对手机主人轮次，或命令来自另一会话。')
+    elif why == 'native_admission_expired':
+        result['hint'] = ('The registered command belongs to an expired or different session; send a fresh phone message there. '
+                          '已登记命令所属轮次已失效或会话不符，请在目标会话重新从手机发消息。')
+    elif why == 'native_admission_cwd_mismatch':
+        result['hint'] = ('Native tool and CLI used different working directories; run from the served session folder. '
+                          '工具与 CLI 的工作目录不同，请从当前会话目录执行。')
+    elif why == 'native_admission_request_mismatch':
+        result['hint'] = ('An admitted file-show call exists, but its path or label differs from this CLI request. '
+                          '已有准入的附图调用，但路径或标签与本次 CLI 请求不同。')
     print(json.dumps(result, ensure_ascii=False) if args.json else result.get('result', 'failure') + ': ' + result.get('why', ''))
     if not args.json and (result.get('result') == 'queued' or 'hint' in result):
         print(result.get('hint') or json.dumps(result, ensure_ascii=False))

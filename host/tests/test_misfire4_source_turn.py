@@ -91,23 +91,49 @@ class Turns(Shared):
 
 
 class DeadCards(Base):
-    def test_unknown_display_origin_is_denied_before_publish(self):
+    def test_unknown_display_origin_offlist_uses_owner_turn_without_card(self):
+        # The display snapshot does not retype the host-held owner turn. Off-list
+        # calls are answered immediately; always_ask cannot invent a card.
+        receipt = {}
         with mock.patch.object(self.host, '_interrupt') as interrupt, \
                 mock.patch.object(self.host, 'push_notify') as push, \
                 mock.patch.object(approval_review, 'snapshot', return_value=None):
-            result = self.ask('rm -rf /home/owner/data', batch=False, always_ask=True)
-        self.assertEqual(result['behavior'], 'deny')
+            result = self.ask('rm -rf /home/owner/data', batch=False, always_ask=True,
+                              _receipt=receipt)
+        self.assertEqual(result['behavior'], 'allow')
         interrupt.assert_not_called()
         push.assert_not_called()
         self.assertEqual(self.cards(), [])
-        self.assertIn('no card', result['message'])
-        self.assertEqual(self.last()['reason'], 'group_source')
+        self.assertFalse(receipt['approval_card_shown'])
+        self.assertEqual(receipt['source'], 'owner_terminal')
+        self.assertEqual(receipt['reason'], 'off_list')
+        self.assertEqual(self.last()['reason'], 'off_list')
+        self.assertEqual(self.last()['decision'], 'allow')
+        # Source refusal remains audited when the host-held turn really is external;
+        # the missing display snapshot must not be used to forge that provenance.
+        with mock.patch.object(self.host.agent, 'native_source', provenance.email_guest('guest@example.test')):
+            refused = self.ask('rm -rf /home/owner/data', batch=False, always_ask=True)
+        self.assertEqual(refused['behavior'], 'deny')
+        self.assertEqual(refused['reason'], 'off_list_write_external')
+        self.assertEqual(self.last()['reason'], 'off_list_write_external')
+        self.assertEqual(self.last()['decision'], 'deny')
+        self.assertEqual(self.cards(), [])
 
-    def test_verified_but_suspicious_origin_is_also_denied(self):
+    def test_verified_but_suspicious_display_origin_offlist_uses_owner_turn(self):
         source = {'session': str(self.host.hist.epoch), 'message_id': 7, 'root_message_id': 7,
                   'verified': True, 'suspicious': True, 'text': 'quoted external material', 'chain': []}
-        with mock.patch.object(approval_review, 'snapshot', return_value=source):
-            result = self.ask('rm -rf /home/owner/data', batch=False, always_ask=True)
-        self.assertEqual(result['behavior'], 'deny')
+        receipt = {}
+        with mock.patch.object(self.host, '_interrupt') as interrupt, \
+                mock.patch.object(self.host, 'push_notify') as push, \
+                mock.patch.object(approval_review, 'snapshot', return_value=source):
+            result = self.ask('rm -rf /home/owner/data', batch=False, always_ask=True,
+                              _receipt=receipt)
+        self.assertEqual(result['behavior'], 'allow')
+        interrupt.assert_not_called()
+        push.assert_not_called()
         self.assertEqual(self.cards(), [])
-        self.assertEqual(self.last()['reason'], 'group_source')
+        self.assertFalse(receipt['approval_card_shown'])
+        self.assertEqual(receipt['source'], 'owner_terminal')
+        self.assertEqual(receipt['reason'], 'off_list')
+        self.assertEqual(self.last()['reason'], 'off_list')
+        self.assertEqual(self.last()['decision'], 'allow')

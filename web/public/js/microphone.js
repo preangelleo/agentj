@@ -9,7 +9,10 @@
 // return from that must never turn into capture without another tap (the permission, if granted, makes that tap instant).
 export const PROMPT_HIDE_MAX_MS = 3000;
 export const hiddenTooLong = (since, now = Date.now()) => since > 0 && now - since > PROMPT_HIDE_MAX_MS;
-export function createMicrophone({getUserMedia, visible}) {
+export function microphoneErrorKey(error) {
+  return 'p0314.mic.' + ({ NotAllowedError: 'denied', NotReadableError: 'busy', AbortError: 'interrupted', TimeoutError: 'timeout' }[error?.name] || 'default');
+}
+export function createMicrophone({getUserMedia, visible, gestureActive = () => navigator.userActivation?.isActive === true}) {
   let stream = null, pending = null, epoch = 0, owner = null;
   const stop = s => s?.getTracks().forEach(t => { t.enabled = false; t.stop(); });
   const live = s => s && s.getAudioTracks().length > 0 && s.getAudioTracks().every(t => t.readyState === 'live');
@@ -26,7 +29,16 @@ export function createMicrophone({getUserMedia, visible}) {
         const generation = epoch;
         // Start inside the user's gesture. Always stop a late result, even if a
         // newer foreground request has already succeeded after a hide/cancel.
-        const request = Promise.resolve(getUserMedia()).then(s => {
+        // A native transient failure may be retried once only while the original
+        // gesture is still active. Never retry a permission denial, a stale take,
+        // or on foreground return (which requires a fresh owner tap).
+        let first;
+        try { first = getUserMedia(); } catch (err) { first = Promise.reject(err); }
+        const request = Promise.resolve(first).catch(err => {
+          if ((err?.name !== 'NotReadableError' && err?.name !== 'AbortError') ||
+              generation !== epoch || !visible() || !gestureActive()) throw err;
+          return getUserMedia();
+        }).then(s => {
           if (generation !== epoch || !visible()) { stop(s); throw abort(); }
           stream = s;
           return s;

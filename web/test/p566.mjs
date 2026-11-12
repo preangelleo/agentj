@@ -208,7 +208,11 @@ try {
 
   await C('#346 Settings 「已设好」 → 「测试一下」 → pk_check → 「正常」; 「重新设置」 beside it', async () => {
     const p = await paired();
-    fake.st.onApp = async (c, m, reply) => { if (m.t === 'pk_check') { await reply({ t: 'pk_check_res', r: m.r, ok: true, s: 'local' }); return true; } return false; };
+    fake.st.onApp = async (c, m, reply) => {
+      if (m.t === 'pk_check_ch') { await reply({ t: 'pk_check_ch_res', r: m.r, fa: CRED, fa_ch: b64u(new Uint8Array(32).fill(2)), n: 'Tn' + 'A'.repeat(20) }); return true; }
+      if (m.t === 'pk_check') { await reply({ t: 'pk_check_res', r: m.r, ok: true, s: 'local' }); return true; }
+      return false;
+    };
     await fake.send({ t: 'pk_state', s: 'local', fa: CRED, fa_ch: b64u(new Uint8Array(32).fill(2)), n: 'Tn' + 'A'.repeat(20) });
     await evaluate(p, `document.getElementById('setBtn').click()`);
     await waitFor(p, visible('#set-pk-test'));

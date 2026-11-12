@@ -127,7 +127,9 @@ test('#364 every get() path hands its answer in (static)', () => {
   assert.match(ctl, /return fa \? commandFa\(\{ \.\.\.obj, fa \}, ch\) : \{ ok: false, why: 'cancel' \};/);
   assert.match(ctl, /if \(g2 !== g\) \{ if \(!fa\) throw new Error\('offline'\);/);
   // P555 self-check / 「测试一下」: answered on whichever socket (host keeps it per device) — both taps
-  assert.equal((app.match(/if \(m\.t === 'offline' && await session\.whenReady\(30000\) && session\.channel\(\) === ch0\) m = await session\.ask1\(\{ t: 'pk_check'/g) || []).length, 2);
+  assert.match(app, /const answer = \{ t: 'pk_check', n: c\.n, fa: proof, \.\.\.\(aa \? \{ aa \} : \{\}\) \};/);
+  assert.match(app, /if \(m\.t === 'offline' && await session\.whenReady\(30000\) && session\.channel\(\) === ch0\)\s*m = await session\.ask1\(answer, 'pk_check_res', 10000\)/, 'self-check resends the same signed answer on reconnect');
+  assert.match(app, /for \(let attempt = 0; attempt < 2; attempt\+\+\)/, 'only explicit challenge expiry may reprompt once');
   // approving another remote's Face ID set-up (pk_peer_answer with this remote's assertion)
   assert.match(app, /o && o\.t === 'pk_peer_answer' && o\.ok \? pkhandin\.put\('peer:' \+ o\.id, \{ send: \(g\) => session\.sendApp\(o, g\), until: Date\.now\(\) \+ 120000, ch: readyCh \}\)/);
   assert.match(app, /pkhandin\.reset\(\);/, 'unpair / re-pair drops every open hand-in');

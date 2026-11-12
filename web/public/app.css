@@ -4666,6 +4666,31 @@ body[data-sheet="1"]:has(#sheet.auth-approval[data-popup-system="center"]) .scri
 #ctFwd .sq.ct-picker-page .ct-list{gap:8px;padding-bottom:8px}
 #ctFwd .sq.ct-picker-page .ct-add{margin-top:0}
 #ctFwd .sq.ct-picker-page .gdlg-row{padding-top:16px}
+
+/* 0315: a centred interactive card stays in its measured reading-area position, but its
+   veil belongs to the viewport, not the reading area. The mic's 18px state-coloured blur
+   now reaches the header, reply toolbar, composer and safe-area bands as one layer. */
+:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="center"]:not([hidden]){
+  overflow:visible;isolation:isolate;background:transparent;
+  -webkit-backdrop-filter:none;backdrop-filter:none;
+}
+:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="center"]:not([hidden])::before{
+  content:"";position:fixed;inset:0;z-index:-1;pointer-events:auto;
+  background:color-mix(in srgb,var(--popup-veil-color,var(--pg)) 58%,transparent);
+  -webkit-backdrop-filter:blur(18px) saturate(1.1);backdrop-filter:blur(18px) saturate(1.1);
+}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  :is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="center"]:not([hidden])::before{
+    background:color-mix(in srgb,var(--popup-veil-color,var(--pg)) 90%,transparent);
+  }
+}
+/* Native top-layer dialogs have their own browser-managed full-viewport backdrop. */
+dialog.aj-shared-popup[data-popup-system="center"]:modal::backdrop{
+  background:color-mix(in srgb,var(--pg) 58%,transparent);
+  -webkit-backdrop-filter:blur(18px) saturate(1.1);backdrop-filter:blur(18px) saturate(1.1);
+}
+/* The status/navigation safe-area paints used to sit above the modal scrim. */
+body:has(:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="center"]:not([hidden])) :is(.satband,.sabband){z-index:0}
 #ctFwd .sq.ct-picker-page .ct-note{margin-top:8px!important}
 #ctFwd .sq.ct-picker-page .ct-back{padding-left:0}
 /* Keep the wide picker centered on desktop while respecting the shared popup card cap; phone geometry stays unchanged. */

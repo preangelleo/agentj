@@ -93,8 +93,20 @@ def resolve(name, environ=None):
             fresh = _resolve(name, {k: v for k, v in e.items() if k not in (ENV[name], ENV[name].replace("AGENTJ_", "AGENTJARVIS_"))})
             pin = r["path"] or (str(Path(r["requested"]).absolute()) if r["requested"] else None)
             manager_pin = name == "claude" and fresh["wrapper"] and r["path"] is not None
-            if not manager_pin and fresh["reason"] != "ambiguous_install" and fresh["path"] and pin and pin != fresh["path"] and version_sibling(pin, fresh["path"]):
-                return {**fresh, "reason": "pin_missing" if r["path"] is None else "pin_stale", "pinned": r["requested"], "via": fresh["reason"]}
+            if not manager_pin and fresh["reason"] != "ambiguous_install" and fresh["path"] and pin and pin != fresh["path"]:
+                sibling = version_sibling(pin, fresh["path"])
+                if not sibling and name == "opencode" and r["path"]:
+                    # The 1.x installer/manager and 2.x native/npm installer have
+                    # different trees. Only supersede an old versioned pin after
+                    # verifying both executable versions; arbitrary owner pins win.
+                    old_major = re.search(r"(?:^|/)installs/opencode/(\d+)\.", pin)
+                    if old_major and int(old_major[1]) == 1:
+                        from .harness import version_of
+                        old, current = version_of(r["path"]), version_of(fresh["path"])
+                        sibling = bool(old and current and re.search(r"(?:^|\s)v?1\.", old)
+                                       and re.search(r"(?:^|\s)v?2\.", current))
+                if sibling:
+                    return {**fresh, "reason": "pin_missing" if r["path"] is None else "pin_stale", "pinned": r["requested"], "via": fresh["reason"]}
         return r
     return _resolve(name, e)
 

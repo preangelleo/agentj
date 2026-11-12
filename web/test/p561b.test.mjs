@@ -149,13 +149,15 @@ test('the no-key card: words on top (line + note), 「去设置」 · 「拒绝�
   assert.match(relay, /if\(action!=="deny"&&cardNoKey\(p\)\)return;/);
   const noKeySource = relay.match(/const cardNoKey = \(p\) => ([^;]+);/)?.[1];
   assert.ok(noKeySource, 'exercise the actual presentation predicate');
-  const noKey = new Function('isTV', 'return (p) => ' + noKeySource)(() => false);
+  const noKey = new Function('isTV', 'canAssert', 'return (p) => ' + noKeySource)(() => false, () => true);
   assert.equal(noKey({passkey_required:true}),true,'no credential goes to setup');
-  assert.equal(noKey({passkey_required:true,fa:'credential',fa_s:'borrowed'}),true,'known borrowed key goes to local setup before WebAuthn');
-  for(const state of ['local','unknown',undefined])assert.equal(noKey({passkey_required:true,fa:'credential',fa_s:state}),false,'registered key is not declared missing from placement '+state);
+  assert.equal(noKey({passkey_required:true,fa:'credential',fa_ch:'challenge',fa_s:'borrowed'}),true,'known borrowed key goes to local setup before WebAuthn');
+  for(const state of ['local','unknown',undefined])assert.equal(noKey({passkey_required:true,fa:'credential',fa_ch:'challenge',fa_s:state}),false,'credential with challenge can start verification '+state);
+  assert.equal(noKey({passkey_required:true,fa:'credential',fa_s:'local'}),true,'missing challenge cannot offer Allow');
+  assert.equal(new Function('isTV', 'canAssert', 'return (p) => ' + noKeySource)(() => false, () => false)({passkey_required:true,fa:'credential',fa_ch:'challenge'}),true,'missing WebAuthn cannot offer Allow');
   assert.equal(noKey({passkey_required:false,fa_s:'borrowed'}),false,'ordinary buttons do not gain a setup requirement');
-  assert.equal(noKey({passkey_required:true,local_only:true}),false,'local-only card keeps its existing path');
-  assert.equal(new Function('isTV', 'return (p) => ' + noKeySource)(() => true)({passkey_required:true}),false,'TV retains phone confirmation');
+  assert.equal(noKey({passkey_required:true,local_only:true}),true,'unverifiable local-only card cannot offer Allow');
+  assert.equal(new Function('isTV', 'canAssert', 'return (p) => ' + noKeySource)(() => true, () => false)({passkey_required:true}),false,'TV retains phone confirmation');
   assert.match(relay, /el\("sheetClose"\)\.click\(\); scrollToPkRow\(\);/, '去设置 folds the card first (it stays pending), then Settings');
 });
 

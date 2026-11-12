@@ -359,6 +359,10 @@ def _one(name: str, environ=None) -> dict:
             rec["privacy"] = opencode_free.privacy_note(rec["free_model"], "en")
     if status in ("ok", "env", "free"):
         rec["logged_in"] = True
+    elif name == "codex" and status == "warn":
+        rec["note"] = ("Codex is installed but not signed in for this host. Run `codex login` in your own terminal, "
+                       "then rerun `agentj agent detect --probe`; or select another ready harness. "
+                       "Codex 已安装但未登录：在自己的终端运行 `codex login`，再重新检测；也可选已就绪的 AI。")
     elif name == "claude" and os.environ.get("CLAUDECODE") == "1":
         rec.update(logged_in=None, note="running inside Claude Code, which hides its own login from commands: ask the human")
     return rec
@@ -622,6 +626,8 @@ def main(as_json: bool = False, call_probe: bool = False, only=None, model: str 
             state += (" · 额度 / 用量已用完，不是没登录 / quota used up, not a login problem" if h["probe_reason"] == "quota_exhausted"
                       else " · 被限流，等一会儿再试 / rate limited, try again later")
         print(f"{LABEL[h['name']]:<12} {state}")
+        if h["name"] == "codex" and h["installed"] and h["logged_in"] is False:
+            print("  → 在自己的终端运行 codex login，重新检测；或选已就绪的 AI / run codex login in your terminal, then retry; or choose a ready harness")
     d_ = d["decision"]
     print("→ " + (DECISION_TEXT[d_] if d_ in DECISION_TEXT else
                   f"只有 {LABEL[d_[4:]]} 可用 / only {LABEL[d_[4:]]} is usable: agentj agent {d_[4:]} --dir <folder>"))

@@ -109,7 +109,7 @@ class NativeFlows(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(self.host.elevate.stop)
         self.addCleanup(self.host.stopping.set)
 
-    async def shared_call(self, command, *, success=True, mutate=None, wd=None):
+    async def shared_call(self, command, *, success=True, mutate=None, wd=None, pretool=False, delivery=None):
         """Real authenticated hook, host-read transcript, shell CLI, UDS and completion."""
         import asyncio
         import socket
@@ -121,6 +121,20 @@ class NativeFlows(unittest.IsolatedAsyncioTestCase):
         messaging.bind(str(messaging_path)); self.addCleanup(messaging.close)
         self.transcript = self.root / 'transcript.jsonl'; self.transcript.touch()
         self.native.transcript = self.transcript
+        if delivery is None and self.native.phone_seen:
+            delivery = 'show the file'
+        if delivery is not None:
+            from agentj import provenance
+            self.native.phone_seen = False
+            self.native.session = {'sessionId': 'file-session', 'pid': os.getpid(), 'cwd': str(self.work)}
+            self.native.native_request = ('file-session', self.send, delivery)
+            self.native.pending_text = delivery
+            self.native.pending_source = self.native.native_source = provenance.phone()
+            self.transcript.write_text(json.dumps({'type': 'user', 'isMeta': True,
+                'origin': {'kind': 'peer', 'name': provenance.PHONE},
+                'message': {'content': provenance.envelope('synthetic-socket', delivery, provenance.phone())}}) + '\n')
+            self.native.read_transcript()
+            self.assertTrue(self.native.phone_seen, 'Host-bound peer delivery must be observed')
         binary = self.root / 'bin'; binary.mkdir()
         cli = binary / 'agentj'
         cli.write_text('#!/bin/sh\nexec ' + shlex.quote(sys.executable) + ' -m agentj.cli "$@"\n'); cli.chmod(0o700)
@@ -129,7 +143,7 @@ class NativeFlows(unittest.IsolatedAsyncioTestCase):
         await channel.start(); self.addAsyncCleanup(channel.stop)
         code = r'''
 import json,sys,subprocess,pathlib
-hook,path,transcript,command,wd=sys.argv[1:]
+hook,path,transcript,command,wd,pretool=sys.argv[1:]
 sys.stdin.readline()
 block={'type':'tool_use','id':'file-call','name':'Bash','input':{'command':command}}
 pathlib.Path(transcript).write_text(json.dumps({'type':'assistant','cwd':wd,'message':{'id':'msg','role':'assistant','content':[block]}})+'\n')
@@ -137,8 +151,9 @@ event={'session_id':'file-session','cwd':wd,'tool_name':'Bash','tool_input':{'co
 def emit(kind,**extra):
     p=subprocess.run([sys.executable,hook,path,kind],input=json.dumps(dict(event,hook_event_name=kind,**extra)),capture_output=True,text=True)
     return json.loads(p.stdout or '{}')
-answer=emit('PermissionRequest');print(json.dumps(answer),flush=True)
-if answer.get('hookSpecificOutput',{}).get('decision',{}).get('behavior')=='allow':
+answer=emit('PreToolUse' if pretool=='1' else 'PermissionRequest');print(json.dumps(answer),flush=True)
+if (answer.get('hookSpecificOutput',{}).get('decision',{}).get('behavior')=='allow' or
+    pretool=='1' and answer.get('hookSpecificOutput',{}).get('permissionDecision')!='deny'):
     p=subprocess.run(command,shell=True,capture_output=True,text=True,cwd=wd)
     print(json.dumps({'exit':p.returncode,'stdout':p.stdout}),flush=True)
     sys.stdin.readline()
@@ -150,7 +165,7 @@ if answer.get('hookSpecificOutput',{}).get('decision',{}).get('behavior')=='allo
                    AGENTJ_ELEVATE_SOCK=str(self.host.elevate.sock_path),
                    PYTHONDONTWRITEBYTECODE='1', PYTHONPATH=str(pathlib.Path(__file__).resolve().parents[1]))
         proc = await asyncio.create_subprocess_exec(sys.executable, '-c', code, str(pathlib.Path(shared_hook.__file__)),
-            str(hookpath), str(self.transcript), command, str(wd or self.work), env=env,
+            str(hookpath), str(self.transcript), command, str(wd or self.work), '1' if pretool else '0', env=env,
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         try:
             self.native.session = {'sessionId': 'file-session', 'pid': proc.pid, 'cwd': str(self.work),
@@ -159,7 +174,9 @@ if answer.get('hookSpecificOutput',{}).get('decision',{}).get('behavior')=='allo
             self.native.issue_hook_token()
             proc.stdin.write(b'go\n'); await proc.stdin.drain()
             answer = json.loads(await asyncio.wait_for(proc.stdout.readline(), 8))
-            behavior = answer.get('hookSpecificOutput', {}).get('decision', {}).get('behavior')
+            hook_output = answer.get('hookSpecificOutput', {})
+            behavior = (('deny' if hook_output.get('permissionDecision') == 'deny' else 'allow') if pretool
+                        else hook_output.get('decision', {}).get('behavior'))
             if behavior != 'allow':
                 await asyncio.wait_for(proc.communicate(), 8)
                 return behavior, None
@@ -180,6 +197,126 @@ if answer.get('hookSpecificOutput',{}).get('decision',{}).get('behavior')=='allo
         finally:
             if proc.returncode is None:
                 proc.kill(); await proc.wait()
+
+    async def test_clear_handoff_label_is_not_authenticated_owner_delivery(self):
+        from agentj import provenance, shared_turn_origin
+        self.native.session = {'sessionId': 'served-session', 'pid': os.getpid()}
+        self.native.native_request = ('served-session', self.send, 'read handoff')
+        self.native.pending_text = 'read handoff'
+        self.native.pending_source = self.native.native_source = provenance.phone()
+        item = {'type': 'user', 'isMeta': True, 'origin': {'name': provenance.PHONE}}
+        text = 'read handoff'
+        self.assertFalse(shared_turn_origin.delivered(self.native, item, text))
+        self.assertFalse(self.native._phone_echo(item, text))
+        self.native.phone_seen = False
+        self.native.transcript = self.root / 'handoff.jsonl'
+        self.native.transcript.write_text(json.dumps({'type': 'user', 'isMeta': True,
+            'origin': {'name': provenance.PHONE}, 'message': {'content': 'read handoff'}}) + '\n')
+        self.native.read_transcript()
+        self.assertFalse(self.native.phone_seen)
+        self.assertFalse(self.native._owner_call_open() and self.native.phone_seen)
+        self.native.session = {'sessionId': 'forked-session', 'pid': os.getpid()}
+        self.assertFalse(self.native._phone_echo(item, text))
+        self.native.session = {'sessionId': 'served-session', 'pid': os.getpid()}
+        self.native.native_request = ('served-session', self.send, 'read handoff')
+        self.native.native_source = self.native.pending_source = provenance.phone()
+        valid = {'type': 'user', 'isMeta': True, 'origin': {'kind': 'peer'}}
+        envelope = provenance.envelope('synthetic-socket', 'read handoff', provenance.phone())
+        self.assertTrue(shared_turn_origin.delivered(self.native, valid, envelope))
+        self.assertTrue(self.native._phone_echo(valid, envelope))
+        self.native.session = {'sessionId': 'resumed-other-session', 'pid': os.getpid()}
+        self.assertFalse(self.native._phone_echo(valid, envelope))
+
+    async def test_file_show_denial_messages_distinguish_source_registration_and_session(self):
+        from agentj import provenance
+        self.native.phone_seen = False
+        self.native.session = {'sessionId': 'file-session', 'pid': os.getpid()}
+        event = {'hook_event_name': 'PreToolUse', 'session_id': 'file-session', 'tool_name': 'Bash',
+                 'tool_input': {'command': 'agentj file show ~/work/a.png --json'}, 'tool_use_id': 'missing'}
+        async def decide():
+            return await self.native._hook_event(event)
+        # No hook channel is started; this exercises the Host's exact decision seam.
+        with patch.object(self.host.peers.xfer.broker, 'execute', return_value={'behavior': 'deny',
+                'message': 'No live native secret-call admission'}):
+            source = (await decide())['hookSpecificOutput']['permissionDecisionReason']
+            self.assertIn('paired-phone', source)
+            self.native.phone_seen = True
+            self.native.native_request = ('other-session', self.send, 'show the file')
+            session = (await decide())['hookSpecificOutput']['permissionDecisionReason']
+            self.assertIn('another session', session)
+            self.native.session = {'sessionId': 'file-session', 'pid': os.getpid()}
+            self.native.native_request = ('file-session', self.send, 'show the file')
+            self.native.pending_source = self.native.native_source = provenance.phone()
+            registration = (await decide())['hookSpecificOutput']['permissionDecisionReason']
+            self.assertIn('PreToolUse', registration)
+
+    async def test_resume_fork_and_other_session_require_exact_phone_delivery(self):
+        from agentj import provenance
+        for sid in ('resumed-session', 'fork-session'):
+            self.native.session = {'sessionId': sid, 'pid': os.getpid()}
+            self.native.native_request = (sid, self.send, 'show the file')
+            self.native.pending_text = 'show the file'
+            self.native.pending_source = self.native.native_source = provenance.phone()
+            self.native.phone_seen = False
+            self.native.transcript = self.root / (sid + '.jsonl')
+            self.native.offset = 0
+            self.native.transcript.write_text(json.dumps({'type': 'user', 'isMeta': True,
+                'origin': {'kind': 'peer', 'name': provenance.PHONE},
+                'message': {'content': provenance.envelope('synthetic-socket', 'show the file', provenance.phone())}}) + '\n')
+            self.native.read_transcript()
+            self.assertTrue(self.native.phone_seen, sid)
+            self.native.phone_seen = False
+            self.native.session = {'sessionId': 'different-session', 'pid': os.getpid()}
+            self.native.offset = 0
+            self.native.read_transcript()
+            self.assertFalse(self.native.phone_seen, sid)
+        self.assertFalse(self.native._owner_call_open() and self.native.phone_seen)
+
+    async def test_bypass_mode_does_not_turn_handoff_into_file_admission(self):
+        # A native Bash allow (including bypassPermissions) cannot establish owner ingress.
+        self.native.phone_seen = False
+        behavior, queued = await self.shared_call('agentj file show ~/work/a.png --json', pretool=True)
+        self.assertEqual(behavior, 'deny')
+        self.assertIsNone(queued)
+        self.assertFalse(self.page.get('media'))
+
+    async def test_shared_feedback_requires_verified_source_even_with_model_available(self):
+        from agentj import privacy_host, privacy
+        from unittest import mock
+        request = {'t': 'privacy_check', 'gate': 'feedback', 'draft': {'body': 'synthetic report'}}
+        with mock.patch.object(privacy_host, '_origin', return_value={'verified': False}), \
+                mock.patch.object(privacy, 'layer2') as model:
+            response = await privacy_host.handle(self.host, request, peer_pid=os.getpid())
+        self.assertEqual(response['reason'], 'privacy-check/source_denied')
+        model.assert_not_called()
+        self.assertFalse(privacy.optional_review(privacy.Verdict(**response)))
+        self.assertFalse(self.host.peers.xfer.broker.feedback_applicable(),
+                         'shared unfenced sessions have no fenced native-feedback holder')
+
+    async def test_bound_phone_delivery_native_allowed_bash_attaches(self):
+        # The phone message is delivered by Host into this exact served session,
+        # not inferred from a caller-supplied UI label or bypassPermissions.
+        behavior, queued = await self.shared_call(
+            'agentj file show ~/work/a.png --json', pretool=True, delivery='show the file')
+        self.assertEqual(behavior, 'allow')
+        self.assertEqual(queued['result'], 'queued')
+        self.assertEqual(len(self.page['media']), 1)
+
+    async def test_native_allowed_bash_pretool_only_attaches_mac_style(self):
+        # macOS Claude Code may allow Bash natively: no PermissionRequest follows PreToolUse.
+        behavior, queued = await self.shared_call(
+            'agentj file show ' + shlex.quote(str(self.image)) + ' --label ' +
+            shlex.quote('图片') + ' --json', pretool=True)
+        self.assertEqual(behavior, 'allow')
+        self.assertEqual(queued['result'], 'queued')
+        self.assertEqual(len(self.page['media']), 1)
+
+    async def test_native_allowed_pretool_does_not_admit_other_owner_turn(self):
+        self.native.phone_seen = False
+        behavior, queued = await self.shared_call('agentj file show ~/work/a.png --json', pretool=True)
+        self.assertEqual(behavior, 'deny')
+        self.assertIsNone(queued)
+        self.assertFalse(self.page.get('media'))
 
     async def test_shared_tilde_real_cli_and_hook_attaches_only_after_completion(self):
         behavior, queued = await self.shared_call('agentj file show ~/work/a.png --json')
@@ -309,7 +446,7 @@ if answer.get('hookSpecificOutput',{}).get('decision',{}).get('behavior')=='allo
         inp = {'command':'agentj file show ~/work/a.png --json'}
         broker.register('cwd-call', 'Bash', inp, str(self.work))
         self.assertEqual((await broker.execute('Bash', inp, 'cwd-call'))['behavior'], 'allow')
-        self.assertEqual(broker.receipt(file_show.request('~/work/a.png', cwd=str(self.root)))['why'], 'native_admission_missing')
+        self.assertEqual(broker.receipt(file_show.request('~/work/a.png', cwd=str(self.root)))['why'], 'native_admission_cwd_mismatch')
         self.assertFalse(self.page.get('media'))
 
     async def test_attachment_rejection_reasons_do_not_bypass_checks(self):

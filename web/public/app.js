@@ -784,26 +784,41 @@ function selfCheck() {
 }
 // P566 (#346, 董事长 10-28 18:5x: 「已设好」 had no way to check or redo it): 「测试一下」 = one Face ID tap over the Agent J
 // host's check challenge (pk_check, the P555 self-check — kept per device, so a drop of the socket behind the sheet does not
-// lose it); a pass changes nothing. A failure says why, with 「重新设置」 (the same set-up, no unpairing). NOT async before get().
+// lose it); a pass changes nothing. A failure says why, with 「重新设置」 (the same set-up, no unpairing).
+let testingFaceId = false;
 function testFaceId() {
-  const c = pkNow && pkNow.ch === session.channel() ? pkNow.chk : null;
-  if (!c || !passkey.canAssert()) { testPkNotice('p566.pk.testNone'); return; }
-  const ch0 = pkNow.ch;
-  pkNow.chk = null; paintPkRow();                     // one challenge, one try (the Agent J host sends a fresh one)
+  if (testingFaceId) return;
+  const ch0 = session.channel();
+  if (!ch0 || !pkNow || pkNow.ch !== ch0 || pkNow.s !== 'local' || !passkey.canAssert()) {
+    testPkNotice('p566.pk.testNone'); return;
+  }
   const reset = () => { setupFaceId().catch(() => {}); };
-  let p;
-  try { p = passkey.approve(unb64u(c.fa_ch), c.fa, true, 'local'); } catch (e) { p = Promise.reject(e); }
-  p.then(async (fa) => {
-    const { aa, ...proof } = fa;
-    let m = await session.ask1({ t: 'pk_check', n: c.n, fa: proof, ...(aa ? { aa } : {}) }, 'pk_check_res', 10000);
-    if (m.t === 'offline' && await session.whenReady(30000) && session.channel() === ch0) m = await session.ask1({ t: 'pk_check', n: c.n, fa: proof, ...(aa ? { aa } : {}) }, 'pk_check_res', 10000);   // review N2: the same computer
+  testingFaceId = true;
+  (async () => {
+    let m = { t: 'timeout' };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      // Never use pk_state's prefetch: a Settings page can stay open beyond CHECK_TTL.
+      const c = await session.ask1({ t: 'pk_check_ch' }, 'pk_check_ch_res', 10000);
+      if (c.t !== 'pk_check_ch_res' || !c.n || !c.fa || !c.fa_ch || session.channel() !== ch0) break;
+      let fa;
+      try { fa = await passkey.approve(unb64u(c.fa_ch), c.fa, true, 'local'); }
+      catch (e) {
+        const n = pkassist.errName(e);
+        testPkNotice(n === 'WrongSeatKey' ? 'p566.pk.wrongSeat' : n === 'AbortError' ? 'p539.fail.abort' : 'p539.fail.cancel', false, reset, true);
+        return; // A cancelled or missing credential is not an expired host challenge.
+      }
+      if (session.channel() !== ch0) break;
+      const { aa, ...proof } = fa;
+      const answer = { t: 'pk_check', n: c.n, fa: proof, ...(aa ? { aa } : {}) };
+      m = await session.ask1(answer, 'pk_check_res', 10000);
+      if (m.t === 'offline' && await session.whenReady(30000) && session.channel() === ch0)
+        m = await session.ask1(answer, 'pk_check_res', 10000); // Same device, same assertion, unchanged verifier.
+      if (session.channel() !== ch0) return;
+      if (m.why !== 'no_check') break; // Only explicit expiry warrants another biometric prompt, once.
+    }
     const result = pkTestResult(m);
     testPkNotice(result.key, result.success, result.setup ? reset : result.retry ? testFaceId : null, result.setup);
-  }, (e) => {
-    const n = pkassist.errName(e);
-    if (pkNow?.ch === ch0 && !pkNow.chk) { pkNow.chk = c; paintPkRow(); } // No assertion was sent; allow a fresh user tap.
-    testPkNotice(n === 'WrongSeatKey' ? 'p566.pk.wrongSeat' : n === 'AbortError' ? 'p539.fail.abort' : 'p539.fail.cancel', false, reset, true);
-  });
+  })().catch(() => testPkNotice('p566.notSent', false, testFaceId)).finally(() => { testingFaceId = false; });
 }
 function testPkNotice(key, success = false, action = null, setup = false) {
   const box = notify({kind:success?'success':'warn', text:pkassist.withBio(key), shape:action?'rect':'circle',
@@ -874,7 +889,7 @@ let pkNow = null;   // {ch, s}: only shown for the computer that said it
 function paintPkRow() {
   const here = pkNow && pkNow.ch === session.channel();
   pkassist.paintPkRow(here ? pkNow.s : null, { row: $('set-pk-row'), label: $('set-pk-state'), note: $('set-pk-note'), setupBtn: $('set-pk-setup'), oldBtn: $('setup-faceid'), failed: passkey.failedHere(),
-    acts: $('set-pk-acts'), testBtn: $('set-pk-test'), canTest: !!(here && pkNow.chk) && passkey.canAssert() });   // P566 (#346)
+    acts: $('set-pk-acts'), testBtn: $('set-pk-test'), canTest: !!(here && pkNow.s === 'local') && passkey.canAssert() });   // P566 (#346)
   renderPhoneEnvironment();
 }
 // P550 (p198): the host record's passkey fields are read-modify-written one at a time — pk_state arrives right after pk_reg_res

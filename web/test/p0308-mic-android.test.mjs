@@ -27,7 +27,7 @@ test('0.30.8: a page hidden by a permission dialog keeps an opening take; pagehi
   assert.doesNotMatch(relay, /window\.addEventListener\("pagehide", microphoneAway\)/, 'the event object must not be read as `gone`');
   // microphone.js still stops a grant that lands while hidden; such an abort is not reported as 「no microphone」
   assert.match(read('../public/js/microphone.js'), /if \(generation !== epoch \|\| !visible\(\)\) \{ stop\(s\); throw abort\(\); \}/);
-  assert.match(relay, /if \(err\?\.name !== "AbortError"\) toast\(t\('r\.ptt\.noMic'\), 3000\);/);
+  assert.match(relay, /if \(p\.over\) return;\s*pttEnd\(p, "cancel", true\);\s*\/\/ A cancelled\/hidden request[\s\S]*?toast\(t\(microphoneErrorKey\(err\)\), 7000\);/, 'hidden/cancelled capture stays silent; native interruption gives a specific message');
 });
 
 test('0.30.8 举一反三: the QR scanner and the camera sheet wait out a hide while still asking, never live while hidden', () => {

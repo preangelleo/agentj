@@ -14,7 +14,7 @@ import time
 from . import approvals, passkey, wire
 from .text import clean_label, pick
 
-TYPES = ("pk_peer_req", "pk_peer_answer", "pk_peer_cancel", "pk_check")
+TYPES = ("pk_peer_req", "pk_peer_answer", "pk_peer_cancel", "pk_check", "pk_check_ch")
 KIND = "pk_peer"
 PEER_TTL = 300
 MAX_OPEN = 3
@@ -246,6 +246,13 @@ class Desk:
         ch = passkey.elevate_challenge(self.host.channel, s.device, n, CHECK_KIND, n, CHECK_DIGEST)
         return {"fa": pk["id"], "fa_ch": wire.b64u(ch), "n": n}
 
+    async def _check_ch(self, s, obj: dict) -> None:
+        """Issue a fresh, device-bound self-check only to this ready paired remote."""
+        if not self._ready(s):
+            return
+        fields = self.check_fields(s)
+        await self.host.send_app(s, {"t": "pk_check_ch_res", **({"r": obj["r"]} if wire.is_rid(obj.get("r")) else {}), **fields})
+
     async def _check(self, s, obj: dict) -> None:
         h = self.host
         mine, n = self.checks.get(s.device, []), obj.get("n")
@@ -335,6 +342,8 @@ class Desk:
         return {"ok": True, "name": r.name}
 
     async def on_phone(self, s, t: str, obj: dict) -> None:
+        if t == "pk_check_ch":
+            return await self._check_ch(s, obj)
         if t == "pk_check":
             return await self._check(s, obj)
         if t == "pk_peer_req":

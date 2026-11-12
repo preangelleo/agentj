@@ -5557,7 +5557,12 @@ export default {
   "reload.close": "关闭这条提示",
   "p0311.todo.plan": "Agent 计划",
   "p0311.todo.task": "关联任务",
-  "p0311.todo.report": "关联报告"
+  "p0311.todo.report": "关联报告",
+  "p0314.mic.denied": "麦克风访问被拒绝。请到「设置 → Safari → 麦克风」允许访问，再点一次。",
+  "p0314.mic.busy": "麦克风正被占用。请关闭正在使用麦克风的其他 App，再点一次。",
+  "p0314.mic.interrupted": "麦克风被中断，请再点一次录音。",
+  "p0314.mic.timeout": "麦克风没有响应，请再点一次。",
+  "p0314.mic.default": "无法打开麦克风，请检查设备后再点一次。"
  },
  "en": {
   "p0287.hideDone": "Hide completed",
@@ -11116,6 +11121,11 @@ export default {
   "reload.close": "Close this notice",
   "p0311.todo.plan": "Agent plan",
   "p0311.todo.task": "Linked task",
-  "p0311.todo.report": "Linked report"
+  "p0311.todo.report": "Linked report",
+  "p0314.mic.denied": "Microphone access was denied. Allow it in Settings → Safari → Microphone, then tap again.",
+  "p0314.mic.busy": "The microphone is busy. Close other apps using it, then tap again.",
+  "p0314.mic.interrupted": "The microphone was interrupted. Tap again to record.",
+  "p0314.mic.timeout": "The microphone did not respond. Tap again to try.",
+  "p0314.mic.default": "Could not open the microphone. Check your device and tap again."
  }
 };
