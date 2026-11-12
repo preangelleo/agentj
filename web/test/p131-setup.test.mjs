@@ -37,7 +37,7 @@ test('every row says where it is done; a failure says what, what it affects and 
   assert.match(zh.setup.sticky, /选择、安装和检查可在手机上完成/);
   assert.match(en.setup.sticky, /Choose, install and check on your phone/);
   assert.deepEqual(zh.setup.where, { auto: '我来做', local: '在Agent J 主机上做', phone: '在手机上点', unsupported: '本版还不支持' });
-  assert.equal(zh.setup.next.open_login, '在主机上打开登录页');
+  assert.equal(zh.setup.next.open_login, '在 Agent J 主机上打开登录页');
   assert.match(zh.setup.act.opened, /请在刚弹到前面的 Agent J 浏览器里登录/);
   for (const k of ['banner', 'bannerClose', 'closeList', 'menu']) assert.equal(typeof en.setup[k], 'string', k);
   assert.ok(!JSON.stringify(zh.setup).includes('这一项没通过，只会暂停依赖它的事'), 'the ambiguous sentence is gone');

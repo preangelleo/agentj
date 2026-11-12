@@ -3,16 +3,22 @@ import _hermetic
 import tempfile
 import unittest
 from unittest import mock
-from agentj import ark, doctor, binaries, harness
+from agentj import ark, doctor, binaries, harness, opencode_install
 from test_l1 import _state
 
 class InstallAdvice(unittest.TestCase):
-    def test_ark_missing_cli_recommends_v2_in_both_languages(self):
+    def test_ark_missing_cli_offers_native_checklist_in_both_languages(self):
         with tempfile.TemporaryDirectory() as root:
             result = ark.switch(_state(root), detector=lambda: {})
-        self.assertEqual(result['install'], 'npm i -g @opencode/cli@2')   # #459 newest 2.x; A-N3 never curl | bash
+        self.assertEqual(result['reason'], 'not_installed')
+        self.assertEqual(result['install_action'], {'item': 'harness', 'op': 'ai.install',
+                                                    'params': {'cli': 'opencode', 'source': 'official'}})
+        self.assertEqual(result['next'], 'agentj setup checklist --resume')
+        # The actual optional npm fallback remains major-pinned and never pipes curl.
+        self.assertEqual(opencode_install.NPM, 'npm i -g @opencode/cli@2')
+        self.assertNotIn('curl', opencode_install.NPM)
         for lang in ('zh', 'en'):
-            self.assertIn('npm i -g @opencode/cli@2', ark.say_switch(result, lang))
+            self.assertIn('agentj setup checklist --resume', ark.say_switch(result, lang))
             self.assertNotIn('curl', ark.say_switch(result, lang))
 
     def test_doctor_keeps_v1_usable_and_explains_optional_upgrade(self):

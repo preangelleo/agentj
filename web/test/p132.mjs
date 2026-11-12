@@ -22,9 +22,9 @@ async function touch(p,id,count=1){
 }
 const L={
  zh:{ask:i=>`帮我看一下第 ${i} 件事。`,ans:i=>`第 ${i} 件事已经处理好了。`,loop:'定时检查：服务都正常，没有新的告警。',task:'后台任务跑完了：日志已整理到报告里。',
-     report:'早上好，昨晚的三件事都做完了。',late:'又一条：备份也完成了。',labels:['定时检查','后台任务完成','Agent J - Wren 主动汇报'],none:'这一页没有你的输入',flash:/有新消息/},
+     report:'早上好，昨晚的三件事都做完了。',late:'又一条：备份也完成了。',labels:['定时检查','后台任务完成','Agent J - Wren 主动汇报'],none:'Agent J 主机提示',flash:/有新消息/},
  en:{ask:i=>`Please check item ${i}.`,ans:i=>`Item ${i} is done.`,loop:'Scheduled check: all services are fine, no new alerts.',task:'The background task finished: logs are in the report.',
-     report:'Good morning — all three things from last night are done.',late:'One more: the backup finished too.',labels:['Scheduled check','Background task finished','Agent J - Wren reporting in'],none:'No message from you on this page',flash:/New message/},
+     report:'Good morning — all three things from last night are done.',late:'One more: the backup finished too.',labels:['Scheduled check','Background task finished','Agent J - Wren reporting in'],none:'Agent J host notice',flash:/New message/},
 };
 export const CASES={a:'a) every page has a header card with page number and corner gestures',b:'b) on the newest page a new page takes the owner there',
  c:'c) paging history only flashes the capsule',d:'d) page numbers continuous across pages with and without input'};
@@ -57,12 +57,12 @@ export async function runP132({B,web,fake,out='reports/qa/p132',rec=parityRecord
    seen=[];
    for(let n=5;n>=1;n--){
     if(n<5){await evaluate(p,`${$('pgPrev')}.click()`);await waitFor(p,`${$('pg')}.textContent==='${n} / 5'`);}
-    seen.push(await evaluate(p,`({pg:${$('pg')}.textContent,hidden:${$('om')}.hidden,header:${$('om')}.dataset.header,label:${$('omLabel')}.textContent,text:${$('omText')}.textContent,more:getComputedStyle(${$('omMore')}).visibility})`));
+    seen.push(await evaluate(p,`({pg:${$('pg')}.textContent,hidden:${$('om')}.hidden,header:${$('om')}.dataset.header,sourceDetail:${$('om')}.dataset.sourceDetail,label:${$('omLabel')}.textContent,text:${$('omText')}.textContent,more:getComputedStyle(${$('omMore')}).visibility})`));
    }
    assert.deepEqual(seen.map(x=>x.pg),['5 / 5','4 / 5','3 / 5','2 / 5','1 / 5'],'page numbers are continuous across pages with and without input');
    for(const x of seen)assert.equal(x.hidden,false,'every page has its header card: '+x.pg);
    assert.deepEqual(seen.slice(0,3).map(x=>x.label),[...s.labels].reverse(),'source labels say where each page came from');
-   for(const x of seen.slice(0,3)){assert.equal(x.header,'1');assert.equal(x.text,s.none);assert.equal(x.more,'hidden');}
+   for(const x of seen.slice(0,3)){assert.equal(x.header,'1');assert.equal(x.text,s.none);assert.equal(x.more,x.sourceDetail==='1'?'visible':'hidden');}
    for(const x of seen.slice(3)){assert.equal(x.header,'0');assert.equal(x.more,'visible');}
    });
    await step('a',async()=>{

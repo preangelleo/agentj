@@ -2,6 +2,7 @@
 
 ## 0.28.5 chairman review contract (2026-11-08)
 
+Source: the chairman's 0.28.5 page-review feedback.
 Approval and Face ID / Touch ID confirmations use the existing bottom sheet: viewport-wide,
 no side margin, the current state background, growing above the five-hour quota rule and
 joining the composer. They must not become centred dialogs. Centred floating dialogs use

@@ -580,7 +580,7 @@ REPAIR_RUN = {1: ("① 正在停下卡住的一切（这一轮、子 Agent、命
 STOPPED_WAIT = ("现在是「全部停下」状态。点下面的「恢复」，一键修复会自动接着做，不用再点。",
                 "Stop everything is on. Tap Resume below and One-tap repair goes on by itself; no need to tap again.")
 NEW_OK = ("新对话开好了；原来的对话保存着，随时能找回。", "A new conversation is ready; the old one is kept and can be brought back.")
-NEW_SHARED = ("这个对话开在 Agent J 主机上你自己的窗口里，新对话要在那台电脑上开。可以点「重启 Agent」。",
+NEW_SHARED = ("这个对话开在 Agent J 主机上你自己的窗口里，新对话要在 Agent J 主机上开。可以点「重启 Agent」。",
               "This conversation lives in your own window on the Agent J host; a new one has to be opened there. You can tap Restart Agent.")
 NEW_FAIL = ("没能开新对话。", "Could not start a new conversation.")
 ALL_FAIL = ("四步都试过了，Agent 还是不回话。可以把去掉隐私的诊断发给客服，请他们远程看看（发之前会再问你一次）。",

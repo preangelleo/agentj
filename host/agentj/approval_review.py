@@ -15,7 +15,8 @@ import unicodedata
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-CONTEXT = 'agentjarvis/approval/v2'
+from .approval_context import CONTEXT
+
 REVIEW_CONTEXT = 'agentjarvis/approval-review/v2'
 ORIGIN = contextvars.ContextVar('approval_message_origin', default=None)
 TERMINAL = frozenset(('denied', 'expired', 'revoked', 'executing', 'completed', 'unknown'))

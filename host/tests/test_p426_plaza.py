@@ -531,18 +531,23 @@ class PermissionUnits(unittest.TestCase):
         req = {"cmd": "plaza_perm", "name": "demo-skill", "version": "1.0.0", "sha256": "a" * 64,
                "items": [{"kind": "tool", "name": "Bash"}, {"kind": "secret", "name": "DEMO_TOKEN"}]}
         h = Host({"behavior": "allow", "grant_info": {"rid": "r", "device": "d", "sign_pub": b"x"}})
-        self.assertEqual(asyncio.run(plaza_perms.serve_card(h, req)), {"ok": True, "approved": True, "rid": "r", "device": "d"})
+        # A stand-in Host has no live authenticated application frame: even a fabricated
+        # grant_info must not authorize installation. Real signed positives use CardFixture.
+        self.assertEqual(asyncio.run(plaza_perms.serve_card(h, req)),
+                         {"ok": False, "why": "application_ingress_unverified"})
         tool, inp, kw = h.asked[0]
         self.assertEqual((tool, kw["batch"], kw["grant_info"]), ("agentj plaza", False, True))
-        self.assertTrue(kw["always_ask"])
+        self.assertNotIn("always_ask", kw, "Host.ask uses the signed card's registered policy")
         self.assertEqual(inp["sha256"], req["sha256"])
         self.assertIn(req["sha256"], inp["summary"])
         self.assertIn("运行命令行（Bash）", inp["summary"])
         self.assertIn("读取密钥 DEMO_TOKEN", inp["summary"])
         from agentj import approval_level
         self.assertTrue(approval_level.HOST_CARDS is not None and "agentj plaza".startswith("agentj "), "a host card: never auto-allowed")
-        for ans in ({"behavior": "deny"}, {"behavior": "allow"}):            # an allow without a device signature does not count
-            self.assertEqual(asyncio.run(plaza_perms.serve_card(Host(ans), req)), {"ok": False, "why": "no_signature"})
+        for ans in ({"behavior": "deny"}, {"behavior": "allow"}):
+            # Neither a forged allow nor an unverified deny may stand in for a phone decision.
+            self.assertEqual(asyncio.run(plaza_perms.serve_card(Host(ans), req)),
+                             {"ok": False, "why": "application_ingress_unverified"})
         self.assertEqual(asyncio.run(plaza_perms.serve_card(Host({}), {**req, "items": [{"kind": "tool", "name": "a b"}]})),
                          {"ok": False, "why": "bad_request"})
         # S1: the card says the package declared less; N4: a publisher change rides on the same card (or alone)
@@ -553,7 +558,8 @@ class PermissionUnits(unittest.TestCase):
         for want in ("包声明的少于实际内容", "发布方换了", f"旧指纹：{a}", f"新指纹：{b}", "信任新的发布方"):
             self.assertIn(want, summ)
         h = Host({"behavior": "allow", "grant_info": {"rid": "r", "device": "d"}})
-        self.assertTrue(asyncio.run(plaza_perms.serve_card(h, {**req, "items": [], "publisher": {"prev": None, "new": b}}))["ok"])
+        self.assertEqual(asyncio.run(plaza_perms.serve_card(h, {**req, "items": [], "publisher": {"prev": None, "new": b}})),
+                         {"ok": False, "why": "application_ingress_unverified"})
         self.assertIn("旧指纹：未签名", h.asked[0][1]["summary"])
         self.assertEqual(h.asked[0][1]["publisher"], {"prev": None, "new": b})
         for bad in ({"prev": a, "new": a}, {"prev": "x", "new": b}, {"new": b, "evil": 1}, "a"):
@@ -575,7 +581,8 @@ class PermissionUnits(unittest.TestCase):
         req = {"cmd": "plaza_perm", "name": "demo-skill", "version": "1.0.0", "sha256": "a" * 64, "items": [],
                "audit": [{"rule": "prompt-injection", "path": "README.md", "line": 3}]}
         h = Host({"behavior": "allow", "grant_info": {"rid": "r", "device": "d"}})
-        self.assertTrue(asyncio.run(plaza_perms.serve_card(h, req))["ok"])
+        self.assertEqual(asyncio.run(plaza_perms.serve_card(h, req)),
+                         {"ok": False, "why": "application_ingress_unverified"})
         summ = h.asked[0][1]["summary"]
         self.assertIn("静态审计拦下了这个官方签名包（官方签名不豁免）", summ)
         self.assertIn("• README.md 第 3 行：" + plaza_audit.rule_text("prompt-injection")[0], summ)

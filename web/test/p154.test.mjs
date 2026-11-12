@@ -3,7 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 globalThis.window = {};
-globalThis.document = { documentElement: { lang: 'zh' } };
+globalThis.document = { documentElement: { lang: 'zh', dataset: {} }, getElementById: () => null };
+globalThis.addEventListener = () => {}; // Browser global used by ui.js, imported transitively by busy.js.
 const { assign, rowLimit, sanitizeCap, ROBOT_N, MAX_DOTS, MAX_WIDE, robotName } = await import('../public/js/busy.js');
 const { ROBOTS } = await import('../public/js/robots.js');
 const lib = JSON.parse(readFileSync(new URL('../public/assets/robots.json', import.meta.url), 'utf8'));

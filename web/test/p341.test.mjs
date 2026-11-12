@@ -48,8 +48,9 @@ test('P341: relay renders host-written system pages without TeX', () => {
   assert.match(src, /const sysPage = \(p\) => !!\(p && p\.source && (p\.source\.k === "sys"\)|\(p\.source\.k === "sys" \|\| p\.source\.k === "auto"\)\));/);
   assert.match(src, /RelayMD\.parse\(tx, \{math: !sys\}\)/);
   // P543: an owner-channel message page (card.channel) is outside data too: plain text, like a friend report
-  assert.match(src, /: progress, hostWait, sysPage\(p\), p\.source\?\.k === "friend_report" \|\| !!chan(?: \|\| noticeOnly)?\);/);
-  assert.equal(src.match(/fill\(el\("rdWords"\), tx, (?:p\.source\?\.k === "friend_report"|dataOnly), sys(Page\(p\))?\)/g).length, 3, 'the reader too');
+  assert.match(src, /: progress, hostWait, sysPage\(p\), replyDataOnly\(p\) \|\| noticeOnly\);/);
+  assert.equal((src.match(/fill\(el\("rdWords"\), tx, replyDataOnly\(p\), sysPage\(p\)\)/g) || []).length, 2, 'reader open and refresh both suppress TeX for system pages');
+  assert.match(src, /fill\(el\("rdWords"\), tx, dataOnly, sys\)/, 'reader incremental update retains the same system-page flag');
   assert.match(src, /const gist = !desc && fold && tool === "Bash" \? cmdGist\(body\) : ""/);
 });
 

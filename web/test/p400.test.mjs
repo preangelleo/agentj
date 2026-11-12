@@ -1,7 +1,7 @@
 // P400 item 3: the online support chat (https://support.agentj.app/ → agentj.app/support/, works without pairing) is reachable
 // from the places of the phone page that are about being disconnected or stuck: Settings → 帮助和反馈, the disconnect page
-// (#error-view) and Settings → 紧急修复. The disconnected card (#offDlg) keeps backlog #84's three levels (P375 guard: no
-// direct site link in the card): its 「打开紧急恢复」 opens 紧急修复, whose last line is 在线客服.
+// (#error-view) and Settings → 紧急修复. The reconnect dialog (#connDlg) keeps the P375 guard: no
+// direct site link or command in the dialog; the separate recovery page still carries the support link.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync as rawContractRead } from 'node:fs';
@@ -32,16 +32,17 @@ test('P400 support link: Settings → 帮助和反馈 carries 在线客服 next 
   assert.match(HTML, /data-i18n="set\.helpDocs">手机怎么用<\/a><a href="mailto:feedback@agentj\.app" rel="noopener" data-i18n="set\.helpMail">写信给我们<\/a><a id="set-help-support" href="https:\/\/support\.agentj\.app\/" target="_blank" rel="noopener" data-i18n="p400\.link">在线客服<\/a><\/p>/);
 });
 
-test('P400 support link: the disconnected card reaches it through 紧急修复 (backlog #84: no direct site link in the card)', () => {
-  const card = section('<div id="offDlg"', '<div id="share-notice"');
-  assert.ok(!card.includes('support.agentj.app') && !card.includes('https://'), 'the card itself stays without a site link (P375 guard)');
-  assert.ok(card.includes('id="offRescue"'));
-  assert.match(read('../public/app.js'), /\$\('offRescue'\)\.addEventListener\('click', \(\) => \{ offline\.later\(\); rescue\.openBlock\(\); \}\)/);
+test('P400 support link: reconnect dialog has no direct external link; recovery page retains support', () => {
+  const card = section('<aside id="connDlg"', '<aside id="session-help"');
+  assert.ok(!card.includes('support.agentj.app') && !card.includes('https://') && !card.includes('doctor --reconnect'), 'the card itself stays without a site link or shell command (P375 guard)');
+  assert.match(card, /id="connLater"[\s\S]*id="connRetry"/);
+  assert.match(read('../public/js/conn-dlg.js'), /registerLayer\(\{[^\n]*close: later/);
+  assert.match(read('../public/js/rescue.js'), /el\('rescue-banner-go'\)\?\.addEventListener\('click', openBlock\)/);
 });
 
 test('P400 support link: the disconnect page and 紧急修复 carry it with a plain line', () => {
   const err = section('<section id="error-view"');
-  assert.match(err, /id="error-help-support"[\s\S]*id="error-help-online" data-i18n="p400\.help"[^>]*>[^<]+<\/p>\n\s*<p class="helpmail"><a id="error-support"[^>]*>support\.agentj\.app<\/a><\/p>[\s\S]*id="error-help-mail"/);
+  assert.match(err, /id="error-help-support"[\s\S]*id="error-help-online" data-i18n="p400\.help"[^>]*>[^<]+<\/p>\n\s*<p class="helpmail"[^>]*><a id="error-support"[^>]*>support\.agentj\.app<\/a><\/p>[\s\S]*id="error-help-mail"/);
   const rs = section('<section class="setcard rescue" id="set-s-rescue"');
   assert.match(rs, /<div class="rssupport" id="rs-support-box"><p class="setnote" id="rs-support-note" data-i18n="p400\.rescue">[^<]+<\/p>\n\s*<p class="setlinks"><a id="rs-support"[^>]*data-i18n="p400\.link">在线客服<\/a><\/p><\/div>/);
   assert.match(read('../public/js/rescue.js'), /const sup = el\('rs-support-box'\);[^\n]*\n\s*if \(block && sup && block\.lastElementChild !== sup\) block\.append\(sup\);/, 'stays under the cards rescue.js appends');

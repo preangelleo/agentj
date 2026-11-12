@@ -13,6 +13,7 @@ import json
 import os
 import pathlib
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -101,7 +102,7 @@ class ConfigToml(_CodexHome):
         """Codex itself (config/read) ignores the table key and honours the fixed top-level one."""
         def effective():
             p = subprocess.Popen(["codex", "app-server"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                 env=dict(os.environ, CODEX_HOME=str(self.home)), cwd=self.tmp.name)
+                                 env=dict(os.environ, CODEX_HOME=str(self.home)), cwd=self.tmp.name, start_new_session=True)
             try:
                 p.stdin.write(b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"t","title":"t","version":"1"},'
                               b'"capabilities":{}}}\n{"jsonrpc":"2.0","method":"initialized"}\n'
@@ -112,8 +113,14 @@ class ConfigToml(_CodexHome):
                     if m.get("id") == 2:
                         return m["result"]["config"].get("sandbox_mode")
             finally:
-                p.kill()
+                # Codex may spawn helper children; stop only this probe's process group.
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 p.wait()
+                p.stdin.close()
+                p.stdout.close()
         self.write(TABLE_APPENDED)
         self.assertIsNone(effective(), "a sandbox_mode inside [tui] is not in effect")
         codex_perm.fix()

@@ -18,5 +18,7 @@ test('bots UI has required owner views, signed writes, text rendering and no raw
  const src=readFileSync(new URL('../public/js/bots.js',import.meta.url),'utf8');
  for(const name of ['settings','limits','knowledge','tools','conversations','statistics','embed'])assert.ok(src.includes(name));
  assert.match(src,/signedWrite\('bots_write'/);assert.match(src,/bots_read/);assert.doesNotMatch(src,/innerHTML|localStorage|indexedDB|apiKey\s*:/);
- assert.match(src,/write.*approval every time/i);assert.match(src,/expires<=Date.now\(\)/);
+ assert.match(src,/tool\.level==='write'\?t\('bots\.write_approval_every_time'\):t\('bots\.read'\)/);
+ assert.match(src,/button\(t\('bots\.approve_this_change'\),\(\)=>act\(async\(\)=>\{if\(m\.expires<=Date\.now\(\)\)throw new Error\('expired'\);await write\(m\.request\)/);
+ assert.match(src,/expires<=Date.now\(\)/);
 });

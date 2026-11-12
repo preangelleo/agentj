@@ -5,8 +5,8 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 function fixture(){
  const handlers={},nodes=[];
- const document={activeElement:null,body:{},addEventListener(k,fn){handlers[k]=fn;}};
- const node=id=>{const n={id,isConnected:true,tabIndex:0,children:[],getClientRects:()=>[{}],closest:()=>null,matches:()=>true,contains(e){return e===this||this.children.includes(e);},querySelectorAll(){return this.children;},focus(){document.activeElement=this;}};nodes.push(n);return n;};
+ const document={activeElement:null,body:{},addEventListener(k,fn){handlers[k]=fn;},querySelectorAll(){return [];}};
+ const node=id=>{const classes=new Set(),styles=new Map();const n={id,isConnected:true,tabIndex:0,children:[],dataset:{},inert:false,classList:{contains:c=>classes.has(c),toggle(c,on){if(on)classes.add(c);else classes.delete(c);}},style:{getPropertyValue:k=>styles.get(k)||'',setProperty:(k,v)=>styles.set(k,v)},getClientRects:()=>[{}],closest:()=>null,matches:()=>true,contains(e){return e===this||this.children.includes(e);},querySelectorAll(){return this.children;},focus(){document.activeElement=this;}};nodes.push(n);return n;};
  const ctx=vm.createContext({focusDraft,document,MutationObserver:class{observe(){}},console});
  vm.runInContext(readFileSync(new URL('../public/js/layers.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replaceAll('export ','' )+';globalThis.api={registerLayer,initLayers};',ctx);ctx.api.initLayers();
  const key=(key,shiftKey=false)=>{const e={key,shiftKey,preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;}};handlers.keydown(e);return e;};

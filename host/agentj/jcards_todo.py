@@ -241,9 +241,25 @@ def _show_cond(c, by_id: dict, end: bool, lang: str):
     return {"kind": "when", "text": cards._clean(privacy.redact(c["when"]), COND_MAX)}
 
 
+def _phone_meta(row: dict, item: dict) -> dict:
+    """Only explicit, closed internal destinations; free-text source/note never becomes navigation."""
+    meta = {}
+    if item['owner'] == 'agent' and item['status'] not in CLOSED and row.get('plan') is True:
+        meta['plan'] = True
+    for kind, prefix in (('task', 'workflow/'), ('report', 'doc/')):
+        ref = row.get(kind)
+        if (isinstance(ref, dict) and set(ref) == {'jlink'} and isinstance(ref['jlink'], str)
+                and ref['jlink'].startswith(prefix) and cards.JLINK_RE.fullmatch(ref['jlink'])):
+            meta[kind] = {'jlink': ref['jlink']}
+    return meta
+
+
 def phone_items(raw: bytes | None, lang: str, now: dt.datetime | None = None, root=None) -> tuple[list, str | None]:
     """jcard_get rows for the To-do card: every field the card draws, already redacted, in the card's order."""
-    items, bad = load(raw)
+    _, rows, bad = _parse(raw)
+    indexed = [(item, row) for i, row in enumerate(rows[:cards.ITEMS_MAX]) if (item := normalize(row, i))]
+    items = [item for item, _ in indexed]
+    meta = {id(item): _phone_meta(row, item) for item, row in indexed if isinstance(row, dict)}
     references = dependencies(root, items) if root is not None else []
     by_id = {x['id']: x for x in [*references, *items]}
     out = []
@@ -253,7 +269,8 @@ def phone_items(raw: bytes | None, lang: str, now: dt.datetime | None = None, ro
                     "editable": privacy.redact(x["text"]) == x["text"], "done": x["status"] in CLOSED, "status": x["status"], "owner": x["owner"], "by": x["by"],
                     "start": _show_cond(x["start"], by_id, False, lang), "end": _show_cond(x["end"], by_id, True, lang),
                     "note": clean(x["note"], NOTE_MAX), "source": clean(x["source"], SOURCE_MAX),
-                    "created": x["created"], "finished": x["finished"], "state": a["state"], "flags": a["flags"]})
+                    "created": x["created"], "finished": x["finished"], "state": a["state"], "flags": a["flags"],
+                    **meta.get(id(x), {})})
     return out, bad
 
 

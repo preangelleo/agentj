@@ -39,7 +39,8 @@ function ctx(cur={status:'working',hostStatus:'working'}){
     'r.replyStopped':zh.replyStopped}};
   const t=(k,v)=>String(DICT.zh[k]??k).replace(/\{(\w+)\}/g,(m,n)=>v&&n in v?String(v[n]):m);
   const painted=[], robots=[], c=vm.createContext({setTimeout:()=>0,clearTimeout(){},Date,historySync:false,shownKey:'1|x',wordsSrc:null,cardReplyKey:null,refreshCards(){},
-    cur,t,el:()=>({dataset:{}}),fill:(_,x,plain)=>painted.push([x,plain]),afterWords:(r)=>robots.push(!!r),rdFollow(){}});
+    cur,hist:{epoch:1},wordsIdentity:null,wordsFinished:false,wordsAt:0,wordsTimer:null,STREAM_MS:150,themeGen:0,
+    t,el:()=>({dataset:{}}),fill:(_,x,plain)=>painted.push([x,plain]),afterWords:(r)=>robots.push(!!r),rdFollow(){}});
   vm.runInContext(words,c);
   return {c,painted,robots,run:(js)=>vm.runInContext(js,c)};
 }
@@ -70,6 +71,7 @@ test('P281 wiring: the dots are gone, the host lines are recognised, the theme r
   assert.match(busy,/if \(dotsMode\(\)\) \{/,'the dots theme keeps its dots');
   assert.match(css,/body\[data-wait-line="1"\] \.thinking\{display:none\}/);
   assert.match(css,/body\[data-status=working\] \.thinking,body\[data-page-progress="1"\] \.thinking\{display:flex\}/);
-  assert.match(css,/@keyframes wb-dance\{from\{background-position-x:0\}to\{background-position-x:calc\(-12\*var\(--wb\)\)\}\}/);
+  assert.match(css,/@keyframes aj-busy-wb-dance\{from\{background-position-x:0\}to\{background-position-x:calc\(-12\*var\(--wb\)\)\}\}/);
+  assert.match(css,/animation:var\(--aj-busy-wbot-animation,aj-busy-wb-dance 2\.4s steps\(12\) infinite\)/);
   assert.doesNotMatch(css,/\.thinking i\{/,'the three breathing dots are gone');
 });

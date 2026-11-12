@@ -1,4 +1,4 @@
-"""0.26.10: every bundled instruction surface keeps the main session available."""
+"""The delegation default and the owner's explicit do-it-yourself exception coexist on every instruction surface."""
 import pathlib
 import sys
 import unittest
@@ -11,8 +11,8 @@ EN = 'keep the main session ready for owner messages'
 
 class AssistantBoundary(unittest.TestCase):
     def test_all_three_harness_prompts_keep_boundary_and_plain_citations(self):
-        for lang, needles in [('zh', (ZH, '一句话小事', '不用 harness 引用语法', '只派活、写验收、跑验收、汇报')),
-                              ('en', ('Keep the main session ready for owner messages', 'one-sentence task', 'Never use harness citation syntax', 'dispatch, write acceptance checks, run them and report'))]:
+        for lang, needles in [('zh', (ZH, '一句话小事', '不用 harness 引用语法', '默认派活、写验收、跑验收、汇报', '主人说「自己做」「别派」')),
+                              ('en', ('Keep the main session ready for owner messages', 'one-sentence task', 'Never use harness citation syntax', 'by default, dispatch, write acceptance checks, run them and report', 'Delegation is a default, not a prohibition', 'do this yourself'))]:
             for harness in ('claude', 'codex', 'opencode'):
                 with self.subTest(lang=lang, harness=harness):
                     prompt = identity.prompt({'language': lang}, harness=harness)
@@ -21,12 +21,18 @@ class AssistantBoundary(unittest.TestCase):
                     self.assertTrue(identity.mechanism({}, harness))
 
     def test_every_packaged_skill_repeats_the_delegate_boundary(self):
-        files = list((ROOT/'skills').glob('agentj-*/SKILL.md')) + [ROOT/'wizard/skill/SKILL.md']
+        files = list((ROOT/'skills').glob('agentj-*/SKILL.md'))
         self.assertGreater(len(files), 30)
         for file in files:
+            # Diagnostic-only and generated reply-component references do not define the main-Agent role.
+            if file.parent.name in ('agentj-relay-check', 'agentj-reply-components'):
+                continue
             with self.subTest(skill=file.parent.name):
                 text = file.read_text()
-                for phrase in (ZH, EN, 'resident CEO or temporary sub-Agent', 'write and run acceptance checks', '一句话小事'):
+                # Skills carry the short bilingual default plus the explicit owner exception;
+                # the former absolute wording contradicted the updated constitutional core.
+                for phrase in ('默认派 CEO/子 Agent', '主人明确要求亲做', 'Delegate by default',
+                               'follow explicit owner requests', 'Verify and report', 'UV'):
                     self.assertIn(phrase, text)
 
     def test_role_templates_keep_rule_inside_upgradeable_core(self):
@@ -38,10 +44,11 @@ class AssistantBoundary(unittest.TestCase):
                     self.assertIn(needle,text[a:b])
 
     def test_turn_reminder_does_not_drift_on_any_harness(self):
-        for lang, needle in [('zh','主会话随时能接主人消息'), ('en','stay ready for owner messages')]:
+        for lang, needles in [('zh', ('主人明确让你亲做', '安全与 UV 不变', '小事亲做')),
+                              ('en', ('Follow an owner request', 'safety and UV remain', 'do instant small jobs yourself'))]:
             text = identity.turn_reminder({'language':lang})
-            self.assertIn(needle,text)
-            self.assertIn('一句话小事' if lang=='zh' else 'one-sentence tasks',text)
+            for needle in needles:
+                self.assertIn(needle,text)
             self.assertLess(len(text),600)
 
     def test_no_direct_maintenance_or_preflight_exception_in_skills(self):

@@ -23,7 +23,8 @@ function ctx(){
   const DICT={zh:{'r.replyWorking':zh.replyWorking,'r.ownerAddress':zh.ownerAddress,'r.replyPending':zh.replyPending}};
   const t=(k,v)=>String(DICT.zh[k]??k).replace(/\{(\w+)\}/g,(m,n)=>v&&n in v?String(v[n]):m);
   const painted=[], c=vm.createContext({setTimeout:()=>0,clearTimeout(){},Date,historySync:false,shownKey:'1|x',wordsSrc:null,
-    cur:{status:'working',hostStatus:'working'},t,el:()=>({dataset:{}}),fill:(_,x,plain)=>painted.push([x,plain]),afterWords(){},rdFollow(){}});
+    cur:{status:'working',hostStatus:'working'},hist:{epoch:1},wordsIdentity:null,wordsFinished:false,wordsAt:0,wordsTimer:null,wordStreams:new WeakMap(),STREAM_MS:150,themeGen:0,
+    t,el:()=>({dataset:{}}),fill:(_,x,plain)=>painted.push([x,plain]),afterWords(){},rdFollow(){}});
   vm.runInContext(words,c);
   return {c,painted,show:()=>vm.runInContext(`renderWords('',true)`,c)};
 }
@@ -45,7 +46,7 @@ test('P205 cleanAddress: text only, control characters out, ≤ 16 characters, j
   assert.equal(clean('😀'.repeat(20)),'😀'.repeat(16),'cut by characters, never half a surrogate pair');
   for(const v of [undefined,null,3,{},['a'],'', '   ']) assert.equal(clean(v),'');
   assert.match(src,/ownerAddr=cleanAddress\(userPreferences\.owner\?\.address\)/,'applyPreferences takes it from the host preferences');
-  assert.match(src,/fill\(w, pending && !tx \? \(label \|\| waitText\(wait\)\) : tx, dataOnly \|\| pending && !tx, sys\)/,'wait lines are drawn as plain text');
+  assert.match(src,/fill\(w, pending && !tx \? \(label \|\| waitText\(wait\)\) : tx, dataOnly \|\| pending && !tx, sys, streamKey, !pending\)/,'wait lines are drawn as plain text, while the stream retains its identity and finish marker');
 });
 
 test('P205 a wait line breaks at its commas on a narrow phone', ()=>{

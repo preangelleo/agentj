@@ -335,7 +335,7 @@ def failure_text(rec, *, mobile=False):
         if rec and rec.get('reason') == 'rolled_back':
             return ('新版本服务未启动，已自动回滚，原版本照常可用。可用「修复连接」检查状态。 / '
                     'The new service did not start; the previous version was restored. Use Repair connection to check its status.')
-        return ('后台服务启动未完成。使用「修复连接」，或前往设置中的「紧急修复」。主机离线时，请先唤醒那台电脑。 / '
+        return ('后台服务启动未完成。使用「修复连接」，或前往设置中的「紧急修复」。Agent J 主机离线时，请先唤醒它。 / '
                 'Background service did not finish starting. Use Repair connection or Settings → Emergency repair. If the host is offline, wake that computer first.')
     if rec and rec.get('reason') in service.NO_MANAGER:   # P278: no systemd here — say so and how to fix it
         return service.MESSAGES[rec['reason']]

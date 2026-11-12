@@ -21,7 +21,7 @@ from unittest import mock
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from agentj import elevate, harness, keys, passkey, serve, wire  # noqa: E402
+from agentj import elevate, harness, keys, keys_found, passkey, serve, wire  # noqa: E402
 
 from test_l1 import Phone, _host, _ready, _state  # noqa: E402
 from test_p57_passkey import Authenticator, pk_record  # noqa: E402
@@ -46,7 +46,12 @@ class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.d = pathlib.Path(self.tmp.name)
-        self.patches = [mock.patch.dict(os.environ, {"HOME": str(self.d / "home"), "XDG_CONFIG_HOME": str(self.d / "cfg")})]
+        # The host key page uses the harness's effective environment, not just agentj.env.
+        # Never let the runner's login variables or real user manager affect these vectors.
+        self.patches = [mock.patch.dict(os.environ, {"HOME": str(self.d / "home"), "XDG_CONFIG_HOME": str(self.d / "cfg")}),
+                        mock.patch.dict(os.environ, {k: "" for k in (*keys_found.CLOUD_ENV, "ANTHROPIC_AUTH_TOKEN",
+                            "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CODEX_API_KEY",
+                            "OPENAI_API_KEY")})]
         (self.d / "home").mkdir()
         self.envf = self.d / "unit" / "agentj.env"
         self.envf.parent.mkdir()

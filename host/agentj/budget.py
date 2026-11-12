@@ -94,7 +94,8 @@ def state(st) -> dict:
     recs = d.get("signed") if isinstance(d.get("signed"), list) else []
     if not recs or not all(isinstance(r, dict) and _verified(st, r) for r in recs):
         return {"day": None, "month": None, "currency": cur}
-    newest = max(recs, key=lambda r: r["ts"])
+    # Equal millisecond timestamps are possible for successive signed taps; the appended record is newest.
+    newest = max(enumerate(recs), key=lambda pair: (pair[1]["ts"], pair[0]))[1]
     if hwm(st) != [newest["ts"], newest.get("n")]:
         return {"day": None, "month": None, "currency": cur}      # rolled back (or the mark is missing): fail closed
     out = {"day": None, "month": None, "currency": cur}

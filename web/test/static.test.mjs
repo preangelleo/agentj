@@ -514,10 +514,21 @@ test('i18n: no internal terms or banned words in either dictionary, the page tex
     'bots.add_a_token_using_the_secret_card_then_enable_telegram_replacing_the_token_pauses_telegram_save_to_r',
   ]);
   for (const [where, original] of sources) {
-    const text = botPlatformKeys.has(where.replace(/^(zh|en) /,'')) ? original.replace(/\bTelegram\b/g,'') : original;
-    // #541 names the actual signed ingress channel, independent of relay's private bot.
-    if (where === 'zh p541.channel.telegram' || where === 'en p541.channel.telegram') {
-      assert.equal(text, 'Telegram', 'only the public channel name is allowed at this exact provenance label');
+    let text = botPlatformKeys.has(where.replace(/^(zh|en) /,'')) ? original.replace(/\bTelegram\b/g,'') : original;
+    // The setup walkthrough quotes the actual Settings route. Match its labels from the same-language dictionary,
+    // then remove only that one quoted route; extra Telegram mentions still fail the private-wording check.
+    if (where === 'zh setup.step.tg' || where === 'en setup.step.tg') {
+      const language = where.slice(0, 2);
+      const dict = DICT[language];
+      const route = language === 'zh'
+        ? `「${dict['set.title']} → ${dict['set.gChannels']} → Telegram」`
+        : `${dict['set.title']} → ${dict['set.gChannels']} → Telegram`;
+      assert.ok(text.includes(route), `${where}: walkthrough must name the real Settings route`);
+      text = text.replace(route, '');
+    }
+    // #541 signed ingress and #0304 owner-action provenance name the actual channel, not relay's private bot.
+    if (['zh p541.channel.telegram','en p541.channel.telegram','zh p0304.qch.telegram','en p0304.qch.telegram'].includes(where)) {
+      assert.equal(text, 'Telegram', 'only the public channel name is allowed at an exact provenance label');
       continue;
     }
     assert.doesNotMatch(text, /\bLeo\b|Telegram|贾维斯|\bJarvis\b|J\.A\.R\.V\.I\.S/i, `${where}: relay's private wording`);
@@ -682,7 +693,7 @@ test('Agent name from the host: text only, control / format chars dropped, ≤ 3
   // shown via textContent only, default "Agent J"
   assert.match(APP, /\$\('brand-name'\)\.textContent = displayAgentName\(\);/);
   assert.match(APP, /const DEFAULT_NAME = 'Agent J';/);
-  assert.match(APP, /case 'status': setAgentName\(m\.name\);/);
+  assert.match(APP, /case 'status': mainThread\.set\(m\.main_thread\); setAgentName\(m\.name\);/);
 });
 
 // G-A130 / ADR-A140 (PR1): Cloudflare Web Analytics injects its beacon <script> into HTML answered to a browser unless the
@@ -767,7 +778,8 @@ test('icon buttons: no border by default (P555)', () => {
   }
   assert.ok(ids.size > 20 && icon.has('fsic') && icon.has('pttbtn'), 'the scan sees the page\'s icon buttons');
   const framed=[...html.matchAll(/<button\b([^>]*)>/g)].filter(m=>/class="[^"]*\baj-icon-action--framed\b/.test(m[1])).map(m=>/\bid="([^"]+)"/.exec(m[1])?.[1]).sort();
-  assert.deepEqual(framed,['mail-add','phone-env-copy','rm-add','rm-copy','rv-refresh'],'only the five #576 inherited icon frames are preserved');
+  assert.deepEqual(framed,['mail-add','phone-env-copy','rm-add','rv-refresh'],'only the four remaining #576 inherited icon frames are preserved; rm-copy is now a labelled action');
+  assert.match(html, /<button\b[^>]*id="rm-copy"[^>]*class="aj-action aj-action--sm"[^>]*>[\s\S]*?<span data-i18n="rm.copy">/, 'pairing-link copy is a labelled action, not an icon-only frame');
   const last = new Map();
   for (const f of files.filter((x) => x.endsWith('.css'))) {
     for (const r of read(f).replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {

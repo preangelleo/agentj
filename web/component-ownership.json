@@ -5994,7 +5994,7 @@
       "aj-action"
     ],
     "rmuse": [
-      "aj-reply-action"
+      "aj-reply"
     ]
   },
   "classOwnerRules": {
@@ -11736,11 +11736,6 @@
         "source": "public/index.html",
         "evidence": "Exact existing component root ID; verified against its static DOM and the 40-family catalog."
       },
-      "offDlg": {
-        "family": "component-40",
-        "source": "public/index.html",
-        "evidence": "Exact existing component root ID; verified against its static DOM and the 40-family catalog."
-      },
       "dropzone": {
         "family": "component-13",
         "source": "public/index.html",
@@ -12320,7 +12315,7 @@
         "ownerClass": "rmuse",
         "withinRoot": "rm",
         "family": "component-07",
-        "reason": "Actual reply header usage disclosure action calls relay.toggleUse; independent reply action, not a generic button skin."
+        "reason": "Finished reply header elapsed-usage summary is non-interactive text, painted by relay.paintUse; it is not a reply action."
       }
     },
     "dynamicIds": [

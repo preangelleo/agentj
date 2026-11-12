@@ -20,6 +20,9 @@ counts as the day's beat. It follows the main switch: `agentj heartbeat off` sil
 beat from a regular one by its text — handle both the same way.
 
 ## When a heartbeat arrives
+
+Use the three-card work protocol in agentj-cards/three-card-protocol.md. On the daily review around 08:00 local time, list **all** open to-dos (including those without a deadline) and check today's/tomorrow's calendar, not only `due`; close verified work, cancel stale items with reasons, fill in next steps and name anything stalled over seven days. Requested default-on 08:00 review is not implemented: `heartbeat.daily_at` remains off until explicitly configured and a daily beat is not guaranteed; do the review on the next available wake-up if the host was off.
+每日约八点的整理按 agentj-cards/three-card-protocol.md 办：查全部未关闭待办（含无截止日）与今明日安排，已验收的完成、失效的说明原因取消、其余补下一步，七天无进展的点名报主人。需求中的默认八点整理尚未在主机实现；每日唤醒仍默认关闭，且不保证准点；漏了就在下次醒来补查。
 1. The message names the heartbeat prompt `~/.config/agentj/heartbeat.md` and the first 8 hex of its hash.
    - It carries the full prompt the first time after a restart, after the prompt changed and after a compaction /
      clear: read it and follow it.

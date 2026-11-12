@@ -149,7 +149,7 @@ test('P393 wiring: every 「连不上」 surface reads the gate', () => {
   assert.match(RESCUE, /p393\.checkedAt/);
   // a drop that heals inside the window still resumes an upload it cut (parity upload-resume: a serve restart = st.hostDown)
   const RELAY = read('../public/js/relay.js');
-  assert.match(RELAY, /export function connLost\(\)\{ quietLost = true; outbox\.lost\(\); \}/);
+  assert.match(RELAY, /export function connLost\(\)\{\s*quietLost = true; outbox\.lost\(\); historyAwaitingMeta = false;\s*historyGeneration\+\+; historyHead = null; historySync = true;/);
   assert.match(RELAY, /if \(on && \(!was \|\| quietLost\)\) uploadsResume\(\);/);
 });
 

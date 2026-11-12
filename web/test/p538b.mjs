@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 // Font family names below are installed Linux stand-ins, never the literal Chrome UI label ‘Custom’.
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {resolve} from 'node:path';
-import {launch,newPage,navigate,evaluate,shoot} from './browser.mjs';
+import {launch,newPage,navigate,evaluate,shoot,sleep} from './browser.mjs';
 import {startWebServer} from './serve.mjs';
 const out=resolve(process.env.P538B_OUT||'reports/qa/538b-web');mkdirSync(out,{recursive:true});
 const phase=process.env.P538B_PHASE||'after', rows=[];
@@ -18,9 +18,22 @@ try {
    await evaluate(page,`(async()=>{document.body.dataset.view='chat';document.body.dataset.conn='on';document.body.dataset.status='idle';document.querySelector('#om').hidden=false;document.querySelector('#words').className='words';document.querySelector('#words').textContent='聊天正文 ABC / Reply text. 这是一段用于比较字体的测试回复。';document.querySelector('.omtxt').textContent='输入卡 ABC / Input card';document.querySelector('#input').placeholder='输入 ABC';await document.fonts.ready;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));})()`);
    // CDP platform glyphs only exist after a rendered frame, not merely fonts.ready.
    // Capture before querying: screenshot waits for the compositor to consume the fixture DOM.
-   await shoot(page);
-   await page.send('DOM.enable');await page.send('CSS.enable');const {root}=await page.send('DOM.getDocument');const fonts={};
-   for(const selector of ['#words','.omtxt','#input','.setrow .setlab']){const {nodeId}=await page.send('DOM.querySelector',{nodeId:root.nodeId,selector});fonts[selector]=(await page.send('CSS.getPlatformFontsForNode',{nodeId})).fonts;if(selector!=='.setrow .setlab')assert.ok(fonts[selector].length,`Visible ${selector} must have painted glyphs (${width}/${theme}/${size})`);}
+   await page.send('DOM.enable');await page.send('CSS.enable');const fonts={};
+   for(const selector of ['#words','.omtxt','#input','.setrow .setlab']){
+    // Startup can redraw the placeholder after the fixture was inserted. Query a freshly
+    // painted, visible node rather than racing that redraw or trusting fonts.ready alone.
+    let painted=[];
+    for(let attempt=0;attempt<12;attempt++){
+     if(selector==='#words'||selector==='.omtxt')await evaluate(page,`(()=>{const n=document.querySelector(${JSON.stringify(selector)});n.textContent=${JSON.stringify(selector==='#words'?'聊天正文 ABC / Reply text. 这是一段用于比较字体的测试回复。':'输入卡 ABC / Input card')};})()`);
+     await shoot(page);
+     const {root}=await page.send('DOM.getDocument');const {nodeId}=await page.send('DOM.querySelector',{nodeId:root.nodeId,selector});
+     painted=(await page.send('CSS.getPlatformFontsForNode',{nodeId})).fonts;
+     if(painted.length||selector==='.setrow .setlab')break;
+     await sleep(100);
+    }
+    fonts[selector]=painted;
+    if(selector!=='.setrow .setlab')assert.ok(painted.length,`Visible ${selector} must have painted glyphs (${width}/${theme}/${size})`);
+   }
    const values=await evaluate(page,`Object.fromEntries(['html','body','#words','.omtxt','#input','.setrow .setlab'].map(s=>{const c=getComputedStyle(document.querySelector(s));return[s,{size:c.fontSize,line:c.lineHeight,family:c.fontFamily}]}))`);
    const pref=await evaluate(page,`(async()=>{const m=await import('./js/settings.js');m.setFontStep(4);const a={rs:getComputedStyle(document.querySelector('#words')).fontSize,stored:localStorage.getItem('aj.fontScale')};m.setFontStep(2);return a;})()`);
    rows.push({width,theme,browserStandardSize:size,values,fonts,pref});

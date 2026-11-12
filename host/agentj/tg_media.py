@@ -48,7 +48,7 @@ def method_of(rec: dict) -> tuple[str, str]:
     return m
 
 
-def collect(media: "media_mod.Media", text: str, keys: list | None = None, mask: bool = False) -> tuple[list[dict], list[dict]]:
+def collect(media: "media_mod.Media", text: str, keys: list | None = None, mask: bool = False, *, limit: int = MAX_ITEMS) -> tuple[list[dict], list[dict]]:
     """Blocking owner attachment scan → records/skips. Run in a thread.
     With keys+mask, offer masked text copies and transient value-card pairs; credential files stay whole cards."""
     mask = mask and keys is not None
@@ -58,7 +58,7 @@ def collect(media: "media_mod.Media", text: str, keys: list | None = None, mask:
     if not media or not getattr(media, "workdir", None) or not text:
         return items, skips
     for ref in media_mod.refs(text):
-        if len(items) >= MAX_ITEMS:
+        if len(items) >= limit:
             break
         name = os.path.basename(ref.path.rstrip("/"))[:media_mod.NAME_MAX] or ref.path[:media_mod.NAME_MAX]
         if media_mod._PLACEHOLDER.search(ref.path):        # P194: a masked path is `masked`, never 「找不到了」
@@ -87,7 +87,7 @@ def collect(media: "media_mod.Media", text: str, keys: list | None = None, mask:
         seen.add((rec["dev"], rec["ino"]))
         total += rec["bytes"]
         items.append(rec)
-    return items, skips[:MAX_ITEMS * 2]
+    return items, skips[:limit * 2]
 
 
 def read_checked(rec: dict) -> bytes:

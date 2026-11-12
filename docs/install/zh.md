@@ -178,6 +178,8 @@ agentj support ask "<你的问题>" --attach-doctor
 
 适用于 Ubuntu、Debian 等常见发行版，台式机、笔记本和云服务器都可以。只能用 SSH 登录、没有桌面的云服务器，还要看[安装说明](https://agentj.app/install.md)里云服务器那一节。
 
+完整云服务器方案选带 systemd 的虚拟机。普通容器可能不支持隔离或后台服务：安装包后、初始化/登录/绑定席位前，运行 `agentj doctor --isolation-only --json`。它只用临时文件测试真实隔离，不读客户身份、不联网。退出码非零就停下看 JSON 里失败的 `checks`（有 `reason` 再看）；通过也不代表平台允许长期后台运行。没有 systemd 用户会话时，tmux/nohup 下的 `agentj serve` 只是手动降级路线：升级、重启、崩溃后要自行启动，不承诺救援守护、手机紧急修复或 systemd 用户定时任务。详见[完整安装说明](https://agentj.app/install.md)。
+
 ### ① 自己装：一条命令 {#linux-self}
 
 **什么时候选它：** Agent J 主机上还没有 AI 工具，或者你想自己动手。全程只用一个码：账户页空席位卡上的**安装码**（`AJI-` 开头）。
@@ -326,7 +328,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装Agent J 主机端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.30.10#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.30.12#subdirectory=host"
 agentj doctor
 ```
 

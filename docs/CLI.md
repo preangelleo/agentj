@@ -1457,7 +1457,7 @@ agentj busy run --help
 usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
                        [--report REPORT] [--harness HARNESS] [--model MODEL]
                        [--workflow WORKFLOW] [--role ROLE] [--parent PARENT]
-                       [--watch WATCH] [--watch-git] [--detach]
+                       [--todo TODO] [--watch WATCH] [--watch-git] [--detach]
                        ...
 ```
 
@@ -1473,6 +1473,7 @@ usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
 | `--workflow` | `null` | false | — | `self-reported display metadata (not detection): workflow` |
 | `--role` | `null` | false | — | `self-reported display metadata (not detection): role` |
 | `--parent` | `null` | false | — | `self-reported display metadata (not detection): parent` |
+| `--todo` | `null` | false | — | `linked To-do id (tN); completion requires separate acceptance and an explicit todo done` |
 | `--watch` | `[]` | false | — | `explicit bounded directory metadata progress` |
 | `--watch-git` | `false` | false | — | `watch working directory .git metadata only` |
 | `--detach` | `false` | false | — | `managed one-shot background run` |
@@ -9483,7 +9484,7 @@ agentj busy run --help
 usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
                        [--report REPORT] [--harness HARNESS] [--model MODEL]
                        [--workflow WORKFLOW] [--role ROLE] [--parent PARENT]
-                       [--watch WATCH] [--watch-git] [--detach]
+                       [--todo TODO] [--watch WATCH] [--watch-git] [--detach]
                        ...
 ```
 
@@ -9499,6 +9500,7 @@ usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
 | `--workflow` | `null` | false | — | `self-reported display metadata (not detection): workflow` |
 | `--role` | `null` | false | — | `self-reported display metadata (not detection): role` |
 | `--parent` | `null` | false | — | `self-reported display metadata (not detection): parent` |
+| `--todo` | `null` | false | — | `linked To-do id (tN); completion requires separate acceptance and an explicit todo done` |
 | `--watch` | `[]` | false | — | `explicit bounded directory metadata progress` |
 | `--watch-git` | `false` | false | — | `watch working directory .git metadata only` |
 | `--detach` | `false` | false | — | `一次性托管并登记` |

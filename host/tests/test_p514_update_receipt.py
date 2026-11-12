@@ -22,6 +22,20 @@ class Receipt(unittest.TestCase):
                     self.assertNotIn('everything is working', text)
                     self.assertNotIn('phone/web page is already', text)
 
+    def test_failure_receipt_explains_stage_without_leaking_untrusted_detail(self):
+        for lang, expected in (('zh', '缓存文件夹没有写权限'), ('en', 'upgrade cache is not writable')):
+            text = phone_update.text({'result': 'failed', 'reason': 'download_failed', 'step': 'download',
+                                      'errno': 13, 'cache_status': 'miss', 'detail': 'PRIVATE_DETAIL'}, lang)
+            self.assertIn(expected, text)
+            self.assertNotIn('PRIVATE_DETAIL', text)
+            self.assertNotIn('download_failed', text)
+            self.assertNotIn('```', text)
+        for lang, expected in (('zh', '暂时查不到新版'), ('en', 'could not check the latest version')):
+            text = phone_update.text({'reason': 'unknown', 'detail': 'PRIVATE_DETAIL'}, lang)
+            self.assertIn(expected, text)
+            self.assertNotIn('unknown', text)
+            self.assertNotIn('PRIVATE_DETAIL', text)
+
     def test_current_receipt_does_not_claim_upgrade_or_restart(self):
         text = phone_update.text({'reason': 'already_current', 'to': '0.26.12'}, 'en')
         self.assertNotIn('grey', text)

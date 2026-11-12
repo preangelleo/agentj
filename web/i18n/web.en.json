@@ -5787,7 +5787,7 @@
   "p0284.refusal.context": "The action context changed. Ask the Agent to send a new card before confirming.",
   "p0284.refusal.stale": "The card changed. Ask the Agent to send a new card before confirming.",
   "p0284.repair.button": "Repair connection",
-  "p0284.repair.offline": "The host is offline. Wake that computer first.",
+  "p0284.repair.offline": "Your Agent J host is offline. Wake your Agent J host first.",
   "p0284.repair.unsupported": "This host does not support repair from this page yet. Open Emergency repair in Settings.",
   "p579.interrupt.native_turn_binding_unavailable": "This native session cannot safely interrupt only the current turn yet.",
   "p579.interrupt.native_turn_unavailable": "There is no native turn available to interrupt.",
@@ -5813,7 +5813,7 @@
   "p584.askAgentAria": "Ask {agent} to run this command on the Agent J host",
   "p584.askAgentHint": "This device cannot run it directly: the Agent runs it and shows a card when it needs your OK",
   "p584.agentMsg": "Please run this command on the Agent J host and tell me the result.",
-  "p584.offline": "The host is offline: wake that computer first",
+  "p584.offline": "Your Agent J host is offline: wake your Agent J host first",
   "p584.running": "Running…",
   "p584.stop": "Stop",
   "p584.stopNo": "Cannot stop it from here: press Ctrl+C in the terminal",
@@ -6059,5 +6059,8 @@
   "reload.stopped": "Page refresh did not take effect. Automatic refresh stopped.",
   "preview.failedFormal": "Preview couldn't open — you're on the regular version.",
   "preview.dismiss": "Got it",
-  "reload.close": "Close this notice"
+  "reload.close": "Close this notice",
+  "p0311.todo.plan": "Agent plan",
+  "p0311.todo.task": "Linked task",
+  "p0311.todo.report": "Linked report"
 }

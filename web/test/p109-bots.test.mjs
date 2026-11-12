@@ -12,11 +12,20 @@ test('template and channel configuration never render a token/key input',()=>{
  const s=readFileSync(new URL('../public/js/bots.js',import.meta.url),'utf8');
  assert.doesNotMatch(s,/type\s*=\s*['"]password|localStorage|innerHTML/);
  for(const op of ['telegram_key','model_key'])assert.ok(s.includes(`op:'${op}'`));
- assert.ok(s.includes('Telegram can see messages'));assert.ok(s.includes('payment integration'));
+ assert.match(s,/t\('bots\.add_a_token_using_the_secret_card_then_enable_telegram_replacing_the_token_pauses_telegram_save_to_r'\)/);
+ assert.match(s,/t\('bots\.owner_s_payment_link_https_no_payment_integration'\)/);
+ const en=JSON.parse(readFileSync(new URL('../i18n/web.en.json',import.meta.url),'utf8'));
+ assert.match(en['bots.add_a_token_using_the_secret_card_then_enable_telegram_replacing_the_token_pauses_telegram_save_to_r'],/Telegram can see messages/);
+ assert.match(en['bots.owner_s_payment_link_https_no_payment_integration'],/no payment integration/);
 });
 test('P297: the owner-bot guest switch is its own signed write, never folded into a save',async()=>{
  const s=readFileSync(new URL('../public/js/bots.js',import.meta.url),'utf8');
- assert.ok(s.includes(`op:'attach_telegram'`));assert.ok(s.includes('receive guests'));assert.ok(s.includes('guests never get your permissions'));
+ assert.ok(s.includes(`op:'attach_telegram'`));
+ assert.match(s,/checkbox\(main,t\('bots\.let_my_agent_j_telegram_bot_receive_guests'\)/);
+ assert.match(s,/t\('bots\.one_bot_two_roles_your_assistant_for_you_main_chat_this_customer_service_for_everyone_else_separate_'\)/);
+ const en=JSON.parse(readFileSync(new URL('../i18n/web.en.json',import.meta.url),'utf8'));
+ assert.match(en['bots.let_my_agent_j_telegram_bot_receive_guests'],/receive guests/);
+ assert.match(en['bots.one_bot_two_roles_your_assistant_for_you_main_chat_this_customer_service_for_everyone_else_separate_'],/guests never get your permissions/);
  const sign=r=>controlMessage('channel','owner','bots_write','b'.repeat(32),123,{request:r});
  const on={op:'attach_telegram',id:'a'.repeat(32),attach:true};
  assert.notDeepEqual(await sign(on),await sign({...on,attach:false}));assert.notDeepEqual(await sign(on),await sign({...on,id:'c'.repeat(32)}));

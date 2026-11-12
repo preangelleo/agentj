@@ -118,6 +118,13 @@ class Snapshot(Base):
                     break
                 await asyncio.sleep(0.01)
             rid = next(iter(self.host.asks))
+            # The ask broadcast is scheduled in a separate task. Let that task finish
+            # while offline, before attaching a session that would also receive it.
+            for _ in range(200):
+                if not any(not task.done() for task in self.host.__dict__.get("_bg_tasks", ())):
+                    break
+                await asyncio.sleep(0.01)
+            self.assertFalse(any(not task.done() for task in self.host.__dict__.get("_bg_tasks", ())))
             self.assertEqual(self.got("ask"), [], "nobody was connected")
             sa = self.ready(a, cid=21)
             await self.host._app(sa, self.cards_get(a, "c1"))

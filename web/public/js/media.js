@@ -597,7 +597,7 @@ function viewerEl() {
   swipeable(v, stage);
   document.body.appendChild(v);
   viewer = { v, x, dl, title, stage, note, hint, prev, next, count, zb, card: null, m: null, cleanup: null, dragAt: 0, hintT: 0 };
-  viewer.layer = registerLayer({element:()=>v,open:()=>!v.hidden,close:closeViewer,fallback:()=>document.getElementById(document.body.dataset.reader==='1'?'rdReadBtn':'readBtn'),rank:90});
+  viewer.layer = registerLayer({element:()=>v,open:()=>!v.hidden,close:closeViewer,trigger:()=>viewer?.card?.querySelector('.mbody img[role="button"]'),fallback:()=>document.getElementById(document.body.dataset.reader==='1'?'rdReadBtn':'readBtn'),rank:90});
   return viewer;
 }
 /** #424: 全屏 is the whole preview (bar + picture + zoom row); Esc leaves it first, the next Esc closes the preview. */

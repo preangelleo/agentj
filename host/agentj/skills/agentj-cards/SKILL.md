@@ -6,6 +6,9 @@ description: Make, change or remove an Agent J card — the owner's own cards in
 默认派 CEO/子 Agent，写验收、复验、汇报；主人明确要求亲做就照办。指纹清单、凭据规则和 harness 硬限制不变。
 Delegate by default; follow explicit owner requests to work personally. Verify and report; UV, credential rules and harness limits remain.
 
+For the official To-do, Calendar and Notebook cards, read three-card-protocol.md first: record the agent's plan, link dispatch and verified completion, review all open work daily, and do not promise punctual reminders.
+管理官方待办、日程和记事本前，先读 three-card-protocol.md：让主人看到 Agent 计划，关联派单与验收，天天复核全部未关闭事项，不承诺准点提醒。
+
 A card = one folder with `card.json` (+ `sample/<data file>`). Schema: `agentj card schema`; spec:
 `https://agentj.app/docs/cards/`. **Phase 1 opens template cards only**: no code, no web page, no image —
 the phone draws one of two built-in templates from one data file on this computer. You do all the work here; the

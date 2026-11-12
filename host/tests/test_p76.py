@@ -58,7 +58,11 @@ class Settings(unittest.TestCase):
             st.agent_config.return_value["session_mode"]="independent"
             self.assertEqual(doctor.check_agent_cli(st,{"installed":False})["status"],"warn")
     def test_shell_token_not_service_login(self):
-        with patch.dict(os.environ,{"CLAUDE_CODE_OAUTH_TOKEN":"TEST_ONLY_TOKEN"}),patch.object(service,"status",return_value={"installed":False}),patch("agentj.harness.sys.platform","linux"):
+        # A developer's separate provider flags / API token may legitimately authenticate
+        # Claude; exclude them so this vector tests only the shell OAuth token.
+        isolated = {k: "" for k in ("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
+                                    "CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+        with patch.dict(os.environ,{**isolated,"CLAUDE_CODE_OAUTH_TOKEN":"TEST_ONLY_TOKEN"}),patch.object(service,"status",return_value={"installed":False}),patch("agentj.harness.sys.platform","linux"):
             self.assertFalse(claude_auth.available());self.assertTrue(claude_auth.available(running=True))
     def test_launch_env_load_private_and_plist_has_path_only(self):
         f=self.home/"service.env";f.write_text('CLAUDE_CODE_OAUTH_TOKEN="TEST_ONLY_TOKEN"\nIGNORED=anything\n');f.chmod(0o600)
@@ -79,8 +83,10 @@ class Settings(unittest.TestCase):
             with self.assertRaises(preferences.ConfigError):preferences.transact(st,raw)
         self.assertEqual(preferences.path().read_bytes(),before)
         with patch("agentj.names.ctl_call",return_value=None),patch.object(claude_auth,"available",return_value=True):
-            self.assertTrue(preferences.transact(st,raw)["ok"])
-        self.assertEqual(st.agent_config()["session_mode"],"independent")
+            with self.assertRaisesRegex(preferences.ConfigError,"fresh paired-device UV"):
+                preferences.transact(st,raw)
+        self.assertEqual(preferences.path().read_bytes(),before)
+        self.assertEqual(st.agent_config()["session_mode"],"shared")
     def test_failure_single_language(self):
         for lang in ("zh","en"):
             host=Mock();a=ClaudeAgent(host,{"kind":"claude","dir":str(self.home),"_workflow_ceo":True,"language":lang})

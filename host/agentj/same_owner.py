@@ -573,7 +573,7 @@ class SameOwner:
                    f"remote will not end it; confirm again or remove it." if bare else '')
         self.svc.xfer._owner_notice(pick(
             self.svc.lang,
-            f"这台电脑现在有了通行密钥。下面这些「同一个主人」关系是旧式建立的（当时没有通行密钥，只靠遥控器签名）：{zh}。"
+            f"这台 Agent J 主机现在有了通行密钥。下面这些「同一个主人」关系是旧式建立的（当时没有通行密钥，只靠遥控器签名）：{zh}。"
             f"{zh_bare}"
             f"建议到好友页对它们重新选择「同一个主人」，用已绑定通行密钥的遥控器核对一次六位数字；不再需要的可以直接解除。",
             f"This computer now has a passkey. These Same owner relations were set up the old way (no passkey, remote "

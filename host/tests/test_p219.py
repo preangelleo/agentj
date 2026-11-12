@@ -222,10 +222,20 @@ class AgentCommand(unittest.TestCase):
         with mock.patch.object(harness_setup, "fence_deps", return_value={"bwrap": True, "socat": True, "hint": ""}):
             self.assertEqual(doctor.check_harness_setup(self.st)["status"], doctor.OK)
         with mock.patch.object(harness_setup, "fence_deps", return_value={"bwrap": True, "socat": False,
-                                                                           "hint": "sudo apt-get install -y socat"}):
+                                                                           "hint": "sudo apt-get install -y socat"}), \
+             mock.patch.object(harness_setup, "install_hint", return_value="sudo apt-get install -y socat"):
             row = doctor.check_harness_setup(self.st)
         self.assertEqual(row["status"], doctor.WARN)
         self.assertIn("sudo apt-get install -y socat", row["hint"])
+
+    def test_codex_does_not_require_claude_sandbox_socat(self):
+        self.st.set_agent_config("codex", str(self.work))
+        with mock.patch.object(harness_setup, "codex_trusted", return_value=True), \
+             mock.patch.object(harness_setup, "fence_deps", return_value={"bwrap": True, "socat": False,
+                                                                            "hint": "sudo apt-get install -y socat"}):
+            row = doctor.check_harness_setup(self.st)
+        self.assertEqual(row["status"], doctor.OK)
+        self.assertNotIn("socat", row["summary"] + row["hint"])
 
 
 # ------------------------------------------------------------------ ③ the adapter
@@ -237,7 +247,7 @@ class _Host:
         self.perm_claimed.set()
         self.notices, self.local, self.texts, self.failed, self.asks = [], [], [], 0, {}
 
-    def new_perm_env(self):
+    def new_perm_env(self, *, cwd=None):
         return {}
 
     def agent_status(self, s):

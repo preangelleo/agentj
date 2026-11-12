@@ -69,9 +69,9 @@ test('P251 hiding a non-modal version notice preserves editing focus; modal rest
  for(const [trap,preserveOutsideFocus] of [[false,true],[true,true],[false,false]]){
   let open=true;
   const body={isConnected:true,getClientRects:()=>[{}],closest:()=>null,matches:()=>false};
-  const doc={activeElement:body};
+  const doc={activeElement:body,querySelectorAll:()=>[]};
   const node=()=>({isConnected:true,getClientRects:()=>[{}],closest:()=>null,matches:()=>true,focus(){doc.activeElement=this;}});
-  const input=node(),fallback=node();const box={contains:()=>false};
+  const input=node(),fallback=node();const box={dataset:{},classList:{contains:()=>false},contains:()=>false};
   const ctx={focusDraft,document:doc};vm.runInNewContext(layerSrc+';this.reg=registerLayer;this.flush=sync;',ctx);
   ctx.reg({element:()=>box,open:()=>open,close(){},fallback:()=>fallback,trap,preserveOutsideFocus});
   doc.activeElement=input;open=false;ctx.flush();assert.equal(doc.activeElement,!trap&&preserveOutsideFocus?input:fallback);

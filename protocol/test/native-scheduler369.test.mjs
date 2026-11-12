@@ -8,7 +8,7 @@ test('native object canonicalization agrees across Python, protocol and phone',(
   const text=protocol.controlObject('native_scheduler_control',target);
   assert.equal(text,phone.controlObject('native_scheduler_control',target));
   const script="import json,sys;sys.path.insert(0,'agentjarvis/host');from agentj.controls import object_text;print(object_text('native_scheduler_control',json.loads(sys.argv[1])))";
-  assert.equal(execFileSync('python3',['-c',script,JSON.stringify(target)],{cwd:new URL('../../../',import.meta.url),encoding:'utf8'}).trim(),text);
+  assert.equal(execFileSync(process.env.AJ_PYTHON || 'python3',['-c',script,JSON.stringify(target)],{cwd:new URL('../../../',import.meta.url),encoding:'utf8'}).trim(),text);
 });
 test('exact identity, platform, scope, snapshot and operation each alter signed object',()=>{
   const base=protocol.controlObject('native_scheduler_control',target);

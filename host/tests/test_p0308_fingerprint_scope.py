@@ -1,9 +1,9 @@
 """0.30.8 ADR-0308-fingerprint-scope (chairman 2026-11-11).
 
-A. The fingerprint card is for the MAIN thread only (owner turns + host heartbeat): CHARGE_COMMANDS and the closed
-   IRREVERSIBLE list. B. 董事长 11-11 定: scheduled tasks / background jobs the OWNER enabled or dispatched, and settings,
-   run it with NO card and NO refusal (they follow their harness; logged as fingerprint_headless); the same work started
-   by a heartbeat / system / same-host turn is refused without a card (security 0310 H1); host_read / external / unknown turns keep the
+A. The fingerprint card is for owner turns only: CHARGE_COMMANDS and the closed
+   IRREVERSIBLE list. B. 董事长 11-11 定: all host-held scheduled tasks / background jobs, regardless of origin,
+   and heartbeat run with NO runtime fingerprint card or refusal (they follow their harness; logged as
+   fingerprint_headless); host_read / external / unknown turns keep the
    ordinary off-list refusal of any write (nothing fingerprint-specific). C. Main-thread / dispatched native rm / rmdir / unlink → deny with
    the `agentj delete` hint (no card); a host-launched user automation (scheduled task) keeps real deletion.
    D. IRREVERSIBLE positives / negatives; ordinary commands unchanged.
@@ -118,7 +118,7 @@ class Irreversible(FakeHome):
         # chairman 11-11: deletion is covered by the trashbin; only the root / home / /home shape stays (no trash holds it)
         self.assertEqual([k for k in uv_list.IRREVERSIBLE if k.startswith("rm")], ["rm -r <home|/|/home>"])
         self.assertEqual(uv_list.FINGERPRINT_SOURCES,
-                         frozenset({"owner_remote", "owner_terminal", "owner_channel", "host_heartbeat"}))
+                         frozenset({"owner_remote", "owner_terminal", "owner_channel"}))
 
 
 class NativeDelete(unittest.TestCase):
@@ -198,7 +198,7 @@ class OffList(FakeHome, p552.Fixture):
     def test_main_thread_gets_the_card(self):
         p552.passkey_on(self.st, self.s.pub)
         for c in ("stripe charges create --amount 500", "git push --force origin main", "dd if=x of=/dev/sdb"):
-            for src in (OWNER, TERMINAL, HEARTBEAT):
+            for src in (OWNER, TERMINAL):
                 res, cards = self.asked(src, c)
                 self.assertEqual(len(cards), 1, (src["type"], c))
                 self.assertTrue(cards[0].get("passkey_required"), c)
@@ -212,7 +212,7 @@ class OffList(FakeHome, p552.Fixture):
             res, cards = self.asked(OWNER, c)
             self.assertEqual(len(cards), 1, c)
             self.assertTrue(cards[0].get("passkey_required"), c)
-            for src in (TASK, ORDER, SETTINGS):
+            for src in (TASK, ORDER, SETTINGS, TASK_UNOWNED, ORDER_UNOWNED, HEARTBEAT):
                 res, cards = self.asked(src, c)
                 self.assertEqual((res["behavior"], cards), ("allow", []), (src["type"], c))
                 self.assertEqual(res.get("updatedInput"), {"command": c})
@@ -224,18 +224,21 @@ class OffList(FakeHome, p552.Fixture):
                 self.assertEqual((res["behavior"], cards), ("deny", []), (src["type"], c))
                 self.assertEqual((res["reason"], plain_cards), (plain["reason"], []), (src["type"], c))
                 self.assertTrue(res["reason"].startswith("off_list_write_"), res)
-            # security 0310 H1: background work the owner did not dispatch / enable cannot launder it — refused, no card
-            for src in (TASK_UNOWNED, ORDER_UNOWNED):
-                res, cards = self.asked(src, c)
-                self.assertEqual((res["behavior"], cards), ("deny", []), (src["type"], c))
-                self.assertEqual(res["reason"], "fingerprint_unowned_" + src["type"])
-                self.assertIn(src["label"], res["message"])
-                plain, _ = self.asked(src, "touch ./notes.txt")
-                self.assertEqual(plain["behavior"], "allow")              # ordinary writes unchanged
         log = (self.st.root / "host.log").read_text() if (self.st.root / "host.log").exists() else ""
         self.assertIn("fingerprint_headless", log)
         self.assertNotIn("stripe charges create --amount 500", log)
         self.assertNotIn("fingerprint_unattended", log)
+
+    def test_existing_cli_tasks_manual_dispatch_resume_and_workflows_never_get_fingerprint_cards(self):
+        # Existing jobs have no owner_started / owner_dispatch fact. The host must not retroactively review them.
+        for src in (TASK_UNOWNED, ORDER_UNOWNED, HEARTBEAT):
+            for command in ("stripe charges create --amount 500", "git push --force origin main",
+                            "mkfs.ext4 /dev/sdb1"):
+                with self.subTest(source=src['type'], command=command):
+                    result, cards = self.asked(src, command)
+                    self.assertEqual((result['behavior'], cards), ('allow', []))
+                    self.assertEqual(result['updatedInput'], {'command': command})
+        # No journal migration or added persisted approvals are needed for old schedules.
 
     def test_headless_allow_respects_emergency_stop(self):
         # the card-free headless path still runs behind serve stop / Stop everything (never an early allow)
@@ -366,6 +369,14 @@ class OwnerDispatchTyping(unittest.TestCase):
             runs = list(journal["runs"].values())
             self.assertEqual(len(runs), 1, (by, trigger))
             self.assertIs(runs[0]["owner_started"], want, (by, trigger))
+            # The actual scheduler mark is passed into the run scope; legacy CLI/manual/dispatch/resume
+            # must still reach the same card-free host decision, without a journal migration.
+            from agentj import provenance
+            with provenance.task_run(owner=runs[0]["owner_started"]):
+                with mock.patch.object(provenance, "_paired_source", return_value=provenance._UNSET):
+                    source = approval_offlist.source(sched.host)
+            self.assertEqual(source["type"], "scheduled_task")
+            self.assertNotIn(source["type"], uv_list.FINGERPRINT_SOURCES)
 
 
 def _hook_cmd(real_delete=False):

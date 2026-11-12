@@ -25,7 +25,7 @@ VERSION = 28  # 0.30.0: delegation is the default; owner working preferences may
 # v9 (P113, ADR-A193): long tasks — preflight card, brief, CEO routing, report read-back
 # v8 (P82): owner-authorized customer-service bot management
 # v5 (P64): a workflow with a CEO is always dispatched — never run or edited by the main Agent; read-only reporting stays
-HASHES = {'en': '34bb2cb538a10e19dac264bee4c08765b6537537e5a9affe31d865ccea6079f3', 'zh': '76f59582206eb1f6d65289b7f938796abcb9e4b1941898c4bdb2a2da4c797232'}
+HASHES = {'en': 'ff19a7096637424285dce8ee7197e7c50da3b355c96a172f3427a9d4ac6ff6b9', 'zh': 'b8b69590ec66f1faaaee4e59f05e72c47d6d7efe32af9bdbc9ac51f8305deeb1'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system",
               "kimi": "acp.resource", "qwen": "acp.resource", "dsh": "acp.text"}   # P329: dsh takes no embedded resources (acp._block)   # P305: ACP has no system-prompt field — an embedded resource block (acp.prompt_blocks)
 
@@ -349,7 +349,7 @@ HOOKS_LINE = {
 # P368 (#78): one-tap answers `[选项](reply:选项)` and which card when. Host line, core hashes unchanged; on every harness
 # (the shared-Claude hook path too — kept short for INLINE_MAX). The phone renders them only in the Agent's own words.
 REPLY_LINE = {
-    "zh": "回复内嵌组件按 agentj-reply-components；表单/确认卡只填草稿。一键回复：非全放行档只为真正的业务取舍问主人，不问「开不开/确认吗」；回复末尾要主人拍板、2–4 个选项、不急时，写 `[选项](reply:选项)`，手机显示成按钮，点一下即以主人名义发出，不阻塞你。例：「先做哪家？[先做 A 店](reply:先做 A 店) [先做 B 店](reply:先做 B 店)」「[用方案 A](reply:用方案 A) [用方案 B](reply:用方案 B)」「不回复就按默认。[按默认](reply:按默认) [我再想想](reply:我再想想)」。凡以「回 X」「回 A 或 B」结尾的回复必须带按钮。非全放行档需等答案、多选、带预览或开放填写→提问卡（选项标签 ≤ 12 字，说明/预览 ≤ 60 字，超了报错）；危险动作→审批卡。按钮别放进引用或代码。命令能自己跑就自己跑；只有你跑不了（断线、要主人密码/登录/扫码、在另一台电脑）才写成单行 ```sh 块，手机会给「执行」按钮。\n",
+    "zh": "回复内嵌组件按 agentj-reply-components；表单/确认卡只填草稿。一键回复：非全放行档只为真正的业务取舍问主人，不问「开不开/确认吗」；回复末尾要主人拍板、2–4 个选项、不急时，写 `[选项](reply:选项)`，手机显示成按钮，点一下即以主人名义发出，不阻塞你。例：「先做哪家？[先做 A 店](reply:先做 A 店) [先做 B 店](reply:先做 B 店)」「[用方案 A](reply:用方案 A) [用方案 B](reply:用方案 B)」「不回复就按默认。[按默认](reply:按默认) [我再想想](reply:我再想想)」。凡以「回 X」「回 A 或 B」结尾的回复必须带按钮。非全放行档需等答案、多选、带预览或开放填写→提问卡（选项标签 ≤ 12 字，说明/预览 ≤ 60 字，超了报错）；危险动作→审批卡。按钮别放进引用或代码。命令能自己跑就自己跑；只有你跑不了（断线、要主人密码/登录/扫码、在另一台设备）才写成单行 ```sh 块，手机会给「执行」按钮。\n",
     "en": "Inline components: agentj-reply-components; forms/confirmations only fill drafts. One-tap answers: only outside full-access mode for real business trade-offs, never to ask \"go?\" or \"confirm?\"; when a reply ends with a decision for the owner (2–4 options, not urgent), write `[option](reply:option)`; the phone shows a button and one tap sends those words as the owner, without blocking you. Examples: \"Which shop first? [Shop A first](reply:Shop A first) [Shop B first](reply:Shop B first)\", \"[Use plan A](reply:Use plan A) [Use plan B](reply:Use plan B)\", \"No answer means the default. [Go with the default](reply:Go with the default) [Let me think](reply:Let me think)\". Every reply ending in \"reply X\" or \"answer A or B\" must carry the buttons. Outside full-access mode, when you must wait for an answer, need multiple choice, previews or a free answer → a question card (option labels ≤ 24 letters, descriptions / previews ≤ 120, longer is refused); a dangerous action → the approval card. Never put the buttons inside a quote or code. Run commands yourself; only when you cannot (disconnected, the owner's password/login/scan, another computer) write a one-line ```sh block — the phone shows a Run button.\n",
 }
 

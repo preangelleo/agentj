@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 globalThis.window = {};
-globalThis.document = { documentElement: { lang: 'zh' } };
+globalThis.document = { documentElement: { lang: 'zh', dataset: {} }, getElementById: () => null };
+globalThis.addEventListener = () => {}; // ui.js is imported transitively by busy.js.
 const {sanitizeRes} = await import('../public/js/busy.js');
 test('#553 disk scope and capacity validate additive host metadata',()=>{
  const current=sanitizeRes({disk:{free:.8,free_gb:1600,total_gb:2000,scope:'workdir',path:'/private/untrusted'}}).disk;

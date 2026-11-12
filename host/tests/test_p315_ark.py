@@ -165,7 +165,7 @@ class ArkPreset(Home):
             self.assertEqual(ms[m]["modalities"]["input"], ["text"], m)
             self.assertNotEqual(ms[m].get("attachment"), True, m)
         self.assertGreater(ms["glm-5.3"]["limit"]["output"], 32000)   # thinking used up the 32k default
-        self.assertEqual(len(ms), 16)
+        self.assertEqual(len(ms), 15)  # current official OpenCode preset, 2026-11-11
         self.assertNotIn("model", cfg)
         self.assertEqual((r["model"], r["vision"], r["kept"], r["written"]), ("ark-coding-plan/doubao-seed-2.1-pro", True, False, True))
         self.assertIn("--dest env:/svc/agentj.env#ARK_CODING_PLAN_API_KEY", r["next"][0])

@@ -47,7 +47,7 @@ class Upgrade(unittest.IsolatedAsyncioTestCase):
     async def test_new_version_launches_and_reports_apply_failure(self):
         with patch.object(update,"check",return_value={"status":"newer","latest":"0.16.3a1"}),patch.object(phone_update,"launch") as launch,patch.object(phone_update,"take",return_value={"result":"failed","reason":"install_failed"}),patch("agentj.serve.asyncio.sleep",new=AsyncMock()):
             await self.h.phone_upgrade(1,"Owner");launch.assert_called_once_with(self.st)
-        self.assertIn("install_failed",self.h.cmd_card.call_args.args[1].text)
+        self.assertIn("升级过程遇到问题",self.h.cmd_card.call_args.args[1].text)
     async def test_restarted_host_replays_result_into_history_once(self):
         rec={"from":"0.16.1a1","to":__version__,"result":"ok","reason":"upgraded","counts":[10,2,0]}
         self.st.write_private(self.st.root/phone_update.RESULT,json.dumps(rec).encode())

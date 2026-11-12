@@ -52,12 +52,21 @@ def text(rec, lang="zh", web="older", machine=None):
     if rec.get("reason") == "already_current":
         from . import humane
         return humane.say("update.current", lang, to=rec["to"])
-    reason = str(rec.get("reason", "unknown"))
+    from . import upgrade_diag
+    reason = rec.get("reason")
     if rec.get("tell_owner"):          # P277: the plain sentence (what failed, where the Agent J host is, whether support has it)
-        from . import upgrade_diag
         return upgrade_diag.owner_sentence(rec, _rep_of(rec), lang)
-    return (f"Upgrade failed ({reason}). Use Repair connection below, or Settings → Emergency repair. If the host is offline, wake that computer first." if lang == "en" else
-            f"升级未完成（{reason}）。使用下方「修复连接」，或前往设置中的「紧急修复」。主机离线时，请先唤醒那台电脑。")
+    en = lang == "en"
+    # Receipt fields may come from an older updater. Only fixed vocabulary crosses into owner-visible text.
+    if reason == "unknown":
+        why = "could not check the latest version (network unavailable or the release site unreachable)" if en else "暂时查不到新版（网络不通或发布站连不上）"
+    elif (rec.get("step") == "download" and rec.get("errno") == 13
+          and rec.get("cache_status") in ("miss", "invalid")):
+        why = "the upgrade cache is not writable" if en else "升级缓存文件夹没有写权限"
+    else:
+        why = upgrade_diag.REASON_WORDS.get(reason, ("升级过程遇到问题", "the upgrade could not finish"))[en]
+    return (f"Upgrade failed: {why}. Use Repair connection below, or Settings → Emergency repair. If the host is offline, wake that computer first." if en else
+            f"升级未完成：{why}。使用下方「修复连接」，或前往设置中的「紧急修复」。Agent J 主机离线时，请先唤醒它。")
 
 def _rep_of(rec):
     import re

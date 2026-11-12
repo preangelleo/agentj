@@ -29,7 +29,7 @@ MAX_MS = 3_600_000                     # anything longer is not a latency (a sle
 
 
 LABELS = {                             # the same words as the phone's Settings → 诊断 (web i18n lat.m.*)
-    "zh": {"t0": "手机到电脑", "t1": "显示「在干活」", "ttft_first": "第一次输出（刚启动）", "ttft_later": "第一次输出（之后）",
+    "zh": {"t0": "手机到 Agent J 主机", "t1": "显示「在干活」", "ttft_first": "第一次输出（刚启动）", "ttft_later": "第一次输出（之后）",
            "done_short": "短问题回完", "done": "回完（全部）"},
     "en": {"t0": "Phone to computer", "t1": "Shows working", "ttft_first": "First output (just started)",
            "ttft_later": "First output (later)", "done_short": "Short reply done", "done": "Reply done (all)"},
@@ -122,7 +122,7 @@ def table(summ: dict, lang: str = "zh") -> str:
     if not summ["turns"]:
         lines.append("还没有记录：从手机发几条消息再看。" if zh else "Nothing recorded yet: send a few messages from the phone.")
     elif not summ["metrics"]["t0"]["n"]:
-        lines.append("「手机到电脑」和「显示在干活」由手机在下一条消息里报回；旧版网页不报。" if zh else
+        lines.append("「手机到 Agent J 主机」和「显示在干活」由手机在下一条消息里报回；旧版网页不报。" if zh else
                      "Phone to computer and Shows working are reported by the phone with its next message; older pages do not.")
     return "\n".join(lines)
 

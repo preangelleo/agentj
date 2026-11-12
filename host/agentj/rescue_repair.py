@@ -210,7 +210,7 @@ def stop_text(res: dict, lang: str) -> str:
     if why == "no_agent":
         return pick(lang, "Agent J 主机上还没选好 AI 助手，没有可以停的。", "No AI assistant is set up on the Agent J host; nothing to stop.")
     if why == "desktop_live":
-        return pick(lang, "卡住的这一轮在你自己在 Agent J 主机上打开的 Codex 里，Agent J 不会关掉它。请在那台电脑上按 Esc 或关掉那个窗口；"
+        return pick(lang, "卡住的这一轮在你自己在 Agent J 主机上打开的 Codex 里，Agent J 不会关掉它。请在 Agent J 主机上按 Esc 或关掉那个窗口；"
                           "不想再遇到，可以在「设置 → 安全 → 会话模式」选「使用独立会话」。",
                     "The stuck turn runs in the Codex you opened yourself on the Agent J host; Agent J never closes it. Press Esc or "
                     "close that window there. To avoid this, choose the independent session in Settings → Safety → Session mode.")

@@ -714,7 +714,7 @@ def web_refresh_text(lang="zh", web: str | None = "older") -> str:
         return (note + ' To refresh, tap ' + menu + '. If the page stays grey, close and reopen it. '
                 'Use Repair connection below, or Settings → Emergency repair. If the host is offline, wake that computer first.')
     return (note + '刷新入口：' + menu + '。若刷新后仍灰，先关闭并重新打开页面。'
-            '使用下方「修复连接」，或前往设置中的「紧急修复」。主机离线时，请先唤醒那台电脑。')
+            '使用下方「修复连接」，或前往设置中的「紧急修复」。Agent J 主机离线时，请先唤醒它。')
 
 
 def repair_upgrade(st, rows):

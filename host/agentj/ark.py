@@ -46,10 +46,9 @@ KEY_HINT = {   # P395: where the Agent Plan key is — it is NOT one from API Ke
 }
 MEDIUM_NOTE = {"zh": "（kimi-k3 从 Medium 套餐起才有）", "en": " (kimi-k3 needs Medium or above)"}
 PAYG_TERMS = {   # P371
-    "zh": "按量付费走方舟标准地址 …/api/v3：按 token 从账户余额扣费，任何程序都能调用（不占套餐额度）。同一把方舟 API Key 两个地址都能用，"
-          "是地址决定扣套餐还是扣余额。",
+    "zh": "按量付费走方舟标准地址 …/api/v3：按 token 从账户余额扣费，任何程序都能调用（不占套餐额度）。Agent Plan、Coding Plan 和按量付费请分别使用对应的 key 和地址。",
     "en": "Pay-as-you-go uses Ark's standard address …/api/v3: billed per token from the account balance, any program may call "
-          "it (no plan quota). One Ark API key works on both addresses — the address decides whether the plan or the balance pays.",
+          "it (no plan quota). Use the matching key and address for Agent Plan, Coding Plan and pay-as-you-go.",
 }
 PLAN_ONLY = {   # P371: said wherever the plan address is offered (Ark's terms)
     "zh": "套餐地址（…/api/coding）只给编程 Agent 用（OpenCode、Claude Code 等）；别的程序拿它调用会被方舟判为滥用、可能封号。",
@@ -253,14 +252,14 @@ def render(r: dict, lang: str = "zh") -> str:
         return "\n".join([head, f"能看图的模型：{eyes}；glm-5.3、deepseek-v4-pro 等是纯文本。{PRO_NOTE['zh']}", "接下来：",
                           f"  1. {r.get('key_card_message', r['next'][0])}\n     （手机上弹出密钥卡，主人只把方舟控制台 {d['console_url']} 的 API Key 贴进卡片；Agent 看不到值）",
                           f"  2. {r['next'][1]}", f"  3. {r['next'][2]}" + ("（这个模型能看图）" if r["vision"] else ""),
-                          f"想用 Claude Code：`agentj provider ark --harness claude`。", "⚠ " + TERMS["zh"]])
+                          f"想用 Claude Code：`agentj provider ark --plan coding --harness claude`。", "⚠ " + TERMS["zh"]])
     head = (f"{r['provider']} already exists in {r['file']}: your own configuration is kept unchanged." if r["kept"] else
             ("Written" if r["written"] else "(dry run, nothing written)") + f" {r['file']}: provider {r['provider']} "
             f"({len(r['models'])} models), key read from {r['key_env']} (no key stored here).")
     return "\n".join([head, f"Models that read images: {eyes}; glm-5.3, deepseek-v4-pro and others are text only.{PRO_NOTE['en']}",
                       "Next:", f"  1. {r.get('key_card_message', r['next'][0])}\n     (a key card opens on the phone; the owner pastes the Ark API key there only)",
                       f"  2. {r['next'][1]}", f"  3. {r['next'][2]}" + (" (this model reads images)" if r["vision"] else ""),
-                      "For Claude Code: `agentj provider ark --harness claude`.", "⚠ " + TERMS["en"]])
+                      "For Claude Code: `agentj provider ark --plan coding --harness claude`.", "⚠ " + TERMS["en"]])
 
 
 def render_agent(r: dict, eyes: str, lang: str) -> str:
@@ -379,8 +378,8 @@ def switch(st, plan: str = DEFAULT_PLAN, model: str | None = None, dry_run: bool
 def say_switch(r: dict, lang: str = "zh") -> str:
     from .switch_harness import _say
     zh = lang != "en"
-    tool = ("arkcli " + r["arkcli"] + "（已装，仅探测：它的 helper 要在终端里 SSO 登录，Agent J 自己写等价配置）" if zh else
-            "arkcli " + r["arkcli"] + " (found, detected only: its helper needs an SSO login in a terminal)") \
+    tool = ("arkcli " + r["arkcli"] + "（已装，仅探测版本；Agent J 直接写 OpenCode 配置）" if zh else
+            "arkcli " + r["arkcli"] + " (found, version detection only; Agent J writes the OpenCode configuration directly)") \
         if r.get("arkcli") else ("没有装 arkcli（不需要）" if zh else "arkcli not installed (not needed)")
     way = {"payg": ("按量付费 …/api/v3", "pay-as-you-go …/api/v3"), "agent": ("Agent Plan 套餐 …/api/plan/v3", "Agent Plan …/api/plan/v3")}.get(
         r.get("plan"), ("Coding Plan 套餐 …/api/coding/v3", "Coding Plan …/api/coding/v3"))[0 if zh else 1]

@@ -68,6 +68,38 @@ class Images(unittest.IsolatedAsyncioTestCase):
         result = await self.c.forward(1,'paired')
         self.assertTrue(result['ok']); self.assertEqual(self.kinds(), [1, 2, 4])
 
+    async def test_customer_main_reply_many_chinese_absolute_paths(self):
+        """A bound owner's final Claude reply sends each local file, not only page cards."""
+        names = ['七港报告.pdf'] + [f'七港图{i}.png' for i in range(8)]
+        for name in names:
+            (self.work / name).write_bytes(b'%PDF-1.4\nfixture\n' if name.endswith('.pdf') else png())
+        self.arm()
+        # Provider-shaped responses: one text send + upload negotiation/CDN/send per attachment.
+        self.tr.replies = [{}] + [{'upload_full_url': CDN+'/upload'},
+                                     (200, {'x-encrypted-param':'fixture-down'}, b''), {}] * len(names)
+        await self.reply('文件如下：\n' + '\n'.join(str(self.work / name) for name in names))
+        self.assertEqual(len(self.kinds()), 10)
+        self.assertEqual(self.kinds().count(2), 8)
+        self.assertEqual(self.kinds().count(4), 1)
+        self.assertEqual(self.c.store.data['counts'].get('send_failed', 0), 0)
+
+        names = [f'新图{i}.jpg' for i in range(7)]
+        for name in names:
+            (self.work / name).write_bytes(b'\xff\xd8\xff\xe0fixture')
+        self.arm()
+        self.tr.replies = [{}] + [{'upload_full_url': CDN+'/upload'},
+                                     (200, {'x-encrypted-param':'fixture-down'}, b''), {}] * len(names)
+        await self.reply('图片如下：\n' + '\n'.join(str(self.work / name) for name in names))
+        self.assertEqual(self.kinds(), [1] + [2] * 7)
+
+    async def test_customer_attachment_upload_failure_counts_send_failed(self):
+        (self.work / '七港图.png').write_bytes(png())
+        self.arm()
+        self.tr.replies = [{}, RuntimeError('fixture failure')]
+        await self.reply(str(self.work / '七港图.png'))
+        self.assertEqual(self.kinds(), [1])
+        self.assertGreaterEqual(self.c.store.data['counts'].get('send_failed', 0), 1)
+
     async def test_inbound_png_named_jpg_reaches_main_once_as_png(self):
         self.arm()
         key = b'k'*16; data = png()
@@ -161,6 +193,7 @@ class LaunchHome(unittest.IsolatedAsyncioTestCase):
                     a = object.__new__(cls)
                     a.cfg = {'kind':'codex', 'dir':td, 'fence':False}
                     a.host = NS(preferences={}, st=NS(log=Mock()))
+                    a._prepare_control_paths = AsyncMock()
                     a.argv = Mock(return_value=['fake-codex'])
                     a.authorized_launch_argv = AsyncMock(return_value=['fake-codex'])
                     a.call = AsyncMock(side_effect=[{}, {'config':{}}])

@@ -105,7 +105,7 @@ def item(key: str, who, kind: str, label="", lk=None, since=None, pid=None, sess
     return d
 
 
-META_LIMITS = {"harness": 32, "model": 100, "effort": 24, "cwd": 400, "workflow": 80, "role": 80, "parent": 80, "where": 40}
+META_LIMITS = {"harness": 32, "model": 100, "effort": 24, "cwd": 400, "workflow": 80, "role": 80, "parent": 80, "where": 40, "todo": 20}
 
 
 # ---- 0.26.9 #444 (ADR-0269-w4-web, own block): where a background command runs, and wait loops are not workers ---------
@@ -185,7 +185,8 @@ def _guard_test_root(root) -> Path:
             relative = path.resolve().relative_to((home / ".local/state").resolve())
         except ValueError:
             return path
-        if relative.parts and (re.fullmatch(r"agentj(?:-[0-9]+)?", relative.parts[0]) or relative.parts[0] == "agentjarvis-alpha"):
+        from .state_paths import LEGACY_STATE
+        if relative.parts and (re.fullmatch(r"agentj(?:-[0-9]+)?", relative.parts[0]) or relative.parts[0] == Path(LEGACY_STATE).name):
             raise RuntimeError("test process refused real Agent J busy state; use an isolated state root")
     return path
 
@@ -2038,6 +2039,7 @@ def add_parser(sub) -> None:
             x.add_argument("--key", default="", help="稍后 stop 用的名字 / the name to stop it with")
             x.add_argument("--pid", type=int, default=None, help="这个进程结束就自动撤下 / removed when this pid ends")
         else:
+            x.add_argument("--todo", default=None, help="linked To-do id (tN); completion requires separate acceptance and an explicit todo done")
             x.add_argument("--watch", action="append", default=[], help="explicit bounded directory metadata progress")
             x.add_argument("--watch-git", action="store_true", help="watch working directory .git metadata only")
             x.add_argument("--detach", action="store_true", help="一次性托管并登记 / managed one-shot background run")

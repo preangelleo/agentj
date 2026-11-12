@@ -702,9 +702,12 @@ def run(st: State | None = None) -> int:
     last_look = time.monotonic()
     try:
         while not stopping["now"]:
-            if proc.poll() is not None:
-                st.log("browser_exited", code=proc.returncode)
-                return 0
+            exit_code = proc.poll()
+            if exit_code is not None:
+                st.log("browser_exited", code=exit_code)
+                # A clean window close is the owner's choice. A crash must be visible
+                # to the service manager, without silently launching another window.
+                return 0 if exit_code == 0 else 3
             if current_instance() == 1 and rec["headless"] and time.monotonic() - last_look > 30:
                 last_look = time.monotonic()
                 if _manager_has_display() and not login_in_progress(st):

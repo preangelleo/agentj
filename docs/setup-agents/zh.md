@@ -48,7 +48,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `b00cd6214fd6defa57e55c489dd66809bf28f4c6df65cb02b8c39d9e99e16d57`
+SHA256 sh: `aa348cf9aa7bd3fafc8f79818702a026ac0f05066dc6ecadee6a6a46e2d1c279`
 
 
 ```bash
@@ -863,10 +863,10 @@ claude --dangerously-skip-permissions
 | 所在地区或网络 | API key 路线 |
 |---|---|
 | Google AI Studio 支持的地区 | 在 [AI Studio](https://aistudio.google.com/apikey) 创建 Gemini API key，先确认 Google 当前的地区限制和结算要求。 |
-| 香港 | 使用绑定服务账号的 Google Cloud Vertex AI API key。AI Studio key 可能返回「User location is not supported」。 |
+| 香港 | 使用绑定服务账号的 Google Cloud Vertex AI API key。AI Studio key 可能返回`User location is not supported`。 |
 | 大陆或其它连不上 Google 的网络 | 先确认网络可达；连通不代表账号和地区获准使用。连不上时选择其它受支持的 AI 路线。 |
 
-Vertex AI 路线：在 [Google Cloud](https://console.cloud.google.com/) 创建项目，开通结算并启用 Vertex AI API，创建具有「Vertex AI 用户」角色的服务账号；创建 API key 时勾选「通过服务账号验证 API 调用」，绑定该服务账号，并限制为所需 API。AI Studio 路线则在受支持地区使用其 API key 页面。使用前查看 Google 当前价格，并设置结算预算提醒。
+Vertex AI 路线：在 [Google Cloud](https://console.cloud.google.com/) 创建项目，开通结算并启用 Vertex AI API，创建具有Vertex AI 用户角色的服务账号；创建 API key 时勾选通过服务账号验证 API 调用，绑定该服务账号，并限制为所需 API。AI Studio 路线则在受支持地区使用其 API key 页面。使用前查看 Google 当前价格，并设置结算预算提醒。
 
 ```bash
 curl -fsSL https://agentj.app/install.sh | bash -s -- --gemini

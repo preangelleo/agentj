@@ -126,20 +126,23 @@ class LoginCards:
         rt = await asyncio.to_thread(browser.runtime, self.st)
         if not rt:
             return {"result": "no_browser", "hint": browser.HINTS["not_running"]}
-        for c in self.cards.values():
-            if c["site"] == site:                 # one card per site: a repeated good morning reuses it
-                return {"result": "sent", "id": c["id"], "reused": True, "ttl": max(0, int(c["deadline"] - time.monotonic()))}
+        old = next((c for c in self.cards.values() if c["site"] == site), None)
+        refresh = req.get("refresh") is True or (old is not None and old["deadline"] - time.monotonic() <= 10)
+        if old is not None and not refresh:     # ordinary repeated good morning reuses the live card
+            return {"result": "sent", "id": old["id"], "reused": True, "ttl": max(0, int(old["deadline"] - time.monotonic()))}
         if not t.get("qr"):
             return await self._host_login(site, t, rec, rt)
         if not self.host._approvers():
             return {"result": "no_device"}
-        if len(self.cards) >= MAX_OPEN:
+        if len(self.cards) >= MAX_OPEN and old is None:
             return {"result": "busy"}
         try:
             got = await asyncio.to_thread(self._open_and_capture, rt, site, t)
         except CDPError as e:
             self.st.log("login_qr_failed", site=site, reason=str(e)[:60])
             return {"result": "failed", "why": "browser"}
+        if old is not None:
+            self._end(old, "refreshed")  # keep the previous QR until a replacement was captured
         if got["state"] == "in":
             await asyncio.to_thread(bs.check, self.st, [site], False, "login")
             return {"result": "already", "site": site}
@@ -304,7 +307,7 @@ class LoginCards:
         if t == "login_qr_refresh":
             site = obj.get("site")
             if isinstance(site, str) and site in bs.load(self.st)["sites"]:
-                res = await self.request({"site": site}, by=s.device)
+                res = await self.request({"site": site, "refresh": True}, by=s.device)
                 if res.get("result") != "sent":
                     await self.host.send_app(s, {"t": "login_qr_err", "id": "", "site": site, "why": res.get("result", "failed")})
             return

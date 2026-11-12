@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {renderHarnessCommands} from '../public/js/harness-commands.js';
 
 class Element {
-  constructor(tag) { this.tagName = tag; this.children = []; this.events = {}; this.hidden = false; }
+  constructor(tag) { this.tagName = tag; this.children = []; this.events = {}; this.hidden = false; this.attributes = {}; }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
   addEventListener(name, callback) { this.events[name] = callback; }

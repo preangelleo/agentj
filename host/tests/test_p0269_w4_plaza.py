@@ -171,20 +171,35 @@ class OneLine(unittest.TestCase):
         t = hi.HostRequest("test_allow_installs_with_one_card_and_receipt")
         t.setUp()
         self.addCleanup(t.doCleanups)
-        # This positive install request originates in an actual host-held owner turn.
-        from agentj import approval_review, provenance
-        t.host.desktop_turn = 1
-        approval_review.remember(t.host, {'id': 1, 'ts': int(__import__('time').time()*1000),
-                                         'src': {'k': 'terminal', 'text': 'Install the synthetic package'}},
-                                 provenance.terminal())
+        # A remembered owner label alone is not a live application request.
+        # Enter the same authenticated paired request/frame guards as
+        # serve._op(DATA) -> Host._app, keeping the frame live through install.
+        # No card is expected for this already-allowed permission set.
+        from agentj import application_ingress, provenance
         t466.need_sandbox(self)
         rows, updates = [], []
         t.host.agent_notice = lambda text, **kw: rows.append(text) or len(rows)
         t.host.hist_update = lambda tid, **kw: updates.append((tid, kw)) or []
         t.add_skill(manifest={"install": {"skill_dir_name": "demo-skill", "post_install": [], "verify": f"{FAKE} --x"}, "permissions": {}})
+        refused = asyncio.run(plaza_host.handle(t.host, {"name": "demo-skill", "harness": "claude_code"},
+                                                post=t.srv, get=t.srv.get))
+        self.assertEqual((refused["rc"], refused["why"]), (market.EXIT_PERMISSION, "application_ingress_unverified"))
+        self.assertFalse(t.cards(), "an unverified caller never opens an approval card")
+        self.assertFalse((t.e.home / ".claude" / "skills" / "demo-skill").exists())
+        async def install():
+            start = len(t.cards())
+            with provenance.paired_request(lambda: t.host._paired_live(t.s)):
+                with application_ingress.paired(t.host, t.s, {"t": "plaza_install"}):
+                    res = await asyncio.wait_for(plaza_host.handle(
+                        t.host, {"name": "demo-skill", "harness": "claude_code"},
+                        post=t.srv, get=t.srv.get), 10)
+            self.assertTrue(res["ok"], res)
+            self.assertEqual(len(t.cards()), start, "this owner install needs no approval card")
+            return res
+
         with mock.patch.object(t.host.agent, "submit", new=lambda s: None, create=True), \
                 mock.patch.object(market.plaza_perms, "allowed", return_value=(market.plaza_perms.ALL, "test")):
-            res, _ = t.run_host({"name": "demo-skill", "harness": "claude_code"}, "allow")
+            res = asyncio.run(install())
         self.assertEqual(res["rc"], 0, res)
         self.assertEqual(len(rows), 1, rows)
         self.assertNotIn("没", rows[0].split("：")[0])

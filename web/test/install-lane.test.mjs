@@ -2,7 +2,26 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import {spawnSync} from 'node:child_process';
+import {mkdtempSync, rmSync, mkdirSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 
+if (!vm.SourceTextModule) {
+  test('install-lane behavior in VM-enabled Node child', () => {
+    const home=mkdtempSync(join(tmpdir(),'aj-install-lane-'));
+    try {
+      const xdg=join(home,'xdg'); mkdirSync(xdg);
+      const child=spawnSync(process.execPath,['--experimental-vm-modules',new URL(import.meta.url).pathname],{
+        encoding:'utf8',env:{...process.env,HOME:home,XDG_CONFIG_HOME:xdg},timeout:30000,
+      });
+      assert.equal(child.status,0,`VM-enabled test failed: ${child.error || ''}\n${child.stdout}\n${child.stderr}`);
+      const output=child.stdout+child.stderr;
+      assert.match(output,/(?:# pass 2\b|tests 2[\s\S]*pass 2\b)/);
+      assert.match(output,/(?:# fail 0\b|fail 0\b)/);
+    } finally { rmSync(home,{recursive:true,force:true}); }
+  });
+} else {
 class Element {
   constructor(tag, cls='', text='') { this.tag=tag; this.className=cls; this.textContent=text; this.children=[]; this.dataset={}; this.listeners={}; }
   append(...children) { this.children.push(...children); }
@@ -20,7 +39,7 @@ async function fixture() {
     './session.js':{ask1:async()=>null,isReady:()=>true,sendApp:()=>{},randHex:()=> 'a'.repeat(16)},
     './controls.js':{signedWrite:async(action,target,extra)=>{writes.push({action,target,extra}); if(action==='setup_run')return new Promise(r=>{finish=r;}); return {ok:true};},whyText:String},
     './t.js':{t:k=>k,lang:()=> 'en',onLang:()=>{}},
-    './ui.js':{mk:(...args)=>new Element(...args),toast:()=>{}},
+    './ui.js':{mk:(...args)=>new Element(...args),toast:()=>{},pageCopy:e=>e},
     './api.js':{keysSet:async name=>{keys.push(name);return {ok:true};}},
   };
   const module=new vm.SourceTextModule(readFileSync(new URL('../public/js/setup.js',import.meta.url),'utf8'),{context});
@@ -56,3 +75,4 @@ test('structured preparation is inert text and key action uses existing key card
   await tick(); assert.deepEqual(f.keys,['OPENAI_API_KEY']); assert.equal(f.writes.length,0);
   f.api.clear(); assert.equal(f.nodes['setup-banner'].hidden,true);
 });
+}

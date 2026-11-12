@@ -132,22 +132,17 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
     if fingerprint:
         # #537② + ADR-0308-fingerprint-scope (chairman 2026-11-11): an off-list call that moves money
         # (uv_list.CHARGE_COMMANDS) or cannot be undone (uv_list.IRREVERSIBLE) gets the fingerprint card — on the MAIN
-        # thread only (owner turns, host heartbeat: uv_list.FINGERPRINT_SOURCES) and only where the off-list decision
+        # thread only (owner turns: uv_list.FINGERPRINT_SOURCES) and only where the off-list decision
         # itself would allow it (credential / private-state reads and unresolved launchers stay refused).
-        # 董事长 11-11 定: headless 派单与 automation（定时任务、后台单、设置页）运行中零卡、也不拒绝 — they follow their
-        # harness; the dangerous action was judged once when the owner created / dispatched them. So owner-made work
-        # (typed `owner_dispatch`) gets the ordinary off-list answer below (allowed, logged reason=fingerprint_headless);
-        # host-held work the owner did not create / start is refused without a card (security 0310 H1: no laundering
-        # through a dispatch); host_read / external / unknown → the same off-list refusal as any other write.
+        # 0.30.11: host-held background jobs, scheduled runs and heartbeat have no runtime fingerprint gate,
+        # irrespective of how they were enabled or resumed. Existing automations must not be re-approved.
+        # host_read / external / unknown retain the ordinary off-list write refusal.
         from . import approval_offlist
         typed = approval_offlist.source(host, settings_context=settings_context, background=background,
                                         order_owner=order_owner)
         if typed.get('type') in uv_list.FINGERPRINT_SOURCES and typed.get('trust') in ('owner', 'host'):
             decided = await asyncio.to_thread(approval_offlist.decide, host, tool, inp, cwd, typed)
             uv = decided[0] == 'allow'
-        elif typed.get('trust') in ('owner', 'host') and typed.get('owner_dispatch') is not True:
-            # security 0310 H1: host-held background work the owner did not dispatch / enable — refused, no card
-            return await approval_offlist.refuse_unowned(host, tool, inp, typed, fingerprint, receipt=receipt)
         else:
             headless_fingerprint, headless_src = fingerprint, typed
     def refused(reason, message):

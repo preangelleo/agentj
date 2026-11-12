@@ -68,10 +68,14 @@ class Forward(unittest.IsolatedAsyncioTestCase):
     async def test_phone_receipt_and_revoked_device(self):
         self.ready();s=NS(cid='c',state='ready',pub=b'p',device='phone')
         self.h.sessions={'c':s};self.st.is_allowed=lambda _:True
-        await on_forward(self.h,s,'r',1)
-        self.h.send_app.assert_awaited_once_with(s,{'t':'wx_fwd_res','r':'r','ok':True})
-        self.h.send_app.reset_mock();self.st.is_allowed=lambda _:False
-        await on_forward(self.h,s,'r',1);self.h.send_app.assert_not_awaited()
+        # This test checks forwarding's live-session guard, not Host.send_app's Noise wire.
+        # A synthetic session has no transport cipher; isolate that boundary explicitly.
+        from unittest.mock import patch
+        with patch.object(self.h, 'send_app', new_callable=AsyncMock) as send_app:
+            await on_forward(self.h,s,'r',1)
+            send_app.assert_awaited_once_with(s,{'t':'wx_fwd_res','r':'r','ok':True})
+            send_app.reset_mock();self.st.is_allowed=lambda _:False
+            await on_forward(self.h,s,'r',1);send_app.assert_not_awaited()
         self.assertEqual(len(self.transport.calls),1)
 
     async def test_greeting_first_message_once(self):

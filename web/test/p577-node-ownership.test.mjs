@@ -12,6 +12,15 @@ test('ID cache is generated from current audited registry and source, with no un
  for(const [id,owner]of Object.entries({rmPart:'aj-reply',rmTop:'aj-reply',rmIcons:'aj-reply-action',why:'aj-approval','error-text':'aj-recovery',rdFsN:'aj-reader',fsSend:'aj-editor', 'rm-code':'aj-remotes'}))assert.equal(actual.idOwners[id].owner,owner,id);
  for(const id of ['rdReadBtn','rdSpeakBtn','rdFwdBtn','rdMailBtn','rdCopyBtn','rdReplyBtn'])assert.equal(actual.idOwners[id].owner,'aj-reader',id);
 });
+test('live connection dialog replaces retired root and finished usage stays reply text, not an action',()=>{
+ const actual=generateNodeOwners({html,registry,sources});
+ assert.equal(actual.idOwners.connDlg.owner,'aj-recovery');
+ assert.equal(actual.idOwners.rmUse.owner,'aj-reply');
+ assert.equal(actual.idOwners.offDlg,undefined);
+ const wrong=html.replace('id="rmUse" hidden data-aj-owner="aj-reply"','id="rmUse" hidden data-aj-owner="aj-reply-action"');
+ assert.notEqual(wrong,html);
+ assert.throws(()=>generateNodeOwners({html:wrong,registry,sources}),/Known-but-wrong direct owner rmUse/);
+});
 test('known but wrong cached semantic owners fail; current source cannot silently revalidate stale IDs',async()=>{
  const actual=await loadNodeOwners();for(const [id,owner]of Object.entries({rmPart:'aj-remotes',rmIcons:'aj-remotes',rdFsN:'aj-editor',fsSend:'aj-composer',why:'aj-channel',rdReadBtn:'aj-reply-action'})){
  const wrong=structuredClone(actual);wrong.idOwners[id].owner=owner;assert.throws(()=>checkNodeOwners(wrong,actual),/cache drift/,id);

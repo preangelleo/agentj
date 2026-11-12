@@ -216,8 +216,7 @@ class OffList(p552.Fixture):
         self.assertTrue(cards[0].get("passkey_required"))
         self.assertNotEqual(res["behavior"], "allow")                 # nobody answered the card
         res, cards = self.asked(HOST, "stripe payouts create --amount 1")
-        self.assertEqual(len(cards), 1)
-        self.assertTrue(cards[0].get("passkey_required"))
+        self.assertEqual((res['behavior'], cards), ('allow', []))  # heartbeat is not an owner turn
 
     def test_owner_charge_reading_a_credential_is_still_refused(self):
         # A throwaway HOME only: never create or write a file under the real home (its ~/coding/.env is a real store).

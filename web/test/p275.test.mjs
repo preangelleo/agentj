@@ -27,7 +27,7 @@ test('both dictionaries carry the entry', () => {
 });
 test('bot card offers the Agent J avatar only once a Telegram token is configured', () => {
   const js = read('../public/js/bots.js');
-  assert.match(js, /if\(detail\.telegram\?\.configured\)main\.append\(button\(copy\('换成 Agent J 头像','Use the Agent J avatar'\)/);
+  assert.match(js, /if\(detail\.telegram\?\.configured\)main\.append\(button\(t\('bots\.use_the_agent_j_avatar'\)/);
   assert.match(js, /await write\(\{op:'telegram_avatar',id:c\.id\}\)/);
-  assert.match(js, /confirmSheet\(copy\('换成 Agent J 头像'/);
+  assert.match(js, /if\(await confirmSheet\(t\('bots\.use_the_agent_j_avatar'\),t\('bots\.replace_this_telegram_bot_s_current_photo_with_the_official_agent_j_logo'\),t\('bots\.use_the_agent_j_avatar'\)\)\)\{await write\(/);
 });

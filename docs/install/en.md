@@ -178,6 +178,8 @@ What to do today:
 
 For Ubuntu, Debian and other common distributions, on desktops, laptops and cloud servers. A cloud server you reach only over SSH (no desktop) also needs the cloud-server section of [the install guide](https://agentj.app/install.md).
 
+A VM with systemd is the full cloud-server setup. For a generic container, the fence and background service may fail: after installing the package, before init/login or binding a seat, run `agentj doctor --isolation-only --json`. It tests the real fence using temporary files without customer identity or network access. If the exit status is nonzero, stop and inspect the failed JSON `checks` entry (`reason` when present); a pass does not prove the platform permits a persistent background process. With no systemd user session, `agentj serve` under tmux/nohup is only a manual fallback: restart it after an update, reboot or crash; rescue, emergency repair and systemd user timers are not guaranteed. See [the full install guide](https://agentj.app/install.md).
+
 ### ① Install it yourself: one command {#linux-self}
 
 **When to choose it:** the Agent J host has no AI tool yet, or you would rather do it yourself. You need one code from start to finish: the **installation code** (it starts with `AJI-`) on an empty seat card in your account.
@@ -337,7 +339,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.30.10#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.30.12#subdirectory=host"
 agentj doctor
 ```
 

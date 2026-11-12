@@ -125,7 +125,7 @@ ERRORS = {
     "bad_param": ("参数不对（只能从卡片上的选项里选）。", "A parameter was not one of the card's choices."),
     "missing_param": ("少了一个必选项。", "A required choice is missing."),
     "not_for_item": ("这一项不能做这个操作。", "This step does not offer that operation."),
-    "stale": ("手机时间和电脑差太多，或请求太旧：校准手机时间后再试。",
+    "stale": ("手机时间和 Agent J 主机差太多，或请求太旧：校准手机时间后再试。",
               "The phone's clock is off or the request is too old: fix the phone time and try again."),
     "replay": ("同一个请求已经处理过了。", "This request was already handled."),
     "bad_signature": ("签名不对，没执行。", "The signature did not match; nothing ran."),
@@ -137,7 +137,7 @@ ERRORS = {
                 "The network failed or was blocked: try the mirror source or check the proxy."),
     "checksum": ("下载的文件校验不对，已丢弃，什么都没装。过几分钟再试。",
                  "The downloaded file failed its checksum and was discarded; nothing was installed. Try again later."),
-    "node_missing": ("这台电脑缺 Node.js，自动安装也没成功。", "Node.js is missing here and could not be installed automatically."),
+    "node_missing": ("这台 Agent J 主机缺 Node.js，自动安装也没成功。", "Node.js is missing here and could not be installed automatically."),
     "install_failed": ("安装没成功（npm 报错或超时）。换个下载来源再试。", "The installation failed (npm error or timeout). Try the other source."),
     "not_installed": ("这个 AI 工具还没安装，先点「安装」。", "This AI tool is not installed yet; tap Install first."),
     "no_device": ("没有能批准的遥控器（需要已配对、带批准钥匙）。", "No remote that can approve (paired, with an approval key)."),
@@ -147,12 +147,12 @@ ERRORS = {
     "login_failed": ("登录没完成：没登录上，或者授权码不对。", "Sign-in did not complete: not signed in, or a wrong code."),
     "login_url": ("登录程序没给出可用的网址。", "The sign-in program did not give a usable address."),
     "connect_failed": ("没能接上这个 AI，已退回原来的状态。", "Could not connect this AI; things were put back as they were."),
-    "no_service": ("Agent J 没有作为后台服务运行，接上 AI 需要它自动重启。先在电脑上运行 agentj service install。",
+    "no_service": ("Agent J 没有作为后台服务运行，接上 AI 需要它自动重启。先在 Agent J 主机上运行 agentj service install。",
                    "Agent J is not running as a background service (connecting needs it to restart): run agentj service install."),
     "same": ("现在接的就是它。", "It is already the connected AI."),
     "probe_pending": ("检查还在进行，过一会儿看结果。", "The check is still running; look again shortly."),
-    "unsupported_platform": ("这台电脑的系统不支持这个操作。", "This operation is not supported on this computer's system."),
-    "io": ("电脑上读写文件出错。", "A file on the computer could not be read or written."),
+    "unsupported_platform": ("这台 Agent J 主机的系统不支持这个操作。", "This operation is not supported on this computer's system."),
+    "io": ("Agent J 主机上读写文件出错。", "A file on the computer could not be read or written."),
     "error": ("出了意外错误，已记录（不含任何密钥）。", "An unexpected error was recorded (no secrets)."),
     "native_timeout": ("60 秒内没回话：多半是没登录、key 不对，或网络 / 代理不通。",
                        "No reply within 60 s: usually not signed in, a wrong key, or no network / proxy."),
@@ -177,7 +177,7 @@ def plan(check: dict) -> dict:
         cli = "claude" if "claude" in signed else signed[0]
         steps = [{"op": "ai.probe", "params": {"cli": cli}}, {"op": "ai.connect", "params": {"cli": cli}}]
         return {"route": "reuse", "cli": cli, "steps": steps,
-                "reason": {"zh": "这台电脑上已经有登录好的 AI 工具，直接试一下、接上。",
+                "reason": {"zh": "这台 Agent J 主机上已经有登录好的 AI 工具，直接试一下、接上。",
                            "en": "An AI tool here is already signed in: try it and connect it."}}
     installed = {c["name"] for c in check.get("clis", []) if c["installed"]}
     if a == "401" or o == "401":

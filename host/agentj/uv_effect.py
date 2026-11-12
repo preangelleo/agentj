@@ -914,7 +914,8 @@ def _operand_role(value, cwd=None):
         return "sensitive_store"
     if re.match(r"https?://", value):
         return "ordinary_destination"
-    if ".jarvis/" in value:
+    from .peer_origin import NOTES
+    if NOTES + "/" in value:
         return "notes"
     if value.startswith("-"):
         return "option"

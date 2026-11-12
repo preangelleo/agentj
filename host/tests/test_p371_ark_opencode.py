@@ -17,6 +17,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from agentj import ark, harness, keys, opencode_provider as op, switch_harness as sh  # noqa: E402
+from agentj.state import State
 from agentj.bots import provider as bp  # noqa: E402
 
 AJ = HERE.parents[1]
@@ -29,6 +30,11 @@ class Home(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.env = {"XDG_CONFIG_HOME": str(Path(self.tmp.name) / ".config")}
         self.file = Path(op.config_file(self.env))
+        env_patch = mock.patch.dict("os.environ", {**self.env, "AGENTJ_STATE_DIR": str(Path(self.tmp.name) / "state")})
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+        self.st = State()
+        self.st.init()
         p = mock.patch("agentj.service.env_file", lambda name: "/svc/agentj.env")
         p.start()
         self.addCleanup(p.stop)
@@ -104,7 +110,7 @@ class Switch(Home):
         def request(st, target, model, dry_run=False):
             calls.append((target, model, dry_run, self.file.exists() and "ark-api" in json.dumps(self.cfg())))
             return dict(reply or {"ok": True, "scheduled": True, "target": target, "from": "claude"})
-        r = ark.switch(None, plan, request=request, detector=lambda: dict(found), key=lambda name, env: key,
+        r = ark.switch(self.st, plan, request=request, detector=lambda: dict(found), key=lambda name, env: key,
                        environ=self.env, **kw)
         return r, calls
 
@@ -126,7 +132,7 @@ class Switch(Home):
     def test_no_opencode(self):
         r, calls = self.run_switch(found={"opencode": None, "arkcli": None})
         self.assertEqual((r["reason"], calls), ("not_installed", []))
-        self.assertIn("npm i -g @opencode/cli@2", ark.say_switch(r, "zh"))   # #459 newest 2.x; A-N3 never curl | bash
+        self.assertIn("agentj setup checklist --resume", ark.say_switch(r, "zh"))  # current native install path
         self.assertIn("arkcli not installed", ark.say_switch(r, "en"))
 
     def test_failed_probe_removes_the_added_block(self):
@@ -183,8 +189,10 @@ class Docs(unittest.TestCase):
             self.assertIn("agentj agent switch opencode --preset ark", t)
             self.assertIn("/api/v3", t)
             self.assertIn("/api/coding/v3", t)
-        self.assertIn("封号", zh)
-        self.assertIn("banned", en)
+            self.assertIn("/api/plan/v3", t)
+            self.assertIn("ARK_AGENT_PLAN_API_KEY", t)
+            self.assertIn("ARK_CODING_PLAN_API_KEY", t)
+            self.assertIn("ARK_API_KEY", t)
 
 
 if __name__ == "__main__":

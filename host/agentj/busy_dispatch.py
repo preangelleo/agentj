@@ -139,7 +139,7 @@ def detach(root, a, cmd, key):
     check_detach(cmd)
     write_probe(os.getcwd())
     argv = [sys.executable, '-m', 'agentj', 'busy', 'run', '--launch-token', key, '--managed']
-    for name in ('who', 'label', 'kind', 'report', 'harness', 'model', 'workflow', 'role', 'parent'):
+    for name in ('who', 'label', 'kind', 'report', 'harness', 'model', 'workflow', 'role', 'parent', 'todo'):
         value = getattr(a, name, None)
         if value:
             argv += ['--' + name, value]

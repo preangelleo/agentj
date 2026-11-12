@@ -23,7 +23,8 @@ test('1450 G: quiet connection indicator, retry on wake, outbox and uploads reta
  assert.match(APP,/addEventListener\('online', \(\) => \{ wakeLink\(\); session\.reconnectNow\(\)/);
  assert.match(APP,/settings\.connectionChanged\(on, !on && link\.state\(\) === 'quiet'\)/);
  assert.match(HTML,/id="outbox"/);
- const relay=read('../public/js/relay.js');assert.match(relay,/export function connLost\(\)\{ quietLost = true; outbox\.lost\(\); \}/);
+ const relay=read('../public/js/relay.js');assert.match(relay,/export function connLost\(\)\{\s*quietLost = true; outbox\.lost\(\); historyAwaitingMeta = false;/);
+ assert.match(relay,/historyGeneration\+\+; historyHead = null; historySync = true;/);
  assert.match(relay,/if \(on && \(!was \|\| quietLost\)\) uploadsResume\(\);/);
 });
 test('1450 G: the removed timer no longer persists an outage timestamp or installs a modal observer',()=>{

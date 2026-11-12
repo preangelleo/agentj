@@ -63,14 +63,16 @@ test('Settings: Agent J first, 紧急修复 second, three numbered cards ① ②
   assert.equal(html.split('id="set-auth-nav"').length, 2, 'one entry, not a copy');
 });
 
-test('≡ 重置连接 + /reset run ①; the offline card and the rescue banner open the block', () => {
+test('≡ 重置连接 + /reset run ①; reconnect dialog retries while the rescue banner opens the block', () => {
   assert.match(relay, /item\("\/reset", t\('p332\.menuDesc'\), \{\}\)\.id = "resetEntry";/);
   assert.match(relay, /\[\["\/reset", t\('p332\.menuDesc'\), ""\]\]/, '/reset autocompletes in the / list');
   assert.match(relay, /if \(b\.id === "resetEntry"\)\{ closeMenu\(\); C\.resetConn\?\.\(\); return; \}/);
   assert.match(relay, /if \(\/\^\[\/\\uff0f\]reset\$\/i\.test\(text\.trim\(\)\)/);
   assert.match(app, /resetConn: rescue\.resetFromCommand/);
-  assert.match(app, /\$\('offRescue'\)\.addEventListener\('click', \(\) => \{ offline\.later\(\); rescue\.openBlock\(\); \}\)/);
-  assert.match(html, /<button id="offRescue" type="button" data-i18n="p332\.offBtn">/);
+  assert.match(app, /conndlg\.init\(\{[\s\S]*retry: \(\) =>/);
+  assert.match(html, /<aside id="connDlg"[^>]*data-state="down" hidden/);
+  assert.match(html, /id="connLater"[\s\S]*id="connRetry"/);
+  assert.match(rescue, /el\('rescue-banner-go'\)\?\.addEventListener\('click', openBlock\)/);
   assert.ok(!html.includes('id="offTip3"'), "P375: helper command moved to website, menu stays the first hop");
   assert.match(rescue, /rs-detail-help/);
   assert.match(html, /<div id="rescue-banner" class="setup-banner rsbanner" role="status" hidden>/);

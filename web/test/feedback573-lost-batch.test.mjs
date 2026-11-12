@@ -57,7 +57,11 @@ test('#451 #453 #454 #456: the shipped sources keep the contracts', () => {
   assert.match(src('js/relay.js'), /const rescueAsk = !!\(p && p\.tool === "AuthRescue" && p\.host_tool === true\);/);
   assert.match(src('js/relay.js'), /item\.tool === "AuthRescue" && item\.host_tool === true/);
   // security C-1: a friend's report or an owner-channel page (a stranger's words) never gets command links
-  assert.match(src('js/relay.js'), /if \(!noticeOnly && !chan && p\.source\?\.k !== "friend_report"\) linkSlash\(/);
+  const relay = src('js/relay.js');
+  assert.match(relay, /const replyDataOnly=p=>externalEcho\(p\)\|\|p\?\.source\?\.k==='friend_report'\|\|/);
+  assert.match(relay, /if\(!replyDataOnly\(p\)\)linkSlash\(root,\{run:phoneCmd,fill:text=>appendText\(text\)\},t\)/);
+  assert.match(relay, /enhanceReplySurface\(el\("words"\),p\)/, 'reply card uses the guarded enhancer');
+  assert.match(relay, /enhanceReplySurface\([^\n]*p,true\)/, 'reader uses the guarded enhancer');
   const ar = src('js/authrescue.js');
   assert.match(ar, /END_MS = 10000/); assert.match(ar, /if \(!f \|\| ended\(f\)\) \{ box\.hidden = true; return; \}/);
   for (const lang of ['zh', 'en']) {

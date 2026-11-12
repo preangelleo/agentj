@@ -1,6 +1,6 @@
 {
   "schema": "agentj.ark/v1",
-  "_comment": "P315: the ONE place for Volcano Engine Ark (火山方舟) Coding Plan in OpenCode / Claude Code. Model ids and image input from the owner's measured table (support thread st_ASwQAUOspTnh8jMvSeueKA, 2026-10-15: arkcli model-list + 32 image questions through OpenCode / Claude Code); endpoints: Anthropic-compatible …/api/coding, OpenAI-compatible …/api/coding/v3 (Ark docs). Unmeasured models are text-only on purpose: claiming image input a model lacks makes OpenCode send pictures it rejects. Output limits only where published (doubao-seed-2.1-pro 256k, deepseek-v4-pro 384k) or needed (glm-5.3: thinking used up OpenCode's 32k default). pro_suggested: Ark's plan overview only says kimi-k3 is \"only suggested for Pro\" (it uses quota fast) — Lite can select it; Lite and Pro differ only in usage (P335, 10-16).",
+  "_comment": "2026-11-11 current model IDs from official Coding Plan and Agent Plan OpenCode JSON (https://ark.volcengine.com/docs/coding-plan-personal-ai-opencode.md and https://ark.volcengine.com/docs/agent-plan-personal-opencode.md). Retired IDs removed only from newly written presets; existing owner configuration is preserved. Model image capabilities and larger limits retained where previously measured, new model metadata follows the official JSON.",
   "provider": "ark-coding-plan",
   "key_env": "ARK_CODING_PLAN_API_KEY",
   "verify_url": null,
@@ -13,8 +13,14 @@
   ],
   "_comment_tiers": "P328: list prices read from Ark's official pages on 2026-10-16 (cn-coding-plans 1.0.1). Lite and Pro have the same models and tools; Pro only gives 5x the quota. Kimi K3 is merely suggested for Pro (it uses quota fast) — Lite can pick it too. Time-limited offers are left to the order page.",
   "tiers": [
-    ["Lite", 40],
-    ["Pro", 200]
+    [
+      "Lite",
+      40
+    ],
+    [
+      "Pro",
+      200
+    ]
   ],
   "prices_checked": "2026-10-16",
   "signup_url": "https://www.volcengine.com/activity/codingplan",
@@ -82,30 +88,6 @@
           ]
         }
       },
-      "doubao-seed-2.1-turbo": {
-        "name": "Doubao Seed 2.1 Turbo",
-        "attachment": true,
-        "modalities": {
-          "input": [
-            "text",
-            "image"
-          ],
-          "output": [
-            "text"
-          ]
-        }
-      },
-      "doubao-seed-2.0-lite": {
-        "name": "Doubao Seed 2.0 Lite",
-        "modalities": {
-          "input": [
-            "text"
-          ],
-          "output": [
-            "text"
-          ]
-        }
-      },
       "doubao-seed-2.0-mini": {
         "name": "Doubao Seed 2.0 Mini",
         "attachment": true,
@@ -143,19 +125,6 @@
           ]
         }
       },
-      "kimi-k2.7-code": {
-        "name": "Kimi K2.7 Code",
-        "attachment": true,
-        "modalities": {
-          "input": [
-            "text",
-            "image"
-          ],
-          "output": [
-            "text"
-          ]
-        }
-      },
       "glm-5.3": {
         "name": "GLM-5.3",
         "modalities": {
@@ -169,19 +138,6 @@
         "limit": {
           "context": 1000000,
           "output": 131072
-        }
-      },
-      "glm-5-3-flash": {
-        "name": "GLM-5.3 Flash",
-        "attachment": true,
-        "modalities": {
-          "input": [
-            "text",
-            "image"
-          ],
-          "output": [
-            "text"
-          ]
         }
       },
       "deepseek-v4-pro": {
@@ -210,7 +166,20 @@
           ]
         }
       },
-      "deepseek-v4-1-flash": {
+      "glm-5.3-flash": {
+        "name": "GLM-5.3 Flash",
+        "attachment": true,
+        "modalities": {
+          "input": [
+            "text",
+            "image"
+          ],
+          "output": [
+            "text"
+          ]
+        }
+      },
+      "deepseek-v4.1-flash": {
         "name": "DeepSeek V4.1 Flash",
         "attachment": true,
         "modalities": {
@@ -223,9 +192,23 @@
           ]
         }
       },
-      "minimax-m3": {
-        "name": "MiniMax M3",
-        "attachment": true,
+      "glm-latest": {
+        "name": "glm-latest",
+        "modalities": {
+          "input": [
+            "text"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "limit": {
+          "context": 1024000,
+          "output": 65536
+        }
+      },
+      "deepseek-v4.1-flash-economy": {
+        "name": "deepseek-v4.1-flash-economy",
         "modalities": {
           "input": [
             "text",
@@ -234,30 +217,71 @@
           "output": [
             "text"
           ]
-        }
+        },
+        "limit": {
+          "context": 1024000,
+          "output": 65536
+        },
+        "attachment": true
+      },
+      "kimi-k3.1-pro": {
+        "name": "kimi-k3.1-pro",
+        "modalities": {
+          "input": [
+            "text",
+            "image"
+          ],
+          "output": [
+            "text"
+          ]
+        },
+        "limit": {
+          "context": 1024000,
+          "output": 65536
+        },
+        "attachment": true
       }
     }
   },
-  "_comment_agent": "P395 (#141, 2026-10-19): Ark now sells the Agent Plan (Small / Medium / Large / Max) — the recommended way in. Its own addresses: OpenAI-compatible …/api/plan/v3, Anthropic-compatible …/api/plan (measured with a Medium key: /api/plan/v3/chat/completions and /api/plan/v1/messages answer; the same key on /api/coding/v3 → 401). Its key is the plan's own key from 订阅 → Agent Plan → 使用配置, not one from API Key management. Never /api/v3 (billed extra). Models: the Coding Plan's list minus `unsupported` (each id called once on 2026-10-19; doubao-seed-2.0-lite → UnsupportedModel); image input and limits as the Coding Plan's. Kimi K3 from Medium up (Ark's plan page).",
+  "_comment_agent": "2026-11-11: Agent Plan OpenAI /api/plan/v3, Anthropic /api/plan/v1 (runtime value; historical P395 prose abbreviated /api/plan, actual measured request /api/plan/v1/messages). Plan-specific key from Subscription > Agent Plan > Usage configuration. Current short model IDs shared with the Coding Plan example; official deprecation notices exclude 2.1-turbo/2.0-lite (10-09), k2.7-code (10-28), minimax-m3 (11-02). Existing user blocks are preserved.",
   "agent": {
     "provider": "ark-agent-plan",
     "key_env": "ARK_AGENT_PLAN_API_KEY",
     "name": "火山方舟 Agent Plan",
     "base_url": "https://ark.cn-beijing.volces.com/api/plan/v3",
     "anthropic_base": "https://ark.cn-beijing.volces.com/api/plan/v1",
-    "unsupported": ["doubao-seed-2.0-lite"],
-    "models_checked": "2026-10-19",
+    "unsupported": [
+      "doubao-seed-2.0-lite",
+      "doubao-seed-2.1-turbo",
+      "kimi-k2.7-code",
+      "minimax-m3"
+    ],
+    "models_checked": "2026-11-11",
     "tiers": [
-      ["Small", 9.9],
-      ["Medium", 49.9],
-      ["Large", 500],
-      ["Max", 1000]
+      [
+        "Small",
+        9.9
+      ],
+      [
+        "Medium",
+        49.9
+      ],
+      [
+        "Large",
+        500
+      ],
+      [
+        "Max",
+        1000
+      ]
     ],
     "start_tier": "Medium",
-    "medium_up": ["kimi-k3"],
+    "medium_up": [
+      "kimi-k3"
+    ],
     "prices_checked": "2026-10-19"
   },
-  "_comment_payg": "P371: the pay-as-you-go preset (standard /api/v3, billed per token, any program may call it — unlike the plan address). Model ids, image input and limits read from GET /api/v3/models on 2026-10-17 (that endpoint is also the read-only key check). OpenCode's built-in `volcengine` provider reads the same ARK_API_KEY but its list lacks the newest ids (no doubao-seed-2-1-pro-260915 in 1.18.34), so this is our own `ark-api` block. One Ark API key works on both addresses: the address decides whether the plan or the balance pays.",
+  "_comment_payg": "P371: the pay-as-you-go preset (standard /api/v3, billed per token, any program may call it — unlike the plan address). Model ids, image input and limits read from GET /api/v3/models on 2026-10-17 (that endpoint is also the read-only key check). OpenCode's built-in `volcengine` provider reads the same ARK_API_KEY but its list lacks the newest ids (no doubao-seed-2-1-pro-260915 in 1.18.34), so this is our own `ark-api` block. Agent Plan, Coding Plan and pay-as-you-go use their matching keys and endpoints; the Agent Plan key is not interchangeable with the other routes.",
   "payg": {
     "provider": "ark-api",
     "key_env": "ARK_API_KEY",
@@ -406,6 +430,6 @@
   "arkcli": {
     "npm": "@volcengine/ark-cli",
     "checked": "1.0.39",
-    "_comment": "P371: Ark's official CLI. `arkcli helper configure opencode` needs an SSO login in a terminal (TTY), has no --dry-run and is not used here: Agent J writes the same kind of provider block with the key as an {env:…} NAME. arkcli is only detected (version) and used by the ark-media plaza package for +gen when the owner already has it."
+    "_comment": "Ark's official platform CLI. Agent J does not invoke helper configure or authenticate it: Agent J writes the OpenCode provider block directly, using an {env:…} key NAME. arkcli is only version-detected here; the ark-media plaza package can use +gen when separately configured by the owner."
   }
 }

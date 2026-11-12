@@ -66,11 +66,12 @@ def work_call(tool, inp):
             continue
         if name == 'relay' and len(words) > 1 and words[1] in ('validate','qa','doctor','handoff'):
             continue
+        from .peer_origin import NOTES
         if name in ('python','python3','python3.11','python3.13','python3.14') and len(words) > 1:
             target = words[1]
-            if target in ('.jarvis/p44-gates.py','.jarvis/precheck.py'):
+            if target in (NOTES + '/p44-gates.py', NOTES + '/precheck.py'):
                 continue
-        if part.raw and part.raw[0] in ('.jarvis/precheck.sh','./.jarvis/precheck.sh'):
+        if part.raw and part.raw[0] in (NOTES + '/precheck.sh', './' + NOTES + '/precheck.sh'):
             continue
         # Test runners count as work; only the named acceptance entrypoints above are exempt.
         if not danger.readonly('Bash', {'command': __import__('shlex').join(words)})[0]:

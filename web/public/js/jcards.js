@@ -97,6 +97,8 @@ const PATHS = {
   edit: 'm4 16-1 5 5-1L20 8l-4-4zM13 7l4 4',
   delete: 'M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7',
   out: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6',
+  task: 'M7 5h13v15H7zM4 8H2v13h14v-2M10 10h7M10 14h5',
+  report: 'M5 3h10l4 4v14H5zM15 3v5h4M8 12h8M8 16h8',
   download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
 };
 export function icon(key, cls = 'fp-line-icon') {
@@ -271,6 +273,8 @@ export async function render(body, id, hooks, {automationPage = 0} = {}) {
       const li = node('li', undefined, 'jc-item'), acts = Array.isArray(it.acts) ? it.acts : [];
       li.dataset.item = it.id; li.dataset.done = it.done ? '1' : '0';
       const main = button('', acts[0] ? () => run(acts[0], hooks, id, it.id, again) : null, 'jc-row');
+      if (todo && id === 'todo' && c?.official && it.owner === 'agent' && it.plan === true)
+        li.append(node('strong', t('p0311.todo.plan'), 'jc-todo-plan'));
       if (todo) todoRow(li, main, it); else main.append(icon(it.done ? 'check' : 'box', 'jc-check'), node('span', String(it.text || ''), 'jc-text'));
       if (acts[0]) main.setAttribute('aria-label', `${acts[0].label}：${it.text}`); else main.disabled = true;
       li.append(main);
@@ -281,6 +285,16 @@ export async function render(body, id, hooks, {automationPage = 0} = {}) {
         if (meta) meta.parentElement.append(meta); // keep labels in the toggle, after the full-width note
         const actions = node('div', undefined, 'jc-todo-actions');
         footer.append(actions); li.append(footer);
+        // Only host-projected internal destinations; never turn free-text sources or report paths into URLs.
+        for (const [kind, ref] of [['task', it.task], ['report', it.report]]) {
+          const dest = typeof ref === 'string' ? ref : ref?.jlink;
+          if (typeof dest !== 'string' || !JLINK.test(dest)) continue;
+          const label = t('p0311.todo.' + kind);
+          const link = button('', () => hooks.nav(dest), 'jc-entry-icon jc-todo-link');
+          link.dataset.todoLink = kind;
+          link.setAttribute('aria-label', label); link.title = label;
+          link.append(icon(kind)); actions.append(link);
+        }
         for (const op of ['edit', 'delete']) {
           const b = button('', async () => {
             if (op === 'delete' && !await confirmSheet(t('p386.delete'), it.text, t('p386.delete'))) return;

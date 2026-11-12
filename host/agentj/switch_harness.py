@@ -264,10 +264,10 @@ def agent_text(text, lang: str = "zh") -> str | None:
 
 _ARK_WORDS = re.compile(r"方舟|火山|豆包|doubao|\bark\b|volcano|volcengine|seed-?2", re.I)
 ARK_HINT = {   # P371
-    "zh": "（这是「OpenCode · 火山方舟」：先问主人用 Coding Plan 套餐还是按量付费，再运行 "
-          "`agentj agent switch opencode --preset ark --plan coding|payg`，它会探测、缺 key 时给密钥卡命令、实测一次才切。）",
-    "en": " (This is \"OpenCode · Volcano Ark\": ask whether the owner has the Coding Plan or pays as they go, then run "
-          "`agentj agent switch opencode --preset ark --plan coding|payg` — it detects, prints the key card if needed, and "
+    "zh": "（这是「OpenCode · 火山方舟」：先确认主人用 Agent Plan（默认）、已有 Coding Plan 还是按量付费，再运行 "
+          "`agentj agent switch opencode --preset ark --plan agent|coding|payg`，它会探测、缺 key 时给密钥卡命令、实测一次才切。）",
+    "en": " (This is \"OpenCode · Volcano Ark\": check whether the owner uses Agent Plan (default), an existing Coding Plan or pay-as-you-go, then run "
+          "`agentj agent switch opencode --preset ark --plan agent|coding|payg` — it detects, prints the key card if needed, and "
           "makes one real call before switching.)",
 }
 
@@ -1543,7 +1543,7 @@ def cli(a, st, lang: str) -> int:
         print(json.dumps(r, ensure_ascii=False) if a.json else ark.say_switch(r, lang))
         return 4 if r.get("scheduled") or r.get("pending") else 0 if r.get("ok") else 3
     if target not in KINDS:
-        print("agentj agent switch <claude|codex|opencode> [--model M] [--dry-run] [--force] [--json] · agentj agent switch opencode --preset ark [--plan coding|payg] · --scan · --undo · --result",
+        print("agentj agent switch <claude|codex|opencode> [--model M] [--dry-run] [--force] [--json] · agentj agent switch opencode --preset ark [--plan agent|coding|payg] · --scan · --undo · --result",
               file=sys.stderr)
         return 2
     r = request(st, target, a.model, dry_run=getattr(a, "dry_run", False), force=getattr(a, "force", False))

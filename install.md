@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.28.36
-released: 2026-11-11
+version: 0.28.38
+released: 2026-11-12
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.30.10
-source_tag: v0.30.10
-host_wheel: agentj-0.30.10-py3-none-any.whl
-host_wheel_sha256: 6225132718f88b8d15fe6e43dbb6e1040b072c91019c6fb7c35b0e0efec01c4c
-host_sdist: agentj-0.30.10.tar.gz
-host_sdist_sha256: 448b373537bed3603d1a188f4b0821c68b2acbbe0e8c3c3cb1e36fc1fd8ec504
+host_version: 0.30.12
+source_tag: v0.30.12
+host_wheel: agentj-0.30.12-py3-none-any.whl
+host_wheel_sha256: 6546bf9a020c1f105661788e7ac55168ef8efa3f16035fea283410c12e16b740
+host_sdist: agentj-0.30.12.tar.gz
+host_sdist_sha256: 8553f337448f7bf0a8fdaddefcde8655218a3e282851fcb99781ff36aa745016
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 docs_index: https://agentj.app/llms.txt (also https://agentj.app/docs/index.json; every page as raw Markdown at https://agentj.app/docs/<slug>/en.md and /zh.md)
@@ -366,7 +366,7 @@ Before selecting OpenCode, run `agentj agent detect --json` after installing Age
 | `curl`, `git` | `curl --version; git --version` | install with the OS package manager (✋ `sudo` = the human types their password) |
 | An agent for the phone: **Claude Code, Codex or OpenCode**, logged in (OpenCode: with a model key) | `claude --version`, `codex --version`, `opencode --version` (each may be missing) | see "Which agent" below |
 | `uv` | `uv --version` | official installer (below); without GitHub (mainland China): Step 3b |
-| Linux only: **bubblewrap** + **socat** (macOS: nothing to install — the built-in `sandbox-exec` is used) | `bwrap --version; socat -V` | ✋ `sudo apt-get install -y bubblewrap socat` · `sudo dnf install -y bubblewrap socat` · `sudo pacman -S bubblewrap socat` |
+| Linux: **bubblewrap** for the Agent J fence; **socat** for Claude Code's own sandbox (Codex/OpenCode do not need socat for that) — macOS uses built-in `sandbox-exec` | `bwrap --version; socat -V` (socat only with Claude Code) | ✋ on Debian/Ubuntu `sudo apt-get install -y bubblewrap` (add `socat` for Claude Code); on Fedora `sudo dnf install -y bubblewrap` (add `socat` for Claude Code); on Arch `sudo pacman -S bubblewrap` (add `socat` for Claude Code) |
 | A phone with a current browser (iPhone: iOS 16.4+ for lock-screen alerts) | nothing to ask now — Step 11 asks iPhone or Android, where the answer is used | — |
 | No other `agentj` command already on PATH | `command -v agentj` | if it prints something, tell your human before Step 4 |
 | No older install | `uv tool list` (or `pipx list`) | it lists a legacy Agent J package → use Section M and the migration guide instead of Step 4 |
@@ -377,7 +377,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh       # uv (official: https://do
 ```
 `uv` downloads Python 3.13 itself if the system has an older one. The Agent is started inside a fence so it cannot see or
 change Agent J's own keys: bubblewrap on Linux, `sandbox-exec` on macOS. When the fence cannot start, the Agent does not
-start (Step 9). Inside a Docker-style container the fence usually cannot start — install on the VM / server itself.
+start (Step 9). A VM with systemd is the full cloud-server route. A generic container may block the fence or lack a systemd user service; do not assume it works. After Step 4 installs the package, **before init, login or seat binding**, run `agentj doctor --isolation-only --json`. It uses temporary files to try the actual fence without customer identity or network access; exit 0 means this probe passed, a nonzero exit means stop and read the failed `checks` entry (and `reason` if present). Passing is necessary but does not prove the platform permits a long-running background process. Do not substitute `agentj pair --check` or full `agentj doctor` for this preflight.
 
 **Which agent (the harness rule).** The phone talks to **one** agent on the Agent J host: Claude Code, Codex, OpenCode,
 Kimi Code (`kimi`, Step 3e), Qwen Code (`qwen`, Step 3g) or DeepSeek Harness (`dsh`, Step 3i — on an Olares box, or with
@@ -731,7 +731,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.30.10` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.30.12` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -773,17 +773,19 @@ uv tool install "./$W"          # the wheel; its dependencies come from PyPI or 
 `https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.9`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.10#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.12#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.10#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.12#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.10`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.12`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
 Continue unless it reports an error that a later step does not fix; report anything you cannot explain.
+**Before Step 5, run `agentj doctor --isolation-only --json`** (especially on a container or cloud server). The temporary-file probe does not read customer identity or contact the network. Exit 0 means the fence works now; nonzero means stop, read the failed JSON `checks` entry (`reason` if present), fix the environment and repeat. A pass does not guarantee the container host keeps background processes alive. Do not use `agentj pair --check` or the full doctor as a substitute.
+中文：进入第 5 步前运行 `agentj doctor --isolation-only --json`（容器和云服务器尤其要查）。只用临时文件测试隔离，不读客户身份、不联网；退出码 0 才继续，非 0 就停下看 JSON 里失败的 `checks`（有 `reason` 再看），修好再测。通过也不保证容器平台允许常驻进程；不要用 `pair --check` 或普通 doctor 代替。
 
 **Feedback from now on: `agentj feedback`.** Write the report as before (same fields, Step 2) into a report file (no extension), then:
 ```bash
@@ -1106,7 +1108,7 @@ The fence (independent mode) is the same on Linux (bubblewrap) and macOS (`sandb
 - **The fence does not start** (the output warns; e.g. bubblewrap missing on a fresh WSL2 Ubuntu, a container, or user
   namespaces disabled): the Agent does **not** start unfenced by itself. On every start the phone shows the card
   「沙箱不可用 · 本次不隔离运行」, which the owner approves with their passkey for that one start. Fix it first:
-  ✋ `sudo apt-get install -y bubblewrap socat` (Ubuntu / Debian / WSL). Do not change kernel or AppArmor settings to
+  ✋ `sudo apt-get install -y bubblewrap` (Ubuntu / Debian / WSL; add `socat` for Claude Code's own sandbox). Do not change kernel or AppArmor settings to
   get around it. `--unfenced` (or `agentj config set agent.isolation false`, or the phone's
   Settings) turns the fence off on purpose; no passphrase.
 - **Docker / podman inside the fence:** hidden by default (a container can mount every file on the Agent J host, Agent J's
@@ -1143,29 +1145,19 @@ every site signed in there (email, shops, banking) — and anything that pays or
 first. Send this as its own message — don't fold it into a long status update — and go on only after your human has read
 it.
 
-The agent runs as the human's own user, with their own Claude Code / Codex login, settings and permission rules; Agent J adds
-no permissions. It only makes things stricter: five kinds of action — spending money, deleting, sending / publishing anything
-outside, changing credentials, changing prices — always come to the phone one by one, even if the human's own Claude Code
-settings allow them (Agent J adds one Claude Code hook at start; it changes no settings file). If the human's Claude Code
-settings contain `"disableAllHooks": true`, the phone's agent does not start until they remove it — tell them; never edit
-their settings yourself. **OpenCode:** every action except reading files and a few read-only commands (`ls`, `cat`, `pwd`,
-`git status` / `diff` / `log`) comes to the phone as a card — also when the human's own OpenCode config allows it; what their
-config denies stays denied; subagents (OpenCode's `task` tool) run under the same rules — their steps come to the phone,
-the card naming the subagent — and any subagent Agent J cannot verify that for stays switched off. Agent J sets these rules
-on the conversation (and, on OpenCode 1.x, per subagent in the configuration it starts OpenCode with) and changes no file of theirs. **Codex:** Agent J talks to it through
-`codex app-server` and asks it to check before every command it does not know to be read-only and before every file change
-(approval policy `untrusted`, approver = the human, not Codex's automatic reviewer); each check comes to the phone as a card,
-and the five kinds above are red cards one by one. Their config file stays as it is. With no `sandbox_mode` of theirs the main
-Codex Agent runs with `danger-full-access` (above). When they **did** restrict it, a phone approval never reaches past that
-sandbox: an approved Codex command runs outside it, so Agent J only offers cards for what their own sandbox
-already allows (plain reads; file changes inside its writable folders); anything beyond is declined at once with a notice
-(「这一步超出了你 Codex 自己的沙箱设置，已拒绝；…」, naming `agentj codex-sandbox default` as the way out). In Codex
-**shared mode** (the human's own Codex App conversation) that conversation's permissions in the Codex App decide; a refusal
-there means the human sets that conversation to 「完全访问」 / Full access in the Codex App. If another program holds that
-conversation, the phone names it (an Agent J leftover process is cleaned up automatically; the ChatGPT App's Codex, the Codex
-App or a terminal `codex` must be quit by the human). One exception to tell
-them about: commands matching a Codex "always allow" rule they saved earlier (`~/.codex/rules/*.rules`, `decision="allow"`)
-run without asking anyone — `agentj doctor` counts them; removing a rule is **their** decision, never edit it yourself.
+The agent runs as the human's own user, with their own AI coding tool's login and permission rules; Agent J cannot grant
+more authority than that tool. Ordinary tool actions follow the tool's native permissions: actions it allows run without
+an Agent J card; when it asks, the phone shows an ordinary confirmation without fingerprint verification. Only Agent J
+commands and matching phone operations explicitly listed by `agentj uv list` require fresh owner verification on a paired
+device. This applies in owner and background turns; a friend or visitor remains in its isolated sandbox. Claude Code,
+Codex and OpenCode each keep their own native permission decisions, including those of subagents. If the human's Claude Code
+settings contain `"disableAllHooks": true`, the phone's agent does not start; tell the human, and do not change their
+settings yourself. In independent Codex, an absent owner `sandbox_mode` uses Agent J's full-access default; an explicit
+restriction is not widened by a phone confirmation. In shared Codex, its desktop conversation keeps its own permissions.
+If another program holds that shared conversation, the human must release it there. Do not promise that every Codex
+command or OpenCode write will trigger a phone card.
+
+Agent 仍使用主人自己的系统账号、AI 编程工具登录和权限，Agent J 不能扩大底层工具的权限。普通工具操作跟随底层工具的原生权限：底层放行就直接执行，底层要求确认才在手机显示普通确认卡，不要求指纹。只有 `agentj uv list` 明确列出的 Agent J 命令及对应手机操作，才要求主人在已配对设备上当场验证。主人回合与后台回合都按这条规则；好友和访客仍受隔离沙箱限制。Claude Code、Codex、OpenCode 及其子代理保留各自原生权限判断。Claude Code 设置含 `"disableAllHooks": true` 时手机 Agent 不启动；请主人自行处理，不代改设置。独立 Codex 未设置主人自己的 `sandbox_mode` 时采用 Agent J 默认全放行；明确设了限制时，手机确认也不能扩大沙箱。共享 Codex 保留桌面会话自己的权限；被其他程序占用时须主人在那边处理。不要承诺 Codex 每条命令或 OpenCode 每次写文件都会弹手机卡。
 
 **Commands from the phone.** The phone's ≡ button 「全部命令」 ("All commands") left of the message box (or typing `/compact`,
 `/clear`, `/model`, `/context`, `/cost`, `/usage`, `/status`, `/help`, `/stop`) works for all three agents without going back to the Agent J host: Agent J carries each one
@@ -1252,6 +1244,8 @@ If `agentj service install` fails (no systemd user session, a container, …), r
 tmux new -d -s agentj 'agentj serve'                      # if tmux exists
 nohup agentj serve >~/.agentj-serve.log 2>&1 &            # otherwise
 ```
+This is a **manual fallback**, not a systemd-equivalent managed service. After every update restart `agentj serve` yourself; after a reboot or crash relaunch it yourself. Without a service manager, do not promise the rescue watchdog, phone emergency repair, or systemd user timers for scheduled tasks. A container platform may also stop long-running processes despite a passing fence probe. For automatic recovery, use the VM+systemd route; the Olares image's trusted supervisor is specific to Olares, not a generic container backend.
+中文：这是**手动降级路线**，不是和 systemd 等价的托管服务。每次升级后自行重启 `agentj serve`；重启机器或进程崩溃后也要自行拉起。没有服务管理器时，不承诺救援守护、手机紧急修复或 systemd 用户定时任务。隔离探针通过也不代表容器平台允许长期运行。要自动恢复请选虚拟机加 systemd；Olares 的受信进程管理器只用于 Olares，不通用于普通容器。
 Changing the agent or folder later: run Step 9 again, then restart (`agentj service uninstall && agentj service
 install`, or restart the tmux / nohup process).
 `agentj service install` (and every update) also installs a small **rescue watchdog** (its own unit `agentj-rescue` /
@@ -1790,7 +1784,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.10#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.12#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1819,12 +1813,12 @@ Use the [older-install migration guide](https://agentj.app/docs/legacy-migration
 
 Supported: the host can run on the human's own cloud server instead of their computer; the data stays on that machine.
 - **Log in** with SSH as a normal user (not root; create one if the server only has root — ✋ human). A Linux server with
-  systemd (Ubuntu 24.04, Debian 12, Amazon Linux 2023 …); a VM, not a Docker container (the fence needs user namespaces).
-- **Install** exactly as in Steps 3–5 (`curl … | sh` for uv, `uv tool install …`, ✋ `sudo apt-get install -y bubblewrap socat`). On
+  systemd (Ubuntu 24.04, Debian 12, Amazon Linux 2023 …). A VM with systemd is the complete managed-server recipe; a generic container is only a manual fallback after the fence preflight passes (Steps 3 and 10), not a supported equivalent. / 完整托管方案是带 systemd 的虚拟机；普通容器只有隔离预检通过后的手动降级路线，不能当作等价服务。
+- **Install** exactly as in Steps 3–5 (`curl … | sh` for uv, `uv tool install …`, ✋ `sudo apt-get install -y bubblewrap`; add `socat` for Claude Code). On
   Ubuntu 24.04: run `agentj doctor --isolation-only --json`. This checks both bubblewrap and
   `kernel.apparmor_restrict_unprivileged_userns`, then actually starts a fenced probe as the normal user.
   A restriction value of `1` is compatible with a working scoped AppArmor profile; a successful probe takes precedence.
-  If bubblewrap is missing, ✋ the owner installs `sudo apt-get install -y bubblewrap socat`. If the probe still reports
+  If bubblewrap is missing, ✋ the owner installs `sudo apt-get install -y bubblewrap` (and `socat` only for Claude Code). If the probe still reports
   `apparmor_userns`, ✋ the owner may add the exact `/usr/bin/bwrap` profile below, or ask their administrator.
   Do not change the global user-namespace restriction or disable AppArmor. Do not replace an existing profile: inspect it
   with the administrator first. The installation assistant uses this same pure diagnostic after package installation and
@@ -2517,7 +2511,7 @@ While the Codex App holds a session, the phone follows its actual model from loc
 An existing seat cancellation does not prevent adding a seat or pausing and resuming renewal. Added seats keep the existing price adjustment; cancelled seats still end on their original date. Pausing or resuming keeps the cancellation plan. Resume renewal before buying while paused.
 
 Seat actions use the current account labels: **「增加一个席位」** ("Add one seat"),
-**「转移到另一台Agent J 主机」** ("Move to another computer"), **「取消席位」** ("Cancel seat"),
+**「转移到另一台 Agent J 主机」** ("Move to another Agent J host"), **「取消席位」** ("Cancel seat"),
 and **「只解绑、保留空席位」** ("Unbind and keep the empty seat").
 For the first pairing choose **Add a remote** on the account-page seat card, or run `agentj pair` in the owner’s terminal. Later remotes request at https://m.agentj.app and a paired remote approves.
 

@@ -90,9 +90,9 @@ def prep_text(lang: str) -> str:
     if lang == "en":
         return (TAG["en"] + " The context is about to be compacted. First write the handoff with the " + SKILL + " skill to "
                 + p + " (merge with what is there: the owner's own words, progress, decisions, absolute paths, pitfalls, next "
-                "step; no credentials). Then reply with one line \"Handoff written\" and do nothing else.")
+                "step; no credentials). Finish this turn normally after writing; do not start compaction yourself.")
     return (TAG["zh"] + "马上要压缩上下文。先按 " + SKILL + " 技能把交接写进 " + p + "（已有就合并重写：主人原话、进度、决定、"
-            "绝对路径、坑、下一步；不写任何凭据）。写完只回一句「交接写好了」，不要做别的事。")
+            "绝对路径、坑、下一步；不写任何凭据）。写完正常结束这一轮，不要自己发起压缩。")
 
 
 # P394 (#130): every recovery also checks the To-do card for what is due.
@@ -102,7 +102,12 @@ RECOVER_DUE = {"zh": "接着跑一次 agentj card todo due + agentj card cal due
 
 def recover_text(lang: str, kind: str, has: bool, where: Path | None = None) -> str:
     """The host's message after a compaction (kind 'compact') or a /clear with a handoff (kind 'clear')."""
-    return _recover_text(lang, kind, has, where) + RECOVER_DUE["en" if lang == "en" else "zh"]
+    message = _recover_text(lang, kind, has, where)
+    if kind == "compact" and has and fresh(None):
+        message += (" In your FIRST reply after reading it, name one concrete in-progress item from the handoff; "
+                    "do not repeat the pre-compaction acknowledgement." if lang == "en" else
+                    "读完后第一条回复要点名交接中的一项具体在跑事项；不要重复压缩前的交接确认。")
+    return message + RECOVER_DUE["en" if lang == "en" else "zh"]
 
 
 def _recover_text(lang: str, kind: str, has: bool, where: Path | None = None) -> str:

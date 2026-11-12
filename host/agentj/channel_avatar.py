@@ -66,7 +66,7 @@ def public_reply(text, images=(), lang=None, files=()):
     return privacy.owner_text(clean)[:1800]
 
 
-def attachments(host, text):
+def attachments(host, text, *, limit=FILES_MAX):
     """P557: files an owner-channel reply names → (images [(mime, data)], files [(name, mime, data)], their paths, keys): the
     same owner-direction checks as a main reply to the owner's Telegram (tg_media.collect / read_checked: inside the working
     folder, deny list, no-follow open, secret scan). Credential files come back in `keys` for pickup cards, never attached."""
@@ -75,13 +75,13 @@ def attachments(host, text):
     if not media or not getattr(media, 'workdir', None) or not isinstance(text, str):
         return [], [], [], keys
     try:
-        items, skips = tg_media.collect(media, text, keys, True)   # P573: a key in a text file → masked copy + value cards
+        items, skips = tg_media.collect(media, text, keys, True, limit=limit)   # P573: masked copy + value cards
     except Exception:   # noqa: BLE001 — no attachment is the old behaviour, never a lost reply
         return [], [], [], keys
     if skips:
         host.st.log("channel_attachments", result="skipped", count=len(skips), why=skips[0]["why"])
     images, files, paths, total = [], [], [], 0
-    for rec in items[:FILES_MAX]:
+    for rec in items[:limit]:
         try:
             data = tg_media.read_checked(rec)
         except Exception:   # noqa: BLE001

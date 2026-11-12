@@ -28,6 +28,9 @@ class Home(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.env = {"XDG_CONFIG_HOME": str(Path(self.tmp.name) / ".config")}
         self.file = Path(op.config_file(self.env))
+        env_patch = mock.patch.dict("os.environ", self.env)
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
         p = mock.patch("agentj.service.env_file", lambda name: "/svc/agentj.env")
         p.start()
         self.addCleanup(p.stop)
@@ -52,9 +55,15 @@ class Preset(Home):
         self.assertEqual(b["options"], {"baseURL": PLAN_V3, "apiKey": "{env:ARK_AGENT_PLAN_API_KEY}"})
         self.assertNotIn("/api/v3", b["options"]["baseURL"].replace("/api/plan/v3", ""))
         ms = b["models"]
-        for m in ("ark-code-latest", "doubao-seed-2.1-pro", "kimi-k3", "glm-5.3", "deepseek-v4-pro", "minimax-m3"):
+        for m in ("ark-code-latest", "doubao-seed-2.1-pro", "kimi-k3", "glm-5.3", "deepseek-v4-pro"):
             self.assertIn(m, ms)
-        self.assertNotIn("doubao-seed-2.0-lite", ms)       # measured 2026-10-19: UnsupportedModel on the Agent Plan
+        for retired in ("doubao-seed-2.0-lite", "doubao-seed-2.1-turbo", "kimi-k2.7-code", "minimax-m3"):
+            self.assertNotIn(retired, ms)  # official Agent Plan retirement notice, checked 2026-11-11
+        self.assertEqual(set(ms), {"ark-code-latest", "doubao-seed-2.1-pro", "doubao-seed-evolving",
+                                  "glm-5.3", "glm-5.3-flash", "glm-latest", "deepseek-v4.1-flash",
+                                  "deepseek-v4.1-flash-economy", "deepseek-v4-flash", "deepseek-v4-pro",
+                                  "doubao-seed-2.1-lite", "doubao-seed-2.0-mini", "kimi-k3",
+                                  "kimi-k2.8-preview", "kimi-k3.1-pro"})
         self.assertEqual(ms["kimi-k3"]["modalities"]["input"], ["text", "image"])
         self.assertEqual(ms["glm-5.3"]["modalities"]["input"], ["text"])
         self.assertEqual((r["model"], r["plan"], r["key_env"], r["vision"]),
@@ -71,7 +80,7 @@ class Preset(Home):
         prov = self.cfg()["provider"]
         self.assertEqual(prov["ark-coding-plan"]["options"]["baseURL"], "https://ark.cn-beijing.volces.com/api/coding/v3")
         self.assertEqual(prov["ark-agent-plan"]["options"]["baseURL"], PLAN_V3)
-        self.assertIn("doubao-seed-2.0-lite", prov["ark-coding-plan"]["models"])
+        self.assertNotIn("doubao-seed-2.0-lite", prov["ark-coding-plan"]["models"])
 
     def test_unsupported_model_refused(self):
         with self.assertRaises(op.ProviderError) as e:
@@ -109,6 +118,17 @@ class Preset(Home):
         self.assertIn("Medium", zh)
         self.assertIn("¥49.9", en)
         self.assertNotIn("/api/coding", zh)
+
+    def test_coding_help_keeps_the_coding_plan_when_selecting_claude(self):
+        r = ark.install(environ=self.env, plan="coding", dry_run=True)
+        for lang in ("zh", "en"):
+            self.assertIn("agentj provider ark --plan coding --harness claude", ark.render(r, lang))
+
+    def test_switch_guidance_includes_the_current_plan(self):
+        for lang in ("zh", "en"):
+            hint = sh.ARK_HINT[lang]
+            self.assertIn("Agent Plan", hint)
+            self.assertIn("--plan agent|coding|payg", hint)
 
     def test_model_note_and_verify(self):
         self.assertIn("Agent Plan", ark.model_note("ark-agent-plan/doubao-seed-2.1-pro"))

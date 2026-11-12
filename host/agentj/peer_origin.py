@@ -565,7 +565,7 @@ def _prompt_dispatch(command, root, state, ctx):
         return None, "shape"
     path = note.outs[0]
     rel = os.path.relpath(_real(path, base) or "/", root)
-    if (not re.fullmatch(r"\.jarvis/PROMPT-[A-Za-z0-9][A-Za-z0-9_.-]*\.md", rel)
+    if (not re.fullmatch(re.escape(NOTES) + r"/PROMPT-[A-Za-z0-9][A-Za-z0-9_.-]*\.md", rel)
             or not _writes(path, base, root, state)
             or any("$" in w or "`" in w for w in note.redirs)):
         return None, "shape"

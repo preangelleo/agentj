@@ -900,7 +900,8 @@ class WeChat:
                 return
             text = ('这一轮没有完成，请在 Agent J 网页查看。' if lang != 'en' else 'This turn did not complete. Check Agent J Web App.')
         text = strip_markers(text)
-        named, files, _paths, keys = await asyncio.to_thread(attachments, self.h, text)
+        from . import media as media_mod
+        named, files, _paths, keys = await asyncio.to_thread(attachments, self.h, text, limit=media_mod.MAX_ITEMS)
         text = await self.owner_out(text)      # P573: keys → pickup cards + placeholders; the answer itself is delivered
         reply = public_reply(text, named, lang, files)
         if reply is None:      # nothing left to say in the channel (no credential reaches here any more)

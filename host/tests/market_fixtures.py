@@ -22,8 +22,11 @@ from agentj.state import State  # noqa: E402
 
 API = "http://127.0.0.1:9"
 URL_PART = "eyJ2IjoxLCJ2aWQiOiJwdl9BQUFBIn0" + "." + "c2lnbmF0dXJlLXRva2Vu"
-# the official catalog, when it sits next to this repo (or $AGENTJARVIS_CATALOG); tests that need it skip otherwise
-CATALOG = pathlib.Path(os.environ.get("AGENTJARVIS_CATALOG") or pathlib.Path(__file__).resolve().parents[4] / "agentjarvis-catalog")
+# The optional catalog is a sibling of the main checkout. A git worktree lives
+# beneath <repo>/.worktrees/<name>; resolve its sibling from the same coding root.
+_REPO = pathlib.Path(__file__).resolve().parents[3]
+_CATALOG_PARENT = _REPO.parents[2] if _REPO.parent.name == ".worktrees" else _REPO.parent
+CATALOG = pathlib.Path(os.environ.get("AGENTJARVIS_CATALOG") or _CATALOG_PARENT / "agentjarvis-catalog")
 
 
 # ------------------------------------------------------------------ package folders

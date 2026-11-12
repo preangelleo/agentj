@@ -458,9 +458,9 @@ def check_harness_setup(st: State) -> dict | None:
             bad.append("工作目录未被 Codex 信任 / working folder not trusted by Codex")
             fix.append(f"agentj agent codex --dir {tilde(c['dir'])}")
     deps = harness_setup.fence_deps()
-    if deps and not deps.get("socat"):
+    if c["kind"] == "claude" and deps and not deps.get("socat"):
         bad.append("缺 socat（Claude Code 自带沙箱要用）/ socat missing (Claude Code's own sandbox)")
-        fix.append(deps["hint"])
+        fix.append(harness_setup.install_hint(["socat"]))
     if not bad:
         return _c("first-setup", OK, "首次设置已完成，后台不会停在终端确认 / one-time setup done: no terminal prompt in the background")
     return _c("first-setup", WARN, "；".join(bad), " · ".join(dict.fromkeys(f for f in fix if f)))

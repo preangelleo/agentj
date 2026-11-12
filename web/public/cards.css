@@ -153,8 +153,10 @@
 .jc-todo-item{display:block;position:relative}
 .jc-todo-item>.jc-row{width:100%;box-sizing:border-box;padding:0}
 .jc-todo-item .jc-todo-meta{box-sizing:border-box;min-height:44px;padding-right:92px}
-.jc-todo-footer{position:absolute;right:0;bottom:0}
-.jc-todo-actions{display:flex;gap:4px}
+.jc-todo-footer{display:flex;justify-content:flex-end}
+.jc-todo-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px}
+.jc-todo-actions .jc-entry-icon{box-sizing:border-box;width:44px;height:44px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.jc-todo-actions .jc-entry-icon:focus-visible{outline:2px solid currentColor;outline-offset:-2px}
 
 /* P474: only the official Notebook changes its entry layout. */
 .jc-body[data-card="notes"] .jc-entry-actions{margin:12px -6px -6px 0}
@@ -202,6 +204,8 @@
 .jc-body[data-card="todo"] .jc-list[data-todo-list] .jc-todo-item{border-left:4px solid var(--c-windstorm,#6a9bcc);border-radius:var(--ui-radius-control) 0 0 var(--ui-radius-control);padding:12px 0 0 12px}
 .jc-body[data-card="todo"] .jc-list[data-todo-list] .jc-todo-item[data-owner="owner"]{border-left-color:var(--c-peachy-feeling,#d97757)}
 .jc-body[data-card="todo"] .jc-todo-item>.jc-row{align-items:flex-start}
+/* P0311: plan and verified internal references remain inside their own todo row. */
+.jc-body[data-card="todo"] .jc-todo-plan{display:block;width:max-content;max-width:100%;box-sizing:border-box;margin:0 0 8px;padding:4px 10px;border-radius:var(--ui-radius-control);border:1px solid var(--c-windstorm);color:var(--menu-text);font-size:13px;line-height:20px;overflow-wrap:anywhere}
 .jc-body[data-card="todo"] .jc-filter{flex-wrap:nowrap;overflow-x:auto;max-width:100%}
 .jc-body[data-card="todo"] .jc-filter-chip{padding-inline:8px;white-space:nowrap}
 .jc-hide-done{margin:0 0 var(--ui-space-control);display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;font-size:13px}

@@ -1,6 +1,7 @@
 // Only Host-generated system metadata offers the existing allowlisted repair control.
 import {mk} from './ui.js';
 import {t} from './t.js';
+import {copyable} from './copycode.js';
 export function repairOf(page) {
  const s=page?.source,c=page?.card;
  if(!s||s.quote||page.assist||page.end==='open')return false;
@@ -16,7 +17,7 @@ export function paintRepair(box,page,ctx) {
  box.append(b);
  if(blocked)box.append(mk('p','small',blocked));
  const more=mk('details','cmdresume'),label=mk('summary','',t('p339.details'),'aj-reply');
- more.append(label,mk('code','','agentj doctor --reconnect'));box.append(more);return true;
+ more.append(label,copyable(mk('code','','agentj doctor --reconnect')));box.append(more);return true;
 }
 // 0.30.7: a Codex sandbox refusal caused by the owner's own config.toml carries the host's typed card.fix — never inferred
 // from the page's text (the notice also shows the terminal commands). One button: the signed cmd_run by NAME + Face ID.

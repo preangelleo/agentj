@@ -1372,7 +1372,7 @@ textarea:where([data-aj-owner="aj-wallet-color"])::placeholder{color:var(--aj-wa
 .ask .dot{background:var(--c-waiting);animation:aj-status-beat 1.1s ease-in-out infinite}
 .sheet h2{margin:0 0 16px;font:500 calc(22px*var(--fz))/1.45 var(--font-title);word-break:break-word}
 .aj-approval-command{background:var(--aj-approval-command-background,var(--surface));border-radius:var(--aj-approval-command-border-radius,16px);padding:var(--aj-approval-command-padding,14px 16px);margin-bottom:var(--aj-approval-command-margin-bottom,10px)}
-.aj-notice-command{background:var(--aj-notice-command-background,var(--surface));border-radius:var(--aj-notice-command-border-radius,16px);padding:var(--aj-notice-command-padding,14px 16px);margin-bottom:var(--aj-notice-command-margin-bottom,10px)}
+.aj-notice-command{background:var(--aj-notice-command-background,var(--dlg-bg));border-radius:var(--aj-notice-command-border-radius,16px);padding:var(--aj-notice-command-padding,14px 16px);margin-bottom:var(--aj-notice-command-margin-bottom,10px)}
 .aj-approval-command .tool{display:var(--aj-approval-command-tool-display,inline-block);margin-bottom:var(--aj-approval-command-tool-margin-bottom,8px);padding:var(--aj-approval-command-tool-padding,3px 10px);border-radius:var(--aj-approval-command-tool-border-radius,var(--r-pill));
   background:var(--aj-approval-command-tool-background,var(--tint-waiting));color:var(--aj-approval-command-tool-color,var(--sooty));font:var(--aj-approval-command-tool-font,600 calc(12px*var(--fz))/1.4 var(--font-mono));letter-spacing:var(--aj-approval-command-tool-letter-spacing,.04em)}
 .aj-approval-command pre{margin:var(--aj-approval-command-preview-margin,0);max-height:var(--aj-approval-command-preview-max-height,30vh);overflow:var(--aj-approval-command-preview-overflow,auto);white-space:var(--aj-approval-command-preview-white-space,pre-wrap);word-break:var(--aj-approval-command-preview-word-break,break-all);
@@ -4343,7 +4343,10 @@ body[data-sheet="1"]:has(.reply-notices>#sheet.cp-docked) .scrim{opacity:0}
 .codeblock .bar .term-command+.copy{margin-left:8px}
 .codeblock .bar .term-command:active{background:rgba(250,249,245,.16)}
 .codeblock .bar .term-command:focus-visible{outline:2px solid currentColor;outline-offset:-6px}
-.codeblock .bar .term-command:disabled,.codeblock .bar .term-command.off,.fixbtn:disabled,.fixbtn.off{opacity:.5;cursor:default}
+.codeblock .bar .term-command:disabled{opacity:.5;cursor:default}
+.codeblock .bar .term-command.off{opacity:.5;cursor:default}
+.fixbtn:disabled{opacity:.5;cursor:default}
+.fixbtn.off{opacity:.5;cursor:default}
 .term-command--danger{color:#f7827e}
 /* #584 ⑧: a whitelisted repair as one plain-words button; the command folded under 「命令」 */
 .fixbtn{width:44px;justify-content:center;display:inline-flex;align-items:center;gap:8px;min-height:48px;margin:8px 0;padding:0;border:0;border-radius:14px;
@@ -4448,21 +4451,33 @@ details.fixcmd>summary{min-height:44px;display:flex;align-items:center;cursor:po
 .auth-action541 .scope541{display:block;white-space:pre-line}
 
 /* P0 / 0.28.1: approval text uses the ordinary reply hierarchy and saved scale. */
-#sheet[data-approval-v="2"],.approval-special541{--approval-body-size:calc(18px*var(--fz)*var(--rs,1));--approval-body-leading:1.66}
+#sheet[data-approval-v="2"]{--approval-body-size:calc(18px*var(--fz)*var(--rs,1));--approval-body-leading:1.66}
+.approval-special541{--approval-body-size:calc(18px*var(--fz)*var(--rs,1));--approval-body-leading:1.66}
 @media(max-width:600px) and (orientation:portrait){
-  #sheet[data-approval-v="2"],.approval-special541{--approval-body-size:calc(16px*var(--fz)*var(--rs,1));--approval-body-leading:1.58}
+  #sheet[data-approval-v="2"]{--approval-body-size:calc(16px*var(--fz)*var(--rs,1));--approval-body-leading:1.58}
+.approval-special541{--approval-body-size:calc(16px*var(--fz)*var(--rs,1));--approval-body-leading:1.58}
 }
-#sheet[data-approval-v="2"] #sheetTitle,.approval-special541 h2{font-size:var(--approval-body-size);line-height:var(--approval-body-leading)}
-#sheet[data-approval-v="2"] .srctext541,#sheet[data-approval-v="2"] .action541,.approval-special541 .auth-text541,.approval-special541 .auth-action541{font-size:var(--approval-body-size);line-height:var(--approval-body-leading);overflow-wrap:anywhere}
-.source541,.auth-source541{box-sizing:border-box;min-width:0;max-width:100%}
-.srcmeta541,.auth-meta541{flex-wrap:wrap;min-width:0;max-width:100%;overflow-wrap:anywhere;font-size:calc(13px*var(--fz)*var(--rs,1))}
-.srcmeta541>span,.auth-meta541>span{white-space:normal;min-width:0;max-width:100%}
+#sheet[data-approval-v="2"] #sheetTitle{font-size:var(--approval-body-size);line-height:var(--approval-body-leading)}
+.approval-special541 h2{font-size:var(--approval-body-size);line-height:var(--approval-body-leading)}
+#sheet[data-approval-v="2"] .srctext541{font-size:var(--approval-body-size);line-height:var(--approval-body-leading);overflow-wrap:anywhere}
+#sheet[data-approval-v="2"] .action541{font-size:var(--approval-body-size);line-height:var(--approval-body-leading);overflow-wrap:anywhere}
+.approval-special541 .auth-text541{font-size:var(--approval-body-size);line-height:var(--approval-body-leading);overflow-wrap:anywhere}
+.approval-special541 .auth-action541{font-size:var(--approval-body-size);line-height:var(--approval-body-leading);overflow-wrap:anywhere}
+.source541{box-sizing:border-box;min-width:0;max-width:100%}
+.auth-source541{box-sizing:border-box;min-width:0;max-width:100%}
+.srcmeta541{flex-wrap:wrap;min-width:0;max-width:100%;overflow-wrap:anywhere;font-size:calc(13px*var(--fz)*var(--rs,1))}
+.auth-meta541{flex-wrap:wrap;min-width:0;max-width:100%;overflow-wrap:anywhere;font-size:calc(13px*var(--fz)*var(--rs,1))}
+.srcmeta541>span{white-space:normal;min-width:0;max-width:100%}
+.auth-meta541>span{white-space:normal;min-width:0;max-width:100%}
 
 /* #0281: bounded step heading; the only human quote stays in its two-line block. */
-#sheet[data-approval-v="2"] #sheetTitle,.approval-special541 h2{min-width:0;max-width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-decoration:none}
+#sheet[data-approval-v="2"] #sheetTitle{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-decoration:none}
+.approval-special541 h2{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-decoration:none}
 #sheet[data-approval-v="2"] .sheethead{min-width:0;max-width:100%}
-#sheet[data-approval-v="2"] .action541,.approval-special541 .auth-action541{min-width:0;max-width:100%;overflow-wrap:anywhere}
-#sheet[data-approval-v="2"] .srcmeta541,.approval-special541 .auth-meta541{overflow:hidden}
+#sheet[data-approval-v="2"] .action541{min-width:0;max-width:100%;overflow-wrap:anywhere}
+.approval-special541 .auth-action541{min-width:0;max-width:100%;overflow-wrap:anywhere}
+#sheet[data-approval-v="2"] .srcmeta541{overflow:hidden}
+.approval-special541 .auth-meta541{overflow:hidden}
 
 .srcmeta541{flex-wrap:nowrap;white-space:nowrap}
 .srcmeta541>.srcsender541{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -4491,7 +4506,9 @@ details.fixcmd>summary{min-height:44px;display:flex;align-items:center;cursor:po
 :is(.gdlg,.ajmodal,#confirm).aj-shared-popup:not([hidden]){position:fixed;inset:auto;top:var(--popup-top);left:var(--popup-left);width:var(--popup-width);height:var(--popup-height);max-height:var(--popup-height);display:grid;place-items:center;align-items:center;padding:0;box-sizing:border-box;overflow:hidden}
 :is(.gdlg,.ajmodal,#confirm).aj-shared-popup>:is(.sq,.box){box-sizing:border-box;width:var(--popup-card-width);max-width:var(--popup-card-width);height:auto;min-height:0;max-height:var(--popup-height);aspect-ratio:auto;overflow-y:auto;border:0;border-radius:28px;transform:none;animation:none}
 #sheet.aj-shared-popup,:is(dialog,#full541).aj-shared-popup{position:fixed;inset:auto;top:var(--popup-center);left:var(--popup-card-left);right:auto;bottom:auto;box-sizing:border-box;width:var(--popup-card-width);max-width:var(--popup-card-width);height:auto;min-height:0;max-height:var(--popup-height);margin:0;transform:translateY(-50%);transition:none;animation:none;overflow-y:auto;border:0;border-radius:28px;box-shadow:none}
-:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-context="settings"]>:is(.sq,.box),#sheet.aj-shared-popup[data-popup-context="settings"],:is(dialog,#full541).aj-shared-popup[data-popup-context="settings"]{border:1px solid var(--line)}
+:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-context="settings"]>:is(.sq,.box){border:1px solid var(--line)}
+#sheet.aj-shared-popup[data-popup-context="settings"]{border:1px solid var(--line)}
+:is(dialog,#full541).aj-shared-popup[data-popup-context="settings"]{border:1px solid var(--line)}
 
 #sheet.aj-shared-popup>.grab{display:none}
 /* The same reply-button component needs an edge against the reader's Noir surface. */
@@ -4586,7 +4603,7 @@ body:has(#sheet.aj-layer-covered) .scrim{visibility:hidden;pointer-events:none}
 /* …and Settings covers the chat completely: the waves do not drift behind it (two infinite 200%-wide layers kept
    repainting under every Settings scroll on a phone). */
 body:has(#settings:not([hidden])) .water .wave{animation-play-state:paused}
-:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="grow"]>:is(.sq,.box),
+:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="grow"]>:is(.sq,.box){background:var(--popup-water,var(--water-color))}
 #sheet.aj-shared-popup[data-popup-system="grow"]{background:var(--popup-water,var(--water-color))}
 
 /* Settings uses the standard Noir B shell through every passkey setup step. */

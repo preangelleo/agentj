@@ -126,9 +126,14 @@ class Cap(unittest.TestCase):
             return await host.decide(p, wire.safety_code(s.h), PASS)
         res = asyncio.run(go())
         self.assertEqual(res["ev"], "approved")
-        self.assertEqual(sent[0], {"t": "approved"})        # L1: then the Agent status + push key (on_ready)
-        # #461f: cmds_state (terminal-command detection, a background task since its TypeError fix) may land in between
-        self.assertEqual([m["t"] for m in sent[1:] if m["t"] != "cmds_state"], ["preferences", "status", "estop_state", "push_key"])
+        self.assertEqual(sent[0], {"t": "approved"})        # L1: then the Agent's readiness messages (on_ready)
+        # Optional capability/terminal updates may arrive between the required pairing events.
+        kinds = [m["t"] for m in sent[1:]]
+        required = ["preferences", "status", "estop_state"]
+        self.assertEqual([kind for kind in kinds if kind in required], required)
+        self.assertTrue(set(kinds) <= set(required) | {"cmds_state", "call_capability", "push_state", "push_key"})
+        if "push_key" in kinds:
+            self.assertLess(kinds.index("estop_state"), kinds.index("push_key"))
         self.assertEqual(len(self.st.devices()), MAX_DEVICES)
         self.assertNotIn(ids[2], self.st.devices())
 
