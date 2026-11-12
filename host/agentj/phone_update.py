@@ -66,7 +66,7 @@ def text(rec, lang="zh", web="older", machine=None):
     else:
         why = upgrade_diag.REASON_WORDS.get(reason, ("升级过程遇到问题", "the upgrade could not finish"))[en]
     return (f"Upgrade failed: {why}. Use Repair connection below, or Settings → Emergency repair. If the host is offline, wake that computer first." if en else
-            f"升级未完成：{why}。使用下方「修复连接」，或前往设置中的「紧急修复」。Agent J 主机离线时，请先唤醒它。")
+            f"升级未完成：{why}。使用下方「修复连接」，或前往设置中的「紧急修复」。主机离线时，请先唤醒那台电脑。")
 
 def _rep_of(rec):
     import re

@@ -93,7 +93,7 @@ class Cache(unittest.TestCase):
                                       kid=b'unknown!' if reason == 'untrusted_key' else None)
                 if reason == 'signature_invalid': signature = 'broken'
                 def fetch(url, limit):
-                    return (('0'*64 if reason == 'hash_mismatch' else digest)+'\n').encode() if url.endswith('.sha256') else signature.encode() if url.endswith('.minisig') else body
+                    return (('0'*64 if reason == 'hash_mismatch' else digest)+'\n').encode() if url.split('?')[0].endswith('.sha256') else signature.encode() if url.endswith('.minisig') else body
                 def cache(st, version, **kwargs):
                     return au.cached_wheel(st, version, fetch=fetch) if kwargs.get('require_signature', True) else self.path
                 installer = Mock()

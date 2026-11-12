@@ -582,6 +582,10 @@ def build(directory, manifest_override: dict | None = None) -> tuple[bytes, dict
         raise BundleError(f"files total {total} bytes > 8 MiB")
     m = {**m, **(manifest_override or {}), "files": files_list(files)}
     check_manifest(m, set(files))
+    # The installer itself is not an external program dependency. Legacy signed bundles
+    # remain parseable unchanged; only newly built/published bundles are refused.
+    if any(c["name"] == "agentj" for c in (m.get("requires") or {}).get("cli", [])):
+        raise BundleError("requires.cli agentj: host command, not an external dependency / 安装宿主，不需要另装")
     check_initialization(m, files)
     check_entry_files(m, set(files))
     if m["type"] == "workflow":

@@ -55,7 +55,7 @@ class UnwritableCache(unittest.TestCase):
 
     def fetch(self, url, limit):
         self.calls.append(url)
-        if url.endswith('.sha256'):
+        if url.split('?')[0].endswith('.sha256'):
             return (self.stated + '\n').encode()
         return self.signature.encode() if url.endswith('.minisig') else self.body
 

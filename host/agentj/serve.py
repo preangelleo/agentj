@@ -639,6 +639,9 @@ class Host:
         self.pairing: Pairing | None = None
         from .credential_revoke import Revocations
         self.credential_revocations = Revocations(self)
+        from .control import Control
+        self.control = Control(self)
+        self.control_sync_wake = asyncio.Event()
         from .security_rotation import Rotation
         self.security_rotation = Rotation(self)
         self.pk_guard = passkey.Guard()   # F20: pk_restore rate limit + nonce replay memory (in memory only)
@@ -657,7 +660,7 @@ class Host:
         self.started_at = time.monotonic()
         self.name_refused = False   # one agent_name_refused line per refused streak, not one per sync
         self.official_pending = {}
-        self.reporter = Reporter(st, self.report_view, on_account=self.account_language, on_notices=self.official_notices)  # Dashboard metadata reports (§7); no-op unless linked
+        self.reporter = Reporter(st, self.report_view, send=lambda st, online, pending: cloud.send_report(st, online, pending, post=self.control.post), on_account=self.account_language, on_notices=self.official_notices)  # Dashboard metadata reports (§7); no-op unless linked
         try:
             self.preferences = preferences.validate(preferences.read()[1])
             from . import voice
@@ -955,6 +958,8 @@ class Host:
                     phase = "auth"
                     await self._auth(ws, cert)
                     phase = "revocations"  # a Dashboard failure is distinct from relay authentication
+                    control = getattr(self, 'control', None)
+                    if control is not None: control.require_safety()
                     await self.credential_revocations.sync()  # P490: apply before accepting any restored remote
                     phase = "up"
                     self.ws, self.relay_up, self.relay_ever_up, backoff, fails = ws, True, True, 1, 0
@@ -1122,6 +1127,8 @@ class Host:
         return s
 
     async def on_frame(self, f: bytes) -> None:
+        control = getattr(self, 'control', None)
+        if control is not None and not control.safety_ready(): return
         if len(f) < 5:
             return
         op, cid, payload = f[0], int.from_bytes(f[1:5], "big"), f[5:]
@@ -1595,6 +1602,10 @@ class Host:
         return await self._grant_pair(s)
 
     async def _grant_pair(self, s: Session, source: str = 'local') -> dict:
+        control = getattr(self, 'control', None)
+        if (control is not None and not control.safety_ready()
+                and control.safety_apply_task is not asyncio.current_task()):
+            return {'ev': 'denied', 'reason': 'control_safety_expired'}
         if (getattr(self, '_unbinding_all', False) or self.sessions.get(s.cid) is not s
                 or s.state != 'pending'):
             await self.close_cid(s.cid, 'unbound_all')
@@ -3126,7 +3137,8 @@ class Host:
                 wait = SYNC_EVERY
             else:
                 link_at_send = cloud.read_cloud(self.st)
-                fut = in_daemon_thread(cloud.send_sync, self.st, list(results))
+                fut = in_daemon_thread(lambda: cloud.send_sync(self.st, list(results), **(
+                    {"post": self.control.post} if hasattr(self, "control") else {})))
                 done, _ = await asyncio.wait({fut}, timeout=cloud.HTTP_TIMEOUT + 5)
                 try:
                     res = fut.result() if done else cloud.SyncResult("fail", "timeout")
@@ -3149,7 +3161,9 @@ class Host:
                     self.st.log("sync_fail", status=res.status)
                     wait = max(SYNC_EVERY, backoff.failed(res.status, getattr(res, "retry_after", None)))
             with contextlib.suppress(asyncio.TimeoutError):
-                await asyncio.wait_for(self.stopping.wait(), wait)
+                control = getattr(self, "control", None)
+                if control is None: await asyncio.wait_for(self.stopping.wait(), wait)
+                else: await control.wait_sync(wait)
 
     async def seat_unbound(self, expected) -> None:
 
@@ -9492,7 +9506,9 @@ class Host:
         return {"agent": kind, "id": hashlib.sha256(sid.encode()).hexdigest()[:32]}
 
     def _meter_msg(self) -> dict:
+        from . import context_snapshot
         m = dict(self.meter_state)
+        m['ctx'] = context_snapshot.current(self)
         if getattr(self, "heartbeat", None) is not None:
             m["heartbeat_usage"] = self.heartbeat.usage_view()
         for optional in ("quota_windows", "source_at"):
@@ -9510,6 +9526,11 @@ class Host:
         for k, v in kw.items():
             if k not in METER_KEYS:
                 continue
+            if k == 'ctx' and isinstance(v, dict):
+                from . import context_snapshot
+                from .heartbeat import session_key
+                v = {**v, 'session_key': session_key(self.agent), 'at': v.get('at', time.time())} if (context_snapshot.percent(v) is not None or
+                     (context_snapshot.display_percent(v) is not None and (v.get('used') is None or v.get('max') is None))) else None
             if isinstance(v, str):
                 v = clean_line(v, {"model": 100, "model_name": 64, "effort": 16}.get(k, 64)) or None
             if self.meter_state.get(k) != v:
@@ -9874,7 +9895,7 @@ class Host:
         self._scratch_task = asyncio.create_task(self._scratch_sweep())   # P542: crash leftovers, off the start path
         self.post_q = asyncio.Queue()
         self.configure_claude_inbound(await asyncio.to_thread(self._claude_inbound_files))   # P142: owner files, off the loop
-        jobs = [asyncio.create_task(self.relay_loop()), asyncio.create_task(self.loop_watch()), asyncio.create_task(self.reporter.run()),
+        jobs = [asyncio.create_task(self.control.run()), asyncio.create_task(self.relay_loop()), asyncio.create_task(self.loop_watch()), asyncio.create_task(self.reporter.run()),
                  asyncio.create_task(self.sync_loop()), asyncio.create_task(self.credential_revocations.run()), asyncio.create_task(self.remote_pair.run()), asyncio.create_task(self.post_loop()),
                  asyncio.create_task(self.update_loop()), asyncio.create_task(self.preferences_loop()),
                  asyncio.create_task(self.busy_loop()), asyncio.create_task(self.seat_loop()), asyncio.create_task(self.seat_xfer.run()),

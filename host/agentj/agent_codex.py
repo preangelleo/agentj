@@ -1028,7 +1028,9 @@ class CodexAgent(Agent):
             from .model_limits import codex_context_limit
             win = codex_context_limit(self.cur_model(), self.usage.get("modelContextWindow"), getattr(self, 'context_metadata', None))
             if not self.research and self.persist:
-                self.meter(ctx={"used": used, "max": win} if type(used) is int and used >= 0 else None)
+                self.meter(ctx={"used": used, "max": win, "session_id": self.tid,
+                                "model_id": self.cur_model(), "at": time.time()}
+                           if type(used) is int and used >= 0 and type(win) is int and win > 0 else None)
         elif method == "account/rateLimits/updated":
             if isinstance(p.get("rateLimits"), dict):
                 self.rate = p["rateLimits"]

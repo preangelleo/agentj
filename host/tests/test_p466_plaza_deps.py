@@ -14,7 +14,8 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import test_market as tm  # noqa: E402
-from agentj import market, plaza_deps  # noqa: E402
+from agentj import bundle, market, plaza_deps  # noqa: E402
+import market_fixtures as fx  # noqa: E402
 
 FAKE = "zz-aj466-tool"
 _which = shutil.which
@@ -72,6 +73,55 @@ class Pending(tm.Base):
         self.assertEqual(rc, market.EXIT_OK, out)
         self.assertIn("install.verify: OK", out)
         self.assertEqual(self.rec()["verify"]["state"], "pending")
+
+    def add_legacy_host_skill(self, verify="python3 scripts/demo.py --self-test", files=None, extra_cli=()):
+        # Construct pre-fix package bytes directly; the new publisher refuses to build these.
+        d = fx.make_skill(self.work / f"legacy-{next(self.n)}", files=files,
+                          requires={"cli": [{"name": "python3"}, {"name": "agentj"}, *extra_cli]},
+                          install={"skill_dir_name": "demo-skill", "post_install": [], "verify": verify})
+        m = __import__("json").loads((d / "manifest.json").read_text())
+        payload = {p: (d / p).read_bytes() for p in (files or fx.SKILL_FILES)}
+        m["files"] = bundle.files_list(payload)
+        data = bundle.pack(m, payload)
+        self.srv.add(data)
+        return data
+
+    def test_legacy_host_declaration_install_and_recheck_are_ok(self):
+        need_sandbox(self)
+        data = self.add_legacy_host_skill()
+        rc, out = self.preview_and_confirm(accept_unverified=True)
+        self.assertEqual(rc, market.EXIT_OK, out)
+        self.assertIn("install.verify: OK", out)
+        self.assertNotIn("依赖待补", out)
+        self.assertEqual((self.rec()["verify"]["state"], self.rec()["verify"]["missing"]), ("ok", []))
+        self.assertEqual(self.rec()["sha256"], bundle.sha256(data))
+        rc, out = self.reverify()
+        self.assertEqual(rc, market.EXIT_OK, out)
+        self.assertEqual((self.rec()["verify"]["state"], self.rec()["verify"]["missing"]), ("ok", []))
+
+    def test_legacy_host_with_real_missing_cli_remains_pending(self):
+        need_sandbox(self)
+        self.add_legacy_host_skill(extra_cli=({"name": FAKE},))
+        rc, out = self.preview_and_confirm(accept_unverified=True)
+        self.assertEqual(rc, market.EXIT_OK, out)
+        self.assertEqual(self.rec()["verify"]["missing"], [FAKE])
+        rc, out = self.reverify()
+        self.assertEqual(rc, market.EXIT_ERROR, out)
+        self.assertEqual(self.rec()["verify"]["missing"], [FAKE])
+
+    def test_legacy_host_verify_command_is_not_made_available_in_sandbox(self):
+        need_sandbox(self)
+        files = {**fx.SKILL_FILES, "scripts/demo.py":
+                 "import subprocess\nsubprocess.run(['agentj', '--version'], check=True)\n"}
+        self.add_legacy_host_skill(files=files)
+        rc, out = self.preview_and_confirm(accept_unverified=True)
+        self.assertEqual(rc, market.EXIT_OK, out)
+        self.assertNotEqual(self.rec()["verify"]["state"], "ok")
+        self.assertIn("agentj", out)
+        rc, out = self.reverify()
+        self.assertEqual(rc, market.EXIT_ERROR, out)
+        self.assertEqual(self.rec()["verify"]["state"], "failed")
+        self.assertIn("agentj", out)
 
     def test_a_real_failure_installs_as_pending(self):
         """ADR-0269-w4-plaza (#479, superseding the a2 rule): only signature / digest / audit block; a failing self-test is

@@ -1735,7 +1735,10 @@ class ClaudeAgent(Agent):
         from .model_limits import positive
         # Claude exposes no trustworthy OpenAI provider endpoint here; retain
         # measured tokens without substituting an alias or stale percentage.
-        ctx = {"used": used, "max": positive(mx)} if type(used) is int and used >= 0 else None
+        from . import context_snapshot
+        ctx = {"used": used, "max": positive(mx), "model_id": selected, "at": time.time()} if type(used) is int and used >= 0 else None
+        if context_snapshot.percent(ctx) is None:
+            ctx = None
         if self.cur_model() == selected:
             self.meter(ctx=ctx)
 

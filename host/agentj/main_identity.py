@@ -250,10 +250,11 @@ HEARTBEAT_LINE = {
 HEARTBEAT_LINE["zh"] = (
     "跳舞机器人=后台 Agent；后台命令用 "
     "`agentj busy run --who 谁 --label 干啥 -- 命令`；`agentj busy capacity`："
-    "空多起、紧排队，守 harness 上限。心跳照提示巡检；哈希未变不重读；"
-    "无事回〔静默消息〕；改心跳用 agentj-heartbeat。\n"
+    "空多起、紧排队，守 harness 上限。心跳巡检；哈希未变不重读；"
+    "无事回〔静默消息〕；改心跳用 agentj-heartbeat。无主机水位勿称过半或让主人压缩。\n"
     "后台活已结束：核对归你，跑验收命令看结论再短报，不凭退出码。\n"
 )
+HEARTBEAT_LINE["en"] += "Without a current host context reading, never claim half-full or ask the owner to compact. "
 HEARTBEAT_LINE["en"] += "On a background-job-ended [Agent J system notice], checking is yours, never the owner's: run the dispatch's acceptance command, read the actual report and evidence, then tell the owner the result in one or two sentences; never trust only the exit code; send a missing report back to whoever ran the job.\n"
 
 # P508: reporting is bound to the host's machine snapshot, not conversational memory.
@@ -261,7 +262,7 @@ HEARTBEAT_LINE["zh"] += "后台据 `agentj busy list --json` 汇报，勿凭记�
 HEARTBEAT_LINE["en"] += "Report background work only from `agentj busy list --json`, never memory; separate detection from self-reports.\n"
 
 # P537: outside the pinned core; one pointer, no duplicated checklist.
-HEARTBEAT_LINE["zh"] += "常驻清单见心跳文件（agentj heartbeat prompt show）；忙时也查。\n"
+HEARTBEAT_LINE["zh"] += "心跳清单见 heartbeat prompt show；忙时也查。\n"
 HEARTBEAT_LINE["en"] += "Standing watchlist: heartbeat prompt file (agentj heartbeat prompt show); follow it while busy too.\n"
 
 # P158 (0.20.0): goal mode. Host line; core hashes unchanged.

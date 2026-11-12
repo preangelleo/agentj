@@ -92,6 +92,18 @@ class Images(unittest.IsolatedAsyncioTestCase):
         await self.reply('图片如下：\n' + '\n'.join(str(self.work / name) for name in names))
         self.assertEqual(self.kinds(), [1] + [2] * 7)
 
+    async def test_customer_forward_failed_attachment_is_not_silent(self):
+        (self.work / '七港图.png').write_bytes(png())
+        self.arm()
+        items, skips = self.h.media.scan(str(self.work / '七港图.png'), 1)
+        self.assertFalse(skips)
+        self.h.hist = NS(get=lambda _: {'id':1, 'end':'done', 'reply':{'text':'图片如下'}, 'media':items})
+        self.tr.replies = [{}, RuntimeError('fixture failure')]
+        result = await self.c.forward(1, 'paired')
+        self.assertTrue(result['skips'])
+        self.assertEqual(result['skips'][0]['why'], 'send_failed')
+        self.assertGreaterEqual(self.c.store.data['counts'].get('send_failed', 0), 1)
+
     async def test_customer_attachment_upload_failure_counts_send_failed(self):
         (self.work / '七港图.png').write_bytes(png())
         self.arm()
@@ -99,6 +111,13 @@ class Images(unittest.IsolatedAsyncioTestCase):
         await self.reply(str(self.work / '七港图.png'))
         self.assertEqual(self.kinds(), [1])
         self.assertGreaterEqual(self.c.store.data['counts'].get('send_failed', 0), 1)
+
+    async def test_missing_attachment_records_wechat_error(self):
+        self.arm()
+        with patch.object(self.h.st, 'log') as log:
+            await self.reply(str(self.work / '不存在的图片.png'))
+        self.assertTrue(any(call.args == ('wechat_error',) and call.kwargs.get('reason') == 'attachment_skipped'
+                            for call in log.call_args_list))
 
     async def test_inbound_png_named_jpg_reaches_main_once_as_png(self):
         self.arm()

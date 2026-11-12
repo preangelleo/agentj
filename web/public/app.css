@@ -3157,6 +3157,12 @@ button.aj-dialog-action:disabled{opacity:var(--aj-dialog-action-disabled-opacity
    Agent pre-filled; lines are the text colour at low strength. Touch targets ≥ 44 px; Esc / outside = 取消 / 不保存. */
 .gdlg .sq.wide{width:min(92vw,440px);min-height:0;align-items:stretch;text-align:left;padding:22px 20px 16px}
 .gdlg .sq.wide>.gdlg-icon,.gdlg .sq.wide>h2,.gdlg .sq.wide>.gdlg-sub{align-self:center;text-align:center}
+.ct-head{display:grid;grid-template-columns:72px 1fr 72px;align-items:center;width:100%;min-height:44px}
+.ct-head h2{grid-column:2;text-align:center}
+.ct-head .ct-back{grid-column:1;grid-row:1}
+.gdlg .sq.wide>.ct-head{align-self:stretch;text-align:left}
+.gdlg .sq.wide>.ct-head h2{align-self:center;text-align:center}
+.gdlg .sq.wide>.ct-head+.gdlg-icon{margin-top:2px}
 .gdlg .sq.wide>.gdlg-icon{width:52px;height:52px;margin:2px 0 var(--space-control)}
 .gdlg .sq.wide>.gdlg-icon svg{width:26px;height:26px}
 .gdlg .sq.wide>.gdlg-sub{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -4400,9 +4406,13 @@ details.fixcmd>summary{min-height:44px;display:flex;align-items:center;cursor:po
 #pending541{position:relative}#pending541 .heart541{fill:var(--peachy-feeling);transform-origin:18px 18px;animation:aj-reply-action-heart541 2.6s ease-in-out infinite}#pending541 .halo541{fill:var(--peachy-feeling);transform-origin:18px 18px;animation:aj-reply-action-halo541 2.6s ease-out infinite}.count541{position:absolute;right:0;top:0;min-width:14px;height:14px;border-radius:7px;background:var(--peachy-feeling);color:var(--lotion);font:600 10px/14px var(--font-body);text-align:center}.reopen541{min-height:48px;padding:12px 18px;background:var(--ink);color:var(--rm-bg);border-radius:24px;font:600 16px/1.4 var(--font-body);margin-top:10px}.located541{outline:2px solid var(--ink);outline-offset:4px}.sheet .elsewhere[hidden]{display:none}#full541{position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;border:0;background:var(--pg);color:var(--ink);padding:24px;box-sizing:border-box}#full541 button{min-height:44px;padding:0 20px;border-radius:22px;background:var(--surface);color:var(--ink)}#full541 pre{white-space:pre-wrap;overflow-wrap:anywhere;font:15px/1.6 var(--font-mono)}
 @keyframes aj-reply-action-heart541{0%,40%,100%{transform:scale(1)}12%{transform:scale(1.16)}23%{transform:scale(1.02)}31%{transform:scale(1.11)}}@keyframes aj-reply-action-halo541{0%,40%,100%{transform:scale(1);opacity:0}12%{opacity:.15}40%{transform:scale(2.4);opacity:0}}@media(prefers-reduced-motion:reduce){#pending541 .heart541,#pending541 .halo541{animation:none}}
 /* #541c: layout only; button paint comes from the existing product classes. */
-#apprBtns.buttons541c{display:grid!important;grid-template-columns:1fr 1fr;gap:10px}
-#apprBtns.buttons541c #apprAllow{grid-column:1 / -1;width:100%;min-height:64px}
-#apprBtns.buttons541c .apprdeny{width:100%;min-height:52px}
+#apprBtns.buttons541c{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+#apprBtns.buttons541c #apprAllow{grid-column:auto;width:100%;min-height:56px}
+#apprBtns.buttons541c .apprdeny{width:100%;min-height:56px}
+#apprBtns.buttons541c :is(.apprallow,.apprdeny){display:flex;align-items:center;justify-content:center;padding:0;min-width:44px}
+#apprBtns.buttons541c :is(.apprallow,.apprdeny)[hidden]{display:none}
+#apprBtns.buttons541c .appr-icon0312{display:block;width:24px;height:24px;flex:none}
+#sheet[data-approval-v="2"] #apprBtns.buttons541c #apprAllow .lbl,#sheet[data-approval-v="2"] #apprBtns.buttons541c #apprAllow .apprkbd,#sheet[data-approval-v="2"] #apprBtns.buttons541c #apprDeny span{display:none}
 #words>.aj-action{margin-top:10px;white-space:normal}
 
 #full541:not([open]){display:none}#pending541[hidden]{display:none!important}
@@ -4423,7 +4433,7 @@ details.fixcmd>summary{min-height:44px;display:flex;align-items:center;cursor:po
 
 .om[data-approval-review] .omtxt{opacity:.6}.action541 .scope541{display:block;white-space:pre-line}
 
-#apprBtns.buttons541c #apprAllow{order:-2}#apprBtns.buttons541c #doubt541c{order:0}#apprBtns.buttons541c #apprDeny{order:1}
+#apprBtns.buttons541c #apprAllow{order:0}#apprBtns.buttons541c #doubt541c{order:1}#apprBtns.buttons541c #apprDeny{order:2}
 
 /* #330: only choices that contain an explanation stack their title and detail. */
 .words .rbtn:has(>small){flex-direction:column;align-items:flex-start;text-align:left}
@@ -4635,3 +4645,35 @@ body[data-sheet="1"]:has(#sheet.auth-approval[data-popup-system="center"]) .scri
 #toast[data-pk-test="1"] .nt-text{align-items:center}
 
 #sheet.auth-approval .buttons541c #apprGo:not([hidden]){grid-column:1/-1;flex:1 0 100%;width:100%;white-space:normal}
+/* Only verified v2 approvals use the three-icon row; legacy controls retain their visible labels. */
+#sheet:not([data-approval-v="2"]) #apprBtns .appr-icon0312{display:none}
+#sheet:not([data-approval-v="2"]) #apprBtns.buttons541c #apprAllow .lbl,#sheet:not([data-approval-v="2"]) #apprBtns.buttons541c #apprDeny span{display:inline}
+/* 0313: the recipient list uses the remaining space within the same centred dialog. */
+#ctFwd .sq.ct-picker-page{height:min(740px,calc(100dvh - 2 * var(--space-content)));overflow:hidden}
+#ctFwd .sq.ct-picker-page .ct-body{flex:1;overflow:hidden}
+#ctFwd .sq.ct-picker-page .ct-other{flex:1;overflow:hidden}
+#ctFwd .sq.ct-picker-page .ct-list{flex:1;min-height:0;max-height:none;overflow-y:auto;-webkit-overflow-scrolling:touch}
+#ctFwd .sq.ct-picker-page .ct-add{flex:none}
+#ctFwd .sq.ct-picker-page .gdlg-row{flex:none;padding-top:8px}
+#ctFwd .sq.ct-picker-page .ct-note{flex:none}
+#ctFwd .sq.ct-picker-page #ctFwd-what[hidden],#ctFwd .sq.ct-picker-page .gdlg-icon[hidden]{display:none}
+/* P313 picker-only rhythm: the selection page is a distinct layout, not a global contact/dialog rule. */
+#ctFwd .sq.ct-picker-page{padding:24px 20px 16px}
+#ctFwd .sq.ct-picker-page .ct-head{min-height:48px}
+#ctFwd .sq.ct-picker-page .ct-body{gap:16px}
+#ctFwd .sq.ct-picker-page .ct-other{gap:16px}
+#ctFwd .sq.ct-picker-page .ct-sorts{gap:8px}
+#ctFwd .sq.ct-picker-page .ct-list{gap:8px;padding-bottom:8px}
+#ctFwd .sq.ct-picker-page .ct-add{margin-top:0}
+#ctFwd .sq.ct-picker-page .gdlg-row{padding-top:16px}
+#ctFwd .sq.ct-picker-page .ct-note{margin-top:8px!important}
+#ctFwd .sq.ct-picker-page .ct-back{padding-left:0}
+/* Keep the wide picker centered on desktop while respecting the shared popup card cap; phone geometry stays unchanged. */
+@media (min-width:601px){
+  #ctFwd .sq.wide{width:min(440px,var(--popup-card-width));max-width:var(--popup-card-width);margin-inline:auto}
+}
+.ct-back{align-self:flex-start;min-height:44px;min-width:72px;padding:0 8px;border:0;background:none;color:inherit;font:600 calc(15px*var(--fz))/1 var(--font-body);cursor:pointer;text-align:left}
+.ct-back[hidden]{display:none}
+.ct-entry{justify-content:space-between}
+.ct-entry .ct-chevron{flex:none;font:400 26px/1 var(--font-body)}
+#ctFwd .ct-list::-webkit-scrollbar{display:none}

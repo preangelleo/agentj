@@ -118,6 +118,9 @@ async def _forward(wc, turn_id, device, *, valid=lambda: True):
         wc.fwd_sent = {k: v for k, v in wc.fwd_sent.items() if now - v < 30}
         wc.fwd_sent[turn_id] = time.monotonic()
         files, skips = await _files(wc, api, turn, generation, account, valid)
+        if skips:
+            # File names/paths never enter the event; the client gets fixed reason codes.
+            wc.h.st.log('wechat_error', reason='attachment_skipped', count=len(skips), why=skips[0]['why'])
         wc.h.st.log('wechat_forward', device=device, id=turn_id, result='ok', files=files, skipped=len(skips))
         return {'ok': True, **({'files':files} if files else {}), **({'skips':skips} if skips else {})}
     except Exception as e:
@@ -178,6 +181,7 @@ async def _files(wc, api, turn, generation, account, valid):
                 break
             await wc.send(api, '', generation, item=item)
         except Exception:   # noqa: BLE001 — a failed media send is never replayed; the reason is a fixed code
+            wc.store.count('send_failed')
             skipped.append({'name': name, 'why': 'send_failed'})
             break
         finally:

@@ -2214,6 +2214,10 @@
     "noMe": "还没登记你的邮箱：在「设置 → 邮件通道」白名单里加上（主人）",
     "toOther": "发给别人",
     "toOtherSub": "从通讯录里选，或新增一个",
+    "pickTitle": "选择收件人",
+    "back": "‹ 返回",
+    "done": "完成（{n}）",
+    "pickedNames": "已选 {n} 人：{names}",
     "picked": "已选 {n} 人",
     "search": "搜名字、昵称、拼音或邮箱",
     "sort": {

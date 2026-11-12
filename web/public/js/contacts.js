@@ -49,17 +49,29 @@ function icon(shapes) {
 }
 
 // ------------------------------------------------------------------ 1. forward to e-mail
-const F = { root: null, what: null, list: [], me: [], mail: null, mode: 'me', picked: new Map(), sort: 'recent', q: '', busy: false, qTimer: 0, seq: 0,
+const F = { root: null, what: null, list: [], me: [], mail: null, mode: 'me', page: 'main', picked: new Map(), sort: 'recent', q: '', busy: false, qTimer: 0, seq: 0,
   noInput: false,    // P189: a whole turn (the reply card's 转发到邮箱) may leave the owner's message out
   result: null };    // P295: what came back, shown in this same centred dialog (never a toast): {ok, to, m} | {dup, ago} | {why}
 
-function fwdClose() { if (F.root) F.root.d.hidden = true; F.busy = false; clearTimeout(F.qTimer); }
+function fwdClose() { if (F.root) F.root.d.hidden = true; F.page = 'main'; F.busy = false; ++F.seq; clearTimeout(F.qTimer); }
+function fwdBack() {
+  if (F.page === 'picker' && !F.result) {
+    F.page = 'main'; renderForward(); document.getElementById('ctFwd-other')?.focus({ preventScroll: true });
+  } else fwdClose();
+}
+function pickerOpen() {
+  if (F.busy || F.result) return;
+  F.page = 'picker'; renderForward(); document.getElementById('ctFwd-back')?.focus({ preventScroll: true });
+}
 
 function buildForward() {
   if (F.root) return F.root;
-  F.root = shell('ctFwd', 47, fwdClose);   // P273: above the full-screen reader (45) it can be opened from
+  F.root = shell('ctFwd', 47, fwdBack);   // P273: above the full-screen reader (45) it can be opened from
   const sq = F.root.sq;
   const h = mk('h2', undefined, undefined, 'aj-contacts'); h.id = 'ctFwd-title';
+  const back = mk('button', 'ct-back', t('ct.back'), 'aj-contacts'); back.type = 'button'; back.id = 'ctFwd-back'; back.hidden = true;
+  back.addEventListener('click', fwdBack);
+  const head = mk('div', 'ct-head'); head.append(back, h);
   const sub = mk('p', 'gdlg-sub'); sub.id = 'ctFwd-what';
   const body = mk('div', 'ct-body'); body.id = 'ctFwd-body';
   const note = mk('p', 'ct-note'); note.id = 'ctFwd-note'; note.setAttribute('aria-live', 'polite');
@@ -67,10 +79,11 @@ function buildForward() {
   const no = mk('button', 'aj-dialog-action', undefined, 'aj-dialog-action'); no.type = 'button'; no.id = 'ctFwd-cancel';
   const go = mk('button', 'go aj-dialog-action aj-dialog-action--primary', undefined, 'aj-dialog-action'); go.type = 'button'; go.id = 'ctFwd-send';
   row.append(no, go);
-  sq.append(icon(ICON), h, sub, body, note, row);
-  no.addEventListener('click', () => { if (!settling()) fwdClose(); });
+  sq.append(head, icon(ICON), sub, body, note, row);
+  no.addEventListener('click', () => { if (!settling()) fwdBack(); });
   go.addEventListener('click', () => {
     if (settling()) return;
+    if (F.page === 'picker') { fwdBack(); return; }
     const r = F.result;
     if (r && r.ok) fwdClose();
     else if (authFailure(r)) repairForward();
@@ -93,7 +106,7 @@ export async function openForward(what = {}) {
   buildForward();
   F.what = { turn: Number.isInteger(what.turn) ? what.turn : null, mid: typeof what.mid === 'string' ? what.mid : null,
     name: typeof what.name === 'string' ? what.name.slice(0, 128) : '', whole: what.whole === true && Number.isInteger(what.turn) && typeof what.mid !== 'string' };
-  F.mode = 'me'; F.picked = new Map(); F.q = ''; F.list = []; F.mail = null; F.me = []; F.noInput = false; F.result = null;
+  F.mode = 'me'; F.page = 'main'; F.picked = new Map(); F.q = ''; F.list = []; F.mail = null; F.me = []; F.noInput = false; F.result = null;
   F.root.d.hidden = false;
   renderForward();
   document.getElementById('ctFwd-cancel').focus({ preventScroll: true });
@@ -111,7 +124,9 @@ async function refresh() {
   F.me = Array.isArray(m.me) ? m.me.filter((a) => typeof a === 'string') : [];
   F.mail = m.mail && typeof m.mail === 'object' ? m.mail : { ready: false };
   if (!F.me.length && F.mode === 'me') F.mode = 'other';
+  const searchFocused = F.page === 'picker' && document.activeElement?.id === 'ctFwd-q';
   renderForward();
+  if (searchFocused) document.getElementById('ctFwd-q')?.focus({ preventScroll: true });
 }
 
 function say(s) { const n = document.getElementById('ctFwd-note'); if (n) n.textContent = s || ''; }
@@ -126,7 +141,12 @@ function rows() {
 function renderForward() {
   if (F.result) { renderResult(); return; }
   const { sq } = F.root;
-  sq.querySelector('#ctFwd-cancel').hidden = false; sq.querySelector('#ctFwd-what').hidden = false;
+  sq.querySelector('#ctFwd-cancel').hidden = false;
+  sq.querySelector('#ctFwd-back').hidden = F.page !== 'picker';
+  sq.querySelector('.gdlg-icon').hidden = F.page === 'picker';
+  sq.querySelector('#ctFwd-what').hidden = F.page === 'picker';
+  sq.classList.toggle('ct-picker-page', F.page === 'picker');
+  if (F.page === 'picker') { renderPicker(); return; }
   sq.querySelector('#ctFwd-title').textContent = t('ct.fwdTitle');
   sq.querySelector('#ctFwd-what').textContent = F.what && F.what.mid ? t('ct.fwdFile', { name: F.what.name || t('ct.file') })
     : F.what && F.what.whole && !F.noInput ? t('ct.fwdTurn') : t('ct.fwdReply');
@@ -153,14 +173,20 @@ function renderForward() {
     const dot = mk('i'); dot.setAttribute('aria-hidden', 'true');
     const tx = mk('span'); tx.append(mk('b', '', title), mk('small', '', sub, 'aj-contacts'));
     b.append(dot, tx);
-    b.addEventListener('click', () => { F.mode = mode; if (mode === 'me') F.picked.clear(); renderForward(); });
+    b.addEventListener('click', () => { F.mode = mode; renderForward(); });
     return b;
   };
-  modes.append(opt('me', t('ct.toMe'), F.me[0] || t('ct.noMe'), !F.me.length),
-    opt('other', t('ct.toOther'), F.picked.size ? t('ct.picked', { n: F.picked.size }) : t('ct.toOtherSub')));
+  modes.append(opt('me', t('ct.toMe'), F.me[0] || t('ct.noMe'), !F.me.length));
+  const other = mk('button', 'ct-mode ct-entry', undefined, 'aj-contacts'); other.type = 'button'; other.id = 'ctFwd-other';
+  const tx = mk('span');
+  const names = [...F.picked].map(([addr, name]) => name || addr);
+  tx.append(mk('b', '', t('ct.toOther')), mk('small', '', F.picked.size
+    ? t('ct.pickedNames', { n: F.picked.size, names: names.slice(0, 2).join('、') + (names.length > 2 ? '…' : '') })
+    : t('ct.toOtherSub'), 'aj-contacts'));
+  const arrow = mk('span', 'ct-chevron', '›'); arrow.setAttribute('aria-hidden', 'true');
+  other.append(tx, arrow); other.addEventListener('click', pickerOpen); modes.append(other);
   body.append(modes);
   if (F.what && F.what.whole) body.append(inputToggle());
-  if (F.mode === 'other') body.append(otherPanel());
   const n = F.mode === 'me' ? (F.me.length ? 1 : 0) : F.picked.size;
   go.textContent = F.busy ? t('ct.sending') : t('ct.send');
   go.disabled = F.busy || !n || !F.mail;
@@ -175,6 +201,16 @@ function inputToggle() {
   b.append(box, tx);
   b.addEventListener('click', () => { F.noInput = !F.noInput; renderForward(); document.getElementById('ctFwd-noinput')?.focus({ preventScroll: true }); });
   return b;
+}
+
+function renderPicker() {
+  const { sq } = F.root, body = sq.querySelector('#ctFwd-body');
+  sq.querySelector('#ctFwd-title').textContent = t('ct.pickTitle');
+  sq.querySelector('#ctFwd-back').textContent = t('ct.back');
+  body.replaceChildren(otherPanel());
+  const no = sq.querySelector('#ctFwd-cancel'), go = sq.querySelector('#ctFwd-send');
+  no.hidden = true;
+  go.textContent = t('ct.done', { n: F.picked.size }); go.disabled = F.busy;
 }
 
 function otherPanel() {
@@ -289,6 +325,7 @@ async function repairForward() {
 
 function renderResult() {
   const { sq } = F.root, r = F.result;
+  sq.classList.remove('ct-picker-page'); sq.querySelector('#ctFwd-back').hidden = true; sq.querySelector('.gdlg-icon').hidden = false;
   const no = sq.querySelector('#ctFwd-cancel'), go = sq.querySelector('#ctFwd-send'), body = sq.querySelector('#ctFwd-body');
   const sub = sq.querySelector('#ctFwd-what');
   body.replaceChildren(); say('');

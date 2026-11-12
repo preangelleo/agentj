@@ -48,6 +48,20 @@ class Build(unittest.TestCase):
         self.assertEqual([f["path"] for f in m["files"]], sorted(files, key=lambda p: p.encode()))
         self.assertEqual(bundle.sha256(a), __import__("hashlib").sha256(a).hexdigest())
 
+    def test_build_refuses_host_as_external_cli_but_parses_legacy_bundle(self):
+        d = fx.make_skill(self.root, requires={"cli": [{"name": "agentj", "optional": True}]})
+        with self.assertRaisesRegex(bundle.BundleError, "requires.cli.*agentj.*host"):
+            bundle.build(d)
+        # Signed legacy bytes must stay intact: parse does not rewrite the manifest/digest.
+        m = json.loads((d / "manifest.json").read_text())
+        files = {p: (d / p).read_bytes() for p in fx.SKILL_FILES}
+        m["files"] = bundle.files_list(files)
+        legacy = bundle.pack(m, files)
+        parsed, payload = bundle.parse(legacy)
+        self.assertEqual(parsed["requires"]["cli"], [{"name": "agentj", "optional": True}])
+        self.assertEqual(payload, files)
+        self.assertEqual(bundle.pack(parsed, payload), legacy)
+
     def test_manifest_files_regenerated(self):
         d = fx.make_skill(self.root, files={**fx.SKILL_FILES})
         m = json.loads((d / "manifest.json").read_text())

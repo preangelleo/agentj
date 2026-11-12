@@ -540,7 +540,8 @@ class AcpAgent(Agent):
             if type(used) is int and used >= 0:
                 self.usage = {"used": used, "size": size if type(size) is int and size > 0 else None}
                 if self.persist and not self.research:
-                    self.meter(ctx={"used": used, "max": self.usage["size"]})
+                    self.meter(ctx={"used": used, "max": self.usage["size"], "session_id": self.sid,
+                                    "model_id": self.cur_model(), "at": time.time()})
         elif kind == "available_commands_update":
             self.commands = [clean_line(str(c.get("name")), 40) for c in u.get("availableCommands") or []
                              if isinstance(c, dict) and c.get("name")][:60]

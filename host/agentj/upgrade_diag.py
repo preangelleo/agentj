@@ -144,7 +144,8 @@ def plan_reason(e: BaseException) -> str:
     """verified_plan's exception → the result reason. Getting the bytes (network, HTTP, timeouts, a redirect refused, too
     large) is download_failed; the installation kind auto-update cannot handle is unsupported_install; every other refusal
     of the bytes (hash, minisign, wheel identity, a broken archive) is signature_or_hash_mismatch."""
-    if isinstance(e, OSError) or (isinstance(e, ValueError) and str(e) in ("artifact_too_large", "insecure_update_redirect")):
+    import http.client
+    if isinstance(e, (OSError, http.client.IncompleteRead)) or (isinstance(e, ValueError) and str(e) in ("artifact_too_large", "insecure_update_redirect")):
         return "download_failed"
     if isinstance(e, ValueError) and str(e) == "unsupported_install":
         return "unsupported_install"
@@ -152,7 +153,7 @@ def plan_reason(e: BaseException) -> str:
 
 
 # P586: immutable metadata vocabulary, never arbitrary exception messages or receipt content.
-SUBREASONS = frozenset(('hash_mismatch', 'signature_invalid', 'untrusted_key', 'comment_mismatch',
+SUBREASONS = frozenset(('truncated', 'hash_mismatch', 'signature_invalid', 'untrusted_key', 'comment_mismatch',
                        'identity_mismatch', 'bad_zip', 'cache_receipt_invalid', 'internal_error'))
 ARTIFACT_STAGES = frozenset(('wheel', 'sha256', 'signature', 'identity', 'cache'))
 PLAN_CODES = frozenset(('artifact_hash_mismatch', 'artifact_signature_mismatch', 'artifact_identity_mismatch',
@@ -198,6 +199,9 @@ def plan_fields(e):
     evidence = dict(evidence) if isinstance(evidence, dict) else {}
     evidence.setdefault('download_attempts', getattr(e, 'download_attempts', None))     # #475
     out = artifact_fields(evidence)
+    import http.client
+    if isinstance(e, http.client.IncompleteRead):
+        out['subreason'] = 'truncated'
     if 'subreason' not in out:
         codes = {'artifact_hash_mismatch': 'hash_mismatch', 'artifact_signature_mismatch': 'comment_mismatch',
                  'artifact_identity_mismatch': 'identity_mismatch', 'upgrade_cache_unreadable': 'cache_receipt_invalid'}
@@ -426,6 +430,16 @@ def _known_reason(v):
 
 KNOWN_REASONS = frozenset({*CATEGORY.values(), *(r for r, _ in UV_STDERR), "uv_failed", "read_only_filesystem",
                            "permission_denied", "rollback_failed", "unknown"})
+
+
+def _metadata_check_ids(value: str) -> bool:
+    # A shape-only check is not an enum: an arbitrary owner's slug could pass it.
+    from .update import DOCTOR_UNNAMED, DOCTOR_UNPARSABLE, UPGRADE_CHECKS
+    ids = value.split(", ")
+    allowed = UPGRADE_CHECKS | {DOCTOR_UNNAMED, DOCTOR_UNPARSABLE}
+    return 0 < len(ids) <= 10 and len(set(ids)) == len(ids) and all(i in allowed for i in ids)
+
+
 # 贾维斯 ruling (reports/decisions.jsonl ts 1793803157.003, P573 amended): when Jev is unavailable only this fixed-field
 # report may leave — version, stage, error code, hash; no path, user name, body or attachment. LOCKED by test_p475:
 # every key has a closed-vocabulary check, and support.metadata_ok re-applies the same checks before sending.
@@ -435,6 +449,7 @@ META_FIELDS = {
     "failure_stage": lambda v: v in STEPS, "artifact_stage": lambda v: v in ARTIFACT_STAGES,
     "subreason": lambda v: v in SUBREASONS, "cache_status": lambda v: v in ("miss", "invalid"),
     "exception_type": lambda v: v in EXCEPTION_TYPES,
+    "failed_checks": _metadata_check_ids,
     "errno": lambda v: v.isdigit() and int(v) in errno.errorcode,
     "artifact_sha256": lambda v: bool(re.fullmatch(r"[0-9a-f]{64}", v)),
     "stated_sha256": lambda v: bool(re.fullmatch(r"[0-9a-f]{64}", v)),
@@ -455,10 +470,14 @@ def meta_line_ok(line: str) -> bool:
 
 def metadata_body(res: dict, kind: str | None = None) -> str:
     """#475 / the ruling above: the report that may leave without Jev — only META_FIELDS keys whose value passes its
-    closed check (never the installer tail, doctor, platform, command, paths, names or free text)."""
+    closed check (never the installer tail, doctor attachment, platform, command, paths, names or free text)."""
+    from .update import DOCTOR_UNNAMED, DOCTOR_UNPARSABLE, UPGRADE_CHECKS
+    allowed = UPGRADE_CHECKS | {DOCTOR_UNNAMED, DOCTOR_UNPARSABLE}
+    checks = [cid for cid in failed_checks(res) if cid in allowed]
     rec = entry(res) or {}
     fields = {"from": res.get("from"), "to": res.get("to"), "result": rec.get("result"),
               "reason": category(res.get("reason")), "step": rec.get("step"),
+              **({"failed_checks": ", ".join(checks)} if checks and category(res.get("reason")) == "doctor_failed" else {}),
               **artifact_fields(res), **exception_fields(res)}
     lines = [META_HEAD] + [f"{k}: {fields[k]}" for k in META_FIELDS
                            if fields.get(k) is not None and meta_line_ok(f"{k}: {fields[k]}")]

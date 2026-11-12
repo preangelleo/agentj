@@ -164,7 +164,7 @@ def status_class(status: int) -> str:
     return f"http_{status // 100}xx"
 
 
-def post_json(url: str, payload: dict, timeout: float = HTTP_TIMEOUT, max_response: int = MAX_RESPONSE) -> tuple[int, dict]:
+def post_json(url: str, payload: dict, timeout: float = HTTP_TIMEOUT, max_response: int = MAX_RESPONSE, *, control_retired: bool = False) -> tuple[int, dict]:
     """POST JSON with TLS verification on. Returns (status, response object or {}). Raises CloudError on transport errors.
     Answers larger than `max_response` bytes are read as {} (16 KiB by default; the plaza reads up to 2 MiB)."""
     check_url(url)
@@ -172,6 +172,11 @@ def post_json(url: str, payload: dict, timeout: float = HTTP_TIMEOUT, max_respon
     if len(data) > MAX_ENVELOPE:
         raise CloudError("too_large")
     u = urllib.parse.urlsplit(url)
+    # Fixed, unauthoritative routing hint for original signed native handlers.
+    # Do not permit queries or arbitrary headers through the generic URL guard.
+    if type(control_retired) is not bool or (control_retired and not any(
+            u.path.endswith('/v1/host/' + p) for p in ('credential-revoke', 'remote-pair', 'sync', 'report'))):
+        raise CloudError('refused_url')
     handlers: list = [_NoRedirect()]
     if (u.hostname or "").lower() in LOOPBACK:
         handlers.append(urllib.request.ProxyHandler({}))  # never send a loopback request through a proxy
@@ -180,7 +185,8 @@ def post_json(url: str, payload: dict, timeout: float = HTTP_TIMEOUT, max_respon
     opener = urllib.request.build_opener(*handlers)
     req = urllib.request.Request(url, data=data, method="POST",
                                  headers={"content-type": "application/json", "accept": "application/json",
-                                          "user-agent": AGENT})
+                                          "user-agent": AGENT,
+                                          **({"X-AgentJ-Control-Retired": "1"} if control_retired else {})})
     try:
         with opener.open(req, timeout=timeout) as r:
             status, raw = r.status, r.read(max_response + 1)

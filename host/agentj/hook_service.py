@@ -232,6 +232,10 @@ class HookService:
                                 t = asyncio.ensure_future(self._frame(ws, m))
                                 self.cards.add(t)          # keep a reference until it answers
                                 t.add_done_callback(self.cards.discard)
+                            elif isinstance(m, str) and len(m) <= 512:
+                                with contextlib.suppress(ValueError, TypeError):
+                                    self.edge_refusal(json.loads(m))
+
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:  # noqa: BLE001 — network / refusal / replaced → back off and retry
@@ -245,6 +249,17 @@ class HookService:
                 self.last_down = {"phase": "seat", "why": "seat", "code": None, "http": None, "kind": "no_cert"}
             await asyncio.sleep(backoff if cert else 3600)
             backoff = min(backoff * 2, RECONNECT[1])
+
+    def edge_refusal(self, event: dict) -> None:
+        """Relay telemetry is untrusted. Only an existing local id may acquire a log row."""
+        if not isinstance(event, dict) or event.get("t") != "refused":
+            return
+        hid, status, reason = event.get("h"), event.get("s"), event.get("r")
+        if type(status) is not int or status not in (403, 404, 405, 408, 413, 429, 503):
+            return
+        if reason not in ("not_found", "method", "slow", "too_big", "rate", "offline", "ip"):
+            return
+        self.store.put_refusal(hid, event.get("m"), status, reason)
 
     async def _frame(self, ws, m: bytes) -> None:
         rid, n = struct.unpack(">II", m[1:9])
@@ -270,16 +285,21 @@ class HookService:
         h = self.store.get(hid) if isinstance(hid, str) and hooks.ID_RE.fullmatch(hid) else None
         if h is None or h["state"] == "pending":
             return 404, {"error": "not_found"}
+        def refused(why, status):
+            self.store.put_refusal(hid, meta.get("m"), status, why)
+            return status, {"error": why}
         if h["state"] != "active":
-            return 410, {"error": "gone"}
+            return refused("gone", 410)
         if not h.get("enabled", True):
+            self.store.put_refusal(hid, meta.get("m"), 423, "paused")
             return 423, {"error": "paused", "retry": 300}
         if self.host.stopped():
+            self.store.put_refusal(hid, meta.get("m"), 423, "stopped")
             return 423, {"error": "stopped", "retry": 300}
         if len(body) > hooks.BODY_MAX:
-            return 413, {"error": "too_big"}
+            return refused("too_big", 413)
         if not hooks.ip_ok(str(meta.get("ip") or ""), h.get("ip_allow") or []):
-            self.store.log_refusal(h, "ip")
+            self.store.log_refusal(h, "ip", meta.get("m"), 403)
             self.log("hook_refused", hook=hid[:8], reason="ip")
             return 403, {"error": "ip"}
         sealed, kid = hooks.seal_header(meta)
@@ -298,13 +318,13 @@ class HookService:
                 else:
                     body, meta = plain, {**meta, "sealed": True}
             if why:
-                self.store.log_refusal(h, why)
+                self.store.log_refusal(h, why, meta.get("m"), 400)
                 self.log("hook_refused", hook=hid[:8], reason=why)
                 self._fail_warn(h)
                 return 400, {"error": "sealed_required" if why == "plain" else "seal"}
         ok, why, keys = hooks.verify(h, self.store.keys(hid), meta, body, self.clock())
         if not ok:
-            self.store.log_refusal(h, why)
+            self.store.log_refusal(h, why, meta.get("m"), 405 if why == "method" else 401)
             self.log("hook_refused", hook=hid[:8], reason=why)
             self._fail_warn(h)
             return (405, {"error": "method"}) if why == "method" else (401, {"error": why})
@@ -318,8 +338,10 @@ class HookService:
         while q and now - q[0] >= 60:
             q.popleft()
         if len(q) >= hooks.PER_MIN:
+            self.store.put_refusal(hid, meta.get("m"), 429, "rate")
             return 429, {"error": "rate", "retry": 60}
         if not test and not self.store.take_day(hid):
+            self.store.put_refusal(hid, meta.get("m"), 429, "quota")
             self.log("hook_refused", hook=hid[:8], reason="quota")
             return 429, {"error": "quota", "retry": 3600}
         q.append(now)
@@ -512,6 +534,8 @@ class HookService:
                     rec = self.store.delivery(req["show"])
                     if not rec or rec.get("hook") != h["id"]:
                         return {"ok": False, "why": "no_delivery"}
+                    if str(rec.get("result", "")).startswith("refused "):
+                        return {"ok": True, "text": f"{rec['result']} {rec['method']} HTTP {rec['status']}", "delivery": rec["id"]}
                     return {"ok": True, "text": hooks.envelope(self.lang, h, rec, "（记录 / record）"), "delivery": rec["id"]}
                 return {"ok": True, "deliveries": self.store.deliveries(h["id"], max(1, min(200, int(req.get("limit") or 20))))}
             if t == "wait":
@@ -531,7 +555,7 @@ class HookService:
             if t == "rotate":
                 return await self._rotate(h, req)
             if t == "test":
-                return await self._test(h, req)
+                return await (self._test_via_relay(h, req) if req.get("via_relay") is True else self._test(h, req))
             if t == "forward":
                 return await self._forward(h, req)
         except hooks.HookError as e:
@@ -833,6 +857,39 @@ class HookService:
         finally:
             self.widening.discard(h["id"])
 
+    async def _test_via_relay(self, h: dict, req: dict) -> dict:
+        """Explicit public probe; real delivery, real quotas, never follow redirects or report the URL/token."""
+        import urllib.error
+        import urllib.request
+
+        keys = self.store.keys(h["id"])
+        if not keys or not self.hb():
+            return {"ok": False, "why": "no_secret", "route": "public_relay"}
+        body = str(req.get("body") or '{"test": true, "from": "agentj hook test"}').encode()[:hooks.BODY_MAX]
+        hd, tok = hooks.sign_test(h, keys[0], body, self.clock())
+        if h.get("e2e") and h.get("seal"):
+            body = hooks.seal(hooks.unb64u(h["seal"]["pub"]), h["id"], body)
+            hd.update({hooks.SEAL_HEADER: f"{hooks.SEAL_V}; kid={h['seal']['kid']}", "Content-Type": "application/octet-stream"})
+        url = hooks.url_of(self.hb(), h, tok)
+
+        def send():
+            class NoRedirect(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, request, fp, code, msg, headers, newurl):
+                    return None
+            opener = urllib.request.build_opener(NoRedirect)
+            request = urllib.request.Request(url, data=body, headers=hd, method="POST")
+            try:
+                with opener.open(request, timeout=8) as reply:
+                    return reply.status
+            except urllib.error.HTTPError as error:
+                return error.code
+
+        try:
+            status = await asyncio.to_thread(send)
+        except (OSError, ValueError):
+            return {"ok": False, "why": "offline", "route": "public_relay"}
+        return {"ok": status == 200, "status": status, "route": "public_relay"}
+
     async def _test(self, h: dict, req: dict) -> dict:
         """Sign a delivery the way this hook's sender would and run it through the same pipeline (no quota)."""
         keys = self.store.keys(h["id"])
@@ -846,7 +903,8 @@ class HookService:
         meta = {"m": "POST", "h": h["id"], "t": tok, "q": "", "hd": {k.lower(): v for k, v in hd.items()},
                 "ip": (h.get("ip_allow") or [""])[0].split("/")[0]}
         status, obj = await self.handle(meta, body, test=True)
-        return {"ok": status == 200, "status": status, "answer": obj, "net_up": self.up}
+        return {"ok": status == 200, "status": status, "answer": obj, "net_up": self.up,
+                "route": "local_direct_not_relay"}
 
     async def _forward(self, h: dict, req: dict) -> dict:
         """The self-built route (§10): an event the owner's own entry already checked comes in through hooks.sock and is
@@ -1249,7 +1307,7 @@ def cmd_hook(a) -> None:
         body = a.body or ""
         if body.startswith("@"):
             body = pathlib.Path(body[1:]).read_text()[:hooks.BODY_MAX]
-        res = _call({"t": "test", **base, "body": body})
+        res = _call({"t": "test", **base, "body": body, "via_relay": a.via_relay})
     elif sub == "forward":
         body = a.body or ""
         if body.startswith("@"):
@@ -1266,6 +1324,9 @@ def cmd_hook(a) -> None:
     if a.json:
         print(json.dumps(res, ensure_ascii=False))
         return
+    if sub == "test":
+        print("公网中继（真实投递，占用配额）/ public relay (real delivery, uses quota)" if a.via_relay else
+              "本机直连，未经过中继（不占配额）/ local direct, not through relay (no quota)")
     if not res.get("ok"):
         raise SystemExit("✗ " + (_why(res) if res.get("why") else f"HTTP {res.get('status')} {res.get('answer')}"))
     if res.get("text"):
@@ -1330,6 +1391,8 @@ def add_parser(sub) -> None:
             p.add_argument("--show", help="看一条投递原文（包信封）")
         if name in ("test", "forward"):
             p.add_argument("--body", help="载荷文字，@文件 读文件" + ("，- 读标准输入" if name == "forward" else ""))
+        if name == "test":
+            p.add_argument("--via-relay", action="store_true", help="公网真实投递（占用配额）；默认本机直连")
         if name == "forward":
             p.add_argument("--header", action="append", help="请求头 K: V（可重复；按这个 hook 的验签方式带上签名 / 令牌）")
             p.add_argument("--token", help="URL 令牌方式的令牌")

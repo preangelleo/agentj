@@ -1617,7 +1617,7 @@
    "type": "integer",
    "default": 100000,
    "tier": "user",
-   "description": "Pause automatic heartbeat above this context size; compact first / 上下文超过此值暂停心跳，先压缩",
+   "description": "Legacy absolute context cap (no longer pauses heartbeat or triggers half-window notices); notices use the real 50%/75% window / 旧绝对上限不再暂停心跳或触发过半提醒；提醒按真实窗口的50%/75%判断",
    "aliases": [
     "heartbeat context limit",
     "心跳上下文上限"

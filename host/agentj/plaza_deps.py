@@ -55,7 +55,11 @@ def missing(names, path: str) -> list[dict]:
 
 
 def wanted(s: dict, cmds) -> list[str]:
-    return [c["name"] for c in s.get("cli") or () if not c.get("optional")] + [a[0] for a in cmds or () if "/" not in a[0]]
+    # A legacy package may declare the installing host as an external CLI. Do not
+    # inspect host PATH for that declaration; actual verify commands still run inside
+    # the unchanged sandbox and can fail if they try to execute agentj there.
+    return [c["name"] for c in s.get("cli") or () if not c.get("optional") and c["name"] != "agentj"] + \
+           [a[0] for a in cmds or () if "/" not in a[0]]
 
 
 def from_tail(tail: str) -> list[str]:

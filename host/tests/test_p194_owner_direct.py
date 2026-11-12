@@ -94,8 +94,11 @@ class _Svc(unittest.IsolatedAsyncioTestCase):
         self.ask = AsyncMock(return_value={"behavior": "allow"})
         self.out = SimpleNamespace(send=AsyncMock(return_value={"result": "sent"}))
         self.host = SimpleNamespace(st=self.st, lang="zh", agent=SimpleNamespace(kind="claude", native_source={"kind": "terminal", "role": "owner"}), agent_cfg={"dir": str(self.work)},
-                                    media=None, hist=SimpleNamespace(get=lambda i: None), stopped=lambda: False,
+                                    media=None, hist=SimpleNamespace(get=lambda i: None, epoch=0), stopped=lambda: False,
+                                    kp=self.st.host_keypair(), channel=self.st.config()["channel"],
+                                    stopping=asyncio.Event(),
                                     send_app=send_app, _send_ready=send_ready, ask=self.ask, _approvers=lambda: ["dev1"],
+                                    _agent_pids=lambda: set(),  # synthetic host: no native agent process to borrow
                                     elevate=SimpleNamespace(out=self.out),
                                     activity=lambda kind, **kw: self.acts.append((kind, kw)))   # P296: no-card sends log here
         self.svc = ContactService(SimpleNamespace(host=self.host, st=self.st))

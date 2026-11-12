@@ -355,6 +355,9 @@ def measured(blob):
     context = {'pct': p} if p is not None else {}
     if all(number(v) for v in vals): context['used'] = sum(vals)
     if number(ctx.get('context_window_size')) and ctx['context_window_size'] > 0: context['max'] = ctx['context_window_size']
+    from . import context_snapshot
+    if context_snapshot.display_percent(context) is None and context_snapshot.percent(context) is None:
+        context = None
     def quota(key):
         q = obj(limits, key); p = pct(q.get('used_percentage'))
         if p is None: return None
@@ -413,7 +416,11 @@ def read(state_root, session_id, compacted_at=None, activity_at=None):
         out = {k: data.get(k) for k in empty}
         out['source_at'] = at
         if compacted_at and at <= compacted_at: out['ctx'] = None
-        return expire(out) if stale(at, activity_at) else out
+        expired = stale(at, activity_at)
+        if expired or time.time() - at > STALE_S: out['ctx'] = None
+        if isinstance(out['ctx'], dict):
+            out['ctx'] = {**out['ctx'], 'at': at, 'session_id': session_id, 'model_id': out['model']}
+        return expire(out) if expired else out
     except (OSError, ValueError, AttributeError, TypeError): return empty
 
 

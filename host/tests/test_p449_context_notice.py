@@ -121,14 +121,14 @@ class ContextNotice0269(ContextNotice):
     def test_absolute_cap_on_a_large_window(self):
         self.host.meter_state = {'ctx': {'used': 410000, 'max': 1000000}}     # 41 %: over the 400k default cap
         self.assertTrue(self.beat(self.now)['ok'])
-        self.assertIn(ZH, self.agent.got[-1].text)
+        self.assertNotIn(ZH, self.agent.got[-1].text)
         self.owner_never_pushed()
 
     def test_cap_preference(self):
         self.host.preferences['heartbeat']['context_max_tokens'] = 50000
         self.host.meter_state = {'ctx': {'used': 60000, 'max': 200000}}       # 30 % but over the owner's 50k
         self.assertTrue(self.beat(self.now)['ok'])
-        self.assertIn(ZH, self.agent.got[-1].text)
+        self.assertNotIn(ZH, self.agent.got[-1].text)
 
     def test_75_percent_required_once_more_then_heartbeat_goes_on(self):
         self.host.meter_state = {'ctx': {'used': 110000, 'max': 200000}}

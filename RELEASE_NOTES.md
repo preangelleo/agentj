@@ -1,4 +1,4 @@
-# Agent J v0.30.12
+# Agent J v0.30.14
 
 Deletions go to the Agent J trash, restorable for 24 hours; background and scheduled tasks no longer stop for a card; the Android mic opens on the first tap.
 

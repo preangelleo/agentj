@@ -4582,7 +4582,9 @@ agentj hook test --help
 ```
 
 ```text
-usage: agentj hook test [-h] [--order ORDER] [--json] [--body BODY] id
+usage: agentj hook test [-h] [--order ORDER] [--json] [--body BODY]
+                        [--via-relay]
+                        id
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -4592,6 +4594,7 @@ usage: agentj hook test [-h] [--order ORDER] [--json] [--body BODY] id
 | `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
 | `--json` | `false` | false | — | `` |
 | `--body` | `null` | false | — | `载荷文字，@文件 读文件` |
+| `--via-relay` | `false` | false | — | `公网真实投递（占用配额）；默认本机直连` |
 
 ### agentj hook triage
 
@@ -12609,7 +12612,9 @@ agentj hook test --help
 ```
 
 ```text
-usage: agentj hook test [-h] [--order ORDER] [--json] [--body BODY] id
+usage: agentj hook test [-h] [--order ORDER] [--json] [--body BODY]
+                        [--via-relay]
+                        id
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -12619,6 +12624,7 @@ usage: agentj hook test [-h] [--order ORDER] [--json] [--body BODY] id
 | `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
 | `--json` | `false` | false | — | `` |
 | `--body` | `null` | false | — | `载荷文字，@文件 读文件` |
+| `--via-relay` | `false` | false | — | `公网真实投递（占用配额）；默认本机直连` |
 
 ### agentj hook triage
 

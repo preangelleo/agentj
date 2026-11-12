@@ -316,6 +316,26 @@ class MetadataReport(_Mac):
         self.assertEqual(res["support"], "sent (st_" + "M" * 22 + ") metadata only")
         self.assertIn("不含日志", res["tell_owner"])
 
+    def test_doctor_failure_id_survives_jev_unavailable_without_free_text(self):
+        ch = Ch()
+        res = {"from": "0.26.8a1", "to": NEW, "result": "rolled_back", "rollback": "ok",
+               "reason": "doctor_failed", "step": "health",
+               "failed_checks": ["serve", "state", "serve", "private_owner_note", "private/owner/key"],
+               "detail": "doctor failed at private/owner/key", "stderr_tail": "secret private/owner/key"}
+        with mock.patch.object(support, "channel_for", return_value=ch), mock.patch.object(support, "remember"), \
+                mock.patch.object(support, "doctor_text", return_value="doctor private/owner/key"), \
+                mock.patch.object(privacy, "layer2", return_value=privacy.Verdict("unavailable", reason="jev.mode=unset")):
+            upgrade_diag.after_failure(self.st, res, lang="zh")
+        self.assertEqual(len(ch.sent), 1)
+        sent = ch.sent[0]
+        self.assertNotIn("attach", sent)
+        self.assertIn("failed_checks: serve, state", sent["body"])
+        self.assertNotIn("private_owner_note", sent["body"])
+        self.assertNotIn("catherine", sent["body"])
+        self.assertNotIn("secret", sent["body"])
+        self.assertTrue(support.metadata_ok(sent["body"]))
+        self.assertFalse(support.metadata_ok(sent["body"].replace("reason: doctor_failed", "reason: download_failed")))
+
     def test_metadata_only_is_a_closed_form(self):
         good = upgrade_diag.metadata_body({"from": "0.26.8a1", "to": NEW, "result": "failed", "reason": "download_failed",
                                            "step": "download", "detail": "URLError"}, "uv")
@@ -332,11 +352,11 @@ class MetadataReport(_Mac):
         self.assertEqual(ch.sent, [])
 
     # 贾维斯 ruling (reports/decisions.jsonl ts 1793803157.003, P573 amended): Jev unavailable → only fixed-field metadata:
-    # version, stage, error code, hash — no path, user name, body or attachment. This set is LOCKED: adding a key fails here.
+    # version, stage, error code, hash, fixed doctor check IDs — no path, user name, body or attachment.
     LOCKED = frozenset({"from", "to", "result", "reason", "step", "failure_stage", "artifact_stage", "subreason",
                         "cache_status", "exception_type", "errno", "artifact_sha256", "stated_sha256",
                         # #0307 (贾维斯 dispatch 2026-11-10): closed words for the cache folder kind / level / owner kind
-                        "cache_path", "cache_level", "cache_owner", "cache_fallback"})
+                        "cache_path", "cache_level", "cache_owner", "cache_fallback", "failed_checks"})
 
     def test_ruling_locks_the_exact_field_whitelist(self):
         self.assertEqual(frozenset(upgrade_diag.META_FIELDS), self.LOCKED)
@@ -350,7 +370,7 @@ class MetadataReport(_Mac):
                       "stderr_tail": "Permission denied /Users/catherine", "fix": "agentj sudo …"}
         body = upgrade_diag.metadata_body(everything, "uv")
         keys = {ln.split(": ", 1)[0] for ln in body.split("\n")[1:]}
-        self.assertEqual(keys, self.LOCKED)
+        self.assertEqual(keys, self.LOCKED - {"failed_checks"})
         self.assertTrue(support.metadata_ok(body))
         for leak in ("catherine", "Permission", "agentj sudo", "platform", "python", "uv tool"):
             self.assertNotIn(leak, body)
@@ -362,7 +382,9 @@ class MetadataReport(_Mac):
         for line in ("platform: linux x86_64", "body: hello there", "note: x", "reason: catherine", "reason: a.b",
                      "to: catherine", "from: 1.0 /Users/x", "step: download@host", "exception_type: Mine",
                      "errno: 99999", "artifact_sha256: " + "A" * 64, "result: catherine", "subreason: catherine",
-                     "detail: URLError", "install: uv", "owner_kind: root"):
+                     "detail: URLError", "install: uv", "owner_kind: root", "failed_checks: private_owner_note",
+                     "failed_checks: serve, private/owner/key", "failed_checks: serve, serve",
+                     "failed_checks: " + ", ".join(["serve"] * 11), "failed_checks: serve,unknown"):
             with self.subTest(line=line):
                 self.assertFalse(support.metadata_ok(good + "\n" + line))
 

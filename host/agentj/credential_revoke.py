@@ -129,16 +129,18 @@ class Revocations:
         self.results = []
         self.inflight = None
 
-    def poll(self, link, seq):
+    def poll(self, link, seq, post=None):
         h = self.host
         from .security_rotation import view
         stage=view(h.st)
         body = {'rotation':{'stage':stage['stage'],'verified':len(stage['verified']),'old':len(stage['old'])},'v':1, 't':'credential_revoke', 'channel':h.channel, 'ts':int(time.time()),
                 'seq':seq, 'epoch':read(h.st).get('ack_epoch',0), 'results':self.results}
-        return cloud.post_json(cloud.api_url(h.st,link)+'/v1/host/credential-revoke',
+        control = getattr(h, 'control', None)
+        post = post or (control.post if control is not None and (control.safety_selected or getattr(control, 'retired', False)) else cloud.post_json)
+        return post(cloud.api_url(h.st,link)+'/v1/host/credential-revoke',
                                cloud.envelope(POLL_CONTEXT,body,h.sk),max_response=64*1024)
 
-    async def sync(self):
+    async def sync(self, *, post=None):
         """Required before relay acceptance; signed response binds this exact request, host and account."""
         import asyncio
         from .reporter import in_daemon_thread
@@ -159,7 +161,7 @@ class Revocations:
             deadline = time.monotonic() + SYNC_TIMEOUT
             from .poll_backoff import response_delay
             try:
-                self.inflight = asyncio.ensure_future(in_daemon_thread(self.poll,link,seq))
+                self.inflight = asyncio.ensure_future(in_daemon_thread(self.poll,link,seq) if post is None else in_daemon_thread(lambda: self.poll(link,seq,post)))
                 self.inflight.add_done_callback(lambda done: None if done.cancelled() else done.exception())
                 done, _ = await asyncio.wait({self.inflight}, timeout=SYNC_TIMEOUT)
                 if not done: raise TimeoutError
@@ -255,8 +257,10 @@ class Revocations:
     async def run(self):
         import asyncio
         while True:
-            try: await self.sync()
-            except Exception: self.host.st.log('credential_revoke_sync',status='failed')
+            control = getattr(self.host, 'control', None)
+            if control is None or not control.safety_selected:
+                try: await self.sync()
+                except Exception: self.host.st.log('credential_revoke_sync',status='failed')
             await asyncio.sleep(4)
 
 

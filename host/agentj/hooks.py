@@ -707,8 +707,22 @@ class Store:
                            | {"triage": self.doc["triage"].get(r.get("id"))})
         return out
 
-    def log_refusal(self, h: dict, why: str) -> None:
-        """A refused request: counted on the hook (last + hourly failures), never stored."""
+    def put_refusal(self, hid: str | None, method: str, status: int, why: str, at: float | None = None) -> None:
+        """Bounded metadata only. Unknown ids are intentionally not stored: no ownership can be established."""
+        if not isinstance(hid, str) or not ID_RE.fullmatch(hid) or not self.get(hid):
+            return
+        if why not in {"ip", "plain", "seal", "signature", "stale", "replay", "method", "quota",
+                       "rate", "too_big", "paused", "stopped", "gone", "slow", "offline", "not_found"}:
+            why = "refused"
+        method = method if method in {"POST", "PUT", "GET", "HEAD", "OPTIONS"} else "OTHER"
+        did = "d" + secrets.token_hex(6)
+        rec = {"id": did, "hook": hid, "at": round(at if at is not None else self.clock(), 3),
+               "method": method, "bytes": 0, "result": "refused " + why, "status": status}
+        self._write(self.dir / "deliveries" / hid / f"{did}.json", rec)
+
+    def log_refusal(self, h: dict, why: str, method: str = "POST", status: int = 401) -> None:
+        """Count the refusal and keep a metadata-only owner-visible record."""
+        self.put_refusal(h["id"], method, status, why)
         now = self.clock()
         h["last"] = {"at": round(now), "result": why}
         f = h.setdefault("fails", {"w": round(now), "n": 0})

@@ -336,7 +336,7 @@ def phone_label(lang: str) -> str:
 
 CTX_HALF = 0.5          # #449: half the model's window → the main Agent writes its own handoff and compacts when idle
 CTX_MUST = 0.75         # #449 b: still uncompacted at three quarters → once more, marked required
-CTX_ABS_CAP = 400_000   # #449 d: tokens; heartbeat.context_max_tokens overrides (a 1M window is not left to 500k)
+CTX_ABS_CAP = 400_000   # legacy setting; never represents half a real context window
 SELF_COMPACT = ("这次心跳就是空闲：按 agentj-handoff 写交接，运行 `agentj capability compact --json`，排队后结束本轮。",
                 " This beat is idle time: write the handoff (agentj-handoff), run `agentj capability compact --json`, end the turn once queued.")
 INVITE_TTL = 1800       # s: a beat's self-compact invite (self_compact.py) expires with the beat's turn or after this
@@ -600,24 +600,22 @@ class Heartbeat:
         return None
 
     def ctx_threshold(self, top: float) -> float:
-        """#449 d: min(half the window, heartbeat.context_max_tokens — default 400k), so a 1M window is not left to 500k."""
-        from . import preferences
-        cap = preferences.get(getattr(self.host, "preferences", None) or {}, "heartbeat.context_max_tokens", CTX_ABS_CAP)
-        cap = cap if type(cap) is int and cap >= 1000 else CTX_ABS_CAP
-        return min(top * CTX_HALF, cap)
+        """Only the actual window defines 'half'; legacy absolute cap cannot lower it."""
+        return top * CTX_HALF
 
     def context_note(self, now: float, d: dict) -> str | None:
-        """#449: context used / the model's window from the meter. Below min(50 %, abs cap) or unknown window → None.
+        """Current trustworthy model window: below 50% or unknown window → None.
         At or above it: one line per session per day; at or above 75 % of the window still uncompacted: one more line
         marked as required, once per session per day (#449 b). Markers live in heartbeat.json; the line rides inside the
         beat (a system turn), never to the owner. The beat carrying it also carries a one-shot self-compact invite."""
         self.ctx_level = None
-        c = (getattr(self.host, "meter_state", None) or {}).get("ctx")
-        used, top = (c.get("used"), c.get("max")) if isinstance(c, dict) else (None, None)
-        if type(used) not in (int, float) or type(top) not in (int, float) or top <= 0 or used < self.ctx_threshold(top):
+        from . import context_snapshot
+        c = context_snapshot.current(self.host)
+        pct = context_snapshot.percent(c)
+        if pct is None or pct < 50:
             return None
         key = session_key(getattr(self.host, "agent", None))
-        if used >= top * CTX_MUST:
+        if pct >= 75:
             marks = d.get("ctx_must")
             if not (isinstance(marks, dict) and marks.get(key) == day_of(now)):
                 self.ctx_level = "must"
@@ -628,8 +626,8 @@ class Heartbeat:
         if isinstance(marks, dict) and marks.get(key) == day_of(now):
             return None
         self.ctx_level = "half"
-        return pick(self.lang(), "主机提示：上下文已用过半。找空闲时自写交接再压缩。" + SELF_COMPACT[0],
-                    "Host notice: over half the context window is used. When idle, write your own handoff, then compact." + SELF_COMPACT[1])
+        return pick(self.lang(), "主机提示：上下文已用到一半。找空闲时自写交接再压缩。" + SELF_COMPACT[0],
+                    "Host notice: at least half the context window is used. When idle, write your own handoff, then compact." + SELF_COMPACT[1])
 
     def fire(self, now: float | None = None, by: str = "timer", reasons=None, note=None) -> dict:
         """Queue one beat now (the caller checked wait_reason, or this is `agentj heartbeat now`)."""

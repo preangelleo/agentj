@@ -1,0 +1,302 @@
+{
+  "agent.py": {
+    "03074c685f9a9dca62de": 1,
+    "0df45b3fadcfc2189c2b": 1,
+    "160f478c71348484facd": 1,
+    "32aa178bcec22291e5bd": 1,
+    "488d8362a5df19798c80": 1,
+    "4958db9ee95ad467d1ba": 1,
+    "52ed71f4bf952a14af0d": 1,
+    "c66adddfc801ad625b0b": 1,
+    "cdd4fc618294f465516b": 1,
+    "d44b688f0b70d4204dae": 1
+  },
+  "agent_codex.py": {
+    "b9517dffb5cf5268c748": 1
+  },
+  "agent_opencode.py": {
+    "1f403804691320135d3c": 1,
+    "3a9733eab1370802134b": 1,
+    "3aa57a4bda56a5d39623": 1,
+    "53badfc9ab934448bc97": 1,
+    "815f0a0e71613aa027f1": 1,
+    "96b567f21fd71b4d7900": 1,
+    "9ae9c23d2b37747d816b": 1,
+    "a43ab7ead821ceef53f4": 1,
+    "c68e08d3df84834c0e3d": 1,
+    "eff8636be0840fe42074": 1
+  },
+  "agent_opencode2.py": {
+    "3aa57a4bda56a5d39623": 1,
+    "a43ab7ead821ceef53f4": 1
+  },
+  "approval_material.py": {
+    "171af09bab0cc3f93825": 1
+  },
+  "approval_review.py": {
+    "213dbd151edd3e0ffaae": 1
+  },
+  "approval_special.py": {
+    "ee6cd5e3eeebe91780ce": 1
+  },
+  "assist.py": {
+    "00ac3b3f20bf751452dc": 1,
+    "85abdd7d679bd47d91f7": 1,
+    "b6b95f7adaee88404c05": 1,
+    "ba36b7953efb515d9b10": 1
+  },
+  "auth_rescue.py": {
+    "16fd3d82c308cdb16656": 1,
+    "450fc066f6a8f58eaca6": 1,
+    "488d8362a5df19798c80": 1,
+    "58e4b4d8fd4cd94faee7": 1,
+    "e09acd74d7955c197729": 1,
+    "e3cc35a4962900152268": 1,
+    "f5541353307f0c2e1a51": 1
+  },
+  "background_done.py": {
+    "5aa324b3daf931bca9e2": 1,
+    "9592bc8f4a06c97440fc": 1
+  },
+  "bailian.py": {
+    "5b674cf2339aacc9662f": 1
+  },
+  "bots/owner.py": {
+    "cd09854b99fd81c4b9ae": 1
+  },
+  "bounded_plan.py": {
+    "fb651f056e8bfcf15c4f": 1
+  },
+  "browser_login.py": {
+    "663fc2ca66d1651bb4b7": 1,
+    "dc99458e26393ea92098": 1,
+    "e17b8cbbf69df81a36db": 1
+  },
+  "channel_card.py": {
+    "85048459457a0f2a8782": 1,
+    "c33cb589a7df5da5c6bf": 1
+  },
+  "channel_context.py": {
+    "2ab745e36cd0bbfd05e9": 1
+  },
+  "claude_live.py": {
+    "77cb32357e1e5a4aca50": 1,
+    "d56b12b8399448c67502": 1
+  },
+  "cmdrun.py": {
+    "8e9ce99c987e148bb34c": 1
+  },
+  "codex_full_access.py": {
+    "e17b8cbbf69df81a36db": 1
+  },
+  "elevate.py": {
+    "027cbffc54f1cbdfe0f4": 1,
+    "3f95a65fcb65a71bc624": 1,
+    "de92bb9e29a8c7ff59f4": 1
+  },
+  "elevate_grant.py": {
+    "c5a9ed51884ef9320bf8": 1
+  },
+  "external_channels.py": {
+    "2f87a77bbbfd13ee3203": 1,
+    "bf2d385702e645607e4d": 1
+  },
+  "external_mcp.py": {
+    "740d6545ae74de9e79e5": 1
+  },
+  "fallback.py": {
+    "e17b8cbbf69df81a36db": 1
+  },
+  "forms.py": {
+    "55eeb343086d85bc696d": 1
+  },
+  "goal.py": {
+    "221ee1158e1b8d901b9b": 1,
+    "592ab2c89bcf740f0c84": 1,
+    "5aecd7d1ce467bfca4a5": 1,
+    "b95db5fbbe4a01128555": 1,
+    "d586a4892c02918c9f83": 1,
+    "ea128d8c37b2e2b74e20": 1,
+    "f6cf3bb1b5c9e59bd705": 1
+  },
+  "heartbeat.py": {
+    "80a3a965c246911b319d": 1
+  },
+  "held.py": {
+    "89b23623a067c1b7d0d8": 1,
+    "bc34bb9176a61fed8ead": 1
+  },
+  "hook_service.py": {
+    "49db448cce14fdf2cd13": 1,
+    "551bc9093bcc19165498": 1,
+    "9737ec018a1408309e87": 1
+  },
+  "imessage.py": {
+    "00150d9c11deaaf858e9": 1,
+    "3a8e42e1195b51503fcd": 1
+  },
+  "local_service_notice.py": {
+    "ca41c437384e1c87622e": 1
+  },
+  "login_flow.py": {
+    "56bfafb61cba6332ae30": 2,
+    "8566d1ebec58c320d41f": 1
+  },
+  "native_scheduler_control.py": {
+    "3dc1e9dccdd9ea068e9c": 1
+  },
+  "notify.py": {
+    "29028068f4bb4e67e4ef": 1,
+    "7dc4d045786abac47beb": 1,
+    "d730a661d20602b01dc0": 1
+  },
+  "owner_broker.py": {
+    "1296236401df4e6b5728": 1,
+    "e2dfa9d85ead38ef61a2": 1
+  },
+  "owner_channels.py": {
+    "5ede9ebfc7e6f886fc5e": 1
+  },
+  "peer_service.py": {
+    "29ad2d72f1bdfa5bda36": 1,
+    "488d8362a5df19798c80": 1,
+    "7c65b69a9f1c9d81da6c": 1,
+    "85f4aa54cdcdbf671d95": 1,
+    "991f6baf88d0776a6493": 1,
+    "d1d5e40b2ebcef6e0704": 1
+  },
+  "plaza_host.py": {
+    "4eeecb1e6ab90539b083": 1,
+    "abfd1a1fc7b1da1167d2": 1
+  },
+  "privacy_host.py": {
+    "9c0e21d4f3ca37e7c67b": 1
+  },
+  "provenance.py": {
+    "2789669a4649c24851a0": 1
+  },
+  "provider_runtime.py": {
+    "529d1f60e40bcff126b8": 1
+  },
+  "quota_refresh.py": {
+    "00a7ca7847f0137d2bdf": 1
+  },
+  "quota_resume.py": {
+    "1a8f8f0a10a197d5c8a1": 1,
+    "488d8362a5df19798c80": 1,
+    "db1b868c1f246e22be65": 1
+  },
+  "refusal_flag.py": {
+    "df35d372670b3a097e64": 1
+  },
+  "report_actions.py": {
+    "db592c048a9182621d7a": 1
+  },
+  "same_owner.py": {
+    "2af403740f73a0e174b5": 1
+  },
+  "secret_out.py": {
+    "663fc2ca66d1651bb4b7": 1
+  },
+  "serve.py": {
+    "0dd498f57d8ebd78f0dc": 1,
+    "0e3da4887bc983c12145": 2,
+    "11ee1ea1b4a849648733": 1,
+    "16f2c8fec095983daf77": 2,
+    "1c498942041c5753a603": 1,
+    "1f254d28b93309aa23aa": 1,
+    "1f88dcc785c536ca3fee": 1,
+    "2620a95a2f2187cc9298": 1,
+    "39f59eea8b143272d0f8": 1,
+    "3c96edf5306104f0413c": 1,
+    "435b2f1cd8628f7d0f1c": 1,
+    "4e52843eafb9b391692a": 1,
+    "6332a8e0d8b5a35708b2": 1,
+    "6e1a7790bb4a903e1783": 1,
+    "7031834c066536cf2bef": 1,
+    "7a186b7d0e68f9580213": 1,
+    "7a62a3909ab73852338d": 1,
+    "7c2baca722f378aabe3a": 1,
+    "800c224a2ad2bdc6d254": 1,
+    "896b76c9763bc4a3fed3": 1,
+    "8ba0c5296937733944e0": 1,
+    "8bd34b196a60dd62fd2f": 4,
+    "8ee6be2aaaaf1834e1a0": 1,
+    "914077f55808fba6af56": 5,
+    "97058399dfcdb1673102": 1,
+    "a54113e801e7804985e5": 1,
+    "a76dbe206d7d3b973d25": 3,
+    "ad1bf4ce32328e8f38a2": 2,
+    "b0145314baa9746da7cb": 1,
+    "b4bf15c46aab279fd640": 2,
+    "b78d544c15a1e46f348e": 1,
+    "bd1bf818e6cb1a196e46": 1,
+    "c21cc75d12b673ca2961": 1,
+    "ca4960e5a601d61c1404": 1,
+    "ccd8114d10308c2e33d3": 1,
+    "d05fee64d92986471c3c": 1,
+    "d0b52cfe60d76a3a4b4e": 1,
+    "dcf195208e7e56a00d6a": 1,
+    "e7154b20606f29685d27": 1,
+    "ea78387be5a4d4b3694f": 1,
+    "ec25fdadba1ca2406d2a": 1,
+    "ef7b738584018173bde7": 3,
+    "f4ee6ee73fd479700dff": 1,
+    "fc2eb45078806ba7f7bb": 2
+  },
+  "shared.py": {
+    "28e8f868fe51bdaa6f8b": 1,
+    "34da4ee22b8355ddbbae": 1,
+    "41a5e3753d0b9a29b8c2": 1,
+    "488d8362a5df19798c80": 1,
+    "5cb5b0e9a876336491f0": 1,
+    "6cfbbc5cbbdc25ec1280": 1,
+    "8a420d60355ac0a7f1f4": 1,
+    "8ac99acec0715d8709fb": 1,
+    "a1fe16345501f7b0dc70": 1,
+    "ad516668d83eaf952617": 1,
+    "bcd5725606d1aa6e129f": 1,
+    "e21373dbf28d98b01206": 1
+  },
+  "shared_codex.py": {
+    "45a51745fb55d2e98c72": 1,
+    "56221135aabb9d2fa650": 1,
+    "57324d8ba033ca5c22a7": 1,
+    "60b142608e1f361d43e7": 1,
+    "79628edd2278289b9558": 1,
+    "a2930714d87dc07c5b6b": 1,
+    "b367eaf8f3e289a1f9b5": 1,
+    "e9d98fe8a3ede5b04f82": 1,
+    "ec3d84c2826a1b9e8862": 1,
+    "ece619540d514aac61bb": 1
+  },
+  "shared_menu.py": {
+    "35b0a76b49e900880ec0": 1,
+    "6c3db65e748274ab009e": 1,
+    "8531d700401df9514d63": 1,
+    "b814c2be8a53db1ebe58": 1,
+    "b8c523a598ecc830c26d": 1,
+    "c0a9d30eb7b5f3c6dd3a": 1,
+    "c0db0e6c2ff481a6002f": 1,
+    "e6b22b17905bea7bac6f": 1,
+    "e839f8ba8cf3c204f656": 1
+  },
+  "sysmigrate.py": {
+    "72ae0633d9a7bdf401cf": 2,
+    "851da8ba28ffa6f07dea": 1,
+    "861542a48e82d2cbb4c0": 1,
+    "d328900f6995fe3b61be": 1
+  },
+  "term_cli.py": {
+    "80d7294180727d4a1edc": 1
+  },
+  "terminal.py": {
+    "b95ec9fb79ff6388ce2d": 1
+  },
+  "turn_heal.py": {
+    "f5f71f4d35a340c7738c": 1
+  },
+  "wechat.py": {
+    "9610d8b19056675ed0f9": 1
+  }
+}

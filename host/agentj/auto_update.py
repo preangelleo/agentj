@@ -292,6 +292,13 @@ def download(url, limit, *, sleep=time.sleep, opener=None):
         try:
             with (opener or update.open_download)(req, timeout=DOWNLOAD_TIMEOUT) as r:
                 data = r.read(limit + 1)
+                expected = r.headers.get('Content-Length') if getattr(r, 'headers', None) else None
+                if expected is not None and expected.isdecimal():
+                    if len(data) > limit:
+                        raise ValueError('artifact_too_large')
+                    if len(data) < int(expected):
+                        import http.client
+                        raise http.client.IncompleteRead(data, int(expected) - len(data))
             break
         except Exception as e:  # noqa: BLE001 — re-raised unchanged; only the attempt count is attached
             if attempt == DOWNLOAD_TRIES or not _transient(e):
@@ -317,6 +324,9 @@ def cached_wheel(st, version, *, fetch=download, require_signature=True, fallbac
             evidence['subreason'] = 'bad_zip'
         if type(getattr(exc, 'download_attempts', None)) is int:   # #475
             evidence['download_attempts'] = exc.download_attempts
+        import http.client
+        if isinstance(exc, http.client.IncompleteRead):
+            evidence['subreason'] = 'truncated'
         exc.artifact_diagnostic = upgrade_diag.artifact_fields(evidence)
         raise
 
@@ -362,8 +372,21 @@ def _cached_wheel(st, version, *, fetch, require_signature, evidence, fallback=N
     stated = stated[0] if stated else ''
     evidence['stated_sha256'] = stated
     if stated != digest:
-        evidence['subreason'] = 'hash_mismatch'
-        raise ValueError('artifact_hash_mismatch')
+        # One independent same-origin read bypasses stale intermediary caches; no signature or source change.
+        from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
+        def refreshed(url):
+            parts = urlsplit(url)
+            query = urlencode([*parse_qsl(parts.query), ('r', secrets.token_hex(8))])
+            return urlunsplit(parts._replace(query=query))
+        data = fetch(refreshed(ORIGIN + filename), MAX_WHEEL)
+        digest = hashlib.sha256(data).hexdigest()
+        evidence['artifact_sha256'] = digest
+        stated = fetch(refreshed(ORIGIN + filename + '.sha256'), 256).decode().strip().split()
+        stated = stated[0] if stated else ''
+        evidence['stated_sha256'] = stated
+        if stated != digest:
+            evidence['subreason'] = 'hash_mismatch'
+            raise ValueError('artifact_hash_mismatch')
     signed = False
     if require_signature:
         evidence['artifact_stage'] = 'signature'

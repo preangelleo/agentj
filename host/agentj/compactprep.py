@@ -43,9 +43,9 @@ PREP = {
 }
 NOTE = {"zh": "（Agent J：压缩前的交接在 {path}，先读它，再跑 agentj card todo due + agentj card cal due 看到期待办，然后继续。）",   # P394: + the due check
         "en": "(Agent J: the handover written before the compaction is at {path}; read it first, run agentj card todo due + agentj card cal due for what is due, then carry on.)"}
-REMIND = {"zh": "（Agent J：上下文已经用了一半多。不用告诉主人，也不要让主人发 /compact；这件事告一段落时（本轮结束或下次心跳），"
+REMIND = {"zh": "（Agent J：上下文已到一半。不用告诉主人，也不要让主人发 /compact；这件事告一段落时（本轮结束或下次心跳），"
                 "按 agentj-handoff 写好交接，再运行 agentj capability compact --json 自己压缩。）",   # #449: the owner is never asked
-          "en": "(Agent J: the context is more than half full. Do not tell the owner or ask them to send /compact; at a natural "
+          "en": "(Agent J: the context is at least half full. Do not tell the owner or ask them to send /compact; at a natural "
                 "break (the end of this turn or the next heartbeat) write the handover with agentj-handoff, then run "
                 "agentj capability compact --json to compact yourself.)"}
 PREP_AUTO = {   # P59 (ADR-A165): the context is nearly full and the harness will compact by itself soon
@@ -412,12 +412,12 @@ def cleared(agent, key: str | None) -> None:
 
 # ------------------------------------------------------------------ the next user message
 def _ctx(agent):
-    m = getattr(agent.host, "meter_state", None)
-    c = m.get("ctx") if isinstance(m, dict) else None
-    if isinstance(c, dict) and isinstance(c.get("used"), (int, float)) and isinstance(c.get("max"), (int, float)) \
-            and not isinstance(c.get("used"), bool) and c["max"] > 0:
-        return c["used"], c["max"]
-    return None
+    from . import context_snapshot
+    if getattr(agent.host, 'agent', None) is not agent:
+        return None
+    c = context_snapshot.current(agent.host)
+    return (c['used'], c['max']) if isinstance(c, dict) and isinstance(c.get('used'), (int, float)) \
+        and isinstance(c.get('max'), (int, float)) and c['max'] > 0 else None
 
 
 def decorate(agent, send) -> str:
@@ -443,7 +443,7 @@ def decorate(agent, send) -> str:
         r["note"] = None
         changed = True
     ctx = _ctx(agent)
-    if ctx and ctx[0] / ctx[1] > REMIND_AT and r.get("rem_n") != r["n"] and ctx[0] != r.get("ctx_at"):
+    if ctx and ctx[0] / ctx[1] >= REMIND_AT and r.get("rem_n") != r["n"] and ctx[0] != r.get("ctx_at"):
         tail = "\n\n" + REMIND[L]
         r["rem_n"] = r["n"]
         changed = True

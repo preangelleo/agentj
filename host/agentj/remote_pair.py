@@ -136,6 +136,9 @@ def open_pass(sk,q,full=False):
 
 class RemotePair:
     def __init__(self,host):
+        self.control_wake = asyncio.Event()
+        self.control_lock = asyncio.Lock()
+        self.control_inflight = None
         self.host=host; self.results={}; self.seq=0; self.started_at=int(time.time()*1000)
         self.offset=0   # P221: account-service clock minus this computer's (ms), learned from every poll; ±MAX_SKEW at most
         self.waiting=None   # P444b: current account QR pending (q, pairing, session), memory only
@@ -152,8 +155,13 @@ class RemotePair:
 
     def reply(self,q,data):
         self.results[q['id']]=(q,encrypt_reply(q,data))
+        control = getattr(self.host, 'control', None)
+        if control is not None and control.safety_selected: self.control_wake.set()
 
     def allowed(self,q):
+        control = getattr(self.host, 'control', None)
+        if (control is not None and not control.safety_ready()
+                and control.safety_apply_task is not asyncio.current_task()): return False
         link=cloud.read_cloud(self.host.st)
         from .credential_revoke import read as revocations
         return q.get('created_at',0)>=revocations(self.host.st).get('cutoff',0) and q.get('epoch',0)==revocations(self.host.st)['epoch'] and enabled(self.host.st) and link and link['host_id']==q['host'] and link['tenant']['slug']==q['account'] and self.now_ms()<q['expires_at']
@@ -385,21 +393,67 @@ class RemotePair:
             self.reply(q,{'status':'approved' if s.state=='ready' else 'gone'})
             self.waiting=None
 
-    def poll(self,link,results):
+    def poll(self,link,results,post=None):
         self.seq=max(self.seq+1,int(time.time()*1000))
         body={'v':1,'t':'remote_pair','channel':self.host.channel,'ts':int(time.time()),'seq':self.seq,
               'enabled':enabled(self.host.st),'online':self.host.relay_up,'results':results}
         # No server advertisement contract is defined for unbind_all yet.
         # A Host implementation flag is not permission to extend a strict poll schema.
-        return cloud.post_json(cloud.api_url(self.host.st,link)+'/v1/host/remote-pair',cloud.envelope(POLL_CONTEXT,body,self.host.sk))
+        control = getattr(self.host, 'control', None)
+        post = post or (control.post if control is not None and (control.safety_selected or getattr(control, 'retired', False)) else cloud.post_json)
+        return post(cloud.api_url(self.host.st,link)+'/v1/host/remote-pair',cloud.envelope(POLL_CONTEXT,body,self.host.sk))
+
+    async def _control_poll(self, link, results, post=None):
+        from .reporter import in_daemon_thread
+        if self.control_inflight is not None and not self.control_inflight.done():
+            raise cloud.CloudError('network')
+        self.control_inflight = asyncio.ensure_future(in_daemon_thread(self.poll, link, results) if post is None else in_daemon_thread(lambda: self.poll(link, results, post)))
+        self.control_inflight.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+        done, _ = await asyncio.wait({self.control_inflight}, timeout=12)
+        if not done: raise TimeoutError
+        return self.control_inflight.result()
+
+    async def sync(self, *, post=None):
+        """Drain original signed requests and flush applied replies before outbox ACK."""
+        from .reporter import in_daemon_thread
+        async with self.control_lock:
+            link = cloud.read_cloud(self.host.st)
+            if not link: return
+            for _ in range(32):
+                results = [{'id': k, 'reply': v[1]} for k, v in list(self.results.items())[-4:]]
+                t0 = int(time.time()*1000)
+                status, obj = await self._control_poll(link, results) if post is None else await self._control_poll(link, results, post)
+                if status != 200: raise cloud.CloudError('network')
+                self.learn_clock(obj.get('now'), t0, int(time.time()*1000))
+                requests = obj.get('requests')
+                if not isinstance(requests, list) or len(requests) > 4: raise ValueError('remote_pair_response')
+                if not requests: return
+                ids = []
+                for env in requests:
+                    q = notices.opened(env, CONTEXT)
+                    if not isinstance(q, dict) or not isinstance(q.get('id'), str):
+                        raise ValueError('remote_pair_unsigned')
+                    ids.append(q['id'])
+                    await self.execute(env)
+                # An ignored/uncertain command cannot be acknowledged as applied.
+                # Keep exact encrypted replies, and flush every page before advancing.
+                if any(rid not in self.results for rid in ids): raise ValueError('remote_pair_unapplied')
+                results = [{'id': rid, 'reply': self.results[rid][1]} for rid in ids]
+                status, obj = await self._control_poll(link, results) if post is None else await self._control_poll(link, results, post)
+                if status != 200: raise cloud.CloudError('network')
+                # A second response can contain another page; do not mistake it for
+                # proof the complete queue drained. The next request rechecks it.
+            raise ValueError('remote_pair_pending')
 
     async def run(self):
         from .poll_backoff import Backoff, response_delay
         backoff = Backoff()
         next_poll = 0.0
+        published_metadata = None
         inflight = None
         from .reporter import in_daemon_thread
         while True:
+            control = getattr(self.host, 'control', None)
             try:
                 self.refresh_waiting()
                 now=self.now_ms()
@@ -409,7 +463,16 @@ class RemotePair:
                     cid=p.cid; self.host._pair_finish(p,{'ev':'denied','reason':'remote_pair_disabled'})
                     if cid is not None: await self.host.close_cid(cid,'remote_pair_disabled')
                 link=cloud.read_cloud(self.host.st)
-                if (link and time.monotonic() >= next_poll and not backoff.remaining()
+                control = getattr(self.host, 'control', None)
+                polling = control is None or not control.safety_selected
+                metadata = (enabled(self.host.st), self.host.relay_up) if not polling else None
+                if (not polling and link and control.safety_ready() and not backoff.remaining()
+                        and (metadata != published_metadata or self.control_wake.is_set())):
+                    self.control_wake.clear()
+                    await self.sync()
+                    published_metadata = metadata
+                    backoff.reset()
+                if (link and polling and time.monotonic() >= next_poll and not backoff.remaining()
                         and (inflight is None or inflight.done())):
                     next_poll = time.monotonic() + 4
                     results=[{'id':k,'reply':v[1]} for k,v in list(self.results.items())[-4:]]
@@ -429,3 +492,6 @@ class RemotePair:
                 backoff.failed()
                 self.host.st.log('remote_pair_poll',status='failed')
             await asyncio.sleep(1)
+            if self.control_wake.is_set() and (control is None or not control.safety_selected):
+                self.control_wake.clear()
+                next_poll = 0.0

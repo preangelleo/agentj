@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+import time
 from pathlib import Path
 
 from ..agent import Agent
@@ -171,7 +172,8 @@ class CoreAgent(Agent):
             return
         self.touch()
         self.usage = {k: self.usage[k] + lp.usage[k] + subs.usage[k] for k in self.usage}
-        self.meter(ctx={"used": lp.last_input, "max": preset.context} if lp.last_input else None, model=preset.name)
+        self.meter(ctx={"used": lp.last_input, "max": preset.context, "session_id": self.host.st.agent_session(self.kind),
+                        "model_id": preset.name, "at": time.time()} if lp.last_input else None, model=preset.name)
         if r.get("text"):
             self.host.agent_text(r["text"])
 

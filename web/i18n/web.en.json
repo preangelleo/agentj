@@ -2214,6 +2214,10 @@
     "noMe": "Your own address isn't listed yet: add it to the allowlist (as Owner) in Settings → E-mail channel",
     "toOther": "To someone else",
     "toOtherSub": "Pick from your contacts, or add one",
+    "pickTitle": "Select recipients",
+    "back": "‹ Back",
+    "done": "Done ({n})",
+    "pickedNames": "{n} selected: {names}",
     "picked": "{n} selected",
     "search": "Search name, nickname, pinyin or address",
     "sort": {

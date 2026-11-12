@@ -91,6 +91,9 @@ def fetch_latest(timeout: float = TIMEOUT) -> tuple[str | None, str]:
     try:
         with open_download(req, timeout=timeout) as r:
             body = r.read(MAX_BYTES + 1)
+            expected = r.headers.get('Content-Length')
+            if expected is not None and expected.isdecimal() and len(body) < int(expected):
+                return None, 'network'
     except urllib.error.HTTPError as e:
         e.close()
         return None, f"http_{e.code}"

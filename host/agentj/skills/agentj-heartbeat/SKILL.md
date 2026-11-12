@@ -112,7 +112,7 @@ minutes) and 「每天固定时间唤醒」/ "Also wake up every day at" with a 
 
 The host prechecks due to-dos/calendar entries, completion reports, failed local units and pending avatar messages, plus changed heartbeat prompts. A wake-up carries the detected reasons; this is a local signal check, not a claim that the entire watchlist was reviewed. Quiet hours default to 23:00–07:00 in host-local time (`heartbeat.quiet_enabled`, `quiet_start`, `quiet_end`), editable under Settings → Heartbeat. Non-urgent prompt-change reasons wait; due items, reports and pending avatar messages can still wake you.
 
-Heartbeats never pause for context size or model. At half the model's context window or more, the heartbeat carries one line (at most once per conversation per day): when idle, write your own handoff, then compact. Do not clear the chat or ask the owner to send `/compact`.
+Heartbeats never pause for context size or model. The legacy `heartbeat.context_max_tokens` cap does not lower the notice threshold. Only a valid current-session native window reading at 50% or more carries one line (at most once per conversation per day): when idle, write your own handoff, then compact. Do not clear the chat or ask the owner to send `/compact`.
 
 主机先查到期待办/日历、完成报告、失败单元、待处理分身消息等本机信号；没有发现事情就不调用模型。有事才在心跳里附上原因，这不表示整份巡检清单都已经查过。默认按主机本地时间 23:00–07:00 延后提示变更等非紧急原因；到期事项、报告和待处理消息仍可唤醒。在设置 → 心跳调整安静时段。心跳不会因上下文大小或模型暂停。上下文达到模型窗口一半及以上时，心跳里附一句（同一会话每天最多一次）：找空闲时自写交接再压缩；不要清空对话，也不要让主人发 `/compact`。点手机顶栏用量查看心跳输入/输出 token 和轮次，工具没有提供的用量标未知。
 

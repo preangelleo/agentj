@@ -902,6 +902,10 @@ class WeChat:
         text = strip_markers(text)
         from . import media as media_mod
         named, files, _paths, keys = await asyncio.to_thread(attachments, self.h, text, limit=media_mod.MAX_ITEMS)
+        if not named and not files and not keys and any(ref.path.startswith('/') for ref in media_mod.refs(text)):
+            # A named absolute local file produced no attachment. Do not log the path or
+            # infer a transport failure; the scanner may have refused it for safety.
+            self.h.st.log('wechat_error', reason='attachment_skipped')
         text = await self.owner_out(text)      # P573: keys → pickup cards + placeholders; the answer itself is delivered
         reply = public_reply(text, named, lang, files)
         if reply is None:      # nothing left to say in the channel (no credential reaches here any more)
