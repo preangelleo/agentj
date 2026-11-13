@@ -1,5 +1,5 @@
 {
-  "version": "0.30.18",
+  "version": "0.30.19",
   "zh": "删除先进 Agent J 回收站、24 小时内可找回；后台任务和定时任务不再中途弹卡；安卓话筒一次就能打开。",
   "en": "Deletions go to the Agent J trash, restorable for 24 hours; background and scheduled tasks no longer stop for a card; the Android mic opens on the first tap."
 }

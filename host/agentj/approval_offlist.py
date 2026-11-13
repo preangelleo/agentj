@@ -33,7 +33,7 @@ import secrets
 # Host-owned explicit cards: each one is a concrete host executor's own question / grant, not a harness request.
 # Together with uv_list.required() this IS the card list. A native (harness) request may only use AskUserQuestion.
 CARD_LIST = frozenset({"AskUserQuestion", "SandboxOnce", "AuthRescue", "AgentJBoundedPlan", "company.write",
-                       "agentj core mcp add", "agentj learn"})
+                       "agentj core mcp add", "agentj learn", "agentj plaza"})
 NATIVE_CARDS = frozenset({"AskUserQuestion"})
 
 TRUST = ("owner", "host", "host_read", "external", "unknown")

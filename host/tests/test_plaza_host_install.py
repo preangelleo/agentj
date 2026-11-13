@@ -848,42 +848,65 @@ class SecurityRound5(SecurityRound4):
 
 
 class SecurityRound6(SecurityRound5):
-    """security-round6.md (new-M5): a local secret in the Agent-chosen workspace / resolved target is refused before any
-    card or tool_input; ordinary paths are unaffected."""
+    """A secret-like target stays Host-private on the signed card; ordinary paths are unaffected."""
     for _n in [n for n in dir(SecurityRound5) if n.startswith("test_")]:
         locals()[_n] = None
     del _n
 
-    def refused_quietly(self, res):
+    def setUp(self):
+        super().setUp()
+        from agentj import application_ingress
+        for patch in (mock.patch.object(application_ingress, 'allowed', return_value=True),
+                      mock.patch.object(application_ingress, 'current', return_value=type('Live', (), {'_transport_live': lambda self: True})())):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.plaza_inputs = []
+        original_ask = self.host.ask
+
+        async def capture_ask(tool, tool_input, *args, **kwargs):
+            if tool == 'agentj plaza':
+                self.plaza_inputs.append(tool_input)
+            return await original_ask(tool, tool_input, *args, **kwargs)
+
+        patch = mock.patch.object(self.host, 'ask', new=capture_ask)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def private_denied_quietly(self, res):
         from agentj import activity
-        self.assertEqual((res["rc"], res["why"]), (market.EXIT_PERMISSION, "secret_path"))
-        self.assertIn("安装路径里像有本机密钥", res["out"])
-        self.assertEqual(self.cards(), [])
+        self.assertEqual((res["rc"], res["why"]), (market.EXIT_PERMISSION, "denied"))
+        self.assertEqual(len(self.cards()), 1)
+        card = self.cards()[-1]
+        self.assertEqual(self.plaza_inputs[-1]['target'], '位置已隐藏')
+        self.assertIn('安装目录含疑似密钥片段，已隐藏完整路径', card['summary'])
         logs = "".join(p.read_text() for p in activity._dir(self.st).glob("*.jsonl")) if activity._dir(self.st).exists() else ""
         for where in (res["out"], logs, json.dumps(self.sent, ensure_ascii=False), self.st.log_path.read_text()):
             self.assertFalse(self.leaked(where), "the secret left the host")
 
-    def test_m5_secret_in_workspace_refused_before_fetch(self):
+    def test_m5_secret_in_workspace_private_signed_card_denied(self):
         import os
         self.package()
         for label, ws in (("whole", self.e.home / ("ws-" + self.SECRET)),
                           ("two-levels", self.e.home / self.SECRET[:10] / self.SECRET[10:])):
             with self.subTest(case=label), mock.patch.dict(os.environ, {"SYNTHETIC_API_KEY": self.SECRET}):
-                res, _ = self.run_host(self.req(workspace=str(ws)))
-                self.refused_quietly(res)
-                self.assertEqual(self.srv.calls, [])
-                self.assertFalse(ws.exists())
+                ws.mkdir(parents=True)
+                before = len(self.cards())
+                res, _ = self.run_host(self.req(workspace=str(ws)), 'deny')
+                self.assertEqual(len(self.cards()), before + 1)
+                self.assertEqual((res['rc'], res['why']), (market.EXIT_PERMISSION, 'denied'))
+                self.assertEqual(self.plaza_inputs[-1]['target'], '位置已隐藏')
+                self.assertFalse(self.leaked(json.dumps(self.sent, ensure_ascii=False)))
+                self.assertFalse((ws / 'demo-flow').exists())
 
-    def test_m5_secret_behind_a_symlinked_workspace_refused_before_card(self):
+    def test_m5_secret_behind_symlink_private_signed_card_denied(self):
         import os
         self.package()
         real = self.e.home / ("p-" + self.SECRET)
         real.mkdir()
         (self.e.home / "nice").symlink_to(real)
-        with mock.patch.dict(os.environ, {"SYNTHETIC_API_KEY": self.SECRET}), \
-             mock.patch.object(self.host, "ask", side_effect=AssertionError("no tool_input may be built")):
-            res, _ = self.run_host(self.req(workspace=str(self.e.home / "nice")))
-        self.refused_quietly(res)
+        with mock.patch.dict(os.environ, {"SYNTHETIC_API_KEY": self.SECRET}):
+            res, _ = self.run_host(self.req(workspace=str(self.e.home / "nice")), 'deny')
+        self.private_denied_quietly(res)
         self.assertFalse((real / "demo-flow").exists())
 
     def test_m5_ordinary_paths_unaffected_and_digits_in_folder_names_visible(self):
@@ -905,8 +928,7 @@ class SecurityRound6(SecurityRound5):
 
 
 class SecurityRound7(SecurityRound6):
-    """security-round7.md (new-M6): a real home path on the card is readable, never 「已隐藏」; a secret split by "/" is
-    refused. Run with HOME under /var/tmp AND under the real home's ~/.cache (gate fake HOMEs differ)."""
+    """Ordinary home paths stay readable; split secrets remain private on signed cards."""
     for _n in [n for n in dir(SecurityRound6) if n.startswith("test_")]:
         locals()[_n] = None
     del _n
@@ -926,11 +948,12 @@ class SecurityRound7(SecurityRound6):
                 self.assertNotIn("已隐藏", text)
                 self.assertNotIn("⚠ 有", text)
 
-    def test_m6_secret_split_by_slashes_refused(self):
+    def test_m6_secret_split_by_slashes_private_card(self):
         import os
         self.package()
         ws = self.e.home / self.SECRET[:7] / self.SECRET[7:14] / self.SECRET[14:]
+        ws.mkdir(parents=True)
         with mock.patch.dict(os.environ, {"SYNTHETIC_API_KEY": self.SECRET}):
-            res, _ = self.run_host(self.req(workspace=str(ws)))
-        self.refused_quietly(res)
-        self.assertEqual(self.srv.calls, [])
+            res, _ = self.run_host(self.req(workspace=str(ws)), 'deny')
+        self.private_denied_quietly(res)
+        self.assertFalse((ws / 'demo-flow').exists())

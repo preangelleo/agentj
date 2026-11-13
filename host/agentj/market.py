@@ -1633,7 +1633,7 @@ def _backup_path(st, name: str) -> pathlib.Path:
 
 def run_install(name: str, *, version=None, harness=None, workspace=None, params=None, params_file=None, accept_unverified=False,
                 sign_as=None, replace=False, skip_verify=False, owner_confirmed=False, digest=None, st=None, post=None, get=None,
-                keyring=None, now=None, out=None, _starter=False, perm_call=None, host_ask=None, _host_live=None) -> int:
+                keyring=None, now=None, out=None, _starter=False, perm_call=None, host_ask=None, _host_live=None, _target_private=None) -> int:
     """host_ask (#428, serve only — plaza_host): the Agent J host runs this install. No preview step: ONE signed card
     (host_ask(info) → {ok, rid, device} | {ok: False, why}) stands for the owner's yes to exactly this package, sha256 and
     digest — including an unverified community package; every check below stays as it is."""
@@ -1684,7 +1684,12 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
     s = summarize(m)
     if s["harness"] and h not in s["harness"]:
         raise PlazaError(f"这个包只支持 / the package supports only: {', '.join(s['harness'])}")
-    target, pin = market_guard.pin_target(target_of(m, h, workspace))    # #428 H1: the real path, on card / digest / record
+    candidate_target = target_of(m, h, workspace)
+    if _target_private is not None:
+        _target_private(str(candidate_target))
+    target, pin = market_guard.pin_target(candidate_target)    # #428 H1: the real path, on card / digest / record
+    if _target_private is not None:
+        _target_private(str(target))
     if host_ask is not None and (why := fence.host_write_refusal(st, str(target))):
         raise PlazaError(f"不装到 {target}：那是 Agent J 受保护的位置（{why}），Agent 自己也写不了 / refused: a protected location")
     now = now or datetime.datetime.now().astimezone()

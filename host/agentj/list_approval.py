@@ -296,7 +296,7 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
     host.status_changed()
     host.push_notify('ask')
     if isinstance(receipt,dict):
-        receipt.update(reason='pending', approval_card_shown=None)
+        receipt.update(id=rid, reason='pending', approval_card_shown=None)
     try:
         waits = {a.fut, a.review_pause} | ({gone} if gone is not None else set())
         done,_ = await asyncio.wait(waits, timeout=max(0,a.deadline-time.monotonic()), return_when=asyncio.FIRST_COMPLETED)

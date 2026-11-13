@@ -439,7 +439,7 @@ def gate_refused(host, name, tool_input, why: str) -> dict:
     return {"ok": False, "why": why}
 
 
-async def signed_card(host, name: str, tool_input: dict, emit=None, gate: dict | None = None, *, require_passkey=False) -> dict:
+async def signed_card(host, name: str, tool_input: dict, emit=None, gate: dict | None = None, *, require_passkey=False, receipt=None) -> dict:
     """One always-asked `agentj plaza` card; only a paired device's signed allow counts (grant_info). `emit` gets
     {"stage": "card", "online", "ttl"} once the card is really out, so the caller can say where it waits. A host card (host
     text, not 「Agent 附注」, QA #1); a gated turn is refused at once (round 1, M1), not queued. #437: waits its turn
@@ -451,20 +451,24 @@ async def signed_card(host, name: str, tool_input: dict, emit=None, gate: dict |
         return gate_refused(host, name, tool_input, "owner_grant_scope")    # 0304 A2-②: a UV card (secret) keeps the grant
     try:
         async with card_turn(host, emit):
-            return await _signed_card(host, name, tool_input, emit, require_passkey=require_passkey)
+            return await _signed_card(host, name, tool_input, emit, require_passkey=require_passkey, receipt=receipt)
     except CardQueueFull:
         host.st.log("plaza_perm_card_done", name=name, result="deny", why="queue_full")
         return {"ok": False, "why": "queue_full"}
 
 
-async def _signed_card(host, name: str, tool_input: dict, emit, *, require_passkey=False) -> dict:
+async def _signed_card(host, name: str, tool_input: dict, emit, *, require_passkey=False, receipt=None) -> dict:
     # Package manifest environment access is a permissions review, not an
     # operation that inputs/replaces a credential. Actual secret entry retains
     # its existing secret-controller UV; manifest names cannot create UV.
     from . import application_ingress
-    answer = await host.ask(CARD_TOOL, tool_input, batch=False, grant_info=True)
-    ok = answer.get('behavior') == 'allow' and application_ingress.allowed(host)
-    return {'ok': ok, **({'approved': True} if ok else {'why': answer.get('reason') or 'application_ingress_unverified'})}
+    answer = await host.ask(CARD_TOOL, tool_input, batch=False, grant_info=True, _receipt=receipt)
+    proof = answer.get('grant_info') or {}
+    ok = (answer.get('behavior') == 'allow' and application_ingress.allowed(host)
+          and bool(proof.get('rid') and proof.get('device') and proof.get('sign_pub'))
+          and host.st.sign_key(proof['device']) == proof['sign_pub'])
+    return {'ok': ok, **({'rid': proof['rid'], 'device': proof['device'], 'proof': proof} if ok else
+                         {'why': ('denied' if answer.get('reason') == 'device' else answer.get('reason')) or 'no_signature'})}
 
 
 _ISO = re.compile(r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?")
@@ -544,7 +548,7 @@ def verify_text(info: dict, en: bool, short: bool = False) -> str:
     return f"Self-test: {e}" if en else f"自检：{zh}"
 
 
-def install_card_text(info: dict, en: bool, index=None) -> str:
+def install_card_text(info: dict, en: bool, index=None, *, target_display=None) -> str:
     """#428: the ONE card of a host-run install (`agentj plaza request`). Built by serve from what it fetched and checked itself:
     name, version, signature, publisher, every permission (+ the part beyond what the Agent may do), audit findings, target.
     Package text never enters it; paths are clamped. Allow = Agent J installs exactly this (sha256 + digest below)."""
@@ -621,7 +625,7 @@ def install_card_text(info: dict, en: bool, index=None) -> str:
         d = ", ".join(clean_line(str(x), 40) for x in info["deps"][:10])
         out.append(f"Missing dependencies (not a blocker): {d} — the Agent adds them after the install, then reruns the self-check"
                    if en else f"缺的依赖（不阻断安装）：{d}——装好后 Agent 补齐，再重跑自检")
-    tgt = shown(str(info["target"]), 300, path=True)        # SecretIndex only (round 7): the path stays readable
+    tgt = (target_display if target_display is not None else shown(str(info["target"]), 300, path=True))
     out.append((f"Installs to ({info['harness']}): {tgt}" if en else f"装到（{info['harness']}）：{tgt}")
                + ((" — replaces the old one (kept in backups)" if en else "（替换旧版，旧的移到备份）") if info.get("replace") else ""))
     if info["type"] == "workflow":
@@ -641,7 +645,7 @@ def install_card_text(info: dict, en: bool, index=None) -> str:
     return "\n".join(out)
 
 
-def group_card_text(infos: list, en: bool, index=None, failed=(), gsha: str = "") -> str:
+def group_card_text(infos: list, en: bool, index=None, failed=(), gsha: str = "", *, target_displays=None) -> str:
     """#437: ONE card for `agentj plaza request a b c` — two lines per package (kind name version · signature · publisher /
     beyond-the-Agent permissions · audit blocks · self-test · target) + its digest, the packages that failed before the card
     (name + fixed reason), and the group SHA-256 binding each name / version / sha256 / digest. Package text never enters."""
@@ -666,7 +670,8 @@ def group_card_text(infos: list, en: bool, index=None, failed=(), gsha: str = ""
         ex = (", " if en else "、").join(extra[:6]) + ((f" +{len(extra) - 6}") if len(extra) > 6 else "") if extra else ("none" if en else "无")
         blk = sum(1 for a in i.get("audit") or () if a.get("level") == "block")
         warn = warn or bool(blk) or not i["certified"] or pub.get("changed")
-        tgt = shown(str(i["target"]), 160, path=True)
+        tgt = (target_displays[n - 1] if target_displays is not None and target_displays[n - 1] is not None
+               else shown(str(i["target"]), 160, path=True))
         kd = k.get(i["type"], ("包", "package"))[1 if en else 0]
         out.append(f"{n}. {kd} {i['name']} {i['version']} · {sig} · {pubt}")
         out.append("   " + (f"beyond your Agent: {ex} · audit blocks {blk} · " if en else f"超出权限：{ex} · 审计拦截 {blk} · ")

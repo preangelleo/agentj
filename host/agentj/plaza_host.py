@@ -22,8 +22,11 @@ import collections
 import concurrent.futures
 import hashlib
 import io
+import os
 import re
+import secrets
 import threading
+import time
 
 _NAME = re.compile(r"[a-z0-9][a-z0-9-]{1,39}")
 _VER = re.compile(r"[0-9A-Za-z.+-]{1,64}")
@@ -110,6 +113,20 @@ SHORT = {"denied": ("你拒绝了", "declined"), "timeout": ("卡超时", "card 
 RC_SHORT = {5: ("签名不对", "bad signature"), 2: ("审计拦下", "audit blocked"), 4: ("digest 不符", "digest mismatch")}
 
 
+def _path_hit(index, path: str) -> bool:
+    return index.hits(path) or index.hits(path.replace("/", ""))
+
+
+def _private_target(info: dict, index, en: bool) -> str:
+    """A fixed display for a Host-private target; no path components leave."""
+    if not info.get("private_target"):
+        return str(info["target"])
+    # Do not expose a leaf merely because it contains fewer than eight indexed
+    # characters: combining it with other card fields could reconstruct a key.
+    return ("Installation directory contains a suspected secret fragment; full path hidden" if en
+            else "安装目录含疑似密钥片段，已隐藏完整路径")
+
+
 def _short(r: dict, en: bool) -> str:
     w = SHORT.get(r.get("why")) or RC_SHORT.get(r["rc"]) or (f"exit {r['rc']}", f"exit {r['rc']}")
     return w[1 if en else 0]
@@ -144,8 +161,27 @@ async def handle(host, req: dict, emit=None, **run_kw) -> dict:
     from .peer_guard import SecretIndex
     index = await asyncio.to_thread(SecretIndex.build, workdir=(getattr(host, "agent_cfg", None) or {}).get("dir") or None,
                                     fragment_size=8)
-    if spec["workspace"] and (index.hits(spec["workspace"]) or index.hits(spec["workspace"].replace("/", ""))):    # round 6 (new-M5): never a local secret on the card / phone
-        return _refuse(host, first, "secret_path", market)
+    # Do not reject an indexed workspace before checking the package: a skill may
+    # install elsewhere. Keep the raw request entirely host-private on a hit.
+    private_workspace = bool(spec["workspace"] and _path_hit(index, spec["workspace"]))
+    # Capture the lexical workspace too: a symlink may resolve into a private
+    # target, and market errors before host_ask can otherwise echo its alias.
+    private_workspace = private_workspace or bool(spec["workspace"] and
+        _path_hit(index, os.path.realpath(spec["workspace"])))
+    # A skill target may live outside the requested workspace. Resolve it before
+    # entering market: pre-card errors must obey the same privacy classification.
+    def private_request(n):
+        if private_workspace:
+            return True
+        try:
+            h = market.resolve_harness(spec["harness"], host.st)
+            for candidate in (market.skills_root(h) / n, market.workspace_root(spec["workspace"]) / n):
+                if _path_hit(index, str(candidate)) or _path_hit(index, os.path.realpath(candidate)):
+                    return True
+        except (ValueError, OSError, market.PlazaError):
+            pass
+        return False
+    private = {n: private_request(n) for n in todo}
     loop = asyncio.get_running_loop()
     slots = _gate(host)
     infos, waits, card, pre, changed = {}, {}, {}, {}, asyncio.Event()
@@ -164,10 +200,10 @@ async def handle(host, req: dict, emit=None, **run_kw) -> dict:
 
     def asker(n):
         def ask(info: dict) -> dict:              # worker thread → the coordinator's ONE card, then back
-            if index.hits(str(info["target"])) or index.hits(str(info["target"]).replace("/", "")):      # the resolved target (a symlink may name it): no card, no tool_input
-                host.st.log("plaza_request", name=info["name"], result="secret_path")
-                pre[n] = "secret_path"
-                return {"ok": False, "why": "secret_path"}
+            # The input workspace and the pinned target can differ (symlinks,
+            # skills). Either hit makes the target opaque on every external surface.
+            info = {**info, "private_target": private[n] or _path_hit(index, str(info["target"]))}
+            private[n] = info["private_target"]
             f = concurrent.futures.Future()
             waits[n] = f
             infos[n] = {**info, "via": gate["via"], "mail": gate.get("mail")}
@@ -179,6 +215,10 @@ async def handle(host, req: dict, emit=None, **run_kw) -> dict:
                 slots.acquire()
         return ask
 
+    def classify_target(n, target):
+        if _path_hit(index, target) or _path_hit(index, os.path.realpath(target)):
+            private[n] = True
+
     def run(n) -> int:
         slots.acquire(None if group else lambda pos: say({"stage": "queued", "position": pos}))
         try:
@@ -186,9 +226,10 @@ async def handle(host, req: dict, emit=None, **run_kw) -> dict:
             return market.run_install(n, version=spec["version"], harness=spec["harness"], workspace=spec["workspace"],
                                       params=spec["params"] or [], params_file=spec["params_obj"], sign_as=spec["sign_as"],
                                       replace=bool(spec["replace"]), st=host.st, out=bufs[n], host_ask=asker(n),
-                                      _host_live=request._transport_live if request else lambda:False, **run_kw)
+                                      _host_live=request._transport_live if request else lambda:False,
+                                      _target_private=lambda target: classify_target(n, target), **run_kw)
         except plaza.PlazaError as e:
-            print(f"agentj plaza: {e}", file=bufs[n])
+            print("没有安装 / NOT installed" if private[n] else f"agentj plaza: {e}", file=bufs[n])
             return market.EXIT_ERROR
         except Exception as e:  # noqa: BLE001 — a receipt, never a silent drop
             print(f"agentj plaza: install failed ({type(e).__name__})", file=bufs[n])
@@ -260,6 +301,8 @@ async def handle(host, req: dict, emit=None, **run_kw) -> dict:
                           _say(host, "failed", name=first, why=f"exit {r['rc']}"))     # fixed words: package text never reaches the chat
             if first in pending and tid is not None:
                 _rows(host)[first] = {"tid": tid, "names": [first], "bad": [], "pending": {first}}
+        if private[first]:
+            out = "已安装 / installed" if r["rc"] == 0 else "没有安装 / NOT installed"
         return {"ok": r["rc"] == 0, "rc": r["rc"], **({"why": r["why"]} if "why" in r else {}), "out": out[-MAX_OUT:]}
     each = MAX_OUT // len(names)
     out = "".join(f"── {n} ──\n" + bufs[n].getvalue()[-each:] for n in todo)
@@ -273,6 +316,8 @@ async def handle(host, req: dict, emit=None, **run_kw) -> dict:
         if row["tid"] is not None:
             _rows(host).update({n: row for n in row["pending"]})
     rc = 0 if not bad else card.get("why") and market.EXIT_PERMISSION or next(r["rc"] for r in results if r["rc"])
+    if any(private.values()):
+        out = "已安装 / installed" if not bad else "没有安装 / NOT installed"
     return {"ok": not bad, "rc": rc, **({"why": card["why"]} if card.get("why") else {}), "out": out[-MAX_OUT:],
             "results": results}
 
@@ -374,21 +419,96 @@ async def _card(host, infos: list, group: bool, before: list, gate: dict, index,
     """ONE signed card for the packages that reached it (one package, not a group: the full #428 card)."""
     from . import plaza_perms
     from .privacy import owner_text
-    pk = [{"package": i["name"], "version": i["version"], "sha256": i["sha256"], "digest": i["digest"], "target": str(i["target"]),
+    # One-use references live only in this invocation; neither target nor workspace
+    # enters a signed input, phone frame, or activity entry. The local installed
+    # receipt retains its real target for reverify and ownership checks.
+    refs = {i["name"]: secrets.token_urlsafe(32) for i in infos if i.get("private_target")}
+    pk = [{"package": i["name"], "version": i["version"], "sha256": i["sha256"], "digest": i["digest"],
+           "target": ("位置已隐藏" if i.get("private_target") else str(i["target"])),
+           **({"target_ref": refs[i["name"]]} if i.get("private_target") else {}),
            "certified": bool(i["certified"]), "publisher": i["publisher"].get("fp")} for i in infos]
     if not group:
         i = infos[0]
-        text = owner_text(plaza_perms.install_card_text(i, en, index))     # new-M2: card + activity
+        text = owner_text(plaza_perms.install_card_text(i, en, index,
+                          target_display=_private_target(i, index, en) if i.get("private_target") else None))
         tool_input = {"summary": text, **{k: v for k, v in pk[0].items() if k != "package"}, "package": i["name"],
                       "items": [{"kind": x["kind"], "name": x["name"]} for x in i.get("extra") or []]}
     else:
         gsha = hashlib.sha256("\n".join(f"{p['package']} {p['version']} {p['sha256']} {p['digest']}" for p in pk).encode()).hexdigest()
         failed = [(n, _short({"rc": rc}, en)) for n, rc in before if rc]
-        text = owner_text(plaza_perms.group_card_text(infos, en, index, failed, gsha))
+        text = owner_text(plaza_perms.group_card_text(infos, en, index, failed, gsha,
+                           target_displays=[_private_target(i, index, en) if i.get("private_target") else None for i in infos]))
         tool_input = {"summary": text, "packages": pk, "group_sha256": gsha,
                       "items": [{"kind": x["kind"], "name": x["name"]} for i in infos for x in i.get("extra") or []][:plaza_perms.MAX_ITEMS]}
     host.st.log("plaza_request_card", name=infos[0]["name"], n=len(tool_input["items"]), packages=len(infos),
                 certified=all(p["certified"] for p in pk))
     label = infos[0]["name"] if not group else f"{len(infos)} packages"
     needs_uv = any(x.get("kind") == "secret" for i in infos for x in i.get("extra") or [])
-    return {**await plaza_perms.signed_card(host, label, tool_input, emit, gate, require_passkey=needs_uv), "version": infos[0]["version"], "packages": pk}
+    # The reference is not an authority. The Host owns the pending request and
+    # consumes it before releasing worker threads, even on denial or exception.
+    from . import approvals, market_guard, application_ingress
+    pending = host.__dict__.setdefault("_plaza_private_pending", {})
+    token = secrets.token_urlsafe(32)
+    if refs:
+        host._task_id()  # initialize before capturing the live authority
+        bindings = []
+        for i in infos:
+            if i.get("private_target"):
+                try:
+                    target, pin = market_guard.pin_target(i["target"])
+                except (market_guard.PlazaError, OSError, ValueError):
+                    return {"ok": False, "why": "authority_changed", "version": infos[0]["version"]}
+                bindings.append((i["name"], str(target), pin, i["digest"], refs[i["name"]]))
+        pending[token] = {"bindings": bindings, "session": str(host.hist.epoch),
+                          "agent": host.agent, "authority": host._approval_live_authority(),
+                          "input": approvals.input_digest(tool_input), "deadline": time.monotonic() + host.ask_ttl,
+                          "receipt": None}
+    receipt = {}
+    if refs:
+        pending[token]["receipt"] = receipt
+    try:
+        result = await plaza_perms.signed_card(host, label, tool_input, emit, gate, require_passkey=needs_uv,
+                                               receipt=receipt if refs else None)
+        if refs:
+            bound = pending.pop(token, None)  # one use, including failed validation
+            proof = result.get("proof") or {}
+            rid, device = proof.get("rid"), proof.get("device")
+            env = proof.get("envelope") or {}
+            records = await asyncio.to_thread(
+                lambda: [r for r in approvals.read_log(host.st) if r.get("id") == rid]) if rid else []
+            valid = (bound is not None and result.get("ok") is True and not result.get("inherited")
+                     and rid and device and bound["receipt"] is receipt and receipt.get("id") == rid
+                     and (not env or (env.get("request_id") == rid and env.get("session") == bound["session"]
+                                      and env.get("input_sha256") == bound["input"]
+                                      and env.get("expires_at", 0) >= time.time()))
+                     and time.monotonic() <= bound["deadline"]
+                     and bound["agent"] is host.agent and bound["session"] == str(host.hist.epoch)
+                     and bound["authority"] == host._approval_live_authority()
+                     and application_ingress.allowed(host) and len(records) == 1
+                     and records[0].get("device") == device and records[0].get("tool") == "agentj plaza"
+                     and records[0].get("input_sha256") == bound["input"]
+                     and records[0].get("reason") == "device" and records[0].get("decision") == "allow"
+                     and approvals.check_record(host.st, records[0]) == "ok"
+                     and host.st.sign_key(device) == proof.get("sign_pub"))
+            if valid:
+                for name, target, pin, digest, ref in bound["bindings"]:
+                    i = next((item for item in infos if item["name"] == name), None)
+                    projected = next((p for p in pk if p["package"] == name), None)
+                    if i is None or projected is None:
+                        valid = False
+                        break
+                    try:
+                        current, current_pin = market_guard.pin_target(i["target"])
+                    except (market_guard.PlazaError, OSError, ValueError):
+                        valid = False
+                        break
+                    if (str(current) != target or current_pin != pin
+                            or i["digest"] != digest or projected["digest"] != digest
+                            or projected.get("target_ref") != ref):
+                        valid = False
+                        break
+            if not valid and result.get("ok"):
+                result = {"ok": False, "why": "authority_changed"}
+    finally:
+        pending.pop(token, None)
+    return {**result, "version": infos[0]["version"]}
