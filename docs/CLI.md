@@ -5460,7 +5460,7 @@ usage: agentj notify [-h] [--from NAME] [--title TITLE] [--text TEXT]
 ### agentj onboarding
 
 ```text
-first-use progress: seat, the Agent J host's browser, main phone, welcome
+first-use progress: seat, the Agent J host's browser, phone remote, welcome
 ```
 
 ```bash
@@ -13490,7 +13490,7 @@ usage: agentj notify [-h] [--from NAME] [--title TITLE] [--text TEXT]
 ### agentj onboarding
 
 ```text
-首次使用进度：席位、这台Agent J 主机的浏览器、主力手机、欢迎消息
+首次使用进度：席位、这台Agent J 主机的浏览器、手机遥控器、欢迎消息
 ```
 
 ```bash

@@ -1031,13 +1031,14 @@ class Elevator:
             if s.state == "ready" and s.device in targets and self.st.is_allowed(s.pub):
                 await self.host.send_app(s, obj_fn(s))
 
-    async def _deliver_card(self, obj_fn, only=None, rid=None) -> None:
-
-        try:
-            await self._to_phones(obj_fn, only)
-        except (OSError, ConnectionError):
+    async def _deliver_card(self, obj_fn, only=None, rid=None) -> dict:
+        from . import approval_delivery
+        result = await approval_delivery.deliver(self.host, obj_fn, rid=rid, only=only)
+        if result["failed"]:
             self.st.log("elev_delivery", id=rid, result="transport_failed")
+        if result["queued"]:
             self.host._remind_offline()
+        return result
 
     def _remind_card(self, c: dict) -> None:
         if not c.get("busy") and not c.get("offline_reminded") and not self.host._online_approvers():
@@ -1329,19 +1330,28 @@ class Elevator:
                                         **({"mail_account": mail_account} if mail_account else {}),
                                         "until": int(time.time() + TTL["secret"]),
                                         **({"where": {k: d.get(k) for k in ("mode", "path", "key")}} if d.get("path") else {})})
-        if on_card is not None:
-            try:
-                await on_card(c)
-            except Exception as e:
-                from . import bg
-                bg.swallowed(self.st.log, "elev_card_hook_failed", e, why=c["kind"], every=0)
         if c["kind"] != "login":
             self.host.push_notify("ask")
         only = c.get("only")
         cancelled=False
         self._remind_card(c)
         try:
-            await self._deliver_card(lambda s: self.card_msg(c, s), only, c["id"])
+            delivery = await self._deliver_card(lambda s: self.card_msg(c, s), only, c["id"])
+            if on_card is not None:
+                # The callback is a delivery receipt, not a card-construction
+                # hook.  Keep the one-argument contract, but expose the exact
+                # fan-out state so CLI callers never claim "sent" for queued,
+                # offline, or failed delivery.
+                c["delivery_status"] = (
+                    "sent" if delivery.get("complete") else
+                    "partial" if delivery.get("accepted") and delivery.get("queued") else
+                    "queued" if delivery.get("queued") else "failed")
+                c["delivery_accepted"] = bool(delivery.get("accepted"))
+                try:
+                    await on_card(c)
+                except Exception as e:
+                    from . import bg
+                    bg.swallowed(self.st.log, "elev_card_hook_failed", e, why=c["kind"], every=0)
             while True:
                 self._remind_card(c)
                 waits = [c["fut"]] + ([gone] if gone is not None and not c.get('review_detached') else [])
@@ -2874,9 +2884,11 @@ def cmd_secret(a) -> int:
         return _secret_report(res, a.json)
 
     def on_card(c):
-        print(f"SECRET_CARD: {c['id']} — 已发到主人手机（有效 {c.get('ttl', TTL['secret']) // 60} 分钟），本命令最多等 {REQUEST_WAIT} 秒。"
+        status = c.get("delivery_status", "queued")
+        headline, english = _secret_card_delivery_copy(status)
+        print(f"SECRET_CARD: {c['id']} — {headline}（有效 {c.get('ttl', TTL['secret']) // 60} 分钟），本命令最多等 {REQUEST_WAIT} 秒。"
               f"若本命令被中断（超时/被杀），卡片仍然有效，主人提交后结果会以〔Agent J 系统提示〕自动告诉你；也可运行 "
-              f"`agentj secret result {c['id']}` 查看结果（加 --wait 可等）。不要再发卡。/ Card sent to the owner's phone; this command "
+              f"`agentj secret result {c['id']}` 查看结果（加 --wait 可等）。不要再发卡。/ {english}; this command "
               f"waits up to {REQUEST_WAIT} s. If it is interrupted the card stays valid and the outcome reaches you as an "
               f"[Agent J system notice]; or run `agentj secret result {c['id']}` later. Do not send another card.",
               file=sys.stderr, flush=True)
@@ -2885,6 +2897,17 @@ def cmd_secret(a) -> int:
                                    "verify_cmd": a.verify_cmd or "", "cwd": os.getcwd(), "wait": REQUEST_WAIT,
                                    "replace": bool(getattr(a, "replace", False))}, on_card=on_card)
     return _secret_report(res, a.json)
+
+
+def _secret_card_delivery_copy(status):
+    """Describe fan-out delivery without implying every remote received it."""
+    copies = {
+        "sent": ("已发到主人手机", "Card sent to the owner's phone"),
+        "partial": ("部分设备已送达，其余排队/失败", "Partially delivered; remaining remotes are queued or failed"),
+        "queued": ("批准卡已排队，当前遥控器离线", "Approval card queued; the remote is offline"),
+        "failed": ("批准卡投递失败", "Approval card delivery failed"),
+    }
+    return copies.get(status, ("批准卡待投递", "Approval card pending delivery"))
 
 
 def _secret_status(a) -> int:

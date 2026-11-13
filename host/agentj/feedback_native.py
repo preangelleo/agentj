@@ -242,32 +242,43 @@ class Binding:
         loop = asyncio.get_running_loop()
         async def review(draft, gate):
             if gate != 'feedback' or not self.live():
-                return privacy_host.failure('source_denied')
-            if len(json.dumps(draft, ensure_ascii=False).encode()) > privacy_host.MAX_DRAFT:
-                return privacy_host.failure('draft_limit')
-            try:
-                result = await asyncio.to_thread(privacy.layer2, draft, gate='feedback', _host=True)
-            except Exception:
-                result = privacy.Verdict('unavailable', reason='privacy-check/backend_unavailable')
-            if not self.live():
-                return privacy_host.failure('session_changed')
-            if not isinstance(result, privacy.Verdict) or result.status not in ('ok', 'blocked', 'unavailable'):
-                return privacy_host.failure('backend_unavailable')
-            return asdict(result)
+                result = privacy_host.failure('source_denied')
+            elif len(json.dumps(draft, ensure_ascii=False).encode()) > privacy_host.MAX_DRAFT:
+                result = privacy_host.failure('draft_limit')
+            else:
+                try:
+                    result = await asyncio.to_thread(privacy.layer2, draft, gate='feedback', _host=True)
+                except Exception:
+                    result = privacy.Verdict('unavailable', reason='privacy-check/backend_unavailable')
+                if not self.live():
+                    result = privacy_host.failure('session_changed')
+                elif not isinstance(result, privacy.Verdict) or result.status not in ('ok', 'blocked', 'unavailable'):
+                    result = privacy_host.failure('backend_unavailable')
+                else:
+                    result = asdict(result)
+            if isinstance(result, dict) and result.get('status') != 'ok':
+                reason = str(result.get('reason') or 'privacy-check/host_unavailable').replace('privacy-check/', '')
+                if result.get('status') != 'blocked':
+                    privacy_host.notify_failure(self.host, 'feedback', reason)
+            return result
+        def failed(why):
+            result = privacy_host.failure(why)
+            privacy_host.notify_failure(self.host, 'feedback', why)
+            return result
         def request(draft, gate):
             if gate != 'feedback' or not self.live():
-                return privacy_host.failure('source_denied')
+                return failed('source_denied')
             if loop.is_closed():
-                return privacy_host.failure('host_unavailable')
+                return failed('host_unavailable')
             try:
                 if asyncio.get_running_loop() is loop:
-                    return privacy_host.failure('broker_thread_required')
+                    return failed('broker_thread_required')
             except RuntimeError:
                 pass
             job = asyncio.run_coroutine_threadsafe(review(draft, gate), loop)
             try: return job.result(timeout=30)
             except Exception:
-                job.cancel(); return privacy_host.failure('host_unavailable')
+                job.cancel(); return failed('host_unavailable')
         token = privacy_host._BROKER_REVIEW.set(request)
         try: yield
         finally: privacy_host._BROKER_REVIEW.reset(token)

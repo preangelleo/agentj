@@ -30,7 +30,7 @@ The installing Agent binds the Agent J host to your seat, then pairs two require
 
 1. **the Agent J host's browser**: open [https://m.agentj.app/](https://m.agentj.app/) on the Agent J host and pair it. It is the quickest, and the big screen
    makes every step easy to follow.
-2. **Your main phone**: the one you carry every day. Add the page to the Home Screen first, then pair from that icon.
+2. **Your phone remote**: the one you carry every day. Add the page to the Home Screen first, then pair from that icon.
 
 Other phones, tablets or computers can wait: when you want one, tell Agent J "pair another one" and it walks you through.
 

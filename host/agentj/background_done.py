@@ -441,8 +441,9 @@ def own_clean(path, workdir) -> bool:   # M3 (ADR-#455 round 1): no-follow walk,
                 return False
             sha, secret = _hash_and_scan(stream.fileno(), st.st_size, True, False)
             data = stream.read(OWN_MAX + 1)
+            index = SecretIndex.build(workdir=os.path.realpath(workdir)).require_complete()
             return not (secret or hashlib.sha256(data).hexdigest() != sha
-                        or SecretIndex.build(workdir=os.path.realpath(workdir)).hits(data.decode("utf-8", "replace")))
+                        or index.hits(data.decode("utf-8", "replace")))
     except Exception:  # noqa: BLE001 — media.Gone (changed while read), OSError …: cannot tell → the card
         return False
     finally:

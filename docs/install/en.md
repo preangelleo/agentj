@@ -339,7 +339,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.30.19#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.30.21#subdirectory=host"
 agentj doctor
 ```
 
@@ -538,7 +538,7 @@ First remote: use Add a remote on the account-page seat card, or run `agentj pai
 
 `agentj pair` shows both QR and link by default; `--link` remains compatible. Way 1: scan with your phone. Way 2: paste the same link into a computer browser's address bar. The link is a pairing key, valid for 5 minutes and one use; never share it with anyone or an AI. On iPhone paste into the pairing-link box inside the Home Screen icon.
 
-**After the first remote**: phone first → open https://m.agentj.app in your usual computer browser, scan its code with the paired phone, compare and confirm on the phone; computer first → on the computer open Settings → Remotes → Add a remote, scan with your main phone, compare and confirm on the computer. Finish installation after both remotes and the first message are verified.
+**After the first remote**: phone first → open https://m.agentj.app in your usual computer browser, scan its code with the paired phone, compare and confirm on the phone; computer first → on the computer open Settings → Remotes → Add a remote, scan with your phone remote, compare and confirm on the computer. Finish installation after both remotes and the first message are verified.
 
 ## Upgrade an older installation
 

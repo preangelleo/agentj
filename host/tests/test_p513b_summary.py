@@ -89,6 +89,21 @@ class Summary(unittest.TestCase):
             with self.assertRaises(ValueError):
                 SecretIndex(fragment_size=size)
 
+    def test_incomplete_secret_index_refuses_every_approval_projection(self):
+        """H0: mail, sudo, hook and other cards must not show partial scans."""
+        from agentj.peer_guard import SecretIndex
+        incomplete = SecretIndex([])
+        incomplete.complete = False
+        with patch('agentj.peer_guard.SecretIndex.build', return_value=incomplete):
+            for tool, payload in (
+                    ('agentj mail', {'before': {}, 'after': {}, 'changes': []}),
+                    ('sudo', {'command': 'sudo id'}),
+                    ('AgentJHook', {'event': 'before_tool', 'command': 'echo ok'}),
+                    ('Bash', {'command': 'echo ok'})):
+                with self.assertRaises(OSError) as ctx:
+                    action_policy.summary(tool, payload, presentation=True)
+                self.assertEqual(str(ctx.exception), 'local_secret_scan_incomplete', tool)
+
     def test_credential_warning_keeps_redacted_parameters(self):
         for lang in ('zh', 'en'):
             text = serve.approval_summary('Read', {'file_path': '/fixture/.env', 'limit': 200},
@@ -105,6 +120,47 @@ class HostCards(unittest.IsolatedAsyncioTestCase):
         from _listed_cards import listed
         listed(self, 'Bash', 'Write', 'exec_command', 'mcp__shell__execute_command', 'AuthRescue', 'agentj goal',
                'AgentJHook', 'SandboxOnce')
+
+    async def test_incomplete_request_index_refuses_before_any_card_branch(self):
+        """H0: the request-bound scan gates display, signing, and emission."""
+        from agentj.peer_guard import SecretIndex
+        from test_l1 import _state
+        incomplete = SecretIndex([])
+        incomplete.complete = False
+        for tool, payload in (
+                ('Bash', {'command': 'echo ok'}),
+                ('Write', {'file_path': '/fixture/out', 'content': 'ok'}),
+                ('AgentJHook', {'command': 'echo hook'}),
+                ('SandboxOnce', {'command': 'echo sandbox'})):
+            with self.subTest(tool=tool), tempfile.TemporaryDirectory() as d:
+                st = State(pathlib.Path(d)); st.init()
+                sent = []; host = _owner_host(st, sent)
+                phone = Phone(host.st, with_passkey=True); _ready(host, phone)
+                with patch('agentj.peer_guard.SecretIndex.build', return_value=incomplete):
+                    result = await host.ask(tool, payload, require_passkey=True, _harness_permission=True)
+                self.assertEqual(result.get('behavior'), 'deny')
+                self.assertIn(result.get('reason'), ('invalid_display', 'no_device'))
+                self.assertFalse(host.asks)
+                self.assertFalse([obj for _, obj in sent if obj.get('t') == 'ask'])
+
+    async def test_incomplete_index_refuses_host_owned_summary_branches(self):
+        from agentj.peer_guard import SecretIndex
+        from test_l1 import _state
+        incomplete = SecretIndex([]); incomplete.complete = False
+        branches = (
+            ('Bash', {'command': 'echo ok', 'card': 'fixture'}, {}),
+            ('Write', {'file_path': '/fixture/out', 'content': 'ok', 'summary': 'fixture'}, {}),
+            ('AgentJHook', {'command': 'echo hook', 'card': 'fixture'}, {}),
+            ('SandboxOnce', {'command': 'echo sandbox', 'summary': 'fixture'}, {}),
+        )
+        for tool, payload, extra in branches:
+            with self.subTest(tool=tool), tempfile.TemporaryDirectory() as d:
+                st = State(pathlib.Path(d)); st.init(); sent = []; host = _owner_host(st, sent)
+                with patch('agentj.peer_guard.SecretIndex.build', return_value=incomplete):
+                    result = await host.ask(tool, payload, require_passkey=True, _harness_permission=True, **extra)
+                self.assertEqual(result.get('behavior'), 'deny')
+                self.assertIn(result.get('reason'), ('invalid_display', 'no_device'))
+                self.assertFalse(host.asks)
 
     async def test_opaque_preview_uses_project_secret_index(self):
         from test_l1 import _state

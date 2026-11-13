@@ -3983,8 +3983,8 @@ def main(argv=None) -> None:
                                        "(shown only by agentj instances)")   # P180: `agentj --instance N label <note>`
     lb.add_argument("text", nargs="*")
     lb.set_defaults(fn=cmd_label)
-    ob = sub.add_parser("onboarding", help="首次使用进度：席位、这台Agent J 主机的浏览器、主力手机、欢迎消息 / first-use progress: seat, "
-                                           "the Agent J host's browser, main phone, welcome")
+    ob = sub.add_parser("onboarding", help="首次使用进度：席位、这台Agent J 主机的浏览器、手机遥控器、欢迎消息 / first-use progress: seat, "
+                                           "the Agent J host's browser, phone remote, welcome")
     ob.add_argument("--json", action="store_true")
     ob.set_defaults(fn=cmd_onboarding)
     from . import usage, learn, forms

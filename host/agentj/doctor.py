@@ -1048,7 +1048,7 @@ def check_turn(st: State, serve_status: dict | None = None) -> dict | None:
 
 
 def check_onboarding(st: State) -> dict:
-    """F28 (P72): the seat and the two required remotes (the Agent J host's browser, the main phone). Never ✗."""
+    """F28 (P72): the seat and the two required remotes (the Agent J host's browser, the initial-pairing phone). Never ✗."""
     if not st.exists():
         return _c("onboard", WARN, "还没初始化 / not initialised yet", "agentj init")
     try:

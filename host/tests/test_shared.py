@@ -11,6 +11,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agentj import agent, shared, preferences
@@ -90,6 +91,8 @@ class ClaudeTransport(unittest.IsolatedAsyncioTestCase):
             with c, c.makefile('r') as f:
                 got.extend(json.loads(f.readline()) for _ in range(2))
         thread=threading.Thread(target=accept);thread.start()
+        self.session['_agentj_transcript_attestation'] = SimpleNamespace(
+            session_id=self.sid, request_id='request-1', nonce='nonce-1', record_id='record-1')
         await asyncio.to_thread(shared.claude_send,self.session,'phone instruction')
         thread.join(2)
         self.assertEqual(got[0],{'type':'auth','token':self.token})
@@ -97,6 +100,9 @@ class ClaudeTransport(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(self.token,json.dumps(got[1]))
         self.assertEqual(self.key.read_text(),json.dumps({'peerToken':self.token}))
         self.assertEqual(got[1]['priority'],'next')
+        self.assertEqual({got[1][k] for k in ('sessionId','requestId','nonce','recordId')},
+                         {self.sid, 'request-1', 'nonce-1', 'record-1'})
+        self.assertEqual(got[1]['msg_id'], 'record-1')
 
     async def test_transcript_new_desktop_turns_only_and_partial_lines(self):
         self.transcript.write_text(json.dumps({'type':'user','uuid':'old','message':{'content':'old'}})+'\n')
@@ -145,10 +151,19 @@ class ClaudeTransport(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.host.inputs,['desktop after long output'])
 
     async def test_no_completion_before_matching_phone_input_and_reply(self):
+        from agentj import provenance, shared_turn_origin
+        from agentj.compose import Send
         a=shared.SharedClaudeAgent(self.host,self.cfg);await a.attach()
-        a.phone_turn=True; a.pending_text='specific instruction'
-        self.transcript.write_text(json.dumps({'type':'user','uuid':'u','message':{'content':
-            '<cross-session-message from-name="Agent-J-phone">specific instruction</cross-session-message>'}})+'\n')
+        a.phone_turn=True; a.pending_text=provenance.body('specific instruction', provenance.phone())
+        send=Send('phone', 'request-b', 1, source=provenance.phone())
+        a.cur_send=send; a.pending_source=provenance.phone()
+        a.native_request=shared_turn_origin.mint(a, send, a.pending_text)
+        att=a.native_request
+        text=provenance.envelope('fixture', a.pending_text, provenance.phone())
+        record={'type':'user','uuid':'claude-generated','sessionId':att.session_id,
+                'isMeta':True,'origin':{'kind':'peer'},'message':{'content':text}}
+        record['origin']['msg_id'] = att.record_id
+        self.transcript.write_text(json.dumps(record)+'\n')
         a.read_transcript(); self.assertFalse(a.done.is_set())
         with self.transcript.open('a') as f:
             f.write(json.dumps({'type':'assistant','uuid':'r','message':{'content':[{'type':'text','text':'finished'}]}})+'\n')

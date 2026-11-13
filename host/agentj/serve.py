@@ -867,6 +867,8 @@ class Host:
             self._post(self.voice_stream.drop, cid)
         s = self.sessions.pop(cid, None)
         if s:
+            from . import approval_delivery
+            approval_delivery.drop_device(self, s.device)
             from . import auth_settings_uv
             auth_settings_uv.clear(self, s)
         if s:self.bots.detach(s)
@@ -896,7 +898,7 @@ class Host:
         await self._notify_close(cid)
         self.st.log("close", cid=cid, device=s.device if s else None, reason=reason)
 
-    async def send_app(self, s: Session, obj: dict) -> bool:
+    async def send_app(self, s: Session, obj: dict, *, _already_locked: bool = False) -> bool:
 
         file_message = obj
         file_key = obj.get('t') == 'private_file_res' and any(k in obj for k in ('key', 'nonce_prefix'))
@@ -918,10 +920,16 @@ class Host:
             card=getattr(out,'cards',{}).get(obj.get('id'))
             return bool(card and card.get('delivery_authority')==(s,self.st.sign_key(s.device))
                         and self.st.is_allowed(s.pub) and approval_special.source_allows(card,self))
-        async with self.send_lock:  # nonce order == wire order
+        class _HeldLock:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *args): return False
+        lock = _HeldLock() if _already_locked else self.send_lock
+        async with lock:  # nonce order == wire order
             if not await file_delivery_live():return False
             if not special_delivery_live():return False
-            if self.sessions.get(s.cid) is not s:  # closed / revoked while this send was queued
+            if (self.sessions.get(s.cid) is not s
+                    or s.state != "ready"
+                    or not self.st.is_allowed(s.pub)):
                 return False
             if s.p33:
                 try:
@@ -3345,6 +3353,8 @@ class Host:
             await self.send_app(s, self.wechat.view())
             for m in self.wechat.open_messages(s):
                 await self.send_app(s, m)
+        from . import approval_delivery
+        await approval_delivery.replay(self, s)
         await self.elevate.on_ready(s)
         await self.capabilities.on_ready(s)
         approval_review.retry_events(self)
@@ -5821,6 +5831,10 @@ class Host:
         kind = self.agent.kind if self.agent else "?"
         same_owner = avatar is None and not unattended and _same_owner_turn(self.agent)   # P573 (f)
         try:
+            # Every card display must use one complete, request-bound inventory.
+            from . import peer_guard
+            card_index = await asyncio.to_thread(peer_guard.SecretIndex.build, workdir=(self.agent_cfg or {}).get("dir") or os.getcwd(), fragment_size=8)
+            await asyncio.to_thread(card_index.require_complete)
             summary = (tool_input["card"] if learned else tool_input["summary"] if own else
                        tool_input["card"] if tool == owner_grant.TOOL and isinstance(tool_input, dict)
                        and isinstance(tool_input.get("card"), str) else
@@ -5828,6 +5842,10 @@ class Host:
                        action_policy.summary(tool, tool_input, lang=self.lang, workdir=(self.agent_cfg or {}).get("dir")) if opaque or tool in
                        ("agentj mail", "agentj mail send", "agentj mail notes", "agentj mail reply", "agentj calendar", "company.write", "agentj data", "agentj report script")
                        else approval_summary(tool, tool_input, v, self.lang, workdir=(self.agent_cfg or {}).get("dir")))
+        except OSError as exc:
+            if str(exc) == "local_secret_scan_incomplete":
+                return {"behavior": "deny", "message": "本地密钥扫描不完整，已拒绝 / local secret scan incomplete; refused"}
+            return {"behavior": "deny", "message": "动作参数无效 / invalid action parameters"}
         except (ValueError, TypeError, RecursionError):
             return {"behavior": "deny", "message": "动作参数无效 / invalid action parameters"}
         if len(summary.encode()) > 24000:

@@ -67,9 +67,16 @@ class FakeHarness(unittest.TestCase):
             json.dumps({"model": "deepseek/deepseek-v4-pro", "instructions": ["~/x.md"], "mcp": {"m": {}}}))
         bindir = self.tmp / "bin"
         bindir.mkdir()
-        env = {"HOME": str(self.home), "MY_API_KEY": "k-" + "x" * 20, "SOME_TOKEN": "t" * 20, "DB_PASSWORD": "p" * 16,
-               "FOO_PLAIN": "bar", "ANTHROPIC_API_KEY": "sk-ant-test-" + "y" * 20, "LANG": "C.UTF-8",
-               "XDG_CONFIG_HOME": str(self.home / ".config")}
+        # Keep every harness-home selector inside the fixture.  In particular, an inherited
+        # CODEX_HOME / CLAUDE_CONFIG_DIR can point at the developer's real private instructions
+        # even when HOME is temporary; the fence would then faithfully hide the wrong tree.
+        env = {"HOME": str(self.home), "CODEX_HOME": str(self.home / ".codex"),
+               "CLAUDE_CONFIG_DIR": str(self.home / ".claude"), "MY_API_KEY": "k-" + "x" * 20,
+               "SOME_TOKEN": "t" * 20, "DB_PASSWORD": "p" * 16, "FOO_PLAIN": "bar",
+               "ANTHROPIC_API_KEY": "sk-ant-test-" + "y" * 20, "LANG": "C.UTF-8",
+               "XDG_CONFIG_HOME": str(self.home / ".config"), "XDG_DATA_HOME": str(self.home / ".local/share"),
+               "XDG_STATE_HOME": str(self.home / ".local/state"), "XDG_CACHE_HOME": str(self.home / ".cache"),
+               "XDG_RUNTIME_DIR": str(self.home / ".runtime")}
         for kind in ("claude", "codex", "opencode"):
             # P591 materializes absent unit roots in a readonly parent view: existing siblings stay writable.
             # Prepare the fake's log, retaining real bubblewrap and every hidden-state/environment assertion.

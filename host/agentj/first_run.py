@@ -41,7 +41,7 @@ ITEMS = [
      "在Agent J 主机上登录你选的 AI 工具（Claude Code / Codex / OpenCode）。", "Sign in to your chosen AI tool on the Agent J host."),
     ("desktop", "core", "required", "local", ["harness"], "遥控器浏览器配对", "Pair the Agent J host's browser",
      "在这台Agent J 主机的浏览器里打开配对页并批准。", "Open the pairing page in the Agent J host's browser and approve it."),
-    ("phone", "core", "required", "local", ["desktop"], "主力手机配对", "Pair your main phone",
+    ("phone", "core", "required", "local", ["desktop"], "首次配对手机配对", "Pair your initial-pairing phone",
      "用手机扫码配对，并发一条消息试试。", "Scan the pairing code with your phone and send a message."),
     ("passkey", "core", "required", "phone", ["phone"], "手机通行密钥", "Phone passkey",
      "在手机上设置 Face ID / 指纹通行密钥，用于批准与恢复。", "Set up a Face ID / fingerprint passkey on the phone for approvals and recovery."),

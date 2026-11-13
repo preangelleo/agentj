@@ -3,7 +3,7 @@ import json
 import hashlib
 
 
-def display_normalizer(*, lang: str = "en", workdir: str | None = None):
+def display_normalizer(*, lang: str = "en", workdir: str | None = None, index=None):
     """Existing bounded structured/encoded display projection, shared by cards.
 
     Build the local fragment index in an I/O worker; the returned projector
@@ -17,7 +17,10 @@ def display_normalizer(*, lang: str = "en", workdir: str | None = None):
     from .privacy import redact_with_report, _CRED_NAMES, R
     from .peer_guard import SecretIndex
 
-    index = SecretIndex.build(workdir=workdir or os.getcwd(), fragment_size=8)
+    index = index if index is not None else SecretIndex.build(workdir=workdir or os.getcwd(), fragment_size=8)
+    # Every approval projection is an externally visible card, including mail,
+    # sudo, and hook actions.  Never present a partial inventory as reviewable.
+    index.require_complete()
     names = re.compile(r"(?:" + _CRED_NAMES + r"|key|authorization|cookie|set-cookie)", re.I)
     pairs = re.compile(r"(?<![\w-])(" + names.pattern + r"[\"']?\s*[:：=]\s*)(\"(?:\\.|[^\"\\])*\"|'[^']*'|[^\s&;,\"'<>}]+)", re.I)
     headers = re.compile(r"(?i)(\b(?:Authorization|Cookie|Set-Cookie)\s*:\s*)([^\r\n\"']+)")
@@ -160,7 +163,7 @@ def display_normalizer(*, lang: str = "en", workdir: str | None = None):
 
 
 def summary(tool: str, inp: dict, *, credentials: bool = False, lang: str = "en",
-            workdir: str | None = None, presentation: bool = False) -> str | dict:
+            workdir: str | None = None, presentation: bool = False, index=None) -> str | dict:
     """Redact original values before serialization; bind the unchanged raw request.
 
     SecretIndex is the existing local .env/process fragment detector. It retains
@@ -168,7 +171,7 @@ def summary(tool: str, inp: dict, *, credentials: bool = False, lang: str = "en"
     Bounded recursive decoding also checks JSON strings, forms, URLs and base64.
     """
     raw = json.dumps(inp, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
-    visible = display_normalizer(lang=lang, workdir=workdir)
+    visible = display_normalizer(lang=lang, workdir=workdir, index=index)
     from .privacy import R
     safe = visible(inp)
     # A plain unlabelled credential-file body has no reviewable structure. Only

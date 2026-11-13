@@ -275,7 +275,8 @@ class Book:
                 from .peer_guard import SecretIndex
                 scanned_sha, secret = _hash_and_scan(stream.fileno(), before.st_size, True, False)
                 data = stream.read(LIMIT + 1)
-                if hashlib.sha256(data).hexdigest() != scanned_sha or secret or SecretIndex.build(workdir=root).hits(path + '\n' + data.decode('utf-8')):
+                index = SecretIndex.build(workdir=root).require_complete()
+                if hashlib.sha256(data).hexdigest() != scanned_sha or secret or index.hits(path + '\n' + data.decode('utf-8')):
                     raise ValueError('secret_content')
                 after = os.fstat(stream.fileno())
                 if len(data) > LIMIT or (before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns):

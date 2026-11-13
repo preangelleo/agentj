@@ -216,17 +216,26 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
                      and host._approval_live_authority() == request_authority))
     if not subject_live():
         return refused('authority_changed', 'Request authority changed; no operation executed.')
-    from . import action_policy
+    from . import action_policy, peer_guard
     try:
+        # Pin one inventory to this request. Every approval display, including
+        # host-owned summaries and computer-use plans, must use this same
+        # complete inventory rather than silently rebuilding a weaker one.
+        secret_index = await asyncio.to_thread(peer_guard.SecretIndex.build, workdir=cwd or os.getcwd(), fragment_size=8)
+        await asyncio.to_thread(secret_index.require_complete)
         # This is display-only: the untouched inp still feeds inventory, frozen
         # executor inputs and input_sha. Never redact an already signed frame.
-        display = await asyncio.to_thread(action_policy.display_normalizer, lang=host.lang, workdir=cwd)
+        display = await asyncio.to_thread(action_policy.display_normalizer, lang=host.lang, workdir=cwd, index=secret_index)
         if not harness_permission and tool == 'agentj secret grant':
             from .owner_grant import typed_plan_display
             display = typed_plan_display(inp, display)
         safe_input = display(inp)
         raw_summary = safe_input['summary'] if host_summary else tool + '\n' + (('Working directory: '+cwd+'\n') if native_context else '') + approval_review.canonical(safe_input)
-    except (ValueError, TypeError, RecursionError, OSError):
+    except OSError as exc:
+        if str(exc) == 'local_secret_scan_incomplete':
+            return refused('invalid_display', '本地密钥扫描不完整，已拒绝 / local secret scan incomplete; refused')
+        return refused('invalid_display', '无法安全显示请求，未执行 / Request cannot be displayed safely; no operation executed.')
+    except (ValueError, TypeError, RecursionError):
         return refused('invalid_display', '无法安全显示请求，未执行 / Request cannot be displayed safely; no operation executed.')
     if not subject_live():
         return refused('authority_changed', 'Request authority changed; no operation executed.')
@@ -240,7 +249,7 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
     plan_scope = None
     if task_actions is not None:
         try:
-            plan_scope, lines = task_scope(host,tool,inp,task_actions,task_target)
+            plan_scope, lines = task_scope(host,tool,inp,task_actions,task_target,secret_index=secret_index)
             summary += '\n具体动作 / Exact actions:\n' + '\n'.join(str(i+1)+'. '+line for i,line in enumerate(lines))
         except (ValueError, TypeError, KeyError, RecursionError):
             return refused('invalid_plan','任务动作清单无效 / Invalid task action plan.')
@@ -252,7 +261,11 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
         # Freeze the exact complete wire text before either signature digest.
         # bind must not project it again or truncate executable input details.
         summary = approval_review.display_text(summary, display)
-    except (ValueError, TypeError, RecursionError, OSError):
+    except OSError as exc:
+        if str(exc) == 'local_secret_scan_incomplete':
+            return refused('invalid_display', '本地密钥扫描不完整，已拒绝 / local secret scan incomplete; refused')
+        return refused('invalid_display', '无法安全显示请求，未执行 / Request cannot be displayed safely; no operation executed.')
+    except (ValueError, TypeError, RecursionError):
         return refused('invalid_display', '无法安全显示请求，未执行 / Request cannot be displayed safely; no operation executed.')
     if len(summary.encode('utf-8')) > 24000 or (plan_scope is not None and len(summary.encode('utf-8'))+len(plan_scope.encode('utf-8')) > 14000):
         return refused('too_large','审批清单过长，无法完整显示 / Approval plan is too large to display.')
@@ -365,8 +378,12 @@ async def security(host, req):
     return {'ok':bool(allowed),'error':None if allowed else 'uv_or_target_changed'}
 
 
-def task_scope(host, tool, inp, steps, target):
+def task_scope(host, tool, inp, steps, target, *, secret_index=None):
     """Legacy exact-action plans keep their signed scope and object seals, no effect UV."""
+    if secret_index is None:
+        from . import peer_guard
+        secret_index = peer_guard.SecretIndex.build(workdir=(host.agent_cfg or {}).get('dir') or os.getcwd(), fragment_size=8)
+    secret_index.require_complete()
     from . import bounded_plan, danger
     if not isinstance(steps,list) or not 1 <= len(steps) <= 12:
         raise ValueError('plan size')

@@ -147,9 +147,9 @@ PAIRING_LINE = {'zh': '安装先 agentj devices --json、agentj pair --check --j
 
 # F28 (P72): first use — the two required remotes and the one-time welcome. Host line after the hashed core (core v5 unchanged).
 ONBOARDING_LINE = {
-    "zh": '首次必配本机浏览器和主力手机；其余问了再配。用 agentj onboarding 查缺项逐个配。配对提示自动更新。〔Agent J 系统提示〕来自本机：照做不复述；提醒一句，主人说先不用就停。首次配对在该遥控器发首条消息、自报家门、逐步介绍。终端/SSH配对：已绑定主机由主人自己运行 `agentj pair --link`，同终端输入手机的 6 位安全码或到账户页批准；你不代运行/索要链接或安全码。\n',
+    "zh": '首次必配本机浏览器和首次配对手机；其余问了再配。用 agentj onboarding 查缺项逐个配。配对提示自动更新。〔Agent J 系统提示〕来自本机：照做不复述；提醒一句，主人说先不用就停。首次配对在该遥控器发首条消息、自报家门、逐步介绍。终端/SSH配对：已绑定主机由主人自己运行 `agentj pair --link`，同终端输入手机的 6 位安全码或到账户页批准；你不代运行/索要链接或安全码。\n',
     "en": "First use: once the seat is active there are two required remotes — (1) the Agent J host's browser and (2) the owner's "
-          "main phone; other phones, pads or computers only when the owner asks. When helping the owner on the Agent J host, run "
+          "initial-pairing phone; other phones, pads or computers only when the owner asks. When helping the owner on the Agent J host, run "
           "agentj onboarding to see the next step and lead from one pairing to the next. A bracketed [Agent J system note] at "
           "the end of an owner message comes from the Agent J host, not the owner: follow it without repeating it; a reminder is "
           "one sentence, dropped when the owner says not now. After the first pairing the Agent J host asks you to write the first "

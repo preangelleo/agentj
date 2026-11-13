@@ -55,18 +55,43 @@ def broker_scope(host, peer_pid):
 
 
 def _origin(host, peer_pid):
-    """Strict live-turn proof first; else (#0302) a same-uid live local process during the owner's own turn.
+    """Return only the live, request-bound caller proof for outbound feedback.
 
-    macOS harness helpers and the owner's background jobs often cannot prove exact current-turn descent; the
-    chairman's rule is that the owner's ordinary requests are not blocked. Guest / friend / group turns still fail.
+    Do not infer owner identity from process ancestry: background/system turns share
+    the host process tree but are not an interactive owner request.
     """
-    from . import approval_material, application_ingress
+    from . import approval_material
     if peer_pid is None:
         return None
-    origin = approval_material.verified_caller_origin(host, peer_pid)
-    if origin is None and application_ingress._process(peer_pid) and application_ingress._owner_tree(host, peer_pid, getattr(host, 'agent', None)):
-        origin = {'verified': True, 'owner_local': True, 'peer': peer_pid}
-    return origin
+    return approval_material.verified_caller_origin(host, peer_pid)
+
+
+SUPPORT_FEEDBACK_RETRY_KIND = 'support_feedback_retry'
+
+
+def support_feedback_card(gate, why):
+    """Return a payload-free formal card for a Host-owned feedback failure."""
+    return {'kind': SUPPORT_FEEDBACK_RETRY_KIND} if gate == 'feedback' and isinstance(why, str) else None
+
+
+def notify_failure(host, gate, why):
+    """Project native feedback failures as one safe system card.
+
+    This projection deliberately contains neither the draft nor a command, and
+    it only tells the phone that the operation failed; it never retries it.
+    """
+    if not isinstance(why, str):
+        why = 'host_unavailable'
+    seen = host.__dict__.setdefault('_privacy_receipts', set())
+    key = (None, gate if gate in ('feedback', 'plaza') else 'invalid', why)
+    if key in seen:
+        return
+    if len(seen) >= 128:
+        seen.clear()
+    seen.add(key)
+    card = support_feedback_card(gate, why)
+    host.agent_notice('隐私外发检查未通过（' + why + '），请保留草稿，恢复后再试。',
+                      **({'card': card} if card else {}))
 
 
 def failure(why):
@@ -114,9 +139,16 @@ async def handle(host, req, *, peer_pid=None):
         elif v.status not in ('ok', 'blocked', 'unavailable') or v.status == 'unavailable':
             why = 'backend_unavailable'
         else:
+            # A content verdict is already a complete policy result. Preserve
+            # its kind/reason so the existing blocked/owner-confirmation
+            # contract remains in force; only infrastructure failures retry.
             result = asdict(v)
     if why:
         result = failure(why)
+    # Content blocks are not host outages. Do not emit retry-card or temporary
+    # failure semantics for a deliberate privacy decision.
+    if result['status'] == 'blocked':
+        return result
     if result['status'] != 'ok':
         code = why or 'blocked'
         seen = host.__dict__.setdefault('_privacy_receipts', set())
@@ -129,7 +161,7 @@ async def handle(host, req, *, peer_pid=None):
             host.st.log('privacy_check_optional' if privacy.optional_review(privacy.Verdict(**result))
                         else 'privacy_check_failed', reason=code, gate=key[1])
             if not privacy.optional_review(privacy.Verdict(**result)):
-                host.agent_notice('隐私外发检查未通过（' + code + '），请保留草稿，恢复后再试。')
+                notify_failure(host, gate, code)
     return result
 
 

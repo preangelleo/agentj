@@ -1001,6 +1001,7 @@ class PeerService:
             wd = (getattr(self.host, "agent_cfg", None) or {}).get("dir")
             self.index = await asyncio.to_thread(peer_guard.SecretIndex.build, None, (), wd)
             self.index_at = time.monotonic()
+        await asyncio.to_thread(self.index.require_complete)
         return peer_guard.outbound(text, self.index, self.store.never_tell_extra)
 
     def _global_limit(self) -> None:

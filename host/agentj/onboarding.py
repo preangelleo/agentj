@@ -1,7 +1,7 @@
 """F28 (P72): first-install onboarding — seat → the two required remotes → one welcome, then a short guided tour.
 
 Owner request 2026-10-07: after a friend's agent installs Agent J, the main Agent itself carries the owner forward: activate the seat,
-pair ① the Agent J host's browser and ② the main phone (both required; other phones / pads / computers only when the owner
+pair ① the Agent J host's browser and ② the initial-pairing phone (both required; other phones / pads / computers only when the owner
 asks), and on the FIRST pairing say who it is on that new remote and walk the owner through the screen one small step at a
 time. No new buttons or UI (PRODUCT_SPEC §0.1): everything is chat text from the one main Agent.
 
@@ -162,12 +162,12 @@ def paired(st, device: str, label: str, now: float | None = None) -> str | None:
 
 
 # ------------------------------------------------------------------ texts
-KIND = {"zh": {"computer": "这台Agent J 主机的浏览器", "phone": "主力手机", "other": "遥控器"},
-        "en": {"computer": "the Agent J host's browser", "phone": "the main phone", "other": "remote"}}
+KIND = {"zh": {"computer": "这台Agent J 主机的浏览器", "phone": "首次配对手机", "other": "遥控器"},
+        "en": {"computer": "the Agent J host's browser", "phone": "the initial-pairing phone", "other": "remote"}}
 
 HOW = {
     "zh": {"computer": "常用电脑浏览器打开 https://m.agentj.app，用已配对手机扫电脑显示的码，核对六位码并在手机确认",
-           "phone": "在已配对电脑的设置 → 遥控器管理 → 添加遥控器打开二维码，主力手机添加 https://m.agentj.app 到主屏幕后扫码，核对六位码并在电脑确认",
+           "phone": "在已配对电脑的设置 → 遥控器管理 → 添加遥控器打开二维码，首次配对手机添加 https://m.agentj.app 到主屏幕后扫码，核对六位码并在电脑确认",
            "seat": "这台Agent J 主机还没加进 Agent J 账号的席位：在账号页空席位上「复制安装提示词」拿设置码，交给我用 agentj login --seat-file 激活"},
     "en": {"computer": "open https://m.agentj.app in the usual computer browser; scan its code with the paired phone, compare six digits and confirm on the phone",
            "phone": "on the paired computer open Settings → Remotes → Add a remote; add https://m.agentj.app to the phone Home Screen, scan, compare six digits and confirm on the computer",
@@ -179,8 +179,8 @@ def missing_text(s: dict, lang: str) -> str:
     lang = "en" if lang == "en" else "zh"
     miss = [k for k in ("computer", "phone") if not s[k]]
     if not miss:
-        return "两个必做的遥控器（这台Agent J 主机的浏览器、主力手机）都配好了。" if lang == "zh" else \
-            "Both required remotes (the Agent J host's browser and the main phone) are paired."
+        return "两个必做的遥控器（这台Agent J 主机的浏览器、首次配对手机）都配好了。" if lang == "zh" else \
+            "Both required remotes (the Agent J host's browser and the initial-pairing phone) are paired."
     names = ("、" if lang == "zh" else " and ").join(KIND[lang][k] for k in miss)
     return f"必做的遥控器还差：{names}。" if lang == "zh" else f"Required remote still missing: {names}."
 
@@ -373,12 +373,12 @@ def doctor_row(st) -> tuple[str, str, str]:
     s = status(st)
     def mark(b):
         return "✓" if b else "✗"
-    summary = (f"席位 {mark(s['seat'])} · 遥控器浏览器 {mark(s['computer'])} · 主力手机 {mark(s['phone'])}"
-               f" / seat {mark(s['seat'])} · the Agent J host's browser {mark(s['computer'])} · main phone {mark(s['phone'])}")
+    summary = (f"席位 {mark(s['seat'])} · 遥控器浏览器 {mark(s['computer'])} · 首次配对手机 {mark(s['phone'])}"
+               f" / seat {mark(s['seat'])} · the Agent J host's browser {mark(s['computer'])} · initial-pairing phone {mark(s['phone'])}")
     if s["complete"]:
         return "ok", summary, ""
     hint = {"seat": "agentj login --seat-file <file> --name <name>", "computer": "agentj admin  (pair the Agent J host's browser)",
-            "phone": "agentj admin  (pair the main phone)"}[s["next"]]
+            "phone": "agentj admin  (pair the initial-pairing phone)"}[s["next"]]
     from . import pairprep   # P127: the same pairing pre-check as `agentj pair --check` / the admin page
     if s["seat"]:
         chk = pairprep.precheck(st)
@@ -400,7 +400,7 @@ def command(args, st) -> int:
         print(json.dumps(s, ensure_ascii=False))
         return 0
     rows = [("席位已激活 / seat activated", s["seat"]), ("这台Agent J 主机的浏览器已配对 / the Agent J host's browser paired", s["computer"]),
-            ("主力手机已配对 / main phone paired", s["phone"]), ("第一条欢迎已发 / welcome sent", s["welcomed"])]
+            ("首次配对手机已配对 / initial-pairing phone paired", s["phone"]), ("第一条欢迎已发 / welcome sent", s["welcomed"])]
     for name, ok in rows:
         print(("✓ " if ok else "· ") + name)
     for d in st.devices().values():

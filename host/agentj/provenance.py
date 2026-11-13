@@ -82,7 +82,7 @@ def terminal_input(record, content, text) -> dict:
 
 
 def system() -> dict:
-    return {"kind": "system", "role": "owner"}
+    return HostSystem(kind="system", role="owner")
 
 
 def telegram_owner(uid: int) -> dict:
@@ -110,6 +110,16 @@ class SameHost(dict):
     pass
 
 
+class HostSystem(dict):
+    """Host-held system source; a plain wire-shaped dict is not equivalent."""
+    pass
+
+
+class HostDelegated(dict):
+    """Host-held delegated source; only host constructors may create it."""
+    pass
+
+
 def automation(name: str) -> dict:
     return {"kind": "automation", "role": "data", "name": name}
 
@@ -130,12 +140,18 @@ def normalize(src) -> dict:
     if kind == "external_mcp" and role == "group" and isinstance(src.get("connector"), str) and re.fullmatch(r"[A-Za-z0-9_-]{22}", src["connector"]):
         return external_mcp(src["connector"])
     if kind in TASK_KINDS and role == "task":
-        return owner_grant.task_source(src)
+        # Delegated/task authority is host-issued; a wire-shaped dict (or a
+        # dict subclass supplied by a transcript) cannot manufacture it.
+        if type(src) is not HostDelegated:
+            return {"kind": "unknown", "role": "group"}
+        return HostDelegated(owner_grant.task_source(src))
     if kind == "phone" and role == "owner":
         return phone()
     if kind == "terminal" and role == "owner":
         return terminal()
     if kind == "system" and role == "owner":
+        if type(src) is not HostSystem:
+            return {"kind": "unknown", "role": "group"}
         return owner_grant.resume_source(src)
     if kind == "wechat" and role == "owner":
         return wechat_owner()
@@ -158,9 +174,65 @@ def normalize(src) -> dict:
     return {"kind": "unknown", "role": "group"}
 
 
+# P0325: one host-attested owner-turn vocabulary.  Transport proof (a live
+# application frame) is deliberately not an identity class and never upgrades one.
+TURN_CLASSES = (
+    "direct_owner_turn", "verified_owner_channel", "host_system_turn",
+    "same_owner_delegated_task", "external_untrusted",
+)
+
+# Operation names are semantic gates, not user-controlled labels.  Callers must
+# pass the class returned by owner_turn_contract(); there is no generic owner=True.
+OWNER_OPERATION_CLASSES = {
+    "notify_allow": frozenset(("direct_owner_turn", "verified_owner_channel")),
+    "mail_third_party_confirm": frozenset(("direct_owner_turn", "verified_owner_channel")),
+    "support_feedback": frozenset(("direct_owner_turn", "verified_owner_channel")),
+    "plaza": frozenset(("direct_owner_turn", "verified_owner_channel")),
+    "goal_propose": frozenset(("direct_owner_turn", "verified_owner_channel")),
+    "friends": frozenset(("direct_owner_turn", "verified_owner_channel")),
+    "skill_suggest": frozenset(("direct_owner_turn",)),
+    "host_maintenance": frozenset(("host_system_turn", "same_owner_delegated_task")),
+}
+
+
 def is_owner(src) -> bool:
     s = normalize(src)
     return s["role"] == "owner" and s["kind"] in ("phone", "terminal")
+
+
+def owner_turn_contract(agent=None, src=None):
+    """Return the only authority class used by owner-only command gates.
+
+    A missing source, an unverified shared-session label, and every external
+    or delegated source are fail-closed.  This function is pure and does not
+    treat application-ingress transport evidence as owner identity.
+    """
+    explicit = src is not None
+    if src is None:
+        src = turn_source(agent) if agent is not None else None
+    # Delegated/system authority is host-held, not a public label.  A caller
+    # supplying an ordinary dict cannot manufacture either class; host code may
+    # pass the typed SameHost token or derive the source from its live agent.
+    if explicit and not isinstance(src, dict):
+        return "external_untrusted"
+    if explicit and src.get("kind") == "system" and type(src) is not HostSystem:
+        return "external_untrusted"
+    if explicit and src.get("kind") in TASK_KINDS and type(src) is not HostDelegated:
+        return "external_untrusted"
+    s = normalize(src)
+    if is_owner(s):
+        return "direct_owner_turn"
+    if owner_channel(s) is not None:
+        return "verified_owner_channel"
+    if s.get("kind") == "system" and s.get("role") == "owner":
+        return "host_system_turn"
+    if s.get("kind") in TASK_KINDS or s.get("kind") in ("same_owner", "friend_task", "wechat_task", "official_assist"):
+        return "same_owner_delegated_task"
+    return "external_untrusted"
+
+
+def accepts_operation(agent=None, operation: str = "", src=None) -> bool:
+    return owner_turn_contract(agent, src) in OWNER_OPERATION_CLASSES.get(operation, frozenset())
 
 
 CHANNELS = {("wechat", "owner"): "wechat", ("telegram", "owner"): "telegram", ("email", "owner"): "mail"}
@@ -241,7 +313,7 @@ def task_request(scope):
 def task_run(owner=False):
     scope = {"live": True, "owner": owner is True}     # owner: the run's owner_started mark (tasks.Scheduler.request)
     try:
-        with task_request(scope), request_source({"kind": "scheduled_task", "role": "task"}):
+        with task_request(scope), request_source(HostDelegated({"kind": "scheduled_task", "role": "task"})):
             yield scope
     finally:
         scope["live"] = False
@@ -316,7 +388,7 @@ def turn_source(agent):
         return child
     scope = _TASK.get()
     if scope is not None:
-        return {"kind": "scheduled_task", "role": "task"} if scope.get("live") else normalize(None)
+        return HostDelegated({"kind": "scheduled_task", "role": "task"}) if scope.get("live") else normalize(None)
     send = getattr(agent, "cur_send", None)
     if send is not None:
         return normalize(getattr(send, "source", None))
