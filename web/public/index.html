@@ -9,8 +9,8 @@
 <title>Agent J · 手机遥控器</title>
 <script src="js/seatscope.js"></script>
 <script src="brand/lang.js"></script>
-<meta name="theme-color" content="#2c2b26" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#2c2b26" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#141414" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141414" media="(prefers-color-scheme: dark)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Agent J">
@@ -638,7 +638,7 @@
         <h2 id="seat-pick-h" data-i18n="seat.pickTitle" data-aj-owner="aj-pairing">选择要连接的席位</h2>
         <p id="seat-pick-note" class="error" role="alert" data-i18n="seat.pkOther" hidden data-aj-owner="aj-pairing" data-aj-page-copy>这把通行密钥属于另一个席位，这个网址只认本席位的通行密钥。要连那个席位，点下面它的网址。</p>
         <p class="small" data-i18n="seat.pickLead" data-aj-owner="aj-pairing" data-aj-page-copy>这个浏览器打开过下面这些席位。每个席位有自己的网址，登录和设置互不影响。</p>
-        <ul id="seat-list" class="seatpick__list"></ul>
+        <ul id="seat-list" class="seatpick__list aj-card-stack-list" data-aj-card-stack></ul>
       </section>
       <!-- P210: numbered, mutually exclusive method cards (任选一种); js/pairpage.js numbers the visible ones 方法一 / 方法二 / … -->
       <!-- P190 (PROTOCOL §27): be scanned — a paired remote scans this code and adds this browser (one tap there, codes compared) -->
@@ -758,16 +758,16 @@
       <div class="sub-head menuhead"><button type="button" class="menuicon back" data-back data-i18n-attr="aria-label=fr.back,title=fr.back" aria-label="返回" title="返回" data-aj-owner="aj-history"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><h1 data-i18n="mem.title" data-aj-owner="aj-history">它记住了什么</h1></div>
       <p class="small" data-i18n="mem.intro" data-aj-owner="aj-history" data-aj-page-copy>这些是 Agent 每次开工都会读的记忆，存在你的Agent J 主机上。可以逐条删除：删掉的内容先进Agent J 主机上的回收站，7 天内可以撤销。</p>
       <p id="mem-status" class="small" role="status" aria-live="polite" data-aj-owner="aj-history" data-aj-page-copy></p>
-      <div id="mem-list" class="mem-list"></div>
+      <div id="mem-list" class="mem-list aj-card-stack-list" data-aj-card-stack></div>
       <h2 class="trash-h" data-i18n="mem.trash" data-aj-owner="aj-history">最近删除（7 天内可以恢复）</h2>
-      <ul id="mem-trash" class="plain-list"></ul>
+      <ul id="mem-trash" class="plain-list aj-card-stack-list" data-aj-card-stack></ul>
     </section>
 
     <section id="act-view" class="aj-flow view sub" hidden>
       <div class="sub-head menuhead"><button type="button" class="menuicon back" data-back data-i18n-attr="aria-label=fr.back,title=fr.back" aria-label="返回" title="返回" data-aj-owner="aj-history"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><h1 data-i18n="act.title" data-aj-owner="aj-history">操作和审批记录</h1></div>
       <p class="small" data-i18n="act.intro" data-aj-owner="aj-history" data-aj-page-copy>这些记录存在你的Agent J 主机上，保留 30 天。</p>
       <p id="act-status" class="small" role="status" aria-live="polite" data-aj-owner="aj-history" data-aj-page-copy></p>
-      <ul id="act-list" class="act-list"></ul>
+      <ul id="act-list" class="act-list aj-card-stack-list" data-aj-card-stack></ul>
       <div class="ajrow"><button type="button" id="act-more" class="aj-action" data-i18n="act.more" hidden data-aj-owner="aj-action">加载更早的</button></div>
     </section>
 
@@ -776,13 +776,13 @@
       <p class="small" data-i18n="tasks.intro" data-aj-owner="aj-history" data-aj-page-copy>这些是 Agent 可以按时自动做的事。启用哪个由你决定；任务改过之后，要重新启用。</p>
       <h3 class="setg tasks-h" id="tasks-h-own" data-i18n="tasks.ownTitle" hidden data-aj-owner="aj-history">Agent J 的定时任务</h3>
       <p id="tasks-status" class="small" role="status" aria-live="polite" data-aj-owner="aj-history" data-aj-page-copy></p>
-      <ul id="tasks-list" class="tasks-list"></ul>
+      <ul id="tasks-list" class="tasks-list aj-card-stack-list" data-aj-card-stack></ul>
       <!-- P207 §2: the computer's own scheduled tasks (systemd / cron / launchd / Task Scheduler), read-only, host cap `systasks` -->
       <div id="systasks" class="systasks" hidden>
         <h3 class="setg tasks-h" id="tasks-h-sys" data-i18n="tasks.sysTitle" data-aj-owner="aj-history">这台Agent J 主机上的其它定时任务</h3>
         <p class="small" data-i18n="tasks.sysNote" data-aj-owner="aj-history" data-aj-page-copy>这些是Agent J 主机上原本就有的定时任务，是自动读到的。这里只能看，不能修改或删除。</p>
         <p id="systasks-status" class="small" role="status" aria-live="polite" data-aj-owner="aj-history" data-aj-page-copy></p>
-        <ul id="systasks-list" class="tasks-list"></ul>
+        <ul id="systasks-list" class="tasks-list aj-card-stack-list" data-aj-card-stack></ul>
       </div>
     </section>
 
@@ -882,7 +882,7 @@
           <button class="setsidebtn" type="button" data-set-jump="set-s-app" data-aj-owner="aj-settings"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><span data-i18n="set.gApp">网页版 App</span></button>
           <button class="setsidebtn" type="button" data-set-jump="set-s-help" data-aj-owner="aj-settings"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .9-1 1.6v.4M12 17h.01"/></svg><span data-i18n="set.gHelp">账号和帮助</span></button>
         </nav>
-        <div class="setcards">
+        <div class="setcards aj-card-stack-list" data-aj-card-stack>
           <section class="setcard" id="set-s-agent" data-paired aria-labelledby="set-h-agent">
             <h3 class="setg" id="set-h-agent" data-i18n="set.gAgent" data-aj-owner="aj-settings">Agent 与遥控器</h3>
             <div class="setrow setid">
@@ -941,7 +941,7 @@
               <summary class="rstitle" id="rs-cmds-h" data-i18n="p361.title" data-aj-owner="aj-settings">终端指令</summary>
               <p class="rsnote" id="rs-repair-order" data-i18n="p438.order">没回应时，先点上面的「一键修复」，不需要到终端执行命令。下面这些终端指令留给熟悉终端的人。</p>
               <p class="rsnote" data-i18n="p361.note">在 Agent J 主机上执行的终端指令。</p>
-              <ul class="rscmdlist" id="rs-cmd-list" aria-labelledby="rs-cmds-h"></ul>
+              <ul class="rscmdlist aj-card-stack-list" id="rs-cmd-list" aria-labelledby="rs-cmds-h" data-aj-card-stack></ul>
               <div class="rscmdres" id="rs-cmd-out" role="status" aria-live="polite" hidden></div>
             </details>
             <div id="harness-commands" hidden></div>
@@ -1513,7 +1513,7 @@
         <div class="setsub__in jcpage">
           <section class="setcard">
             <p class="setnote" data-i18n="p360.intro">卡片会叠在左上角菜单的 5 张卡下面。打开哪张就多显示哪张；活都在你的 Agent J 主机上干，手机只负责看和发消息。</p>
-            <div id="set-cards-list" class="jc-setlist"></div>
+            <div id="set-cards-list" class="jc-setlist aj-card-stack-list" data-aj-card-stack></div>
             <p class="setnote" data-i18n="p360.safe">卡片拿不到你的密钥，也不能自己动手：它的按钮只会变成一条聊天消息，先给你看全文，你点「发送」才发。</p>
             <button type="button" id="set-cards-assist" class="aj-action imsg-assist" data-aj-owner="aj-action" data-aj-action-context="dialog"><img src="brand/img/logo-mark.png?v=2f7e6841" width="28" height="28" alt=""><span data-i18n="p360.assist">让 Agent J 帮我做一张卡</span></button>
           </section>
@@ -1532,11 +1532,11 @@
             </div>
             <p class="setnote mailmsg" id="ntf-msg" role="status" aria-live="polite"></p>
             <h3 class="setg" data-i18n="p365.gScripts" data-aj-owner="aj-settings">你的脚本</h3>
-            <div id="ntf-autos" class="ntflist"></div>
+            <div id="ntf-autos" class="ntflist aj-card-stack-list" data-aj-card-stack></div>
             <p class="setnote" id="ntf-autos-empty" data-i18n="p365.empty" hidden>还没有登记的自动化。在 Agent J 主机的终端运行 agentj notify --allow &lt;名字&gt; 登记；脚本用 agentj notify --from &lt;名字&gt; --text … 发消息。没登记或开关关着的会被拒绝，不会弹窗问你。</p>
             <p class="setnote" id="ntf-how" data-i18n="p365.how" hidden>登记新的：在 Agent J 主机的终端运行 agentj notify --allow &lt;名字&gt;；脚本用 agentj notify --from &lt;名字&gt; --text … 发消息。没登记或开关关着的会被拒绝，不会弹窗问你。</p>
             <h3 class="setg" id="ntf-tasks-h" data-i18n="p365.gTasks" data-aj-owner="aj-settings">定时任务</h3>
-            <div id="ntf-tasks" class="ntflist"></div>
+            <div id="ntf-tasks" class="ntflist aj-card-stack-list" data-aj-card-stack></div>
             <p class="setnote" data-i18n="p365.agentNote">每条消息主 Agent 也会看到；它没有要补充的就不说话。</p>
           </section>
         </div>
@@ -1561,7 +1561,7 @@
               <input class="aj-file" id="ctm-file" type="file" accept=".vcf,.csv,.json,text/vcard,text/csv,application/json,text/plain" hidden data-aj-owner="aj-settings">
             </div>
             <p class="setnote" id="ctm-msg" role="status" aria-live="polite"></p>
-            <ul id="ctm-list" class="ctm-list"></ul>
+            <ul id="ctm-list" class="ctm-list aj-card-stack-list" data-aj-card-stack></ul>
             <template id="ctm-ico-allow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6 8.5-6"/><path d="M17 16.5h5M19.5 14v5"/></svg></template>
             <template id="ctm-ico-done"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6 8.5-6"/><path d="M15.5 16.5l2 2 4-4"/></svg></template>
             <p class="setnote" id="ctm-empty" hidden data-i18n="p207set.ct.empty">通讯录还是空的。点上面的加号新增，或者导入手机导出的 vCard / CSV 文件。</p>
@@ -1629,7 +1629,7 @@
           </section>
           <section class="setcard" aria-labelledby="rm-list-h">
             <h3 class="setg" id="rm-list-h" data-i18n="rm.list" data-aj-owner="aj-settings">已绑定的遥控器</h3>
-            <ul id="rm-list" class="rmlist" tabindex="0" aria-labelledby="rm-list-h" data-aj-owner="aj-remotes"></ul>
+            <ul id="rm-list" class="rmlist aj-card-stack-list" tabindex="0" aria-labelledby="rm-list-h" data-aj-owner="aj-remotes" data-aj-card-stack></ul>
             <p id="rm-legacy" class="setnote" hidden data-i18n="rm.legacy">Agent J 主机上的程序还不支持在手机上管理遥控器，这里只能查看。要添加、改名或解绑，在 Agent J 主机上运行 agentj pair、agentj devices 或 agentj revoke &lt;设备&gt;。</p>
           </section>
         </div>
@@ -1714,7 +1714,7 @@
     <div class="menuhead"><button type="button" class="menuicon" id="silentClose" data-i18n-attr="aria-label=r.keys.back,title=r.keys.back" aria-label="返回（Esc）" title="返回（Esc）" data-aj-owner="aj-history"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><h2 id="silentTitle" data-i18n="r.silent.title" data-aj-owner="aj-history">静默记录</h2><kbd class="setesc" aria-hidden="true" data-aj-owner="aj-history">Esc</kbd></div>
     <div class="menubody"><div class="menunarrow">
       <p class="menunote" id="silentHelp" data-i18n="r.silent.help">静默回合收在这里。点开一条，查看当时的原话。</p>
-      <section class="menucard"><div class="slist" id="silentList"></div></section>
+      <section class="menucard"><div class="slist aj-card-stack-list" id="silentList" data-aj-card-stack></div></section>
       <div class="setacts"><button type="button" class="aj-action" id="silentMore" data-i18n="r.silent.more" data-aj-owner="aj-action">加载更早的</button></div>
     </div></div>
   </div>
@@ -1733,7 +1733,7 @@
         <div class="srsort" id="srchSort" role="group" data-i18n-attr="aria-label=r.find.sortAria" aria-label="排序"><button type="button" data-sort="score" aria-pressed="true" data-i18n="r.find.sortScore" data-aj-owner="aj-search">相关度</button><button type="button" data-sort="time" aria-pressed="false" data-i18n="r.find.sortTime" data-aj-owner="aj-search">按时间</button></div>
         <span class="srstatus" id="srchStatus" role="status" aria-live="polite"></span>
       </div>
-      <div class="srlist" id="srchList" role="listbox" tabindex="-1" data-i18n-attr="aria-label=r.find.results" aria-label="搜索结果" data-aj-owner="aj-search"></div>
+      <div class="srlist aj-card-stack-list" id="srchList" role="listbox" tabindex="-1" data-i18n-attr="aria-label=r.find.results" aria-label="搜索结果" data-aj-owner="aj-search" data-aj-card-stack></div>
     </div>
   </div>
   <div class="keys menupage" id="keys" hidden role="dialog" aria-modal="true" aria-labelledby="keysTitle">

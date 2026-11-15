@@ -144,6 +144,9 @@ class Messages(unittest.TestCase):
         self.assertEqual(presets.resolve(None, environ={"ARK_API_KEY": "x", "ANTHROPIC_API_KEY": "y"}).provider, "ark",
                          "new presets come after the recommended order")
         self.assertEqual(presets.resolve("anthropic", "sub", environ={}).model, "claude-sonnet-5-5")
+        self.assertEqual(presets.resolve("anthropic", "main", environ={}).model, "claude-opus-5-5")
+        self.assertIn("claude-fable-5-2", presets.providers()["anthropic"]["models"])
+        self.assertIn("claude-mythos-5-2", presets.providers()["anthropic"]["models"])
 
     def test_request_shape_tool_results_merged_cache_and_key_header(self):
         msgs = [{"role": "system", "content": "rules"}, {"role": "user", "content": "go"},
@@ -166,6 +169,9 @@ class Messages(unittest.TestCase):
         self.assertNotIn("Authorization", h)
         self.assertNotIn(SENTINEL, json.dumps(b))
         self.assertEqual((b["model"], b["max_tokens"], b["stream"]), ("claude-opus-5-5", 64000, True))
+        self.assertNotIn("temperature", b)
+        self.assertNotIn("top_p", b)
+        self.assertNotIn("top_k", b)
         self.assertEqual(b["system"][0]["text"], "rules")
         self.assertEqual(b["system"][0]["cache_control"], {"type": "ephemeral"})
         self.assertEqual(b["tools"][-1]["cache_control"], {"type": "ephemeral"})

@@ -79,7 +79,8 @@ self.addEventListener('message', e => {
   pruneShares();
   const u = new URL(e.source.url), id = e.data.id;
   // The one-time handle is bound to the landing URL, never a filename / image / shared text in a URL.
-  if (u.origin !== self.location.origin || u.pathname !== '/' || u.searchParams.get('share') !== id) return;
+  const landingPath = new URL('./', self.location.href).pathname;
+  if (u.origin !== self.location.origin || u.pathname !== landingPath || u.searchParams.get('share') !== id) return;
   const v = shared.get(id); shared.delete(id);
   e.ports[0].postMessage(v ? {images: v.images, text: v.text} : {error: 'expired'});
 });

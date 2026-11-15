@@ -217,3 +217,38 @@
   --menu-bg:var(--c-lotion);--menu-panel:var(--c-salt);--menu-text:var(--c-sooty);
   --menu-accent:var(--c-noir);--menu-on-accent:var(--c-lotion);
 }
+
+/* Card-gap contract: ordinary card lists own sibling separation; decks keep their geometry. */
+/* One owner for separation between sibling cards and list rows (Web-owned: brand/palette.css is a byte copy of the shared source). */
+:root { --ui-space-card-stack: var(--sp-3); }
+.aj-card-stack-list[data-aj-card-stack] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-card-stack);
+  min-width: 0;
+}
+.aj-card-stack-list[data-aj-card-stack] > :is(.setcard, .rscard, .jc-card, .jc-setrow,
+  .jc-todo-item, .task-card, .task-item, .card, .mcard, .srcard, .act-item, .setrow) {
+  margin-block: 0;
+}
+
+/* Settings keeps its existing two-column desktop masonry contract. */
+.setcards.aj-card-stack-list[data-aj-card-stack] { display: block; }
+@media (min-width: 60rem) {
+  .setcards.aj-card-stack-list[data-aj-card-stack] {
+    columns: 2 26rem;
+    column-gap: var(--space-section);
+  }
+  .setcards.aj-card-stack-list[data-aj-card-stack] > .setcard {
+    break-inside: avoid;
+    margin-bottom: var(--ui-space-card-stack);
+  }
+}
+
+/* Wallet calendar entries are siblings in the real panel, not a synthetic list. */
+.jc-calendar > .jc-entry + .jc-entry { margin-top: var(--ui-space-card-stack); }
+.jc-body[data-card="todo"] .jc-list[data-todo-list] { gap: var(--ui-space-card-stack); }
+#ntf-autos.aj-card-stack-list[data-aj-card-stack],
+#ntf-tasks.aj-card-stack-list[data-aj-card-stack] {
+  gap: var(--ui-space-card-stack);
+}

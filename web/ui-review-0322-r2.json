@@ -25,10 +25,15 @@
   "retained_manifest": "deferred/0.30.22/manifest.json",
   "active": {
     "web/public/app.css": {
-      "sha256": "8da43121f9f082afbcf8260af6ba2fc84474a4b448ef25e76e8cd1fbe11b692c",
+      "sha256": "f3e4489493abf34c164fcec68a3e4f36131a40c4fb6637137908bfb7e5d33f4b",
       "approved": [
-        "r3_final_decision"
-      ]
+        "r3_final_decision",
+        "0.30.24_owner_ruling"
+      ],
+      "propagation": {
+        "baseline_sha256": "8da43121f9f082afbcf8260af6ba2fc84474a4b448ef25e76e8cd1fbe11b692c",
+        "reason": "R-0034 final ruling (chairman 2026-11-15): notice card stays Noir, Undo is solid Lotion with Noir text and no border."
+      }
     },
     "web/public/i18n.js": {
       "sha256": "f03c0cf3390d75c76915330e78285e4afc83ee3a835656dd58e94d2192bdd2d8",
@@ -41,10 +46,15 @@
       }
     },
     "web/public/index.html": {
-      "sha256": "a8a77a3194b85b69b94a5cd530a3741f2cfc9fc4d34ea2ad91bb16995bc40762",
+      "sha256": "ccb6703561a4f29e6ccc34597c62b47fd186a9a65e4be46cff7d7fd0afb99b88",
       "approved": [
-        "r3_final_decision"
-      ]
+        "r3_final_decision",
+        "0.30.24_owner_ruling"
+      ],
+      "propagation": {
+        "baseline_sha256": "a8a77a3194b85b69b94a5cd530a3741f2cfc9fc4d34ea2ad91bb16995bc40762",
+        "reason": "R-0001 (iOS status chrome fixed Sooty: static theme-color #141414) and the accepted 0.30.24 card-gap fix (aj-card-stack-list hooks)."
+      }
     },
     "web/public/js/accounts.js": {
       "sha256": "0c8af63a05189e15ab49874ff406384da22d1b5825df277942c399817bf28f5b",

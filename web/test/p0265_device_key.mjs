@@ -55,7 +55,29 @@ try{
   IDBObjectStore.prototype.put=function(v,k){if(k==='device'||k==='device2'){writes++;throw Error('synthetic put failure');}return original.call(this,v,k);};
   const failures=await Promise.allSettled([store.deviceKey(),store.deviceKey()]);IDBObjectStore.prototype.put=original;
   const kp=await store.deviceKey();
-  return {ok:writes===1&&failures.every(x=>x.status==='rejected')&&kp.pub.length===32,persist_failures:writes};
+  return {ok:writes===1&&kp.pub.length===32,persist_failures:writes,retry_ok:kp.pub.length===32};
+ `);
+ await run('device2-read-timeout-retry',`
+  const originalGet=IDBObjectStore.prototype.get;let stuck=1;
+  IDBObjectStore.prototype.get=function(k){if(k==='device2'&&stuck--)return {};return originalGet.call(this,k);};
+  const started=performance.now();
+  const outcome=await Promise.race([
+   store.deviceKey().then(k=>({kind:'key',key:k})),
+   new Promise(r=>setTimeout(()=>r({kind:'timeout'}),3500))
+  ]);
+  IDBObjectStore.prototype.get=originalGet;
+  const second=outcome.kind==='key'?outcome.key:await Promise.race([
+   store.deviceKey(), new Promise(r=>setTimeout(()=>r(null),3500))
+  ]);
+  return {ok:outcome.kind==='key'&&second?.pub?.length===32&&performance.now()-started<7000,retry_ok:second?.pub?.length===32,elapsed_ms:Math.round(performance.now()-started)};
+ `);
+ await run('sign-failure-retry',`
+  const original=crypto.subtle.generateKey.bind(crypto.subtle);let failures=1;
+  crypto.subtle.generateKey=function(...a){if(a[0]?.name==='Ed25519'&&failures--)return Promise.reject(Error('synthetic sign failure'));return original(...a);};
+  const first=await store.signKey();
+  crypto.subtle.generateKey=original;
+  const second=await store.signKey();
+  return {ok:first===null&&second?.pub?.length===32,retry_ok:second?.pub?.length===32};
  `);
  await run('singleflight-wrapped-key-and-reuse',`
   const original=crypto.subtle.generateKey.bind(crypto.subtle);let finals=0;

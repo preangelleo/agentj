@@ -36,7 +36,14 @@ class Prices(unittest.TestCase):
         self.assertIsNone(usage.norm_model("a b"))
         self.assertIsNone(usage.price_of("gpt-unknown-9"))
         p = usage.price_of("claude-sonnet-5-5")
-        self.assertEqual((p["in"], p["out"]), (2.0, 10.0))
+        self.assertEqual((p["in"], p["out"], p["cr"]), (2.0, 10.0, 0.1))
+
+    def test_current_anthropic_models_have_current_list_prices(self):
+        self.assertEqual(usage.PRICES["claude-fable-5-2"], {"in": 8.0, "out": 40.0, "cr": 0.2, "cw": 10.0})
+        self.assertEqual(usage.PRICES["claude-mythos-5-2"], {"in": 8.0, "out": 40.0, "cr": 0.2, "cw": 10.0})
+        self.assertEqual(usage.PRICES["claude-opus-5-5"], {"in": 4.0, "out": 20.0, "cr": 0.2, "cw": 5.0})
+        self.assertEqual(usage.PRICES["claude-sonnet-5-5"], {"in": 2.0, "out": 10.0, "cr": 0.1, "cw": 2.5})
+        self.assertEqual(usage.PRICES["claude-haiku-5-5"], {"in": 0.1, "out": 0.5, "cr": 0.01, "cw": 0.125})
 
     def test_estimate_counts_cache_at_cache_prices(self):
         p = usage.PRICES["claude-opus-5-5"]

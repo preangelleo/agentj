@@ -1504,7 +1504,7 @@ body[data-conn=off] .composer{filter:grayscale(1);opacity:.7}
 .toast.rect.act .nt-acts{max-width:100%;flex-wrap:wrap;justify-content:flex-end}
 .toast.rect.act .undo{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 .toast .undo{min-height:44px;padding:0 16px;border-radius:var(--r-pill);font:600 var(--dlg-fs-body)/1 var(--font-body);
-  color:var(--dlg-fg);background:var(--dlg-chip);border:1.5px solid var(--nt-accent,var(--state))}
+  color:var(--noir);background:var(--lotion);border:0}
 .toast .undo:focus-visible{outline:2px solid var(--dlg-fg);outline-offset:2px}
 /* P340 #27: the screenshot notice carries its picture (top of the page, cropped) and puts its buttons on their own row */
 .toast .nt-media{flex:none;width:44px;height:64px;object-fit:cover;object-position:top;border-radius:8px;

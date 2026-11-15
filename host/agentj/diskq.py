@@ -91,6 +91,7 @@ LOOP_WAIT = 0.02       # s: the loop waits at most this long for its line to lan
 BUFFER_FOR = 30.0      # s: after one wait ran out the loop hands its lines over without waiting, for this long
 LOG_MAX_LINES = 4096   # per file: ~2 min of the busiest host.log seen (a reconnect storm) — far more than one stall
 LOG_MAX_BYTES = 1 << 20   # per file: 1 MiB of queued lines (a line is ~150 B), bounded memory on a disk that never answers
+LOG_ROTATE_BYTES = 10 << 20  # host.log history stays readable without growing without bound
 _buffer_until = 0.0
 
 _llk = threading.Lock()
@@ -163,6 +164,17 @@ def _append_now(key: str, line: bytes) -> None:
 
 
 def _append(path: str, lines: list[bytes]) -> None:
+    # Rotate only the diagnostic host log; callers may use this queue for other files.
+    if os.path.basename(path) == "host.log":
+        try:
+            if os.stat(path).st_size + sum(map(len, lines)) > LOG_ROTATE_BYTES:
+                old = path + ".1"
+                try:
+                    os.replace(path, old)
+                except FileNotFoundError:
+                    pass
+        except FileNotFoundError:
+            pass
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     try:
         os.write(fd, b"".join(lines))

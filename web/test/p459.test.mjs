@@ -14,11 +14,11 @@ test('P459 diagnostic is URL opt-in and only reports layout/colour metadata',()=
  assert.doesNotMatch(js,/\.value|innerHTML|cookie|localStorage|password|fetch\(/i);
 });
 
-test('P459m all iOS modes share Noir chrome and browser composer geometry',()=>{
+test('P459m all iOS modes share one fixed chrome (R-0001 Sooty) and browser composer geometry',()=>{
  const css=read('app.css'),js=read('js/ios-chrome.js'),boot=read('js/boot.js');
  assert.match(boot,/iPad\|iPhone\|iPod/);
  assert.doesNotMatch(boot,/CriOS/,'no browser-specific device fork');
- assert.match(boot,/ios \? "#2c2b26" : "#141414"/);
+ assert.match(boot,/window\.__ajLaunchChrome = "#141414"/);assert.doesNotMatch(boot,/#2c2b26/);
  assert.ok(css.includes('html[data-ios="1"]:not([data-standalone="1"]) .composer{padding-bottom:12px}'));
  assert.match(css,/html\[data-ios="1"\]\{--ios-chrome:var\(--c-noir\)/);
  assert.match(js,/html.dataset.iosSafari/); // P470 scopes root-canvas repair to Safari tabs.

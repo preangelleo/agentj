@@ -2,9 +2,9 @@
   "schema": 2,
   "authority": "component-ownership.json + current explicit HTML + verified dynamic constructors; no ID prefix inference",
   "sourceHashes": {
-    "public/index.html": "a8a77a3194b85b69b94a5cd530a3741f2cfc9fc4d34ea2ad91bb16995bc40762",
+    "public/index.html": "ccb6703561a4f29e6ccc34597c62b47fd186a9a65e4be46cff7d7fd0afb99b88",
     "component-ownership.json": "28899b06420306dff7bedde1bb7225c1ca0cd871779a1b3237f08b6dedb93135",
-    "public/js/relay.js": "a38a976a30d4f03fcff9fa7ee85977899c09fd486fa894db55b31b03a2550cca"
+    "public/js/relay.js": "3deff07399e55b2d56f8e600291a006695c087231a000fdeade56c33e8262c53"
   },
   "idOwners": {
     "version-notice": {
@@ -3820,7 +3820,8 @@
       "rootLine": 626,
       "tag": "ul",
       "classes": [
-        "seatpick__list"
+        "seatpick__list",
+        "aj-card-stack-list"
       ]
     },
     "rv-card": {
@@ -4430,7 +4431,8 @@
       "rootLine": 757,
       "tag": "div",
       "classes": [
-        "mem-list"
+        "mem-list",
+        "aj-card-stack-list"
       ]
     },
     "mem-trash": {
@@ -4447,7 +4449,8 @@
       "rootLine": 757,
       "tag": "ul",
       "classes": [
-        "plain-list"
+        "plain-list",
+        "aj-card-stack-list"
       ]
     },
     "act-view": {
@@ -4486,7 +4489,8 @@
       "rootLine": 766,
       "tag": "ul",
       "classes": [
-        "act-list"
+        "act-list",
+        "aj-card-stack-list"
       ]
     },
     "act-more": {
@@ -4546,7 +4550,8 @@
       "rootLine": 774,
       "tag": "ul",
       "classes": [
-        "tasks-list"
+        "tasks-list",
+        "aj-card-stack-list"
       ]
     },
     "systasks": {
@@ -4601,7 +4606,8 @@
       "rootLine": 774,
       "tag": "ul",
       "classes": [
-        "tasks-list"
+        "tasks-list",
+        "aj-card-stack-list"
       ]
     },
     "bots-view": {
@@ -5490,7 +5496,8 @@
       "rootLine": 940,
       "tag": "ul",
       "classes": [
-        "rscmdlist"
+        "rscmdlist",
+        "aj-card-stack-list"
       ]
     },
     "rs-cmd-out": {
@@ -9392,7 +9399,8 @@
       "rootLine": 1512,
       "tag": "div",
       "classes": [
-        "jc-setlist"
+        "jc-setlist",
+        "aj-card-stack-list"
       ]
     },
     "set-cards-assist": {
@@ -9477,7 +9485,8 @@
       "rootLine": 1524,
       "tag": "div",
       "classes": [
-        "ntflist"
+        "ntflist",
+        "aj-card-stack-list"
       ]
     },
     "ntf-autos-empty": {
@@ -9538,7 +9547,8 @@
       "rootLine": 1524,
       "tag": "div",
       "classes": [
-        "ntflist"
+        "ntflist",
+        "aj-card-stack-list"
       ]
     },
     "set-hooks": {
@@ -9658,7 +9668,8 @@
       "rootLine": 1553,
       "tag": "ul",
       "classes": [
-        "ctm-list"
+        "ctm-list",
+        "aj-card-stack-list"
       ]
     },
     "ctm-ico-allow": {
@@ -10011,7 +10022,8 @@
       "line": 1632,
       "tag": "ul",
       "classes": [
-        "rmlist"
+        "rmlist",
+        "aj-card-stack-list"
       ]
     },
     "rm-legacy": {
@@ -10640,7 +10652,8 @@
       "rootLine": 1713,
       "tag": "div",
       "classes": [
-        "slist"
+        "slist",
+        "aj-card-stack-list"
       ]
     },
     "silentMore": {
@@ -10761,7 +10774,8 @@
       "line": 1736,
       "tag": "div",
       "classes": [
-        "srlist"
+        "srlist",
+        "aj-card-stack-list"
       ]
     },
     "keys": {
@@ -10925,7 +10939,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2637,
+      "line": 2631,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."
@@ -10934,7 +10948,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2637,
+      "line": 2631,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."
@@ -10943,7 +10957,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2637,
+      "line": 2631,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."
@@ -10952,7 +10966,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2637,
+      "line": 2631,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."
@@ -10961,7 +10975,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2637,
+      "line": 2631,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."
@@ -10970,7 +10984,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2637,
+      "line": 2631,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."

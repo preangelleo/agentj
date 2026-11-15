@@ -933,18 +933,12 @@ function chromeTarget(){
   return "#141414"; // P422 #191/#86: system chrome never follows a state or custom theme.
 }
 function setThemeColor(hex){
-  const old = [...document.querySelectorAll('meta[name="theme-color"]')];
-  if (old.length === 1 && old[0].getAttribute("content") === hex && !old[0].media) return;
-  const m = document.createElement("meta");
-  m.name = "theme-color"; m.content = hex;
-  for (const o of old) o.remove();
-  document.head.prepend(m);
+  return;
 }
 export function paintChrome(force){
   if (document.documentElement.dataset.ios === "1") {
     const color = paintIOSChrome();
     // All iPhone browsers and Home Screen keep the same fixed Noir metadata.
-    if (color) setThemeColor(color);
     return;
   }
   const hex = chromeTarget();

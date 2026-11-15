@@ -1382,10 +1382,16 @@ class ClaudeAgent(Agent):
                         self.raw_tail = (self.raw_tail + line.decode("utf-8", "replace"))[-2000:]
                     continue
                 if isinstance(ev, dict):
-                    self._busy(ev)
-                    self.on_event(ev)
+                    try:
+                        self._busy(ev)
+                        self.on_event(ev)
+                    except Exception as e:  # P1 audit H7: never leave a producer blocked on a dead reader
+                        bg.swallowed(bg.host_log(self.host), "agent_read_failed", e, why=self.kind)
+                        await self._kill(proc)
+                        break
         except Exception as e:  # noqa: BLE001 — P192 (B18): the harness link ends here; say so in host.log
             bg.swallowed(bg.host_log(self.host), "agent_read_failed", e, why=self.kind)
+            await self._kill(proc)
         code = await proc.wait()
         self._busy(None)
         self.host.st.log("agent_exit", agent=self.kind, status=code)

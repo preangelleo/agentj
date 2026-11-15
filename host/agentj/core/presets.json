@@ -141,6 +141,8 @@
       "stream": true,
       "verified": false,
       "models": {
+        "claude-fable-5-2": {"tier": "large", "context": 1000000, "edit_mode": "str_replace", "max_output": 128000},
+        "claude-mythos-5-2": {"tier": "large", "context": 1000000, "edit_mode": "str_replace", "max_output": 128000},
         "claude-opus-5-5": {"tier": "large", "context": 1000000, "edit_mode": "str_replace", "max_output": 64000},
         "claude-sonnet-5-5": {"tier": "large", "context": 1000000, "edit_mode": "str_replace", "max_output": 64000},
         "claude-haiku-5-5": {"tier": "small", "context": 1000000, "edit_mode": "str_replace", "max_output": 32000}

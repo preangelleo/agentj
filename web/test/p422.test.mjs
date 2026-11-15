@@ -25,15 +25,18 @@ test('P422 exact iPhone Air and other iOS startup links have both orientations a
   const hash=createHash('sha256').update(bytes).digest('hex').slice(0,8);assert.ok(html.includes(`href="startup/${s.file}?v=${hash}" media="${s.media}"`));}
  for(const scheme of ['light','dark']){const b=read(`startup/420x912-3-portrait-${scheme}.png`);assert.equal(b.readUInt32BE(16),1260);assert.equal(b.readUInt32BE(20),2736);}
 });
-test('P422 non-iOS keeps Sooty; P459m iOS delegates fixed Noir document chrome',()=>{
- assert.equal([...html.matchAll(/<meta name="theme-color" content="([^"]+)"/g)].filter(m=>m[1]!=='#2c2b26').length,0);
+test('P422 iOS and non-iOS keep Sooty; iOS has no runtime theme writes',()=>{
+ assert.deepEqual([...html.matchAll(/<meta name="theme-color" content="([^"]+)"/g)].map(m=>m[1]),['#141414','#141414']);
  const r=read('js/relay.js').toString();assert.match(r,/function chromeTarget\(\)\{\s*return "#141414"/);
  const iosBranch=r.match(/if \(document\.documentElement\.dataset\.ios === "1"\) \{([\s\S]*?)\n  \}/)?.[1];
  assert.ok(iosBranch,'iOS chrome uses its own branch');
  assert.match(iosBranch,/const color = paintIOSChrome\(\)/,'iOS delegates page chrome colour');
- assert.match(iosBranch,/if \(color\) setThemeColor\(color\)/,'Safari, CriOS and standalone share fixed Noir metadata');
+ assert.doesNotMatch(iosBranch,/setThemeColor\(color\)/,'iOS does not write runtime theme metadata');
  assert.match(iosBranch,/return;/,'iOS never falls through to the non-iOS Sooty theme update');
- assert.doesNotMatch(read('js/boot.js').toString(),/localStorage/);
+ assert.match(r,/function setThemeColor\(hex\)\{\s*return;/,'runtime theme writes are disabled');
+ const b=read('js/boot.js').toString();
+ assert.match(b,/if \(!ios\) \{[\s\S]*setAttribute\("content", window\.__ajLaunchChrome\)/,'non-iOS chrome keeps launch Sooty');
+ assert.doesNotMatch(b,/localStorage/);
  assert.match(read('app.css').toString(),/\.satband,\.sabband\{background:#141414!important/);
 });
 test('P422 pull and hold share draft-preserving refresh, no wheel or mouse gesture handler',()=>{

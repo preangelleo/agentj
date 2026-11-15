@@ -1763,7 +1763,7 @@ async function main() {
   wire();
   initSeatUi();
   checkPhoneEnvironment().catch(() => {});
-  if (!globalThis.crypto?.subtle || !globalThis.indexedDB || !globalThis.WebSocket) return fatal('error.missing');
+  if (!globalThis.crypto?.subtle || !globalThis.WebSocket) return fatal('error.missing');
   if ('serviceWorker' in navigator && window.isSecureContext) push.registration().catch(() => {});
   try { await deviceKey(); } catch (e) {
     return fatal(e && e.name === 'NotSupportedError' ? 'error.noCrypto' : 'error.noStore');

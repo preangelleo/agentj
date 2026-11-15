@@ -20,14 +20,27 @@ function idb(name = DB_NAME) {
     r.onerror = () => rej(r.error);
   });
 }
+// Some private modes and embedded browsers expose IndexedDB but reject every open. Keep the
+// session usable (and able to reconnect) with an in-memory store; persistence is best effort.
+const memory = new Map();
+let storageFailed = false;
 async function kv(mode, fn) {
-  const db = await idb();
-  return new Promise((res, rej) => {
-    const tx = db.transaction('kv', mode);
-    const req = fn(tx.objectStore('kv'));
-    tx.oncomplete = () => { db.close(); res(req.result); };
-    tx.onerror = tx.onabort = () => { db.close(); rej(tx.error); };
-  });
+  if (storageFailed) {
+    const key = fn({ get: (k) => ({ result: memory.get(k) }), put: (v, k) => { memory.set(k, v); return { result: v }; }, delete: (k) => { memory.delete(k); return { result: undefined }; } });
+    return key?.result;
+  }
+  try {
+    const db = await idb();
+    return await new Promise((res, rej) => {
+      const tx = db.transaction('kv', mode);
+      const req = fn(tx.objectStore('kv'));
+      tx.oncomplete = () => { db.close(); res(req.result); };
+      tx.onerror = tx.onabort = () => { db.close(); rej(tx.error); };
+    });
+  } catch (e) {
+    storageFailed = true;
+    return kv(mode, fn);
+  }
 }
 export const dbGet = (k) => kv('readonly', (s) => s.get(k));
 export const dbPut = (k, v) => kv('readwrite', (s) => s.put(v, k));
@@ -188,7 +201,7 @@ export async function deviceKey() {
   finally { if (devKeyFlight === flight) devKeyFlight = null; }
 }
 async function loadDeviceKey() {
-  const w = await dbGet('device2');
+  const w = await within(dbGet('device2'), READ_MS).catch(() => undefined);
   if (w && w.v === 2 && w.kek && w.ct && w.iv && w.pub) {
     try { return (devKey = { priv: await unwrapDevice(w), pub: new Uint8Array(w.pub) }); } catch { /* unusable: a new key below */ }
   }
@@ -246,7 +259,7 @@ export async function signKey() {
     const kp = await generateSigningKeypair();       // private key not extractable
     await dbPut('sign', { priv: kp.priv, pub: kp.pub });
     return (signKp = kp);
-  } catch { return (signKp = null); }
+  } catch { return null; }
 }
 
 // ---------------------------------------------------------------- sealed records (§10.14)

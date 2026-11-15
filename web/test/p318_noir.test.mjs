@@ -39,6 +39,8 @@ test('the toast and the share notice are the Noir dialog layer', () => {
 test('no notice / toast / snack / flash rule paints a light or see-through background', () => {
   assert.ok(notices.length >= 5, 'the notice rules were found (' + notices.length + ')');
   for (const r of notices) {
+    // R-0034 (chairman 2026-11-15): the notice card stays Noir; only its Undo action is a solid Lotion button with Noir text and no border.
+    if (r.f === 'app.css' && r.sel === '.toast .undo') { assert.match(r.body, /color:var\(--noir\);background:var\(--lotion\);border:0$/, 'Undo = solid Lotion, Noir text, no border'); continue; }
     assert.doesNotMatch(r.body, LIGHT_BG, `${r.f}: ${r.sel} — a light background is back (use --dlg-bg / notify())`);
     // the popup itself is opaque; a chip / button inside it may be a tint of it
     const container = r.sel.split(',').some((s) => NOTICE.test(s.trim().split(/\s+/).at(-1)));

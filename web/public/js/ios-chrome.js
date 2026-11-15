@@ -18,9 +18,10 @@ export function paintIOSChrome() {
   html.dataset.iosSafari = html.dataset.standalone !== '1' && /iPhone/.test(navigator.userAgent)
     && /Version\/.*Safari\//.test(navigator.userAgent)
     && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(navigator.userAgent) ? '1' : '0';
-  // Status chrome is fixed Noir in Safari, CriOS and Home Screen, including overlays.
+  // R-0001: status chrome is fixed Sooty in Safari, CriOS and Home Screen, including overlays.
+  // The bottom fallback (fullscreen, reader, unknown layer) stays Noir (P470 / P488 / P489).
   const noir = '#2c2b26';
-  const color = noir;
+  const color = '#141414';
   const water = document.getElementById('water');
   let bottom = noir;
   if (document.body.dataset.fs !== '1' && document.body.dataset.reader !== '1') {

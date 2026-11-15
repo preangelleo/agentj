@@ -599,6 +599,9 @@ AUTONOMOUS_CHOICE = ("全放行：按主人已有目标自主选择合理默认�
                      "Full access: choose a reasonable default consistent with the owner's goal and continue without a reply. "
                      "Use the existing permission channel for actions requiring UV.")
 
+RELAY_FRAME_BACKLOG = 256      # H1: frames still running across all phones before the relay read loop waits
+
+
 class Host:
     def __init__(self, st: State, events: str = "text", read_stdin: bool = True):
         self.st = st
@@ -983,7 +986,7 @@ class Host:
                     async for msg in ws:
                         self._tap("in", msg)
                         if isinstance(msg, bytes):
-                            await self.on_frame(msg)
+                            await Host._queue_relay_frame(self, msg)
                         elif isinstance(msg, str):
                             await self.private_files.direct.relay_message(ws, msg)
             except Exception as e:  # network, handshake refusal, relay auth failure → back off and retry
@@ -996,6 +999,7 @@ class Host:
                 if phase != "up":
                     self.relay_last = {**d, "at": int(time.time()), "attempts": attempts}
             finally:
+                await Host._settle_relay_frames(self)
                 if self.relay_up:
                     self.emit("relay", up=False)
                 self.ws, self.relay_up = None, False
@@ -1136,6 +1140,40 @@ class Host:
         s = self.sessions[cid] = Session(cid)
         self._set_timer(s, self._handshake_timeout(s))
         return s
+
+    async def _queue_relay_frame(self, f: bytes) -> None:
+        """H1: hand one relay frame to its connection's lane without waiting for it. Unbound-callable (tests drive
+        relay_loop with a stand-in host). The read loop only waits when RELAY_FRAME_BACKLOG frames are still running."""
+        running = self.__dict__.setdefault("_relay_frames_running", set())
+        task = Host._bg(self, Host._dispatch_relay_frame(self, f), "relay_frame")
+        running.add(task)
+        task.add_done_callback(running.discard)
+        if len(running) >= RELAY_FRAME_BACKLOG:
+            await asyncio.wait(running, return_when=asyncio.FIRST_COMPLETED)
+
+    async def _dispatch_relay_frame(self, f: bytes) -> None:
+        """Frames of one relay connection run strictly in arrival order; different phones run concurrently.
+        Each frame's task becomes its lane's tail before its first await, so any number of queued frames keep their order."""
+        if len(f) < 5:
+            return
+        cid = int.from_bytes(f[1:5], "big")
+        tails = self.__dict__.setdefault("_relay_frame_tasks", {})
+        me, previous = asyncio.current_task(), tails.get(cid)
+        tails[cid] = me
+        try:
+            if previous is not None and not previous.done():
+                await asyncio.wait({previous})      # a failed or cancelled earlier frame never stops the later ones
+            await self.on_frame(f)
+        finally:
+            if tails.get(cid) is me:
+                tails.pop(cid, None)
+
+    async def _settle_relay_frames(self) -> None:
+        """The relay connection ended: frames already running finish before their sessions are dropped, exactly as
+        before H1 (the read loop always finished its frame first). Nothing is cancelled half-way."""
+        tasks = list(self.__dict__.get("_relay_frames_running", ()))
+        if tasks:
+            await asyncio.wait(tasks)
 
     async def on_frame(self, f: bytes) -> None:
         control = getattr(self, 'control', None)
@@ -3090,11 +3128,14 @@ class Host:
                         await self.close_cid(cid, "pair_abandoned")
                     return
                 req = json.loads(line)
-                if req.get("cmd") == "unbind":  # the human picked a device to unbind from the full-list prompt
+                if req.get("cmd") == "unbind":
+                    # S1: removed. This stream is opened without a claim, so an unbind inside it let any same-user process
+                    # remove the owner's remotes without Face ID. A full list makes room by itself when the new remote is
+                    # approved (_grant_pair, evict); a remote is removed only through `revoke` (claim + Face ID) or by itself.
                     did = str(req.get("device", ""))
-                    pend = self.sessions.get(p.cid) if p.cid is not None else None
-                    removed, _ = (False, 0) if pend and pend.device == did else await self.revoke(did)
-                    await self._ctl_send(w, {"ev": "unbound", "ok": removed, "device": did})
+                    self.st.log("ctl_refused", cmd="pair_unbind", reason="removed")
+                    self.emit("ctl_refused", cmd="pair_unbind", reason="removed")
+                    await self._ctl_send(w, {"ev": "unbound", "ok": False, "device": did, "error": "removed"})
                     s = self.sessions.get(p.cid) if p.cid is not None else None
                     if s and s.state == "pending":
                         await self._ctl_send(w, self._pending_event(s))
@@ -4052,7 +4093,7 @@ class Host:
         from . import busy as busy_mod
         n = 0
         while True:
-            with contextlib.suppress(Exception):
+            try:
                 await asyncio.to_thread(self.busy.refresh_outside, n % 5 == 0)
                 runner = getattr(self, "scheduler", None)
                 proc = getattr(runner, "proc", None) or getattr(getattr(runner, "runner", None), "proc", None)
@@ -4079,10 +4120,14 @@ class Host:
                 colors = self.busy.take_colors()
                 if colors is not None:
                     await asyncio.to_thread(busy_mod.save_colors, self.st.root, colors)
-            with contextlib.suppress(Exception):
+            except Exception as e:  # P1 audit H5: periodic failures remain visible and the loop continues
+                bg.swallowed(bg.host_log(self), "busy_loop_failed", e)
+            try:
                 if await asyncio.to_thread(self.theme_refresh):
                     msg = self.theme_cached
                     self._post(self._send_p33, lambda s: msg)
+            except Exception as e:  # P1 audit H5
+                bg.swallowed(bg.host_log(self), "theme_refresh_failed", e)
             n += 1
             await asyncio.sleep(2)
 
@@ -4933,13 +4978,14 @@ class Host:
                     from . import trash as trash_mod
                     await asyncio.to_thread(trash_mod.tick, self.st)
                 idle_newer = auto_update.newer_known(self.st) and not auto_update.impact(self)
-                if auto_update.due(self.st, blocked=auto_update.busy(self), stopped=self.stopped(), newer=idle_newer):
+                if await asyncio.to_thread(auto_update.due, self.st, blocked=auto_update.busy(self), stopped=self.stopped(), newer=idle_newer):
                     job = auto_update.read(self.st, auto_update.JOB)
                     if job.get("phase") == "done":
                         (self.st.root / auto_update.JOB).unlink(missing_ok=True)
                     auto_update.launch(self.st)
                 note = nightly["notice"] if nightly is not None else await asyncio.to_thread(update.daily, self.st)
-            except Exception:  # noqa: BLE001 — a failed check costs nothing
+            except Exception as e:  # noqa: BLE001 — a failed check costs nothing, but remains diagnosable
+                bg.swallowed(bg.host_log(self), "update_loop_failed", e)
                 note = None
             if note:
                 latest = update.read_rec(self.st).get("latest")

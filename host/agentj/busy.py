@@ -199,6 +199,18 @@ def items_dir(root) -> Path:
     return _guard_test_root(root) / "agentperm" / "busy"
 
 
+def _board_locked(fn):
+    def wrapped(self, *args, **kwargs):
+        lock = self.__dict__.get("_lock")
+        if lock is None:    # built without __init__ (tests) or a copy: the lock is never copied, each Board gets its own
+            lock = self.__dict__.setdefault("_lock", threading.RLock())
+        with lock:
+            return fn(self, *args, **kwargs)
+    wrapped.__name__ = fn.__name__
+    wrapped.__doc__ = fn.__doc__
+    return wrapped
+
+
 def _safe(key: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", key)[:80]
 
@@ -891,7 +903,11 @@ def notification_exit(body):
 class Board:
 
 
+    def __getstate__(self):      # H2: copy.deepcopy / pickle of anything that holds the Board must not carry the lock
+        return {k: v for k, v in self.__dict__.items() if k != "_lock"}
+
     def __init__(self, root, on_change=None, verify_sources=False):
+        self._lock = threading.RLock()
         self.verify_sources = verify_sources
         self.trusted = None                    # P570: is the launching turn the owner's / the host's own?
         self.launched = {}
@@ -934,11 +950,13 @@ class Board:
                 self.colors = {str(k)[:64]: int(v) % COLORS for k, v in c.items()} if isinstance(c, dict) else {}
 
 
+    @_board_locked
     def set_context(self, scope, harness=None, cwd=None, pid=None):
 
         from .busy_probe import start_id
         self.context[scope] = {**task_meta({"harness": harness, "cwd": cwd}), **({"pid": pid, "proc_start": start_id(pid)} if isinstance(pid, int) else {})}
 
+    @_board_locked
     def start(self, key, who, kind="temp", label="", lk=None, session=None, late=False, **meta) -> None:
         old = self.mem.get(key)
         saved = self.native_starts.get(key, {}) if not old and session and late and key in self.launched else {}
@@ -1005,6 +1023,7 @@ class Board:
             self.mem[key] = it
             self.on_change()
 
+    @_board_locked
     def annotate(self, key, **meta):
         key = self.alias.get(key, key)
         if key in self.mem:
@@ -1013,12 +1032,14 @@ class Board:
                 self.mem[key] = it
                 self.on_change()
 
+    @_board_locked
     def stop(self, key, exit_code=None, fg=False, ended=None, outcome=None, end_reason=None) -> None:
         it = self.mem.pop(key, None)
         if it is not None:
             self.finish(it, exit_code=exit_code, fg=fg, ended=ended, outcome=outcome, end_reason=end_reason)
             self.on_change()
 
+    @_board_locked
     def finish(self, it, exit_code=None, ended=None, fg=False, outcome=None, end_reason=None):
         fg = (fg or it.get("fg") is True) and not it.get("bg")
         why = {**({"outcome": outcome} if outcome in OUTCOMES else {}),
@@ -1030,6 +1051,7 @@ class Board:
         if key in self.mem:
             self.mem[key] = {**self.mem[key], "bg": True}
 
+    @_board_locked
     def stop_where(self, pred, fg=False, outcome=None, end_reason=None) -> None:
         gone = [k for k, v in self.mem.items() if pred(k, v)]
         for k in gone:
@@ -1037,6 +1059,7 @@ class Board:
         if gone:
             self.on_change()
 
+    @_board_locked
     def rekey(self, old: str, new: str) -> None:
         it = self.mem.pop(old, None)
         if it is not None:
@@ -1048,11 +1071,13 @@ class Board:
             if old in self.last:
                 self.last[new] = self.last.pop(old)
 
+    @_board_locked
     def _alias(self, child: str, key: str) -> None:
         self.alias[child] = key
         while len(self.alias) > 256:
             self.alias.pop(next(iter(self.alias)))
 
+    @_board_locked
     def note(self, key, text) -> None:
 
 
@@ -1063,6 +1088,7 @@ class Board:
             self.native_status(key, "running")
 
 
+    @_board_locked
     def hook_event(self, ev: dict, scope: str = "shared") -> None:
         if not isinstance(ev, dict):
             return
@@ -1135,6 +1161,7 @@ class Board:
 
             self.stop_where(lambda k, v: v.get("session") == f"{scope}:{sid}" and k not in live, fg=True)
 
+    @_board_locked
     def _background(self, scope: str, sid: str, t: dict, late=False) -> str:
 
 
@@ -1163,6 +1190,7 @@ class Board:
         return key
 
 
+    @_board_locked
     def stream_event(self, ev: dict, scope: str = "own") -> None:
         if not isinstance(ev, dict):
             return
@@ -1389,6 +1417,7 @@ class Board:
             self.note(k, tool_desc(p.get("tool") or p.get("name"), p.get("input")))
 
 
+    @_board_locked
     def refresh_outside(self, units: bool = True, run=subprocess.run) -> bool:
 
         files = read_items(self.root) if self.root is not None else []
@@ -1448,6 +1477,7 @@ class Board:
             L.save()
         return changed
 
+    @_board_locked
     def native_status(self, key, status, now=None):
 
         v = self.mem.get(key)
@@ -1461,6 +1491,7 @@ class Board:
                 v["checked_at"] = time.time() if now is None else now
                 v["activity_at"] = v["checked_at"]
 
+    @_board_locked
     def reconcile_claude(self, scope, transcript=None):
 
 
@@ -1544,6 +1575,7 @@ class Board:
                 elif ev.get("type") == "system" and ev.get("subtype") in ("task_notification", "task_updated"):
                     self.stream_event(ev, owner)
 
+    @_board_locked
     def refresh_sources(self, processes=None):
         from .busy_probe import Processes, fields
         processes = processes or Processes()
@@ -1561,6 +1593,7 @@ class Board:
         self.evidence = evidence
 
 
+    @_board_locked
     def items(self, now: float | None = None) -> list[dict]:
         now = time.time() if now is None else now
         def uncertain(v):
@@ -1626,6 +1659,7 @@ class Board:
         self.colors_dirty = False
         return dict(list(self.colors.items())[-64:])
 
+    @_board_locked
     def sample_load(self, now: float | None = None, read=None, cap_read=None) -> bool:
 
 
@@ -1658,6 +1692,7 @@ class Board:
         except Exception:  # noqa: BLE001 — display only
             return None
 
+    @_board_locked
     def msg(self, by=None) -> dict:
         tasks = self.items()
         m = {"t": "busy", "tasks": tasks, "by": by, **counts(tasks)}
@@ -1977,6 +2012,9 @@ def cmd_busy(a) -> int:
             from .resource_policy import work_argv
             env = dict(binaries.pinned(n) if n else os.environ)
             env["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"
+            # The trampoline must know which registered lifetime contract applies;
+            # do not infer it from the parent service's cgroup.
+            env["AGENTJ_BUSY_KIND"] = it.get("kind", "temp")
             print("busy: Nice>=10 CPUWeight=20 (where supported); sandbox/approval=native unchanged; no bypass", file=sys.stderr)
             it["delivery_started"] = time.time()
             child = subprocess.Popen(work_argv(cmd), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
@@ -2023,6 +2061,12 @@ def cmd_busy(a) -> int:
                                                         capture_output=True, text=True, timeout=3)
                                 if result.returncode == 0 and result.stdout.strip() in ("success", "timeout"):
                                     it["stop_reason"] = "timeout" if result.stdout.strip() == "timeout" else "sigterm"
+                        # A stopped background run must leave an auditable reason;
+                        # the receipt is consumed by background_done for the main
+                        # Agent, while this fixed journal event stays payload-free.
+                        with contextlib.suppress(Exception):
+                            from .state import State
+                            State(root).log("busy_stopped", reason=it.get("stop_reason") or "sigterm", kind=it.get("kind"))
                     write_finished(root, it, code)
             remove_item(root, key)
     return 2

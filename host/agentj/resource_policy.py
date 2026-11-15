@@ -36,13 +36,15 @@ def _work_scope():
     unit = f"agentj-work-{os.getpid()}.scope"
     try:
         parts = Path("/proc/self/cgroup").read_text().strip().split("/")
-        # A sibling scope must die with the originating host service, even if
-        # serve crashes before its normal process-group cleanup can run.
+        # `busy run --kind temp` is explicitly independent background work;
+        # binding it to agentj.service makes a normal host stop kill it. Keep the
+        # existing service boundary for CEO work, which is intentionally unchanged.
         parent = next((x for x in reversed(parts) if x.endswith(".service") and not x.startswith("user@")), None)
-        lifetime = ["BindsTo", "as", "1", parent, "After", "as", "1", parent] if parent else []
+        lifetime = (["BindsTo", "as", "1", parent, "After", "as", "1", parent]
+                    if parent and os.environ.get("AGENTJ_BUSY_KIND", "ceo") != "temp" else [])
         r = subprocess.run([bus, "--user", "call", "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
                             "org.freedesktop.systemd1.Manager", "StartTransientUnit", "ssa(sv)a(sa(sv))",
-                            unit, "fail", str(5 + (2 if parent else 0)), "Description", "s", "Agent J background work",
+                            unit, "fail", str(5 + (2 if lifetime else 0)), "Description", "s", "Agent J background work",
                             "PIDs", "au", "1", str(os.getpid()), "CPUWeight", "t", "20", "IOWeight", "t", "20",
                             "CollectMode", "s", "inactive-or-failed", *lifetime, "0"],
                            stdin=subprocess.DEVNULL, capture_output=True, timeout=3)

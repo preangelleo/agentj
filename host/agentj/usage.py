@@ -24,6 +24,8 @@ import time
 PRICES_CHECKED = "2026-10-13"
 # Anthropic first-party list prices (claude-api reference, 2026-10). cw = 5-minute cache write (1.25 × input).
 PRICES = {
+    "claude-fable-5-2": {"in": 8.0, "out": 40.0, "cr": 0.2, "cw": 10.0},
+    "claude-mythos-5-2": {"in": 8.0, "out": 40.0, "cr": 0.2, "cw": 10.0},
     "claude-fable-5-1": {"in": 10.0, "out": 50.0, "cr": 0.25, "cw": 12.5},
     "claude-fable-5": {"in": 10.0, "out": 50.0, "cr": 1.0, "cw": 12.5},
     "claude-opus-5-5": {"in": 4.0, "out": 20.0, "cr": 0.2, "cw": 5.0},
@@ -31,7 +33,7 @@ PRICES = {
     "claude-opus-4-8": {"in": 5.0, "out": 25.0, "cr": 0.5, "cw": 6.25},
     "claude-opus-4-7": {"in": 5.0, "out": 25.0, "cr": 0.5, "cw": 6.25},
     "claude-opus-4-6": {"in": 5.0, "out": 25.0, "cr": 0.5, "cw": 6.25},
-    "claude-sonnet-5-5": {"in": 2.0, "out": 10.0, "cr": 0.2, "cw": 2.5},
+    "claude-sonnet-5-5": {"in": 2.0, "out": 10.0, "cr": 0.1, "cw": 2.5},
     "claude-sonnet-5": {"in": 2.0, "out": 10.0, "cr": 0.2, "cw": 2.5},
     "claude-sonnet-4-6": {"in": 3.0, "out": 15.0, "cr": 0.3, "cw": 3.75},
     "claude-haiku-5-5": {"in": 0.1, "out": 0.5, "cr": 0.01, "cw": 0.125},
