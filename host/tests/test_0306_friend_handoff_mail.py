@@ -290,6 +290,55 @@ class HandoffMail(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.smtp.sent, [])
         self.assertEqual(self.cards(), [])
 
+    async def test_live_handoff_cannot_be_borrowed_by_another_request_scope(self):
+        """Exercise current through agent_send's actual to_thread boundary, including child context propagation."""
+        from agentj import provenance
+        self.run_turn(await self.click())
+        scopes = (
+            ("request", lambda: provenance.request_source(provenance.phone())),
+            ("task", lambda: provenance.task_run()),
+            ("shared-child", lambda: provenance.shared_child_request(self.host.agent, provenance.phone())),
+            ("other-agent-child-phone", lambda: provenance.shared_child_request(object(), provenance.phone())),
+            ("other-agent-child-guest", lambda: provenance.shared_child_request(
+                object(), provenance.email_guest("synthetic@example.com"))),
+            ("paired", lambda: provenance.paired_request(lambda: True)),
+        )
+        for name, scope in scopes:
+            for recipient in (BOB, OWNER):
+                with self.subTest(scope=name, recipient=recipient), scope():
+                    async with asyncio.timeout(10):
+                        res = await self.mail.agent_send(
+                            {"to": [recipient], "subject": "Scope refusal", "body": "Synthetic test only"})
+                    self.assertEqual(res.get("why"), "friend_handoff_unverified", res)
+                    self.assertEqual(self.smtp.sent, [])
+                    self.assertEqual(self.cards(), [])
+
+    async def test_raw_friend_task_does_not_acquire_general_task_authority(self):
+        from agentj import provenance
+        source = {"kind": "friend_task", "role": "task"}
+        self.assertEqual(provenance.normalize(source), {"kind": "unknown", "role": "group"})
+        self.run_turn(compose.Send("peer", "q" * 22, 1, text="synthetic", source=source))
+        self.assertFalse(provenance.delegated_turn(self.host.agent))
+        self.assertFalse(provenance.is_owner(provenance.turn_source(self.host.agent)))
+
+    async def test_live_handoff_requires_its_exact_restricted_source(self):
+        send = await self.click()
+        self.run_turn(send)
+        original = send.source
+        try:
+            for source in ({**original, "extra": "unbound"}, {"kind": "friend_task", "role": "owner"}, None):
+                send.source = source
+                for recipient in (BOB, OWNER):
+                    with self.subTest(source=source, recipient=recipient):
+                        async with asyncio.timeout(10):
+                            res = await self.mail.agent_send(
+                                {"to": [recipient], "subject": "Source refusal", "body": "Synthetic test only"})
+                        self.assertEqual(res.get("why"), "friend_handoff_unverified", res)
+                        self.assertEqual(self.smtp.sent, [])
+                        self.assertEqual(self.cards(), [])
+        finally:
+            send.source = original
+
     async def test_marker_only_ever_adds_uv(self):
         self.assertFalse(uv_list.required("agentj mail send", {"recipients": [BOB]}))
         self.assertTrue(uv_list.required("agentj mail send", {"recipients": [BOB], "friend_handoff": "x"}))

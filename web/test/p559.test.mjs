@@ -84,10 +84,11 @@ test('Settings: 「已设好」 only while the key passes here', () => {
   const bad = box();
   A.paintPkRow('local', { ...bad, failed: true });
   assert.equal(bad.row.dataset.pk, 'failed');
-  assert.equal(bad.label.textContent, A.withBio('p561.pk.st.missing'));   // P561 wording
+  assert.equal(bad.label.textContent, A.withBio('p0285.pk.unverified'));   // 0.28.5: an incomplete attempt is not proof the registered key was lost
   assert.equal(bad.setupBtn.hidden, false);
   assert.equal(bad.setupBtn.textContent, T.t('p561.pk.reset'));
-  assert.equal(bad.note.hidden, true);   // P561 (10-27 23:1x): no long note
+  assert.equal(bad.note.hidden, false);
+  assert.equal(bad.note.textContent,A.withBio('p0285.pk.incomplete'));   // The released row explains that this browser still needs a successful check
   assert.match(read('../public/app.js'), /failed: passkey\.failedHere\(\)/);
   const D = Object.fromEntries(['web.zh.src', 'web.zh.override', 'web.zh', 'web.en'].map((n) => [n, JSON.parse(read(`../i18n/${n}.json`))]));
   for (const k of ['p561.pk.st.missing', 'p561.pk.reset']) for (const d of Object.values(D)) assert.ok(d[k], k);
@@ -107,7 +108,7 @@ test('the unlock is named Face ID or Touch ID — never 屏幕锁 / 指纹或人
     ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/141.0', 0, 'Touch ID'], ['Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)', 5, 'Face ID/Touch ID'],
     ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605', 5, 'Face ID/Touch ID']]) {   // the last one: an iPad asking for the desktop site
     T.setTextOs(ENV.osOf(ua, touch));
-    for (const k of ['p539.pk.st.local', 'p539.pk.st.none']) assert.equal(A.withBio(k), (want==='指纹或面容'?'本机':'本机 ') + want + '：' + zh[k].split('：')[1], ua + ' ' + k);
+    for (const k of ['p539.pk.st.local', 'p539.pk.st.none']) assert.equal(A.withBio(k), '本机' + want + '：' + zh[k].split('：')[1], ua + ' ' + k);
     assert.equal(T.t('p336.faYes'), want==='指纹或面容'?'用指纹或面容确认':'用 ' + want + ' 确认');
   }
   T.setTextOs(undefined);

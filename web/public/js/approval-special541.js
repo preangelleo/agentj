@@ -61,7 +61,7 @@ export function decorateSpecial(root,c,{title,metadata=[],allow,deny,fold,repain
  let ui=root.querySelector('.special-main541');
  if(!ui){
   ui=node('div','special-main541');if(title)title.after(ui);else box.insertBefore(ui,box.firstChild);
-  const close=node('button','special-fold541',t('r.sheet.fold'));close.type='button';ui.append(close);
+  const close=node('button','special-fold541 elev-hide');close.type='button';close.setAttribute('data-i18n-attr','aria-label=r.sheet.fold');close.append(document.querySelector('#sheetClose svg').cloneNode(true));ui.append(close);
   ui.append(node('p','special-status0282',t('p541.wait')));
   const warning=node('p','auth-warn541');ui.append(warning);
   const source=node('button','auth-source541');source.type='button';ui.append(source);
@@ -74,6 +74,7 @@ export function decorateSpecial(root,c,{title,metadata=[],allow,deny,fold,repain
   allow.classList.add('special-allow541');deny.classList.add('special-deny541');for(const b of [allow,deny]){b.setAttribute('data-aj-owner','aj-action');b.setAttribute('data-aj-action-context','dialog');}
  }
  ui.hidden=false;box.querySelector('.special-buttons541').hidden=false;
+ ui.querySelector('.special-fold541').setAttribute('aria-label',t('r.sheet.fold'));
  ui.querySelector('.special-fold541').onclick=()=>{c.collapsed=true;fold();refreshSpecialVisibility();};
  const warning=ui.querySelector('.auth-warn541');warning.hidden=src.verified===true&&!src.suspicious;warning.textContent=t(src.suspicious?'p541.suspicious':'p541.unknown');
  const source=ui.querySelector('.auth-source541');source.replaceChildren();

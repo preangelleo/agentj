@@ -146,15 +146,45 @@ class OwnerDefaults(Base):
 
 class DesktopTurn(Base):
     async def test_waits_for_desktop_turn_then_delivers(self):
+        from test_p0269_selfheal import queue_history
+        from agentj.turn_heal import TurnHeal
+        import time
+        queue_history(self.host, Path(self.tmp.name))
+        self.host.lang, self.host.preferences, self.host.asks = 'zh', None, {}
+        self.host.stopped.return_value = True  # Observe the watchdog; never interrupt the desktop.
+        self.host.turn_t0 = time.monotonic() - 10
+        heal = self.host.turn_heal = TurnHeal(self.host)
         path=self.rollout(SID,active=True)
-        a=self.agent(SID);a.turn_done=asyncio.Event()
+        a=self.agent(SID);self.host.agent=a;a.status='working';a.turn_done=asyncio.Event()
         async def finish():
             await asyncio.sleep(1.2)
             with path.open('a') as f:f.write(json.dumps({'type':'event_msg','payload':{'type':'task_complete'}})+'\n')
         t=asyncio.create_task(finish())
-        await a._thread();await t
+        resumed=asyncio.create_task(a._thread())
+        try:
+            async with asyncio.timeout(5):
+                while not self.host.hist.get(self.host.cur_turn).get('card',{}).get('queued'):
+                    await asyncio.sleep(.01)
+            tid=self.host.cur_turn
+            self.assertFalse(resumed.done(), 'native active turn must still block resume')
+            self.assertFalse(self.calls, 'no resume/start before native completion')
+            self.assertEqual(self.host.hist.get(tid)['reply']['text'], '')
+            self.assertIn(tid, heal.pages)
+            await heal.tick()
+            page=self.host.hist.get(tid)
+            self.assertTrue(page['card']['queued'])
+            self.assertGreaterEqual(page['card']['waited_s'], 9)
+            self.assertEqual(page['reply']['text'], '')
+            self.assertTrue(await resumed)
+            await t
+        finally:
+            for task in (resumed,t):
+                if not task.done():task.cancel()
+            await asyncio.gather(resumed,t,return_exceptions=True)
         self.assertEqual(self.calls[-1][0],'thread/resume')
-        self.assertIn('等它说完我就把您的消息递过去',self.notices())
+        self.assertNotIn('等它说完我就把您的消息递过去',self.notices())
+        self.assertEqual(a.tid, SID, 'completion resumes the same native thread')
+        self.assertEqual(self.calls[-1][1]['threadId'], SID)
         self.assertEqual(self.events('shared_waiting')[0]['reason'],'desktop turn active; alternate turns')
         self.assertFalse(self.events('shared_refused'))
 

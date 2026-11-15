@@ -9,7 +9,7 @@ import secrets
 
 HEX = re.compile(r'[0-9a-f]{32}')
 FINAL = {'done', 'released', 'expired', 'cancelled', 'loop', 'hops', 'rate', 'shape', 'blocked'}
-ADMISSION = {'admission_filter', 'admission_error', 'relationship', 'queue_full', 'handoff_unknown',
+ADMISSION = {'admission_filter', 'admission_error', 'admission_secret_scan', 'relationship', 'queue_full', 'handoff_unknown',
              'action_nonce', 'action_capacity', 'durability', 'main_unavailable', 'submit_failed', 'task_plan', 'quota', 'delivery_guard', 'admission_interrupted'}
 REASONS = {
     'loop': ('这条转交绕回了原来的 Agent J 主机，已停止。', 'This request came back to its starting computer and was stopped.'),
@@ -34,6 +34,9 @@ def diagnostic(fid, mid, state, reason, lang):
         text = '请求已认领，请先核实接收设备，避免重复执行。' if zh else 'Claimed. Check the receiving device before resending.'
     elif state == 'pending':
         text = '请求已保留，等待主 Agent 恢复，无需重发。' if zh else 'Saved; waiting for the main Agent. No resend needed.'
+    elif reason == 'admission_secret_scan':
+        text = ('本机隐私检查暂不可用，报告尚未交给主 Agent；检查恢复后请重新发送。' if zh else
+                'The local privacy check is unavailable. The report was not handed to the main Agent; resend after it recovers.')
     elif reason == 'queue_full':
         text = '等待队列已满，请稍后重新发送。' if zh else 'The waiting queue is full. Send again later.'
     else:
@@ -218,7 +221,7 @@ class RelayGuards:
         self.receipt(fid, m['mid'], 'claimed')
         return True
 
-    async def begin_reply(self, fid, mid, *, report=False, retry_unknown=False):
+    async def begin_reply(self, fid, mid, *, report=False, retry_unknown=False, claim=None):
         """Durable CAS shared by old question approval and explicit report reply.
 
         The transport lifecycle may already be claimed. reply_state is a separate
@@ -234,18 +237,26 @@ class RelayGuards:
                                 else 'This message has already been handled. Do not reply again.')
                 return False
             row['reply_state'] = 'sending'
+            if claim is not None:row['reply_claim'] = claim
         if await diskq.aflush():
             return True
-        await self.release_reply(fid, mid, 'durability')
+        await self.release_reply(fid, mid, 'durability', claim=claim)
         return False
 
-    async def release_reply(self, fid, mid, reason):
+    def owns_reply(self, fid, mid, claim):
+        row=self.row(fid,mid)
+        return bool(claim and row and row.get('state') not in FINAL
+                    and row.get('reply_state')=='sending' and row.get('reply_claim')==claim)
+
+    async def release_reply(self, fid, mid, reason, *, claim=None):
         """Only a caller that knows transport was not accepted may release its latch."""
         from . import diskq
         with self.store._edit('relay-requests.json', {}) as d:
             row = d.get(self.key(fid, mid))
+            if claim is not None and (not row or row.get('reply_claim') != claim or row.get('state') in FINAL):return False
             if row and row.get('reply_state') == 'sending':
                 row.update(reply_state='pending', reply_reason=reason)
+                if claim is not None:row.pop('reply_claim',None)
         self.svc.log('peer_reply', result='pending', reason=reason)
         return await diskq.aflush()
 
@@ -257,12 +268,14 @@ class RelayGuards:
                     row.update(reply_state='unknown', reply_reason='restart')
                     self.svc.log('peer_reply', result='unknown', reason='restart')
 
-    async def finish_reply(self, fid, mid):
+    async def finish_reply(self, fid, mid, *, claim=None):
         from . import diskq
         with self.store._edit('relay-requests.json', {}) as d:
             row = d.get(self.key(fid, mid))
+            if claim is not None and (not row or row.get('reply_claim') != claim or row.get('state') in FINAL):return False
             if row and row.get('reply_state') == 'sending':
                 row['reply_state'] = 'done'
+                if claim is not None:row.pop('reply_claim',None)
         return await diskq.aflush()
 
     def complete(self, fid, mid):

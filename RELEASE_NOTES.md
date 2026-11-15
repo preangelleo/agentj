@@ -1,5 +1,5 @@
-# Agent J v0.30.21
+# Agent J v0.30.22
 
-Deletions go to the Agent J trash, restorable for 24 hours; background and scheduled tasks no longer stop for a card; the Android mic opens on the first tap.
+Owner queue cards say “Stop current task”; automatic notices queue quietly. Fixes false unreceived notices and friend-message offline errors.
 
-删除先进 Agent J 回收站、24 小时内可找回；后台任务和定时任务不再中途弹卡；安卓话筒一次就能打开。
+主人消息沿用排队卡，按钮改为“停止当前任务”；后台通知安静排队，已接收消息不再误弹未接收提示；修复好友消息误报离线。

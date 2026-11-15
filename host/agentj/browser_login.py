@@ -82,6 +82,7 @@ class LoginCards:
         self.st = elev.st
         self.cards: dict[str, dict] = {}
         self.tabs: dict[str, str] = {}          # site → the login tab this host opened (kept: it is the owner's page)
+        self.qr_history: dict[str, dict] = {}  # bounded in-memory digests, never QR images or durable authority
         self.bg: set = set()                    # phone-initiated work running beside the receive loop
 
     # ---------------------------------------------------------- records (never the image)
@@ -137,10 +138,20 @@ class LoginCards:
         if len(self.cards) >= MAX_OPEN and old is None:
             return {"result": "busy"}
         try:
-            got = await asyncio.to_thread(self._open_and_capture, rt, site, t)
+            got = await asyncio.to_thread(self._open_and_capture, rt, site, t, refresh)
         except CDPError as e:
             self.st.log("login_qr_failed", site=site, reason=str(e)[:60])
             return {"result": "failed", "why": "browser"}
+        generation = (rt.get("pid"), rt.get("starttime"), got.get("target") or self.tabs.get(site))
+        digest = hashlib.sha256(got["png"]).hexdigest() if got.get("state") == "qr" else None
+        previous = self.qr_history.get(site)
+        same = previous is not None and previous["generation"] == generation and previous["sha256"] == digest
+        if got.get("state") == "qr" and (same or (refresh and old is not None and got["png"] == bytes(old["img"]))
+                                         or site not in self.qr_history and len(self.qr_history) >= 32):
+            got["cdp"].detach(got["session"])
+            got["cdp"].close()
+            return {"result": "failed", "why": "browser",
+                    "hint": "未取得新的二维码，请稍后刷新或重新打开登录页。 / No new QR code; refresh later or reopen the sign-in page."}
         if old is not None:
             self._end(old, "refreshed")  # keep the previous QR until a replacement was captured
         if got["state"] == "in":
@@ -157,6 +168,9 @@ class LoginCards:
         c = {"id": cid, "site": site, "title": t["title"][lang], "img": bytearray(got["png"]), "nonce": nonce,
              "deadline": time.monotonic() + ttl, "until": until, "by": by, "cdp": got["cdp"], "session": got["session"],
              "bind": bind_digest(self.host.channel, site, cid, nonce, until), "lock": threading.Lock()}
+        if isinstance(generation[-1], str):
+            self.qr_history[site] = {"generation": generation, "sha256": digest,
+                                     "captured_at": c["deadline"] - ttl, "deadline": c["deadline"]}
         c["timer"] = asyncio.get_running_loop().call_later(ttl, lambda: self._end(c, "expired"))
         self.cards[cid] = c
         self._active(True)
@@ -180,29 +194,46 @@ class LoginCards:
                 "hint": "已在这台Agent J 主机的 Agent J 浏览器打开登录页：请主人在Agent J 主机前登录，然后运行 agentj browser check --site " + site
                         + " / opened the sign-in page on the Agent J host"}
 
-    def _open_and_capture(self, rt: dict, site: str, t: dict) -> dict:
-        """(thread) Reuse or open the login tab, wait up to 15 s for the QR element, crop it. The CDP connection stays with
+    def _open_and_capture(self, rt: dict, site: str, t: dict, refresh: bool = False) -> dict:
+        """(thread) Reuse or open the login tab, wait up to 30 s for the QR element, crop it. The CDP connection stays with
         the card (its watcher); the tab is never closed by us."""
         cdp = CDP(rt["ws"])
         ok = False
         try:
             target = self.tabs.get(site)
-            if not target or not cdp.tab_alive(target):
+            reused = bool(target and cdp.tab_alive(target))
+            if not reused:
                 target = cdp.new_tab(t["login_url"], background=bool(rt.get("headless")))
                 self.tabs[site] = target
             session = cdp.attach(target)
+            loader = None
+            if refresh and reused:
+                href, _ = cdp.location(session)
+                signed_in = (bs.classify(href, t) == "in" and
+                             not (t.get("out_dom") and present(cdp, session, t["out_dom"])))
+                if not signed_in:
+                    navigation = cdp.call("Page.navigate", {"url": t["login_url"]}, session=session)
+                    loader = navigation.get("loaderId")
+                    if navigation.get("errorText") or navigation.get("isDownload") or not isinstance(loader, str) or not loader:
+                        raise CDPError("login_refresh_failed")
             end = time.monotonic() + QR_WAIT
             while time.monotonic() < end:
-                href, _ = cdp.location(session)
+                href, ready = cdp.location(session)
                 if bs.classify(href, t) == "in" and not (t.get("out_dom") and present(cdp, session, t["out_dom"])):
                     return {"state": "in"}
+                if loader:
+                    current = cdp.call("Page.getFrameTree", session=session).get("frameTree", {}).get("frame", {}).get("loaderId")
+                    if current != loader or ready != "complete":
+                        time.sleep(0.2)
+                        continue
+                    loader = None
                 png = capture_qr(cdp, session, t["qr"]["selectors"])
                 if png:
                     time.sleep(SETTLE)
                     again = capture_qr(cdp, session, t["qr"]["selectors"])
                     if again == png:
                         ok = True
-                        return {"state": "qr", "png": png, "cdp": cdp, "session": session}
+                        return {"state": "qr", "png": png, "cdp": cdp, "session": session, "target": target}
                     continue
                 time.sleep(1.0)
             return {"state": "none"}

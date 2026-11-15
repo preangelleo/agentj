@@ -1295,6 +1295,8 @@ def dry_run(st, root: Path, tid: str, *, harness: str | None = None, model: str 
         res["skipped"] = f"{kind} is not installed on the Agent J host"
         return res
     if not st.exists():
+        if fence.inside():
+            raise WizardError(fence.hidden_state())
         raise WizardError("run `agentj init` first (the dry run starts the Agent inside the same fence as `agentj serve`)")
     cfg = st.agent_config() or {}
     argv, stdin = harness_argv(kind, exe, prompt, model)
@@ -1480,6 +1482,9 @@ def _state():
     from ..state import State
     st = State()
     if not st.exists():
+        from .. import fence
+        if fence.inside():
+            raise WizardError(fence.hidden_state())
         raise WizardError("run `agentj init` and `agentj login` first")
     return st
 

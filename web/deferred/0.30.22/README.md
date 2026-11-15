@@ -1,0 +1,3 @@
+# 0.30.22 deferred UI source
+
+These are exact candidate source bytes before removal from this release's active UI. They are retained for chairman review and later approved work. They are outside `public/`, never loaded by the app and never selected by `build.mjs`. `manifest.json` records the prior candidate, baseline and every retained file hash. Do not restore these files to active UI without chairman approval. The active source uses the actual released `70c8cf3e5` baseline, with only 0332, 0335, the explicitly requested version-follow fix, and the non-visible safety checks listed in the manifest. This is source retention, not runtime feature activation.

@@ -293,6 +293,7 @@ function paintErrs(root, errs, touched) {
     const box = w.querySelector('.ferr');
     if (box) box.textContent = show ? t(e.k, e.vars) : '';
     w.classList.toggle('bad', !!show);
+    for (const field of w.querySelectorAll('input,select,textarea,button[role=radio],button[role=checkbox]')) field.setAttribute('aria-invalid', String(!!show));
   }
 }
 

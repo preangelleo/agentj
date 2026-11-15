@@ -1,3 +1,4 @@
+import { accountNodes } from './brand/account-links.js';
 // Agent J — the host-local Agent settings page (`agentj admin`, A3.2 contract §4). Login: the one-time token arrives in
 // the URL fragment (#t=), is wiped from the address bar at once and swapped (POST /api/session) for a session secret kept only
 // in this tab's sessionStorage and sent as `Authorization: Bearer` — no cookie anywhere. Same-origin JSON API; every value from
@@ -31,11 +32,11 @@ const t = (key, vars) => (window.AJLang ? window.AJLang.t(DICT, key, vars) : key
 function rich(node, text) {
   const parts = String(text).split(/`([^`]+)`/);
   node.replaceChildren(...parts.map((p, i) => {
-    if (i % 2 === 0) return document.createTextNode(p);
+    if (i % 2 === 0) return node.closest('a,button,code,pre,textarea,select,option') ? document.createTextNode(p) : accountNodes(p,{className:'adm-account-link'});
     const c = document.createElement('code');
     c.textContent = p;
     return c;
-  }));
+  }).flat());
 }
 
 function applyStatic() {

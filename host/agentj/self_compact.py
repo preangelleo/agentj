@@ -9,6 +9,9 @@ not an untrusted or delegated turn). The invite is consumed when the queued comp
 """
 from __future__ import annotations
 import asyncio
+import copy
+import hashlib
+import stat
 import os
 import time
 from types import SimpleNamespace
@@ -22,7 +25,7 @@ TEXT = {
  'unsupported': ('当前 AI 接口尚未接入自行压缩；交接已保留，请用 Agent J 网页的压缩按钮，并查看返回的具体原因。', 'This AI interface is not wired for self-compaction yet. Keep the handoff, use Compact in the Agent J web app and check the returned reason.'),
  'not_ready': ('当前会话还没有可核实的输入连接；交接保留，请在 Agent J 网页重新连接会话后再试。', 'This conversation has no verifiable input connection yet. Keep the handoff and reconnect the conversation in the Agent J web app, then retry.'),
  'caller': ('无法确认请求来自当前主会话；没有压缩任何会话。', 'The caller could not be verified as the current main conversation; nothing was compacted.'),
- 'source': ('无法确认这轮来自主人本人，不能自行压缩主会话。', 'This turn cannot be verified as coming from the owner; it cannot compact the main conversation.'),
+ 'source': ('这次压缩请求缺少有效的会话授权，没有执行压缩。', 'This compaction request has no valid conversation authorization; nothing was compacted.'),
  'handoff': ('请先按 agentj-handoff 写好本轮交接，再请求自行压缩。', 'Write this turn’s handoff with agentj-handoff before requesting compaction.'),
  'stopped': ('Agent J 已急停，没有排入压缩。', 'Agent J is stopped; no compaction was queued.'),
  'stale': ('会话已更换，或交接已不再新鲜；这次自行压缩已取消，请重新写交接后再试。', 'The conversation changed or its handoff is no longer fresh. This compaction was cancelled; update the handoff and retry.'),
@@ -114,36 +117,66 @@ def owner_channel(src):
     return src['role'] == 'owner' and src['kind'] in ('phone', 'terminal')
 
 
+AUTH_TTL = 300.0
+_ABSENT = object()
+
+
+def handoff_binding(agent):
+    """Bind the exact handoff bytes; never accept a substituted link or oversized file."""
+    if agent.cfg.get('session_mode') != 'shared' or agent.kind != 'claude':
+        probe = compactprep.probe(agent.cfg.get('dir', ''), compactprep.FILE)
+        return probe if probe and probe[1] <= compactprep.READ_MAX else None
+    try:
+        p = handoff.path(handoff.COMPACT)
+        fd = os.open(p, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, 'O_CLOEXEC', 0))
+        with os.fdopen(fd, 'rb') as f:
+            st = os.fstat(f.fileno())
+            if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or not 0 < st.st_size <= compactprep.READ_MAX:
+                return None
+            data = f.read(compactprep.READ_MAX + 1)
+        return str(p), st.st_mtime_ns, st.st_size, hashlib.sha256(data).digest()
+    except OSError:
+        return None
+
+
+def origin_binding(agent):
+    # These are host-owned native-turn observations, not inferred owner identities.
+    # Cleanup may clear cur_send; a new native source or generation cancels the request.
+    return tuple(copy.deepcopy(v) if isinstance(v, dict) else v for v in
+                 (getattr(agent, k, _ABSENT) for k in ('turn_gen', 'pending_source', 'native_source', 'out_src')))
+
+
 def guard(agent, cmd):
     data = getattr(cmd, 'data', None) or {}
-    expected = data.get('self_compact')
-    if expected is None:
+    if data.get('self_compact') is None:
         return None
-    if agent.host.agent is not agent or marker(agent) != expected or not fresh(agent):
+    auth = getattr(agent, '_self_compact_authorization', None)
+    if auth is None or auth.cmd is not cmd:
+        return Result(detail(agent.host, 'source'), 'refused')
+    agent._self_compact_authorization = None  # one attempt, including failed validation
+    if (agent.host.agent is not agent or marker(agent) != auth.marker
+            or time.monotonic() > auth.deadline or origin_binding(agent) != auth.origin
+            or handoff_binding(agent) != auth.handoff or not fresh(agent)):
         agent.host.st.log('self_compact', result='stale')
         return Result(detail(agent.host, 'stale'), 'refused')
-    invite = data.get('self_compact_invite')
-    if invite is not None:                     # #449: host-invited from a heartbeat beat; one shot
+    if agent.host.stopped():
+        return Result(detail(agent.host, 'stopped'), 'refused')
+    if auth.invite is not None:
         from .heartbeat import session_key
         hb = getattr(agent.host, 'heartbeat', None)
-        if agent.host.stopped():
-            return Result(detail(agent.host, 'stopped'), 'refused')
-        if hb is None or not hb.take_invite(invite, session_key(agent)):
-            agent.host.st.log('self_compact', result='stale')
+        if hb is None or not hb.take_invite(auth.invite, session_key(agent)):
             return Result(detail(agent.host, 'stale'), 'refused')
         return None
-    src = turn_source(agent)
-    actor = agent
-    if getattr(agent, 'cur_send', None) is None and not hasattr(agent, 'out_src') and (src is _UNKNOWN or src is None):
-        # The queue runs after Send is cleared. Its host-captured owner source remains
-        # valid only under the unchanged conversation/turn marker checked above.
-        native = getattr(agent, 'native_source', None)
-        if native is not None and not owner_channel(native):
-            return Result(detail(agent.host, 'source'), 'refused')
-        src = data.get('self_compact_source')
-        actor = SimpleNamespace(cur_send=SimpleNamespace(source=src), untrusted=getattr(agent, 'untrusted', None))
-    if agent.host.stopped() or not owner_channel(data.get('self_compact_source')) or not owner_channel(src) or provenance.untrusted_turn(actor) or provenance.delegated_turn(actor):
-        return Result(detail(agent.host, 'stopped' if agent.host.stopped() else 'source'), 'refused')
+    # Authorize the captured request, not the now-idle source resolver. An unrelated
+    # active Send or a lower-trust request context still cannot borrow that authority.
+    send = getattr(agent, 'cur_send', None)
+    retained = [getattr(agent, k) for k in ('pending_source', 'out_src') if hasattr(agent, k)]
+    actor = SimpleNamespace(cur_send=SimpleNamespace(source=auth.source), untrusted=getattr(agent, 'untrusted', None))
+    if (send is not None and (send is not auth.send or getattr(send, 'source', None) != auth.source)
+            or data.get('self_compact_source') != auth.source
+            or any(not owner_channel(src) for src in retained)
+            or provenance.untrusted_turn(actor) or provenance.delegated_turn(actor)):
+        return Result(detail(agent.host, 'source'), 'refused')
     return None
 
 
@@ -180,6 +213,18 @@ async def enqueue(host, req, pid):
     data = {'self_compact':marker(agent), 'self_compact_source':provenance.normalize(src)}
     if invite is not None:
         data['self_compact_invite'] = invite
-    agent.submit(Cmd('compact', '', 'Agent J', turn, data=data))
+    cmd = Cmd('compact', '', 'Agent J', turn, data=data)
+    binding = handoff_binding(agent)
+    if binding is None:
+        return refused('handoff')
+    agent._self_compact_authorization = SimpleNamespace(cmd=cmd, marker=marker(agent),
+        deadline=time.monotonic()+AUTH_TTL, origin=origin_binding(agent), handoff=binding,
+        source=provenance.normalize(src), send=getattr(agent, 'cur_send', None), invite=invite)
+    auth = agent._self_compact_authorization
+    def expire():
+        if getattr(agent, '_self_compact_authorization', None) is auth:
+            agent._self_compact_authorization = None
+    asyncio.get_running_loop().call_later(AUTH_TTL, expire)
+    agent.submit(cmd)
     host.st.log('self_compact', result='queued', **({'by': 'heartbeat'} if invite is not None else {}))
     return {'result':'queued', 'detail':detail(host, 'queued')}

@@ -192,6 +192,15 @@ class ClaudeStuck(_P585):
 
     def test_restart_agent_on_claude_answers(self):
         async def check(c, h):
+            actor, hung = h.agent, h.agent.cur_send
+            self.assertEqual(hung.text, 'HANG')
+            # Working/process-started is not native delivery. Reopening before
+            # this receipt correctly preserves the pending HANG ahead of the probe.
+            await c['wait'](lambda: hung.state == 'delivered' and any(
+                obj.get('t') == 'say_state' and obj.get('sid') == hung.sid and obj.get('s') == 'delivered'
+                for _, obj in c['sent']))
+            self.assertIs(h.agent, actor)
+            self.assertIs(actor.cur_send, hung)
             press = self.press_more(c)
             done, _ = await press('restart_session', 'cr2')
             self.assertTrue(done['ok'], done)

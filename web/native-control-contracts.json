@@ -1115,6 +1115,30 @@
         "fontstep-focus-reset"
       ],
       "mode": "self-owned-native-context"
+    },
+    {
+      "id": "p1k-released-settings-select-row",
+      "file": "public/app.css",
+      "selector": ".setrow>select",
+      "context": [
+        "@media(max-width:600px)"
+      ],
+      "occurrence": 0,
+      "bodySha256": "d4beb25efad9f442db2a15e05020a435e2a1a6f3bb12a5e9d9772436fde79886",
+      "scopeIds": [
+        "released-settings-select-row"
+      ]
+    },
+    {
+      "id": "p1k-released-owner-host-actions",
+      "file": "public/menu.css",
+      "selector": "#settings .owner-hosts button",
+      "context": [],
+      "occurrence": 0,
+      "bodySha256": "23d50c3f8318da6bb480850cc4de86f9d86940980eb1fba3b2d033dddfa2b272",
+      "scopeIds": [
+        "released-owner-host-actions"
+      ]
     }
   ],
   "retiredSourceContracts": [

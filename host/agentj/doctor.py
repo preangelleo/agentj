@@ -420,6 +420,8 @@ def _login(k: str) -> tuple[str, str]:
 
 
 def check_agent(st: State) -> dict:
+    if _fenced() and not st.exists():
+        return _unverifiable("agent")
     c = st.agent_config() if st.exists() else None
     if not c:
         return _c("agent", WARN, "还没接 Agent / no Agent configured", "agentj agent claude --dir <folder>   (or: codex / opencode)")
@@ -874,6 +876,8 @@ def isolation_preflight() -> dict:
 
 
 def check_passphrase(st: State) -> dict:
+    if _fenced() and not st.exists():
+        return _unverifiable("passphrase")
     if not st.exists():
         return _c("passphrase", WARN, "未设置 / not set", "agentj init, then agentj passphrase set")
     if gate.is_set(st):
@@ -906,6 +910,8 @@ def check_harness(svc=None) -> dict:
 
 
 def check_bound(st: State) -> dict:
+    if _fenced() and not st.exists():
+        return _unverifiable("bound")
     link = cloud.read_cloud(st) if st.exists() else None
     if link:
         via = "用设置码加入 / joined with a setup code" if link["via"] == "seat" else "用Agent J 主机绑定码加入 / joined with a host binding code"
@@ -915,6 +921,8 @@ def check_bound(st: State) -> dict:
 
 def check_seat(st: State) -> dict:
     """P185: whether this host may serve its phones (relay seat certificate, seatcert). Never ✗: installing comes first."""
+    if _fenced() and not st.exists():
+        return _unverifiable("seat")
     from . import seatcert
     if not st.exists():
         return _c("seat", WARN, "还没初始化 / not initialised", "agentj setup")
@@ -1049,6 +1057,8 @@ def check_turn(st: State, serve_status: dict | None = None) -> dict | None:
 
 def check_onboarding(st: State) -> dict:
     """F28 (P72): the seat and the two required remotes (the Agent J host's browser, the initial-pairing phone). Never ✗."""
+    if _fenced() and not st.exists():
+        return _unverifiable("onboard")
     if not st.exists():
         return _c("onboard", WARN, "还没初始化 / not initialised yet", "agentj init")
     try:
@@ -1380,6 +1390,8 @@ def check_shared_controls(st: State) -> dict | None:
 
 def check_estop(st: State) -> dict:
     """The stop switch (ADR-A51): on = the Agent and the scheduled tasks do nothing until a human resumes."""
+    if _fenced() and not st.exists():
+        return _unverifiable("estop")
     from . import controls
     if not st.exists():
         return _c("estop", OK, "未急停 / not stopped")
@@ -1394,6 +1406,8 @@ def check_estop(st: State) -> dict:
 
 
 def check_tasks(st: State) -> dict:
+    if _fenced() and not st.exists():
+        return _unverifiable("tasks")
     from . import tasks
     c = st.agent_config() if st.exists() else None
     rows = tasks.rows(st, c["dir"]) if c else []
@@ -1554,6 +1568,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     out += check_preferences(st)
     out += check_main_identity(st)
     out.append(check_skills())
+    out.append(check_local_patches())
     out += [check_google(st), check_first_run(st)]
     out += list(filter(None, [check_launchd_environment(svc), check_service_environment(svc, runtime=_serve_status(st)), check_shared_controls(st)]))
     login = check_login_session(svc)
@@ -1644,7 +1659,7 @@ def check_upgrade_restart(st, svc):
 
 
 def run_upgrade(st=None):
-    """Package/service integrity only: no workflow, ASR, billing or network probes."""
+    """Package/service integrity + read-only patch inventory; no workflow, ASR, billing or network probes."""
     from . import main_identity
     st = st or State()
     svc = service.status()
@@ -1666,6 +1681,7 @@ def run_upgrade(st=None):
     recovery = check_upgrade_restart(st, svc)
     if recovery:
         rows.append(recovery)
+    rows.append(check_local_patches())
     return rows
 
 
@@ -1681,6 +1697,7 @@ def run_read_only(st=None):
                               check_shared_hooks(st, read_only=True), check_shared_statusline(st), check_install_dir()]))
     rows += check_main_identity(st)
     rows.append(check_skills())
+    rows.append(check_local_patches())
     rows.append(_c("read-only", OK, "只读检查；未运行安装、修复、重连或主动探测 / Read-only: installation, repair, reconnect and active probes skipped",
                    "agentj doctor"))
     return rows
@@ -1837,6 +1854,18 @@ def check_skills(home=None) -> dict:
         return _c('skills', OK if ready else WARN, detail)
     except OSError:
         return _c('skills', WARN, '内置技能将在服务启动时自动更新 / Built-in skills update automatically at service startup')
+
+
+def check_local_patches() -> dict:
+    """An owner inventory finding never rolls a verified package back."""
+    from . import local_patches
+    result = local_patches.check()
+    count = len(result['patches']) + len(result['features'])
+    clean = result['status'] in ('ok', 'empty') and count == 0
+    detail = ('本机补丁只读盘点 / Local patch inspection: ' + result['status']
+              + f"; {count} records; " + ', '.join(f"{k}={v}" for k,v in sorted(result['counts'].items())))
+    return _c('local-patches', OK if clean else WARN, detail,
+              '' if clean else 'agentj local check — review only; no patch applied or official fix verified')
 
 
 for _name in [n for n in list(globals()) if n.startswith("check_") and callable(globals()[n])]:

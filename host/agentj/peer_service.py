@@ -48,6 +48,11 @@ _HEX16 = re.compile(r"[0-9a-f]{16}")
 _RID = re.compile(r"[0-9a-f]{32}")
 
 
+class SecretScanUnavailable(OSError):
+    """Fixed local failure category; never carries a credential source path or value."""
+
+
+
 def _task_plan_detail(h, actions) -> str:
     """#0303: the refusal says why and what to do (it used to be a bare `task_plan`)."""
     from . import provenance
@@ -997,12 +1002,23 @@ class PeerService:
         return mid
 
     async def _outbound(self, text: str) -> peer_guard.Verdict:
-        if self.index is None or time.monotonic() - self.index_at > INDEX_REFRESH:
-            wd = (getattr(self.host, "agent_cfg", None) or {}).get("dir")
-            self.index = await asyncio.to_thread(peer_guard.SecretIndex.build, None, (), wd)
-            self.index_at = time.monotonic()
-        await asyncio.to_thread(self.index.require_complete)
-        return peer_guard.outbound(text, self.index, self.store.never_tell_extra)
+        wd = (getattr(self.host, "agent_cfg", None) or {}).get("dir")
+        index = self.index
+        if index is None or time.monotonic() - self.index_at > INDEX_REFRESH:
+            index = await asyncio.to_thread(peer_guard.SecretIndex.build, None, (), wd)
+        try:
+            await asyncio.to_thread(index.require_complete)
+        except OSError:
+            # A credential source may have changed since the last scan. Rebuild once,
+            # then require the same strict source validation before filtering anything.
+            try:
+                index = await asyncio.to_thread(peer_guard.SecretIndex.build, None, (), wd)
+                await asyncio.to_thread(index.require_complete)
+            except OSError:
+                raise SecretScanUnavailable("local_secret_scan_unavailable") from None
+        if index is not self.index:
+            self.index, self.index_at = index, time.monotonic()
+        return peer_guard.outbound(text, index, self.store.never_tell_extra)
 
     def _global_limit(self) -> None:
         """The account-wide daily token total is reached: every friend gets `limited scope=global` (once a day each), the owner
@@ -1709,7 +1725,7 @@ class PeerService:
             self._send(fid, {"t": "relay_cancel", "mid": mid})
         return {"ok": changed}
 
-    async def tell(self, ref: str, text: str, reply_to=None, actions=None, grant=None) -> dict:
+    async def tell(self, ref: str, text: str, reply_to=None, actions=None, grant=None, *, _authorized=None) -> dict:
         if actions is not None and grant is not None:
             return {"ok": False, "why": "conflicting_authority"}
         if not isinstance(text, str) or not text.strip() or wire.text_problem(text, wire.MAX_TEXT_P33) is not None:
@@ -1777,17 +1793,28 @@ class PeerService:
         # P528: automatic and explicit same-owner replies share the existing durable latch.
         latched = reply is not None and self.same_owner.active(fid)
         token = self.same_owner.row(fid).get('token') if latched else None
+        claim = secrets.token_hex(16) if latched and _authorized is not None else None
         if latched:
-            if not await self.guards.begin_reply(fid, reply_to):
+            if not await self.guards.begin_reply(fid, reply_to, **({'claim':claim} if claim else {})):
                 return {"ok": False, "why": "bad_reply", "message": "这条可能已回复或已过期；若已回执，请用不带 --reply-to 的 friends tell。 / Reply already used or expired; if acknowledged, use friends tell without --reply-to."}
             if (not self.same_owner.active(fid) or self.same_owner.row(fid).get('token') != token
                     or self.host.stopped()):
-                await self.guards.release_reply(fid, reply_to, 'authority_changed')
+                await self.guards.release_reply(fid, reply_to, 'authority_changed', **({'claim':claim} if claim else {}))
                 return {"ok": False, "why": "bad_reply", "message": "这条可能已回复或已过期；若已回执，请用不带 --reply-to 的 friends tell。 / Reply already used or expired; if acknowledged, use friends tell without --reply-to."}
+        if _authorized is not None:
+            allowed=await _authorized()
+            # Fresh scanning may await. Recheck the original relationship and
+            # exact reply claim synchronously at the transport boundary.
+            if (not allowed or latched and (not self.same_owner.active(fid)
+                    or self.same_owner.row(fid).get('token') != token
+                    or not self.guards.owns_reply(fid,reply_to,claim))):
+                if latched:
+                    await self.guards.release_reply(fid, reply_to, 'authority_changed', claim=claim)
+                return {"ok":False,"why":"authority_changed"}
         mid = self._send_pmsg(fid, text, reply, auto=False, end=reply is not None, extra=extra)
         if mid is None:
             if latched:
-                await self.guards.release_reply(fid, reply_to, 'send_refused')
+                await self.guards.release_reply(fid, reply_to, 'send_refused', **({'claim':claim} if claim else {}))
             from .relay_guards import message
             why = self.last_relay_refusal or "bad_text"
             return {"ok": False, "why": why, **({"message": message(why, self.lang)} if why == "hops" else {})}
@@ -1796,7 +1823,7 @@ class PeerService:
                 if grant in d:
                     d[grant].setdefault("tasks", {})[fid] = mid
         if latched:
-            await self.guards.finish_reply(fid, reply_to)
+            await self.guards.finish_reply(fid, reply_to, **({'claim':claim} if claim else {}))
         if reply_to:
             self.guards.complete(fid, reply_to)
         if extra and "grp" in extra:
@@ -1874,7 +1901,14 @@ class PeerService:
             req = None
             try:
                 req = json.loads(await asyncio.wait_for(r.readline(), 10))
-                if isinstance(req, dict) and req.get("t") in ("approve-actions", "execute-action", "action-recovery"):
+                if isinstance(req, dict) and req.get("t") == "tell-card":
+                    from . import application_ingress, friends_tell_action
+                    from .shared_hook import peer_pid
+                    pid, caller_uid = peer_pid(sock)
+                    with application_ingress.native(self.host, w, req, pid, caller_uid):
+                        res = await friends_tell_action.handle(self, req)
+                elif isinstance(req, dict) and req.get("t") in ("approve-actions", "execute-action", "action-recovery"):
+
                     from . import bounded_plan, approval_review
                     from .shared_hook import peer_pid
                     pid, caller_uid = peer_pid(sock)
@@ -1889,6 +1923,8 @@ class PeerService:
                            else await self.cli(req) if isinstance(req, dict) else {"ok": False, "why": "shape"})
             except (ValueError, asyncio.TimeoutError, asyncio.LimitOverrunError):
                 res = {"ok": False, "why": "shape"}
+            except SecretScanUnavailable:
+                res = {"ok": False, "why": "local_secret_scan_unavailable"}
             self.log("friends_cli", kind=str(req.get("t"))[:16] if isinstance(req, dict) else None,
                      result="ok" if res.get("ok") else str(res.get("why"))[:24])
             w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
@@ -2165,6 +2201,7 @@ def add_parser(sub) -> None:
     t = s.add_parser("tell", help="替主人对好友说一句：tell <好友> <内容>")
     t.add_argument("friend")
     t.add_argument("text", nargs="+")
+    t.add_argument("--sandbox-card", action="store_true", help="仅这条消息的一次签名发送卡 / one signed send card for this message only")
     t.add_argument("--actions", help="具体动作 JSON 文件 / exact action plan JSON file")
     ap = s.add_parser("approve-actions", help="一次确认当前任务的具体动作 / approve the exact actions of this task once")
     ap.add_argument("actions")
@@ -2245,6 +2282,11 @@ def _req(a) -> dict:
         return {"t": f, "plan": a.plan, "step": a.step}
     if f == "approve-actions":
         return {"t": f, "actions": actions}
+    if f == "tell" and getattr(a, "sandbox_card", False):
+        if actions is not None or a.grant:
+            raise SystemExit("固定发送卡不接受动作计划或授权单 / fixed send card accepts no action plan or grant")
+        return {"t":"tell-card","friend":a.friend,"text":" ".join(a.text),
+                **({"reply_to":a.reply_to} if a.reply_to else {})}
     if f == "tell":
         return {"t": "tell", **({"actions": actions} if actions is not None else {}), "friend": a.friend, "text": " ".join(a.text), **({"reply_to": a.reply_to} if a.reply_to else {}), **({"grant": a.grant, "cwd": os.getcwd()} if a.grant else {})}
     if f == "group":
@@ -2314,7 +2356,7 @@ def cmd_friends(a) -> None:
         if text is None:
             sys.exit("没有保存（编辑器没有正常退出）")
         req = {"t": "profile", "set": text}
-    res = ask(req, timeout=1800 if req["t"] == "approve-actions" or "actions" in req else 30)
+    res = ask(req, timeout=1800 if req["t"] == "approve-actions" or "actions" in req else 180 if req["t"] == "tell-card" else 30)
     if res is None:
         from .state import State
         st = State()

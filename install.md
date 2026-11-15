@@ -4,12 +4,12 @@ version: 0.28.43
 released: 2026-11-14
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.30.21
-source_tag: v0.30.21
-host_wheel: agentj-0.30.21-py3-none-any.whl
-host_wheel_sha256: 3ecfb7a6ab4265f54dc099cc881ed8bf0bd3c891ec04e807ab7110a639da15bc
-host_sdist: agentj-0.30.21.tar.gz
-host_sdist_sha256: e5d0eda8d65bed349a080b3945b61fd160c681b183f197ce4539568eba19da25
+host_version: 0.30.22
+source_tag: v0.30.22
+host_wheel: agentj-0.30.22-py3-none-any.whl
+host_wheel_sha256: c3a452fb56750ab3058432a36b3dcf1a9d2109769c790a9f5f9837102f3f8014
+host_sdist: agentj-0.30.22.tar.gz
+host_sdist_sha256: 792ee22e812bf4150a87a7343f999c54d804273ebc1f3d5adfe65fca370171da
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 docs_index: https://agentj.app/llms.txt (also https://agentj.app/docs/index.json; every page as raw Markdown at https://agentj.app/docs/<slug>/en.md and /zh.md)
@@ -731,7 +731,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.30.21` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.30.22` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -773,13 +773,13 @@ uv tool install "./$W"          # the wheel; its dependencies come from PyPI or 
 `https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.9`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.21#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.22#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.21#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.22#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.21`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.22`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -944,7 +944,7 @@ with the 8-character code), and `agentj name` shows the Agent's name (from 0.20.
 phone's reply card).
 
 **The seat is now active — do not stop here.** Go straight on through Steps 8–10 and then Step 11, where you lead your
-human through the **two required pairings** (the Agent J host's browser, then their main phone) without waiting to be asked.
+human through the **two required pairings** (the Agent J host's browser, then their phone remote) without waiting to be asked.
 After every step `agentj onboarding` (or `--json`) shows where things stand: seat ✓/·, the Agent J host's browser ✓/·, main
 phone ✓/·, welcome sent ✓/· — and the next step in one line.
 
@@ -1381,7 +1381,7 @@ After pairing or unbinding, open pages update the remote count, pairing suggesti
 
 `agentj pair` 默认同时显示二维码与链接；`--link` 保留兼容。方法一：手机扫码。方法二：把同一个链接粘到电脑浏览器地址栏直接打开。链接 5 分钟、一次有效，是配对密钥，不要发给别人或 AI；iPhone 请粘到主屏幕图标内的配对链接框。
 
-**首台配好后**：手机先配 → 建议在常用电脑浏览器打开 https://m.agentj.app，用已配对手机扫电脑显示的码，核对后在手机确认；电脑先配 → 建议在电脑浏览器的「设置 → 遥控器管理 → 添加遥控器（配对新遥控器）」打开二维码，用主力手机扫码，核对后在电脑浏览器上确认。两台都配好并验收首条消息再结束安装。
+**首台配好后**：手机先配 → 建议在常用电脑浏览器打开 https://m.agentj.app，用已配对手机扫电脑显示的码，核对后在手机确认；电脑先配 → 建议在电脑浏览器的「设置 → 遥控器管理 → 添加遥控器（配对新遥控器）」打开二维码，用手机遥控器扫码，核对后在电脑浏览器上确认。两台都配好并验收首条消息再结束安装。
 
 **First remote — choose your situation:**
 - **Own account**: open `account_url` returned by `agentj pair --check --json`, choose Add a remote on this host's seat card, scan, compare the six digits and approve.
@@ -1390,23 +1390,23 @@ After pairing or unbinding, open pages update the remote count, pairing suggesti
 
 `agentj pair` shows both QR and link by default; `--link` remains compatible. Way 1: scan with your phone. Way 2: paste the same link into a computer browser's address bar. The link is a pairing key, valid for 5 minutes and one use; never share it with anyone or an AI. On iPhone paste into the pairing-link box inside the Home Screen icon.
 
-**After the first remote**: phone first → open https://m.agentj.app in your usual computer browser, scan its code with the paired phone, compare and confirm on the phone; computer first → on the computer open Settings → Remotes → Add a remote, scan with your main phone, compare and confirm on the computer. Finish installation after both remotes and the first message are verified.
+**After the first remote**: phone first → open https://m.agentj.app in your usual computer browser, scan its code with the paired phone, compare and confirm on the phone; computer first → on the computer open Settings → Remotes → Add a remote, scan with your phone remote, compare and confirm on the computer. Finish installation after both remotes and the first message are verified.
 
 ### 11a. Two required remotes, one after the other (host 0.15.8+)
 
 Pair **two** remotes before you call the install finished, in either order — you lead, your human should not have to ask:
 1. **The Agent J host's browser.** Run `agentj pair --check --json`, open its `account_url` and select **Add a remote** on this host’s seat card. Open **https://m.agentj.app** in another tab and the owner pastes the pairing link there. The account page automatically replaces the QR with a waiting-remote notice, six-digit confirmation code and **Approve**. Compare the two screens, then approve. Do not open the local admin page for installation pairing. If a terminal QR was already scanned, approve that waiting phone on the same seat card; do not start another pairing. The terminal alternative is for the owner to run `agentj pair` (SSH: `agentj pair --link`) and approve there; an Agent must never do that for them.
-2. **Their main phone** — open https://m.agentj.app there and request pairing. Scan that self-service code with the browser just paired, compare the six digits and approve on that paired browser (P190 reverse pairing). The steps below also cover a phone used as the first remote.
+2. **Their phone remote** — open https://m.agentj.app there and request pairing. Scan that self-service code with the browser just paired, compare the six digits and approve on that paired browser (P190 reverse pairing). The steps below also cover a phone used as the first remote.
 
 Other phones, tablets or computers: **only when your human asks** — do not offer them now.
 
 What to say (in your human's language; keep it this short):
-- Before ①: 「席位已经激活。接下来配两个遥控器：你的常用电脑浏览器和主力手机，哪台方便先配哪台。我先在这台Agent J 主机上打开配对页。」 /
-  "The seat is active. Next we pair two remotes: your usual computer browser and main phone, in whichever order is convenient. I'll open the pairing
+- Before ①: 「席位已经激活。接下来配两个遥控器：你的常用电脑浏览器和手机遥控器，哪台方便先配哪台。我先在这台Agent J 主机上打开配对页。」 /
+  "The seat is active. Next we pair two remotes: your usual computer browser and phone remote, in whichever order is convenient. I'll open the pairing
   page here."
 - After ① (or whichever came first): 「第一个遥控器好了，看那个窗口——你的董事长助理会在那里跟你打招呼，一步一步带你认识界面。
-  看完我们再配另一台：手机先配就配常用电脑，电脑先配就配主力手机。」 / "The first remote is ready — look at that window: your chief-of-staff assistant says hello
-  there and shows you around, one step at a time. Then pair the other one: your usual computer if the phone came first, or your main phone if the computer came first."
+  看完我们再配另一台：手机先配就配常用电脑，电脑先配就配手机遥控器。」 / "The first remote is ready — look at that window: your chief-of-staff assistant says hello
+  there and shows you around, one step at a time. Then pair the other one: your usual computer if the phone came first, or your phone remote if the computer came first."
 - After ②: 「两个遥控器都配好了。以后直接在手机或这个浏览器窗口里跟你的董事长助理说话就行。」 / "Both remotes are paired. From
   now on just talk to your chief-of-staff assistant on the phone or in this browser window."
 
@@ -1784,7 +1784,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.21#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.22#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -2111,7 +2111,7 @@ or logs out Claude Code / Codex / OpenCode (nor removes a model key), and never 
   with Face ID on a paired phone) and `agentj secret result`; the one-line installer follows `/dl/latest.txt`.
   Preparation does not publish.
 - 0.19.8 (2026-10-07): host 0.15.8a1 candidate. First-use onboarding: after Step 7 the seat is active and you keep going —
-  `agentj onboarding` names the next step (the Agent J host's browser, then the owner's main phone, Step 11a). The first
+  `agentj onboarding` names the next step (the Agent J host's browser, then the owner's phone remote, Step 11a). The first
   approved remote gets one welcome written by the main Agent and a short tour the owner can skip; upgraded hosts are not welcomed.
 
 - 0.19.7 (2026-10-07): host 0.15.7a1 candidate. Silent replies, native provider switching, Codex Desktop read-only status,
@@ -2461,10 +2461,14 @@ Shared sessions keep their original permissions. Finish other active work before
 switching. The CLI delegates through the host socket inside the data fence; a matching
 owned harness restarts before its next turn. Reopen an owner-managed desktop app when asked.
 
-Agent J and relay use the exact final reply `〔不回群〕` for routine background work
-that needs no response, or duplicate notices. It does not push a notification or
-mark a new unread reply; history retains an expandable gray “Silent turn hh:mm” row.
+For routine background work needing no response or duplicate notices, use
+`[silent]` in English or `〔静默消息〕` in Chinese. After trimming whitespace, a final
+reply starting or ending with either marker silences the whole turn: no push, unread
+count or main-stream message; records remain. A marker only in the middle is removed
+and the body is delivered. Marker text itself is never displayed.
 Direct questions, failures, approvals and required results must receive a normal reply.
+
+后台无事或重复通知可回 `〔静默消息〕`（英文 `[silent]`）。最终回复去首尾空白后，以标记开头或结尾即整条静默，不推送、不计未读、不进主消息流，记录保留。标记只在正文中间出现时，去掉标记后显示正文；标记本身不会展示。
 
 Codex's model label falls back to its native default model and then the first
 completed turn. OpenCode keeps the previous assistant's provider/model for quota
@@ -2498,13 +2502,13 @@ While the Codex App holds a session, the phone follows its actual model from loc
 
 **账号管付钱，席位管功能。** 一个邮箱一个账号，一个账号可以买多个席位；要几份账单就用几个不同邮箱开账号。席位是付费名额，Agent 是绑定在席位上的Agent J 主机或服务器，手机或浏览器是遥控器。账号页在「Agent（席位）」标题右侧增加席位：先确认单价、优惠与 Stripe 本期补差价，再购买。空席位的安装提示词显示 ••••，点击「复制安装提示词」时签发 7 天单次码并作废旧码；不要把码写进报告、日志或 git。
 
-**绑定成功后不要停下来，也不能宣布安装完成。** 运行 `agentj onboarding --json` 和 `agentj devices --json`，继续第 11、12 步：先这台 Agent J 主机的浏览器，再主力手机；至少配好遥控器并验收首条消息才报完成。先运行 `agentj pair --check --json`，打开返回的 `account_url`，在目标席位卡点「添加遥控器」。扫码后账号页自动显示「有遥控器等待配对」、六位确认码和「批准」，主人核对两边数字一致后批准，不需要点「查看待批准的遥控器」。首台只有账号页与主人终端 `agentj pair` 两个入口；本地 127 设置页只给账号页跳转。不要代主人确认、索要配对材料或写进报告。之后的遥控器打开 https://m.agentj.app 自助申请，由已配对遥控器扫码、核对并批准。首台成功后的欢迎和逐步导览照旧只发一次。
+**绑定成功后不要停下来，也不能宣布安装完成。** 运行 `agentj onboarding --json` 和 `agentj devices --json`，继续第 11、12 步：先这台 Agent J 主机的浏览器，再手机遥控器；至少配好遥控器并验收首条消息才报完成。先运行 `agentj pair --check --json`，打开返回的 `account_url`，在目标席位卡点「添加遥控器」。扫码后账号页自动显示「有遥控器等待配对」、六位确认码和「批准」，主人核对两边数字一致后批准，不需要点「查看待批准的遥控器」。首台只有账号页与主人终端 `agentj pair` 两个入口；本地 127 设置页只给账号页跳转。不要代主人确认、索要配对材料或写进报告。之后的遥控器打开 https://m.agentj.app 自助申请，由已配对遥控器扫码、核对并批准。首台成功后的欢迎和逐步导览照旧只发一次。
 
 转移到另一台Agent J 主机时，旧Agent J 主机直到新Agent J 主机绑定成功前照常工作，新Agent J 主机绑定成功后旧Agent J 主机解绑。遥控器必须重新配对；聊天记录留在旧Agent J 主机。取消席位到期后不再收费并自动解绑；更多菜单的「只解绑、保留空席位」继续计费并保留优惠，暂停续费在账单区。
 
 **Accounts pay; seats provide the features.** Each email has one account; buy multiple seats on it. Use separate email accounts for separate bills. A seat is a paid slot, an Agent is its computer or server, and a remote is a phone or browser. Confirm the unit price, existing price adjustment and Stripe's prorated charge before adding a seat. Empty cards show a masked installation prompt; copying issues a single-use seven-day code and revokes its previous unused code.
 
-**Do not finish installation at account binding.** Run `agentj onboarding --json` and `agentj devices --json`, then continue Steps 11–12 for the host browser and main phone. Run `agentj pair --check --json`, open `account_url` and choose Add a remote on the target seat card. After scanning, the page automatically shows the waiting remote, six-digit code and Approve. Compare, then approve. Do not open the local admin page for installation pairing; it only links to the account page. The other first-remote entry is `agentj pair` in the owner’s terminal. If a phone is already waiting, approve that waiting phone on the same seat without restarting pairing. Later devices request at https://m.agentj.app and a paired remote approves. Verify the first message before declaring setup complete. Moving a seat requires new pairing and leaves history on the old computer. Cancelling ends billing and unbinds at the paid boundary; unbinding alone keeps billing and the price adjustment.
+**Do not finish installation at account binding.** Run `agentj onboarding --json` and `agentj devices --json`, then continue Steps 11–12 for the host browser and phone remote. Run `agentj pair --check --json`, open `account_url` and choose Add a remote on the target seat card. After scanning, the page automatically shows the waiting remote, six-digit code and Approve. Compare, then approve. Do not open the local admin page for installation pairing; it only links to the account page. The other first-remote entry is `agentj pair` in the owner’s terminal. If a phone is already waiting, approve that waiting phone on the same seat without restarting pairing. Later devices request at https://m.agentj.app and a paired remote approves. Verify the first message before declaring setup complete. Moving a seat requires new pairing and leaves history on the old computer. Cancelling ends billing and unbinds at the paid boundary; unbinding alone keeps billing and the price adjustment.
 
 已有取消席位计划时，仍可增加席位或暂停、恢复续费。增购沿用原优惠；已取消的席位仍在原到期日移除，新增席位正常续费。暂停和恢复不会撤销取消计划。暂停期间请先恢复续费再增购。
 
@@ -2711,7 +2715,7 @@ Pair once; later opens automatically reconnect while the Agent J host keeps this
 Shared-mode startup and `agentj doctor` read managed, private local, project and user settings in native file precedence. If the effective writable value is not `accept`, they back it up and set accept (project policy uses a private local override; the shared project file stays intact). Managed settings are read-only and the phone names the blocking layer/value. **Start a new session or run /clear on the Agent J host for the change to take effect**; a session started earlier may still hold phone messages. Session/CLI or remote managed overrides cannot be verified from these files. `agentj config claude-inbound off` is temporary while shared mode is selected: its next startup/doctor restores accept. Do not resend an unacknowledged message before checking the desktop.
 
 ### 0.20.0 candidate: heartbeat and load-based parallel work
-The host wakes the main Agent by itself after a quiet spell (`heartbeat.interval_minutes`, default 60, 5–1440; `heartbeat.enabled`, default on) — on Claude Code, Codex and OpenCode, shared or independent, from `agentj serve` on the Agent J host (not the cloud). It waits while the Agent works, a message waits, a card is open, a compaction runs, the stop switch is on, or in the 03:00–05:00 upgrade window; any conversation moves it back. The message starts with 〔Agent J 心跳〕 and the short hash of `~/.config/agentj/heartbeat.md` (default template written on first start); the full prompt comes along only the first time after a restart, after it changed and after a compaction. A reply of exactly 〔不回群〕 stays silent; otherwise the phone shows a "Heartbeat check" page. Commands: `agentj heartbeat status`, `agentj heartbeat set 30m`, `agentj heartbeat off` / `on`, `agentj heartbeat now`, `agentj heartbeat prompt show` / `edit` / `reset` (they work inside the isolated session through serve); the phone's Settings → Heartbeat has the switch and the interval. Every heartbeat costs one model call. The main Agent's packaged identity is core v11 (adds the heartbeat and the `agentj-heartbeat` skill) and runs background work by load: `agentj busy capacity` prints cores, load, available memory, what already runs and "room for N more"; a harness's own concurrency limit still applies.
+The host wakes the main Agent by itself after a quiet spell (`heartbeat.interval_minutes`, default 60, 5–1440; `heartbeat.enabled`, default on) — on Claude Code, Codex and OpenCode, shared or independent, from `agentj serve` on the Agent J host (not the cloud). It waits while the Agent works, a message waits, a card is open, a compaction runs, the stop switch is on, or in the 03:00–05:00 upgrade window; any conversation moves it back. The message starts with 〔Agent J 心跳〕 and the short hash of `~/.config/agentj/heartbeat.md` (default template written on first start); the full prompt comes along only the first time after a restart, after it changed and after a compaction. After trimming whitespace, a final reply starting or ending with `[silent]` or `〔静默消息〕` stays silent; otherwise the phone shows a "Heartbeat check" page. Commands: `agentj heartbeat status`, `agentj heartbeat set 30m`, `agentj heartbeat off` / `on`, `agentj heartbeat now`, `agentj heartbeat prompt show` / `edit` / `reset` (they work inside the isolated session through serve); the phone's Settings → Heartbeat has the switch and the interval. Every heartbeat costs one model call. The main Agent's packaged identity is core v11 (adds the heartbeat and the `agentj-heartbeat` skill) and runs background work by load: `agentj busy capacity` prints cores, load, available memory, what already runs and "room for N more"; a harness's own concurrency limit still applies.
 
 ### 0.21.0a1 one-command install, remote pairing password, no silent first message
 The account page gives one command: `curl -fsSL https://agentj.app/install.sh | bash -s -- AJI-…` (macOS / Linux) or
@@ -2901,7 +2905,7 @@ Messages from the owner's own automations: the owner's scripts and timers post a
 name is off until the owner runs `agentj notify --allow <name>` (or switches it on in the phone's settings). An Agent can never post this way; a long task
 declares `"notify_webapp": true|false` in its `task.json` when it is made (default false). Each post also goes to the main
 Agent as one queued turn marked as data from a script (not the owner's words, not an instruction); with nothing to add the
-Agent replies 〔不回群〕 and nothing is shown. `--json` reports `"agent": "queued" | "no_agent" | "failed"`. The phone's
+Agent replies `[silent]` and nothing is shown. `--json` reports `"agent": "queued" | "no_agent" | "failed"`. The phone's
 Settings → Automation messages holds the master switch (`notify.enabled`) and a switch per automation and per Agent J
 task. Nothing to do at install.
 
@@ -3382,7 +3386,7 @@ After upgrading, the Agent J host checks itself. The receipt reports the version
 
 Claude Code installed with mise/asdf may have several versions. Agent J reports `ambiguous_install` and defaults to the highest executable numeric version unless a version was explicitly selected. Set `AGENTJ_CLAUDE_BIN` to an executable or select an installed version with mise/asdf. This is not `not_installed`.
 
-On a queued phone message, **Stop previous task / 停下上一件** uses the existing Stop command. After three minutes queued with no new earlier-turn output for three minutes, the queue page says so. New output resets that quiet window; reconnecting or reloading starts a new observation window. Stop keeps its existing interruption and queued-message handling.
+On a queued phone message, **Stop current task / 停止当前任务** uses the existing Stop command. After three minutes queued with no new earlier-turn output for three minutes, the queue page says so. New output resets that quiet window; reconnecting or reloading starts a new observation window. Stop keeps its existing interruption and queued-message handling.
 
 ### 好友任务与公开链上数据 / Friend tasks and public on-chain data
 

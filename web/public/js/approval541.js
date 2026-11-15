@@ -1,3 +1,4 @@
+import { friendsTellCard } from './friends-tell-card.js';
 // #541: presentation consumes the host-owned canonical envelope; it cannot grant authority.
 import { t, lang } from './t.js';
 import { el, toast } from './ui.js';
@@ -23,6 +24,7 @@ export function warnText(src){
  return t('p0304.quote',{ch:t('p0304.qch.'+(QUOTE_CH.has(src.channel)?src.channel:'other'))});
 }
 export function reset(){
+ el('apprAllow').setAttribute('aria-label',t('r.appr.allowAria'));
  active=false;current=null;el("sheet").removeAttribute("data-approval-v");
  for(const id of ['warn541','source541','action541','details541','doubt541c'])el(id).hidden=true;
  el('apprBtns').classList.remove('buttons541c');
@@ -52,9 +54,11 @@ export function paint(p, options){
  // @ix appr.source
  source.disabled=outside||!src.message_id;
  source.onclick=async()=>{if(!source.disabled){options.fold();await options.locate(src);}};
- const action=el('action541');action.hidden=false;action.textContent=stepReason(e);
+ const action=el('action541');action.hidden=false;action.textContent=stepReason(e,p);
  if(e.plan?.display){action.append(text('span','scope541','\n'+((lang()==='en'&&e.plan.display_en)||e.plan.display)));}
- el('sheetTitle').textContent=stepTitle(e,t('p336.faTitle'));
+ el('sheetTitle').textContent=stepTitle(e,t('p336.faTitle'),p);
+ if(friendsTellCard(e,p))el('apprAllowLbl').textContent=lang()==='en'?'Verify · send once':'验证并仅发送这一次';
+ el('apprAllow').setAttribute('aria-label',friendsTellCard(e,p)?el('apprAllowLbl').textContent:t('r.appr.allowAria'));
  el('askText').textContent=t('p541.wait');el('askTags').hidden=true;el('cmdToggle').hidden=true;el('goalInfo').hidden=true;
  for(const id of ['apprBatch','apprGoalAdd','apprKbd','cmdCopy'])el(id).hidden=true;
  const task=el('apprTask');if(task)task.hidden=true;

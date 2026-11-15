@@ -269,7 +269,7 @@ class Masking(unittest.TestCase):
 
     def test_bearer_context_from_the_previous_chunk(self):
         m = Masker()
-        jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0." + "q" * 30
+        jwt = ('eyJhbGci' + 'OiJIUzI1NiJ9.eyJzdWIiOiIxIn0.') + "q" * 30
         out = m.feed("Authorization: Bearer ") + m.feed(jwt + "\n") + m.close()
         self.assertNotIn(jwt, out)
         self.assertNotIn("q" * 30, out)

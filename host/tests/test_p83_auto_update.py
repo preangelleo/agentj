@@ -5,6 +5,9 @@ import hashlib
 import io
 import json
 import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import time
@@ -27,21 +30,49 @@ class Nightly(unittest.TestCase):
     def due(self,now=None,**kw):return au.due(self.st,now=self.now if now is None else now,rand=lambda _:0,**kw)
     def test_default_on_and_explicit_off_survives(self):
         self.assertTrue(au.enabled(self.st))
-        with patch('builtins.print'):
-            self.assertEqual(au.command(['off']),0)
+        for initial,command in ((True,'off'),(False,'on')):
+            # Arrange opposite effective values; a no-op is not evidence of an authorized change.
+            path=preferences.ensure()
+            path.write_text(preferences.edit(path.read_text(),'updates.auto_install',initial))
+            self.assertEqual(au.enabled(self.st),initial)
+            before=path.read_bytes()
+            with patch('builtins.print'):
+                self.assertEqual(au.command([command]),3)
+            self.assertEqual(path.read_bytes(),before,'offline never changes a UV-bound key')
+            self.assertEqual(au.enabled(self.st),initial)
         self.assertFalse(au.enabled(self.st));self.assertFalse(self.due())
         self.assertFalse(au.read(self.st).get('attempted',False))
-        with patch('builtins.print'):self.assertEqual(au.command(['on']),0)
-        self.assertTrue(au.enabled(self.st))
     def test_window_random_persisted_and_at_most_once(self):
         self.assertFalse(au.due(self.st,now=self.now-1,rand=lambda _:123))
         self.assertEqual(au.read(self.st)['second'],10923)
         self.assertTrue(au.due(self.st,now=self.now+123,rand=Mock(side_effect=AssertionError)))
         self.assertFalse(self.due(self.now+124))
-    def test_busy_skip_reschedules_next_local_date(self):
-        self.assertFalse(self.due(blocked=True));self.assertFalse(self.due(self.now+1800))
+    def test_busy_waits_for_idle_within_the_same_night(self):
+        self.assertFalse(self.due(blocked=True))
         self.assertEqual(au.read(self.st)['decision'],'busy')
+        self.assertFalse(au.read(self.st)['attempted'])
+        self.assertFalse(self.due(self.now+30,blocked=True))
+        self.assertTrue(self.due(self.now+1800))
+        self.assertFalse(self.due(self.now+1830))
         self.assertTrue(self.due(self.now+86400))
+
+    def test_recent_phone_waits_until_idle_but_never_past_five(self):
+        au.touch(self.st,self.now-60)
+        self.assertFalse(self.due())
+        self.assertTrue(self.due(self.now+au.IDLE))
+        self.assertFalse(self.due(self.now+au.IDLE+30))
+        tomorrow=self.now+86400
+        self.assertFalse(self.due(tomorrow,blocked=True))
+        self.assertFalse(self.due(tomorrow+7200))
+        self.assertEqual(au.read(self.st)['decision'],'window_missed')
+
+    def test_window_deferral_records_only_reason_changes(self):
+        with patch('agentj.activity.record') as record:
+            self.assertFalse(self.due(blocked=True))
+            self.assertFalse(self.due(self.now+30,blocked=True))
+            self.assertEqual(record.call_count,1)
+            self.assertFalse(self.due(self.now+60,stopped=True))
+            self.assertEqual(record.call_count,2)
     def test_stopped_and_recent_phone_skip(self):
         self.assertFalse(self.due(stopped=True));self.assertEqual(au.read(self.st)['decision'],'stopped')
         au.touch(self.st,self.now+86400-1799)
@@ -208,4 +239,129 @@ class Worker(Nightly):
             args=launch.call_args;self.assertTrue(args.kwargs['restart']);self.assertEqual(args.args[2],'autoupdate')
             self.assertTrue((Path(args.args[1][1]).parent/'agentj/auto_update.py').is_file())
 
+class NightlyInstallJourney(Nightly):
+    @unittest.skipUnless(shutil.which('uv'), 'isolated wheel installer requires uv')
+    def test_busy_night_reaches_real_isolated_wheel_install_once(self):
+        target=Path(self.tmp.name)/'fixture-venv'
+        subprocess.run([sys.executable,'-m','venv','--without-pip',str(target)],check=True,capture_output=True)
+        paths={}; keys={}
+        for version in (__version__,'99.0.0a1'):
+            body=io.BytesIO()
+            with zipfile.ZipFile(body,'w') as z:
+                dist=f'agentj-{version}.dist-info'
+                z.writestr(dist+'/METADATA',f'Metadata-Version: 2.1\nName: agentj\nVersion: {version}\n')
+                z.writestr(dist+'/WHEEL','Wheel-Version: 1.0\nGenerator: isolated-nightly-fixture\nRoot-Is-Purelib: true\nTag: py3-none-any\n')
+                z.writestr('nightly_fixture.py',"import json,sys\nprint(json.dumps({'checks':[{'id':'main-core','status':'ok'}]}) if 'doctor' in sys.argv else 'agentj "+version+"')\n")
+                z.writestr(dist+'/RECORD','')
+            data=body.getvalue(); digest=hashlib.sha256(data).hexdigest()
+            k=Ed25519PrivateKey.generate();kid=version.encode()[:8].ljust(8,b'0')
+            sig=k.sign(hashlib.blake2b(data,digest_size=64).digest())
+            comment=f'agentj-host/v1 version={version} sha256={digest}'
+            signature='untrusted comment: fixture\n'+base64.b64encode(b'ED'+kid+sig).decode()+'\ntrusted comment: '+comment+'\n'+base64.b64encode(k.sign(sig+comment.encode())).decode()+'\n'
+            keys[au.minisign.key_id_hex(kid)]=base64.b64encode(b'Ed'+kid+k.public_key().public_bytes_raw()).decode()
+            wheel=self.st.root/f'agentj-{version}-py3-none-any.whl';wheel.write_bytes(data)
+            wheel.with_suffix('.verified.json').write_text(json.dumps({'sha256':digest,'signature':signature}))
+            paths[version]=wheel
+        info={'kind':'pip','where':str(target)}
+        argv=[str(target/'bin/python'),'-m','nightly_fixture']; launched=[]; restarted=[]
+        runner=lambda cmd:subprocess.run(cmd,capture_output=True,text=True,timeout=60)
+        self.assertFalse(self.due(blocked=True))
+        with patch.object(update,'install_kind',return_value=info),patch.object(update,'new_argv',return_value=argv),patch.object(au.minisign,'keyring',lambda role:keys):
+            for seconds in (1800,1830,1860):
+                if self.due(self.now+seconds,newer=getattr(self,'known_newer',False)):
+                    launched.append(seconds)
+                    if au.read(self.st,au.JOB).get('phase')=='done':
+                        (self.st.root/au.JOB).unlink()  # same completed-job removal as Host.update_loop
+                    result=au.run(self.st,check_fn=lambda:{'status':'newer','latest':'99.0.0a1'},cache=lambda st,v,**kw:paths[v],runner=runner,restart=restarted.append)
+                    self.assertEqual(result['result'],'ok')
+        self.assertEqual(launched,[1800]);self.assertEqual(restarted,['99.0.0a1'])
+        self.assertEqual(runner(argv+['--version']).stdout.strip(),'agentj 99.0.0a1')
+        self.assertIsNone(au.take_notice(self.st), 'old running host must not claim the new version')
+        with patch.object(au,'__version__','99.0.0a1'):
+            self.assertIn('99.0.0a1',au.take_notice(self.st))
+            self.assertIsNone(au.take_notice(self.st))
+
+class KnownNewerNightlyJourney(NightlyInstallJourney):
+    known_newer=True
+
+    def test_idle_opportunity_before_three_does_not_relaunch_at_random_night_time(self):
+        self.assertTrue(self.due(self.now-1,newer=True))
+        self.assertFalse(self.due(self.now,newer=True))
+        self.assertFalse(self.due(self.now+30,newer=True))
+
+    def test_no_newer_at_night_preserves_automatic_daytime_new_release(self):
+        self.assertTrue(self.due())
+        self.assertIsNone(au.run(self.st,check_fn=lambda:{'status':'current'}))
+        self.assertTrue(self.due(self.now+9*3600,newer=True))
+        self.assertFalse(self.due(self.now+9*3600+30,newer=True))
+
+    def test_worker_reservation_only_blocks_while_held(self):
+        from agentj import phone_update
+        self.assertTrue(phone_update.reserve(self.st))
+        self.assertFalse(phone_update.reserve(self.st))
+        phone_update.release(self.st)
+        self.assertTrue(phone_update.reserve(self.st))
+        phone_update.release(self.st)
+
 if __name__=='__main__':unittest.main()
+
+
+class SignedAutoInstallConfig(unittest.IsolatedAsyncioTestCase):
+    """Auto off/on persists only after a real paired signature and fresh synthetic WebAuthn UV."""
+    async def asyncSetUp(self):
+        from _p541_device import Phone, _owner_host
+        from test_l1 import _state, _ready
+        from agentj import approval_review, approval_jev, provenance
+        from types import SimpleNamespace
+        tmp=tempfile.TemporaryDirectory(prefix='p83-uv-');self.addCleanup(tmp.cleanup)
+        self.root=Path(tmp.name)
+        env=patch.dict(os.environ,{'HOME':str(self.root),'XDG_CONFIG_HOME':str(self.root/'config'),
+                                  'AGENTJ_STATE_DIR':str(self.root/'s')})
+        env.start();self.addCleanup(env.stop)
+        self.st=_state(tmp.name);preferences.ensure()
+        self.sent=[];self.host=_owner_host(self.st,self.sent);self.host.ask_ttl=5
+        self.phone=Phone(self.st,with_passkey=True);self.session=_ready(self.host,self.phone)
+        page=self.host.hist_add({'k':'phone','name':'你','text':'Synthetic auto-update setting request.'},'','done')
+        origin=approval_review.remember(self.host,page,provenance.phone())
+        self.host.agent.cur_send=SimpleNamespace(approval_origin=origin,source=provenance.phone())
+        no_jev=patch.object(approval_jev,'available',return_value=False);no_jev.start();self.addCleanup(no_jev.stop)
+        self.server=await asyncio.start_unix_server(self.host.on_ctl,str(self.st.sock_path))
+        self.addAsyncCleanup(self.cleanup_server)
+
+    async def cleanup_server(self):
+        self.server.close();await self.server.wait_closed()
+        for ask in list(self.host.asks.values()):
+            if not ask.fut.done():ask.fut.set_result(('deny',None,None,None))
+        await asyncio.gather(*list(getattr(self.host,'_ctl_bg',())),return_exceptions=True)
+
+    async def wait(self, predicate):
+        for _ in range(200):
+            if predicate():return
+            await asyncio.sleep(.005)
+        self.fail('auto-install approval did not reach its bounded fixture state')
+
+    async def request(self,value):
+        raw=preferences.edit(preferences.read()[0],'updates.auto_install',value)
+        reader,writer=await asyncio.open_unix_connection(str(self.st.sock_path))
+        try:
+            writer.write((json.dumps({'cmd':'config_apply','raw':raw})+'\n').encode());await writer.drain()
+            result=json.loads(await reader.readline())
+        finally:
+            writer.close();await writer.wait_closed()
+        self.assertEqual(result.get('code'),'owner_approval',result)
+        await self.wait(lambda:bool(self.host.asks))
+        return next(iter(self.host.asks.values()))
+
+    async def test_signed_without_uv_cannot_write_then_fresh_uv_off_on_persists(self):
+        for value in (False,True):
+            before=preferences.path().read_bytes();ask=await self.request(value)
+            self.assertTrue(ask.require_passkey)
+            no_uv=self.phone.answer(self.host._ask_msg(ask,self.session),True);no_uv.pop('fa')
+            await self.host._answer(self.session,no_uv)
+            self.assertFalse(ask.fut.done());self.assertFalse(ask.uv_ok)
+            self.assertEqual(preferences.path().read_bytes(),before)
+            await self.host._answer(self.session,self.phone.answer(self.host._ask_msg(ask,self.session),True))
+            await self.wait(lambda:preferences.get(preferences.read()[1],'updates.auto_install') is value)
+            self.assertEqual(preferences.get(self.host.preferences,'updates.auto_install'),value)
+            self.assertEqual(au.enabled(self.st),value)
+            await self.wait(lambda:not getattr(self.host,'_ctl_bg',()))

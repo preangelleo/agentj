@@ -86,3 +86,14 @@ test('hold / wipe: a refused clipboard keeps nothing after wipe()', () => {
   keys.wipe();
   assert.equal(keys.holding(), false);
 });
+
+
+test('Relay rows already represented by the dedicated vendor do not repeat as third-party keys', () => {
+  const fixture = keysMsg('Y3JlZC1pZA');
+  const names = ['AGENTSRELAY_CLAUDE_KEY', 'AGENTSRELAY_OPENAI_KEY'];
+  fixture.base.push({id:'agentsrelay',name:{zh:'Agents Relay',en:'Agents Relay'},rows:names.map(name => ({type:'key',name,set:false}))});
+  fixture.third = [...names.map(name => ({name,set:true})), {name:'ORDINARY_API_KEY',set:true}];
+  assert.deepEqual(keys.parse(fixture).third.map(r => r.name), ['ORDINARY_API_KEY']);
+  fixture.base = fixture.base.filter(v => v.id !== 'agentsrelay');
+  assert.deepEqual(keys.parse(fixture).third.map(r => r.name), [...names,'ORDINARY_API_KEY']);
+});

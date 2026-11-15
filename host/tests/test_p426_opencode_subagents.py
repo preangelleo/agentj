@@ -200,7 +200,7 @@ class Adapter(unittest.TestCase):
                                                                  "resources": ["rm -rf x"]}})
                 await asyncio.sleep(0.05)
             self.assertEqual(asks[0][0], "Bash")
-            self.assertEqual(asks[0][2], {"origin": "来自子 Agent：general · 写报告"})
+            self.assertEqual(asks[0][2], {"origin": "来自子 Agent：general · 写报告", "_harness_permission": True})
             self.assertIn(("POST", "/api/session/ses_kid/permission/per_1/reply", {"decision": "reject", "message": "no"}),
                           a.client.calls)
             # a request from a session that is not ours (no parent of ours): never a card
@@ -215,6 +215,11 @@ class Adapter(unittest.TestCase):
         async def go():
             a, asks, notices = agent(oc2.OpenCodeV2Agent, answers={
                 ("GET", "/api/session/ses_late"): (200, {"data": {"id": "ses_late", "parentID": "ses_main", "agent": "explore"}})})
+            # Ordinary native rules now remain untouched. Give this inheritance
+            # negative control an actual native ask rule to protect.
+            a.rules = oc2.rules_to_v2([{"permission":"bash","pattern":"*","action":"ask"}])
+            self.assertTrue(a.rules)
+            self.assertTrue(a._sub_mode())
             a.on_event({"type": "form.created", "data": {"form": {"id": "frm_1", "sessionID": "ses_late", "fields": [
                 {"key": "c", "type": "string", "title": "Which?", "options": [{"value": "r", "label": "Red"}]}]}}})
             await asyncio.sleep(0.05)
@@ -273,7 +278,7 @@ class Adapter(unittest.TestCase):
         asyncio.run(go())
 
 
-FRIEND = {"kind": "friend_task", "role": "task"}
+FRIEND = provenance.HostDelegated({"kind": "friend_task", "role": "task"})
 GROUP = {"kind": "telegram", "role": "group", "sender": 7, "chat": -100, "profile": "proxy", "owner_id": False}
 
 
@@ -322,7 +327,22 @@ class Source(unittest.TestCase):
 
     def check_friend_child_after_turn(self, cls):
         async def go():
+            from copy import deepcopy
             a, asks, seen = self.spy(cls)
+            questions = []
+            original_question = a.host.question
+            async def question(card, gone=None, task=None):
+                source = provenance.turn_source(a)
+                facts = (provenance.untrusted_turn(a), provenance.delegated_turn(a))
+                result = await original_question(card, gone, task)
+                questions.append((source, facts, result))
+                return result  # Picks only: no approval behavior, UV proof or grant.
+            a.host.question = question
+            authority_keys = ('permissions','risk_grants','task_grants','capabilities',
+                              '_owner_approval_origin','_native_approval_origin')
+            def authority():
+                return deepcopy([(who, key, getattr(obj,key,None)) for who,obj in (('agent',a),('host',a.host))
+                                 for key in authority_keys])
             with mock.patch.object(a, "_sub_mode", return_value=False):
                 self.turn(a, FRIEND)
                 self.created(a, "ses_f")
@@ -338,14 +358,14 @@ class Source(unittest.TestCase):
                 await asyncio.sleep(0.05)
                 self.assertEqual(seen[-1], ("Bash", "rm -rf y", True, True))
                 self.assertFalse(provenance.untrusted_turn(a))        # outside the request: nothing leaks
-                # a group member's sub-agent: refused (untrusted, not delegated) — its question never reaches the phone
+                # Native non-authorizing questions route normally; group provenance never becomes an owner grant.
                 self.turn(a, GROUP)
                 self.created(a, "ses_g")
                 self.end(a)
                 self.perm(a, "per_4", "ses_g", "rm z")
                 await asyncio.sleep(0.05)
                 self.assertEqual(seen[-1], ("Bash", "rm z", True, False))
-                n = len(asks)
+                n, approvals_before, authority_before = len(questions), len(seen), authority()
                 if a.v2:
                     a.on_event({"type": "form.created", "data": {"form": {"id": "frm_g", "sessionID": "ses_g", "fields": [
                         {"key": "c", "type": "string", "title": "Which?", "options": [{"value": "r", "label": "Red"}]}]}}})
@@ -353,9 +373,20 @@ class Source(unittest.TestCase):
                     a.on_event({"type": "question.asked", "properties": {"id": "que_g", "sessionID": "ses_g", "questions": [
                         {"question": "哪个？", "header": "", "options": [{"label": "A"}]}]}})
                 await asyncio.sleep(0.05)
-                self.assertEqual(len(asks), n, "no question card for a group member's sub-agent")
-                self.assertTrue(any(c[0] in ("POST", "DELETE") and ("/reject" in c[1] or c[0] == "DELETE")
-                                    for c in a.client.calls))
+                self.assertEqual(len(questions), n + 1)
+                source, facts, result = questions[-1]
+                self.assertEqual(source, provenance.normalize(GROUP))
+                self.assertEqual(facts, (True, False), 'group input remains untrusted and not delegated')
+                self.assertEqual(result, ('answer', [[1]]), 'question returns picks, never approval material')
+                self.assertEqual(len(seen), approvals_before, 'a question never invokes the tool approval spy')
+                self.assertEqual(authority(), authority_before, 'picks create no UV, grant or capability')
+                if a.v2:
+                    self.assertIn(('POST','/api/session/ses_g/form/frm_g/reply',{'answer':{'c':'r'}}),a.client.calls)
+                    self.assertIn(('POST','/api/session/ses_g/permission/per_4/reply',
+                                   {'decision':'reject','message':'no'}),a.client.calls)
+                else:
+                    self.assertIn(('POST','/question/que_g/reply',{'answers':[['A']]}),a.client.calls)
+                    self.assertIn(('POST','/permission/per_4/reply',{'reply':'reject','message':'no'}),a.client.calls)
             # a child started in the owner's turn stays the owner's (P198 / goal unchanged)
             a2, _, seen2 = self.spy(cls)
             with mock.patch.object(a2, "_sub_mode", return_value=False):

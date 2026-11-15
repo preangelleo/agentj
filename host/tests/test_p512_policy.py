@@ -48,7 +48,9 @@ P553_UNKNOWN_BEFORE = frozenset({
 # category projection. Native spellings/command text do not become executors.
 P0300_UV_HOST = frozenset({'pair_device','AuthRescue','agentj mail workflow-grant',
                          'agentj goal grant','agentj secret grant',
-                         'agentj automation grant'})   # 0304 A3: automation outbound-send grant (UV list)
+                         'agentj automation grant',
+                         # 0.30.22: closed, reviewed friend-send/local-record/local-relink executors; never derive from the runtime table.
+                         'FriendsTellOnce','agentj local record','agentj local relink'})
 P0300_REVIEWED_ACTIONS = {'plan.bounded': {'main':'uv','channel':'handoff','friend':'handoff','support':'deny'}}
 
 

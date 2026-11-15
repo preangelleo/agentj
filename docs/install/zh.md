@@ -197,7 +197,7 @@ agentj support ask "<你的问题>" --attach-doctor
 | 屏幕上 | 你要做的 |
 |---|---|
 | 安装码 | 命令里带了码就直接用；没带会让你粘贴一次（不显示） |
-| 系统组件 | 会装 bubblewrap 和 socat（让 Agent 在隔离里运行），可能要输入一次Agent J 主机密码（输入时不显示） |
+| 系统组件 | 会装 bubblewrap（Agent J 隔离）；只有 Claude Code 自带沙箱需要 socat，可能要输入一次Agent J 主机密码（输入时不显示） |
 | AI | 已经登录过 Claude Code 或 Codex 就直接用。没有就选一条路：连不上官方服务选 Agents Relay 中转（见[香港和中国大陆](/docs/install/#hk-cn)），能连就在浏览器里登录官方账号 |
 | Agent J | 不用做：装好、启动后台服务、用同一个码绑定这个席位 |
 | 手机 | 屏幕上出现二维码：用**你自己的手机**打开 https://m.agentj.app ，点「扫二维码」扫它 |
@@ -328,7 +328,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装Agent J 主机端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.30.21#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.30.22#subdirectory=host"
 agentj doctor
 ```
 

@@ -101,7 +101,9 @@ class SeatBindUnit(unittest.TestCase):
             self.assertEqual(cloud.seat_bind(self.st, cp.url, code, "Wren3")["status"], "invalid_setup")
         log = self.st.log_path.read_text()
         self.assertNotIn(code, log)
-        self.assertIn('"ev": "seat_bind", "result": "invalid_setup", "status": "http_4xx"', log)
+        rows = [json.loads(line) for line in log.splitlines()]
+        self.assertTrue(any(r.get('ev') == 'seat_bind' and r.get('result') == 'invalid_setup'
+                            and r.get('status') == 'http_4xx' for r in rows))
         self.assertEqual(self.leaked(code), [])
 
     def test_local_refusals_send_nothing(self):

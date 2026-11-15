@@ -41,7 +41,7 @@ class PreferenceChecksTest(unittest.TestCase):
     def test_data_layer_has_no_state_or_runtime_imports_at_any_depth(self):
         root = Path(__file__).resolve().parents[1] / 'agentj'
         allowed = {'__future__', 'copy', 'json', 'pathlib', 're', 'json5',
-                   'urllib.parse', 'preference_values'}
+                   'urllib.parse', 'preference_values', 'math'}
         for name in ('preference_data', 'preference_values', 'preference_checks'):
             tree = ast.parse((root / (name + '.py')).read_text())
             for node in ast.walk(tree):

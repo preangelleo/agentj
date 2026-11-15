@@ -389,6 +389,9 @@ def cmd_terminal(a) -> None:
         return _agent_cmd(a)
     st = State()
     if not st.exists():
+        from . import fence
+        if fence.inside():
+            sys.exit(fence.hidden_state())
         sys.exit("✗ 还没初始化：先运行 agentj init。/ Not set up yet: run agentj init.")
     req = {"cmd": "terminal_cfg", "op": a.action}
     if a.action in WIDEN:

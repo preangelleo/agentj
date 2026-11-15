@@ -74,6 +74,31 @@ def publisher(st, d: dict, sha: str, m: dict, official: bool) -> dict:
     return {"fp": fp, "short": plaza_trust.short_fp(fp), "known": known, "prev": prev, "changed": known and prev != fp}
 
 
+def review_refusal_diagnostic(st, detail: dict, sha: str, manifest: dict) -> str:
+    """Evidence-only explanation after an already-final review-signature refusal.
+
+    Existing publisher() verifies exact package bytes. Server track/certified
+    claims never establish publisher identity; no keys, URLs or labels are echoed.
+    This helper cannot authorize, record TOFU, grant permission or weaken refusal.
+    """
+    try:
+        proof = publisher(st, detail, sha, manifest, False)
+    except (PublisherMismatch, OSError, ValueError, TypeError):
+        return ("发布方签名无法验证，不能据此确认身份或审核状态；仍拒绝。 / "
+                "The publisher signature cannot be verified; identity and review status cannot be established; still refused.")
+    if proof['fp'] is None:
+        return ("当前没有可验证的发布方签名，无法判断同发布方或待审核；仍拒绝。 / "
+                "There is no verifiable publisher signature; matching publisher identity or pending review cannot be established; still refused.")
+    if not proof['known'] or proof['prev'] is None:
+        return ("当前发布方签名已核验，但没有可匹配的本地已签发布方记录，无法判断同发布方；仍拒绝。 / "
+                "The publisher signature is verified, but cannot establish a matching publisher identity from local history; still refused.")
+    if proof['fp'] != proof['prev']:
+        return ("发布方签名已核验，但与本地记录不同，不能归因为仅待审核；仍拒绝。 / "
+                "The verified publisher differs from the local record; this cannot be described as only pending review; still refused.")
+    return ("发布方签名已核验且与本地记录一致，但发布方签名不等于 Agent J 审核签名，也不能证明本版本仅待审核；仍拒绝。 / "
+            "The verified publisher matches the local record, but publisher signing is not Agent J review and does not prove this version is only pending review; still refused.")
+
+
 def publisher_lines(p: dict, official: bool) -> list[str]:
     if official and not p["fp"]:
         who = "Agent J 官方发布（官方签名在本机核验）/ published by Agent J (official signature checked here)"

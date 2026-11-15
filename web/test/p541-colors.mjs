@@ -25,7 +25,7 @@ try{
   const p=await H.setup(390,844,theme);
   await sample(p,theme+' expanded',['#source541','#action541','#details541 summary','#apprAllow','#doubt541c','#apprDeny']);
   await H.ev(p,`document.getElementById('details541').querySelector('summary').click()`);
-  await sample(p,theme+' details',['#details541 .cmd']);
+  await sample(p,theme+' details',['#details541 #cmd']);
   await H.ev(p,`document.getElementById('sheetClose').click()`);await sleep(100);
   await sample(p,theme+' folded',['#omText']);
   await H.ev(p,`document.getElementById('pending541').click()`);await waitFor(p,`document.body.dataset.sheet==='1'`);

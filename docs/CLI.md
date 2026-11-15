@@ -147,7 +147,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,delete,rm,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,fn,uv,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding,usage,learn,form} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,api,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,delete,rm,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,fn,uv,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,relay,busy,decide,local-model,recall,bots,friends,local,codex-sandbox,migrate,alias,instances,label,onboarding,usage,learn,form} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -388,6 +388,174 @@ usage: agentj alias [-h] [--json] [{status,install,remove}]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `mode` | `"status"` | false | `status`, `install`, `remove` | `` |
 | `--json` | `false` | false | — | `` |
+
+### agentj api
+
+```text
+Seat API: owner reads and signed management proposals / 席位 API 管理
+```
+
+```bash
+agentj api --help
+```
+
+```text
+usage: agentj api [-h]
+                  {list,usage,workflows,spec,review,manifest,request,result} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj api list
+
+```text
+
+```
+
+```bash
+agentj api list --help
+```
+
+```text
+usage: agentj api list [-h]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj api manifest
+
+```text
+
+```
+
+```bash
+agentj api manifest --help
+```
+
+```text
+usage: agentj api manifest [-h] endpoint
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `endpoint` | `null` | true | — | `` |
+
+### agentj api request
+
+```text
+
+```
+
+```bash
+agentj api request --help
+```
+
+```text
+usage: agentj api request [-h] --file FILE
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--file` | `null` | true | — | `` |
+
+### agentj api result
+
+```text
+
+```
+
+```bash
+agentj api result --help
+```
+
+```text
+usage: agentj api result [-h] proposal
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `proposal` | `null` | true | — | `` |
+
+### agentj api review
+
+```text
+
+```
+
+```bash
+agentj api review --help
+```
+
+```text
+usage: agentj api review [-h] endpoint
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `endpoint` | `null` | true | — | `` |
+
+### agentj api spec
+
+```text
+
+```
+
+```bash
+agentj api spec --help
+```
+
+```text
+usage: agentj api spec [-h] endpoint
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `endpoint` | `null` | true | — | `` |
+
+### agentj api usage
+
+```text
+
+```
+
+```bash
+agentj api usage --help
+```
+
+```text
+usage: agentj api usage [-h]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj api workflows
+
+```text
+
+```
+
+```bash
+agentj api workflows --help
+```
+
+```text
+usage: agentj api workflows [-h]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
 
 ### agentj approvals
 
@@ -2888,7 +3056,7 @@ usage: agentj doctor [-h] [--json] [--latency] [--read-only] [--offline]
 | `--offline` | `false` | false | — | `skip the network checks` |
 | `--isolation-only` | `false` | false | — | `isolation preflight only, no user state or network` |
 | `--post-upgrade` | `false` | false | — | `repair post-upgrade root and connection` |
-| `--upgrade-only` | `false` | false | — | `package and service integrity only` |
+| `--upgrade-only` | `false` | false | — | `package, service and read-only local patch checks` |
 | `--reconnect` | `false` | false | — | `phone grey or disconnected: check service, relay and Agent, repair the broken one` |
 | `--session` | `null` | false | — | `with --reconnect: attach this session ID` |
 
@@ -3003,12 +3171,33 @@ agentj file --help
 ```
 
 ```text
-usage: agentj file [-h] {show} ...
+usage: agentj file [-h] {show,send} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj file send
+
+```text
+Send one file to your bound WeChat
+```
+
+```bash
+agentj file send --help
+```
+
+```text
+usage: agentj file send [-h] --to {wechat} [--json] path
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `path` | `null` | true | — | `` |
+| `--to` | `null` | true | `wechat` | `` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj file show
 
@@ -3822,8 +4011,8 @@ agentj friends tell --help
 ```
 
 ```text
-usage: agentj friends tell [-h] [--json] [--actions ACTIONS] [--grant GRANT]
-                           [--reply-to REPLY_TO]
+usage: agentj friends tell [-h] [--json] [--sandbox-card] [--actions ACTIONS]
+                           [--grant GRANT] [--reply-to REPLY_TO]
                            friend text [text ...]
 ```
 
@@ -3833,6 +4022,7 @@ usage: agentj friends tell [-h] [--json] [--actions ACTIONS] [--grant GRANT]
 | `--json` | `false` | false | — | `machine-readable output` |
 | `friend` | `null` | true | — | `` |
 | `text` | `null` | true | — | `` |
+| `--sandbox-card` | `false` | false | — | `one signed send card for this message only` |
 | `--actions` | `null` | false | — | `exact action plan JSON file` |
 | `--grant` | `null` | false | — | `signed same-owner task grant` |
 | `--reply-to` | `null` | false | — | `task reply id` |
@@ -5178,6 +5368,29 @@ usage: agentj learn status [-h] [--json]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
 
+### agentj local
+
+```text
+local records, inspection and owner-skill links
+```
+
+```bash
+agentj local --help
+```
+
+```text
+usage: agentj local [-h] [--json] [--contract CONTRACT]
+                    {check,record,relink} [id]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `null` | true | `check`, `record`, `relink` | `` |
+| `id` | `null` | false | — | `relink: registered feature fN / 已登记功能编号` |
+| `--json` | `false` | false | — | `` |
+| `--contract` | `null` | false | — | `record: local baseline/feature JSON contract / 本地基线或功能合同` |
+
 ### agentj local-model
 
 ```text
@@ -5576,7 +5789,7 @@ agentj plaza --help
 
 ```text
 usage: agentj plaza [-h]
-                    {search,show,mine,post,reply,resolve,report,install,request,publish,like,verify,installed,partners} ...
+                    {search,show,mine,post,reply,resolve,report,install,request,publish,like,verify,uninstall,installed,partners} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -5893,6 +6106,29 @@ usage: agentj plaza show [-h] [--json] [--version VERSION] id
 | `id` | `null` | true | — | `pz_… or a package name` |
 | `--json` | `false` | false | — | `` |
 | `--version` | `null` | false | — | `包的版本（只对包）/ package version` |
+
+### agentj plaza uninstall
+
+```text
+move an owned install to backup after signed phone confirmation
+```
+
+```bash
+agentj plaza uninstall --help
+```
+
+```text
+usage: agentj plaza uninstall [-h] [--harness {claude_code,codex,opencode}]
+                              [--preview]
+                              name
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `` |
+| `--harness` | `null` | false | `claude_code`, `codex`, `opencode` | `` |
+| `--preview` | `false` | false | — | `read-only preview; no card or move` |
 
 ### agentj plaza verify
 
@@ -6356,6 +6592,140 @@ usage: agentj recall [-h] [--days DAYS] [--date DATE] [--limit LIMIT] [--json]
 | `--date` | `null` | false | — | `only this day` |
 | `--limit` | `10` | false | — | `最多几条（≤ 50）/ at most N hits` |
 | `--json` | `false` | false | — | `` |
+
+### agentj relay
+
+```text
+dispatch through the current Agents Relay profile
+```
+
+```bash
+agentj relay --help
+```
+
+```text
+usage: agentj relay [-h] {status,stats,codex,claude,check} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj relay check
+
+```text
+one minimal fixed-text Codex Relay request; may use provider quota
+```
+
+```bash
+agentj relay check --help
+```
+
+```text
+usage: agentj relay check [-h]
+                          [--sandbox {read-only,workspace-write,danger-full-access}]
+                          [--model MODEL] [--base-url BASE_URL]
+                          [--report REPORT]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--sandbox` | `null` | false | `read-only`, `workspace-write`, `danger-full-access` | `` |
+| `--model` | `null` | false | — | `` |
+| `--base-url` | `null` | false | — | `background-only exact Agents Relay /v1 HTTPS URL; requires --model; preserves official settings` |
+| `--report` | `null` | false | — | `` |
+
+### agentj relay claude
+
+```text
+not yet supported by the Host adapter
+```
+
+```bash
+agentj relay claude --help
+```
+
+```text
+usage: agentj relay claude [-h]
+                           [--sandbox {read-only,workspace-write,danger-full-access}]
+                           [--model MODEL] [--base-url BASE_URL]
+                           [--report REPORT]
+                           prompt
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--sandbox` | `null` | false | `read-only`, `workspace-write`, `danger-full-access` | `` |
+| `--model` | `null` | false | — | `` |
+| `--base-url` | `null` | false | — | `background-only exact Agents Relay /v1 HTTPS URL; requires --model; preserves official settings` |
+| `--report` | `null` | false | — | `` |
+| `prompt` | `null` | true | — | `` |
+
+### agentj relay codex
+
+```text
+Host-managed current Codex profile
+```
+
+```bash
+agentj relay codex --help
+```
+
+```text
+usage: agentj relay codex [-h]
+                          [--sandbox {read-only,workspace-write,danger-full-access}]
+                          [--model MODEL] [--base-url BASE_URL]
+                          [--report REPORT]
+                          prompt
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--sandbox` | `null` | false | `read-only`, `workspace-write`, `danger-full-access` | `` |
+| `--model` | `null` | false | — | `` |
+| `--base-url` | `null` | false | — | `background-only exact Agents Relay /v1 HTTPS URL; requires --model; preserves official settings` |
+| `--report` | `null` | false | — | `` |
+| `prompt` | `null` | true | — | `` |
+
+### agentj relay stats
+
+```text
+current Host process metadata; unavailable provider telemetry stays unknown
+```
+
+```bash
+agentj relay stats --help
+```
+
+```text
+usage: agentj relay stats [-h]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj relay status
+
+```text
+inspect a dispatch without executing or resuming it
+```
+
+```bash
+agentj relay status --help
+```
+
+```text
+usage: agentj relay status [-h] key
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `key` | `null` | true | — | `` |
 
 ### agentj reload
 
@@ -7245,14 +7615,16 @@ agentj tasks --help
 ```
 
 ```text
-usage: agentj tasks [-h] [--all] [--dry-run] [--json]
-                    {list,show,enable,disable,run,migrate,unmigrate} [id]
+usage: agentj tasks [-h] [--contract CONTRACT] [--all] [--dry-run] [--json]
+                    {list,show,enable,disable,run,migrate,unmigrate,create}
+                    [id]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `null` | true | `list`, `show`, `enable`, `disable`, `run`, `migrate`, `unmigrate` | `` |
+| `mode` | `null` | true | `list`, `show`, `enable`, `disable`, `run`, `migrate`, `unmigrate`, `create` | `` |
+| `--contract` | `null` | false | — | `create: JSON contract with task, prompt and optional declared transfer / 创建任务合同` |
 | `--all` | `false` | false | — | `every enabled task` |
 | `id` | `null` | false | — | `` |
 | `--dry-run` | `false` | false | — | `show the plan only` |
@@ -8177,7 +8549,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,delete,rm,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,fn,uv,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding,usage,learn,form} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,api,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,delete,rm,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,fn,uv,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,relay,busy,decide,local-model,recall,bots,friends,local,codex-sandbox,migrate,alias,instances,label,onboarding,usage,learn,form} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -8418,6 +8790,174 @@ usage: agentj alias [-h] [--json] [{status,install,remove}]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `mode` | `"status"` | false | `status`, `install`, `remove` | `` |
 | `--json` | `false` | false | — | `` |
+
+### agentj api
+
+```text
+Seat API: owner reads and signed management proposals / 席位 API 管理
+```
+
+```bash
+agentj api --help
+```
+
+```text
+usage: agentj api [-h]
+                  {list,usage,workflows,spec,review,manifest,request,result} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj api list
+
+```text
+
+```
+
+```bash
+agentj api list --help
+```
+
+```text
+usage: agentj api list [-h]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj api manifest
+
+```text
+
+```
+
+```bash
+agentj api manifest --help
+```
+
+```text
+usage: agentj api manifest [-h] endpoint
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `endpoint` | `null` | true | — | `` |
+
+### agentj api request
+
+```text
+
+```
+
+```bash
+agentj api request --help
+```
+
+```text
+usage: agentj api request [-h] --file FILE
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--file` | `null` | true | — | `` |
+
+### agentj api result
+
+```text
+
+```
+
+```bash
+agentj api result --help
+```
+
+```text
+usage: agentj api result [-h] proposal
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `proposal` | `null` | true | — | `` |
+
+### agentj api review
+
+```text
+
+```
+
+```bash
+agentj api review --help
+```
+
+```text
+usage: agentj api review [-h] endpoint
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `endpoint` | `null` | true | — | `` |
+
+### agentj api spec
+
+```text
+
+```
+
+```bash
+agentj api spec --help
+```
+
+```text
+usage: agentj api spec [-h] endpoint
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `endpoint` | `null` | true | — | `` |
+
+### agentj api usage
+
+```text
+
+```
+
+```bash
+agentj api usage --help
+```
+
+```text
+usage: agentj api usage [-h]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj api workflows
+
+```text
+
+```
+
+```bash
+agentj api workflows --help
+```
+
+```text
+usage: agentj api workflows [-h]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
 
 ### agentj approvals
 
@@ -10918,7 +11458,7 @@ usage: agentj doctor [-h] [--json] [--latency] [--read-only] [--offline]
 | `--offline` | `false` | false | — | `跳过网络检查` |
 | `--isolation-only` | `false` | false | — | `仅隔离预检：不读用户状态、不联网` |
 | `--post-upgrade` | `false` | false | — | `修复升级后的工作根与连接` |
-| `--upgrade-only` | `false` | false | — | `仅升级后的包与服务完整性` |
+| `--upgrade-only` | `false` | false | — | `升级后的包、服务与本机补丁只读检查` |
 | `--reconnect` | `false` | false | — | `手机灰了/断开：自检 服务·中继·Agent 三段，哪段断了修哪段` |
 | `--session` | `null` | false | — | `和 --reconnect 一起：接上这个会话 ID` |
 
@@ -11033,12 +11573,33 @@ agentj file --help
 ```
 
 ```text
-usage: agentj file [-h] {show} ...
+usage: agentj file [-h] {show,send} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj file send
+
+```text
+发送单个文件到自己已绑定的微信
+```
+
+```bash
+agentj file send --help
+```
+
+```text
+usage: agentj file send [-h] --to {wechat} [--json] path
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `path` | `null` | true | — | `` |
+| `--to` | `null` | true | `wechat` | `` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj file show
 
@@ -11852,8 +12413,8 @@ agentj friends tell --help
 ```
 
 ```text
-usage: agentj friends tell [-h] [--json] [--actions ACTIONS] [--grant GRANT]
-                           [--reply-to REPLY_TO]
+usage: agentj friends tell [-h] [--json] [--sandbox-card] [--actions ACTIONS]
+                           [--grant GRANT] [--reply-to REPLY_TO]
                            friend text [text ...]
 ```
 
@@ -11863,6 +12424,7 @@ usage: agentj friends tell [-h] [--json] [--actions ACTIONS] [--grant GRANT]
 | `--json` | `false` | false | — | `机器可读输出` |
 | `friend` | `null` | true | — | `` |
 | `text` | `null` | true | — | `` |
+| `--sandbox-card` | `false` | false | — | `仅这条消息的一次签名发送卡` |
 | `--actions` | `null` | false | — | `具体动作 JSON 文件` |
 | `--grant` | `null` | false | — | `同主人任务授权单编号` |
 | `--reply-to` | `null` | false | — | `回复同一个主人任务的消息 ID（避免当成新任务）` |
@@ -13208,6 +13770,29 @@ usage: agentj learn status [-h] [--json]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
 
+### agentj local
+
+```text
+本机记录、检查与自定义技能链接
+```
+
+```bash
+agentj local --help
+```
+
+```text
+usage: agentj local [-h] [--json] [--contract CONTRACT]
+                    {check,record,relink} [id]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `null` | true | `check`, `record`, `relink` | `` |
+| `id` | `null` | false | — | `relink: registered feature fN / 已登记功能编号` |
+| `--json` | `false` | false | — | `` |
+| `--contract` | `null` | false | — | `record: local baseline/feature JSON contract / 本地基线或功能合同` |
+
 ### agentj local-model
 
 ```text
@@ -13606,7 +14191,7 @@ agentj plaza --help
 
 ```text
 usage: agentj plaza [-h]
-                    {search,show,mine,post,reply,resolve,report,install,request,publish,like,verify,installed,partners} ...
+                    {search,show,mine,post,reply,resolve,report,install,request,publish,like,verify,uninstall,installed,partners} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -13923,6 +14508,29 @@ usage: agentj plaza show [-h] [--json] [--version VERSION] id
 | `id` | `null` | true | — | `pz_… 或包名` |
 | `--json` | `false` | false | — | `` |
 | `--version` | `null` | false | — | `包的版本（只对包）/ package version` |
+
+### agentj plaza uninstall
+
+```text
+已配对手机签名确认后移至备份
+```
+
+```bash
+agentj plaza uninstall --help
+```
+
+```text
+usage: agentj plaza uninstall [-h] [--harness {claude_code,codex,opencode}]
+                              [--preview]
+                              name
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `` |
+| `--harness` | `null` | false | `claude_code`, `codex`, `opencode` | `` |
+| `--preview` | `false` | false | — | `仅本机只读预览` |
 
 ### agentj plaza verify
 
@@ -14386,6 +14994,140 @@ usage: agentj recall [-h] [--days DAYS] [--date DATE] [--limit LIMIT] [--json]
 | `--date` | `null` | false | — | `只看这一天 YYYY-MM-DD` |
 | `--limit` | `10` | false | — | `最多几条（≤ 50）/ at most N hits` |
 | `--json` | `false` | false | — | `` |
+
+### agentj relay
+
+```text
+用当前已配置的 Agents Relay 派单
+```
+
+```bash
+agentj relay --help
+```
+
+```text
+usage: agentj relay [-h] {status,stats,codex,claude,check} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj relay check
+
+```text
+one minimal fixed-text Codex Relay request; may use provider quota
+```
+
+```bash
+agentj relay check --help
+```
+
+```text
+usage: agentj relay check [-h]
+                          [--sandbox {read-only,workspace-write,danger-full-access}]
+                          [--model MODEL] [--base-url BASE_URL]
+                          [--report REPORT]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--sandbox` | `null` | false | `read-only`, `workspace-write`, `danger-full-access` | `` |
+| `--model` | `null` | false | — | `` |
+| `--base-url` | `null` | false | — | `background-only exact Agents Relay /v1 HTTPS URL; requires --model; preserves official settings` |
+| `--report` | `null` | false | — | `` |
+
+### agentj relay claude
+
+```text
+not yet supported by the Host adapter
+```
+
+```bash
+agentj relay claude --help
+```
+
+```text
+usage: agentj relay claude [-h]
+                           [--sandbox {read-only,workspace-write,danger-full-access}]
+                           [--model MODEL] [--base-url BASE_URL]
+                           [--report REPORT]
+                           prompt
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--sandbox` | `null` | false | `read-only`, `workspace-write`, `danger-full-access` | `` |
+| `--model` | `null` | false | — | `` |
+| `--base-url` | `null` | false | — | `background-only exact Agents Relay /v1 HTTPS URL; requires --model; preserves official settings` |
+| `--report` | `null` | false | — | `` |
+| `prompt` | `null` | true | — | `` |
+
+### agentj relay codex
+
+```text
+Host-managed current Codex profile
+```
+
+```bash
+agentj relay codex --help
+```
+
+```text
+usage: agentj relay codex [-h]
+                          [--sandbox {read-only,workspace-write,danger-full-access}]
+                          [--model MODEL] [--base-url BASE_URL]
+                          [--report REPORT]
+                          prompt
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--sandbox` | `null` | false | `read-only`, `workspace-write`, `danger-full-access` | `` |
+| `--model` | `null` | false | — | `` |
+| `--base-url` | `null` | false | — | `background-only exact Agents Relay /v1 HTTPS URL; requires --model; preserves official settings` |
+| `--report` | `null` | false | — | `` |
+| `prompt` | `null` | true | — | `` |
+
+### agentj relay stats
+
+```text
+current Host process metadata; unavailable provider telemetry stays unknown
+```
+
+```bash
+agentj relay stats --help
+```
+
+```text
+usage: agentj relay stats [-h]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj relay status
+
+```text
+inspect a dispatch without executing or resuming it
+```
+
+```bash
+agentj relay status --help
+```
+
+```text
+usage: agentj relay status [-h] key
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `key` | `null` | true | — | `` |
 
 ### agentj reload
 
@@ -15267,7 +16009,7 @@ usage: agentj support thread [-h] [--wait WAIT] id
 ### agentj tasks
 
 ```text
-定时任务：list · show · enable · disable · run [--dry-run] · migrate <id\|--all> · unmigrate <id>
+定时任务：create --contract FILE · list · show · enable · disable · run [--dry-run] · migrate <id\|--all> · unmigrate <id>
 ```
 
 ```bash
@@ -15275,14 +16017,16 @@ agentj tasks --help
 ```
 
 ```text
-usage: agentj tasks [-h] [--all] [--dry-run] [--json]
-                    {list,show,enable,disable,run,migrate,unmigrate} [id]
+usage: agentj tasks [-h] [--contract CONTRACT] [--all] [--dry-run] [--json]
+                    {list,show,enable,disable,run,migrate,unmigrate,create}
+                    [id]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `null` | true | `list`, `show`, `enable`, `disable`, `run`, `migrate`, `unmigrate` | `` |
+| `mode` | `null` | true | `list`, `show`, `enable`, `disable`, `run`, `migrate`, `unmigrate`, `create` | `` |
+| `--contract` | `null` | false | — | `create: JSON contract with task, prompt and optional declared transfer / 创建任务合同` |
 | `--all` | `false` | false | — | `migrate：所有已启用的任务` |
 | `id` | `null` | false | — | `` |
 | `--dry-run` | `false` | false | — | `run：只显示会怎么跑，不运行` |

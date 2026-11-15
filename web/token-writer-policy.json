@@ -63,6 +63,57 @@
         "--src-sys",
         "--src-task"
       ]
+    },
+    {
+      "path": "js/cardplace.js",
+      "line": 198,
+      "sourceSha256": "3ba18887c15b357e67dcf6d00f2d0ef5d1af2a32edf3f31e93016adbfbf66dbf",
+      "kind": "finite-layout-vars",
+      "purpose": "Owner-approved0e858 finite viewport geometry; host badge owner and existing sheet action placement changed only metadata/placement, while the exact four finite geometry keys remain independently source-derived.",
+      "tokenNames": [
+        "--host-stage-height",
+        "--host-stage-left",
+        "--host-stage-top",
+        "--host-stage-width"
+      ]
+    },
+    {
+      "path": "js/popup-layout.js",
+      "line": 32,
+      "sourceSha256": "28695947209e281e30fb1a693271203451986f900f9e1655abc48e0048632a31",
+      "kind": "finite-layout-vars",
+      "purpose": "Released70c8 finite viewport geometry and native-dialog theme restoration; keys derived from actual source, never arbitrary CSS custom properties.",
+      "tokenNames": [
+        "--ink",
+        "--pg"
+      ]
+    },
+    {
+      "path": "js/popup-layout.js",
+      "line": 33,
+      "sourceSha256": "28695947209e281e30fb1a693271203451986f900f9e1655abc48e0048632a31",
+      "kind": "finite-layout-vars",
+      "purpose": "Released70c8 finite viewport geometry and native-dialog theme restoration; keys derived from actual source, never arbitrary CSS custom properties.",
+      "tokenNames": [
+        "--ink",
+        "--pg"
+      ]
+    },
+    {
+      "path": "js/popup-layout.js",
+      "line": 39,
+      "sourceSha256": "28695947209e281e30fb1a693271203451986f900f9e1655abc48e0048632a31",
+      "kind": "finite-layout-vars",
+      "purpose": "Released70c8 finite viewport geometry and native-dialog theme restoration; keys derived from actual source, never arbitrary CSS custom properties.",
+      "tokenNames": [
+        "--popup-card-left",
+        "--popup-card-width",
+        "--popup-center",
+        "--popup-height",
+        "--popup-left",
+        "--popup-top",
+        "--popup-width"
+      ]
     }
   ]
 }

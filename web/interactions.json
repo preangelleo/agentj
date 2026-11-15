@@ -3677,6 +3677,29 @@
       "gesture_zh": "点击",
       "gesture_en": "Tap",
       "nokey": "Owner confirmation requires an explicit click"
+    },
+    {
+      "id": "app.background",
+      "since": "0.30.22",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#backgroundCommandEntry",
+        "zh": "命令菜单里的 /background「后台动态」",
+        "en": "/background Background activity in the command menu"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "打开后台、Webhook 和系统消息的已有记录列表",
+      "en": "Open the existing list of background, Webhook and system messages",
+      "gesture_zh": "在命令菜单点 /background",
+      "gesture_en": "Tap /background in the command menu",
+      "nokey": "Type /background in the existing message box"
     }
   ]
 }

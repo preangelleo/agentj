@@ -1732,6 +1732,51 @@ html:not([data-theme="light"]) .aj-navigation-action--primary:hover{background:v
 /* #577 aj-navigation-action: independent equal initial contract. */
 .aj-navigation-action:disabled, .aj-navigation-action[aria-disabled="true"]{opacity:var(--aj-navigation-action-disabled-opacity,0.5);cursor:var(--aj-navigation-action-disabled-cursor,not-allowed); }
 
+/* 0322 r2 chairman approval: existing popup action roles, two opaque Global CSS palette pairs.
+   This is scoped to popup actions; page and input controls keep their own owners. */
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-action{
+  --aj-action-primary-background:var(--c-lotion);--aj-action-primary-color:var(--c-noir);
+  --aj-action-primary-hover-background:var(--c-lotion);--aj-action-primary-hover-color:var(--c-noir);
+  background:var(--c-noir);color:var(--c-lotion);border-color:var(--c-lotion);
+}
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-action:is(:hover,:active){
+  background:var(--c-noir);color:var(--c-lotion);border-color:var(--c-lotion);
+}
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-action--primary,
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-action--primary:is(:hover,:active){
+  background:var(--c-lotion);color:var(--c-noir);border-color:var(--c-lotion);
+}
+
+/* 0322 r2 chairman approval: existing popup action roles, two opaque Global CSS palette pairs.
+   This is scoped to popup actions; page and input controls keep their own owners. */
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-icon-action{
+  --aj-icon-action-primary-background:var(--c-lotion);--aj-icon-action-primary-color:var(--c-noir);
+  --aj-icon-action-primary-hover-background:var(--c-lotion);--aj-icon-action-primary-hover-color:var(--c-noir);
+  background:var(--c-noir);color:var(--c-lotion);border-color:var(--c-lotion);
+}
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-icon-action:is(:hover,:active){
+  background:var(--c-noir);color:var(--c-lotion);border-color:var(--c-lotion);
+}
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-icon-action--primary,
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-icon-action--primary:is(:hover,:active){
+  background:var(--c-lotion);color:var(--c-noir);border-color:var(--c-lotion);
+}
+
+/* 0322 r2 chairman approval: existing popup action roles, two opaque Global CSS palette pairs.
+   This is scoped to popup actions; page and input controls keep their own owners. */
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-navigation-action{
+  --aj-navigation-action-primary-background:var(--c-lotion);--aj-navigation-action-primary-color:var(--c-noir);
+  --aj-navigation-action-primary-hover-background:var(--c-lotion);--aj-navigation-action-primary-hover-color:var(--c-noir);
+  background:var(--c-noir);color:var(--c-lotion);border-color:var(--c-lotion);
+}
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-navigation-action:is(:hover,:active){
+  background:var(--c-noir);color:var(--c-lotion);border-color:var(--c-lotion);
+}
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-navigation-action--primary,
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-navigation-action--primary:is(:hover,:active){
+  background:var(--c-lotion);color:var(--c-noir);border-color:var(--c-lotion);
+}
+
 /* #577 Web-owned content-card; source order is a compatibility contract. */
 /* ===== cards ===== */
 .aj-card { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-lg);

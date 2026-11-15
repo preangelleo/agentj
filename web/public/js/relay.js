@@ -1,3 +1,4 @@
+import { activityKind, activityFailed, mergeOwnerInputs, ownerInput, ownerQueue, pendingAutomation } from './phone-activity.js';
 import {paintRepair,repairOf,replyName,paintFix} from './repair-actions.js';
 import {fullAccess, supports as cmdSupports} from './cmdrun.js';
 import {waitsForNewRequest,rememberRefusal,waitingText,forgetRefusal,forgetRefusals} from './approval-notice.js';
@@ -1280,7 +1281,7 @@ addEventListener('storage', e => {
 // paging history (or the full-screen reader) is never interrupted, the page capsule flashes instead. `tailWait` = he is on
 // the newest page whose turn has no visible reply yet (a pending input stays behind the reply he reads, P87) — the intent
 // survives, so that reply, when it lands, still takes him there.
-const hist = {turns: [], count: 0, firstId: 0, lastId: 0, epoch: 0, route: true, busy: false, want: 0, older: false};
+const hist = {activityRevision: 0, turns: [], count: 0, firstId: 0, lastId: 0, epoch: 0, route: true, busy: false, want: 0, older: false};
 let histSettled = () => false;   // P398: settleQueued (the queue section sets it) — a page the host updated may end a queued send
 let pageAt = -1, follow = true, tailWait = false, pagesCache = null, shownKey = null, unreadReply = false;
 const noticeReads = new Set();
@@ -1312,12 +1313,12 @@ function newTurnArrived(ps){
   tailSeen.reply = tt.reply; tailSeen.virt = tt.id === null; tailSeen.primed = true;
   return arrived && !silentTurn(tt);
 }
-function visibleReply(p){ return typeof p?.reply === "string" && !!p.reply.trim() && !silentTurn(p); }
+function visibleReply(p){ return typeof p?.reply === "string" && !!p.reply.trim() && !silentTurn(p) && !pendingAutomation(p); }
 function visiblePage(p){
   const src = p.source;
   // P127 (追加6): a withdrawn send never reached the Agent and its words are back in the field — as if never sent, so its
   // page leaves the history instead of standing there with 「（无文字回复）」 (and a second copy once it is sent again).
-  if (p.card && p.card.withdrawn === true) return false;
+  if (p.card && p.card.withdrawn === true || pendingAutomation(p)) return false;
   return !silentTurn(p) && (visibleReply(p) || !!src?.text?.trim() || !!src?.att?.length || !!p.card);
 }
 function toNewest(){ follow = true; tailWait = false; shownKey = null; stick = true; showPage(); }
@@ -1344,13 +1345,13 @@ const isSteered = p => !!p && Number.isInteger(p.id) && (steered.has(p.id) || (p
 function pages(){
   if (pagesCache) return pagesCache;
   let out = [];
-  for (const p of hist.turns) if (visiblePage(p) && !echoPage(p, out[out.length - 1])) out.push(p);
+  for (const p of mergeOwnerInputs(hist.turns.filter(p => !pendingAutomation(p) && !activityKind(p)))) if (visiblePage(p) && !echoPage(p, out[out.length - 1])) out.push(p);
   split.note(hist.turns, visibleReply);
   out = split.layout(out, p => visibleReply(p) && !isSteered(p));
   if (!out.length) out.push({id: null, reply: "", source: null, ts: null});
   return (pagesCache = out);
 }
-function totalPages(){ return pages().length + Math.max(0, hist.count - hist.turns.length); }
+function totalPages(){ return pages().filter(p=>p.id!==null).length + Math.max(0, hist.count - hist.turns.length); }
 function noteHistory(s){
   const h = s.history;
   if (h && typeof h.last_id === "number"){
@@ -1372,6 +1373,7 @@ function resetHistory(ep){
 }
 /** A turn pushed by the host (hist_turn): new, a reply part appended, or its end. */
 export function upsertTurn(p){
+  hist.activityRevision++;
   p = displayTurn(p);
   const previous=hist.turns.find(x=>x.id===p.id);
   if(previous?.end==='open' && p.end==='done' && !silentTurn(p)) announceTurn(p,true);
@@ -1490,7 +1492,7 @@ async function refreshNewestRun(retry = false, hintAtStart = historyHintSequence
     for (const p of j.turns){
       if (!byId.has(p.id) || byId.get(p.id) === before.get(p.id)) byId.set(p.id, displayTurn(p));
     }
-    hist.turns = [...byId.values()].sort((a,b) => a.id - b.id);
+    hist.activityRevision++; hist.turns = [...byId.values()].sort((a,b) => a.id - b.id);
     hist.lastId = hist.turns.at(-1)?.id || 0;
     hist.count = Math.max(j.count || 0, hist.count, hist.turns.length);
     hist.firstId = Math.max(hist.firstId, j.first_id || hist.turns[0]?.id || 0);
@@ -1530,11 +1532,11 @@ async function syncHistory(want){
       const fresh = j.turns.filter(x => x && typeof x.id === "number").map(displayTurn);
       const ep = typeof j.epoch === "number" ? j.epoch : 0;
       if (ep !== hist.epoch) { historyHint({epoch:ep,kind:'meta'}); break; }
-      if (reset || !hist.lastId) hist.turns = fresh;
+      if (reset || !hist.lastId) { hist.activityRevision++; hist.turns = fresh; }
       else {
         const byId = new Map(hist.turns.map(x => [x.id, x]));
         for (const x of fresh) if (!byId.has(x.id) || byId.get(x.id) === before.get(x.id)) byId.set(x.id, x);
-        hist.turns = [...byId.values()].sort((a, b) => a.id - b.id);
+        hist.activityRevision++; hist.turns = [...byId.values()].sort((a, b) => a.id - b.id);
       }
       hist.count = Math.max(j.count || 0, hist.turns.length); hist.firstId = j.first_id || (hist.turns[0] ? hist.turns[0].id : 0);
       hist.lastId = hist.turns.length ? hist.turns[hist.turns.length - 1].id : 0;
@@ -1562,7 +1564,7 @@ async function loadOlderBatch(){
     // Older pages of a session that has since been cleared are not this session's.
     if (generation === historyGeneration && epoch === hist.epoch && j && j.turns.length && (typeof j.epoch === "number" ? j.epoch : 0) === hist.epoch){
       const older = j.turns.filter(t => t && typeof t.id === "number" && t.id < hist.turns[0].id).map(displayTurn);
-      hist.turns = older.concat(hist.turns); hist.firstId = j.first_id || hist.firstId;
+      hist.activityRevision++; hist.turns = older.concat(hist.turns); hist.firstId = j.first_id || hist.firstId;
       if (!older.length) hist.firstId = hist.turns[0].id;
       pagesCache = null;
       const shown = older.filter(visiblePage).length;
@@ -1733,7 +1735,7 @@ function showPage(){
   queueStuck = queueWatch.check(queueList, hist.turns);
   const chan = chanCard(p);                              // P543 (#308): an owner-channel message shows its words
   el("words").dataset.chan = chan ? "1" : "0";
-  if (chan) { el("cmdx").replaceChildren(); el("cmdx").hidden = true; }
+  if (chan && !ownerQueue(p)) { el("cmdx").replaceChildren(); el("cmdx").hidden = true; }
   else if (p.cont) paintCont(el("cmdx"), p, ps);         // 0.26.9 #471: 「继续见下方」 — this card gets nothing more
   else if (!chatheal.paint(el("cmdx"), p, HEAL)){ paintCmdx(p); chatheal.tail(el("cmdx"), p, HEAL); }   // 0.26.9: 重新登录 / 已等 N 分钟 / 强制结束这一轮
   C.termCard?.(p);                                       // P414 (§37.12): a 「!」 page's terminal result card (js/bang.js)
@@ -1750,7 +1752,7 @@ function showPage(){
     const rid=typeof p.card.approval_reopen==='string'?p.card.approval_reopen:p.card.approval_request_id||p.card.approval_request;
     if(rid&&src?.quote){el('omqMeta').textContent=' · '+(p.card.approval_label||rid);}
   }
-  const qd = p.end === "open" && queuedTurn(p.id);     // P127: accepted, waiting behind the running turn — say so
+  const qd = ownerInput(p) && queuedTurn(p.id);     // P127: accepted, waiting behind the running turn — say so
   document.body.dataset.pageQueued = qd ? "1" : "0";
   // P282 (追加): the working dots belong to the page being worked on. A closed page shown while another page is still open
   // (e.g. the Agent's 「切换已完成」 report landed after the owner's queued message) does not look busy itself.
@@ -1765,12 +1767,12 @@ function showPage(){
   const hostWait = open && (c.wait === true || c.queued === true) || (typeof c.switch === "string" && p === ps[ps.length - 1]);
   const absorbed = isSteered(p) && !visibleReply(p);   // 0.26.9 #471: steered into the running turn — its answer is that turn's
   if (absorbed) renderWords(t('p0269.queue.steered'), false, "", false, false, true);
-  else renderWords((silentTurn(p) ? "" : p.reply?.trim()) || (noticeOnly ? t('p0269w4.notice') : p.end === "open" || p.id === null ? "" : t('r.noReply')), open,
+  else renderWords((silentTurn(p) ? "" : p.reply?.trim()) || (noticeOnly ? t('p0269w4.notice') : qd || p.end === "open" || p.id === null ? "" : t('r.noReply')), open || qd,
     qd ? t(queueStuck ? 'p481.queueStuck' : 'r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : progress, hostWait, sysPage(p), replyDataOnly(p) || noticeOnly);
   { const lg = selfheal.loginOf(p); if (lg) selfheal.linkLogin(el("words"), t('p0269.login.btn'), () => openLogin(lg.agent, lg.why)); }   // 0.26.9: `/login` = 「重新登录」
   // 0.26.9 #433 #447 · security C-1: never on a friend's report or an owner-channel page (a stranger's words); a fill tap goes
   // after the owner's draft (appendText), never replacing it
-  setStuck(hist.turns.slice(-6).some(x => { const q = selfheal.queueOf(x); return !!q && (x.end === "open" || x === hist.turns[hist.turns.length - 1]) && selfheal.canEnd(q, selfheal.waitedNow(x.id, q, true)); }));
+  setStuck(hist.turns.slice(-6).filter(ownerInput).some(x => { const q = selfheal.queueOf(x); return !!q && (x.end === "open" || x === hist.turns[hist.turns.length - 1]) && selfheal.canEnd(q, selfheal.waitedNow(x.id, q, true)); }));
   paintThinking(visibleReply(p) && !hostWait ? progress : "");
   el("words").classList.toggle("empty", !visibleReply(p));
   if (p.source?.k === 'cmd' && p.card?.kind === 'refused') {
@@ -2314,8 +2316,9 @@ async function jumpToTurn(id){
   while (!hist.turns.some(p => p.id === id) && olderLeft() && hist.turns[0].id > id){
     const b = await loadOlderBatch(); if (!b || !b.all) break;
   }
+  if (hist.turns.some(p => p.id === id && activityKind(p))){ openSilent(id,true); return; }
   if (hist.turns.some(p => p.id === id && silentTurn(p))){ openSilent(id); return; }
-  const i = pages().findIndex(p => p.id === id);
+  const i = pages().findIndex(p => p.id === id || p.mergedIds?.includes(id));
   if (i < 0){ toast(t('r.quote.gone'), 2200); return; }
   pageAt = i; follow = i === pages().length - 1; tailWait = false; shownKey = null; showPage();
 }
@@ -3426,7 +3429,7 @@ const queueWatch = new QueueWatch();
 let queueStuck = false;
 const observedQueue = new Map();
 function queuedWatchList(){
-  const rows = hist.turns.filter(p => p.end === "open" && p.card?.queued === true && !isSteered(p));   // 0.26.9 #471: steered = not queued
+  const rows = hist.turns.filter(p => ownerQueue(p) && !isSteered(p));   // 0.26.9 #471: steered = not queued
   const ids = new Set(rows.map(p => p.id));
   for (const id of observedQueue.keys()) if (!ids.has(id)) observedQueue.delete(id);
   for (const p of rows) if (!observedQueue.has(p.id)) observedQueue.set(p.id, Date.now());
@@ -3700,6 +3703,11 @@ async function say(voiceReady = false){
   if (fa && !atts.length && !quotes.length){
     if (await addFriendCmd((fa[1] || "").trim())){ pushHist(text); settleField(text); autosize(); saveDraft(); }
     return;
+  }
+  // /background is local history navigation, including while offline or stopped.
+  if (/^[/\uff0f]background$/i.test(text.trim()) && !atts.length && !quotes.length){
+    pushHist(text); settleField(text); autosize(); saveDraft();
+    openSilent(undefined, true); return;
   }
   // P332 (§33): /reset = 紧急修复 ① (the signed reset ladder) — before the stop / offline checks: it is how a stuck link is fixed
   if (/^[/\uff0f]reset$/i.test(text.trim()) && !atts.length && !quotes.length){
@@ -4017,6 +4025,7 @@ function renderMenu(){
   if (C.estopOn()) { const resume = item("■", t('estop.resume'), {estop: "resume"}); menuIcon(resume, "stop"); }
   // P182: Agent J's own tools — inserted like a menu item (the human adds files / addresses and sends)
   group(t('r.menu.tools'));
+  item("/background", t('p0331.title'), {}).id = "backgroundCommandEntry";   // @ix app.background — reuse the existing history dialog
   for (const [cmd, why] of toolItems()) item(cmd, why, {slash: cmd});
   const host = hostMenu || {items: RUN.map(c => ["/" + c, runDescription(c), ""]), skills: []};
   menuItems = [];
@@ -4030,7 +4039,7 @@ function renderMenu(){
     }
   }
   if (host.skills.length){ group(t('r.menu.skills')); for (const [cmd, why] of host.skills) item(cmd, why, {slash: cmd}); }
-  menuItems = RUN.map(c => ["/" + c, runDescription(c), ""]).concat(hostMenu?.reload ? [["/reload", t('p320.reloadDesc'), ""]] : [], [["/reset", t('p332.menuDesc'), ""]], [["/customize", t('p181.customize'), ""]], toolItems(true), switchItems(), fromHost, host.skills);
+  menuItems = RUN.map(c => ["/" + c, runDescription(c), ""]).concat(hostMenu?.reload ? [["/reload", t('p320.reloadDesc'), ""]] : [], [["/reset", t('p332.menuDesc'), ""]], [["/customize", t('p181.customize'), ""]], [["/background", t("p0331.title"), ""]], toolItems(true), switchItems(), fromHost, host.skills);
   // P412 (#175): Agent J's own first — a harness command with the same name shows once (Agent J's)
   const native = (host.native || []).filter(it => !menuItems.some(m => m[0] === it[0]));
   if (native.length){
@@ -4065,7 +4074,7 @@ async function loadMenu(){
   if (hostMenu?.kind) menuKind = menuKind || hostMenu.kind;
   renderMenu(); placeSheet();
 }
-function closeMenu(){ menu.hidden = true; delete el("menuSheet").dataset.drag; el("menuSheet").style.transform = ""; sheetDrag = null; }
+function closeMenu(){ menu.hidden = true; menuExpanded(false); delete el("menuSheet").dataset.drag; el("menuSheet").style.transform = ""; sheetDrag = null; }
 // P238: the list is a card rising from the 5-hour bar (menu.css .cmdsheet): its bottom edge on the bar, its left / width those
 // of the tool row (so it lines up with ≡ on a phone and with the composer on a wide screen), at most 60 % of what is visible.
 function placeSheet(){
@@ -4084,10 +4093,11 @@ function placeSheet(){
 function openMenu(){
   if (!menu.hidden) return;
   closeSug();
-  menu.hidden = false;
+  menu.hidden = false; menuExpanded(true);
   el("menuBody").scrollTop = 0;
   placeSheet(); renderMenu(); loadMenu();
 }
+function menuExpanded(open){ el("slashBtn").setAttribute("aria-expanded", String(open)); }
 function toggleMenu(){ if (menu.hidden) openMenu(); else closeMenu(); }
 // Pull-down: a drag that starts on the grab / header, or on the list while it is at its top, moves the card; past 64 px (or a
 // quick flick) it slides away. Every touch inside stays inside (the reply cards underneath never page sideways).
@@ -4786,7 +4796,7 @@ function edgeArrow(e){
 const isM = e => !e.shiftKey && (e.key === "m" || e.key === "M" || (e.code === "KeyM" && e.key.length !== 1));
 function composerEmpty(){ return !input.value && !atts.length; }
 const typingIn = tg => !!tg && (tg.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName));
-var silentKey = "", silentBusy = false;
+var silentKey = "", silentBusy = false, activityMode = false;
 function silentWhen(ts){
   if (typeof ts !== "number") return "";
   const d = new Date((ts + skew) * 1000), now = new Date();
@@ -4794,12 +4804,12 @@ function silentWhen(ts){
   return day + hhmm(ts);
 }
 function renderSilent(focusId){
-  const list = hist.turns.filter(t => silentTurn(t)).reverse();
+  const list = hist.turns.filter(p => activityMode ? !pendingAutomation(p) && !!activityKind(p) : silentTurn(p)).reverse();
   const more = el("silentMore");
   more.hidden = !olderLeft();
   more.disabled = silentBusy;
   more.textContent = silentBusy ? t('r.silent.loading') : t('r.silent.more');
-  const key = hist.epoch + ":" + list.map(t => t.id).join(",") + ":" + hist.route + ":" + olderLeft();
+  const key = activityMode + ":" + hist.epoch + ":" + hist.activityRevision + ":" + list.map(t => t.id).join(",") + ":" + hist.route + ":" + olderLeft();
   if (key === silentKey && focusId === undefined) return;
   silentKey = key;
   const box = el("silentList");
@@ -4817,8 +4827,8 @@ function renderSilent(focusId){
     const d = document.createElement("details"); d.dataset.id = String(turn.id); d.open = open.has(turn.id);
     const sm = document.createElement("summary"); sm.setAttribute('data-aj-owner', 'aj-history');
     const tm = document.createElement("span"); tm.className = "t"; tm.textContent = silentWhen(turn.ts) || "—";
-    const sc = document.createElement("span"); sc.className = "s"; sc.textContent = src ? sourceOf(src).label : t('r.silent.noSource');
-    const ln = document.createElement("span"); ln.className = "l"; ln.textContent = text.split("\n")[0] || t('r.silent.noText');
+    const sc = document.createElement("span"); sc.className = "s"; sc.textContent = activityMode ? t('p0331.'+activityKind(turn)) : src ? sourceOf(src).label : t('r.silent.noSource');
+    const ln = document.createElement("span"); ln.className = "l"; ln.textContent = activityMode ? t(activityFailed(turn) ? 'p0331.failure' : 'p0331.record') : text.split("\n")[0] || t('r.silent.noText');
     sm.append(tm, sc, ln);
     const full = document.createElement("div"); full.className = "full"; full.textContent = text || t('r.silent.noText');
     const rp = document.createElement("div"); rp.className = "rep"; rp.textContent = t('r.silent.reply') + cleanSilentMarkers(turn.silent_reply || turn.reply);
@@ -4835,7 +4845,13 @@ function renderSilent(focusId){
     if (d) d.scrollIntoView({block: "nearest"});
   }
 }
-function openSilent(id){
+function openSilent(id, background = false){
+  if (background) closeMenu();                  // /background returns to the usable composer, never a covering parent menu
+  activityMode=background;
+  el('silentTitle').dataset.i18n=background ? 'p0331.title' : 'r.silent.title';
+  el('silentTitle').textContent=t(el('silentTitle').dataset.i18n);
+  el('silentHelp').dataset.i18n=background ? 'p0331.help' : 'r.silent.help';
+  el('silentHelp').textContent=t(el('silentHelp').dataset.i18n);
   closeSug();                                   // P187: above the command list — back (Esc) returns to it
   el("silent").hidden = false;
   if (typeof id !== "number") el("silentList").scrollTop = 0;
@@ -4846,10 +4862,10 @@ function closeSilent(){ el("silent").hidden = true; if (document.activeElement) 
 async function moreSilent(){
   if (silentBusy) return;
   silentBusy = true; renderSilent();
-  const had = hist.turns.filter(t => silentTurn(t)).length;
+  const had = hist.turns.filter(p => activityMode ? !pendingAutomation(p) && !!activityKind(p) : silentTurn(p)).length;
   for (;;){
     const b = await loadOlderBatch();
-    if (!b || !b.all || hist.turns.filter(t => silentTurn(t)).length > had) break;
+    if (!b || !b.all || hist.turns.filter(p => activityMode ? !pendingAutomation(p) && !!activityKind(p) : silentTurn(p)).length > had) break;
   }
   silentBusy = false;
   showPage(); renderSilent();
@@ -5638,6 +5654,7 @@ export function init(ctx){
     if (b.id === "menuClose"){ closeMenu(); return; }
     if (b.id === "modelsEntry"){ closeMenu(); C.models?.(); return; }
     if (b.id === "silentEntry"){ openSilent(); return; }
+    if (b.id === "backgroundCommandEntry"){ openSilent(undefined, true); return; }
     if (b.id === "keysEntry"){ openKeys(); return; }
     if (b.id === "appEntry"){ closeMenu(); location.href = / AgentJApp\//.test(navigator.userAgent) ? "agentj-app://status" : "jarvis-app://status"; return; }
     if (b.id === "clipEntry"){ closeMenu(); pasteClipImages(); return; }

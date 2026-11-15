@@ -1,0 +1,304 @@
+import * as relayKeys from './keys.js';
+import { reopenAuth } from './elevate.js';
+import { authOf } from './authcard.js';
+// P258 · Settings → AI 登录救援 (PROTOCOL §31): a harness whose subscription login expired is signed in again from the phone.
+// The host runs the official login command; this page shows its link / device code, and the code or token is pasted only
+// into the host's sealed secret card (elevate.js) — never into these messages. Starting needs the owner's passkey (an
+// ask card). Everything is textContent; the link opens in a new tab with noopener.
+// P288: 「Claude 登录还有 N 天」 per row (or how a login without a fixed expiry is watched: the daily health check), a
+// 「现在续期」 button inside the last 7 days, and a thin chat banner (the host's view.renew) that starts the same route A —
+// dismissed per reminder mark on this phone. The authorize round shows its countdown and reopens by itself on the host.
+import { t, fillText } from './t.js';
+import { el, notify } from './ui.js';
+import { copyable, copyNow } from './copycode.js';   // P292
+import { ask1, isReady } from './session.js';
+import { onView as loginSheet } from './loginsheet.js';   // 0.26.9: a login step view goes to the chat's sheet
+
+let view = null;          // the host's last view: {harnesses, flow, dot, renew?}
+let hooks = {};           // app.js: {openAuth} (Settings → AI 登录救援)
+const RENEW_KEY = 'aj.arRenew';
+let timers = [], poll = null, loadId = 0;
+// #535: repeated checking pushes cannot extend the first visible wait forever.
+const CHECK_MS = 90000, checkingSince = new Map();
+let checkTimer = null;
+function checkDeadline() {
+  clearTimeout(checkTimer); checkTimer = null;
+  const now = Date.now(), active = new Set();
+  for (const h of view?.harnesses || []) {
+    if (h.state !== 'checking') { checkingSince.delete(h.kind); continue; }
+    active.add(h.kind);
+    if (!checkingSince.has(h.kind)) checkingSince.set(h.kind, now);
+  }
+  for (const kind of checkingSince.keys()) if (!active.has(kind)) checkingSince.delete(kind);
+  const left = [...checkingSince.values()].map(at => CHECK_MS - (now - at)).filter(ms => ms > 0);
+  if (left.length) checkTimer = setTimeout(() => { checkTimer = null; render(); checkDeadline(); }, Math.min(...left));
+}
+// #568: account flows belong to AI accounts; rescue flows belong to AI login rescue.
+const FLOW_BOXES = ['ar-flow', 'acct-flow'];
+const stopTimers = () => { for (const x of timers) clearInterval(x); timers = []; };
+const LONG = 11 * 60 * 1000;   // auth_start answers after the passkey card (up to its 10 minutes)
+
+function say(s) { const m = el('ar-msg'); if (m) m.textContent = s || ''; }
+const tw = (k, fb) => { const s = t(k); return s === k ? (fb || '') : s; };
+
+async function call(obj, ms = 20000) {
+  if (!isReady()) { say(t('set.offline')); return null; }
+  const owner = loadId;
+  const m = await ask1(obj, 'auth_res', ms);
+  if (owner !== loadId) return null;   // closing/reopening invalidates an older page response
+  if (m.t !== 'auth_res') { say(m.t === 'timeout' ? t('ar.timeout') : t('set.offline')); return null; }
+  if (m.view && typeof m.view === 'object') setView(m.view);
+  if (!m.ok && m.why) say(tw('ar.why.' + m.why, m.why));
+  return m;
+}
+
+/** app.js: the host's `auth_rescue` push (a flow moved on, a new alert, a reminder; on ready only while the dot is on). */
+export function onPush(m) {
+  if (!m || !m.view || typeof m.view !== 'object') return;
+  if (typeof m.view.step === 'string') { loginSheet(m.view); return; }   // 0.26.9 (CONTRACT §C): the chat's login sheet (loginsheet.js)
+  setView(m.view);
+}
+export async function load() {
+  close(); relayKeys.loadRelay(el('ar-relay-keys')).catch(() => {}); const id = ++loadId; view = null; el('ar-list')?.replaceChildren(); el('ar-flow')?.replaceChildren(); say(t('ar.checking'));
+  const m = await call({ t: 'auth_get' }); if (m) say('');
+  if (id !== loadId) return;
+  poll = setInterval(() => { if (!document.hidden) call({ t:'auth_get', check:false }); }, 5000);
+}
+
+const watchers = [];      // P332: Settings → 紧急修复 card ③ shows this flow's state (rescue.js)
+function setView(v) {
+  const before = view?.flow, flow = v.flow;
+  const moved = flow && (!before || ['kind','stage','round','route'].some(k => before[k] !== flow[k]));
+  view = v; checkDeadline(); dot(); render(); banner();
+  endNotice(before, flow);
+  // Long multi-harness pages preserve their scroll anchor. Bring a new device/code card into view once; health polling
+  // never pulls the owner away from what they are reading, and a hidden Settings page is never opened here.
+  if (moved && el('set-auth')?.getClientRects().length) el('ar-flow')?.scrollIntoView({ block:'start' });
+  else if (moved && el('set-accts')?.getClientRects().length) el('acct-flow')?.scrollIntoView({ block:'start' });
+  for (const f of watchers) { try { f(view); } catch { /* a painter must not stop the rest */ } }
+}
+// 0.26.9 #456 (chairman 11-04 11:34: 「已经添加成功了，为什么这个状态消息一直在那里？我已经强制刷新过了，它还在。」): a flow that has
+// ended (done / failed) is no longer a status box on AI 账号 or AI 登录救援 — the change into it shows ONE 10-second result notice
+// (seen on this page), and an ended flow the host still remembers after a refresh shows nothing. The failure reason stays on
+// the harness row (h.last) where it always was.
+export const END_MS = 10000;
+const ENDED = ['done', 'failed'];
+const ended = (f) => !!f && ENDED.includes(f.stage);
+function endNotice(before, flow) {
+  if (flow?.account) return;   // The accepted account attempt owns its result; unrelated rescue flow state cannot suppress it.
+  if (!before || ended(before) || !ended(flow)) return;
+  const acct = typeof flow.account === 'string' ? flow.account : flow.account && typeof flow.account.name === 'string' ? flow.account.name : '';
+  const text = flow.stage === 'done' ? (acct ? t('acct.added', { name: acct }) : t('ar.done')) : (flow.why || t('ar.failed'));
+  notify({ kind: flow.stage === 'done' ? 'success' : 'warn', shape: 'rect', text, ms: END_MS });
+}
+/** P332: card ③ of 紧急修复 follows the view (flow stage → progress / green / failure). */
+export function watch(fn) { watchers.push(fn); if (view) fn(view); }
+
+/** P288: the chat's renew banner — view.renew {kind, days_left, expires, mark}; ✕ hides it until the next reminder mark. */
+function renewTag(r) { return r ? `${r.expires}:${r.mark ?? ''}` : ''; }
+function banner() {
+  const b = el('ar-renew');
+  if (!b) return;
+  const r = view && view.renew;
+  let gone = '';
+  try { gone = localStorage.getItem(RENEW_KEY) || ''; } catch { /* private mode */ }
+  b.hidden = !r || gone === renewTag(r);
+  if (b.hidden) return;
+  const open = el('ar-renew-open');
+  if (open) open.textContent = r.days_left > 0 ? t('ar.renewBanner').replace('{d}', String(r.days_left)) : t('ar.renewBannerToday');
+}
+function renewLater() {
+  try { localStorage.setItem(RENEW_KEY, renewTag(view && view.renew)); } catch { /* private mode */ }
+  banner();
+}
+function renewNow() {
+  if (hooks.openAuth) hooks.openAuth();
+  start('claude', 'setup_token');
+}
+function dot() {
+  const on = !!(view && view.dot);
+  for (const id of ['ar-dot', 'ar-dot-top']) { const d = el(id); if (d) d.hidden = !on; }
+}
+
+const STATE = { ok: 'ar.stOk', login: 'ar.stLogin', balance: 'ar.stBalance', rate_limit: 'ar.stRate', checking: 'ar.checking', unknown: 'ar.unknown' };
+function btn(label, cls, fn) {
+  const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-action'); b.setAttribute('data-aj-action-context','dialog');
+  b.type = 'button'; b.className = 'aj-action aj-action--sm' + (cls ? ' ' + cls : ''); b.textContent = label;
+  b.addEventListener('click', fn);
+  return b;
+}
+function line(text, cls) { const p = document.createElement('p'); p.className = 'setnote' + (cls ? ' ' + cls : ''); fillText(p, text); return p; }   // P292: `commands` → code + ⧉
+
+async function start(kind, route) {
+  say(t('ar.confirm'));
+  const m = await call({ t: 'auth_start', kind, route }, LONG);
+  if (m && m.ok) say(route === 'quota_recheck' ? t('p0280.quotaQueued') : t('ar.started'));
+}
+
+function harnessCard(h) {
+  const timedOut = h.state === 'checking' && Date.now() - (checkingSince.get(h.kind) ?? Date.now()) >= CHECK_MS;
+  if (timedOut) h = { ...h, state: 'unknown' };
+  const box = document.createElement('div');
+  box.className = 'setrow arrow';
+  box.dataset.kind = h.kind;
+  const head = document.createElement('div');
+  head.className = 'arhead';
+  const b = document.createElement('b'); b.textContent = h.label;
+  const chip = document.createElement('span');
+  chip.className = 'archip archip--' + (h.state || 'ok');
+  chip.textContent = t(STATE[h.state] || 'ar.stOk');
+  head.append(b, chip);
+  box.append(head);
+  if (h.state === 'checking') return box;
+  if (timedOut) box.append(line(t('ar.checkTimeout'), 'ardanger'));
+  if (h.state === 'balance') box.append(line(t('ar.balanceNote')));
+  if (h.state === 'rate_limit') box.append(line(t('ar.rateNote')));
+  if (h.kind === 'codex' && h.installed && ['balance','rate_limit'].includes(h.state)) {
+    box.append(line(t('p0280.quotaNote')));
+    box.append(btn(t('p0280.quotaRecheck'), '', () => start('codex', 'quota_recheck')));
+  }
+  if (h.token) {
+    const d = h.token.days_left;
+    const k = d > 0 ? 'ar.token' : d === 0 ? 'ar.tokenToday' : 'ar.tokenPast';
+    box.append(line(t(k).replace('{e}', h.token.expires).replace('{d}', String(d)), h.warn ? 'ardanger artoken' : 'artoken'));
+  } else if (h.installed && h.expiry) {
+    const k = { unknown: 'ar.expUnknown', auto: h.kind === 'codex' ? 'ar.expAutoCodex' : h.kind === 'kimi' ? 'ar.expAutoKimi' : 'ar.expAuto', none: 'ar.expNone' }[h.expiry];
+    if (k) box.append(line(t(k), 'arexp'));
+  }
+  if (h.installed) box.append(btn(t('ar.checkNow'), '', () => { checkingSince.delete(h.kind); call({t:'auth_get'}); }));
+  if (h.health && h.health.at) {
+    const when = new Date(h.health.at * 1000).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    box.append(line(t(h.health.ok ? 'ar.healthOk' : 'ar.healthFail').replace('{t}', when), h.health.ok ? 'arhealth' : 'arhealth ardanger'));
+  }
+  if (h.kind === 'claude' && h.installed && (h.warn || h.expiry === 'unknown')) {
+    const p = document.createElement('p'); p.className = 'mailbtns';
+    p.append(btn(t('ar.renewNow'), 'aj-action--primary arrenewbtn', () => start('claude', 'setup_token')));
+    box.append(p, line(t('ar.renewNote')));
+  }
+  if (h.conflicts && h.conflicts.length) box.append(line(t('ar.conflict').replace('{n}', h.conflicts.join(', ')), 'ardanger'));
+  const last = h.last;
+  if (last) {
+    if (last.result === 'recovered') box.append(line(t('ar.lastOk')));
+    else if (last.screen) {
+      box.append(line(t('ar.blocked').replace('{s}', last.screen.label || last.screen.id), 'ardanger'));
+      if (last.screen.last) box.append(line(last.screen.last, 'arlast'));
+      if (last.screen.action === 'confirm') {
+        const p = document.createElement('p'); p.className = 'mailbtns';
+        p.append(btn(t('ar.press'), 'aj-action--primary', () => press(h.kind, last.screen.id)));
+        box.append(p);
+      }
+    } else if (last.why && last.why !== 'same_account') box.append(line(t('ar.lastFail').replace('{w}', tw('ar.why.' + last.why, last.why)), 'ardanger'));
+  }
+  if (!h.installed) { box.append(line(t('ar.notInstalled'))); return box; }
+  const p = document.createElement('p'); p.className = 'mailbtns';
+  if (h.kind === 'claude') {
+    p.append(btn(t('ar.claudeA'), 'aj-action--primary', () => start('claude', 'setup_token')),
+             btn(t('ar.claudeB'), '', () => start('claude', 'paste')));
+    box.append(p, line(t('ar.claudeNote')));
+    const d = document.createElement('details'); d.className = 'mailadv';
+    const s = document.createElement('summary'); s.setAttribute('data-aj-owner', 'aj-account'); s.textContent = t('ar.more');
+    const q = document.createElement('p'); q.className = 'mailbtns';
+    q.append(btn(t('ar.claudeC'), '', () => start('claude', 'login')));
+    d.append(s, q, line(t('ar.claudeCNote')));
+    box.append(d);
+  } else if (h.kind === 'codex') {
+    const before = line(t('ar.codexBefore'), 'arbefore');
+    const security = document.createElement('a'); security.setAttribute('data-aj-owner', 'aj-account');
+    security.href = 'https://chatgpt.com/#settings/Security';
+    security.target = '_blank'; security.rel = 'noopener noreferrer';
+    security.className = 'arlink'; security.textContent = t('ar.codexSecurity');
+    before.append(document.createTextNode(' '), security);
+    box.append(before);
+    p.append(btn(t('ar.codexA'), 'aj-action--primary', () => start('codex', 'device')));
+    box.append(p, line(t('ar.codexNote')));
+  } else if (h.kind === 'kimi') {   // P305: `kimi login` device code (kimi.com / kimi.ai), or a key card
+    p.append(btn(t('ar.kimiA'), 'aj-action--primary', () => start('kimi', 'device')));
+    box.append(p, line(t('ar.kimiNote')), line(t('ar.kimiKey')));
+  } else {
+    p.append(btn(t('ar.opencodeA'), '', () => start('opencode', 'provider_key')));
+    box.append(p, line(t('ar.opencodeNote')));
+  }
+  return box;
+}
+
+async function press(kind, id) {
+  say(t('ar.confirm'));
+  const m = await call({ t: 'auth_press', kind, id }, LONG);
+  if (m && m.ok) say(t('ar.verifying'));
+}
+
+function copyBtn(text) {
+  return btn(t('ar.copy'), '', () => { copyNow(text).then((ok) => say(t(ok ? 'ar.copied' : 'r.copy.fail')), () => {}); });   // P292: + the execCommand fallback
+}
+
+function flowCard(f) {
+  stopTimers();
+  for (const id of FLOW_BOXES) { const box = el(id); if (box) flowInto(box, f); }
+}
+function flowInto(box, f) {
+  box.replaceChildren();
+  if (!f || ended(f)) { box.hidden = true; return; }
+  if ((box.id === 'acct-flow') !== !!f.account) { box.hidden = true; return; }
+  box.hidden = false;
+  // #427: a flow that adds an account names it (`account`: the name, or {name})
+  const here = box.id === 'acct-flow', acct = typeof f.account === 'string' ? f.account : (f.account && typeof f.account.name === 'string' ? f.account.name : ''), adding = !!acct;
+  const h = document.createElement('h3'); h.setAttribute('data-aj-owner','aj-account'); h.className = 'setg'; h.textContent = t(adding ? 'acct.flowTitle' : 'ar.flowTitle').replace('{h}', { codex: 'Codex', kimi: 'Kimi Code' }[f.kind] || 'Claude Code');
+  box.append(h);
+  if (adding) box.append(line(t('acct.flowFor', { name: acct })));
+  const link = (u) => { const a = document.createElement('a'); a.setAttribute('data-aj-owner', 'aj-account'); a.href = u; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.className = 'arlink'; a.textContent = t('ar.openLink'); return a; };
+  if (!here && ['url','device'].includes(f.stage)) box.append(line(t('p332.auth.wait')));   // #427: on AI 账号 the steps are right here
+  if (f.stage === 'starting') box.append(line(t('ar.stStarting')));
+  if (f.stage === 'device' && authOf({...f,round:f.round||1,rounds:f.rounds||1}) && (f.code || f.kind === 'kimi')) {
+    box.append(line(t(f.kind === 'kimi' ? 'ar.kimiStep1' : 'ar.deviceStep1')));
+    const p = document.createElement('p'); p.className = 'mailbtns'; p.append(link(f.url), copyBtn(f.url)); box.append(p);
+    if (f.code) {
+      box.append(line(t('ar.deviceStep2')));
+      const c = document.createElement('p'); c.className = 'arcode'; c.textContent = f.code; box.append(c);
+      const q = document.createElement('p'); q.className = 'mailbtns'; const cb = copyBtn(f.code); q.append(cb); box.append(q);
+      copyable(c, { variant: 'ext', btn: cb });   // P292: a tap on the code = 复制
+    }
+    if (!f.code) box.append(line(t('ar.kimiLinkOnly')));
+    box.append(line(t('ar.round', { n: f.round || 1, max: f.rounds || 1 })));
+    const left = line(''); box.append(left, line(t('ar.deviceNote')));
+    const tick = () => { const s = Math.max(0, (f.expires_at || 0) - Math.floor(Date.now() / 1000)); left.textContent = t('ar.left').replace('{m}', String(Math.floor(s / 60))).replace('{s}', String(s % 60).padStart(2, '0')); };
+    tick(); timers.push(setInterval(tick, 1000));
+  }
+  if (f.reopened && ['starting', 'url'].includes(f.stage)) box.append(line(t(f.reopened === 'expired' ? 'ar.reopenedExpired' : 'ar.reopenedRejected'), 'arreopen'));
+  if (f.stage === 'url' && authOf({...f,code:f.code||'',round:f.round||1,rounds:f.rounds||3})) {
+    box.append(line(t('ar.urlStep1')));
+    const p = document.createElement('p'); p.className = 'mailbtns'; p.append(link(f.url), copyBtn(f.url)); box.append(p);
+    if (f.kind === 'kimi') box.append(line(t('ar.kimiLinkOnly')));
+    else box.append(line(t('ar.urlStep2')), btn(t('ar.openCard'), '', reopenAuth));
+    if (f.expires_at) {   // P288: the link's 10 minutes; at 0 the host opens the next round by itself
+      const left = line('', 'arleft'); box.append(left);
+      const tick = () => {
+        const s = Math.max(0, f.expires_at - Math.floor(Date.now() / 1000));
+        left.textContent = t('ar.urlLeft').replace('{m}', String(Math.floor(s / 60))).replace('{s}', String(s % 60).padStart(2, '0'))
+          + (f.round ? ' · ' + t('ar.round').replace('{n}', String(f.round)).replace('{max}', String(f.rounds || 3)) : '');
+      };
+      tick(); timers.push(setInterval(tick, 1000));
+    }
+  }
+  if (f.stage === 'paste') box.append(line(t('ar.pasteStep')));
+  if (f.stage === 'verifying') box.append(line(t(f.saved ? 'ar.savedChecking' : 'ar.verifying')));
+  if (['starting', 'device', 'url', 'paste'].includes(f.stage)) {
+    const p = document.createElement('p'); p.className = 'mailbtns';
+    p.append(btn(t('ar.cancel'), '', () => call({ t: 'auth_cancel' })));
+    box.append(p);
+  }
+}
+
+function render() {
+  const list = el('ar-list');
+  if (!list || !view) return;
+  list.replaceChildren(...(view.harnesses || []).filter((h) => h.installed || h.current).map(harnessCard));
+  flowCard(view.flow);
+}
+
+export function configure(h = {}) {
+  hooks = h || {};
+  document.addEventListener('visibilitychange', () => { if (poll && !document.hidden) call({ t:'auth_get', check:false }); });
+  el('ar-renew-open')?.addEventListener('click', renewNow);
+  el('ar-renew-x')?.addEventListener('click', renewLater);
+}
+export function close() { relayKeys.unmount(el('ar-relay-keys')); ++loadId; stopTimers(); clearInterval(poll); poll = null; clearTimeout(checkTimer); checkTimer = null; checkingSince.clear(); }

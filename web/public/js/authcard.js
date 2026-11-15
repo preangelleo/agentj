@@ -7,7 +7,7 @@ export function authOf(a) {
     const u = new URL(a.url);
     const hosts = { claude: ['claude.com','claude.ai','console.anthropic.com','platform.claude.com'], codex: ['auth.openai.com'] };
     if (u.protocol !== 'https:' || u.username || u.password || u.port || u.hash) return null;
-    if (a.kind === 'kimi' ? !/^(?:[a-z0-9-]+\.)*kimi\.(com|ai)$/.test(u.hostname) : !hosts[a.kind].includes(u.hostname)) return null;
+    if (a.kind === 'kimi' ? !['auth.kimi.com','auth.kimi.ai','www.kimi.com','www.kimi.ai','kimi.com','kimi.ai'].includes(u.hostname) : !hosts[a.kind].includes(u.hostname)) return null;
     if (a.kind === 'claude' && !u.pathname.endsWith('/oauth/authorize')) return null;
   } catch { return null; }
   if (typeof a.code !== 'string' || a.code.length > 32 || !/^[A-Za-z0-9-]*$/.test(a.code)
@@ -28,5 +28,5 @@ export function paintAuth(box, a) {
   actions.append(link, copy, result); box.append(p, actions);
   if (a.code) { const c = document.createElement('p'); c.className = 'arcode'; c.textContent = a.code; const b = copy.cloneNode(); b.textContent = t('ar.copy'); b.addEventListener('click', async()=>{ result.textContent=t(await copyNow(a.code)?'ar.copied':'r.copy.fail'); }); box.append(c,b); }
   const round = document.createElement('p'); round.textContent = t('ar.round', { n:a.round, max:a.rounds }); box.append(round);
-  const note = document.createElement('p'); note.textContent = t('ar.cardStep'); box.append(note);
+  const note = document.createElement('p'); note.textContent = t(a.kind === 'kimi' ? 'ar.kimiLinkOnly' : 'ar.cardStep'); box.append(note);
 }

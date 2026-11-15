@@ -94,6 +94,7 @@ def decision(layer, action):
 # execution or replaces signature, nonce, target, TTL or final-executor checks.
 HOST_TOOLS = MappingProxyType({
     "AgentJBoundedPlan": "plan.bounded",
+    "FriendsTellOnce": "publish",
     "pair_device": "device.pair", "SandboxOnce": "admin", "AuthRescue": "secrets.read",
     "DoomLoop": "settings.write", "task": "agent.dispatch", "AskUserQuestion": "settings.write",
     "AgentJHook": "settings.write", "AgentJTerminal": "admin",
@@ -110,6 +111,9 @@ HOST_TOOLS = MappingProxyType({
     "agentj config": "settings.write", "agentj goal": "settings.write",
     "agentj goal grant": "settings.write", "agentj quota switch": "settings.write",
     "agentj automation resume": "settings.write", "agentj plaza": "admin",
+    "agentj tasks create": "settings.write",
+    "agentj local record": "settings.write",
+    "agentj local relink": "settings.write",
     "agentj tasks migrate": "settings.write",   # P570b: sysmigrate's card (P570c: a plain confirm)
     "AgentJSameOwnerAction": "publish",
     "agentj secret grant": "secrets.read",   # P574: the same-owner task grant card (owner_grant.TOOL), always Face ID

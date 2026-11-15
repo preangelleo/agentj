@@ -491,6 +491,12 @@ export function render() {
   renderLevel();
   const mode = pget('agent.session_mode', 'independent') === 'shared' ? 'shared' : 'independent';   // P174: independent by default
   twoWay('set-updates', !autoUpdates());     // P207 two-way (left 自动 · right 先问我) over P203's two keys: 自动 = install when idle
+  // Report the actual host fields, including a partial save / legacy mismatch, rather than guessing from the knob.
+  const install = pget('updates.auto_install', null), notice = pget('updates.mode', null);
+  const updateKey = typeof install === 'boolean' && ['auto', 'ask'].includes(notice)
+    ? `p0322.update.${install ? 'on' : 'off'}.${notice}` : 'p0322.update.unknown';
+  el('set-updates-state').dataset.i18n = updateKey;
+  fillText(el('set-updates-state'), t(updateKey));
   twoWay('set-mode', mode === 'shared');                                // P207: left 独立 · right 共享
   const iso = pget('agent.isolation', true) !== false, dock = pget('agent.allow_docker', false) === true;
   tgl('set-iso', iso);
@@ -696,6 +702,7 @@ export function close() {
   if (box.hidden) return;
   if (sub === 'remotes') remotes.close();
   if (sub === 'contacts') ctmanage.close();
+  if (sub === 'auth') authrescue.close();
   if (sub === 'accts') accounts.close();   // #427
   webhooks.close();   // P366
   toolsort.close();   // P340: a picked-up button is put down

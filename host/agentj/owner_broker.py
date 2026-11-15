@@ -27,11 +27,15 @@ def parse(tool, inp, cwd):
         return None
     if len(words) < 3 or not (words[0] == 'agentj' or (shutil.which('agentj') and os.path.realpath(words[0]) == os.path.realpath(shutil.which('agentj')))):
         return None
-    if words[1:3] == ['file', 'show']:
+    if words[1] == 'file' and words[2] in ('show', 'send'):
         import argparse
         parser = argparse.ArgumentParser(exit_on_error=False, add_help=False)
         parser.add_argument('path')
-        parser.add_argument('--label', default='')
+        if words[2] == 'show':
+            parser.add_argument('--label', default='')
+        else:
+            parser.add_argument('--to', required=True, choices=['wechat'])
+            parser.set_defaults(label='')
         parser.add_argument('--json', action='store_true')
         try:
             args, unknown = parser.parse_known_args(words[3:])
@@ -40,7 +44,7 @@ def parse(tool, inp, cwd):
         if unknown or not args.path or len(args.path) > 512 or len(args.label) > 128:
             return None
         from .file_show import request
-        return request(args.path, args.label, cwd)
+        return request(args.path, args.label, cwd, delivery='wechat' if words[2] == 'send' else None)
     if words[1:3] == ['friends','tell']:
         args = words[3:]
         if args.count('--grant') != 1:
@@ -184,6 +188,22 @@ class Broker:
                     or not provenance.is_owner(row['source']) or not page or page.get('end') != 'open'
                     or execution.send.turn not in ids):
                 return {'behavior': 'deny', 'message': 'No active owner page'}
+            if req.get('delivery') == 'wechat':
+                from . import wechat_forward
+                binding = wechat_forward.file_binding(host)
+                if binding is None:
+                    return {'behavior': 'deny', 'message': 'Bound owner WeChat needs a message before sending.'}
+                try:
+                    await asyncio.to_thread(wechat_forward.file_secret_check, row['project_root'], os.path.abspath(os.path.join(req['cwd'], os.path.expanduser(req['path']))))
+                except (OSError, ValueError):
+                    return {'behavior': 'deny', 'message': 'File delivery privacy check refused.'}
+                with owner_call.request(live), provenance.request_source(row['source']):
+                    answer = await host.ask(tool, inp, gone, batch=False)
+                if answer.get('behavior') != 'allow':
+                    return answer
+                if not live() or not wechat_forward.file_binding_live(host, binding):
+                    return {'behavior': 'deny', 'message': 'Original owner execution or WeChat binding changed.'}
+                row['file_delivery'] = binding
         if req.get('op') == 'grant':
             path = pathlib.Path(req.pop('file')).expanduser()
             if not path.is_absolute():
@@ -254,7 +274,7 @@ class Broker:
         with owner_call.request(row['check']), provenance.request_source(row['source']):
             from . import file_show
             if req['t'] == 'file_show':
-                result = await file_show.attach(x.svc.host, req, row['check'], row['project_root'])
+                result = await file_show.attach(x.svc.host, req, row['check'], row['project_root'], row.get('file_delivery'))
             elif req['t'] == 'tell':
                 result = await x.svc.tell(req['friend'], req['text'], grant=req['grant'])
             else:
@@ -263,7 +283,7 @@ class Broker:
             self.receipts[key(req)] = (time.monotonic() + 120, result)
         while len(self.receipts) > 64:
             self.receipts.pop(next(iter(self.receipts)))
-        x.svc.host.agent_notice(('FILE_SHOW_RESULT: ' if req['t'] == 'file_show' else 'SECRET_TASK_RESULT: ') + json.dumps(result, ensure_ascii=False))
+        x.svc.host.agent_notice(('FILE_SEND_RESULT: ' if req.get('delivery') == 'wechat' else 'FILE_SHOW_RESULT: ' if req['t'] == 'file_show' else 'SECRET_TASK_RESULT: ') + json.dumps(result, ensure_ascii=False))
 
     def feedback_receipt(self, req, peer):
         """Only an exact admitted payload produces a pending result; never HTTP here."""

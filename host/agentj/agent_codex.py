@@ -450,6 +450,10 @@ class CodexAgent(Agent):
     def provider(self) -> dict | None:
         """P309: the provider the loaded thread really uses (Codex's own answer first, then config.toml)."""
         try:
+            if self.cfg.get('_agentsrelay_provider') is not None:
+                from .agentsrelay_dispatch import pinned_profile
+                from urllib.parse import urlsplit
+                return {'id': 'agentsrelay', 'host': urlsplit(pinned_profile(self.cfg['_agentsrelay_provider']).base_url).hostname, 'relay': True}
             return codex_perm.provider(self.thread.get("modelProvider") or self.human.get("model_provider"))
         except Exception:  # noqa: BLE001 — a notice must never fail on this
             return None
@@ -501,6 +505,9 @@ class CodexAgent(Agent):
 
     def argv(self) -> list[str]:
         argv = [_agentmod._bin("AGENTJ_CODEX_BIN", "codex") or "codex", "app-server"]
+        if self.cfg.get('_agentsrelay_provider') is not None:
+            from .agentsrelay_dispatch import provider_options
+            argv += provider_options(self.cfg['_agentsrelay_provider'])
         channel = getattr(self, '_control_channel', None)
         if channel:
             from . import shared_hook
@@ -574,6 +581,15 @@ class CodexAgent(Agent):
         p.stdin.write((json.dumps(obj, ensure_ascii=False) + "\n").encode())
 
     async def call(self, method: str, params: dict, timeout: float = CALL_WAIT):
+        profile = self.cfg.get('_agentsrelay_provider')
+        if profile is not None and method in ('thread/start', 'thread/resume'):
+            from .agentsrelay_dispatch import rpc_options
+            params = rpc_options(profile, params)
+        if profile is not None and method == 'turn/start':
+            if self.thread.get('modelProvider') != profile.id:
+                raise RPCError({'message': 'Relay provider receipt mismatch; no turn started'})
+            params = {k:v for k,v in params.items() if k not in ('modelProvider', 'model_provider', 'config', 'configOverrides', 'config_overrides')}
+            params['model'] = profile.model
         self.n += 1
         i = self.n
         f = asyncio.get_running_loop().create_future()
@@ -611,10 +627,12 @@ class CodexAgent(Agent):
         from .proxy import environment
         from . import fence
         env = environment(primary_environment(os.environ) if self.kind == "codex" else os.environ, self.host.preferences)
+        from .agentsrelay_dispatch import native_model_key
+        model_key = native_model_key(self.cfg)
         if self.cfg.get("_workflow_ceo"):
-            env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"), host_state=self.host.st)
+            env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"), host_state=self.host.st, native_model_key=model_key)
         if self.cfg.get("fence", True):
-            env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
+            env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind, native_model_key=model_key)
         from .static_shell import interpreter_env
         self.approval_env = interpreter_env(env)
         try:
@@ -1094,7 +1112,7 @@ class CodexAgent(Agent):
             batch = p.get("kind") != "writeStdin" and not isinstance(p.get("networkApprovalContext"), dict)
             why = beyond_sandbox(self.thread.get("sandbox"), method, "Bash", {"command": inner}, p, None, self.cfg["dir"])
             if why:
-                return self._refuse(rid, "Bash", inp, {"decision": "decline"}, why)
+                return self._refuse(rid, "Bash", inp, {"decision": "decline"}, why, _native_request=p)
             if getattr(self.host, "peers", None) is not None and not self.research and not codex_children.is_child(self):
                 self.__dict__.setdefault("secret_native_calls", {})[str(rid)] = p.get("itemId")
                 self.host.peers.xfer.broker.register(p.get("itemId"), "Bash", inp, p.get("cwd") or self.cfg["dir"], raw={"command":inner}, native=(self.tid, p.get("turnId")))
@@ -1253,11 +1271,17 @@ class CodexAgent(Agent):
                     "this restriction, run `agentj codex-sandbox default`, then `agentj service restart`.")
         return POLICY_NOTICE
 
-    def _refuse(self, rid, tool: str, inp: dict, no: dict, why: str, notice: str | None = None) -> None:
+    def _refuse(self, rid, tool: str, inp: dict, no: dict, why: str, notice: str | None = None, *, _native_request=None) -> None:
         """Beyond the human's own sandbox (or, M2, too long to show whole): declined at once, no card; a notice and a
         refused-by-policy record."""
+        from .friends_tell_native import offer as friends_tell_offer
+        if notice is None and friends_tell_offer(self,rid,tool,inp,no,_native_request):
+            return
         self._answer(rid, no)
         if not self.research:                  # a read-only task's refusals are expected; it reports in its answer
+            from .friends_tell_action import sandbox_guidance
+            if notice is None and (guidance := sandbox_guidance(tool, inp)):
+                return self.host.policy_refused(clean_line(tool, 64) or "?", inp, why, guidance)
             from . import codex_full_access    # 0.30.7: the owner's config.toml case alone gets the one-tap way back
             if notice is None and codex_full_access.offered(getattr(self, "perm_source", None)):
                 return self.host.policy_refused(clean_line(tool, 64) or "?", inp, why, self.policy_notice(),

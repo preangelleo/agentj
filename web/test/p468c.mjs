@@ -5,11 +5,12 @@ import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
 import {launch,newPage,navigate,waitState,evaluate,shoot} from './browser.mjs';
 import {orphanLineAuditSource} from '../../brand/test/orphan-line-audit.mjs';
-const mode=process.env.P468C_MODE||'after',out=resolve(process.env.P468C_OUT||'reports/qa/orphan-468c-20261106/engineering'),shots=resolve(process.env.HOME,'coding/.agentj/outbox');
+const mode=process.env.P468C_MODE||'after',out=resolve(process.env.P468C_OUT||'reports/qa/orphan-468c-20261106/engineering'),shots=resolve(process.env.P468C_SHOTS||out,'shots');
 mkdirSync(out,{recursive:true});mkdirSync(shots,{recursive:true});
 const web=await startWebServer(),fake=await startFakeHost(),B=await launch(),entries=[];let checks=0;
 const ids=(process.env.P468C_IDS||'setup-faceid,set-mail-nav,set-contacts-nav,set-notify-nav').split(',');
-const originalKeys={'setup-faceid':'pkp.rowNote','set-mail-nav':'mail.navNote','set-contacts-nav':'p207set.ct.navNote','set-notify-nav':'p365.navNote'};
+const currentKeys={'setup-faceid':['p468c.faceRisk','p468c.faceBio','p468c.faceConfirm','p468c.faceDevice','p468c.faceMethod'],'set-mail-nav':['p468c.mailSend','p468c.mailReply'],'set-contacts-nav':['p468c.contactsPeople','p468c.contactsAllow'],'set-notify-nav':['p468c.notifySource','p468c.notifyTarget']};
+assert.ok(ids.every(id=>currentKeys[id]),'every fixture id has an explicit current wording contract');
 const check=(v,msg)=>{checks++;assert.ok(v,msg);};
 try{for(const width of [320,360,390,430,1440])for(const theme of ['light','dark'])for(const language of ['zh','en']){
  fake.reset();fake.setUp(true);fake.st.extraCaps=['contacts'];fake.st.prefs={appearance:{language,theme}};
@@ -29,7 +30,7 @@ try{for(const width of [320,360,390,430,1440])for(const theme of ['light','dark'
  }
  entries.push({mode,width,theme,language,id,geometry,findings});
  if(language==='zh'&&((id==='setup-faceid'&&width===360)||(id!=='setup-faceid'&&width===390)||width===1440))writeFileSync(resolve(shots,`468c-孤字-${mode==='before'?'改前':'改后'}-${id}-${language}-${theme}-${width}.png`),await shoot(p,''));
- if(mode!=='before'){check(geometry.text===await evaluate(p,`import('./js/t.js').then(m=>m.t('${originalKeys[id]}'))`),id+' keeps complete original wording');check(geometry.visible,id+' visible');check(!findings.length,`${width}/${theme}/${language}/${id}: ${JSON.stringify(findings)}`);check(!geometry.overflow,id+' no overflow');check(geometry.lines.every(l=>l.left>=geometry.box.left-1&&l.right<=geometry.box.right+1),id+' no clipping');}
+ if(mode!=='before'){const keys=currentKeys[id];const copy=await evaluate(p,`import('./js/t.js').then(m=>({actual:[...document.querySelectorAll('#${id} small [data-i18n]')].map(n=>n.dataset.i18n),values:${JSON.stringify(keys)}.map(k=>m.t(k))}))`);check(JSON.stringify(copy.actual)===JSON.stringify(keys),id+' exact declared key sequence and node count');check(copy.values.every((v,i)=>typeof v==='string'&&v.trim()&&v!==keys[i]),id+' every declared translation is nonempty and resolved');check(geometry.text===copy.values.join(''),id+' keeps complete independently declared component wording');check(geometry.visible,id+' visible');check(!findings.length,`${width}/${theme}/${language}/${id}: ${JSON.stringify(findings)}`);check(!geometry.overflow,id+' no overflow');check(geometry.lines.every(l=>l.left>=geometry.box.left-1&&l.right<=geometry.box.right+1),id+' no clipping');}
  }
  if(mode!=='before'){check(!p.problems.length,'console/CSP '+p.problems.join('|'));check(!p.offsite.length,'no offsite');}
  }finally{await p.dispose();}

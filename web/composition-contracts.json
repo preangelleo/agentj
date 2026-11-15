@@ -1287,17 +1287,18 @@
     "styles/05-composition-layout.css": "48a0f2d6bb2e599a19ab5904606212932ccaaae29f1dacd67a68e8eb92e790ae",
     "styles/19-hero.css": "0e945eb51f97b7e117d24d9af66b7ad7ceffa79428321770972e46f9a1d8fa3b",
     "styles/20-composition-rhythm.css": "eef8954791dbdfd0a29e02de76a7ff35c08f091f3d45b208496f52c1558eb56d",
-    "public/index.html": "3df32b00d92465d9303b41f04bb701500838d09074dd39bb15b9efac9893375c",
-    "public/js/elevate.js": "7b873373a1e7b712a46f60c5d576088403221dbd77d5f5d886ec3e669d8c21ea",
-    "public/js/relay.js": "a6c99bf9aa3c6c68599d432f094231e75d5c6621dc1a9f0953433011591d7bbf",
-    "public/js/bots.js": "0c8b487e619459b73da06d53d67a747d43ea19d1ace8a3b56beb6bcc129e6f02",
+    "public/index.html": "a8a77a3194b85b69b94a5cd530a3741f2cfc9fc4d34ea2ad91bb16995bc40762",
+    "public/js/elevate.js": "930ccc2c64d5baefb2752d6ee29f5b377053e673b985af49b403500851b11c2f",
+    "public/js/relay.js": "a38a976a30d4f03fcff9fa7ee85977899c09fd486fa894db55b31b03a2550cca",
+    "public/js/bots.js": "29752fd99e8be638ae0827a93a63bb8e35d9121223a65922cb9eb41edbe9b11a",
     "public/js/controls.js": "9d5390820561605b234716c20949ecf5f71232b7afca8853562cc7097a2ebbf8",
-    "public/js/friends.js": "2d163c669ff0b65da6b1e2309ec80ce686c22a8ca0f25aa54d187568447d0861",
-    "public/js/version-notice.js": "90ac0b2bbe98d6c3146899996731e948d51d671aba17fafddf9933df37e868bb",
-    "public/js/ui.js": "b3d39636e06ab926e9edcae9a4f697bad3d568a227dc988f61ca310de52b7748",
+    "public/js/friends.js": "ab5daa2333a0acc4444d855a88ff40a476f328e9ac7ac03c9bfa4d6bfde9bf73",
+    "public/js/version-notice.js": "d0aeaca668dfef979c09ec05a25d3cc5196511825dba68cfe579ebbc54ba1b95",
+    "public/js/ui.js": "3931ccf877149de037cb7cc27bd58b0cd2ed84ec9437e46503559103c43c6d3c",
     "public/js/copycode.js": "1f37adefc4fe9d30825e6e345ff93cbd71ffd56804564888891f2db17bbb63db",
     "public/js/bang.js": "7d6af4c80e22f5d3957a97baddd5a20b0f3d677e56be57313d742c6351d39d6a",
     "public/js/md.js": "1a1f0eea6053c9a783d1da26907761f7038d4229e543c4b6f514951815727409",
-    "public/js/cardplace.js": "f674254caf8724806b79dcd363541f89de804df8436c214f3da9b5e44724311c"
+    "public/js/cardplace.js": "3ba18887c15b357e67dcf6d00f2d0ef5d1af2a32edf3f31e93016adbfbf66dbf",
+    "public/app.css": "8da43121f9f082afbcf8260af6ba2fc84474a4b448ef25e76e8cd1fbe11b692c"
   }
 }

@@ -16,16 +16,18 @@ test('1 reload stop: one notice function, 15 s, square, close button labelled fr
   assert.match(ui, /export function reloadStoppedNotice\(\) \{ return notify\(\{ kind: 'info', shape: 'square', text: tr\('reload\.stopped'\), ms: RELOAD_STOP_MS, close: tr\('reload\.close'\) \}\); \}/);
   assert.match(app, /notice: \(\) => reloadStoppedNotice\(\)/);
   assert.doesNotMatch(app, /toast\(t\('reload\.stopped'\)/, 'the old 6 s close-less toast is gone');
-  // the button: aria-label + title from spec.close, closes through toastOff (same as Esc), keeps a field's focus
+  // the button: aria-label + title from spec.close, closes its own channel; Esc clears both channels, keeps a field's focus
   const at = ui.indexOf('if (spec.close) {'), body = ui.slice(at, ui.indexOf('box.replaceChildren(...kids);', at));
   assert.ok(at > 0);
   assert.match(body, /x\.type = 'button'; x\.className = 'nt-close'/);
   assert.match(body, /x\.setAttribute\('aria-label', String\(spec\.close\)\)/);
-  assert.match(body, /x\.addEventListener\('click', \(\) => toastOff\(\)\)/);
+  assert.match(body, /x\.addEventListener\('click', \(\) => hideNotice\(box\)\)/);
   assert.match(ui, /box\.classList\.toggle\('closable', !!spec\.close\)/);
   assert.match(ui, /'glance', 'over-dlg', 'closable'\);/, 'a later notice drops the close state');
   // Esc on a held notice still puts it away (unchanged global handler)
-  assert.match(ui, /if \(n && n\.classList\.contains\('on'\)\) \{ toastOff\(\);/);
+  assert.match(ui, /const visibleNotice = e\.key === 'Escape' && noticeNodes\(\)\.some\(n => n\.classList\.contains\('on'\)\)/);
+  assert.match(ui, /if \(visibleNotice\) \{ toastOff\(\);/);
+  assert.match(ui, /for \(const node of noticeNodes\(\)\) hideNotice\(node\)/);
 });
 
 test('1 reload stop: the button is a 44 px Lotion-on-Noir target and the square takes taps while it shows', () => {
@@ -53,7 +55,9 @@ test('2 preview failure (S3): a confirmation card on top is above the strip', ()
   const m = /body\[data-ontop="1"\] #toast\[data-preview-failure="1"\]\{z-index:calc\(var\(--z-confirm\) - 1\)!important\}/.exec(css);
   assert.ok(m, 'below --z-confirm while a card is on top');
   // it must come after (and out-rank) the generic notice-over-card rule P551 keeps for every other notice
-  assert.ok(m.index > css.indexOf('body[data-ontop="1"] #toast{z-index:var(--z-notice-top)!important}'));
+  const generic = css.indexOf('body[data-ontop="1"] :is(#toast,#notice-fifo[data-aj-owner="aj-notice"]){z-index:var(--z-notice-top)!important}');
+  assert.ok(generic >= 0, 'both notice channels keep the reviewed over-card tier');
+  assert.ok(m.index > generic);
 });
 
 test('3 Settings: a notice that repeats a Settings status line is not shown; a later line puts it away', () => {

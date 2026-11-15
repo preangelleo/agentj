@@ -5,8 +5,88 @@ import json
 import os
 from dataclasses import dataclass
 import secrets
+import stat
 import time
 from . import approval_review, approvals, policy_registry, uv_list
+
+
+@dataclass(frozen=True)
+class StateSubject:
+    """One request's concrete controller State; no authority from tool fields."""
+    state: object
+    configured: str
+    root: str
+    device: int
+    inode: int
+    channel: str
+
+    @classmethod
+    def capture(cls, host):
+        state = host.st
+        configured = os.path.abspath(state.root)
+        root = os.path.realpath(configured)
+        info = os.stat(root)
+        if not stat.S_ISDIR(info.st_mode):
+            raise OSError('state root unavailable')
+        return cls(state, configured, root, info.st_dev, info.st_ino, state.config()['channel'])
+
+    def live(self, host):
+        try:
+            info = os.stat(self.root)
+            return (host.st is self.state and host.channel == self.channel
+                    and self.state.config().get('channel') == self.channel
+                    and os.path.abspath(self.state.root) == self.configured
+                    and os.path.realpath(self.configured) == self.root
+                    and (info.st_dev, info.st_ino) == (self.device, self.inode))
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            return False
+
+    def record(self, host, **fields):
+        """Retain approvals.record's schema, with append anchored to the captured inode.
+
+        A root renamed between live() and open() must never redirect this audit to
+        its replacement. No descriptor survives the synchronous append.
+        """
+        if not self.live(host):
+            return None
+        from types import SimpleNamespace
+        try:
+            fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        except OSError:
+            return None
+        try:
+            info = os.fstat(fd)
+            if (info.st_dev, info.st_ino) != (self.device, self.inode) or not self.live(host):
+                return None
+            def append(path, line):
+                out = os.open('approvals.log', os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW,
+                              0o600, dir_fd=fd)
+                try:
+                    os.write(out, (line + '\n').encode())
+                finally:
+                    os.close(out)
+            audit = SimpleNamespace(config=lambda: {'channel': self.channel},
+                                    approvals_path='approvals.log', append_private=append)
+            return approvals.record(audit, **fields)
+        except OSError:
+            return None
+        finally:
+            os.close(fd)
+
+
+def state_live(host, ask):
+    subject = getattr(ask, 'state_subject', None)
+    return subject is None or (type(subject) is StateSubject and subject.live(host))
+
+
+def state_changed(host, ask):
+    """Retire the pending card without touching a replacement State's files."""
+    host.asks.pop(ask.rid, None)
+    ask.withdrawn = 'state_authority_changed'
+    if not ask.fut.done():
+        ask.fut.set_result(('deny', None, None, None))
+    return {'behavior':'deny', 'reason':'state_authority_changed',
+            'message':'Controller state changed; approval cancelled, no operation confirmed.'}
 
 
 @dataclass(frozen=True)
@@ -98,6 +178,10 @@ class PermissionContext:
 
 async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
               receipt=None, only=None, host_card=False, settings_session=None, bounded_context=None, harness_permission=False, task_actions=None, task_target=None, native_context=None, settings_context=None, front=None, background=None, order_owner=False):
+    try:
+        state_subject = StateSubject.capture(host)
+    except (OSError, ValueError, TypeError, KeyError):
+        return {'behavior':'deny', 'reason':'state_authority_changed'}
     # JSON from a native transport must normalize before inventory/path checks,
     # settings-input hashes or display hashes. Never echo exception repr/values.
     try:
@@ -146,18 +230,25 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
         else:
             headless_fingerprint, headless_src = fingerprint, typed
     def refused(reason, message):
+        if not state_subject.live(host):
+            return {'behavior':'deny', 'reason':'state_authority_changed',
+                    'message':'Controller state changed; no operation confirmed.'}
         # No card was displayed. Keep the original request's metadata-only
         # audit linkage without collecting source text or inventing a signer.
         rid = secrets.token_hex(16)
         agent = getattr(host.agent, 'kind', '?')
-        approvals.record(host.st, rid=rid, agent=agent, tool=tool,
+        recorded = state_subject.record(host, rid=rid, agent=agent, tool=tool,
             input_sha256=approvals.input_digest(inp),
             shown_sha256=approvals.shown_digest(tool, '[not displayed]'),
             decision='deny', reason=reason, cats=[], task_id=host._task_id())
+        if recorded is None or not state_subject.live(host):
+            return {'behavior':'deny', 'reason':'state_authority_changed'}
         if isinstance(receipt, dict):
             receipt.update(id=rid, reason=reason, approval_card_shown=False)
         host.st.log('ask_done', id=rid, agent=agent, tool=tool, decision='deny', reason=reason)
         return {'behavior':'deny', 'message':message, 'reason':reason}
+    if not state_subject.live(host):
+        return refused('state_authority_changed', 'Controller state changed; no operation confirmed.')
     if host.stopping.is_set():
         return refused('serve_stop', 'Agent J serve has stopped; no operation executed.')
     if host.stopped():
@@ -180,12 +271,15 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
                                                               else approval_offlist.CARD_LIST)
     if not listed and (harness_permission or tool not in policy_registry.HOST_TOOLS):
         return await approval_offlist.answer(host, tool, inp, cwd, receipt=receipt, settings_context=settings_context,
-                                             background=background, fingerprint=headless_fingerprint, src=headless_src)
+                                             background=background, fingerprint=headless_fingerprint, src=headless_src,
+                                             state_subject=state_subject)
     # Host commands that are not on the list add no second permission layer.
     # Native permission requests reach this adapter only after the harness asks.
     if not harness_permission and not listed and tool in policy_registry.HOST_TOOLS and task_actions is None:
         from . import application_ingress
         result = application_ingress.ordinary(host, tool, inp)
+        if not state_subject.live(host):
+            return refused('state_authority_changed', 'Controller state changed; no operation confirmed.')
         if result['behavior'] != 'allow':
             return refused(result['reason'], 'No live authenticated application request; no operation executed.')
         if isinstance(receipt, dict):
@@ -208,7 +302,7 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
     request_origin = None if settings_context else copy.deepcopy(approval_review.snapshot(host))
     request_typed = approval_offlist.source(host, settings_context=settings_context, background=background)
     def subject_live():
-        return (not host.stopped() and not host.stopping.is_set()
+        return (state_subject.live(host) and not host.stopped() and not host.stopping.is_set()
                 and (gone is None or not gone.done())
                 and (native_context is None or native_context.live(host))
                 and (settings_context.live(host) if settings_context else
@@ -277,6 +371,7 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
             asyncio.get_running_loop().create_future(), require_passkey=uv,
             only=only, host_card=host_card, settings_session=settings_session,
             reason=tool)
+    a.state_subject = state_subject
     a.list_model = True
     a._list_display_snapshot = summary
     a.display_normalizer = display
@@ -313,6 +408,8 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
     try:
         waits = {a.fut, a.review_pause} | ({gone} if gone is not None else set())
         done,_ = await asyncio.wait(waits, timeout=max(0,a.deadline-time.monotonic()), return_when=asyncio.FIRST_COMPLETED)
+        if not state_subject.live(host):
+            return state_changed(host, a)
         if a.review_pause in done and not a.fut.done():
             return host._park(a,base,summary,host._park_key(tool,isha),None,why='question')
         if a.fut in done:
@@ -332,12 +429,16 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
     finally:
         if not a.parked:
             host.asks.pop(rid,None)
+    if not state_subject.live(host):
+        return state_changed(host, a)
     approval_review.finished(host,a,decision,reason)
     if getattr(a,'answer_v',None) == 2:
         base.update(shown_sha256=a.answer_digest, approval_v=2)
-    approvals.record(host.st,**base,decision=decision,reason=reason,device=did,sign_pub=sk,sig=sig,
+    recorded = state_subject.record(host,**base,decision=decision,reason=reason,device=did,sign_pub=sk,sig=sig,
         task_scope=a.task_scope,task_uv=bool(uv and a.uv_ok) if a.task_scope else None,
         task_id=host._task_id() if a.task_scope else None)
+    if recorded is None or not state_subject.live(host):
+        return state_changed(host, a)
     host.st.log('ask_done',id=rid,tool=tool,decision=decision,reason=reason,device=did)
     host.activity('decision',id=rid,tool=tool,result=decision,reason=reason,cats=[],summary=summary)
     host.emit('ask_done',id=rid,result=decision,reason=reason,device=did)
@@ -434,7 +535,7 @@ def proof(host, ask, device, signing_key, signature):
 
 def bind_resume(host, ask, send, device, signing_key, signature):
     """A Host-created retry Send is an object capability, never a client field."""
-    if (not getattr(ask,'list_model',False) or getattr(ask,'bounded_plan',None) is not None
+    if (not state_live(host, ask) or not getattr(ask,'list_model',False) or getattr(ask,'bounded_plan',None) is not None
             or not getattr(ask,'review_event',None) or not signing_key
             or host.st.sign_key(device)!=signing_key or (ask.require_passkey and not ask.uv_ok)):
         return
@@ -452,7 +553,7 @@ def take_resume(host, tool, inp, uv, context, settings_session):
     now=time.monotonic()
     for rid,record in list(records.items()):
         ask=record['ask']
-        if (now>=record['deadline'] or record['state'] is not host.st or record['agent'] is not host.agent
+        if (not state_live(host, ask) or now>=record['deadline'] or record['state'] is not host.st or record['agent'] is not host.agent
                 or record['channel']!=host.channel or record['session']!=str(host.hist.epoch)
                 or record['task_epoch']!=host.__dict__.get('task_epoch')
                 or host.st.sign_key(record['device'])!=record['key']):

@@ -1,7 +1,7 @@
 // Actual owner UI over paired Noise, fixture host. No production or credential access.
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
-import {mkdirSync,writeFileSync} from 'node:fs';
+import {mkdirSync,writeFileSync,readFileSync} from 'node:fs';
 import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
 import {launch,newPage,evaluate,navigate,waitFor,waitState,shoot} from './browser.mjs';
@@ -14,17 +14,23 @@ try{
  for(const language of ['zh','en']){
   const name='owner-bots-'+language;let p;
   try{
-   fake.reset();let config=null,nativeProblem=null;const writes=[];
+   fake.reset();let config=null,nativeProblem=null,apiEnabled=false;const writes=[],reads=[];
+   const words=JSON.parse(readFileSync(new URL('../i18n/web.'+language+'.json',import.meta.url),'utf8'));
+   const expectedTabs=['settings','limits','knowledge','tools','conversations','statistics','embed'].map(k=>words['bots.'+k]).concat('API');
    fake.st.onApp=async(c,m,send)=>{
     if(!['bots_read','bots_write'].includes(m.t))return false;
     if(m.t==='bots_write'){
      const device=fake.devs.find(d=>d.id===c.devId),pk=await webcrypto.subtle.importKey('raw',wire.unb64u(device.sk),'Ed25519',false,['verify']);
      assert.equal(await webcrypto.subtle.verify('Ed25519',pk,wire.unb64u(m.sig),await wire.controlMessage(fake.channel,c.devId,'bots_write',m.n,m.ts,{request:m.request})),true);
+     assert.equal(await webcrypto.subtle.verify('Ed25519',pk,wire.unb64u(m.sig),await wire.controlMessage(fake.channel,c.devId,'bots_write',m.n,m.ts,{request:{...m.request,op:m.request.op+'_tampered'}})),false,'a changed operation cannot reuse the owner signature');
+     if(m.request.op==='api_switch')apiEnabled=m.request.enabled;
      writes.push(m.request);if(m.request.op==='create')config={id:'a'.repeat(32),description:'Public help',prompt:'Product questions only',background:'',language:'auto',timezone:'Asia/Tokyo',hours:null,provider:{source:'main'},limits:{visitor_messages:20,bot_messages:100,host_messages:100,host_tokens:100000,concurrency:4},outbound_domains:[],embed_origins:[],...m.request.config};
      if(m.request.op==='save')config={id:config.id,...m.request.config};
      await send({t:'ctl_res',r:m.r,action:m.t,ok:true,bot:config});return true;
     }
+    reads.push(m.request);
     const r={t:'bots_res',r:m.r,ok:true};
+    if(m.request.op==='api_list')Object.assign(r,{enabled:apiEnabled,endpoints:[],keys:[],registrations:{}});
     if(m.request.op==='list')Object.assign(r,{bots:config?[config]:[],host_timezone:'Asia/Tokyo',vendors:[{id:'ark',zh:'火山方舟（按量付费）',en:'Volcano Ark (pay as you go)',base_url:'https://ark.cn-beijing.volces.com/api/v3',api:'chat',model:'doubao-cheap',key:'BOT_ARK_API_KEY',console:'https://console.volcengine.com/ark'},{id:'dashscope',zh:'阿里云百炼 / 千问（按量付费）',en:'Alibaba Cloud Bailian / Qwen (pay as you go)',base_url:'https://dashscope.aliyuncs.com/compatible-mode/v1',api:'chat',model:'qwen-flash',key:'BOT_DASHSCOPE_API_KEY',console:'https://bailian.console.aliyun.com/'}]});
     if(m.request.op==='detail')Object.assign(r,{bot:config,knowledge:[{name:'manual.md',bytes:12}],tools:[{name:'order_status',description:'Own authorized order',enabled:false,level:'write'}],provider:{provider:'fixture',model:'small'},provider_problem:nativeProblem});
     if(m.request.op==='history')Object.assign(r,m.request.visitor?{messages:[{role:'user',text:'<img src=x onerror=alert(1)>',created:1}]}:{sessions:[{visitor:'b'.repeat(32),messages:1}]});
@@ -36,14 +42,35 @@ try{
    const click=expression=>evaluate(p,expression+'.click()');
    await click("document.querySelector('#bots-side button:nth-child(2)')");await click("document.querySelector('#bots-main button')");
    await evaluate(p,"document.querySelectorAll('#bots-main input')[0].value='Shop';document.querySelectorAll('#bots-main input')[1].value='sample-shop'");await click("document.querySelector('#bots-main button')");await evaluate(p,"document.querySelectorAll('#bots-main input[type=checkbox]').forEach(e=>e.checked=true)");await click("document.querySelector('#bots-main button')");
-   await waitFor(p,"document.querySelectorAll('.bots-tabs button').length===7");assert.equal(writes[0].config.enabled,false);assert.equal(writes[0].config.timezone,'Asia/Tokyo');assert.equal(writes[0].config.subscription_risk_accepted,true);
-   for(let i=0;i<7;i++){
+   await waitFor(p,"document.querySelectorAll('.bots-tabs button').length===8");assert.equal(writes[0].config.enabled,false);assert.equal(writes[0].config.timezone,'Asia/Tokyo');assert.equal(writes[0].config.subscription_risk_accepted,true);
+   assert.deepEqual(await evaluate(p,"[...document.querySelectorAll('.bots-tabs button')].map(e=>e.textContent)"),expectedTabs,'the seven original tabs and approved API tab retain their exact order');
+   for(let i=0;i<8;i++){
     await click(`document.querySelectorAll('.bots-tabs button')[${i}]`);await waitFor(p,`document.querySelectorAll('.bots-tabs button')[${i}]?.getAttribute('aria-current')==='page'`);
     if(i===0){await waitFor(p,"document.getElementById('bots-main').textContent.includes('OpenRouter')");assert.match(await evaluate(p,"document.getElementById('bots-main').textContent"),/OpenRouter/);const widths=await evaluate(p,"[...document.querySelectorAll('.bots-tabs button')].map(e=>({w:e.getBoundingClientRect().width,parent:e.parentElement.getBoundingClientRect().width,nowrap:getComputedStyle(e).whiteSpace}))");assert.ok(widths.every(e=>Math.abs(e.w-e.parent)<2&&e.nowrap==='nowrap'));writeFileSync(new URL(language+'-settings-390.png',out),await shoot(p));}
     if(i===3)assert.match(await evaluate(p,"document.getElementById('bots-main').textContent"),/WRITE|写入/);
     if(i===4){await waitFor(p,"document.querySelector('#bots-main button:not(.bots-tabs button)')");assert.equal(await evaluate(p,"document.querySelectorAll('#bots-main textarea,#bots-main input').length"),0);}
     if(i===5)await waitFor(p,"document.getElementById('bots-main').textContent.includes('12')");
     if(i===6)assert.match(await evaluate(p,"document.getElementById('bots-main').textContent"),/https:\/\/agentj.app\/bots\/sample-shop/);
+    if(i===7){
+     await waitFor(p,`document.getElementById('bots-main').textContent.includes(${JSON.stringify(words['p126.api.profile_only'])}) && document.querySelector('#bots-status').textContent===''`);
+     assert.ok(reads.some(r=>r.op==='api_list'),'the API tab reads the paired Host state');
+     assert.ok((await evaluate(p,"document.getElementById('bots-main').textContent")).includes(words['p126.api.n02']));
+     assert.equal(await evaluate(p,"document.querySelector('#bots-main a').getAttribute('href')"),'https://agentj.app/account/');
+     assert.equal(await evaluate(p,`[...document.querySelectorAll('#bots-main button')].find(e=>e.textContent===${JSON.stringify(words['p126.api.n09'])}).disabled`),true,'a main-Agent model cannot create a profile-only endpoint');
+     assert.equal(await evaluate(p,"document.querySelectorAll('#bots-main input[type=password],#bots-main textarea').length"),0,'the API tab never renders a caller credential field');
+     for(const enabled of [true,false]){
+      const label=words[enabled?'p126.api.n05':'p126.api.n04'];
+      await evaluate(p,`[...document.querySelectorAll('#bots-main button')].find(e=>e.textContent===${JSON.stringify(label)}).click()`);
+      await waitFor(p,`document.querySelector('#bots-status').textContent==='' && [...document.querySelectorAll('#bots-main button')].some(e=>e.textContent===${JSON.stringify(words[enabled?'p126.api.n04':'p126.api.n05'])})`);
+      assert.deepEqual(writes.at(-1),{op:'api_switch',enabled},'only the signed requested global API switch changes');
+     }
+     assert.equal(apiEnabled,false,'the fixture restores the default-off API state');
+     writeFileSync(new URL(language+'-api-390.png',out),await shoot(p));
+    }
+    const tabGeometry=await evaluate(p,"({overflow:document.documentElement.scrollWidth>innerWidth,taps:[...document.querySelectorAll('#bots-view button')].filter(e=>e.getClientRects().length).map(e=>Math.round(e.getBoundingClientRect().height))})");
+    assert.equal(tabGeometry.overflow,false);assert.ok(tabGeometry.taps.every(h=>h>=44),JSON.stringify({tab:i,...tabGeometry}));
+    assert.deepEqual(p.problems,[]);assert.equal(p.offsite.length,0);
+
    }
    const geometry=await evaluate(p,"({overflow:document.documentElement.scrollWidth>innerWidth,taps:[...document.querySelectorAll('#bots-view button')].filter(e=>e.getClientRects().length).map(e=>Math.round(e.getBoundingClientRect().height))})");
    assert.equal(geometry.overflow,false);assert.ok(geometry.taps.every(h=>h>=44),JSON.stringify(geometry));assert.deepEqual(p.problems,[]);assert.equal(p.offsite.length,0);
@@ -83,7 +110,8 @@ try{
     await click("document.querySelector('#bots-main button')");
     await evaluate(p,"document.querySelectorAll('#bots-main input[type=checkbox]').forEach(e=>e.checked=true)");
     await click("document.querySelector('#bots-main button')");
-    await waitFor(p,"document.querySelectorAll('.bots-tabs button').length===7");
+    await waitFor(p,"document.querySelectorAll('.bots-tabs button').length===8");
+    assert.deepEqual(await evaluate(p,"[...document.querySelectorAll('.bots-tabs button')].map(e=>e.textContent)"),expectedTabs);
     assert.equal(writes.at(-1).config.template,template);assert.equal(writes.at(-1).config.enabled,false);
    }
    writeFileSync(new URL(language+'.png',out),await shoot(p));rec.record(name,true);console.log(name+' PASS');

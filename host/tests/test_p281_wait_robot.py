@@ -167,7 +167,7 @@ class ServeLines(unittest.TestCase):
             h = self.host(root)
             h.turn_queued_note(True)
             page = h.hist.get(h.cur_turn)
-            self.assertEqual((page["reply"]["text"], page["card"]), (Host_note(h), {"queued": True}))
+            self.assertEqual((page["reply"]["text"], page["card"]), ("", {"queued": True}))
             h.turn_queued_note(False)
             self.assertEqual((h.hist.get(h.cur_turn)["reply"]["text"], h.hist.get(h.cur_turn)["card"]), ("", {}))
 

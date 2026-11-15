@@ -278,3 +278,9 @@ Local receipts prevent automatic redelivery after a restart or an uncertain resu
 A reply that was definitely not sent can be tried again. After a computer restart, an interrupted send shows its unknown result on the original card. Nothing is resent automatically. Check friend history and confirm your friend did not receive it before choosing Send again and entering the words to pass on.
 
 Friend reports use a light reply editor and green actions. If the previous send result is unknown, check friend history first. Confirm it was not received before choosing Send again and entering this reply. Nothing is resent automatically.
+
+### One fixed message when the sandbox blocks sending
+
+Ask your Agent to retry the intended message with `agentj friends tell --sandbox-card <friend> <message>`. The phone shows a separate card for that exact friend, message and optional reply. Verify on your paired phone to send only this message once. This does not allow the original shell command or widen the session's sandbox. Denying the card sends nothing; changing the current task or recipient cancels the request. If the outcome is unknown, check friend history before trying again.
+
+The native shortcut requires Codex to emit a command approval request in the current owner session. A mode that refuses internally without such a request, including unsupported `never` configurations, cannot show this card through that shortcut. Research, guest and delegated task sessions cannot use it.

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { accountHtml } from '../brand/account-links.js';
 // agentj web client — build step (zero npm deps, deterministic, no timestamps).
 //   1. copies protocol/{noise,wire,search}.js → public/proto/ byte-for-byte (the client must not carry its own crypto)
 //   2. (in the monorepo) copies the shared design system (agentjarvis/brand, set "web": tokens, base, lang.js, ui.js, fonts, shield + PWA +
@@ -58,7 +59,7 @@ const noTicks = (s) => s.replace(/`/g, '');
 /** index.html with every data-i18n text / data-i18n-attr attribute set to the Chinese dictionary value. */
 export function syncHtml(html, zh = dictionaries().zh) {
   const miss = (k) => { throw new Error(`index.html uses unknown i18n key ${k}`); };
-  html = html.replace(/(<(\w+)\b[^>]*\sdata-i18n="([\w.]+)"[^>]*>)([^<]*)(<\/\2>)/g,
+  html = html.replace(/(<(\w+)\b[^>]*\sdata-i18n="([\w.]+)"[^>]*>)([\s\S]*?)(<\/\2>)/g,
     (m, open, tag, key, _text, close) => open + esc(noTicks(zh[key] ?? miss(key))) + close);
   html = html.replace(/<[a-z]+\b[^>]*\sdata-i18n-attr="([^"]+)"[^>]*>/g, (tagText, spec) => {
     for (const pair of spec.split(',')) {
@@ -69,7 +70,7 @@ export function syncHtml(html, zh = dictionaries().zh) {
     }
     return tagText;
   });
-  return html;
+  return accountHtml(html);
 }
 
 /** Web-owned modules are concatenated, preserving cascade and one original HTTP resource. */

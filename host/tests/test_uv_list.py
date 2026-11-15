@@ -53,6 +53,41 @@ class ListApproval(unittest.IsolatedAsyncioTestCase):
         obj=self.ph.answer(self.h._ask_msg(a,self.s),True)
         obj['envelope_sha256']='0'*64
         await self.h._answer(self.s,obj);self.assertFalse(a.fut.done())
+    async def test_revoke_ctl_rejects_missing_uv_wrong_uv_and_signature(self):
+        """P560 D: real control claim, Host.ask and signed device answers; no grant substitution."""
+        import json
+        server = await asyncio.start_unix_server(self.h.on_ctl, str(self.st.sock_path))
+        self.addAsyncCleanup(server.wait_closed)
+        self.addCleanup(server.close)
+        for invalid in ('missing_uv', 'wrong_uv', 'bad_signature'):
+            with self.subTest(invalid=invalid):
+                r, w = await asyncio.open_unix_connection(str(self.st.sock_path))
+                async def call(obj):
+                    w.write((json.dumps(obj)+'\n').encode()); await w.drain()
+                    return json.loads(await r.readline())
+                claim = await call({'cmd':'claim'})
+                self.assertTrue(claim['ok'])
+                task = asyncio.create_task(call({'cmd':'revoke','device':self.ph.did,'claim':claim['claim']}))
+                for _ in range(100):
+                    if self.h.asks or task.done(): break
+                    await asyncio.sleep(.002)
+                self.assertFalse(task.done())
+                a = next(iter(self.h.asks.values()))
+                obj = self.ph.answer(self.h._ask_msg(a,self.s), True)
+                if invalid == 'missing_uv': obj.pop('fa')
+                elif invalid == 'wrong_uv':
+                    obj['fa'] = self.ph.auth.assert_(b'wrong-revoke-challenge',b'0',nonce=b'0')
+                else: obj['sig'] = 'A'*86
+                await self.h._answer(self.s,obj)
+                self.assertFalse(a.fut.done())
+                self.assertTrue(self.st.is_allowed(self.ph.pub))
+                # A valid signed decline terminates this request without granting revoke.
+                await self.h._answer(self.s,self.ph.answer(self.h._ask_msg(a,self.s),False))
+                result = await asyncio.wait_for(task,2)
+                self.assertEqual(result,{'ok':False,'error':'uv_required','closed':0})
+                self.assertTrue(self.st.is_allowed(self.ph.pub))
+                w.close(); await w.wait_closed()
+
     async def test_external_and_unknown_never_skip_uv(self):
         for source in ({}, {**self.origin,'channel':'email','verified':False,'suspicious':True}):
             with approval_review.origin_scope(source):

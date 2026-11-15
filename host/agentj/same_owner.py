@@ -21,6 +21,11 @@ class ForwardSend(Send):
         super().__init__('same-owner', secrets.token_urlsafe(16), turn, text=text, by='same-owner',
                          source={'kind': 'friend_task' if approved else 'same_owner', 'role': 'task', 'relay': (data or {}).get('relay'),
                                  **({'otg': otg or [], 'fid': fid, 'otg_required': True} if (otg or (data or {}).get('otg')) and not approved else {})})   # P574: verified grant ids
+        # Only this host's verified forwarding constructor mints task provenance.
+        # A wire-shaped dict must remain unable to claim same-owner authority.
+        if not approved and not (data or {}).get('irt') and not (data or {}).get('end'):
+            from .provenance import HostDelegated
+            self.source = HostDelegated(self.source)
         self.owner, self.fid, self.token = owner, fid, token
         self.data, self.approved = data or {}, approved
         self.payload = payload if payload is not None else self.data.get("text") or ""
@@ -855,11 +860,14 @@ class SameOwner:
     async def forward(self, fid, data, auto=False, approved=False):
         try:
             return await self._forward(fid, data, auto, approved)
-        except Exception:
+        except Exception as error:
+            from .peer_service import SecretScanUnavailable
+            reason = "admission_secret_scan" if isinstance(error, SecretScanUnavailable) else "admission_error"
+            self.svc.log("peer_forward", result="admission_failed", reason=reason)
             current = self.queued.pop((fid, data['mid']), None)
             if current:
                 current[1].cancel()
-            self.svc.guards.block(fid, data['mid'], 'admission_error',
+            self.svc.guards.block(fid, data['mid'], reason,
                                   retry=data['mid'] in self.row(fid).get('queue', {}))
             return False
         finally:

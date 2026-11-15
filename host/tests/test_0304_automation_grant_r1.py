@@ -145,11 +145,76 @@ class CallerLineage(Base):                                 # F3
         with patch("agentj.background_done.chain_turn", return_value={"id": "c"}):    # a host chain turn
             await no_grant()
         self.hook_turn()
-        self.host.agent.pending_source = {"kind": "same_owner", "role": "task"}
+        self.host.agent.pending_source = provenance.HostDelegated({"kind": "same_owner", "role": "task"})
         await no_grant()
         self.assertEqual(next(iter(self.ledger()["grants"].values()))["uses"], 0)
         self.hook_turn()                                     # the plain hook turn still uses it (control)
         self.assertEqual((await self.send([ALLY])).get("automation_grant"), next(iter(self.ledger()["grants"])))
+
+    async def test_shared_child_worker_context_never_borrows_hook_grant(self):
+        from unittest.mock import AsyncMock
+        grant = await self.grant()  # Existing actual Ed25519 + WebAuthn issuance.
+        self.hook_turn()
+        agent = self.host.agent
+        delegated = provenance.HostDelegated({'kind':'same_owner','role':'task'})
+        cases = (
+            ('same-agent', agent, delegated, False),
+            ('foreign-agent', SimpleNamespace(), delegated, False),
+            ('phone-child', agent, provenance.phone(), False),
+            ('guest-child', agent, provenance.email_guest('guest@example.com'), False),
+            ('malformed-source', agent, {'kind':'same_owner','role':'not-a-task'}, False),
+            ('copied-task', agent, delegated, True),
+        )
+        outcomes = []
+        async def attempt(label, recipient):
+            uses = self.ledger()['grants'][grant['grant']]['uses']
+            before = len(self.smtp.sent)
+            self.assertIsNotNone(provenance._SHARED_CHILD.get())
+            # This is the real async agent_send -> to_thread(AG.identity) path.
+            async with asyncio.timeout(5):
+                result = await self.send([recipient])
+            self.assertNotIn('automation_grant', result, (label, recipient, result))
+            self.assertEqual(self.ledger()['grants'][grant['grant']]['uses'], uses)
+            if recipient == ALLY:
+                self.assertFalse(result['ok'], (label, result))
+                self.assertFalse(result.get('no_card'), (label, result))
+                self.assertEqual(len(self.smtp.sent), before)
+            elif result['ok']:
+                # ADR0304 owner-only delivery remains legal; it is not an automation grant.
+                self.assertTrue(result['no_card'], (label, result))
+                self.assertTrue(result['owner_direct'], (label, result))
+                self.assertEqual(len(self.smtp.sent), before + 1)
+                self.assertEqual(self.smtp.sent[-1][1], [OWNER])
+            else:
+                self.assertEqual(len(self.smtp.sent), before)
+            outcomes.append((label, recipient, result['ok']))
+        with patch.object(self.host, 'ask', AsyncMock(return_value={'behavior':'deny'})):
+            for label, context_agent, source, copied in cases:
+                for recipient in (OWNER, ALLY):
+                    with self.subTest(context=label, recipient=recipient), provenance.shared_child_request(context_agent, source):
+                        if copied:
+                            # A new Task inherits the ContextVar but is not the task that issued it.
+                            await asyncio.create_task(attempt(label, recipient))
+                        else:
+                            await attempt(label, recipient)
+        self.assertEqual(len(outcomes), 12)
+        self.assertEqual(self.ledger()['grants'][grant['grant']]['uses'], 0)
+        # No child restriction in this actual parent turn: signed hook grant still works.
+        self.ask.reset_mock()
+        result = await self.send([ALLY])
+        self.assertEqual(result.get('automation_grant'), grant['grant'])
+        self.assertTrue(result['ok'] and result['no_card'])
+        self.ask.assert_not_awaited()
+        self.assertEqual(self.ledger()['grants'][grant['grant']]['uses'], 1)
+
+    async def test_child_identity_veto_precedes_even_a_live_task_source(self):
+        await self.grant()
+        self.hook_turn()
+        with provenance.shared_child_request(self.host.agent, provenance.phone()), \
+                patch.object(wm, 'source', return_value={'workflow_id':'digest','tsha':'a'*64}) as source:
+            # Actual worker identity implementation; no asyncio task lookup can erase the child marker.
+            self.assertIsNone(await asyncio.to_thread(AG.identity, self.host, 4242))
+            source.assert_not_called()
 
     async def test_task_grant_requires_run_lineage(self):
         contract = {"workflow_id": "digest", "root": str(self.work), "tsha": "a" * 64}
@@ -268,9 +333,14 @@ class Lifecycle(Base):                                     # F8
         self.assertIs(AG.items(self.host)[0]["permanent"], False)
 
     async def test_use_log_names_grant_and_request(self):
-        g = await self.grant()
-        self.hook_turn()
-        self.assertTrue((await self.send([ALLY, OWNER]))["ok"])
+        from agentj import contacts_serve
+        # This positive audit-correlation fixture uses IDs that cannot randomly
+        # resemble PII. Only opaque ID generation is fixed; signing/UV/send stay real.
+        with patch.object(AG, "secrets", SimpleNamespace(token_hex=lambda n: "a" * (2*n))), \
+                patch.object(contacts_serve, "secrets", SimpleNamespace(token_hex=lambda n: "b" * (2*n))):
+            g = await self.grant()
+            self.hook_turn()
+            self.assertTrue((await self.send([ALLY, OWNER]))["ok"])
         rows = [json.loads(x) for x in (self.st.root / "host.log").read_text().splitlines() if "automation_grant_use" in x]
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["id"], g["grant"])
@@ -278,6 +348,29 @@ class Lifecycle(Base):                                     # F8
         self.assertIn(("auto", rows[0]["request"]), [(k, kw.get("id")) for k, kw in self.acts])
         log = (self.st.root / "host.log").read_text()
         self.assertNotIn(ALLY, log)
+
+    async def test_phone_shaped_ids_remain_redacted_in_diagnostic_logs(self):
+        from agentj import contacts_serve, diskq
+        # Synthetic PII-shaped metadata must not bypass the global log projector.
+        phone_shape = "1" + "38" + "1234" + "5678"
+        grant_id, request_id = phone_shape + "c" * 21, phone_shape + "d" * 5
+        with patch.object(AG, "secrets", SimpleNamespace(token_hex=lambda n: grant_id)), \
+                patch.object(contacts_serve, "secrets", SimpleNamespace(token_hex=lambda n: request_id)):
+            g = await self.grant()
+            self.hook_turn()
+            res = await self.send([ALLY, OWNER])
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(g["grant"], grant_id)
+        self.assertEqual(res["automation_grant"], grant_id, "privacy projection never rewrites authorization identity")
+        self.assertTrue(await diskq.aflush())
+        log = (self.st.root / "host.log").read_text()
+        rows = [json.loads(x) for x in log.splitlines() if "automation_grant_use" in x]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], "<phone>" + "c" * 21)
+        self.assertEqual(rows[0]["request"], "<phone>" + "d" * 5)
+        self.assertIn(("auto", request_id), [(k, kw.get("id")) for k, kw in self.acts])
+        for sensitive in (phone_shape, grant_id, request_id, ALLY):
+            self.assertNotIn(sensitive, log)
 
     def test_hook_digest_fields(self):
         from agentj import hook_service

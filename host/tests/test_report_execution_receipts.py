@@ -63,6 +63,18 @@ class ReceiptCLI(unittest.TestCase):
 
 
 class AskObservation(Base):
+    def assert_actual_receipt(self, receipt, reason, shown):
+        from agentj import approvals
+        self.assertEqual(set(receipt), {'id', 'reason', 'approval_card_shown'})
+        self.assertRegex(receipt['id'], r'^[a-f0-9]{32}$')
+        self.assertEqual((receipt['reason'], receipt['approval_card_shown']), (reason, shown))
+        rows = [r for r in approvals.read_log(self.st) if r['id'] == receipt['id']]
+        self.assertEqual(len(rows), 1, 'a receipt must identify its actual decision audit row')
+        self.assertEqual((rows[0]['decision'], rows[0]['reason']), ('deny', reason))
+        if reason != 'device':
+            for key in ('device', 'sk', 'sig'):
+                self.assertIsNone(rows[0].get(key), 'a host refusal must not invent phone approval evidence')
+
     def _listed(self):
         # 0.30.7 ADR-0307-offlist: off-list Bash no longer cards; these tests are about card receipts (timeout /
         # device deny / reuse), so the vehicle is a listed (tap) card again.
@@ -75,11 +87,11 @@ class AskObservation(Base):
         with patch.object(approval_level,'PARK_GRACE',.01):
             initial={}
             self.assertEqual(self.ask('git push origin main',_receipt=initial)['behavior'],'deny')
-            self.assertEqual(initial,{'reason':'timeout','approval_card_shown':None})
+            self.assert_actual_receipt(initial, 'timeout', None)
             count=len(self.host.asks)
             retry={}
             self.assertEqual(self.ask('git push origin main',_receipt=retry)['behavior'],'deny')
-            self.assertEqual(retry,{'reason':'timeout','approval_card_shown':None})
+            self.assert_actual_receipt(retry, 'timeout', None)
             self.assertEqual(len(self.host.asks),count)
             self.assertEqual(count,0)  # completed native timeout does not leave a retired offline parked card
 
@@ -110,7 +122,7 @@ class AskObservation(Base):
              patch.object(self.host,'_parked_rewait',new=AsyncMock(side_effect=AssertionError('retired parked rewait'))) as rewait:
             answer=self.ask('git push origin main',_receipt=receipt)
         self.assertEqual((answer['behavior'],answer['reason']),('deny','timeout'))
-        self.assertEqual(receipt,{'reason':'timeout','approval_card_shown':None})
+        self.assert_actual_receipt(receipt, 'timeout', None)
         find.assert_not_called();rewait.assert_not_awaited()
         self.assertEqual(len(self.cards()),1)
 
@@ -140,7 +152,7 @@ class AskObservation(Base):
         receipt={}
         observed=self.ask('rm -rf ~/data',_receipt=receipt)
         self.assertEqual(observed,legacy)
-        self.assertEqual(receipt,{'reason':'no_device','approval_card_shown':False})
+        self.assert_actual_receipt(receipt, 'no_device', False)
         self.assertEqual(self.cards(),[])
 
     def test_actual_timeout_and_signed_device_deny_are_distinct(self):
@@ -149,9 +161,9 @@ class AskObservation(Base):
         receipt={}
         timed=self.ask('git push origin main',_receipt=receipt)
         self.assertEqual(timed['behavior'],'deny')
-        self.assertEqual(receipt,{'reason':'timeout','approval_card_shown':None})
+        self.assert_actual_receipt(receipt, 'timeout', None)
         self.host.ask_ttl=.4
         denied={}
         result=self.ask('git push origin other',answer=False,_receipt=denied)
         self.assertEqual(result['behavior'],'deny')
-        self.assertEqual(denied,{'reason':'device','approval_card_shown':None})
+        self.assert_actual_receipt(denied, 'device', None)

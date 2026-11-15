@@ -17,7 +17,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from types import SimpleNamespace as NS
+from types import SimpleNamespace as NS, MethodType
 from unittest import mock
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -32,6 +32,16 @@ PROFILE = {'type': 'managed', 'file_system': {'type': 'restricted', 'entries': [
     {'path': {'type': 'special', 'value': {'kind': 'root'}}, 'access': 'read'}]}, 'network': 'restricted'}
 OLD = time.time() - 3 * 3600
 RECOVERED = humane.say('selfheal.recovered', 'zh')
+
+
+def queue_history(host, root):
+    """Exercise the actual queue renderer and durable History, not a notice mock."""
+    from agentj.history import History
+    from agentj.state import State
+    host.hist = History(State(Path(root) / 'queue-state'), on=True)
+    host.cur_turn = host.hist.add({'k': 'phone', 'dev': 'fixture-owner', 'text': 'queued owner input'}, '', 'open')['id']
+    host.hist_update = MethodType(serve.Host.hist_update, host)
+    host.turn_queued_note = MethodType(serve.Host.turn_queued_note, host)
 
 
 def foreign_process():
@@ -121,6 +131,7 @@ class SharedCodexHeal(unittest.IsolatedAsyncioTestCase):
         self.host.stopped.return_value = False
         self.host.turn_t0 = time.monotonic() - 3600
         self.host.agent_notice.return_value = None
+        queue_history(self.host, root)
         self.heal = turn_heal.TurnHeal(self.host)
         self.host.turn_heal = self.heal
         self.calls = []
@@ -192,7 +203,10 @@ class SharedCodexHeal(unittest.IsolatedAsyncioTestCase):
         a = self.agent()
         t = asyncio.create_task(a.turn('hello after the hang'))
         await self.wait_for(lambda: a.desktop_wait)
-        self.assertIn('等它说完', self.notices())
+        page = self.host.hist.get(self.host.cur_turn)
+        self.assertTrue(page['card']['queued'])
+        self.assertEqual(page['reply']['text'], '')
+        self.assertNotIn('等它说完', self.notices())
         await self.heal.tick()                      # one watchdog tick: stuck (3 h quiet, no tool child) → heal
         await asyncio.wait_for(t, 15)
         starts = [p for m, p in self.calls if m == 'turn/start']
@@ -242,17 +256,16 @@ class SharedCodexHeal(unittest.IsolatedAsyncioTestCase):
         path = self.rollout()
         self.holder(path)
         a = self.agent()
-        self.host.agent_notice.return_value = 7
-        page = {'id': 7, 'card': {'queued': True, 'waited_s': 0}}
-        self.host.hist.get.side_effect = lambda tid: page if tid == 7 else None
-        self.host.hist_update.side_effect = lambda tid, card: page.update(card=card)
         self.host.stopped.return_value = True            # measure only
         t = asyncio.create_task(a.turn('x'))
         self.addCleanup(t.cancel)
         await self.wait_for(lambda: a.desktop_wait)
-        kw = [c.kwargs for c in self.host.agent_notice.call_args_list if '等它说完' in c.args[0]][0]
-        self.assertEqual(kw['card'], {'queued': True, 'waited_s': 0})
+        page = self.host.hist.get(self.host.cur_turn)
+        self.assertEqual(page['card'], {'queued': True})
+        self.assertEqual(page['reply']['text'], '')
+        self.assertNotIn('等它说完', self.notices())
         await self.heal.tick()
+        page = self.host.hist.get(self.host.cur_turn)
         self.assertTrue(page['card']['stuck'])
         self.assertGreaterEqual(page['card']['waited_s'], 3500)
 

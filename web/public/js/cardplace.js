@@ -143,8 +143,9 @@ export function badge(node) {
   b = document.createElement('p'); b.className = 'cp-host'; b.dataset.cpHost = '1';
   const svg = document.createElementNS(SVG, 'svg'); svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true');
   const path = document.createElementNS(SVG, 'path'); path.setAttribute('d', SHIELD); svg.append(path);
-  const span = document.createElement('span'); span.dataset.i18n = 'p0269c.fromHost'; span.textContent = tr('p0269c.fromHost');
+  const span = document.createElement('span'); span.dataset.ajOwner = 'aj-host-provenance'; span.dataset.i18n = 'p0269c.fromHost'; span.textContent = tr('p0269c.fromHost');
   b.append(svg, span);
+  if (node.id === 'sheet') { const acts = node.querySelector('.sheetacts'); if (acts) b.append(acts); }
   frame.prepend(b);
   return b;
 }

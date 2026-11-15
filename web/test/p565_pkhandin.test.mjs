@@ -126,5 +126,5 @@ test('words: zh / en, the {bio} word, no trial wording', () => {
 test('#556 supersedes the old bottom notice under an open dialog', () => {
   const css = read('../public/app.css');
   assert.doesNotMatch(css, /body:has\([^{}]+\) \.toast:is\(\.circle,\.square\)\{top:auto;bottom:/);
-  assert.match(css, /\.toast:is\(\.circle,\.square,\.mail-saved\)\{top:var\(--nt-center-y,50%\);bottom:auto;/);
+  assert.match(css, /\.toast:is\(\.circle,\.square,\.mail-saved\)\{top:var\(--aj-notice-center-y,50%\);bottom:auto;/);
 });

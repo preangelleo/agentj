@@ -79,6 +79,7 @@ class Handoff(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(p.stop)
         self.a = shared.SharedClaudeAgent(self.host, {"kind": "claude", "dir": str(self.work), "_workflow_ceo": True,
                                                       "session_mode": "shared", "high_risk_warnings": False})
+        self.host.agent = self.a  # Real Host owns the constructed shared adapter.
         self.a.session = dict(self.session)
         self.a.loop = asyncio.get_running_loop()
 

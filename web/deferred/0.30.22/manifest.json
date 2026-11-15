@@ -1,0 +1,269 @@
+{
+  "v": 1,
+  "baseline": "70c8cf3e5",
+  "candidate": "0e1ec31a051b2bea2b908a0c6de08565fe0766a1",
+  "authority": "Chairman 2026-11-14 20:2x: interface changes require approval; current task removes all unapproved UI from 0.30.22 without deleting its source.",
+  "approved": [
+    "0332 owner queue / Stop current task",
+    "0335 original main layout and /background in existing command menu",
+    "Current task: bidirectional server-version refresh"
+  ],
+  "nonvisible_retained": [
+    "app.js disconnect calls elevate.forgetInput; baseline elevate.js receives equivalent field clearing without editor controls",
+    "api.keysSet retains isCurrent checks before and after async request; keys requestCard/run/delete/copy/import keep page object, sequence and nonce checks before UV/send and after receipt; no Relay-key UI or settings mount",
+    "authcard.authOf keeps exact six-host Kimi HTTPS allowlist; only visible Kimi authorization wording returns to baseline"
+  ],
+  "files": [
+    {
+      "path": "web/public/app.css",
+      "saved": "web/deferred/0.30.22/public/app.css",
+      "candidate_sha256": "b7d0f1aa05920b1cda9353c2d8b16f09cfb77aa7b164a6d437957a442f6b6404",
+      "baseline_sha256": "f1b51e8a750c04dceeccb68e88b52b7591c6df2fb4709d84ba5977ad4fbb55e6",
+      "disposition": "baseline-active",
+      "active_sha256": "f1b51e8a750c04dceeccb68e88b52b7591c6df2fb4709d84ba5977ad4fbb55e6"
+    },
+    {
+      "path": "web/public/brand/account-links.js",
+      "saved": "web/deferred/0.30.22/public/brand/account-links.js",
+      "candidate_sha256": "dc83bbbd3e300651536e966599306ca4a2851e711c2e22953c9c2349f2736740",
+      "baseline_sha256": null,
+      "disposition": "inert-no-loading-edge",
+      "active_sha256": "dc83bbbd3e300651536e966599306ca4a2851e711c2e22953c9c2349f2736740"
+    },
+    {
+      "path": "web/public/i18n.js",
+      "saved": "web/deferred/0.30.22/public/i18n.js",
+      "candidate_sha256": "42146059c380b1751ddcdd2a1e706022e54c57d1bc6f6d030a955f3c5695c05f",
+      "baseline_sha256": "0e43f35a0caa98146d1b8a9d3940855b72aed02d6a66b0c4041deb12abe0e4d3",
+      "disposition": "mixed-approved-only",
+      "active_sha256": "3f03784284fa0ef6dbba43da1ab5da0a962ce0b0948f138c8b9cf76aca630e6a"
+    },
+    {
+      "path": "web/public/index.html",
+      "saved": "web/deferred/0.30.22/public/index.html",
+      "candidate_sha256": "921cb9ec0c41addd839280bc7ca204302009595a6264bab13be26b6d43a3509b",
+      "baseline_sha256": "0d7a92430ef51e2c0a5b3a28f364a41bba71f7cbf6b890d5d0f7a709de259929",
+      "disposition": "mixed-approved-only",
+      "active_sha256": "1d67e894dae02846c91e92417b3d26aa6d088144852707930c360e8c21961162"
+    },
+    {
+      "path": "web/public/js/accounts.js",
+      "saved": "web/deferred/0.30.22/public/js/accounts.js",
+      "candidate_sha256": "0c8af63a05189e15ab49874ff406384da22d1b5825df277942c399817bf28f5b",
+      "baseline_sha256": "ae6fb0336a0b17f020a51a5e603db7eed2d8225f1bf52ec07bba2374f90df14b",
+      "disposition": "baseline-active",
+      "active_sha256": "ae6fb0336a0b17f020a51a5e603db7eed2d8225f1bf52ec07bba2374f90df14b"
+    },
+    {
+      "path": "web/public/js/api.js",
+      "saved": "web/deferred/0.30.22/public/js/api.js",
+      "candidate_sha256": "5a3e0c619f86166c26138e598deb7774a1a3efc8e7955f30187f4d2f6243c8d1",
+      "baseline_sha256": "723d24e195e158415f795a43f83f5e9375eb5975d9cf8eaf509472af5fe86771",
+      "disposition": "baseline-with-nonvisible-stale-subject-protection",
+      "active_sha256": "5a3e0c619f86166c26138e598deb7774a1a3efc8e7955f30187f4d2f6243c8d1"
+    },
+    {
+      "path": "web/public/js/approval-layout0281.js",
+      "saved": "web/deferred/0.30.22/public/js/approval-layout0281.js",
+      "candidate_sha256": "f62ccd74e054031c109787a7be75063894bf362e564690cc45b9cc2a81052bf0",
+      "baseline_sha256": "da513ed0eb3472411b79899c79227eba482c26fb509500be6e0c2c356ab32d41",
+      "disposition": "baseline-active",
+      "active_sha256": "da513ed0eb3472411b79899c79227eba482c26fb509500be6e0c2c356ab32d41"
+    },
+    {
+      "path": "web/public/js/approval541.js",
+      "saved": "web/deferred/0.30.22/public/js/approval541.js",
+      "candidate_sha256": "0d77401dad56f1b3f2b4cb20bb539e0bbbb7adc923222d8529c17b9b63233a2b",
+      "baseline_sha256": "32ca6ab33282855e74c0906b4bcaefcdb3545fdf7d495c1bc0bf67a881402eee",
+      "disposition": "baseline-active",
+      "active_sha256": "32ca6ab33282855e74c0906b4bcaefcdb3545fdf7d495c1bc0bf67a881402eee"
+    },
+    {
+      "path": "web/public/js/authcard.js",
+      "saved": "web/deferred/0.30.22/public/js/authcard.js",
+      "candidate_sha256": "4b6d30d4da1d478fca2409b7b549851da593ebea941d30e0b2c898cdc31e84c7",
+      "baseline_sha256": "1d9b36471ef9428cbd71908533029faec0a4dddbfede5964221b2143b018432c",
+      "disposition": "baseline-with-nonvisible-exact-auth-host-allowlist",
+      "active_sha256": "0e1213ef93e2f3542f3908070ed43f618a8862e9651470e7e49890ed7a7084e7"
+    },
+    {
+      "path": "web/public/js/authrescue.js",
+      "saved": "web/deferred/0.30.22/public/js/authrescue.js",
+      "candidate_sha256": "0b7ee2e04f555660570036a4479dbc716235ae933bfd683f66187665ccde676a",
+      "baseline_sha256": "b190b65f5173339618cb83a1624b0fa30262ec674647edf78954a65a49b4f11d",
+      "disposition": "baseline-active",
+      "active_sha256": "b190b65f5173339618cb83a1624b0fa30262ec674647edf78954a65a49b4f11d"
+    },
+    {
+      "path": "web/public/js/bots.js",
+      "saved": "web/deferred/0.30.22/public/js/bots.js",
+      "candidate_sha256": "c1a4eed8667f84586807351f3ad20900d8af29410a74f2fc51ec3d7788ea7c34",
+      "baseline_sha256": "0c8b487e619459b73da06d53d67a747d43ea19d1ace8a3b56beb6bcc129e6f02",
+      "disposition": "baseline-active",
+      "active_sha256": "0c8b487e619459b73da06d53d67a747d43ea19d1ace8a3b56beb6bcc129e6f02"
+    },
+    {
+      "path": "web/public/js/elevate.js",
+      "saved": "web/deferred/0.30.22/public/js/elevate.js",
+      "candidate_sha256": "8eb1a942afabf008ece1ff620fa5602c1a11952fea1dd0bd0da672319834fdac",
+      "baseline_sha256": "6cda9e9f82c422264d277812f28074cc99b0e6aa3862092344643ae76fef4daa",
+      "disposition": "baseline-with-nonvisible-input-clearing",
+      "active_sha256": "4e41bc24879890220cf3bbb7078266c29552d56191585d0daa4ce597f5d98b96"
+    },
+    {
+      "path": "web/public/js/forms.js",
+      "saved": "web/deferred/0.30.22/public/js/forms.js",
+      "candidate_sha256": "704b01d1ac4b1aa3ce6d095f7a7ca63f86d24fc4897538f85946359c3d7da1ac",
+      "baseline_sha256": "5c81fa04f872de62237b950edd99e00173ab3a40f218f36cdb5d01aa8f1c543e",
+      "disposition": "baseline-active",
+      "active_sha256": "5c81fa04f872de62237b950edd99e00173ab3a40f218f36cdb5d01aa8f1c543e"
+    },
+    {
+      "path": "web/public/js/friends-tell-card.js",
+      "saved": "web/deferred/0.30.22/public/js/friends-tell-card.js",
+      "candidate_sha256": "f887b1b1da416ad5092f37371acb2fcf23dc360cb3c7847f8821344f99619be2",
+      "baseline_sha256": null,
+      "disposition": "inert-no-loading-edge",
+      "active_sha256": "f887b1b1da416ad5092f37371acb2fcf23dc360cb3c7847f8821344f99619be2"
+    },
+    {
+      "path": "web/public/js/fsedit.js",
+      "saved": "web/deferred/0.30.22/public/js/fsedit.js",
+      "candidate_sha256": "1f5cf9b19ac72ae6a58811f691c8ae3de9969653ee179747fb9880224a5a74a8",
+      "baseline_sha256": "802058cb263436c4bb6f71f0166a6179cbdeec2ce18cf1d52c19f9ca08f252f6",
+      "disposition": "baseline-active",
+      "active_sha256": "802058cb263436c4bb6f71f0166a6179cbdeec2ce18cf1d52c19f9ca08f252f6"
+    },
+    {
+      "path": "web/public/js/keys.js",
+      "saved": "web/deferred/0.30.22/public/js/keys.js",
+      "candidate_sha256": "a98911d51ffb8e7d56764708252c110ecf927c30a99a2c5fa7035524917a3de2",
+      "baseline_sha256": "28b14ab03d899179e311a782f11a073006274008a1e7f17933088a279dadb155",
+      "disposition": "baseline-with-nonvisible-stale-subject-protection",
+      "active_sha256": "06c2c520d63b0eb04a5a0abb3615f3583c29820d0c30f662effd53ec7dd6c84c"
+    },
+    {
+      "path": "web/public/js/media.js",
+      "saved": "web/deferred/0.30.22/public/js/media.js",
+      "candidate_sha256": "4286c2ad3ca8de4dae6cefaf4e521c60279363a3b48095b619698724994f12ca",
+      "baseline_sha256": "b70043e83ba15063817fb4f08c4043f97b091f221d2e9f545d2c86540b10cf8d",
+      "disposition": "baseline-active",
+      "active_sha256": "b70043e83ba15063817fb4f08c4043f97b091f221d2e9f545d2c86540b10cf8d"
+    },
+    {
+      "path": "web/public/js/pkpeer.js",
+      "saved": "web/deferred/0.30.22/public/js/pkpeer.js",
+      "candidate_sha256": "59dc144ff808bfdb12ddc3b2eb400dce8ce4b5190c1809e03fe634e4a9e0bd70",
+      "baseline_sha256": "3ce284803838a055022d29b327ecc6b2fe2eff004e172e7d35ea7ac5a9969aee",
+      "disposition": "baseline-active",
+      "active_sha256": "3ce284803838a055022d29b327ecc6b2fe2eff004e172e7d35ea7ac5a9969aee"
+    },
+    {
+      "path": "web/public/js/popup-layout.js",
+      "saved": "web/deferred/0.30.22/public/js/popup-layout.js",
+      "candidate_sha256": "869d966974e545be49b2edace0be48eeadf2c5a4217a8c7a20f2d564416b4627",
+      "baseline_sha256": "28695947209e281e30fb1a693271203451986f900f9e1655abc48e0048632a31",
+      "disposition": "baseline-active",
+      "active_sha256": "28695947209e281e30fb1a693271203451986f900f9e1655abc48e0048632a31"
+    },
+    {
+      "path": "web/public/js/rescue.js",
+      "saved": "web/deferred/0.30.22/public/js/rescue.js",
+      "candidate_sha256": "7f2fd322715d4140f3ec9b40ac763811cb2b9c43d999797772fdcb57b684ac4c",
+      "baseline_sha256": "d6b6abdf67222e583fae6dd18eb3db731b87289c920fad1dc2e2e9cfff96df9a",
+      "disposition": "baseline-active",
+      "active_sha256": "d6b6abdf67222e583fae6dd18eb3db731b87289c920fad1dc2e2e9cfff96df9a"
+    },
+    {
+      "path": "web/public/js/rvpair.js",
+      "saved": "web/deferred/0.30.22/public/js/rvpair.js",
+      "candidate_sha256": "5b8d4877ceaf658df889ffeb112ea789500bf8ca7e659c1678a8cb3330c51b3f",
+      "baseline_sha256": "3695842f6c6754cdc8dbf24352a923b75f893f73c4620a416d7bf038f1b81ee0",
+      "disposition": "baseline-active",
+      "active_sha256": "3695842f6c6754cdc8dbf24352a923b75f893f73c4620a416d7bf038f1b81ee0"
+    },
+    {
+      "path": "web/public/js/settings.js",
+      "saved": "web/deferred/0.30.22/public/js/settings.js",
+      "candidate_sha256": "4520cb6fd9379024abcf86d16eca156ca290081ec970ccccd4750725292e2f4e",
+      "baseline_sha256": "71ad47e0921fdb18b1b2c22ce5226cc5e95b7caf61b6839c7e543478d6936f61",
+      "disposition": "baseline-active",
+      "active_sha256": "71ad47e0921fdb18b1b2c22ce5226cc5e95b7caf61b6839c7e543478d6936f61"
+    },
+    {
+      "path": "web/public/js/t.js",
+      "saved": "web/deferred/0.30.22/public/js/t.js",
+      "candidate_sha256": "fa877c4b292d143d1a9f19ef2c368364919858fc6b9c6b981fdebaf8d5d560ed",
+      "baseline_sha256": "4af534935421273035a0ce1c7a08435b7fb6612d24ef8d6ea148e26345bfe59d",
+      "disposition": "baseline-active",
+      "active_sha256": "4af534935421273035a0ce1c7a08435b7fb6612d24ef8d6ea148e26345bfe59d"
+    },
+    {
+      "path": "web/public/js/ui.js",
+      "saved": "web/deferred/0.30.22/public/js/ui.js",
+      "candidate_sha256": "3931ccf877149de037cb7cc27bd58b0cd2ed84ec9437e46503559103c43c6d3c",
+      "baseline_sha256": "d2a959cc6faf869343192285a8081a86e12f105763a0962924a72821b90826a5",
+      "disposition": "baseline-active",
+      "active_sha256": "d2a959cc6faf869343192285a8081a86e12f105763a0962924a72821b90826a5"
+    },
+    {
+      "path": "web/public/menu.css",
+      "saved": "web/deferred/0.30.22/public/menu.css",
+      "candidate_sha256": "b7d4a930d6e72ce2c0d9d8864ca30df3fdc9713f2d2fe321c0a564dbe6da02ba",
+      "baseline_sha256": "9a39b8e0e38953c187272ccf37a8cb6ac1ad95afde4949803c3c7c2010749ae9",
+      "disposition": "baseline-active",
+      "active_sha256": "9a39b8e0e38953c187272ccf37a8cb6ac1ad95afde4949803c3c7c2010749ae9"
+    },
+    {
+      "path": "web/i18n/web.zh.json",
+      "saved": "web/deferred/0.30.22/i18n/web.zh.json",
+      "candidate_sha256": "0fa09f3169142b30ffc3d99d0aff08b73af1f5cc4bc4455b7d0bf9c82f5b648f",
+      "baseline_sha256": "b908d3603abd330f00826bdace9c0e506c3b609ffa441496f961ac16c0a778b0",
+      "disposition": "approved-key-delta-only",
+      "active_sha256": "4310f22633550539ba462766cb2824bbd090a600eb68664d34fbd00c9e443d85"
+    },
+    {
+      "path": "web/i18n/web.en.json",
+      "saved": "web/deferred/0.30.22/i18n/web.en.json",
+      "candidate_sha256": "0ce44d604fa6e2bd63adadcce4a2b2f1ad8de85955f8dc82ae4e25a1c0b6f0fb",
+      "baseline_sha256": "f02e9b822111d1f7b84af50698c348dcf9ce09ec5d36f2f85bacd8c838a5d30f",
+      "disposition": "approved-key-delta-only",
+      "active_sha256": "378d84096de706a1860c2571d05bebb06075c16d4bffeea2ff6c67c044c1e38d"
+    },
+    {
+      "path": "web/i18n/web.zh.src.json",
+      "saved": "web/deferred/0.30.22/i18n/web.zh.src.json",
+      "candidate_sha256": "fd613d966110eb7f0f40f1cd02b3f6f5dd491ba8de521e9d74b2a8560f28a0a8",
+      "baseline_sha256": "569a34d20f924fca22fb8034866378f3cc67e6f188d20333f93aa8b502676ac2",
+      "disposition": "approved-key-delta-only",
+      "active_sha256": "b626e013307ed87ff98ebb90ecd07c86501f130d0c9d5dfdf6a34e7f9945fc7a"
+    },
+    {
+      "path": "web/i18n/web.zh.override.json",
+      "saved": "web/deferred/0.30.22/i18n/web.zh.override.json",
+      "candidate_sha256": "f00fdbc7f74572cc7528436a6382522b65bf25ceb4b597112e5707cfa8421446",
+      "baseline_sha256": "ef948a888bc6fd65de586cc4cc1ce1c5122082c05f63b9369b289e0d437783dc",
+      "disposition": "approved-key-delta-only",
+      "active_sha256": "45188436efe7f3479f953bffc3ed05151c4ffb8985c182b02e539f0cbc7d5e71"
+    },
+    {
+      "path": "web/interactions.json",
+      "saved": "web/deferred/0.30.22/interactions.json",
+      "candidate_sha256": "22fc5ce46ead03f9343bd25517d14338215b8f66abc5d12165b36b8e1f8aba00",
+      "baseline_sha256": "c0570f452cc190ab1e9f18c4bfdf4a2d94d8198290ac19b188aa99501967d8fc",
+      "disposition": "approved-background-entry-only",
+      "active_sha256": "e43bb933a29252a8ec6de74bd871fe9e1006ddcf46dc97cdbd3872aa8787fdc0"
+    },
+    {
+      "path": "web/build.mjs",
+      "saved": "web/deferred/0.30.22/build.mjs",
+      "candidate_sha256": "ef915f8c751e95000086fb3027e960b684fdd384c2d1c86bae47006e72b1a158",
+      "baseline_sha256": "f34e69879b2aa0c2eb6ce4501242d3b1cba4612fdf7c83d6627aba8eeab2d34b",
+      "disposition": "baseline-active",
+      "active_sha256": "f34e69879b2aa0c2eb6ce4501242d3b1cba4612fdf7c83d6627aba8eeab2d34b"
+    }
+  ],
+  "ui_default_off": [
+    "keys parser filters the two new Relay-key names in every base/third-party vendor, avoiding generic fallback UI from newer Host metadata"
+  ]
+}

@@ -162,7 +162,7 @@ class Media:
             raise Failure('local_media_limit_25MiB')
         return plain
 
-    def upload(self, user, item, plain):
+    def upload(self, user, item, plain, *, retry=True):
         if len(plain) > MAX_MEDIA:
             raise Failure('local_media_limit_25MiB')
         typ = item['type']
@@ -176,7 +176,8 @@ class Media:
             if not upload.get('upload_param'):
                 raise Failure('missing_upload_url')
             url = CDN + '/upload?' + urllib.parse.urlencode({'encrypted_query_param': upload['upload_param'], 'filekey': filekey})
-        for attempt in range(3):
+        attempts = 3 if retry else 1
+        for attempt in range(attempts):
             try:
                 status, headers, _ = self.api.transport.request('POST', url, {'Content-Type': 'application/octet-stream'}, cipher, 60)
                 param = headers.get('x-encrypted-param')
@@ -184,7 +185,7 @@ class Media:
                     raise Failure('cdn_missing_download_param', http=status)
                 break
             except Failure as e:
-                if 400 <= e.http < 500 or attempt == 2:
+                if 400 <= e.http < 500 or attempt == attempts - 1:
                     raise
                 continue
         media = {'encrypt_query_param': param, 'aes_key': base64.b64encode(key.hex().encode()).decode(), 'encrypt_type': 1}

@@ -12,6 +12,7 @@
 // (H.stop()) on an older one. The host notice offers it once stuck or after END_AFTER_S; the owner's own queued page at once
 // (as P481 did).
 import { t } from './t.js';
+import { ownerInput } from './phone-activity.js';
 import * as termhook from './termhook.js';   // 0.30.3: 「进入终端」 under the opened notice
 import { loginOf, queueOf, waitedNow, prevText, canEnd, keepTicking } from './selfheal.js';
 import { open as openLogin } from './loginsheet.js';
@@ -24,6 +25,7 @@ onChange(() => { if (endPage !== null && repaint) repaint(); });
 const button = (cls, text, fn) => { const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-recovery'); b.type = 'button'; b.className = 'cmdundo ' + cls; b.textContent = text; b.addEventListener('click', fn); return b; };
 
 function liveQueue(p, H) {
+  if (!ownerInput(p)) return null;
   const own = !!H.queuedTurn?.(p.id);
   let q = queueOf(p);
   if (!q && own) {

@@ -311,6 +311,50 @@ def scope_of(host) -> tuple | None:
     return kind, nonce, sid
 
 
+def _owner_binding(host, *, verified_answer=False):
+    """A live owner context may reuse a grant; copied/delegated scopes never may."""
+    from . import approval_review, approval_special, provenance
+    try:
+        if (host.stopped() or provenance._SHARED_CHILD.get() is not None
+                or provenance.task_scope() is not None):
+            return None
+        paired = provenance._PAIRED_REQUEST.get()
+        if paired is not provenance._UNSET and not verified_answer:
+            current = provenance._paired_source()
+            if current is provenance._UNSET or not provenance.is_owner(current):
+                return None
+        request = provenance._REQUEST.get()
+        if request is not provenance._UNSET and not provenance.owner_intent(request):
+            return None
+        agent = getattr(host, 'agent', None)
+        # A signed answer's worker can inherit an obsolete paired-task marker.
+        # It never substitutes for the live Host turn whose grant is issued.
+        token = provenance._PAIRED_REQUEST.set(provenance._UNSET)
+        try:
+            if agent is None or not provenance.owner_intent(provenance.turn_source(agent), getattr(agent, 'cur_send', None)):
+                return None
+            # Ignore frozen ORIGIN/REQUEST/TASK when resolving the actual Host turn;
+            # the creator's stricter contexts were independently refused above.
+            origin, task = approval_special._current_context(host)
+            if (not isinstance(origin, dict) or origin.get('verified') is not True
+                    or origin.get('suspicious') is True or host.agent is not agent):
+                return None
+            scope = scope_of(host)
+            if scope is None:
+                return None
+            return agent, scope, task, approval_review.digest(origin)
+        finally:
+            provenance._PAIRED_REQUEST.reset(token)
+    except Exception:  # unknown provenance can never enable a grant
+        return None
+
+
+def _same_owner_binding(host, expected):
+    current = _owner_binding(host)
+    return bool(current is not None and expected is not None
+                and current[0] is expected[0] and current[1:] == expected[1:])
+
+
 class Grant:
     __slots__ = ("gid", "key", "exe", "fmt", "device", "sk", "scope", "origin", "expires", "pw")
 
@@ -336,7 +380,7 @@ class GrantBook:
     # ------------------------------------------------------------ lifecycle
     def offer(self, card: dict) -> dict | None:
         """The card's opt-in toggle (program + fixed options + hash), or None (no toggle: this command never shares)."""
-        if card.get("kind") != "sudo" or scope_of(self.el.host) is None:
+        if card.get("kind") != "sudo" or _owner_binding(self.el.host) is None:
             return None
         k = klass(card["argv"], self.path, card.get("cwd") or "/")
         return offer_of(k) if k is not None else None
@@ -345,8 +389,11 @@ class GrantBook:
         from . import elevate
         k = klass(card["argv"], self.path, card.get("cwd") or "/")
         scope, off = card.get("scope"), card.get("grant")
-        if k is None or not off or off["h"] != class_hash(k) or card.get("want_grant") != off["h"] or scope is None \
-                or scope != scope_of(self.el.host) or self.el.st.sign_key(device) != sk:
+        if (_owner_binding(self.el.host, verified_answer=True) is None
+                or not self.el._source_allows(card) or k is None or not off
+                or off["h"] != class_hash(k) or card.get("want_grant") != off["h"]
+                or scope is None or scope != scope_of(self.el.host)
+                or self.el.st.sign_key(device) != sk):
             elevate.wipe(pw)
             return None
         gid = secrets.token_hex(8)
@@ -410,7 +457,7 @@ class GrantBook:
 
     def match(self, card: dict) -> Grant | None:
         self.sweep()
-        if card.get("kind") != "sudo":
+        if card.get("kind") != "sudo" or _owner_binding(self.el.host) is None:
             return None
         k = klass(card["argv"], self.path, card.get("cwd") or "/")
         scope = scope_of(self.el.host)
@@ -457,7 +504,8 @@ class GrantBook:
     async def auto(self, card: dict, gone: asyncio.Future | None) -> dict | None:
         """Run `card` under a matching grant (no card on the phone); None = no grant applies, show a card as usual."""
         from . import elevate
-        g = self.match(card)
+        binding = _owner_binding(self.el.host)
+        g = self.match(card) if binding is not None else None
         if g is None:
             return None
         if self.el.st.sign_key(g.device) != g.sk:
@@ -479,8 +527,17 @@ class GrantBook:
             gone.add_done_callback(hang_up)
         pw = bytearray(g.pw)
         argv = [g.exe] + list(card["argv"][1:])     # pinned: the program the owner approved, same basename
+        def execute():
+            # The executor may start after the Host turn/key/grant moved.
+            # to_thread copies contextvars: child/task/request vetoes survive.
+            if (not _same_owner_binding(self.el.host, binding)
+                    or self.grants.get(g.gid) is not g
+                    or self.el.st.sign_key(g.device) != g.sk
+                    or g.expires <= self.clock()):
+                return {"result": "refused", "why": "authority_changed"}
+            return elevate.run_sudo(argv, pw, card["cwd"], timeout, self.el.sudo, cancel)
         try:
-            res = await asyncio.to_thread(elevate.run_sudo, argv, pw, card["cwd"], timeout, self.el.sudo, cancel)
+            res = await asyncio.to_thread(execute)
         except Exception:  # noqa: BLE001 — never log exception text (a child may print private data)
             res = {"result": "failed", "why": "execution"}
         finally:

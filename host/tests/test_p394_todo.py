@@ -75,7 +75,9 @@ class Fields(Base):
         self.assertEqual(c("2026-10-20"), {"at": "2026-10-20"})
         self.assertEqual(c("+2h", NOW), {"at": todo._iso(NOW + dt.timedelta(hours=2))})
         self.assertEqual(c("+1d", NOW)["at"][:10], (NOW + dt.timedelta(days=1)).astimezone().isoformat()[:10])
-        self.assertEqual(c("2026-10-20T09:00+09:00"), {"at": "2026-10-20T09:00+09:00"})
+        aware = dt.datetime.fromisoformat("2026-10-20T09:00+09:00")
+        self.assertEqual(c(aware.isoformat()), {"at": aware.astimezone().isoformat(timespec="minutes")})
+        self.assertEqual(dt.datetime.fromisoformat(c(aware.isoformat())["at"]), aware)
         self.assertEqual(c("after:t3"), {"after": "t3"})
         self.assertEqual(c("等 t3"), {"after": "t3"})
         self.assertEqual(c("主人回了邮件"), {"when": "主人回了邮件"})
@@ -90,7 +92,7 @@ class Fields(Base):
         x = self.stored()["items"][0]
         self.assertEqual({k: x[k] for k in ("id", "text", "owner", "status", "done", "start", "end", "by", "source", "note", "finished")},
                          {"id": "t1", "text": "明天跟进报价", "owner": "agent", "status": "pending", "done": False,
-                          "start": {"at": "2026-10-20T09:00+09:00"}, "end": {"at": "2026-10-21"}, "by": "owner",
+                          "start": {"at": dt.datetime.fromisoformat("2026-10-20T09:00+09:00").astimezone().isoformat(timespec="minutes")}, "end": {"at": "2026-10-21"}, "by": "owner",
                           "source": "10-19 语音", "note": "报价单在邮箱", "finished": None})
         self.assertTrue(x["created"].startswith("2026-10-19"))
 

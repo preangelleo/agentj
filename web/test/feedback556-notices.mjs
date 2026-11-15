@@ -5,10 +5,10 @@ import {generateKeyPairSync} from 'node:crypto';
 import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
 import {launch,newPage,navigate,waitFor,waitState,evaluate,shoot,sleep} from './browser.mjs';
-const before=process.env.P556_BEFORE, out=`reports/qa/sudo-save-toast-556-20261106/web/${before?'before':'after'}`;
+const before=process.env.P556_BEFORE, out=process.env.P556_OUT||process.env.OLARES_RUN_OUT||`reports/qa/sudo-save-toast-556-20261106/web/${before?'before':'after'}`;
 mkdirSync(out,{recursive:true});
 const web=await startWebServer(before?{publicDir:before}:{}),fake=await startFakeHost(),B=await launch(),checks=[];
-const geometry=`(()=>{const n=document.getElementById('toast'),r=n.getBoundingClientRect(),cs=getComputedStyle(n),ids=['tools','input'],protectedRects=ids.map(id=>document.getElementById(id)).filter(e=>e&&!e.closest('[hidden]')&&e.getClientRects().length).map(e=>{const r=e.getBoundingClientRect();return {id:e.id,x:r.x,y:r.y,right:r.right,bottom:r.bottom,w:r.width,h:r.height}}),overlaps=protectedRects.filter(p=>r.left<p.right&&r.right>p.x&&r.top<p.bottom&&r.bottom>p.y).map(p=>p.id);return {classes:n.className,parent:n.parentElement.id||n.parentElement.className,top:r.top,bottom:r.bottom,left:r.left,right:r.right,w:r.width,h:r.height,position:cs.position,z:cs.zIndex,radius:cs.borderRadius,bg:cs.backgroundColor,overlaps,protectedRects,height:innerHeight,scrollHeight:n.scrollHeight}})()`;
+const geometry=`(()=>{const n=document.getElementById('toast'),r=n.getBoundingClientRect(),cs=getComputedStyle(n),ids=['tools','input','elev-input'],protectedRects=ids.map(id=>document.getElementById(id)).filter(e=>e&&!e.closest('[hidden]')&&e.getClientRects().length).map(e=>{const r=e.getBoundingClientRect();return {id:e.id,x:r.x,y:r.y,right:r.right,bottom:r.bottom,w:r.width,h:r.height}}),overlaps=protectedRects.filter(p=>r.left<p.right&&r.right>p.x&&r.top<p.bottom&&r.bottom>p.y).map(p=>p.id);return {classes:n.className,parent:n.parentElement.id||n.parentElement.className,top:r.top,bottom:r.bottom,left:r.left,right:r.right,w:r.width,h:r.height,position:cs.position,z:cs.zIndex,radius:cs.borderRadius,bg:cs.backgroundColor,overlaps,protectedRects,height:innerHeight,scrollHeight:n.scrollHeight}})()`;
 try {
  for(const width of [390,1440])for(const theme of ['light','dark']) {
   fake.reset();fake.setUp(true);
@@ -21,17 +21,25 @@ try {
    await fake.addTurn({k:'phone',dev,text:'检查备份任务'},'已检查备份任务。执行结果会显示在回复卡下方。');
    await waitFor(p,`document.getElementById('pg').textContent==='1 / 1'`);
    const check=async(name,{center=false,reply=false,modal=false,negative=false}={})=>{
-    await sleep(300);const g=await evaluate(p,geometry);checks.push({tag,name,...g});
+    await sleep(300);const g=await evaluate(p,geometry);
+    // Observe rendered stacking, not unrelated numeric z-index values from separate popup contexts.
+    if(modal)g.paint=await evaluate(p,`(()=>{const t=document.getElementById('toast'),e=document.getElementById('elev'),r=t.getBoundingClientRect(),prev=t.style.pointerEvents;t.style.pointerEvents='auto';const hits=[.25,.5,.75].map(y=>{const x=r.left+r.width/2,py=r.top+r.height*y,n=document.elementFromPoint(x,py);return {x,y:py,top:n?.id||n?.className||n?.tagName,notice:!!n&&(n===t||t.contains(n))}});t.style.pointerEvents=prev;return {hits,noticeZ:getComputedStyle(t).zIndex,passwordZ:getComputedStyle(e).zIndex,passwordPopup:e.dataset.popupSystem,passwordCovered:e.classList.contains('aj-layer-covered')}})()`);
+    checks.push({tag,name,...g});writeFileSync(`${out}/geometry.json`,JSON.stringify({before:!!before,checks},null,2)+'\n');
+    writeFileSync(`${out}/${tag}-${name}.png`,await shoot(p,''));
     if(!before){
      if(negative)assert.ok(g.overlaps.length,'restoring old bottom placement must be detected');
      else {assert.deepEqual(g.overlaps,[],`${tag}/${name}: ${JSON.stringify(g)}`);assert.ok(g.h>0);assert.ok(g.top>=0&&g.bottom<=g.height+1,JSON.stringify(g));}
-     if(center)assert.ok(Math.abs((g.top+g.bottom)/2-g.height/2)<1.5,JSON.stringify(g));
+     if(center){
+      const protectedTop=Math.min(g.height,...g.protectedRects.map(r=>r.y));
+      const wanted=Math.min(g.height/2,protectedTop-12-g.h/2);
+      assert.ok(Math.abs((g.top+g.bottom)/2-wanted)<1.5,'centred unless the existing12px protected-field gap requires moving up: '+JSON.stringify(g));
+     }
      if(reply)assert.equal(await evaluate(p,`document.getElementById('reply-notices').contains(document.getElementById('toast'))`),true);
-     if(modal)assert.equal(await evaluate(p,`(()=>{const t=document.getElementById('toast'),e=document.getElementById('elev');return Number(getComputedStyle(t).zIndex)>Number(getComputedStyle(e).zIndex)})()`),true,'notice above password card');
+     if(modal)assert.ok(g.paint.hits.every(x=>x.notice),'notice actually painted above password card: '+JSON.stringify(g.paint));
     }
     writeFileSync(`${out}/${tag}-${name}.png`,await shoot(p,''));
    };
-   const show=spec=>evaluate(p,`import('./js/ui.js').then(m=>m.notify(${JSON.stringify({...spec,ms:60000})}))`).catch(e=>{throw e});
+   const show=spec=>evaluate(p,`import('./js/ui.js').then(m=>m.notify(${JSON.stringify({ms:60000,...spec})}))`).catch(e=>{throw e});
    await show({kind:'info',text:'已复制'});await check('circle',{center:true});
    await show({kind:'info',text:'这是一条说明，完整内容显示在居中圆角通知卡内。'});await check('square',{center:true});
    await show({kind:'warn',text:'备份检查已完成，请检查结果。'});await check('reply-result',{reply:true});
@@ -45,6 +53,16 @@ try {
     await evaluate(p,`document.getElementById('toast').style.cssText='position:fixed;left:50%;top:auto;bottom:16px;transform:translate(-50%,0);z-index:9999'`);
     await check('negative-old-bottom',{negative:true});
     await evaluate(p,`document.getElementById('toast').style.cssText=''`);
+    // Expiry must preserve the live password field and its modal ownership; do not use Escape to cancel that card.
+    await show({kind:'warn',text:'命令已执行，但管理员密码没有保存。',ms:600});
+    await waitFor(p,`!document.getElementById('toast').classList.contains('on')`);
+    const field=await evaluate(p,`(()=>{const e=document.getElementById('elev-input'),r=e.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2,enabled:!e.disabled,visible:!document.getElementById('elev').hidden,inert:e.closest('[inert]')!==null}})()`);
+    assert.ok(field.enabled&&field.visible&&!field.inert,'expiry keeps password card operable');
+    await p.send('Input.dispatchMouseEvent',{type:'mousePressed',x:field.x,y:field.y,button:'left',clickCount:1});
+    await p.send('Input.dispatchMouseEvent',{type:'mouseReleased',x:field.x,y:field.y,button:'left',clickCount:1});
+    assert.equal(await evaluate(p,`document.activeElement===document.getElementById('elev-input')`),true,'real click focuses original password input');
+    assert.equal(fake.log.some(m=>m.t==='elev_answer'),false,'notices do not submit a password');
+    await evaluate(p,`import('./js/elevate.js').then(m=>m.clear())`);
     await show({kind:'warn',text:'命令已执行，但管理员密码没有保存。'});
     await p.send('Input.dispatchKeyEvent',{type:'keyDown',key:'Escape',code:'Escape',windowsVirtualKeyCode:27});
     assert.equal(await evaluate(p,`document.getElementById('toast').classList.contains('on')`),false,'Escape dismisses transient results');
@@ -68,7 +86,7 @@ try {
     assert.equal(await evaluate(p,`document.getElementById('settings').contains(document.getElementById('toast'))`),true,'local page owns result');
     await evaluate(p,`import('./js/settings.js').then(m=>m.close());window.relayNative.notice('文件没有加进附件，请再试一次。')`);await check('native-page-notice',{center:true});
    }
-  }finally{await p.dispose();}
+  }catch(error){writeFileSync(`${out}/${tag}-FAIL.png`,await shoot(p,''));throw error;}finally{await p.dispose();}
  }
 }finally{await B.close();await fake.stop();await web.stop();}
 writeFileSync(out+'/geometry.json',JSON.stringify({before:!!before,checks},null,2)+'\n');

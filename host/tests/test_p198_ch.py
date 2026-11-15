@@ -8,7 +8,7 @@ C — shared OpenCode on Agent J's own ordinary server, fenced: the v1 guard plu
 H — shared Claude: Claude Code 2.1.296 sends no PostToolUse(Failure) after a PermissionRequest hook denies, so the card our
     state set stayed and the status held at `waiting` past the turn's Stop (240 s+ in P164). A deny clears the card.
     Real process: reports/qa/p198/shared_claude_deny_idle.py (real claude 2.1.296).
-P3 — `git push` asks on the phone by default for shared Claude, Codex and OpenCode (RiskGuard); `approvals = native` does not.
+P3 — ordinary native tools keep the harness decision; fixed control-path writes still ask in every permission mode.
 """
 import _hermetic  # noqa: F401,I001
 import asyncio
@@ -28,6 +28,7 @@ from agentj.state import State
 from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 
 PUSH = {"command": "git push origin HEAD:main"}
+CONTROL = {"file_path": "/tmp/.claude/settings.local.json", "content": "{}"}
 
 
 class _Tmp(unittest.TestCase):
@@ -83,17 +84,37 @@ class OpenCodeGuardChannel(_Tmp):
                              ["shared_guard_not_ready"])
         asyncio.run(go())
 
-    def test_owner_server_stays_opt_in(self):
+    def test_owner_server_always_keeps_the_control_path_guard(self):
         async def go():
-            a = self.agent()
-            await a.prepare_risk(owner=True)
-            self.assertIsNone(a.risk_channel)
-            a = self.agent(high_risk_warnings=True)
-            await a.prepare_risk(owner=True)
-            try:
-                self.assertEqual(a.risk_channel.path.parent, self.st.perm_dir)
-            finally:
-                await a.risk_channel.stop()
+            self.st.init()
+            for cfg in ({}, {"high_risk_warnings": True}):
+                a = self.agent(shared_session_id="owner-fixture", **cfg)
+                from agentj.busy import Board
+                from agentj.serve import Host
+                host = Host(self.st, read_stdin=False)
+                host.busy = Board(self.st.root)
+                self.assertEqual(host.busy.items(), [])
+                a.host = host
+                host.agent = a
+                # Spy on the real no-paired-device refusal; do not mock the decision.
+                host.ask = AsyncMock(wraps=host.ask)
+                await a.prepare_risk(owner=True)
+                try:
+                    self.assertEqual(a.risk_channel.path.parent, self.st.perm_dir)
+                    self.assertEqual(shared_hook.family_of(a.risk_channel.path), "opencode")
+                    channel = a.risk_channel
+                    await a.prepare_risk(owner=True)
+                    self.assertIs(a.risk_channel, channel, "preparation must not open a second guard")
+                    control = self.work / ".claude/settings.local.json"
+                    self.assertFalse(control.exists())
+                    decision = await asyncio.to_thread(shared_hook._exchange, str(channel.path),
+                        {"hook_event_name": "PreToolUse", "session_id": "owner-fixture", "tool_name": "Write",
+                         "tool_input": {"file_path": str(control), "content": "{}"}}, 5)
+                    self.assertEqual(decision["hookSpecificOutput"]["permissionDecision"], "deny")
+                    a.host.ask.assert_awaited_once()
+                    self.assertFalse(control.exists(), "the fixture only asks; it never executes the control write")
+                finally:
+                    await a.risk_channel.stop()
         asyncio.run(go())
 
     @unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("bwrap"), "needs bubblewrap")
@@ -148,8 +169,15 @@ class ClaudeDenyGoesIdle(_Tmp):
             a = self.agent(self.host(behavior))
             await a.hook_event(self.ev("UserPromptSubmit", prompt="push"))
             pre = await a.hook_event(self.ev("PreToolUse", tool_name="Bash", tool_input=dict(PUSH), tool_use_id="t1"))
-            self.assertEqual(pre["hookSpecificOutput"]["permissionDecision"], "ask")   # P3: the default asks
+            # Ordinary native tools keep the harness's decision. A real native
+            # PermissionRequest below still opens and settles the existing card.
+            self.assertNotIn("permissionDecision", pre.get("hookSpecificOutput", {}))
+            a.host.ask.assert_not_awaited()
+            self.assertIsNone(a.state.card)
+            self.assertEqual(a.state.status, "working")
             out = await a.hook_event(self.ev("PermissionRequest", tool_name="Bash", tool_input=dict(PUSH)))
+            a.host.ask.assert_awaited_once()
+            self.assertTrue(a.host.ask.await_args.kwargs["_harness_permission"])
             for e in tail:                                      # what Claude Code 2.1.296 sends after the decision
                 await a.hook_event(self.ev(e, last_assistant_message="没有执行。"))
             await asyncio.sleep(shared_state.config.IDLE_DEBOUNCE_S + 0.05)
@@ -175,36 +203,44 @@ class ClaudeDenyGoesIdle(_Tmp):
 
 # ------------------------------------------------------------------ P3 default on the other harnesses
 class DefaultGuard(unittest.TestCase):
-    def guard(self, **cfg):
+    def guard(self, kind="codex", **cfg):
         h = Mock()
         h.stopped.return_value = False
         h.ask = AsyncMock(return_value={"behavior": "deny"})
-        return RiskGuard(Mock(cfg={"dir": "/tmp", **cfg}, host=h, kind="codex")), h
+        return RiskGuard(Mock(cfg={"dir": "/tmp", **cfg}, host=h, kind=kind)), h
 
-    def test_codex_and_opencode_guard_ask_for_push_by_default_and_deny_blocks(self):
-        g, h = self.guard()
-        self.assertFalse(asyncio.run(g.check("Bash", PUSH)))
-        h.ask.assert_awaited_once()
+    def test_codex_and_opencode_fixed_controls_ask_and_deny_blocks(self):
+        for kind in ("codex", "opencode"):
+            g, h = self.guard(kind=kind)
+            self.assertFalse(asyncio.run(g.check("Write", dict(CONTROL))))
+            h.ask.assert_awaited_once()
+
+    def test_ordinary_push_keeps_native_permission_without_an_extra_card(self):
+        for kind in ("codex", "opencode"):
+            g, h = self.guard(kind=kind)
+            self.assertTrue(asyncio.run(g.check("Bash", PUSH)))
+            h.ask.assert_not_awaited()
 
     def test_hook_event_denies_for_the_served_session(self):
         g, h = self.guard(shared_session_id="s1")
-        out = asyncio.run(g.hook_event({"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash",
-                                        "tool_input": dict(PUSH)}))
+        out = asyncio.run(g.hook_event({"hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Write",
+                                        "tool_input": dict(CONTROL)}))
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
 
     def test_native_cannot_bypass_registry_floor(self):
         g, h = self.guard(approvals="native")
-        self.assertFalse(asyncio.run(g.check("Bash", PUSH)))
+        self.assertFalse(asyncio.run(g.check("Write", dict(CONTROL))))
         h.ask.assert_awaited_once()
 
     def test_shared_claude_registry_floor_also_applies_under_native(self):
         h = Mock()
         h.stopped.return_value = False
-        for cfg, want in (({}, "ask"), ({"approvals": "native"}, "ask")):
+        h.ask = AsyncMock(return_value={"behavior": "deny"})
+        for cfg, want in (({}, "deny"), ({"approvals": "native"}, "deny")):
             a = shared.SharedClaudeAgent(h, {"kind": "claude", "dir": "/tmp", "_workflow_ceo": True, **cfg})
             a.session = {"sessionId": "owner"}
-            out = asyncio.run(a.hook_event({"session_id": "owner", "hook_event_name": "PreToolUse", "tool_name": "Bash",
-                                            "tool_input": dict(PUSH)}))
+            out = asyncio.run(a.hook_event({"session_id": "owner", "hook_event_name": "PreToolUse", "tool_name": "Write",
+                                            "tool_input": dict(CONTROL)}))
             self.assertEqual((out.get("hookSpecificOutput") or {}).get("permissionDecision"), want, cfg)
 
 

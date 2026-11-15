@@ -197,7 +197,7 @@ A VM with systemd is the full cloud-server setup. For a generic container, the f
 | On screen | What you do |
 |---|---|
 | Installation code | Taken from the command; if it is missing you paste it once (hidden) |
-| System parts | Installs bubblewrap and socat (the Agent runs fenced); you may be asked for the Agent J host password once (hidden) |
+| System parts | Installs bubblewrap for Agent J isolation; socat is needed only for Claude Code's own sandbox; you may be asked for the Agent J host password once (hidden) |
 | AI | Reuses Claude Code or Codex if you are signed in. Otherwise pick a route: if the official services are unreachable choose the Agents Relay route (see [Hong Kong and mainland China](/docs/install/#hk-cn)); if they work, sign in with your own account in the browser |
 | Agent J | Nothing: it installs, starts the background service and links this seat with the same code |
 | Phone | A QR code appears: open https://m.agentj.app on **your own phone**, tap "Scan QR code" and scan it |
@@ -339,7 +339,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.30.21#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.30.22#subdirectory=host"
 agentj doctor
 ```
 

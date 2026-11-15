@@ -493,6 +493,9 @@ class Agent:
             self.host.agent_status(s)
 
     def submit(self, text) -> None:
+        present = getattr(self.host, "queue_pending", None)
+        if callable(present) and not self.cfg.get("_workflow_ceo"):
+            present(text)
         self.q.put_nowait(text)
 
     def start(self) -> None:

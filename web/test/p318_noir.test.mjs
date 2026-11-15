@@ -63,7 +63,7 @@ test('reply rescue action keeps strong background and matching strong ink', () =
 
 test('ui.js: notify with six kinds; FORMATS accents use current state or semantic palette tokens', async () => {
   const src = read('js/ui.js');
-  assert.match(src, /export function notify\(spec\)/);
+  assert.match(src, /export function notify\(spec = \{\}\)/);
   globalThis.window = globalThis.window || {};
   const ui = await import('../public/js/ui.js');
   assert.deepEqual(Object.keys(ui.FORMATS).sort(), ['confirm', 'error', 'info', 'progress', 'success', 'warn']);
@@ -111,15 +111,16 @@ function fakeDom() {
       Object.defineProperty(this, 'className', { set: (v) => { cls.clear(); String(v).split(/\s+/).filter(Boolean).forEach((c) => cls.add(c)); }, get: () => [...cls].join(' ') });
       const props = {}; this.style = { setProperty: (k, v) => { props[k] = v; }, removeProperty: (k) => { delete props[k]; }, props }; }
     setAttribute(k, v) { this.attrs[k] = v; if (k === 'class') this.className = v; }
-    appendChild(c) { this.children.push(c); return c; }
-    replaceChildren(...c) { this.children = c; this._text = ''; }
+    appendChild(c) { if (c.parentElement) c.parentElement.children = c.parentElement.children.filter(n => n !== c); this.children.push(c); c.parentElement = this; return c; }
+    replaceChildren(...c) { for (const old of this.children) old.parentElement = null; this.children = []; this._text = ''; for (const n of c) this.appendChild(n); }
     addEventListener(t, f) { this.listeners[t] = f; }
     getClientRects() { return []; }
     get textContent() { return this._text + this.children.map((c) => c.textContent || '').join(''); }
     set textContent(v) { this._text = String(v); this.children = []; }
   }
-  const toastEl = new N('div');
-  globalThis.document = { getElementById: (id) => (id === 'toast' ? toastEl : null), querySelector: () => null, querySelectorAll: () => [],
+  const toastEl = new N('div'), body = new N('body'); toastEl.id = 'toast'; body.appendChild(toastEl);
+  const find = (node, id) => node.id === id ? node : node.children.map(n => find(n, id)).find(Boolean) || null;
+  globalThis.document = { body, getElementById: (id) => find(body, id), querySelector: () => null, querySelectorAll: () => [],
     createElement: (t) => new N(t), createElementNS: (_ns, t) => new N(t), createTextNode: (t) => { const n = new N('#text'); n._text = t; return n; } };
   return toastEl;
 }
@@ -147,9 +148,17 @@ test('notify(): title + text in #toast, kind / shape classes, action button .und
     assert.equal(box.dataset.hold, '1', 'progress holds');
     assert.equal(box.attrs.role, 'status');
     notify({ kind: 'error', text: 'x' }); assert.equal(box.attrs.role, 'alert');
-    box.dataset.sharedFollow = '1'; toast('plain'); assert.equal(box.dataset.sharedFollow, undefined);
-    assert.equal(box.dataset.kind, 'info'); assert.equal(box.textContent, 'plain');
-    toastOff(); assert.ok(!box.classList.contains('on'));
+    box.dataset.sharedFollow = '1'; toast('plain');
+    const fifo = document.getElementById('notice-fifo');
+    assert.equal(fifo.dataset.kind, 'info'); assert.equal(fifo.textContent, 'plain');
+    assert.equal(box.dataset.sharedFollow, '1', 'ordinary FIFO information does not replace the immediate actor');
+    assert.equal(box.dataset.kind, 'error'); assert.equal(box.textContent, 'x');
+    toast('explicit result', 5000);
+    assert.equal(box.dataset.sharedFollow, undefined, 'reusing the immediate actor erases inherited metadata');
+    assert.equal(box.dataset.kind, 'info'); assert.equal(box.textContent, 'explicit result');
+    assert.ok(fifo.classList.contains('on'), 'an immediate result does not dismiss FIFO information');
+    toastOff(); assert.ok(!box.classList.contains('on') && !fifo.classList.contains('on'));
+    assert.equal(fifo.textContent, '', 'explicit dismissal also clears the FIFO body');
   } finally { clearTimeout(box._t); delete globalThis.document; }
 });
 

@@ -4552,3 +4552,41 @@ or `roster_binding_required` with a fresh `cont`). The ticket grants nothing; th
   `account` / changed target), `automation_grant_invalid`; issuance refusals `automation_grant_owner_turn`,
   `automation_grant_domain_refused {domain, reason}`, `automation_grant_context {reason}`. Logs carry ids, counts and an
   address hash only. Host: `host/agentj/automation_grant.py`.
+
+
+### Fenced task diagnostics and login-check reasons (#467 / #470)
+
+A fenced or sandboxed `agentj tasks list [--json]` queries the existing same-UID
+Agent socket (`AGENTJ_ELEVATE_SOCK`) with
+`{t:"host_diagnostics", op:"tasks_list", as_json?:boolean}`. The host rejects extra
+fields or a non-boolean `as_json` before reading state. It answers only an identified
+peer whose process ancestry intersects the host's owned Agent/session PIDs; missing
+peer evidence or a friend, visitor, group, bot or scheduled-task caller is refused
+with `peer_unverified` or `not_owner_agent`. Existing captured-source and output
+privacy checks still apply. The read grants no task mutation authority.
+
+The response is `{exit, output}`. JSON rows contain only `id, title, schedule, tz,
+mode, suggested, enabled, stale, uncertain, problems, next, migrated, last`; `last`
+is reduced to `verdict, status, at`. No caller-selected path, workdir or task ID is
+accepted. Enable, disable, run and migrate retain their existing protected paths.
+An unavailable host produces an honest hidden-state error, never an empty list
+that pretends no tasks exist.
+
+After `login_qr_check`, the host performs its trusted template check; the owner's
+claim or the login tab's landing URL alone cannot confirm login. Success remains
+`login_qr_done {result:"done"}`. An unresolved check sends
+`{t:"login_qr_state", id, state:"waiting", why}` with exactly one of:
+`signed_out` (trusted check requires authentication), `other_browser` (the login
+tab remains on the sign-in page), `landing_unknown` (unrecognized landing and
+inconclusive check), or `browser` (tab/browser unavailable). The explanatory chat
+line uses only the page host name, never its path or query. Older clients may
+ignore `why` and keep the generic waiting message. Template `landing_url` patterns
+can trigger a check; they never establish a signed-in result.
+
+### AuthRescue card presentation marker (#0269 C-2)
+
+An Agent J-owned AuthRescue `ask` carries `host_tool:true`, set by the host's
+`Ask.host_card` path. The rescue layout requires this marker; matching a harness
+tool name or caller-provided label is insufficient. The marker is presentation
+metadata and grants no approval, UV, source or credential authority. Existing
+signed card/envelope and initiating-device checks remain mandatory.

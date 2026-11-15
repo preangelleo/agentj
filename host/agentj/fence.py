@@ -228,7 +228,20 @@ _MAIN_ENV = frozenset({
 })
 
 
-def launch_environment(base=None, allow_docker: bool = False, kind: str = "codex") -> dict:
+def _native_model_keys(kind, name):
+    """Names only: the Host-only pinned native Relay adapter opts in, never a bot/config JSON.
+
+    Values are an unchanged subset of the supplied existing environment. No
+    credential source is read and no general secret allowlist is accepted.
+    """
+    if name is None:
+        return set()
+    if kind != 'codex' or name != 'AGENTSRELAY_OPENAI_KEY':
+        raise ValueError('unsupported native model key')
+    return {name}
+
+
+def launch_environment(base=None, allow_docker: bool = False, kind: str = "codex", *, native_model_key=None) -> dict:
     """Strict subset of the existing child environment; adds no values or authority.
 
     Reuse the established harness whitelist and the main-session tool claim names.
@@ -236,7 +249,8 @@ def launch_environment(base=None, allow_docker: bool = False, kind: str = "codex
     """
     from .peer_session import clean_env, codex_user_model, SECRETISH
     env = dict(os.environ if base is None else base)
-    keep = set(_MAIN_ENV | (frozenset(_CONTAINER_ENV) if allow_docker else frozenset()))
+    model_keys = _native_model_keys(kind, native_model_key)
+    keep = set(_MAIN_ENV | (frozenset(_CONTAINER_ENV) if allow_docker else frozenset())) | model_keys
     if kind == "opencode":
         # Main-session configuration is constructed before this boundary. Peer
         # sessions build their own configuration after clean_env; their narrower
@@ -304,7 +318,7 @@ def _host_elevate_socket(host_state):
         return None
 
 
-def auxiliary_environment(base=None, kind: str = "claude", extra_keep=(), plan_keys: bool = False, host_state=None) -> dict:
+def auxiliary_environment(base=None, kind: str = "claude", extra_keep=(), plan_keys: bool = False, host_state=None, *, native_model_key=None) -> dict:
     """Tasks/bots authenticate from native storage, never serve's secret environment — except the plan keys
     (PLAN_KEY_ENV) when `plan_keys` (the owner's own tasks; bots never pass it).
 
@@ -313,6 +327,7 @@ def auxiliary_environment(base=None, kind: str = "claude", extra_keep=(), plan_k
     from .peer_session import clean_env
     env = dict(os.environ if base is None else base)
     plans = set(PLAN_KEY_ENV) if plan_keys else set()
+    model_keys = _native_model_keys(kind, native_model_key)
     extra_keep = set(extra_keep) | {k for k in _MAIN_ENV if k.startswith("FAKE_")} | {"AGENTJ_INSTANCE"}
     if host_state is not None:
         env.pop("AGENTJ_ELEVATE_SOCK", None)
@@ -321,12 +336,12 @@ def auxiliary_environment(base=None, kind: str = "claude", extra_keep=(), plan_k
         if endpoint is not None:
             env["AGENTJ_ELEVATE_SOCK"] = endpoint
             extra_keep.add("AGENTJ_ELEVATE_SOCK")
-    clean = clean_env(kind, env, extra_keep=extra_keep | plans)
+    clean = clean_env(kind, env, extra_keep=extra_keep | plans | model_keys)
     hidden = set(hide_env(env))
     return {k: v for k, v in clean.items() if k not in hidden
-            and not k.startswith("AGENTSRELAY_")
-            and (k in plans or not (k.endswith(("_TOKEN", "_API_KEY")) or k == "CLAUDE_CODE_OAUTH_TOKEN"))
-            and (k in extra_keep or k in plans or not k.endswith("_KEY"))}
+            and (k in model_keys or not k.startswith("AGENTSRELAY_"))
+            and (k in plans or k in model_keys or not (k.endswith(("_TOKEN", "_API_KEY")) or k == "CLAUDE_CODE_OAUTH_TOKEN"))
+            and (k in extra_keep or k in plans or k in model_keys or not k.endswith("_KEY"))}
 
 
 def _env_dirs(env) -> list[str]:

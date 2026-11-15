@@ -1,3 +1,4 @@
+import * as relayKeys from './keys.js';
 // #427 · Settings → 备用 AI 账号: each harness (Claude Code, Codex) keeps several named accounts on the host; one tap makes one
 // current. Wire (reports/design/harness-multi-account/CONTRACT.md): acct_get / acct_use / acct_rename / acct_del → acct_res
 // {r, ok, view, why?}; adding an account = the AI 登录救援 flow (`auth_start {kind, route, account:{name}}`) writing into a new
@@ -69,7 +70,7 @@ async function call(obj, ms = 15000) {
 }
 
 export async function load() {
-  stop(); const id = ++loadId; view = null; form = null;
+  stop(); relayKeys.loadRelay(el('acct-relay-keys')).catch(() => {}); const id = ++loadId; view = null; form = null;
   el('acct-list')?.replaceChildren(); el('acct-primary')?.replaceChildren(); say(t('ar.checking'));
   watchFlow();
   const m = await call({ t: 'acct_get' });
@@ -79,7 +80,7 @@ export async function load() {
   const attempt = adding, generation = addGeneration;   // a pre-add snapshot cannot finish a newer same-name attempt
   if (isReady()) ask1({ t: 'auth_get', check: false }, 'auth_res', 15000).then((r) => { if (id === loadId && generation === addGeneration && adding === attempt && r?.t === 'auth_res') authrescue.onPush(r); });
 }
-export function close() { ++loadId; stop(); form = null; }
+export function close() { relayKeys.unmount(el('acct-relay-keys')); ++loadId; stop(); form = null; }
 /** Settings' Esc / Back (layers.js owns Esc in the capture phase): an open name field is put away first → true. */
 export function escape() {
   if (!form) return false;

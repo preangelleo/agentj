@@ -456,6 +456,10 @@ class WheelInstall(unittest.TestCase):
         bot_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename.startswith(('agentj/bots/','agentj/skills/agentj-bots/'))]
         bot_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in bot_entries)
         self.assertLessEqual(bot_bytes,77824,'P82 bot package allocation is bounded; no models or knowledge ship')
+        api_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename.startswith('agentj/seat_api/')]
+        api_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in api_entries)
+        # P126: restore the historical 48 KiB API allocation; the retired API skill stays excluded.
+        self.assertLessEqual(api_bytes,49152,'P126 API package allocation is bounded; no model or customer content ships')
         # P113 (0.18, ADR-A194): an explicit bounded 48 KiB increment for long tasks (P250 owner-approved growth) (registry, schemas, skill); same accounting.
         lt_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename in ('agentj/capability.py','agentj/ltschema.py')
                     or i.filename.startswith(('agentj/longtask_schemas/','agentj/skills/agentj-capability/'))]
@@ -625,7 +629,7 @@ class WheelInstall(unittest.TestCase):
         p275_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p275)
         self.assertEqual(len(p275),2)
         self.assertLessEqual(p275_bytes,20480,'P275 avatar allocation is bounded')
-        allocs=bot_bytes+lt_bytes+browser_bytes+p115_bytes+cut_bytes+p147_bytes+p155_bytes+p158_bytes+p169_bytes+p170_bytes+p171_bytes+p181_bytes+p184_bytes+p188_bytes+p189_bytes+p207_bytes+p244_bytes+p274_bytes+p275_bytes   # + P244 catalogue + P274 iMessage
+        allocs=bot_bytes+api_bytes+lt_bytes+browser_bytes+p115_bytes+cut_bytes+p147_bytes+p155_bytes+p158_bytes+p169_bytes+p170_bytes+p171_bytes+p181_bytes+p184_bytes+p188_bytes+p189_bytes+p207_bytes+p244_bytes+p274_bytes+p275_bytes   # + P244 catalogue + P274 iMessage
         core_0184=2_260_000+8192+8192+8192+12288+4096+8192+8192+12288      # P118 + P135 P139 P142 P143 P149 P150 P151 P152
         core_0200=core_0184+139264                                          # + P165 (0.20.0)
         core_0200+=8192           # P194: owner_route.py (owner-directed outbound) + mail / telegram / privacy / media wiring, flagged to Jarvis

@@ -2367,6 +2367,12 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
+            if isinstance(req, dict) and req.get("t") == "plaza_uninstall":
+                from . import plaza_uninstall
+                w.write((json.dumps(await plaza_uninstall.handle(self.host, req), ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
             if isinstance(req, dict) and req.get("t") == "plaza_verify":      # #466: the fenced `agentj plaza verify`
                 from . import plaza_host
                 w.write((json.dumps(await plaza_host.verify(self.host, req), ensure_ascii=False) + "\n").encode())

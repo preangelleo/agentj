@@ -76,6 +76,9 @@ def _state():
     from .state import State
     st = State()
     if not st.exists():
+        from . import fence
+        if fence.inside():
+            raise LibraryError(fence.hidden_state())
         raise LibraryError("还没初始化：先 agentj init / not initialised: agentj init")
     return st
 

@@ -74,6 +74,7 @@ export const ROWS = [
   ["app.assist_terminal_log",[],1],
   ["app.assist_terminal_discover_retry",[],1],
   ["app.assist_terminal_log_earlier",[],1],
+  ["app.background",[],1],
   ["keys.search",[["/","press"],["Mod+K","press"]],1],
   ["keys.search_close",[["Escape","press"]],1],
   ["compose.focus",[["i","press"],["Escape","press"]],1],

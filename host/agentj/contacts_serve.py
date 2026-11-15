@@ -327,6 +327,8 @@ class ContactService:
         content = await asyncio.to_thread(self._content, turn, mid, obj.get("input") is not False, mine)
         if content is None:
             return {"ok": False, "why": "not_found"}
+        if isinstance(content, dict):
+            return {**content, "files": 1, "limit": FILES_MAX}
         if content == "secret":       # P211: a file checked for the owner's page, refused by the strict rules for others
             return {"ok": False, "why": "secret"}
         subject, body, files, html, skips = content
@@ -340,7 +342,7 @@ class ContactService:
         try:
             refused, smtp_id = await asyncio.to_thread(self.smtp_send, cfg, pw, msg, [r["addr"] for r in recips])
         except M.MailError as e:
-            return {"ok": False, "why": "send_failed", "detail": e.why, "_log": log}
+            return {"ok": False, "why": "send_failed", "detail": e.why, "files": len(files), "_log": {**log, "why": e.why}}
         log["smtp"] = smtp_id
         self.recent[key] = now
         await asyncio.to_thread(C.record_sent, self.st, recips, "phone")
@@ -348,7 +350,7 @@ class ContactService:
                 **({"refused": refused} if refused else {}),
                 **({"skipped": len(skips), "skips": skips, "limit": FILES_MAX} if skips else {})}
 
-    def _content(self, turn, mid, with_input: bool = True, mine: bool = False) -> tuple[str, str, list, str | None, list] | None:
+    def _content(self, turn, mid, with_input: bool = True, mine: bool = False) -> tuple[str, str, list, str | None, list] | dict | str | None:
         """Forwardable subject/text/files/html/skips, or None if gone. Owner-only uses owner masking; others strict."""
         from . import mail_template
         from . import tg_media
@@ -373,6 +375,10 @@ class ContactService:
             except Exception:   # noqa: BLE001 — vanished / changed since the page: `gone`
                 return None
         if isinstance(mid, str):
+            with (getattr(media, "lock", None) or contextlib.nullcontext()):
+                size = int((table.get(mid) or {}).get("bytes") or 0)
+            if size > FILES_MAX:
+                return {"ok": False, "why": "too_big", "bytes": size}
             one = read(mid)
             if one is None or one == "secret":
                 return one

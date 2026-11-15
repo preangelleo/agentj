@@ -1,13 +1,13 @@
 // 0.26.9 #471 (CONTRACT §D, lane w2-web) — a long turn the owner talked past, on the real phone page against the local fake host
 // (real Noise, own headless Chromium, never :9222). No customer machine, no real Codex, no credentials.
 //   · turn T is answering (a live reply card); the owner sends a message → it is queued: the merged notice 「上一件还在做，已等
-//     N 分钟」 + 「停下上一件」 under it (an older host without the turn watchdog: P481's /stop)
+//     N 分钟」 + 「停止当前任务」 under it (an older host without the turn watchdog: P481's /stop)
 //   · T says more → that output is on a NEW card at the bottom (same turn, continuation), the page goes there; the old card keeps
 //     only what it showed, says 「继续见下方」, gets nothing more (T's further output lands below), a tap goes to the continuation
 //   · T ends, then the queued message is answered → its answer is the newest page (T's rest sits above it)
 //   · negative control: a turn with no owner message after it streams on its own card as before (no split, no button)
-//   · msg_steered {mid, turn} → that message says 「已插入当前这一轮」: not queued, no 「停下上一件」 (mid = page id, and = send id)
-//   · on a host that runs the turn watchdog (a queued notice carries waited_s) 「停下上一件」 is the signed rescue_do end_turn
+//   · msg_steered {mid, turn} → that message says 「已插入当前这一轮」: not queued, no 「停止当前任务」 (mid = page id, and = send id)
+//   · on a host that runs the turn watchdog (a queued notice carries waited_s) 「停止当前任务」 is the signed rescue_do end_turn
 // Shots (zh light / dark 390, en light 390, zh light 1440) → reports/qa/p0269-split/ (P0269_W2_OUT overrides: the ticket's shot folder).
 // AJ_P0269_BEFORE=1 + AJ_P0269_PUBLIC=<base public/> plays the same scene on the base build (before shots, no new-UI checks).
 import assert from 'node:assert/strict';
@@ -23,10 +23,10 @@ const OUT = process.env.P0269_W2_OUT || fileURLToPath(new URL('../../../reports/
 const W = {
   zh: { task: '把这周的周报整理好', s1: '第一步：读完了 12 份会议记录。', s2: '第二步：草稿写好了，在检查数字。', s3: '第三步：数字核对完，周报已经保存。',
     say: '顺便把上个月的也看一下', answer: '上个月的周报也看过了，没有问题。', cont: '继续见下方', contOf: '接着回复：把这周的周报整理好', steered: '已插入当前这一轮',
-    waited: '上一件还在做，已等不到 1 分钟', stop: '停下上一件', other: '再查一下磁盘空间', otherReply: '磁盘还剩 120 GB。' },
+    waited: '上一件还在做，已等不到 1 分钟', stop: '停止当前任务', other: '再查一下磁盘空间', otherReply: '磁盘还剩 120 GB。' },
   en: { task: 'Put together this week\'s report', s1: 'Step 1: read all 12 meeting notes.', s2: 'Step 2: the draft is written, checking the numbers.', s3: 'Step 3: numbers checked, the report is saved.',
     say: 'Also look at last month\'s', answer: 'Last month\'s report looks fine too.', cont: 'Continued below', contOf: 'Continuing the reply: Put together this week\'s report', steered: 'Added to the current turn',
-    waited: 'Previous task still running · waiting under a minute', stop: 'Stop previous task', other: 'Check the disk space again', otherReply: '120 GB free.' },
+    waited: 'Previous task still running · waiting under a minute', stop: 'Stop current task', other: 'Check the disk space again', otherReply: '120 GB free.' },
 };
 
 const web = await startWebServer({ port: 0, relayCsp: 'ws://127.0.0.1:*', ...(process.env.AJ_P0269_PUBLIC ? { publicDir: process.env.AJ_P0269_PUBLIC } : {}) });
@@ -86,7 +86,7 @@ try {
       if (!before) {
         await waitFor(p, `!!document.querySelector('#cmdx [data-waited]')`, 6000);
         check((await evaluate(p, `document.querySelector('#cmdx .sh-waited').textContent`)) === X.waited, 'merged notice 「上一件还在做，已等…」 ' + tag);
-        check((await evaluate(p, `document.querySelector('#cmdx [data-queue-stop]')?.textContent`)) === X.stop, '「停下上一件」 under it ' + tag);
+        check((await evaluate(p, `document.querySelector('#cmdx [data-queue-stop]')?.textContent`)) === X.stop, '「停止当前任务」 under it ' + tag);
         const g = await evaluate(p, `(()=>{const r=document.querySelector('#cmdx [data-queue-stop]').getBoundingClientRect();return {w:r.width,h:r.height,x:r.x,right:r.right}})()`);
         check(g.h >= 44 && g.x >= 0 && g.right <= w, 'button ≥ 44 px, on screen ' + tag + JSON.stringify(g));
       }
@@ -140,7 +140,7 @@ try {
         const M2 = fake.st.turns.at(-1), sid = [...fake.st.queued.keys()].at(-1);
         await fake.send({ t: 'msg_steered', mid: lang === 'en' ? sid : M2.id, turn: T2.id });
         await waitFor(p, `document.getElementById('words').textContent.includes(${JSON.stringify(X.steered)})`, 6000);
-        check(!await has('[data-queue-stop]') && !await has('#cmdx [data-waited]'), 'steered: no queued notice, no 「停下上一件」 ' + tag);
+        check(!await has('[data-queue-stop]') && !await has('#cmdx [data-waited]'), 'steered: no queued notice, no 「停止当前任务」 ' + tag);
         check(await evaluate(p, `document.body.dataset.pageQueued==='0'`), 'steered: the page is not queued ' + tag);
         await sleep(2400);   // the pill's 「已送达」 moment
         check((await evaluate(p, `(()=>{const b=document.getElementById('sayCancel');return b.hidden?'':b.dataset.mode})()`)) !== 'queued', 'steered: the composer no longer holds it as queued ' + tag);
@@ -148,7 +148,7 @@ try {
         await fake.updateTurn(T2.id, { end: 'done' });
         fake.st.queued.clear();
 
-        // ---- the turn watchdog's host: 「停下上一件」 = signed end_turn
+        // ---- the turn watchdog's host: 「停止当前任务」 = signed end_turn
         if (tag === 'zh-light-390') {
           const T3 = await fake.addTurn({ k: 'phone', text: X.task }, X.s1, 'open');
           await fake.addTurn({ k: 'sys', text: '' }, 'Codex 正在回答，等它说完我就把您的消息递过去。', 'done', { queued: true, waited_s: 30 });

@@ -42,7 +42,7 @@ class DailyPure(unittest.TestCase):
         self.assertFalse(hb.daily_due(T730 + 60, "07:30", hb.day_of(T730), started), "already fired today")
         self.assertTrue(hb.daily_due(T730 + 60, "07:30", hb.day_of(T730 - 86400), started), "yesterday's does not count")
         self.assertTrue(hb.daily_due(T730 + 1800, "07:30", None, T730 + 1800), "started 30 min after: still within grace")
-        self.assertFalse(hb.daily_due(T730 + 7200, "07:30", None, T730 + 7200), "started 2 h after: skipped today")
+        self.assertTrue(hb.daily_due(T730 + 7200, "07:30", None, T730 + 7200), "late start catches up today")
         self.assertTrue(hb.daily_due(T730 + 86400 + 10, "07:30", hb.day_of(T730), T730 + 7200), "but due tomorrow")
         self.assertFalse(hb.daily_due(T730 + 60, "", None, started), "off")
         self.assertFalse(hb.daily_due(T730 + 60, "7:30", None, started), "malformed = off")
@@ -57,8 +57,8 @@ class DailyPure(unittest.TestCase):
 
     def test_schema_and_settable(self):
         m = preferences.SCHEMA["heartbeat.daily_at"]
-        self.assertEqual((m["type"], m["default"], m["tier"]), ("string", "", "user"))
-        self.assertEqual(preferences.defaults()["heartbeat"]["daily_at"], "")
+        self.assertEqual((m["type"], m["default"], m["tier"]), ("string", "08:00", "user"))
+        self.assertEqual(preferences.defaults()["heartbeat"]["daily_at"], "08:00")
         self.assertIn("heartbeat.daily_at", serve.PREF_SET_KEYS)
         for good in ("07:30", "", "00:00", "23:59"):
             preferences.validate({"heartbeat": {"daily_at": good}})
@@ -101,10 +101,10 @@ class Daily(unittest.TestCase):
         r = asyncio.run(self.h.tick(T730 + 3 * 3600))
         self.assertTrue(r and r["ok"], r)
 
-    def test_missed_by_more_than_the_grace_is_skipped(self):
+    def test_missed_daily_review_catches_up_after_late_start(self):
         self.daily(started=T730 + 2 * 3600)              # serve came up at 09:30
-        self.assertIsNone(asyncio.run(self.h.tick(T730 + 2 * 3600 + 30)))
-        self.assertEqual(self.agent.got, [])
+        self.assertTrue(asyncio.run(self.h.tick(T730 + 2 * 3600 + 30))["ok"])
+        self.assertEqual(len(self.agent.got), 1)
 
     def test_off_and_disabled(self):
         self.daily(hhmm="", activity=T730 - 60)
@@ -139,7 +139,7 @@ class DailyCLI(unittest.TestCase):
     def test_offline(self):
         with tempfile.TemporaryDirectory() as d:
             env = {"XDG_CONFIG_HOME": d + "/cfg", "AGENTJ_STATE_DIR": d + "/state"}
-            self.assertEqual(json.loads(self.run_cli("heartbeat", "status", "--json", env=env).stdout)["daily_at"], "")
+            self.assertEqual(json.loads(self.run_cli("heartbeat", "status", "--json", env=env).stdout)["daily_at"], "08:00")
             r = self.run_cli("heartbeat", "daily", "07:30", env=env)
             self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
             self.assertIn("07:30", r.stdout)

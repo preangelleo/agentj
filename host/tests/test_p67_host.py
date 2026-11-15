@@ -12,6 +12,21 @@ from agentj import provider_runtime as pr
 from agentj import agent_opencode as oc
 from agentj.shared_opencode2 import SharedOpenCodeV2Agent
 
+def diagnostic_host(case, agent, meter=None):
+    from agentj.serve import Host
+    from agentj.state import State
+    tmp = tempfile.TemporaryDirectory()
+    case.addCleanup(tmp.cleanup)
+    st = State(Path(tmp.name) / 'state')
+    st.init(relay='ws://127.0.0.1:1')
+    host = Host(st, read_stdin=False)
+    host.agent = agent
+    host._ctl_send = mock.AsyncMock()
+    if meter is not None:
+        host.meter_state = meter
+    return host
+
+
 class Runtime(unittest.TestCase):
     def test_builtin_auth_errors_use_phone_path_and_one_language(self):
         a = object.__new__(oc.OpenCodeAgent)
@@ -132,7 +147,7 @@ class AsyncRuntime(unittest.IsolatedAsyncioTestCase):
     async def test_metadata_control_returns_only_whitelisted_model_and_numbers(self):
         from agentj.serve import Host
         agent = SimpleNamespace(kind='opencode', cur_model=lambda:'relay/m', _providers=mock.AsyncMock(return_value={'providers':[{'id':'relay', 'options':{'apiKey':'private-fixture-value'}, 'models':{'m':{'limit':{'context':100}, 'options':{'secret':'private-fixture-value'}}}}]}), _last_assistant=mock.AsyncMock(return_value={'tokens':{'input':15}, 'text':'private-fixture-answer'}), _ctx=oc.OpenCodeAgent._ctx)
-        host=SimpleNamespace(agent=agent,_ctl_send=mock.AsyncMock())
+        host=diagnostic_host(self, agent)
         reader=asyncio.StreamReader();reader.feed_data(b'{"cmd":"opencode_metadata"}\n');reader.feed_eof()
         await Host.on_ctl(host, reader, SimpleNamespace(close=lambda:None))
         result=host._ctl_send.call_args.args[1]
@@ -420,7 +435,7 @@ class RuntimeDiagnostic(unittest.IsolatedAsyncioTestCase):
         from agentj import main_identity
         cfg={'language':'zh','model':'relay/m','instructions':'private-fixture-user-text','apiKey':'private-fixture-key'}
         agent=SimpleNamespace(kind='opencode',cfg=cfg,sid='fixture-session',identity_sent={'fixture-session':main_identity.prompt(cfg)},session_model={'providerID':'native','id':'actual','apiKey':'private-fixture-key'},owned_server=True,persist=True,cur_model=lambda:'relay/m')
-        host=SimpleNamespace(agent=agent,meter_state={'model':'relay/m','ctx':{'used':12,'max':100,'key':'private-fixture-key'},'quota_windows':[{'window':'weekly','used':1,'limit':5,'pct':20,'key':'private-fixture-key'}]},_ctl_send=mock.AsyncMock())
+        host=diagnostic_host(self, agent, {'model':'relay/m','ctx':{'used':12,'max':100,'key':'private-fixture-key'},'quota_windows':[{'window':'weekly','used':1,'limit':5,'pct':20,'key':'private-fixture-key'}]})
         reader=asyncio.StreamReader();reader.feed_data(b'{"cmd":"opencode_runtime"}\n');reader.feed_eof()
         await Host.on_ctl(host,reader,SimpleNamespace(close=lambda:None))
         value=host._ctl_send.call_args.args[1]

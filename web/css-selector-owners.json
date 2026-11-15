@@ -1392,16 +1392,16 @@
     }
   ],
   "source6ProducerBindings": {
-    "public/index.html": "3df32b00d92465d9303b41f04bb701500838d09074dd39bb15b9efac9893375c",
-    "public/app.js": "0b154f10f9fb0d19abbfd8f8df5d346765d02e6807f56a86012e94a2b0ea2f07",
+    "public/index.html": "a8a77a3194b85b69b94a5cd530a3741f2cfc9fc4d34ea2ad91bb16995bc40762",
+    "public/app.js": "ef5f0c9d46dad29690a8638876598fd03436125113884ca440f9a37f16bae358",
     "public/js/sendvol.js": "af0e1b739e9bb027cfa3be86ad04ba002c0768c443cdb2b60c7c6536e573b229",
-    "public/app.css": "991ba0e4732f8954c444ff611f3bafb4822ad9b5e5a33af685619339a6ff3ce5",
-    "public/js/relay.js": "a6c99bf9aa3c6c68599d432f094231e75d5c6621dc1a9f0953433011591d7bbf",
-    "public/menu.css": "3c8c0908069eda66ef52e32cb50edacdbe6a7d9225426e67b64f65eb16ff9ecf",
+    "public/app.css": "8da43121f9f082afbcf8260af6ba2fc84474a4b448ef25e76e8cd1fbe11b692c",
+    "public/js/relay.js": "a38a976a30d4f03fcff9fa7ee85977899c09fd486fa894db55b31b03a2550cca",
+    "public/menu.css": "ac0f38d6cfb4f1a521d7c3c152bd6e524c253fa6dd41cac5be1f7437ff4a3794",
     "public/js/md.js": "1a1f0eea6053c9a783d1da26907761f7038d4229e543c4b6f514951815727409",
     "public/js/render.js": "7ad1676b626ce53c0cef3d4b3f4a33317d8dd5857f59aceea3bb2ffccec921fe",
     "public/js/longtask.js": "6bef8993727fd0ccea003553980609f7d70af5d73cdbe87f42240dc82d335f36",
-    "public/js/remotes.js": "b063ec59122cd649280a7b7c4b7fee17a033e0b4448dbecd441777e1fe02a37d",
+    "public/js/remotes.js": "05aad15333b854015d0524599a6233b62b691509809f3eaed390b9b3936d9ea1",
     "public/js/bang.js": "7d6af4c80e22f5d3957a97baddd5a20b0f3d677e56be57313d742c6351d39d6a",
     "public/js/wechat.js": "65c8c2343b03458f660f8e90d94bc23a18be434eec36274448d5caa3d98218e9"
   }

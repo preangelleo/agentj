@@ -212,6 +212,15 @@ def set_enabled(st, workdir: str | None, tid: str, on: bool, by: str, tsha: str 
             raise TaskError("invalid", e["problems"][0])
         if tsha is not None and tsha != e["tsha"]:
             raise TaskError("changed")
+    # Bind an in-flight enable to the directory it actually reviewed. A creator
+    # may publish the same bytes under a removed old id while this waits for the
+    # shared state lock; old authorization must not attach to that new object.
+    if on:
+        try:
+            before = os.stat(e['dir'], follow_symlinks=False)
+            identity = before.st_dev, before.st_ino
+        except OSError:
+            raise TaskError('changed') from None
     from . import sysmigrate                 # P570b: never two schedulers for one task; off = the system timer off too (M1)
     if tid in sysmigrate.migrated(st):
         if on:
@@ -219,6 +228,16 @@ def set_enabled(st, workdir: str | None, tid: str, on: bool, by: str, tsha: str 
         sysmigrate.unmigrate(st, tid)
     def change(d):
         if on:
+            try:
+                now = os.stat(e['dir'], follow_symlinks=False)
+                fresh = find(workdir, tid)
+                after = os.stat(fresh['dir'], follow_symlinks=False)
+            except (OSError, TaskError):
+                raise TaskError('changed') from None
+            if (not stat.S_ISDIR(now.st_mode) or (now.st_dev,now.st_ino) != identity
+                    or (after.st_dev,after.st_ino) != identity or fresh['dir'] != e['dir']
+                    or fresh['problems'] or fresh['tsha'] != e['tsha']):
+                raise TaskError('changed')
             d["on"][tid] = {"tsha": e["tsha"], "at": int(time.time()), "by": by[:80]}
             # Existing human enable is also an explicit acknowledgement after checking old effects.
             for rec in d["runs"].values():
