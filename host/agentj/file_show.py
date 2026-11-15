@@ -6,11 +6,14 @@ import sys
 from . import media, owner_call, privacy, provenance, history
 
 
-def request(path, label='', cwd=None):
+def request(path, label='', cwd=None, *, delivery=None):
     # Shell argv expands ~/ before CLI entry; native tool input still has the tilde.
     if isinstance(path, str) and path.startswith('~/'):
         path = os.path.expanduser(path)
-    return {'t': 'file_show', 'path': path, 'label': label, 'cwd': os.path.abspath(cwd or os.getcwd())}
+    req = {'t': 'file_show', 'path': path, 'label': label, 'cwd': os.path.abspath(cwd or os.getcwd())}
+    if delivery is not None:
+        req['delivery'] = delivery
+    return req
 
 
 def cli(args):
@@ -18,17 +21,18 @@ def cli(args):
     from .state import State
     st = State()
     try:
-        result = elevate.client_request(st, request(args.path, args.label), timeout=30,
+        result = elevate.client_request(st, request(args.path, args.label, delivery=getattr(args, 'delivery', None)), timeout=30,
                                         path=os.environ.get(elevate.ENV) or names.elevate_sock(st))
     except (OSError, ValueError):
         result = failure('broker_unavailable')
     if result.get('result') == 'unavailable':
         result = failure('broker_unavailable')
+    hint = SEND_HINT if getattr(args, 'delivery', None) == 'wechat' else HINT
     why = result.get('why')
     if why == 'native_admission_missing':
         result['hint'] = ('No matching admitted tool call was recorded for this owner turn; if already run as instructed, '
                           'check the shared hook/transcript registration. '
-                          '本轮未记录到对应工具调用；若已按提示执行，请检查共享 hook/转录登记。 ' + HINT)
+                          '本轮未记录到对应工具调用；若已按提示执行，请检查共享 hook/转录登记。 ' + hint)
     elif why == 'no_owner_session':
         result['hint'] = ('No verified paired-phone owner turn is active in this session, or this command came from another session. '
                           '本会话没有已核实的配对手机主人轮次，或命令来自另一会话。')
@@ -49,23 +53,36 @@ def cli(args):
 
 def add_parser(sub):
     p = sub.add_parser('file', help='当前主人回合的文件 / Files in the active admitted owner turn')
-    show = p.add_subparsers(dest='file_action', required=True).add_parser('show', help='附到当前页；不代表手机已下载 / Attach to current page; not a download receipt',
+    actions = p.add_subparsers(dest='file_action', required=True)
+    show = actions.add_parser('show', help='附到当前页；不代表手机已下载 / Attach to current page; not a download receipt',
         description='POSIX Linux/macOS; Windows via WSL. Linux tested; macOS/WSL not verified. Requires a live admitted owner turn.')
     show.add_argument('path')
     show.add_argument('--label', default='')
     show.add_argument('--json', action='store_true')
     show.set_defaults(fn=cli)
+    send = actions.add_parser('send', help='发送单个文件到自己已绑定的微信 / Send one file to your bound WeChat',
+        description='Requires an exact admitted live owner turn. queued is pending; later FILE_SEND_RESULT reports platform acceptance, not delivery.')
+    send.add_argument('path')
+    send.add_argument('--to', required=True, choices=['wechat'])
+    send.add_argument('--json', action='store_true')
+    send.set_defaults(fn=cli, label='', delivery='wechat')
 
 
 HINT = ('Run `agentj file show PATH --label L --json` as the whole Bash command: no cd, &&, pipes or redirects. '
         '整条 Bash 命令只写这一句：不加 cd、&&、管道或重定向。')
 
 
+SEND_HINT = ('Run `agentj file send PATH --to wechat --json` as the whole Bash command. '
+             'queued is pending; wait for FILE_SEND_RESULT; do not retry uncertain delivery. '
+             '整条 Bash 命令只写发送命令；queued 只是排队，等 FILE_SEND_RESULT，不自动重试未知结果。')
+
 def failure(why):
     return {'result': 'failure', 'why': why, 'client_downloaded': False}
 
 
-async def attach(host, req, check, admitted_root=None):
+async def attach(host, req, check, admitted_root=None, delivery_binding=None):
+    if req.get('delivery') not in (None, 'wechat'):
+        return failure('shape')
     send = getattr(host.agent, 'cur_send', None)
     tid = getattr(host, 'cur_turn', None)
     page = host.hist.get(tid)
@@ -126,6 +143,9 @@ async def attach(host, req, check, admitted_root=None):
                     and r.get('ref') == rec['ref'] and r.get('sha256') == rec['sha256']), None)
     item = ({'mid': old[0], **{k: rec[k] for k in ('name', 'mime', 'kind', 'bytes', 'sha256', 'ref')}}
             if old else host.media.register(rec, owner_page))
+    if req.get('delivery') == 'wechat':
+        from . import wechat_forward
+        return await wechat_forward.send_file(host, item, delivery_binding, valid=lambda: refusal() is None)
     name = privacy.owner_text(label or rec['name'])[:128].replace('[', '').replace(']', '').replace('\n', ' ')
     shown = privacy.owner_text(raw).replace('>', '%3E').replace('<', '%3C')
     link = f'[{name}](<{shown}>)'

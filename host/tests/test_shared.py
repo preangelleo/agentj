@@ -20,6 +20,9 @@ class Host:
     def __init__(self):
         self.st = Mock()
         self.inputs = []; self.replies = []; self.phone_replies = []; self.notices = []
+    def bind(self, adapter):
+        self.agent = adapter  # Same current-adapter ownership as serve.Host.
+        return adapter
     def desktop_input(self, text): self.inputs.append(text)
     def desktop_text(self, text): self.replies.append(text)
     def desktop_end(self): pass
@@ -65,13 +68,13 @@ class ClaudeTransport(unittest.IsolatedAsyncioTestCase):
     async def test_ambiguous_folder_requires_exact_session(self):
         second={**self.session,'sessionId':'22222222-2222-2222-2222-222222222222'}
         (self.cc/'sessions/second.json').write_text(json.dumps(second))
-        a=shared.SharedClaudeAgent(self.host,self.cfg)
+        a=self.host.bind(shared.SharedClaudeAgent(self.host,self.cfg))
         self.assertFalse(await a.attach())
         a.cfg['shared_session_id']=self.sid
         self.assertTrue(await a.attach())
 
     async def test_first_phone_attach_waits_for_ordinary_start(self):
-        a=shared.SharedClaudeAgent(self.host,self.cfg)
+        a=self.host.bind(shared.SharedClaudeAgent(self.host,self.cfg))
         starting=asyncio.Event();ready=asyncio.Event()
         async def ordinary():
             starting.set();await ready.wait()
@@ -106,7 +109,7 @@ class ClaudeTransport(unittest.IsolatedAsyncioTestCase):
 
     async def test_transcript_new_desktop_turns_only_and_partial_lines(self):
         self.transcript.write_text(json.dumps({'type':'user','uuid':'old','message':{'content':'old'}})+'\n')
-        a=shared.SharedClaudeAgent(self.host,self.cfg); self.assertTrue(await a.attach())
+        a=self.host.bind(shared.SharedClaudeAgent(self.host,self.cfg)); self.assertTrue(await a.attach())
         records=[{'type':'user','uuid':'new','message':{'content':'desktop input'}},
                  {'type':'assistant','uuid':'reply','message':{'content':[{'type':'text','text':'desktop reply'}]}},
                  {'type':'user','uuid':'tool','message':{'content':[{'type':'tool_result','content':'never export tool output'}]}}]
@@ -119,7 +122,7 @@ class ClaudeTransport(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(a.done.is_set(),'initial registry idle must not complete a pending phone turn')
 
     async def test_p87_meta_inputs_do_not_open_desktop_turn(self):
-        a=shared.SharedClaudeAgent(self.host,self.cfg);await a.attach()
+        a=self.host.bind(shared.SharedClaudeAgent(self.host,self.cfg));await a.attach()
         records=[{'type':'user','uuid':str(i),'message':{'content':text},**extra} for i,(text,extra) in enumerate([
             ('skill body',{'isMeta':True}), ('Base directory for this skill: ~/.claude/skills/test\nbody',{}),
             ('<local-command-stdout>done</local-command-stdout>',{}),
@@ -133,7 +136,7 @@ class ClaudeTransport(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.host.inputs,['real keyboard input'])
 
     async def test_p132_loop_and_task_records_mark_the_turn_not_the_desktop(self):
-        a=shared.SharedClaudeAgent(self.host,self.cfg);await a.attach()
+        a=self.host.bind(shared.SharedClaudeAgent(self.host,self.cfg));await a.attach()
         records=[{'type':'user','uuid':'l','isMeta':True,'turnOrigin':'scheduled','scheduledTaskId':'s','message':{'content':'# Autonomous loop check'}},
                  {'type':'user','uuid':'t','turnOrigin':'task_notification','origin':{'kind':'task-notification'},
                   'message':{'content':'<task-notification> <task-id>b</task-id></task-notification>'}},
@@ -143,7 +146,7 @@ class ClaudeTransport(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.host.inputs,['<via:loop>','<via:task>','real keyboard input'])
 
     async def test_oversized_tool_result_does_not_stall_later_desktop_input(self):
-        a=shared.SharedClaudeAgent(self.host,self.cfg);await a.attach()
+        a=self.host.bind(shared.SharedClaudeAgent(self.host,self.cfg));await a.attach()
         records=[{'type':'user','message':{'content':[{'type':'tool_result','content':'x'*(2*1024*1024)}]}},
                  {'type':'user','uuid':'after-long','message':{'content':'desktop after long output'}}]
         self.transcript.write_text(''.join(json.dumps(r)+'\n' for r in records))
@@ -153,7 +156,7 @@ class ClaudeTransport(unittest.IsolatedAsyncioTestCase):
     async def test_no_completion_before_matching_phone_input_and_reply(self):
         from agentj import provenance, shared_turn_origin
         from agentj.compose import Send
-        a=shared.SharedClaudeAgent(self.host,self.cfg);await a.attach()
+        a=self.host.bind(shared.SharedClaudeAgent(self.host,self.cfg));await a.attach()
         a.phone_turn=True; a.pending_text=provenance.body('specific instruction', provenance.phone())
         send=Send('phone', 'request-b', 1, source=provenance.phone())
         a.cur_send=send; a.pending_source=provenance.phone()
@@ -181,7 +184,7 @@ class OpenCodeAttachment(unittest.IsolatedAsyncioTestCase):
         mock_channel=patch.object(shared.SharedClaudeAgent,'prepare_channel',new=AsyncMock())
         mock_channel.start();self.addCleanup(mock_channel.stop);self.cfg={'kind':'opencode','dir':'/var/tmp/work','_workflow_ceo':True,
              'session_mode':'shared','high_risk_warnings':False,'shared_session_id':'sesOwner','shared_opencode_port':2345}
-        self.a=shared.SharedOpenCodeAgent(self.host,self.cfg)
+        self.a=self.host.bind(shared.SharedOpenCodeAgent(self.host,self.cfg))
         self.a.client=Mock();self.a.client.request=AsyncMock(return_value=(200,{'id':'sesOwner','directory':'/var/tmp/work',
              'permission':[{'permission':'*','pattern':'*','action':'allow'}]}))
 

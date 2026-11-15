@@ -3738,10 +3738,6 @@ body[data-status=waiting]:not([data-kind=question]){--xlink:var(--c-bisque)}
 /* P406 #173: the sudo card's 「收起」 (down arrow, top right — collapsing never declines) and the status strip above the composer:
    a collapsed card / a running command (tap → its masked output, 「停止」) / a just-finished result. */
 .elev .box{position:relative}
-.elev .elev-hide{position:absolute;top:10px;right:10px;width:44px;height:44px;display:grid;place-items:center;padding:0;border:0;
-  border-radius:50%;background:transparent;color:var(--text-muted);cursor:pointer}
-.elev .elev-hide:hover,.elev .elev-hide:focus-visible{background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--text)}
-.elev .elev-hide svg{width:24px;height:24px}
 .elev .elev-kicker{padding-right:44px}
 .elev-run{position:fixed;left:50%;bottom:calc(216px + env(safe-area-inset-bottom));z-index:9;transform:translateX(-50%);
   box-sizing:border-box;width:min(560px,calc(100vw - 2 * var(--rg,16px)));display:flex;flex-direction:column;gap:6px;
@@ -4212,7 +4208,7 @@ html[data-ios-safari="1"] body::before{content:"";position:absolute;inset:0;back
 .scrim.ontop-float{position:fixed;inset:0;z-index:calc(var(--z-confirm) + var(--ontop-n,0));pointer-events:auto}
 .sheet.ontop-float{position:fixed;left:0;right:0;bottom:0;z-index:calc(var(--z-confirm) + var(--ontop-n,0) + 1);
   max-height:85dvh;width:min(100%,720px);margin:auto}
-body[data-ontop="1"] #toast{z-index:var(--z-notice-top)!important}
+body[data-ontop="1"] :is(#toast,#notice-fifo[data-aj-owner="aj-notice"]){z-index:var(--z-notice-top)!important}
 /* A preview bootstrap failure is page-level status, not a reply. Reuse the Noir notice skin and dismiss action. */
 #toast[data-preview-failure="1"].on{position:fixed;top:calc(env(safe-area-inset-top,0px) + 64px);left:50%;bottom:auto;
   width:min(calc(100% - 32px),560px);max-width:calc(100% - 32px);z-index:var(--z-notice-top);
@@ -4419,7 +4415,6 @@ details.fixcmd>summary{min-height:44px;display:flex;align-items:center;cursor:po
 
 
 
-#sheet[data-approval-v="2"] #sheetClose svg{display:none}
 /* Dedicated sealed cards use the same approved source/action/details and button geometry. */
 .approval-special541.ajmodal{align-items:flex-end;padding:0;background:rgb(from var(--sooty) r g b / .35)}
 .approval-special541.ajmodal>.box{position:relative;margin:0 auto;width:min(100%,680px);max-width:680px;max-height:calc(100dvh - 110px);overflow-y:auto;border:0;border-radius:28px 28px 0 0;background:var(--peachy-feeling);color:var(--lotion);padding:28px 20px 18px;box-sizing:border-box}
@@ -4702,3 +4697,81 @@ body:has(:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="center"
 .ct-entry{justify-content:space-between}
 .ct-entry .ct-chevron{flex:none;font:400 26px/1 var(--font-body)}
 #ctFwd .ct-list::-webkit-scrollbar{display:none}
+
+/* 0322 r2: popup titles use the established section inset, including grown cards. */
+.sheet .sheethead{padding-top:var(--ui-space-content)}
+:is(.gdlg,.ajmodal,#confirm).aj-shared-popup>:is(.sq,.box){padding-top:calc(var(--ui-space-section) + var(--ui-space-content))}
+/* Existing legacy action owners in request sheets consume the same two approved palette pairs. */
+.sheet .qcancel{background:var(--noir);color:var(--lotion);border-color:var(--lotion);box-shadow:none}
+.sheet .cmdcopy{background:var(--noir);color:var(--lotion);border-color:var(--lotion);box-shadow:none}
+.sheet .close{background:var(--noir);color:var(--lotion);border-color:var(--lotion);box-shadow:none}
+.sheet .cmdmore{background:var(--noir);color:var(--lotion);border-color:var(--lotion);box-shadow:none}
+.sheet .qmore{background:var(--noir);color:var(--lotion);border-color:var(--lotion);box-shadow:none}
+.sheet .apprdeny{background:var(--noir);color:var(--lotion);border-color:var(--lotion);box-shadow:none}
+.sheet :is(.apprallow,.asksend){background:var(--lotion);color:var(--noir);border-color:var(--lotion)}
+.sheet .qcancel:is(:hover,:active){background:var(--noir);color:var(--lotion)}
+.sheet .cmdcopy:is(:hover,:active){background:var(--noir);color:var(--lotion)}
+.sheet .close:is(:hover,:active){background:var(--noir);color:var(--lotion)}
+.sheet .cmdmore:is(:hover,:active){background:var(--noir);color:var(--lotion)}
+.sheet .qmore:is(:hover,:active){background:var(--noir);color:var(--lotion)}
+.sheet .apprdeny:is(:hover,:active){background:var(--noir);color:var(--lotion)}
+
+.sheet .qs .opt{background:var(--noir);color:var(--lotion)}
+.sheet .qs .opt[aria-pressed="true"]{background:var(--lotion);color:var(--noir);border-color:var(--noir)}
+.sheet .qs .opt .n,.sheet .qs .opt .t,.sheet .qs .opt .t>.d{color:inherit}
+.sheet .qs .qmore{min-height:var(--ui-tap);margin-block:var(--ui-space-control);background:var(--noir);color:var(--lotion)}
+
+/* Dialog actions retain their own semantic owner and the same approved palette. */
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-dialog-action{background:var(--noir);color:var(--lotion);border-color:var(--lotion)}
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-dialog-action:is(:hover,:active){background:var(--noir);color:var(--lotion);border-color:var(--lotion)}
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-dialog-action--primary{background:var(--lotion);color:var(--noir);border-color:var(--lotion)}
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .aj-dialog-action--primary:is(:hover,:active){background:var(--lotion);color:var(--noir);border-color:var(--lotion)}
+.elev .elev-hide{background:var(--noir);color:var(--lotion)}
+.sheet .apprbatch{background:var(--noir);color:var(--lotion)}
+
+.sheet{padding-top:calc(var(--ui-space-section) + var(--ui-space-control))}
+.reply-notices>.cp-docked .cp-host{padding-top:var(--ui-space-section);padding-bottom:var(--ui-space-control)}
+.sheet .cmdtoggle{background:var(--noir);color:var(--lotion)}
+#details541 .full541{background:var(--noir);color:var(--lotion)}
+#details541 .auth-full541{background:var(--noir);color:var(--lotion)}
+.special-main541 .special-fold541{background:var(--noir);color:var(--lotion)}
+.special-main541 .auth-full541{background:var(--noir);color:var(--lotion)}
+.special-buttons541>.special-allow541{background:var(--lotion);color:var(--noir)}
+.special-buttons541>.special-deny541{background:var(--noir);color:var(--lotion);border-color:var(--lotion)}
+
+/* Copy is an existing independent control owner, including masked secret-card metadata. */
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .cc-btn{background:var(--lotion);color:var(--noir);opacity:1}
+:is(#sheet,[data-popup-system="grow"],#elev,.pkp) .cc-btn:is(:hover,:active){background:var(--lotion);color:var(--noir)}
+
+/* 0322 r3: the existing title and fold action share one padded row inside the card. */
+.sheet .sheethead{align-items:center;gap:var(--ui-space-control);padding-top:var(--ui-space-section)}
+.sheet .sheethead>.sheetacts{order:2;flex:none}
+.sheet .sheetacts{position:static;align-items:center;gap:var(--sp-1);margin-left:auto}
+.reply-notices>.sheet.cp-docked>.cp-host{padding-right:var(--sp-1)}
+.reply-notices>.cp-docked .cp-host{padding-top:calc(var(--ui-space-section) + var(--ui-space-control));padding-bottom:var(--ui-space-content)}
+.cp-host>span:where([data-aj-owner="aj-host-provenance"]){flex:1;min-width:0}
+.cp-host>.sheetacts{flex:none}
+:is(.gdlg,.ajmodal,#confirm).aj-shared-popup>:is(.sq,.box){padding-top:calc(var(--ui-space-section) + var(--ui-space-section))}
+.elev .elev-hide{top:var(--ui-space-section);right:var(--ui-space-content)}
+.elev .elev-kicker{padding-right:calc(var(--ui-tap) + var(--ui-space-control));min-height:calc(var(--ui-space-section) + var(--sp-2));display:flex;align-items:center}
+.elev .elev-acts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--ui-space-control)}
+.elev .elev-acts>.aj-action{min-width:0;width:100%;height:auto;white-space:normal;padding-block:var(--ui-space-control);text-wrap:balance;scroll-margin-block:var(--ui-space-content)}
+.elev .elev-deny{width:100%;margin:0;text-decoration:none}
+/* 0322 r4 U10: secret decisions stack at full width; sudo keeps its existing pair. */
+.elev.secret .elev-acts{grid-template-columns:minmax(0,1fr)}
+.elev.secret .elev-acts>.aj-action{white-space:nowrap;text-wrap:nowrap}
+#elev.secret.aj-shared-popup[data-popup-system="grow"]{height:auto;max-height:calc(var(--vvh,100dvh) - var(--popup-top) - var(--ui-space-content))}
+#elev.secret.aj-shared-popup[data-popup-system="grow"]>.box{max-height:calc(var(--vvh,100dvh) - var(--popup-top) - var(--ui-space-content))}
+/* Metadata fields keep their own inset and a complete, independently rounded copy control. */
+.elev .elev-rows dd.mono.cc-in{min-height:calc(var(--ui-tap) + 2 * var(--sp-2));padding-right:calc(var(--ui-tap) + 2 * var(--sp-2));display:flex;align-items:center}
+.elev .cc-in>.cc-btn{width:var(--ui-tap);height:var(--ui-tap);top:var(--sp-2);right:var(--sp-2);border-radius:var(--r-md)}
+/* U10: result notices follow the existing popup by one visual layer. */
+:is(#toast,#notice-fifo[data-aj-owner="aj-notice"]).on[data-popup-notice="1"]:not([data-preview-failure="1"]){z-index:var(--aj-notice-popup-z)!important}
+
+/* 0322 r5: every pending-card fold reuses U10's existing 44px circular control. */
+:is(.elev,.sheet,.approval-special541) .elev-hide{position:absolute;top:var(--ui-space-section);right:var(--ui-space-content);width:44px;min-width:44px;height:44px;min-height:44px;display:grid;place-items:center;flex:none;padding:0;border:0;border-radius:50%;background:var(--noir);color:var(--lotion);cursor:pointer;box-shadow:none}
+:is(.elev,.sheet,.approval-special541) .elev-hide:is(:hover,:active,:focus-visible){background:var(--noir);color:var(--lotion)}
+:is(.elev,.sheet,.approval-special541) .elev-hide svg{display:block;width:24px;height:24px}
+.sheet .elev-hide{position:static}
+/* The sealed card's heading uses the existing dialog-title typography; lh keeps its fold centered as that font scales. */
+.approval-special541.ajmodal.dlgcard .special-fold541.elev-hide{font:600 var(--dlg-fs-title)/1.3 var(--font-title);top:calc(2 * var(--ui-space-section) + .5lh - 22px)}

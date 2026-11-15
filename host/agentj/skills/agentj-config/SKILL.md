@@ -180,6 +180,35 @@ Speed range for ElevenLabs is 0.7–1.2.
 5. `agentj config validate --json`，`agentj reload`（服务重新读密钥文件，不用重启），主人同意后 `agentj voice test --say '你好，我是你的助手'`。
 回复文字会直接发给 ElevenLabs，按字数计费；先跟主人说清楚再切。
 
+### Owner speech directions and settings (0.30.22)
+
+`voice.tts.text_prefix` and `voice.tts.settings` are local provider maps, both empty by default. Only
+`elevenlabs` entries are currently supported. A prefix is sent literally before the reply text, at most
+256 characters without control characters; prefix plus reply must fit the existing 4,000-character limit.
+Settings accept only numeric `stability` and `similarity_boost`, each 0..1; unknown fields, booleans and
+non-finite numbers are rejected. Keep credentials in the existing named-key mechanism. Switching away
+from ElevenLabs retains these choices locally but does not apply them to other engines. Nothing here
+runs a policy script. The prefix is sent directly to ElevenLabs and counts toward the reading's character
+usage; it is not a secret field. Phone settings omit these maps. Changing either map invalidates cached
+audio. Before cloud transmission, Agent J checks the exact combined prefix and reply using its local known-secret/fragment guard; a match or incomplete scan refuses the reading with a fixed error. Every cached replay rechecks the exact previously synthesized text against fresh secret sources before sending audio; a safe replay makes no new provider request. No default voice, accent or personal policy is added.
+
+主人可以在本机配置播报前缀与参数，默认都为空。当前只接受 `elevenlabs` 项；前缀按原文加在
+回复前，最多 256 字符、不能有控制字符，与正文合计不超过 4,000 字符。参数只接受
+`stability`、`similarity_boost`，都是 0 到 1 的数值。切换到其他服务商时保留这些本机选择，
+但不套用。前缀会直接发给 ElevenLabs，也计入播报字数；这里不填密钥，不执行脚本，不预设
+个人口音。手机设置不会带出这两项，改动后重新生成音频，不复用旧缓存。发送前会对前缀与正文拼接后的完整文字做本机秘密检查；命中已知秘密、片段，或检查不完整时拒绝播报，不回显命中内容。缓存重播也会先拿当初实际合成的完整文字重新检查秘密来源；检查安全才发音频，不额外请求服务商。
+
+For an owner who explicitly wants these options / 主人明确要设置时，可用现有配置命令：
+
+```sh
+agentj config set voice.tts.text_prefix '{"elevenlabs":"[calm] "}' --json-value
+agentj config set voice.tts.settings '{"elevenlabs":{"stability":0.5,"similarity_boost":0.75}}' --json-value
+agentj config validate --json
+```
+
+Use `agentj config unset voice.tts.text_prefix` / `agentj config unset voice.tts.settings` to restore
+empty defaults. / 要取消时，用上述 `unset` 命令恢复空默认值。实际付费试听仍按主人选择执行。
+
 ## Local speech command
 
 本地发声脚本可直接配置，无需人工开关。脚本从 stdin 读取 UTF-8 文字，向 `{output}` 指定的路径写 PCM16 WAV（单声道或双声道，8–96 kHz）。脚本自己对接所需服务，从本机凭据机制读取密钥。不要把密钥或正文写进命令参数，也不要输出到日志。脚本路径要用绝对路径或 `~/`，不要依赖当前目录。
@@ -354,7 +383,7 @@ To ask the owner, run `agentj keep-awake setup --phone` (a card, first option = 
 For multiple people on one computer, each person takes their own paid seat; there is no profile selector. Two plans — A: several instances on one OS user (`agentj --instance N`, recommended, simple); B: a separate OS user per person (stronger separation). Follow the bundled `agentj-multi-seat` skill and https://agentj.app/docs/multi-seat/en.md. For plan B: Keep state, AI logins and pairing private to each user. Recommend linger on Linux; macOS requires one GUI login per user after reboot. Do not restore machine-wide sleep settings until all users agree. Legacy signed sudo helpers need reinstallation per user (`agentj sudo-helper install`); never delete another user's helper.
 
 
-Installation reuse (0.17.2): `agentj agent detect --probe --json` makes one tool-free call per installed supported CLI using its existing login. Only `callable:true` qualifies; ask the owner when more than one is usable. The formal installer handles this automatically and avoids another key card when callable. AgentsRelay official private env.sh is loaded as data by the host; never source/read/print keys in a conversation. Gemini remains unavailable as a main Agent. Verify Hello from the paired phone; startup/pairing alone is not proof of authentication.
+Installation reuse (0.17.2): `agentj agent detect --probe --json` makes one tool-free call per installed supported CLI using its existing login. Only `callable:true` qualifies; ask the owner when more than one is usable. The formal installer handles this automatically and avoids another key card when callable. AgentsRelay official private env.sh is loaded as data by the host; never source/read/print keys in a conversation. Gemini CLI is not a main Agent; Gemini models can run through OpenCode. Use the documented `--gemini` installation path with the owner-held provider API credential; never put keys in chat. See https://agentj.app/docs/setup-agents/#gemini. Verify Hello from the paired phone; startup/pairing alone is not proof of authentication.
 
 ## Session mode, the shared Claude session and an old identity (P127, P174)
 
@@ -589,3 +618,9 @@ When you create or change a command or script that can transfer money, pay, broa
 When the owner has a fixed, occasional transfer or data-deletion program and wants to verify each run, suggest registering it once with `agentj fn add <name> -- <command> <args>`. Explain the exact command, arguments and current directory before requesting registration. Use `agentj fn run <name>` with no extra arguments. `agentj fn list` and `agentj uv list` are read-only; adding, running and removing (`agentj fn remove <name>`) each require fresh owner verification. Existing names are not overwritten: remove, then add a replacement. Never put a secret in argv; have the program read named local environment variables or files. Registration does not expand uid, environment or sandbox permissions. A refusal, missing device or expiry means no execution. Do not substitute a raw shell invocation to evade a listed function's verification.
 
 主人有固定、低频的转账或删数据程序，并希望每次验证时，建议用 `agentj fn add <name> -- <command> <args>` 注册。先解释完整命令、参数和当前目录，再发注册请求。以后用 `agentj fn run <name>`，不追加参数。`agentj fn list` 和 `agentj uv list` 只读；注册、执行、删除（`agentj fn remove <name>`）每次都要主人当场验证。重名不会覆盖，要换命令先删除再注册。参数里不放秘密，由程序在本机按变量名读取。注册不扩大系统身份、环境或沙箱权限。拒绝、无设备或过期就不执行，不改用裸命令绕过已登记函数的验证。
+
+## Dispatch on an already-configured Agents Relay Codex profile / 用既有 Relay 配置派单
+
+`agentj relay codex --sandbox read-only "<one task>"` uses the currently loaded Codex session and its already-selected Agents Relay Responses provider. It requires the existing `AGENTSRELAY_OPENAI_KEY` reference; configure/select an owner-approved profile through the provider flow above first. This command never switches provider or reads a key into the conversation. The requested sandbox cannot exceed the current session's real ceiling; existing Host approvals and isolation remain. It returns a run key: use `agentj relay status <key>` to observe its current Host-process state without executing or resuming it, and `agentj relay stats` for local state counts (missing cost/quota/reset data stays unknown). Only a proven connection failure before sending is retried three times; an accepted job waits behind the four-worker channel gate. A missing/ambiguous Host answer is **unknown**, not proof the task never started: do not resubmit or fall back to the official service automatically. No subscription renewal is performed. `agentj relay claude` explicitly reports unsupported; generic retry/resume/fallback and new Relay settings panels are not delivered by this partial entry.
+
+`agentj relay codex --sandbox read-only "<一项任务>"` 只使用当前已加载 Codex 会话已经选定的 Agents Relay Responses 服务商，要求引用既有 `AGENTSRELAY_OPENAI_KEY`；先按上文服务商流程由主人批准配置/选择。它不切服务商，不把密钥读进对话。请求的沙箱不能高于当前会话真实上限，原主机审批和隔离照常。回执给出 run key，用 `agentj relay status <key>` 查看当前 Host 进程观察到的状态，查询不会执行或续跑；`agentj relay stats` 只统计本机状态，金额、额度、重置时间缺证据就保持未知。仅在可证明发送前未连上主机时重试三次；已接收任务超过四个工作位时排队。主机答复缺失/模糊表示**结果未知**，不代表没开始；不要重派或擅自回退官方，更不会自动续费。`agentj relay claude` 明确尚不支持；完整重试、续跑、回退和新增设置入口仍未交付。

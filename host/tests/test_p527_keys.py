@@ -1,5 +1,6 @@
 """P527: real receive admission → background key card, no provider/credential access."""
 import asyncio
+from unittest.mock import patch
 from test_p352_keys import Base
 from agentj import elevate, keys, provenance
 
@@ -21,8 +22,8 @@ class KeyDelivery(Base):
             self.host.elevate.cancel_all('stopped')
             self.assertIsNotNone(card, 'success must carry a real input card, not a premature toast')
             self.assertEqual(card['name'],'OPENAI_API_KEY')
-            self.assertFalse(card['passkey_required'])  # P573: paired owner key editing is a signed button.
-            self.assertTrue(card['button_only'])
+            self.assertTrue(card['passkey_required'])  # Inserting/replacing secrets always requires fresh UV.
+            self.assertFalse(card.get('button_only',False))
             self.assertEqual(self.host.elevate.cards[card['id']]['only'],self.s.device)
             self.host.elevate.cancel_all('stopped')
             await asyncio.gather(*list(self.host.__dict__.get('_bg_tasks', [])), return_exceptions=True)
@@ -39,8 +40,45 @@ class KeyDelivery(Base):
 
     def test_agent_request_still_rejects_unknown_source(self):
         async def go():
-            result=await self.host.elevate.request(keys.build_card(self.host,'OPENAI_API_KEY'))
-            self.assertEqual(result['result'],'group_source')
+            before=self.envf.read_bytes()
+            # An invalid paired creator is unknown at the actual admission
+            # boundary; an unset turn label alone is not request authority.
+            checked=[]
+            def no_creator():
+                checked.append(False)
+                return False
+            async def rejected():
+                with provenance.paired_request(no_creator):
+                    return await self.host.elevate.request(keys.build_card(self.host,'OPENAI_API_KEY'))
+            result=await asyncio.wait_for(rejected(),2)
+            self.assertTrue(checked, 'the actual same-task creator verifier must run')
+            self.assertEqual((result['result'],result.get('why')),('refused','authority_changed'))
+            self.assertFalse(self.host.elevate.cards)
+            self.assertFalse(self.of('elev'))
+            self.assertEqual(self.envf.read_bytes(),before)
+        asyncio.run(go())
+
+    def test_unknown_offer_is_not_authority_and_gone_cancels_without_write(self):
+        async def go():
+            before=self.envf.read_bytes()
+            gone=asyncio.get_running_loop().create_future()
+            delivered=[]
+            async def shown(card):
+                delivered.append(card)
+                gone.set_result(True)  # the synthetic caller withdraws, never answers the card
+            try:
+                with provenance.request_source(provenance.normalize(None)), \
+                        patch.object(elevate,'write_secret',side_effect=AssertionError('unsigned card wrote')) as write:
+                    result=await asyncio.wait_for(self.host.elevate.request(
+                        keys.build_card(self.host,'OPENAI_API_KEY'),gone=gone,on_card=shown),2)
+                    write.assert_not_called()
+                self.assertEqual(result['result'],'gone')
+                self.assertEqual(len(delivered),1)
+                self.assertIsNot(delivered[0]['review_adapter'].envelope['source'].get('verified'),True)
+                self.assertFalse(self.host.elevate.cards)
+                self.assertEqual(self.envf.read_bytes(),before)
+            finally:
+                self.host.elevate.cancel_all('stopped')
         asyncio.run(go())
 
     def test_every_catalog_key_uses_a_real_card(self):

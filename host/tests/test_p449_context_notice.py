@@ -2,6 +2,11 @@
 "write your own handoff, then compact" line inside the beat, at most once per session per day."""
 import _hermetic  # noqa
 import asyncio
+import copy
+import json
+from pathlib import Path
+import shutil
+import subprocess
 import time
 import unittest
 from unittest.mock import Mock, patch
@@ -41,7 +46,38 @@ class ContextNotice(Decide):
         for send in self.agent.got:
             for old in ('请发送 /compact', 'Send /compact', '心跳已暂停', 'Heartbeat paused'):
                 self.assertNotIn(old, send.text)
-            self.assertEqual(self.host.hist.get(send.turn)['src'].get('text'), '', 'beat body stays off the owner page')
+            # 0332 keeps the actual internal source; hiding is the phone projection's
+            # responsibility, not destruction of the history used for audit/recovery.
+            from agentj import privacy
+            from agentj.history import History
+            page = copy.deepcopy(self.host.hist.get(send.turn))
+            self.assertEqual(page['src']['text'], privacy.owner_text(send.text))
+            self.assertEqual((page['src']['k'], page['src']['via']), ('agent', 'heartbeat'))
+            self.assertEqual(page['reply']['text'], '')
+            self.assertEqual(History(self.st, on=True).get(send.turn), page,
+                             'the persisted heartbeat source must survive a History restart')
+            # These are the same real modules imported by the existing paired-DOM
+            # .jarvis/qa0332-journey.mjs gate. This unit binds our actual heartbeat
+            # History row to that hiding contract; the paired-DOM gate still runs
+            # separately and must pass, rather than being replaced by this unit.
+            web = Path(__file__).resolve().parents[2] / 'web/public/js'
+            script = ('import assert from "node:assert/strict";'
+                      'import {readFileSync} from "node:fs";'
+                      f'import {{toPage}} from {json.dumps((web / "snap.js").as_uri())};'
+                      f'import {{ownerInput,ownerQueue,pendingAutomation,activityKind}} from {json.dumps((web / "phone-activity.js").as_uri())};'
+                      'const raw=JSON.parse(readFileSync(0,"utf8")), p=toPage(raw);'
+                      'assert.equal(p.source.text,raw.src.text);'
+                      'assert.equal(ownerInput(p),false);assert.equal(ownerQueue(p),false);'
+                      'assert.equal(pendingAutomation(p),true,"unreplied heartbeat must stay off the main page");'
+                      'assert.equal(pendingAutomation({...p,end:"failed"}),false,"real failures remain visible");'
+                      'const replied=toPage({...raw,reply:{text:"SYNTHETIC HEARTBEAT RESULT"},end:"done"});'
+                      'assert.equal(pendingAutomation(replied),false,"an actual result is no longer pending");'
+                      'assert.equal(activityKind(replied),"background","the existing background surface owns the result");')
+            node = shutil.which('node')
+            self.assertIsNotNone(node, 'the shared Olares Node toolchain is required')
+            check = subprocess.run([node, '--input-type=module', '-e', script],
+                                   input=json.dumps(page), text=True, capture_output=True, timeout=30)
+            self.assertEqual(check.returncode, 0, check.stderr)
 
     def test_30_percent_nothing(self):
         self.host.meter_state = {'ctx': {'used': 60000, 'max': 200000}, 'model': 'claude-opus-4-1'}

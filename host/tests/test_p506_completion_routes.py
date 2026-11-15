@@ -35,8 +35,10 @@ class CompletionRoutes(unittest.TestCase):
             h._remember=Mock();h._post=Mock();h.hist_add=Mock(return_value={});h.push_notify=Mock()
             h.task_finished({'id':'qa','run_id':'b'*32,'title':'每日简报','verdict':'ok','line':'English secret summary'})
             self.assertEqual(h._remember.call_args.args[1],'定时任务「每日简报」已完成。')
+            self.assertNotIn('card',h.hist_add.call_args.kwargs)
             h.lang='en';h.task_finished({'id':'qa','run_id':'b'*32,'title':'Daily brief','verdict':'fail','line':'原文'})
             self.assertEqual(h._remember.call_args.args[1],'Scheduled task “Daily brief” failed.')
+            self.assertTrue(h.hist_add.call_args.kwargs['card']['activity_failure'])
 
     def test_untrusted_result_flag_and_legacy_run_cannot_notify(self):
         for run in ({}, {"id":"qa","trigger":"schedule"}, {"id":"qa","trigger":"manual","owner_notify":True},

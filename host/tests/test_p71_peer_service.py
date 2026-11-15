@@ -192,6 +192,8 @@ async def settle_pending(svc):
     await settle()
     while svc.jobs:
         await asyncio.wait_for(asyncio.gather(*list(svc.jobs)), timeout=5)
+        # Python 3.13 gather(done tasks) can finish eagerly; let discard callbacks retire them.
+        await asyncio.sleep(0)
 
 
 class Base(unittest.IsolatedAsyncioTestCase):

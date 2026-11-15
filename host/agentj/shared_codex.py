@@ -860,9 +860,9 @@ class SharedCodexAgent(CodexAgent):
             if not told:
                 told = True
                 self.note('shared_waiting', 'desktop turn active; alternate turns')
-                tid = self.host.agent_notice(humane.of(self, 'codex.waiting'), card={'queued': True, 'waited_s': 0})
+                self.host.turn_queued_note(True)
                 with contextlib.suppress(Exception):
-                    heal.saw_loop(); heal.queued_page(tid)
+                    heal.saw_loop(); heal.queued_page(getattr(self.host, 'cur_turn', None))
             if self.turn_done is not None and self.turn_done.is_set():
                 raise Stopped()
             if loop.time() > deadline:

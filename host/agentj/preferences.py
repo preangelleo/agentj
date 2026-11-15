@@ -20,7 +20,7 @@ from .preference_data import (
     _defaults, _line, _dotted, _undot, ignored, COMPOSER_BUTTONS,
     composer_order_ok, TOKEN, spans, edit, template, decode,
 )
-from .preference_checks import rows_problem as notify_problem, asr_endpoint
+from .preference_checks import rows_problem as notify_problem, asr_endpoint, tts_options
 
 
 def path():
@@ -117,6 +117,7 @@ def validate(doc,raw=''):
     for key in ('voice.tts.model','voice.tts.key_env'):
         if get(doc,key) is None:
             put(out,key,SCHEMA[key].get('providerDefaults',{}).get(provider,SCHEMA[key]['default']))
+    tts_options(out)
     command=get(out,'voice.tts.command')
     if len(command)>32 or any(not isinstance(a,str) or not a or len(a)>1000 or any(ord(c)<32 for c in a) for a in command):
         raise ConfigError('voice.tts.command','expected at most 32 non-empty argv strings; no inline credentials')

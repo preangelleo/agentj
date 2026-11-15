@@ -25,7 +25,12 @@ try{
  await ev(p,`document.getElementById('pending541').click()`);await waitFor(p,`document.body.dataset.sheet==='1'`);
  check(await ev(p,`document.getElementById('source541').disabled&&document.getElementById('source541').textContent.includes('最近 500 条')&&document.getElementById('source541').textContent.includes('清理任务-541')`),'501st message trusted initiator task fallback');
  await update(c=>Object.assign(c.envelope.source,{verified:false,suspicious:true,history_outside_window:false,message_id:null,text:'找不到是谁发起的'}));
- check(await ev(p,`!document.getElementById('warn541').hidden&&document.getElementById('apprAllow').disabled`),'unknown origin cannot approve');
+ // Current source text is disclosure, not an independent client admission authority.
+ check(await ev(p,`!document.getElementById('warn541').hidden`),'unknown origin remains visibly warned');
+ const tampered=structuredClone(currentCard());tampered.revision++;tampered.envelope.revision=tampered.revision;tampered.envelope_sha256='0'.repeat(64);
+ await fake.ask(tampered);await sleep(200);
+ currentCard().revision=tampered.revision;currentCard().envelope.revision=tampered.revision;
+ check(await ev(p,`document.getElementById('apprAllow').disabled`),'unverified/tampered envelope cannot approve');
  await update(c=>Object.assign(c.envelope.source,{verified:true,suspicious:false,history_outside_window:false,message_id:501,session:'other-session',text:'同名ID来自别的会话'}));await ev(p,`document.getElementById('source541').click()`);await sleep(150);check(await ev(p,`document.getElementById('pg').textContent.startsWith('1 / 500')`),'same numeric ID in another session cannot navigate');
  await p.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});check(await ev(p,`getComputedStyle(document.querySelector('#pending541 .heart541')).animationName==='none'`),'reduced motion keeps static heartbeat');
  const second=structuredClone(currentCard());second.id='541b0000000000000000000000000002';second.envelope.request_id=second.id;second.envelope.revision=1;second.revision=1;second.envelope_sha256=await wire.approvalEnvelopeDigest(second.envelope);second.fa_ch=wire.b64u(await elevateChallenge(fake.channel,fake.devs.at(-1).id,second.id,second.pk_kind,second.id,second.envelope_sha256));await fake.ask(second);await sleep(200);

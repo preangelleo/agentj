@@ -4,7 +4,7 @@ import {mkdirSync, writeFileSync} from 'node:fs';
 import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
 import {launch, newPage, navigate, waitState, waitFor, evaluate, shoot, rect, sleep} from './browser.mjs';
-const out = process.env.P555_FORCE_OUT || 'reports/qa/force-switch-555-20261106/web';
+const out = process.env.P555_FORCE_OUT || process.env.OLARES_RUN_OUT || 'reports/qa/force-switch-555-20261106/web';
 mkdirSync(out, {recursive:true});
 const web = await startWebServer({port:0, relayCsp:'ws://127.0.0.1:*'}), fake = await startFakeHost(), B = await launch();
 // A synthetic future registration proves that the browser has no parallel harness list.
@@ -51,13 +51,16 @@ try {
     release();await waitFor(p,`import('./js/cmdrun.js').then(m=>m._debug().R?.st==='done')`);
    }
    check(await evaluate(p,`[...document.querySelectorAll('.rscmdgo svg')].every(s=>s.getBoundingClientRect().width>=18)`),'toolbar glyphs have visible width');
-   check(await evaluate(p,`[...document.querySelectorAll('.rscmdgo')].every(b=>b.classList.contains('aj-btn')&&b.classList.contains('aj-btn--quiet')&&b.getBoundingClientRect().height>=44)`),'542 classes and touch height');
+   // ADR576 withdraws global542 classes; #577 gives this exact component its own actor, preserving 44px targets.
+   const targets=await evaluate(p,`[...document.querySelectorAll('.rscmdgo')].map(b=>{b.scrollIntoView({block:'center'});const r=b.getBoundingClientRect(),a=getComputedStyle(b,'::after'),hits=[r.top+1,r.bottom-1].map(y=>{const n=document.elementFromPoint(r.left+r.width/2,y);return n===b||b.contains(n)});return {id:b.id,owner:b.dataset.ajOwner,own:b.classList.contains('rscmdact')&&!!b.closest('.rscmdbar'),borrowed:b.classList.contains('act')||!!b.closest('.rmbar'),height:r.height,hitWidth:parseFloat(a.width),hitHeight:parseFloat(a.height),hits}})`);
+   check(targets.every(x=>x.owner==='aj-rescue'&&x.own&&!x.borrowed),'rescue actor stays independent of reply/global542: '+JSON.stringify(targets));
+   check(targets.every(x=>x.height>=44&&x.hitWidth>=44&&x.hitHeight>=44&&x.hits.every(Boolean)),'44px target and real vertical-edge hit testing: '+JSON.stringify(targets));
    check(await evaluate(p,`document.getElementById('set-main').scrollWidth<=document.getElementById('set-main').clientWidth+1`),'no horizontal overflow');
    release=null;await click('rs-cmd-switch_kimi');await waitFor(p,`document.getElementById('settings').hidden`);
    writeFileSync(out+'/'+[lang,theme,width,'chat'].join('-')+'.png',await shoot(p,''));for(let i=0;i<100&&!release;i++)await sleep(20);release();
    await waitFor(p,`import('./js/cmdrun.js').then(m=>m._debug().R?.st==='done')`);
    check(!p.problems.length,'no runtime/console errors');
-  } finally {release?.();await p.dispose();}
+  } catch(error){writeFileSync(out+'/'+[lang,theme,width,'FAIL'].join('-')+'.png',await shoot(p,''));throw error;}finally {release?.();await p.dispose();}
  }
  writeFileSync(out+'/result.json',JSON.stringify({checks,calls,ok:true},null,2));console.log('#555 force switch PASS '+checks+' checks');
 } finally {release?.();await B.close();await fake.stop();await web.stop();}

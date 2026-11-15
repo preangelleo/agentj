@@ -271,7 +271,8 @@ class TypedSource(_Matrix):
 class CardListInventory(unittest.TestCase):
     def test_card_list_is_closed(self):
         self.assertEqual({'AskUserQuestion', 'SandboxOnce', 'AuthRescue', 'AgentJBoundedPlan', 'company.write',
-                          'agentj core mcp add', 'agentj learn', 'agentj plaza'}, set(approval_offlist.CARD_LIST))
+                          'agentj core mcp add', 'agentj learn', 'agentj plaza',
+                          'FriendsTellOnce', 'agentj local record', 'agentj local relink'}, set(approval_offlist.CARD_LIST))
         self.assertEqual({'AskUserQuestion'}, set(approval_offlist.NATIVE_CARDS))
 
 

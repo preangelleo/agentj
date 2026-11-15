@@ -248,7 +248,7 @@ function setStatus(s, key, vars) {
   // relay deploy, a phone back from the lock screen: the computer is back a second later).
   const down = s === 'connecting' || s === 'waiting-host';
   if (down && (painted === 'ready' || quietPaint)) {
-    if (link.drop()) { quietPaint = true; relay.connLost(); }
+    if (link.drop()) { quietPaint = true; elevate.forgetInput(); relay.connLost(); }
     if (quietPaint) return;
   }
   if (down && PAIRED_VIEWS.includes(view)) link.drop();   // a paired page starting without a link

@@ -343,7 +343,15 @@ class Flows(unittest.TestCase):
         self.assertEqual(res["behavior"], "deny")
         self.assertLess(time.monotonic() - t0, 1)
         self.assertEqual(res["reason"], "no_device")
-        self.assertEqual(approvals.read_log(self.st), [], "a refusal with no approver has no fabricated signed row")
+        rows = approvals.read_log(self.st)
+        self.assertEqual(len(rows), 1, 'a pre-card refusal keeps its metadata audit')
+        row = rows[0]
+        self.assertEqual((row['decision'], row['reason'], row['tool']), ('deny', 'no_device', 'Bash'))
+        self.assertRegex(row['id'], r'^[a-f0-9]{32}$')
+        for field in ('device', 'sk', 'sig'):
+            self.assertIsNone(row.get(field), 'a refusal with no approver has no fabricated signed row')
+        for field in ('input_sha256', 'shown_sha256'):
+            self.assertRegex(row[field], r'^[a-f0-9]{64}$')
         self.assertEqual(self.asks(), [])
         refused=[json.loads(line) for line in self.st.log_path.read_text().splitlines()]
         self.assertTrue(any(row.get("ev")=="ask_done" and row.get("decision")=="deny"

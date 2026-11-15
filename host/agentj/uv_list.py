@@ -128,6 +128,10 @@ def credential_reads(tool, inp, *, host=None, cwd=None, env=None):
     return False
 
 COMMANDS = MappingProxyType({
+    'agentj local relink': 'Restore one registered missing owner-custom Codex skill link without executing code.',
+    "agentj api manage": "Change the owner-signed seat API contract, routing, caller keys or callbacks.",
+    'agentj local record': 'Record exact owner-approved local patch/feature bytes without applying them.',
+    'FriendsTellOnce': 'Send exactly one approved message to one fixed friend without widening the native sandbox.',
     'agentj mail workflow-grant': 'Create a durable delegation allowing a workflow to send mail to the owner.',
     'agentj automation grant': 'Create a durable grant letting one webhook / scheduled task mail listed third-party recipients.',
     'AuthRescue': 'Insert or replace AI account login credentials in the host settings.',
@@ -185,6 +189,7 @@ def config_keys(changes):
 
 def entries():
     return ([{'command': command, 'reason': reason} for command, reason in COMMANDS.items()]
+        + [{'command':'agentj tasks create --contract FILE','reason':'Only an explicitly declared large bank/crypto transfer; informational limit, no runtime enforcement.'}]
         + [{'command':'agentj config set approval.*','reason':'Change approval policy, expiry or preauthorization.'}]
         + [{'command':'agentj config set '+key,'reason':reason} for key,reason in CONFIG_KEYS.items()])
 
@@ -196,6 +201,8 @@ def entries():
 # the fingerprint card (list_approval.ask); every other source keeps the ADR-0307-offlist refusal. A speed bump against
 # the model's own mistakes, not a boundary: a script, a raw HTTP call or a variable-built argv is not recognised.
 CHARGE_COMMANDS = MappingProxyType({
+    'agentj local relink': 'Restore one registered missing owner-custom Codex skill link without executing code.',
+    'agentj local record': 'Record exact owner-approved local patch/feature bytes without applying them.',
     'stripe': (('charges', 'create'), ('charges', 'capture'),
                ('payment_intents', 'create'), ('payment_intents', 'confirm'), ('payment_intents', 'capture'),
                ('invoices', 'pay'), ('subscriptions', 'create'), ('payouts', 'create'), ('transfers', 'create'),
@@ -503,6 +510,8 @@ def required(tool, tool_input=None, *, cwd=None, env=None):
     """Semantic names only. Model text, command shape and origin never grant UV."""
     if protected_targets(tool, tool_input, cwd=cwd, env=env):
         return True
+    if tool == 'agentj tasks create' and isinstance(tool_input, dict):
+        return tool_input.get('purpose') == 'declared_large_transfer_creation'
     if tool in COMMANDS:
         return True
     if tool == 'agentj config' and isinstance(tool_input, dict):

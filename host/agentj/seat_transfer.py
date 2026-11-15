@@ -546,6 +546,9 @@ def cmd(a) -> None:
     from .state import State
     st = State()
     if not st.exists():
+        from . import fence
+        if fence.inside():
+            sys.exit(fence.hidden_state())
         sys.exit("还没初始化：先运行 agentj init / not initialised: run agentj init first")
     expire_due(st)
     if a.seat_cmd == "transfer" and (a.status or a.cancel):

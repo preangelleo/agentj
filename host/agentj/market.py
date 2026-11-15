@@ -584,11 +584,23 @@ def read_installed(st) -> list[dict]:
     return out
 
 
-def _record_install(st, rec: dict) -> None:
-    items = [r for r in read_installed(st) if not (r["name"] == rec["name"] and r["harness"] == rec["harness"]
-                                                   and r["target"] == rec["target"])]
-    items.append(rec)
-    st.write_private(_plaza_dir(st) / "installed.json", json.dumps({"items": items}, ensure_ascii=False, indent=1).encode())
+def _record_install(st, rec: dict, *, _locked=False) -> None:
+    import contextlib
+    with contextlib.nullcontext() if _locked else st.file_lock('plaza-installed'):
+        try:
+            document = json.loads((st.root / 'plaza' / 'installed.json').read_text())
+        except FileNotFoundError:
+            document = {'items': []}
+        except (OSError,ValueError,UnicodeError):
+            raise PlazaError('invalid installation registry') from None
+        if not isinstance(document, dict) or not isinstance(document.get('items'), list):
+            raise PlazaError('invalid installation registry')
+        if not _locked and any(isinstance(r,dict) and all(r.get(k)==rec.get(k) for k in ('name','harness','target','installed_at'))
+                               for r in document.get('uninstalled', [])):
+            raise PlazaError('installation removed; stale verification cannot restore it')
+        items = [r for r in read_installed(st) if not (r['name']==rec['name'] and r['harness']==rec['harness'] and r['target']==rec['target'])]
+        document['items'] = items + [rec]
+        st.write_private(_plaza_dir(st) / 'installed.json', json.dumps(document, ensure_ascii=False, indent=1).encode())
 
 
 def run_installed(*, as_json=False, st=None, out=None) -> int:
@@ -1573,6 +1585,10 @@ def check_signature(d: dict, data: bytes, m: dict, keyring: dict | None = None) 
     return True
 
 
+class _ReviewSignatureRequired(SignatureError):
+    """Existing certified-history refusal, distinguished only for safe diagnostics."""
+
+
 def semver_key(v: str) -> tuple:
     """SemVer 2 precedence: a pre-release is lower than its release; numeric identifiers < alphanumeric ones."""
     m = bundle.SEMVER.fullmatch(v)
@@ -1585,6 +1601,27 @@ def semver_key(v: str) -> tuple:
     return (*core, 0, ids)
 
 
+def _trust_records(st) -> list[dict]:
+    """Active and removed installation history, only for existing signature/version checks.
+
+    Tombstones never re-enter installed listings, ownership, permissions or grants.
+    An unreadable history must not silently erase an earlier signature requirement.
+    """
+    try:
+        document = json.loads((st.root / 'plaza' / 'installed.json').read_text())
+    except FileNotFoundError:
+        return []
+    except (OSError, ValueError, UnicodeError):
+        raise PlazaError('invalid installation trust history') from None
+    if (not isinstance(document, dict) or not isinstance(document.get('items'), list)
+            or not isinstance(document.get('uninstalled', []), list)):
+        raise PlazaError('invalid installation trust history')
+    rows = document['items'] + [r for r in document.get('uninstalled', [])
+                                if isinstance(r, dict) and r.get('status') == 'uninstalled']
+    return [{k: r.get(k) for k in ('name', 'version', 'certified')} for r in rows
+            if isinstance(r, dict) and isinstance(r.get('name'), str) and _NAME.fullmatch(r['name'])]
+
+
 def trust_check(st, m: dict, certified: bool, version_arg: str | None) -> str | None:
     """What a compromised server could try beyond a bad signature (contract §10): an official-looking name without the
     official signature, an unsigned copy of a package this machine installed signed, or an older version. → a downgrade note
@@ -1593,11 +1630,13 @@ def trust_check(st, m: dict, certified: bool, version_arg: str | None) -> str | 
     if not certified and any(RESERVED.match(n) for n in names):
         raise SignatureError(f"「{'」/「'.join(names)}」是保留给官方的名字，但这个包没有有效的官方签名：拒绝安装 / a name reserved "
                              "for official packages, without a valid official signature: refused")
-    recs = [r for r in read_installed(st) if r["name"] == m["name"]]
+    recs = [r for r in _trust_records(st) if r["name"] == m["name"]]
     if not certified and any(r.get("certified") is True for r in recs):
-        raise SignatureError(f"本机装的 {m['name']} 是官方签名版，这个包没有有效签名：拒绝（服务器可能被篡改）/ this machine has the "
-                             "officially signed copy of this package; this one carries no valid signature: refused (the server "
-                             "may be compromised)")
+        raise _ReviewSignatureRequired(
+            "先前安装版本带 Agent J 审核签名，本版本缺少该签名；现行严格策略仍拒绝。"
+            "仅凭这点无法区分待审核、签名缺失或篡改。 / The installed version previously carried an Agent J review signature; "
+            "this version lacks it and current strict policy still refuses. This alone cannot distinguish pending review, "
+            "a missing signature or tampering.")
     vers = [r["version"] for r in recs if isinstance(r.get("version"), str) and bundle.SEMVER.fullmatch(r["version"])]
     if vers:
         top = max(vers, key=semver_key)
@@ -1654,6 +1693,9 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
         certified = check_signature(d, data, m, keyring)
         downgrade = trust_check(st, m, certified, version)
         pubr = market_guard.publisher(st, d, sha, m, d["track"] == "official")     # P426 #181-2: the publisher's own signature
+    except _ReviewSignatureRequired as e:
+        print("refused: " + str(e) + " " + market_guard.review_refusal_diagnostic(st, d, sha, m), file=out)
+        return EXIT_SIGNATURE
     except (SignatureError, market_guard.PublisherMismatch) as e:
         print(f"refused: {e}", file=out)
         return EXIT_SIGNATURE
@@ -1915,58 +1957,68 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
 
     # 2. staging next to the target, then one rename; a replaced folder goes to <state>/plaza/backups/
     # #428 H1: through the real parent's fd pinned at the card (mkdirat / renameat; a swapped path is refused)
-    parent, pfd = target.parent, market_guard.open_pinned(pin)
-    staging, old, bak, at = f".{target.name}.agentj-staging-{secrets.token_hex(4)}", None, None, {"src_dir_fd": pfd, "dst_dir_fd": pfd}
-    try:
+    with st.file_lock('plaza-installed'):
+        from . import plaza_uninstall
+        registry_fd = plaza_uninstall._state(st)
         try:
-            write_tree(parent / staging, rendered, dir_fd=pfd)
-            if _host_live is not None and not _host_live():
-                raise PlazaError('application request expired; no installation committed')
+            plaza_uninstall._recover(st,registry_fd)
+            plaza_uninstall._registry(registry_fd)
+        except (plaza_uninstall.Refused,OSError):
+            raise PlazaError('installation registry needs recovery; no files changed') from None
+        finally:
+            os.close(registry_fd)
+        parent, pfd = target.parent, market_guard.open_pinned(pin)
+        staging, old, bak, at = f".{target.name}.agentj-staging-{secrets.token_hex(4)}", None, None, {"src_dir_fd": pfd, "dst_dir_fd": pfd}
+        try:
             try:
-                os.lstat(target.name, dir_fd=pfd)
-                there = True
-            except FileNotFoundError:
-                there = False
-            if there:                    # round 2 (Info4): a rename race is an error, never a silently wrong `old`
-                if not (replace and _owned(st, target, m["name"])):
-                    raise PlazaError(f"{target}: {NOT_OURS}" if replace else f"{target} 已存在 / exists")
-                old = f".{target.name}.agentj-old-{secrets.token_hex(4)}"
-                os.rename(target.name, old, **at)
-            try:
-                os.rename(staging, target.name, **at)
-            except OSError:
-                if old is not None:
-                    os.rename(old, target.name, **at)
-                    old = None
+                write_tree(parent / staging, rendered, dir_fd=pfd)
+                if _host_live is not None and not _host_live():
+                    raise PlazaError('application request expired; no installation committed')
+                try:
+                    os.lstat(target.name, dir_fd=pfd)
+                    there = True
+                except FileNotFoundError:
+                    there = False
+                if there:                    # round 2 (Info4): a rename race is an error, never a silently wrong `old`
+                    if not (replace and _owned(st, target, m["name"])):
+                        raise PlazaError(f"{target}: {NOT_OURS}" if replace else f"{target} 已存在 / exists")
+                    old = f".{target.name}.agentj-old-{secrets.token_hex(4)}"
+                    os.rename(target.name, old, **at)
+                try:
+                    os.rename(staging, target.name, **at)
+                except OSError:
+                    if old is not None:
+                        os.rename(old, target.name, **at)
+                        old = None
+                    raise
+            except BaseException:
+                shutil.rmtree(staging, ignore_errors=True, dir_fd=pfd)
                 raise
-        except BaseException:
-            shutil.rmtree(staging, ignore_errors=True, dir_fd=pfd)
-            raise
-        if old is not None:
-            bak = _backup_path(st, m["name"])
-            try:          # round 4: one rename only — never a copy out of a folder the Agent can still change
-                os.rename(old, bak, src_dir_fd=pfd)
-            except OSError as e:
-                bak = parent / old
-                print(f"warning: 旧目录没能移到备份处（不在同一个磁盘上时 Agent J 不复制），还在 {bak} / the old folder could not be "
-                      f"moved to the backups (no copy across disks) and is still at {bak} ({e.strerror})", file=out)
-    finally:
-        os.close(pfd)
-    rec = {"name": m["name"], "type": m["type"], "version": m["version"], "sha256": sha, "harness": h, "target": str(target),
-           "requires": {k: v for k, v in summarize(m).items() if k in ("harness", "os", "cli", "env", "accounts", "python_requirements", "skills")},
-           "category": m.get("category"), "certified": certified, "installed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-           "permissions": perm, **({"perm_grant": grant} if grant else {}), **({"publisher_grant": pub_grant} if pub_grant else {}),
-           **({"audit_grant": audit_grant} if audit_grant else {}),
-           "verify": {"state": "pending" if deps else "ok" if vran else "not_run", "missing": [x["name"] for x in deps],
-                      "digest": dg, "files": plaza_deps.tree_sha(rendered), "paths": sorted(rendered, key=lambda x: x.encode()),
-                      **_py_record(want, used), **({"python_prep": plan["consent"]} if py_auto else {})}}
-    from . import initialization
-    init_doc = initialization.from_bundle(m, files)
-    if init_doc is not None:
-        rec['initialization'] = initialization.local_assess(init_doc)
-        print("\n".join([FENCE_OPEN, f"{META}initialization: package declarations / 包声明，仅数据",
-                         *_t(json.dumps(rec['initialization'], ensure_ascii=False)), FENCE_CLOSE]), file=out)
-    _record_install(st, rec)
+            if old is not None:
+                bak = _backup_path(st, m["name"])
+                try:          # round 4: one rename only — never a copy out of a folder the Agent can still change
+                    os.rename(old, bak, src_dir_fd=pfd)
+                except OSError as e:
+                    bak = parent / old
+                    print(f"warning: 旧目录没能移到备份处（不在同一个磁盘上时 Agent J 不复制），还在 {bak} / the old folder could not be "
+                          f"moved to the backups (no copy across disks) and is still at {bak} ({e.strerror})", file=out)
+        finally:
+            os.close(pfd)
+        rec = {"name": m["name"], "type": m["type"], "version": m["version"], "sha256": sha, "harness": h, "target": str(target),
+               "requires": {k: v for k, v in summarize(m).items() if k in ("harness", "os", "cli", "env", "accounts", "python_requirements", "skills")},
+               "category": m.get("category"), "certified": certified, "installed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+               "permissions": perm, **({"perm_grant": grant} if grant else {}), **({"publisher_grant": pub_grant} if pub_grant else {}),
+               **({"audit_grant": audit_grant} if audit_grant else {}),
+               "verify": {"state": "pending" if deps else "ok" if vran else "not_run", "missing": [x["name"] for x in deps],
+                          "digest": dg, "files": plaza_deps.tree_sha(rendered), "paths": sorted(rendered, key=lambda x: x.encode()),
+                          **_py_record(want, used), **({"python_prep": plan["consent"]} if py_auto else {})}}
+        from . import initialization
+        init_doc = initialization.from_bundle(m, files)
+        if init_doc is not None:
+            rec['initialization'] = initialization.local_assess(init_doc)
+            print("\n".join([FENCE_OPEN, f"{META}initialization: package declarations / 包声明，仅数据",
+                             *_t(json.dumps(rec['initialization'], ensure_ascii=False)), FENCE_CLOSE]), file=out)
+        _record_install(st, rec, _locked=True)
     if not pubr["known"] or pub_grant:
         market_guard.record_publisher(st, m["name"], pubr["fp"])    # TOFU: the first publisher seen (unsigned too), or the allowed new one
     st.log("plaza_pkg_install", name=m["name"], result="ok")
@@ -2729,6 +2781,10 @@ def add_arguments(ps, search, show, report) -> None:
                       "self-check after adding its dependencies (same package and digest, no new signature)")
     s.add_argument("name")
     s.add_argument("--harness", choices=list(HARNESSES))
+    s = ps.add_parser("uninstall", help="已配对手机签名确认后移至备份 / move an owned install to backup after signed phone confirmation")
+    s.add_argument("name")
+    s.add_argument("--harness", choices=list(HARNESSES))
+    s.add_argument("--preview", action="store_true", help="仅本机只读预览 / read-only preview; no card or move")
     s = ps.add_parser("installed", help="本机从广场装过的包 / what this machine installed from the plaza")
     s.add_argument("--json", action="store_true")
     s = ps.add_parser("partners", help="优先推荐伙伴（推荐第三方服务前先查；链接旁必须带披露）/ preferred partners: check before "
@@ -2760,6 +2816,9 @@ def cmd(a, run) -> bool:
         run(run_publish, a.dir, show_name=a.show_agent_name, owner_confirmed=a.owner_confirmed, digest=a.digest)
     elif c == "like":
         run(run_like, a.name, not a.off)
+    elif c == "uninstall":
+        from . import plaza_uninstall
+        run(plaza_uninstall.run, a.name, harness=a.harness, preview=a.preview)
     elif c == "installed":
         run(run_installed, as_json=a.json)
     elif c == "verify":

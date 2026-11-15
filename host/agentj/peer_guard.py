@@ -165,6 +165,7 @@ class SecretIndex:
         self._minimum = min(MIN_SECRET, fragment_size)
         self._salt = secrets.token_bytes(16)
         self._set: set[bytes] = set()
+        self._values: set[bytes] = set()  # salted normalized-value hashes, never plaintext
         self._lens: set[int] = set()
         self.count = 0
         self.complete = True
@@ -178,12 +179,16 @@ class SecretIndex:
     def add(self, value: str) -> None:
         if not isinstance(value, str):
             return
-        if self.count >= MAX_VALUES:
-            self.complete = False
-            return
         v = "".join(value.split())
         if len(v) < self._minimum:
             return
+        fingerprint = hashlib.blake2b(v.encode("utf-8", "surrogatepass"), digest_size=32, key=self._salt).digest()
+        if fingerprint in self._values:
+            return
+        if self.count >= MAX_VALUES:
+            self.complete = False
+            return
+        self._values.add(fingerprint)
         self.count += 1
         if len(v) < self._window:
             self._lens.add(len(v))
@@ -316,9 +321,6 @@ class SecretIndex:
             privacy.remember_env_names(k for k, _ in pairs)
             for k, v in pairs:
                 if SECRET_NAME.search(k) or _tokenish(v):
-                    if idx.count >= MAX_VALUES:
-                        idx.complete = False
-                        break
                     idx.add(v)
         return idx
 

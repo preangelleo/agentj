@@ -373,6 +373,14 @@ class Chain(unittest.TestCase):
         self.assertEqual(log.count('"ev": "perm_low"'), 3)
 
     def test_wrong_password_reconnect_foreign_reply_resume_and_exit(self):
+        # Only this temporary executable can run: no real CLI, network or key.
+        # Its charge-shaped argv makes the real native request wait for UV.
+        stub = self.work / 'stripe'
+        stub.write_text("#!/bin/sh\nsleep 2\nprintf synthetic > foreign-executed.txt\n")
+        stub.chmod(0o700)
+        human = fakeopencode.DEFAULT_RULES + [
+            {'permission':'bash', 'pattern':'./stripe charges create', 'action':'ask'}]
+        os.environ['FAKE_OC_AGENT_RULES'] = json.dumps(human)
         async def script(c):
             await c["say"]("一")
             await c["wait"](lambda: any(m["text"] == "ECHO: 一" for m in c["msgs"]()))
@@ -391,10 +399,17 @@ class Chain(unittest.TestCase):
             log = self.st.log_path.read_text()
             self.assertIn('"status": "lost"', log)
             # a reply serve did not send (someone else used the password) → OpenCode is stopped, notice
-            await c["say"]("FOREIGN: rm evil.txt")             # P198: a danger (low risk no longer waits on a card)
+            await c["say"]("FOREIGN: ./stripe charges create")
+            await c["wait"](lambda: bool(a.pending))
+            pending = next(iter(a.pending))
+            self.assertTrue(pending.startswith('per'))
+            await c["wait"](lambda: bool(c['asks']()))
+            self.assertIn(pending, a.pending, 'foreign reply must target a genuine waiting native request')
             await c["wait"](lambda: any("绕过手机" in m["text"] for m in c["msgs"]()))
             await c["wait"](lambda: a.proc is None)
             self.assertIn('"ev": "agent_tamper"', self.st.log_path.read_text())
+            await asyncio.sleep(2.2)
+            self.assertFalse((self.work / 'foreign-executed.txt').exists(), 'foreign permission cannot execute the local stub')
             await c["wait"](lambda: c["statuses"]()[-1:] == ["idle"])
             # the next message starts OpenCode again and resumes the same conversation with our rules re-applied
             os.environ["FAKE_OC_SESSIONS"] = json.dumps([sid])
@@ -409,7 +424,7 @@ class Chain(unittest.TestCase):
         self.assertEqual(sum(r["method"] == "POST" and r["path"] == "/session" for r in rq), 1)
         patch = [r for r in rq if r["method"] == "PATCH"]
         self.assertEqual(len(patch), 1)
-        self.assertEqual(patch[0]["body"]["permission"], oc.session_rules(fakeopencode.DEFAULT_RULES))
+        self.assertEqual(patch[0]["body"]["permission"], oc.session_rules(human))
         self.assertEqual(sum(1 for r in rq if r.get("path") == "/event" and r["method"] == "GET") >= 3, True)
 
     def test_no_opencode_and_bad_model_are_notices(self):

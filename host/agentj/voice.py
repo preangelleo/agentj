@@ -25,7 +25,7 @@ from websockets.exceptions import InvalidStatus, ConnectionClosed
 import uuid
 import sys
 from . import preference_values as p
-from .preference_checks import asr_endpoint
+from .preference_checks import asr_endpoint, tts_options
 
 ASR_URL='https://openrouter.ai/api/v1/audio/transcriptions'
 TTS_URL='https://api.openai.com/v1/audio/speech'
@@ -395,8 +395,42 @@ def _transcribe(path,cfg,timeout=60,*,state_dir=None,local_asr=None):
     if result.get('ok'): result['text']=correct_transcript(result.get('text',''),cfg)
     return result
 
-def synthesize(text,cfg,timeout=60):
-    if not isinstance(text,str) or not text.strip() or len(text)>4000: raise p.ConfigError('voice.tts','text must be 1..4000 characters')
+def synthesis_text(text, cfg):
+    """Exact complete text associated with synthesized audio; retained in memory for replay checks."""
+    if not isinstance(text, str) or not text.strip() or len(text) > 4000:
+        raise p.ConfigError('voice.tts', 'text must be 1..4000 characters')
+    prefix, _ = tts_options(cfg)
+    if len(prefix) + len(text) > 4000:
+        raise p.ConfigError('voice.tts', 'prefix and text must total at most 4000 characters')
+    return prefix + text
+
+
+def synthesis_chars(text, cfg):
+    """Characters sent to the selected TTS provider, including an optional owner prefix."""
+    return len(synthesis_text(text, cfg))
+
+
+def _outbound_speech(text, source=None):
+    """Strict complete-text check, independent of the phone display masking switch."""
+    from types import SimpleNamespace
+    from . import display_privacy, peer_guard
+    try:
+        # A fresh ephemeral index includes current environment values; do not reuse a
+        # display cache across an owner key change. The index stores salted hashes.
+        host = SimpleNamespace(agent_cfg=source if isinstance(source, dict) else {'dir': os.getcwd()})
+        index = display_privacy.index(host).require_complete()
+        if not peer_guard.outbound(text, index).ok:
+            raise SpeechError('unsafe_text')
+    except SpeechError:
+        raise
+    except Exception:
+        raise SpeechError('not_ready') from None
+    return text
+
+
+def synthesize(text,cfg,timeout=60, *, source=None):
+    complete_text = synthesis_text(text, cfg)
+    _, settings = tts_options(cfg)
     mode=p.get(cfg,'voice.tts.mode'); voice=p.get(cfg,'voice.tts.voice')
     if mode=='phone':raise p.ConfigError('voice.tts.mode','phone speech runs on phone; use its Read button')
     if mode=='host' and p.get(cfg,'voice.tts.provider')=='command':return _command_audio(text,cfg,timeout)
@@ -404,10 +438,11 @@ def synthesize(text,cfg,timeout=60):
         if not has_key(p.get(cfg,'voice.tts.key_env')):raise SpeechError('missing_key')
         try:validate_runtime(cfg)
         except p.ConfigError as exc:raise speech_error(exc) from None
+        text = _outbound_speech(complete_text, source)
         if p.get(cfg,'voice.tts.provider')=='elevenlabs':
             model=p.get(cfg,'voice.tts.model')
             url=TTS_ELEVEN_URL+voice
-            payload={'text':text,'model_id':model,'voice_settings':{'speed':p.get(cfg,'voice.tts.rate')}}
+            payload={'text':text,'model_id':model,'voice_settings':{'speed':p.get(cfg,'voice.tts.rate'), **settings}}
             body=json.dumps(payload).encode()
             try:
                 pcm=_request(url+'?output_format=pcm_16000',os.environ[p.get(cfg,'voice.tts.key_env')],body,'application/json',timeout,8*1024*1024-44,auth_header='xi-api-key')

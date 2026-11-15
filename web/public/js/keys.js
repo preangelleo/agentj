@@ -33,6 +33,7 @@ export const NAME_MAX = 64;
 export const HOLD_MS = 30000;                     // a value the clipboard refused waits this long for 「再点一次拷贝」
 const HEX32 = /^[0-9a-f]{32}$/;
 const TYPES = new Set(['oauth', 'sub', 'key']);
+export const RELAY_KEYS = ['AGENTSRELAY_CLAUDE_KEY', 'AGENTSRELAY_OPENAI_KEY'];
 const SRC_ID = /^(?:systemd|s[0-9a-f]{16})$/;
 const SRC_KINDS = new Set(['envd', 'systemd', 'file']);
 const USES = new Set(['login', 'sub', 'key', 'cloud', 'helper', 'none']);
@@ -70,6 +71,7 @@ function found(f) {
 }
 function row(r) {
   if (!r || !TYPES.has(r.type) || !okName(r.name)) return null;
+  if (RELAY_KEYS.includes(r.name) && typeof r.set !== 'boolean') return null;
   if (r.type === 'oauth') {
     const o = { type: 'oauth', name: r.name, state: r.state === 'in' ? 'in' : 'out' };
     if (USES.has(r.use)) {                                     // P362: which login the harness really uses
@@ -103,7 +105,8 @@ export function parse(m) {
     const rows = (Array.isArray(v.rows) ? v.rows.slice(0, 12) : []).map(row).filter(Boolean);
     if (rows.length) base.push({ id: v.id, name, rows });
   }
-  const third = (Array.isArray(m.third) ? m.third.slice(0, 200) : []).map((r) => row({ ...r, type: 'key', set: r?.set !== false })).filter(Boolean);
+  const relayNames = new Set(base.filter(v => v.id === 'agentsrelay').flatMap(v => v.rows.filter(r => r.type === 'key' && RELAY_KEYS.includes(r.name)).map(r => r.name)));
+  const third = (Array.isArray(m.third) ? m.third.slice(0, 200) : []).map((r) => row({ ...r, type: 'key', set: r?.set !== false })).filter(r => r && !relayNames.has(r.name));
   const fa = typeof m.fa === 'string' && m.fa.length > 0 && m.fa.length <= 1400 ? m.fa : null;
   const src = (Array.isArray(m.src) ? m.src.slice(0, 80) : []).map(source).filter(Boolean);
   return { id: m.id, n: m.n, fa, fa_s: fa ? faState(m.fa_s) : null, base, third, src, routing: parseRouting(m.routing), ...(m.button_ops === true ? {button_ops:true} : {}) };
@@ -122,6 +125,7 @@ export function parseCorrection(v) {
 
 let S = null;                       // the page model (names / states only) + the armed challenges
 let root = null, hooks = {}, busy = false, seq = 0, held = null, addForm = null;
+let relayOnly = false;
 let pkErr = null;                   // P539: {name, err, retry} — the row whose passkey tap just failed says why, under itself
 const verification = new Map();
 export function saved(name, verify) {
@@ -178,10 +182,12 @@ export function srcLabel(id, list) {
 function rearm(n) { if (S && HEX32.test(n || '')) arm(n).catch(() => chs.clear()); }
 
 /** Open / refresh: ask the host for the list and draw it into `box` (the models page's #keys-box). */
-export async function load(box) {
+export async function load(box, options) {
+  if (box) { wipe(); relayOnly = options?.relayOnly === true; }
   root = box || root;
   if (!root) return;
   const my = ++seq;
+  S = null; chs.clear(); root.replaceChildren();
   status(t('p352.loading'));
   const m = await api.keysGet();
   if (my !== seq) return;
@@ -192,9 +198,15 @@ export async function load(box) {
   draw();
   rearm(S.n);
 }
+/** The same editable Relay component is mounted by rescue and backup-account settings. */
+export function loadRelay(box) { return load(box, { relayOnly: true }); }
+export function unmount(box) {
+  if (root !== box) return;
+  ++seq; wipe(); root = null; S = null; chs.clear(); pkErr = null;
+}
 function status(text) {
-  let p = root && root.parentElement && root.parentElement.querySelector('#keys-status');
-  if (!p && root) { p = pageCopy(mk('p', 'keys-status', undefined, 'aj-account')); p.id = 'keys-status'; p.setAttribute('role', 'status'); root.after(p); }
+  let p = root && root.parentElement && root.parentElement.querySelector('.keys-status');
+  if (!p && root) { p = pageCopy(mk('p', 'keys-status', undefined, 'aj-account')); if (!relayOnly) p.id = 'keys-status'; p.setAttribute('role', 'status'); root.after(p); }
   if (p) { p.textContent = text; p.hidden = !text; }
 }
 
@@ -221,17 +233,18 @@ const PLAN_COPY = {
   ARK_CODING_PLAN_API_KEY: ['arkCodingTitle','arkCodingHint','https://agentj.app/docs/ark/'],
 };
 function rowNode(r, vendor) {
+  const relay = RELAY_KEYS.includes(r.name);
   const li = mk('li', 'krow'); li.dataset.name = r.name; li.dataset.type = r.type;
   const main = mk('div', 'kmain');
   const top = mk('div', 'ktop');
-  if (vendor !== null) top.append(mk('span', 'ktag ktag--' + r.type, t('p352.tag.' + r.type)));   // third-party rows: no tag
+  if (vendor !== null && !relay) top.append(mk('span', 'ktag ktag--' + r.type, t('p352.tag.' + r.type)));   // third-party rows: no tag
   if (r.type === 'oauth') top.append(mk('span', 'kname kname--login', ['claude', 'codex'].includes(r.name) ? t('p352.login.' + r.name) : r.name));
   else {
     const info = PLAN_COPY[r.name];
-    top.append(mk('span','kname',vendor && ['TYPESAFE_API_KEY','OPENROUTER_API_KEY'].includes(r.name) ? t('p527.jev.' + (r.name === 'TYPESAFE_API_KEY' ? 'typesafe' : 'openrouter')) : info ? t('p417.key.'+info[0]) : vendor ? t(r.type==='sub'?'p417.key.subTitle':'p417.key.apiTitle',{vendor}) : r.name));
+    top.append(mk('span','kname',relay ? (r.name === RELAY_KEYS[0] ? 'Claude Code' : 'Codex') : vendor && ['TYPESAFE_API_KEY','OPENROUTER_API_KEY'].includes(r.name) ? t('p527.jev.' + (r.name === 'TYPESAFE_API_KEY' ? 'typesafe' : 'openrouter')) : info ? t('p417.key.'+info[0]) : vendor ? t(r.type==='sub'?'p417.key.subTitle':'p417.key.apiTitle',{vendor}) : r.name));
   }
   main.append(top);
-  if (r.type !== 'oauth' && vendor) {
+  if (r.type !== 'oauth' && vendor && !relay) {
     const info = PLAN_COPY[r.name];
     main.append(pageCopy(mk('p','keys-desc',t(info?'p417.key.'+info[1]:r.type==='sub'?'p417.key.subHint':'p417.key.apiHint'), 'aj-account')));
     const link=mk('a','keys-help',t('p417.key.get'), 'aj-account');link.href=info?info[2]:'https://agentj.app/docs/models/';link.target='_blank';link.rel='noopener noreferrer';main.append(link);
@@ -239,13 +252,13 @@ function rowNode(r, vendor) {
   }
   const st = mk('div', 'kstate');
   if (r.type === 'oauth') { st.textContent = t(r.state === 'in' ? 'p352.signedIn' : 'p352.signedOut'); st.dataset.on = r.state === 'in' ? '1' : '0'; }
-  else if (r.set) { st.textContent = '••••••••' + (r.tail || ''); st.dataset.on = '1'; }
+  else if (r.set) { st.textContent = relay ? t('p0322relay.saved') : '••••••••' + (r.tail || ''); st.dataset.on = '1'; }
   else { st.textContent = t(r.found ? 'p362.notInAgentJ' : 'p352.notSet'); st.dataset.on = '0'; }
-  if (r.in_use && (r.set || r.type === 'oauth')) st.append(mk('span', 'kuse', t('p352.inUse')));   // a found-only copy says it on its own line
-  if (r.set && verification.has(r.name)) st.append(mk('span','kverify',t(verification.get(r.name)==='ok'?'elev.r.verifyOk':'elev.r.verifyFail')));
+  if (!relay && r.in_use && (r.set || r.type === 'oauth')) st.append(mk('span', 'kuse', t('p352.inUse')));   // a found-only copy says it on its own line
+  if (!relay && r.set && verification.has(r.name)) st.append(mk('span','kverify',t(verification.get(r.name)==='ok'?'elev.r.verifyOk':'elev.r.verifyFail')));
   main.append(st);
   if (r.type === 'oauth' && r.use) main.append(useLine(r));
-  for (const f of r.found || []) main.append(foundLine(r, f, vendor));
+  if (!relay) for (const f of r.found || []) main.append(foundLine(r, f, vendor));
   if (r.set && CHECKABLE.has(r.name)) {
     const box = mk('div','keys-correction');
     const check = mk('button','aj-action',t('p450.check'), 'aj-action'); check.type='button'; check.disabled=busy;
@@ -267,7 +280,7 @@ function rowNode(r, vendor) {
   li.append(main);
   if (r.type !== 'oauth') {
     const acts = mk('div', 'kacts');
-    if (r.set) { acts.append(iconBtn('copy', r, vendor)); if (r.name !== 'BAILIAN_CODING_PLAN_API_KEY') acts.append(iconBtn('edit', r, vendor)); acts.append(iconBtn('delete', r, vendor)); }
+    if (r.set) { if (!relay) acts.append(iconBtn('copy', r, vendor)); if (r.name !== 'BAILIAN_CODING_PLAN_API_KEY') acts.append(iconBtn('edit', r, vendor)); acts.append(iconBtn('delete', r, vendor)); }
     else acts.append(iconBtn('set', r, vendor));
     li.append(acts);
   }
@@ -319,12 +332,28 @@ function sourcesNode() {
   if (!S.src.some((x) => x.kind === 'file')) box.append(pageCopy(mk('p', 'ksrc-hint', t('p362.moreHint'), 'aj-account')));
   return box;
 }
+function relayNode() {
+  const card = mk('section', 'kvendor relay-key-section'); card.dataset.vendor = 'agentsrelay';
+  card.append(mk('h3', 'kvendor-h', 'Agents Relay', 'aj-account'));
+  card.append(pageCopy(mk('p', 'keys-desc', t('p0322relay.note'), 'aj-account')));
+  const guide = mk('a', 'keys-help', t('p0322relay.guide'), 'aj-account');
+  guide.href = 'https://agentj.app/docs/agents-relay/'; guide.target = '_blank'; guide.rel = 'noopener noreferrer';
+  card.append(guide);
+  const vendor = S?.base.find(v => v.id === 'agentsrelay');
+  const rows = RELAY_KEYS.map(name => vendor?.rows.find(r => r.name === name && r.type === 'key'));
+  if (rows.some(r => !r)) { card.append(pageCopy(mk('p', 'keys-desc', t('p352.unavailable'), 'aj-account'))); return card; }
+  const ul = mk('ul', 'klist');
+  for (const r of rows) ul.append(rowNode(r, 'Agents Relay'));
+  card.append(ul); return card;
+}
 function draw() {
   if (!root || !S) return;
+  if (relayOnly) { root.replaceChildren(relayNode()); return; }
   const kids = [];
   if (S.routing) kids.push(routingNode(S.routing));
   kids.push(mk('h2', 'keys-h', t('p352.base'), 'aj-account'));
   for (const v of S.base) {
+    if (v.id === 'agentsrelay') { kids.push(relayNode()); continue; }
     const card = mk('section', 'kvendor'); card.dataset.vendor = v.id;
     card.append(mk('h3', 'kvendor-h', label(v.name), 'aj-account'));
     const ul = mk('ul', 'klist');
@@ -382,6 +411,7 @@ async function writeSetup(op,name) {
   const ch=chs.get(op+'\n'+name);
   if (!S.button_ops && !ch) { toast(t('p450.again'),4000); return; }
   const res=await run(op,name,S.button_ops ? Promise.resolve(null) : approve(ch,S.fa));
+  if (res.why === 'stale_page') return;
   if (res.ok) { checks.clear(); toast(t(op==='unify'?'p450.unified':'p450.moved'),4500); await load(); }
   else if (res.err) failNotice(res.err, S && S.fa_s, () => writeSetup(op, name));   // P539
   else if(res.why!=='cancel') toast(t('p450.failed'),4500);
@@ -440,21 +470,26 @@ function act(op, r, vendor, button) {
 }
 
 async function requestCard(name) {
-  const res = await api.keysSet(name);
+  const page = S, owner = seq, isCurrent = () => S === page && seq === owner;
+  const res = await api.keysSet(name, { isCurrent });
+  if (!isCurrent() || res.why === 'stale_page') return;
   if (!res.ok) toast(t(why(res.why)), 4200);
   if (res.n) rearm(res.n);
 }
 
 /** One operation's round trip after Face ID: → the host's keys_res (with a fresh nonce re-armed). Not async before fa. */
 async function run(op, name, faP, more) {
-  const id = S.id, n = S.n;
+  const page = S, owner = seq, id = page.id, n = page.n;
   busy = true;
   try {
     let fa;
-    try { fa = await faP; } catch (e) { return { ok: false, why: e && e.name === 'NotAllowedError' ? 'cancel' : 'fa_error', err: webauthnErr(e) }; }   // the owner closed the sheet = quiet (P539: the row still says why)
+    try { fa = await faP; } catch (e) { if (S !== page || seq !== owner) return { ok: false, why: 'stale_page' }; return { ok: false, why: e && e.name === 'NotAllowedError' ? 'cancel' : 'fa_error', err: webauthnErr(e) }; }   // the owner closed the sheet = quiet (P539: the row still says why)
+    if (S !== page || seq !== owner) return { ok: false, why: 'stale_page' };
+    if (S.n !== n) return { ok: false, why: 'gone' };
     if (pkErr) { pkErr = null; draw(); }
     chs.clear();                                       // this nonce is spent the moment it is sent
     const res = await api.keysOp(op, name, id, n, fa, more);
+    if (S !== page || seq !== owner) return { ok: false, why: 'stale_page' };
     if (res.n) rearm(res.n);
     return res;
   } finally { busy = false; }
@@ -482,6 +517,7 @@ function copy(r, ch, button, vendor) {
     try { wrote = nav.clipboard.write([new CI({ 'text/plain': blob })]).then(() => true, () => false); } catch { wrote = null; }
   }
   run('copy', r.name, faP).then(async (res) => {
+    if (res.why === 'stale_page') { drop(new Error('stale page')); return; }
     if (!res.ok || typeof res.value !== 'string') {
       drop(new Error('no value'));
       if (pkFailed(res, r.name, () => act('copy', r, vendor, button))) return;
@@ -544,6 +580,7 @@ async function importKey(r, f) {
   if (!ok) return;
   if (!faP) return toast(t('p352.busy'));
   const res = await run('import', r.name, faP, { src: f.src, keep, fp: f.fp });
+  if (res.why === 'stale_page') return;
   if (res.ok) {
     toast(t(res.old === 'commented' ? 'p362.importedCommented' : res.old === 'comment_failed' ? 'p362.commentFailed' : 'p362.imported', { name: r.name }), 4200, 'success');
     return load();
@@ -555,19 +592,22 @@ async function importKey(r, f) {
 
 /** 删除: a confirmation naming the key (stronger when it is the one in use); Face ID starts in the 「删除」 tap itself. */
 async function remove(r, vendor, ch) {
+  const page = S, owner = seq;
   const yes = document.getElementById('confirm-yes');
   let faP = null;
-  const pre = () => { faP = approve(ch, S.fa); faP.catch(() => {}); };
+  const pre = () => { if (S !== page || seq !== owner) return; faP = approve(ch, page.fa); faP.catch(() => {}); };
   yes.addEventListener('click', pre);
   const sep = lang() === 'en' ? ' ' : '';             // the in-use warning leads: it is the one thing that breaks at once
   const text = (r.in_use ? t('p352.delInUse') + sep : '') + t(vendor ? 'p352.delText' : 'p352.delTextThird', { name: r.name, vendor: vendor || '' });
   let ok;
   try { ok = await pkSheet(S.fa_s, t('p352.delTitle', { name: r.name }), text, t('p352.delete'), true); }   // P539
   finally { yes.removeEventListener('click', pre); }
-  if (!ok || !faP) return;
+  if (!ok || !faP || S !== page || seq !== owner) return;
   const res = await run('delete', r.name, faP);
+  if (res.why === 'stale_page') return;
   if (res.ok) { toast(t('p352.deleted', { name: r.name }), 3000, 'success'); return load(); }
   if (pkFailed(res, r.name, () => act('delete', r, vendor))) return;
+  if (RELAY_KEYS.includes(r.name) && ['timeout', 'offline'].includes(res.why)) { toast(t('p0322relay.deleteUnknown'), 8000); return; }
   if (res.why !== 'cancel') toast(t(why(res.why),{device:deviceNoun()}), 4200);
   if (res.why === 'gone' || res.why === 'missing') load();
 }

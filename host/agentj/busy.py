@@ -1480,6 +1480,10 @@ class Board:
                     lines = f.read(262144).splitlines()
             except OSError:
                 continue
+            # Same native evidence contract as the shared tailer/recovery reader:
+            # an enqueue alone is not completion; consume only its exact removal.
+            from .completion_recovery import native_ids
+            enqueued = set()
             for line in lines:
                 try:
                     ev = json.loads(line)
@@ -1490,17 +1494,19 @@ class Board:
                 if ev.get("isSidechain"):
                     continue
 
-                if ev.get("type") == "user":
-                    message = ev.get("message")
-                    content = message.get("content") if isinstance(message, dict) else None
-                    origin = ev.get("origin") if isinstance(ev.get("origin"), dict) else {}
-                    native = origin.get("kind") == "task-notification" or ev.get("turnOrigin") == "task_notification"
-                    text = content if native and isinstance(content, str) else ""
-
+                message = ev.get("message")
+                content = message.get("content") if isinstance(message, dict) else None
+                ids = native_ids(ev, enqueued)
+                if ids:
+                    content_text = ev.get("content") if ev.get("type") == "queue-operation" else content
+                    text = (content_text if isinstance(content_text, str) else
+                            "".join(b.get("text", "") for b in content_text
+                                    if isinstance(b, dict) and isinstance(b.get("text"), str))
+                            if isinstance(content_text, list) else "")
                     for notification in re.findall(r"<task-notification>(.*?)</task-notification>", text, re.S):
                         tid = re.search(r"<task-id>([A-Za-z0-9_-]{1,80})</task-id>", notification)
                         status = re.search(r"<status>(completed|failed|stopped|killed|error)</status>", notification)
-                        if tid and status:
+                        if tid and status and tid.group(1) in ids:
                             key = f"{owner}:{tid.group(1)}"
                             task_key = f"{owner}:task:{tid.group(1)}"
                             recovered_end = None
@@ -1519,8 +1525,11 @@ class Board:
                                 self.mark_bg(key)
                                 recovered_end = ended
                             code = notification_exit(notification)
-                            self.stop(task_key, exit_code=code)
-                            self.stop(key, exit_code=code, ended=recovered_end)
+                            self.stop(task_key, exit_code=code, outcome=NATIVE_OUTCOME.get(status.group(1)),
+                                      end_reason="task_notification")
+                            self.stop(key, exit_code=code, ended=recovered_end,
+                                      outcome=NATIVE_OUTCOME.get(status.group(1)), end_reason="task_notification")
+                if ev.get("type") == "user":
                     for part in content if isinstance(content, list) else []:
                         if isinstance(part, dict) and part.get("type") == "tool_result":
                             key = f"{owner}:tu:{clean(part.get('tool_use_id'), 80)}"

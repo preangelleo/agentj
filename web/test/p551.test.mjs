@@ -22,7 +22,7 @@ test('confirmation cards use the one tier, never an ad-hoc number', () => {
     assert.ok(tier.split(' | ').some((s) => s.split(',').map((x) => x.trim()).includes(sel)), `${sel} on --z-confirm (have: ${tier})`);
   }
   assert.match(css['app.css'], /:root\{--z-confirm:150;--z-notice-top:250;--z-chrome:300\}/);
-  assert.match(css['app.css'], /body\[data-ontop="1"\] #toast\{z-index:var\(--z-notice-top\)!important\}/);
+  assert.match(css['app.css'], /body\[data-ontop="1"\] :is\(#toast,#notice-fifo\[data-aj-owner="aj-notice"\]\)\{z-index:var\(--z-notice-top\)!important\}/);
 });
 
 test('no other layer reaches the confirmation tier (150)', () => {
@@ -59,7 +59,7 @@ test('「全放行」: the 3rd button of the same picker (P552: merged; P556: re
   assert.match(s, /const LEVELS = \['safe', 'standard', 'harness'\];/);
   assert.equal((html.match(/data-set-level="/g) || []).length, 3);
   assert.match(html, /<button class="setsegment" type="button" data-set-level="harness" aria-pressed="false" data-i18n="p336\.harness">全放行<\/button><\/div>/);
-  assert.match(s, /const full = \(jev && value === 'off'\) \|\| harness, goal = key === 'approval\.goal_nocard';/);    // red
+  assert.match(s, /const full = \(jev && \(value === 'off' \|\| cheap\)\) \|\| harness, goal = key === 'approval\.goal_nocard';/);    // red
   assert.match(s, /harness \? t\('p336\.note\.harness'\) \+ ' ' \+ t\('p551\.harnessSign'\)/);
   // P550: no passkey → the plain words + 「在本机设置 Face ID（需另一台批准）」 (P551 待拍板 3: every widening is ③)
   assert.match(s, /if \(m\.why === 'no_passkey'\) toastAction\(t\('p551\.noPasskey'\), t\('pkp\.setupHere'\), \(\) => \{ close\(\); H\.setupFaceId\?\.\(\); \}, 10000\);/);

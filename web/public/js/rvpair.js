@@ -218,9 +218,10 @@ async function confirm() {
   if (A !== a) return;
   if (!res.ok) return fail(a, res.why === 'timeout' || res.why === 'gone' ? 'rv.timeout' : 'rv.fail', false);
   a.phase = 'done';
-  a.done = { name: clean(res.name || p.name), evicted: res.evicted ? clean(res.evicted.name) : '' };
+  a.done = { name: clean(res.name || p.name), evicted: res.evicted ? (clean(res.evicted.name) || '—') : '' };
   setPhase('done');
-  setTimeout(() => { if (A === a) closeDlg(false); }, 2500);
+  // Replacing another remote changes its access: keep that result until the owner acknowledges it.
+  if (!a.done.evicted) setTimeout(() => { if (A === a) closeDlg(false); }, 2500);
 }
 function fail(a, key, tellHost = true) {
   if (A !== a) return false;

@@ -138,7 +138,7 @@ def policy(host, req, pid, uid):
     return text, cfg, origin, effective, table[pid][2]
 
 
-async def start(host, req, pid, uid):
+async def start(host, req, pid, uid, *, relay_profile=None):
     from . import busy, approval_review
     if host.stopped():
         raise ValueError('Stop everything is on; native dispatch was not started')
@@ -146,6 +146,10 @@ async def start(host, req, pid, uid):
     if not isinstance(key, str) or not re.fullmatch(r'run:[a-f0-9]{12}', key):
         raise ValueError('invalid busy key')
     text, cfg, origin, mode, proc_start = policy(host, req, pid, uid)
+    if relay_profile is not None:
+        from .agentsrelay_dispatch import pinned_profile
+        cfg['_agentsrelay_provider'] = pinned_profile(relay_profile)
+        cfg['model'] = cfg['_agentsrelay_provider'].model
     rows = host.__dict__.setdefault('_busy_native', {})
     digest = approval_review.digest(req)
     if key in rows:
@@ -172,7 +176,12 @@ async def start(host, req, pid, uid):
     rows[key] = {'binding': (pid, proc_start, digest), 'receipt': receipt}
     token = approval_review.ORIGIN.set(copy.deepcopy(origin))
     try:
-        task = asyncio.create_task(run(host, cfg, text, mode, it))
+        if relay_profile is not None:
+            from . import agentsrelay_dispatch
+            agentsrelay_dispatch.runtime(host)['rows'][key] = {'status': 'queued'}
+            task = asyncio.create_task(agentsrelay_dispatch.run_queued(host, cfg, text, mode, it))
+        else:
+            task = asyncio.create_task(run(host, cfg, text, mode, it))
     finally:
         approval_review.ORIGIN.reset(token)
     rows[key]['task'] = task
@@ -271,10 +280,20 @@ async def run(host, cfg, text, mode, it):
         path = busy.items_dir(host.st.root) / (busy._safe(it['key']) + '.json')
         if not await asyncio.to_thread(busy.wait_capacity, stop, path):
             code = 130
-            return
+            return code
         if host.stopped():
             code = 130
-            return
+            return code
+        if cfg.get('_agentsrelay_provider') is not None:
+            from . import agentsrelay_dispatch
+            # Native resource capacity can wait again after the Relay semaphore.
+            # This is the final disclosure boundary before any provider dispatch.
+            if not await agentsrelay_dispatch.execution_allowed(host, cfg, text, it):
+                code = 126
+                return code
+            if host.stopped():
+                code = 130
+                return code
         admitted = True
         it["delivery_started"] = time.time()
         out, result = await runner.run_once(text)
@@ -291,3 +310,5 @@ async def run(host, cfg, text, mode, it):
         await asyncio.gather(beat, return_exceptions=True)
         busy.write_finished(host.st.root, it, code)
         busy.remove_item(host.st.root, it['key'])
+
+    return code

@@ -37,16 +37,25 @@ def mint(host, send, agent_text: str) -> str | None:
 
 
 def current(host, agent, peers=None):
-    """None = not a handoff turn (unchanged paths); False = a handoff marker that is not live → refuse; else the record.
+    """None = not a friend-task/handoff turn; False = no live handoff for this restricted turn; else the record.
     Blocking (friends.json read): call through asyncio.to_thread."""
     from . import provenance
     send = getattr(agent, "cur_send", None)
+    source = getattr(send, "source", None)
+    # This shape identifies a restricted turn, never delegated authority. The
+    # exact host-held record below is the handoff capability; normalize remains
+    # strict about plain task dictionaries everywhere else.
+    friend_task = isinstance(source, dict) and source.get("kind") == "friend_task" and source.get("role") == "task"
     nonce = getattr(send, "friend_handoff", None)
     if nonce is None:
-        return None
+        return False if friend_task else None
+    # to_thread copies contextvars but has no asyncio task. _shared_child's
+    # task-local lookup cannot see that context here; use it only to deny a
+    # child borrowing the root-turn capability (any child context = deny).
+    child = provenance._SHARED_CHILD.get()
     if (provenance._paired_source() is not provenance._UNSET or provenance._REQUEST.get() is not provenance._UNSET
-            or provenance.task_scope() is not None or provenance._shared_child(agent) is not provenance._UNSET
-            or provenance.normalize(getattr(send, "source", None)) != {"kind": "friend_task", "role": "task"}):
+            or provenance.task_scope() is not None or child is not None
+            or source != {"kind": "friend_task", "role": "task"}):
         return False                    # another request scope around the turn never borrows the handoff
     row = host.__dict__.get("_friend_handoffs", {}).get(nonce) if isinstance(nonce, str) else None
     if row is None or row["send"] is not send or time.monotonic() >= row["until"]:

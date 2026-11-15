@@ -14,7 +14,7 @@ class Cost(Decide):
     # Inherit only fixture, not the old periodic-wake contract.
     def setUp(self):
         super().setUp()
-        self.host.preferences = {'heartbeat': {'quiet_enabled': False}, 'updates': {'auto_install': False}}
+        self.host.preferences = {'heartbeat': {'quiet_enabled': False, 'daily_at': ''}, 'updates': {'auto_install': False}}
         from agentj import heartbeat
         heartbeat.ensure_prompt('zh')
         self.h.started = self.h.last_activity = time.time()-7200
@@ -50,10 +50,15 @@ class Cost(Decide):
         self.assertTrue(asyncio.run(self.h.tick())['ok'])
         self.host.agent_notice.assert_not_called()
 
-    def test_daily_is_check_not_unconditional_wake(self):
+    def test_daily_is_explicit_review_even_without_other_work(self):
+        from agentj.heartbeat import DAILY_REVIEW
+        self.host.preferences['heartbeat']['daily_at'] = '08:00'
+        self.assertEqual(self.h.daily_at(), '08:00')
         with patch.object(self.h, 'daily_is_due', return_value=True):
-            self.assertEqual(asyncio.run(self.h.tick())['why'], 'no_work')
-        self.assertFalse(self.agent.got)
+            self.assertTrue(asyncio.run(self.h.tick())['ok'])
+        self.assertEqual(len(self.agent.got), 1)
+        self.assertIn('daily_schedule', self.agent.got[0].text)
+        self.assertIn(DAILY_REVIEW['zh'], self.agent.got[0].text)
 
     def test_prompt_change_deferred_in_quiet_but_urgent_work_allowed(self):
         self.h._save({'checked_sha': 'different', 'beats':{}})

@@ -904,19 +904,27 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
         from _p541_device import Phone as ReviewPhone
         self.h.stopped=lambda:False
         reserve=OperationOnce.reserve
+        reservations=[]
+        gone=asyncio.get_running_loop().create_future()
         def race(book,*args,**kwargs):
             result=reserve(book,*args,**kwargs)
+            reservations.append(result)
             self.h.stopped=lambda:True
             return result
-        task=asyncio.create_task(self.h.ask('Bash',{'command':'rm -rf /tmp/p574-worker-race'},ttl=.03,_harness_permission=True))
+        task=asyncio.create_task(self.h.ask('Bash',{'command':'rm -rf /tmp/p574-worker-race'},ttl=5,gone=gone,_harness_permission=True))
         for _ in range(100):
             if self.h.asks:break
             await asyncio.sleep(.002)
         ask=next(iter(self.h.asks.values()))
         with patch.object(OperationOnce,'reserve',race):
             await self.h._answer(self.s,ReviewPhone.answer(self.phone,self.h._ask_msg(ask,self.s),True))
+        self.assertEqual(reservations,[True], 'the valid signed allow must reach the worker reservation before emergency stop')
+        self.assertTrue(self.h.stopped(), 'the race actually activated emergency stop')
         self.assertFalse(ask.fut.done(),'emergency stop during reservation must invalidate the signed allow')
-        res=await task
+        self.assertTrue(any(obj.get('t')=='answer_refused' and obj.get('id')==ask.rid and obj.get('why')=='authority_changed'
+                            for _,obj in self.sent if isinstance(obj,dict)), 'the post-worker stop check must refuse the signed allow')
+        gone.set_result(True)  # End the original synthetic request only after proving its signed allow remains pending/refused.
+        res=await asyncio.wait_for(task,1)
         self.assertEqual(res['behavior'],'deny');self.assertFalse(self.h.asks)
 
     async def test_receiving_task_strict_level_never_falls_back_to_peer_card(self):

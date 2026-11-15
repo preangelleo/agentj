@@ -42,6 +42,8 @@ def facts(root=None) -> dict:
          "web": DEFAULT_WEB, "account_url": cloud.DEFAULT_APP, "service": None}
     try:
         if not st.exists():
+            from . import fence
+            f["fenced"] = fence.inside()
             return f
         f["set_up"] = True
         cfg = st.config()
@@ -80,7 +82,10 @@ def note(f: dict, lang: str = "en") -> str:
 def _zh(f: dict) -> str:
     web, acct_url = f["web"], f["account_url"]
     out = []
-    if not f["set_up"]:
+    if not f["set_up"] and f.get("fenced"):
+        from . import fence
+        out += [fence.hidden_state(), ""]
+    elif not f["set_up"]:
         out += ["这台Agent J 主机上还没有设置好 Agent J（还没运行过 `agentj init`）。下面是装好以后的用法，先留着备用。", ""]
     else:
         out += ["Agent J 装好了。下面这些留着备用。", ""]
@@ -154,7 +159,10 @@ def _zh(f: dict) -> str:
 def _en(f: dict) -> str:
     web, acct_url = f["web"], f["account_url"]
     out = []
-    if not f["set_up"]:
+    if not f["set_up"] and f.get("fenced"):
+        from . import fence
+        out += [fence.hidden_state(), ""]
+    elif not f["set_up"]:
         out += ["Agent J is not set up on the Agent J host yet (`agentj init` has not run). Here is how it works once it is; "
                 "keep it for later.", ""]
     else:

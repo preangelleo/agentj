@@ -57,7 +57,7 @@ class Core(unittest.TestCase):
                 (root/"core.en.md").write_text("I am a workflow CEO")
                 with self.assertRaises(identity.IdentityError): identity.prompt({})
     def test_root_and_no_private_identity(self):
-        self.assertEqual(identity.working_root({"working_root":"/tmp/root", "dir":"/tmp/old"}),pathlib.Path("/tmp/root"))
+        self.assertEqual(identity.working_root({"working_root":"/tmp/root", "dir":"/tmp/old"}),pathlib.Path("/tmp/root").resolve())
         for lang in ("en","zh"):
             for private in ("Example Owner", "Example Private Workflow", str(pathlib.Path.home())):
                 self.assertNotIn(private,identity.prompt({"language":lang}))
@@ -65,7 +65,7 @@ class Core(unittest.TestCase):
         host=SimpleNamespace(st=Mock())
         cfg={"kind":"claude","dir":"/tmp","working_root":"/tmp/root","instructions":"my style"}
         a=ClaudeAgent(host,cfg)
-        self.assertEqual(a.cfg["dir"],"/tmp/root")
+        self.assertEqual(a.cfg["dir"],str(pathlib.Path("/tmp/root").resolve()))
         for sid in (None,"old-session"):
             argv=a.argv(sid)
             self.assertEqual(argv[argv.index("--append-system-prompt")+1],identity.prompt(cfg))

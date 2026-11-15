@@ -97,6 +97,7 @@ class BusyIsNotHeld(unittest.TestCase):
         a.state = SimpleNamespace(status=status, snapshot=lambda: {"compacting": compacting})
         a.status, a.cfg, a.input_seen = "working", {"dir": "/x"}, asyncio.Event()
         a.done, a.q, a.halting, a.session, a.native_turn, a.phone_claim = asyncio.Event(), asyncio.Queue(), False, None, False, False
+        a.native_request = None
         a.notes = []
         a.host = SimpleNamespace(turn_queued_note=a.notes.append)
         return a
@@ -132,7 +133,8 @@ class BusyIsNotHeld(unittest.TestCase):
                 h = Host133(root, lang)
                 h.cur_turn = h.hist_add({"k": "phone", "text": "hi"})["id"]
                 h.turn_queued_note(True)
-                self.assertEqual(h.hist.get(h.cur_turn)["reply"]["text"], want)
+                self.assertEqual(h.hist.get(h.cur_turn)["reply"]["text"], "")
+                self.assertTrue(h.hist.get(h.cur_turn)["card"]["queued"])
                 self.assertNotIn("尚未接收", want)
                 h.turn_queued_note(False)
                 self.assertEqual(h.hist.get(h.cur_turn)["reply"]["text"], "")

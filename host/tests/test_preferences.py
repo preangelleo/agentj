@@ -21,6 +21,9 @@ class PreferencesTest(unittest.TestCase):
             self.assertTrue(any(alias.isascii() for alias in meta['aliases']),key)
         self.assertEqual(p.resolve_key('唤醒词'),'voice.wake_word')
         self.assertEqual(p.resolve_key('VOICE TTS RATE'),'voice.tts.rate')
+        for alias,key in [('语音文本前缀','voice.tts.text_prefix'),('voice tts text prefix','voice.tts.text_prefix'),
+                          ('语音服务商参数','voice.tts.settings'),('voice tts provider settings','voice.tts.settings')]:
+            self.assertEqual(p.resolve_key(alias),key)
         with patch('sys.stdout',new_callable=io.StringIO):
             self.assertEqual(p.command(['set','主题','dark']),0)
             self.assertEqual(p.command(['reset','unknown.section']),1)

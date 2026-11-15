@@ -25,7 +25,7 @@ VERSION = 28  # 0.30.0: delegation is the default; owner working preferences may
 # v9 (P113, ADR-A193): long tasks — preflight card, brief, CEO routing, report read-back
 # v8 (P82): owner-authorized customer-service bot management
 # v5 (P64): a workflow with a CEO is always dispatched — never run or edited by the main Agent; read-only reporting stays
-HASHES = {'en': 'ff19a7096637424285dce8ee7197e7c50da3b355c96a172f3427a9d4ac6ff6b9', 'zh': 'b8b69590ec66f1faaaee4e59f05e72c47d6d7efe32af9bdbc9ac51f8305deeb1'}
+HASHES = {'en': '1f1d45eecfcff5d45b9ec50ec77ef444340073dea03fc5153293a149d0f0a319', 'zh': '7efacd1e9e41d6779c48e72eb499b88d3770e5eb10fb870372b858fe37a389cd'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system",
               "kimi": "acp.resource", "qwen": "acp.resource", "dsh": "acp.text"}   # P329: dsh takes no embedded resources (acp._block)   # P305: ACP has no system-prompt field — an embedded resource block (acp.prompt_blocks)
 
@@ -117,7 +117,7 @@ SUPPORT_LINE = {"zh": "", "en": ""}  # P253: merged into the versioned core; one
 # P65: explicit operational guidance for small models; immutable hashed role remains v5.
 # Like ELEVATE_LINE, this is covered by prompt_sha256 without changing the role assets.
 OPERATIONS_LINE = {
-    "zh": '晨报汇总现有工作流昨夜报告、VERDICT、未处理项，不新建晨报工作流；失败待办在前。退出码 0 不代表成功；缺报告直说，不虚构运行/派单/故障原因，不把计划当已运行。接续任务依次：①真实执行 `agentj recall --days 2 --json`（可无关键词），读 said、reply 决定和停点；无结果再查7天、交接和报告。不屏蔽错误、只截前几行、猜测或谎称派单。②读工作根 documentation/ROLES.md；③真实执行花名册 CEO 派单入口，交决定和停点；④读回报告。业务默认派 CEO；主人让亲做则照办；安全与验收不变。操作先读 agentj-manual 对应语言手册，一句话回答，不发明设置项。换模型点顶部模型/思考强度：点换下一个，按住恢复默认；`/model` 列表、`/model 名字` 切换。\n',
+    "zh": '晨报汇总各工作流昨夜报告、VERDICT、未处理项，不另建晨报工作流；失败待办优先。退出码 0 不代表成功；缺报告直说，不编运行、派单、原因，不拿计划冒实做。接续：①跑 `agentj recall --days 2 --json`（可无关键词），读said/reply决定和停点；空则查7天、交接和报告。勿藏错、截断、猜测或谎称派单。②读工作根 documentation/ROLES.md；③跑花名册CEO派单入口，交决定和停点；④读回报告。业务默认派CEO；主人让亲做照办，安全验收不变。操作先读 agentj-manual 对应语言手册，一句话回答，不编设置项。换模型：顶部模型/思考强度点换下个、按住恢复默认；`/model` 列表、`/model 名字` 切换。\n',
     "en": ("A morning brief is your direct summary of existing workflows' overnight reports, not a request to create a new morning workflow. "
            "Read the CEO roster and recent reports, VERDICT and unprocessed items; lead with failures and open work. Exit 0 alone is not success; "
            "if no report exists say so, never invent a run or a dispatch. To continue earlier work, actually run `agentj recall --days 2 --json` "

@@ -1,4 +1,5 @@
-// P132: every page has a header — pages without the owner's input (a check, a background task, the Agent reporting in)
+// P132: every main page has a header, including ordinary proactive reports without the owner's input.
+// 0332/0335 route completed loop/task replies through the existing /background history. Main pages
 // keep the source card's place and size, its page capsule, both corner double-taps and the new-message flash; on the newest
 // page a new page takes the owner there, while paging history only the capsule flashes. Real page + local fake host.
 import assert from 'node:assert/strict';
@@ -19,6 +20,12 @@ async function touch(p,id,count=1){
   await p.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
   if(i+1<count)await sleep(70);
  }
+}
+// Existing /background journey's real pointer activation closes its parent menu too.
+async function click(p,selector){
+ const point=await evaluate(p,`(()=>{const e=document.querySelector(${JSON.stringify(selector)});e.scrollIntoView({block:'center'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+ await p.send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...point});
+ await p.send('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...point});
 }
 const L={
  zh:{ask:i=>`帮我看一下第 ${i} 件事。`,ans:i=>`第 ${i} 件事已经处理好了。`,loop:'定时检查：服务都正常，没有新的告警。',task:'后台任务跑完了：日志已整理到报告里。',
@@ -43,13 +50,28 @@ export async function runP132({B,web,fake,out='reports/qa/p132',rec=parityRecord
    const dev=await evaluate(p,`import('./js/api.js').then(api=>api.myDeviceId())`);
    let inputCard,seen;
    await step('d',async()=>{
-   // d) mixed pages: two with the owner's input, then (a) three without — every page numbered, no gap
+   // 0332/0335: completed loop/task replies belong to the existing /background history.
+   // Keep ordinary proactive reports on main pages, mixed with real owner-input pages.
    for(let i=1;i<=2;i++)await fake.addTurn({k:'phone',dev,text:s.ask(i)},s.ans(i));
    await waitFor(p,`${$('pg')}.textContent==='2 / 2'`);
    inputCard=await box(p,'om');
-   await fake.addTurn({k:'agent',text:'',via:'loop'},s.loop);
-   await waitFor(p,`${$('pg')}.textContent==='3 / 3'`);           // b) on the newest page: the new page is shown
-   await fake.addTurn({k:'agent',text:'',via:'task'},s.task);
+   for(const [via,reply] of [['loop',s.loop],['task',s.task]]){
+    const t=await fake.addTurn({k:'agent',text:'',via},reply);
+    await click(p,'#slashBtn');
+    await waitFor(p,`!${$('menu')}.hidden && document.getElementById('backgroundCommandEntry')`);
+    await click(p,'#backgroundCommandEntry');
+    await waitFor(p,`!${$('silent')}.hidden && document.querySelector('#silentList details[data-id="${t.id}"]')?.textContent.includes(${JSON.stringify(reply)})`);
+    assert.equal(await pg(p),'2 / 2',via+' reply does not add a main page');
+    assert.equal(await evaluate(p,`${$('pgCorner')}.dataset.unread`),'0',via+' reply does not flash the main capsule');
+    await click(p,`#silentList details[data-id="${t.id}"] summary`);
+    assert.equal(await evaluate(p,`document.querySelector('#silentList details[data-id="${t.id}"]').open`),true,via+' exact turn expanded');
+    assert.equal(await evaluate(p,`document.querySelector('#silentList details[data-id="${t.id}"] .rep').getClientRects().length>0`),true,via+' reply visible');
+    await evaluate(p,`document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+    await waitFor(p,`${$('silent')}.hidden`);
+   }
+   await fake.addTurn({k:'agent',text:''},s.report);
+   await waitFor(p,`${$('pg')}.textContent==='3 / 3'`);
+   await fake.addTurn({k:'phone',dev,text:s.ask(3)},s.ans(3));
    await waitFor(p,`${$('pg')}.textContent==='4 / 4'`);
    await fake.addTurn({k:'agent',text:''},s.report);
    await waitFor(p,`${$('pg')}.textContent==='5 / 5'`);
@@ -61,9 +83,9 @@ export async function runP132({B,web,fake,out='reports/qa/p132',rec=parityRecord
    }
    assert.deepEqual(seen.map(x=>x.pg),['5 / 5','4 / 5','3 / 5','2 / 5','1 / 5'],'page numbers are continuous across pages with and without input');
    for(const x of seen)assert.equal(x.hidden,false,'every page has its header card: '+x.pg);
-   assert.deepEqual(seen.slice(0,3).map(x=>x.label),[...s.labels].reverse(),'source labels say where each page came from');
-   for(const x of seen.slice(0,3)){assert.equal(x.header,'1');assert.equal(x.text,s.none);assert.equal(x.more,x.sourceDetail==='1'?'visible':'hidden');}
-   for(const x of seen.slice(3)){assert.equal(x.header,'0');assert.equal(x.more,'visible');}
+   assert.deepEqual([seen[0],seen[2]].map(x=>x.label),[s.labels[2],s.labels[2]],'ordinary proactive reports keep their source labels');
+   for(const x of [seen[0],seen[2]]){assert.equal(x.header,'1');assert.equal(x.text,s.none);assert.equal(x.more,x.sourceDetail==='1'?'visible':'hidden');}
+   for(const x of [seen[1],seen[3],seen[4]]){assert.equal(x.header,'0');assert.equal(x.more,'visible');}
    });
    await step('a',async()=>{
    // a) the header card is the input card's place and size; both corner gestures work on it
@@ -74,12 +96,12 @@ export async function runP132({B,web,fake,out='reports/qa/p132',rec=parityRecord
    for(const n of [2,3]){await evaluate(p,`${$('pgNext')}.click()`);await waitFor(p,`${$('pg')}.textContent==='${n} / 5'`);}
    await touch(p,'pgLatest',2);await waitFor(p,`${$('pg')}.textContent==='5 / 5'`);
    await touch(p,'omFirst',2);await waitFor(p,`${$('pg')}.textContent==='1 / 5'`);
-   for(const n of [2,3,4]){await evaluate(p,`${$('pgNext')}.click()`);await waitFor(p,`${$('pg')}.textContent==='${n} / 5'`);}
+   for(const n of [2,3]){await evaluate(p,`${$('pgNext')}.click()`);await waitFor(p,`${$('pg')}.textContent==='${n} / 5'`);}
    });
    await step('c',async()=>{
    // c) paging history: a new page without input does not move him; the capsule flashes on a header page
-   await fake.addTurn({k:'agent',text:'',via:'loop'},s.late);
-   await waitFor(p,`${$('pgCorner')}.dataset.unread==='1' && ${$('pg')}.textContent==='4 / 6'`);
+   await fake.addTurn({k:'agent',text:''},s.late);
+   await waitFor(p,`${$('pgCorner')}.dataset.unread==='1' && ${$('pg')}.textContent==='3 / 6'`);
    assert.equal(await evaluate(p,`${$('om')}.dataset.header`),'1');
    assert.match(await evaluate(p,`${$('pgLatest')}.getAttribute('aria-label')`),s.flash);
    assert.equal(await evaluate(p,`getComputedStyle(${$('pg')}).animationName`),'aj-source-new-message-pulse');
@@ -96,7 +118,7 @@ export async function runP132({B,web,fake,out='reports/qa/p132',rec=parityRecord
    await evaluate(p,`(()=>{const m=document.querySelector('#rm main');m.scrollTop=Math.floor((m.scrollHeight-m.clientHeight)/2);m.dispatchEvent(new Event('scroll'))})()`);
    await sleep(100);
    assert.ok(await evaluate(p,`(()=>{const m=document.querySelector('#rm main');return m.scrollHeight-m.scrollTop-m.clientHeight>100})()`),'mid-way through the reply');
-   await fake.addTurn({k:'agent',text:'',via:'task'},s.task);
+   await fake.addTurn({k:'agent',text:''},s.task);
    await waitFor(p,`${$('pg')}.textContent==='8 / 8' && ${$('pgCorner')}.dataset.unread==='0'`);
    // b) a pending desktop input stays behind the reply, and its reply, when it lands, takes him there (no stuck page)
    const t=await fake.addTurn({k:'host',name:'Agent J 主机',text:s.ask(9)},'','open');

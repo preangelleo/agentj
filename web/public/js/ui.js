@@ -122,19 +122,71 @@ function settingsLine(text) {
 }
 /** A Settings status line now says `text`: put away a notice that only repeats it (the line arrived after the notice). */
 export function settingsSaid(text) {
-  const box = el('toast'), s = text == null ? '' : String(text).trim();
-  if (!s || !box?.classList.contains('on') || box.classList.contains('act') || !settingsLine(s)) return false;
-  if (box.querySelector('.nt-body')?.textContent.trim() !== s) return false;
-  toastOff();
-  return true;
+  const s = text == null ? '' : String(text).trim();
+  if (!s || !settingsLine(s)) return false;
+  // An inline result supersedes only its identical sentence, not an unrelated action/held notice.
+  const removed = infoQueue.filter(spec => String(spec.text).trim() === s).length;
+  infoQueue = infoQueue.filter(spec => String(spec.text).trim() !== s);
+  let matched = removed > 0;
+  for (const box of noticeNodes()) {
+    if (!box.classList.contains('on') || box.classList.contains('act') || box.querySelector('.nt-body')?.textContent.trim() !== s) continue;
+    matched = true;
+    if (box.id === 'notice-fifo') { clearTimeout(infoTimer); hideNotice(box); infoActive = false; nextInfo(); }
+    else hideNotice(box);
+  }
+  return matched;
 }
-export function notify(spec) {
-  const f = notifyFormat(spec), box = el('toast');
+// P252: only the ordinary default-duration info lane queues. Explicit durations, commands,
+// structured/rectangular results and every other kind retain invocation-time deadlines on #toast.
+// No deduplication: a fresh DOM body and an empty 180ms interval announce repeated sentences.
+const INFO_GAP_MS = 180; // current actor --dlg-dur, not an additional display delay
+let infoQueue = [], infoActive = false, infoTimer;
+const noticeNodes = () => [el('toast'), el('notice-fifo')].filter(Boolean);
+function hideNotice(box) {
+  if (!box) return;
+  clearTimeout(box._t); delete box.dataset.hold;
+  box.classList.remove('on', 'act', 'mail-saved');
+}
+function infoNode() {
+  let box = el('notice-fifo');
+  if (!box) {
+    box = mk('div', 'toast', undefined, 'aj-notice'); box.id = 'notice-fifo';
+    box.setAttribute('aria-live', 'polite'); box.setAttribute('aria-atomic', 'true');
+    document.body.appendChild(box);
+  }
+  return box;
+}
+function nextInfo() {
+  while (infoQueue.length && settingsLine(infoQueue[0].text)) infoQueue.shift();
+  if (!infoQueue.length) { infoActive = false; return; }
+  infoActive = true;
+  const spec = infoQueue.shift(), box = infoNode();
+  renderNotice(spec, box, () => {
+    box.replaceChildren();
+    infoTimer = setTimeout(nextInfo, INFO_GAP_MS);
+  });
+}
+export function notify(spec = {}) {
+  const f = notifyFormat(spec);
+  const ordinary = f.kind === 'info' && f.ms === FORMATS.info.ms && f.shape !== 'rect'
+    && !spec.title && !spec.media && !spec.close && !(spec.actions || []).length
+    && !/`[^`\n]+`/.test(String(spec.text ?? ''));
+  if (!ordinary) return renderNotice(spec, el('toast'));
+  if (!el('toast')) return null;
+  if (settingsLine(spec.text)) return renderNotice(spec, el('toast')); // retains existing inline echo handling
+  infoQueue.push({ ...spec, text: String(spec.text ?? '') });
+  if (!infoActive) nextInfo();
+  return infoNode();
+}
+function renderNotice(spec, box, expired) {
+  const f = notifyFormat(spec);
   if (!box) return null;
+  box.setAttribute('data-aj-owner', 'aj-notice'); // This producer owns the existing notice actor, including scroll targets.
   if (!(spec.actions || []).length) { const line = settingsLine(spec.text); if (line) { line.scrollIntoView?.({ block: 'nearest' }); return null; } }
   delete box.dataset.sharedFollow;
   delete box.dataset.pkTest;
   delete box.dataset.previewFailure;
+  delete box.dataset.popupNotice; box.style.removeProperty('--aj-notice-popup-z');
   box.classList.remove('act', 'mail-saved', 'circle', 'square', 'rect', 'glance', 'over-dlg', 'closable');
   box.classList.toggle('glance', !!spec.glance);
   box.dataset.kind = f.kind; box.style.setProperty('--nt-accent', 'var(' + f.accent + ')');
@@ -155,7 +207,7 @@ export function notify(spec) {
     for (const a of acts) {
       const b = document.createElement('button'); b.setAttribute('data-aj-owner', 'aj-notice'); b.type = 'button'; b.className = 'undo'; b.textContent = a.label;
       b.addEventListener('pointerdown', (e) => e.preventDefault());          // keep the field's focus
-      b.addEventListener('click', () => { toastOff(); a.fn(b); });
+      b.addEventListener('click', () => { hideNotice(box); a.fn(b); });
       row.appendChild(b);
     }
     kids.push(row);
@@ -168,7 +220,7 @@ export function notify(spec) {
     for (const d of ['M6.5 6.5l11 11', 'M17.5 6.5l-11 11']) { const p = document.createElementNS(SVG, 'path'); p.setAttribute('d', d); s.appendChild(p); }
     x.appendChild(s);
     x.addEventListener('pointerdown', (e) => e.preventDefault());          // keep the field's focus
-    x.addEventListener('click', () => toastOff());
+    x.addEventListener('click', () => hideNotice(box));
     kids.push(x);
   }
   box.replaceChildren(...kids);
@@ -200,9 +252,9 @@ export function notify(spec) {
   if (ms) delete box.dataset.hold; else box.dataset.hold = '1';
   sizeCircle(box);
   box.classList.add('on');
-  fitNotice(box);
+  fitNotice();
   clearTimeout(box._t);
-  if (ms) box._t = setTimeout(() => box.classList.remove('on', 'act'), ms);
+  if (ms) box._t = setTimeout(() => { hideNotice(box); expired?.(); }, ms);
   return box;
 }
 // A centred notice may use the viewport centre only while it stays clear of the composer.
@@ -212,15 +264,42 @@ export function noticeBounds(height, protectedTop, noticeHeight) {
   const maxHeight = Math.max(1, bottom - 16), half = Math.min(noticeHeight, maxHeight) / 2;
   return { top: Math.max(16 + half, Math.min(height / 2, bottom - half)), maxHeight };
 }
-function fitNotice(box = el('toast')) {
+function fitNotice(box) {
+  if (!box) { for (const node of noticeNodes()) fitNotice(node); return; }
   if (!box?.classList.contains('on') || !['circle', 'square', 'mail-saved', 'over-dlg'].some(c => box.classList.contains(c))) return;
   if (typeof window.innerHeight !== 'number') return;
   sizeCircle(box);
   const view = window.visualViewport, height = view?.height || window.innerHeight, offset = view?.offsetTop || 0;
-  const protectedRects = ['tools', 'input'].map(el).filter(n => n && !n.closest('[hidden]') && n.getClientRects().length)
+  // A result is one visual step above its current popup, not above an arbitrary future tier.
+  // It never becomes a modal owner: password focus, Tab, Escape and signed UV keep their existing layer.
+  const owner = activeLayer()?.element(), popup = owner?.classList.contains('aj-shared-popup') ? owner : null;
+  const z = popup ? Number(getComputedStyle(popup).zIndex) : NaN;
+  if (Number.isFinite(z)) {
+    box.dataset.popupNotice = '1';
+    if (box.style.getPropertyValue('--aj-notice-popup-z') !== String(z + 1)) box.style.setProperty('--aj-notice-popup-z', String(z + 1));
+  } else if (box.dataset.popupNotice) { delete box.dataset.popupNotice; box.style.removeProperty('--aj-notice-popup-z'); }
+  // Keep the password/key field readable and clickable while a transient result is present.
+  const fields = popup ? [...popup.querySelectorAll('input:not([type=hidden]),textarea,select')] : [];
+  const protectedRects = [el('tools'), el('input'), ...fields].filter(n => n && !n.closest('[hidden]') && n.getClientRects().length)
     .map(n => n.getBoundingClientRect()).filter(r => r.height && r.top >= offset && r.top < offset + height);
-  const protectedTop = protectedRects.length ? Math.min(...protectedRects.map(r => r.top)) - offset : height;
-  const bounds = noticeBounds(height, protectedTop, box.scrollHeight);
+  let protectedTop = protectedRects.length ? Math.min(...protectedRects.map(r => r.top)) - offset : height;
+  const priority = el('toast'), fifo = el('notice-fifo');
+  const together = priority?.classList.contains('on') && fifo?.classList.contains('on');
+  // The immediate actor keeps its reply/page placement. If both are centred, reserve the lower
+  // half of the existing safe area for it; the FIFO then fits above its actual rendered bounds.
+  // Both retain scrolling and the same composer/password protection, never a new layer owner.
+  let bounds;
+  if (together && box === priority) {
+    const start = 16, bottom = Math.max(start + 1, Math.min(height - 16, protectedTop - 12));
+    const half = Math.max(1, (bottom - start - 12) / 2);
+    bounds = { top: start + half + 12 + half / 2, maxHeight: half };
+  } else {
+    if (together && box === fifo) {
+      const rect = priority.getBoundingClientRect();
+      if (rect.height && rect.top >= offset && rect.top < offset + height) protectedTop = Math.min(protectedTop, rect.top - offset);
+    }
+    bounds = noticeBounds(height, protectedTop, box.scrollHeight);
+  }
   box.style.setProperty('--aj-notice-center-y', `${bounds.top + offset}px`);
   box.style.setProperty('--aj-notice-max-height', `${bounds.maxHeight}px`);
 }
@@ -240,9 +319,13 @@ if (typeof document !== 'undefined') {
 /** P590 reload guard stopped automatic reloads: 15 s, Esc, and (0.30.7, chairman 11-11) its own close button — a phone has no Esc. */
 export const RELOAD_STOP_MS = 15000;
 export function reloadStoppedNotice() { return notify({ kind: 'info', shape: 'square', text: tr('reload.stopped'), ms: RELOAD_STOP_MS, close: tr('reload.close') }); }
-export function toast(t, ms, kind = 'info') { notify({ kind, text: t, ms: ms || FORMATS[kind]?.ms || 1800 }); }
-export function toastOff() { const n = el('toast'); if (!n) return; clearTimeout(n._t); delete n.dataset.hold; n.classList.remove('on', 'act', 'mail-saved'); }
-// A toast with one action button (undo, restore). Any later toast() replaces it.
+export function toast(t, ms, kind = 'info') { return notify({ kind, text: t, ms: ms || FORMATS[kind]?.ms || 1800 }); }
+export function toastOff() {
+  clearTimeout(infoTimer); infoQueue.length = 0; infoActive = false;
+  for (const node of noticeNodes()) hideNotice(node);
+  el('notice-fifo')?.replaceChildren();
+}
+// Action deadline begins now; ordinary FIFO notices never replace or postpone it.
 export function toastAction(t, label, fn, ms) { notify({ kind: 'confirm', text: t, actions: [{ label, fn }], ms: ms || 5000 }); }
 // a held notice is a layer like any other: Esc puts it away (transient ones go by themselves)
 if (typeof document !== 'undefined') addEventListener('keydown', (e) => {
@@ -255,8 +338,8 @@ if (typeof document !== 'undefined') addEventListener('keydown', (e) => {
     .some(n => !(terminal && n.id === 'settings') && n.getClientRects().length && getComputedStyle(n).visibility !== 'hidden');
   // The terminal may cover Settings; that underlying page must not own its header's Escape.
   if (document.querySelector('dialog[open]') || program || modal || document.body.dataset.sheet === '1') return;
-  const n = e.key === 'Escape' && el('toast');
-  if (n && n.classList.contains('on')) { toastOff(); e.preventDefault(); e.stopImmediatePropagation(); }
+  const visibleNotice = e.key === 'Escape' && noticeNodes().some(n => n.classList.contains('on'));
+  if (visibleNotice) { toastOff(); e.preventDefault(); e.stopImmediatePropagation(); }
 }, true);
 
 /** Two-step confirmation for every write (and /clear): → true / false. `danger` = a destructive yes (unbind, unpair);

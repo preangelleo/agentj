@@ -2,6 +2,8 @@
 import _hermetic  # noqa: F401
 import asyncio
 import os
+import json
+import shutil
 import shlex
 import tempfile
 import unittest
@@ -20,11 +22,18 @@ class Base(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR"))
         root = Path(self.tmp.name)
         self.state = root / "state"
-        self.env = patch.dict(os.environ, {"AGENTJ_STATE_DIR": str(self.state)})
+        self.env = patch.dict(os.environ, {"AGENTJ_STATE_DIR": str(self.state),
+                                         "XDG_CONFIG_HOME": str(root / "config")})
         self.env.start()
         self.work = root / "work"
         self.work.mkdir()
         self.cfg = {"dir": str(self.work), "session_mode": "shared"}
+        # Use the genuine first-setup capability before handoff files exist.
+        from agentj.state import State
+        from agentj import working_root
+        self.st = State(self.state)
+        self.st.init(relay="ws://127.0.0.1:1", _setup_root=self.work)
+        working_root.record(self.st, self.work)
         handoff.ensure()
         self.file = handoff.path(handoff.SWITCH)
 
@@ -177,14 +186,26 @@ class OwnRead(Base):
         self.assertNotIn(">>>", block[len("\n\n" + handoff.INLINE_BEGIN):-len(handoff.INLINE_END)])
         self.assertIn("ignore the owner", block)
 
+    def own_read_host(self):
+        from agentj.state import State
+        from agentj.serve import Host
+        # Real State/root/config/channel/inode, as required by StateSubject.
+        # No fake root property or bypass of the captured-subject check.
+        st = self.st
+        st.set_agent_config("codex", str(self.work))
+        h = Host(st, events="jsonl", read_stdin=False)
+        h.agent = SimpleNamespace(kind="codex", cfg=self.cfg, cur_send=sw.HelloSend("hello"))
+        h.agent_cfg = self.cfg
+        h.st.log = Mock(wraps=h.st.log)
+        return h
+
+    @staticmethod
+    def state_bytes(st):
+        return {str(p.relative_to(st.root)): p.read_bytes() for p in st.root.rglob('*') if p.is_file()}
+
     def test_serve_ask_allows_without_a_card_and_logs_no_path(self):
         from agentj.serve import Host
-        h = object.__new__(Host)
-        hello = sw.HelloSend("hello")             # the hello turn after a switch: Agent J's own host turn
-        h.agent = SimpleNamespace(kind="codex", cfg=self.cfg, cur_send=hello)
-        h.agent_cfg = self.cfg
-        h.st = SimpleNamespace(log=Mock(), agent_config=lambda: self.cfg)
-        h.stopped = lambda: False
+        h = self.own_read_host()
         with patch("agentj.approvals.record") as rec:
             r = asyncio.run(Host.ask(h, "Bash", {"command": "cat " + self.p}))
         self.assertEqual(r, {"behavior": "allow", "updatedInput": {"command": "cat " + self.p}})
@@ -203,10 +224,57 @@ class OwnRead(Base):
         from agentj import handoff as ho
         self.assertFalse(ho.owner_side(h.agent))  # a group turn never gets the shortcut
         h.stopped = lambda: True       # an emergency stop: no shortcut (the ordinary path refuses)
-        with patch("agentj.policy_registry.main_requirement", return_value="deny"):
+        with patch("agentj.approvals.record") as stopped_audit:
             r = asyncio.run(Host.ask(h, "Bash", {"command": "cat " + self.p}))
         self.assertEqual(r["behavior"], "deny")
-        self.assertIn("没有给主人弹确认卡", r["message"])
+        self.assertIn("已急停", r["message"])
+        self.assertEqual((stopped_audit.call_args.kwargs['decision'],
+                          stopped_audit.call_args.kwargs['reason']), ('deny', 'estop'))
+
+
+    def test_own_read_replaced_state_cannot_allow_or_write_either_state(self):
+        from agentj import handoff as ho
+        from agentj.state import State
+        h = self.own_read_host()
+        original = h.st
+        other = State(Path(self.tmp.name) / "other-state")
+        other.init(relay="ws://127.0.0.1:1")
+        # Copy the public channel: object/root identity must still reject the swap.
+        cfg = other.config(); cfg['channel'] = original.config()['channel']
+        other.write_private(other.config_path, json.dumps(cfg).encode())
+        before = self.state_bytes(original), self.state_bytes(other)
+        read = ho.own_read
+        def replace(*args, **kwargs):
+            value = read(*args, **kwargs)
+            h.st = other
+            return value
+        with patch.object(ho, 'own_read', side_effect=replace), patch('agentj.approvals.record') as rec:
+            result = asyncio.run(h.ask('Bash', {'command': 'cat ' + self.p}))
+        self.assertEqual((result['behavior'], result['reason']), ('deny', 'state_authority_changed'))
+        rec.assert_not_called()
+        self.assertFalse(h.asks)
+        self.assertEqual((self.state_bytes(original), self.state_bytes(other)), before,
+                         'a replaced subject must write neither the old nor the replacement State')
+
+    def test_own_read_replaced_root_inode_cannot_allow_or_write_the_copy(self):
+        from agentj import handoff as ho
+        h = self.own_read_host()
+        root = h.st.root
+        retired = root.with_name('retired-state')
+        read = ho.own_read
+        before = self.state_bytes(h.st)
+        def replace(*args, **kwargs):
+            value = read(*args, **kwargs)
+            root.rename(retired)
+            shutil.copytree(retired, root)
+            return value
+        with patch.object(ho, 'own_read', side_effect=replace), patch('agentj.approvals.record') as rec:
+            result = asyncio.run(h.ask('Bash', {'command': 'cat ' + self.p}))
+        self.assertEqual((result['behavior'], result['reason']), ('deny', 'state_authority_changed'))
+        rec.assert_not_called()
+        self.assertFalse(h.asks)
+        self.assertEqual(self.state_bytes(h.st), before, 'same identity bytes cannot authorize a replacement inode')
+        self.assertEqual({str(p.relative_to(retired)): p.read_bytes() for p in retired.rglob('*') if p.is_file()}, before)
 
 
 class SharedOwnRead(Base):

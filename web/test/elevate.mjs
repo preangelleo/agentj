@@ -189,8 +189,10 @@ try {
       await waitFor(p, `!!document.getElementById('elev') && !document.getElementById('elev').hidden`);
       await type(p, PW);
       await ev(p, `document.getElementById('elev-allow').click()`);
-      // P559 naming: headless Chromium is Linux (touch → Android family) → Touch ID; Face ID only on iPhone / iPad
-      await waitFor(p, `document.getElementById('toast').textContent.includes('用不了 Touch ID')`);
+      // The current platform label comes from the formal phone-env/bioLabel route, never a fixed desktop label.
+      const expected = await ev(p, `(async()=>{const {t}=await import('./js/t.js');return t('elev.fa.none')})()`);
+      await waitFor(p, `[...document.querySelectorAll('#toast.on,#notice-fifo.on')].some(n=>n.textContent.includes(${JSON.stringify(expected)}))`);
+      assert.equal(await ev(p, `!document.getElementById('elev-err').hidden && document.getElementById('elev-err').textContent`), expected, 'actual visible unavailable error');
       await new Promise((r) => setTimeout(r, 300));
       assert.equal(answers().length, 0, 'nothing sent');
       assert.equal(await ev(p, `document.getElementById('elev').hidden`), false, 'the card stays');
@@ -215,7 +217,9 @@ try {
       for (let i = 0; i < 100 && !answers().length; i++) await new Promise((r) => setTimeout(r, 50));
       assert.equal(await ev(p, `document.getElementById('elev-input').disabled`), true, 'sending');
       await fake.send({ t: 'elev_refused', id: card.m.id, why: 'passkey' });
-      await waitFor(p, `document.getElementById('toast').textContent.includes("didn't accept this Touch ID")`);
+      const expected = await ev(p, `(async()=>{const {t}=await import('./js/t.js');return t('elev.fa.refused')})()`);
+      await waitFor(p, `[...document.querySelectorAll('#toast.on,#notice-fifo.on')].some(n=>n.textContent.includes(${JSON.stringify(expected)}))`);
+      assert.equal(await ev(p, `!document.getElementById('elev-err').hidden && document.getElementById('elev-err').textContent`), expected, 'actual visible host-refused error');
       assert.equal(await ev(p, `document.getElementById('elev-input').disabled`), false, 'usable again');
       assert.equal(await ev(p, `document.getElementById('elev').hidden`), false, 'the card stays');
       await fake.send({ t: 'elev_done', id: card.m.id, result: 'denied' });
@@ -224,8 +228,8 @@ try {
   });
 
   // P73 (support ticket 20261007-183234: one `denied` nobody meant): on a secret card the keyboard's Enter only ever submits —
-  // empty or whitespace says what is missing and sends nothing; 「不提供」 is a quiet button on its own line, below the main
-  // action, and needs a second tap; Enter with a value saves it.
+  // empty or whitespace says what is missing and sends nothing; the chairman-approved equal-width action pair keeps
+  // 「不提供」 quiet and requiring a second tap; Enter with a value saves it.
   await C('p73-secret-enter-and-decline', async () => {
     const p = await paired('zh');
     try {
@@ -242,10 +246,14 @@ try {
       await enter();
       await new Promise((r) => setTimeout(r, 200));
       assert.equal(answers().length, 0, 'Enter on an empty / blank field sends nothing (no false)');
-      // layout: 保存 alone on its row; 不提供 below it, not side by side
-      const geo = await ev(p, `(() => { const a = document.getElementById('elev-allow').getBoundingClientRect(), d = document.getElementById('elev-deny').getBoundingClientRect();
-        return { gap: d.top - a.bottom, sameRow: Math.abs(a.top - d.top) < 4, quiet: document.getElementById('elev-deny').classList.contains('aj-action--quiet') }; })()`);
-      assert.ok(!geo.sameRow && geo.gap >= 12 && geo.quiet, JSON.stringify(geo));
+      // Existing 844px error state may scroll; bring the unchanged decision pair into view before measuring.
+      await ev(p, `document.getElementById('elev-deny').scrollIntoView({block:'nearest'})`);
+      // 0322 r4: both secret actions stack visibly inside the existing card, with equal width and a 12px gap.
+      const geo = await ev(p, `(() => { const a = document.getElementById('elev-allow').getBoundingClientRect(), d = document.getElementById('elev-deny').getBoundingClientRect(), c = document.querySelector('#elev>.box').getBoundingClientRect();
+        return { rects: {allow:{x:a.x,y:a.y,width:a.width,height:a.height},deny:{x:d.x,y:d.y,width:d.width,height:d.height},card:{x:c.x,y:c.y,width:c.width,height:c.height},scrollTop:document.querySelector('#elev>.box').scrollTop,scrollHeight:document.querySelector('#elev>.box').scrollHeight,viewport:innerHeight}, gap: d.top - a.bottom, sameColumn: Math.abs(a.left - d.left) < 1, equalWidth: Math.abs(a.width-d.width)<1,
+          inside: [a,d].every(r=>r.left>=c.left+8&&r.right<=c.right-8&&r.top>=c.top+8&&r.bottom<=c.bottom-8&&r.bottom<=innerHeight-8),
+          quiet: document.getElementById('elev-deny').classList.contains('aj-action--quiet') }; })()`);
+      assert.ok(geo.sameColumn && geo.equalWidth && Math.abs(geo.gap - 12) < .5 && geo.inside && geo.quiet, JSON.stringify(geo));
       writeFileSync(OUT + 'p73-secret-card-zh-phone.png', await shoot(p, 'unused'));
       await ev(p, `document.getElementById('elev-deny').click()`);
       await new Promise((r) => setTimeout(r, 200));

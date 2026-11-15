@@ -71,6 +71,8 @@ _CLI_PASSWORD_LITERAL = _re(
     r"(?:\$'(?:\\[\s\S]|[^'\\])*'|\$?\"(?:\\[\s\S]|[^\"\\$`])*\"|'[^']*'|\\[\s\S]|[^ \t\n'\"\\$`;&|<>()])+"
     r"(?=$|[ \t\n;&|<>()])", re.I)
 _SECRETS: list[tuple[str, re.Pattern, str]] = [
+    ("seat_api_callback", re.compile(r"ajwhsec_[a-f0-9]{64}"), R),
+    ("seat_api_key", re.compile(r"aj(?:api|prov)_[a-f0-9]{32}_[a-f0-9]{32}_[A-Za-z0-9_-]{43}"), R),
     ("private_key", _re(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----(?:[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----|[\s\S]*)"), R),
     # P326: a scheme is at most 32 characters — unbounded, a long "a.b.c…" run was scanned once per position (quadratic)
     ("url_credentials", _re(r"\b([a-z][a-z0-9+.-]{0,31}://)[^\s/:@]+:[^\s/@]+@", re.I), r"\1" + R + "@"),
@@ -409,7 +411,9 @@ def redact_with_report(text: str, host: str | None = None, user: str | None = No
 # #439 (11-03: `/home/olares/.ssh` in a reply was shown and copied as `~/.ssh`; run in a root shell, `~` = /root): owner
 # delivery rewrites only THIS computer's own home, and never inside code (``` / ~~~ fences, `inline`) — what the owner
 # copies is what the Agent wrote. Another user's home stays whole. The strict outward filter (feedback, plaza) is unchanged.
-_CODE = re.compile(r"(?ms)^[ \t]*(`{3,}|~{3,})[^\n]*\n.*?(?:^[ \t]*\1[ \t]*$|\Z)|(`+)(?!`)[^\n]+?(?<!`)\2(?!`)")
+# Linear on hostile text (security review D-1): openers are possessive and an inline span starts only at the first backtick
+# of a run — no re-trying every shorter run / every offset inside a long run of backticks (untrusted channel text).
+_CODE = re.compile(r"(?ms)^[ \t]*+(`{3,}+|~{3,}+)[^\n]*+\n.*?(?:^[ \t]*\1[ \t]*$|\Z)|(?<!`)(`++)(?!`)[^\n]+?(?<!`)\2(?!`)")
 _SSH_PUB = re.compile(r"(?:ssh-(?:ed25519|rsa|dss)|ecdsa-sha2-nistp(?:256|384|521)|sk-(?:ssh-ed25519|ecdsa-sha2-nistp256)@openssh\.com)[ \t]+$")
 
 
@@ -454,7 +458,7 @@ def _owner_homes(text: str, hits: collections.Counter) -> str:
 
 _LABELLED = frozenset(("credential_assignment", "authorization_header"))
 _LINK = _re(r"\b[a-z][a-z0-9+.-]{0,31}://[^\s<>\"'`]+", re.I)     # P326: bounded scheme (see url_credentials)
-_LINK_HARD = frozenset(("private_key", "url_credentials", "aws_access_key", "github_token", "gitlab_token", "slack_token",
+_LINK_HARD = frozenset(("seat_api_key", "seat_api_callback", "private_key", "url_credentials", "aws_access_key", "github_token", "gitlab_token", "slack_token",
                         "stripe_key", "google_api_key", "anthropic_key", "openrouter_key", "openai_key", "replicate_token",
                         "huggingface_token", "telegram_bot_token", "agentjarvis_id", "mailgun_key"))
 _MNEMONIC = _re(r"(?i)((?:mnemonic|seed\s+phrase|recovery\s+phrase|secret\s+recovery\s+phrase|助记词|恢复短语)[^\n:：]{0,12}[:：]?\s*)"

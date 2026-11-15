@@ -37,3 +37,25 @@ def asr_endpoint(base_url):
     return urllib.parse.urlunsplit((u.scheme,u.netloc,path+'/audio/transcriptions','',''))
 
 
+
+
+def tts_options(cfg):
+    """Validate local provider-scoped data without echoing owner text or unknown fields."""
+    import math
+    from .preference_values import get
+    prefixes = get(cfg, 'voice.tts.text_prefix', {})
+    settings = get(cfg, 'voice.tts.settings', {})
+    if not isinstance(prefixes, dict) or set(prefixes) - {'elevenlabs'}:
+        raise ConfigError('voice.tts.text_prefix', 'expected provider object; only elevenlabs is supported')
+    for value in prefixes.values():
+        if not isinstance(value, str) or len(value) > 256 or any(ord(c) < 32 or ord(c) == 127 for c in value):
+            raise ConfigError('voice.tts.text_prefix', 'expected text of 0..256 characters without control characters')
+    if not isinstance(settings, dict) or set(settings) - {'elevenlabs'}:
+        raise ConfigError('voice.tts.settings', 'expected provider object; only elevenlabs is supported')
+    for value in settings.values():
+        if (not isinstance(value, dict) or set(value) - {'stability', 'similarity_boost'} or
+                any(type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1 for v in value.values())):
+            raise ConfigError('voice.tts.settings', 'only stability and similarity_boost are supported, finite numbers in 0..1')
+    if get(cfg, 'voice.tts.mode') == 'cloud' and get(cfg, 'voice.tts.provider') == 'elevenlabs':
+        return prefixes.get('elevenlabs', ''), dict(settings.get('elevenlabs', {}))
+    return '', {}

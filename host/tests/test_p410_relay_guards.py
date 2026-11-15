@@ -1,5 +1,8 @@
 """P410: deterministic lifecycle, chain propagation and phone-only handover."""
 import _hermetic  # noqa: F401
+import asyncio
+import contextlib
+import os
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -115,40 +118,105 @@ class Guards(Base):
         self.assertIsNone(controls.check(self.host.st, controls.Nonces(), self.host.channel, self.did, proof, 'fr_set', target))
         self.assertTrue((await self.svc.write('fr_set', target, device=self.did, proof=proof))[0])
 
+    @contextlib.asynccontextmanager
+    async def real_handoff_service(self, r):
+        """Actual paired Host/PeerService; only transport and adapter submission are local fixtures."""
+        from agentj import peer, peer_service
+        from test_p71_peer_service import FakeNet, FakeSessions, Clock, peer_keys, SECRET
+        from agentj import peer_guard
+        import time
+        from unittest.mock import AsyncMock
+        sent = []
+        r.host.agent.submit = sent.append
+        r.host._setup_round_trip = AsyncMock()
+        with patch.dict(os.environ, {peer_service.TEST_CERT_ENV: wire.b64u(os.urandom(32))}):
+            svc = peer_service.PeerService(r.host, sessions=FakeSessions(), net_factory=FakeNet, clock=Clock())
+            svc.HOUSEKEEP = 3600
+            await svc.start()
+            r.host.peers = svc
+            svc.index = peer_guard.SecretIndex([SECRET])
+            svc.index_at = time.monotonic()
+            k = peer_keys()
+            svc.store.add_friend(k.id, wire.b64u(k.x_pub), wire.b64u(k.ed_pub), k.mbox,
+                                 card=peer.sign_card(k, {'name': 'Synthetic Friend', 'owner': '', 'intro': '',
+                                                        'lang': 'zh', 'caps': ['chat']}), group='default')
+            try:
+                yield svc, sent, k.id
+            finally:
+                await svc.stop()
+
+    def bind_real_handoff(self, r, svc, send, fid):
+        from agentj import friend_handoff
+        r.host.agent.cur_send = send
+        r.host.cur_turn = send.turn
+        self.assertEqual(send.source, {'kind': 'friend_task', 'role': 'task'})
+        self.assertFalse(provenance.is_owner(send.source))
+        row = friend_handoff.current(r.host, r.host.agent, svc)
+        self.assertIsInstance(row, dict)
+        self.assertIs(row['send'], send)
+        self.assertEqual(row['fid'], fid)
+        self.assertIs(r.host._friend_handoffs[send.friend_handoff], row)
+        # The exact Host-held record grants handoff scope, not a raw dictionary cast.
+        self.assertFalse(provenance.delegated_turn(SimpleNamespace(cur_send=send)))
+        self.assertFalse(provenance.same_owner_source(SimpleNamespace(cur_send=None, pending_source=send.source)))
+        self.assertEqual(provenance.from_name(send.source), provenance.UNKNOWN)
+        return row
+
     async def test_hold_requires_signed_phone_and_allows_only_one_main_delivery(self):
-        fid = self.friend().id
-        self.assertFalse(self.store.get(fid).get('hold_for_owner', False))
-        await self.hold(fid)
-        self.assertTrue(self.svc.list_view()['friends'][0]['hold_for_owner'])
-        sends = []
-        self.host.agent = SimpleNamespace(submit=sends.append)
-        self.host.hist_add = lambda *a: {'id': 1}
-        m = pmsg('检查任务')
-        self.svc._on_pmsg(fid, m)
-        await settle()
-        self.assertFalse(self.sess.calls)
-        self.assertFalse(sends)
-        ask = self.svc.ask_msgs()[-1]
-        self.assertTrue(ask['pq']['handover'])
-        # Wrong key/signature does not release the card.
-        self.svc.answer(self.did, {**sign_answer(self.host.st,self.did,self.dsk,ask,True), 'sig': 'bad'})
-        self.assertTrue(self.svc.has_ask(ask['id']))
-        self.svc.answer(self.did, sign_answer(self.host.st,self.did,self.dsk,ask,True))
-        await settle()
-        self.assertEqual(len(sends), 1)
-        self.assertFalse(provenance.is_owner(sends[0].source))
-        self.assertTrue(provenance.delegated_turn(SimpleNamespace(cur_send=sends[0])))
-        self.assertEqual(provenance.from_name(sends[0].source), provenance.FRIEND_TASK)
-        self.assertTrue(provenance.same_owner_source(SimpleNamespace(cur_send=None, pending_source=sends[0].source)))
-        self.assertEqual(self.svc.guards.row(fid,m['mid'])['state'], 'pending')
-        self.assertTrue(await sends[0].wait_ready())
-        self.assertEqual(self.svc.guards.row(fid,m['mid'])['state'], 'claimed')
-        self.svc._on_pmsg(fid,m)
-        await settle()
-        self.assertEqual(len(sends),1)
-        reply = await self.svc.tell(fid, '任务完成', reply_to=m['mid'])
-        self.assertTrue(reply['ok'])
-        self.assertEqual(self.svc.guards.row(fid,m['mid'])['state'],'done')
+        from test_p393_elevate_grant import run
+        async def go(r):
+            async with self.real_handoff_service(r) as (svc, sends, fid):
+                self.assertFalse(svc.store.get(fid).get('hold_for_owner', False))
+                target = {'friend': fid, 'op': 'hold-for-owner', 'value': 'on'}
+                self.assertEqual((await svc.write('fr_set', target))[1], 'phone_required')
+                n, ts = 'a' * 32, int(svc.clock() * 1000)
+                sig = wire.b64u(r.ph.sk.sign(controls.signed_message(r.host.channel, r.ph.did, 'fr_set', n, ts,
+                                               controls.object_digest('fr_set', target))))
+                proof = {'n': n, 'ts': ts, 'sig': sig}
+                self.assertIsNone(controls.check(r.st, controls.Nonces(), r.host.channel, r.ph.did, proof, 'fr_set', target))
+                self.assertTrue((await svc.write('fr_set', target, device=r.ph.did, proof=proof))[0])
+                self.assertTrue(svc.list_view()['friends'][0]['hold_for_owner'])
+                m = pmsg('检查任务')
+                svc._on_pmsg(fid, m)
+                await settle_pending(svc)
+                self.assertFalse(svc.sessions.calls)
+                self.assertFalse(sends)
+                ask = svc.ask_msgs()[-1]
+                self.assertTrue(ask['pq']['handover'])
+                signed = sign_answer(r.st, r.ph.did, r.ph.sk, ask, True)
+                with patch('agentj.report_actions.phone_source', return_value=None):
+                    await r.host._answer(r.session, {**signed, 'sig': 'bad'})
+                    self.assertTrue(svc.has_ask(ask['id']))
+                    self.assertFalse(sends)
+                    await r.host._answer(r.session, signed)
+                await settle_pending(svc)
+                self.assertEqual(len(sends), 1)
+                from agentj.same_owner import ForwardSend
+                from agentj import friend_handoff
+                send = sends[0]
+                self.assertIsInstance(send, ForwardSend)
+                self.assertIs(send.owner, svc.same_owner)
+                self.assertIs(send.owner.svc.host, r.host)
+                self.assertTrue(send.approved)
+                r.host.agent.cur_send = send
+                r.host.cur_turn = send.turn
+                self.assertIs(svc.same_owner.queued[(fid, m['mid'])][0], r.host.agent)
+                self.assertIs(svc.same_owner.queued[(fid, m['mid'])][1], send)
+                self.assertFalse(provenance.is_owner(send.source))
+                self.assertFalse(provenance.delegated_turn(r.host.agent))
+                self.assertFalse(provenance.same_owner_source(SimpleNamespace(cur_send=None, pending_source=send.source)))
+                self.assertEqual(provenance.from_name(send.source), provenance.UNKNOWN)
+                self.assertIs(friend_handoff.current(r.host, r.host.agent, svc), False)
+                self.assertEqual(svc.guards.row(fid, m['mid'])['state'], 'pending')
+                self.assertTrue(await sends[0].wait_ready())
+                self.assertEqual(svc.guards.row(fid, m['mid'])['state'], 'claimed')
+                svc._on_pmsg(fid, m)
+                await settle_pending(svc)
+                self.assertEqual(len(sends), 1)
+                reply = await svc.tell(fid, '任务完成', reply_to=m['mid'])
+                self.assertTrue(reply['ok'])
+                self.assertEqual(svc.guards.row(fid, m['mid'])['state'], 'done')
+        await asyncio.to_thread(run, go)
 
     async def test_hold_denied_or_expired_never_calls_main(self):
         fid = self.friend().id
@@ -250,18 +318,86 @@ class Guards(Base):
         self.assertTrue(self.svc.has_ask(ask['id']))
 
     async def test_friend_task_admin_never_reuses_owner_grant(self):
+        from agentj import elevate
+        from agentj.peer_service import HAND_MAIN
         from test_p393_elevate_grant import run, A, REAL
         if not REAL:
             self.skipTest('requires existing root-owned read-only fixture')
         async def go(r):
-            _,first=await r.approve(A)
-            self.assertEqual(first['result'],'done')
-            r.host.agent.cur_send=SimpleNamespace(source={'kind':'friend_task','role':'task'})
-            card,result=await r.deny_next(A)
-            self.assertIsNotNone(card)
-            self.assertNotIn('grant',card)
-            self.assertNotEqual(result.get('result'),'done')
-        await __import__('asyncio').to_thread(run,go)
+            with patch.object(elevate, 'run_sudo', wraps=elevate.run_sudo) as execute:
+                _, first = await r.approve(A)
+                self.assertEqual(first['result'], 'done')
+                self.assertTrue(r.host.elevate.grants.grants)
+                self.assertEqual(execute.call_count, 1)
+                # Prove the owner grant is live for exactly this request before changing scope.
+                card, reused = await r.approve(A)
+                self.assertIsNone(card)
+                self.assertTrue(reused.get('auto'))
+                self.assertEqual(reused['result'], 'done')
+                self.assertEqual(execute.call_count, 2)
+                async with self.real_handoff_service(r) as (svc, sends, fid):
+                    svc._question(fid, pmsg('Inspect read-only fixture'), 'draft', 'owner decision')
+                    ask = next(x for x in svc.ask_msgs() if x['pq']['friend'] == fid)
+                    with patch('agentj.report_actions.phone_source', return_value=None):
+                        await r.host._answer(r.session, sign_answer(r.st, r.ph.did, r.ph.sk, ask, True, group=HAND_MAIN))
+                    await settle_pending(svc)
+                    self.assertEqual(len(sends), 1)
+                    self.bind_real_handoff(r, svc, sends[0], fid)
+                    before = execute.call_count
+                    auto_before = len(r.of('elev_auto'))
+                    card, result = await r.deny_next(A)
+                    self.assertIsNotNone(card)
+                    self.assertNotIn('grant', card)
+                    self.assertEqual(result.get('result'), 'denied')
+                    self.assertFalse(result.get('auto'))
+                    self.assertEqual(execute.call_count, before)
+                    self.assertEqual(len(r.of('elev_auto')), auto_before)
+                # Raw task-shaped input is unknown, not a host-minted handoff capability.
+                r.host.agent.cur_send = SimpleNamespace(source={'kind': 'friend_task', 'role': 'task'})
+                from agentj import friend_handoff
+                self.assertIs(friend_handoff.current(r.host, r.host.agent, svc), False)
+                before = execute.call_count
+                card, result = await r.deny_next(A)
+                if card is not None:
+                    self.assertNotIn('grant', card)
+                self.assertNotEqual(result.get('result'), 'done')
+                self.assertFalse(result.get('auto'))
+                self.assertEqual(execute.call_count, before)
+                self.assertEqual(len(r.of('elev_auto')), auto_before)
+                # A child scope cannot borrow the root owner's live grant, including copied task context.
+                from agentj import approval_review
+                owner_turn = r.host.hist.add({'k': 'terminal', 'text': 'Inspect synthetic system fixture',
+                                              'name': 'Synthetic owner'}, '', 'open')
+                approval_review.remember(r.host, owner_turn, provenance.terminal())
+                r.host.desktop_turn = owner_turn['id']
+                r.host.cur_turn = owner_turn['id']
+                r.host.agent.cur_send = None
+                for name, other, source, copied in (
+                    ('same_child', False, provenance.email_guest('synthetic@example.com'), False),
+                    ('foreign_child', True, provenance.phone(), False),
+                    ('copied_child', False, provenance.email_guest('synthetic@example.com'), True),
+                ):
+                    with self.subTest(scope=name):
+                        # Each negative starts with the actual owner grant demonstrably usable.
+                        before = execute.call_count
+                        owner_card, owner_result = await r.approve(A)
+                        self.assertIsNone(owner_card)
+                        self.assertEqual(owner_result.get('result'), 'done')
+                        self.assertTrue(owner_result.get('auto'))
+                        self.assertEqual(execute.call_count, before + 1)
+                        auto_before = len(r.of('elev_auto'))
+                        before = execute.call_count
+                        agent = SimpleNamespace() if other else r.host.agent
+                        with provenance.shared_child_request(agent, source):
+                            pending = r.deny_next(A)
+                            card, result = await (asyncio.create_task(pending) if copied else pending)
+                        if card is not None:
+                            self.assertNotIn('grant', card)
+                        self.assertNotEqual(result.get('result'), 'done')
+                        self.assertFalse(result.get('auto'))
+                        self.assertEqual(execute.call_count, before)
+                        self.assertEqual(len(r.of('elev_auto')), auto_before)
+        await asyncio.to_thread(run, go)
 
     async def test_cancel_before_message_is_a_persistent_tombstone(self):
         fid=self.friend().id

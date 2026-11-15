@@ -39,7 +39,7 @@ const HTML = read(pub('index.html'));
 
 test('expected files ship, robots.txt disallows all', () => {
   for (const r of ['index.html', 'app.js', 'app.css', 'i18n.js', 'sw.js', 'manifest.webmanifest', 'proto/noise.js', 'proto/wire.js', 'proto/search.js', 'version.json', 'version.js',
-    'robots.txt', 'favicon.ico', 'apple-touch-icon.png', 'brand/palette.css', 'brand/base.css', 'brand/lang.js', 'brand/ui.js', 'brand/img/icon-192.png',
+    'robots.txt', 'favicon.ico', 'apple-touch-icon.png', 'brand/palette.css', 'brand/base.css', 'brand/lang.js', 'brand/ui.js', 'brand/account-links.js', 'brand/img/icon-192.png',
     'brand/img/icon-512.png', 'brand/img/icon-512-maskable.png', 'brand/img/logo-mark.png', 'brand/img/status/logo-working.png',
     'brand/img/status/logo-waiting.png', 'brand/img/status/logo-question.png', 'brand/img/status/logo-offline.png',
     ...OURS_FILES, 'assets/rocket-mask-128.png', 'assets/rocket-mask-256.png', 'assets/rocket-lotion.png', 'assets/rocket-whoosh.mp3',
@@ -143,6 +143,9 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         if (rel(f) === 'index.html' && m[0] === SUPPORT_LINK) continue;
         // P417 #207: owner-clicked official key consoles; no fetch or secret in either URL.
         if (rel(f) === 'js/keys.js' && ['https://bailian.console.aliyun.com/cn-beijing/subscription/overview','https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key'].includes(m[0])) continue;
+        // Approved P108/P126: displayed caller endpoint prefix only; this paired UI never fetches it.
+        // Scope stays exact to this module and prefix; arbitrary API URLs remain forbidden.
+        if (rel(f) === 'js/bots.js' && m[0] === 'https://api.agentj.app/v1/') continue;
         assert.match(m[0], SITE_LINK, `${rel(f)} contains URL ${m[0]}`);
       }
     }
@@ -466,7 +469,8 @@ test('i18n: zh and en have the same keys and placeholders; i18n.js and index.htm
     assert.equal((DICT.en[k].match(/`/g) || []).length % 2, 0, `unbalanced backticks en ${k}`);
   }
   assert.equal(read(pub('i18n.js')), i18nModule(DICT), 'public/i18n.js is stale — run build.mjs');
-  assert.equal(HTML, syncHtml(HTML, DICT.zh), 'index.html Chinese text differs from web.zh.json — run build.mjs');
+  const rawHtml = readFileSync(pub('index.html'), 'utf8');
+  assert.equal(rawHtml, syncHtml(rawHtml, DICT.zh), 'index.html Chinese text or actor ownership differs from the canonical build — run build.mjs');
   for (const m of HTML.matchAll(/data-i18n="([\w.]+)"/g)) assert.ok(DICT.zh[m[1]], `index.html: unknown key ${m[1]}`);
   for (const m of OURS.matchAll(/\bt\('([\w.]+)'/g)) {
     if (m[1].endsWith('.')) assert.ok(Object.keys(DICT.zh).some((k) => k.startsWith(m[1])), `app.js: no keys under ${m[1]}`);

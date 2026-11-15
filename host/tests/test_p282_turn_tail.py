@@ -22,6 +22,7 @@ from agentj.serve import Host
 
 def codex():
     a = object.__new__(CodexAgent)
+    a.proc = None  # Event-only adapter fixture has not launched an app-server process.
     a.cfg, a.thread, a.human, a.models_cache = {}, {}, {}, []
     a.unavailable_models, a.halting, a.tid, a.turn_id = set(), False, "th", "turn-1"
     a.turn_done, a.turn_status, a.items, a.pending, a.tasks = asyncio.Event(), {}, {}, {}, set()
@@ -106,6 +107,7 @@ class TailFallback(unittest.IsolatedAsyncioTestCase):
 class Taken(unittest.TestCase):
     def host(self):
         h = object.__new__(Host)
+        h.agent, h.meter_state = None, {}  # Projection-only Host: no attached adapter or quota reading.
         h.turn_by, h.activity, h.posted = None, Mock(), []
         h._post = lambda fn, *args: h.posted.append(args)
         return h

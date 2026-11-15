@@ -2,24 +2,25 @@ import {focusDraft} from '../public/js/composer-focus.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 globalThis.window={};
-const {followsHost}=await import('../public/js/version-notice.js');
-test('P251 automatic follow requires the same newer host and server, and never retries a stale edge',()=>{
- const current='0.20.3a1',next='0.21.0a1';
- assert.equal(followsHost(current,next,next,null),true);
- for(const [host,web,tried]of [[current,next,null],[next,current,null],[next,null,null],[null,next,null],['invalid',next,null],[next,'0.21.1a1',null],[next,next,next],[current,current,null]])
-  assert.equal(followsHost(current,host,web,tried),false,JSON.stringify({host,web,tried}));
+const {followsServer,followsHost}=await import('../public/js/version-notice.js');
+test('server changes follow in either direction, independent of installed host; exact stale targets are not retried',()=>{
+ const current='0.30.22',up='0.30.23',down='0.30.21';
+ for(const target of [up,down]){assert.equal(followsServer(current,target,null),true);assert.equal(followsHost(current,current,target,null),true);}
+ for(const target of [current,null,'invalid'])assert.equal(followsServer(current,target,null),false);
+ assert.equal(followsServer(current,down,down),false);
+ assert.equal(followsServer(current,down,up),true,'a changed target is eligible even after trying a newer version');
 });
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 const uiSrc=readFileSync(new URL('../public/js/ui.js',import.meta.url),'utf8');
 const flashSrc=uiSrc.match(/export function notifyOnce[\s\S]*?\n\}\n/)[0].replace(/^import .*;\n/gm,'').replaceAll('export ','');
 const src=flashSrc+readFileSync(new URL('../public/js/version-notice.js',import.meta.url),'utf8').replace(/^import .*;$/gm,'').replace(/^import .*;\n/gm,'').replaceAll('export ','');
-function fixture(seed={}){
- let now=1000,blocked=false,saveOK=true,version='0.21.0a1',refreshes=0,saves=0;
+function fixture(seed={},current="0.20.3a1",served="0.21.0a1"){
+ let now=1000,blocked=false,saveOK=true,version=served,refreshes=0,saves=0;
  const notices=[];
  const listeners={},nodes={},storage=new Map(Object.entries(seed)),timers=[];
  for(const id of ['version-notice','version-notice-text','version-refresh','version-dismiss','version-later'])nodes[id]={hidden:true,addEventListener(){}};
- const ctx={VERSION:{version:'0.20.3a1'},window:{},location:{origin:'https://m.agentj.app'},URL,Response,AbortSignal,
+ const ctx={VERSION:{version:current},window:{},location:{origin:'https://m.agentj.app'},URL,Response,AbortSignal,
   notify:spec=>notices.push(spec),Date:{now:()=>now},setInterval(){},setTimeout:(f,ms)=>{timers.push({f,ms});return timers.length;},clearTimeout(){},t:(key,args)=>key+JSON.stringify(args||{}),onLang(){},registerLayer(){},
   localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
   document:{hidden:false,getElementById:id=>nodes[id],addEventListener:(k,f)=>listeners[k]=f},
@@ -43,9 +44,9 @@ test('P251 idle guard: typing, IME, hidden page, protected work and failed draft
  assert.equal(f.storage.get('aj.verUpdated'),'0.21.0a1');
  assert.ok([...f.storage.values()].every(v=>!v.includes('draft')),'only public version metadata in localStorage');
 });
-test('P251 final metadata mismatch cancels reload; web-first deployment remains an owner prompt',async()=>{
+test('P251 final metadata mismatch cancels reload; server eligibility is independent of host',async()=>{
  const f=fixture();await f.flush();f.advance(10000);f.serve('0.21.1a1');await f.ctx.api.follow();assert.equal(f.counts().refreshes,0);
- f.ctx.api.setHostVersion('0.20.3a1');f.ctx.api.render();assert.equal(f.nodes['version-notice'].hidden,false);
+ f.ctx.api.setHostVersion('0.20.3a1');f.ctx.api.render();assert.equal(f.nodes['version-notice'].hidden,true);
 });
 
 const relaySrc=readFileSync(new URL('../public/js/relay.js',import.meta.url),'utf8');
@@ -88,4 +89,25 @@ test('P425 #60 updated uses shared Noir notification once per version, never the
  f.ctx.api.render();assert.equal(f.notices.length,1);
  const g=fixture({'aj.verUpdated':'0.20.3a1','aj.verUpdatedSeen.0.20.3a1':'1'});await g.flush();assert.equal(g.notices.length,0);
  const h=fixture({'aj.verUpdated':'0.19.0a1'});await h.flush();assert.equal(h.notices.length,0);
+});
+
+test('rollback 0.30.22 to 0.30.21 refreshes once after protected work, even while host remains 0.30.22',async()=>{
+ const f=fixture({},'0.30.22','0.30.21');await f.flush();f.ctx.api.setHostVersion('0.30.22');
+ f.advance(10000);f.block(true);await f.ctx.api.follow();assert.equal(f.counts().refreshes,0);
+ f.block(false);f.save(false);await f.ctx.api.follow();assert.equal(f.counts().refreshes,0);
+ f.save(true);await f.ctx.api.follow();assert.equal(f.counts().refreshes,1);
+ assert.deepEqual(JSON.parse(f.storage.get('aj.verRefresh')),{from:'0.30.22',to:'0.30.21'});
+ await f.ctx.api.follow();assert.equal(f.counts().refreshes,1);
+});
+test('a server rollback after an attempted forward update cancels the stale target then follows the new target',async()=>{
+ const f=fixture({},'0.30.22','0.30.23');await f.flush();f.advance(10000);
+ f.serve('0.30.21');await f.ctx.api.follow();assert.equal(f.counts().refreshes,0);
+ f.event('visibilitychange');await f.flush();await f.ctx.api.follow();assert.equal(f.counts().refreshes,1);
+});
+
+test('an actual 22 → 21 → 22 page transition is eligible at both steps',async()=>{
+ const rollback=fixture({},'0.30.22','0.30.21');await rollback.flush();rollback.advance(10000);await rollback.ctx.api.follow();
+ const upgrade=fixture(Object.fromEntries(rollback.storage),'0.30.21','0.30.22');await upgrade.flush();upgrade.advance(10000);await upgrade.ctx.api.follow();
+ assert.equal(upgrade.counts().refreshes,1);
+ assert.deepEqual(JSON.parse(upgrade.storage.get('aj.verRefresh')),{from:'0.30.21',to:'0.30.22'});
 });

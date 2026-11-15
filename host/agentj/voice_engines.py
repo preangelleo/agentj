@@ -477,6 +477,9 @@ def test(st, say: str, out: str | None, prefs=None) -> dict:
 def run_test(st, say: str, out: str, prefs, kind: str | None = None) -> dict:
     """Synthesize `say` (spoken rewrite applied when it is on) into `out` (a new file, never inside the state dir)."""
     from . import spoken, voice
+    from copy import deepcopy
+    prefs = deepcopy(prefs)
+    source = deepcopy(st.agent_config())
     if not isinstance(say, str) or not say.strip() or len(say) > 2000:
         return {"ok": False, "error": "say: 1..2000 characters"}
     target = pathlib.Path(out)
@@ -487,7 +490,7 @@ def run_test(st, say: str, out: str, prefs, kind: str | None = None) -> dict:
     t0 = time.monotonic()
     sc = spoken.script(st, say, prefs, kind)
     try:
-        audio = voice.synthesize(sc["text"][:4000], prefs)
+        audio = voice.synthesize(sc["text"][:4000], prefs, source=source)
     except p.ConfigError as e:
         why = getattr(e, "why", None)
         return {"ok": False, "engine": engine_of(prefs), "error": why or e.detail}
@@ -497,7 +500,7 @@ def run_test(st, say: str, out: str, prefs, kind: str | None = None) -> dict:
             f.write(audio)
     except OSError:
         return {"ok": False, "error": "cannot write out"}
-    use = record(st, seconds=time.monotonic() - t0, engine=engine_of(prefs), chars=len(sc["text"]), lang=sc["lang"], rewrite=sc)
+    use = record(st, seconds=time.monotonic() - t0, engine=engine_of(prefs), chars=voice.synthesis_chars(sc["text"][:4000], prefs), lang=sc["lang"], rewrite=sc)
     return {"ok": True, "engine": engine_of(prefs), "audio": str(target), "spoken": sc["spoken"], "script": sc["text"],
             "usd": use.get("usd"), "est": use.get("est"),
             "needs": ["link this file in your reply (the phone shows an audio card) and ask the owner to listen"]}

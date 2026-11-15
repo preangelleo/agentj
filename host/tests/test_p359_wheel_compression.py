@@ -130,3 +130,69 @@ class WheelCompression(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class CutoverWheelPayload(unittest.TestCase):
+    """Actual built wheel; opt-in artifact inputs avoid rebuilding in source-unit runs."""
+    @classmethod
+    def setUpClass(cls):
+        import os
+        wheel=os.environ.get('AJ_CUTOVER_WHEEL')
+        if not wheel:
+            raise unittest.SkipTest('actual built wheel not supplied')
+        cls.wheel=Path(wheel)
+
+    def test_actual_cutover_members_fit_and_preserve_exact_source_and_record(self):
+        import base64,csv,hashlib,io
+        with zipfile.ZipFile(self.wheel) as archive:
+            infos=[i for i in archive.infolist() if i.filename in ('agentj/provenance.py','agentj/tg_cursor.py')]
+            self.assertEqual(len(infos),2)
+            total=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in infos)
+            print('P117 actual wheel members:',[(i.filename,i.file_size,i.compress_size) for i in infos], 'allocation=',total)
+            self.assertIsNone(archive.testzip())
+            record=next(n for n in archive.namelist() if n.endswith('.dist-info/RECORD'))
+            hashes={r[0]:r[1:] for r in csv.reader(io.StringIO(archive.read(record).decode()))}
+            for member in infos:
+                data=archive.read(member)
+                self.assertEqual(data,(HOST/member.filename).read_bytes())
+                self.assertEqual(hashes[member.filename],["sha256="+base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b'=').decode(),str(len(data))])
+            self.assertLessEqual(total,12288,'P117 cut-over allocation is bounded')
+
+    def test_only_comment_tokens_changed_including_all_ast_locations(self):
+        import ast,io,os,subprocess,tokenize
+        baseline=os.environ.get('AJ_CUTOVER_SOURCE_BASE')
+        if not baseline:
+            self.skipTest('source baseline not supplied')
+        for member in ('agentj/provenance.py','agentj/tg_cursor.py'):
+            prefix=subprocess.run(['git','rev-parse','--show-prefix'],cwd=HOST,capture_output=True,check=True,text=True).stdout.strip()
+            before=subprocess.run(['git','show',baseline+':'+prefix+member],cwd=HOST,capture_output=True,check=True).stdout.decode()
+            after=(HOST/member).read_text()
+            self.assertEqual(ast.dump(ast.parse(before),include_attributes=True),ast.dump(ast.parse(after),include_attributes=True))
+            def tokens(source):
+                return [(t.type,t.string,t.start,t.end) for t in tokenize.generate_tokens(io.StringIO(source).readline) if t.type!=tokenize.COMMENT]
+            self.assertEqual(tokens(before),tokens(after))
+
+class CutoverCommentUpperBound(unittest.TestCase):
+    def test_nonexecuting_comment_only_compression_upper_bound(self):
+        import ast,io,tokenize
+        try:
+            from zopfli.zlib import compress
+        except ImportError:
+            self.skipTest('build-only zopfli is not installed in the host runtime')
+        original_total=0; stripped_total=0
+        for member in ('agentj/provenance.py','agentj/tg_cursor.py'):
+            source=(HOST/member).read_text()
+            lines=source.splitlines(keepends=True)
+            comments=[t for t in tokenize.generate_tokens(io.StringIO(source).readline) if t.type==tokenize.COMMENT]
+            for token in reversed(comments):
+                row=token.start[0]-1
+                lines[row]=lines[row][:token.start[1]]+lines[row][token.end[1]:]
+            stripped=''.join(lines)
+            self.assertEqual(ast.dump(ast.parse(source),include_attributes=True),ast.dump(ast.parse(stripped),include_attributes=True))
+            def packed(text):
+                data=text.encode()
+                return min(len(zlib.compress(data,9)[2:-4]),len(compress(data,numiterations=5)[2:-4]))
+            before,after=packed(source),packed(stripped)
+            overhead=76+2*len(member.encode())
+            original_total+=before+overhead;stripped_total+=after+overhead
+            print('P117 comment upper bound:',member,'source=',len(source.encode()),'comment_tokens=',len(comments),'packed_before=',before,'packed_after=',after)
+        print('P117 all-comments-removed allocation=',stripped_total,'original=',original_total,'cap=',12288,'remaining_over=',stripped_total-12288)

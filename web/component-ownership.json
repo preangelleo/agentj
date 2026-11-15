@@ -647,6 +647,12 @@
     }
   },
   "classOwners": {
+    "relay-key-section": [
+      "aj-account"
+    ],
+    "relay-keys-mount": [
+      "aj-account"
+    ],
     "acctcur": [
       "aj-account"
     ],
@@ -5995,6 +6001,72 @@
     ],
     "rmuse": [
       "aj-reply"
+    ],
+    "ct-head": [
+      "aj-contacts"
+    ],
+    "ct-back": [
+      "aj-contacts"
+    ],
+    "ct-entry": [
+      "aj-contacts"
+    ],
+    "ct-chevron": [
+      "aj-contacts"
+    ],
+    "ct-picker-page": [
+      "aj-contacts"
+    ],
+    "fixbtn": [
+      "aj-rescue"
+    ],
+    "fixcmd": [
+      "aj-rescue"
+    ],
+    "runbox": [
+      "aj-rescue"
+    ],
+    "runhead": [
+      "aj-rescue"
+    ],
+    "runacts": [
+      "aj-rescue"
+    ],
+    "runact": [
+      "aj-rescue"
+    ],
+    "conndlg": [
+      "aj-recovery"
+    ],
+    "fr-owner-signers__title": [
+      "aj-friends"
+    ],
+    "fr-owner-signers__end": [
+      "aj-friends"
+    ],
+    "fr-owner-signer": [
+      "aj-friends"
+    ],
+    "setup-detail": [
+      "aj-setup"
+    ],
+    "setup-summary": [
+      "aj-setup"
+    ],
+    "setup-detail-body": [
+      "aj-setup"
+    ],
+    "setup-step": [
+      "aj-setup"
+    ],
+    "pkp-details": [
+      "aj-passkey"
+    ],
+    "aj-shared-popup": [
+      "aj-dialog"
+    ],
+    "owner-hosts__review": [
+      "aj-settings"
     ]
   },
   "classOwnerRules": {
@@ -9232,7 +9304,11 @@
     "#full541:not([open])": "aj-approval",
     "#auth-full541": "aj-auth-card",
     "#auth-full541 pre": "aj-auth-card",
-    "#auth-full541:not([open])": "aj-auth-card"
+    "#auth-full541:not([open])": "aj-auth-card",
+    "#settings .owner-hosts__review,#confirm .owner-hosts__review": "aj-settings",
+    ".conndlg p[hidden],.conndlg .gdlg-row[hidden]": "aj-recovery",
+    "#ctFwd .sq.ct-picker-page #ctFwd-what[hidden],#ctFwd .sq.ct-picker-page .gdlg-icon[hidden]": "aj-contacts",
+    "#ctFwd .sq.wide": "aj-contacts"
   },
   "semanticOwnerCorrections": [
     {
@@ -13023,6 +13099,35 @@
           "native-60-reset",
           "native-64-reset",
           "native-68-reset"
+        ]
+      },
+      {
+        "id": "released-settings-select-row",
+        "selector": ".setrow",
+        "actorOwners": [
+          "aj-settings"
+        ],
+        "kind": "composition-layout-slot",
+        "purpose": "Released70c8 direct Settings select row layout; no control skin or other descendants.",
+        "subjectOwners": {
+          "set-voice-keep": "aj-settings",
+          "set-asr-mode": "aj-settings",
+          "set-jev-source": "aj-settings"
+        },
+        "sourceEvidence": [
+          "public/index.html direct .setrow > select IDs and explicit aj-settings actors"
+        ]
+      },
+      {
+        "id": "released-owner-host-actions",
+        "selector": ".owner-hosts",
+        "actorOwners": [
+          "aj-action"
+        ],
+        "kind": "composition-layout-slot",
+        "purpose": "Existing owner-hosts node() creates only aj-action buttons; field/prose ownership stays separate.",
+        "sourceEvidence": [
+          "public/js/owner-hosts.js node() and its button constructors"
         ]
       }
     ],

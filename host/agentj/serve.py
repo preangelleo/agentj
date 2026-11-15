@@ -2585,6 +2585,14 @@ class Host:
                         await self._ctl_send(w, {"ok": True, **result})
                     except ValueError as exc:
                         await self._ctl_send(w, {"ok": False, "error": str(exc)})
+                elif cmd in ("agentsrelay_native", "agentsrelay_query"):
+                    from . import agentsrelay_dispatch
+                    try:
+                        result = (await agentsrelay_dispatch.start(self, req, pid, puid) if cmd == "agentsrelay_native"
+                                  else agentsrelay_dispatch.query(self, req, pid, puid))
+                        await self._ctl_send(w, result)
+                    except ValueError as exc:
+                        await self._ctl_send(w, {"ok": False, "error": str(exc)})
                 elif cmd == "busy_native":
                     from . import busy_native
                     try:
@@ -2805,6 +2813,9 @@ class Host:
                     from . import plaza_host
                     await self._ctl_send(w, await plaza_host.handle(
                         self, req, lambda ev: asyncio.ensure_future(self._ctl_send(w, {"sent": True, **ev}))))
+                elif cmd == "plaza_uninstall":
+                    from . import plaza_uninstall
+                    await self._ctl_send(w, await plaza_uninstall.handle(self, req))
                 elif cmd == "plaza_verify":         # #466: rerun an installed package's self-check (same sha256 + files)
                     from . import plaza_host
                     await self._ctl_send(w, await plaza_host.verify(self, req))
@@ -2886,6 +2897,15 @@ class Host:
                     from . import wfrun
                     trusted = ctl_auth.refusal(pid, os.getpid(), self._agent_pids()) is None and ctl_auth.has_tty(pid)
                     await self._ctl_send(w, await wfrun.resume(self, req.get("run"), bool(req.get("yes")), trusted))
+                elif cmd == "local_relink":
+                    from . import local_relink
+                    await self._ctl_send(w, await local_relink.handle(self, req))
+                elif cmd == "local_record":
+                    from . import local_record
+                    await self._ctl_send(w, await local_record.handle(self, req))
+                elif cmd == "task_create":
+                    from . import task_create
+                    await self._ctl_send(w, await task_create.handle(self, req))
                 elif cmd == "tasks_changed":
                     self.scheduler.wake.set()
                     await self._ctl_send(w, {"ok": True})
@@ -3479,7 +3499,8 @@ class Host:
     def preferences_msg(self, s=None):
         value = dict(self.preferences)
         value = preferences.merge(value, {})
-        value.get("voice", {}).get("tts", {}).pop("command", None)
+        for key in ("command", "text_prefix", "settings"):
+            value.get("voice", {}).get("tts", {}).pop(key, None)
         value.pop("proxy", None)        # P59: host-only (local proxy addresses / variable names stay on the Agent J host)
         if not preferences.get(value, "voice.wake_word"):
             preferences.put(value, "voice.wake_word", "嘿 " + (self.st.agent_name() or "Agent J"))
@@ -4643,12 +4664,32 @@ class Host:
         from . import approval_context
         approval_review.remember(self, desktop, provenance.terminal())
 
-    def turn_queued_note(self, on: bool) -> None:     # P133: busy shared session, message in its queue
-        tid, note = self.cur_turn, humane.of(self, "shared.busy_queued")
+    def queue_pending(self, send) -> None:
+        """Project existing host provenance for queue presentation, never authorization."""
+        page = self.hist.get(getattr(send, "turn", None))
+        if not page or page.get("end") != "open":
+            return
+        source = provenance.normalize(getattr(send, "source", None))
+        page["src"].update(source_kind=source["kind"], source_role=source["role"])
+        if getattr(send, "hook_notice", None):
+            page["src"]["via"] = "hook"
+        self.hist_update(send.turn, card={**(page.get("card") or {}), "queued": True})
+
+    def turn_queued_note(self, on: bool) -> None:
+        tid = self.cur_turn
         page = self.hist.get(tid) if tid is not None else None
-        if page and page["end"] == "open" and page["reply"]["text"] == ("" if on else note):
-            card = {k: v for k, v in (page.get("card") or {}).items() if k != "queued"}   # P281: the phone's robot marks it
-            self.hist_update(tid, text=note if on else "", card={**card, **({"queued": True} if on else {})})
+        if not page or page["end"] != "open":
+            return
+        old = page.get("card") or {}
+        card = {k: v for k, v in old.items() if k not in ("queued", "waited_s", "stuck")}
+        if on:
+            card["queued"] = True
+        # The existing Web App queue renderer owns wording, timing and Stop.
+        text = page["reply"]["text"]
+        if text == humane.of(self, "shared.busy_queued"):
+            text = ""
+        if card != old or text != page["reply"]["text"]:
+            self.hist_update(tid, text=text, card=card)
 
     def turn_wait_note(self, text: str | None, stall: bool = False, final: bool = False) -> None:
 
@@ -4676,7 +4717,7 @@ class Host:
         tid = self.cur_turn
         page = self.hist.get(tid) if tid is not None else None
         if page and page["end"] == "open":
-            self.hist_update(tid, text=humane.of(self, "shared.merged"), end="done")
+            self.hist_update(tid, text="", end="done", card={**(page.get("card") or {}), "merged": True})
         _rcpt_turn(self, tid)                           # P313: its words reached the running turn
         self.cur_turn, self.cur_failed = None, False
 
@@ -5362,6 +5403,9 @@ class Host:
         return rec
 
     def _park(self, a: Ask, base: dict, summary: str, key: tuple, unattended: str | None = None, why: str = "no_remote") -> dict:
+        from . import list_approval
+        if not list_approval.state_live(self, a):
+            return list_approval.state_changed(self, a)
 
         parked = [x for x in self.asks.values() if x.parked and not x.fut.done()]
         for old in parked[:max(0, len(parked) - approval_level.PARK_MAX + 1)]:
@@ -5375,7 +5419,12 @@ class Host:
         timer = loop.call_later(max(0, a.deadline - time.monotonic()), lambda: a.fut.done() or a.fut.set_result(("deny", None, None, None)))
         a.fut.add_done_callback(lambda f: (timer.cancel(), self._park_settle(a, base, summary)))
         r = "questioned" if why == "question" else "unanswered" if why == "unanswered" else "offline"
-        approvals.record(self.st, **base, decision="deny", reason=r)
+        subject = getattr(a, "state_subject", None)
+        if subject is not None:
+            if subject.record(self, **base, decision="deny", reason=r) is None:
+                return list_approval.state_changed(self, a)
+        else:
+            approvals.record(self.st, **base, decision="deny", reason=r)
         self.st.log("ask_parked", id=a.rid, tool=a.tool, reason=why, **({"via": unattended} if unattended else {}))
         self.activity("decision", id=a.rid, tool=a.tool, result="parked", reason=r, cats=a.cats, task=a.task,
                       summary=summary[:200])
@@ -5464,6 +5513,10 @@ class Host:
                          reason="goal_grant_add", device=did, grant=a.rid, auto="goal", scope_sha256=offer)
 
     def _park_settle(self, a: Ask, base: dict, summary: str) -> None:
+        from . import list_approval
+        if not list_approval.state_live(self, a):
+            list_approval.state_changed(self, a)
+            return
         self.asks.pop(a.rid, None)
         try:
             decision, did, sk, sig = a.fut.result()
@@ -5473,10 +5526,15 @@ class Host:
         picks = list(a.allow_add) if decision == "allow" and reason == "device" else []   # P339: the signed allow_add line
         if getattr(a, "answer_v", None) == 2:
             base = {**base, "shown_sha256":a.answer_digest, "approval_v":2}
-        approvals.record(self.st, **base, decision=decision, reason=reason, device=did, sign_pub=sk, sig=sig,
+        subject = getattr(a, "state_subject", None)
+        record = (lambda **kw: subject.record(self, **kw)) if subject is not None else (lambda **kw: approvals.record(self.st, **kw))
+        recorded = record(**base, decision=decision, reason=reason, device=did, sign_pub=sk, sig=sig,
                          scope_sha256=approvals.allow_add_line(picks) if picks else None,
                          **({"task_scope":a.task_scope,"task_uv":bool(a.require_passkey and a.uv_ok),"task_id":a.review_task}
                             if getattr(a,"list_model",False) and a.task_scope else {}))
+        if subject is not None and (recorded is None or not subject.live(self)):
+            list_approval.state_changed(self, a)
+            return
         approval_review.finished(self, a, decision, reason)
         allowed = decision in ("allow", "allow_batch") and reason == "device" and not getattr(a, "secret_display_route", False)
         bounded = getattr(a, "bounded_plan", None)
@@ -6902,6 +6960,10 @@ class Host:
             a = self.asks.get(rid) if isinstance(rid,str) else None
         if a is None or a.fut.done():
             return                         # unknown or already decided (another phone, timeout): nothing to do
+        from . import list_approval
+        if not list_approval.state_live(self, a):
+            list_approval.state_changed(self, a)
+            return await self.send_app(s, {"t":"answer_refused", "id":a.rid, "why":"state_authority_changed"})
         if not isinstance(ok, bool) or not isinstance(sig, str) or not isinstance(batch, bool) \
                 or time.monotonic() > a.deadline:
             await self._answer_refused(s, a, "shape_or_late")
@@ -7021,6 +7083,9 @@ class Host:
                 if not reserved:
                     return await self._answer_refused(s, a, "operation_already_consumed")
                 reserved_here = True   # P0: a refusal below releases it, else every retry reads operation_already_consumed
+            if not list_approval.state_live(self, a):
+                list_approval.state_changed(self, a)
+                return await self.send_app(s, {"t":"answer_refused", "id":a.rid, "why":"state_authority_changed"})
             if (a.fut.done() or time.monotonic() > a.deadline or self.stopped()
                     or self.st.sign_key(s.device) != sk
                     or (not review_bound and not self._native_ask_live(a))
@@ -7369,7 +7434,8 @@ class Host:
         if res.get("deliver") and not res.get("stopped"):   # 0.18: the brief's owner deliverables, offered as files (§13)
             page += "\n\n" + "\n".join(f"[{os.path.basename(p)}]({p})" for p in res["deliver"][:5])
         t = self.hist_add({"k": "task", "name": clean(str(title), 64), "text": ""}, clean(page, wire.MAX_TEXT_P33),
-                          "stopped" if res.get("stopped") or res.get("status") == "interrupted" else "done")
+                          "stopped" if res.get("stopped") or res.get("status") == "interrupted" else "done",
+                          **({"card": {"activity_failure": True}} if state != "ok" else {}))
         if isinstance(t, dict) and isinstance(res.get("resume"), dict):
             run_id = res["resume"].get("run_id")
             if isinstance(run_id, str) and re.fullmatch(r"[0-9a-f]{32}", run_id):
@@ -8314,26 +8380,33 @@ class Host:
             failed("not_ready")
             return await self.send_app(s,{"t":"tts_end","r":r,"ok":False,"why":"not_ready"})
         self.tts_busy=True
+        from copy import deepcopy
+        prefs = deepcopy(self.preferences)
+        source = deepcopy(getattr(self, 'agent_cfg', None))
         try:
             text=turn.get("reply",{}).get("text","")
             from . import display_privacy
             text=await asyncio.to_thread(display_privacy.text,self,text)
             import hashlib, json, time as _time
-            cache_key=hashlib.sha256(json.dumps([text,self.preferences.get("voice",{})],sort_keys=True).encode()).digest()
+            cache_key=hashlib.sha256(json.dumps([text,prefs.get("voice",{})],sort_keys=True).encode()).digest()
             cached=getattr(self,"tts_cache",None)
-            if cached and cached[0]==cache_key:
-                audio=cached[1]
+            if cached and len(cached)==3 and cached[0]==cache_key:
+                audio, complete_text = cached[1:]
             else:
                 # P208: a local model / cloud voice reads the spoken script (rewritten by the AI tool's mid-tier model,
                 # cached on disk); rewrite off or failed → the reply's plain words. Every reading lands in the usage log.
                 from . import spoken, voice_engines
                 t0=_time.monotonic()
-                sc=await asyncio.to_thread(spoken.script,self.st,text,self.preferences,(getattr(self,"agent_cfg",None) or {}).get("kind"))
+                sc=await asyncio.to_thread(spoken.script,self.st,text,prefs,(source or {}).get("kind"))
                 sc={**sc,"text":await asyncio.to_thread(display_privacy.text,self,sc["text"])}
-                audio=await asyncio.to_thread(voice.synthesize,sc["text"][:4000],self.preferences)
-                self.tts_cache=(cache_key,audio)
-                voice_engines.record(self.st,seconds=_time.monotonic()-t0,engine=voice_engines.engine_of(self.preferences),
-                                     chars=len(sc["text"][:4000]),lang=sc["lang"],rewrite=sc)
+                complete_text = voice.synthesis_text(sc["text"][:4000], prefs)
+                audio=await asyncio.to_thread(voice.synthesize,sc["text"][:4000],prefs,source=source)
+                self.tts_cache=(cache_key,audio,complete_text)
+                voice_engines.record(self.st,seconds=_time.monotonic()-t0,engine=voice_engines.engine_of(prefs),
+                                     chars=voice.synthesis_chars(sc["text"][:4000],prefs),lang=sc["lang"],rewrite=sc)
+            # Replay is another disclosure: sources may change after synthesis or while
+            # audio was cached. Recheck the actual rewritten text, never just the reply/key.
+            await asyncio.to_thread(voice._outbound_speech, complete_text, source)
             for i in range(0,len(audio),24*1024):
                 if self.sessions.get(s.cid) is not s or not self.st.is_allowed(s.pub):
                     failed("not_ready")
@@ -9005,7 +9078,9 @@ class Host:
             src["att"] = [{"name": b.name[:128], "mime": b.mime, "bytes": b.size, "kind": b.kind} for b in blobs]
         if extra_src:
             src.update(extra_src)
-        turn = self.hist_add(src, "", "open" if self.agent else "done")
+        origin = provenance.normalize(getattr(s, "provenance", None))
+        src.update(source_kind=origin["kind"], source_role=origin["role"])
+        turn = self.hist_add(src, "", "open" if self.agent else "done", card={"queued": True} if self.agent else None)
         from .report_actions import phone_source
         if phone_source(self, s) is not None:
             note = await asyncio.to_thread(self.background_done.recovery.notice)
@@ -9368,6 +9443,16 @@ class Host:
 
     def say_delivered(self, send: compose.Send) -> None:
 
+        heal = getattr(self, "turn_heal", None)
+        if heal is not None:
+            heal.pages.discard(getattr(send, "turn", None))
+        hist = getattr(self, "hist", None)
+        page = hist.get(getattr(send, "turn", None)) if hist is not None else None
+        if page:
+            card = page.get("card") or {}
+            rest = {k: v for k, v in card.items() if k not in ("queued", "waited_s", "stuck")}
+            if rest != card:
+                self.hist_update(send.turn, card=rest)
         if getattr(send, "background_done_ids", None):
             self.background_done.complete(send)
             self.st.log("background_done_delivery", count=len(send.background_done_ids), outcome="delivered")

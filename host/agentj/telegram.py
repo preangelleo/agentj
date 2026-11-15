@@ -510,7 +510,7 @@ class Telegram:
         return True
 
     def completed(self,turn):
-        if not self.enabled() or not turn or turn.get('src',{}).get('k')!='telegram':return
+        if not self.enabled() or not turn or turn.get('src',{}).get('k')!='telegram' or (turn.get('card') or {}).get('held')=='pending':return
         tid = turn.get('id')
         enrolled=self.turn_enrollment.pop(tid,None)
         route=self.turn_routes.pop(tid,None)

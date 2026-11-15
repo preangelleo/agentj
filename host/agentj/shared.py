@@ -242,8 +242,10 @@ def application_ingress_span(agent):
     """#0302 r3: a native turn whose source is not the owner's opens a guest span (processes born in it never act as owner)."""
     from . import application_ingress
     host = getattr(agent, "host", None)
-    if host is not None and not application_ingress._owner_source(getattr(agent, "native_source", None)):
-        application_ingress.open_span(host, native=True)
+    if host is not None:
+        application_ingress.task_begin(host)
+        if not application_ingress._owner_source(getattr(agent, "native_source", None), getattr(agent, "cur_send", None)):
+            application_ingress.open_span(host, native=True)
 
 
 class SharedClaudeAgent(Agent):
@@ -427,7 +429,7 @@ class SharedClaudeAgent(Agent):
         self.native_turn = self.peer_low = self.untrusted_foreign = False
         self._native_approval_origin = None
         self._limit_check(reply)
-        if self.phone_turn and (self.phone_seen or self.phone_claim):
+        if self.phone_turn and (self.phone_seen or self.phone_claim or shared_turn_origin.display_received(self)):
             self.phone_reply_seen = True
             if self.phone_claim:
                 self.host.turn_queued_note(False)   # the reply replaces 「Agent J 主机正忙，消息已排队」, never follows it
@@ -2120,6 +2122,7 @@ class SharedClaudeAgent(Agent):
                 if not text or role not in ("user", "assistant"):
                     continue
                 if role == "user":
+                    shared_turn_origin.received(self, item, text)
                     delivery_echo = shared_turn_origin.delivered(self, item, text)
                     from .transcript_input import human_input, proactive_origin
                     if item.get("isMeta") and self._from_phone(item, text):
@@ -2434,7 +2437,7 @@ class SharedClaudeAgent(Agent):
                 reply and claimed and claimed[0] == public_text(reply) and time.monotonic() - claimed[1] < 60):
             self.host.st.log("shared_turn_end_dup_dropped")
             return
-        phone = self.phone_turn and (self.phone_seen or self.phone_claim)
+        phone = self.phone_turn and (self.phone_seen or self.phone_claim or shared_turn_origin.display_received(self))
         self.host.st.log("shared_turn_end_no_stop", phone=phone, reply=bool(reply))
         self._withdraw_answered("Stop", {})
         end = getattr(self.state, "end_without_stop", None)
@@ -2699,18 +2702,18 @@ class SharedClaudeAgent(Agent):
                 # Socket write is not native acceptance. Name the concrete reason (P127): managed policy, project /
                 # local / user setting, owner off, a session started before the change, or simply busy.
                 from . import claude_inbound
-                if not await self._wait_busy_input(claude_inbound):
+                # Display consumption keeps this Send alive through its native final;
+                # it never sets the strict input/owner-attestation latches.
+                accepted = (self.input_seen.is_set() or shared_turn_origin.display_received(self)
+                            or await self._wait_busy_input(claude_inbound))
+                if not accepted:
                     lang = self.cfg.get("language", "zh")
                     self.host.st.log("shared_input_unaccepted", agent="claude", waited=CLAUDE_INPUT_WAIT)
-                    notice = claude_inbound.turn_notice(self.cfg.get("dir"), lang)
-                    detail = claude_inbound.diagnostic(self.host.st, lang, self.cfg)
-                    # P424 #75 (held.py): on the owner's own page (its words right above), the settings line folded into
-                    # 「详情」; remembered so the page turns 「已送达」 when Claude Code takes the message after all
+                    # Timeout is queue bookkeeping, not a native refusal. The existing
+                    # page renderer owns the queue card; no separate unreceived sentence.
                     from . import held
-                    tid = held.note(self.host, notice, detail) if hasattr(self.host, "hist") and hasattr(self.host, "hist_update") else None
-                    if tid is None:
-                        self.fail_notice(notice + " " + detail)
-                    else:
+                    tid = held.note(self.host, "") if hasattr(self.host, "hist") and hasattr(self.host, "hist_update") else None
+                    if tid is not None:
                         self.held = (self.held + [(tid, self.pending_text)])[-5:]
                     return
             # A committed native Stop belonging to this phone input ends the turn; so does the turn end the transcript
@@ -2830,7 +2833,7 @@ class SharedClaudeAgent(Agent):
         self.host.turn_queued_note(True)
         deadline = asyncio.get_running_loop().time() + DESKTOP_IDLE_WAIT
         try:
-            while not (self.input_seen.is_set() or self.done.is_set()):
+            while not (self.input_seen.is_set() or self.done.is_set() or getattr(self.native_request, "received", False)):
                 left = deadline - asyncio.get_running_loop().time()
                 if left <= 0:
                     return False

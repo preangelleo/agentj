@@ -197,6 +197,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | — | Tap | View the activity log and repair report |
 | — | Tap | Retry notifying support of the authorized session |
 | — | Tap | View the previous page of activity for this assistance session |
+| — | Tap /background in the command menu | Open the existing list of background, Webhook and system messages |
 | `/` · `⌘+K` / `Ctrl+K` | Tap the magnifier at the top right of the list | Search the shortcut list: type a word to filter by action, key or gesture, in Chinese or English |
 | `Esc` | Tap the magnifier again | Clear and close the search box; Esc again closes the shortcut list |
 | `i` · `Esc` | Tap the message box | Into the message box; Esc in it leaves (the draft stays) |

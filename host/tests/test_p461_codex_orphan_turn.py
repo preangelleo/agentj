@@ -41,6 +41,8 @@ class Base(unittest.IsolatedAsyncioTestCase):
         self.host.st.agent_session.return_value = None
         self.host.lang = 'zh'
         self.host.preferences = None
+        from test_p0269_selfheal import queue_history
+        queue_history(self.host, root)
         self.calls = []
 
     def rollout(self, mtime=OLD):
@@ -110,7 +112,9 @@ class OrphanTurn(Base):
             with self.assertRaises(Refusal) as r:
                 await asyncio.wait_for(a._thread(), 10)
         self.assertEqual(r.exception.code, 'desktop turn did not finish')
-        self.assertIn('等它说完', self.notices())
+        self.assertTrue(self.host.hist.get(self.host.cur_turn)['card']['queued'])
+        self.assertEqual(self.host.hist.get(self.host.cur_turn)['reply']['text'], '')
+        self.assertNotIn('等它说完', self.notices())
         self.assertFalse(self.events('shared_orphan_turn'))
 
     async def test_fresh_rollout_without_writer_still_waits(self):

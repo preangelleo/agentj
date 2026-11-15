@@ -327,8 +327,8 @@ _REASONS = {
     "unreadable": ("Claude 设置无法读取（JSON 损坏、软链或权限），Agent J 没有改它。运行 agentj doctor 查看。",
                    "Claude settings could not be read (broken JSON, a symlink or permissions); Agent J did not change "
                    "them. Run agentj doctor."),
-    "busy": ("设置已允许手机消息，它多半正忙（在跑工具或等你处理Agent J 主机上的对话框）。",
-             "phone messages are allowed, so it is most likely busy (running a tool or waiting on a desktop dialog)."),
+    "busy": ("排队中",
+             "Queued"),
 }
 
 
@@ -340,6 +340,8 @@ def reason_text(reason: str | None, lang: str = "zh") -> str:
 def turn_notice(directory, lang: str = "zh") -> str:
     """The phone's specific explanation when Claude Code did not acknowledge a message in time."""
     reason = hold_reason(directory)
+    if reason in (None, "busy"):
+        return reason_text("busy", lang)
     if lang == "en":
         return ("Claude Code on the Agent J host has not taken this message: " + reason_text(reason, "en") +
                 " Check the desktop before resending: the original may still arrive.")

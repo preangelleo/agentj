@@ -2757,6 +2757,9 @@ def _tasks_hidden(st: State) -> bool:
 
 def cmd_tasks(a) -> None:
     from . import activity, tasks
+    if a.mode == "create":
+        from . import task_create
+        raise SystemExit(task_create.command(a))
     st = State()
     if _tasks_hidden(st):
         if a.mode == "list":      # #467: read-only, answered by serve over the existing Agent socket
@@ -3376,7 +3379,7 @@ def main_jarvis(argv=None) -> None:
 
 # `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
 # AI's own memory file), `handover` only reads: none may move the state directory first
-NO_MIGRATE = ("fn", "uv", "trash", "delete", "rm", "file", "files", "diag", "preflight", "migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask", "form", "learn", "usage", "order", "core")   # recall / friends / codex-sandbox / capability: usually inside the fence
+NO_MIGRATE = ("local", "fn", "uv", "trash", "delete", "rm", "file", "files", "diag", "preflight", "migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask", "form", "learn", "usage", "order", "core")   # recall / friends / codex-sandbox / capability: usually inside the fence
 
 
 APPROVALS_HELP = dict.fromkeys(("standard", "strict", "native"), (
@@ -3586,7 +3589,7 @@ def main(argv=None) -> None:
     dc.add_argument("--offline", action="store_true", help="跳过网络检查 / skip the network checks")
     dc.add_argument("--isolation-only", action="store_true", help="仅隔离预检：不读用户状态、不联网 / isolation preflight only, no user state or network")
     dc.add_argument("--post-upgrade", action="store_true", help="修复升级后的工作根与连接 / repair post-upgrade root and connection")
-    dc.add_argument("--upgrade-only", action="store_true", help="仅升级后的包与服务完整性 / package and service integrity only")
+    dc.add_argument("--upgrade-only", action="store_true", help="升级后的包、服务与本机补丁只读检查 / package, service and read-only local patch checks")
     dc.add_argument("--reconnect", action="store_true", help="手机灰了/断开：自检 服务·中继·Agent 三段，哪段断了修哪段 / phone grey or "
                     "disconnected: check service, relay and Agent, repair the broken one")
     dc.add_argument("--session", help="和 --reconnect 一起：接上这个会话 ID / with --reconnect: attach this session ID")
@@ -3689,6 +3692,8 @@ def main(argv=None) -> None:
     nm = sub.add_parser("name", help="查看 / 修改这台Agent J 主机上 Agent 的名字（加入了 Agent J 账号的话，先在账号后台改，改好了才改这台Agent J 主机上的）")
     nm.add_argument("name", nargs="?", help="新名字（中文最多 8 个字，英文 / 数字 / 横杠最多 13 个；混写时中文算 1.6、合计 ≤ 13）；不填 = 查看")
     nm.set_defaults(fn=cmd_name)
+    from .seat_api.cli import add_parser as api_parser
+    api_parser(sub)
     ad = sub.add_parser("admin", help="打开本机的 Agent 管理页（只在 127.0.0.1；配对、遥控器、改名）")
     ad.add_argument("--port", type=int, default=0, help="端口（默认随机）。地址永远是 127.0.0.1，不能改")
     ad.add_argument("--events", choices=["text", "jsonl"], default="text",
@@ -3864,8 +3869,9 @@ def main(argv=None) -> None:
                                     "local speech-to-text", add_help=False)
     sr.add_argument("args", nargs=argparse.REMAINDER)
     sr.set_defaults(fn=cmd_asr)
-    tk = sub.add_parser("tasks", help="定时任务：list · show · enable · disable · run [--dry-run] · migrate <id|--all> · unmigrate <id> / scheduled tasks")
-    tk.add_argument("mode", choices=["list", "show", "enable", "disable", "run", "migrate", "unmigrate"])
+    tk = sub.add_parser("tasks", help="定时任务：create --contract FILE · list · show · enable · disable · run [--dry-run] · migrate <id|--all> · unmigrate <id> / scheduled tasks")
+    tk.add_argument("mode", choices=["list", "show", "enable", "disable", "run", "migrate", "unmigrate", "create"])
+    tk.add_argument("--contract", help="create: JSON contract with task, prompt and optional declared transfer / 创建任务合同")
     tk.add_argument("--all", action="store_true", help="migrate：所有已启用的任务 / every enabled task")
     tk.add_argument("id", nargs="?")
     tk.add_argument("--dry-run", action="store_true", help="run：只显示会怎么跑，不运行 / show the plan only")
@@ -3948,6 +3954,8 @@ def main(argv=None) -> None:
     accounts_mod.add_parser(sub)    # #427: agentj account list|add|use|rename|remove (several accounts per harness)
     from . import imessage as imessage_mod
     imessage_mod.add_parser(sub)    # P274: agentj imessage status|doctor|on|off|set|instructions|vip|mute|scan|backfill|open-fda
+    from . import agentsrelay_dispatch
+    agentsrelay_dispatch.add_parser(sub)
     busy.add_parser(sub)         # P150 (§22): agentj busy list|start|stop|run — the phone's 「在办事项」 dots
     from . import decisions as decisions_mod
     decisions_mod.add_parser(sub)   # P571: agentj decide "<decision>" --why … · decide list — the decision log
@@ -3959,6 +3967,8 @@ def main(argv=None) -> None:
     add_bots_parser(sub)
     peer_service.add_parser(sub)   # P71 (§17.9): agentj friends … — through <state>/agentperm/friends.sock, also inside the fence
     from . import codex_perm
+    from . import local_patches
+    local_patches.add_parser(sub)
     codex_perm.add_parser(sub)     # F30 (P73): agentj codex-sandbox status|set|default|fix — always the top level of config.toml
     mg = sub.add_parser("migrate", help="改名后的状态目录搬迁：status 查看 · rollback 撤销 / the 0.10 state move: status · rollback",
                         description="经主人同意后，将旧版状态迁到 ~/.local/state/agentj（旧路径保留兼容链接）；精确旧路径见 https://agentj.app/docs/legacy-migration/。"

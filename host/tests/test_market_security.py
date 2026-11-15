@@ -400,9 +400,17 @@ class CompromisedServer(Base):
         self.assertEqual(rc, 0, out)
         self.srv.packages.clear()
         self.add(manifest={"version": "1.0.1"})          # the server now serves an unsigned community "update"
+        installed = market.read_installed(self.e.st)
+        targets = [pathlib.Path(row["target"]) for row in installed]
+        payload = {str(p): p.read_bytes() for root in targets for p in root.rglob("*") if p.is_file()}
         rc, out = self.install(keyring=key.keyring, replace=True)
         self.assertEqual(rc, market.EXIT_SIGNATURE, out)
-        self.assertIn("officially signed copy", out)
+        self.assertIn("previously carried an Agent J review signature", out)
+        self.assertIn("current strict policy still refuses", out)
+        self.assertIn("cannot distinguish pending review, a missing signature or tampering", out)
+        self.assertEqual(market.read_installed(self.e.st), installed, "a refused unsigned update cannot change installed trust history")
+        self.assertEqual({str(p): p.read_bytes() for root in targets for p in root.rglob("*") if p.is_file()}, payload,
+                         "a refused unsigned update cannot replace the signed payload")
 
     def test_official_integrity_failures_exit_5(self):
         key = fx.TestKey()

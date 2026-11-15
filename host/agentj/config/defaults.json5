@@ -71,6 +71,9 @@
       // Local argv, no shell; stdin text and {output} WAV. No inline credentials.
       "command": [],
       "command_timeout": 60,
+      // Local owner choices keyed by provider. Empty preserves the original request.
+      "text_prefix": {},
+      "settings": {},
       // Volcengine App ID (not a secret) / 火山引擎 App ID（不是密钥）
       "app_id": "",
       // Spoken rewrite before reading: auto | on | off / 播报前口语化
@@ -148,8 +151,8 @@
     "enabled": true,
     // Idle minutes before a beat, 5–1440 / 空闲多少分钟心跳一次; default=60
     "interval_minutes": 60,
-    // P207: also wake once a day at this local time, HH:MM; empty = off / 每天固定时间唤醒（HH:MM），留空关闭; default=""
-    "daily_at": "",
+    // Daily three-card review, local HH:MM; empty = off / 每日三卡整理（本地 HH:MM），留空关闭; default="08:00"
+    "daily_at": "08:00",
     "quiet_enabled": true,
     "quiet_start": "23:00",
     "quiet_end": "07:00",

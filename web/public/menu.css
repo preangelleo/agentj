@@ -1505,60 +1505,64 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 /* P352 「模型和 API Key」 (js/keys.js): one dashed card per base-model vendor + one for the owner's other keys. A row = type tag ·
    NAME (mono) over its state (masked + last 4, 未填, 已登录 / 未登录), icon-only buttons on the right (44 px, 8 px apart). Palette
    only: Lotion text on Noir, Milky Waves for 订阅, Lama for 登录, Sage Sensation for 正在使用 / 已登录, Strawberry Field on 删除. */
-#models-view .keys-box{display:flex;flex-direction:column;gap:var(--ui-space-content);margin:var(--ui-space-content) 0 var(--ui-space-section)}
-#models-view .keys-box>h2,#models-view .keys-h h2{margin:var(--ui-space-control) 0 0;font-size:var(--menu-title-3);font-weight:600}
-#models-view .keys-h--third{display:flex;align-items:center;justify-content:space-between;gap:var(--ui-space-control)}
-#models-view .kvendor{border:1px dashed color-mix(in srgb,var(--menu-text) 34%,transparent);border-radius:var(--ui-radius-panel);padding:var(--sp-3) var(--ui-space-content)}
-#models-view .kvendor-h{margin:0 0 var(--sp-2);font-size:var(--ui-fs-body);font-weight:600}
-#models-view .klist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
-#models-view .krow{display:flex;align-items:center;gap:var(--ui-space-control);min-height:var(--menu-row-2);padding:var(--sp-2) 0}
-#models-view .krow+.krow{border-top:1px solid var(--menu-line)}
-#models-view .kmain{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
-#models-view .ktop{display:flex;align-items:baseline;flex-wrap:wrap;gap:var(--sp-2)}
-#models-view .ktag{flex:none;font-size:var(--ui-fs-caption);line-height:1.6;padding:0 8px;border-radius:var(--ui-radius-pill);
+:is(#models-view,.relay-keys-mount) .keys-box{display:flex;flex-direction:column;gap:var(--ui-space-content);margin:var(--ui-space-content) 0 var(--ui-space-section)}
+:is(#models-view,.relay-keys-mount) .keys-box>h2,:is(#models-view,.relay-keys-mount) .keys-h h2{margin:var(--ui-space-control) 0 0;font-size:var(--menu-title-3);font-weight:600}
+:is(#models-view,.relay-keys-mount) .keys-h--third{display:flex;align-items:center;justify-content:space-between;gap:var(--ui-space-control)}
+:is(#models-view,.relay-keys-mount) .kvendor{border:1px dashed color-mix(in srgb,var(--menu-text) 34%,transparent);border-radius:var(--ui-radius-panel);padding:var(--sp-3) var(--ui-space-content)}
+:is(#models-view,.relay-keys-mount) .kvendor-h{margin:0 0 var(--sp-2);font-size:var(--ui-fs-body);font-weight:600}
+:is(#models-view,.relay-keys-mount) .klist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+:is(#models-view,.relay-keys-mount) .krow{display:flex;align-items:center;gap:var(--ui-space-control);min-height:var(--menu-row-2);padding:var(--sp-2) 0}
+:is(#models-view,.relay-keys-mount) .krow+.krow{border-top:1px solid var(--menu-line)}
+:is(#models-view,.relay-keys-mount) .kmain{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+:is(#models-view,.relay-keys-mount) .ktop{display:flex;align-items:baseline;flex-wrap:wrap;gap:var(--sp-2)}
+:is(#models-view,.relay-keys-mount) .ktag{flex:none;font-size:var(--ui-fs-caption);line-height:1.6;padding:0 8px;border-radius:var(--ui-radius-pill);
   border:1px solid currentColor;color:var(--menu-muted)}
-#models-view .ktag--sub{color:var(--milky-waves)}
-#models-view .ktag--oauth{color:var(--lama)}
-#models-view .kname{font-family:var(--font-mono);font-size:var(--ui-fs-caption);background:transparent;padding:0;color:var(--menu-text);overflow-wrap:anywhere}
-#models-view .kname--login{font-family:var(--font-body);font-size:var(--ui-fs-small)}
-#models-view .kstate{font-size:var(--ui-fs-caption);color:var(--menu-muted);font-family:var(--font-mono);letter-spacing:.04em}
-#models-view .kstate[data-on="0"]{font-family:var(--font-body);letter-spacing:0}
-#models-view .krow[data-type="oauth"] .kstate[data-on="1"]{color:var(--sage-sensation);font-family:var(--font-body);letter-spacing:0}
-#models-view .kuse{margin-left:var(--sp-2);font-family:var(--font-body);letter-spacing:0;color:var(--sage-sensation)}
-#models-view .kacts{flex:none;display:flex;gap:8px}
-#models-view .kbtn{flex:none;display:inline-flex;align-items:center;justify-content:center;width:var(--ui-icon-btn);height:var(--ui-icon-btn);
+:is(#models-view,.relay-keys-mount) .ktag--sub{color:var(--milky-waves)}
+:is(#models-view,.relay-keys-mount) .ktag--oauth{color:var(--lama)}
+:is(#models-view,.relay-keys-mount) .kname{font-family:var(--font-mono);font-size:var(--ui-fs-caption);background:transparent;padding:0;color:var(--menu-text);overflow-wrap:anywhere}
+:is(#models-view,.relay-keys-mount) .kname--login{font-family:var(--font-body);font-size:var(--ui-fs-small)}
+:is(#models-view,.relay-keys-mount) .kstate{font-size:var(--ui-fs-caption);color:var(--menu-muted);font-family:var(--font-mono);letter-spacing:.04em}
+:is(#models-view,.relay-keys-mount) .kstate[data-on="0"]{font-family:var(--font-body);letter-spacing:0}
+:is(#models-view,.relay-keys-mount) .krow[data-type="oauth"] .kstate[data-on="1"]{color:var(--sage-sensation);font-family:var(--font-body);letter-spacing:0}
+:is(#models-view,.relay-keys-mount) .kuse{margin-left:var(--sp-2);font-family:var(--font-body);letter-spacing:0;color:var(--sage-sensation)}
+:is(#models-view,.relay-keys-mount) .kacts{flex:none;display:flex;gap:8px}
+:is(#models-view,.relay-keys-mount) .kbtn{flex:none;display:inline-flex;align-items:center;justify-content:center;width:var(--ui-icon-btn);height:var(--ui-icon-btn);
   padding:0;margin:0;border:0;border-radius:var(--ui-radius-control);background:var(--menu-chip);color:var(--menu-text);cursor:pointer}
-#models-view .kbtn:hover{background:var(--menu-press)}
-#models-view .kbtn:active{background:var(--menu-press)}
-#models-view .kbtn--delete{color:var(--menu-danger)}
-#models-view .kbtn--add{background:transparent;border:1px dashed color-mix(in srgb,var(--menu-text) 42%,transparent)}
-#models-view .kico{width:var(--ui-icon);height:var(--ui-icon)}
-#models-view .kempty{margin:0;color:var(--menu-muted);font-size:var(--ui-fs-small)}
-#models-view .kadd{display:flex;flex-direction:column;gap:var(--sp-2);margin-bottom:var(--ui-space-control)}
-#models-view .kadd[hidden]{display:none}
-#models-view .kadd-l{font-size:var(--ui-fs-small);color:var(--menu-muted)}
-#models-view .kadd-row{display:flex;gap:var(--ui-space-btn)}
-#models-view .kadd-i{flex:1;min-width:0;min-height:var(--ui-tap);padding:0 var(--sp-3);font:400 var(--ui-fs-body) var(--font-mono);color:var(--menu-text);
+:is(#models-view,.relay-keys-mount) .kbtn:hover{background:var(--menu-press)}
+:is(#models-view,.relay-keys-mount) .kbtn:active{background:var(--menu-press)}
+:is(#models-view,.relay-keys-mount) .kbtn--delete{color:var(--menu-danger)}
+:is(#models-view,.relay-keys-mount) .kbtn--add{background:transparent;border:1px dashed color-mix(in srgb,var(--menu-text) 42%,transparent)}
+:is(#models-view,.relay-keys-mount) .kico{width:var(--ui-icon);height:var(--ui-icon)}
+:is(#models-view,.relay-keys-mount) .kempty{margin:0;color:var(--menu-muted);font-size:var(--ui-fs-small)}
+:is(#models-view,.relay-keys-mount) .kadd{display:flex;flex-direction:column;gap:var(--sp-2);margin-bottom:var(--ui-space-control)}
+:is(#models-view,.relay-keys-mount) .kadd[hidden]{display:none}
+:is(#models-view,.relay-keys-mount) .kadd-l{font-size:var(--ui-fs-small);color:var(--menu-muted)}
+:is(#models-view,.relay-keys-mount) .kadd-row{display:flex;gap:var(--ui-space-btn)}
+:is(#models-view,.relay-keys-mount) .kadd-i{flex:1;min-width:0;min-height:var(--ui-tap);padding:0 var(--sp-3);font:400 var(--ui-fs-body) var(--font-mono);color:var(--menu-text);
   background:var(--menu-chip);border:1px solid var(--menu-line);border-radius:var(--ui-radius-control)}
-#models-view .kadd-i::placeholder{color:color-mix(in srgb,var(--menu-text) 55%,transparent)}
-#models-view .kadd-err{margin:0;font-size:var(--ui-fs-small);color:var(--menu-danger)}
-#models-view .kadd-err[hidden]{display:none}
-#models-view .keys-status{color:var(--menu-muted)}
-#models-view .keys-status[hidden]{display:none}
+:is(#models-view,.relay-keys-mount) .kadd-i::placeholder{color:color-mix(in srgb,var(--menu-text) 55%,transparent)}
+:is(#models-view,.relay-keys-mount) .kadd-err{margin:0;font-size:var(--ui-fs-small);color:var(--menu-danger)}
+:is(#models-view,.relay-keys-mount) .kadd-err[hidden]{display:none}
+:is(#models-view,.relay-keys-mount) .keys-status{color:var(--menu-muted)}
+:is(#models-view,.relay-keys-mount) .keys-status[hidden]{display:none}
 /* P362: where else a key already is on the computer (「电脑上已有 · 来源 X」 + 「收进 Agent J」), which login is really used, and the
    places the host looked in. Same palette: muted caption text, Sage Sensation for 正在使用, Lama for 重启后生效. */
-#models-view .kuseline{font-size:var(--ui-fs-caption);color:var(--menu-text);overflow-wrap:anywhere}
-#models-view .kpending{margin-left:var(--sp-2);color:var(--lama)}
-#models-view .kfound{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2);font-size:var(--ui-fs-caption);color:var(--menu-muted)}
-#models-view .kfound-t{flex:1 1 12em;min-width:0;overflow-wrap:anywhere}
-#models-view .kimp{flex:none;min-height:var(--ui-tap);padding:0 var(--sp-3);font-size:var(--ui-fs-small)}
-#models-view .ksrc{display:flex;flex-direction:column;gap:var(--sp-2);font-size:var(--ui-fs-caption);color:var(--menu-muted)}
-#models-view .ksrc-h{margin:0;font-size:var(--ui-fs-small);font-weight:600;color:var(--menu-text)}
-#models-view .ksrc-l{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere}
-#models-view .ksrc-i[data-skip="1"]{color:var(--lama)}
-#models-view .ksrc-hint{margin:0}
+:is(#models-view,.relay-keys-mount) .kuseline{font-size:var(--ui-fs-caption);color:var(--menu-text);overflow-wrap:anywhere}
+:is(#models-view,.relay-keys-mount) .kpending{margin-left:var(--sp-2);color:var(--lama)}
+:is(#models-view,.relay-keys-mount) .kfound{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2);font-size:var(--ui-fs-caption);color:var(--menu-muted)}
+:is(#models-view,.relay-keys-mount) .kfound-t{flex:1 1 12em;min-width:0;overflow-wrap:anywhere}
+:is(#models-view,.relay-keys-mount) .kimp{flex:none;min-height:var(--ui-tap);padding:0 var(--sp-3);font-size:var(--ui-fs-small)}
+:is(#models-view,.relay-keys-mount) .ksrc{display:flex;flex-direction:column;gap:var(--sp-2);font-size:var(--ui-fs-caption);color:var(--menu-muted)}
+:is(#models-view,.relay-keys-mount) .ksrc-h{margin:0;font-size:var(--ui-fs-small);font-weight:600;color:var(--menu-text)}
+:is(#models-view,.relay-keys-mount) .ksrc-l{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere}
+:is(#models-view,.relay-keys-mount) .ksrc-i[data-skip="1"]{color:var(--lama)}
+:is(#models-view,.relay-keys-mount) .ksrc-hint{margin:0}
 .kimp-opt{display:flex;align-items:flex-start;gap:var(--sp-2);margin:0 0 var(--sp-3);font-size:var(--ui-fs-small);line-height:1.45;cursor:pointer}
 .kimp-opt input{flex:none;width:20px;height:20px;margin:2px 0 0}
+
+/* 0322: the shared Relay key component retains the same touch geometry on settings subpages. */
+.relay-key-section .keys-desc{margin:var(--sp-2) 0;color:var(--menu-muted);font-size:var(--ui-fs-small);line-height:1.5}
+.relay-key-section .keys-help{display:inline-flex;align-items:center;min-height:var(--ui-tap);color:var(--menu-accent);font-size:var(--ui-fs-small)}
 
 /* ---- P363 (#70): the per-page search field (js/pagefind.js; the shortcut sheet's look, P344) ------------------------------- */
 .pfind{position:sticky;top:0;z-index:3;padding:var(--sp-2) 0 var(--sp-3);background:var(--menu-bg)}   /* the page's own side padding lines it up with the cards */
@@ -1855,3 +1859,12 @@ body[data-assist-view]{overflow:hidden}
 #settings #owner-hosts-batch{grid-column:1/-1}
 /* SSH whole-target review is dialog prose, not a light-theme code sample. */
 #confirm .owner-hosts__review{background:transparent;color:inherit}
+
+/* 0322 r2: the Relay mount shares the existing account-card rhythm on all three pages. */
+.relay-keys-mount{display:flex;flex-direction:column;gap:var(--ui-space-content);margin-block:var(--ui-space-section) var(--ui-space-section)}
+.relay-key-section .kvendor-h{margin-bottom:var(--ui-space-control)}
+.relay-key-section .keys-desc{margin-block:var(--ui-space-content);line-height:var(--ui-leading)}
+.relay-key-section .keys-help{margin-bottom:var(--ui-space-content)}
+.relay-key-section .krow{gap:var(--ui-space-content);padding-block:var(--ui-space-content)}
+.relay-key-section .kmain{gap:var(--ui-space-control)}
+.relay-key-section .kacts{gap:var(--ui-space-btn)}

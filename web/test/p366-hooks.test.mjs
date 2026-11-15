@@ -260,7 +260,7 @@ test('empty list: one friendly paragraph + the two routes; offline: nothing aske
 test('via: hook — snap.js keeps it on Agent pages (history + search), relay.js labels it 「Webhook」', () => {
   assert.equal(snap.toPage({ id: 1, ts: 1000, src: { k: 'agent', via: 'hook', text: '' }, reply: { text: 'ok' } }).source.via, 'hook');
   assert.equal(snap.toPage({ id: 2, src: { k: 'agent', via: 'quota' } }).source.via, 'quota', 'the others stay');
-  assert.equal(snap.toPage({ id: 3, src: { k: 'phone', via: 'hook' } }).source.via, undefined, 'only on Agent pages');
+  assert.equal(snap.toPage({ id: 3, src: { k: 'phone', via: 'hook' } }).source.via, 'hook', '0332 retains hook provenance so a forged phone kind cannot gain owner queue presentation');
   assert.equal(snap.toPage({ id: 4, src: { k: 'agent', via: 'evil' } }).source.via, undefined);
   assert.equal((SNAP.match(/\['loop', 'task', 'quota', 'auto', 'hook', 'heartbeat', 'api', 'mcp', 'background_done'\]\.includes\(src\.via\)/g) || []).length, 2, 'history page + search hit');
   assert.match(RELAY, /src\.via === "hook" \? t\('p366\.src'\)/);

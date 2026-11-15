@@ -1,0 +1,222 @@
+{
+  "schema": 1,
+  "authority": "Chairman 2026-11-14 22:43 final decision, explicit UI review r3 work order; external OWNER-DECISION-2245.md",
+  "enabled": [
+    "U01",
+    "U02",
+    "U03",
+    "U05",
+    "U06",
+    "U07",
+    "U08",
+    "U09",
+    "U10",
+    "U11",
+    "U12",
+    "U13",
+    "U14",
+    "U15",
+    "U16",
+    "U10_notice_avoidance"
+  ],
+  "disabled": [
+    "U04"
+  ],
+  "retained_manifest": "deferred/0.30.22/manifest.json",
+  "active": {
+    "web/public/app.css": {
+      "sha256": "8da43121f9f082afbcf8260af6ba2fc84474a4b448ef25e76e8cd1fbe11b692c",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/i18n.js": {
+      "sha256": "f03c0cf3390d75c76915330e78285e4afc83ee3a835656dd58e94d2192bdd2d8",
+      "approved": [
+        "r3_final_decision"
+      ],
+      "propagation": {
+        "baseline_sha256": "42146059c380b1751ddcdd2a1e706022e54c57d1bc6f6d030a955f3c5695c05f",
+        "reason": "P570c brand terminology repair for existing API migration sentence; source plus manual override regenerated through existing Chinese polisher and build.i18nModule; no feature, permission or flow change."
+      }
+    },
+    "web/public/index.html": {
+      "sha256": "a8a77a3194b85b69b94a5cd530a3741f2cfc9fc4d34ea2ad91bb16995bc40762",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/accounts.js": {
+      "sha256": "0c8af63a05189e15ab49874ff406384da22d1b5825df277942c399817bf28f5b",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/approval-layout0281.js": {
+      "sha256": "f62ccd74e054031c109787a7be75063894bf362e564690cc45b9cc2a81052bf0",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/approval541.js": {
+      "sha256": "0d77401dad56f1b3f2b4cb20bb539e0bbbb7adc923222d8529c17b9b63233a2b",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/authrescue.js": {
+      "sha256": "0b7ee2e04f555660570036a4479dbc716235ae933bfd683f66187665ccde676a",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/keys.js": {
+      "sha256": "e8bb2506a79faf2643b7a9bb266ccde9f1eddcc3bb349e905fd0de7186b4cfdb",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/pkpeer.js": {
+      "sha256": "59dc144ff808bfdb12ddc3b2eb400dce8ce4b5190c1809e03fe634e4a9e0bd70",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/menu.css": {
+      "sha256": "ac0f38d6cfb4f1a521d7c3c152bd6e524c253fa6dd41cac5be1f7437ff4a3794",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/i18n/web.zh.json": {
+      "sha256": "8b06feb54e19be944a4e7a882992b3fb3dceb40d71d6b206bfdc4a0179c856e8",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/i18n/web.en.json": {
+      "sha256": "0ce44d604fa6e2bd63adadcce4a2b2f1ad8de85955f8dc82ae4e25a1c0b6f0fb",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/i18n/web.zh.src.json": {
+      "sha256": "aff3c6ac2048048ad2b90ad83b915706509d70ed5baf78a0837659b7461c08f8",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/i18n/web.zh.override.json": {
+      "sha256": "780a6ece99c30a2825bce0a4d26700f8f3da89d38c3a5a2c7db74f802f34d4f8",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/brand/account-links.js": {
+      "sha256": "dc83bbbd3e300651536e966599306ca4a2851e711c2e22953c9c2349f2736740",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/api.js": {
+      "sha256": "5a3e0c619f86166c26138e598deb7774a1a3efc8e7955f30187f4d2f6243c8d1",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/authcard.js": {
+      "sha256": "4b6d30d4da1d478fca2409b7b549851da593ebea941d30e0b2c898cdc31e84c7",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/bots.js": {
+      "sha256": "29752fd99e8be638ae0827a93a63bb8e35d9121223a65922cb9eb41edbe9b11a",
+      "approved": [
+        "r3_final_decision"
+      ],
+      "propagation": {
+        "baseline_sha256": "c1a4eed8667f84586807351f3ad20900d8af29410a74f2fc51ec3d7788ea7c34",
+        "reason": "Integration semantic-ownership repair: existing API paragraphs receive pageCopy and direct aj-bots metadata; text, data, controls, protocol and feature enablement are unchanged."
+      }
+    },
+    "web/public/js/elevate.js": {
+      "sha256": "930ccc2c64d5baefb2752d6ee29f5b377053e673b985af49b403500851b11c2f",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/forms.js": {
+      "sha256": "704b01d1ac4b1aa3ce6d095f7a7ca63f86d24fc4897538f85946359c3d7da1ac",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/friends-tell-card.js": {
+      "sha256": "f887b1b1da416ad5092f37371acb2fcf23dc360cb3c7847f8821344f99619be2",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/fsedit.js": {
+      "sha256": "802058cb263436c4bb6f71f0166a6179cbdeec2ce18cf1d52c19f9ca08f252f6",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/media.js": {
+      "sha256": "4286c2ad3ca8de4dae6cefaf4e521c60279363a3b48095b619698724994f12ca",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/popup-layout.js": {
+      "sha256": "28695947209e281e30fb1a693271203451986f900f9e1655abc48e0048632a31",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/rescue.js": {
+      "sha256": "7f2fd322715d4140f3ec9b40ac763811cb2b9c43d999797772fdcb57b684ac4c",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/rvpair.js": {
+      "sha256": "5b8d4877ceaf658df889ffeb112ea789500bf8ca7e659c1678a8cb3330c51b3f",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/settings.js": {
+      "sha256": "4520cb6fd9379024abcf86d16eca156ca290081ec970ccccd4750725292e2f4e",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/t.js": {
+      "sha256": "fa877c4b292d143d1a9f19ef2c368364919858fc6b9c6b981fdebaf8d5d560ed",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/public/js/ui.js": {
+      "sha256": "3931ccf877149de037cb7cc27bd58b0cd2ed84ec9437e46503559103c43c6d3c",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/interactions.json": {
+      "sha256": "e43bb933a29252a8ec6de74bd871fe9e1006ddcf46dc97cdbd3872aa8787fdc0",
+      "approved": [
+        "r3_final_decision"
+      ]
+    },
+    "web/build.mjs": {
+      "sha256": "ef915f8c751e95000086fb3027e960b684fdd384c2d1c86bae47006e72b1a158",
+      "approved": [
+        "r3_final_decision"
+      ]
+    }
+  }
+}

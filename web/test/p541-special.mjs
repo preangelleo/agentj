@@ -5,10 +5,10 @@ import {webcrypto} from 'node:crypto';
 import assert from 'node:assert/strict';
 import * as wire from '../../protocol/wire.js';
 const {setup,fake,B,ev,web,OUT}=await import('./p541.mjs');
-const {waitFor,sleep}=await import('./browser.mjs');
+const {waitFor,sleep,shoot}=await import('./browser.mjs');
 const checks=[];const check=(value,name)=>{checks.push({name,pass:!!value});assert.ok(value,name);};
-try{
- const p=await setup(390,844,'light');await fake.send({t:'ask_done',id:'541b0000000000000000000000000001',result:'deny'});await sleep(200);
+try{for(const theme of ['light','dark']){
+ const p=await setup(390,844,theme);await ev(p,`document.documentElement.dataset.theme=${JSON.stringify(theme)}`);await fake.send({t:'ask_done',id:'541b0000000000000000000000000001',result:'deny'});await sleep(200);
  const id='541a0000000000000000000000000001',e={v:2,channel:fake.channel,session:String(fake.st.epoch),request_id:id,revision:1,nonce:'nonce-1',title:'查看本次连接密钥',source:{message_id:1,root_message_id:1,session:String(fake.st.epoch),channel:'phone',time:Date.now(),sender:'你',text:'请在我确认的设备上显示连接密钥。',verified:true,suspicious:false,history_outside_window:false,initiator:'Agent J',task_record:'special-541',chain:[]},action:'仅在完成设备确认的遥控器上显示。',details:'受控秘密领取 · 原签名与UV协议',effects:['secret_display'],plan:null,expires_at:Math.floor(Date.now()/1000)+600};
  let card={t:'secret_out',id,n:'0'.repeat(32),kind:'text',name:'DEMO_KEY',purpose:'本次设备连接',filename:'',size:16,ttl:600,fa:'c3ludGhldGljLXJldmlldy1jcmVk',fa_s:'local',v:2,envelope:e,envelope_sha256:await wire.approvalEnvelopeDigest(e),revision:1,review_state:'pending'};
  fake.st.onApp=async(c,m,send)=>{
@@ -19,7 +19,19 @@ try{
   await send({t:'approval_review_result',id,op:m.op,event_id:m.event_id,ok:true,ask:card});return true;
  };
  await fake.send(card);await waitFor(p,`document.getElementById('sout')?.classList.contains('approval-special541')&&!document.getElementById('sout').hidden`);await sleep(250);
- check(await ev(p,`document.getElementById('sout').querySelector('.source541').textContent.includes('请在我确认的设备')`),'dedicated source displayed');
+
+ const geometry=await ev(p,`(()=>{const root=document.getElementById('sout'),b=root.querySelector('.special-fold541'),card=root.querySelector('.box'),r=b.getBoundingClientRect(),c=card.getBoundingClientRect(),s=getComputedStyle(b),h=card.querySelector('h2').getBoundingClientRect();return {aria:b.getAttribute('aria-label'),svg:!!b.querySelector('svg'),text:b.innerText,width:r.width,height:r.height,radius:s.borderRadius,bg:s.backgroundColor,color:s.color,left:r.x-c.x,top:r.y-c.y,right:c.right-r.right,bottom:c.bottom-r.bottom,title:{top:h.y-c.y,height:h.height},visibleTextButtons:[...root.querySelectorAll('button')].filter(n=>n.getClientRects().length&&getComputedStyle(n).visibility!=='hidden'&&/收起/.test(n.innerText)).map(n=>n.innerText)};})()`);
+ writeFileSync(OUT+'/r5-special-'+theme+'-geometry.json',JSON.stringify(geometry,null,2));
+ check(geometry.aria==='收起'&&geometry.svg&&!geometry.text.trim(),'dedicated collapse accessible icon '+theme);
+ check(geometry.width===44&&geometry.height===44&&parseFloat(geometry.radius)>=22,'dedicated U10 44px round shape '+theme);
+ check(geometry.bg==='rgb(44, 43, 38)'&&geometry.color==='rgb(250, 249, 245)','dedicated Noir Lotion '+theme);
+ check(geometry.left>=8&&geometry.top>=8&&geometry.right>=8&&geometry.bottom>=8,'dedicated collapse inside card '+theme);
+ check(Math.abs(geometry.top+geometry.height/2-geometry.title.top-geometry.title.height/2)<=2,'dedicated collapse title centers aligned '+theme);
+ check(geometry.visibleTextButtons.length===0,'dedicated no visible collapse text '+theme);
+ writeFileSync(OUT+'/r5-special-'+theme+'-390.png',await shoot(p));
+ const english=await ev(p,`(async()=>{window.AJLang.set('en');await new Promise(r=>setTimeout(r,80));const b=document.querySelector('#sout .special-fold541'),out={aria:b.getAttribute('aria-label'),text:b.innerText};window.AJLang.set('zh');return out;})()`);
+ check(english.aria==='Hide'&&!english.text.trim(),'dedicated English accessible icon '+theme);
+ check(await ev(p,`document.getElementById('sout').querySelector('.auth-source541').textContent.includes('请在我确认的设备')`),'dedicated source displayed');
  check(await ev(p,`!document.getElementById('sout').querySelector('details').open`),'dedicated details default folded');
  await ev(p,`document.getElementById('sout').querySelector('.special-fold541').click()`);await waitFor(p,`!document.getElementById('pending541').hidden&&document.getElementById('sout').hidden`);
  check(await ev(p,`document.body.dataset.status==='idle'`),'dedicated fold normal background');
@@ -29,5 +41,5 @@ try{
  check(await ev(p,`!document.querySelector('#sout-value').textContent.includes('DEMO_SECRET_VALUE')`),'no value in metadata UI');
  await fake.send({t:'secret_out_done',id,result:'declined'});await sleep(200);check(await ev(p,`document.getElementById('pending541').hidden&&!document.getElementById('webReportBtn').hidden`),'dedicated terminal restores report slot');
  await p.dispose();
-}finally{await B.close();await fake.stop();await web.stop();writeFileSync(OUT+'/special-validation.json',JSON.stringify({checks},null,2));}
+}}finally{await B.close();await fake.stop();await web.stop();writeFileSync(OUT+'/special-validation.json',JSON.stringify({checks},null,2));}
 console.log(JSON.stringify({checks:checks.length}));

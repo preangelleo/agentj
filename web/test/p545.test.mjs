@@ -50,7 +50,7 @@ test('Worker: /<seat> → 308 /<seat>/ (query kept), assets served from under th
   assert.equal(await r.text(), 'ok:/');
   r = await handle(new Request('https://m.agentj.app/abcd2345/friends'), env);
   assert.equal(await r.text(), 'ok:/');
-  assert.match(r.headers.get('content-security-policy'), /connect-src wss:\/\/relay\.agentj\.app wss:\/\/alpha-relay\.agentjarvis\.net https:\/\/m\.agentj\.app\/version\.json https:\/\/m\.agentj\.app\/abcd2345\/\.aj\/rt;/);
+  assert.match(r.headers.get('content-security-policy'), /connect-src wss:\/\/relay\.agentj\.app wss:\/\/alpha-relay\.agentjarvis\.net https:\/\/relay\.agentj\.app\/v1\/file\/ https:\/\/alpha-relay\.agentjarvis\.net\/v1\/file\/ https:\/\/m\.agentj\.app\/version\.json https:\/\/m\.agentj\.app\/abcd2345\/\.aj\/rt;/);
   r = await handle(new Request('https://m.agentj.app/'), env);
   assert.match(r.headers.get('content-security-policy'), /https:\/\/m\.agentj\.app\/version\.json https:\/\/m\.agentj\.app\/\.aj\/rt;/, 'the root page: unchanged');
   r = await handle(new Request('https://evil.example/abcd2345/'), env);

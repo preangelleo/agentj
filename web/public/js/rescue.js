@@ -31,6 +31,8 @@ export const STEPS = { reset: 4, help: 3, offer: 1, restart: 1, restart_session:
 export const FIRST_MS = 30000;                       // no answer at all this long → the host is stuck or too old
 export const IDLE_MS = { reset: 120000, help: 240000, offer: 240000, restart: 200000, restart_session: 180000, clear: 120000, ark: 240000, end_turn: 120000, takeover: 200000, repair: 240000, stop_hard: 120000, new_chat: 180000, report: 240000, deep_repair: 600000, rollback: 240000 };   // then: silence this long between two messages = no answer
 const WHY = ['shape', 'stale', 'no_key', 'bad_signature', 'replay', 'busy', 'unavailable'];
+// These authenticated fixed Host results explain why reset cannot help; only not_stopped suggests further repair.
+export const HOST_SAYS = ['quota', 'desktop_live', 'foreign', 'not_stopped', 'noack'];
 const STATES = ['run', 'ok', 'fail', 'skip'];
 const TICKET = /^st_[A-Za-z0-9_-]{8,40}$/;
 const OLD = /^[A-Za-z0-9._:-]{1,80}$/;
@@ -167,7 +169,8 @@ function finish(flow, m) {
   if (ok && isReady()) foldLater(flow);
   if (flow === 'help' && F.text && (m.advice === true || ADVICE.test(F.text))) F.advice = true;
   // ① did not bring the link back (a real failure, or a computer that never answered) → ② is the next thing to try
-  if (!ok && flow === 'reset' && !['offline', 'no_key', 'shape', 'stale', 'bad_signature', 'replay', 'busy'].includes(F.why)) S.failedOnce = true;
+  if (!ok && flow === 'reset' && !['offline', 'no_key', 'shape', 'stale', 'bad_signature', 'replay', 'busy'].includes(F.why)
+      && (!HOST_SAYS.includes(F.why) || F.why === 'not_stopped')) S.failedOnce = true;
   paint();
 }
 
@@ -284,7 +287,8 @@ function paintReset() {
   if (F.st === 'run') parts.push(bar('reset', F, STEPS.reset));
   if (F.st === 'ok') { const [first, ...rest] = okBlock('reset', F); parts.push(headBar('reset', first, () => clearFlow('reset')), ...rest, acts(backBtn('reset'), btn('rs-reset-go', tx('p332.again'), '', () => start('reset')))); }
   if (F.st === 'fail') {
-    const known = whyText(F.why);
+    const hostSays = HOST_SAYS.includes(F.why) && F.text;
+    const known = hostSays ? F.text : whyText(F.why);
     const msg = node('p', 'rsmsg rsfail', known || (F.why === 'timeout' && !F.heard ? tx('p332.noAnswer') : tx('p332.reset.fail')));
     msg.id = 'rs-reset-msg';
     parts.push(headBar('reset', msg, () => clearFlow('reset')));

@@ -1,0 +1,3705 @@
+{
+  "$schema": "./interactions.schema.json",
+  "about": "P207: the single source of truth for every mouse / touch gesture and keyboard shortcut of the Agent J web app. Never edit the generated files; add an entry with `agentjarvis/tools/interactions add`, then `render`; `check` runs in the p44 gates.",
+  "next_version": "0.20.2",
+  "words": {
+    "hold": {
+      "zh": "按住",
+      "en": "hold"
+    },
+    "space": {
+      "zh": "空格",
+      "en": "Space"
+    },
+    "gesture": {
+      "zh": "鼠标 / 触摸：",
+      "en": "Mouse / touch: "
+    },
+    "functional": {
+      "zh": "功能键（Alt+Shift）",
+      "en": "Function keys (Alt+Shift)"
+    },
+    "single": {
+      "zh": "单键与其它组合",
+      "en": "Single keys and other combinations"
+    },
+    "gestures": {
+      "zh": "手势",
+      "en": "Gestures"
+    },
+    "website": {
+      "zh": "在官网打开",
+      "en": "Open on website"
+    },
+    "globalNote": {
+      "zh": "功能键在输入框聚焦时也有效。系统或输入法占用的组合可能无法传到页面；ChromeOS 的 Alt+Shift+M 会打开文件应用，请从模型菜单恢复默认。",
+      "en": "Function keys also work while a text field is focused. System or input-method shortcuts may intercept them; on ChromeOS Alt+Shift+M opens Files, so restore defaults from the model menu."
+    },
+    "capturePending": {
+      "zh": "截图功能将在本次集成后可用。",
+      "en": "Page capture will be available after this integration."
+    },
+    "cards": {
+      "zh": "卡片（Alt+Shift，按你现有的卡片自动分配）",
+      "en": "Cards (Alt+Shift, given to the cards you have)"
+    }
+  },
+  "groups": [
+    {
+      "id": "page",
+      "zh": "翻页",
+      "en": "Pages"
+    },
+    {
+      "id": "card",
+      "zh": "当前回复卡",
+      "en": "This reply"
+    },
+    {
+      "id": "file",
+      "zh": "这一页的文件",
+      "en": "Files on this page"
+    },
+    {
+      "id": "app",
+      "zh": "页面顶部与状态",
+      "en": "Header and status"
+    },
+    {
+      "id": "keys",
+      "zh": "快捷键表",
+      "en": "Shortcut list"
+    },
+    {
+      "id": "compose",
+      "zh": "输入框与附件",
+      "en": "Message box and attachments"
+    },
+    {
+      "id": "edit",
+      "zh": "全屏编辑",
+      "en": "Full-screen editor"
+    },
+    {
+      "id": "read",
+      "zh": "全屏阅读",
+      "en": "Full-screen reader"
+    },
+    {
+      "id": "viewer",
+      "zh": "文件预览",
+      "en": "File preview"
+    },
+    {
+      "id": "search",
+      "zh": "搜索聊天记录",
+      "en": "Search the chat"
+    },
+    {
+      "id": "appr",
+      "zh": "审批卡",
+      "en": "Approval card"
+    }
+  ],
+  "entries": [
+    {
+      "id": "page.prev",
+      "since": "0.15.0",
+      "impl": "table",
+      "scope": "chat",
+      "repeat": false,
+      "target": {
+        "selector": "#deck",
+        "zh": "消息卡",
+        "en": "Message cards"
+      },
+      "gestures": [
+        {
+          "type": "swipe-right",
+          "pointer": "touch"
+        },
+        {
+          "type": "tap",
+          "pointer": "any",
+          "on": "#pgPrev"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+J",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
+          "combo": "j"
+        },
+        {
+          "combo": "ArrowLeft"
+        }
+      ],
+      "zh": "上一条（更早）",
+      "en": "Previous page (older)",
+      "gesture_zh": "卡片向右滑；横屏点左边的 ‹",
+      "gesture_en": "Swipe the cards right; in landscape tap ‹ on the left",
+      "common": true
+    },
+    {
+      "id": "page.next",
+      "since": "0.15.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#deck",
+        "zh": "消息卡",
+        "en": "Message cards"
+      },
+      "gestures": [
+        {
+          "type": "swipe-left",
+          "pointer": "touch"
+        },
+        {
+          "type": "tap",
+          "pointer": "any",
+          "on": "#pgNext"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "k"
+        },
+        {
+          "combo": "ArrowRight"
+        }
+      ],
+      "zh": "下一条（更新）",
+      "en": "Next page (newer)",
+      "gesture_zh": "卡片向左滑；横屏点右边的 ›",
+      "gesture_en": "Swipe the cards left; in landscape tap › on the right",
+      "common": true
+    },
+    {
+      "id": "page.newest",
+      "since": "0.17.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#pgLatest",
+        "zh": "消息卡页眉右边 1/3（页码）",
+        "en": "Right third of the message card header (page number)"
+      },
+      "gestures": [
+        {
+          "type": "double-tap",
+          "pointer": "any"
+        },
+        {
+          "type": "tap",
+          "pointer": "any",
+          "when": "the page number flashes"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+G",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
+          "combo": "g"
+        }
+      ],
+      "zh": "跳到最新一条",
+      "en": "Jump to the newest page",
+      "gesture_zh": "双击页眉右边 1/3（页码）；页码闪烁时单击也行",
+      "gesture_en": "Double-tap the right third of the header (page number); a single tap while it flashes",
+      "common": true
+    },
+    {
+      "id": "page.earliest",
+      "since": "0.17.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#omFirst",
+        "zh": "消息卡页眉左边 1/3",
+        "en": "Left third of the message card header"
+      },
+      "gestures": [
+        {
+          "type": "double-tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "G"
+        }
+      ],
+      "zh": "跳到最早一条（更早的会从Agent J 主机上取）",
+      "en": "Jump to the earliest page (older ones are fetched from the computer)",
+      "gesture_zh": "双击页眉左边 1/3",
+      "gesture_en": "Double-tap the left third of the header",
+      "common": true
+    },
+    {
+      "id": "page.first_unread",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#omUnread",
+        "zh": "消息卡页眉中间 1/3（未读圆标）",
+        "en": "Middle third of the message card header (unread badge)"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any",
+          "on": "#omUnread"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "u"
+        }
+      ],
+      "zh": "跳到第一条未读（所有遥控器同步已读），再一张张往后翻",
+      "en": "Jump to the first unread reply (read status syncs across your remotes), then page forward",
+      "gesture_zh": "点页眉中间 1/3 的未读圆标",
+      "gesture_en": "Tap the unread badge in the middle third of the header",
+      "common": true
+    },
+    {
+      "id": "page.quoted",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#omQuote",
+        "zh": "原话里引用的那一条",
+        "en": "The quoted message inside a message"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+Q",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
+          "combo": "q"
+        }
+      ],
+      "zh": "跳到这一条引用的那条消息",
+      "en": "Jump to the message this one quotes",
+      "gesture_zh": "点原话上方的引用条",
+      "gesture_en": "Tap the quote above the message"
+    },
+    {
+      "id": "page.expand",
+      "since": "0.15.0",
+      "impl": "table",
+      "scope": "chat",
+      "repeat": true,
+      "target": {
+        "selector": "#om",
+        "zh": "原话卡",
+        "en": "Message card"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any",
+          "on": "#omMore"
+        },
+        {
+          "type": "double-tap",
+          "pointer": "any",
+          "on": "#omText"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "o"
+        },
+        {
+          "combo": "ArrowUp"
+        },
+        {
+          "combo": "ArrowDown"
+        }
+      ],
+      "zh": "展开 / 收起原话（↑ 展开，↓ 收起；没有可展开的时候 ↑ ↓ 在消息里滚一段）",
+      "en": "Expand / fold the message (↑ expands, ↓ folds; with nothing to toggle ↑ ↓ scroll the page)",
+      "gesture_zh": "点右边的 … 按钮；双击原话",
+      "gesture_en": "Tap the … button on the right; double-tap the message",
+      "common": true
+    },
+    {
+      "id": "page.scroll",
+      "since": "0.15.0",
+      "impl": "table",
+      "scope": "chat",
+      "repeat": true,
+      "target": {
+        "selector": "#main",
+        "zh": "回复卡",
+        "en": "Reply card"
+      },
+      "gestures": [
+        {
+          "type": "scroll",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Space"
+        },
+        {
+          "combo": "Shift+Space"
+        }
+      ],
+      "zh": "往下翻一屏（Shift+空格 往上）",
+      "en": "Scroll down one screen (Shift+Space up)",
+      "gesture_zh": "上下滑动回复",
+      "gesture_en": "Scroll the reply"
+    },
+    {
+      "id": "card.reader",
+      "since": "0.15.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#readBtn",
+        "zh": "回复卡底部「全屏阅读」",
+        "en": "Reply bar: full-screen reader"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        },
+        {
+          "type": "double-tap",
+          "pointer": "any",
+          "on": "#rm"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "f"
+        }
+      ],
+      "zh": "全屏阅读这条回复",
+      "en": "Read this reply full screen",
+      "gesture_zh": "点书本图标；双击回复空白、正文或音频卡",
+      "gesture_en": "Tap the book icon; double-tap reply text, blank space or an audio card",
+      "common": true
+    },
+    {
+      "id": "card.speak",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#speakBtn",
+        "zh": "回复卡底部「朗读」",
+        "en": "Reply bar: read aloud"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "l"
+        }
+      ],
+      "zh": "朗读这条回复（再按一次停下）",
+      "en": "Read this reply aloud (press again to stop)",
+      "gesture_zh": "点喇叭图标",
+      "gesture_en": "Tap the speaker icon"
+    },
+    {
+      "id": "card.forward",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#fwdBtn",
+        "zh": "回复卡底部「转发给我自己」",
+        "en": "Reply bar: forward to myself"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "t"
+        }
+      ],
+      "zh": "把这条回复转发给自己（没设置转发时用手机的分享）",
+      "en": "Forward this reply to yourself (the phone's share sheet when forwarding is not set up)",
+      "gesture_zh": "点箭头图标",
+      "gesture_en": "Tap the arrow icon"
+    },
+    {
+      "id": "card.mail",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#mailBtn",
+        "zh": "回复卡底部「转发到邮箱」",
+        "en": "Reply bar: forward by e-mail"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "e"
+        }
+      ],
+      "zh": "把这一条转发到邮箱（邮件通道打开时才有）",
+      "en": "Forward this one by e-mail (when the e-mail channel is on)",
+      "gesture_zh": "点信封图标",
+      "gesture_en": "Tap the envelope icon"
+    },
+    {
+      "id": "card.copy",
+      "since": "0.15.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#copyReply",
+        "zh": "回复卡底部「复制」",
+        "en": "Reply bar: copy"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+Y",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
+          "combo": "y"
+        }
+      ],
+      "zh": "复制整条回复",
+      "en": "Copy the whole reply",
+      "gesture_zh": "点两张纸图标",
+      "gesture_en": "Tap the copy icon",
+      "common": true
+    },
+    {
+      "id": "card.copy_source",
+      "since": "0.15.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#om",
+        "zh": "原话卡",
+        "en": "Message card"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any",
+          "on": "#omCopy"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Y"
+        }
+      ],
+      "zh": "复制整段原话（纯语音的话复制转写文字）",
+      "en": "Copy the whole message (a voice-only message: its transcript)",
+      "gesture_zh": "点原话卡右下角展开 / 收起按钮左边的拷贝图标",
+      "gesture_en": "Tap the copy icon just left of expand / collapse at the card's bottom right"
+    },
+    {
+      "id": "card.reply",
+      "since": "0.15.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#replyBtn",
+        "zh": "回复卡底部「回复」",
+        "en": "Reply bar: reply"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+A",
+          "scope": "any"
+        },
+        {
+          "combo": "r"
+        }
+      ],
+      "zh": "回复这一条（引用条出现在输入框上方，焦点留在输入框，Esc 取消）；Alt+Shift+A 在输入框里也能用",
+      "en": "Reply to this one (the quote shows above the message box, focus stays in it; Esc cancels); Alt+Shift+A also works while typing",
+      "gesture_zh": "点弯箭头图标",
+      "gesture_en": "Tap the curved-arrow icon",
+      "common": true,
+      "allowReserved": "Leo 10-15 chose Alt+Shift+A (Answer) as the global reply key; ChromeOS may take it — r and the reply icon still work",
+      "keywords": {
+        "zh": "回答 引用 回复",
+        "en": "answer quote reply"
+      }
+    },
+    {
+      "id": "card.quote_selection",
+      "since": "0.15.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#words",
+        "zh": "回复里的文字",
+        "en": "Words of the reply"
+      },
+      "gestures": [
+        {
+          "type": "select",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "选中一段文字就引用它；再选别处是再加一段（最多 5 段，可以来自不同回复，全屏阅读里选也算）",
+      "en": "Select some words to quote them; each further selection adds one more (up to 5, from any replies, also in the full-screen reader)",
+      "gesture_zh": "在回复里选中文字",
+      "gesture_en": "Select words in the reply",
+      "nokey": "Text selection is the gesture itself; r quotes the whole reply."
+    },
+    {
+      "id": "card.web_report",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#webReportBtn",
+        "zh": "回复卡左下角快捷技能键（默认「分享成网页报告」）",
+        "en": "Reply card, bottom left: the hot key (default: share as a web report)"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "W"
+        }
+      ],
+      "zh": "快捷技能键：默认分享成网页报告（输入框放好 /web-page-report，可补一句，不自动发送；在旧卡上点同时引用这张）；换绑后执行你选的命令或技能，/clear 照旧先确认",
+      "en": "Hot key: by default share as a web report (puts /web-page-report in the message box, never sends; on an older reply also quotes it); once rebound, runs the command or skill you chose — /clear still asks first",
+      "gesture_zh": "点左下角圆形分享图标",
+      "gesture_en": "Tap the round share icon at the bottom left"
+    },
+    {
+      "id": "card.hot_pick",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#webReportBtn",
+        "zh": "回复卡左下角快捷技能键",
+        "en": "Reply card, bottom left: the hot key"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "换快捷技能键绑定的命令或技能（可搜索，确认后保存；图标不变）",
+      "en": "Change which command or skill the hot key runs (search, confirm, saved; the icon stays the same)",
+      "gesture_zh": "长按左下角圆形分享图标",
+      "gesture_en": "Hold the round share icon at the bottom left",
+      "nokey": "a hold opens a picker sheet; W already taps it"
+    },
+    {
+      "id": "file.preview",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": ".mcard",
+        "zh": "文件卡「预览」",
+        "en": "File card: preview"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        },
+        {
+          "type": "double-tap",
+          "pointer": "any",
+          "on": ".mcard:not([data-kind=audio])"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "v"
+        }
+      ],
+      "zh": "预览这一页的第一个文件（预览里 ← → 换下一个）",
+      "en": "Preview the first file on this page (← → in the preview for the others)",
+      "gesture_zh": "点文件卡、图片或「全屏查看」；双击非音频文件卡直接查看文件全屏",
+      "gesture_en": "Tap the file card, picture or Full screen; double-tap a non-audio file card to view that file full screen"
+    },
+    {
+      "id": "file.download",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": ".mcard",
+        "zh": "文件卡「下载」",
+        "en": "File card: download"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+D",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
+          "combo": "d"
+        }
+      ],
+      "zh": "下载这一页的第一个文件",
+      "en": "Download the first file on this page",
+      "gesture_zh": "点下载图标",
+      "gesture_en": "Tap the download icon"
+    },
+    {
+      "id": "file.share",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": ".mcard",
+        "zh": "文件卡「分享」",
+        "en": "File card: share"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+X",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
+          "combo": "x"
+        }
+      ],
+      "zh": "用系统分享发出这一页的第一个文件",
+      "en": "Share the first file on this page with the system share sheet",
+      "gesture_zh": "点分享图标",
+      "gesture_en": "Tap the share icon"
+    },
+    {
+      "id": "file.mail",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": ".mcard",
+        "zh": "文件卡「转发到邮箱」",
+        "en": "File card: forward by e-mail"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "E"
+        }
+      ],
+      "zh": "把这一页的第一个文件转发到邮箱",
+      "en": "Forward the first file on this page by e-mail",
+      "gesture_zh": "点文件卡上的信封图标",
+      "gesture_en": "Tap the envelope icon on the file card"
+    },
+    {
+      "id": "file.forward",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": ".mcard",
+        "zh": "文件卡「转发给我自己」",
+        "en": "File card: forward to myself"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "T"
+        }
+      ],
+      "zh": "把这一页的第一个文件转发给自己",
+      "en": "Forward the first file on this page to yourself",
+      "gesture_zh": "点文件卡上的箭头图标",
+      "gesture_en": "Tap the arrow icon on the file card"
+    },
+    {
+      "id": "app.font_step",
+      "since": "0.17.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#set-font-plus",
+        "zh": "设置 → 字体大小",
+        "en": "Settings → Text size"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Alt+Shift+Z",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
+          "combo": "z"
+        }
+      ],
+      "zh": "换页面字号（中 → 大 → 中 → 小）",
+      "en": "Step the page text size (medium → large → medium → small)",
+      "gesture_zh": "设置里调整字号",
+      "gesture_en": "Change the text size in Settings"
+    },
+    {
+      "id": "app.rename_agent",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#agent",
+        "zh": "回复卡上的 Agent 名字",
+        "en": "The Agent's name on the reply card"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "n"
+        }
+      ],
+      "zh": "给 Agent 改名",
+      "en": "Rename the Agent",
+      "gesture_zh": "长按 Agent 名字",
+      "gesture_en": "Hold the Agent's name"
+    },
+    {
+      "id": "app.rename_remote",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#omFirst",
+        "zh": "另一台遥控器发的原话卡上的来源名",
+        "en": "The source label of a message sent from another remote"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "N"
+        }
+      ],
+      "zh": "给发这条消息的另一台遥控器改名",
+      "en": "Rename the other remote that sent this message",
+      "gesture_zh": "长按页眉左边的来源名",
+      "gesture_en": "Hold the source label at the left of the header"
+    },
+    {
+      "id": "app.busy_list",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#busyDots",
+        "zh": "跳舞的机器人",
+        "en": "The dancing robots"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "b"
+        }
+      ],
+      "zh": "看后台在干活的 Agent 清单",
+      "en": "See which agents are at work in the background",
+      "gesture_zh": "点跳舞的机器人",
+      "gesture_en": "Tap the dancing robots"
+    },
+    {
+      "id": "app.robots_theme",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#busyDots",
+        "zh": "跳舞的机器人",
+        "en": "The dancing robots"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "B"
+        }
+      ],
+      "zh": "请 Agent 重新画机器人（换主题）",
+      "en": "Ask the Agent to redraw the robots (theme)",
+      "gesture_zh": "长按跳舞的机器人",
+      "gesture_en": "Hold the dancing robots"
+    },
+    {
+      "id": "app.load",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#loadHit",
+        "zh": "负载线",
+        "en": "The load line"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+W",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
+          "combo": "w"
+        }
+      ],
+      "zh": "看Agent J 主机现在有多忙（系统负载）",
+      "en": "See how busy the computer is (system load)",
+      "gesture_zh": "点 Agent 名字下面的负载线",
+      "gesture_en": "Tap the load line under the Agent's name"
+    },
+    {
+      "id": "app.quota",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#mWeek",
+        "zh": "本周 / 5 小时额度线",
+        "en": "The weekly / 5-hour lines"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Q"
+        }
+      ],
+      "zh": "看额度用了多少",
+      "en": "See how much quota is used",
+      "gesture_zh": "点顶部或输入框上方的灰线",
+      "gesture_en": "Tap the grey line at the top or above the message box"
+    },
+    {
+      "id": "app.model_step",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#meta",
+        "zh": "顶部「模型 · 思考强度」左半边",
+        "en": "Left half of the model · effort label"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+M"
+        }
+      ],
+      "zh": "换下一个模型（只改显示，停手 5 秒才生效）",
+      "en": "Switch to the next model (shown at once, applied after 5 s without another tap)",
+      "gesture_zh": "点模型名",
+      "gesture_en": "Tap the model name"
+    },
+    {
+      "id": "app.effort_step",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#meta",
+        "zh": "顶部「模型 · 思考强度」右半边",
+        "en": "Right half of the model · effort label"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+R"
+        }
+      ],
+      "zh": "换下一档思考强度（只改显示，停手 5 秒才生效）",
+      "en": "Switch to the next effort level (shown at once, applied after 5 s without another tap)",
+      "gesture_zh": "点思考强度",
+      "gesture_en": "Tap the effort level"
+    },
+    {
+      "id": "app.model_default",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#meta",
+        "zh": "顶部「模型 · 思考强度」",
+        "en": "The model · effort label"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+M",
+          "scope": "any",
+          "impl": "table"
+        }
+      ],
+      "zh": "模型和思考强度都回到默认（立即生效）",
+      "en": "Back to the default model and effort (at once)",
+      "gesture_zh": "长按模型或思考强度",
+      "gesture_en": "Hold the model or the effort",
+      "allowReserved": "Existing owner-required M; ChromeOS reserves it for Files. Use the model menu there."
+    },
+    {
+      "id": "app.scan",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#scanBtn",
+        "zh": "右上角扫码图标；拍照按钮",
+        "en": "Scan icon at the top right; the camera button"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any",
+          "on": "#scanBtn"
+        },
+        {
+          "type": "long-press",
+          "pointer": "any",
+          "on": "#tCamera"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "C"
+        }
+      ],
+      "zh": "扫二维码（新设备的配对码、好友名片，或者任何二维码）",
+      "en": "Scan a QR code (a new device's pairing code, a friend's card, or anything else)",
+      "gesture_zh": "点扫码图标；长按拍照按钮",
+      "gesture_en": "Tap the scan icon; hold the camera button"
+    },
+    {
+      "id": "app.settings",
+      "since": "0.15.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#setBtn",
+        "zh": "右上角齿轮",
+        "en": "The gear at the top right"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+O",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
+          "combo": "s"
+        },
+        {
+          "combo": "Mod+,",
+          "scope": "any",
+          "impl": "code"
+        }
+      ],
+      "zh": "打开设置",
+      "en": "Open Settings",
+      "gesture_zh": "点齿轮",
+      "gesture_en": "Tap the gear",
+      "common": true
+    },
+    {
+      "id": "app.search",
+      "since": "0.19.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#srchBtn",
+        "zh": "右上角放大镜",
+        "en": "The magnifier at the top right"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+K",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
+          "combo": "Mod+K",
+          "yields": [
+            "keys"
+          ]
+        }
+      ],
+      "zh": "搜索当前这一页：聊天里搜聊天记录，工作流 / 技能 / 记忆 / Agent J 页筛卡片，设置、菜单页和打开的文档在页内查找（输入框里的 Ctrl+K 仍是删到行尾），再按一次清空并关闭",
+      "en": "Search the page you are on: the chat history in the chat, the cards on Workflows / Skills / Memory / Agent J, the text of Settings, a menu page or an open document (inside the message box Ctrl+K still deletes to the end); press again to clear and close",
+      "gesture_zh": "点放大镜",
+      "gesture_en": "Tap the magnifier",
+      "common": true,
+      "keywords": {
+        "zh": "查找 搜索 聊天记录",
+        "en": "find lookup chat history"
+      }
+    },
+    {
+      "id": "app.keys",
+      "since": "0.15.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#keysBtn",
+        "zh": "设置里的「键盘快捷键」",
+        "en": "Settings: Keyboard shortcuts"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+H",
+          "scope": "any",
+          "impl": "table"
+        },
+        {
+          "combo": "?"
+        }
+      ],
+      "zh": "显示这张快捷键表",
+      "en": "Show this list of shortcuts",
+      "gesture_zh": "设置里点「键盘快捷键」",
+      "gesture_en": "Tap Keyboard shortcuts in Settings"
+    },
+    {
+      "id": "app.pending",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#pendTag",
+        "zh": "顶部「待处理」",
+        "en": "The Pending tag at the top"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+P"
+        }
+      ],
+      "zh": "重新打开收起的审批卡或问题卡",
+      "en": "Reopen the approval or question card you put away",
+      "gesture_zh": "点「待处理」",
+      "gesture_en": "Tap Pending"
+    },
+    {
+      "id": "app.pair_scan",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "[data-pair-scan]",
+        "zh": "未配对页「扫二维码」",
+        "en": "Unpaired page: scan the QR code"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "在未配对页扫Agent J 主机终端或账户页上的配对二维码",
+      "en": "On the unpaired page, scan the pairing QR code from the terminal or the account page",
+      "gesture_zh": "点「扫二维码」",
+      "gesture_en": "Tap \"Scan QR code\"",
+      "nokey": "未配对页没有键盘快捷键（按钮可用 Tab 选中）"
+    },
+    {
+      "id": "app.pair_copy",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "[data-pm-copy]",
+        "zh": "未配对页命令旁的复制图标",
+        "en": "Unpaired page: copy icon next to a command"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "复制旁边那条命令（agentj pair 等）",
+      "en": "Copy the command next to it (agentj pair …)",
+      "gesture_zh": "点复制图标",
+      "gesture_en": "Tap the copy icon",
+      "nokey": "未配对页没有键盘快捷键（按钮可用 Tab 选中）"
+    },
+    {
+      "id": "compose.focus",
+      "since": "0.15.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#input",
+        "zh": "输入框",
+        "en": "Message box"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "i"
+        },
+        {
+          "combo": "Escape",
+          "scope": "input",
+          "impl": "code"
+        }
+      ],
+      "zh": "进入输入框；在输入框里按 Esc 离开（输入的字保留）",
+      "en": "Into the message box; Esc in it leaves (the draft stays)",
+      "gesture_zh": "点输入框",
+      "gesture_en": "Tap the message box",
+      "common": true
+    },
+    {
+      "id": "compose.slash",
+      "since": "0.19.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#slashBtn",
+        "zh": "输入框左边的 ≡「全部命令」",
+        "en": "≡ All commands left of the message box"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "/"
+        }
+      ],
+      "zh": "命令菜单：在输入框外按 / 直接进输入框，斜杠已经填好，命令菜单随即弹出；弹窗或设置开着时不抢",
+      "en": "Commands: / outside the message box jumps in with / typed and the command menu open; not while a dialog or Settings is open",
+      "gesture_zh": "点 ≡",
+      "gesture_en": "Tap ≡",
+      "allowReserved": "Firefox quick find only when the page does not take /",
+      "common": true
+    },
+    {
+      "id": "compose.customize",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#slashBtn",
+        "zh": "≡「全部命令」",
+        "en": "≡ All commands"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+/"
+        }
+      ],
+      "zh": "定制我的命令（请 Agent 增删改 / 菜单里的命令）",
+      "en": "Customise my commands (ask the Agent to add, change or remove / commands)",
+      "gesture_zh": "长按 ≡",
+      "gesture_en": "Hold ≡"
+    },
+    {
+      "id": "compose.file",
+      "since": "0.15.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#tDoc",
+        "zh": "「文件」按钮",
+        "en": "File button"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "a"
+        }
+      ],
+      "zh": "选文件发给 Agent",
+      "en": "Pick a file for the Agent",
+      "gesture_zh": "点「文件」",
+      "gesture_en": "Tap File",
+      "common": true
+    },
+    {
+      "id": "compose.paste_text",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#tDoc",
+        "zh": "「文件」按钮",
+        "en": "File button"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "A"
+        }
+      ],
+      "zh": "把剪贴板里的文字放进输入框",
+      "en": "Put the clipboard text into the message box",
+      "gesture_zh": "长按「文件」",
+      "gesture_en": "Hold File"
+    },
+    {
+      "id": "compose.photo",
+      "since": "0.15.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#tPhoto",
+        "zh": "「相册」按钮",
+        "en": "Photos button"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "p"
+        }
+      ],
+      "zh": "从相册选图片",
+      "en": "Pick pictures from the photo library",
+      "gesture_zh": "点「相册」",
+      "gesture_en": "Tap Photos",
+      "common": true
+    },
+    {
+      "id": "compose.paste_image",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#tPhoto",
+        "zh": "「相册」按钮",
+        "en": "Photos button"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "P"
+        }
+      ],
+      "zh": "把剪贴板里的图片作为附件",
+      "en": "Attach the picture on the clipboard",
+      "gesture_zh": "长按「相册」",
+      "gesture_en": "Hold Photos"
+    },
+    {
+      "id": "compose.camera",
+      "since": "0.15.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#tCamera",
+        "zh": "「拍照」按钮",
+        "en": "Camera button"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "c"
+        }
+      ],
+      "zh": "拍照",
+      "en": "Take a photo",
+      "gesture_zh": "点「拍照」",
+      "gesture_en": "Tap Camera",
+      "common": true
+    },
+    {
+      "id": "compose.talk",
+      "since": "0.15.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#mic",
+        "zh": "麦克风按钮",
+        "en": "Microphone button"
+      },
+      "gestures": [
+        {
+          "type": "hold",
+          "pointer": "any"
+        },
+        {
+          "type": "swipe-up",
+          "pointer": "touch",
+          "when": "while holding = cancel"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "m",
+          "how": "hold"
+        }
+      ],
+      "zh": "按住说话，松开直接发送（滑出取消）；键盘 m 松开仍转文字",
+      "en": "Hold to talk, release to send (slide out to cancel); keyboard m still releases to text",
+      "gesture_zh": "按住麦克风",
+      "gesture_en": "Hold the microphone",
+      "common": true
+    },
+    {
+      "id": "compose.talk_lock",
+      "since": "0.17.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#mic",
+        "zh": "麦克风按钮",
+        "en": "Microphone button"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        },
+        {
+          "type": "double-tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "m",
+          "how": "double"
+        }
+      ],
+      "zh": "锁定录音，松手继续录；任意键或再点一下结束，Esc 取消",
+      "en": "Lock the recording; any key or another tap ends it, Esc cancels",
+      "gesture_zh": "单击或双击麦克风",
+      "gesture_en": "Tap or double-tap the microphone"
+    },
+    {
+      "id": "compose.send",
+      "since": "0.15.0",
+      "impl": "code",
+      "scope": "input",
+      "target": {
+        "selector": "#send",
+        "zh": "发送按钮",
+        "en": "Send button"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Enter"
+        }
+      ],
+      "zh": "发送（Shift+Enter 换行；内容长时用全屏编辑）",
+      "en": "Send (Shift+Enter for a new line; long text: the full-screen editor)",
+      "gesture_zh": "点发送",
+      "gesture_en": "Tap Send"
+    },
+    {
+      "id": "compose.volume",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#send",
+        "zh": "发送按钮",
+        "en": "Send button"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "V"
+        }
+      ],
+      "zh": "调发送提示音的音量",
+      "en": "Set the send sound's volume",
+      "gesture_zh": "长按发送按钮，上下滑",
+      "gesture_en": "Hold Send and slide up or down"
+    },
+    {
+      "id": "compose.paste",
+      "since": "0.15.0",
+      "impl": "code",
+      "scope": "input",
+      "target": {
+        "selector": "#input",
+        "zh": "整个页面",
+        "en": "The whole page"
+      },
+      "gestures": [
+        {
+          "type": "drag-drop",
+          "pointer": "mouse"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Mod+V"
+        }
+      ],
+      "zh": "把文件或截图放进附件（拖到页面上，或者在输入框里粘贴）",
+      "en": "Attach files or screenshots (drop them on the page, or paste in the message box)",
+      "gesture_zh": "把文件拖到页面上",
+      "gesture_en": "Drop files on the page"
+    },
+    {
+      "id": "compose.history",
+      "since": "0.15.0",
+      "impl": "code",
+      "scope": "input",
+      "target": {
+        "selector": "#input",
+        "zh": "输入框",
+        "en": "Message box"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "ArrowUp"
+        },
+        {
+          "combo": "ArrowDown"
+        }
+      ],
+      "zh": "输入框空着时翻之前发过的话",
+      "en": "With the message box empty: bring back what you sent before",
+      "gesture_zh": "",
+      "gesture_en": ""
+    },
+    {
+      "id": "compose.edge_arrows",
+      "since": "0.19.0",
+      "impl": "code",
+      "scope": "input",
+      "target": {
+        "selector": "#input",
+        "zh": "输入框",
+        "en": "Message box"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "ArrowLeft"
+        },
+        {
+          "combo": "ArrowRight"
+        }
+      ],
+      "zh": "输入框空着或光标已在头 / 尾时，直接翻上一条 / 下一条",
+      "en": "With the box empty or the cursor already at that end: previous / next page",
+      "gesture_zh": "",
+      "gesture_en": ""
+    },
+    {
+      "id": "compose.readline",
+      "since": "0.15.0",
+      "impl": "code",
+      "scope": "input",
+      "target": {
+        "selector": "#input",
+        "zh": "输入框",
+        "en": "Message box"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Ctrl+A"
+        },
+        {
+          "combo": "Ctrl+E"
+        },
+        {
+          "combo": "Ctrl+U"
+        },
+        {
+          "combo": "Ctrl+K"
+        },
+        {
+          "combo": "Ctrl+W"
+        },
+        {
+          "combo": "Ctrl+Y"
+        },
+        {
+          "combo": "Ctrl+D"
+        }
+      ],
+      "zh": "和终端一样：到行首 / 行尾，删到行首 / 行尾，删前一个词，贴回刚删掉的，删光标后一个字（Ctrl+W 在普通浏览器标签页里可能直接关标签，装到桌面的网页版里可用）",
+      "en": "As in a terminal: line start / end, delete to start / end, delete the previous word, paste back what was deleted, delete the next character (Ctrl+W may close a normal browser tab; it works in the installed web app)",
+      "gesture_zh": "",
+      "gesture_en": "",
+      "allowReserved": "terminal habits inside the message box only; documented caveat for Ctrl+W; Ctrl+D (bookmark) only while typing"
+    },
+    {
+      "id": "compose.cancel_reply",
+      "since": "0.15.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#qbX",
+        "zh": "输入框上方引用条最右边的 ✕",
+        "en": "✕ at the right end of the quotes above the message box"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Escape"
+        }
+      ],
+      "zh": "取消引用（有两段以上时，一次清空全部）",
+      "en": "Cancel the quote (with two or more, clears them all)",
+      "gesture_zh": "点引用条上的 ✕",
+      "gesture_en": "Tap ✕ on the quote"
+    },
+    {
+      "id": "compose.clear",
+      "since": "0.15.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#clr",
+        "zh": "输入框里的 ✕",
+        "en": "✕ in the message box"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Escape",
+          "how": "double"
+        }
+      ],
+      "zh": "在输入框外按两下 Esc 清空文字和附件（✕ 只清文字，可以撤销）。Esc 从不打断 Agent；要停下当前任务，点 Stop 按钮或发 /stop",
+      "en": "Esc twice outside the message box clears text and attachments (✕ clears the text only, with undo). Esc never interrupts the Agent; to stop the current task, use the Stop button or send /stop",
+      "gesture_zh": "点输入框里的 ✕",
+      "gesture_en": "Tap ✕ in the message box",
+      "common": true
+    },
+    {
+      "id": "compose.rec_end",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#pttEnd",
+        "zh": "录音卡「结束录音」",
+        "en": "Recording card: end"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "锁定录音时结束录音，转成文字放进输入框",
+      "en": "End a locked recording; the text goes into the message box",
+      "gesture_zh": "点录音卡上的结束图标",
+      "gesture_en": "Tap the end icon on the recording card",
+      "nokey": "锁定录音时任意键就是结束（见 compose.talk_lock）"
+    },
+    {
+      "id": "compose.rec_cancel",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#pttCancel",
+        "zh": "录音卡「取消录音」",
+        "en": "Recording card: cancel"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "取消锁定的录音，不转文字",
+      "en": "Cancel a locked recording; nothing is transcribed",
+      "gesture_zh": "点录音卡上的取消图标",
+      "gesture_en": "Tap the cancel icon on the recording card",
+      "nokey": "Esc 取消锁定的录音（见 compose.talk_lock）"
+    },
+    {
+      "id": "compose.quote_chip",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#qbList",
+        "zh": "输入框上方的一段引用（两段以上时）",
+        "en": "One quote above the message box (with two or more)"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "点时间跳回原回复并高亮这一段；点文字看全文；点它右上角的 ✕ 只删这一段",
+      "en": "Tap the time to go back to its reply with the words highlighted; tap the words to read them in full; its own ✕ removes just that one",
+      "gesture_zh": "点引用的时间 / 文字 / ✕",
+      "gesture_en": "Tap the quote’s time / words / ✕",
+      "nokey": "Several small targets in one strip; Esc clears them all."
+    },
+    {
+      "id": "compose.rec_send",
+      "since": "0.22.2",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#pttSend",
+        "zh": "录音卡「说完直接发送」",
+        "en": "Recording card: stop and send"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "锁定录音时一步结束并直接发送：短的转成文字发出，长的作为语音附件发出，不用再点发送",
+      "en": "End a locked recording and send it in one step: a short one goes as text, a long one as a voice attachment — no second tap on send",
+      "gesture_zh": "点录音卡上的发送图标",
+      "gesture_en": "Tap the send icon on the recording card",
+      "nokey": "锁定录音时任意键是结束（见 compose.talk_lock）；直接发送只在录音卡上点"
+    },
+    {
+      "id": "compose.fullscreen",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#tFull",
+        "zh": "输入框上方第 5 个按钮（全屏）",
+        "en": "The fifth button above the message box (full screen)"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        },
+        {
+          "type": "swipe-up",
+          "pointer": "touch"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Ctrl+G"
+        }
+      ],
+      "zh": "打开全屏编辑器（输入框里也能按；字原样带进去，内容超过一行时按钮角上显示有几行）",
+      "en": "Open the full-screen editor (also from inside the message box; the words come along, and past one line the button shows how many lines)",
+      "gesture_zh": "点全屏按钮，或手指按住输入框往上滑",
+      "gesture_en": "Tap the full-screen button, or swipe up on the message box"
+    },
+    {
+      "id": "compose.newline",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "input",
+      "target": {
+        "selector": "#input",
+        "zh": "输入框",
+        "en": "Message box"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Ctrl+J"
+        }
+      ],
+      "zh": "换行（和 Shift+Enter 一样；行末打一个 \\ 再按 Enter 也是换行，和终端一样）",
+      "en": "New line (like Shift+Enter; a \\ at the end of the line, then Enter, does the same — as in a terminal)",
+      "gesture_zh": "",
+      "gesture_en": "",
+      "allowReserved": "Ctrl+J (downloads page) only while typing in the message box, as in a terminal"
+    },
+    {
+      "id": "compose.stash",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "input",
+      "target": {
+        "selector": "#input",
+        "zh": "输入框",
+        "en": "Message box"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Ctrl+S"
+        }
+      ],
+      "zh": "暂存草稿：输入框里的字先放一边，再按一次取回（只在这个页面里）",
+      "en": "Put the draft aside; press again to bring it back (this page only)",
+      "gesture_zh": "",
+      "gesture_en": "",
+      "allowReserved": "Ctrl+S (save page) only while typing in the message box, as Claude Code's stash"
+    },
+    {
+      "id": "compose.history_search",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "input",
+      "target": {
+        "selector": "#input",
+        "zh": "输入框",
+        "en": "Message box"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Ctrl+R"
+        }
+      ],
+      "zh": "在之前发过的话里找含有输入框这几个字的那条；再按继续往前找",
+      "en": "Find an earlier message that contains what the box says; again = further back",
+      "gesture_zh": "",
+      "gesture_en": "",
+      "allowReserved": "Ctrl+R (reload) only while typing in the message box, as a terminal's history search"
+    },
+    {
+      "id": "edit.exit",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "editor",
+      "target": {
+        "selector": "#fsExit",
+        "zh": "全屏编辑左上角图标",
+        "en": "Top-left icon of the full-screen editor"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        },
+        {
+          "type": "double-tap",
+          "pointer": "any"
+        },
+        {
+          "type": "swipe-down",
+          "pointer": "any",
+          "on": "#fsGrab"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Escape"
+        },
+        {
+          "combo": "Ctrl+G"
+        }
+      ],
+      "zh": "退出全屏，文字原样回到输入框",
+      "en": "Leave full screen; the words go back to the message box as they are",
+      "gesture_zh": "点左上角图标，在空白处双击（在文字上双击仍是选字），或按住顶部中间的横杠往下拉（拉得不够会弹回去）",
+      "gesture_en": "Tap the top-left icon, double-tap blank space (on words a double tap still selects), or pull the bar at the top centre down (not far enough and it springs back)"
+    },
+    {
+      "id": "edit.send",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "editor",
+      "target": {
+        "selector": "#fsSend",
+        "zh": "全屏编辑右下角发送",
+        "en": "Send at the bottom right of the full-screen editor"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Mod+Enter"
+        }
+      ],
+      "zh": "发送（全屏里 Enter 只换行）",
+      "en": "Send (in full screen Enter is a new line)",
+      "gesture_zh": "点右下角发送",
+      "gesture_en": "Tap Send at the bottom right"
+    },
+    {
+      "id": "edit.clear",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "editor",
+      "target": {
+        "selector": "#fsClear",
+        "zh": "全屏编辑右上角清空图标",
+        "en": "Top-right clear icon of the full-screen editor"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "清空全部文字（5 秒内可以撤销）",
+      "en": "Clear all the words (undo within 5 seconds)",
+      "gesture_zh": "点右上角清空图标",
+      "gesture_en": "Tap the top-right clear icon",
+      "nokey": "a one-off tap with its own undo; Ctrl+U / Ctrl+K clear by line"
+    },
+    {
+      "id": "edit.command",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "editor",
+      "target": {
+        "selector": "#fsSlash",
+        "zh": "全屏编辑左下角的斜杠图标",
+        "en": "The slash icon at the bottom left of the full-screen editor"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "命令列表：选一条插到光标处（可搜索，↑↓ 选，Enter 插入）",
+      "en": "Command list: the one you pick goes in at the caret (search, ↑↓ to choose, Enter to insert)",
+      "gesture_zh": "点左下角的斜杠图标",
+      "gesture_en": "Tap the slash icon at the bottom left",
+      "nokey": "a list to pick from; typing / in the message box opens the same list"
+    },
+    {
+      "id": "edit.readline",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "editor",
+      "target": {
+        "selector": "#fsText",
+        "zh": "全屏编辑的文字区",
+        "en": "The full-screen editor's text"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Ctrl+A"
+        },
+        {
+          "combo": "Ctrl+E"
+        },
+        {
+          "combo": "Ctrl+U"
+        },
+        {
+          "combo": "Ctrl+K"
+        },
+        {
+          "combo": "Ctrl+W"
+        },
+        {
+          "combo": "Ctrl+Y"
+        },
+        {
+          "combo": "Ctrl+D"
+        }
+      ],
+      "zh": "和输入框一样的终端编辑键：到行首 / 行尾，删到行首 / 行尾，删前一个词，贴回刚删的，删光标后一个字",
+      "en": "The same terminal keys as the message box: line start / end, delete to start / end, delete the previous word, paste back, delete the next character",
+      "gesture_zh": "",
+      "gesture_en": "",
+      "allowReserved": "terminal habits inside the editor only; Ctrl+W may close a normal browser tab"
+    },
+    {
+      "id": "compose.mention",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#input",
+        "zh": "输入框",
+        "en": "Message box"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "@"
+        }
+      ],
+      "zh": "焦点在输入框外时，进入输入框并打开 @ 列表",
+      "en": "Outside the message box, focus it and open the @ list",
+      "gesture_zh": "",
+      "gesture_en": ""
+    },
+    {
+      "id": "read.close",
+      "since": "0.15.0",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rd",
+        "zh": "全屏阅读",
+        "en": "Full-screen reader"
+      },
+      "gestures": [
+        {
+          "type": "double-tap",
+          "pointer": "any",
+          "on": "#rdScroll"
+        },
+        {
+          "type": "tap",
+          "pointer": "any",
+          "on": "#rdReadBtn"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "f"
+        },
+        {
+          "combo": "Escape"
+        }
+      ],
+      "zh": "退出全屏阅读",
+      "en": "Leave the full-screen reader",
+      "gesture_zh": "双击文字；点右下角的书本（回复也会退出）",
+      "gesture_en": "Double-tap the text; tap the book (bottom right; reply leaves too)"
+    },
+    {
+      "id": "read.font",
+      "since": "0.15.0",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdScroll",
+        "zh": "全屏阅读的文字",
+        "en": "Text in the reader"
+      },
+      "gestures": [
+        {
+          "type": "pinch",
+          "pointer": "touch"
+        },
+        {
+          "type": "tap",
+          "pointer": "any",
+          "on": "#rdFsBtn"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "+"
+        },
+        {
+          "combo": "-"
+        }
+      ],
+      "zh": "调大 / 调小全屏阅读的字号",
+      "en": "Larger / smaller text in the reader",
+      "gesture_zh": "两指捏合；点左下角的字号图标，拖滑块或点 + / −",
+      "gesture_en": "Pinch; tap the text-size icon (bottom left), then drag the slider or tap + / −"
+    },
+    {
+      "id": "read.scroll",
+      "since": "0.15.0",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdScroll",
+        "zh": "全屏阅读的文字",
+        "en": "Text in the reader"
+      },
+      "gestures": [
+        {
+          "type": "scroll",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "ArrowUp"
+        },
+        {
+          "combo": "ArrowDown"
+        },
+        {
+          "combo": "Space"
+        }
+      ],
+      "zh": "往上 / 往下滚一段；空格翻一屏",
+      "en": "Scroll up / down; Space for a screen",
+      "gesture_zh": "上下滑动",
+      "gesture_en": "Scroll"
+    },
+    {
+      "id": "viewer.step",
+      "since": "0.20.0",
+      "impl": "code",
+      "scope": "viewer",
+      "target": {
+        "selector": ".mview",
+        "zh": "文件预览",
+        "en": "File preview"
+      },
+      "gestures": [
+        {
+          "type": "swipe-left",
+          "pointer": "touch"
+        },
+        {
+          "type": "tap",
+          "pointer": "any",
+          "on": ".mvprev"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "ArrowLeft"
+        },
+        {
+          "combo": "ArrowRight"
+        }
+      ],
+      "zh": "同一条回复里的上一个 / 下一个文件",
+      "en": "Previous / next file of the same reply",
+      "gesture_zh": "左右滑；点 ‹ ›",
+      "gesture_en": "Swipe; tap ‹ ›"
+    },
+    {
+      "id": "viewer.download",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "viewer",
+      "target": {
+        "selector": ".mvdl",
+        "zh": "预览顶部的下载",
+        "en": "Download in the preview bar"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "d"
+        }
+      ],
+      "zh": "下载正在预览的文件",
+      "en": "Download the file being previewed",
+      "gesture_zh": "点下载图标",
+      "gesture_en": "Tap the download icon"
+    },
+    {
+      "id": "viewer.close",
+      "since": "0.20.0",
+      "impl": "code",
+      "scope": "viewer",
+      "target": {
+        "selector": ".mview",
+        "zh": "文件预览",
+        "en": "File preview"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any",
+          "on": ".mview-x"
+        },
+        {
+          "type": "tap",
+          "pointer": "any",
+          "when": "outside the file"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Space"
+        },
+        {
+          "combo": "Escape"
+        }
+      ],
+      "zh": "关闭预览",
+      "en": "Close the preview",
+      "gesture_zh": "点 ×；点文件外面",
+      "gesture_en": "Tap ×; tap outside the file"
+    },
+    {
+      "id": "search.results",
+      "since": "0.19.0",
+      "impl": "code",
+      "scope": "search",
+      "target": {
+        "selector": "#srch",
+        "zh": "搜索结果",
+        "en": "Search results"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any",
+          "on": ".srhit"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "ArrowUp"
+        },
+        {
+          "combo": "ArrowDown"
+        },
+        {
+          "combo": "Enter"
+        }
+      ],
+      "zh": "选结果，Enter 打开那一条",
+      "en": "Pick a result; Enter opens it",
+      "gesture_zh": "点一条结果",
+      "gesture_en": "Tap a result"
+    },
+    {
+      "id": "search.history",
+      "since": "0.19.0",
+      "impl": "code",
+      "scope": "search",
+      "target": {
+        "selector": "#srch",
+        "zh": "搜索结果",
+        "en": "Search results"
+      },
+      "gestures": [
+        {
+          "type": "swipe-left",
+          "pointer": "touch"
+        },
+        {
+          "type": "tap",
+          "pointer": "any",
+          "on": "#srchPrev"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "ArrowLeft"
+        },
+        {
+          "combo": "ArrowRight"
+        }
+      ],
+      "zh": "换到之前 / 之后的一次搜索",
+      "en": "Earlier / later searches",
+      "gesture_zh": "左右滑；点 ‹ ›",
+      "gesture_en": "Swipe; tap ‹ ›"
+    },
+    {
+      "id": "search.close",
+      "since": "0.19.0",
+      "impl": "code",
+      "scope": "search",
+      "target": {
+        "selector": "#srch",
+        "zh": "搜索",
+        "en": "Search"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any",
+          "on": "#srchClose"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Escape"
+        }
+      ],
+      "zh": "关闭搜索",
+      "en": "Close the search",
+      "gesture_zh": "点 ×；点外面",
+      "gesture_en": "Tap ×; tap outside"
+    },
+    {
+      "id": "appr.approve",
+      "since": "0.19.0",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": "#apprAllow",
+        "zh": "审批卡「批准」",
+        "en": "Approval card: approve"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Mod+Enter"
+        }
+      ],
+      "zh": "批准，等于点一下「批准」（验证本人照常）；审批卡开着时优先给它，输入框里的发送让位",
+      "en": "Approve, the same as tapping Approve (identity checks as usual); the card wins over the message box",
+      "gesture_zh": "点「批准」",
+      "gesture_en": "Tap Approve",
+      "common": true
+    },
+    {
+      "id": "appr.fold",
+      "since": "0.19.0",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": "#sheetClose",
+        "zh": "审批卡右上角",
+        "en": "Top right of the approval card"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Escape"
+        }
+      ],
+      "zh": "收起审批卡，不算批准也不算拒绝；点顶部「待处理」再打开",
+      "en": "Put the card away, neither approved nor denied; tap Pending at the top to reopen it",
+      "gesture_zh": "点收起",
+      "gesture_en": "Tap put away"
+    },
+    {
+      "id": "appr.question",
+      "since": "0.28.0",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": "#doubt541c",
+        "zh": "我有疑问",
+        "en": "I have a question"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "询问这张审批卡的来源和范围，不批准操作",
+      "en": "Ask the main agent to explain this approval without approving it",
+      "gesture_zh": "点我有疑问",
+      "gesture_en": "Tap I have a question",
+      "nokey": "点击该控件"
+    },
+    {
+      "id": "appr.source",
+      "since": "0.28.0",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": "#source541",
+        "zh": "审批来源消息",
+        "en": "Approval source message"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "跳到原始消息并高亮，审批卡收起",
+      "en": "Locate and highlight the original message while folding the approval",
+      "gesture_zh": "点审批来源消息",
+      "gesture_en": "Tap Approval source message",
+      "nokey": "点击该控件"
+    },
+    {
+      "id": "appr.details",
+      "since": "0.28.0",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": "#details541>summary",
+        "zh": "命令详情",
+        "en": "Command details"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "展开或收起命令详情",
+      "en": "Expand or fold command details",
+      "gesture_zh": "点命令详情",
+      "gesture_en": "Tap Command details",
+      "nokey": "点击该控件"
+    },
+    {
+      "id": "appr.details_full",
+      "since": "0.28.0",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": "#detailsFull541",
+        "zh": "全屏查看命令",
+        "en": "View command full screen"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "全屏查看安全脱敏的命令详情",
+      "en": "View redacted command details full screen",
+      "gesture_zh": "点全屏查看命令",
+      "gesture_en": "Tap View command full screen",
+      "nokey": "点击该控件"
+    },
+    {
+      "id": "appr.reopen",
+      "since": "0.28.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#reopen541",
+        "zh": "重新弹出，我来审批",
+        "en": "Reopen for my approval"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "重新核对并打开原审批卡，仍须本人确认",
+      "en": "Recheck and reopen the original card; identity confirmation is still required",
+      "gesture_zh": "点重新弹出，我来审批",
+      "gesture_en": "Tap Reopen for my approval",
+      "nokey": "点击该控件"
+    },
+    {
+      "id": "appr.heartbeat",
+      "since": "0.28.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#pending541",
+        "zh": "待审批心跳点",
+        "en": "Pending approval heartbeat"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "打开收起的待审批卡",
+      "en": "Open the pending approval you put away",
+      "gesture_zh": "点待审批心跳点",
+      "gesture_en": "Tap Pending approval heartbeat",
+      "nokey": "点击该控件"
+    },
+    {
+      "id": "app.pages_menu",
+      "since": "0.21.0",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#orb",
+        "zh": "左上角 logo",
+        "en": "Logo at the top left"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+W"
+        }
+      ],
+      "zh": "打开五页菜单",
+      "en": "Open the five-page menu",
+      "gesture_zh": "点 logo",
+      "gesture_en": "Tap the logo"
+    },
+    {
+      "id": "app.upgrade_host",
+      "since": "0.21.0",
+      "impl": "table",
+      "scope": "any",
+      "target": {
+        "selector": "#set-hostupg",
+        "zh": "设置：升级 Agent J 主机",
+        "en": "Settings: Upgrade computer"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+U"
+        }
+      ],
+      "zh": "升级 Agent J 主机（手机确认）",
+      "en": "Upgrade computer (confirm on phone)",
+      "gesture_zh": "点击设置里的升级 Agent J 主机",
+      "gesture_en": "Tap Upgrade computer in Settings"
+    },
+    {
+      "id": "app.refresh_web",
+      "since": "0.21.0",
+      "impl": "table",
+      "scope": "any",
+      "target": {
+        "selector": "#set-refresh",
+        "zh": "设置：更新并刷新网页",
+        "en": "Settings: Update and reload page"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+R"
+        }
+      ],
+      "zh": "更新并刷新网页",
+      "en": "Update and reload page",
+      "gesture_zh": "点击设置里的更新并刷新",
+      "gesture_en": "Tap Update and reload in Settings"
+    },
+    {
+      "id": "app.reload_host",
+      "since": "0.22.1",
+      "impl": "table",
+      "scope": "any",
+      "target": {
+        "selector": "#reloadEntry",
+        "zh": "≡ 全部命令：重新加载配置",
+        "en": "≡ All commands: Reload configuration"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+L"
+        }
+      ],
+      "allowReserved": "P320 (Leo 10-15): Reload needs a key and every free Alt+Shift letter is a ChromeOS shell key; L = reLoad. The ≡ row and /reload work everywhere",
+      "zh": "重新加载 Agent J 主机配置（不重启后台服务）",
+      "en": "Reload the computer's configuration (no service restart)",
+      "gesture_zh": "在 ≡ 全部命令里点「重新加载配置」",
+      "gesture_en": "Tap Reload configuration in ≡ All commands"
+    },
+    {
+      "id": "page.go_chat",
+      "since": "0.21.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#orb",
+        "zh": "左上角 logo",
+        "en": "Logo at the top left"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "nokey": "同一入口的长按；菜单中的聊天卡也可返回 / the Chat card in the menu also returns",
+      "zh": "回到聊天",
+      "en": "Go to chat",
+      "gesture_zh": "长按 logo",
+      "gesture_en": "Hold the logo"
+    },
+    {
+      "id": "app.pair_add",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "any",
+      "target": {
+        "selector": "#rm-add",
+        "zh": "添加遥控器",
+        "en": "Add a remote"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Alt+Shift+P"
+        }
+      ],
+      "zh": "添加遥控器",
+      "en": "Add a remote",
+      "gesture_zh": "",
+      "gesture_en": ""
+    },
+    {
+      "id": "app.screenshot",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "any",
+      "target": {
+        "selector": "#setBtn",
+        "zh": "截取当前页面，放入附件并复制到剪贴板",
+        "en": "Capture this page as an attachment and copy it to the clipboard"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+C"
+        }
+      ],
+      "zh": "截取当前页面，放入附件并复制到剪贴板",
+      "en": "Capture this page as an attachment and copy it to the clipboard",
+      "gesture_zh": "长按齿轮；说明见右键或快捷键页",
+      "gesture_en": "Hold the gear; help via right-click or Keyboard shortcuts",
+      "keywords": {
+        "zh": "截图 截屏 屏幕截图 拍屏",
+        "en": "screenshot screen capture snapshot print screen"
+      }
+    },
+    {
+      "id": "app.friends",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "any",
+      "target": {
+        "selector": "#open-friends",
+        "zh": "打开好友页",
+        "en": "Open Friends"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+F"
+        }
+      ],
+      "zh": "打开好友页",
+      "en": "Open Friends",
+      "gesture_zh": "点设置 → 好友",
+      "gesture_en": "Settings → Friends"
+    },
+    {
+      "id": "app.bots",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "any",
+      "target": {
+        "selector": "#open-bots",
+        "zh": "打开客服页",
+        "en": "Open Customer service"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+E"
+        }
+      ],
+      "zh": "打开客服页",
+      "en": "Open Customer service",
+      "gesture_zh": "点设置 → Bots / 客服",
+      "gesture_en": "Settings → Bots"
+    },
+    {
+      "id": "app.setup",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "any",
+      "target": {
+        "selector": "#open-setup",
+        "zh": "打开设置向导",
+        "en": "Open Setup"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Alt+Shift+V"
+        }
+      ],
+      "zh": "打开设置向导",
+      "en": "Open Setup",
+      "gesture_zh": "",
+      "gesture_en": ""
+    },
+    {
+      "id": "app.card_color",
+      "since": "0.24.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "[data-color-card]",
+        "zh": "卡片右上角",
+        "en": "Card top-right corner"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "打开卡片底色取色器（任意颜色；浅色底上的字自动变深色）",
+      "en": "Open the card colour picker (any colour; on a light fill the words turn dark)",
+      "gesture_zh": "长按右上角的隐形圆形区域",
+      "gesture_en": "Hold the invisible circular area in the top-right corner",
+      "nokey": "Pointer Easter egg"
+    },
+    {
+      "id": "app.open_card",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#five-menu .fp-menu-card",
+        "zh": "Logo 菜单里的卡片",
+        "en": "A card on the logo menu"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "直接打开一张卡片：Alt+Shift+卡片英文名里的一个字母（先取首字母，已被别的键占用就取下一个，字母都占了用数字 1–9、0），输入框里也能按；再按一次或 Esc 回到对话。每张卡片现在的键位列在本页最上面的卡片一节，卡片标题上带下划线的字母就是它的键，新加的卡片自动分到一个",
+      "en": "Open a card directly: Alt+Shift + a letter of the card's English name (the first letter; if another key has it, the next one; when all are taken, a digit 1–9, 0), also while typing; again, or Esc, goes back to the chat. Each card's key right now is listed in the cards section at the top of this page, the underlined letter in a card's title is its key, and a new card gets one by itself",
+      "gesture_zh": "点 Logo 菜单里的卡片",
+      "gesture_en": "Tap the card on the logo menu",
+      "nokey": "each card's key is given at run time from its English name (web/public/js/cardkeys.js), never a fixed letter; the shortcut sheet lists them"
+    },
+    {
+      "id": "keys.search",
+      "since": "0.22.2",
+      "impl": "code",
+      "scope": "keys",
+      "target": {
+        "selector": "#keysFindBtn",
+        "zh": "快捷键表右上角的放大镜",
+        "en": "The magnifier at the top right of the shortcut list"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "/"
+        },
+        {
+          "combo": "Mod+K"
+        }
+      ],
+      "zh": "在快捷键表里搜索：输入关键词，按说明、按键或手势筛选，中英文都行",
+      "en": "Search the shortcut list: type a word to filter by action, key or gesture, in Chinese or English",
+      "gesture_zh": "点快捷键表右上角的放大镜",
+      "gesture_en": "Tap the magnifier at the top right of the list"
+    },
+    {
+      "id": "keys.search_close",
+      "since": "0.22.2",
+      "impl": "code",
+      "scope": "keys",
+      "target": {
+        "selector": "#keysFind",
+        "zh": "快捷键表的搜索框",
+        "en": "The shortcut list search box"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any",
+          "on": "#keysFindBtn"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Escape"
+        }
+      ],
+      "zh": "清空并收起搜索框，再按一次 Esc 关闭快捷键表",
+      "en": "Clear and close the search box; Esc again closes the shortcut list",
+      "gesture_zh": "再点一次放大镜",
+      "gesture_en": "Tap the magnifier again"
+    },
+    {
+      "id": "read.prev",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdScroll",
+        "zh": "全屏阅读",
+        "en": "Full-screen reader"
+      },
+      "gestures": [
+        {
+          "type": "swipe-right",
+          "pointer": "touch"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "ArrowLeft"
+        }
+      ],
+      "zh": "上一条更早的回复",
+      "en": "Previous, older reply",
+      "gesture_zh": "向右滑动",
+      "gesture_en": "Swipe right"
+    },
+    {
+      "id": "read.next",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdScroll",
+        "zh": "全屏阅读",
+        "en": "Full-screen reader"
+      },
+      "gestures": [
+        {
+          "type": "swipe-left",
+          "pointer": "touch"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "ArrowRight"
+        }
+      ],
+      "zh": "下一条更新的回复",
+      "en": "Next, newer reply",
+      "gesture_zh": "向左滑动",
+      "gesture_en": "Swipe left"
+    },
+    {
+      "id": "read.first",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdWho",
+        "zh": "全屏阅读页眉左边（Agent 名和时间）",
+        "en": "Reader header, left (Agent name and time)"
+      },
+      "gestures": [
+        {
+          "type": "double-tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "G"
+        }
+      ],
+      "zh": "跳到第一条回复，仍在全屏阅读",
+      "en": "Jump to the first reply, staying in the reader",
+      "gesture_zh": "双击左上角的 Agent 名和时间",
+      "gesture_en": "Double-tap the Agent name and time (top left)"
+    },
+    {
+      "id": "read.last",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdPgBtn",
+        "zh": "全屏阅读页眉右上角的页码",
+        "en": "Reader header: the page number (top right)"
+      },
+      "gestures": [
+        {
+          "type": "double-tap",
+          "pointer": "any"
+        },
+        {
+          "type": "tap",
+          "pointer": "any",
+          "when": "the page number flashes"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "g"
+        }
+      ],
+      "zh": "跳到最新一条回复，不退出全屏",
+      "en": "Jump to the newest reply without leaving the reader",
+      "gesture_zh": "双击右上角的页码；页码闪烁时单击也行",
+      "gesture_en": "Double-tap the page number (top right); a single tap while it flashes"
+    },
+    {
+      "id": "read.first_unread",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdUnread",
+        "zh": "全屏阅读页眉中间（未读圆标）",
+        "en": "Reader header, middle (unread badge)"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "u"
+        }
+      ],
+      "zh": "跳到第一条未读回复",
+      "en": "Jump to the first unread reply",
+      "gesture_zh": "点页眉中间的未读圆标",
+      "gesture_en": "Tap the unread badge in the middle of the header"
+    },
+    {
+      "id": "read.copy",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdCopyBtn",
+        "zh": "全屏阅读右下角「复制」",
+        "en": "Reader footer: copy"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "y"
+        }
+      ],
+      "zh": "复制整条回复并继续阅读",
+      "en": "Copy the whole reply and keep reading",
+      "gesture_zh": "点两张纸图标",
+      "gesture_en": "Tap the copy icon"
+    },
+    {
+      "id": "read.reply",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdReplyBtn",
+        "zh": "全屏阅读右下角「回复」（最右）",
+        "en": "Reader footer: reply (rightmost)"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "r"
+        }
+      ],
+      "zh": "引用这条回复，退出全屏，光标进输入框",
+      "en": "Quote this reply, leave the reader and put the caret in the message box",
+      "gesture_zh": "点弯箭头图标",
+      "gesture_en": "Tap the curved-arrow icon"
+    },
+    {
+      "id": "read.speak",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdSpeakBtn",
+        "zh": "全屏阅读右下角「朗读」",
+        "en": "Reader footer: read aloud"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "l"
+        }
+      ],
+      "zh": "朗读这条回复，留在全屏",
+      "en": "Read this reply aloud, staying in the reader",
+      "gesture_zh": "点喇叭图标",
+      "gesture_en": "Tap the speaker icon"
+    },
+    {
+      "id": "read.forward",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdFwdBtn",
+        "zh": "全屏阅读右下角「转发给我自己」",
+        "en": "Reader footer: forward to myself"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "t"
+        }
+      ],
+      "zh": "转发给我自己，留在全屏（图标显示发送中 / 已发送）",
+      "en": "Forward to myself, staying in the reader (the icon shows sending / sent)",
+      "gesture_zh": "点纸飞机图标",
+      "gesture_en": "Tap the paper-plane icon"
+    },
+    {
+      "id": "read.mail",
+      "since": "0.20.2",
+      "impl": "code",
+      "scope": "reader",
+      "target": {
+        "selector": "#rdMailBtn",
+        "zh": "全屏阅读右下角「转发到邮箱」",
+        "en": "Reader footer: forward by e-mail"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "e"
+        }
+      ],
+      "zh": "转发到邮箱，弹窗关掉后仍在全屏",
+      "en": "Forward by e-mail; after the dialog you are still in the reader",
+      "gesture_zh": "点信封图标",
+      "gesture_en": "Tap the envelope icon"
+    },
+    {
+      "id": "card.remote_reader",
+      "since": "0.24.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#rm",
+        "zh": "大屏回复卡",
+        "en": "Large-screen reply card"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Enter",
+          "how": "double"
+        }
+      ],
+      "zh": "大屏全屏阅读（两次确认间隔小于 400 毫秒）",
+      "en": "Large-screen full-screen reader (two OK presses under 400 ms)",
+      "gesture_zh": "大屏遥控器双击确认键",
+      "gesture_en": "Double-press OK on a large-screen remote"
+    },
+    {
+      "id": "app.refresh_hold",
+      "since": "0.24.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#srchBtn",
+        "zh": "右上角放大镜",
+        "en": "Top-right magnifier"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "保存草稿并强制刷新网页",
+      "en": "Save draft and force refresh",
+      "gesture_zh": "长按搜索（录音、附件或未提交卡片时不刷新）",
+      "gesture_en": "Hold Search (blocked by recording, attachments or an unsubmitted card)",
+      "nokey": "Uses the existing Alt+Shift+R refresh shortcut"
+    },
+    {
+      "id": "app.refresh_pull",
+      "since": "0.25.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#main",
+        "zh": "消息正文",
+        "en": "Message text"
+      },
+      "gestures": [
+        {
+          "type": "swipe-down",
+          "pointer": "touch"
+        }
+      ],
+      "keys": [],
+      "zh": "保存草稿并更新刷新网页",
+      "en": "Save draft and update the page",
+      "gesture_zh": "消息滚到顶部后继续下拉，看到「松开刷新」后松手；录音、附件或未提交卡片时不刷新",
+      "gesture_en": "At the message top, pull down and release; blocked by recording, attachments or unfinished cards",
+      "nokey": "Uses Alt+Shift+R"
+    },
+    {
+      "id": "app.palette_copy",
+      "since": "0.25.1",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": ".jp-swatch",
+        "zh": "配色色块",
+        "en": "Palette swatch"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Mod+C"
+        }
+      ],
+      "zh": "复制色块 HEX",
+      "en": "Copy swatch HEX",
+      "gesture_zh": "长按色块复制 HEX；移动手指取消",
+      "gesture_en": "Hold a swatch to copy HEX; move to cancel"
+    },
+    {
+      "id": "app.stop_all",
+      "since": "0.25.1",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#set-estop",
+        "zh": "设置 → 安全",
+        "en": "Settings → Safety"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Alt+Shift+S",
+          "impl": "table"
+        }
+      ],
+      "zh": "停止所有 Agent（先确认）",
+      "en": "Stop all Agents (confirm first)",
+      "gesture_zh": "点按钮后确认",
+      "gesture_en": "Tap the button, then confirm",
+      "allowReserved": "P563 (董事长 10-28: the Settings button shows its key so the owner remembers it); S = Stop. The free Alt+Shift letters left (B I N S T) are all browser / OS keys: B T I = Chrome on Windows / Linux (bookmarks bar, toolbar, feedback), N S = ChromeOS shell (notifications, status tray). S is the only one that is free in Chrome / Firefox / Safari on Windows, macOS, Linux and an iPad keyboard; on a Chromebook the Settings button still works"
+    },
+    {
+      "id": "app.restart_session",
+      "since": "0.25.1",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#rs-session-go",
+        "zh": "设置 → 紧急修复",
+        "en": "Settings → Emergency repair"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "重启 Agent（先确认）",
+      "en": "Restart Agent (confirm first)",
+      "gesture_zh": "点按钮后确认",
+      "gesture_en": "Tap the button, then confirm",
+      "nokey": "settings-only"
+    },
+    {
+      "id": "app.layout_diagnostic",
+      "since": "0.25.5",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#layout-diag-send",
+        "zh": "设置 → 紧急修复",
+        "en": "Settings → Emergency repair"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "发送画面诊断",
+      "en": "Send layout diagnostic",
+      "gesture_zh": "点一下",
+      "gesture_en": "Tap",
+      "nokey": "settings-only"
+    },
+    {
+      "id": "app.mcp_create",
+      "since": "0.26.11",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": ".mcp474-create",
+        "zh": "创建外部助手连接",
+        "en": "Create external assistant connection"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "创建连接并签名确认",
+      "en": "Create a connection and confirm its signed card",
+      "gesture_zh": "点创建连接",
+      "gesture_en": "Tap Create connection",
+      "nokey": "Infrequent settings action; use standard form keyboard navigation"
+    },
+    {
+      "id": "app.mcp_rotate",
+      "since": "0.26.11",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": ".mcp474-rotate",
+        "zh": "轮换外部助手凭据",
+        "en": "Rotate external assistant credential"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "轮换连接凭据",
+      "en": "Rotate a connection credential",
+      "gesture_zh": "点轮换凭据",
+      "gesture_en": "Tap Rotate credential",
+      "nokey": "Infrequent settings action; use standard form keyboard navigation"
+    },
+    {
+      "id": "app.mcp_revoke",
+      "since": "0.26.11",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": ".mcp474-revoke",
+        "zh": "撤销外部助手连接",
+        "en": "Revoke external assistant connection"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "撤销连接",
+      "en": "Revoke a connection",
+      "gesture_zh": "点撤销连接",
+      "gesture_en": "Tap Revoke connection",
+      "nokey": "Infrequent settings action; use standard form keyboard navigation"
+    },
+    {
+      "id": "app.mcp_copy",
+      "since": "0.26.11",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": ".mcp474-copy",
+        "zh": "复制外部助手连接地址",
+        "en": "Copy external assistant connection URL"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "复制连接地址",
+      "en": "Copy the connection URL",
+      "gesture_zh": "点复制连接地址",
+      "gesture_en": "Tap Copy connection URL",
+      "nokey": "Infrequent settings action; use standard form keyboard navigation"
+    },
+    {
+      "id": "app.assist_terminal_grant",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-grant",
+        "zh": "官方终端协助授权",
+        "en": "Official terminal assistance consent"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "准备并授权官方终端协助",
+      "en": "Prepare and authorize official terminal assistance",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Owner confirmation requires an explicit click"
+    },
+    {
+      "id": "app.assist_terminal_view",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-open",
+        "zh": "官方终端旁观",
+        "en": "Official terminal observer"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "打开只读终端旁观画面",
+      "en": "Open the read-only terminal observer",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Owner confirmation requires an explicit click"
+    },
+    {
+      "id": "app.assist_terminal_stop",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-stop, #ast-banner-stop, #ast-float-stop, #ast-card-stop",
+        "zh": "终止官方协助",
+        "en": "End official assistance"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "立即终止当前官方协助",
+      "en": "End the current official assistance session",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Owner confirmation requires an explicit click"
+    },
+    {
+      "id": "app.assist_terminal_log",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-log",
+        "zh": "官方协助日志",
+        "en": "Official assistance activity log"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "查看操作日志和修复报告",
+      "en": "View the activity log and repair report",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Owner confirmation requires an explicit click"
+    },
+    {
+      "id": "app.assist_terminal_discover_retry",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-discovery-retry, #ast-card-retry",
+        "zh": "重试通知官方协助",
+        "en": "Retry the official assistance notification"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "重试将已授权会话通知给官方",
+      "en": "Retry notifying support of the authorized session",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Owner confirmation requires an explicit click"
+    },
+    {
+      "id": "app.assist_terminal_log_earlier",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-log-earlier",
+        "zh": "官方协助更早日志",
+        "en": "Earlier official assistance log records"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "查看当前协助更早的一页操作记录",
+      "en": "View the previous page of activity for this assistance session",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Read-only log page control"
+    },
+    {
+      "id": "app.background",
+      "since": "0.30.22",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#backgroundCommandEntry",
+        "zh": "命令菜单里的 /background「后台动态」",
+        "en": "/background Background activity in the command menu"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "打开后台、Webhook 和系统消息的已有记录列表",
+      "en": "Open the existing list of background, Webhook and system messages",
+      "gesture_zh": "在命令菜单点 /background",
+      "gesture_en": "Tap /background in the command menu",
+      "nokey": "Type /background in the existing message box"
+    },
+    {
+      "id": "appr.assist_terminal_answer",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-yes, #ast-no",
+        "zh": "官方协助操作确认",
+        "en": "Official assistance operation confirmation"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "批准或拒绝官方请求的操作",
+      "en": "Approve or deny the helper’s requested operation",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Owner confirmation requires an explicit click"
+    },
+    {
+      "id": "appr.assist_terminal_login",
+      "since": "0.27.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#ast-login-yes, #ast-login-no",
+        "zh": "官方协助电脑密码确认",
+        "en": "Computer password confirmation for official assistance"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "确认或取消本次 Agent J 主机登录密码验证",
+      "en": "Confirm or cancel this Agent J host login password verification",
+      "gesture_zh": "点击",
+      "gesture_en": "Tap",
+      "nokey": "Owner confirmation requires an explicit click"
+    }
+  ]
+}

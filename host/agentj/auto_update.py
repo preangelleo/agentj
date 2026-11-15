@@ -236,7 +236,7 @@ def due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow, n
 
 
 def _due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow, newer=False):
-    """One night opportunity each local date. Missed/busy/stopped never retries that night.
+    """One attempt each local date, waiting for idle within the night window.
     P203 「空闲时自动更新」: besides it, a newer version the daily check already saw (`newer`, no extra network) is installed
     the first time the host is idle — no turn, card or task, no phone input for IDLE s — at most once a day."""
     now = time.time() if now is None else now
@@ -254,6 +254,8 @@ def _due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow, 
         rec.setdefault('phone_at', now)
         write(st, rec)
     second = local.tm_hour*3600 + local.tm_min*60 + local.tm_sec
+    if rec.get('idle_day') == day:
+        return False  # A known-newer attempt already owns this day's idle/night opportunity.
     if rec.get('attempted') or second < rec['second']:
         if (newer and rec.get('idle_day') != day and not stopped and not blocked
                 and now - rec.get('phone_at', now) >= IDLE):
@@ -261,12 +263,18 @@ def _due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow, 
             write(st, rec)
             return True
         return False
-    rec['attempted'] = True
     reason = ('window_missed' if second >= 5*3600 else 'stopped' if stopped else
               'busy' if blocked else 'phone_recent' if now - rec.get('phone_at', now) < IDLE else 'check')
+    # Busy/recent phone/stop are temporary. Consuming the whole night's
+    # opportunity here could leave an automatic host unupgraded indefinitely.
+    # Persist the actual attempt before launch, or close the expired window.
+    changed = rec.get('decision') != reason
+    rec['attempted'] = reason in ('check', 'window_missed')
+    if reason == 'check' and newer:
+        rec['idle_day'] = day  # Do not launch the same known update again via the idle lane.
     rec['decision'] = reason
     write(st, rec)
-    if reason != 'check':
+    if changed and reason != 'check':
         activity.record(st, 'auto_update', result='skipped', reason=reason, text='夜间自动升级顺延 / Nightly update deferred: '+reason)
     return reason == 'check'
 

@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import {randomBytes,webcrypto} from 'node:crypto';
+import {writeFileSync,mkdirSync} from 'node:fs';
+mkdirSync(process.env.OLARES_RUN_OUT||'reports/qa/secret-editor-privacy',{recursive:true});
+import {startWebServer} from './serve.mjs';
+import {startFakeHost} from './fakehost.mjs';
+import {launch,newPage,evaluate,navigate,waitState,waitFor,key} from './browser.mjs';
+const web=await startWebServer({port:0,relayCsp:'ws://127.0.0.1:*'}),fake=await startFakeHost(),browser=await launch();
+let page; const results=[];
+const ev=s=>evaluate(page,s);
+async function check(name,fn){try{await fn();results.push({name,pass:true});}catch(e){results.push({name,pass:false,error:e.name});}}
+try{
+ page=await newPage(browser,390,844,'light',{touch:true,allow:[web.url,fake.relay+'/']});
+ await navigate(page,fake.newPairing(web.url));await waitState(page,'awaiting-approval');await fake.approve();await waitState(page,'ready');
+ await fake.send({t:'status',s:'idle',agent:'claude',name:'Agent J'});
+ await ev(`document.getElementById('phone-env-dismiss')?.click()`);
+ await ev(`window.__privacyCanary='FAKE-privacy-'+crypto.randomUUID();window.__privacySaved=false;`);
+ const open=()=>ev(`import('./js/fsedit.js').then(m=>m.openText({secret:true,title:'<img src=x onerror=alert(1)>',description:'<svg onload=alert(1)>',save:()=>{window.__privacySaved=true;return false;}}))`);
+ const fill=()=>ev(`{const i=document.getElementById('fsText');i.focus();i.value=window.__privacyCanary;i.dispatchEvent(new Event('input'));i.setSelectionRange(i.value.length,i.value.length);}`);
+ const clean=()=>ev(`(()=>{const v=window.__privacyCanary;return document.getElementById('input').value.indexOf(v)<0&&![...document.querySelectorAll('input,textarea')].some(i=>i.value.includes(v))&&!document.documentElement.outerHTML.includes(v)&&!JSON.stringify({...localStorage}).includes(v)&&!JSON.stringify({...sessionStorage}).includes(v);})()`);
+ await check('secret uses native password one-time-code control without login form identity',async()=>{await open();assert.ok(await ev(`(()=>{const i=document.getElementById('fsText');return i.tagName==='INPUT'&&i.type==='password'&&i.autocomplete==='one-time-code'&&i.spellcheck===false&&i.autocapitalize==='none'&&!i.hasAttribute('name')&&!i.form;})()`));});
+ await check('metadata renders literal text without HTML or typed-secret disclosure',async()=>{await fill();assert.ok(await ev(`(()=>{const h=document.querySelector('#fsEd .fs-secret-context');return h?.querySelector('.fs-secret-title').textContent==='<img src=x onerror=alert(1)>'&&h.querySelector('.fs-secret-purpose').textContent==='<svg onload=alert(1)>'&&!h.querySelector('img,svg')&&!h.textContent.includes(window.__privacyCanary);})()`));});
+ await check('copy cut drag and undo events are prevented in secret mode',async()=>{await fill();assert.ok(await ev(`(()=>{const i=document.getElementById('fsText');return ['copy','cut','dragstart'].every(type=>!i.dispatchEvent(new Event(type,{bubbles:true,cancelable:true})))&&['historyUndo','historyRedo'].every(inputType=>!i.dispatchEvent(new InputEvent('beforeinput',{inputType,bubbles:true,cancelable:true})));})()`));});
+ await check('trusted CDP value visibility does not exceed native password baseline',async()=>{await fill();const candidate=JSON.stringify(await page.send('Accessibility.getFullAXTree')).includes(await ev(`window.__privacyCanary`));await ev(`{const b=document.createElement('input');b.id='qa-ax-password-baseline';b.type='password';b.autocomplete='off';window.__privacyBaseline='FAKE-AXBASE-'+crypto.randomUUID();b.value=window.__privacyBaseline;document.body.append(b);}`);try{const baseline=JSON.stringify(await page.send('Accessibility.getFullAXTree')).includes(await ev(`window.__privacyBaseline`));assert.ok(!candidate||baseline);}finally{await ev(`document.getElementById('qa-ax-password-baseline').remove()`);}});
+ await check('secret cannot enter shared terminal kill ring',async()=>{await fill();await key(page,'u',{ctrl:true});assert.ok(await ev(`import('./js/termkeys.js').then(m=>!m.killed().includes(window.__privacyCanary))`));});
+ await check('secret clear offers no undo closure and removes input',async()=>{await fill();await ev(`document.getElementById('fsClear').click()`);assert.ok(await ev(`document.getElementById('fsText').value===''&&!document.querySelector('#toast .undo')`));});
+ await check('cancel clears controls and preserves ordinary composer',async()=>{await fill();await ev(`document.getElementById('fsExit').click()`);assert.ok(await clean());});
+ await check('forget clears active secret and closes editor',async()=>{await open();await fill();await ev(`import('./js/fsedit.js').then(m=>m.forget())`);assert.ok(await clean());assert.ok(await ev(`document.getElementById('fsEd').hidden`));});
+ await check('subsequent ordinary editor restores textarea with no secret',async()=>{await ev(`import('./js/fsedit.js').then(m=>m.open())`);assert.ok(await ev(`document.getElementById('fsText').tagName==='TEXTAREA'&&!document.getElementById('fsText').value.includes(window.__privacyCanary)`));await ev(`import('./js/fsedit.js').then(m=>m.close())`);});
+ await check('private IndexedDB stores contain no canary',async()=>{assert.ok(await ev(`new Promise(resolve=>{const q=indexedDB.open('agentjarvis');q.onerror=()=>resolve(false);q.onsuccess=()=>{const db=q.result,names=[...db.objectStoreNames];if(!names.length){db.close();resolve(true);return;}let ok=true;const tx=db.transaction(names,'readonly');for(const n of names){const r=tx.objectStore(n).openCursor();r.onsuccess=()=>{const c=r.result;if(c){if(JSON.stringify(c.value).includes(window.__privacyCanary))ok=false;c.continue();}};}tx.oncomplete=()=>{db.close();resolve(ok)};};})`));});
+ const kp=await webcrypto.subtle.generateKey({name:'X25519'},true,['deriveBits']);
+ const epk=Buffer.from(await webcrypto.subtle.exportKey('raw',kp.publicKey)).toString('base64url');
+ const card=()=>({t:'elev',id:randomBytes(16).toString('hex'),n:randomBytes(16).toString('hex'),kind:'secret',epk,ttl:120,name:'FAKE_QA_VALUE',purpose:'Disposable browser privacy check',dest:'file:/tmp/fake-privacy-destination',verify:'',button_only:true,passkey_required:false});
+ const openCard=async c=>{await fake.send(c);await waitFor(page,`document.getElementById('elev-input')&&!document.getElementById('elev').hidden`);await ev(`document.getElementById('elev-input').click()`);await waitFor(page,`!document.getElementById('fsEd').hidden`);await fill();};
+ await check('real card completion clears active secret editor',async()=>{const c=card();await openCard(c);await fake.send({t:'elev_done',id:c.id,result:'saved'});await waitFor(page,`document.getElementById('fsEd').hidden`);assert.ok(await clean());});
+ await check('nonce replacement clears active secret editor',async()=>{const c=card();await openCard(c);c.n=randomBytes(16).toString('hex');await fake.send(c);await waitFor(page,`document.getElementById('fsEd').hidden`);assert.ok(await clean());await fake.send({t:'elev_done',id:c.id,result:'gone'});});
+ await check('unpair-style card clear removes active secret editor',async()=>{const c=card();await openCard(c);await ev(`import('./js/elevate.js').then(m=>m.clear())`);assert.ok(await clean());assert.ok(await ev(`document.getElementById('fsEd').hidden`));});
+ await check('native password stays secure without CSS text-security support or initial value',async()=>{assert.ok(await ev(`(async()=>{const m=await import('./js/fsedit.js'),native=CSS.supports.bind(CSS);CSS.supports=(a,b)=>a==='-webkit-text-security'?false:native(a,b);try{const opened=m.openText({secret:true,value:window.__privacyCanary}),i=document.getElementById('fsText');return opened&&i.type==='password'&&i.value===''&&![...document.querySelectorAll('input,textarea')].some(i=>i.value.includes(window.__privacyCanary));}finally{m.forget();CSS.supports=native;}})()`));});
+ await check('CSS override cannot remove native password masking or accept initial secret',async()=>{assert.ok(await ev(`(async()=>{const m=await import('./js/fsedit.js'),style=document.createElement('style');style.textContent='#fsText{-webkit-text-security:none!important}';document.head.append(style);try{const opened=m.openText({secret:true,value:window.__privacyCanary}),i=document.getElementById('fsText');return (!opened&&document.getElementById('fsEd').hidden||opened&&i.type==='password'&&getComputedStyle(i).webkitTextSecurity==='disc')&&![...document.querySelectorAll('input,textarea')].some(i=>i.value.includes(window.__privacyCanary));}finally{m.forget();style.remove();}})()`));});
+ await check('late cancelled UV serializes replacement nonce editor',async()=>{
+  const c={...card(),fa:randomBytes(32).toString('base64url'),fa_s:'local',passkey_required:true,button_only:false};
+  await fake.send({t:'pk_state',s:'local'});
+  await ev(`window.__privacyGet=navigator.credentials.get;navigator.credentials.get=()=>new Promise((resolve,reject)=>{window.__privacyUVWaiting=true;window.__privacyUVReject=reject;});`);
+  await openCard(c);await new Promise(r=>setTimeout(r,250));await ev(`document.getElementById('fsSend').click()`);
+  await waitFor(page,`window.__privacyUVWaiting===true`);
+  c.n=randomBytes(16).toString('hex');await fake.send(c);await waitFor(page,`document.getElementById('fsEd').hidden`);
+  assert.ok(await ev(`document.getElementById('elev-input').disabled`));
+  await ev(`window.__privacyUVReject(new DOMException('','AbortError'));navigator.credentials.get=window.__privacyGet;`);await waitFor(page,`!document.getElementById('elev-input').disabled`);
+  await ev(`document.getElementById('elev-input').click()`);await waitFor(page,`!document.getElementById('fsEd').hidden`);await fill();await new Promise(r=>setTimeout(r,100));
+  assert.ok(await ev(`!document.getElementById('fsEd').hidden&&document.getElementById('fsText').value===window.__privacyCanary&&!document.querySelector('#fsEd .fs-status')`));
+  assert.ok(!fake.log.some(m=>m.t==='elev_answer'&&m.id===c.id));
+  await ev(`import('./js/elevate.js').then(m=>m.clear())`);
+ });
+ await check('real network socket loss clears active secret before reconnect',async()=>{const c=card();await openCard(c);fake.muteNextResumes(1);fake.kick();await waitFor(page,`document.getElementById('fsEd').hidden`);assert.ok(await clean());});
+}finally{
+ writeFileSync((process.env.OLARES_RUN_OUT||'reports/qa/secret-editor-privacy')+'/privacy-results.json',JSON.stringify({results,pass:results.every(x=>x.pass)},null,2)+'\n');
+ console.log(JSON.stringify({checks:results.length,failed:results.filter(x=>!x.pass).map(x=>x.name)}));
+ if(page)await page.dispose();await browser.close();await fake.stop();await web.stop();
+}
+if(results.some(x=>!x.pass))process.exitCode=1;

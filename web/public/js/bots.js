@@ -8,7 +8,7 @@ import { copyable, copyNow } from './copycode.js';   // P292: every pre can be c
 let hooks, selected=null, tab='settings', generation=0, pendingProposal=null,hostZone='UTC',vendors=[];
 const copy=(zh,en)=>lang()==='en'?en:zh;
 const text=(v,max=6000)=>typeof v==='string'?v.slice(0,max):'';
-export const TABS=['settings','limits','knowledge','tools','conversations','statistics','embed'];
+export const TABS=['settings','limits','knowledge','tools','conversations','statistics','embed','api'];
 export function configure(h){hooks=h;}
 export function open(){hooks.openPanel('bots');}
 const button=(label,fn)=>{const b=mk('button','aj-action',label, 'aj-action');b.type='button';b.addEventListener('click',fn);return b;};
@@ -41,7 +41,7 @@ export async function refresh(){
   });
 }
 function tabs(parent){const nav=mk('nav','bots-tabs aj-actions');nav.setAttribute('aria-label',t('bots.bot_settings'));
-  const labels={settings:[...both('bots.settings')],limits:[...both('bots.limits')],knowledge:[...both('bots.knowledge')],tools:[...both('bots.tools')],conversations:[...both('bots.conversations')],statistics:[...both('bots.statistics')],embed:[...both('bots.embed')]};
+  const labels={settings:[...both('bots.settings')],limits:[...both('bots.limits')],knowledge:[...both('bots.knowledge')],tools:[...both('bots.tools')],conversations:[...both('bots.conversations')],statistics:[...both('bots.statistics')],embed:[...both('bots.embed')],api:['API','API']};
   for(const name of TABS){const b=button(copy(...labels[name]),()=>{tab=name;refresh();});b.className='aj-navigation-action';b.setAttribute('data-aj-owner','aj-navigation-action');b.setAttribute('aria-current',name===tab?'page':'false');nav.append(b);}parent.append(nav);
 }
 function wizard(){selected=null;const main=el('bots-main');main.replaceChildren();let step=1;const config={slug:'',title:'',enabled:false,terms_accepted:false,subscription_risk_accepted:false,timezone:hostZone,template:'customer_service'};
@@ -134,6 +134,7 @@ function draw(detail,main){const c=detail.bot;main.append(mk('h2','',text(c.titl
     }
     const m=await read({op:'history',id:c.id});for(const session of m.sessions||[])main.append(button(session.visitor.slice(0,8)+' · '+session.messages,()=>act(async()=>{const m=await read({op:'history',id:c.id,visitor:session.visitor});const history=mk('div','');for(const msg of m.messages||[])history.append(pageCopy(mk('p','',msg.role+': '+text(msg.text,12000), 'aj-bots')));main.append(history);})));});
   else if(tab==='statistics')act(async()=>{const m=await read({op:'statistics',id:c.id});for(const day of m.days||[])main.append(pageCopy(mk('p','',`${day.day}: ${day.calls} ${t('bots.calls')} · ${day.charged_tokens} ${t('bots.charged_reserved_tokens')}`, 'aj-bots')));for(const tool of m.tools||[])main.append(pageCopy(mk('p','',`${tool.day}: ${tool.tool} · ${tool.calls}`, 'aj-bots')));});
+  else if(tab==='api'){void drawApi(main,c,generation); }
   else if(tab==='embed'){
     const url='https://agentj.app/bots/'+c.slug;main.append(pageCopy(mk('p','',t('bots.free_public_url')+': '+url, 'aj-bots')));
     const code=`<script src="https://agentj.app/bots/embed.js" data-bot="${c.slug}" async></script>`;
@@ -174,4 +175,100 @@ export function toolRequest(m){
  const req={op:'tool_approve',approval:m.id,digest:m.digest,allow:true};
  const main=el('bots-main');hooks.openPanel('bots');++generation;
  main.replaceChildren(mk('h2','',t('bots.approve_a_bot_write_operation'), 'aj-bots'),pageCopy(mk('p','',text(m.tool,40), 'aj-bots')),copyable(mk('pre','',text(m.args,4000), 'aj-bots'),{click:false}),button(t('bots.approve_once'),()=>act(async()=>{await write(req);await refresh();})),button(t('bots.deny'),()=>act(async()=>{await write({...req,allow:false});await refresh();})));
+}
+
+// P126 (ADR-A193): five simple areas for one endpoint. Advanced work (migration, provisioning, callbacks, workflows)
+// is proposed by the owner's main Agent (`agentj api request`) and approved on the proposal sheet; no extra buttons here.
+// Key values never reach this page: issuing opens the Face ID key card on the computer; only key ids and expiry show.
+let apiEndpoint=null,apiNotice='';
+const when=s=>typeof s==='number'&&s>0?new Date(s*1000).toLocaleString(lang()==='en'?'en':'zh-CN',{hour12:false}):'—';
+const short=v=>typeof v==='string'?v.slice(0,8):'—';
+function area(main,name){const s=mk('section','aj-flow api-area',undefined,'aj-bots');s.dataset.area=name;s.append(mk('h3','',t('p126.api.'+name),'aj-bots'));main.append(s);return s;}
+function actions(parent,...buttons){const row=mk('div','aj-actions');row.append(...buttons);parent.append(row);return row;}
+function usageSummary(events){
+ let calls=0,known=0,unknown=0;
+ for(const item of events){const e=item?.event||{};calls+=typeof e.call_count==='number'?e.call_count:1;if(typeof e.total_tokens==='number')known+=e.total_tokens;else unknown++;}
+ // A missing provider count is "unknown", never 0.
+ const tokens=unknown===0?String(known):known>0?t('p126.api.unknown_tokens',{known,unknown}):t("p126.api.n01");
+ return {calls,tokens};
+}
+function download(name,body){
+ // Client-side only: the CSV already arrived over the paired channel; no URL is fetched.
+ const url=URL.createObjectURL(new Blob([body],{type:'text/csv;charset=utf-8'})),a=mk('a');a.href=url;a.download=name;a.hidden=true;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+}
+async function drawApi(main,c,g){
+ const valid=()=>generation===g&&selected===c.id&&tab==='api'&&main.isConnected;
+ const apiWrite=async req=>{if(!valid())throw new Error('page_changed');const m=await write(req);if(!valid())throw new Error('page_changed');return m;};
+ await act(async()=>{
+  const state=await read({op:'api_list'});if(!valid())return;
+  const offline=()=>!isReady();
+  const profile=c.provider?.source==='profile';if(!profile)main.append(pageCopy(mk('p','',t('p126.api.profile_only'),'aj-bots')));
+  main.append(pageCopy(mk('p','',t("p126.api.n02"),'aj-bots')));
+  const accountLink=mk('a','aj-action',t("p126.api.n03"));accountLink.setAttribute('data-aj-owner','aj-action');accountLink.href='https://agentj.app/account/';accountLink.target='_blank';accountLink.rel='noopener';
+  const sw=button(state.enabled?t("p126.api.n04"):t("p126.api.n05"),()=>act(async()=>{await apiWrite({op:'api_switch',enabled:!state.enabled});refresh();}));sw.disabled=offline();
+  actions(main,accountLink,sw);
+  main.append(pageCopy(mk('p','small',t("p126.api.n06"),'aj-bots')));
+  const mine=(state.endpoints||[]).filter(e=>e.bot===c.id);
+  if(!mine.some(e=>e.id===apiEndpoint))apiEndpoint=mine[0]?.id??null;
+  const endpointArea=area(main,'endpoints'),keyArea=area(main,'keys'),usageArea=area(main,'usage'),logArea=area(main,'logs'),docArea=area(main,'docs');
+  const createForm=mk('div','aj-flow');
+  const name=field(createForm,t("p126.api.n07"),'');
+  const rest=checkbox(createForm,t("p126.api.n08"),false);
+  const create=button(t("p126.api.n09"),()=>act(async()=>{const m=await apiWrite({op:'api_create',name:name.value,bot:c.id,privacy:rest.checked?'rest':'e2e',rest_accepted:rest.checked});apiEndpoint=m.endpoint?.id||apiEndpoint;refresh();}));create.disabled=offline()||!profile;
+  actions(createForm,create);
+  if(mine.length>1)actions(endpointArea,...mine.map(e=>{const b=button(text(e.public_id,40),()=>{apiEndpoint=e.id;refresh();});b.setAttribute('aria-current',e.id===apiEndpoint?'page':'false');return b;}));
+  const e=mine.find(x=>x.id===apiEndpoint);
+  if(!e){endpointArea.append(createForm);for(const x of [keyArea,usageArea,logArea,docArea])x.append(pageCopy(mk('p','',t('p126.api.create_first'),'aj-bots')));return;}
+  const account=state.registrations?.[e.id]?.account_name;
+  endpointArea.append(pageCopy(mk('p','mono',account?'https://api.agentj.app/v1/'+account+'/'+e.public_id:t("p126.api.n10"),'aj-bots')));
+  const privacyLabel=e.privacy==='rest'?t("p126.api.n11"):t("p126.api.n12");
+  const stateLabel=t('p126.api.state.'+(['active','migrating','migrated','taken_down'].includes(e.state)?e.state:'unknown'));
+  endpointArea.append(pageCopy(mk('p','',[privacyLabel,stateLabel,e.enabled?t("p126.api.n13"):t("p126.api.n14"),t("p126.api.n15")+e.version].join(' · '),'aj-bots')));
+  const publish=button(e.enabled?t("p126.api.n16"):t("p126.api.n17"),()=>act(async()=>{await apiWrite({op:'api_publish',id:e.id,enabled:!e.enabled});refresh();}));publish.disabled=offline()||e.state!=='active'||(!e.enabled&&!profile);
+  const row=actions(endpointArea,publish);
+  if(e.privacy!=='rest'&&typeof e.pin==='string'){
+   endpointArea.insertBefore(pageCopy(mk('p','mono',t("p126.api.n18")+e.pin,'aj-bots')),row);
+   row.append(button(t("p126.api.n19"),()=>act(()=>copyNow(e.pin))));
+  }
+  const reviewBox=mk('div','aj-flow');reviewBox.hidden=true;endpointArea.append(reviewBox);
+  const more=button(t("p126.api.n20"),()=>{createForm.hidden=false;more.hidden=true;});createForm.hidden=true;row.append(more);endpointArea.append(createForm);
+  const label=field(keyArea,t("p126.api.n21"),'');
+  const issue=button(t("p126.api.n22"),()=>act(async()=>{const m=await apiWrite({op:'api_issue',id:e.id,label:label.value,days:30});apiNotice=t('p126.api.key_card',{id:short(m.key_id),expires:when(m.expires_at)});refresh();}));
+  issue.disabled=offline()||!profile||!state.enabled||!e.enabled;actions(keyArea,issue);
+  if(apiNotice){const n=pageCopy(mk('p','',apiNotice,'aj-bots'));n.setAttribute('role','status');keyArea.append(n);apiNotice='';}
+  const keys=(state.keys||[]).filter(k=>k.endpoint===e.id);
+  if(!keys.length)keyArea.append(pageCopy(mk('p','small',t("p126.api.n23"),'aj-bots')));
+  for(const k of keys){
+   const old=!k.revoked&&k.version<e.version;
+   keyArea.append(pageCopy(mk('p','',[text(k.label,60)||t("p126.api.n24"),'key '+short(k.id),k.revoked?t("p126.api.n25"):t("p126.api.n26")+when(k.expires),t("p126.api.n27")+k.version+(old?t("p126.api.n28"):''),k.issuer?t("p126.api.n29"):''].filter(Boolean).join(' · '),'aj-bots')));
+   if(k.revoked)continue;
+   const buttons=[button(t("p126.api.n30"),()=>act(async()=>{await apiWrite({op:'api_revoke',key_id:k.id});refresh();}))];
+   if(old)buttons.unshift(button(t("p126.api.n31"),()=>act(async()=>{await apiWrite({op:'api_key_rebind',key_id:k.id});refresh();})));
+   for(const b of buttons)b.disabled=offline();actions(keyArea,...buttons);
+  }
+  // Docs: public OpenAPI switch and the metadata-only handoff to the main Agent.
+  docArea.append(pageCopy(mk('p','',e.public_spec?t("p126.api.n32"):t("p126.api.n33"),'aj-bots')));
+  const spec=button(e.public_spec?t("p126.api.n34"):t("p126.api.n35"),()=>act(async()=>{await apiWrite({op:'api_spec_publish',id:e.id,public:!e.public_spec});refresh();}));spec.disabled=offline();actions(docArea,spec);
+  const purpose=field(docArea,t("p126.api.n36"),'');purpose.maxLength=200;
+  const handState=pageCopy(mk('p','small','','aj-bots'));handState.setAttribute('role','status');
+  const hand=button(t("p126.api.n37"),()=>act(async()=>{handState.textContent='';const m=await apiWrite({op:'api_handoff',id:e.id,purpose:purpose.value.trim()});
+   handState.textContent=m.delivered===true?t("p126.api.n38"):t("p126.api.n39")+text(String(m.state??'unknown'),40);}));
+  hand.disabled=offline()||!e.enabled;actions(docArea,hand);docArea.append(handState,pageCopy(mk('p','small',t("p126.api.n40"),'aj-bots')));
+  // Contract review, usage and logs load after the basic page is drawn; a failure there leaves the rest usable.
+  try{const r=await read({op:'api_review',id:e.id});if(!valid()||apiEndpoint!==e.id)return;
+   if(typeof r.pending==='string'&&r.pending!==r.current){
+    const changed=(r.changed||[]).slice(0,20).map(x=>text(String(x),40));
+    reviewBox.append(pageCopy(mk('p','',t("p126.api.n41")+(changed.join(t("p126.api.n42"))||t("p126.api.n43")),'aj-bots')),pageCopy(mk('p','small',t("p126.api.n44"),'aj-bots')));
+    const pub=button(t("p126.api.n45"),()=>act(async()=>{await apiWrite({op:'api_version_publish',id:e.id,reviewed:r.pending});refresh();}));pub.disabled=offline();actions(reviewBox,pub);reviewBox.hidden=false;
+   }}catch(err){reviewBox.hidden=false;reviewBox.append(pageCopy(mk('p','small',t("p126.api.n46"),'aj-bots')));}
+  const u=await read({op:'api_usage',id:e.id,since:0});if(!valid()||apiEndpoint!==e.id)return;
+  const sum=usageSummary(u.events||[]);
+  usageArea.append(pageCopy(mk('p','',t("p126.api.n47")+' · '+t("p126.api.n48")+sum.calls+' · '+t("p126.api.n49")+sum.tokens,'aj-bots')));
+  if(u.gap)usageArea.append(pageCopy(mk('p','small',t("p126.api.n50"),'aj-bots')));
+  actions(usageArea,button(t("p126.api.n51"),()=>act(async()=>{const m=await read({op:'api_usage',id:e.id,since:0,format:'csv'});if(typeof m.csv!=='string')throw new Error('csv');download('agentj-api-usage-'+text(e.public_id,40)+'.csv',m.csv);})));
+  const requests=(u.requests||[]).filter(r=>r.endpoint===e.id).slice(0,20);
+  logArea.append(pageCopy(mk('p','small',t("p126.api.n52"),'aj-bots')));
+  if(!requests.length)logArea.append(pageCopy(mk('p','',t("p126.api.n53"),'aj-bots')));
+  for(const r of requests)logArea.append(pageCopy(mk('p','mono',[when(r.created),text(String(r.status??''),20),text(String(r.method??''),20),'req '+short(r.id),'key '+short(r.key_id)].join(' · '),'aj-bots')));
+ });
 }

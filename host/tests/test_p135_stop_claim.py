@@ -97,7 +97,8 @@ class StopClaim(unittest.IsolatedAsyncioTestCase):
             (s1, s2), wrote = await self.run_turns(a, h, ["第一条", "第二条"])
             self.assertEqual(wrote.call_count, 2, "both messages reach the native session")
             p1, p2 = h.hist.get(s1.turn), h.hist.get(s2.turn)
-            self.assertEqual(p1["reply"]["text"], humane.say("shared.merged", "zh"))
+            self.assertEqual(p1["reply"]["text"], "")
+            self.assertTrue(p1["card"]["merged"])
             self.assertEqual(p1["end"], "done")
             self.assertEqual(p2["reply"]["text"], "两件事都办好了", "the Stop reply on the last page, no busy note left")
             self.assertEqual(p2["end"], "done")
@@ -117,7 +118,7 @@ class StopClaim(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(h.notices, [])
             self.assertFalse(a.native_turn, "the Stop ends the native turn")
 
-    async def test_idle_session_not_taken_still_names_the_reason(self):
+    async def test_idle_session_allowed_input_stays_queued(self):
         with tempfile.TemporaryDirectory() as root:
             h = Host135(root)
             a = self.agent(h, status="idle")
@@ -130,7 +131,8 @@ class StopClaim(unittest.IsolatedAsyncioTestCase):
             # P424 #75: the reason sits on the message's own page (no page of its own), not a failed turn
             self.assertFalse(h.failed)
             self.assertEqual(h.notices, [])
-            self.assertIn("尚未接收", h.hist.get(s1.turn)["reply"]["text"])
+            self.assertEqual("", h.hist.get(s1.turn)["reply"]["text"])
+            self.assertTrue(h.hist.get(s1.turn)["card"]["queued"])
             self.assertEqual(h.hist.get(s1.turn)["card"]["held"], "pending")
 
     def test_merged_note_one_language(self):
@@ -139,7 +141,8 @@ class StopClaim(unittest.IsolatedAsyncioTestCase):
             h.cur_turn = h.hist.add({"k": "phone", "text": "a"}, "", "open")["id"]
             tid = h.cur_turn
             h.turn_merged()
-            self.assertEqual(h.hist.get(tid)["reply"]["text"], "I'll answer this together with the next reply.")
+            self.assertEqual(h.hist.get(tid)["reply"]["text"], "")
+            self.assertTrue(h.hist.get(tid)["card"]["merged"])
             self.assertIsNone(h.cur_turn)
 
 

@@ -158,34 +158,46 @@ class InboundEffective(_Home):
 
 class PhoneHoldNotice(_Home, unittest.IsolatedAsyncioTestCase):
     async def notice_for(self, lang="zh"):
+        from agentj.history import History
+        from types import MethodType
+        from agentj.serve import Host
         host = Mock()
-        a = shared.SharedClaudeAgent(host, {"kind": "claude", "dir": str(self.work), "_workflow_ceo": True, "language": lang})
-        a.session = {"pid": os.getpid(), "sessionId": "aaaaaaaa-1111-2222-3333-444444444444", "messagingSocketPath": "/nonexistent"}
+        host.lang, host.preferences = lang, None
+        host.hist = History(self.st, on=True)
+        host.cur_turn = host.hist.add({'k': 'phone', 'text': 'hello'}, '', 'open')['id']
+        host.hist_update = MethodType(Host.hist_update, host)
+        a = shared.SharedClaudeAgent(host, {"kind":"claude", "dir":str(self.work), "_workflow_ceo":True, "language":lang})
+        host.agent = a
+        a.session = {"pid":os.getpid(), "sessionId":"aaaaaaaa-1111-2222-3333-444444444444", "messagingSocketPath":"/nonexistent"}
         a.attach = AsyncMock(return_value=True)
         with patch.object(shared, "claude_send"), patch.object(shared, "CLAUDE_INPUT_WAIT", 0.01):
             await a.turn("hello")
-        host.turn_failed.assert_called_once()
-        return host.agent_notice.call_args.args[0]
+        host.turn_failed.assert_not_called()
+        host.agent_notice.assert_not_called()
+        page = host.hist.get(host.cur_turn)
+        self.assertEqual(page['reply']['text'], '')
+        self.assertEqual(page['card'], {'held':'pending', 'queued':True})
+        self.assertEqual(a.held, [(host.cur_turn, 'hello')])
+        return page
 
     async def test_specific_reasons_replace_maybe(self):
-        self.write(self.managed, {"crossSessionInbound": "hold"})
-        text = await self.notice_for()
-        self.assertIn("组织策略", text); self.assertNotIn("可能拦下", text)
+        self.write(self.managed, {"crossSessionInbound":"hold"})
+        self.assertEqual(inbound.hold_reason(str(self.work)), 'managed')
+        await self.notice_for()
         self.managed.unlink()
-        self.write(self.project, {"crossSessionInbound": "refuse"})
-        self.assertIn("项目设置", await self.notice_for())
-        self.assertIn("project settings", await self.notice_for("en"))
+        self.write(self.project, {"crossSessionInbound":"refuse"})
+        self.assertEqual(inbound.hold_reason(str(self.work)), 'project')
+        await self.notice_for()
+        await self.notice_for("en")
 
     async def test_default_hold_keeps_the_fix_command(self):
-        text = await self.notice_for()
-        self.assertIn("claude-inbound on", text)
-        self.assertNotIn("可能拦下", text)
+        # The effective-setting diagnosis still exists, but timeout alone is not rejection evidence.
+        await self.notice_for()
 
     async def test_accept_everywhere_says_busy_not_held(self):
-        self.write(inbound.path(), {"crossSessionInbound": "accept"})
-        text = await self.notice_for()
-        self.assertNotIn("拦下", text)
-        self.assertIn("别重复发送", text)
+        self.write(inbound.path(), {"crossSessionInbound":"accept"})
+        self.assertIsNone(inbound.hold_reason(str(self.work)))
+        await self.notice_for()
 
 
 class StatuslineDefault(_Home):

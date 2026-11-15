@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import * as split from '../public/js/turnsplit.js';
+import * as activity from '../public/js/phone-activity.js';
 import {createUnread} from '../public/js/unread.js';
 const src=readFileSync(new URL('../public/js/relay.js',import.meta.url),'utf8');
 const history=src.slice(src.indexOf('const hist ='),src.indexOf('function hhmm')).replaceAll('export function','function');
 function setup(historyFn){
  const node={hidden:true,classList:{toggle(){}},textContent:''};
- const ctx=vm.createContext({...split,search:{onEpoch(){}},unread:createUnread(),hostId:()=> 'fixture',setTimeout,clearTimeout,
+ const ctx=vm.createContext({...split,...activity,search:{onEpoch(){}},unread:createUnread(),hostId:()=> 'fixture',setTimeout,clearTimeout,
  C:{api:{history:historyFn},connected:()=>true,myDev:()=> 'fixture'},document:{body:{dataset:{}}},t:x=>x,showPage(){},announceTurn(){},el:()=>node,chanCard:()=>null,acceptHistoryHead(){},historyGeneration:0,historySync:false,wordsSrc:null});
  vm.runInContext(history,ctx);return js=>vm.runInContext(js,ctx);
 }

@@ -724,8 +724,11 @@ def identity(host, peer) -> dict | None:
     """{'kind','id','digest','name'} from host-held facts only, else None (not an automation turn)."""
     from . import workflow_mail
     from .background_done import chain_turn
-    if provenance._paired_source() is not provenance._UNSET:
-        return None                                  # a paired (phone) request is never an automation
+    if (provenance._paired_source() is not provenance._UNSET
+            or provenance._SHARED_CHILD.get() is not None):
+        # to_thread carries child context but has no asyncio task: any child
+        # context restricts access, even when its task-local lookup is absent.
+        return None
     req = provenance._REQUEST.get()
     try:
         c = workflow_mail.source(host, peer)

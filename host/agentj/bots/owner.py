@@ -49,12 +49,17 @@ class HandoffSend(Send):
         return bool(row and row['status']=='pending' and self.manager.state().now()-row['created']<self.manager.state().get(row['bot'])['handoff']['reply_window_h']*3600 and not self.manager.host.stopped())
 
 READS={'list','detail','history','statistics','handoffs'}
+from ..seat_api.admin import READS as API_READS, WRITES as API_WRITES
+READS |= API_READS
 WRITES={'create','save','delete','knowledge_add','knowledge_remove','knowledge_directory','knowledge_url','tool_save','tool_delete','tool_test','tool_approve','human_reply','human_email_code','human_email_reply','audit_key','telegram_key','model_key','attach_telegram','telegram_avatar'}
+
+WRITES |= API_WRITES
 
 class Manager:
     def __init__(self,host):
         self.host=host;self.store=None;self.server=None;self.proposals={};self.pending_calls={};self.runtime=None;self.runtime_task=None
         self.phone_tasks={}
+        self.api_store=None;self.api_runtime=None;self.api_runtime_task=None
         self.socket=host.st.perm_dir/'bots.sock'
         os.environ['AGENTJ_BOTS_SOCK']=str(self.socket)
     def state(self):
@@ -65,7 +70,16 @@ class Manager:
             secret_root=preferences_path().parent/'bot-secrets'/self.host.channel
             self.store=Store(self.host.st.root/'bots',host_timezone(),secret_root=secret_root);self.store.recover();self.store.prune()
         return self.store
+    def api_state(self):
+        if self.api_store is None:
+            from ..seat_api.store import Store as ApiStore
+            self.api_store=ApiStore(self.state())
+        return self.api_store
+    def api_admin(self):
+        from ..seat_api.admin import ApiAdmin
+        return ApiAdmin(self)
     def read(self,req):
+        if req.get('op') in API_READS:return self.api_admin().read(req)
         store=self.state();op=req.get('op');bid=req.get('id')
         if op=='list':return {'bots':store.listing(),'host_timezone':str(store.timezone),'vendors':vendors_public()}   # P348: own-key providers
         c=store.get(bid)
@@ -97,6 +111,7 @@ class Manager:
         route=_route()   # the same key sources audit.resolve uses (P82: no ambient-environment key)
         return {'provider':route.mode or vendor,'secret_name':name,'configured':bool(route.key) or (store.secrets(bid)/name).is_file(),'mode':route.mode}
     async def write(self,req, gone=None):
+        if isinstance(req,dict) and req.get("op") in API_WRITES:raise BotError("signed_owner_required")
         if not isinstance(req,dict) or len(canonical(req).encode())>2*1024*1024:raise BotError('invalid_request')
         store=self.state();op=req.get('op');bid=req.get('id')
         if op in ('telegram_key','telegram_avatar') and set(req)!={'op','id'}:raise BotError('invalid_request')
@@ -297,6 +312,8 @@ class Manager:
         # phone() already verified the action signature/nonce before admitting this callback.
         from .. import provenance
         with provenance.paired_request(lambda: self.host._paired_live(session)):
+            if req.get("op") in API_WRITES:
+                return await self.api_admin().write(req,session=session,gone=gone)
             return await self.write(req,gone)
 
     async def _write_reply(self,session,obj,gone=None):
@@ -331,7 +348,7 @@ class Manager:
             if why:raise BotError(why)
             op=req.get('op');bid=req.get('id')
             if any(bid==item[3] for item in self.phone_tasks.values()) and op!='tool_approve':raise BotError('busy')
-            slow=op in ('audit_key','telegram_key','model_key','human_reply','human_email_code','human_email_reply','tool_test','telegram_avatar') or (op=='save' and isinstance(req.get('config'),dict) and req['config'].get('enabled'))
+            slow=op in API_WRITES or op in ('audit_key','telegram_key','model_key','human_reply','human_email_code','human_email_reply','tool_test','telegram_avatar') or (op=='save' and isinstance(req.get('config'),dict) and req['config'].get('enabled'))
             if background and slow:
                 if len(self.phone_tasks)>=4:raise BotError('busy')
                 gone=asyncio.get_running_loop().create_future()
@@ -357,16 +374,24 @@ class Manager:
         from .runtime import Runtime
         self.runtime=Runtime(self)
         self.runtime_task=asyncio.create_task(self.runtime.run())
+        # The default-off state is loaded at boot; no owner read is required after restart.
+        self.api_state()
+        from ..seat_api.runtime import Runtime as ApiRuntime
+        self.api_runtime=ApiRuntime(self)
+        self.api_runtime_task=asyncio.create_task(self.api_runtime.run())
     async def stop(self):
         tasks=list(self.phone_tasks)
         for session,_,_,_ in list(self.phone_tasks.values()):self.detach(session)
         if tasks:await asyncio.gather(*tasks,return_exceptions=True)
+        if self.api_runtime_task:
+            self.api_runtime_task.cancel();await asyncio.gather(self.api_runtime_task,return_exceptions=True)
         if self.runtime_task:
             self.runtime_task.cancel();await asyncio.gather(self.runtime_task,return_exceptions=True)
         for item in self.pending_calls.values():
             if not item["future"].done():item["future"].set_result(False)
         if self.server:self.server.close();await self.server.wait_closed()
         self.socket.unlink(missing_ok=True)
+        self.api_store=None;self.api_runtime=None
         if self.store:self.store.close();self.store=None
     async def approve(self,bid,request,args):
         # The digest binds the exact validated tool definition and arguments.

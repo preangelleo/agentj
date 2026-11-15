@@ -190,7 +190,7 @@ function paintAsk() {
   if (S.shown && S.shown !== 'ask') return;           // the requester's own sheet first (the two never meet on one device)
   const a = [...S.asks.values()].find((x) => !x.sent && x.ch && (!x.exp || x.exp * 1000 > H.now()));
   if (!a) { if (S.shown === 'ask') hide(); return; }
-  show({ mode: 'ask', id: a.id, name: a.name, ...(a.roster ? { roster: true } : {}), at: a.at, code: a.code, can: !a.needsSetup && H.canAssert(), ...(a.needsSetup ? { needsSetup: true, bootstrap: a.bootstrap, ...(a.bootstrapUnavailable ? {bootstrapUnavailable: true} : {}) } : {}) });
+  show({ mode: 'ask', id: a.id, name: a.name, ...(a.roster ? { roster: true } : {}), at: a.at, code: a.code, can: !a.needsSetup && H.canAssert(), ...(a.needsSetup && typeof a.fa === 'string' && a.fa.length ? { knownKey: true } : {}), ...(a.needsSetup ? { needsSetup: true, bootstrap: a.bootstrap, ...(a.bootstrapUnavailable ? {bootstrapUnavailable: true} : {}) } : {}) });
 }
 export const currentAsk = () => (S.shown === 'ask' ? [...S.asks.values()].find((x) => !x.sent && x.ch && (!x.exp || x.exp * 1000 > H.now())) || null : null);
 /** 「批准（Face ID）」: the assertion starts synchronously inside the tap (iOS gesture rule). */
@@ -333,7 +333,7 @@ function paint() {
     const at = when(s.at);
     if (at) kids.push(mk('p', 'elev-note pkp-at', t('pkp.askAt', { time: at })));
     kids.push(codeRow(s.code), mk('p', 'pkp-text', t(s.roster ? 'p574.introText' : 'p0285.uv.askText')));
-    if (s.needsSetup) kids.push(mk('p', 'elev-note', t(s.bootstrapUnavailable ? 'pkp.passwordNotSet' : s.bootstrap ? 'pkp.bootstrapText' : 'p0285.uv.noKey')));
+    if (s.needsSetup) kids.push(mk('p', 'elev-note', t(s.bootstrapUnavailable ? 'pkp.passwordNotSet' : s.bootstrap ? 'pkp.bootstrapText' : s.knownKey ? 'p0285.uv.ineligibleKey' : 'p0285.uv.noKey')));
     else if (!s.can) kids.push(mk('p', 'elev-note', t('pkp.noAssert')));
     if (s.bootstrap) {
       const input = mk('input', 'aj-input', undefined, 'aj-passkey'); input.type = 'password'; input.autocomplete = 'off';

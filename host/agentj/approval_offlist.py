@@ -32,8 +32,8 @@ import secrets
 
 # Host-owned explicit cards: each one is a concrete host executor's own question / grant, not a harness request.
 # Together with uv_list.required() this IS the card list. A native (harness) request may only use AskUserQuestion.
-CARD_LIST = frozenset({"AskUserQuestion", "SandboxOnce", "AuthRescue", "AgentJBoundedPlan", "company.write",
-                       "agentj core mcp add", "agentj learn", "agentj plaza"})
+CARD_LIST = frozenset({"FriendsTellOnce", "AskUserQuestion", "SandboxOnce", "AuthRescue", "AgentJBoundedPlan", "company.write",
+                       "agentj core mcp add", "agentj learn", "agentj plaza", "agentj local record", "agentj local relink"})
 NATIVE_CARDS = frozenset({"AskUserQuestion"})
 
 TRUST = ("owner", "host", "host_read", "external", "unknown")
@@ -392,16 +392,22 @@ async def refuse_unowned(host, tool, inp, src, shape, *, receipt=None):
     return {"behavior": "deny", "reason": reason, "message": message}
 
 
-def _record(host, tool, inp, decision, reason):
+def _record(host, tool, inp, decision, reason, state_subject=None):
     from . import approvals
     rid = secrets.token_hex(16)
     agent = getattr(getattr(host, "agent", None), "kind", "?")
     try:
-        approvals.record(host.st, rid=rid, agent=agent, tool=tool, input_sha256=approvals.input_digest(inp),
+        if state_subject is not None and not state_subject.live(host):
+            return None
+        record = (lambda **fields: state_subject.record(host, **fields)) if state_subject is not None else (lambda **fields: approvals.record(host.st, **fields))
+        saved = record(rid=rid, agent=agent, tool=tool, input_sha256=approvals.input_digest(inp),
                          shown_sha256=approvals.shown_digest(tool, "[off list: no card]"), decision=decision,
                          reason=reason, cats=[])
-    except Exception:  # noqa: BLE001 — the host.log line still records the decision
-        pass
+        if state_subject is not None and (saved is None or not state_subject.live(host)):
+            return None
+    except Exception:  # noqa: BLE001 — no unconfirmed subject may become an allow
+        if state_subject is not None:
+            return None
     return rid, agent
 
 
@@ -528,10 +534,17 @@ def decide(host, tool, inp, cwd, src):
 
 
 async def answer(host, tool, inp, cwd, *, receipt=None, settings_context=None, src=None, background=None,
-                 fingerprint=None):
+                 fingerprint=None, state_subject):
     """The answer to an off-list request: audited, never a card. The source is read on the loop (paired requests and
     shared children are bound to the running task); filesystem checks and the audit row run off-loop."""
     import asyncio
+    def changed():
+        if isinstance(receipt, dict):
+            receipt.update(reason='state_authority_changed', approval_card_shown=False)
+        return {'behavior':'deny', 'reason':'state_authority_changed',
+                'message':'Controller state changed; no operation confirmed.'}
+    if not state_subject.live(host):
+        return changed()
     src = src or source(host, settings_context=settings_context, background=background)
     if not cwd:     # no host agent_cfg (e.g. a configured-later host): the running adapter's own working directory
         cwd = ((getattr(getattr(host, "agent", None), "cfg", None) or {}).get("dir")) or None
@@ -545,17 +558,26 @@ async def answer(host, tool, inp, cwd, *, receipt=None, settings_context=None, s
         own_cfg = None
     own = own_cfg is not None and await asyncio.to_thread(
         lambda: handoff.own_read(tool, inp, own_cfg) or handoff.own_state(tool, inp, own_cfg))
+    if not state_subject.live(host):
+        return changed()
     decision, reason, key = ("allow", "own_handoff", None) if own else await asyncio.to_thread(decide, host, tool, inp, cwd, src)
+    if not state_subject.live(host):
+        return changed()
     if fingerprint and decision == "allow":
         # 董事长 11-11 定: a charge / irreversible call in a headless job or automation follows its harness — no card, no
         # refusal, only this log line (the shape label, never the command text).
         reason = "fingerprint_headless"
-    rid, agent = await asyncio.to_thread(_record, host, tool, inp, decision, reason)
+    recorded = await asyncio.to_thread(_record, host, tool, inp, decision, reason, state_subject)
+    if recorded is None or not state_subject.live(host):
+        return changed()
+    rid, agent = recorded
     host.st.log("ask_done", id=rid, agent=agent, tool=tool, decision=decision, reason=reason,
                 source_type=src["type"], trust=src["trust"], card=False,
                 **({"shape": log_shape(fingerprint)} if fingerprint else {}))
     if isinstance(receipt, dict):
         receipt.update(id=rid, reason=reason, approval_card_shown=False, source=src["type"])
+    if not state_subject.live(host):
+        return changed()
     if decision == "allow":
         return {"behavior": "allow", "updatedInput": inp}
     zh, en = _REFUSALS[key]

@@ -78,6 +78,7 @@ class Held(unittest.IsolatedAsyncioTestCase):
         a = shared.SharedClaudeAgent(h, {"kind": "claude", "dir": "/nonexistent", "_workflow_ceo": True, "language": h.lang})
         a.session = {"pid": 1, "sessionId": "aaaaaaaa-1111-2222-3333-444444444444", "messagingSocketPath": "/nonexistent"}
         a.state = SimpleNamespace(status="idle", snapshot=lambda: {}, handle=lambda e: None)
+        h.agent = a
         return a
 
     async def not_taken(self, h, a, text, reason="default"):
@@ -102,13 +103,14 @@ class Held(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual([t["id"] for t in h.hist.turns.values()], [tid], "one page: the owner's message")
                 self.assertEqual(page["src"]["text"], "帮我调研一下 PPT 模板", "the owner's words stay on the page")
                 reply = page["reply"]["text"]
-                self.assertIn("尚未接收" if lang == "zh" else "has not taken this message", reply)
+                self.assertEqual(reply, "")
+                self.assertTrue(page["card"]["queued"])
                 self.assertNotIn("crossSessionInbound", reply, "no internal field in the words")
                 self.assertEqual(page["card"]["held"], "pending")
-                self.assertIn("crossSessionInbound", page["card"]["detail"], "the diagnosis is behind 「详情」")
+                self.assertNotIn("detail", page["card"], "queue card is the only presentation")
                 self.assertEqual(page["end"], "done", "not a failed turn: no fallback model, no 「再发一次」")
                 self.assertFalse(h.failed)
-                self.assertEqual(h.legacy, [("notice", reply)], "an older phone still hears the notice")
+                self.assertEqual(h.legacy, [], "no duplicate legacy notice")
                 self.assertEqual(a.held, [(tid, a.pending_text)])
 
     async def test_arrives_later_by_prompt_hook(self):
@@ -120,8 +122,8 @@ class Held(unittest.IsolatedAsyncioTestCase):
             await a.hook_event({"session_id": a.session["sessionId"], "hook_event_name": "UserPromptSubmit",
                                 "prompt": "<cross-session from-name=\"Agent J\">" + body + "</cross-session>"})
             page = h.hist.get(tid)
-            self.assertEqual(page["card"], {"held": "delivered"}, "「详情」 gone with the notice")
-            self.assertIn("后来接收了这条消息", page["reply"]["text"])
+            self.assertEqual(page["card"], {}, "queue card gone on delivery")
+            self.assertEqual(page["reply"]["text"], "")
             self.assertNotIn("尚未接收", page["reply"]["text"])
             self.assertEqual(a.held, [])
             self.assertIn(("shared_held_delivered", {"turn": tid}), h.logs)
@@ -134,8 +136,8 @@ class Held(unittest.IsolatedAsyncioTestCase):
             body = a.held[0][1]
             a._held_seen("queued: " + body)        # a queued_command attachment / an isMeta or user record carries it
             page = h.hist.get(tid)
-            self.assertEqual(page["card"]["held"], "delivered")
-            self.assertIn("took this message after all", page["reply"]["text"])
+            self.assertNotIn("held", page["card"])
+            self.assertEqual(page["reply"]["text"], "")
             a._held_seen(body)                     # twice → nothing more
             self.assertEqual(h.hist.get(tid)["reply"]["text"], page["reply"]["text"])
 
@@ -151,7 +153,7 @@ class Held(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(h.hist.get(tid)["card"]["held"], "pending")
             a.phone_turn = False
             a._held_seen(body)
-            self.assertEqual(h.hist.get(tid)["card"]["held"], "delivered")
+            self.assertNotIn("held", h.hist.get(tid)["card"])
 
     async def test_no_open_page_falls_back_to_the_notice(self):
         with tempfile.TemporaryDirectory() as root:

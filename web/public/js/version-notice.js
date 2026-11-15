@@ -1,4 +1,4 @@
-// P251: metadata-only checks; matched host/server updates follow only after protected input is idle.
+// Metadata-only checks; every server page version change follows after protected input is idle.
 import VERSION from '../version.js';
 import {t,onLang} from './t.js';
 import {registerLayer} from './layers.js';
@@ -25,9 +25,9 @@ export async function readWebVersion(){
 let hostVersion=null,webVersion=null,dismissed=null,refresh=null,webChecked=false,yielded=false;
 // 0.30.6: while the offline card (#connDlg) offers 更新并刷新 itself, this dialog steps aside (one card, not two).
 export function yieldTo(on){if(yielded===!!on)return;yielded=!!on;render();}
-/** The newer web page a refresh would deliver (null = none): the offline card's 「需要更新」 state. */
+/** The changed web page a refresh would deliver (null = none): the offline card's 「需要更新」 state. */
 export function offerVersion(){return state().offer;}
-// P240 (Leo 10-13 23:13, a Huawei host updated by hand before batch B): a refresh only helps when the page it fetches is newer.
+// P240: a host update alone cannot make a page available. A valid different server page can be fetched in either direction.
 // The dialog offers what version.json serves (`webVersion`), never what the host runs: a host ahead of every page that can be
 // fetched gets one quiet line under the header (ver.later_line) instead of a dialog whose 刷新 reloads the same page forever.
 // And once a refresh came back on the same page version, that offer is not repeated until the page itself changes
@@ -39,28 +39,31 @@ function refreshedTo(){
 export function versionState(current,host,web,triedTo){
  // `offer`: the dialog's version (a refresh delivers it); `later`: the host is ahead of what a refresh would deliver.
  const ahead=v=>compareVersion(v,current)===1;
- let offer=ahead(web)?web:null;
- if(offer&&triedTo&&compareVersion(offer,triedTo)!==1)offer=null;   // refreshed for this already and still on `current`
+ const changed=compareVersion(web,current);
+ let offer=changed!==null&&changed!==0?web:null;
+ if(offer&&offer===triedTo)offer=null;   // refreshed for this already and still on `current`
  const best=offer||current;
  const later=ahead(host)&&compareVersion(host,best)===1;
  return {offer,later};
 }
 function state(){return versionState(VERSION.version,hostVersion,webVersion,refreshedTo());}
 function close(){dismissed=state().offer;render();}
-export function followsHost(current,host,web,triedTo){
- return compareVersion(host,web)===0 && !!versionState(current,host,web,triedTo).offer;
+export function followsServer(current,web,triedTo){
+ return !!versionState(current,null,web,triedTo).offer;
 }
+// Preserve the published P251 export; page eligibility now follows the server in either direction.
+export function followsHost(current,host,web,triedTo){return followsServer(current,web,triedTo);}
 let guards={blocked:()=>true,save:async()=>{}}, lastInput=Date.now(), refreshing=false, composing=false;
 const IDLE_MS=10000, DONE_KEY='aj.verUpdated';
 export const LATER_MS=10000;   // #451: 「稍后上线」 = the shared notice, once per host version (notifyOnce 'aj.verLaterSeen.<version>')
-const autoTarget=()=>followsHost(VERSION.version,hostVersion,webVersion,refreshedTo())?webVersion:null;
+const autoTarget=()=>followsServer(VERSION.version,webVersion,refreshedTo())?webVersion:null;
 function idle(){return !document.hidden && !composing && Date.now()-lastInput>=IDLE_MS && !guards.blocked();}
 async function follow(){
  const target=autoTarget();
  if (!target || !idle() || refreshing) return;
  refreshing=true;
  try{
-  // Confirm metadata again, after the idle wait. A failed check or changed host cancels this attempt.
+  // Confirm metadata again, after the idle wait. A failed check or changed server target cancels this attempt.
   const fresh=await readWebVersion();
   if(fresh!==target || autoTarget()!==target || !idle())return;
   if(!await guards.save())return;
@@ -101,7 +104,7 @@ function render(){
  }
 }
 // A new host version: read version.json first, then decide (never a dialog on the host's word alone).
-export function setHostVersion(v){hostVersion=v;render();if(check&&v&&compareVersion(v,VERSION.version)===1)check();}
+export function setHostVersion(v){hostVersion=v;render();if(check&&v&&compareVersion(v,VERSION.version)!==0)check();}
 let check=null;
 export function initVersionNotice(refreshApp, inputGuards){
  refresh=refreshApp; if(inputGuards)guards=inputGuards;

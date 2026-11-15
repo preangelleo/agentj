@@ -1559,6 +1559,10 @@ def cli_main(argv, *, state_dir=None, out=print, inp=None, engine_override=None)
             if not go:
                 return 2
         if not _set_setting(state_dir, engine=a.engine):
+            from . import fence
+            if fence.inside():
+                out("✗ " + fence.hidden_state())
+                return 1
             out("✗ 这台Agent J 主机还没初始化 / not initialised: agentj init")
             return 1
         s = status(state_dir)

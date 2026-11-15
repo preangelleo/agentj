@@ -1,3 +1,4 @@
+import { accountNodes } from '../brand/account-links.js';
 // Every user-visible string comes from i18n.js (built from web/i18n/web.{zh,en}.json); runtime = window.AJLang
 // (brand/lang.js: 中文 default, ?lang=en or the switch, saved as localStorage "aj.lang"). Dictionary text is ours, so
 // `code` spans in it become <code> elements (createElement + textContent; never HTML). Host / Agent text is plain text.
@@ -56,13 +57,14 @@ export const plain = (str) => String(str).replace(/`/g, '');
 export function fillText(node, str) {
   const parts = String(str).split('`');
   node.replaceChildren(...parts.map((p, i) => { if (i % 2 === 0) {
+    if(node.closest?.('a,button,code,pre,textarea,select,option'))return document.createTextNode(p);
     const part = document.createDocumentFragment(); let at = 0;
     for (const m of p.matchAll(/https:\/\/(?:m\.)?agentj\.app\/[A-Za-z0-9_/?#=&.%:-]*/g)) {
-      part.append(document.createTextNode(p.slice(at, m.index)));
+      part.append(...accountNodes(p.slice(at, m.index)));
       const a = document.createElement('a'); a.setAttribute('data-aj-owner', 'aj-prose'); a.className = 'hint__link'; a.href = m[0]; a.textContent = m[0];
       a.target = '_blank'; a.rel = 'noopener noreferrer'; part.append(a); at = m.index + m[0].length;
     }
-    part.append(document.createTextNode(p.slice(at))); return part;
+    part.append(...accountNodes(p.slice(at))); return part;
   } const c = document.createElement('code'); c.setAttribute('data-aj-owner','aj-prose'); c.textContent = p; return copyable(c, { label: 'set.copy' }); }));
 }
 /** Static markup: [data-i18n] text and [data-i18n-attr] attributes. */

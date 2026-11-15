@@ -163,11 +163,15 @@ Replies are laid out for you:
 - **Images, audio, video, PDFs, web pages and files** inside the working folder appear in replies. Enlarge images, play audio/video, preview web pages in a script-free frame. Each file has preview/download/share/email/Telegram icons. Small visible files load automatically; large files need a tap with size shown. Data saver/cellular never auto-loads. Full-screen previews support PDF, docx, xlsx, CSV, Markdown, code and text; unsupported kinds such as PowerPoint offer download. On a computer, Space previews a selected card; Space/Esc closes. Left/right arrows or phone swipes move among files in the same reply, with position/total on the top bar; one finger pans a zoomed image instead. Downloads retain names (Chinese, spaces, emoji), with a browser-download confirmation; the iPhone Home Screen app opens the share sheet — choose Save to Files.
 - Too-large/outside-folder files get a reason instead. Both the configured root (even after `cd` into a subfolder) and the current folder count. Scripts/source (`.sh`, `.py`, `.ps1`…) are text cards: preview/download, never run. A suspected key's notice gives its line and only its first two characters. Audio/video/images always send regardless of Chinese, underscores or long names. Credential files (`.env`, `.pem`, private keys) and text holding real keys use a phone secret-pickup card (Face ID), never ordinary attachment; if unavailable, the notice explains why and how to retrieve it. External image links never open automatically.
 
+Tap a recognized short value in a reply—an email address, Agent ID, @handle, account ID or a domain such as example.com—to copy it; other links open normally, and holding reply text still selects it.
+
 For a local image, write a complete `[label](absolute-path)` reference, optionally prefixed with `!`. Both forms accept absolute paths and `~/`. Receipt of the complete reference starts preparation while work continues; the slot shows progress/failure until the file card is ready. Path, type and secret checks still apply.
 
 In an admitted live owner phone turn, `agentj file show PATH --label LABEL --json` attaches explicitly to that page. No live owner turn, including a standalone desktop turn, means no outgoing message. `queued` is pending; later `FILE_SHOW_RESULT` says `attached_to_page` or `failure`, neither proves viewing/downloading. Isolated Linux processes/real Chromium passed with a synthetic image; physical phones, macOS, WSL and real Claude Code/Codex/OpenCode model sessions remain untested. No accepted Kimi/Qwen ACP integration; Windows requires WSL.
 
 Absolute or `~/` PATHs must remain in the admitted working root. Failures: `broker_unavailable` — attachment service unreachable; `no_owner_session` — owner turn/context unconfirmed; `native_admission_missing` — no admission for this exact request; `native_admission_expired` — admission expired; `native_admission_ambiguous` — multiple valid matches. None attaches a file. Keep the owner turn, report the reason, and never change target pages or bypass checks.
+
+To send one local image or file explicitly to your own bound WeChat during the current admitted owner phone turn, run `agentj file send PATH --to wechat --json` as the whole Bash command. The destination cannot be chosen or changed; no group/friend/account/URL argument is accepted. The file must be inside the admitted work folder and pass existing type, no-symlink, digest and secret checks. The limit is 25 MiB per WeChat file (existing media-type caps may be lower); this is one file per command, not a 24-file batch interface. Existing page attachment limits remain 24 items / 100 MiB. `queued` only means pending native completion; wait for `FILE_SEND_RESULT`: `sent_to_wechat` with `platform_accepted:true` means the platform accepted it, not that the phone displayed/downloaded it. `failure` may be an uncertain delivery; check WeChat before explicitly retrying. A changed binding/context/owner execution stops sending; do not use this command to bypass a failed `file show`, approval or file check.
 
 （Screenshot：A picture, a formula and highlighted code in a reply — https://agentj.app/docs/manual/rich.en.webp）
 （Screenshot：Further down: a diagram, a file to download and a line about a file that was not sent — https://agentj.app/docs/manual/rich-more.en.webp）
@@ -439,6 +443,8 @@ Five minutes without input/output, 60 seconds hidden, expiry, Stop everything or
 **Operation log recording** links to [what is recorded](https://agentj.app/docs/web-terminal-log/): masked output and resize, no separate keystrokes; legacy line mode also logs commands. Logs stay on the host for 30 days; no camera, recording or automatic upload. Masking misses unusual secret formats/encodings, and end-to-end encryption cannot stop programs displaying secrets to your own device. Do not print or forward credentials. [Password storage](https://agentj.app/docs/web-terminal/#computer-password) · [authorization and limits](https://agentj.app/docs/web-terminal/).
 
 ### Models & API keys
+
+The phone does not show an Agents Relay key section in this version. Saved keys do not switch the primary model or official login, prove provider connectivity, or establish that background dispatch is available. Never paste keys into chat.
 
 "Models & API keys" in Settings keeps the model picker at the top and two sections below it. "Base models" shows one dashed card per provider (Anthropic, OpenAI, Volcano Ark, Alibaba Bailian, Kimi, DeepSeek and more), each key tagged Subscription, Pay-as-you-go or Sign-in; "Third-party API keys" lists the other keys on the Agent J host (ElevenLabs, for example). A row shows only the name and "Not set" or a mask (at most the last 4 characters) — the key itself is never shown on the page. The icons on the right are Copy, Edit and Delete; an empty row only has Add, and "Add" at the bottom lets you name a new key first. Copy, entering a new value, Edit and Delete require in-person passkey verification first, and Delete asks once more; Copy puts the value straight on the clipboard. Edit and Add open the key card; storing a new value or replacement requires in-person verification, and the Agent never sees what you type. Every copy, delete and edit is written to the audit log — the name, never the key. Keys already on the Agent J host are listed too: the systemd user environment, `~/.config/environment.d/`, and any .env file you list in `api_keys.extra_env_files` (none by default; just tell the Agent which file to add). Those rows say "Already on this computer · from X" with at most the last 4 characters; Tapping "Move into Agent J" copies the key into Agent J's own key file on the Agent J host, and from then on that copy counts — the old source stays unless you tick the box to comment its line out. Symlinks, other users' folders and files others can change are never read; the bottom of the page lists the places checked and any skipped. The Claude and Codex sign-in rows say which login is really in use: a subscription token (`CLAUDE_CODE_OAUTH_TOKEN`) wins over the account sign-in in `~/.claude/.credentials.json`. After installing, fill your keys in here and you can leave the terminal.
 
@@ -795,7 +801,7 @@ Centred circular notices show one short status word: Sent, Copied or Saved (up t
 
 ## Queued messages and quiet periods
 
-A queued message shows **Previous task still running · waiting N min** and **Stop previous task**: on a 0.26.9 Agent J host it first asks you to confirm **Force-end this turn**, interrupts the earlier task and after 10 seconds ends that turn's processes; the conversation is kept. On a queued notice from the Agent J host the button appears once the task is stuck or has waited 2 minutes. `/clear`, `/new` and **Reset connection** no longer wait behind a stuck turn.
+A queued message shows **Previous task still running · waiting N min** and **Stop current task**: on a 0.26.9 Agent J host it first asks you to confirm **Force-end this turn**, interrupts the earlier task and after 10 seconds ends that turn's processes; the conversation is kept. On a queued notice from the Agent J host the button appears once the task is stuck or has waited 2 minutes. `/clear`, `/new` and **Reset connection** no longer wait behind a stuck turn.
 
 After three minutes both queued and without new earlier-task output, the page reports that quiet period; this does not prove the task is stuck. New output resets the timer, and a reload or reconnection starts a new observation. A working task is never stopped automatically. From 0.26.9 a turn that is really stuck (no card waiting, no tool running, yet nothing for 5 minutes or your message waiting 10) recovers by itself: the Agent J host interrupts it, restarts the AI program Agent J started if needed, continues the same conversation and says: It got stuck just now — recovered automatically. Stop retains its existing handling of unsent messages.
 
@@ -816,6 +822,20 @@ Foreground takes reuse an authorized microphone and disable its capture track be
 Mail only to yourself goes without a card. Mail to anyone else, including allowlisted contacts, meeting notes and email replies, has a one-tap confirmation card; no Face ID. The card binds recipients, content, attachment hashes and mail servers. The allowlist only controls incoming mail. When you yourself tap Forward by e-mail or forward to Telegram on a paired remote, or sign a customer-service email, that tap is your approval: it goes out at once, with no card and no passkey. Mail settings changes and connection tests use their signed confirmation; entering a real app password still uses the secret card. Changing the account address, login name, IMAP/SMTP server, port or encryption invalidates the old app password. An app password saved by an older version moves over by itself on the first run after the upgrade when the mailbox uses a fixed provider (Gmail, QQ, 163 …). With a custom server it is not used directly: saved candidates are verified first, and you enter it again in the secret card only when none works.
 
 Administrator password cards use password entry and a confirmation button; revealing a real secret still requires this remote's approval passkey. Enable it in Settings first. Replacing an existing passkey asks the old key to verify this one-use registration offer, then creates the new key. Cancellation or verification failure keeps the old key. Account sign-in and remote approval passkeys are set up separately.
+
+## Create a new Agent J plan through the Host
+
+For the new Host transaction, write a local JSON contract and run:
+
+```sh
+agentj tasks create --contract contract.json --json
+```
+
+The contract has `task` (the existing task.json v1 schema, `enabled:false`, both prompt file names `PROMPT.md`) and `prompt` (the task instructions). Only an explicitly declared **new large bank/cryptocurrency transfer** adds `large_transfer:{"kind":"crypto","limit":"1200.50","currency":"USD"}`. The kind is bank or crypto. Its presence declares the task large; do not add it to ordinary tasks or paid API work. The Host freezes the exact contract, asks one paired-device fingerprint approval for this declaration and atomically publishes the disabled task. A small/new ordinary task or a paid API task has no additional creation card. Existing automations are not migrated or reapproved.
+
+The owner-approved amount is written in the task instructions and is **informational, not enforced**. Agent J does not monitor transfers, verify runtime amounts, debit a quota or stop a run over this declaration. This is not a payment authorization or extra sandbox permission. Creation initially supports a live verified Codex thread whose current sandbox can write the configured working root; read-only, unknown/custom roots and other unverifiable AI coding tool policies refuse, even with fingerprint approval. Do not bypass that refusal.
+
+Creation does not enable the task. Inspect with `agentj tasks show ID`, then use the existing `agentj tasks enable ID` when appropriate; enabling/resuming adds no financial reapproval. Multi-step creation is not supported by this initial endpoint. On an uncertain connection result inspect the task before retrying; a task id is never overwritten. If that id retains an old enable authorization, creation refuses even when the old directory has moved; it does not clear the old authorization automatically. A crashed uncommitted stage is retained privately and is never discovered as an active task; do not delete unrelated private staging data automatically. If publication reports a conflict requiring recovery, keep the conflicting files and ask the owner to inspect them before enabling or retrying.
 
 ## Background task information
 
@@ -876,3 +896,53 @@ Audio and captions decrypt only on the phone and host; the relay continues to ca
 
 
 AI login rescue inserts or replaces login credentials and is on the explicit verification list. Every request requires fresh in-person verification; a check from the last five minutes is not reused.
+
+### Inspect local patches
+
+`agentj local check` (optionally `--json`) inspects `~/.agentj-local/MANIFEST.json` without changing files. A missing inventory does not create a directory. Corrupt records, unsafe patch paths and broken links are reported. It does not apply patches, repair links or contact support. `pending_review` needs human verification; `present_unverified` means only that a link points to an existing source, not that it works with this release. The existing post-upgrade doctor automatically inspects this inventory read-only; findings are warnings and never block an otherwise verified upgrade. `reapply` and trusted official fixed-version checks remain unimplemented; relink is limited to explicitly registered owner-custom Codex skill slots. Do not claim that inspection restored a feature.
+
+### Uninstall a plaza skill or workflow
+
+Request a plaza package uninstall. Choose the AI coding tool when the same name has several installs. `--preview` inspects without a card or move. The host checks the original record, complete installed files and target, then shows **Uninstall plaza package** on a paired remote. Approval moves that directory atomically to a private recoverable backup, keeping publisher trust and installation history. Denial, expiry, invalid signatures and changed targets leave it installed. Inspect the installed list before retrying an unknown outcome.
+
+<details>
+<summary>Uninstall command</summary>
+
+`agentj plaza uninstall <package> --harness <claude_code|codex|opencode>`
+
+</details>
+
+Only unchanged skill/workflow directories are supported. Card packages, modified or unmanaged targets and cross-filesystem backup moves are refused. The local uninstall history retains the backup reference; reinstalling uses the normal signed install and does not revive old approvals. This action does not terminate running processes or revoke publisher trust.
+
+### Save local patch or feature records
+
+`agentj local record --contract FILE --json` saves a private record only after a fresh paired-phone identity check and explicit approval. This initial entry supports Linux and a verifiable active Codex session with full access; it refuses workspace-only/read-only/unknown authority. It cannot increase native permissions. The running Host derives its own package code root; the caller cannot select an installation directory. Nothing is applied, linked, executed or sent to support.
+
+A patch contract has exactly `kind: "patch"`, `files` (relative package paths), `baseline_root` (an absolute local text baseline directory), `baseline_sha256` (each file's expected SHA-256), `description`, `validation`, `rollback`, and `father_ticket` (letters, digits or hyphens). The baseline is explicitly **owner-local SHA-256 evidence**, not an official release or an official fix. Newline-terminated UTF-8 files only; protected paths, links, binaries, oversized or secret-bearing input refuse. The private record contains the unified diff, baseline bytes and README; the manifest remains pending review.
+
+A feature contract has exactly `kind: "feature"`, `source` (an absolute external code directory), `entry` (a relative path inside the Host package root), `description`, `validation` and `rollback`. It records the exact source inventory and proposed symlink entry without creating the link or copying the external code into the installation. `local check` may therefore report `broken_link` until a separately approved restoration exists.
+
+Records stay in owner-only `~/.agentj-local/`, with numeric `pN`/`fN` IDs. No manifest text is a command or an official repair receipt. A concurrent file change refuses instead of broadening approval; uncertain publication retains private recovery data and reports `record_recovery_required`. Keep it for review rather than automatically retrying or deleting unknown files. Patch application and authenticated Father fixed-version evidence remain unavailable. Legacy arbitrary installation entries cannot be relinked.
+
+### Restore an owner-custom Codex skill link
+
+<details>
+<summary>Fields for a new feature record</summary>
+
+Use a new feature record with exactly `kind: "feature"`, `entry_kind: "harness_skill"`, `harness: "codex"`, `skill_name`, `source`, `description`, `validation` and `rollback`.
+
+</details>
+
+`skill_name` must match SKILL.md's canonical front-matter name, use a nonreserved package slug and declare no aliases. Host derives the only destination from the existing Codex global skill root, `~/.agents/skills/<skill_name>`. This is an owner-custom global skill, never bundled/official. Original and current installation roots and the global destination tree cannot hold the external source. Existing arbitrary installation-relative feature records stay read-only; there is no guessed migration.
+
+`agentj local relink fN --json` verifies that record and the exact source files, inode generations, owner and permissions. The global skill parent must already exist and be a safe real directory. Existing Plaza packages, retained uninstall/history/certification records, publisher trust, registered names or aliases cannot be displaced or impersonated. Corrupt or unavailable conflict evidence refuses. A missing target needs a fresh paired-phone identity check and approval in the active full-access Codex session. An existing correct link returns `already_present`, `modified:false`, without another card; other occupants are preserved and refused. No file or link is replaced or deleted.
+
+`linked` proves the exact link was created and validated; `functional_verified:false` means no feature code or validation/rollback text was executed. Check behavior with the owner before calling the feature repaired. Source edits, including same-byte new inodes, need a new record. An uncertain result preserves the approved link or unknown object plus private prepared journal and reports recovery-required. Inspect first; do not automatically retry or erase recovery files. Linux/Codex/full-access restrictions still apply. `reapply` remains unsupported because arbitrary recorded package files may include frozen trust code and no trusted Host-owned functional verification mapping exists; a compile check would not prove a repair.
+
+## Spend, learning and read-aloud settings
+
+Run `agentj usage` on the Agent J host for time, usage and spend summaries. Missing readings stay unknown; subscription quota is not a dollar bill. See [Spend and speed](https://agentj.app/docs/spend/).
+
+`/learn` skill distillation is currently awaiting an owner decision; draft and proposal requests are refused. Its retained design requires the complete proposed diff and paired-owner confirmation before writing, with a separate review for plaza publishing.
+
+Hold a reply's Read aloud button to ask for voice setup. Inspect `agentj voice status`, choose an available engine, enter keys only through a secret card and listen to a test. Automatic model rewriting for speech is disabled; cloud speech checks the full text, including an owner prefix, before sending it to the chosen provider. See [Choose a reading voice](https://agentj.app/docs/voice/).

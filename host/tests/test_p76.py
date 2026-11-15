@@ -118,33 +118,112 @@ class Runtime(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(st.agent_config()["session_mode"],"shared")
 
     async def test_socket_held_and_accepted(self):
-        for accepted in (False,True):
-            with tempfile.TemporaryDirectory(prefix="p76-") as td,patch.dict(os.environ,{"CLAUDE_CONFIG_DIR":td+"/cc"}):
+        from test_p0269_selfheal import queue_history
+        from agentj.compose import Send
+        from agentj import provenance
+        from datetime import datetime, timezone
+        for mode in ('queued', 'accepted', 'end-timeout'):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory(prefix="p76-") as td,patch.dict(os.environ,{"CLAUDE_CONFIG_DIR":td+"/cc"}):
                 root=Path(td);cc=root/"cc/sessions";cc.mkdir(parents=True)
                 sock=socket.socket(socket.AF_UNIX);sock.bind(td+"/p.sock");sock.listen();sock.settimeout(3)
-                session={"pid":os.getpid(),"sessionId":"fixture-session","messagingSocketPath":td+"/p.sock"}
+                # Same actual registry fields as Handoff's native-session fixture.
+                session={"pid":os.getpid(),"cwd":td,"sessionId":"fixture-session","kind":"interactive",
+                         "messagingSocketPath":td+"/p.sock","status":"idle","updatedAt":10}
+                (cc/'owner.json').write_text(json.dumps(session))
+                self.assertEqual(shared.claude_sessions(td,session['sessionId']),[session])
                 (cc/(str(os.getpid())+"."+hashlib.sha256((td+"/p.sock").encode()).hexdigest()+".key")).write_text(json.dumps({"peerToken":"TEST_ONLY_PEER"}))
-                host=Mock();a=shared.SharedClaudeAgent(host,{"kind":"claude","dir":td,"_workflow_ceo":True,"language":"zh"})
+                host=Mock();host.lang,host.preferences='zh',None
+                queue_history(host,root)
+                tid=host.cur_turn
+                a=shared.SharedClaudeAgent(host,{"kind":"claude","dir":td,"_workflow_ceo":True,"language":"zh"})
+                host.agent=a
                 a.session=session;a.attach=AsyncMock(return_value=True)
-                loop=asyncio.get_running_loop();frames=[]
+                a.loop=asyncio.get_running_loop()  # Real attach binds the Stop callback's event loop.
+                send=Send('fixture-owner','p76-request-'+mode,tid,text='fixture request',source=provenance.phone())
+                a.cur_send=send
+                a.transcript=root/'native.jsonl'
+                a.transcript.write_text('')
+                a._idle_reply=AsyncMock(return_value=False)
+                a._ask_rescue=Mock()  # Recovery UI is independent of native acceptance/completion.
+                loop=asyncio.get_running_loop();frames=[];observations=[];peer_errors=[]
+                async def observed():
+                    frame=frames[1]
+                    await a.hook_event({"session_id":"fixture-session","hook_event_name":"UserPromptSubmit","prompt":frame["message"]["content"]})
+                    # The hook only observes display text; it cannot mint record-level ownership.
+                    self.assertFalse(a.input_seen.is_set())
+                    self.assertIsNone(getattr(a,'_owner_approval_origin',None))
+                    if mode=='queued':return
+                    self.assertEqual(frame['sessionId'],session['sessionId'])
+                    self.assertEqual(frame['requestId'],send.sid)
+                    self.assertEqual(frame['msg_id'],frame['recordId'])
+                    self.assertEqual(frame['message']['content'],provenance.envelope(session['messagingSocketPath'],send.text,send.source))
+                    record={'type':'user','uuid':'wrong-id-'+mode,'sessionId':frame['sessionId'],
+                            'isMeta':True,'isSidechain':False,
+                            'timestamp':datetime.now(timezone.utc).isoformat(),
+                            'origin':{'kind':'peer','msg_id':'not-the-sent-record'},
+                            'message':frame['message']}
+                    with a.transcript.open('a') as f:f.write(json.dumps(record)+'\n')
+                    a.read_transcript()
+                    self.assertIs(a.session,session,'wrong-ID observation cannot lose a live native registry session')
+                    self.assertTrue(shared.claude_sessions(td,session['sessionId']))
+                    self.assertFalse(a.input_seen.is_set(),'wrong native record ID is not receipt authority')
+                    self.assertFalse(a.native_request.consumed)
+                    record['uuid']='accepted-id-'+mode
+                    record['origin']['msg_id']=frame['msg_id']
+                    with a.transcript.open('a') as f:f.write(json.dumps(record)+'\n')
+                    a.read_transcript()
+                    self.assertIs(a.session,session)
+                    self.assertTrue(shared.claude_sessions(td,session['sessionId']))
+                    self.assertTrue(a.native_request.consumed)
+                    self.assertTrue(a.input_seen.is_set(),'actual transcript attestation is the acceptance proof')
+                    if mode=='accepted':
+                        await a.hook_event({'session_id':session['sessionId'],'hook_event_name':'Stop','last_assistant_message':'fixture complete'})
+                        await asyncio.wait_for(a.done.wait(),1)  # Wait for the actual scheduled _finish_stop.
+                        self.assertTrue(a.done.is_set(),'native Stop completes the accepted turn')
                 def peer():
-                    with sock.accept()[0] as c,c.makefile("r") as f:
-                        frames.extend(json.loads(f.readline()) for _ in range(2))
-                    if accepted:
-                        async def observed():
-                            await a.hook_event({"session_id":"fixture-session","hook_event_name":"UserPromptSubmit","prompt":frames[1]["message"]["content"]})
-                            a.done.set()
-                        loop.call_soon_threadsafe(lambda: asyncio.create_task(observed()))
+                    try:
+                        with sock.accept()[0] as c,c.makefile("r") as f:
+                            frames.extend(json.loads(f.readline()) for _ in range(2))
+                        if mode!='queued':
+                            loop.call_soon_threadsafe(lambda:observations.append(asyncio.create_task(observed())))
+                    except Exception as e:peer_errors.append(type(e).__name__)
                 thread=threading.Thread(target=peer);thread.start()
                 try:
-                    with patch.object(shared,"CLAUDE_INPUT_WAIT",0.05):await a.turn("fixture request")
+                    # Actual input wait and actual completion wait loops, with short fixture clocks.
+                    with patch.object(shared,"CLAUDE_INPUT_WAIT",0.05),patch.object(shared,"TURN_WAIT",0.02):
+                        await asyncio.wait_for(a.turn("fixture request"),3)
                     await asyncio.to_thread(thread.join,2)
+                    self.assertFalse(thread.is_alive());self.assertFalse(peer_errors)
+                    if observations:await asyncio.gather(*observations)
                     self.assertEqual(len(frames),2);self.assertNotIn("senderMode",frames[1])
-                    if accepted:host.turn_failed.assert_not_called()
+                    page=host.hist.get(tid)
+                    if mode=='queued':
+                        host.turn_failed.assert_not_called();host.agent_notice.assert_not_called()
+                        self.assertEqual(page['reply']['text'],'')
+                        self.assertEqual(page['card'],{'held':'pending','queued':True})
+                        self.assertEqual(a.held,[(tid,a.pending_text)])
+                        self.assertFalse(a.input_seen.is_set(), 'socket write alone is not acceptance')
+                        # A later actual native hook consumes the retained marker on the original page.
+                        await observed()
+                        self.assertEqual(a.held,[])
+                        self.assertEqual(host.hist.get(tid)['card'],{})
+                        self.assertEqual(host.hist.get(tid)['reply']['text'],'')
+                        self.assertFalse(a.input_seen.is_set(),'late hook clears display only')
+                        self.assertFalse(a.native_request.consumed)
+                        self.assertIsNone(getattr(a,'_owner_approval_origin',None))
+                    elif mode=='accepted':
+                        self.assertTrue(a.input_seen.is_set())
+                        host.turn_failed.assert_not_called()
+                        self.assertEqual(a.held,[])
+                        self.assertFalse(page.get('card',{}).get('held'))
                     else:
-                        host.turn_failed.assert_called_once();self.assertIn("agentj doctor",host.agent_notice.call_args.args[0]);self.assertIn("user",host.agent_notice.call_args.args[0])
+                        self.assertTrue(a.input_seen.is_set(), 'completion timeout requires real acceptance first')
+                        host.turn_failed.assert_called_once()
+                        self.assertTrue(any(c.kwargs.get('final') is True for c in host.turn_wait_note.call_args_list))
+                        self.assertEqual(a.held,[], 'completion timeout cannot be reclassified as unreceived queue')
                 finally:
-                    sock.close();thread.join(3)
+                    sock.close();await asyncio.to_thread(thread.join,3)
+
 
 class Statusline(unittest.TestCase):
     setUp = Settings.setUp

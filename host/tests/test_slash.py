@@ -500,11 +500,15 @@ class CodexChain(_Chain):
         """ADR-A73: under `untrusted` an accepted command runs outside Codex's sandbox, so with a read-only sandbox only a
         command that just reads (and no network) may become a card; the rest is declined at once with a notice."""
         os.environ["FAKE_CX_SANDBOX"] = "read-only"
+        # Explicit native review policy: the stand-in models native RPC, not
+        # an OS sandbox. Production follows this human policy rather than
+        # adding an Agent J default; the installed pre-tool guard is real.
+        os.environ["FAKE_CX_POLICY"] = json.dumps("untrusted")
 
         async def script(c):
             host, ph, s = c["host"], c["ph"], c["s"]
             notices = lambda: [m["text"] for m in c["msgs"](("notice",))]  # noqa: E731
-            for text, want in [("RUN: rm victim.txt", "declined: rm victim.txt"), ("RUN: touch made.txt", "declined: touch made.txt"),
+            for text, want in [("RUN: rm victim.txt", "declined by installed pre-tool hook"), ("RUN: touch made.txt", "declined: touch made.txt"),
                                ("RUN: curl -s https://example.com", "declined: curl -s https://example.com"),
                                ("PATCH: add new.txt", "patch declined: new.txt"), ("PERM: /etc", "granted: {}")]:
                 n0 = len(notices())
@@ -512,8 +516,14 @@ class CodexChain(_Chain):
                 await c["wait"](lambda: any(m["text"] == want for m in c["msgs"]()))
                 await c["idle"]()
                 self.assertEqual(c["asks"](), [], f"{text}: no card")
-                self.assertTrue(any(n.startswith("这一步超出了你 Codex 自己的沙箱设置，已拒绝；要放开请在Agent J 主机上改 Codex 的设置")
-                                    for n in notices()[n0:]), (text, notices()[n0:]))
+                if text == "RUN: rm victim.txt":
+                    events = [json.loads(line) for line in self.st.log_path.read_text().splitlines()]
+                    self.assertTrue(any(r.get('ev') == 'ask_done' and r.get('tool') == 'Bash'
+                                        and r.get('decision') == 'deny' and r.get('card') is False
+                                        and r.get('reason') == 'native_delete_use_trash' for r in events))
+                else:
+                    self.assertTrue(any(n.startswith("这一步超出了你 Codex 自己的沙箱设置，已拒绝；要放开请在Agent J 主机上改 Codex 的设置")
+                                        for n in notices()[n0:]), (text, notices()[n0:]))
             self.assertTrue((self.work / "victim.txt").exists())
             self.assertFalse((self.work / "made.txt").exists() or (self.work / "new.txt").exists())
             # P513d: review remains untrusted; read-only commands still fast-pass,
@@ -525,19 +535,23 @@ class CodexChain(_Chain):
         start = [x["params"] for x in self.logged() if x.get("method") == "thread/start"][0]
         self.assertEqual((start["sandbox"], start["approvalPolicy"]), ("read-only", "untrusted"))
         log = approvals.read_log(self.st)
-        self.assertEqual([(x["decision"], x["reason"]) for x in log], [("deny", "policy")] * 5)
-        self.assertTrue(all(x["sig"] is None for x in log[:5]), "refused by policy: nobody was asked")
+        self.assertEqual([(x["tool"], x["decision"], x["reason"]) for x in log],
+                         [("Bash", "deny", "policy"), ("Bash", "deny", "policy"),
+                          ("Write", "deny", "policy"), ("CodexPermissions", "deny", "policy"),
+                          ("Bash", "allow", "off_list")])
+        self.assertTrue(all(x["sig"] is None for x in log), "automatic decisions: nobody was asked")
         acts = [json.loads(x) for f in (self.st.root / "activity").glob("*.jsonl") for x in f.read_text().splitlines()]
-        self.assertEqual(sum(1 for r in acts if r.get("k") == "decision" and r.get("result") == "policy"), 5)
+        self.assertEqual(sum(1 for r in acts if r.get("k") == "decision" and r.get("result") == "policy"), 4)
         self.assertNotIn("victim", self.st.log_path.read_text())
         answers = [x["answer"] for x in self.logged() if "answer" in x]
-        self.assertEqual([a.get("decision") for a in answers if "decision" in a], ["decline"] * 4 + ["accept"])   # stat still passes read-only review
+        self.assertEqual([a.get("decision") for a in answers if "decision" in a], ["decline"] * 3 + ["accept"])   # rm refused by real pre-tool, stat passes native review
         self.assertIn({"permissions": {}, "scope": "turn"}, answers)
 
     def test_workspace_write_sandbox_cards_only_what_stays_inside(self):
         """P513d: untrusted asks before writes; command approvals outside the sandbox
         are refused, while a file patch inside an existing writable root can pass."""
         os.environ["FAKE_CX_SANDBOX"] = "workspace-write"
+        os.environ["FAKE_CX_POLICY"] = json.dumps("untrusted")  # explicit human native policy
 
         async def script(c):
             await c["say"]("PATCH: add new.txt")
@@ -553,10 +567,16 @@ class CodexChain(_Chain):
             await c["idle"]()
             self.assertEqual(c["asks"](), [])
             self.assertFalse(os.path.exists("/srv/aj-outside-never-written.txt"))
+            self.assertFalse((self.work / '.git' / 'config').exists())
         self.run_chain(script)
         start = [x["params"] for x in self.logged() if x.get("method") == "thread/start"][0]
         self.assertEqual((start["sandbox"], start["approvalPolicy"]), ("workspace-write", "untrusted"))
-        self.assertEqual([(x["decision"], x["reason"]) for x in approvals.read_log(self.st)], [("deny", "policy")] * 4)
+        log = approvals.read_log(self.st)
+        self.assertEqual([(x["tool"], x["decision"], x["reason"]) for x in log],
+                         [("Write", "allow", "off_list"), ("Bash", "deny", "policy"),
+                          ("Write", "deny", "policy"), ("Write", "deny", "policy"),
+                          ("Bash", "deny", "policy")])
+        self.assertTrue(all(x['sig'] is None for x in log))
 
     def test_granular_policy_cannot_remove_independent_review(self):
         os.environ["FAKE_CX_POLICY"] = json.dumps({"granular": {"rules": False, "sandbox_approval": False, "mcp_elicitations": False}})
@@ -591,21 +611,53 @@ class CodexChain(_Chain):
             self.assertEqual(c["asks"](), [])
             os.environ["FAKE_CX_LOG"] = str(self.work / "workflows" / "work" / ".fake.jsonl")
             (self.work / "workflows" / "work" / "gone.txt").write_text("keep")
-            t = asyncio.create_task(host.scheduler.run("work", "manual"))
-            # P569 integration: P568 追加 A (REPORT-568:131,137) — an enabled task runs under the expiring delegated
-            # scheduled_task scope (rank 1, never the owner): low-risk steps follow the registry, a deletion still asks a
-            # paired phone with the task's name on the card (Claude twin: test_controls.SchedulerChain); no group_source.
-            await c["wait"](lambda: len(c["asks"]()) == 1)
-            ask = c["asks"]()[0]
-            self.assertEqual((ask["tool"], ask["task"]), ("Bash", "任务work"))
-            self.assertIn("delete", ask["cat"])
-            await host._app(c["s"], c["ph"].answer(ask, False))
-            res = await t
-            self.assertEqual(len(c["asks"]()), 1, "a workflow is not a fresh owner request: no other card")
+            # 0310: the real Scheduler issues its task/root scope; the enabled
+            # headless run follows this harness and adds no Agent J card. Never
+            # simulate it with owner_started/preapproved booleans or wire data.
+            from agentj import provenance
+            self.assertIsNone(provenance.task_scope())
+            original_exec = host.scheduler._exec_retry
+            issued = []
+            async def observe_issued_scope(*args, **kwargs):
+                scope = provenance.task_scope()
+                self.assertIsNotNone(scope)
+                self.assertIs(scope['live'], True)
+                self.assertIs(type(provenance._REQUEST.get()), provenance.HostDelegated)
+                self.assertIn(scope['approval_task_ref'], host._approval_task_refs)
+                issued.append(scope)
+                return await original_exec(*args, **kwargs)
+            with mock.patch.object(host.scheduler, '_exec_retry', side_effect=observe_issued_scope):
+                res = await host.scheduler.run("work", "manual")
+            self.assertEqual(len(issued), 1)
+            self.assertIs(issued[0]['live'], False, 'the real scheduler scope expires after the run')
+            self.assertIsNone(provenance.task_scope())
+            self.assertEqual(c["asks"](), [], "0310 headless execution adds no Agent J approval card")
             log = approvals.read_log(self.st)
             self.assertFalse(any(r.get("reason") == "group_source" for r in log))
-            self.assertTrue(any(r.get("decision") == "deny" and "delete" in (r.get("cats") or []) for r in log))
-            self.assertEqual((self.work / "workflows" / "work" / "gone.txt").read_text(), "keep", "the owner refused the deletion")
+            # The normal harness does not request native approval for these
+            # ordinary operations. Audit the actual persisted Scheduler run,
+            # rather than inventing a phone/native approval that never happened.
+            run = tasks.load(self.st)['runs'][res['run_id']]
+            self.assertEqual((run['id'], run['trigger'], run['status'], run['verdict'], run['readonly']),
+                             ('work', 'manual', 'finished', 'ok', False))
+            events = [json.loads(line) for line in self.st.log_path.read_text().splitlines()]
+            self.assertTrue(any(r.get('ev') == 'task_run' and r.get('id') == 'work'
+                                and r.get('kind') == 'manual' for r in events))
+            self.assertTrue(any(r.get('ev') == 'task_done' and r.get('id') == 'work'
+                                and r.get('result') == 'ok' for r in events))
+            self.assertFalse((self.work / "workflows" / "work" / "gone.txt").exists(),
+                             'the normal harness may delete only its own synthetic workflow file')
+            # The same shape supplied as ordinary data is not a Scheduler scope.
+            # It receives no task authority and cannot borrow the completed run.
+            for forged in ({'kind':'scheduled_task','role':'task'},
+                           {'kind':'scheduled_task','role':'task','owner_started':True,
+                            'owner_dispatch':True,'preapproved':True,'live':True}):
+                self.assertEqual(provenance.normalize(forged), {'kind':'unknown','role':'group'})
+                with provenance.request_source(forged):
+                    denied = await host.ask('Bash', {'command':'touch forged-outside.txt'})
+                self.assertEqual(denied['behavior'], 'deny')
+                self.assertEqual(c["asks"](), [], 'untrusted wire data must not open a task approval card')
+            self.assertFalse((self.work / 'forged-outside.txt').exists())
             self.assertEqual(res["verdict"], "ok", res)
             self.assertFalse((self.work / "normal-wrote.txt").exists(), "CEO writes stay in its own folder")
             self.assertTrue((self.work / "workflows" / "work" / "normal-wrote.txt").exists(), "a low-risk write in the task's own folder")
@@ -615,7 +667,7 @@ class CodexChain(_Chain):
         starts = [x["params"] for x in rows if x.get("method") == "thread/start"]
         starts.sort(key=lambda x: x.get("sandbox") != "read-only")
         self.assertEqual([(s.get("sandbox"), s.get("ephemeral"), s.get("approvalPolicy")) for s in starts],
-                         [("read-only", True, "untrusted"), ("danger-full-access", True, "untrusted")])   # F30
+                         [("read-only", True, "untrusted"), ("danger-full-access", True, None)])   # 0310: normal follows harness
 
 
 class OpenCodeChain(_Chain):

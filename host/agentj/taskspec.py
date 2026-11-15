@@ -162,7 +162,7 @@ def secret_where(text: str, owner: bool = False) -> dict | None:
     return where(text, (kind, s, e))
 
 
-SECRET_KINDS = frozenset({"private_key", "url_credentials", "bearer_token", "jwt", "aws_access_key", "github_token",
+SECRET_KINDS = frozenset({"seat_api_key", "seat_api_callback", "private_key", "url_credentials", "bearer_token", "jwt", "aws_access_key", "github_token",
                           "gitlab_token", "slack_token", "stripe_key", "google_api_key", "anthropic_key", "openrouter_key",
                           "openai_key", "replicate_token", "huggingface_token", "telegram_bot_token", "agentjarvis_id", "agentj_access_code",
                           "mailgun_key", "authorization_header", "credential_assignment", "labelled_hex", "high_entropy"})

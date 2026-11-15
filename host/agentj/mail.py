@@ -968,6 +968,8 @@ def _fail(e: Exception, side: str) -> MailError:
         return e
     if isinstance(e, (imaplib.IMAP4.error,)) and "login" in str(e).lower() or isinstance(e, smtplib.SMTPAuthenticationError):
         return MailError(side + "_login")
+    if isinstance(e, (smtplib.SMTPDataError, smtplib.SMTPSenderRefused)) and getattr(e, "smtp_code", 0) == 552:
+        return MailError(side + "_too_big")  # fixed code only, never the SMTP response body
     if isinstance(e, ssl.SSLError):
         return MailError(side + "_tls")
     if isinstance(e, (socket.timeout, TimeoutError)):
@@ -1927,7 +1929,7 @@ class Mail:
 
     # ---------------- replies
     def completed(self, turn) -> None:
-        if not turn or getattr(self.host, 'cur_turn', None) != turn.get('id'):
+        if not turn or getattr(self.host, 'cur_turn', None) != turn.get('id') or (turn.get('card') or {}).get('held') == 'pending':
             return
         from .silent import MARKER
         text = MARKER if turn.get('silent') is True else (turn.get('reply') or {}).get('text', '')
@@ -2489,7 +2491,7 @@ def first_run_probe(st, ctx=None) -> tuple[str, str | None]:
 WHY = {
     "zh": {"imap_login": "IMAP 登录失败：授权码不对，或邮箱没开 IMAP 服务", "smtp_login": "SMTP 登录失败：授权码不对，或没开 SMTP 服务",
            "imap_network": "连不上 IMAP 服务器", "smtp_network": "连不上 SMTP 服务器", "imap_tls": "IMAP 加密连接失败",
-           "smtp_tls": "SMTP 加密连接失败", "imap_timeout": "IMAP 超时", "smtp_timeout": "SMTP 超时", "imap_select": "打不开收件箱",
+           "smtp_too_big": "邮件太大，发信服务器拒收", "smtp_tls": "SMTP 加密连接失败", "imap_timeout": "IMAP 超时", "smtp_timeout": "SMTP 超时", "imap_select": "打不开收件箱",
            "no_password": "还没设置授权码", "incomplete": "邮箱地址或服务器没填完", "off": "邮件通道是关着的",
            "not_running": "Agent J 没在运行（agentj service status）", "address": "邮箱地址格式不对", "preset": "没有这个邮箱预设",
            "not_configured": "Agent J 主机上还没配好邮件通道：请在手机「设置 → 沟通渠道 → 邮件通道」填邮箱并设置授权码",
@@ -2515,7 +2517,7 @@ WHY = {
            "request_invalid": "请求不完整", "file_unreadable": "读不了附件或状态文件"},
     "en": {"imap_login": "IMAP sign-in failed: wrong app password, or IMAP is not enabled", "smtp_login": "SMTP sign-in failed",
            "imap_network": "cannot reach the IMAP server", "smtp_network": "cannot reach the SMTP server", "imap_tls": "IMAP TLS failed",
-           "smtp_tls": "SMTP TLS failed", "imap_timeout": "IMAP timed out", "smtp_timeout": "SMTP timed out",
+           "smtp_too_big": "the mail server refused the size", "smtp_tls": "SMTP TLS failed", "imap_timeout": "IMAP timed out", "smtp_timeout": "SMTP timed out",
            "imap_select": "cannot open the inbox", "no_password": "no app password yet", "incomplete": "address or servers missing",
            "off": "the mail channel is off", "not_running": "Agent J is not running (agentj service status)",
            "address": "not an e-mail address", "preset": "no such preset",

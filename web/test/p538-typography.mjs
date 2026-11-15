@@ -9,7 +9,7 @@ export const snapshotPath = fileURLToPath(new URL('./fixtures/p538-typography-02
 export async function typography(publicDir, outFile) {
   const sourceRoot = publicDir ? resolve(publicDir) : fileURLToPath(new URL('../public/', import.meta.url));
   const relay = readFileSync(resolve(sourceRoot,'js/relay.js'),'utf8');
-  const classify = relay.match(/w\.className = \"words\"[^;]+;/)?.[0];
+  const classify = relay.match(/w\.className\s*=\s*\"words\"[^;]+;/)?.[0];
   if(!classify) throw Error('Reply size classifier missing; review contract');
   const server = await startWebServer(publicDir ? { publicDir: resolve(publicDir) } : {});
   const browser = await launch();

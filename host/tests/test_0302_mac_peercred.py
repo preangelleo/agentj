@@ -68,6 +68,24 @@ def host_with(agent):
               stopped=lambda: False, stopping=asyncio.Event(), _agent_pids=lambda: set())
 
 
+def span_host():
+    agent = NS(cur_send=None, native_source=None)
+    host = host_with(agent)
+    agent.host = host
+    return host
+
+
+def span_native(host, source):
+    from agentj import shared
+    host.agent.native_source = source
+    shared.application_ingress_span(host.agent)
+
+
+def span_turn(host, send):
+    host.agent.cur_send = send
+    AI.note_turn(host, send)
+
+
 class Writer:
     def is_closing(self):
         return False
@@ -143,13 +161,13 @@ class OwnerLocalIngress(unittest.IsolatedAsyncioTestCase):
         from agentj import provenance
         clock = [100.0]
         with mock.patch.object(PE, 'now', lambda: clock[0]):
-            host = NS()
-            AI.note_turn(host, NS(source=provenance.phone()))
-            AI.note_turn(host, NS(source=provenance.system(), hook_notice=None))
+            host = span_host()
+            span_turn(host, NS(source=provenance.phone()))
+            span_turn(host, NS(source=provenance.system(), hook_notice=None))
             self.assertFalse(host.__dict__.get('_nonowner_spans'))
-            AI.note_turn(host, NS(source={'kind': 'friend_task', 'role': 'task'}))
+            span_turn(host, NS(source={'kind': 'friend_task', 'role': 'task'}))
             clock[0] = 180.0; AI.close_span(host)
-            AI.note_turn(host, NS(source=provenance.system(), hook_notice='h'))
+            span_turn(host, NS(source=provenance.system(), hook_notice='h'))
             self.assertEqual(host._nonowner_spans, [[100.0, 180.0], [180.0, None]])
             host._nonowner_floor = 0.0
             self.assertTrue(AI._guest_born(host, 150.0)); self.assertTrue(AI._guest_born(host, 999.0))
@@ -258,14 +276,17 @@ class SelfCompactAfterTurn(unittest.TestCase):
                       {'kind': 'email', 'role': 'group', 'sender': 'guest@example.test'}, None, {}):
             self.assertFalse(self_compact.owner_channel(guest), guest)
 
-    def test_queued_owner_compaction_runs_after_shared_turn_end(self):
+    def test_uncaptured_command_cannot_borrow_cleared_owner_source(self):
         from agentj import self_compact, provenance
         host = NS(agent=None, stopped=lambda: False, st=NS(log=lambda *a, **k: None), lang='zh')
         agent = NS(kind='claude', host=host, cur_send=None, pending_source=None, native_source=provenance.terminal())
         host.agent = agent
         cmd = NS(data={'self_compact': 'm', 'self_compact_source': provenance.phone()})
         with mock.patch.object(self_compact, 'marker', lambda a: 'm'), mock.patch.object(self_compact, 'fresh', lambda a: True):
-            self.assertIsNone(self_compact.guard(agent, cmd))
+            # R-0028: data fields alone cannot mint a queue authorization. The
+            # real enqueue -> shared turn cleanup -> run positive lives in
+            # test_p0337_compact_authorization, with an actual host-held Cmd.
+            self.assertIsNotNone(self_compact.guard(agent, cmd))
             agent.native_source = {'kind': 'friend_task', 'role': 'task'}
             self.assertIsNotNone(self_compact.guard(agent, cmd))
 
@@ -277,16 +298,16 @@ class SharedSessionSpans(unittest.TestCase):
         clock = [100.0]
         with mock.patch.object(PE, 'now', lambda: clock[0]):
             for src in (provenance.normalize(None), {'kind': 'same_host', 'role': 'peer'}, {'kind': 'friend_task', 'role': 'task'}):
-                host = NS()
-                shared.application_ingress_span(NS(host=host, native_source=src))
+                host = span_host()
+                span_native(host, src)
                 self.assertEqual(host._nonowner_spans, [[100.0, None]], src)
                 clock[0] = 150.0; AI.close_span(host); clock[0] = 100.0
                 host._nonowner_floor = 0.0
                 self.assertTrue(AI._guest_born(host, 120.0))      # born in that native turn: never owner_local later
                 self.assertFalse(AI._guest_born(host, 160.0))     # born in a later owner turn: fine
             for owner in (provenance.terminal(), provenance.phone(), {'kind': 'same_owner', 'role': 'task'}):
-                host = NS()
-                shared.application_ingress_span(NS(host=host, native_source=owner))
+                host = span_host()
+                span_native(host, owner)
                 self.assertFalse(host.__dict__.get('_nonowner_spans'), owner)
 
     def test_every_turn_source_assignment_in_shared_opens_a_span(self):
@@ -304,10 +325,10 @@ class SharedSessionSpans(unittest.TestCase):
 
     def test_peer_origin_or_envelope_prompt_is_not_owner(self):
         from agentj import provenance, shared
-        host = NS()
+        host = span_host()
         with mock.patch.object(PE, 'now', lambda: 50.0):
             src = provenance.terminal_input({'origin': {'kind': 'peer'}}, 'hi', 'hi')
-            shared.application_ingress_span(NS(host=host, native_source=src))
+            span_native(host, src)
         self.assertEqual(host._nonowner_spans, [[50.0, None]])
 
     def test_native_stop_keeps_span_open_while_a_non_owner_send_is_pending(self):
@@ -333,12 +354,12 @@ class OwnerChannelMerge(unittest.TestCase):
         owner_tg = {'kind': 'telegram', 'role': 'owner', 'sender': 123, 'chat': 123}
         for src in (owner_tg, {'kind': 'wechat', 'role': 'owner'}, {'kind': 'email', 'role': 'owner', 'sender': 'owner@example.com'}):
             self.assertEqual(AI._owner_source(src), provenance.owner_intent(src), src)
-            host = NS(); shared.application_ingress_span(NS(host=host, native_source=src))
-            AI.note_turn(host, NS(source=src, hook_notice=None))
+            host = span_host(); span_native(host, src)
+            span_turn(host, NS(source=src, hook_notice=None))
             self.assertFalse(host.__dict__.get('_nonowner_spans'), src)
         for src in ({'kind': 'telegram', 'role': 'forward', 'sender': 1, 'chat': 1}, {'kind': 'telegram', 'role': 'group', 'sender': 1, 'chat': -5},
                     {'kind': 'email', 'role': 'guest', 'sender': 'forged@example.com'}, {'kind': 'email', 'role': 'group', 'sender': 'x@example.com'}):
-            host = NS(); AI.note_turn(host, NS(source=src, hook_notice=None))
+            host = span_host(); span_turn(host, NS(source=src, hook_notice=None))
             self.assertTrue(host.__dict__.get('_nonowner_spans'), src)
-        host = NS(); AI.note_turn(host, NS(source=owner_tg, hook_notice='h'))       # webhook body is never the owner
+        host = span_host(); span_turn(host, NS(source=owner_tg, hook_notice='h'))       # webhook body is never the owner
         self.assertTrue(host.__dict__.get('_nonowner_spans'))

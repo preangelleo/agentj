@@ -4,6 +4,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import * as activity from '../public/js/phone-activity.js';
 import * as turnsplit from '../public/js/turnsplit.js';   // 0.26.9 #471: relay.js pages() lays out continuation cards (its import, given to the vm)
 const src=readFileSync(new URL('../public/js/relay.js',import.meta.url),'utf8');
 const history=src.slice(src.indexOf('const hist ='),src.indexOf('function hhmm')).replaceAll('export function','function');
@@ -21,7 +22,7 @@ function host(n,silentEvery=0){
   return {calls,history};
 }
 function page(h){
-  const ctx=vm.createContext({...turnsplit,chanCard:()=>null,acceptHistoryHead(){},document:{body:{dataset:{}}},t:x=>x,hist:{epoch:0},historyGeneration:0,C:{connected:()=>true,api:{history:h.history}},showPage(){},renderSilent(){},announceTurn(){},el:()=>({hidden:true,classList:{toggle(){}},textContent:''})});
+  const ctx=vm.createContext({...turnsplit,...activity,chanCard:()=>null,acceptHistoryHead(){},document:{body:{dataset:{}}},t:x=>x,hist:{epoch:0},historyGeneration:0,C:{connected:()=>true,api:{history:h.history}},showPage(){},renderSilent(){},announceTurn(){},el:()=>({hidden:true,classList:{toggle(){}},textContent:''})});
   vm.runInContext(history,ctx);
   return x=>vm.runInContext(x,ctx);
 }
@@ -59,7 +60,7 @@ function clock(){
 }
 function wordsCtx(){
   const c=clock(),painted=[],refreshes=[],w={dataset:{}};
-  const ctx=vm.createContext({...turnsplit,chanCard:()=>null,acceptHistoryHead(){},document:{body:{dataset:{}}},t:x=>x,hist:{epoch:0},historyGeneration:0,setTimeout:c.setTimeout,clearTimeout:c.clearTimeout,Date:c.Date,historySync:false,shownKey:'7|x',wordsSrc:null,cardReplyKey:null,refreshCards:()=>refreshes.push(1),
+  const ctx=vm.createContext({...turnsplit,...activity,chanCard:()=>null,acceptHistoryHead(){},document:{body:{dataset:{}}},t:x=>x,hist:{epoch:0},historyGeneration:0,setTimeout:c.setTimeout,clearTimeout:c.clearTimeout,Date:c.Date,historySync:false,shownKey:'7|x',wordsSrc:null,cardReplyKey:null,refreshCards:()=>refreshes.push(1),
     cur:{status:'working',hostStatus:'working'},t:x=>x,el:()=>w,fill:(_,x)=>painted.push(x),afterWords(){},rdFollow(){}});
   vm.runInContext(words,ctx);
   ctx.showPage=()=>vm.runInContext('renderWords(globalThis.latest,globalThis.open)',ctx);

@@ -47,7 +47,7 @@ class Pure(unittest.TestCase):
 
     def test_schema_defaults_and_settable(self):
         d = preferences.defaults()
-        self.assertEqual(d["heartbeat"], {"enabled": True, "interval_minutes": 60, "daily_at": "", "quiet_enabled": True, "quiet_start": "23:00", "quiet_end": "07:00", "context_max_tokens": 100000})   # + P207 daily_at
+        self.assertEqual(d["heartbeat"], {"enabled": True, "interval_minutes": 60, "daily_at": "08:00", "quiet_enabled": True, "quiet_start": "23:00", "quiet_end": "07:00", "context_max_tokens": 100000})   # + P207 daily_at
         m = preferences.SCHEMA["heartbeat.interval_minutes"]
         self.assertEqual((m["minimum"], m["maximum"], m["tier"]), (5, 1440, "user"))
         self.assertIn("heartbeat.enabled", serve.PREF_SET_KEYS)
@@ -151,6 +151,8 @@ class Decide(unittest.TestCase):
         return self.h.next_due() + 1
 
     def test_due_after_interval_and_pushed_back_by_activity(self):
+        # This exercises the idle interval independently of the default daily review.
+        self.host.preferences = preferences.merge(self.host.preferences, {"heartbeat": {"daily_at": ""}})
         now = time.time()
         self.assertIsNone(asyncio.run(self.h.tick(now)), "not due right after start")
         self.h.touch()

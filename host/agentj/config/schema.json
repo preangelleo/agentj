@@ -1145,7 +1145,7 @@
   },
   "heartbeat.daily_at": {
    "type": "string",
-   "default": "",
+   "default": "08:00",
    "tier": "user",
    "description": "Also wake once a day at this local time, HH:MM (24-hour); empty = off (agentj heartbeat daily 07:30) / 每天固定时间唤醒一次（本地时间 HH:MM，24 小时制），留空关闭",
    "aliases": [
@@ -1802,6 +1802,26 @@
    "verify": "agentj inbox",
    "since": "0.30.6",
    "aliases": ["语音保留时长", "语音原文件保留", "voice retention", "voice retention hours"]
-  }
+  },
+ "voice.tts.text_prefix": {
+  "type": "object",
+  "default": {},
+  "description": "Owner provider prefixes (ElevenLabs only), up to 256 characters; local configuration, not a credential / 主人服务商文本前缀，仅ElevenLabs，最多256字符，不填凭据",
+  "aliases": ["语音文本前缀", "voice tts text prefix"],
+  "tier": "user",
+  "apply": "hot",
+  "verify": "agentj config validate --json",
+  "since": "0.30.22"
+ },
+ "voice.tts.settings": {
+  "type": "object",
+  "default": {},
+  "description": "Owner provider settings: ElevenLabs stability/similarity_boost, numbers 0..1 / 主人服务商参数，ElevenLabs稳定性与相似度，数值0..1",
+  "aliases": ["语音服务商参数", "voice tts provider settings"],
+  "tier": "user",
+  "apply": "hot",
+  "verify": "agentj config validate --json",
+  "since": "0.30.22"
+ }
  }
 }

@@ -168,9 +168,9 @@ test('one setup entry: the terminal row points up (scrollToPkRow), no button of 
   assert.doesNotMatch(term, /aj-action|phoneEnv\.setup|p417\.nopk/);
   assert.match(read('../public/js/termhook.js'), /el\('set-term-faceid'\)\?\.addEventListener\('click', \(\) => scrollToPkRow\(\)\)/);
   const pk = read('../public/js/pkassist.js');
-  assert.match(pk, /export function scrollToPkRow\(\)/);
+  assert.match(pk, /export function scrollToPkRow\(\{ setupFallback = true \} = \{\}\)/);
   assert.match(pk, /row\.classList\.add\('set-found'\)/, 'the Settings search\'s own highlight');
-  assert.match(pk, /return H\.setupFaceId\(\);/, 'an older host without the row: the setup itself');
+  assert.match(pk, /return setupFallback \? H\.setupFaceId\(\) : false;/, 'an older host without the row: the setup itself');
   assert.match(read('../public/app.js'), /pkassist\.configure\(\{ setupFaceId, openSettings: \(\) => \{ if \(!settings\.isOpen\(\)\) settings\.open\(\); \} \}\)/);
 });
 

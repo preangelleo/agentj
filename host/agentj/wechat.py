@@ -866,7 +866,7 @@ class WeChat:
 
     def completed(self, turn):
         """P562: a main-conversation turn that answered the owner's WeChat message → that answer back to WeChat, once."""
-        if not turn or (turn.get('src') or {}).get('k') != 'wechat' or self.closed:
+        if not turn or (turn.get('src') or {}).get('k') != 'wechat' or self.closed or (turn.get('card') or {}).get('held') == 'pending':
             return
         r = next((x for x in self.store.data['records'].values() if x.get('turn') == turn.get('id') and x.get('state') == 'main'), None)
         if r is None:

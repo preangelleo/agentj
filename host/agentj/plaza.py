@@ -220,6 +220,9 @@ def _state():
     from .state import State
     st = State()
     if not st.exists():
+        from . import fence
+        if fence.inside():
+            raise PlazaError(fence.hidden_state())
         raise PlazaError("还没初始化：先 agentj init / not initialised: agentj init")
     return st
 
@@ -419,7 +422,7 @@ def seat_gate(st=None) -> None:
 
 def cmd(a) -> None:
     from . import market   # skill & workflow plaza: search / show / mine / report also cover packages
-    if a.plaza_cmd not in ("installed", "request", "verify"):     # #428: request → serve checks the seat where the state is; P199: what is already installed here stays readable (local files only)
+    if a.plaza_cmd not in ("installed", "request", "verify", "uninstall"):     # #428: request → serve checks the seat where the state is; P199: what is already installed here stays readable (local files only)
         try:
             st = _state()
         except PlazaError:

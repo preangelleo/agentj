@@ -324,12 +324,14 @@ export async function keysOp(op, name, id, n, fa, more) {   // P362: more = {src
   return m.t === 'keys_res' ? m : {ok:false,why:m.t};
 }
 /** Edit / Add: the host opens the existing encrypted key card for `name` (its 同意 asks for Face ID itself). */
-export async function keysSet(name) {
+export async function keysSet(name, { isCurrent = () => true } = {}) {
+  if (!isCurrent()) return {ok:false,why:'stale_page'};
   if (!isReady()) return {ok:false,why:'offline'};
   const g = gen();
   if (gen() !== g || !isReady()) return {ok:false,why:'offline'};
   if (keyCards.reopen(name)) return {ok:true};
   const m = await ask1({t:'keys_set',name}, 'keys_res', 15000);
+  if (!isCurrent()) return {ok:false,why:'stale_page'};
   if (gen() !== g) return {ok:false,why:'offline'};
   if (m.t !== 'keys_res') return {ok:false,why:m.t};
   if (m.ok) {

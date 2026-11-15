@@ -2108,43 +2108,59 @@ def hook_main(argv: list[str]) -> int:
     """Reference: documentation/notes/inline-media-docstrings.md (danger.py: hook_main)."""
     try:
         ev = json.load(sys.stdin)
+        # Advisory only: preserve the current native/explicit permission result and one JSON frame.
+        hint = None
+        try:
+            from . import waithint
+            hint = waithint.hint(ev)
+        except Exception:  # a hint never changes or blocks an otherwise valid tool call
+            pass
+        emitted = False
+        def emit(obj):
+            nonlocal emitted
+            if hint:
+                obj['hookSpecificOutput']['additionalContext'] = hint
+            emitted = True
+            sys.stdout.write(json.dumps(obj, ensure_ascii=False))
         extra = decode_extra(argv[0]) if argv else []
         if argv[1:2] == ["research"]:
             ok, why = readonly(ev.get("tool_name"), ev.get("tool_input"))
             if not ok:
-                sys.stdout.write(json.dumps({"hookSpecificOutput": {
+                emit({"hookSpecificOutput": {
                     "hookEventName": "PreToolUse", "permissionDecision": "deny",
                     "permissionDecisionReason": "agentj 只读运行（定时任务 mode: research）：" + why + "。这次运行只能读取，"
-                                                "把要做的事写进报告，由人决定。"}}, ensure_ascii=False))
+                                                "把要做的事写进报告，由人决定。"}})
                 return 0
         from . import uv_list
         if (text := uv_list.agentj_delete_refusal(ev.get('tool_name'), ev.get('tool_input'), cwd=ev.get('cwd'))):
             # security r2 L3: `agentj delete <protected/credential>` is denied outright (put() would refuse it anyway)
-            sys.stdout.write(json.dumps({'hookSpecificOutput': {
+            emit({'hookSpecificOutput': {
                 'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
-                'permissionDecisionReason': text}}, ensure_ascii=False))
+                'permissionDecisionReason': text}})
         elif uv_list.protected_targets(ev.get('tool_name'), ev.get('tool_input'), cwd=ev.get('cwd')):
-            sys.stdout.write(json.dumps({'hookSpecificOutput': {
+            emit({'hookSpecificOutput': {
                 'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
-                'permissionDecisionReason': 'Agent J protected control file: owner verification required.'}}))
+                'permissionDecisionReason': 'Agent J protected control file: owner verification required.'}})
         elif uv_list.charge_command(ev.get('tool_name'), ev.get('tool_input')):    # #537② (S2): money moves → Host.ask
-            sys.stdout.write(json.dumps({'hookSpecificOutput': {
+            emit({'hookSpecificOutput': {
                 'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
-                'permissionDecisionReason': 'Agent J: this command moves money; owner fingerprint confirmation required.'}}))
+                'permissionDecisionReason': 'Agent J: this command moves money; owner fingerprint confirmation required.'}})
         elif uv_list.irreversible_command(ev.get('tool_name'), ev.get('tool_input'), cwd=ev.get('cwd')):   # ADR-0308 D
-            sys.stdout.write(json.dumps({'hookSpecificOutput': {
+            emit({'hookSpecificOutput': {
                 'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
-                'permissionDecisionReason': 'Agent J: this cannot be undone; owner fingerprint confirmation required.'}}))
+                'permissionDecisionReason': 'Agent J: this cannot be undone; owner fingerprint confirmation required.'}})
         elif "real-delete" not in argv[1:]:
             # ADR-0308 C: main thread / dispatched jobs delete through the Agent J trashbin (agentj delete); the host adds
             # `real-delete` only to the hook of a user automation it launched (scheduled task). Deny, never rewrite.
             from . import delete_redirect
             prog = delete_redirect.native_delete(ev.get('tool_name'), ev.get('tool_input'))
             if prog:
-                sys.stdout.write(json.dumps({'hookSpecificOutput': {
+                emit({'hookSpecificOutput': {
                     'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
-                    'permissionDecisionReason': delete_redirect.hint(prog)}}, ensure_ascii=False))
+                    'permissionDecisionReason': delete_redirect.hint(prog)}})
 
+        if hint and not emitted:
+            emit({'hookSpecificOutput': {'hookEventName': 'PreToolUse'}})
         return 0
     except Exception as e:  # noqa: BLE001 — fail closed
         sys.stderr.write(f"agentj danger hook failed ({type(e).__name__}): blocked\n")

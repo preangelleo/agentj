@@ -4,6 +4,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import * as activity from '../public/js/phone-activity.js';
 import * as turnsplit from '../public/js/turnsplit.js';   // 0.26.9 #471: relay.js pages() lays out continuation cards (its import, given to the vm)
 import {createUnread} from '../public/js/unread.js';
 const src=readFileSync(new URL('../public/js/relay.js',import.meta.url),'utf8');
@@ -37,7 +38,7 @@ test('P135 waitKey: stopped at once, idle/down only after 30 s, working / compac
 
 test('P135 open page: a timer redraws to 「没有回音」 after 30 s idle, back to normal on working, cleared on leaving', async()=>{
   const c=clock(),painted=[],w={dataset:{}};
-  const ctx=vm.createContext({...turnsplit,chanCard:()=>null,acceptHistoryHead(){},document:{body:{dataset:{}}},t:x=>x,hist:{epoch:0},historyGeneration:0,setTimeout:c.setTimeout,clearTimeout:c.clearTimeout,Date:c.Date,historySync:false,shownKey:'7|x',wordsSrc:null,cardReplyKey:null,refreshCards(){},
+  const ctx=vm.createContext({...turnsplit,...activity,chanCard:()=>null,acceptHistoryHead(){},document:{body:{dataset:{}}},t:x=>x,hist:{epoch:0},historyGeneration:0,setTimeout:c.setTimeout,clearTimeout:c.clearTimeout,Date:c.Date,historySync:false,shownKey:'7|x',wordsSrc:null,cardReplyKey:null,refreshCards(){},
     cur:{status:'idle',hostStatus:'idle'},t:x=>x,el:()=>w,fill:(_,x)=>painted.push(x),afterWords(){},rdFollow(){}});
   vm.runInContext(words,ctx);
   ctx.showPage=()=>vm.runInContext(`renderWords('',true)`,ctx);
@@ -61,7 +62,7 @@ test('P135 a failed head fetch retries at 5, 10, 20 s … one at a time, then cl
   const c=clock();let calls=0;
   const answers=[()=>Promise.reject(new Error('timeout')),()=>Promise.reject(new Error('timeout')),()=>Promise.resolve(null),
     ()=>Promise.resolve({epoch:0,count:1,first_id:1,turns:[{id:1,reply:'done',end:'done',source:{k:'phone',text:'q'}}]})];
-  const ctx=vm.createContext({...turnsplit,chanCard:()=>null,acceptHistoryHead(){},document:{body:{dataset:{}}},t:x=>x,hist:{epoch:0},historyGeneration:0,unread:createUnread(),hostId:()=> 'test-host',setTimeout:c.setTimeout,clearTimeout:c.clearTimeout,
+  const ctx=vm.createContext({...turnsplit,...activity,chanCard:()=>null,acceptHistoryHead(){},document:{body:{dataset:{}}},t:x=>x,hist:{epoch:0},historyGeneration:0,unread:createUnread(),hostId:()=> 'test-host',setTimeout:c.setTimeout,clearTimeout:c.clearTimeout,
     C:{connected:()=>true,api:{history:()=>answers[calls++]()},myDev:()=>'mine'},showPage(){},announceTurn(){},el:()=>({hidden:true,classList:{toggle(){}},textContent:''}),historySync:false,historyGeneration:0,wordsSrc:null});
   vm.runInContext(history,ctx);
   await vm.runInContext('refreshNewest()',ctx);
@@ -78,7 +79,7 @@ test('P135 a failed head fetch retries at 5, 10, 20 s … one at a time, then cl
 
 test('P135 backoff caps at 60 s and a newer generation (disconnect / fresh refresh) stops it', async()=>{
   const c=clock();let calls=0;
-  const ctx=vm.createContext({...turnsplit,chanCard:()=>null,acceptHistoryHead(){},document:{body:{dataset:{}}},t:x=>x,hist:{epoch:0},historyGeneration:0,unread:createUnread(),hostId:()=> 'test-host',setTimeout:c.setTimeout,clearTimeout:c.clearTimeout,
+  const ctx=vm.createContext({...turnsplit,...activity,chanCard:()=>null,acceptHistoryHead(){},document:{body:{dataset:{}}},t:x=>x,hist:{epoch:0},historyGeneration:0,unread:createUnread(),hostId:()=> 'test-host',setTimeout:c.setTimeout,clearTimeout:c.clearTimeout,
     C:{connected:()=>true,api:{history:()=>{calls++;return Promise.reject(new Error('x'));}},myDev:()=>'mine'},showPage(){},announceTurn(){},el:()=>({hidden:true,classList:{toggle(){}},textContent:''}),historySync:false,historyGeneration:0,wordsSrc:null});
   vm.runInContext(history,ctx);
   await vm.runInContext('refreshNewest()',ctx);

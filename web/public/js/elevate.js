@@ -76,12 +76,13 @@ function build() {
   const saveOpt = node('label', 'elev-save-opt', 'elev-grant-opt elev-save-opt'); saveOpt.hidden = true;
   const saveBox = node('input', 'elev-save-on', 'elev-grant-on'); saveBox.type = 'checkbox';
   saveOpt.append(saveBox, node('span', 'elev-save-text'));
-  // P73 (ADR-A180): the main action alone on its row; 「拒绝 / 不提供」 a quiet text button on its own line under it, so a
-  // thumb aiming at 「保存到Agent J 主机」 cannot land on it. The keyboard's Enter / 完成 key only ever submits.
+  // 0322 r3 chairman decision: save and decline form an equal-width action pair inside the card.
+  // The keyboard's Enter / 完成 key only ever submits.
   const acts = mk('div', 'ajrow confirm-row elev-acts');
   const allow = node('button', 'elev-allow', 'aj-action aj-action--primary'); allow.type = 'submit';
   acts.append(allow);
   const deny = node('button', 'elev-deny', 'aj-action aj-action--quiet elev-deny'); deny.type = 'button';
+  acts.append(deny);
   // #116: the 10-minute toggle, off by default, shown only when the host offers it for this exact command format
   const opt = node('label', 'elev-grant-opt', 'elev-grant-opt'); opt.hidden = true;
   const box = node('input', 'elev-grant-on', 'elev-grant-on'); box.type = 'checkbox';
@@ -92,8 +93,8 @@ function build() {
   const hide = node('button', 'elev-hide', 'elev-hide'); hide.type = 'button';
   hide.append(chevron());
   form.append(hide, node('p', 'elev-kicker', 'elev-kicker'), node('h2', 'elev-title'), node('p', 'elev-scope', 'cp-scope'), node('dl', 'elev-rows', 'elev-rows'), node('section', 'elev-auth', 'elev-auth'), bad, stale, vault, label, input,
-    empty, opt, saveOpt, node('p', 'elev-note', 'elev-note'), node('p', 'elev-left', 'elev-left'), err, acts, deny);
-  acts.after(node('div', 'elev-pk', 'pkassist'));   // P539: right under 「同意」, above the quiet 「拒绝」
+    empty, opt, saveOpt, node('p', 'elev-note', 'elev-note'), node('p', 'elev-left', 'elev-left'), err, acts);
+  acts.after(node('div', 'elev-pk', 'pkassist'));   // P539: assist remains directly under the existing decision row
   root.appendChild(form);
   document.body.appendChild(root);
   root.querySelector('#elev-form').addEventListener('submit', (e) => { e.preventDefault(); decide(true); });
@@ -112,6 +113,9 @@ function build() {
   return root;
 }
 const $ = (id) => root.querySelector('#' + id);
+// Clear a sensitive field on disconnect without adding an editor or changing any card.
+export function forgetInput() { if(root) $('elev-input').value=''; }
+
 
 const str = (v, n) => (typeof v === 'string' && v.length <= n ? v : null);
 /** A card from the host (§11 `elev`); a re-sent one (wrong password → new nonce and key) replaces the old. */
@@ -406,7 +410,7 @@ function render() {
     $('elev-empty').hidden = true;
     $('elev-deny').textContent = t(sudo || vs ? 'elev.deny' : 'elev.secret.cancel');
     $('elev-allow').textContent = vs ? t('p414.e.vsAllow') : t(nopw ? 'elev.sudo.allowHelper' : sudo ? 'elev.sudo.allow' : 'elev.secret.allow');
-    $('elev-hide').setAttribute('aria-label', t('p406.sudo.hide')); $('elev-hide').title = t('p406.sudo.hide');
+    $('elev-hide').setAttribute('aria-label', t('r.sheet.fold')); $('elev-hide').title = t('p406.sudo.hide');
     root.hidden = false;
     if (!nopw && !useV) setTimeout(() => { try { $('elev-input').focus({ preventScroll: true }); } catch { /* old browsers */ } }, 60);
     else if (document.querySelector('.gdlg:not([hidden])')) setTimeout(() => $('elev-allow')?.focus({ preventScroll: true }), 60);   // P549 (#316)

@@ -26,6 +26,34 @@ The list does not prove that every background process has been found.
 A mention authorizes asking about that job, not running, disabling, rescheduling or deleting it. If the owner separately
 asks for a change, use the existing task-management workflow and its normal approvals, then verify the actual state.
 
+## Create a new Agent J plan through the Host
+
+For the new Host transaction, write a local JSON contract and run:
+
+```sh
+agentj tasks create --contract contract.json --json
+```
+
+The contract has `task` (the existing task.json v1 schema, `enabled:false`, both prompt file names `PROMPT.md`) and `prompt` (the task instructions). Only an explicitly declared **new large bank/cryptocurrency transfer** adds `large_transfer:{"kind":"crypto","limit":"1200.50","currency":"USD"}`. The kind is bank or crypto. Its presence declares the task large; do not add it to ordinary tasks or paid API work. The Host freezes the exact contract, asks one paired-device fingerprint approval for this declaration and atomically publishes the disabled task. A small/new ordinary task or a paid API task has no additional creation card. Existing automations are not migrated or reapproved.
+
+The owner-approved amount is written in the task instructions and is **informational, not enforced**. Agent J does not monitor transfers, verify runtime amounts, debit a quota or stop a run over this declaration. This is not a payment authorization or extra sandbox permission. Creation initially supports a live verified Codex thread whose current sandbox can write the configured working root; read-only, unknown/custom roots and other unverifiable harness policies refuse, even with fingerprint approval. Do not bypass that refusal.
+
+Creation does not enable the task. Inspect with `agentj tasks show ID`, then use the existing `agentj tasks enable ID` when appropriate; enabling/resuming adds no financial reapproval. Multi-step creation is not supported by this initial endpoint. On an uncertain connection result inspect the task before retrying; a task id is never overwritten. A crashed uncommitted stage is retained privately and is never discovered as an active task; do not delete unrelated private staging data automatically.
+
+## 由主机创建新的 Agent J 定时计划
+
+先写本机 JSON 合同，再运行真实主机入口：
+
+```sh
+agentj tasks create --contract contract.json --json
+```
+
+合同包含 `task`（现有 task.json v1 格式，`enabled:false`，两个提示文件名都为 `PROMPT.md`）和 `prompt`（任务说明）。只有明确声明为**新建大额银行／数字货币转账**的任务才加 `large_transfer:{"kind":"crypto","limit":"1200.50","currency":"USD"}`；kind 可为 bank 或 crypto；这个字段即声明“大额”，普通、小额任务和付费 API 不加。主机冻结完整合同，由已配对设备扫一次指纹批准此声明，再原子写入尚未启用的任务。普通任务、付费 API 创建不另弹卡；旧自动化不迁移、不补审。
+
+主人批准的金额写入任务说明，**只是说明，不是强制预算**。运行期不监控转账、不核实金额、不扣次数、不因超过这个声明拦截；它不代替付款授权，也不提高沙箱权限。首批入口只支持活跃且已核实可写当前工作根目录的 Codex 线程；只读、未知／自定义写根和无法核实的其它工具权限均拒绝，扫指纹也不能绕过。
+
+创建不等于启用：用 `agentj tasks show ID` 查看，适合时再走现有 `agentj tasks enable ID`；启用或续跑不补财务审批。首批入口不创建多步骤计划。通道结果未知时先查看任务，不自动重试；已存在 id 不覆盖；即使旧目录已移走，同 id 留有旧启用授权也拒绝创建，不自动清除旧授权。崩溃后未发布的私有暂存不会被发现为有效任务，不自动删除其它暂存数据。若发布冲突要求恢复，保留冲突文件，请主人查看后再决定是否启用或重试。
+
 ## Continue a failed multi-step automation (「从失败处继续」)
 An Agent J automation may declare `steps` in its task.json: each step is its own run with its own VERDICT, and Agent J keeps
 a checkpoint of every step. When a step fails, the later steps do not start and the failure notice says which step failed,

@@ -1,5 +1,6 @@
 """P536: paired-phone reply forwarding; one provider send, never a fallback/replay."""
 import asyncio
+import os
 import re
 import time
 from . import privacy
@@ -203,3 +204,78 @@ async def on_forward(host, session, rid, turn_id):
         res = {'ok': False, 'why': 'send_failed'}
     if live():
         await host.send_app(session, {'t': 'wx_fwd_res', 'r': rid, **res})
+
+
+def file_binding(host):
+    """Host-held snapshot taken at exact native send admission; never accepted from the CLI."""
+    wc = getattr(host, 'wechat', None)
+    if wc is None or _why(wc):
+        return None
+    return {'adapter': wc, 'account': dict(wc.store.data['account']),
+            'generation': wc.store.data['generation'], 'context': wc.store.data['context']}
+
+
+def file_binding_live(host, binding):
+    if not isinstance(binding, dict):
+        return False
+    wc = binding.get('adapter')
+    return bool(wc is not None and getattr(host, 'wechat', None) is wc and not _why(wc)
+                and wc.store.data['account'] == binding['account']
+                and wc.store.data['generation'] == binding['generation']
+                and wc.store.data['context'] == binding['context'])
+
+
+def file_secret_check(root, path, data=None, mime=None):
+    """Fresh local checks on raw names and actual reopened bytes, never JSON-escaped substitutes."""
+    from types import SimpleNamespace
+    from . import display_privacy, peer_guard, media as media_mod
+    try:
+        idx = display_privacy.index(SimpleNamespace(agent_cfg={'dir': root})).require_complete()
+        if not peer_guard.outbound(path, idx).ok:
+            raise ValueError('secret')
+        if data is not None:
+            text = data.decode('utf-8', 'replace')
+            if idx.hits(text) or (mime in media_mod.TEXTY and peer_guard.credential_shape(text)):
+                raise ValueError('secret')
+    except ValueError:
+        raise ValueError('secret') from None
+    except Exception:
+        raise OSError('privacy_unavailable') from None
+
+
+async def send_file(host, item, binding, *, valid):
+    """One admitted owner file → the pinned owner's existing WeChat; no new recipient or resend."""
+    from . import file_show, tg_media
+    from .wechat_protocol import MAX_MEDIA
+    def live():
+        return valid() and file_binding_live(host, binding)
+    if not live():
+        return file_show.failure('binding_changed')
+    wc = binding['adapter']
+    rec = host.media.get(item['mid'])
+    if rec is None:
+        return file_show.failure('gone')
+    if rec['bytes'] > MAX_MEDIA:
+        return file_show.failure('too_big')
+    attempted = False
+    try:
+        data = await asyncio.to_thread(tg_media.read_checked, rec)
+        await asyncio.to_thread(file_secret_check, rec['root'], os.path.join(rec['root'], *rec['parts']), data, rec['mime'])
+        if not live():
+            return file_show.failure('binding_changed')
+        api = wc.api_factory(binding['account'])
+        spec = {'type': 2} if rec['mime'] in _IMAGES else {'type': 4, 'file_item': {'file_name': rec['name']}}
+        outgoing = await asyncio.to_thread(Media(api).upload, binding['account']['ilink_user_id'], spec, data, retry=False)
+        await asyncio.to_thread(file_secret_check, rec['root'], os.path.join(rec['root'], *rec['parts']), data, rec['mime'])
+        if not live():
+            return file_show.failure('binding_changed')
+        attempted = True
+        await wc.send(api, '', binding['generation'], item=outgoing)
+        return {'result': 'sent_to_wechat', 'platform_accepted': True, 'client_downloaded': False,
+                'files': 1, 'mime': rec['mime'], 'bytes': rec['bytes']}
+    except (OSError, ValueError) as exc:
+        why = str(exc) if str(exc) in ('secret', 'privacy_unavailable') else 'send_failed'
+    except Exception as exc:
+        why = 'needs_message' if getattr(exc, 'code', None) in ('context_rejected', 'no_context') else 'send_failed'
+    wc.store.count('send_failed')
+    return {**file_show.failure(why), 'delivery_unknown': attempted}

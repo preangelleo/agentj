@@ -420,16 +420,15 @@
       <div class="scrim" aria-hidden="true"></div>
       <section class="sheet" id="sheet" data-i18n-attr="aria-label=r.sheet.aria" aria-label="待决">
         <div class="grab"></div>
-        <div class="sheetacts">
-          <button class="qcancel" id="askCancel" type="button" hidden data-i18n-attr="aria-label=r.q.cancelAria" aria-label="取消这个问题（告诉 Agent J 你要直接打字）" data-aj-owner="aj-choice">取消问题</button>
-          <button class="close" id="sheetClose" type="button" data-i18n-attr="aria-label=r.sheet.foldAria" aria-label="收起（只是收起，请求仍在等你）" data-aj-owner="aj-approval">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg><span data-i18n="r.sheet.fold">收起</span>
-          </button>
-        </div>
         <div class="ask"><span class="dot"></span><span id="askText"></span><span class="askmore" id="askMore"></span></div>
         <div class="asktags" id="askTags"></div>
         <!-- P154: the copy icon sits at the right of the title (「运行一条命令」 ⧉); it copies the whole command. -->
-        <div class="sheethead"><h2 id="sheetTitle" data-aj-owner="aj-approval"></h2><button class="cmdcopy" id="cmdCopy" type="button" hidden data-i18n-attr="aria-label=r.appr.cmdCopy,title=r.appr.cmdCopy" aria-label="复制完整命令" title="复制完整命令" data-aj-owner="aj-approval"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button></div>
+        <div class="sheethead"><div class="sheetacts">
+          <button class="qcancel" id="askCancel" type="button" hidden data-i18n-attr="aria-label=r.q.cancelAria" aria-label="取消这个问题（告诉 Agent J 你要直接打字）" data-aj-owner="aj-choice">取消问题</button>
+          <button class="close elev-hide" id="sheetClose" type="button" data-i18n-attr="aria-label=r.sheet.fold" aria-label="收起" data-aj-owner="aj-approval">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+        </div><h2 id="sheetTitle" data-aj-owner="aj-approval"></h2><button class="cmdcopy" id="cmdCopy" type="button" hidden data-i18n-attr="aria-label=r.appr.cmdCopy,title=r.appr.cmdCopy" aria-label="复制完整命令" title="复制完整命令" data-aj-owner="aj-approval"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button></div>
         <!-- P339: a goal card in plain words (why not automatic · what if you don't tap · how to approve); the raw command waits behind 详情. -->
         <div class="goalinfo" id="goalInfo" hidden></div>
         <button class="cmdtoggle" id="cmdToggle" type="button" hidden aria-expanded="false" aria-controls="cmdBox" data-aj-owner="aj-approval"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg><span data-i18n="p339.details">详情</span></button>
@@ -688,13 +687,13 @@
       </section>
       <section id="pm-acct" class="pm" aria-labelledby="pm-acct-h">
         <p class="pm__no" data-aj-owner="aj-pairing" data-aj-page-copy></p>
-        <h2 id="pm-acct-h" data-i18n="pair.m3.title" data-aj-owner="aj-pairing">在账号后台添加</h2>
+        <h2 id="pm-acct-h" data-i18n="pair.m3.title" data-aj-owner="aj-pairing">在<a class="hint__link" data-aj-owner="aj-prose" href="https://agentj.app/account/" target="_blank" rel="noopener noreferrer">账号后台</a>添加</h2>
         <p class="pm__when" data-i18n="pair.m3.when" data-aj-owner="aj-pairing" data-aj-page-copy>适合：Agent J 主机已经加入 Agent J 账号。不用碰终端，用通行密钥（passkey）确认。</p>
         <ol class="steps">
-          <li><span><span data-i18n="pair.m3.s1">在另一台设备（比如电脑）的浏览器里打开账号后台，找到要连的那台Agent J 主机的席位卡，点「添加遥控器（手机或浏览器）」。</span>
+          <li><span><span data-i18n="pair.m3.s1">在另一台设备（比如电脑）的浏览器里打开<a class="hint__link" data-aj-owner="aj-prose" href="https://agentj.app/account/" target="_blank" rel="noopener noreferrer">账号后台</a>，找到要连的那台Agent J 主机的席位卡，点「添加遥控器（手机或浏览器）」。</span>
             <a class="pm-link" href="https://agentj.app/account/" target="_blank" rel="noopener" data-aj-owner="aj-pairing">agentj.app/account ↗</a></span></li>
-          <li><span data-i18n="pair.m3.s2">用通行密钥确认，账号后台会出现一个二维码。</span></li>
-          <li><span data-i18n="pair.m3.s3">在这台设备上点下面的「扫二维码」扫它，扫完就配好了，不用输码。也可以在账号后台复制链接，粘贴到上面的链接框。</span></li>
+          <li><span data-i18n="pair.m3.s2">用通行密钥确认，<a class="hint__link" data-aj-owner="aj-prose" href="https://agentj.app/account/" target="_blank" rel="noopener noreferrer">账号后台</a>会出现一个二维码。</span></li>
+          <li><span data-i18n="pair.m3.s3">在这台设备上点下面的「扫二维码」扫它，扫完就配好了，不用输码。也可以在<a class="hint__link" data-aj-owner="aj-prose" href="https://agentj.app/account/" target="_blank" rel="noopener noreferrer">账号后台</a>复制链接，粘贴到上面的链接框。</span></li>
         </ol>
         <div class="ajrow">
           <button type="button" id="scan-acct" class="aj-action aj-action--primary aj-action--block" data-pair-scan data-i18n="pair.scan" data-aj-owner="aj-action">扫二维码</button>
@@ -741,7 +740,7 @@
       <h1 class="sas-card" data-i18n="sas.cardTitle" data-aj-owner="aj-pairing">已申请，请在任意一台已绑定的遥控器上确认</h1>
       <p class="sas-card sas-label" data-i18n="sas.cardLabel" data-aj-owner="aj-pairing" data-aj-page-copy>对照码</p>
       <p id="sas" class="sas" data-i18n-attr="aria-label=sas.aria" aria-label="6 位码" data-aj-owner="aj-pairing" data-aj-page-copy>------</p>
-      <p id="sas-lead" class="lead center sas-type" data-i18n="sas.lead" data-aj-owner="aj-pairing" data-aj-page-copy>账号页会自动显示同样的确认码，核对一致后点「批准」。如果从终端 agentj pair 发起，就在那个终端输入这六位数字，再输入遥控器配对密码。</p>
+      <p id="sas-lead" class="lead center sas-type" data-i18n="sas.lead" data-aj-owner="aj-pairing" data-aj-page-copy><a class="hint__link" data-aj-owner="aj-prose" href="https://agentj.app/account/" target="_blank" rel="noopener noreferrer">账号页</a>会自动显示同样的确认码，核对一致后点「批准」。如果从终端 agentj pair 发起，就在那个终端输入这六位数字，再输入遥控器配对密码。</p>
       <p id="sas-note" class="small center sas-type" data-i18n="sas.note" data-aj-owner="aj-pairing" data-aj-page-copy>核对两边的确认码并批准后，这里会自动进入对话。</p>
       <p class="lead center sas-card" data-i18n="sas.cardLead" data-aj-owner="aj-pairing" data-aj-page-copy>你已绑定的手机或遥控器浏览器上会弹出一张确认卡，卡上显示同一串数字。核对一致，在那边点「确认」。</p>
       <p class="small center sas-card" data-i18n="sas.cardNote" data-aj-owner="aj-pairing" data-aj-page-copy>这里不用输入任何东西。确认后自动进入对话；5 分钟内没人确认，这次申请就作废。</p>
@@ -905,7 +904,7 @@
             <!-- P547 (PASSKEY-SEAT-MODEL §3): move this seat to a new Agent J host from the remote. js/seatxfer.js (hidden until the host answers seat_xfer_state) -->
             <button type="button" id="set-seat-xfer" class="setnav" hidden data-aj-owner="aj-settings"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="9" height="6.5" rx="1.5"/><rect x="12.5" y="13.5" width="9" height="6.5" rx="1.5"/><path d="M7 13v2.5a2 2 0 0 0 2 2h1M8.5 15.5l2 2-2 2"/></svg><span><b data-i18n="sxf.row">转移席位到另一台 Agent J 主机</b><small data-i18n="sxf.rowNote" data-aj-owner="aj-settings">换新的 Agent J 主机时用：席位和遥控器都跟过去。</small><small id="set-seat-xfer-state" class="sxf-state" hidden data-aj-owner="aj-settings"></small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <div class="setacts" id="set-seat-xfer-acts" hidden><button type="button" id="set-seat-xfer-cancel" class="aj-action aj-action--sm" data-i18n="sxf.cancelBtn" data-aj-owner="aj-action" data-aj-action-context="dialog">撤销</button></div>
-            <p class="setnote" data-i18n="set.computerNote">这台手机一次只配对一台Agent J 主机。给 Agent 改名：在Agent J 主机上运行 agentj name &lt;新名字&gt;。你所有的 Agent 都能在账号后台看到。</p>
+            <p class="setnote" data-i18n="set.computerNote">这台手机一次只配对一台Agent J 主机。给 Agent 改名：在Agent J 主机上运行 agentj name &lt;新名字&gt;。你所有的 Agent 都能在<a class="hint__link" data-aj-owner="aj-prose" href="https://agentj.app/account/" target="_blank" rel="noopener noreferrer">账号后台</a>看到。</p>
             <p class="setlinks"><a href="https://agentj.app/account/" target="_blank" rel="noopener" data-i18n="set.computerSeats" data-aj-owner="aj-settings">在账号后台查看所有 Agent</a></p>
             <div class="setacts">
               <button type="button" id="scan-repair" class="aj-action aj-action--sm" data-i18n="set.rescan" hidden data-aj-owner="aj-action" data-aj-action-context="dialog">重新扫码配对</button>
@@ -922,7 +921,7 @@
             <ol class="rscards">
               <li class="rscard" id="rs-reset" data-state="idle">
                 <div class="rshead"><span class="rsnum" aria-hidden="true">1</span><h4 class="rstitle" data-i18n="p332.reset.title" data-aj-owner="aj-settings">重置连接</h4></div>
-                <p class="rsnote" data-i18n="p332.reset.note">手机连不上、断了又连时用：重新连上 Agent J 主机，必要时开一个新对话。Agent 卡住不回话，先点上面的「一键修复」。</p>
+                <p class="rsnote" data-i18n="p332.reset.note">手机连不上、断了又连时用：重新连上 Agent J 主机，必要时开一个新对话。Agent 卡住不回话，先点上面的「一键修复」。 手机完全连不上 Agent J 主机时，这一步发不出去；Agent J 主机恢复联网后会自己连回来。</p>
                 <div class="rsbody" id="rs-reset-body"></div>
               </li>
               <li class="rscard" id="rs-help" data-state="idle">
@@ -1283,7 +1282,8 @@
             <h3 class="setg" id="set-h-app" data-i18n="set.gApp" data-aj-owner="aj-settings">网页版 App</h3>
             <div class="setrow" data-paired>
               <span class="setlab" data-i18n="set.updates">升级方式</span>
-              <div class="twoway" role="group" data-i18n-attr="aria-label=set.updates" aria-label="升级方式"><button type="button" class="tw-lab" data-side="left" data-tw="set-updates" data-i18n="p207set.tw.auto" data-aj-owner="aj-settings-control">自动</button><button type="button" role="switch" id="set-updates" class="tw-sw" aria-checked="false" data-pref="updates.auto_install" data-i18n-attr="aria-label=p207set.tw.updates" aria-label="升级方式：左边自动升级，右边先问我" data-aj-owner="aj-settings-control"><i class="tw-knob"></i></button><button type="button" class="tw-lab" data-side="right" data-tw="set-updates" data-i18n="p207set.tw.ask" data-aj-owner="aj-settings-control">先问我</button></div>
+              <div class="twoway" role="group" data-i18n-attr="aria-label=set.updates" aria-label="升级方式"><button type="button" class="tw-lab" data-side="left" data-tw="set-updates" data-i18n="p207set.tw.auto" data-aj-owner="aj-settings-control">自动</button><button type="button" role="switch" id="set-updates" class="tw-sw" aria-checked="false" aria-describedby="set-updates-state" data-pref="updates.auto_install" data-i18n-attr="aria-label=p207set.tw.updates" aria-label="升级方式：左边自动升级，右边先问我" data-aj-owner="aj-settings-control"><i class="tw-knob"></i></button><button type="button" class="tw-lab" data-side="right" data-tw="set-updates" data-i18n="p207set.tw.ask" data-aj-owner="aj-settings-control">先问我</button></div>
+              <p class="setnote" id="set-updates-state" role="status" data-aj-owner="aj-settings" data-i18n="p0322.update.unknown">尚未收到完整的Agent J 主机升级设置。</p>
               <p class="setnote" data-i18n="set.autoUpdNote">自动：有新版时，等Agent J 主机闲下来再升级——没有在跑的任务、没有待处理的卡片、30 分钟没用手机，夜里 3–5 点优先。先问我：有新版只告诉你，什么时候升由你决定。</p>
               <p class="setnote" data-i18n="set.updatesSecurity">紧急安全修复会立即升级，并告诉你原因。</p>
             </div>
@@ -1322,7 +1322,7 @@
             <h3 class="setg" id="set-h-help" data-i18n="set.gHelp" data-aj-owner="aj-settings">账号和帮助</h3>
             <div class="setrow">
               <span class="setlab" data-i18n="set.account">账号和订阅</span>
-              <p class="setnote" data-i18n="set.accountNote">付款、发票、邀请码和积分，都在账号后台。</p>
+              <p class="setnote" data-i18n="set.accountNote">付款、发票、邀请码和积分，都在<a class="hint__link" data-aj-owner="aj-prose" href="https://agentj.app/account/" target="_blank" rel="noopener noreferrer">账号后台</a>。</p>
               <p class="setlinks"><a id="set-account" href="https://agentj.app/account/" target="_blank" rel="noopener" data-i18n="set.accountOpen" data-aj-owner="aj-settings">打开账号后台</a><a href="https://agentj.app/account/#invite" target="_blank" rel="noopener" data-i18n="menu.invite" data-aj-owner="aj-settings">邀请与积分</a><a href="https://agentj.app/account/#credits" target="_blank" rel="noopener" data-i18n="menu.credits" data-aj-owner="aj-settings">点数</a></p>
             </div>
             <div class="setrow" id="set-news-row" data-paired data-keywords="email mail newsletter digest musk ai news 邮件 邮箱 订阅 新闻 动态">
@@ -1435,6 +1435,7 @@
             <p class="setnote mailmsg" id="ar-msg" role="status" aria-live="polite"></p>
             <div id="ar-flow" class="arflow" hidden></div>
             <div id="ar-list"></div>
+            <div id="ar-relay-keys" class="keys-box relay-keys-mount" data-aj-owner="aj-account"></div>
             <p class="setnote" data-i18n="ar.safety">开始救援需要主人的通行密钥确认；授权码和 token 只在密钥卡里填写，端到端加密直达Agent J 主机，不会出现在聊天、日志或中继里。</p>
           </section>
         </div>
@@ -1448,6 +1449,7 @@
             <div id="acct-flow" class="arflow" hidden></div>
             <div id="acct-primary"></div>
             <div id="acct-list"></div>
+            <div id="acct-relay-keys" class="keys-box relay-keys-mount" data-aj-owner="aj-account"></div>
             <p class="setnote" data-i18n="acct.safety">登录凭据只存在 Agent J 主机上，这里只显示名字、登录方式和额度。添加账号需要主人的通行密钥确认。</p>
           </section>
         </div>
@@ -1711,7 +1713,7 @@
   <div class="silent menupage" id="silent" hidden role="dialog" aria-modal="true" aria-labelledby="silentTitle">
     <div class="menuhead"><button type="button" class="menuicon" id="silentClose" data-i18n-attr="aria-label=r.keys.back,title=r.keys.back" aria-label="返回（Esc）" title="返回（Esc）" data-aj-owner="aj-history"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><h2 id="silentTitle" data-i18n="r.silent.title" data-aj-owner="aj-history">静默记录</h2><kbd class="setesc" aria-hidden="true" data-aj-owner="aj-history">Esc</kbd></div>
     <div class="menubody"><div class="menunarrow">
-      <p class="menunote" data-i18n="r.silent.help">静默回合收在这里。点开一条，查看当时的原话。</p>
+      <p class="menunote" id="silentHelp" data-i18n="r.silent.help">静默回合收在这里。点开一条，查看当时的原话。</p>
       <section class="menucard"><div class="slist" id="silentList"></div></section>
       <div class="setacts"><button type="button" class="aj-action" id="silentMore" data-i18n="r.silent.more" data-aj-owner="aj-action">加载更早的</button></div>
     </div></div>

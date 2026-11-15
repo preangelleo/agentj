@@ -157,6 +157,13 @@ export function skipText(s) {
   return t('media.skip.' + s.why, { name: s.name, mb: mb(s.bytes || 0) }) + at;
 }
 
+/** A complete refusal sentence replaces the slot, so its adjacent sentence punctuation is redundant. */
+export function orphanPunct(note, next) {
+  if (!/[。．.！!？?]$/.test(note || '')) return 0;
+  const m = /^\s*[。．.，,；;：:、]+/.exec(next || '');
+  return m ? m[0].length : 0;
+}
+
 const privateLabels = new WeakMap();
 onLang(() => { if(typeof document!=='undefined')for(const box of document.querySelectorAll('[data-private-file]'))privateLabels.get(box)?.(); });
 function skipCard(s) {
@@ -208,7 +215,11 @@ function fillSlots(words, items, skips, sc) {
       if (label && label !== m.name) s.replaceChildren(mk('span', 'mlabel', label), c); else s.replaceChildren(c);
     } else {
       s.dataset.skip = '1';
-      s.replaceChildren(skipCard(skips[a.skip]));
+      const skipped = skips[a.skip];
+      s.replaceChildren(skipCard(skipped));
+      const next = s.nextSibling;
+      const cut = next?.nodeType === 3 ? orphanPunct(skipText(skipped), next.nodeValue) : 0;
+      if (cut) next.nodeValue = next.nodeValue.slice(cut);
     }
   });
   return { rest, restSkips };

@@ -57,7 +57,7 @@ test('P73 secret card: Enter only submits, empty says so, 「不提供」 is sep
   assert.match(ELEV, /addEventListener\('keydown', \(e\) => \{\n\s+if \(e\.key !== 'Enter' \|\| e\.isComposing\) return;\n\s+e\.preventDefault\(\); e\.stopPropagation\(\);\n\s+decide\(true\);/);
   assert.ok(!/decide\(false\)[^;]*Enter|Enter[^;]*decide\(false\)/.test(ELEV), 'Enter never declines');
   assert.match(ELEV, /acts\.append\(allow\);/, 'the main action is alone on its row');
-  assert.match(ELEV, /acts, deny\);/, '「拒绝 / 不提供」 comes after the row, on its own line');
+  assert.match(ELEV, /acts\.append\(deny\);/, '「拒绝 / 不提供」 follows the main action in the existing action container');
   assert.match(ELEV, /aj-action aj-action--quiet elev-deny/, 'a quiet button');
   assert.match(ELEV, /elev\.secret\.cancelSure/, 'a second tap confirms 「不提供」');
   assert.match(ELEV, /never send false/);

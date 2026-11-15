@@ -1121,7 +1121,14 @@ class Round3(Base):
         self.assertEqual(result['reason'], 'application_ingress_unverified')
         self.assertEqual(asyncio.run(go())['reason'], 'application_ingress_unverified')
         self.assertEqual(sent, [])
-        self.assertEqual(approvals.read_log(st), [])
+        rows = approvals.read_log(st)
+        self.assertEqual(len(rows), 2, 'both unframed requests retain refusal audit metadata')
+        self.assertEqual(len({r['id'] for r in rows}), 2, 'refusals have distinct request identities')
+        for row in rows:
+            self.assertEqual((row['decision'], row['reason']), ('deny', 'application_ingress_unverified'))
+            self.assertEqual(row['tool'], 'agentj tasks migrate')
+            for field in ('device', 'sk', 'sig'):
+                self.assertIsNone(row.get(field), 'unframed requests must never invent phone approval evidence')
         task(self.work,'daily'); self.enable('daily')
         result, real = actual_ctl(self)
         self.assertTrue(result['ok'],result)

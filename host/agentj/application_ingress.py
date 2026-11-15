@@ -31,11 +31,80 @@ def _process(pid):
     return row[0] if row else None
 
 
+def _live_same_owner_task(agent):
+    from .same_owner import ForwardSend
+    send = getattr(agent, 'cur_send', None)
+    if (provenance.turn_source(agent).get('kind') != 'same_owner' or type(send) is not ForwardSend
+            or send.approved or send.data.get('irt') or send.data.get('end')
+            or send.state not in ('pending', 'delivering', 'delivered')):
+        return False
+    svc = send.owner.svc
+    row = svc.guards.row(send.fid, send.data.get('mid')) or {}
+    return (getattr(agent, 'host', None) is svc.host and svc.host.agent is agent
+            and row.get('state') == 'claimed' and send.delivery_allowed())
+
+
+def task_begin(host):
+    """Record activation, not queue creation; TASK children retain a foreign birth span."""
+    from .core.process_evidence import now
+    agent = host.agent
+    if not _live_same_owner_task(agent):
+        return
+    send, binding = agent.cur_send, _session_binding(host, agent)
+    old = host.__dict__.get('_application_task_birth')
+    if old is None or old[0] is not agent or old[1] is not send or old[2] != binding:
+        host.__dict__['_application_task_birth'] = (agent, send, binding, now())
+
+
+def _task_tree(host, pid, agent):
+    """Only current claimed TASK descendants born in this activation generation.
+
+    Every hop matters: a new child of a TASK-A helper cannot wash away that old
+    helper's birth when TASK-B or an owner turn becomes current.
+    """
+    if not _live_same_owner_task(agent) or _sandboxed(agent):
+        return False
+    generation = host.__dict__.get('_application_task_birth')
+    if (generation is None or generation[0] is not agent or generation[1] is not agent.cur_send
+            or generation[2] != _session_binding(host, agent)):
+        return False
+    try:
+        from .core.process_evidence import row, start_matches
+        session = getattr(agent, 'session', None)
+        if isinstance(session, dict) and type(session.get('pid')) is int:
+            anchor = session['pid']
+            if not start_matches(session.get('procStart'), row(anchor)):
+                return False
+        else:
+            proc = getattr(agent, 'proc', None)
+            anchor = getattr(proc, 'pid', None)
+            if type(anchor) is not int or getattr(proc, 'returncode', None) is not None or not row(anchor):
+                return False
+        anchor_row = row(anchor)
+        if anchor_row is None:
+            return False
+        chain, current = [], pid
+        while current != anchor:
+            if type(current) is not int or current <= 1 or current in {p for p, _ in chain} or len(chain) >= 64:
+                return False
+            evidence = row(current)
+            if not evidence or evidence[1] < generation[3] + SPAN_MARGIN:
+                return False
+            chain.append((current, evidence));current = evidence[0]
+        return (bool(chain) and row(anchor) == anchor_row
+                and all(row(p) == evidence for p, evidence in chain)
+                and host.__dict__.get('_application_task_birth') is generation
+                and _live_same_owner_task(agent))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+
+
 def _sandboxed(agent):
     source = provenance.turn_source(agent)
     return (getattr(agent, 'research', False) or source.get('kind') == 'friend_task'
             or (source.get('role') == 'group' and source.get('kind') != 'unknown')
-            or (bool(getattr(agent, 'untrusted_state', None)) and getattr(agent, 'untrusted_foreign', False)))
+            or (bool(getattr(agent, 'untrusted_state', None)) and getattr(agent, 'untrusted_foreign', False)
+                and not _live_same_owner_task(agent)))
 
 
 class _Frame:
@@ -102,6 +171,8 @@ def native(host, writer, frame, pid, uid):
     agent = host.agent
     session = getattr(agent, 'session', None)
     binding = _session_binding(host, agent)
+    send = getattr(agent, 'cur_send', None)
+    task_source = provenance.turn_source(agent).get('kind') == 'same_owner'
     scope = approval_material._direct_scope(host, pid) if start else None
     if scope is not None and scope.get('kind') == 'unknown_agent':
         scope = None
@@ -111,10 +182,14 @@ def native(host, writer, frame, pid, uid):
     # jobs, Codex persistent exec shells and macOS harness helpers were refused (Linux included per Jarvis 15:4x). owner_local admits a kernel same-uid live caller that descends from the live session
     # process with no hop born inside a non-owner turn span (host-held spans), during an owner turn.
     # Liveness only: UV, bounded plans and approval proofs keep their strict origin checks.
-    owner_local = bool(start and not terminal and scope is None and _owner_tree(host, pid, agent))
+    task_local = bool(start and task_source and _task_tree(host, pid, agent))
+    owner_local = bool(start and not task_source and not terminal and scope is None and _owner_tree(host, pid, agent))
     def check():
         if not start or _process(pid) != start or writer.is_closing():
             return False
+        if task_source:
+            return (task_local and host.agent is agent and getattr(agent, 'cur_send', None) is send
+                    and binding == _session_binding(host, agent) and _task_tree(host, pid, agent))
         if terminal:
             return ctl_auth.refusal(pid, os.getpid(), host._agent_pids()) is None and ctl_auth.has_tty(pid)
         if owner_local:
@@ -123,7 +198,7 @@ def native(host, writer, frame, pid, uid):
         return (host.agent is agent and getattr(agent, 'session', None) is session
                 and not _sandboxed(agent) and binding == _session_binding(host, agent)
                 and scope is not None and approval_material._scope_live(host, scope, pid))
-    return _enter(host, writer, frame, check, 'terminal' if terminal else 'owner_local' if owner_local else 'native')
+    return _enter(host, writer, frame, check, 'task_local' if task_local else 'terminal' if terminal else 'owner_local' if owner_local else 'native')
 
 
 SPAN_MARGIN = 0.05     # seconds; widens every non-owner span (clock granularity), always toward refusing
@@ -165,6 +240,8 @@ def close_native_span(agent):
 
 
 def note_turn(host, send):
+    if getattr(host.agent, 'cur_send', None) is send:
+        task_begin(host)
     if not _owner_source(getattr(send, 'source', None), send):
         open_span(host)
 
@@ -180,11 +257,11 @@ def _guest_born(host, born):
 
 def _owner_source(src, send=None):
     """One predicate for spans, owner_local and the shared-session helper (security r3/r4 merge requirement):
-    same-owner device tasks, provenance.owner_intent (paired phone, owner terminal, the owner's verified Telegram DM /
+    Delegated tasks remain foreign birth spans. Only provenance.owner_intent (paired phone, owner terminal, the owner's verified Telegram DM /
     own WeChat / DMARC-DKIM-aligned mail — never a webhook body), or the host's own system turns without hook_notice."""
     s = provenance.normalize(src)
     if s.get('kind') == 'same_owner':
-        return True
+        return False  # task intent has a separate current-process generation check
     if provenance.owner_intent(src, send):
         return True
     return s.get('kind') == 'system' and s.get('role') == 'owner' and not getattr(send, 'hook_notice', None)
@@ -231,7 +308,8 @@ def _owner_tree(host, pid, agent):
 def _owner_turn(agent):
     """The current turn is the owner's own (paired remote / owner terminal / a same-owner device task /
     a host system turn such as background_done or heartbeat), never a friend / guest / group / external channel."""
-    if agent is None or _sandboxed(agent) or getattr(agent, 'untrusted_foreign', False):
+    if (agent is None or _sandboxed(agent)
+            or (getattr(agent, 'untrusted_foreign', False) and not _live_same_owner_task(agent))):
         return False                      # security r2 N2: a harness turn reacting to guest content is not the owner's
     try:
         return provenance.owner_speaking(agent) or _owner_source(provenance.turn_source(agent), getattr(agent, 'cur_send', None))

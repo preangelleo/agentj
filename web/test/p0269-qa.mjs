@@ -8,7 +8,7 @@
 //      and sends msg_steered {uncertain:true}. The owner must see the uncertain line, not 「已插入当前这一轮」, and nothing queued.
 //   C. #468 task feed: every state with its reason as the host sends them (assist.py set_state why values), incl. stopped/ended,
 //      stopped/interrupted, done/outbound_gate, refused/quota; the 「官方远程协助」 label on a task turn; 收回 while a task runs.
-//   D. the queued notice of the owner's own message (merged 「上一件还在做，已等 N 分钟」 + 「停下上一件」) in every language/theme.
+//   D. the queued notice of the owner's own message (merged 「上一件还在做，已等 N 分钟」 + 「停止当前任务」) in every language/theme.
 // Runs zh/en × light/dark at 390 and zh-light 1440. Shots + browser.json → $P0269_QA_OUT (default reports/qa/selfheal-0269/qa-w2/walk).
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -22,12 +22,12 @@ const OUT = process.env.P0269_QA_OUT || fileURLToPath(new URL('../../../reports/
 mkdirSync(OUT, { recursive: true });
 const W = {
   zh: { task: '把这周的周报整理好', s1: '第一步：读完了 12 份会议记录。', say: '顺便把上个月的也看一下', steered: '已插入当前这一轮', noReply: '（无文字回复）',
-    uncertain: '已发给 Codex，但它没确认收到：可能已插进这一轮，也可能没有。不会重发。', waited: '上一件还在做，已等不到 1 分钟', stop: '停下上一件',
+    uncertain: '已发给 Codex，但它没确认收到：可能已插进这一轮，也可能没有。不会重发。', waited: '上一件还在做，已等不到 1 分钟', stop: '停止当前任务',
     src: '官方远程协助', st: { queued: '排队中', running: '正在做', done: '已完成', refused: '已拦下', stopped: '已停下' },
     why: { endedStop: '协助结束了，这条任务停在了一半。', interrupted: '这条任务被中途停下了。', outbound_gate: '回复里有像密码或密钥的内容，已拦下，没有发给官方客服。', quota: '这次协助能发的任务数已经用完了。' },
     banner: /^官方远程协助中 · 剩 \d+ 分钟$/, revoke: '收回' },
   en: { task: "Put together this week's report", s1: 'Step 1: read all 12 meeting notes.', say: "Also look at last month's", steered: 'Added to the current turn', noReply: '(No text reply)',
-    uncertain: 'Sent to Codex but not confirmed: it may or may not be in this turn. It will not be re-sent.', waited: 'Previous task still running · waiting under a minute', stop: 'Stop previous task',
+    uncertain: 'Sent to Codex but not confirmed: it may or may not be in this turn. It will not be re-sent.', waited: 'Previous task still running · waiting under a minute', stop: 'Stop current task',
     src: 'Agent J support', st: { queued: 'Waiting', running: 'Working', done: 'Done', refused: 'Blocked', stopped: 'Stopped' },
     why: null, banner: /^Agent J support helping · \d+ min left$/, revoke: null },
 };
@@ -76,7 +76,7 @@ try {
       await waitFor(p, `document.body.dataset.pageQueued==='1'`, 8000);
       await waitFor(p, `!!document.querySelector('#cmdx [data-waited]')`, 6000);
       check((await evaluate(p, `document.querySelector('#cmdx .sh-waited').textContent`)) === X.waited, 'D merged waited line ' + tag);
-      check((await evaluate(p, `document.querySelector('#cmdx [data-queue-stop]')?.textContent`)) === X.stop, 'D 停下上一件 ' + tag);
+      check((await evaluate(p, `document.querySelector('#cmdx [data-queue-stop]')?.textContent`)) === X.stop, 'D 停止当前任务 ' + tag);
       await snap('D-queued');
 
       // ---- B. uncertain steer, live: host updates the owner's page exactly like serve.msg_steered(uncertain=True)
@@ -89,7 +89,7 @@ try {
       soft(wb.includes(X.uncertain), 'B uncertain line visible on the owner message page', tag);
       soft(!wb.includes(X.steered), 'B uncertain page must not claim 「已插入当前这一轮」 (got: ' + wb.slice(0, 80) + ')', tag);
       check(await evaluate(p, `document.body.dataset.pageQueued==='0'`), 'B not queued ' + tag);
-      check(!await has('#cmdx [data-queue-stop]'), 'B no 停下上一件 ' + tag);
+      check(!await has('#cmdx [data-queue-stop]'), 'B no 停止当前任务 ' + tag);
       await snap('B-uncertain-live');
       fake.st.queued.clear();
 

@@ -36,3 +36,10 @@ test('P240: the dialog offers only what a refresh can fetch; a host ahead of eve
  // a still newer page after that is offered again
  assert.deepEqual(versionState('0.20.1a1','0.20.3a1','0.20.3a1','0.20.2a1'),{offer:'0.20.3a1',later:false});
 });
+
+test('a different valid server version is offered downward; only the exact attempted target is suppressed',()=>{
+ assert.deepEqual(versionState('0.30.22','0.30.22','0.30.21',null),{offer:'0.30.21',later:false});
+ assert.deepEqual(versionState('0.30.22','0.30.21','0.30.21','0.30.21'),{offer:null,later:false});
+ assert.deepEqual(versionState('0.30.22','0.30.22','0.30.21','0.30.23'),{offer:'0.30.21',later:false});
+ assert.deepEqual(versionState('0.30.22','0.30.22','invalid',null),{offer:null,later:false});
+});
