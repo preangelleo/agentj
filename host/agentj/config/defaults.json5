@@ -151,8 +151,8 @@
     "enabled": true,
     // Idle minutes before a beat, 5–1440 / 空闲多少分钟心跳一次; default=60
     "interval_minutes": 60,
-    // Daily three-card review, local HH:MM; empty = off / 每日三卡整理（本地 HH:MM），留空关闭; default="08:00"
-    "daily_at": "08:00",
+    // P207 legacy factory value; the reader upgrades it to the daily-review default when supported. Empty stays an explicit off override.
+    "daily_at": "",
     "quiet_enabled": true,
     "quiet_start": "23:00",
     "quiet_end": "07:00",

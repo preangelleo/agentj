@@ -216,6 +216,17 @@ def wait_ready(st, *, limit=READY_LIMIT, poll=READY_POLL, ctl=None, sleep=time.s
 STABLE_S = 12.0   # ticket U33rz: launchd shows `running` for the half second a crash-looping serve lives (ThrottleInterval 5)
 
 
+def process_version(st) -> str | None:
+    """Read the version from the live serve, not from the newly installed disk package."""
+    try:
+        from .names import ctl_call
+        r = ctl_call(st, {"cmd": "status"}, 10)
+    except Exception:
+        return None
+    v = r.get("version") if isinstance(r, dict) else None
+    return v if isinstance(v, str) else None
+
+
 def stays_up(status, timeout: float, stable: float | None = None) -> None:
     """The new service is active AND stays active for `stable` s in a row (≤ a quarter of the timeout), else
     ServiceError('recovery_inactive') — so a crash loop after an upgrade rolls back instead of being recorded as ok."""
@@ -258,6 +269,11 @@ def run(st, target, *, timeout=45, install=None, status=None, ready=None, runner
         try:
             (install or service.install)(st)
             stays_up(status or service.status, timeout)
+            live = process_version(st)
+            # Older test/host control endpoints have no version field; the current endpoint does,
+            # and an explicit mismatch is always a hard failure.
+            if live is not None and live != target:
+                raise service.ServiceError("recovery_version_mismatch", "live process did not report target version")
         except Exception:
             # P142 (B15): the new service did not come up — auto_update's cached-wheel rollback, then the old service.
             if pending and pending.get('old') and isinstance(pending.get('install'), dict):

@@ -1,4 +1,4 @@
-# Agent J v0.30.22
+# Agent J v0.30.23
 
 Owner queue cards say “Stop current task”; automatic notices queue quietly. Fixes false unreceived notices and friend-message offline errors.
 

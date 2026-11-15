@@ -370,6 +370,64 @@ def read_rec(st) -> dict:
         return {}
 
 
+def package_fingerprint() -> str | None:
+    """Fingerprint version-bearing package data so a same-version disk edit cannot hide from serve."""
+    import hashlib
+    paths = (Path(__file__).with_name("__init__.py"), Path(__file__).with_name("config") / "schema.json",
+             Path(__file__).with_name("config") / "defaults.json5")
+    h = hashlib.sha256()
+    try:
+        for path in paths:
+            data = path.read_bytes()
+            h.update(str(path.name).encode())
+            h.update(len(data).to_bytes(8, "big"))
+            h.update(data)
+    except OSError:
+        return None
+    return h.hexdigest()
+
+
+DRIFT_MARKER = "package-drift-restart.json"
+
+
+def drift_handoff(st, started_fingerprint, *, run=None) -> str | None:
+    """0.30.23: the running serve finds a different package on disk (an upgrade replaced it but no restart followed).
+    Hand the restart to the installed CLI's recovery worker — the same idle wait and live-version read-back as /update —
+    once per package (a state marker keeps a failing hand-off from looping). Skipped while an upgrade or a scheduled
+    restart is still in flight. → None (no drift / skipped) | "scheduled" | "failed"."""
+    import time
+    from . import auto_update, service, service_recovery
+    disk = installed_version()
+    now_fp = package_fingerprint()
+    if disk is None or now_fp is None:
+        return None
+    if disk == __version__ and (started_fingerprint is None or now_fp == started_fingerprint):
+        return None
+    if auto_update.read(st, auto_update.JOB).get("phase") in ("installing", "installed", "rollback"):
+        return None
+    rec = service_recovery.read(st) or {}
+    if (rec.get("target") == disk and rec.get("status") in ("pending", "waiting", "running")
+            and time.time() - rec.get("at", 0) < service_recovery.READY_LIMIT + 300):
+        return None
+    marker = st.root / DRIFT_MARKER
+    try:
+        if json.loads(marker.read_text()).get("fingerprint") == now_fp:
+            return None
+    except (OSError, ValueError, AttributeError):
+        pass
+    st.write_private(marker, json.dumps({"fingerprint": now_fp, "version": disk, "running": __version__,
+                                         "at": time.time()}).encode())
+    st.log("package_drift", status="warning", action="restart")
+    try:
+        r = (run or subprocess.run)(service.agentj_argv() + ["service", "install", "--deferred", disk],
+                                    stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=120)
+        ok = r.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        ok = False
+    st.log("package_drift", status="restart_scheduled" if ok else "restart_failed")
+    return "scheduled" if ok else "failed"
+
+
 def installed_version() -> str | None:
     """P238: the version on disk right now (the package's own __init__.py, read afresh). After `apply` installs a new copy
     the running serve still says its old __version__ until the recovery worker restarts it when idle."""
@@ -1159,8 +1217,8 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
         from . import service
         try:
             svc_on = bool(service.status().get("installed") or service.legacy_status().get("installed"))
-        except Exception:  # noqa: BLE001 — no service manager: nothing to restart
-            svc_on = False
+        except Exception as e:  # noqa: BLE001 — an installed service whose manager cannot be read must fail closed
+            return done("service_status_failed", service_error=type(e).__name__)
     if not svc_on:
         write_marker(st, __version__, target)
         return {**out, "result": "ok", "reason": "upgraded", "service": "not_installed", "exit": 0}
@@ -1263,8 +1321,8 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
         from . import service
         try:
             svc_on = bool(service.status().get("installed") or service.legacy_status().get("installed"))
-        except Exception:  # noqa: BLE001 — no service manager: nothing to restart (as authorized_apply)
-            svc_on = False
+        except Exception as e:  # noqa: BLE001 — an installed service whose manager cannot be read must fail closed
+            return done("service_status_failed", service_error=type(e).__name__)
     from .upgrade_diag import plan_detail, plan_fields, plan_reason, run_step
     out["step"] = "download"
     try:
@@ -1586,4 +1644,7 @@ REASON_EXTRA = {
                               "so the service connection and local data could not be checked here — nothing failed"),
     "artifact_refused": ("发布包签名或哈希校验失败，未安装；请检查正式发布工件", "published artifact signature/hash verification failed; nothing installed; check the official release artifacts"),
     "upgraded": ("已升级", "upgraded"),
+    "service_status_failed": ("读不出后台服务的状态，没有动安装：运行 `agentj service status` 和 `agentj doctor` 查看",
+                              "the background service's status could not be read, so nothing was installed: run "
+                              "`agentj service status` and `agentj doctor`"),
 }

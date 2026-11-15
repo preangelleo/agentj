@@ -71,7 +71,10 @@ class Upgrade(unittest.IsolatedAsyncioTestCase):
         with patch("agentj.service_recovery.launch_job") as launch:
             phone_update.launch(self.st)
             self.assertEqual(launch.call_args.args[2], "update")
-            self.assertEqual(launch.call_args.args[1][-2:], ["-m", "agentj.phone_update"])
+            # 0.30.23: the job starts from a package snapshot in the state directory (the install recreates the venv)
+            worker = launch.call_args.args[1][-1]
+            self.assertTrue(worker.startswith(str(self.st.root / "upgrade-cache" / "phone-lib")), worker)
+            self.assertIn("from agentj.phone_update import run", open(worker).read())
 
 class InstalledDoctorFailure(unittest.TestCase):
     def test_failed_doctor_still_restarts_installed_package_and_reports_counts(self):

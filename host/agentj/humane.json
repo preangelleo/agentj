@@ -90,7 +90,7 @@
     "stop.none": {"zh": "现在没有在跑的一轮，不用停。", "en": "Nothing is running right now."},
     "stop.children": {"zh": "这一轮早已结束；已停止 {n} 个还在跑的子 Agent。", "en": "The turn had already ended; stopped {n} sub-agent(s) still running."},
     "update.started": {"zh": "我去升级了，服务会重启一下，回来就告诉您结果。", "en": "Upgrading now — the service will restart; I'll report back when I'm up."},
-    "update.current": {"zh": "已经是最新的 {to}，不用升级。", "en": "Already on the latest, {to}."},
+    "update.current": {"zh": "已是最新版 {to}，不用升级。", "en": "Already on the latest version, {to}."},
     "update.auto_ok": {"zh": "{title}，我夜里自己升级到 {to} 了：{summary}。", "en": "{title}, I updated myself to {to} overnight: {summary}."},
     "update.auto_ok_default": {"zh": "装上了最新正式版的改进", "en": "the latest published fixes"},
     "update.auto_rollback": {"zh": "{title}，夜里升级没成功，已回滚到 {from}，原因：{reason}。", "en": "{title}, last night's update failed; I rolled back to {from} ({reason})."},

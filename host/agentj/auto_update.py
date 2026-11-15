@@ -619,6 +619,24 @@ def install_template(info):
         info['kind'], 'python -m pip install --no-deps --force-reinstall <wheel>')
 
 
+def snapshot_worker(st, folder: str, module: str) -> Path:
+    """Copy this agentj package (code and its packaged data) into the state directory and return a run.py that starts
+    `module.run(State())` from that copy. `uv tool install --force` deletes and recreates the whole tool venv; a worker
+    importing from the venv would load half the new package into the old process (0.30.23: the phone /update job crashed
+    on `schema/default drift` after the install and never handed off the restart). The copy keeps the job consistent."""
+    import shutil
+    snapshot = st.root / 'upgrade-cache' / folder
+    shutil.rmtree(snapshot / 'agentj', ignore_errors=True)
+    for p in Path(__file__).parent.rglob('*'):
+        if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc':
+            dst = snapshot / 'agentj' / p.relative_to(Path(__file__).parent)
+            dst.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            st.write_private(dst, p.read_bytes())
+    worker = snapshot / 'run.py'
+    st.write_private(worker, f"from {module} import run\nfrom agentj.state import State\nrun(State())\n".encode())
+    return worker
+
+
 def launch(st):
     if update.market_managed():
         return False
@@ -628,14 +646,7 @@ def launch(st):
     try:
         # Snapshot the updater package: rolling back to a pre-P83 wheel must not
         # remove the worker entry point needed for retry after a SIGKILL.
-        snapshot = st.root / 'upgrade-cache' / 'worker-lib'
-        for p in Path(__file__).parent.rglob('*'):
-            if p.is_file() and '__pycache__' not in p.parts and p.suffix != '.pyc':
-                dst = snapshot / 'agentj' / p.relative_to(Path(__file__).parent)
-                dst.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-                st.write_private(dst, p.read_bytes())
-        worker = snapshot / 'run.py'
-        st.write_private(worker, b"from agentj.auto_update import run\nfrom agentj.state import State\nrun(State())\n")
+        worker = snapshot_worker(st, 'worker-lib', 'agentj.auto_update')
         service_recovery.launch_job(st, [sys.executable, str(worker)], 'autoupdate', restart=True)
     except Exception:
         phone_update.release(st)

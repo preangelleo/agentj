@@ -602,6 +602,9 @@ AUTONOMOUS_CHOICE = ("全放行：按主人已有目标自主选择合理默认�
 class Host:
     def __init__(self, st: State, events: str = "text", read_stdin: bool = True):
         self.st = st
+        # Capture packaged defaults once; the running process must notice a same-version disk drift too.
+        self._package_fingerprint = update.package_fingerprint()
+        self._drift_restart_started = False
         from . import userdata                     # P207: missing user files come back from the newest snapshot first,
         self.userdata_restored = []                # then this version keeps its own snapshot (once per version)
         with contextlib.suppress(Exception):
@@ -2713,7 +2716,7 @@ class Host:
                     await self._ctl_send(w, owner_hosts.handle_commands(self, req))
                 elif cmd == "status":
                     from . import service_runtime
-                    await self._ctl_send(w, {"environment": service_runtime.snapshot(), "ok": True, "relay_up": self.relay_up, "relay_state": self.relay_state(), "channel": self.channel,
+                    await self._ctl_send(w, {"environment": service_runtime.snapshot(), "ok": True, "version": update.__version__, "relay_up": self.relay_up, "relay_state": self.relay_state(), "channel": self.channel,
                                              "relay_last": None if self.relay_up else self.relay_last,   # P317: the host leg's stuck point
                                              "identity_ok": self.identity_ok,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
@@ -4919,6 +4922,9 @@ class Host:
         await asyncio.sleep(UPDATE_FIRST)
         while True:
             try:
+                if not self._drift_restart_started:     # 0.30.23: new package on disk, this process still the old one
+                    action = await asyncio.to_thread(update.drift_handoff, self.st, self._package_fingerprint)
+                    self._drift_restart_started = action is not None
                 from . import auto_update, nightly_report
                 nightly = await asyncio.to_thread(nightly_report.check, self.st)
                 if nightly is not None:
@@ -4983,6 +4989,7 @@ class Host:
             completed = phone_update.take(self.st)
             if completed:
                 if completed.get("reason") in ("upgraded", "doctor_failed"):
+                    completed["to"] = update.__version__     # 0.30.23: the version read back from this restarted process
                     from . import doctor
                     try:
                         rows = await asyncio.to_thread(doctor.run, self.st)

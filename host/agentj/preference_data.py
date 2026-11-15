@@ -13,6 +13,15 @@ from .preference_values import ConfigError, get, put
 
 DATA = Path(__file__).with_name('config')
 SCHEMA = json.loads((DATA / 'schema.json').read_text())['keys']
+# 0.30.23: the packaged defaults are code, read together with SCHEMA once per process. An upgrade replaces the package on
+# disk while the old serve / phone job still runs; re-reading defaults.json5 from disk paired the new defaults with the old
+# in-memory SCHEMA, and `schema/default drift` then closed every web connection (M1 + Olares, 2026-11-15).
+_DEFAULTS_RAW = (DATA / 'defaults.json5').read_text()
+# 0.30.23: 0.30.21/0.30.22 hosts must parse the shipped defaults without schema/default drift.
+# Keep the old factory bytes so an older host sees its own schema, while newer readers supply the
+# daily-review default only when the field is absent (an explicit empty value remains disabled).
+LEGACY_DAILY_DEFAULT = ""
+DAILY_REVIEW_DEFAULT = "08:00"
 MAX_BYTES = 48 * 1024
 
 def flatten(doc,prefix=''):
@@ -53,12 +62,21 @@ def _cached(slot,raw,make):
     return copy.deepcopy(hit[2])
 
 def defaults():
-    return _cached('defaults',(DATA/'defaults.json5').read_text(),_defaults)
+    out = _cached('defaults', _DEFAULTS_RAW, _defaults)
+    # The schema's current default is intentionally not written into defaults.json5: old
+    # 0.30.21/0.30.22 readers reject that byte-level drift. Only the factory value is
+    # upgraded; a user override of "" is preserved by validate()/merge().
+    if out.get('heartbeat', {}).get('daily_at') == LEGACY_DAILY_DEFAULT:
+        out.setdefault('heartbeat', {})['daily_at'] = DAILY_REVIEW_DEFAULT
+    return out
 
 def _defaults(raw):
     out=json5.loads(raw,allow_duplicate_keys=False)
     for k,m in SCHEMA.items():
-        if m['tier']=='user' and get(out,k)!=m['default']: raise RuntimeError('schema/default drift: '+k)
+        if m['tier']=='user' and get(out,k)!=m['default']:
+            if k == 'heartbeat.daily_at' and get(out, k) == LEGACY_DAILY_DEFAULT and m['default'] == DAILY_REVIEW_DEFAULT:
+                continue
+            raise RuntimeError('schema/default drift: '+k)
     return out
 
 def _line(raw,key):

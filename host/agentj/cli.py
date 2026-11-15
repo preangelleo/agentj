@@ -3217,6 +3217,8 @@ def cmd_update(a) -> None:
         res = update.repair_install(st)
         print(update.result_block(res))
         raise SystemExit(res["exit"])
+    if getattr(a, "wheel", None):
+        return _update_local(a)
     if a.mode == "apply" and (a.authorization or a.from_email):
         return _update_authorized(a)
     if a.mode != "apply" and (a.authorization or a.from_email or a.version):
@@ -3289,6 +3291,25 @@ def _upgrade_gate(r: dict) -> dict | None:
     except Exception:  # noqa: BLE001 — the block still says why nothing was installed
         pass
     return {**base, "reason": "confirm_on_phone"}
+
+
+def _update_local(a) -> None:
+    """R-0032: the owner's terminal installs a local candidate wheel through the /update job (local_update). Prints the
+    job's result JSON; the restart itself is the recovery worker's, as after a phone /update."""
+    from . import local_update
+    if a.mode != "apply" or not a.version or a.authorization or a.from_email or getattr(a, "reinstall", False):
+        sys.exit("✗ --wheel 只用于 apply --version V / --wheel needs apply --version V (no code, no email, no --reinstall)")
+    st = State()
+    _need_init(st)
+    try:
+        staged = local_update.stage(st, a.wheel, a.version)
+        local_update.launch(st, staged, a.version)
+    except local_update.Refused as e:
+        sys.exit(f"✗ {e}")
+    st.log("local_update", status=a.version)
+    res = local_update.wait_result(st)
+    print(json.dumps(res if res is not None else {"result": "failed", "reason": "timeout"}, ensure_ascii=False), flush=True)
+    sys.exit(0 if res and res.get("result") == "ok" else 1)
 
 
 def _update_authorized(a) -> None:
@@ -3632,6 +3653,8 @@ def main(argv=None) -> None:
     up.add_argument("--authorization", metavar="AJUP-…", help="主人升级邮件里的授权码 / the authorization code from the owner's upgrade email")
     up.add_argument("--from-email", metavar="FILE|-", help="整封升级邮件（文件或 - 读标准输入）：从中找授权码和目标版本 / the whole "
                                                           "upgrade email (file, or - for stdin): code and target version are read from it")
+    up.add_argument("--wheel", metavar="FILE", help="apply：从本机 wheel 安装（主人终端，走 /update 同一任务）/ apply: install a local wheel "
+                                                   "through the /update job (owner terminal only)")
     up.add_argument("--version", help="目标版本（缺省：邮件里的目标版本，或公开仓库的最新版）/ target version (default: the email's, or the latest)")
     up.set_defaults(fn=cmd_update)
     i = sub.add_parser("init", help="生成主机身份密钥")

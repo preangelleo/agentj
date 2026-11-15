@@ -554,6 +554,9 @@ REASON_WORDS = {
     "doctor_failed": ("升级后自检没通过", "the post-upgrade self-check failed"),
     "self_check_failed": ("升级后新程序跑不起来", "the new program could not run after the upgrade"),
     "unsupported_install": ("这台Agent J 主机的安装方式不能自动升级", "this installation cannot be upgraded automatically"),
+    "service_status_failed": ("读不出后台服务的状态，所以没有开始安装", "the background service's status could not be read, so nothing was installed"),
+    "apply_crashed": ("升级程序自身出错，没有装完", "the upgrader itself crashed before finishing"),
+    "phone_update_crashed": ("升级任务在收尾时出错，服务可能还没重启", "the upgrade job crashed while finishing; the service may not have restarted"),
 }
 
 

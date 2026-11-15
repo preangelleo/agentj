@@ -1145,9 +1145,9 @@
   },
   "heartbeat.daily_at": {
    "type": "string",
-   "default": "08:00",
+   "default": "",
    "tier": "user",
-   "description": "Also wake once a day at this local time, HH:MM (24-hour); empty = off (agentj heartbeat daily 07:30) / 每天固定时间唤醒一次（本地时间 HH:MM，24 小时制），留空关闭",
+   "description": "Also wake once a day at this local time, HH:MM (24-hour); empty = off (agentj heartbeat daily 07:30); the current reader supplies the daily-review factory time / 每天固定时间唤醒一次（本地时间 HH:MM，24 小时制），留空关闭；当前读取器补上每日整理的出厂时间",
    "aliases": [
     "heartbeat daily",
     "daily wake-up",

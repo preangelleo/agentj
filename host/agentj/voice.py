@@ -25,7 +25,18 @@ from websockets.exceptions import InvalidStatus, ConnectionClosed
 import uuid
 import sys
 from . import preference_values as p
-from .preference_checks import asr_endpoint, tts_options
+try:
+    from .preference_checks import asr_endpoint, tts_options
+except ImportError:
+    # A 0.30.21 /update job checks health in its own process after the install: its preference_checks (no tts_options)
+    # is already in memory when this new file is first imported. Read the installed file under a private name instead of
+    # failing — that failure cancelled the service restart (old serve left running on the new package).
+    import importlib.util as _ilu
+    import os as _os
+    _spec = _ilu.spec_from_file_location(__package__ + "._preference_checks_installed",
+                                         _os.path.join(_os.path.dirname(__file__), "preference_checks.py"))
+    _pc = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_pc)
+    asr_endpoint, tts_options = _pc.asr_endpoint, _pc.tts_options
 
 ASR_URL='https://openrouter.ai/api/v1/audio/transcriptions'
 TTS_URL='https://api.openai.com/v1/audio/speech'

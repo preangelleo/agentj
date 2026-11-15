@@ -7987,7 +7987,7 @@ agentj update --help
 ```text
 usage: agentj update [-h] [--reinstall] [--yes] [--json]
                      [--authorization AJUP-…] [--from-email FILE|-]
-                     [--version VERSION]
+                     [--wheel FILE] [--version VERSION]
                      {check,apply,auto,rollback} [{on,off,status}]
 ```
 
@@ -8001,6 +8001,7 @@ usage: agentj update [-h] [--reinstall] [--yes] [--json]
 | `--json` | `false` | false | — | `machine-readable check` |
 | `--authorization` | `null` | false | — | `the authorization code from the owner's upgrade email` |
 | `--from-email` | `null` | false | — | `the whole upgrade email (file, or - for stdin): code and target version are read from it` |
+| `--wheel` | `null` | false | — | `apply：从本机 wheel 安装（主人终端，走 /update 同一任务）/ apply: install a local wheel through the /update job (owner terminal only)` |
 | `--version` | `null` | false | — | `目标版本（缺省：邮件里的目标版本，或公开仓库的最新版）/ target version (default: the email's, or the latest)` |
 
 ### agentj usage
@@ -16389,7 +16390,7 @@ agentj update --help
 ```text
 usage: agentj update [-h] [--reinstall] [--yes] [--json]
                      [--authorization AJUP-…] [--from-email FILE|-]
-                     [--version VERSION]
+                     [--wheel FILE] [--version VERSION]
                      {check,apply,auto,rollback} [{on,off,status}]
 ```
 
@@ -16403,6 +16404,7 @@ usage: agentj update [-h] [--reinstall] [--yes] [--json]
 | `--json` | `false` | false | — | `check 的机器可读输出` |
 | `--authorization` | `null` | false | — | `主人升级邮件里的授权码` |
 | `--from-email` | `null` | false | — | `整封升级邮件（文件或 - 读标准输入）：从中找授权码和目标版本` |
+| `--wheel` | `null` | false | — | `apply：从本机 wheel 安装（主人终端，走 /update 同一任务）/ apply: install a local wheel through the /update job (owner terminal only)` |
 | `--version` | `null` | false | — | `目标版本（缺省：邮件里的目标版本，或公开仓库的最新版）/ target version (default: the email's, or the latest)` |
 
 ### agentj usage
