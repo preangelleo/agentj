@@ -76,7 +76,7 @@ def text(rec, lang="zh", web="older", machine=None):
         why += (f"; {rec['installed']} is installed, the old version is still running" if en else
                 f"；{rec['installed']} 已装好，仍在运行旧版本")
     return (f"Upgrade failed: {why}. Use Repair connection below, or Settings → Emergency repair. If the host is offline, wake that computer first." if en else
-            f"升级未完成：{why}。使用下方「修复连接」，或前往设置中的「紧急修复」。主机离线时，请先唤醒那台电脑。")
+            f"升级未完成：{why}。使用下方「修复连接」，或前往设置中的「紧急修复」。主机离线时，请先唤醒 Agent J 主机。")
 
 def _rep_of(rec):
     import re

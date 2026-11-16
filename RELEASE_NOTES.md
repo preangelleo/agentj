@@ -1,5 +1,5 @@
-# Agent J v0.30.28
+# Agent J v0.30.29
 
-The post-upgrade self-check looks again while the service is still restarting instead of reporting a false failure; the new version corrects earlier such reports on start.
+New agentj relay: send a task to Claude Code or Codex via your Agents Relay key, each job confirmed on your phone; QR vision works with new Claude models.
 
-升级后的自检遇到服务刚在重启时会再看一次，不再误报「升级失败」；新版启动后会自动更正之前的这类误报。
+新增 agentj relay：经你的 Agents Relay 密钥把任务交给 Claude Code 或 Codex 后台执行，每个任务需在手机上确认；二维码视觉识别兼容新版 Claude 模型。

@@ -248,6 +248,12 @@ def _call(st, req):
 
 def command(args):
     from .state import State
+    if args.channel == 'status' and not str(getattr(args, 'key', None) or '').startswith('run:'):
+        from . import relay_full   # 0.30.29: key names (+ --check) or a `relay:` job receipt; `run:` keys stay below
+        raise SystemExit(relay_full.status_command(args))
+    if args.channel in ('claude', 'codex') and getattr(args, 'full', False):
+        from . import relay_full   # 0.30.29: one owner Face ID card, then serve runs the full-permission child
+        raise SystemExit(relay_full.command(args))
     if args.channel in ('status', 'stats'):
         answer = _call(State(), {'cmd': 'agentsrelay_query', 'operation': args.channel,
                                  'key': getattr(args, 'key', None)})
@@ -256,7 +262,8 @@ def command(args):
         print(json.dumps(safe))
         raise SystemExit(0 if safe.get('ok') else 1)
     if args.channel not in ('codex', 'check'):
-        print(json.dumps({'ok': False, 'error': 'claude_host_adapter_unavailable'}))
+        print(json.dumps({'ok': False, 'error': 'claude_host_adapter_unavailable',
+                          'hint': 'agentj relay claude --full "<task>"'}))
         raise SystemExit(2)
     argv = ['codex', 'exec']
     if args.sandbox:
@@ -283,15 +290,25 @@ def command(args):
 def add_parser(sub):
     p = sub.add_parser('relay', help='用当前已配置的 Agents Relay 派单 / dispatch through the current Agents Relay profile')
     modes = p.add_subparsers(dest='channel', required=True)
-    q = modes.add_parser('status', help='inspect a dispatch without executing or resuming it')
-    q.add_argument('key'); q.set_defaults(fn=command)
+    q = modes.add_parser('status', help='没有参数：两把 Agents Relay 密钥是否已设置（只给名字）；relay:/run: 编号：查看结果，不执行也不续跑 / '
+                         'no argument: whether the two Agents Relay keys are set (names only); a relay:/run: id: inspect it without executing or resuming')
+    q.add_argument('key', nargs='?')
+    q.add_argument('--check', action='store_true', help='用已存的密钥向 api.agentsrelay.net 发一次只读检查（不跟随跳转）/ '
+                   'one read-only request to api.agentsrelay.net with each stored key (redirects refused)')
+    q.set_defaults(fn=command)
     modes.add_parser('stats', help='current Host process metadata; unavailable provider telemetry stays unknown').set_defaults(fn=command)
-    for channel in ('codex', 'claude', 'check'):
-        q = modes.add_parser(channel, help='Host-managed current Codex profile' if channel == 'codex' else 'one minimal fixed-text Codex Relay request; may use provider quota' if channel == 'check' else 'not yet supported by the Host adapter')
+    for channel, text in (("codex", "Host-managed current Codex profile; with --full: one owner Face ID card, then the Agent J host runs Codex headless"),
+                          ("claude", "only with --full: one owner Face ID card, then the Agent J host runs Claude Code headless through Agents Relay"),
+                          ("check", "one minimal fixed-text Codex Relay request; may use provider quota")):
+        q = modes.add_parser(channel, help=text)
         q.add_argument('--sandbox', choices=('read-only', 'workspace-write', 'danger-full-access'))
         q.add_argument('--model')
         q.add_argument('--base-url', help='background-only exact Agents Relay /v1 HTTPS URL; requires --model; preserves official settings')
         q.add_argument('--report')
         if channel != 'check':
-            q.add_argument('prompt')
+            q.add_argument('--full', action='store_true', help='主人在手机上 Face ID 同意后，由 Agent J 主机以完全权限在后台跑一次（经主人的 Agents Relay 密钥）/ '
+                           "after the owner's Face ID card, the Agent J host runs it once headless with full permissions through the owner's Agents Relay key")
+            q.add_argument('--cwd', help='--full：工作目录（默认当前目录）/ --full: working directory (default: here)')
+            q.add_argument('--minutes', type=int, help='--full：时限分钟，1–240，默认 60 / --full: time limit in minutes, 1-240, default 60')
+            q.add_argument('prompt', help='任务；- 表示从标准输入读 / the task; - reads it from stdin')
         q.set_defaults(fn=command)

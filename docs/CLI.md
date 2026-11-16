@@ -6639,7 +6639,7 @@ usage: agentj relay check [-h]
 ### agentj relay claude
 
 ```text
-not yet supported by the Host adapter
+only with --full: one owner Face ID card, then the Agent J host runs Claude Code headless through Agents Relay
 ```
 
 ```bash
@@ -6650,7 +6650,8 @@ agentj relay claude --help
 usage: agentj relay claude [-h]
                            [--sandbox {read-only,workspace-write,danger-full-access}]
                            [--model MODEL] [--base-url BASE_URL]
-                           [--report REPORT]
+                           [--report REPORT] [--full] [--cwd CWD]
+                           [--minutes MINUTES]
                            prompt
 ```
 
@@ -6661,12 +6662,15 @@ usage: agentj relay claude [-h]
 | `--model` | `null` | false | — | `` |
 | `--base-url` | `null` | false | — | `background-only exact Agents Relay /v1 HTTPS URL; requires --model; preserves official settings` |
 | `--report` | `null` | false | — | `` |
-| `prompt` | `null` | true | — | `` |
+| `--full` | `false` | false | — | `主人在手机上 Face ID 同意后，由 Agent J 主机以完全权限在后台跑一次（经主人的 Agents Relay 密钥）/ after the owner's Face ID card, the Agent J host runs it once headless with full permissions through the owner's Agents Relay key` |
+| `--cwd` | `null` | false | — | `--full：工作目录（默认当前目录）/ --full: working directory (default: here)` |
+| `--minutes` | `null` | false | — | `--full：时限分钟，1–240，默认 60 / --full: time limit in minutes, 1-240, default 60` |
+| `prompt` | `null` | true | — | `the task; - reads it from stdin` |
 
 ### agentj relay codex
 
 ```text
-Host-managed current Codex profile
+Host-managed current Codex profile; with --full: one owner Face ID card, then the Agent J host runs Codex headless
 ```
 
 ```bash
@@ -6677,7 +6681,8 @@ agentj relay codex --help
 usage: agentj relay codex [-h]
                           [--sandbox {read-only,workspace-write,danger-full-access}]
                           [--model MODEL] [--base-url BASE_URL]
-                          [--report REPORT]
+                          [--report REPORT] [--full] [--cwd CWD]
+                          [--minutes MINUTES]
                           prompt
 ```
 
@@ -6688,7 +6693,10 @@ usage: agentj relay codex [-h]
 | `--model` | `null` | false | — | `` |
 | `--base-url` | `null` | false | — | `background-only exact Agents Relay /v1 HTTPS URL; requires --model; preserves official settings` |
 | `--report` | `null` | false | — | `` |
-| `prompt` | `null` | true | — | `` |
+| `--full` | `false` | false | — | `主人在手机上 Face ID 同意后，由 Agent J 主机以完全权限在后台跑一次（经主人的 Agents Relay 密钥）/ after the owner's Face ID card, the Agent J host runs it once headless with full permissions through the owner's Agents Relay key` |
+| `--cwd` | `null` | false | — | `--full：工作目录（默认当前目录）/ --full: working directory (default: here)` |
+| `--minutes` | `null` | false | — | `--full：时限分钟，1–240，默认 60 / --full: time limit in minutes, 1-240, default 60` |
+| `prompt` | `null` | true | — | `the task; - reads it from stdin` |
 
 ### agentj relay stats
 
@@ -6711,7 +6719,7 @@ usage: agentj relay stats [-h]
 ### agentj relay status
 
 ```text
-inspect a dispatch without executing or resuming it
+no argument: whether the two Agents Relay keys are set (names only); a relay:/run: id: inspect it without executing or resuming
 ```
 
 ```bash
@@ -6719,13 +6727,14 @@ agentj relay status --help
 ```
 
 ```text
-usage: agentj relay status [-h] key
+usage: agentj relay status [-h] [--check] [key]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `key` | `null` | true | — | `` |
+| `key` | `null` | false | — | `` |
+| `--check` | `false` | false | — | `用已存的密钥向 api.agentsrelay.net 发一次只读检查（不跟随跳转）/ one read-only request to api.agentsrelay.net with each stored key (redirects refused)` |
 
 ### agentj reload
 
@@ -15042,7 +15051,7 @@ usage: agentj relay check [-h]
 ### agentj relay claude
 
 ```text
-not yet supported by the Host adapter
+only with --full: one owner Face ID card, then the Agent J host runs Claude Code headless through Agents Relay
 ```
 
 ```bash
@@ -15053,7 +15062,8 @@ agentj relay claude --help
 usage: agentj relay claude [-h]
                            [--sandbox {read-only,workspace-write,danger-full-access}]
                            [--model MODEL] [--base-url BASE_URL]
-                           [--report REPORT]
+                           [--report REPORT] [--full] [--cwd CWD]
+                           [--minutes MINUTES]
                            prompt
 ```
 
@@ -15064,12 +15074,15 @@ usage: agentj relay claude [-h]
 | `--model` | `null` | false | — | `` |
 | `--base-url` | `null` | false | — | `background-only exact Agents Relay /v1 HTTPS URL; requires --model; preserves official settings` |
 | `--report` | `null` | false | — | `` |
-| `prompt` | `null` | true | — | `` |
+| `--full` | `false` | false | — | `主人在手机上 Face ID 同意后，由 Agent J 主机以完全权限在后台跑一次（经主人的 Agents Relay 密钥）/ after the owner's Face ID card, the Agent J host runs it once headless with full permissions through the owner's Agents Relay key` |
+| `--cwd` | `null` | false | — | `--full：工作目录（默认当前目录）/ --full: working directory (default: here)` |
+| `--minutes` | `null` | false | — | `--full：时限分钟，1–240，默认 60 / --full: time limit in minutes, 1-240, default 60` |
+| `prompt` | `null` | true | — | `任务；- 表示从标准输入读` |
 
 ### agentj relay codex
 
 ```text
-Host-managed current Codex profile
+Host-managed current Codex profile; with --full: one owner Face ID card, then the Agent J host runs Codex headless
 ```
 
 ```bash
@@ -15080,7 +15093,8 @@ agentj relay codex --help
 usage: agentj relay codex [-h]
                           [--sandbox {read-only,workspace-write,danger-full-access}]
                           [--model MODEL] [--base-url BASE_URL]
-                          [--report REPORT]
+                          [--report REPORT] [--full] [--cwd CWD]
+                          [--minutes MINUTES]
                           prompt
 ```
 
@@ -15091,7 +15105,10 @@ usage: agentj relay codex [-h]
 | `--model` | `null` | false | — | `` |
 | `--base-url` | `null` | false | — | `background-only exact Agents Relay /v1 HTTPS URL; requires --model; preserves official settings` |
 | `--report` | `null` | false | — | `` |
-| `prompt` | `null` | true | — | `` |
+| `--full` | `false` | false | — | `主人在手机上 Face ID 同意后，由 Agent J 主机以完全权限在后台跑一次（经主人的 Agents Relay 密钥）/ after the owner's Face ID card, the Agent J host runs it once headless with full permissions through the owner's Agents Relay key` |
+| `--cwd` | `null` | false | — | `--full：工作目录（默认当前目录）/ --full: working directory (default: here)` |
+| `--minutes` | `null` | false | — | `--full：时限分钟，1–240，默认 60 / --full: time limit in minutes, 1-240, default 60` |
+| `prompt` | `null` | true | — | `任务；- 表示从标准输入读` |
 
 ### agentj relay stats
 
@@ -15114,7 +15131,7 @@ usage: agentj relay stats [-h]
 ### agentj relay status
 
 ```text
-inspect a dispatch without executing or resuming it
+没有参数：两把 Agents Relay 密钥是否已设置（只给名字）；relay:/run: 编号：查看结果，不执行也不续跑
 ```
 
 ```bash
@@ -15122,13 +15139,14 @@ agentj relay status --help
 ```
 
 ```text
-usage: agentj relay status [-h] key
+usage: agentj relay status [-h] [--check] [key]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `key` | `null` | true | — | `` |
+| `key` | `null` | false | — | `` |
+| `--check` | `false` | false | — | `用已存的密钥向 api.agentsrelay.net 发一次只读检查（不跟随跳转）/ one read-only request to api.agentsrelay.net with each stored key (redirects refused)` |
 
 ### agentj reload
 

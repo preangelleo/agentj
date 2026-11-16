@@ -272,7 +272,8 @@ class CardListInventory(unittest.TestCase):
     def test_card_list_is_closed(self):
         self.assertEqual({'AskUserQuestion', 'SandboxOnce', 'AuthRescue', 'AgentJBoundedPlan', 'company.write',
                           'agentj core mcp add', 'agentj learn', 'agentj plaza',
-                          'FriendsTellOnce', 'agentj local record', 'agentj local relink'}, set(approval_offlist.CARD_LIST))
+                          'FriendsTellOnce', 'agentj local record', 'agentj local relink',
+                          'agentj relay'}, set(approval_offlist.CARD_LIST))
         self.assertEqual({'AskUserQuestion'}, set(approval_offlist.NATIVE_CARDS))
 
 

@@ -128,6 +128,7 @@ def credential_reads(tool, inp, *, host=None, cwd=None, env=None):
     return False
 
 COMMANDS = MappingProxyType({
+    'agentj relay': 'Run one headless full-permission Claude Code / Codex job through the owner\'s Agents Relay key.',
     'agentj local relink': 'Restore one registered missing owner-custom Codex skill link without executing code.',
     "agentj api manage": "Change the owner-signed seat API contract, routing, caller keys or callbacks.",
     'agentj local record': 'Record exact owner-approved local patch/feature bytes without applying them.',

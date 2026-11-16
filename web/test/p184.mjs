@@ -126,11 +126,12 @@ export async function runP184() {
 
         await step('b', async () => {
           await tapEl(p, '#mf-test'); await waitFor(p, `!${$('ctFwd')}.hidden && !${$('ctFwd-send')}.disabled`);
-          await tapEl(p, '#ctFwd .ct-mode[data-mode=other]');
+          // fe79188276: 「发给别人」 opens its own picker page (#ctFwd-other); 「完成（n）」 returns to the main page
+          await tapEl(p, '#ctFwd-other');
           await waitFor(p, `document.querySelectorAll('#ctFwd-list .ct-person').length===4`);
           const order = await evaluate(p, `[...document.querySelectorAll('#ctFwd-list .ct-person')].map(b=>b.dataset.addr)`);
           check(order[0] === 'zhangsan@hongyuan.cn' && order.length === 4, 'recent first; one row per address ' + order);
-          check(await evaluate(p, `${$('ctFwd-send')}.disabled`), 'nobody picked → no send');
+          check((await evaluate(p, `${$('ctFwd-send')}.textContent`)).includes('0'), 'nobody picked → 完成（0）');
           await tapEl(p, '#ctFwd .ct-sorts [data-sort=frequent]');
           await waitFor(p, `document.querySelector('#ctFwd-list .ct-person')?.dataset.addr==='lisi@163.com'`);
           await tapEl(p, '#ctFwd .ct-sorts [data-sort=name]');
@@ -139,7 +140,6 @@ export async function runP184() {
           check(last('ct_list').sort === 'name', 'sort asked of the host');
           await tapEl(p, '#ctFwd-list [data-addr="anna@contoso.com"]');
           await waitFor(p, `document.querySelector('#ctFwd-list [data-addr="anna@contoso.com"]').getAttribute('aria-checked')==='true'`);
-          check(await evaluate(p, `document.querySelector('#ctFwd .ct-mode[data-mode=me]').getAttribute('aria-checked')`) === 'false', 'picking someone else unticks 发给我自己');
           await evaluate(p, `(()=>{const i=${$('ctFwd-q')};i.focus();i.value='zhangsan';i.dispatchEvent(new Event('input'))})()`);
           await waitFor(p, `document.querySelectorAll('#ctFwd-list .ct-person').length===1`);
           check(last('ct_list').q === 'zhangsan', 'search on the Agent J host (pinyin)');
@@ -153,7 +153,9 @@ export async function runP184() {
           await waitFor(p, `document.querySelector('#ctFwd-list [data-addr="wang@x.cn"]')?.getAttribute('aria-checked')==='true'`);
           const sv = last('ct_save');
           check(sv.contact.emails[0] === 'Wang@X.cn' && sv.contact.nicks[0] === '王总', 'ct_save address + nickname');
-          check((await evaluate(p, `document.querySelector('#ctFwd .ct-mode[data-mode=other]').textContent`)).includes('3'), 'three picked');
+          await tapEl(p, '#ctFwd-send'); await waitFor(p, `!!${$('ctFwd-other')} && !${$('ctFwd-send')}.disabled`);
+          check(await evaluate(p, `document.querySelector('#ctFwd .ct-mode[data-mode=me]').getAttribute('aria-checked')`) === 'false', 'picking someone else unticks 发给我自己');
+          check((await evaluate(p, `${$('ctFwd-other')}.textContent`)).includes('3'), 'three picked');
           await save('forward-other');
           await sendOk(p);
           const f = last('mail_fwd');

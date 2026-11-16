@@ -114,6 +114,7 @@ HOST_TOOLS = MappingProxyType({
     "agentj tasks create": "settings.write",
     "agentj local record": "settings.write",
     "agentj local relink": "settings.write",
+    "agentj relay": "admin",                 # 0.30.29 relay_full: full-permission background job (uv_list.COMMANDS)
     "agentj tasks migrate": "settings.write",   # P570b: sysmigrate's card (P570c: a plain confirm)
     "AgentJSameOwnerAction": "publish",
     "agentj secret grant": "secrets.read",   # P574: the same-owner task grant card (owner_grant.TOOL), always Face ID

@@ -2676,6 +2676,13 @@ class Host:
                         await self._ctl_send(w, result)
                     except ValueError as exc:
                         await self._ctl_send(w, {"ok": False, "error": str(exc)})
+                elif cmd == "agentsrelay_full":     # 0.30.29: `agentj relay claude|codex --full` — one Face ID card, then serve runs it
+                    from . import relay_full
+                    await self._ctl_send(w, await relay_full.handle(
+                        self, req, lambda ev: asyncio.ensure_future(self._ctl_send(w, {"sent": True, **ev}))))
+                elif cmd == "agentsrelay_full_status":
+                    from . import relay_full
+                    await self._ctl_send(w, await relay_full.query(self, req))
                 elif cmd == "busy_native":
                     from . import busy_native
                     try:
@@ -7464,6 +7471,9 @@ class Host:
             from .core.order_host import pause_all
             await pause_all(self)
         ran = await self.scheduler.stop_current()
+        from . import relay_full      # 0.30.29 R-0006 r1 H1: running Agents Relay jobs stop with everything else
+        with contextlib.suppress(Exception):
+            await relay_full.stop_all(self, "estop")
         from . import sysmigrate      # P570b M1-R
         with contextlib.suppress(Exception):
             await asyncio.to_thread(sysmigrate.halt, self.st)
@@ -10096,6 +10106,9 @@ class Host:
         ended = await asyncio.to_thread(codex_procs.sweep, self.st)
         if ended:
             self.st.log("codex_leftover_ended", result=len(ended))
+        from . import relay_full                     # 0.30.29 R-0006 r2 N5: Agents Relay run homes a crashed serve left
+        if swept := await asyncio.to_thread(relay_full.sweep_homes, self.st):
+            self.st.log("relay_homes_swept", result=swept)
         self._scratch_task = asyncio.create_task(self._scratch_sweep())   # P542: crash leftovers, off the start path
         self.post_q = asyncio.Queue()
         self.configure_claude_inbound(await asyncio.to_thread(self._claude_inbound_files))   # P142: owner files, off the loop
@@ -10245,6 +10258,9 @@ class Host:
                 if not q.fut.done():
                     q.fut.set_result(("gone", None, None, None, None))
             await self.scheduler.stop_current()
+            from . import relay_full                # 0.30.29 R-0006 r1 L4: serve stopping ends running Agents Relay jobs
+            with contextlib.suppress(Exception):
+                await relay_full.stop_all(self, "serve_stop")
             await self.bots.stop()
             with contextlib.suppress(Exception):    # P408: serve stopping closes the web terminal (`host`)
                 await self.term_desk.close("host")

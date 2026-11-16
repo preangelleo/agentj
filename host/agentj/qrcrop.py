@@ -22,6 +22,7 @@ import re
 import struct
 import time
 import urllib.request
+import urllib.error
 import zlib
 
 PNG_SIG = b"\x89PNG\r\n\x1a\n"
@@ -196,11 +197,21 @@ def vision_corners(png: bytes, w: int, h: int, env=None, timeout: float = 30) ->
     body = {"model": env["AGENTJ_VISION_MODEL"], "temperature": 0, "messages": [{"role": "user", "content": [
         {"type": "text", "text": VISION_PROMPT},
         {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(png).decode()}}]}]}
-    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={
-        "Authorization": "Bearer " + env["AGENTJ_VISION_API_KEY"], "Content-Type": "application/json",
-        "User-Agent": "agentj-qr"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:      # noqa: S310 — the owner's configured endpoint
-        out = json.loads(r.read(1 << 20))
+    headers = {"Authorization": "Bearer " + env["AGENTJ_VISION_API_KEY"], "Content-Type": "application/json",
+               "User-Agent": "agentj-qr"}
+
+    def ask(b):
+        req = urllib.request.Request(url, data=json.dumps(b).encode(), headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as r:      # noqa: S310 — the owner's configured endpoint
+            return json.loads(r.read(1 << 20))
+    try:
+        out = ask(body)
+    except urllib.error.HTTPError as e:
+        # R-0030: current Anthropic models answer 400 to any sampling parameter (API change 2026-10-21); ask once without.
+        if e.code != 400:
+            raise
+        e.close()
+        out = ask({k: v for k, v in body.items() if k not in ("temperature", "top_p", "top_k")})
     txt = (((out.get("choices") or [{}])[0].get("message") or {}).get("content")) or ""
     m = re.search(r"\{.*\}", txt, re.S)
     j = json.loads(m.group(0)) if m else {}

@@ -2393,6 +2393,18 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
+            if isinstance(req, dict) and req.get("t") in ("agentsrelay_full", "agentsrelay_full_status"):
+                # 0.30.29: the fenced `agentj relay claude|codex --full` / `relay status` — same handlers as control.sock.
+                from . import relay_full
+
+                def emit(ev, w=w):
+                    w.write((json.dumps({"t": "card", **ev}) + "\n").encode())
+                res = await (relay_full.handle(self.host, req, emit) if req["t"] == "agentsrelay_full" else
+                             relay_full.query(self.host, req))
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
             if isinstance(req, dict) and req.get("t") == "jcard_open":
 
 
