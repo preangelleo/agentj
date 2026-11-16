@@ -167,6 +167,15 @@ class Send(_Svc):
         self.ask.assert_awaited_once()
         self.assertFalse(self.ask.await_args.kwargs.get("require_passkey"))   # P551 (#318): ② long-press, no Face ID
 
+    async def test_smtp_refusal_is_counted_and_not_reported_as_sent(self):
+        self.allow(FRIEND)
+        self.smtp.refuse.add(FRIEND)
+        res = await self.svc.agent_send({"to_owner": True, "cc": [FRIEND], "subject": "s", "body": "b"})
+        self.assertTrue(res["ok"], res)
+        self.assertEqual(res["sent"], [ALLOW_ME])
+        self.assertEqual(res["refused"], 1)
+        self.assertEqual(self.smtp.sent[-1][1], [ALLOW_ME])
+
     async def test_an_outsider_on_cc_or_bcc_brings_the_card(self):
         for key in ("cc", "bcc"):
             self.ask.reset_mock()

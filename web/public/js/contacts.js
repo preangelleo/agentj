@@ -333,12 +333,15 @@ function renderResult() {
   if (r.ok) {
     const m = r.m || {};
     sq.querySelector('#ctFwd-title').textContent = t('p295.ct.okTitle');
-    sub.textContent = t('p295.ct.okTo');
+    const sent = Number.isInteger(m.sent) && m.sent >= 0 ? m.sent : r.to.length;
+    body.append(mk('p', 'gdlg-sub ct-res-note', t('p295.ct.sentCount', { n: sent })));
+    sub.textContent = t('p295.ct.selectedTo');
     const ul = mk('ul', 'ct-res'); ul.id = 'ctFwd-to';
     for (const a of r.to) ul.append(mk('li', '', a));
     body.append(ul);
     const notes = [];
-    for (const x of Array.isArray(m.skips) ? m.skips : []) {
+    const skips = Array.isArray(m.skips) ? m.skips : [];
+    for (const x of skips) {
       if (!x || typeof x.name !== 'string') continue;
       const k = 'p295.ct.skip.' + (x.why === 'too_big' || x.why === 'secret' ? x.why : 'gone');
       notes.push(t(k, { name: x.name, size: human(x.bytes | 0).replace(' ', '\u00a0'), limit: human(m.limit | 0).replace(' ', '\u00a0') }));

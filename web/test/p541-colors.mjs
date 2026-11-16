@@ -15,10 +15,10 @@ async function sample(p,state,selectors){
    const chain=[];for(let a=n;a;a=a.parentElement)chain.push(a);
    let bg=[255,255,255,1];for(const a of chain.reverse()){const c=rgba(getComputedStyle(a).backgroundColor);bg=over([c[0],c[1],c[2],c[3]??1],bg);}
    const css=getComputedStyle(n),fg=rgba(css.color),final=over([fg[0],fg[1],fg[2],fg[3]??1],bg),l=[luminance(final),luminance(bg)].sort((a,b)=>a-b);
-   return {selector,color:css.color,background:bg,contrast:(l[1]+.05)/(l[0]+.05),font:css.fontSize};
+   return {selector,color:css.color,background:bg,contrast:(l[1]+.05)/(l[0]+.05),font:css.fontSize,border:css.border,boxShadow:css.boxShadow};
   });
  }.toString()})(${JSON.stringify(selectors)})`);
- for(const row of rows){samples.push({state,...row});assert.ok(row.contrast>=4.5,`${state} ${row.selector} contrast ${row.contrast}`);}
+ for(const row of rows){samples.push({state,...row});assert.ok(row.contrast>=4.5,`${state} ${row.selector} contrast ${row.contrast}`);if(row.selector==='#apprDeny'){assert.match(row.border,/^0px none /,`${state} deny keeps the solid borderless button rule`);assert.equal(row.boxShadow,'none',`${state} deny has no outline shadow`);}}
 }
 try{
  for(const theme of ['light','dark']){

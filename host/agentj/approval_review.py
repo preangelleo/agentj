@@ -90,8 +90,24 @@ def register_task_origin(host, run_id, task_id, origin=None):
     while len(refs)>1000:refs.pop(next(iter(refs)))
 
 
-def snapshot(host):
-    """Resolve only host-held references. Caller text and requested message ids are never read."""
+def _turn_origin(host, turn_id):
+    """Return the origin recorded for exactly one host turn, never a recent owner turn."""
+    if type(turn_id) is not int:
+        return None
+    refs = host.__dict__.get('_approval_origins', {})
+    value = refs.get(turn_id)
+    return copy.deepcopy(value) if isinstance(value, dict) else None
+
+
+def _scoped(host):
+    """Host-held scopes that always outrank the main thread's current Send.
+
+    Order is main's resolver order: a live scheduled task, an exact child
+    origin_scope, then an independent or same-host request.  An independent
+    request (a CLI callback, a worker, a peer) with no registered host origin
+    never inherits whatever owner turn happens to be current on the main
+    thread.  Returns _UNSET when no scope applies.
+    """
     from . import provenance
     scope=provenance.task_scope()
     if scope is not None:
@@ -120,7 +136,64 @@ def snapshot(host):
     live = provenance.turn_source(agent)
     if type(live) is provenance.SameHost:
         return copy.deepcopy(host.__dict__.get('_approval_launch_refs', {}).get(live.get('unit')) or {})
+    return provenance._UNSET
+
+
+def source(host):
+    """Resolve approval provenance for every card kind (ordinary, sudo, secret, UV list, file grant).
+
+    Host-held scopes first (see _scoped).  Then the active host-created Send's
+    turn id is the join key to exactly one owner-message record; an explicit
+    turn never falls back to desktop_turn or an older owner record.  Caller
+    text and requested message ids are never read.
+    """
+    from . import provenance
+    scoped = _scoped(host)
+    if scoped is not provenance._UNSET:
+        return scoped
+    agent = getattr(host, 'agent', None)
     send = getattr(agent, 'cur_send', None)
+    turn = getattr(send, 'turn', None) if send is not None else None
+    if type(turn) is not int:
+        return _fallback(host, agent, send, allow_desktop=True)
+    direct = getattr(send, 'approval_origin', None)
+    exact = _turn_origin(host, turn)
+    hist = getattr(host, 'hist', None)
+    if exact is not None and hist is not None and exact.get('session') != str(getattr(hist, 'epoch', '')):
+        exact = None        # a record from another conversation epoch is not this turn's
+    if exact is not None:
+        # The Send must still carry the host record for this very turn; a Send
+        # whose origin was replaced (root/session/input change) borrows nothing.
+        if isinstance(direct, dict) and direct != exact:
+            return _fallback(host, agent, send, allow_desktop=False)
+        cfg = getattr(agent, 'cfg', None) or {}
+        shared = type(agent).__name__.startswith('Shared') or cfg.get('session_mode') == 'shared'
+        if not shared:
+            return exact
+        # Shared session: native may be running a different input (desktop turn,
+        # background notice, peer) while this Send waits.  Only a phone Send of
+        # this epoch, or native-attested delivery, may label the native tool call.
+        if (provenance.normalize(getattr(send, 'source', None)).get('kind') == 'phone'
+                or (getattr(agent, 'phone_turn', False) and getattr(agent, 'phone_seen', False))):
+            return exact
+        return _fallback(host, agent, send, allow_desktop=False)
+    if isinstance(direct, dict) and direct.get('verified') is True:
+        # A Send with no ledger row (review event, same-owner forward, native
+        # child) may present a verified record only when its source is
+        # host-typed (HostSystem / HostDelegated / SameHost, never built from
+        # JSON) or the host's owner predicate attests it.  A group / forward /
+        # guest / webhook / friend Send never carries a verified owner record;
+        # an unverified record keeps main's display ("来源未核实").
+        send_source = getattr(send, 'source', None)
+        host_typed = type(send_source) in (provenance.HostSystem, provenance.HostDelegated, provenance.SameHost)
+        if not (host_typed or provenance.owner_intent(send_source, send)):
+            return None
+    return _fallback(host, agent, send, allow_desktop=False)
+
+
+def _fallback(host, agent, send, *, allow_desktop):
+    """Main's remaining resolution: exact phone row, shared native attestation, desktop turn."""
+    from . import provenance
     cfg = getattr(agent, 'cfg', None) or {}
     shared = type(agent).__name__.startswith('Shared') or cfg.get('session_mode') == 'shared'
     # Display the exact Host-held phone request even while native delivery flags
@@ -130,9 +203,10 @@ def snapshot(host):
     if phone_source.get('kind') == 'phone' and not phone_ref:
         # Exact active Send.turn only; never borrow a recent/nearest owner row.
         turn = getattr(send, 'turn', None)
-        exact = host.hist.get(turn) if type(turn) is int else None
+        hist = getattr(host, 'hist', None)
+        exact = hist.get(turn) if type(turn) is int and hist is not None else None
         if exact and (exact.get('src') or {}).get('k') == 'phone':
-            phone_ref = copy.deepcopy(host.__dict__.get('_approval_origins', {}).get(turn))
+            phone_ref = _turn_origin(host, turn)
     display_phone = (phone_source.get('kind') == 'phone' and isinstance(phone_ref, dict)
                      and phone_ref.get('session') == str(getattr(getattr(host,'hist',None),'epoch','')))
     ref = phone_ref if display_phone or not shared or (getattr(agent, 'phone_turn', False) and getattr(agent, 'phone_seen', False)) else None
@@ -142,10 +216,17 @@ def snapshot(host):
     native = shared_turn_origin.snapshot(agent) if shared else None
     if native:
         return native
+    if not allow_desktop:
+        # An explicit turn with no host record of its own has no origin (None, as main's resolver).
+        return None
     # A desktop turn id is host-generated from a verified native transcript, not an agent field.
     tid = getattr(host, 'desktop_turn', None) if getattr(agent, 'phone_turn', False) is False else None
-    refs = host.__dict__.get('_approval_origins', {})
-    return copy.deepcopy(refs.get(tid))
+    return _turn_origin(host, tid)
+
+
+def snapshot(host):
+    """Resolve only host-held references. Caller text and requested message ids are never read."""
+    return source(host)
 
 
 def remember(host, turn, source):

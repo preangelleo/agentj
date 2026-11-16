@@ -72,6 +72,26 @@ class Delivery(_Svc):
         self.assertEqual((await self.service.send(self.req, os.getpid()))['why'], 'duplicate')
         self.assertEqual(len(self.smtp.sent), 1); self.ask.assert_awaited_once()
 
+    async def test_successful_workflow_mail_registers_owner_thread(self):
+        await self.grant()
+        res = await self.service.send(self.req, os.getpid())
+        self.assertTrue(res['ok'], res)
+        from email import message_from_bytes
+        sent = message_from_bytes(self.smtp.sent[-1][2])
+        rows = __import__('agentj.mail', fromlist=['read_state']).read_state(self.st)['owner_threads']
+        self.assertIn({'id': str(sent['Message-ID']), 'addr': ME,
+                       'gen': __import__('agentj.mail', fromlist=['read_config']).read_config(self.st)['generation']}, rows)
+
+    async def test_guest_workflow_mail_never_registers_owner_thread(self):
+        await self.grant()
+        req = copy.deepcopy(self.req)
+        req['to_owner'] = False
+        req['to'] = ['guest@example.test']
+        req['delivery_manifest']['binding_sha256'] = 'b' * 64
+        self.assertEqual((await self.service.send(req, os.getpid()))['why'], 'recipient')
+        rows = __import__('agentj.mail', fromlist=['read_state']).read_state(self.st)['owner_threads']
+        self.assertEqual(rows, [])
+
     async def test_tampered_body_and_file_and_recipient_never_send(self):
         await self.grant()
         for field, value in [('body', 'different body'), ('to', ['outsider@example.test']), ('cc', [ME]), ('bcc', [ME]), ('to_owner', False)]:

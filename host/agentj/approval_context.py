@@ -36,43 +36,9 @@ def safe_text(value, limit=6000):
 
 
 def snapshot(host):
-    """Resolve only host-held references. Caller text and requested message ids are never read."""
-    from . import provenance
-    scope=provenance.task_scope()
-    if scope is not None:
-        ref=scope.get('approval_task_ref')
-        record=host.__dict__.get('_approval_task_refs',{}).get(ref) if scope.get('live') else None
-        origin=record.get('origin') if record else None
-        if origin:
-            result=copy.deepcopy(origin)
-            result['task_record']=record['task_record']
-            result['chain']=[*result.get('chain',[]),{'kind':'scheduled_task','id':str(ref)}]
-            return result
-        return {'message_id':None,'root_message_id':None,'session':str(getattr(getattr(host,'hist',None),'epoch','')),
-                'channel':'unknown','text':'','verified':False,'suspicious':True,'chain':[],
-                'initiator':'定时任务','task_record':record['task_record'] if record else 'scheduled-task:historical-owner-unavailable'}
-    agent = getattr(host, 'agent', None)
-    active = provenance._REQUEST.get()
-    if type(active) is provenance.SameHost:
-        peer = host.__dict__.get('_approval_launch_refs', {}).get(active.get('unit'))
-        return copy.deepcopy(peer) if peer else {}
-    if active is not provenance._UNSET:
-        # An independent request with no registered host origin cannot inherit the main thread's owner.
-        return {}
-    live = provenance.turn_source(agent)
-    if type(live) is provenance.SameHost:
-        peer = host.__dict__.get('_approval_launch_refs', {}).get(live.get('unit'))
-        return copy.deepcopy(peer) if peer else {}
-    send = getattr(agent, 'cur_send', None)
-    cfg = getattr(agent, 'cfg', None) or {}
-    shared = type(agent).__name__.startswith('Shared') or cfg.get('session_mode') == 'shared'
-    ref = getattr(send, 'approval_origin', None) if not shared or (getattr(agent, 'phone_turn', False) and getattr(agent, 'phone_seen', False)) else None
-    if ref:
-        return copy.deepcopy(ref)
-    # A desktop turn id is host-generated from a verified native transcript, not an agent field.
-    tid = getattr(host, 'desktop_turn', None) if getattr(agent, 'phone_turn', False) is False else None
-    refs = host.__dict__.get('_approval_origins', {})
-    return copy.deepcopy(refs.get(tid))
+    """Compatibility facade for the shared host-turn provenance resolver."""
+    from . import approval_review
+    return approval_review.source(host)
 
 
 def remember(host, turn, source):

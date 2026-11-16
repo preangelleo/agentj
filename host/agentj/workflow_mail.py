@@ -740,6 +740,13 @@ class Service:
                     return {'ok': False, 'why': 'send_unknown', 'provider_acceptance': None, 'error': rec['error'], 'delivery': key}
                 rec.update(status='sent', provider_acceptance=True)
                 await asyncio.to_thread(self.save, data)
+                # Only mail to an allowlisted owner can create an owner thread;
+                # guest/customer deliveries must never enter that ledger.
+                owner_addresses = {mail.norm_addr(a) for a in contacts.owner_emails(self.st)}
+                if mail.norm_addr(recipient) in owner_addresses:
+                    owner_state = mail.read_state(self.st)
+                    mail.remember_owner_thread(owner_state, str(msg['Message-ID']), recipient, cfg)
+                    mail.save_state(self.st, owner_state)
                 self.st.log('workflow_mail_send', task=contract['workflow_id'], id=c['id'], sha=rec['manifest_sha256'], result='sent')
                 return {'ok': True, 'provider_acceptance': True, 'sent': recipients, 'manifest_sha256': rec['manifest_sha256'],
                         'no_card': True, 'owner_direct': False, 'workflow_grant': True, 'workflow_id': contract['workflow_id']}

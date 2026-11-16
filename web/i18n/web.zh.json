@@ -3028,6 +3028,8 @@
   "p285.hintFrom": "已放好 {cmd}，从这条回复开始。可以补一句再发送",
   "p295.ct.okTitle": "邮件已发出",
   "p295.ct.okTo": "已发到：",
+  "p295.ct.selectedTo": "已选收件人：",
+  "p295.ct.sentCount": "实际送达 {n} 位收件人。",
   "p295.ct.spam": "对方没收到的话，请 TA 看一下垃圾邮件。",
   "p295.ct.refused": "{n} 个地址被对方邮件服务器拒收，没有送到。",
   "p295.ct.failTitle": "发送失败",

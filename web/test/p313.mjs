@@ -25,7 +25,7 @@ try {
     if(m.sort==='frequent') list.reverse();
     await reply({t:'ct_res',r:m.r,ok:true,contacts:list,count:list.length,me:['owner@example.com'],mail:{ready:true}});
    } else if(m.t==='ct_save'){saved++;await reply({t:'ct_res',r:m.r,ok:true});}
-   else if(m.t==='mail_fwd'){sent.push(m);await reply({t:'mail_fwd_res',r:m.r,ok:true,sent:m.to.length});}
+   else if(m.t==='mail_fwd'){sent.push(m);await reply({t:'mail_fwd_res',r:m.r,ok:true,sent:1,refused:1,skipped:1,skips:[{name:'sample.pdf',bytes:12,why:'secret'}]});}
    else return false;
    return true;
   };
@@ -60,6 +60,8 @@ try {
    check(await ev(p,`document.getElementById('ctFwd-other').textContent.includes('已选 2 人') && !document.getElementById('ctFwd-send').disabled`),'Done returns to selected summary');
    await press(p,'#ctFwd-send');await waitFor(p,`!!document.getElementById('ctFwd-to')`);
    check(sent.length===1&&sent[0].to.length===2&&sent[0].to.some(x=>x.addr==='colleague55@example.com'),'exact recipients sent');
+   check(await ev(p,`document.getElementById('ctFwd-body').textContent.includes('1') && document.getElementById('ctFwd-body').textContent.includes('收件人')`),'receipt uses actual sent count');
+   check(await ev(p,`document.getElementById('ctFwd-body').textContent.includes('拒收') && document.getElementById('ctFwd-body').textContent.includes('sample.pdf')`),'receipt identifies refused and skipped items');
    check(p.problems.length===0,'no browser errors '+J(p.problems));
    if(size==='phone'&&theme==='light'){
     await key(p,'Escape');await ev(p,`window.AgentJMailForward.open({turn:1,mid:'AAAAAAAAAAAAAAAAAAAAAA',name:'sample.pdf'})`);

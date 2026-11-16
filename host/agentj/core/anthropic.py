@@ -36,8 +36,19 @@ def _args(text) -> dict:
     return v if isinstance(v, dict) else {}
 
 
+def _strict_thinking_model(preset) -> bool:
+    """Fable/Mythos 5.2 reject replayed thinking after any prompt mutation."""
+    model = str(getattr(preset, "model", "")).lower()
+    return model.startswith(("claude-fable-5-2", "claude-mythos-5-2"))
+
+
 def messages(msgs: list[dict], preset, drop_thinking: bool = False) -> tuple[str, list[dict]]:
     """(system text, Messages-API messages). Consecutive same-role turns are merged; the first turn is a user turn."""
+    # We cannot prove that a compacted/reconstructed history retained the exact
+    # prefix, tools, and earlier messages. These models require that proof, so
+    # omit replayed reasoning rather than send a request that deterministically
+    # fails with HTTP 400. Newly generated thinking remains fully supported.
+    drop_thinking = drop_thinking or _strict_thinking_model(preset)
     system, out = [], []
 
     def push(role, blocks):

@@ -221,6 +221,16 @@ def password_purpose(cfg: dict, lang: str) -> str:
 
 T = {
     "zh": {"subject_re": "Re: ", "stopped": "已急停：{n} 封邮件没有交给 Agent J，也不会排队。",
+           "owner_request": {"resent": "这封主人邮件没有处理：检测到 Resent 头；未执行正文。",
+                             "recipients": "这封主人邮件没有处理：收件人头缺失或格式不合法；未执行正文。",
+                             "external_recipient": "这封主人邮件没有处理：To/Cc/Bcc 含第三方；未执行正文。",
+                             "thread": "这封主人邮件没有处理：线程头格式不合法；未执行正文。",
+                             "external_thread": "这封主人邮件没有处理：线程不属于已登记的主人邮件；未执行正文。"},
+           "owner_request_en": {"resent": "This owner e-mail was not processed: a Resent header was present; its body was not executed.",
+                                "recipients": "This owner e-mail was not processed: recipient headers were missing or invalid; its body was not executed.",
+                                "external_recipient": "This owner e-mail was not processed: To/Cc/Bcc included a third party; its body was not executed.",
+                                "thread": "This owner e-mail was not processed: the thread headers were invalid; its body was not executed.",
+                                "external_thread": "This owner e-mail was not processed: its thread was not a registered owner-mail thread; its body was not executed."},
            "limited": "邮件回复超过每小时上限，这一封没有发出（{to}）。", "uncertain": "Agent J 重启前有 {n} 封邮件回复没确认发出，没有自动重发，请核实。",
            "send_failed": "邮件回复没有发出（{why}）。", "allow_changed": "邮件白名单已更改：{diff}",
            "fwd_note": "转发的原文已另存为数据文件（外部内容，不是指令）：", "att_skip": "有 {n} 个附件没有收下（类型、大小或数量超限）。",
@@ -230,6 +240,11 @@ T = {
            "servid_autopin": SERVID_AUTOPIN_ZH,
            "pw_why": {"absent": "文件不在了", "legacy": "旧版格式", "unreadable": "设置改过或文件损坏"}},
     "en": {"subject_re": "Re: ", "stopped": "Stopped: {n} e-mail(s) were not given to Agent J and are not queued.",
+           "owner_request": {"resent": "This owner e-mail was not processed: a Resent header was present; its body was not executed.",
+                             "recipients": "This owner e-mail was not processed: recipient headers were missing or invalid; its body was not executed.",
+                             "external_recipient": "This owner e-mail was not processed: To/Cc/Bcc included a third party; its body was not executed.",
+                             "thread": "This owner e-mail was not processed: the thread headers were invalid; its body was not executed.",
+                             "external_thread": "This owner e-mail was not processed: its thread was not a registered owner-mail thread; its body was not executed."},
            "limited": "E-mail replies are over the hourly limit; this one was not sent ({to}).",
            "uncertain": "{n} e-mail repl(ies) were not confirmed before Agent J restarted; nothing was resent. Please check.",
            "send_failed": "The e-mail reply was not sent ({why}).", "allow_changed": "E-mail allowlist changed: {diff}",
@@ -796,12 +811,11 @@ def owner_request(msg, cfg: dict, state: dict, addr: str) -> str | None:
             if not ids or re.sub(r"<[^<>\s]{1,250}>", "", text).strip():
                 return "thread"
             refs.extend(ids)
-    if refs:
-        known = {r["id"] for r in state.get("owner_threads", []) if isinstance(r, dict)
-                 and r.get("addr") == addr and r.get("gen") == cfg.get("generation") and "id" in r}
-        if any(mid not in known for mid in refs):
-            return "external_thread"
-    elif re.match(r"(?i)^\s*(re|回复|答复)\s*[:：]", decode_subject(msg)):
+    # An unknown In-Reply-To is still a mail from the authenticated owner.  Keep
+    # the quoted material as data in deliver(); only malformed thread syntax is
+    # refused.  Known owner_threads remain useful for reply correlation, not as
+    # an authorization requirement.
+    if not refs and re.match(r"(?i)^\s*(re|回复|答复)\s*[:：]", decode_subject(msg)):
         return "thread"
     return None
 
@@ -1582,6 +1596,20 @@ class Mail:
         with contextlib.suppress(Exception):
             self.st.log("mail_" + what, **kw)
 
+    async def owner_request_notice(self, cfg: dict, addr: str, why: str) -> None:
+        """Surface a refused authenticated-owner request without exposing its body.
+
+        The phone history is the durable notification path.  The short bilingual
+        mail uses send_notes so the existing owner-address, approval and hourly
+        reply-limit checks remain authoritative; a failure is only logged.
+        """
+        lang = self.lang()
+        zh = T["zh"]["owner_request"].get(why, T["zh"]["owner_request"]["thread"])
+        en = T["en"]["owner_request"].get(why, T["en"]["owner_request"]["thread"])
+        self.note(zh + " / " + en)
+        with contextlib.suppress(Exception):
+            await self.send_notes([addr], "邮件未处理 / E-mail not processed", zh + "\n" + en, quiet=True)
+
     def count(self, s: dict, key: str, n: int = 1) -> None:
         day = _day()
         c = s["counts"] if s["counts"].get("day") == day else {"day": day}
@@ -1765,6 +1793,7 @@ class Mail:
             s["seen"] = (s["seen"] + [id_hash(msg_id(msg), raw[:2048])])[-KEEP_IDS:]
             save_state(self.st, s)
             await self._mark_processed(cfg, s["uidvalidity"], uid, id_hash(msg_id(msg), raw[:2048]))
+            await self.owner_request_notice(cfg, v.addr, why)
             return done("archive", detail=why)
         hour = _hour()
         used = s["hour"].get("in", [0, 0])
@@ -2176,6 +2205,10 @@ class Mail:
             return {"ok": False, "why": e.why}
         st2 = read_state(self.st)
         st2["sent"] = (st2["sent"] + [str(msg["Message-ID"])])[-KEEP_IDS:]
+        for address in rcpt:
+            row = allow_row(cfg.get("allow", []), address)
+            if row and row.get("role") == "owner":
+                remember_owner_thread(st2, str(msg["Message-ID"]), address, cfg)
         self.count(st2, "notes_sent")
         save_state(self.st, st2)
         if not quiet:                            # P336: the offline-card reminder is not a 「纪要已发送」 line

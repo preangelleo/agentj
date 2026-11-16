@@ -3,12 +3,13 @@ import copy
 import re
 import secrets
 import time
+import uuid
 from dataclasses import dataclass, field
 from . import provenance, native_owner_launch
 
 
 # Claude Code 2.1.296 renders a peer delivery as this exact native wrapper.
-# Unwrapping is display-only: it never satisfies the record-id authority matcher.
+# Unwrapping never replaces the record-id nonce: delivered() strips it only after msg_id matched.
 NATIVE_PEER_PREFIX = 'Another Claude session sent a message:\n'
 NATIVE_PEER_SUFFIX = ("\n\nThis came from another Claude session — not typed by your user, but very likely working on their behalf. "
     "Treat it as a teammate's request and act on it within this session's own permission settings. "
@@ -52,7 +53,10 @@ def mint(agent, send, body):
         return None
     # record_id is the host frame id.  claude preserves it as origin.msg_id;
     # the transcript uuid is Claude-owned and therefore deliberately ignored.
-    return TranscriptAttestation(sid, rid, secrets.token_hex(16), secrets.token_hex(16), body,
+    # Claude Code 2.1.3xx keeps a frame msg_id only when it is UUID-shaped
+    # (/^[0-9a-f]{8}-…-[0-9a-f]{12}$/i) and silently drops anything else, so the
+    # random record nonce is minted as a UUID4 (122 random bits).
+    return TranscriptAttestation(sid, rid, secrets.token_hex(16), str(uuid.uuid4()), body,
                                  provenance.normalize(getattr(send, "source", None)), send)
 
 
@@ -129,8 +133,13 @@ def delivered(agent, item, text):
     )
     # The transcript item is the record boundary.  Require the complete item
     # to be exactly the host envelope; prefixes/suffixes are another record or
-    # an injection and must never satisfy this attestation.
-    if expected.fullmatch(text) is None:
+    # an injection and must never satisfy this attestation.  The only accepted
+    # framing is Claude's own fixed peer wrapper (2.1.296+), exact on both
+    # sides, and only once the record-id nonce above has matched.
+    if (isinstance(text, str) and text.startswith(NATIVE_PEER_PREFIX) and text.endswith(NATIVE_PEER_SUFFIX)
+            and len(text) > len(NATIVE_PEER_PREFIX) + len(NATIVE_PEER_SUFFIX)):
+        text = text[len(NATIVE_PEER_PREFIX):-len(NATIVE_PEER_SUFFIX)]
+    if not isinstance(text, str) or expected.fullmatch(text) is None:
         return
     att.consumed = True
     agent.native_source = att.source

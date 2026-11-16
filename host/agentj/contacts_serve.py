@@ -173,8 +173,8 @@ class ContactService:
             m.add_attachment(data, maintype=main or "application", subtype=sub or "octet-stream", filename=_file_name(name))
         return m
 
-    def smtp_send(self, cfg: dict, pw: str, msg: EmailMessage, to: list[str]) -> tuple[int, str]:
-        """→ (recipients the server refused, its queue id from the 250 after DATA — `OK 1791991713 …-gsmtp` → `…-gsmtp`)."""
+    def smtp_send(self, cfg: dict, pw: str, msg: EmailMessage, to: list[str]) -> tuple[list[str], str]:
+        """→ (recipient addresses the server refused, its queue id from the 250 after DATA)."""
         from . import mail as M
         from . import mail_recovery
         c = mail_recovery.run(self.host, M.smtp_open, cfg, pw)
@@ -189,7 +189,7 @@ class ContactService:
         try:
             refused = c.send_message(msg, from_addr=cfg["address"], to_addrs=to) or {}
             words = re.findall(r"[A-Za-z0-9._@<>-]{6,}", (got.get("r") or b"").decode("ascii", "replace"))
-            return len(refused), (words[-1][:64] if words else "")
+            return list(refused), (words[-1][:64] if words else "")
         except M.MailError:
             raise
         except Exception as e:   # noqa: BLE001
@@ -344,10 +344,12 @@ class ContactService:
         except M.MailError as e:
             return {"ok": False, "why": "send_failed", "detail": e.why, "files": len(files), "_log": {**log, "why": e.why}}
         log["smtp"] = smtp_id
+        refused = set(refused)
+        sent = [r for r in recips if r["addr"] not in refused]
         self.recent[key] = now
-        await asyncio.to_thread(C.record_sent, self.st, recips, "phone")
-        return {"ok": True, "sent": len(recips) - refused, "files": len(files), "_log": log,
-                **({"refused": refused} if refused else {}),
+        await asyncio.to_thread(C.record_sent, self.st, sent, "phone")
+        return {"ok": True, "sent": len(sent), "files": len(files), "_log": log,
+                **({"refused": len(refused)} if refused else {}),
                 **({"skipped": len(skips), "skips": skips, "limit": FILES_MAX} if skips else {})}
 
     def _content(self, turn, mid, with_input: bool = True, mine: bool = False) -> tuple[str, str, list, str | None, list] | dict | str | None:
@@ -685,21 +687,24 @@ class ContactService:
             self.st.log("mail_send", result="denied", to=len(recips), why="stale")
             return {"ok": False, "why": "stale"}
         try:
-            await asyncio.to_thread(self.smtp_send, cfg, pw, msg, [r["addr"] for r in recips])
+            refused, _smtp_id = await asyncio.to_thread(self.smtp_send, cfg, pw, msg, [r["addr"] for r in recips])
         except M.MailError as e:
             self.st.log("mail_send", result="failed", why=e.why)
             return {"ok": False, "why": "send_failed", "detail": e.why, **({"allowlisted": added} if added else {})}
+        refused = set(refused)
+        sent = [r["addr"] for r in recips if r["addr"] not in refused]
         if mine and (getattr(pending, "found", 0) or file_keys):   # P573: sent — now the pickup cards (body values first, then the files' values)
             rep = await owner_route.deliver(self.host, pending, "mail", self.lang(), subject or "邮件")
             if file_keys:
                 held = sum(len(r["values"]) for _s, r in file_keys)
                 n = await owner_route.offer_files(self.host, file_keys, self.lang(), owner_route.MAX_CARDS - rep["cards"])
                 rep = {**rep, "cards": rep["cards"] + n, "withheld": rep["withheld"] + max(0, held - n)}
-        rec = await asyncio.to_thread(C.record_sent, self.st, [{"addr": r["addr"], "name": r["name"]} for r in recips], "agent")
-        self.st.log("mail_send", result="sent", to=len(recips), files=len(files), owner=mine, fmt=fmt,
+        rec = await asyncio.to_thread(C.record_sent, self.st, [{"addr": r["addr"], "name": r["name"]} for r in recips if r["addr"] in sent], "agent")
+        self.st.log("mail_send", result="sent", to=len(sent), refused=len(refused), files=len(files), owner=mine, fmt=fmt,
                     cc=len(addr_of["cc"]), bcc=len(addr_of["bcc"]), **({"id": granted, "via": "automation_grant"} if granted
                        else {"via": src["kind"]} if outside else {}))
-        return {"ok": True, "sent": [r["addr"] for r in recips], "files": names, "format": fmt,
+        return {"ok": True, "sent": sent, "files": names, "format": fmt,
+                **({"refused": len(refused), "refused_recipients": sorted(refused)} if refused else {}),
                 **({"html_flattened": True} if flat else {}),
                 **({"cc": addr_of["cc"]} if addr_of["cc"] else {}), **({"bcc": addr_of["bcc"]} if addr_of["bcc"] else {}),
                 **({"local_images": info["local_images"]} if info.get("local_images") else {}),

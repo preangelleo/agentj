@@ -17,9 +17,14 @@ row gets no dollar estimate.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
+
+
+_LOG = logging.getLogger(__name__)
+_WARNED_PRICE_MODELS: set[str] = set()
 
 PRICES_CHECKED = "2026-10-13"
 # Anthropic first-party list prices (claude-api reference, 2026-10). cw = 5-minute cache write (1.25 × input).
@@ -33,7 +38,7 @@ PRICES = {
     "claude-opus-4-8": {"in": 5.0, "out": 25.0, "cr": 0.5, "cw": 6.25},
     "claude-opus-4-7": {"in": 5.0, "out": 25.0, "cr": 0.5, "cw": 6.25},
     "claude-opus-4-6": {"in": 5.0, "out": 25.0, "cr": 0.5, "cw": 6.25},
-    "claude-sonnet-5-5": {"in": 2.0, "out": 10.0, "cr": 0.1, "cw": 2.5},
+    "claude-sonnet-5-5": {"in": 2.0, "out": 10.0, "cr": 0.2, "cw": 2.5},
     "claude-sonnet-5": {"in": 2.0, "out": 10.0, "cr": 0.2, "cw": 2.5},
     "claude-sonnet-4-6": {"in": 3.0, "out": 15.0, "cr": 0.3, "cw": 3.75},
     "claude-haiku-5-5": {"in": 0.1, "out": 0.5, "cr": 0.01, "cw": 0.125},
@@ -100,14 +105,36 @@ def table(st=None) -> dict:
 
 
 def price_of(model, st=None, tab: dict | None = None) -> dict | None:
-    """Exact id first, then the longest table key the id starts with (`claude-opus-5-5-fast` → no; a dated id is cut
-    first by norm_model)."""
+    """Resolve an exact price, then a dated/patched model in the same known family.
+
+    A family fallback is deliberately marked with a warning: it keeps usage visible
+    when a vendor adds a model suffix, but does not pretend the price was verified.
+    """
     m = norm_model(model)
     if not m:
         return None
     tab = tab if tab is not None else table(st)
     if m in tab:
         return tab[m]
+    # Prefer the current 5.2 row over the older broad `claude-*-5` rows.
+    # Future versions in these families are warned, not silently treated as exact.
+    for family in ("claude-fable-5-", "claude-mythos-5-"):
+        if m.startswith(family):
+            suffix = m[len(family):]
+            version = suffix.split("-", 1)[0]
+            if version.isdigit() and version != "1":
+                key = family + "2"
+                if key in tab:
+                    if m not in _WARNED_PRICE_MODELS:
+                        _WARNED_PRICE_MODELS.add(m)
+                        _LOG.warning("unverified model price fallback: %s uses %s", m, key)
+                    return tab[key]
+    for key in sorted(tab, key=len, reverse=True):
+        if m.startswith(key + "-"):
+            if m not in _WARNED_PRICE_MODELS:
+                _WARNED_PRICE_MODELS.add(m)
+                _LOG.warning("unverified model price fallback: %s uses %s", m, key)
+            return tab[key]
     return None
 
 
