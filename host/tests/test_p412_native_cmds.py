@@ -14,6 +14,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest.mock import AsyncMock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from agentj import agent, harness_cmds, preferences, serve, slash  # noqa: E402
@@ -176,6 +177,76 @@ class Tables(unittest.TestCase):
             host.agent = SharedClaudeAgent.__new__(SharedClaudeAgent)
             self.assertIsNone(host.native_route("config"))
             self.assertIsNone(host.native_text("/config"))
+
+    def test_shared_on_slash_hands_registered_command_to_owner(self):
+        from agentj.preference_values import put
+        from agentj.shared import SharedClaudeAgent
+        from agentj.shared_codex import SharedCodexAgent
+        for kind, cls in (("claude", SharedClaudeAgent), ("codex", SharedCodexAgent)):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as d:
+                host, s, _ = _host(d)
+                host.agent = cls.__new__(cls)
+                host.agent.init = {"skills": []}
+                host.agent_cfg = {"kind": kind, "dir": d}
+                put(host.preferences, "menu.items", [{"id": "custom", "cmd": "/my-cmd", "desc": "Custom"}])
+                host._accept = AsyncMock(return_value=types.SimpleNamespace(turn=42))
+                turn = asyncio.run(host.on_slash(s, "my-cmd", "hello", False, True))
+                self.assertEqual(turn, 42)
+                host._accept.assert_awaited_once_with(s, "/my-cmd hello", sid=None)
+
+    def test_shared_on_slash_refuses_unknown_command(self):
+        with tempfile.TemporaryDirectory() as d:
+            host, s, _ = _host(d)
+            from agentj.shared import SharedClaudeAgent
+            host.agent = SharedClaudeAgent.__new__(SharedClaudeAgent)
+            host.agent.init = {"skills": []}
+            host.agent_cfg = {"kind": "claude", "dir": d}
+            host._accept = AsyncMock()
+            asyncio.run(host.on_slash(s, "not-registered", "", False, True))
+            host._accept.assert_not_awaited()
+
+    def test_shared_registered_menu_cannot_unlock_refused_commands(self):
+        from agentj.preference_values import put
+        from agentj.shared import SharedClaudeAgent
+        with tempfile.TemporaryDirectory() as d:
+            host, s, _ = _host(d)
+            host.agent = SharedClaudeAgent.__new__(SharedClaudeAgent)
+            host.agent.kind = "claude"
+            host.agent.init = {"skills": []}
+            host.agent.passthrough = lambda _n: False
+            host.agent_cfg = {"kind": "claude", "dir": d}
+            put(host.preferences, "menu.items", [{"id": n, "cmd": "/" + n, "desc": n} for n in ("permissions", "login", "my-cmd")])
+            for n in ("permissions", "login"):
+                self.assertIsNone(host.native_route(n), n)
+                self.assertIsNone(host.native_text("/" + n), n)
+                host._accept = AsyncMock()
+                asyncio.run(host.on_slash(s, n, "", False, True))
+                host._accept.assert_not_awaited()
+            self.assertEqual(host.native_route("my-cmd"), "agent")
+            self.assertIsNone(host.native_route("config"), "shared Claude: unregistered built-ins unchanged")
+
+    def test_shared_registered_command_obeys_estop_and_ignores_agent_menu_file(self):
+        import json as _json
+        from agentj.preference_values import put
+        from agentj.shared import SharedClaudeAgent
+        from agentj.shared_codex import SharedCodexAgent
+        for kind, cls in (("claude", SharedClaudeAgent), ("codex", SharedCodexAgent)):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as d:
+                host, s, _ = _host(d)
+                host.agent = cls.__new__(cls)
+                host.agent.init = {"skills": []}
+                host.agent_cfg = {"kind": kind, "dir": d}
+                put(host.preferences, "menu.items", [{"id": "custom", "cmd": "/my-cmd", "desc": "Custom"}])
+                host.estop = {"on": True}
+                host._accept = AsyncMock()
+                asyncio.run(host.on_slash(s, "my-cmd", "", False, False))
+                host._accept.assert_not_awaited()
+                host.estop = {"on": False}
+                put(host.preferences, "menu.items", [])
+                pathlib.Path(d, ".agentj").mkdir()
+                pathlib.Path(d, ".agentj", "menu.json").write_text(_json.dumps({"items": [{"cmd": "/agent-added", "desc": "x"}]}))
+                asyncio.run(host.on_slash(s, "agent-added", "", False, False))
+                host._accept.assert_not_awaited()
 
     def test_own_names_cover_whitelist(self):
         self.assertTrue(set(slash.WHITELIST) <= harness_cmds.OWN)

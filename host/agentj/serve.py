@@ -4654,19 +4654,30 @@ class Host:
     def native_route(self, name):
 
         a = self.agent
-        if not a or isinstance(a, SharedClaudeAgent):
+        if not a:
             return None
-        return harness_cmds.route(a.kind, name, getattr(a, "init", None))
+        registered = preferences.get(getattr(self, "preferences", None), "menu.items", [])
+        registered = harness_cmds.registered_commands(registered)
+        if isinstance(a, SharedClaudeAgent):
+            init = getattr(a, "init", None)
+            skills = {s for s in (init or {}).get("skills", []) if isinstance(s, str)}
+            return "agent" if isinstance(name, str) and name in registered and name not in skills \
+                and harness_cmds.route(a.kind, name, init) != "none" else None
+        return harness_cmds.route(a.kind, name, getattr(a, "init", None), registered)
 
     def native_text(self, text):
 
         a = self.agent
-        if not a or isinstance(a, SharedClaudeAgent):
+        if not a:
             return None
         p = slash.parse(text)
         if not p or a.passthrough(p[0]):           # a skill of the same name (/focus, /import …) stays the skill
             return None
-        return harness_cmds.agent_text(text, a.kind, getattr(a, "init", None), self.lang)
+        registered = harness_cmds.registered_commands(preferences.get(getattr(self, "preferences", None), "menu.items", []))
+        if isinstance(a, SharedClaudeAgent):         # shared Claude: only the owner's menu registrations, as before otherwise
+            return harness_cmds.agent_text(text, "claude", getattr(a, "init", None), self.lang, registered) \
+                if p[0] in registered else None
+        return harness_cmds.agent_text(text, a.kind, getattr(a, "init", None), self.lang, registered)
 
     def agent_text(self, text: str) -> None:
         text = drop_replacement(text)       # P281: every harness's reply text passes here — no stray 「◆?」 on any channel
@@ -8214,6 +8225,32 @@ class Host:
             self.activity("slash", cmd="goal", result=res.kind, by=by)
             self.cmd_card("goal", res, by, turn)
             return turn
+        # A direct phone slash bypasses ordinary message ingress. Shared sessions may hand only a
+        # command the owner registered in menu.items (never the Agent-writable .agentj/menu.json),
+        # never a refused one, and only under the same estop / seat rules as ordinary messages.
+        from .shared_codex import SharedCodexAgent
+        if self.agent and isinstance(self.agent, (SharedClaudeAgent, SharedCodexAgent)):
+            kind = getattr(self.agent, "kind", None)
+            registered = harness_cmds.registered_commands(preferences.get(self.preferences, "menu.items", []))
+            skills = {x for x in (getattr(self.agent, "init", {}) or {}).get("skills") or [] if isinstance(x, str)} \
+                if kind == "claude" else set()
+            if name in registered and name not in skills and name not in slash.WHITELIST + slash.INTERNAL + slash.AGENT_CMDS \
+                    and harness_cmds.route(kind, name) != "none":
+                self.st.log("slash_in", cid=s.cid, device=s.device, cmd="registered")
+                why = "estop" if self.stopped() else ("seat" if self.seat_refusal() else None)
+                if why:
+                    turn = self.cmd_turn(s, "refused", "")
+                    if why == "seat":
+                        self.seat_note(self.seat_refusal())
+                    text = pick(self.lang, "已急停：恢复之后再用这个命令。", "Emergency stop is on: use this command after resuming.") \
+                        if why == "estop" else slash.refuse(self.lang)
+                    self.st.log("slash", cmd="registered", result="refused", why=why)
+                    self.activity("slash", cmd="registered", result="refused", by=by)
+                    self.cmd_card("refused", slash.Result(text, "refused"), by, turn)
+                    return turn
+                self.activity("slash", cmd="registered", result="agent", by=by)
+                send = await self._accept(s, "/" + name + (" " + arg if arg else ""), sid=None)
+                return send.turn if send is not None else self.cmd_turn(s, name, arg)
         known = name in slash.WHITELIST + slash.INTERNAL
         self.st.log("slash_in", cid=s.cid, device=s.device, cmd=name if known else "other")
         turn = self.cmd_turn(s, name if known else "refused", arg if known else "")

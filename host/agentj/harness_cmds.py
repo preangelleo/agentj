@@ -81,6 +81,8 @@ NONE = {
         "terminal-setup": ("这是 Agent J 主机终端的换行键设置；网页里 Shift+Enter 就是换行", "That sets up the computer's terminal; on the web Shift+Enter is a new line"),
         "ultrareview": ("云端深度审查要主人在 Agent J 主机终端里亲自启动（计费）", "The billed cloud review is started by the owner at the computer's terminal"),
         "bug": ("向 Anthropic 报问题会附上对话记录，请在 Agent J 主机终端里亲自发", "A bug report to Anthropic carries the conversation; send it yourself at the terminal"),
+        "allowed-tools": ("权限变更必须由主人本人在现有手机 UV 审批入口确认；不能通过终端命令代办。",
+                          "Permission changes require the owner's existing phone UV approval; terminal-command delegation is unavailable."),
         "heapdump": ("内存转储会把登录凭据写到磁盘，网页里不做", "A heap dump writes login tokens to disk; not from the web"),
         "design-consent": ("授权访问要主人在 Agent J 主机终端里亲自确认", "Granting access is confirmed by the owner at the computer's terminal"),
         "workflow-launch-exec": ("这是 Claude Code 内部用的命令，网页里不做", "An internal Claude Code command; not from the web"),
@@ -122,14 +124,31 @@ def _kind(kind):
     return kind if kind in TUI else ("opencode" if isinstance(kind, str) and kind.startswith("opencode") else kind)
 
 
-def _reported(init) -> set[str]:
+def registered_commands(items) -> set[str]:
+    """Return command names registered in the host's menu preference.
+
+    ``menu.items`` is the source used by ``menu.for_phone`` and the ``agentj
+    menu add`` command. Keep this public so routing does not inspect a private
+    menu implementation or mistake an init report for registration.
+    """
+    out = set()
+    for item in items or ():
+        if not isinstance(item, dict) or item.get("disabled"):
+            continue
+        cmd = item.get("cmd")
+        if isinstance(cmd, str) and cmd.startswith("/") and CMD_RE.match(cmd[1:]):
+            out.add(cmd[1:])
+    return out
+
+
+def reported_commands(init) -> set[str]:
     rep = (init or {}).get("slash_commands")
     skills = (init or {}).get("skills")
     return {n for n in rep if isinstance(n, str)} - ({x for x in skills if isinstance(x, str)} if isinstance(skills, list) else set()) \
         if isinstance(rep, list) else set()
 
 
-def route(kind, name, init=None):
+def route(kind, name, init=None, registered=None):
     """"run" | "agent" | "none" for a typed `/name` of this harness, or None (not one of its commands: as before — a skill
     passes through, anything else is refused)."""
     kind = _kind(kind)
@@ -137,12 +156,12 @@ def route(kind, name, init=None):
         return None
     if name in RUN.get(kind, ()):
         return "run"
-    if name in NONE[kind]:
+    if name in NONE[kind]:                  # permission screens and terminal-only commands stay refused, registered or not
         return "none"
     if kind == "claude":
-        if name in RUN["claude"]:
-            return "run"
-        if name in _CLAUDE_AGENT or name in _reported(init):   # settings / screens, the owner's custom commands, the unknown
+        if name in _CLAUDE_AGENT or name in reported_commands(init) or name in (registered or ()):
+            # settings / screens, the owner's menu registrations, and the
+            # init-reported long tail are delegated.
             return "agent"
         return None
     return "agent" if name in {n for n, _, _ in TUI[kind]} else None
@@ -153,10 +172,10 @@ def none_note(kind, name, lang="zh") -> str:
     return _d(pair, lang) if pair else ""
 
 
-def agent_text(text, kind, init=None, lang: str = "zh") -> str | None:
+def agent_text(text, kind, init=None, lang: str = "zh", registered=None) -> str | None:
     """The message the main Agent gets for a typed `agent` command (None for anything else). Never starts with "/"."""
     p = slash.parse(text)
-    if not p or route(kind, p[0], init) != "agent":
+    if not p or route(kind, p[0], init, registered) != "agent":
         return None
     name, arg = p
     h = HARNESS.get(_kind(kind), str(kind))

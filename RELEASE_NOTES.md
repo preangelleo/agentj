@@ -1,5 +1,5 @@
-# Agent J v0.30.29
+# Agent J v0.30.30
 
-New agentj relay: send a task to Claude Code or Codex via your Agents Relay key, each job confirmed on your phone; QR vision works with new Claude models.
+In shared sessions, custom commands you registered in the menu now reach the Agent from your phone; unregistered and permission commands are still refused.
 
-新增 agentj relay：经你的 Agents Relay 密钥把任务交给 Claude Code 或 Codex 后台执行，每个任务需在手机上确认；二维码视觉识别兼容新版 Claude 模型。
+共享会话里，你在菜单中登记的自定义命令从手机发出后会交给 Agent 执行；未登记的命令和权限类命令仍然拒绝。
