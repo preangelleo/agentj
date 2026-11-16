@@ -1499,6 +1499,10 @@ class ClaudeAgent(Agent):
                 self.turn_model = msg["model"]
             if not synthetic:
                 self._note_tools(msg.get("content"), ev.get("parent_tool_use_id"))
+                from . import trust_taint             # S2/S3: this session's own tool call (its result follows at once)
+                for block in msg.get("content") or []:
+                    if isinstance(block, dict) and block.get("type") == "tool_use":
+                        trust_taint.observe_tool(self, block.get("name"), block.get("input"))
             if not synthetic and not ev.get("parent_tool_use_id") and getattr(self.host, "peers", None) is not None:
                 for block in msg.get("content") or []:
                     if isinstance(block, dict) and block.get("type") == "tool_use":

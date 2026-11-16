@@ -428,6 +428,24 @@ def control_sockets(environ=None, allow_docker: bool = False) -> list[str]:
     return out
 
 
+def _foreign_state(sock: str, root: str, home: str, work: str) -> str | None:
+    """The Agent J state folder (the one holding `agentperm/`, ≤ 3 levels up) a listed socket lives in, when that is not
+    this fence's own and holds none of root / HOME / the working folder (see bwrap_argv). None otherwise."""
+    d = os.path.dirname(sock)
+    for _ in range(3):
+        try:
+            if os.path.isdir(os.path.join(d, "agentperm")) and not os.path.islink(d):
+                if _under(d, root) or any(_under(x, d) for x in (root, home, work)):
+                    return None
+                return d
+        except OSError:
+            return None
+        if os.path.dirname(d) == d:
+            return None
+        d = os.path.dirname(d)
+    return None
+
+
 def ancestors(paths) -> list[str]:
     """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
     out = set()
@@ -728,6 +746,14 @@ def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = 
         a += ["--tmpfs", d]
     socks = [p for p in control_sockets(env, allow_docker)
              if visible(p) and not _under(p, root) and not any(_under(p, d) for d in dirs)]
+    # 0.30.25: another Agent J state's sockets (a second instance; the real one seen from a test's state) — that whole
+    # folder becomes an empty tmpfs. A file bind needs a mount point: when that serve had just removed its socket (a
+    # restart), bwrap created it on the real disk as a 0-byte 0444 file and the next serve could not start (11-16).
+    states = sorted({d for d in (_foreign_state(p, root, home, work) for p in socks) if d}, key=len)
+    for d in states:
+        if not any(_under(d, o) for o in states if o != d):
+            a += ["--tmpfs", d]
+    socks = [p for p in socks if not any(_under(p, d) for d in states)]
     for p in socks[:MAX_SOCKETS]:
         a += ["--ro-bind", "/dev/null", p]
     for d in g["other"]:     # a second (old) state directory: hidden whole; the legacy symlink resolves to root

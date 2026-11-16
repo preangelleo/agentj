@@ -49,6 +49,7 @@ T = {
         "asr_secs": "{s} 秒，",
         "asr_fail": "转写失败（{why}）——音频仍在上面的路径。",
         "asr_partial": "（转写不完整：{why}，后面的部分没有转出来——完整音频仍在上面的路径。）",
+        "asr_fallback": "（远程转写服务不可用，已改用本机转写。）",
         "asr_more": "（转写较长，上面只是开头；全文在 {path}）",
         "quote_head": "【回复 #{id} · {who} · {hhmm}】",
         "excerpt": "（摘录）",
@@ -78,6 +79,7 @@ T = {
         "asr_secs": "{s} s, ",
         "asr_fail": "Transcription failed ({why}) — the audio is still at the path above.",
         "asr_partial": "(Transcript incomplete: {why}; the rest was not transcribed — the full audio is still at the path above.)",
+        "asr_fallback": "(The remote transcription service was unavailable; local transcription was used.)",
         "asr_more": "(Long transcript: only the beginning is above; the full text is at {path})",
         "quote_head": "[Reply to #{id} · {who} · {hhmm}]",
         "excerpt": "(excerpt)",
@@ -220,6 +222,8 @@ def render(text: str, files: list[dict], lang: str = "zh", quote: str | None = N
         head = t["asr_head"].format(secs=secs, name=os.path.basename(f["path"]))
         if a.get("ok") and (a.get("text") or "").strip():
             parts.append(head + "\n" + a["text"])
+            if a.get("notice") == "local_fallback":
+                parts.append(t["asr_fallback"])
             if a.get("file"):
                 parts.append(t["asr_more"].format(path=a["file"]))
             if a.get("partial"):

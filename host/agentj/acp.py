@@ -529,6 +529,13 @@ class AcpAgent(Agent):
             tid = u.get("toolCallId")
             if isinstance(tid, str):
                 self.tools[tid] = {"title": u.get("title"), "kind": u.get("kind"), "raw": u.get("rawInput")}
+                from . import trust_taint                # S2/S3: the served session's own tool step (ACP tool kinds)
+                if u.get("kind") == "fetch":
+                    trust_taint.mark(self, "web")
+                elif u.get("kind") == "execute":
+                    trust_taint.observe_tool(self, "Bash", u.get("rawInput"))
+                else:
+                    trust_taint.observe_tool(self, u.get("title"), u.get("rawInput"))
                 if len(self.tools) > 500:
                     self.tools.pop(next(iter(self.tools)))
         elif kind == "tool_call_update":

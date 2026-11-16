@@ -1,5 +1,5 @@
-# Agent J v0.30.24
+# Agent J v0.30.25
 
-Services always restart after an upgrade and background jobs keep running. Clearer undo button on notice cards, refined card spacing, Anthropic 5.2 models.
+The iPhone Home Screen status bar is always black; high-risk background sends are refused; voice transcription falls back to local when the service is down.
 
-升级后服务一定会重新启动，后台任务不会再被重启误杀，会继续运行；卡片间距更舒适，通知卡撤销按钮更醒目，iPhone 顶部状态栏颜色与页面一致；支持 Anthropic 5.2 模型。
+iPhone 主屏 App 顶部状态栏始终是黑色；后台自己发起的高危外发直接拒绝；手机语音转写服务不可用时自动改用本机转写。

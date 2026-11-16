@@ -59,6 +59,25 @@ class CustomASR(unittest.TestCase):
         self.assertEqual(local.transcribe.call_args.kwargs['engine_override'],'sensevoice')
         self.assertEqual(local.shutdown.call_count,2)
 
+    def test_remote_unreachable_falls_back_to_local(self):
+        local=Mock();local.transcribe.return_value={'ok':True,'text':'本地兜底','engine':'sherpa'}
+        with patch('agentj.voice.cloud_asr',return_value={'ok':False,'reason':'engine_failed','detail':'No route to host'}):
+            result=voice.transcribe('/sample',config(),60,state_dir='/isolated',local_asr=local)
+        self.assertEqual((result['ok'],result['text'],result['notice']),(True,'本地兜底','local_fallback'))
+
+    def test_remote_empty_text_is_not_no_speech(self):
+        local=Mock();local.transcribe.return_value={'ok':True,'text':'本地兜底','engine':'sherpa'}
+        with patch('agentj.voice._request',return_value=b'{"text":""}'):
+            result=voice.transcribe('/sample',config(),60,state_dir='/isolated',local_asr=local)
+        self.assertEqual(result['notice'],'local_fallback')
+        self.assertNotEqual(result.get('reason'),'no_speech')
+
+    def test_local_fallback_failure_is_service_failure(self):
+        local=Mock();local.transcribe.return_value={'ok':False,'reason':'engine_failed'}
+        with patch('agentj.voice.cloud_asr',return_value={'ok':False,'reason':'engine_failed'}):
+            result=voice.transcribe('/sample',config(),60,state_dir='/isolated',local_asr=local)
+        self.assertEqual((result['ok'],result['reason'],result['notice']),(False,'engine_failed','remote_unavailable'))
+
     def test_failure_not_silent_and_no_exception_detail(self):
         local=Mock();local.transcribe.side_effect=ValueError('PRIVATE_SENTINEL')
         with patch('agentj.voice.cloud_asr',return_value={'ok':False,'reason':'engine_failed'}):

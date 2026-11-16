@@ -346,6 +346,21 @@ def failure(st):
     return None
 
 
+def acknowledge_after_start(st, active: bool):
+    """0.30.25: a serve that is up under the service manager ends a *completed* failure (gave up, or a pending/running
+    record older than 90 s) the way `agentj service start` does. `service restart` (rescue watchdog, phone repair, a
+    plain systemctl restart) never did, so a healed host kept the old failure and the next upgrade's health step failed
+    on `upgrade-restart` (Olares 11-16). A rollback stays visible (a warning, never a blocker); a recovery in flight
+    (< 90 s) is not a failure and is left alone. → the acknowledged record, or None."""
+    rec = failure(st)
+    if not rec or not active or rec.get('status') == 'rolled_back' or rec.get('reason') == 'rolled_back':
+        return None
+    from . import __version__
+    record(st, 'ok', __version__)
+    (st.root / NOTICE).unlink(missing_ok=True)
+    return rec
+
+
 def failure_text(rec, *, mobile=False):
     if mobile:
         if rec and rec.get('reason') == 'rolled_back':

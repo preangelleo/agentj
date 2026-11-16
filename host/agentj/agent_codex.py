@@ -944,6 +944,9 @@ class CodexAgent(Agent):
         self.last_note = time.monotonic()
         if method == "item/started" or method == "item/completed":
             it = p.get("item") if isinstance(p.get("item"), dict) else {}
+            if method == "item/completed":
+                from . import trust_taint             # S2/S3: the served thread's and its child threads' completed items
+                trust_taint.observe_codex(self, it)
             if th == self.tid:
                 tool = CODEX_TOOL_ITEMS.get(it.get("type"))
                 if tool and method == "item/started":

@@ -836,6 +836,12 @@ class SharedClaudeAgent(Agent):
                 event['_agentj_dispatch_context'] = output['additionalContext']
         from . import approval_material
         approval_material.observe(self.host, self, event)
+        if name in ("PostToolUse", "PostToolUseFailure"):
+            # S2/S3: the served session's own completed tool call (the hook event, never last_tool / display state).
+            from . import trust_taint
+            trust_taint.observe_claude(self, event)
+            # Nothing here ends the mark: the session's own shell can emit any hook event (a Stop also ends the host's
+            # turn). Only the start of the next host-built turn does (Host.agent_turn_start).
         if not aid and name in ("PreToolUse", "PermissionRequest"):
             from .approval_review import explanation_tool_allowed
             limited = explanation_tool_allowed(self.host, event.get("tool_name"), event.get("tool_input") or {})
@@ -2864,7 +2870,12 @@ class SharedClaudeAgent(Agent):
         if merged:
             merged()
         self.cur_send = nxt
-        self.host.agent_turn_start(nxt.text, nxt)
+        from . import trust_taint
+        read = trust_taint.tainted(self)              # S2/S3: merged into the running turn — what it read stays read
+        try:
+            self.host.agent_turn_start(nxt.text, nxt)
+        finally:
+            trust_taint.restore(self, read)
         from . import compactprep
         text = compactprep.decorate(self, nxt)
         source = provenance.normalize(getattr(nxt, "source", None))

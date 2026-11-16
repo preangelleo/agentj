@@ -23,6 +23,13 @@ class Attribution(unittest.TestCase):
         self.assertIn('没有听到说话',self.render('no_speech'))
         self.assertIn('no speech heard',self.render('no_speech','en'))
 
+    def test_local_fallback_success_is_reported_truthfully(self):
+        files=[{'path':'/synthetic/recording.wav','mime':'audio/wav','bytes':1000,
+                'asr':{'ok':True,'text':'本地转写内容','notice':'local_fallback','secs':61}}]
+        result=compose.render('',files,'zh')
+        self.assertIn('本地转写内容',result)
+        self.assertIn('远程转写服务不可用，已改用本机转写',result)
+
     def test_text_plus_failed_audio_does_not_ask_owner_to_repeat_entire_message(self):
         result=self.render('broken',text='Please review the document.')
         self.assertIn('Please review the document.',result)

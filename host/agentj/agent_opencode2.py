@@ -214,6 +214,9 @@ class OpenCodeV2Agent(OpenCodeAgent):
         p = ev.get("data") if isinstance(ev.get("data"), dict) else {}
         mine = p.get("sessionID") == self.sid and self.sid is not None
         kid = p.get("sessionID") in self.children           # P426: a sub-agent's session (parentID = ours)
+        if (mine or kid) and isinstance(t, str) and t.startswith("session.tool."):
+            from . import trust_taint      # S2/S3: the served session's (and its sub-agents') own tool step
+            trust_taint.observe_tool(self, p.get("tool"), p.get("input"))
         if mine:
             self.touch()                   # P219: progress on our session (stall watch)
         if mine and getattr(self, "collect", None) is None and not getattr(self, "quiet", False) and opencode2_output(t):

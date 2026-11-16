@@ -34,4 +34,15 @@ test('R-0001 iOS top chrome is always Sooty and runtime theme/status writes are 
   assert.doesNotMatch(RELAY, /setThemeColor\(color\)/);
   assert.match(IOS, /const color = '#141414'/);
   assert.doesNotMatch(IOS, /setProperty\(['"]--ios-top/);
+  // P593: iOS 26 Home Screen apps colour the iOS-painted status bar from the page's top row (WebKit
+  // sampledPageTopColor, frozen per document) — so the root layer is Sooty and never thinner than 2 px,
+  // whatever the safe-area inset, and the Home Screen under-page colour is Sooty.
+  const top = CSS.match(/html\[data-ios="1"\]::before\{([^}]+)\}/)?.[1];
+  assert.ok(top, 'root status layer');
+  assert.match(top, /background:#141414;/);
+  assert.match(top, /min-height:2px;/);
+  assert.match(top, /position:fixed;left:0;right:0;top:var\(--vvtop,0px\);/);
+  assert.doesNotMatch(top, /--(?:pg|state|c-noir|ios-chrome|ios-bottom)|opacity|transparent/);
+  assert.match(CSS, /html\[data-ios="1"\]\[data-standalone="1"\]\{background:#141414!important\}/);
+  assert.match(HTML, /<meta name="apple-mobile-web-app-status-bar-style" content="default">/);
 });

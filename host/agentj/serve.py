@@ -602,6 +602,48 @@ AUTONOMOUS_CHOICE = ("全放行：按主人已有目标自主选择合理默认�
 RELAY_FRAME_BACKLOG = 256      # H1: frames still running across all phones before the relay read loop waits
 
 
+async def claim_control_sock(sock, log=None) -> None:
+    """0.30.25: what is left on the control.sock path before this serve binds it. A live serve (it accepts, or is there
+    but does not answer within 5 s) → SystemExit, as before. Everything else is residue and never stops the start: a
+    socket that refuses → removed; a non-socket (the 0-byte 0444 file a fence's mount point leaves when the socket was
+    gone for a moment, 11-16 Olares), a socket we may not connect to, or an inode of another user → moved aside to
+    control.sock.stale-<UTC time> (removed if it cannot be moved)."""
+    import stat as _stat
+    try:
+        st_ = os.lstat(sock)
+    except FileNotFoundError:
+        return
+    kind = "file"
+    if _stat.S_ISSOCK(st_.st_mode) and st_.st_uid == os.getuid():
+        try:
+            _, w = await asyncio.wait_for(asyncio.open_unix_connection(str(sock)), 5)
+        except (ConnectionRefusedError, FileNotFoundError):
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(sock)
+            return
+        except asyncio.TimeoutError:
+            raise SystemExit(f"agentj serve is already running ({sock})") from None
+        except OSError:
+            kind = "socket"                   # EACCES / EPERM: not a socket a serve of ours listens on
+        else:
+            w.close()
+            raise SystemExit(f"agentj serve is already running ({sock})")
+    elif _stat.S_ISSOCK(st_.st_mode):
+        kind = "foreign"
+    aside = f"{sock}.stale-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+    try:
+        os.replace(sock, aside)
+    except OSError:
+        aside = ""
+        try:
+            os.unlink(sock)
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            raise SystemExit(f"agentj serve: cannot clear {sock}: {e}") from None
+    if log:
+        log("control_sock_stale", kind=kind, status="moved" if aside else "removed")
+
 class Host:
     def __init__(self, st: State, events: str = "text", read_stdin: bool = True):
         self.st = st
@@ -5032,6 +5074,11 @@ class Host:
             if warning and (notice.exists() or service_recovery.receipt_path().exists() or warning.get("status") != "failed"):
                 self.cmd_card("update", slash.Result(service_recovery.failure_text(warning,mobile=True), "error"))
                 notice.unlink(missing_ok=True)
+            if warning:                              # 0.30.25: up under the service manager → a finished failure is over
+                from . import service as _svc
+                active = await asyncio.to_thread(lambda: _svc.status().get("active") == "active")
+                if await asyncio.to_thread(service_recovery.acknowledge_after_start, self.st, active):
+                    self.st.log("upgrade_recovery_acknowledged", status=warning.get("status"))
             completed = phone_update.take(self.st)
             if completed:
                 if completed.get("reason") in ("upgraded", "doctor_failed"):
@@ -5085,7 +5132,8 @@ class Host:
         return web, machine
 
     def agent_turn_start(self, text: str, send=None) -> None:
-        from . import application_ingress
+        from . import application_ingress, trust_taint
+        trust_taint.turn_start(self, send)            # S2/S3: a new host turn starts clean, then takes its ingress's mark
         application_ingress.note_turn(self, send)     # #0302: guest-born processes never get the owner_local frame
         if (peers := getattr(self, "peers", None)) is not None:
             peers.xfer.begin_execution(send)
@@ -10029,13 +10077,7 @@ class Host:
         fence.no_dump()   # same-user processes cannot read this process's memory, environment or sockets
         sys.setswitchinterval(SWITCH_INTERVAL)       # P331: a worker thread's CPU work no longer taxes every loop syscall 5 ms
         sock = self.st.sock_path
-        if sock.exists():
-            try:
-                _, w = await asyncio.open_unix_connection(str(sock))
-                w.close()
-                raise SystemExit(f"agentj serve is already running ({sock})")
-            except (ConnectionRefusedError, FileNotFoundError):
-                sock.unlink()
+        await claim_control_sock(sock, self.st.log)
         old = os.umask(0o077)
         try:
             server = await asyncio.start_unix_server(self.on_ctl, path=str(sock))

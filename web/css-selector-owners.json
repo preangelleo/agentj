@@ -180,6 +180,17 @@
     },
     {
       "file": "public/app.css",
+      "selector": "html[data-ios=\"1\"][data-standalone=\"1\"]",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3936,
+        "decision": "P593 R-0001 (chairman 2026-11-16): Home Screen under-page colour is Sooty"
+      }
+    },
+    {
+      "file": "public/app.css",
       "selector": "html[data-ios=\"1\"]:not([data-standalone=\"1\"]) body",
       "owner": "aj-shell",
       "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",

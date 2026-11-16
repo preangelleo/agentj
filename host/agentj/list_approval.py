@@ -176,6 +176,11 @@ class PermissionContext:
         return host is self.host and host.perm_w is self.writer
 
 
+def _seam_cwd(host, cwd):
+    from . import trust_taint
+    return trust_taint.effective_cwd(host, cwd)
+
+
 async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
               receipt=None, only=None, host_card=False, settings_session=None, bounded_context=None, harness_permission=False, task_actions=None, task_target=None, native_context=None, settings_context=None, front=None, background=None, order_owner=False):
     try:
@@ -229,6 +234,28 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
             uv = decided[0] == 'allow'
         else:
             headless_fingerprint, headless_src = fingerprint, typed
+    if (not uv and settings_context is None and task_actions is None and background is None
+            and (native_context is None or type(native_context) is PermissionContext)
+            and (harness_permission or tool not in policy_registry.HOST_TOOLS)):
+        # S2/S3 (0.30.25, chairman B + security r3): the main-thread turn has read external content (trust_taint, set
+        # only at host-observed facts). An outbound send that the UNCHANGED off-list decision would allow takes the
+        # existing Face ID card instead of running card-free. The decision runs first: whatever it refuses
+        # (credential / private-state access, unknown / external / host_read writes) stays refused below, no card.
+        # A positive list of who comes here: a request with no native context, or exactly the claimed permission
+        # connection. Anything a full-access pre-tool guard, native observer or background-job runner raised itself
+        # carries NativeContext or a subclass (shared_risk / busy_native fingerprint and protected-target calls) and
+        # is answered exactly as before (security r3-4 / r3-5). Protected-target calls never get here: uv is already
+        # set for them above.
+        from . import approval_offlist, trust_taint
+        if trust_taint.tainted(getattr(host, 'agent', None)) is not None:
+            typed = approval_offlist.source(host, settings_context=settings_context, background=background,
+                                            order_owner=order_owner)
+            taint_kind = await asyncio.to_thread(trust_taint.escalates, host, tool, inp, _seam_cwd(host, cwd), typed)
+            if taint_kind:
+                uv = True
+                host.st.log('trust_taint_uv', kind=taint_kind, source_type=typed.get('type'), trust=typed.get('trust'))
+            elif headless_src is None:
+                headless_src = typed      # one reading of the source for the seam and the off-list answer below
     def refused(reason, message):
         if not state_subject.live(host):
             return {'behavior':'deny', 'reason':'state_authority_changed',

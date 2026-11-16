@@ -3932,10 +3932,18 @@ body[data-view="chat"] .reply-notices .share-notice{margin:0}
    Safe-area paint is noninteractive; the bottom stays below every content layer. */
 html[data-ios="1"]{--ios-chrome:var(--c-noir);--ios-bottom:var(--c-noir);--ios-safe-top:env(safe-area-inset-top,0px);--ios-safe-bottom:env(safe-area-inset-bottom,0px);background:var(--ios-chrome)!important}
 html[data-ios="1"] body{background:var(--pg)}
+/* P593: the under-page colour of a Home Screen app is Sooty too (iOS falls back to it when a sample is rejected). */
+html[data-ios="1"][data-standalone="1"]{background:#141414!important}
 /* P472: the root owns status paint, outside the state-coloured body compositor.
-   No state/theme token or JS colour writer participates in this layer. */
+   No state/theme token or JS colour writer participates in this layer.
+   P593 (R-0001): an iOS 26 Home Screen app starts its WebView below an opaque status bar that
+   iOS paints itself (env(safe-area-inset-top)=0, IMG_2821: 204 px = 68 pt). WebKit colours that
+   bar from the page's own top row: Page::computeSampledPageTopColorIfNecessary() samples y=0
+   once per document and keeps it until the next load; fixed-container edges sample 2 px. A
+   reload while the page was idle froze Emerald (#4c7367) above a Windstorm page. The layer is
+   therefore never thinner than 2 px, so whatever moment iOS samples, the top row is Sooty. */
 html[data-ios="1"]::before{content:"";position:fixed;left:0;right:0;top:var(--vvtop,0px);
-  height:var(--ios-safe-top);background:#2c2b26;z-index:var(--z-chrome);pointer-events:none;transition:none!important}
+  height:var(--ios-safe-top);min-height:2px;background:#141414;z-index:var(--z-chrome);pointer-events:none;transition:none!important}
 html[data-ios="1"] .satband{display:none}
 html[data-ios="1"] .sabband{display:block;height:var(--ios-safe-bottom);background:var(--ios-bottom,var(--c-noir))!important;border:0;box-shadow:none;z-index:0}
 html[data-ios="1"] .water{background:var(--water-color)}

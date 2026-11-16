@@ -333,7 +333,13 @@ def cloud_asr(path,cfg,timeout=60):
         url=asr_endpoint(p.get(cfg,'voice.asr.base_url')) if custom else (ASR_URL if p.get(cfg,'voice.asr.provider')=='openrouter' else ASR_OPENAI_URL)
         res=json.loads(_request(url,key,body,'multipart/form-data; boundary='+boundary,timeout,256*1024))
         text=res.get('text')
-        if not isinstance(text,str) or len(text)>64000:return {'ok':False,'reason':'engine_failed'}
+        # An unreachable/failed service and an empty response are both service
+        # failures.  Empty text is not evidence that the recording was silent;
+        # the local recovery path must get a chance to transcribe it.
+        if not isinstance(text,str) or len(text)>64000:
+            return {'ok':False,'reason':'engine_failed','detail':'remote ASR returned an invalid response'}
+        if not text.strip():
+            return {'ok':False,'reason':'engine_failed','detail':'remote ASR returned empty text'}
         return {'ok':True,'text':correct_transcript(text,cfg),'engine':'custom' if custom else p.get(cfg,'voice.asr.provider')}
     except Exception:return {'ok':False,'reason':'engine_failed'}
 

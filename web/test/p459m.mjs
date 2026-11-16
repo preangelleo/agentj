@@ -11,7 +11,7 @@ const baseline=process.argv.includes('--baseline'),out='reports/qa/p459m/'+(base
 mkdirSync(out,{recursive:true});
 const failures=[],finalMatrix=[],snapshots={},fallbackChecks=[];let contrast;
 const rgb=s=>s.startsWith('#')?[1,3,5].map(i=>parseInt(s.slice(i,i+2),16)):s.match(/[\d.]+/g).slice(0,3).map(v=>Math.round(Number(v)*(s.startsWith('color(srgb')?255:1)));
-const noir=[44,43,38],ok=(v,s)=>{if(!v)failures.push(s)};
+const noir=[44,43,38],sooty=[20,20,20],/* R-0001 (0.30.24/P593): iOS status chrome is Sooty */ok=(v,s)=>{if(!v)failures.push(s)};
 const web=await startWebServer(),fake=await startFakeHost(),browser=await pw.webkit.launch();
 const safari=pw.devices['iPhone 13'].userAgent,crios=safari.replace(/Version\/[\d.]+/,'CriOS/131.0.6778.81');
 try{
@@ -54,10 +54,10 @@ try{
    await p.screenshot({path});const raw=execFileSync('magick',[path,'-depth','8','rgb:-']);
    const pixel=(x,y)=>[...raw.slice((y*390+x)*3,(y*390+x)*3+3)],same=(a,b)=>a.every((v,i)=>Math.abs(v-b[i])<=1);
    const expectedBottom=['editor','reader'].includes(view)?'rgb(44, 43, 38)':m.waterColor,target=rgb(expectedBottom);
-   const top_bad_rows=Array.from({length:47},(_,y)=>y).filter(y=>[2,195,387].some(x=>!same(noir,pixel(x,y))));
+   const top_bad_rows=Array.from({length:47},(_,y)=>y).filter(y=>[2,195,387].some(x=>!same(sooty,pixel(x,y))));
    const badRows=Array.from({length:34},(_,i)=>i).filter(i=>[2,387].some(x=>!same(target,pixel(x,m.limit-34+i))));
    for(const b of m.buttons){const ink=rgb(b.ink);let n=0;for(let y=Math.ceil((b.top+b.bottom)/2+3);y<Math.floor(b.bottom-5);y++)for(let x=Math.ceil(b.left);x<Math.floor(b.right);x++)if(same(ink,pixel(x,y)))n++;b.lower_ink_pixels=n;ok(b.top>=47&&b.bottom<=m.limit-10&&b.front&&!b.occluded.length&&n>0,label+' '+b.id+' complete lower glyph and unobstructed control')}
-   ok(!top_bad_rows.length,label+' top 47px Noir');ok(!badRows.length,label+' bottom 34px '+expectedBottom);ok(m.meta.every(c=>same(rgb(c),noir)),label+' all theme-color Noir');
+   ok(!top_bad_rows.length,label+' top 47px Sooty');ok(!badRows.length,label+' bottom 34px '+expectedBottom);ok(m.meta.every(c=>same(rgb(c),sooty)),label+' all theme-color Sooty');
    if(view==='home')ok(Math.abs(m.composer.bottom-m.limit)<=1&&m.composerGap<=(mode==='standalone'&&!keyboard?46.5:12.5),label+' composer no extra bottom gap');
    const row={mode,state,view,keyboard,label,path,...m,standalone:mode==='standalone',designGap:12,topColor:'rgb('+pixel(2,0).join(', ')+')',expectedBottom,bottomColor:'rgb('+pixel(2,m.limit-1).join(', ')+')',top_bad_rows,bottom_bad_rows:keyboard?[]:badRows,keyboard_bad_rows:keyboard?badRows:[]};
    finalMatrix.push(row);snapshots[label]=row;

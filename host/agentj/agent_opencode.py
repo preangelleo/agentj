@@ -1364,6 +1364,10 @@ class OpenCodeAgent(Agent):
         elif t == "message.part.updated":
             part = p.get("part") or {}
             state = part.get("state") or {}
+            if (part.get("sessionID") == self.sid or part.get("sessionID") in getattr(self, "children", {})) \
+                    and part.get("type") == "tool" and state.get("status") in ("completed", "error"):
+                from . import trust_taint             # S2/S3: the served session's (and its sub-agents') finished tool part
+                trust_taint.observe_tool(self, part.get("tool"), state.get("input"))
             if part.get("sessionID") == self.sid and part.get("type") == "tool" and state.get("status") in ("completed", "error") and getattr(self.host, "peers", None) is not None:
                 self.host.peers.xfer.broker.complete(part.get("callID"), state.get("status") == "completed", state.get("output"))
             self._tool_dir(p.get("part"))

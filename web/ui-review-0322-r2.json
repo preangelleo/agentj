@@ -25,14 +25,15 @@
   "retained_manifest": "deferred/0.30.22/manifest.json",
   "active": {
     "web/public/app.css": {
-      "sha256": "f3e4489493abf34c164fcec68a3e4f36131a40c4fb6637137908bfb7e5d33f4b",
+      "sha256": "186cf690af07924feb0c32a5e688b7f7789c8b5c9d6397847cae525fef77730c",
       "approved": [
         "r3_final_decision",
-        "0.30.24_owner_ruling"
+        "0.30.24_owner_ruling",
+        "0.30.25_P593_R-0001"
       ],
       "propagation": {
-        "baseline_sha256": "8da43121f9f082afbcf8260af6ba2fc84474a4b448ef25e76e8cd1fbe11b692c",
-        "reason": "R-0034 final ruling (chairman 2026-11-15): notice card stays Noir, Undo is solid Lotion with Noir text and no border."
+        "baseline_sha256": "f3e4489493abf34c164fcec68a3e4f36131a40c4fb6637137908bfb7e5d33f4b",
+        "reason": "P593 R-0001 (chairman 2026-11-16, IMG_2821): iOS root status layer Sooty with min-height 2px and Home Screen under-page Sooty, so the WebKit-sampled status bar can never freeze a state colour; bottom band unchanged."
       }
     },
     "web/public/i18n.js": {
