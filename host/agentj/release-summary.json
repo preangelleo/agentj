@@ -1,5 +1,5 @@
 {
-  "version": "0.30.26",
-  "zh": "新版 Claude Code 下，手机上的 sudo 和凭据确认卡能正常弹出；邮件转发如实报告每个收件人是否送达；主人用邮件回复会安全回到原对话；Claude Fable 5.2 和 Mythos 5.2 的用量能正确计价。",
-  "en": "Sudo and credential cards appear on the phone again with newer Claude Code; mail forwards report delivery per recipient; owner email replies return safely to the original thread; Claude Fable 5.2 and Mythos 5.2 usage is priced correctly."
+  "version": "0.30.27",
+  "zh": "iPhone 主屏 App 顶部状态栏稳定显示为黑色，不再偶尔变成状态色。",
+  "en": "The iPhone Home Screen app's status bar now stays black instead of sometimes taking the state colour."
 }

@@ -25,16 +25,17 @@
   "retained_manifest": "deferred/0.30.22/manifest.json",
   "active": {
     "web/public/app.css": {
-      "sha256": "1687ac947391c88062dbbe492ec5581086f221558fe45b70cc8fef415502c80e",
+      "sha256": "ef95e81977d25f7c13aa49c0a99175d2a1735bcc8edbeb452e7fb3ed11b7006c",
       "approved": [
         "r3_final_decision",
         "0.30.24_owner_ruling",
         "0.30.25_P593_R-0001",
-        "0.30.25_provenance_noir_solid_no_border"
+        "0.30.25_provenance_noir_solid_no_border",
+        "0.30.26_P593_R-0001_r4"
       ],
       "propagation": {
-        "baseline_sha256": "186cf690af07924feb0c32a5e688b7f7789c8b5c9d6397847cae525fef77730c",
-        "reason": "0.30.25 provenance (chairman 2026-11-16 06:53 screenshot): approval-card 「我有疑问」/「拒绝」 Noir solid buttons drop the inset white outline; owner rule: solid buttons never carry a border. Only .apprdeny box-shadow changed."
+        "baseline_sha256": "1687ac947391c88062dbbe492ec5581086f221558fe45b70cc8fef415502c80e",
+        "reason": "P593 r4 R-0001 (chairman 2026-11-16 13:42, IMG_2822): iOS Home Screen body paints the same state colour as an image layer over a transparent background-colour (WebKit status-bar fallback becomes html Sooty); r3 2 px min-height removed. Pending chairman daytime look before ship."
       }
     },
     "web/public/i18n.js": {

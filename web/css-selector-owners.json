@@ -185,8 +185,19 @@
       "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
       "evidence": {
         "source": "public/app.css",
-        "line": 3936,
+        "line": 3942,
         "decision": "P593 R-0001 (chairman 2026-11-16): Home Screen under-page colour is Sooty"
+      }
+    },
+    {
+      "file": "public/app.css",
+      "selector": "html[data-ios=\"1\"][data-standalone=\"1\"] body",
+      "owner": "aj-shell",
+      "purpose": "Document shell composition and browser safe-area/refresh behavior; this rule targets the actual document/frame, not arbitrary component descendants.",
+      "evidence": {
+        "source": "public/app.css",
+        "line": 3943,
+        "decision": "P593 r4 R-0001 (chairman 2026-11-16, IMG_2822): Home Screen body paints its state colour as an image layer over a transparent background-colour, so the WebKit status-bar fallback (documentBackgroundColor) is html's Sooty"
       }
     },
     {
