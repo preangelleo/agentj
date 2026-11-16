@@ -287,6 +287,8 @@ def entry(res: dict, now: float | None = None) -> dict | None:
         checks = failed_checks(res)
         if checks:
             rec["failed_checks"] = checks
+            if "service" in checks and service_reason(res.get("service_reason")):
+                rec["service_reason"] = res["service_reason"]
         rec.update(rollback_fields(res))
     return rec
 
@@ -306,6 +308,24 @@ def rollback_fields(res) -> dict:
     if res.get("rollback_check") in ROLLBACK_CHECKS:
         out["rollback_check"] = res["rollback_check"]
     return out
+
+
+# R-0045: why the `service` row failed, as a closed word — the doctor sets it, the report carries it; anything else is dropped.
+SERVICE_STATES = ("inactive", "failed", "activating", "deactivating", "not_loaded", "unknown")
+SERVICE_REASONS = frozenset({*(f"not_active:{s}" for s in SERVICE_STATES), "env_mismatch", "inspect_failed", "legacy_name",
+                             "no_manager", "not_installed", "path_missing"})
+
+
+def service_reason(value) -> str | None:
+    return value if isinstance(value, str) and value in SERVICE_REASONS else None
+
+
+def service_reason_of(rows) -> str | None:
+    """The first `service` doctor row's closed reason, or None."""
+    for r in rows if isinstance(rows, list) else []:
+        if isinstance(r, dict) and r.get("id") == "service":
+            return service_reason(r.get("service_reason"))
+    return None
 
 
 def failed_checks(res) -> list:
@@ -370,6 +390,33 @@ def heartbeat_field(st) -> dict | None:
     return {"from": rec.get("from"), "to": rec["to"], "result": rec["result"], "reason": rec["reason"], "at": rec["at"]}
 
 
+LATE_CHECKS = frozenset(("service", "serve"))     # = auto_update.TRANSIENT_CHECKS (kept here: no import cycle)
+
+
+def recover_late(st, service_row) -> dict | None:
+    """R-0045: the new serve is up and the last attempt failed only because its service / serve row had not settled when an
+    older updater (no re-ask) looked once. When that record is for this very version and `service_row()` (doctor's
+    check_service, in-process, no network) is ok now, last-upgrade.json becomes `ok / upgraded, recovered: self_check_late`
+    so the heartbeat / Dashboard stop showing a failure. Local only: no upgrade_diag path sends an `ok` follow-up (report()
+    skips ok results; the metadata-only body cannot name a thread), so nothing goes out. → the new record, or None."""
+    rec = read(st)
+    if not rec or rec.get("result") != "failed" or rec.get("reason") != "doctor_failed" or rec.get("to") != __version__:
+        return None
+    checks = rec.get("failed_checks")
+    if not isinstance(checks, list) or not checks or not set(checks) <= LATE_CHECKS:
+        return None
+    try:
+        row = service_row()
+    except Exception:  # noqa: BLE001 — cannot tell: leave the failure as it is
+        return None
+    if not isinstance(row, dict) or row.get("id") != "service" or row.get("status") != "ok":
+        return None
+    new = {"v": 1, "from": rec.get("from"), "to": rec["to"], "result": "ok", "reason": "upgraded", "at": rec["at"],
+           "recovered": "self_check_late",
+           **{k: rec[k] for k in ("reported", "reported_at") if k in rec}}
+    return new if write(st, new) else None
+
+
 # ------------------------------------------------------------------ automatic support report
 def enabled(st) -> bool:
     if (os.environ.get(REPORT_ENV) or "").lower() == "off":
@@ -403,6 +450,8 @@ def body(res: dict, kind: str | None = None) -> str:
     checks = failed_checks(res)
     if checks:
         lines.append("failed checks: " + ", ".join(checks))
+        if "service" in checks and service_reason(res.get("service_reason")):
+            lines.append("service reason: " + res["service_reason"])
     elif category(res.get("reason")) == "doctor_failed":
         lines.append("failed checks: not recorded")
     if res.get("detail"):
@@ -450,6 +499,9 @@ META_FIELDS = {
     "subreason": lambda v: v in SUBREASONS, "cache_status": lambda v: v in ("miss", "invalid"),
     "exception_type": lambda v: v in EXCEPTION_TYPES,
     "failed_checks": _metadata_check_ids,
+    # R-0045 — P573 exception approved by 贾维斯 2026-11-16: why the `service` row failed, one closed word (SERVICE_REASONS,
+    # the not_active state from a fixed systemd/launchd table) or `unknown`; never a path, a log line or free text.
+    "service_reason": lambda v: v in SERVICE_REASONS or v == "unknown",
     "errno": lambda v: v.isdigit() and int(v) in errno.errorcode,
     "artifact_sha256": lambda v: bool(re.fullmatch(r"[0-9a-f]{64}", v)),
     "stated_sha256": lambda v: bool(re.fullmatch(r"[0-9a-f]{64}", v)),
@@ -478,6 +530,8 @@ def metadata_body(res: dict, kind: str | None = None) -> str:
     fields = {"from": res.get("from"), "to": res.get("to"), "result": rec.get("result"),
               "reason": category(res.get("reason")), "step": rec.get("step"),
               **({"failed_checks": ", ".join(checks)} if checks and category(res.get("reason")) == "doctor_failed" else {}),
+              **({"service_reason": service_reason(res.get("service_reason")) or "unknown"}
+                 if "service" in checks and category(res.get("reason")) == "doctor_failed" and "service_reason" in res else {}),
               **artifact_fields(res), **exception_fields(res)}
     lines = [META_HEAD] + [f"{k}: {fields[k]}" for k in META_FIELDS
                            if fields.get(k) is not None and meta_line_ok(f"{k}: {fields[k]}")]

@@ -676,6 +676,7 @@ def _diagnose(st, result, diag):
         res = {**result, **upgrade_diag.exception_fields(diag), **upgrade_diag.installer_fields(diag), 'reason': upgrade_diag.category(result.get('reason')), 'step': diag.get('step') or 'install',
                **({'stderr_tail': diag['stderr_tail']} if diag.get('stderr_tail') else {}),
                **({'failed_checks': update.check_ids(diag['failed_checks'])} if diag.get('failed_checks') else {}),
+               **({'service_reason': diag['service_reason']} if upgrade_diag.service_reason(diag.get('service_reason')) else {}),
                **({'detail': diag['detail']} if diag.get('detail') else {}),
                **{k: diag[k] for k in ('rollback_failure', 'rollback_tail', 'rollback_check') if diag.get(k)}}
         if result.get('result') == 'rolled_back':
@@ -888,6 +889,9 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             print('upgrade_health_failed ' + ('upgrade' if diagnose else 'rollback') + ': ' + ','.join(ids), flush=True)
             if diagnose:
                 diag['failed_checks'] = update.check_ids(blockers)
+                why = upgrade_diag.service_reason_of(rows) if 'service' in blockers else None   # R-0045: closed word only
+                if why:
+                    diag['service_reason'] = why
                 if update.DOCTOR_UNPARSABLE in blockers:
                     rc = getattr(h, 'returncode', None)
                     diag['detail'] = f"doctor exit {rc}" if isinstance(rc, int) else 'doctor output unreadable'

@@ -356,7 +356,9 @@ class MetadataReport(_Mac):
     LOCKED = frozenset({"from", "to", "result", "reason", "step", "failure_stage", "artifact_stage", "subreason",
                         "cache_status", "exception_type", "errno", "artifact_sha256", "stated_sha256",
                         # #0307 (贾维斯 dispatch 2026-11-10): closed words for the cache folder kind / level / owner kind
-                        "cache_path", "cache_level", "cache_owner", "cache_fallback", "failed_checks"})
+                        "cache_path", "cache_level", "cache_owner", "cache_fallback", "failed_checks",
+                        # R-0045: P573 exception approved by 贾维斯 2026-11-16 — closed service_reason words only (pinned below)
+                        "service_reason"})
 
     def test_ruling_locks_the_exact_field_whitelist(self):
         self.assertEqual(frozenset(upgrade_diag.META_FIELDS), self.LOCKED)
@@ -370,7 +372,7 @@ class MetadataReport(_Mac):
                       "stderr_tail": "Permission denied /Users/catherine", "fix": "agentj sudo …"}
         body = upgrade_diag.metadata_body(everything, "uv")
         keys = {ln.split(": ", 1)[0] for ln in body.split("\n")[1:]}
-        self.assertEqual(keys, self.LOCKED - {"failed_checks"})
+        self.assertEqual(keys, self.LOCKED - {"failed_checks", "service_reason"})
         self.assertTrue(support.metadata_ok(body))
         for leak in ("catherine", "Permission", "agentj sudo", "platform", "python", "uv tool"):
             self.assertNotIn(leak, body)
@@ -387,6 +389,52 @@ class MetadataReport(_Mac):
                      "failed_checks: " + ", ".join(["serve"] * 11), "failed_checks: serve,unknown"):
             with self.subTest(line=line):
                 self.assertFalse(support.metadata_ok(good + "\n" + line))
+
+    # R-0045 / P573 exception (贾维斯 2026-11-16): `service_reason` is a closed word; a path, free text or a state outside the
+    # fixed systemd/launchd table is refused on the wire and turned into `unknown` by the body builder.
+    SERVICE_REASON_BAD = ("service_reason: /Users/catherine/Library/LaunchAgents/net.agentj.host.plist",
+                          "service_reason: not_active:catherine", "service_reason: not_active:", "service_reason: env_mismatch extra",
+                          "service_reason: inspect_failed: Permission denied", "service_reason: Traceback (most recent call last)",
+                          "service_reason: not_active:running /tmp/x", "service_reason: ENV_MISMATCH")
+
+    def test_service_reason_refuses_paths_and_free_text(self):
+        base = {"from": "0.26.8a1", "to": NEW, "result": "failed", "reason": "doctor_failed", "step": "health",
+                "failed_checks": ["service"]}
+        good = upgrade_diag.metadata_body(base, "uv")
+        for line in self.SERVICE_REASON_BAD:
+            with self.subTest(line=line):
+                self.assertFalse(support.metadata_ok(good + "\n" + line))
+        for bad in ("/Users/catherine/x", "not_active:catherine", "env_mismatch extra", "inspect_failed: EACCES /Users/c", 7, ["x"]):
+            with self.subTest(value=bad):
+                body = upgrade_diag.metadata_body({**base, "service_reason": bad}, "uv")
+                self.assertIn("\nservice_reason: unknown", body)
+                self.assertNotIn("catherine", body); self.assertNotIn("EACCES", body)
+                self.assertTrue(support.metadata_ok(body))
+
+    def test_service_reason_enum_is_pinned(self):
+        self.assertEqual(upgrade_diag.SERVICE_STATES, ("inactive", "failed", "activating", "deactivating", "not_loaded", "unknown"))
+        self.assertEqual(upgrade_diag.SERVICE_REASONS, frozenset({*(f"not_active:{s}" for s in upgrade_diag.SERVICE_STATES),
+                         "env_mismatch", "inspect_failed", "legacy_name", "no_manager", "not_installed", "path_missing"}))
+
+    def test_service_reason_needs_a_service_failure_line(self):
+        base = upgrade_diag.metadata_body({"from": "0.26.8a1", "to": NEW, "result": "failed", "reason": "doctor_failed",
+                                           "step": "health", "failed_checks": ["serve"]}, "uv")
+        self.assertFalse(support.metadata_ok(base + "\nservice_reason: env_mismatch"))
+
+    def test_service_reason_closed_values_pass(self):
+        base = {"from": "0.26.8a1", "to": NEW, "result": "failed", "reason": "doctor_failed", "step": "health",
+                "failed_checks": ["service"]}
+        for v in sorted(upgrade_diag.SERVICE_REASONS):
+            with self.subTest(value=v):
+                body = upgrade_diag.metadata_body({**base, "service_reason": v}, "uv")
+                self.assertIn("\nservice_reason: " + v, body)
+                self.assertTrue(support.metadata_ok(body))
+        for st in upgrade_diag.SERVICE_STATES:
+            self.assertRegex(st, r"^[a-z_]+$")
+        # only next to a service failure: a download failure never carries it
+        body = upgrade_diag.metadata_body({"to": NEW, "reason": "download_failed", "step": "download",
+                                           "service_reason": "env_mismatch"}, "uv")
+        self.assertNotIn("service_reason", body)
 
     def test_free_text_detail_never_enters_metadata(self):
         body = upgrade_diag.metadata_body({"to": NEW, "reason": "download_failed", "step": "download",

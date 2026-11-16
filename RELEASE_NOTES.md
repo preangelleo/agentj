@@ -1,5 +1,5 @@
-# Agent J v0.30.27
+# Agent J v0.30.28
 
-The iPhone Home Screen app's status bar now stays black instead of sometimes taking the state colour.
+The post-upgrade self-check looks again while the service is still restarting instead of reporting a false failure; the new version corrects earlier such reports on start.
 
-iPhone 主屏 App 顶部状态栏稳定显示为黑色，不再偶尔变成状态色。
+升级后的自检遇到服务刚在重启时会再看一次，不再误报「升级失败」；新版启动后会自动更正之前的这类误报。

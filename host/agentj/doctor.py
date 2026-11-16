@@ -1193,33 +1193,48 @@ def _seen(st: State, svc: dict) -> dict:
         return svc
 
 
+def _svc(why: str, status: str, summary: str, hint: str = "") -> dict:
+    """R-0045: a non-ok `service` row also says why in a closed word (upgrade_diag.SERVICE_REASONS) the report may carry."""
+    from .upgrade_diag import service_reason
+    row = _c("service", status, summary, hint)
+    if service_reason(why):
+        row["service_reason"] = why
+    return row
+
+
+def _not_active(svc: dict) -> str:
+    from .upgrade_diag import SERVICE_STATES
+    state = svc.get("active")
+    return "not_active:" + (state if state in SERVICE_STATES else "unknown")
+
+
 def check_service(svc: dict, legacy: dict | None = None) -> dict:
     legacy = legacy or {}
     if legacy.get("installed") and not svc.get("installed"):
-        return _c("service", WARN, f"还是旧名字的服务 {legacy.get('name')}（{legacy.get('active')}）/ the service still has its old "
+        return _svc("legacy_name", WARN, f"还是旧名字的服务 {legacy.get('name')}（{legacy.get('active')}）/ the service still has its old "
                   f"name {legacy.get('name')}", "运行 agentj service install 换成新名字 / run `agentj service install` to switch to "
                   "the new name")
     if svc.get("kind") == "none":
         why = service.classify_no_manager() if svc.get("active") == "no_systemctl" else None   # P278: WSL / container fix
-        return _c("service", WARN, f"没有可用的服务管理器 / no service manager ({svc.get('active')})",
+        return _svc("no_manager", WARN, f"没有可用的服务管理器 / no service manager ({svc.get('active')})",
                   service.MESSAGES[why] if why in service.NO_MANAGER else "run `agentj serve` under tmux / your own supervisor")
     if svc.get("kind") == "systemd" and svc.get("active") not in ("active", "inactive", "failed", "activating", "deactivating"):
         why = service.systemd_problem()          # P278: systemctl is there, but no systemd user manager answers it
         if why in service.NO_MANAGER:
-            return _c("service", WARN, f"没有可用的 systemd / no usable systemd ({why})", service.MESSAGES[why])
+            return _svc("no_manager", WARN, f"没有可用的 systemd / no usable systemd ({why})", service.MESSAGES[why])
     n = svc.get("name")
     if not svc.get("installed"):
-        return _c("service", WARN, "没安装 / not installed", "agentj service start")
+        return _svc("not_installed", WARN, "没安装 / not installed", "agentj service start")
     try:
         mismatch = service.binary_env_mismatches(n)
     except (OSError, service.ServiceError):
-        return _c("service", FAIL, "Cannot inspect harness path settings", "Check service env path assignments; never dump credentials")
+        return _svc("inspect_failed", FAIL, "Cannot inspect harness path settings", "Check service env path assignments; never dump credentials")
     if mismatch:
-        return _c("service", FAIL, "unit/env file harness paths disagree: " + ", ".join(mismatch),
+        return _svc("env_mismatch", FAIL, "unit/env file harness paths disagree: " + ", ".join(mismatch),
                   "Run `agentj service install` to remove stale unit paths; saved env overrides are preserved")
     missing = service.path_missing_harnesses(svc)
     if missing:
-        return _c("service", WARN, "服务 PATH 找不到已安装的 Agent / Installed harness missing from service PATH: " + ", ".join(missing),
+        return _svc("path_missing", WARN, "服务 PATH 找不到已安装的 Agent / Installed harness missing from service PATH: " + ", ".join(missing),
                   "agentj service install")
     if svc.get("active") == "active" and svc.get("seen_by") == "socket":
         return _c("service", OK, f"{n} 在运行（serve 在应答；这里看不到 launchd / systemd）/ running (serve answers; the service "
@@ -1228,7 +1243,7 @@ def check_service(svc: dict, legacy: dict | None = None) -> dict:
         return _c("service", OK, f"{n} 已安装、运行中 / installed, active")
     hint = (f"journalctl --user -u {n} -n 50" if svc.get("kind") == "systemd" else "cat <state dir>/service.log")
     hint = "agentj service start; " + hint
-    return _c("service", FAIL, f"{n} 已安装但没在运行 / installed but {svc.get('active')}", hint)
+    return _svc(_not_active(svc), FAIL, f"{n} 已安装但没在运行 / installed but {svc.get('active')}", hint)
 
 
 def check_alias() -> dict:

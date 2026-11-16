@@ -1397,31 +1397,43 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
             out["service"] = "not_installed"
         handed = True
         out["step"] = "health"
-        rows = None
-        if chan:
-            h = _host(st, "health", HEALTH_TIMEOUT + 30)
-            rows = h.get("checks") if h and isinstance(h.get("checks"), list) else None
-            if rows is None:
-                out["health"] = "unverifiable"
-        if rows is not None:
-            blockers, existing = upgrade_blockers(rows)
-        else:
-            health = run(argv + ["doctor", "--json"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
-            try:
-                rows = json.loads(health.stdout)["checks"]
+        from . import auto_update
+        for attempt in range(auto_update.SELF_CHECK_TRIES):
+            rows = None
+            if fenced:
+                out["health"] = "host" if chan else "unverifiable"     # each look starts from what the fence can see
+            if chan:
+                h = _host(st, "health", HEALTH_TIMEOUT + 30)
+                rows = h.get("checks") if h and isinstance(h.get("checks"), list) else None
+                if rows is None:
+                    out["health"] = "unverifiable"
+            if rows is not None:
                 blockers, existing = upgrade_blockers(rows)
-            except (ValueError, TypeError, KeyError, AttributeError):
-                blockers, existing = ([DOCTOR_UNPARSABLE] if health.returncode else []), []
-            if fenced and blockers == [DOCTOR_UNPARSABLE]:
-                # ADR-0269-fenced-doctor: the version is already verified; a fenced doctor that could not even produce its
-                # document (an older doctor crashing on host-only files the fence hides, EPERM on macOS) proves nothing
-                # about the host — "unverifiable in fence", never "the upgrade failed". The id stays among pending_checks.
-                out["health"], blockers, rows = "unverifiable", [], [{"id": DOCTOR_UNPARSABLE, "status": "warn"}]
+            else:
+                health = run(argv + ["doctor", "--json"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
+                try:
+                    rows = json.loads(health.stdout)["checks"]
+                    blockers, existing = upgrade_blockers(rows)
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    blockers, existing = ([DOCTOR_UNPARSABLE] if health.returncode else []), []
+                if fenced and blockers == [DOCTOR_UNPARSABLE]:
+                    # ADR-0269-fenced-doctor: the version is already verified; a fenced doctor that could not even produce its
+                    # document (an older doctor crashing on host-only files the fence hides, EPERM on macOS) proves nothing
+                    # about the host — "unverifiable in fence", never "the upgrade failed". The id stays among pending_checks.
+                    out["health"], blockers, rows = "unverifiable", [], [{"id": DOCTOR_UNPARSABLE, "status": "warn"}]
+            # R-0045: the nightly worker's P393 rule on this path too — a service / serve row that has not settled yet is
+            # looked at again (SELF_CHECK_TRIES, SELF_CHECK_WAIT apart); any other blocker fails at once.
+            if not blockers or not set(blockers) <= auto_update.TRANSIENT_CHECKS or attempt == auto_update.SELF_CHECK_TRIES - 1:
+                break
+            time.sleep(auto_update.SELF_CHECK_WAIT)
         out["existing_issues"] = existing
         out["pending_count"] = sum(r.get("status") != "ok" for r in rows or [] if isinstance(r, dict))
         out["pending_checks"] = check_ids([r.get("id") for r in rows or [] if isinstance(r, dict) and r.get("status") != "ok"])
         if blockers:
-            return {**out, "result": "failed", "reason": "doctor_failed", "failed_checks": check_ids(blockers), "exit": 1}
+            from .upgrade_diag import service_reason_of
+            why = service_reason_of(rows) if "service" in blockers else None     # R-0045: a closed word, never the summary
+            return {**out, "result": "failed", "reason": "doctor_failed", "failed_checks": check_ids(blockers),
+                    **({"service_reason": why} if why else {}), "exit": 1}
     except OSError:
         if not handed:
             return back("self_check_failed", **({"service": "failed"} if svc_on else {}))
@@ -1538,7 +1550,10 @@ def host_op(st, req: dict, mem: dict, run=None) -> dict:
             return {"ok": False, "why": "doctor"}
         keep = ("id", "status", "summary", "hint", "unverifiable")
         st.log("upgrade_host", op=op, result="ok")
-        return {"ok": True, "checks": [{k: r[k] for k in keep if k in r} for r in rows if isinstance(r, dict)]}
+        from .upgrade_diag import service_reason
+        return {"ok": True, "checks": [{**{k: r[k] for k in keep if k in r},
+                                        **({"service_reason": r["service_reason"]} if service_reason(r.get("service_reason")) else {})}
+                                       for r in rows if isinstance(r, dict)]}
     if op not in ("prepare", "pending", "marker", "rollback", "service"):
         return {"ok": False, "why": "op"}
     if not isinstance(to, str) or parse(to) is None or compare(__version__, to) != -1:

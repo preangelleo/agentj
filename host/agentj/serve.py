@@ -5079,6 +5079,12 @@ class Host:
                 active = await asyncio.to_thread(lambda: _svc.status().get("active") == "active")
                 if await asyncio.to_thread(service_recovery.acknowledge_after_start, self.st, active):
                     self.st.log("upgrade_recovery_acknowledged", status=warning.get("status"))
+            with contextlib.suppress(Exception):     # R-0045: an older updater's one-look service/serve failure, healthy now
+                from . import doctor as _doc, names as _names, service as _svc2, upgrade_diag as _ud
+                late = await asyncio.to_thread(_ud.recover_late, self.st, lambda: _doc.check_service(
+                    _names.seen_status(self.st, answering=True), _svc2.legacy_status()))
+                if late:
+                    self.st.log("upgrade_recovered_late", status=late["to"])
             completed = phone_update.take(self.st)
             if completed:
                 if completed.get("reason") in ("upgraded", "doctor_failed"):

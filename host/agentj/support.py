@@ -307,7 +307,9 @@ def metadata_ok(text, attach_doctor=False, thread=None) -> bool:
     keys = [ln.partition(": ")[0] for ln in lines[1:]]
     return (not attach_doctor and not thread and 1 < len(lines) <= META_MAX_LINES and lines[0] == META_HEAD
             and len(keys) == len(set(keys)) and all(meta_line_ok(ln) for ln in lines[1:])
-            and ("failed_checks" not in keys or "reason: doctor_failed" in lines[1:]))
+            and ("failed_checks" not in keys or "reason: doctor_failed" in lines[1:])
+            and ("service_reason" not in keys or any(ln.startswith("failed_checks: ") and "service" in ln[15:].split(", ")
+                                                     for ln in lines[1:])))
 
 
 def _full_access(st) -> bool:
