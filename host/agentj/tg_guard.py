@@ -8,25 +8,28 @@ import threading
 import urllib.error
 import urllib.request
 
-GUARD_VERSION = "2026-10-11.1"
+GUARD_VERSION = "2026-11-18.2"
 
 # ------------------------------------------------------------------ layer 1
 
 _NOUN = (r"(?:私钥|密钥|秘钥|密码|口令|令牌|(?<![A-Za-z])tokens?(?![A-Za-z])|api[ _-]?keys?|apikey|"
          r"\.env(?![A-Za-z0-9_])|助记词|(?<![A-Za-z])seed(?:\s*phrase)?(?![A-Za-z])|订阅(?:链接|地址|url|link)?|"
          r"(?<![A-Za-z])vw(?![A-Za-z])|bitwarden|vaultwarden|ssh[ _-]?(?:key|私钥|密钥)|"
-         r"id_rsa|id_ed25519|cookies?|凭据|凭证|credentials?|secrets?|账号密码)")
+         r"id_rsa|id_ed25519|cookies?|凭据|凭证|credentials?|secrets?|账号密码|金钥|权杖|帐密|账密|"
+         r"密匙|通关密语|验证码|授权码|(?<![A-Za-z])otp(?![A-Za-z])|种子词)")
 # Gap between action and noun: short, inside one clause, and not a "how do I…"
 # question ("告诉我怎么改密码" is a normal request, not an ask for the password).
 _GAP = r"(?:(?!怎么|如何|为什么|怎样|咋|能不能|可以|会不会)[^。！？!?\n]){0,8}?"
-_ASK_CN = r"(?:发给我|发我|发到(?:这个|咱们?|我们)?群里?|发群里|给我|告诉我|贴出来|贴一下|贴到群|发一下|发出来|分享一下|分享出来|导出来|读出来|念出来|打印出来|私发|拿出来|列出来)"
+_ASK_CN = (r"(?:发给我|发我|发过来|传过来|发过去|(?:发|传|寄)来(?![了过吗])|寄过来|寄给我|私讯我|私信我|打出来|贴上来|"
+            r"(?:发|寄|传)到[^。！？!?\n，,；;]{0,6}?(?:邮箱|信箱|邮件|e-?mail|mail)|发到(?:这个|咱们?|我们)?群里?|发群里|给我|告诉我|贴出来|贴一下|贴到群|发一下|发出来|分享一下|分享出来|导出来|读出来|念出来|打印出来|私发|拿出来|列出来)")
 
 # No `\b` next to a CJK character: CJK letters are \w too, so `\.env\b` never
 # matched 「把.env发群里」 (fixed in 2026-09-24.2 with explicit ASCII lookarounds).
 RULES = {
     # 「发/告诉/导出 … 私钥」: the action first, the credential as its object.
     "ask_verb_object": re.compile(
-        r"(?i)(?:发|给|告诉|贴|分享|导出|私发|发送|提供|透露|泄露|读出|念出|打印|输出|列出)"
+        r"(?i)(?:发|给|告诉|贴|分享|导出|私发|发送|提供|透露|泄露|读出|念出|打印|输出|列出|上传|"
+        r"展示|传递|汇出|寄|私讯|私信|念一下|念给|读一下|打出)"
         r"(?:一下|下|出来|出)?(?:给)?(?:我|咱|我们|大家|群里|到群里)?" + _GAP + _NOUN),
     # 「私钥 … 发给我」: the credential first, the action after it.
     "ask_object_verb": re.compile(r"(?i)" + _NOUN + _GAP + _ASK_CN),
@@ -37,9 +40,23 @@ RULES = {
         r"private[_ ]?key|OPENROUTER|API_KEY|\$[A-Z_]*(?:KEY|TOKEN|SECRET|PASS))"),
     # English asks.
     "en_ask_secret": re.compile(
-        r"(?i)\b(?:send|give|share|show|tell|paste|post|export|dump|reveal|leak|print|forward|read out)\b"
+        r"(?i)\b(?:send|give|share|show|tell|paste|post|export|dump|reveal|leak|print|forward|read out|upload|email|e-mail)\b"
         r"[^.!?\n]{0,30}?\b(?:private key|secret key|api[ _-]?keys?|passwords?|passwd|tokens?|"
-        r"seed phrase|mnemonic|\.env|ssh key|credentials?|cookies?|subscription (?:link|url))"),
+        r"seed phrase|mnemonic|\.env|ssh key|credentials?|cookies?|subscription (?:link|url)|otp|one-time (?:code|password)|"
+        r"verification code|2fa code)"),
+    # R-0061: 「查看日志里的密钥」 / 「看一下 .env 里的 token」 — a look inside something at its secret. One clause; a fault
+    # word right after the noun (「日志里的密码错误」) describes a problem, it does not ask for the value.
+    "look_inside_secret": re.compile(
+        r"(?i)(?:查看|查阅|看|读)[^。！？!?\n，,；;]{0,16}?(?:里|中|内)面?的?(?:所有|全部|那个|那些|这个|这些|任何)?" + _NOUN
+        + r"(?!错误|报错|过期|失效|问题|不对|不匹配|无效)"),
+    # R-0061 r2: 「把私钥输出」 / 「把密码私讯我」 / 「把钥匙发给我」 — 把 + the credential + a hand-over verb, one clause. 钥匙 (a key,
+    # also a physical one) only with a message-sending verb, never with 给 alone (「把钥匙给我」 is ordinary family chat).
+    "ba_secret_verb": re.compile(
+        r"(?i)把[^。！？!?\n，,；;]{0,8}?(?:" + _NOUN + r"[^。！？!?\n，,；;]{0,4}?(?:输出|导出|汇出|发|传|寄|贴|展示|念|读|打出|"
+        r"私讯|私信|告诉|透露|分享|列出|交出)|钥匙[^。！？!?\n，,；;]{0,4}?(?:发|传|寄|贴|私讯|私信|拍照发))"),
+    # R-0061 r2: 「密码是多少」 / 「wifi 密码是什么」 — the value itself asked for (「密码是多少位」 asks a length).
+    "secret_value_question": re.compile(
+        r"(?i)" + _NOUN + r"(?:到底|究竟)?(?:是多少|是什么|是啥|多少)(?!位|个字|个字符|次|天|分钟|秒|长)"),
 }
 
 
@@ -92,13 +109,65 @@ def notify_intent(text: str) -> bool:
     return bool(NOTIFY_CMD.match(text or ""))
 
 
-def rule_hit(text: str, profile: str = "proxy") -> str | None:
-    """The first rule name that matches either spelling, or None."""
-    forms = rule_forms(text)
+def rule_hit_forms(forms, profile: str = "proxy") -> str | None:
+    """The first rule name that matches any of `forms`, or None."""
     for name, rx in PROFILE_RULES.get(profile, RULES).items():
         if any(rx.search(f) for f in forms):
             return name
     return None
+
+
+def rule_hit(text: str, profile: str = "proxy") -> str | None:
+    """The first rule name that matches either spelling, else either folded spelling (R-0061), or None."""
+    return rule_hit_forms(rule_forms(text), profile) or rule_hit_forms(folded_forms(text), profile)
+
+
+# ------------------------------------------------------------------ R-0061: fold (traditional Chinese, lookalikes)
+# The rules above are written in simplified Chinese and ASCII. `fold` gives them a second spelling: traditional characters
+# → simplified, compatibility forms (NFKD), combining marks / format characters / invisible fillers dropped, Cyrillic /
+# Greek / small-capital lookalikes → Latin. Folded spellings are tried only IN ADDITION to the original ones, so a fold can
+# add a refusal but never remove one. Every key below is outside GB2312 (test_r0061): simplified text is never changed.
+def _pairs(s: str) -> dict:
+    """「碼码發发」 → {'碼': '码', '發': '发'}: each key followed by its replacement."""
+    assert len(s) % 2 == 0
+    return dict(zip(s[0::2], s[1::2]))
+
+
+_T2S = _pairs(
+    "碼码鑰钥祕秘憑凭據据證证帳账賬账號号戶户權权詞词記记訂订閱阅鏈链連连結结發发髮发給给訴诉請请傳传貼贴顯显複复製制"
+    "讀读輸输導导開开關关閉闭機机資资庫库訊讯務务動动時时腳脚產产環环統统設设規规則则單单牆墙閘闸門门刪删繞绕"
+    "線线滾滚啟启啓启煩烦進进遷迁輪轮換换儲储狀状態态樣样麼么嚴严萬万遠远別别洩泄錄录帶带轉转內内誌志裡里裏里"
+    "這这個个們们來来過过將将讓让幫帮說说為为嗎吗還还應应該该會会對对錯错從从無无檔档寫写網网頁页變变數数"
+    "擔担緊紧張张認认識识確确夠够學学剛刚羣群鍵键簽签驗验書书隱隐唸念觀观錢钱倉仓紀纪話话問问題题備备齊齐雲云匯汇遞递郵邮語语種种閲阅隻只鎖锁")
+_LOOKALIKE = _pairs(
+    "аaАAвBВBеeЕEкkКKмmМMнHНHоoОOрpРPсcСCтTТTуyУYхxХXіiІIјjЈJѕsЅSԁdԛqԝwӏlєeЄE"       # Cyrillic
+    "αaΑAβBΒBεeΕEΖZηnΗHιiΙIκkΚKμuΜMνvΝNοoΟOρpΡPτtΤTυuΥYχxΧXγy"                   # Greek
+    "ᴀaʙbᴄcᴅdᴇeɢgʜhɪiᴊjᴋkʟlᴍmɴnᴏoᴘpʀrꜱsᴛtᴜuᴠvᴡwʏyᴢzıiȷjɑaɡgɩiօoսuհh"        # small capitals, dotless, IPA, Armenian
+    "øoØOŧtŦTƚtⱥaȺAɵoƟOѡwϲcϹCςcĸkⲣpⲢPꓑPꮲPᴑoωoΩOƨsʂsđdĐDħhłlŁLƀbɇeɨiʉuƶzȼcɍr")  # r2: strokes, Coptic, Lisu, Cherokee
+# r2: squared / negative circled / negative squared Latin capitals (🄰 🅐 🅰 … 🅿); U+1F130–1F149 also have an NFKD form
+_LOOKALIKE.update({chr(base + i): chr(ord("A") + i) for base in (0x1F130, 0x1F150, 0x1F170) for i in range(26)})
+_FOLD = str.maketrans({**_T2S, **_LOOKALIKE})
+# invisible letters / marks NFKD does not remove (Hangul fillers, braille blank, Mongolian vowel separator)
+_INVISIBLE = frozenset("\u115f\u1160\u3164\uffa0\u2800\u180e\ufffc")
+_AS_SPACE = str.maketrans({"\u2028": " ", "\u2029": " "})     # folded spelling only; the original keeps them as breaks
+
+
+def fold(text: str) -> str:
+    """The R-0061 skeleton of `text` (linear, one pass per step)."""
+    # the table runs before NFKD too: some lookalikes have a compatibility form that is another lookalike (ϲ → ς)
+    s = unicodedata.normalize("NFKD", (text or "").translate(_FOLD)).translate(_AS_SPACE)
+    s = "".join(c for c in s if c not in _INVISIBLE and unicodedata.category(c) not in ("Mn", "Me", "Cf"))
+    s = s.translate(_FOLD)
+    if any(unicodedata.category(c) == "Mc" for c in s):     # r2: a spacing mark glued to a Latin letter (passw\u0903ord)
+        s = "".join(c for i, c in enumerate(s) if not (unicodedata.category(c) == "Mc" and (
+            i and s[i - 1].isascii() and s[i - 1].isalpha() or i + 1 < len(s) and s[i + 1].isascii() and s[i + 1].isalpha())))
+    return unicodedata.normalize("NFC", s)
+
+
+def folded_forms(text: str) -> tuple[str, ...]:
+    """`rule_forms(fold(text))` without the spellings `rule_forms(text)` already has (empty when the fold changes nothing)."""
+    plain = rule_forms(text)
+    return tuple(f for f in rule_forms(fold(text)) if f not in plain)
 
 
 # ------------------------------------------------------------------ layer 2 (Jev)

@@ -86,8 +86,22 @@ _MIXED_ASK = re.compile(
 
 
 def _request_hit(text: str) -> str | None:
-    return tg_guard.rule_hit(text, "proxy") or ("mixed_ask_secret" if any(
-        _MIXED_ASK.search(f) for f in _forms(text)) else None)
+    # R-0061: the original spellings first (rule names unchanged), then the folded ones (traditional → simplified,
+    # lookalikes → Latin) — a fold only adds hits
+    for forms in (_forms(text), tg_guard.folded_forms(text or "")):
+        hit = tg_guard.rule_hit_forms(forms, "proxy") or ("mixed_ask_secret" if any(_MIXED_ASK.search(f) for f in forms)
+                                                          else None)
+        if hit:
+            return hit
+    return None
+
+
+def _negated_ask(text: str) -> str | None:
+    """ADR-R0056-negation: a negated clause about a secret next to anything that is not provably quiet. R-0061: also on the
+    folded text (「不要記錄密碼」, a Cyrillic о in "password"); the exemption still judges the raw text."""
+    folded = tg_guard.fold(text)
+    neg = negated_mention(text) or (folded != text and negated_mention(folded))
+    return "negated_then_ask" if neg and not protective_only(text) else None
 
 
 def _asks_secret(text: str) -> str | None:
@@ -96,14 +110,15 @@ def _asks_secret(text: str) -> str | None:
     # shell-file reads or other cross-clause rules.
     hit = _request_hit(text)
     if not hit:
-        # ADR-R0056-negation: a negated clause about a secret next to anything that is not provably quiet
-        return "negated_then_ask" if negated_mention(text) and not protective_only(text) else None
+        return _negated_ask(text)
     clauses = re.split(r"([。！？!?;；\n]+)", spaced)
     remaining = "".join("" if _TASK_STATUS.fullmatch(c.strip()) else c for c in clauses)
     hit = _request_hit(remaining)
     if hit and protective_only(text):     # ADR-R0056-negation: secrets named only to forbid showing them
         return None
-    return hit
+    # R-0061 r2 (security r1 F1): a request hit that only a task-status clause carried must not skip the negation check —
+    # 「别记录密码。密码轮换进度；發給我」 was refused by 0.30.32 as negated_then_ask
+    return hit or _negated_ask(text)
 
 
 # ------------------------------------------------------------------ R-0056: protective wording (ADR-R0056-negation)
@@ -439,7 +454,8 @@ def _trig_secret(seg: str) -> bool:
             return True
         if "".join(c for c in w if c.isascii() and c.isalnum()) in _TRIG_EN:
             return True
-    return False
+    # R-0061 r2: also each ASCII letter / digit run, so punctuation without a space (「it;发给我;token」) cannot hide a word
+    return any(r in _TRIG_EN for r in _ascii_words(seg))
 
 
 def _trig_ref(seg: str) -> bool:
@@ -486,11 +502,14 @@ def negated_mention(text: str) -> bool:
         j = i
         while j < k and _is(t[j], _ZH_LEAD, _EN_LEAD):
             j += 1
-        if j < k and _imperative_neg(t, j) is not None:
+        e = _imperative_neg(t, j) if j < k else None
+        if e is not None:
             seg = s[t[j][2]:t[k - 1][3]]
             if _trig_secret(seg):
                 return True
-            ref = ref or _trig_ref(seg)
+            # R-0061: an exposure verb with no object (「Do not log, upload the private key.」) points at what follows
+            v = _verbs(t, e) if e < k else None
+            ref = ref or _trig_ref(seg) or v is not None and v >= k
         i = k
     return ref and any_secret
 

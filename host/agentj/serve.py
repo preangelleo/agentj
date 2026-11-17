@@ -2800,6 +2800,9 @@ class Host:
                     await self._ctl_send(w, {"ok": True, "items": self.upg_items("agent" if req.get("caller") == "agent" else None)})
                 elif cmd == "upgrade_card":         # P203: … and, when it is not empty, puts the confirmation card on the phones
                     await self._ctl_send(w, {"ok": True, **self.upg_open("agent" if req.get("caller") == "agent" else None)})
+                elif cmd == "upgrade_friend":       # R-0060: every mutating `agentj update` asks whether a friend's turn runs
+                    from . import upgrade_friend
+                    await self._ctl_send(w, await upgrade_friend.answer(self, pid, req.get("caller")))
                 elif cmd == "auto_update_ready":
                     from . import auto_update
                     rec = auto_update.read(self.st)

@@ -1,5 +1,5 @@
-# Agent J v0.30.32
+# Agent J v0.30.33
 
-Background replies in shared sessions now notify; "do not print keys" wording no longer refused; faster computer service; steadier phone reconnects.
+Upgrade requests from friends or your own devices now ask you on the remote first; secret requests in Traditional Chinese or look-alike letters are refused.
 
-共享会话后台完成的回复会推送「有新回复」；「不要打印密钥」类保护句不再误拒；电脑端多项提速；手机断线重连更稳。
+好友或同主人设备请求升级时改为主人遥控器确认卡，三台行为一致；繁体字、形近字母索要密钥也会被拒收。

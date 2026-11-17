@@ -2311,10 +2311,14 @@ class Elevator:
             if isinstance(req, dict) and req.get("t") == "upgrade":
 
 
-                from . import update
+                from . import update, upgrade_friend
                 if not isinstance(req.get("op"), str):
                     raise Refused("shape", "upgrade: op")
-                res = await asyncio.to_thread(update.host_op, self.st, req, self._upgrade_mem)
+                if req["op"] == "friend":       # R-0060: the fenced Agent's `agentj update` asks first
+                    res = await upgrade_friend.answer(self.host, fenced=True)
+                else:                           # … and install / restart / rollback ops refuse during a friend turn
+                    res = upgrade_friend.host_op_refusal(self.host, req) or \
+                        await asyncio.to_thread(update.host_op, self.st, req, self._upgrade_mem)
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
                 await w.drain()
                 w.close()

@@ -3209,6 +3209,11 @@ def cmd_update(a) -> None:
     reinstall = getattr(a, "reinstall", False) is True
     if reinstall and a.mode != "apply":
         sys.exit("✗ --reinstall 只用于 apply / reinstall requires apply")
+    action = None if a.mode not in ("apply", "rollback") else "rollback" if a.mode == "rollback" else \
+        "reinstall" if reinstall else "wheel" if getattr(a, "wheel", None) else \
+        "authorized" if a.authorization or a.from_email else "apply"
+    if action not in (None, "apply"):    # R-0060: one check before every mutating entrypoint (plain apply: below)
+        _upgrade_guard(action)
     if a.mode == "rollback":
         if a.authorization or a.from_email or a.version:
             sys.exit("✗ rollback 不接受授权码或目标版本 / rollback is cached-only")
@@ -3244,6 +3249,8 @@ def cmd_update(a) -> None:
         if r["status"] == "newer":
             print(f"  （agentj update apply 会运行 / it runs:  {r['command']}）")
         return
+    if r.get("status") == "newer":       # R-0060: only a newer version installs anything
+        _upgrade_guard("apply")
     if r.get("status") == "newer" and not a.yes:
         held = _upgrade_gate(r)
         if held:
@@ -3254,6 +3261,15 @@ def cmd_update(a) -> None:
     _upgrade_failed(st, res)
     print(update.result_block(res))
     raise SystemExit(res["exit"])
+
+
+def _upgrade_guard(action: str) -> None:
+    """R-0060: a friend's turn → the owner's card; an Agent whose host cannot confirm the turn → refused (upgrade_friend)."""
+    from . import update, upgrade_friend
+    held = upgrade_friend.guard(State(), action)
+    if held:
+        print(update.result_block(held))
+        raise SystemExit(held["exit"])
 
 
 def _upgrade_failed(st, res: dict) -> None:

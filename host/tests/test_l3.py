@@ -483,7 +483,11 @@ class WheelInstall(unittest.TestCase):
         cut_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename in ('agentj/provenance.py','agentj/tg_cursor.py')]
         cut_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in cut_entries)
         self.assertEqual(len(cut_entries),2)
-        self.assertLessEqual(cut_bytes,12288,'P117 cut-over allocation is bounded')
+        # R-0043 (0.30.33, approved 掌枢 0.30.33 R-0043): provenance.py became the host's single source-of-turn module
+        # (0303 R1 owner channels, 0310 H1 owner-made work, P0325 owner-turn contract 7d7a654886 +0.6 KiB, host-held
+        # authority tokens 294644a5e9 +0.24 KiB, forged-subclass refusal c2da9e292b). Measured 14 164 B at 698bc4b440
+        # (provenance.py 9 220 + tg_cursor.py 4 944, same accounting) → an explicit +2 KiB; security work, no feature dropped.
+        self.assertLessEqual(cut_bytes,12288+2048,'P117 cut-over allocation is bounded')
         # P147 (0.18.4): the reconnect command and its skill get their own explicit 8 KiB allocation, same accounting; flagged
         # to Jarvis. The self-heal itself (shared.py, the identity line, CLI flags) stays inside the core ceiling.
         p147=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/reconnect.py' or i.filename.startswith('agentj/skills/agentj-reconnect/')]
@@ -751,7 +755,10 @@ class WheelInstall(unittest.TestCase):
         # 0.30.7: signed 0.30.6 wheel = 4,924,880 B (already above the historical 4,595,969 B cap).
         # 贾维斯 11-11 批: candidate 4,934,498 B + 5% rounded up = 5,181,223 B named total cap.
         # Keep the per-feature allocations above; do not silently loosen those boundaries.
-        self.assertLessEqual(pathlib.Path(self.wheel).stat().st_size,5_181_223,'0.30.7 combined wheel cap (贾维斯 11-11 批)')
+        # R-0043 (0.30.33, approved 掌枢 0.30.33 R-0043): the R-0056 candidate (0.30.32 word lists) measured 5,184,073 B,
+        # +2,850 B (+0.055 %) over 5,181,223; main 12041705fe measures 5,171,875 B. New cap = 5,184,073 + 16 KiB headroom for
+        # the 0.30.33 lanes (R-0061 guard tables) = 5,200,457 B. Label unchanged so release ledgers keep matching the row.
+        self.assertLessEqual(pathlib.Path(self.wheel).stat().st_size,5_184_073+16384,'0.30.7 combined wheel cap (贾维斯 11-11 批)')
         # flagged to Jarvis.
         self.assertFalse([n for n in names_ if n.startswith("tests/") or "wiredump" in n or "fakeclaude" in n])
         ep = next(n for n in names_ if n.endswith("entry_points.txt"))

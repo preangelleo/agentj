@@ -1411,14 +1411,102 @@
       "selector": "#sheet #apprBtns+.pkassist",
       "owner": "aj-passkey",
       "purpose": "Space between approval buttons and the existing passkey verification status."
+    },
+    {
+      "file": "public/cards.css",
+      "selector": ".aj-card-stack-list[data-aj-card-stack] > :is(.setcard, .rscard, .jc-card, .jc-setrow,\n  .jc-todo-item, .task-card, .task-item, .card, .mcard, .srcard, .act-item, .setrow)",
+      "owner": "aj-content",
+      "purpose": "Card-gap contract: the aj-content card-stack list owns separation between its direct sibling cards/rows (gap on the list, block margins zeroed on the direct children). Layout only (margin-block); no colour, border, radius or type of the child families is taken over.",
+      "evidence": {
+        "source": "public/cards.css",
+        "line": 230,
+        "decision": "1e7953c6fd separate real wallet card stacks (shipped since 0.30.24); R-0043 ownership bookkeeping, no CSS value change"
+      },
+      "producerEvidence": [
+        {
+          "file": "public/index.html",
+          "line": 641,
+          "purpose": "static aj-card-stack-list[data-aj-card-stack] container"
+        },
+        {
+          "file": "public/index.html",
+          "line": 761,
+          "purpose": "static aj-card-stack-list[data-aj-card-stack] container"
+        },
+        {
+          "file": "public/index.html",
+          "line": 763,
+          "purpose": "static aj-card-stack-list[data-aj-card-stack] container"
+        },
+        {
+          "file": "public/index.html",
+          "line": 770,
+          "purpose": "static aj-card-stack-list[data-aj-card-stack] container"
+        },
+        {
+          "file": "public/index.html",
+          "line": 779,
+          "purpose": "static aj-card-stack-list[data-aj-card-stack] container"
+        },
+        {
+          "file": "public/index.html",
+          "line": 785,
+          "purpose": "static aj-card-stack-list[data-aj-card-stack] container"
+        },
+        {
+          "file": "public/index.html",
+          "line": 885,
+          "purpose": "static aj-card-stack-list[data-aj-card-stack] container"
+        },
+        {
+          "file": "public/index.html",
+          "line": 944,
+          "purpose": "static aj-card-stack-list[data-aj-card-stack] container"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1516,
+          "purpose": "static aj-card-stack-list[data-aj-card-stack] container"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1535,
+          "purpose": "static aj-card-stack-list[data-aj-card-stack] container"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1539,
+          "purpose": "static aj-card-stack-list[data-aj-card-stack] container"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1564,
+          "purpose": "static aj-card-stack-list[data-aj-card-stack] container"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1632,
+          "purpose": "static aj-card-stack-list[data-aj-card-stack] container"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1717,
+          "purpose": "static aj-card-stack-list[data-aj-card-stack] container"
+        },
+        {
+          "file": "public/index.html",
+          "line": 1736,
+          "purpose": "static aj-card-stack-list[data-aj-card-stack] container"
+        }
+      ]
     }
   ],
   "source6ProducerBindings": {
-    "public/index.html": "a8a77a3194b85b69b94a5cd530a3741f2cfc9fc4d34ea2ad91bb16995bc40762",
-    "public/app.js": "ef5f0c9d46dad29690a8638876598fd03436125113884ca440f9a37f16bae358",
+    "public/index.html": "ccb6703561a4f29e6ccc34597c62b47fd186a9a65e4be46cff7d7fd0afb99b88",
+    "public/app.js": "e7844af138ad59bf0e6b6f75929a2f6c9f04752160c54248b402810eff8cfc45",
     "public/js/sendvol.js": "af0e1b739e9bb027cfa3be86ad04ba002c0768c443cdb2b60c7c6536e573b229",
-    "public/app.css": "8da43121f9f082afbcf8260af6ba2fc84474a4b448ef25e76e8cd1fbe11b692c",
-    "public/js/relay.js": "a38a976a30d4f03fcff9fa7ee85977899c09fd486fa894db55b31b03a2550cca",
+    "public/app.css": "ef95e81977d25f7c13aa49c0a99175d2a1735bcc8edbeb452e7fb3ed11b7006c",
+    "public/js/relay.js": "01e285b0d1935a56ae5570e25b0908893a8034713e59d0c9877bc3e1d204fa4c",
     "public/menu.css": "ac0f38d6cfb4f1a521d7c3c152bd6e524c253fa6dd41cac5be1f7437ff4a3794",
     "public/js/md.js": "1a1f0eea6053c9a783d1da26907761f7038d4229e543c4b6f514951815727409",
     "public/js/render.js": "7ad1676b626ce53c0cef3d4b3f4a33317d8dd5857f59aceea3bb2ffccec921fe",

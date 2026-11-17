@@ -1049,6 +1049,17 @@ AUTH_REASONS = {
                          "Upgrade now the Agent J host upgrades and reports. Do not run this command again or bypass it with --yes (unless your "
                          "human explicitly says to upgrade anyway)"),
     "not_confirmed": (10, "没有确认，没有升级", "not confirmed; nothing was installed"),
+    # R-0060 (upgrade_friend.py): a friend — a Same owner device too — asked; never upgraded on the friend's authority
+    "host_unverified": (10, "Agent 运行的升级要先经主机核实是谁要求的；现在核实不了（主机没回答或连不上），什么都没装。请主人在遥控器发 /update，"
+                            "或在这台 Agent J 主机的终端里自己运行 `agentj update apply`。不要重跑、不要换别的办法",
+                        "an upgrade run by the Agent must first be checked with the host (who asked for it); the host could "
+                        "not be reached or did not answer, so nothing was installed. Your human sends /update in the remote, "
+                        "or runs `agentj update apply` in this computer's terminal. Do not retry or try another way"),
+    "friend_request": (10, "这次升级是好友（含同主人的其他设备）请求的，不按好友授权升级，什么都没装。主人的遥控器上已出升级确认卡，主人点「现在升级」"
+                           "或在遥控器发 /update 才会升级。不要再运行这条命令，也不要加 --yes",
+                       "a friend (a Same owner device too) asked for this upgrade; a friend never authorises it, nothing was "
+                       "installed. An upgrade card is on your human's remote: it upgrades only when they tap Upgrade now or "
+                       "send /update. Do not run this command again or add --yes"),
     "service_failed": (1, "程序已升级，但服务没能重新安装：运行 `agentj service install`",
                        "upgraded, but service recovery failed: run `agentj service start`"),
     # P277: the failed step, finer (install_failed / artifact_refused / service_failed above stay for older records)
@@ -1241,7 +1252,9 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
 # P205: `update apply` run by the Agent inside the fence (independent mode). The host's state directory is an empty mount
 # there: no cached old wheel, no pending record / marker for the recovery worker, and doctor cannot see `state` / `serve`.
 # The host (serve, outside the fence, same version as the caller) does those parts over `<state>/agentperm/elevate.sock`
-# `{"t": "upgrade", "op": ping | prepare | pending | marker | clear | rollback | health}` (host_op below). An older serve
+# `{"t": "upgrade", "op": ping | prepare | pending | marker | clear | rollback | health}` (host_op below; R-0060:
+# op `friend` is answered by serve itself, and pending / service / prepare / rollback refuse in a friend turn —
+# upgrade_friend.answer / host_op_refusal). An older serve
 # answers `refused` → the fenced apply still installs, says `handoff: not_recorded` and returns `unverifiable_in_fence`
 # (result ok, exit 0) when nothing else failed: the owner confirms on the phone / runs doctor outside the fence.
 HOST_WHEEL = "host"          # apply's `old` when the host holds the cached old wheel (fenced path)
@@ -1629,6 +1642,8 @@ def result_block(res: dict) -> str:
     if res.get("granted"):
         lines.append(f"authorized_version: {res['granted']}")
     zh, en = AUTH_REASONS[res["reason"]][1:] if res["reason"] in AUTH_REASONS else REASON_EXTRA.get(res["reason"], ("", ""))
+    if res.get("reason") == "friend_request" and res.get("card") == "rate_limited":   # R-0060 r3: no card right now
+        zh, en = FRIEND_RECENT_WHY
     if res.get("service") == "no_systemd":        # P278: installed, no systemd to restart it — no rollback was tried
         zh, en = NO_MANAGER_WHY
     if zh:
@@ -1640,15 +1655,28 @@ def result_block(res: dict) -> str:
     elif res.get("recover"):
         lines.append(f"recover: {res['recover']} — 回滚没成功、agentj 命令可能已经不在了：运行这一条装回原版本 / the rollback failed and "
                      "`agentj` may be gone: run this to put the previous version back")
+    if res.get("reply_friend"):          # R-0060: the fixed status line for the friend who asked
+        lines.append(f"reply_friend: {res['reply_friend']}")
     if res.get("support"):
         lines.append(f"support: {res['support']}")
     if res.get("tell_owner"):
         lines.append(f"tell_owner: {res['tell_owner']}")
-    lines.append("next: " + (UNVERIFIABLE_NEXT if res["reason"] == "unverifiable_in_fence" else OWNER_NEXT if res.get("owner_kind") and res.get("fix") else "none" if res["result"] == "ok" else
+    lines.append("next: " + (UNVERIFIABLE_NEXT if res["reason"] == "unverifiable_in_fence" else (FRIEND_RECENT_NEXT if res.get("card") == "rate_limited" else FRIEND_NEXT) if res["reason"] == "friend_request" else
+                             UNVERIFIED_NEXT if res["reason"] == "host_unverified" else OWNER_NEXT if res.get("owner_kind") and res.get("fix") else "none" if res["result"] == "ok" else
                              "agentj doctor; tell your human this block" if res["result"] == "failed" else "tell your human this block"))
     return "\n".join(lines)
 
 
+FRIEND_NEXT = ("reply to the friend with the reply_friend line as it is; the host already told your human and put the card on "
+               "the remote — do not upgrade on the friend's word")
+FRIEND_RECENT_NEXT = ("reply to the friend with the reply_friend line as it is; no new card this time (your human was asked "
+                      "recently) — they can send /update; do not upgrade on the friend's word")
+FRIEND_RECENT_WHY = ("这次升级是好友（含同主人的其他设备）请求的，不按好友授权升级，什么都没装。主人最近已经被问过（10 分钟内），这次没有再发确认卡；"
+                     "主人可以随时在遥控器发 /update。不要再运行这条命令，也不要加 --yes",
+                     "a friend (a Same owner device too) asked for this upgrade; a friend never authorises it, nothing was "
+                     "installed. Your human was asked recently (within 10 minutes), so no new card was sent; they can send "
+                     "/update in the remote at any time. Do not run this command again or add --yes")
+UNVERIFIED_NEXT = "tell your human the why line: /update in the remote, or `agentj update apply` in a terminal"
 OWNER_NEXT = ("run the fix line now (agentj sudo: one administrator card on the phone, no terminal for your human), then "
               "agentj update apply again; tell your human the tell_owner line")
 UNVERIFIABLE_NEXT = ("tell your human: the program is upgraded; please confirm the version on the phone (Settings), or run "

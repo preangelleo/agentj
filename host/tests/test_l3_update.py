@@ -166,7 +166,9 @@ class InstallKind(unittest.TestCase):
 class Apply(unittest.TestCase):
     def test_cli_noninteractive_with_fake_installer(self):
         from agentj import cli
-        with mock.patch.object(update, "apply", return_value={"result":"ok", "reason":"upgraded", "from":"0.14.0a1", "to":"0.15.0a1", "service":"restarted", "exit":0}) as apply, mock.patch.object(update,"check",return_value={"status":"newer"}), mock.patch("sys.stdout",new_callable=io.StringIO):
+        # the owner at a terminal, no host running: no Agent marker, whichever harness launched the test (R-0060: an
+        # Agent caller without a host answer is refused — test_r0060_friend_upgrade.FailClosed)
+        with mock.patch("agentj.upgrade_friend.agent_caller", return_value=False), mock.patch.object(update, "apply", return_value={"result":"ok", "reason":"upgraded", "from":"0.14.0a1", "to":"0.15.0a1", "service":"restarted", "exit":0}) as apply, mock.patch.object(update,"check",return_value={"status":"newer"}), mock.patch("sys.stdout",new_callable=io.StringIO):
             with self.assertRaises(SystemExit) as e:
                 cli.main(["update", "apply", "--yes"])
             self.assertEqual(e.exception.code,0)
