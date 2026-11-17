@@ -1280,6 +1280,11 @@ class CodexAgent(Agent):
         from .friends_tell_native import offer as friends_tell_offer
         if notice is None and friends_tell_offer(self,rid,tool,inp,no,_native_request):
             return
+        if not self.research:                  # R-0056: the model learns it was policy, not the owner, before the decline
+            from .refusal_intent import model_note
+            cls = ("non_owner_turn_sandbox" if isinstance(getattr(self, "turn_source", None), dict) else
+                   "arguments_too_large" if why == MCP_TOO_BIG_WHY else "outside_codex_sandbox")
+            self._tell_model(model_note(None, why, cls))
         self._answer(rid, no)
         if not self.research:                  # a read-only task's refusals are expected; it reports in its answer
             from .friends_tell_action import sandbox_guidance
@@ -1290,6 +1295,16 @@ class CodexAgent(Agent):
                 return self.host.policy_refused(clean_line(tool, 64) or "?", inp, why, self.policy_notice(),
                                                 fix=codex_full_access.NAME)
             self.host.policy_refused(clean_line(tool, 64) or "?", inp, why, notice or self.policy_notice())
+
+    def _tell_model(self, text: str) -> None:
+        """R-0056: one developer item written to the app-server ahead of the decline that follows it (no wait; the
+        reply id is unknown to `waits` and dropped). Best effort: a failure never turns a refusal into anything else."""
+        if not getattr(self, "tid", None):
+            return
+        with contextlib.suppress(Exception):
+            self.n += 1
+            self._send({"jsonrpc": "2.0", "id": self.n, "method": "thread/inject_items", "params": {"threadId": self.tid,
+                        "items": [{"type": "message", "role": "developer", "content": [{"type": "input_text", "text": text}]}]}})
 
     async def _decide(self, rid, tool: str, inp: dict, yes: dict, no: dict, batch: bool, bind: dict | None = None) -> None:
         gone = asyncio.get_running_loop().create_future()
@@ -1322,9 +1337,10 @@ class CodexAgent(Agent):
                 told = retry_notice(self, r["message"])     # #450 1c: a completion turn's refusal → 「看结果」, once
                 if told != "":
                     self.host.agent_notice(told or why)
+                from .refusal_intent import model_note
                 with contextlib.suppress(Exception):
                     await self.call("thread/inject_items", {"threadId": self.tid, "items": [{"type": "message",
-                        "role": "developer", "content": [{"type": "input_text", "text": "Agent J approval result: " + why}]}]}, timeout=3)
+                        "role": "developer", "content": [{"type": "input_text", "text": model_note(r, why)}]}]}, timeout=3)
         except Exception:  # noqa: BLE001 — fail closed
             ans = no
         finally:

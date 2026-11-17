@@ -115,7 +115,9 @@ class OwnerLocalIngress(unittest.IsolatedAsyncioTestCase):
 
     async def frame_allowed(self, uid=None, *, rows=None, spans=None, floor=0.0, send=None, foreign=False, **kw):
         uid = os.getuid() if uid is None else None if uid == 'unknown' else uid
-        host = host_with(NS(session={'pid': self.ANCHOR, 'procStart': 'S'}, cur_send=send, untrusted_foreign=foreign))
+        # R-0052 r1: the session's in-process inventory was reported by its own main Stop (nothing running)
+        host = host_with(NS(session={'pid': self.ANCHOR, 'procStart': 'S'}, cur_send=send, untrusted_foreign=foreign,
+                            bg_live={}, bg_known=(self.ANCHOR, 'S')))
         host._nonowner_spans = [list(x) for x in (self.GUEST if spans is None else spans)]
         if floor is not None:
             host._nonowner_floor = floor

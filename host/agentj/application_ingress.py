@@ -211,6 +211,8 @@ def open_span(host, native=False):
     native=True (security r4 N5): the host only notices a harness-started turn after the fact, so the span starts at
     the previous span close (the owner's previous turn's jobs were born before it) instead of "now"."""
     from .core.process_evidence import now
+    from . import approval_material
+    approval_material.clock_check(host)                 # R-0052 r2: span times share the macOS continuity reference
     spans = host.__dict__.setdefault('_nonowner_spans', [])
     if not spans or spans[-1][1] is not None:
         start = now()
@@ -224,6 +226,8 @@ def open_span(host, native=False):
 
 def close_span(host):
     from .core.process_evidence import now
+    from . import approval_material
+    approval_material.clock_check(host)
     spans = host.__dict__.get('_nonowner_spans') or []
     t = now()
     if spans and spans[-1][1] is None:
@@ -282,13 +286,17 @@ def _owner_tree(host, pid, agent):
         else:                                 # an Agent serve launched itself: its live child process is the anchor
             proc = getattr(agent, 'proc', None)
             anchor = getattr(proc, 'pid', None)
-            if type(anchor) is not int or getattr(proc, 'returncode', None) is not None or not darwin_row(anchor):
+            row = darwin_row(anchor) if type(anchor) is int else None
+            if type(anchor) is not int or getattr(proc, 'returncode', None) is not None or not row:
                 return False
         if host.__dict__.get('_nonowner_floor') is None:   # nothing remembered before this serve: serve-era only
             me = darwin_row(os.getpid())
             if not me:
                 return False
             host.__dict__['_nonowner_floor'] = me[1]
+        from . import approval_material                    # R-0052 r1 F3: the guarded refusals apply here too
+        if approval_material.lineage_blocked(host, agent, row[1]):
+            return False
         current, seen = pid, set()
         while current != anchor:
             if type(current) is not int or current <= 1 or current in seen or len(seen) >= 64:

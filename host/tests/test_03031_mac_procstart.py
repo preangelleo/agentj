@@ -125,11 +125,13 @@ class DarwinScope(unittest.TestCase):
 
     def scope(self, start):
         send = NS(approval_origin={'session': '1', 'message_id': 'm1'}, created=time.monotonic() - 5)
-        agent = NS(session={'pid': 500, 'procStart': start}, cur_send=send, phone_turn=True, phone_seen=True)
-        h = NS(agent=agent, hist=NS(epoch=1), desktop_turn=None)
+        agent = NS(session={'pid': 500, 'procStart': start}, cur_send=send, phone_turn=True, phone_seen=True, bg_live={})
+        h = NS(agent=agent, hist=NS(epoch=1), desktop_turn=None, _nonowner_floor=0.0)   # serve remembers; no guest turn
         now = time.time()
         rows = {500: ROW, 700: (500, now - 1.0, 'P')}
         with darwin(), mock.patch.object(PE, 'darwin_row', lambda pid: rows.get(pid)):
+            AM.turn_start(h, send)                    # R-0052: the turn-start stamp (delivered 5 s ago, as `created`)
+            h._turn_started = (send, h._turn_started[1] - 5, *h._turn_started[2:])
             return AM._darwin_scope(h, 700)
 
     def test_utc_and_local_accepted_others_refused(self):

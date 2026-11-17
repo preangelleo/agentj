@@ -287,6 +287,13 @@ class Bounded(unittest.IsolatedAsyncioTestCase):
         import time
         self.h.agent.phone_turn=True;self.h.agent.phone_seen=True
         self.h.agent.cur_send.created=time.monotonic()
+        # R-0052: the turn starts with the agent_turn_start stamp; the stand-in session is this process (as old
+        # as serve), so serve's memory is said to predate it; the shared session's background-task counter is empty.
+        from agentj import busy_launch
+        self.h._nonowner_floor=int(busy_launch.procs()[os.getpid()][2])/busy_launch.HZ-1
+        self.h.agent.bg_live={}
+        from agentj import approval_material
+        approval_material.turn_start(self.h,self.h.agent.cur_send)   # what serve.agent_turn_start stamps
         await asyncio.sleep(.03)
         self.svc.log=lambda *args,**kwargs:None
         socket_path=self.path/'friends.sock'

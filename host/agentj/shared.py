@@ -270,6 +270,13 @@ class SharedClaudeAgent(Agent):
         self._native_idle_since = None  # P198: monotonic start of "native_turn, yet the session and its registry entry are idle"
         self.bg_parent = {}             # 0.26.8a2: background shell id → the sub-agent that launched it
         self.bg_live = {}               # P243: background task id → type ("shell" / "subagent" / …), main thread's own
+        # R-0052 r1 F1: whose background list Claude Code itself reported (main Stop.background_tasks) — (pid, procStart)
+        # of that session. None = unknown: a fresh serve / re-attach has not seen it, so bg_live={} proves nothing.
+        self.bg_known = None
+        self.bg_nested = {}             # R-0052 r1 F3: async sub-agents launched BY a sub-agent (agent_id set); approval only
+        self.bg_clean = None            # (pid, procStart, process_evidence.now()) of the last empty main background list
+        self.bg_stopped = {}            # R-0052 r3: recently stopped sub-agent ids (bounded): late events are not new work
+        self.bg_overflow = None         # (pid, procStart) whose nested inventory overflowed: unknown for that generation
         self.main_seen_at = __import__("time").monotonic()   # P243: main thread's last hook event / transcript line (start = now)
         self.pending_text = ""
         self.last_phone_prompt = None    # P539: the owner's phone Send the latest main-thread prompt carried
@@ -291,7 +298,8 @@ class SharedClaudeAgent(Agent):
         from .shared_menu import Desk
         self.menu_desk = Desk(self)
         self.state = AgentState(on_turn=self._committed_stop,
-                                warn=lambda msg: self.host.st.log("shared_state_warning", detail=msg))
+                                warn=lambda msg: self.host.st.log("shared_state_warning", detail=msg),
+                                on_drop=self._bg_unresolved)
         self.loop = None
         self.permissions = set()
         self.risk_requests = {}
@@ -601,9 +609,21 @@ class SharedClaudeAgent(Agent):
         aid = event.get("agent_id")
         if not aid:
             self.main_seen_at = time.monotonic()
+        self._note_unseen_agent(name, aid, event)
         if name == "Stop" and not aid and isinstance(event.get("background_tasks"), list):
             self.bg_live = {str(t.get("id")): str(t.get("type") or "task") for t in event["background_tasks"]
                             if isinstance(t, dict) and t.get("id") and t.get("status") in (None, "running", "pending")}
+            # r3 F1: a fake Stop (a foreground sub-agent still open; shared_state holds it as _deferred_stop) is not the
+            # main turn ending — it never reconciles the inventory or moves the clean point.
+            if not self._foreground_open():
+                session = self.session if isinstance(self.session, dict) else {}
+                self.bg_known = (session.get("pid"), session.get("procStart")) if session.get("pid") else None
+                # r2 F2: an empty background list alone is not absence — pending Agent calls, nested / unseen
+                # sub-agents or an overflowed inventory keep the clean boundary where it was.
+                if (self.bg_known and not self.bg_live and not self.__dict__.get("bg_nested") and not self.sub_pending
+                        and self.__dict__.get("bg_overflow") != self.bg_known):
+                    from .core.process_evidence import now
+                    self.bg_clean = (*self.bg_known, now())     # nothing in-process ran here at this instant
         elif name == "PostToolUse" and not aid:
             resp = event.get("tool_response") if isinstance(event.get("tool_response"), dict) else {}
             inp = event.get("tool_input") if isinstance(event.get("tool_input"), dict) else {}
@@ -611,19 +631,104 @@ class SharedClaudeAgent(Agent):
                 self.bg_live[str(resp["backgroundTaskId"])] = "shell"
             elif resp.get("agentId") and (resp.get("isAsync") or resp.get("status") == "async_launched"):
                 self.bg_live[str(resp["agentId"])] = "subagent"
+                self._bg_saw(resp["agentId"])
             elif event.get("tool_name") in ("TaskStop", "KillShell", "KillBash"):
                 for k in ("task_id", "shell_id", "bash_id"):
                     self.bg_live.pop(str(inp.get(k)), None)
         elif name == "SubagentStop" and aid:
             self.bg_live.pop(str(aid), None)
+        if name == "PostToolUse" and aid:
+            resp = event.get("tool_response") if isinstance(event.get("tool_response"), dict) else {}
+            if resp.get("agentId") and (resp.get("isAsync") or resp.get("status") == "async_launched"):
+                nested = self._nested_now()
+                nested[str(resp["agentId"])] = str(aid)
+                self._bg_saw(resp["agentId"])
+                self._cap_nested()
+        elif name == "SubagentStop" and aid:
+            self.__dict__.setdefault("bg_nested", {}).pop(str(aid), None)
         if name == "PostToolUse" and aid and isinstance(event.get("tool_response"), dict) and event["tool_response"].get("backgroundTaskId"):
             self.bg_parent[str(event["tool_response"]["backgroundTaskId"])] = str(aid)
             while len(self.bg_parent) > 128:
                 self.bg_parent.pop(next(iter(self.bg_parent)))
         elif name in ("SessionEnd",) or (name == "SessionStart" and event.get("source") in ("clear", "startup")):
             self.bg_live = {}
+            self.bg_known = None                 # R-0052 r1: what runs now is unknown again until the next main Stop
         while len(self.bg_live) > 64:
             self.bg_live.pop(next(iter(self.bg_live)))
+            self.bg_known = None                 # R-0052 r1: a forgotten entry could be running guest work
+
+    def _foreground_open(self) -> int:
+        """Foreground sub-agents shared_state still counts open (unknown state → treated as open)."""
+        state = self.__dict__.get("state")
+        if state is None:
+            return 0
+        try:
+            return int(state._foreground_open())
+        except Exception:  # noqa: BLE001
+            return 1
+
+    def _bg_saw(self, aid):
+        self.__dict__.setdefault("bg_stopped", {}).pop(str(aid), None)
+
+    def _bg_overflowed(self):
+        session = self.session if isinstance(self.session, dict) else {}
+        self.bg_overflow = (session.get("pid"), session.get("procStart"))
+        self.bg_known = None
+
+    def _cap_nested(self):
+        nested = self.__dict__.setdefault("bg_nested", {})
+        if len(nested) > 64:                     # r2 F2: sticky for this session generation, never laundered by a Stop
+            while len(nested) > 64:
+                nested.pop(next(iter(nested)))
+            self._bg_overflowed()
+
+    def _generation(self):
+        session = self.session if isinstance(self.session, dict) else {}
+        return (session.get("pid"), session.get("procStart"))
+
+    def _nested_now(self):
+        """bg_nested for the current session generation (a new generation starts empty: its process is new)."""
+        if self.__dict__.get("bg_nested_gen") != self._generation():
+            self.bg_nested, self.bg_nested_gen = {}, self._generation()
+        return self.__dict__.setdefault("bg_nested", {})
+
+    def _bg_unresolved(self, aids, unnamed=0):
+        """R-0052 r4 F1: foreground sub-agents shared_state stopped tracking (stale watchdog after a held Stop, lost-Stop
+        reconcile) may still run: unresolved live work until their own SubagentStop or a new session generation."""
+        nested = self._nested_now()
+        for aid in aids:
+            if isinstance(aid, str) and aid:
+                nested[aid] = "unresolved"
+        if unnamed:
+            self._bg_overflowed()                # no id to reconcile by: this generation's inventory is unknown
+        self._cap_nested()
+
+    def _note_unseen_agent(self, name, aid, event):
+        """R-0052 r2 F1 / r3: a hook event from a sub-agent that is not live in any Host-held count (it predates a restart
+        / re-attach, its start was lost, or the stale watchdog dropped it after a fake Stop) is live in-process work of
+        unknown origin until its own SubagentStop. Only LIVE work counts (r3 F3): stopped ids are remembered, bounded."""
+        if not aid or not isinstance(aid, str):
+            return
+        stopped = self.__dict__.setdefault("bg_stopped", {})
+        if name == "SubagentStart":
+            self._bg_saw(aid)
+            return
+        if name == "SubagentStop":
+            stopped[aid] = True
+            while len(stopped) > 512:
+                stopped.pop(next(iter(stopped)))
+            return
+        if aid in stopped:
+            return                               # a late event of work already reconciled as ended
+        state = self.__dict__.get("state")
+        try:
+            tracked = state is not None and aid in state._agents
+        except Exception:  # noqa: BLE001
+            tracked = False
+        nested = self._nested_now()
+        if not tracked and aid not in nested and aid not in self.bg_live:
+            nested[aid] = "unseen"
+            self._cap_nested()
 
     def _control_gate(self, reg) -> tuple[bool, str]:
 
@@ -697,6 +802,12 @@ class SharedClaudeAgent(Agent):
         elif name in ("PostToolUse", "PostToolUseFailure"):
             self.tool_agent.pop(hashlib.sha256(json.dumps([event.get("tool_name"), event.get("tool_input")],
                                                            sort_keys=True).encode()).hexdigest(), None)
+            if name == "PostToolUseFailure" and not aid and event.get("tool_name") in ("Agent", "Task"):
+                # R-0052 r3 F3: a failed / denied Agent call never starts its sub-agent — not pending work any more
+                ti = event.get("tool_input") if isinstance(event.get("tool_input"), dict) else {}
+                pending = (str(ti.get("subagent_type") or ""), str(ti.get("description") or ""))
+                if pending in self.sub_pending:      # r4 F4: exactly this call; one SubagentStart consumed is gone already
+                    self.sub_pending.remove(pending)
         elif name == "SubagentStop" and isinstance(aid, str):
             self.sub_agents.pop(aid, None)
 
@@ -748,6 +859,14 @@ class SharedClaudeAgent(Agent):
 
     async def hook_event(self, event):
         result = await self._scoped_hook_event(event)
+        if (isinstance(event, dict) and event.get("hook_event_name") == "PreToolUse" and not event.get("agent_id")
+                and event.get("tool_name") in ("Agent", "Task") and isinstance(result, dict)
+                and (result.get("hookSpecificOutput") or {}).get("permissionDecision") == "deny"):
+            # R-0052 r3 F3: an Agent call this hook denied never starts — it is not pending work.
+            ti = event.get("tool_input") if isinstance(event.get("tool_input"), dict) else {}
+            pending = (str(ti.get("subagent_type") or ""), str(ti.get("description") or ""))
+            if pending in self.sub_pending:
+                self.sub_pending.remove(pending)
         context = event.pop('_agentj_dispatch_context',None) if isinstance(event,dict) else None
         if context:
             output = dict(result.get('hookSpecificOutput') or {})

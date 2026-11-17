@@ -101,6 +101,144 @@ def _unit(host, peer):
     return unit
 
 
+STEP_MAX = 1.0      # seconds of wall-clock vs continuous-clock drift that void a macOS turn stamp (clock step)
+
+
+def _continuous():
+    """A clock that keeps counting through sleep and is not stepped: CLOCK_BOOTTIME (Linux), CLOCK_MONOTONIC (macOS,
+    which unlike Python's time.monotonic() advances while asleep)."""
+    if hasattr(time, 'CLOCK_BOOTTIME'):
+        return time.clock_gettime(time.CLOCK_BOOTTIME)
+    if hasattr(time, 'CLOCK_MONOTONIC'):
+        return time.clock_gettime(time.CLOCK_MONOTONIC)
+    return time.monotonic()
+
+
+def _drift(wall, cont):
+    return abs((time.time() - wall) - (_continuous() - cont))
+
+
+def turn_start(host, send):
+    """R-0052: serve.Host.agent_turn_start is the one place a Send becomes the executing turn (agent.py queue loop and
+    shared._merge_queued both call it). Host-held stamp: (send, start in process_evidence.now()'s clock, wall,
+    continuous, stepped). `stepped` (macOS): the wall clock moved against the continuous clock since the previous stamp,
+    so wall-clock span / birth comparisons around this turn cannot be trusted → every lineage check refuses this turn."""
+    from .core.process_evidence import now
+    stepped = clock_check(host)
+    host.__dict__['_turn_started'] = (send, now(), time.time(), _continuous(), stepped)
+
+
+def clock_check(host):
+    """r2 F1: macOS wall-clock continuity, independent of any Send. A Host-held (wall, continuous) reference is checked
+    and advanced on every stamp, every non-owner span open / close and every macOS lineage proof (desktop included);
+    > STEP_MAX drift anywhere → the sticky step. Returns whether a step is (now) recorded. Linux: no-op (BOOTTIME)."""
+    if sys.platform != 'darwin':
+        return False
+    wall, cont = time.time(), _continuous()
+    ref = host.__dict__.get('_clock_ref')
+    if (isinstance(ref, tuple) and len(ref) == 2 and not host.__dict__.get('_clock_step')
+            and abs((wall - ref[0]) - (cont - ref[1])) > STEP_MAX):
+        _clock_stepped(host)
+    host.__dict__['_clock_ref'] = (wall, cont)
+    return bool(host.__dict__.get('_clock_step'))
+
+
+def _clock_stepped(host):
+    """r1 F2: a wall-clock step makes every wall-clock birth / span this serve recorded incomparable — not just this
+    turn's. Sticky for this serve's life: macOS caller-origin and owner_local lineage refuse from now on (restart clears),
+    and the serve-era floor is raised so nothing that existed before the step can ever count as owner-era."""
+    from .core.process_evidence import now
+    host.__dict__['_clock_step'] = True
+    host.__dict__['_nonowner_floor'] = max(host.__dict__.get('_nonowner_floor') or 0.0, now())
+    with contextlib.suppress(Exception):
+        host.st.log('approval_clock_step')
+
+
+def _turn_began(host, send):
+    """The stamped start of `send`'s turn, or None (no stamp, another Send's stamp, or a macOS clock step)."""
+    stamp = host.__dict__.get('_turn_started')
+    if not isinstance(stamp, tuple) or len(stamp) != 5 or send is None or stamp[0] is not send:
+        return None
+    if sys.platform == 'darwin':
+        if not host.__dict__.get('_clock_step') and _drift(stamp[2], stamp[3]) > STEP_MAX:
+            _clock_stepped(host)
+        if clock_check(host):
+            return None
+    return stamp[1]
+
+
+def lineage_blocked(host, agent, anchor_born):
+    """The refusal half of the caller-origin proof, shared with application_ingress._owner_tree (owner_local), which
+    deliberately skips the turn-start rule: the anchor is tainted by a guest turn's running in-process work, a macOS
+    clock step happened, or the current Send was never stamped as the executing turn."""
+    if clock_check(host):
+        return True
+    send = getattr(agent, 'cur_send', None)
+    if send is not None and _turn_began(host, send) is None:
+        return True
+    return _anchor_tainted(host, agent, anchor_born)
+
+
+def _harness_leftovers(host, agent):
+    """R-0047+R-0052 r0 F2: work that runs INSIDE the anchor process and can outlive the turn that started it (Codex
+    native sub-agent threads in the app-server, Claude background Tasks / shells / pending Agent calls). Host-held
+    counters only; a harness the Host cannot count for is treated as having leftovers."""
+    bg, session = getattr(agent, 'bg_live', None), getattr(agent, 'session', None)
+    if isinstance(session, dict):
+        # r1 F1: an empty list proves nothing until Claude Code itself reported this very session's background list
+        # (main Stop.background_tasks → shared.bg_known); a fresh serve / re-attach starts unknown.
+        generation = (session.get('pid'), session.get('procStart'))
+        if (getattr(agent, 'bg_known', None) != generation or session.get('pid') is None
+                or getattr(agent, 'bg_overflow', None) == generation):
+            return True
+        state = getattr(agent, 'state', None)
+        if state is not None:                   # r3 F1: foreground sub-agents still open (a fake Stop was held)
+            try:
+                if state._foreground_open():
+                    return True
+            except Exception:  # noqa: BLE001 — cannot count → running
+                return True
+        return (not isinstance(bg, dict) or bool(bg) or bool(getattr(agent, 'sub_pending', None))
+                or bool(getattr(agent, 'bg_nested', None)))
+    scope = getattr(agent, 'busy_scope', None)
+    board = getattr(getattr(host, 'busy', None), 'mem', None)
+    if not callable(scope) or not isinstance(board, dict):
+        return True
+    try:
+        name = scope()
+        return any(':th:' in k and isinstance(v, dict) and v.get('session') == name for k, v in list(board.items()))
+    except Exception:  # noqa: BLE001 — cannot count → leftovers
+        return True
+
+
+def _anchor_tainted(host, agent, anchor_born):
+    """F2: a non-owner turn ran while this anchor generation (pid + start) was alive — or before this serve remembers —
+    and harness-internal work is still running: that work may be the guest's, so no caller under this anchor is the
+    owner's. Ends when the leftovers end, /stop ends them, or the anchor exits (a new generation has no such history)."""
+    from . import application_ingress
+    margin = application_ingress.SPAN_MARGIN
+    floor = host.__dict__.get('_nonowner_floor')
+    spans = host.__dict__.get('_nonowner_spans') or []
+    since = anchor_born
+    session, clean = getattr(agent, 'session', None), getattr(agent, 'bg_clean', None)
+    if isinstance(session, dict):
+        # r3 F1: live work this serve never saw start (unseen agent_id) and an overflowed inventory are of unknown
+        # origin — tainted unconditionally, never filtered through the clean point or the guest-span window. Unseen work
+        # clears only on its own SubagentStop; overflow only with a new session generation.
+        nested, generation = getattr(agent, 'bg_nested', None), (session.get('pid'), session.get('procStart'))
+        current = getattr(agent, 'bg_nested_gen', generation) == generation
+        if (getattr(agent, 'bg_overflow', None) == generation
+                or (current and isinstance(nested, dict) and {'unseen', 'unresolved'} & set(nested.values()))):
+            return True
+    if (isinstance(session, dict) and isinstance(clean, tuple) and len(clean) == 3
+            and clean[:2] == (session.get('pid'), session.get('procStart')) and isinstance(clean[2], (int, float))
+            and not (sys.platform == 'darwin' and host.__dict__.get('_clock_step'))):
+        since = max(since, clean[2])      # Claude Code reported nothing in-process running here at that instant
+    overlapped = ((floor is None or since < floor + margin)
+                  or any(end is None or end + margin >= since for _, end in spans))
+    return overlapped and _harness_leftovers(host, agent)
+
+
 def _direct_scope(host, peer):
     """Independent harness/new-turn descendants and registered CEOs have host-held roots without Claude hooks."""
     from . import busy_launch, peer_origin
@@ -150,13 +288,29 @@ def _direct_scope(host, peer):
     if not hasattr(time, 'CLOCK_BOOTTIME'):
         return None
     began = created + (time.clock_gettime(time.CLOCK_BOOTTIME) - time.monotonic())
-    current, seen, ambiguous = peer, set(), False
+    stamp = None if desktop else _turn_began(host, send)
+    if stamp is not None:
+        began = max(began, stamp)
+    from . import application_ingress
+    if host.__dict__.get('_nonowner_floor') is None:     # same lazy floor as application_ingress._owner_tree: serve-era only
+        me = table.get(os.getpid())
+        if not me:
+            return None
+        host.__dict__['_nonowner_floor'] = int(me[2]) / busy_launch.HZ
+    current, seen = peer, set()
+    # R-0052: Send.created is the QUEUE time; the turn starts when this Send became cur_send (serve.agent_turn_start
+    # stamps it, host-held). No stamp / another Send's stamp proves nothing → ambiguous (`unknown_agent`: refused as a
+    # caller, and still the stricter material-receipt outcome, never a silent None).
+    ambiguous = (not desktop and stamp is None) or _anchor_tainted(host, agent, int(row[2]) / busy_launch.HZ)
     while current > 1 and current != pid and current not in seen and len(seen) < 64:
         seen.add(current)
         branch = table.get(current)
         if not branch:
             return None
-        ambiguous |= int(branch[2]) / busy_launch.HZ < began
+        born = int(branch[2]) / busy_launch.HZ
+        # R-0052: a hop born inside any host-held non-owner span (friend / guest / external / webhook turn on this anchor,
+        # including a span still open when the owner's Send was merged into it) is guest-born, never the owner's caller.
+        ambiguous |= born < began or application_ingress._guest_born(host, born)
         current = branch[0]
     if current != pid or peer not in table:
         return None
@@ -172,8 +326,10 @@ def _darwin_scope(host, peer):
     from .core.process_evidence import darwin_row, start_matches
     agent = getattr(host, 'agent', None)
     session, send = getattr(agent, 'session', None), getattr(agent, 'cur_send', None)
-    if not isinstance(session, dict) or type(peer) is not int:
+    if type(peer) is not int:
         return None
+    if not isinstance(session, dict):
+        return _darwin_owned_scope(host, agent, send, peer)
     desktop = not getattr(agent, 'phone_turn', False)
     if not desktop and not getattr(agent, 'phone_seen', False):
         return None
@@ -188,26 +344,85 @@ def _darwin_scope(host, peer):
     if _root(source) is None or str(host.hist.epoch) != str(source.get('session')) or not start_matches(session.get('procStart'), row):
         return None
     began = time.time() - (time.monotonic() - created)
-    current, chain = peer, []
-    while current != anchor and type(current) is int and current > 1 and len(chain) < 64:
-        if current in {p for p, _ in chain}:
+    if not desktop:
+        stamp = _turn_began(host, send)       # R-0052 r0 F1: the turn start, not the queue time (Send.created)
+        if stamp is None:
             return None
-        child = darwin_row(current)
-        if not child or child[1] < began:
-            return None
-        chain.append((current, child))
-        current = child[0]
-    if current != anchor or not chain or darwin_row(anchor) != row or any(darwin_row(p) != v for p, v in reversed(chain)):
+        began = max(began, stamp)
+    chain = _darwin_chain(host, agent, peer, anchor, row, began)
+    if chain is None:
         return None
     return {'platform': 'darwin', 'kind': 'desktop' if desktop else 'agent', 'desktop': desktop,
             'desktop_turn': getattr(host, 'desktop_turn', None), 'agent': agent, 'send': send,
             'anchor': (anchor, row), 'peer': (peer, chain[0][1]), 'origin': copy.deepcopy(source)}
 
+def _darwin_chain(host, agent, peer, anchor, row, began):
+    """Every hop from `peer` up to `anchor` started after `began`, none inside a Host-held non-owner span, the anchor not
+    tainted by a guest turn's still-running in-process work (R-0052 r0 F1/F2, the Linux twin); rows re-read unchanged."""
+    from . import application_ingress
+    from .core.process_evidence import darwin_row
+    if clock_check(host):                                 # r1/r2 F2/F1: wall-clock births are incomparable since a step
+        return None
+    if host.__dict__.get('_nonowner_floor') is None:     # serve-era only, as application_ingress._owner_tree
+        me = darwin_row(os.getpid())
+        if not me:
+            return None
+        host.__dict__['_nonowner_floor'] = me[1]
+    if _anchor_tainted(host, agent, row[1]):
+        return None
+    current, chain = peer, []
+    while current != anchor and type(current) is int and current > 1 and len(chain) < 64:
+        if current in {p for p, _ in chain}:
+            return None
+        child = darwin_row(current)
+        if not child or child[1] < began or application_ingress._guest_born(host, child[1]):
+            return None
+        chain.append((current, child))
+        current = child[0]
+    if current != anchor or not chain or darwin_row(anchor) != row or any(darwin_row(p) != v for p, v in reversed(chain)):
+        return None
+    return chain
+
+
+def _darwin_owned_scope(host, agent, send, peer):
+    """R-0047: a Host-spawned harness (Codex app-server, own Claude, OpenCode) has no shared-session `procStart` anchor.
+
+    Same facts as the Linux owned-process branch, all Host-held: the turn being delivered (`cur_send`, cleared at turn
+    end) and its host-written `approval_origin`; the anchor is the Host's own live, unreaped child (`proc`, parent ==
+    this process, so its PID cannot have been reused); every hop from the caller up to it started after the turn.
+    """
+    from .core.process_evidence import darwin_row
+    process = getattr(agent, 'proc', None)
+    anchor, source = getattr(process, 'pid', None), getattr(send, 'approval_origin', None)
+    try:
+        created = float(send.created)
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if type(anchor) is not int or anchor <= 1 or getattr(process, 'returncode', 0) is not None:
+        return None
+    row = darwin_row(anchor)
+    if not row or row[0] != os.getpid() or _root(source) is None or str(host.hist.epoch) != str(source.get('session')):
+        return None
+    stamp = _turn_began(host, send)           # R-0052 r0 F1: the turn start, not the queue time (Send.created)
+    if stamp is None:
+        return None
+    began = max(time.time() - (time.monotonic() - created), stamp)
+    chain = _darwin_chain(host, agent, peer, anchor, row, began)
+    if chain is None:
+        return None
+    return {'platform': 'darwin', 'kind': 'agent', 'desktop': False, 'desktop_turn': getattr(host, 'desktop_turn', None),
+            'agent': agent, 'send': send, 'anchor': (anchor, row), 'peer': (peer, chain[0][1]),
+            'origin': copy.deepcopy(source)}
+
+
 def _scope_live(host, scope, peer):
+    if not isinstance(scope, dict):
+        return False
     if scope.get('platform') == 'darwin':
         current = _darwin_scope(host, peer)
-        return current is not None and all(current.get(k) == scope.get(k) for k in
-            ('agent', 'send', 'desktop_turn', 'anchor', 'peer', 'origin'))
+        return (current is not None and current.get('agent') is scope.get('agent')     # r0 F5/F6: identity, not ==
+                and current.get('send') is scope.get('send')
+                and all(current.get(k) == scope.get(k) for k in ('desktop_turn', 'anchor', 'peer', 'origin')))
     from . import peer_origin
     row = peer_origin._stat(Path('/proc'), peer)
     if not row or scope['peer'] != (peer, row[2]) or str(host.hist.epoch) != str(scope['origin'].get('session')):

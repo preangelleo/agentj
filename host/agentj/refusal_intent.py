@@ -22,3 +22,34 @@ def message(why,lang='zh',detail=None):
     if isinstance(detail,str) and detail.strip() and detail.strip() not in ('已拒绝。','Denied by paired phone or timeout.'):
         text+=' '+detail.strip()[:600]
     return text
+
+
+# R-0056: Codex native declines carry no reason field, so the model reads "rejected by user". Every decline Agent J sends
+# is preceded by this developer note naming who decided: the owner on a paired device, or Agent J policy with its class.
+def _owner_texts():
+    """Both languages of serve's paired-device decline (sysmigrate.DECLINED) — security r1 F2."""
+    try:
+        from .sysmigrate import DECLINED
+        return frozenset(DECLINED)
+    except Exception:  # noqa: BLE001 — the literal pair below is the same text
+        return frozenset(('用户在手机上拒绝了这个操作。', 'The owner declined this on the phone.'))
+
+
+def model_note(result, why, cls=None):
+    """The model-facing line for a declined native request. `result` is the host decision dict (its `reason`, if any)."""
+    why = why.strip() if isinstance(why, str) else ''
+    msg = result.get('message') if isinstance(result, dict) else None
+    if cls is None and (owner_denied(result) or reason(result) == 'owner_denied_before'
+                        or (isinstance(msg, str) and msg.strip() in _owner_texts())):
+        return 'Agent J approval result: refused by the owner on a paired device. ' + why
+    cls = cls or reason(result)
+    if cls == 'unknown':     # security r1 F2: never claim who decided when the host did not say
+        return 'Agent J approval result: declined; reason unknown; treat as refused, do not retry another way. ' + why
+    text = ('Agent J approval result: NOT refused by the owner (ignore the native "rejected by user" wording); '
+            f'refused by Agent J policy: {cls}. ' + why)
+    if cls.startswith('off_list_write_'):
+        # The frozen off-list rule names every request outside its closed read list "write" (find, grep, journalctl,
+        # ls -t, a path outside the working folder, a pipe or redirect): say so instead of claiming the command writes.
+        text += (' Note: this class covers every request outside the closed read list for this source (for example find, '
+                 'grep, journalctl, a pipe or redirect, or a path outside the working folder), not only commands that write.')
+    return text

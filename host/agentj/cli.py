@@ -1160,16 +1160,25 @@ def _name_note(v) -> str:
 
 
 def cmd_revoke(a) -> None:
+    from . import lost_remote as lr        # R-0055: say who can confirm, how long, and the way out (words only)
     st = State()
     _need_init(st)
+    lang = _lang(st)
+    if a.device not in st.devices():
+        sys.exit(f"没有这台设备：{a.device}（`agentj devices` 查看）")
+    online = {s.get("device") for s in (_ctl_quiet(st, {"cmd": "status"}) or {}).get("sessions", []) if s.get("state") == "ready"}
+    print("\n".join(lr.revoke_intro(st, lang, a.device, online)), flush=True)
     try:
-        res = names.ctl_call(st, {"cmd": "revoke", "device": a.device}, 900)
+        res = lr.wait(lambda: names.ctl_call(st, {"cmd": "revoke", "device": a.device}, 900), lr.card_secs(st), lang,
+                      lambda t: print(t, flush=True))
     except names.ServeBusy:
-        sys.exit("确认未完成，没有解绑 / Approval unavailable; remote was not revoked.")
+        sys.exit(lr.revoke_failed(st, lang, "busy"))
     if res is not None and res.get("error") in ("claim_required", "claim_refused"):
         sys.exit("✗ " + _ctl_refused_msg(res))
     if res is None:
         sys.exit("需要运行中的 Agent J 和主人现场验证，未解绑 / A running Host and fresh owner verification are required.")
+    if res.get("error") == "uv_required":
+        sys.exit(lr.revoke_failed(st, lang, "uv_required"))
     if not res.get("ok"):
         sys.exit(f"没有这台设备：{a.device}（`agentj devices` 查看）")
     print(f"已吊销 {a.device}，断开了 {res.get('closed', 0)} 个连接。")
@@ -2332,8 +2341,10 @@ def cmd_faceid(a) -> None:
         sys.exit("agentj serve 在运行但没有响应 / serve is not answering")
     if res is None:
         sys.exit("✗ agentj serve 没在运行：先 `agentj service start`，再在遥控器上点「在本机设置」 / serve is not running")
-    if res.get("error") == "approver_exists":
-        sys.exit("✗ 你还有别的设了 Face ID 的遥控器：请在那台上批准 / another remote with Face ID can approve it")
+    if res.get("error") == "approver_exists":            # R-0055: name them, and the way out when they are lost
+        from . import lost_remote
+        on = {s.get("device") for s in (_ctl_quiet(st, {"cmd": "status"}) or {}).get("sessions", []) if s.get("state") == "ready"}
+        sys.exit(lost_remote.approver_exists(st, _lang(st), on))
     if res.get("error") == "rate":
         sys.exit("✗ 对照码输错太多次，10 分钟后再试 / too many wrong codes, try again in 10 minutes")
     if res.get("error") == "no_passphrase":

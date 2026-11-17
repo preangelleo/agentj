@@ -168,7 +168,9 @@ class OfficialReplyReachesIsolatedAgent(unittest.IsolatedAsyncioTestCase):
                                desktop_turn=1, stopped=lambda: False,
                                agent_notice=lambda message: None,
                                agent=SimpleNamespace(native_source=provenance.terminal(),
-                                                     session={'pid': os.getpid(), 'procStart': proc[2]}))
+                                                     session={'pid': os.getpid(), 'procStart': proc[2]},
+                                                     # R-0052 r1: its main Stop reported no in-process work
+                                                     bg_live={}, bg_known=(os.getpid(), proc[2])))
         from agentj.history import History
         from agentj.serve import Host
         # Use the production identity/lineage methods; the actual child socket

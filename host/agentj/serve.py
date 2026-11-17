@@ -5156,9 +5156,10 @@ class Host:
         return web, machine
 
     def agent_turn_start(self, text: str, send=None) -> None:
-        from . import application_ingress, trust_taint
+        from . import application_ingress, approval_material, trust_taint
         trust_taint.turn_start(self, send)            # S2/S3: a new host turn starts clean, then takes its ingress's mark
         application_ingress.note_turn(self, send)     # #0302: guest-born processes never get the owner_local frame
+        approval_material.turn_start(self, send)     # R-0052: the turn start (not Send.created) for caller-origin proofs
         if (peers := getattr(self, "peers", None)) is not None:
             peers.xfer.begin_execution(send)
         self._fallback_error, self._fallback_used = "", False

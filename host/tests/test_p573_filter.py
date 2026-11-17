@@ -335,10 +335,14 @@ class SupportTicket(unittest.TestCase):
         h = _owner_host(self.st, [])
         h.agent.session = {'sessionId':'support-synthetic-native', 'pid':os.getpid(),
                            'procStart':peer_origin._stat(Path('/proc'),os.getpid())[2]}
+        h.agent.bg_live = {}        # SharedClaudeAgent's host-held background-task counter (R-0052 r0 F2): nothing running
+        h.agent.bg_known = (h.agent.session['pid'], h.agent.session['procStart'])   # r1 F1: its main Stop reported that list
         from agentj import approval_review
         origin = approval_review.snapshot(h)
         h.agent.phone_turn = h.agent.phone_seen = True
-        h.agent.cur_send = NS(created=time.monotonic(), approval_origin=origin, source={'kind':'phone','role':'owner'})
+        h.agent.cur_send = NS(created=time.monotonic(), approval_origin=origin, source={'kind':'phone','role':'owner'},
+                              by=None, turn=None)
+        h.agent_turn_start('synthetic owner support turn', h.agent.cur_send)   # R-0052: the real turn-start stamp
         async def go():
             await asyncio.sleep(.03)
             child = subprocess.Popen([sys.executable, '-c', 'import sys;sys.stdin.buffer.read()'],

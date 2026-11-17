@@ -27,6 +27,13 @@ class DarwinOrigin(unittest.TestCase):
         self.stack = mock.patch.object(process_evidence,'darwin_row',side_effect=lambda p:self.rows.get(p))
         self.stack.start();self.addCleanup(self.stack.stop)
         p=mock.patch.object(approval_material.sys,'platform','darwin');p.start();self.addCleanup(p.stop)
+        # R-0052: the turn started when the Send was delivered (5 s ago, as `created`), stamped by agent_turn_start;
+        # serve's memory predates the anchor; the shared session's background-task counter is empty.
+        approval_material.turn_start(self.h, self.send)
+        stamp = self.h._turn_started
+        self.h._turn_started = (stamp[0], stamp[1] - 5, *stamp[2:])
+        self.h._nonowner_floor = time.time() - 1000
+        self.agent.bg_live = {}
 
     def test_fresh_child_resolves_exact_host_origin(self):
         self.assertEqual(approval_material.verified_caller_origin(self.h,102),self.origin)

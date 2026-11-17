@@ -1,5 +1,5 @@
 {
-  "version": "0.30.30",
-  "zh": "共享会话里，你在菜单中登记的自定义命令从手机发出后会交给 Agent 执行；未登记的命令和权限类命令仍然拒绝。",
-  "en": "In shared sessions, custom commands you registered in the menu now reach the Agent from your phone; unregistered and permission commands are still refused."
+  "version": "0.30.31",
+  "zh": "来源判定改用回合实际开始时间，并拒绝仍被追踪的非主人回合遗留任务（共享 Claude 仍有已知缺口）；修复 macOS 主人回合反馈误判；改进 revoke 提示。",
+  "en": "Origin checks use real turn start and refuse tracked non-owner leftovers (shared Claude still has known gaps); macOS owner feedback fixed; better revoke hints."
 }

@@ -42,8 +42,11 @@ AGENT_TOOLS = ("Agent", "Task")
 
 
 class AgentState:
-    def __init__(self, on_change=None, warn=None, scheduler=None, on_turn=None):
+    def __init__(self, on_change=None, warn=None, scheduler=None, on_turn=None, on_drop=None):
         self._lock = threading.RLock()
+        # R-0052 r4: told which foreground sub-agents the watchdog / lost-Stop reconcile stops tracking (ids, unnamed
+        # count) — they may still be running; the security inventory keeps them unresolved.
+        self._on_drop = on_drop or (lambda aids, unnamed: None)
         self._on_change = on_change or (lambda snap: None)
         # A committed Stop with a reply = one turn of history (history.py, ADR-033).
         # Called under the lock, before the frame that shows the reply is published,
@@ -216,6 +219,7 @@ class AgentState:
                 elif now - self._json_idle_since >= LOST_STOP_IDLE_S:
                     self._warn("lost Stop reconciled: session json idle and no hook traffic for 10s; going idle")
                     self._main_active = False
+                    self._on_drop([a for a, bg in self._agents.items() if not bg], self._subagent_depth)
                     self._agents = {a: bg for a, bg in self._agents.items() if bg}
                     self._subagent_depth = 0
                     self._deferred_stop = None
@@ -479,7 +483,9 @@ class AgentState:
             self._warn(f"no hook traffic for {config.SUBAGENT_STALE_S:.0f}s after a held "
                        f"Stop; dropping foreground sub-agents {fg} "
                        f"(+{self._subagent_depth} unnamed) as lost and going idle")
-            for a in [a for a, v in self._agents.items() if not v]:
+            dropped = [a for a, v in self._agents.items() if not v]
+            self._on_drop(dropped, self._subagent_depth)
+            for a in dropped:
                 del self._agents[a]
             self._subagent_depth = 0
             self._commit_stop(ev)

@@ -313,8 +313,13 @@ class OwnerDispatchTyping(unittest.TestCase):
         self.assertFalse(order_host.turn_bound(host, None, None))
         for scope, want in (({"kind": "agent"}, True), ({"kind": "desktop"}, True), ({"kind": "unknown_agent"}, False),
                             ({"kind": "unit"}, False), (None, False), ("agent", False)):
-            with mock.patch.object(approval_material, "_direct_scope", return_value=scope):
+            with mock.patch.object(approval_material, "_direct_scope", return_value=scope), \
+                    mock.patch.object(approval_material, "_scope_live", return_value=True):
                 self.assertIs(order_host.turn_bound(host, 4242, None), want, scope)
+        # R-0052 r1 F5: the same live re-check as verified_caller_origin (epoch / current Send / peer start)
+        with mock.patch.object(approval_material, "_direct_scope", return_value={"kind": "agent"}), \
+                mock.patch.object(approval_material, "_scope_live", return_value=False):
+            self.assertFalse(order_host.turn_bound(host, 4242, None))
         with mock.patch.object(approval_material, "_direct_scope", side_effect=OSError):
             self.assertFalse(order_host.turn_bound(host, 4242, None))
         src = (AJ / "agentj" / "core" / "order_host.py").read_text()

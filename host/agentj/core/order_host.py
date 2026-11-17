@@ -95,7 +95,9 @@ def turn_bound(host, peer=None, internal=None) -> bool:
     try:
         from .. import approval_material
         scope = approval_material._direct_scope(host, peer)
-        return isinstance(scope, dict) and scope.get('kind') in ('agent', 'desktop')
+        # R-0052 r1 F5: the same liveness / epoch / current-Send re-check as verified_caller_origin.
+        return (isinstance(scope, dict) and scope.get('kind') in ('agent', 'desktop')
+                and approval_material._scope_live(host, scope, peer))
     except Exception:  # noqa: BLE001
         return False
 

@@ -30,7 +30,7 @@ class NativeJourney(app_fixture.Journey):
         request={'jsonrpc':'2.0','id':'native-friends-request','method':'item/commandExecution/requestApproval',
                  'params':{'threadId':actor.tid,'turnId':actor.turn_id,'itemId':'one-call',
                            'command':cmd,'cwd':str(self.work)}}
-        code="import json,sys;from pathlib import Path;print(sys.argv[1],flush=True);v=json.loads(sys.stdin.readline());Path(sys.argv[2]).write_text(json.dumps(v))"
+        code="import json,sys;from pathlib import Path;print(sys.argv[1],flush=True);v={}\nwhile v.get('id')!='native-friends-request':v=json.loads(sys.stdin.readline())\nPath(sys.argv[2]).write_text(json.dumps(v))"
         proc=await asyncio.create_subprocess_exec(os.sys.executable,'-u','-c',code,json.dumps(request),str(receipt),
             stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE,env=self.env)
         actor.proc=proc

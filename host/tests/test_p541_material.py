@@ -252,6 +252,11 @@ class Material(unittest.IsolatedAsyncioTestCase):
         actor.cur_send = Send('fixture', 'sdk-task', self.origin['message_id'], source=provenance.phone())
         actor.cur_send.approval_origin = copy.deepcopy(self.origin)
         self.host.agent = actor
+        # R-0052: the stand-in app-server is this test process, i.e. as old as "serve" itself; a real one is serve's child,
+        # born after the serve-era floor. Say so, then start the turn through the real agent_turn_start (the stamp).
+        from agentj import busy_launch
+        self.host._nonowner_floor = int(busy_launch.procs()[os.getpid()][2]) / busy_launch.HZ - 1
+        self.host.agent_turn_start('synthetic owner task', actor.cur_send)
         await asyncio.sleep(.03)  # kernel process-start ticks cannot prove ordering within one tick
         output = await self.cli_read()
         self.assertIn(material.PREFIX, output)

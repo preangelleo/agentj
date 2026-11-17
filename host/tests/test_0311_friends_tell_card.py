@@ -26,6 +26,7 @@ class Journey(CardFixture,unittest.IsolatedAsyncioTestCase):
         self.actor=NS(host=self.host,kind='codex',cfg=cfg,cur_send=None,native_source=provenance.terminal(),
             session={'sessionId':'friends-card-native','pid':os.getpid(),'procStart':codex_procs.start_token(os.getpid())},
             research=False,untrusted_foreign=False,untrusted_state=None,
+            bg_live={},bg_known=(os.getpid(),codex_procs.start_token(os.getpid())),   # R-0052 r1: reported, nothing running
             thread={'sandbox':{'type':'readOnly'},'approvalPolicy':'on-request'})
         self.sends=[];self.actor.submit=self.sends.append
         self.host.agent=self.actor;self.host.agent_cfg=cfg
