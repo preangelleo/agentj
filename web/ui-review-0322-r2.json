@@ -78,10 +78,14 @@
       ]
     },
     "web/public/js/authrescue.js": {
-      "sha256": "0b7ee2e04f555660570036a4479dbc716235ae933bfd683f66187665ccde676a",
+      "sha256": "8174ab1e19fe7cf3693d034ce5f75c747f478aa23957780b766320d6a3b07662",
       "approved": [
         "r3_final_decision"
-      ]
+      ],
+      "propagation": {
+        "baseline_sha256": "0b7ee2e04f555660570036a4479dbc716235ae933bfd683f66187665ccde676a",
+        "reason": "R-0051 W8 (0.30.32): the login-rescue link takes the URL object authOf returned instead of re-reading flow.url; same https official-host rule, no visible, feature, permission or flow change."
+      }
     },
     "web/public/js/keys.js": {
       "sha256": "e8bb2506a79faf2643b7a9bb266ccde9f1eddcc3bb349e905fd0de7186b4cfdb",

@@ -24,20 +24,58 @@ function idb(name = DB_NAME) {
 // session usable (and able to reconnect) with an in-memory store; persistence is best effort.
 const memory = new Map();
 let storageFailed = false;
-async function kv(mode, fn) {
+// R-0051 W12: one connection for the page's key-value reads and writes instead of an open + close per operation. The browser
+// may close it under us (iOS: "connection to IndexedDB server lost"; another tab upgrading): such a lost connection is dropped
+// and the operation tried once more on a fresh one. Any other failure falls back to memory at once, as before (W1).
+// r1b F3: a forced loss aborts the running transactions BEFORE onclose fires, so the error itself must say "connection":
+// an abort with no error / AbortError / UnknownError, or InvalidStateError / TransactionInactiveError, retries once on a fresh
+// connection; a store error (ConstraintError, DataError, DataCloneError, a thrown Error …) still goes to memory at once.
+let conn = null;
+const gone = new WeakSet();
+const CONN_ERRORS = new Set(['AbortError', 'UnknownError', 'InvalidStateError', 'TransactionInactiveError']);
+const connLost = (db, e) => gone.has(db) || e == null || CONN_ERRORS.has(e.name);
+function shared() {
+  if (conn) return conn;
+  const p = conn = idb().then((db) => {
+    const lost = () => { gone.add(db); if (conn === p) conn = null; };
+    db.onclose = lost;
+    db.onversionchange = () => { lost(); db.close(); };
+    p.db = db;
+    return db;
+  });
+  p.catch(() => { if (conn === p) conn = null; });
+  return p;
+}
+function release(db) {
+  gone.add(db);
+  if (conn && conn.db === db) conn = null;
+  try { db.close(); } catch { /* already closed */ }
+}
+async function kv(mode, fn, again = true) {
   if (storageFailed) {
     const key = fn({ get: (k) => ({ result: memory.get(k) }), put: (v, k) => { memory.set(k, v); return { result: v }; }, delete: (k) => { memory.delete(k); return { result: undefined }; } });
     return key?.result;
   }
+  let db;
+  try { db = await shared(); } catch { storageFailed = true; return kv(mode, fn); }
+  let tx;
+  try { tx = db.transaction('kv', mode); } catch (e) {
+    // InvalidStateError: the connection is closing / closed — a lost connection, not a broken store
+    const lost = connLost(db, e);                     // before release(): release marks the db gone
+    release(db);
+    if (again && lost) return kv(mode, fn, false);
+    storageFailed = true; return kv(mode, fn);
+  }
   try {
-    const db = await idb();
     return await new Promise((res, rej) => {
-      const tx = db.transaction('kv', mode);
       const req = fn(tx.objectStore('kv'));
-      tx.oncomplete = () => { db.close(); res(req.result); };
-      tx.onerror = tx.onabort = () => { db.close(); rej(tx.error); };
+      tx.oncomplete = () => res(req.result);
+      tx.onerror = tx.onabort = () => rej(tx.error);
     });
   } catch (e) {
+    const lost = connLost(db, e);
+    release(db);
+    if (again && lost) return kv(mode, fn, false);   // lost while this transaction ran (abort may precede onclose)
     storageFailed = true;
     return kv(mode, fn);
   }

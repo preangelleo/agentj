@@ -41,7 +41,7 @@ Suites: **`Noise_IKpsk2_25519_AESGCM_SHA256`** (first pairing) and **`Noise_IK_2
   `ip rate` / `ip busy`). IP = `cf-connecting-ip`: an IPv4 address, or an IPv6 /64 (IPv4-mapped → IPv4); missing or malformed →
   one shared bucket. The counters live in a per-bucket `IpLimiter` Durable Object named by a hash of the bucket; it stores only
   lease ids with expiry times and one window counter — no IP, no channel, no frame content. Leases end on close or after 5 min
-  without refresh, and an idle bucket's storage is wiped.
+  without refresh (25 min while the bucket holds ≤ 16 live leases), and an idle bucket's storage is wiped.
 - The relay **stores no frame content** (no logs, observability off; the only storage is the per-IP counters above). It cannot
   decrypt anything: it holds no keys.
 - **Seat certificate** (P185, ADR-A198): the host auth frame may carry `"cert"` — `b64url(P) "." b64url(Ed25519(k, "agentj-relay-cert-v1\n" ‖ P))`,
@@ -3345,7 +3345,8 @@ Spec and security review: `agentjarvis/docs/specs/AGENTJ-HOOKS-SPEC.md`. Code: `
   host too; only `token` hooks accept them). `hb` = `b64url(SHA-256("agentj/hookbox/v1\n" ‖ mbox_raw16)[0:16])` (one-way from the
   §17.1 mbox), `hook` = 22 b64url chars (16 random bytes), `token` = 16–64 b64url chars. Anything else → 404 JSON; other methods
   405; `content-length` or the read body > 65 536 B, > 64 headers, > 8 KiB of headers or a query > 2 048 chars → 413 before the
-  host. Per (IP bucket, box): one `IpLimiter.acquire()` on `idFromName(ipKey(ip) + "|hook|" + hb)` per request (lease returned at
+  host. The box is asked first (`HookBox.admit`): no authenticated host → 503, a hook id the host did not announce → 404, both
+  without a limiter or reading the body. Then, per (IP bucket, box): one `IpLimiter.acquire()` on `idFromName(ipKey(ip) + "|hook|" + hb)` per request (lease returned at
 once; 120 / 60 s; separate from the sockets' per-IP window) → 429. The body must arrive within 10 s → 408. The edge drops
   `cookie`, `host`, `connection`, `content-length`, `transfer-encoding`, `cdn-loop`, `x-real-ip`, `x-forwarded-*`, `cf-*`,
   `x-aj-*`, `true-client-ip` and hands the host `{m, h, t, q, hd:{lower-case name: value}, ip:<cf-connecting-ip>, ts}` + the body.

@@ -245,12 +245,14 @@ function flowInto(box, f) {
   const h = document.createElement('h3'); h.setAttribute('data-aj-owner','aj-account'); h.className = 'setg'; h.textContent = t(adding ? 'acct.flowTitle' : 'ar.flowTitle').replace('{h}', { codex: 'Codex', kimi: 'Kimi Code' }[f.kind] || 'Claude Code');
   box.append(h);
   if (adding) box.append(line(t('acct.flowFor', { name: acct })));
-  const link = (u) => { const a = document.createElement('a'); a.setAttribute('data-aj-owner', 'aj-account'); a.href = u; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.className = 'arlink'; a.textContent = t('ar.openLink'); return a; };
+  // R-0051 W8: the button only ever carries a URL that authOf (authcard.js: https + the harness's official login host) returned.
+  const link = (ok) => { const a = document.createElement('a'); a.setAttribute('data-aj-owner', 'aj-account'); a.href = ok.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.className = 'arlink'; a.textContent = t('ar.openLink'); return a; };
   if (!here && ['url','device'].includes(f.stage)) box.append(line(t('p332.auth.wait')));   // #427: on AI 账号 the steps are right here
   if (f.stage === 'starting') box.append(line(t('ar.stStarting')));
-  if (f.stage === 'device' && authOf({...f,round:f.round||1,rounds:f.rounds||1}) && (f.code || f.kind === 'kimi')) {
+  const dev = f.stage === 'device' && authOf({...f,round:f.round||1,rounds:f.rounds||1});
+  if (dev && (f.code || f.kind === 'kimi')) {
     box.append(line(t(f.kind === 'kimi' ? 'ar.kimiStep1' : 'ar.deviceStep1')));
-    const p = document.createElement('p'); p.className = 'mailbtns'; p.append(link(f.url), copyBtn(f.url)); box.append(p);
+    const p = document.createElement('p'); p.className = 'mailbtns'; p.append(link(dev), copyBtn(dev.url)); box.append(p);
     if (f.code) {
       box.append(line(t('ar.deviceStep2')));
       const c = document.createElement('p'); c.className = 'arcode'; c.textContent = f.code; box.append(c);
@@ -264,9 +266,10 @@ function flowInto(box, f) {
     tick(); timers.push(setInterval(tick, 1000));
   }
   if (f.reopened && ['starting', 'url'].includes(f.stage)) box.append(line(t(f.reopened === 'expired' ? 'ar.reopenedExpired' : 'ar.reopenedRejected'), 'arreopen'));
-  if (f.stage === 'url' && authOf({...f,code:f.code||'',round:f.round||1,rounds:f.rounds||3})) {
+  const web = f.stage === 'url' && authOf({...f,code:f.code||'',round:f.round||1,rounds:f.rounds||3});
+  if (web) {
     box.append(line(t('ar.urlStep1')));
-    const p = document.createElement('p'); p.className = 'mailbtns'; p.append(link(f.url), copyBtn(f.url)); box.append(p);
+    const p = document.createElement('p'); p.className = 'mailbtns'; p.append(link(web), copyBtn(web.url)); box.append(p);
     if (f.kind === 'kimi') box.append(line(t('ar.kimiLinkOnly')));
     else box.append(line(t('ar.urlStep2')), btn(t('ar.openCard'), '', reopenAuth));
     if (f.expires_at) {   // P288: the link's 10 minutes; at 0 the host opens the next round by itself

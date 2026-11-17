@@ -58,7 +58,10 @@ def record(ev, fields, allowed):
     out = {"ev": value(ev)}
     # Fixed allowlist traversal: no copy, repr, deepcopy, or full walk of caller data.
     priority = ("status", "cid", "id", "request", "phase", "task", "code", "exception_type")
-    for key in sorted(allowed, key=lambda k: (k not in priority, priority.index(k) if k in priority else k)):
+    # R-0049 H13: sort only the allowed names this line carries (a handful), not all ~80 per line — same key, so the same
+    # order and the same point where the node budget runs out.
+    present = [k for k in fields if k in allowed]
+    for key in sorted(present, key=lambda k: (k not in priority, priority.index(k) if k in priority else k)):
         if key in fields:
             if remaining[0] <= 0:
                 cut[0] = True

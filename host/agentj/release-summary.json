@@ -1,5 +1,5 @@
 {
-  "version": "0.30.31",
-  "zh": "来源判定改用回合实际开始时间，并拒绝仍被追踪的非主人回合遗留任务（共享 Claude 仍有已知缺口）；修复 macOS 主人回合反馈误判；改进 revoke 提示。",
-  "en": "Origin checks use real turn start and refuse tracked non-owner leftovers (shared Claude still has known gaps); macOS owner feedback fixed; better revoke hints."
+  "version": "0.30.32",
+  "zh": "共享会话后台完成的回复会推送「有新回复」；「不要打印密钥」类保护句不再误拒；电脑端多项提速；手机断线重连更稳。",
+  "en": "Background replies in shared sessions now notify; \"do not print keys\" wording no longer refused; faster computer service; steadier phone reconnects."
 }

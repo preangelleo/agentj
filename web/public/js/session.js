@@ -55,6 +55,12 @@ const BACKOFF_FIRST = 250;
 // or the network coming back retries at once. A resume that opened but did not get to ready within RESUME_STALL_MS is
 // abandoned and retried (the relay or the computer dropped it silently) — never a pairing or a computer that is down.
 const BACKOFF_MAX = 5000, RESUME_STALL_MS = 30000;
+// R-0051 W2: before `ready` there is no heartbeat, and a socket that sits in wait-host hears the relay only on a change. After
+// sleep or a network switch that socket can be a zombie that will never hear `host up`. Coming back to the front or online,
+// a resume that heard nothing for SILENT_MS (wall clock: iOS stops performance.now() in sleep) is replaced by a fresh socket —
+// quietly: the relay answers the new one at once with the same `host` status, so the status line does not flicker.
+const SILENT_MS = 15000;
+let quietUntil = 0;
 let backoff = BACKOFF_FIRST;
 // P168: what the offline card may say about the automatic reconnect — real numbers only (no invented progress):
 // attempts = scheduled retries since the last ready session, nextAt = when the pending one fires (null = none pending).
@@ -97,16 +103,18 @@ export function closeSession() {
 
 export function openSession(mode, ctx) {
   closeSession();
+  const quiet = mode === 'resume' && Date.now() < quietUntil;
+  quietUntil = 0;
   const ws = new WebSocket(ctx.relay + '/v1/dev/' + ctx.channel);
   ws.binaryType = 'arraybuffer';
   const s = { ws, mode, ctx, phase: 'wait-host', hs: null, gen: null, recv: null, chain: Promise.resolve(),
-    closedByUs: false, frag: new Defrag(), pacer: new Pacer(), removed: null, rxAt: 0, foreground: globalThis.document?.visibilityState !== 'hidden' };
+    closedByUs: false, frag: new Defrag(), pacer: new Pacer(), removed: null, rxAt: 0, foreground: globalThis.document?.visibilityState !== 'hidden', heardAt: Date.now() };
   if (mode === 'pair') { refusals = 0; removalProbe = false; }
   sess = s;
   if (mode === 'resume') armStall(s);
-  H.setStatus('connecting', 'st.connecting');
-  ws.onopen = () => { if (sess === s && s.phase === 'wait-host') H.setStatus('waiting-host', 'st.waitingHost'); };
-  ws.onmessage = (ev) => { s.rxAt = performance.now(); s.chain = s.chain.then(() => onFrame(s, ev.data)).catch((e) => protocolFail(s, e)); };
+  if (!quiet) H.setStatus('connecting', 'st.connecting');
+  ws.onopen = () => { if (!quiet && sess === s && s.phase === 'wait-host') H.setStatus('waiting-host', 'st.waitingHost'); };
+  ws.onmessage = (ev) => { s.rxAt = performance.now(); s.heardAt = Date.now(); s.chain = s.chain.then(() => onFrame(s, ev.data)).catch((e) => protocolFail(s, e)); };
   ws.onclose = (ev) => { s.chain = s.chain.then(() => onClose(s, ev)); };
   ws.onerror = () => { /* a close event always follows */ };
   return s;
@@ -381,7 +389,18 @@ export function scheduleReconnect() {
   backoff = Math.min(backoff * 2, BACKOFF_MAX);
   retries++; nextAt = Date.now() + wait;
   H.setStatus('connecting', 'st.retryIn', { n: Math.max(1, Math.round(wait / 1000)) });
-  reconnectTimer = setTimeout(() => { reconnectTimer = null; nextAt = null; H.resume(); }, wait);
+  reconnectTimer = setTimeout(() => { reconnectTimer = null; nextAt = null; runResume(); }, wait);
+}
+// R-0051 W1: H.resume() reads IndexedDB before it opens a socket. A rejected read (iOS back from the background: "connection to
+// IndexedDB server lost") used to end the ladder — no socket, no timer, the page stuck on 「N 秒后重试」. A failed resume that
+// left no session and no pending timer schedules the next rung instead.
+function runResume() {
+  let p;
+  try { p = H.resume(); } catch (e) { p = Promise.reject(e); }
+  Promise.resolve(p).catch(() => { quietUntil = 0; if (!sess && !reconnectTimer) scheduleReconnect(); });
+}
+function silentResume(s) {
+  return s && s === sess && s.mode === 'resume' && s.phase !== 'ready' && !reconnectTimer && Date.now() - s.heardAt >= SILENT_MS;
 }
 function armHeartbeat(ms = HEARTBEAT_MS) {
   clearTimeout(heartbeatTimer);
@@ -410,7 +429,15 @@ export async function checkConnection(fast = false, why = 'hb') {
 }
 export function reconnectNow(why = 'visibility') {
   if (isReady()) checkConnection(true, why);
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; nextAt = null; backoff = BACKOFF_FIRST; H.resume(); }
+  else if (silentResume(sess)) {
+    lastDrop = lastDrop ? { ...lastDrop, why: 'stall' } : { why: 'stall', code: null, at: Date.now() };   // keeps the first close code
+    closeSession();
+    backoff = BACKOFF_FIRST;
+    quietUntil = Date.now() + 5000;                    // only the openSession this resume makes
+    runResume();
+    return;
+  }
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; nextAt = null; backoff = BACKOFF_FIRST; runResume(); }
 }
 
 /** Send one app message on the ready session; resolves when it is on the socket. `g` pins a generation (gen()): when the

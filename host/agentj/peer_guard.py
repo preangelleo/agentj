@@ -96,10 +96,445 @@ def _asks_secret(text: str) -> str | None:
     # shell-file reads or other cross-clause rules.
     hit = _request_hit(text)
     if not hit:
-        return None
+        # ADR-R0056-negation: a negated clause about a secret next to anything that is not provably quiet
+        return "negated_then_ask" if negated_mention(text) and not protective_only(text) else None
     clauses = re.split(r"([。！？!?;；\n]+)", spaced)
     remaining = "".join("" if _TASK_STATUS.fullmatch(c.strip()) else c for c in clauses)
-    return _request_hit(remaining)
+    hit = _request_hit(remaining)
+    if hit and protective_only(text):     # ADR-R0056-negation: secrets named only to forbid showing them
+        return None
+    return hit
+
+
+# ------------------------------------------------------------------ R-0056: protective wording (ADR-R0056-negation)
+# 「排查断网，不要打印凭据、密钥」 names secrets only to forbid showing them. Exempt a message ONLY when every clause is either a
+# protective clause (closed negated-exposure grammar) or, from closed allowlists only, an exact filler, a hand-over of a
+# non-secret result, or a task clause (closed verb + closed non-secret object + closed modifiers). No denylist, nothing is
+# deleted before judging; anything unknown refuses (fail closed). Deterministic tokens and set lookups, linear time.
+NEG_MAX = 1200          # normalised characters; longer messages never get the exemption
+
+_CJK_PUNCT = "、。「」『』《》〈〉【】\u201c\u201d·\u2014\u2013…"   # curly single quotes are mapped to ' first
+_BREAK = frozenset("。!?;\n…")          # after NFKC: ！？； are ASCII
+_SEP = frozenset(",:、")                  # clause separators inside a sentence (，： are ASCII after NFKC)
+_NEUTRAL = frozenset("\"()[]{}<>「」『』《》〈〉【】\u201c\u201d·\u2014\u2013")
+
+
+def _w(s: str) -> frozenset:
+    return frozenset(s.split())
+
+
+# protective grammar — closed lists
+_ZH_NEG = _w("不要 不用 不准 不许 不可 不可以 不能 不得 不该 不应 不应该 别 勿 切勿 请勿 禁止 严禁 不 绝不 决不 千万别 千万不要 "
+             "永远不要 避免 不必 无需 无须 毋须 莫")
+_ZH_LEAD = _w("请 注意 也 并 并且 而且 同时 务必 一定 记得 全程 千万 绝对 始终 永远 都 一律 过程中 期间 排查时 诊断时 任何时候 另外")
+_ZH_ADV = _w("随便 擅自 主动 再 去 随意 轻易")
+_ZH_VERB = _w("打印 输出 显示 展示 泄露 泄漏 透露 暴露 外泄 发送 发出 发 贴 粘贴 贴出 记录 回显 列出 读出 念出 提及 提到 写 写入 写进 "
+              "上传 分享 公开 打出 给出 外传 传出 回传 转发 外发 包含 带出 附上 复述 曝光 记")
+_ZH_VSUF = _w("出 出来")
+_ZH_DET = _w("任何 任一 一切 所有 全部 有关 相关 相关的 有关的 的")
+_ZH_MOD = _w("账号 账户 登录 数据库 服务器 管理员 用户 系统 私人 个人 真实")
+_ZH_HEAD = _w("私钥 密钥 秘钥 密码 口令 令牌 凭据 凭证 助记词 账号密码 机密 秘密 敏感信息 隐私信息 环境变量 证书 订阅链接 订阅地址 "
+              "验证码 授权码 登录信息 认证信息 密钥文件 私钥文件")
+_ZH_SUF = _w("的内容 内容 的值 值 原文 信息 等 等等 等信息 之类 之类的 文件 相关信息 里的 中的 里面的")
+_ZH_CONJ = _w("和 与 及 以及 或 或者 或是 跟")
+_ZH_LOCP = _w("到 在 进 于 往")
+_ZH_PLACE = _w("群里 群 日志 日志里 回复 回复里 回答里 输出 输出里 终端 终端里 屏幕 屏幕上 聊天 聊天里 消息 消息里 任何地方 网上 外面")
+_ZH_BA = "把"
+_EN_LEAD = _w("please pls kindly also and note important remember")
+_EN_ADV = _w("ever accidentally")
+_EN_VERB = _w("print printing output outputting show showing display displaying reveal revealing leak leaking expose exposing "
+              "disclose disclosing send sending share sharing paste pasting post posting log logging dump dumping include "
+              "including write writing mention mentioning emit emitting upload uploading copy copying type typing return "
+              "returning repeat repeating")
+_EN_DET = _w("any the a an all of your")
+_EN_MOD = _w("api ssh private secret access auth bearer env environment gpg pgp aws cloud bot session login admin root database "
+             "db account user service signing encryption sensitive real seed")
+_EN_HEAD = _w("key keys token tokens secret secrets password passwords passwd passphrase passphrases credential credentials "
+              "cookie cookies apikey apikeys api_key api_keys api-key api-keys mnemonic mnemonics .env env variables vars "
+              "phrase information info data details")
+_EN_POST = _w("contents content values value files file")
+_EN_CONJ = _w("or and nor")
+_EN_LOCP = _w("in into to on inside within")
+_EN_PLACE = _w("reply replies response responses output outputs answer answers log logs chat terminal console screen channel "
+               "group message messages transcript transcripts report reports")
+_EN_TAIL = _w("anywhere etc")
+
+# r2 allowlist for every clause that is not protective
+_FILL = frozenset(("谢谢", "好的", "好", "收到", "注意", "辛苦了", "ok", "okay", "thanks", "thank you", "please", "pls"))
+_HO_ZH_LEAD = _w("请 麻烦 然后 再 最后")
+_HO_ZH_TAIL = _w("发我 发给我 告诉我 贴出来")
+_HO_ZH_OBJ = _w("结论 原因 诊断结果 诊断结论 排查结果 报错 错误信息")
+_HO_EN_LEAD = _w("please then and")
+_HO_EN_VERB = _w("send tell")
+_HO_EN_OBJ = _w("cause causes diagnosis findings errors error conclusion conclusions")
+_TASK_VERB = _w("查 排查 诊断 检查 查看 看一下 分析 check inspect diagnose look review read")
+_TASK_OBJ = _w("日志 日志里 网络 断网 报错 配置 服务 状态 进程 磁盘 连接 host.log journalctl agentj logs log network service services "
+               "config status errors error disk process processes connection")
+_TASK_MOD = _w("今天 最近 原因 只读 一下 请 帮我 麻烦 的 里 中 里的 中的 先 read-only today recent latest the a please at")
+_JOIN = _w("、 / 和 及 与 以及 and &")
+_ZH_REF = tuple(_w("它 其 该 此 这 那 上面 上述 上一 上条 前面 前述 刚才 刚刚 之前 原文 值 同一 后者 前者 以上 如上 下面 下述 以下 下一 "
+                   "本身"))
+_EN_REF = _w("it its itself them they their theirs that this those these value values one ones same above previous prior former "
+             "latter thing things stuff aforementioned earlier")
+_ZH_DICT = (_ZH_NEG | _ZH_LEAD | _ZH_ADV | _ZH_VERB | _ZH_VSUF | _ZH_DET | _ZH_MOD | _ZH_HEAD | _ZH_SUF | _ZH_CONJ | _ZH_LOCP
+            | _ZH_PLACE | {_ZH_BA} | _FILL | _HO_ZH_LEAD | _HO_ZH_TAIL | _HO_ZH_OBJ | _TASK_VERB | _TASK_OBJ | _TASK_MOD | _JOIN)
+_ZH_DICT = frozenset(w for w in _ZH_DICT if "\u4e00" <= w[0] <= "\u9fff")
+_ZH_MAXW = max(len(w) for w in _ZH_DICT)
+
+
+def _cjk(c: str) -> bool:
+    o = ord(c)
+    return 0x4E00 <= o <= 0x9FFF or 0x3400 <= o <= 0x4DBF
+
+
+def _squash(text: str) -> str:
+    """NFKC (full-width → ASCII), format characters (Cf: zero-width, BOM, bidi) dropped, apostrophes unified, lower case."""
+    s = unicodedata.normalize("NFKC", text or "")
+    s = "".join(c for c in s if unicodedata.category(c) != "Cf")
+    for q in ("\u2018", "\u2019", "\u02bc"):
+        s = s.replace(q, "'")
+    return s.replace("\r", "\n").replace("\t", " ").lower()
+
+
+def _normalise(text: str) -> str | None:
+    """`_squash`, or None if too long or if any character is outside ASCII / GB2312 Han / a few CJK punctuation marks
+    (traditional characters, homoglyphs, combining marks, other scripts → no exemption)."""
+    s = _squash(text)
+    if len(s) > NEG_MAX:
+        return None
+    for c in s:
+        if not (" " <= c <= "~" or c == "\n" or _cjk(c) and _gb2312(c) or c in _CJK_PUNCT):
+            return None
+    return s
+
+
+def _gb2312(c: str) -> bool:
+    """Simplified Chinese only: 發 / 譯 / 碼 (traditional) are outside GB2312 and end the exemption (r1 F1)."""
+    try:
+        c.encode("gb2312")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+def _tokens(s: str) -> list:
+    """[(kind, text, start, end)]: kind b = sentence break, p = clause separator, q = neutral mark, a = ASCII word, c = Chinese
+    (dictionary longest match; unknown characters one by one). One pass, bounded look-ahead."""
+    out, i, n = [], 0, len(s)
+    while i < n:
+        c = s[i]
+        if c == " ":
+            i += 1
+        elif c in _BREAK or (c == "." and (i + 1 == n or s[i + 1] in " \n")):
+            out.append(("b", c, i, i + 1)); i += 1
+        elif c in _SEP:
+            out.append(("p", c, i, i + 1)); i += 1
+        elif c in _NEUTRAL:
+            out.append(("q", c, i, i + 1)); i += 1
+        elif _cjk(c):
+            for k in range(min(_ZH_MAXW, n - i), 0, -1):
+                w = s[i:i + k]
+                if k == 1 or w in _ZH_DICT:
+                    out.append(("c", w, i, i + k)); i += k
+                    break
+        else:   # an ASCII word: up to a space, Chinese, a separator or a break
+            j = i
+            while j < n and s[j] != " " and not _cjk(s[j]) and s[j] not in _BREAK and s[j] not in _SEP \
+                    and s[j] not in _NEUTRAL and not (s[j] == "." and (j + 1 == n or s[j + 1] in " \n")):
+                j += 1
+            if j == i:      # a lone "." inside text: treat as a word character
+                j = i + 1
+            out.append(("a", s[i:j], i, j)); i = j
+    return out
+
+
+def _is(tok, *sets) -> bool:
+    return tok is not None and tok[0] in "ac" and any(tok[1] in st for st in sets)
+
+
+def _protective(t: list, i: int) -> int | None:
+    """Parse one negated-exposure clause at t[i]; return the index of the token after it (a separator, a break or the end) or
+    None. Forms: LEAD* NEG ADV* [LOC] (VERB+ VSUF* DET* OBJS [LOC|TAIL] | 把 DET* OBJS VERB+ VSUF* [LOC|TAIL])."""
+    n = len(t)
+    g = lambda k: t[k] if k < n else None   # noqa: E731
+    while _is(g(i), _ZH_LEAD, _EN_LEAD):
+        i += 1
+    i = _neg(t, i)
+    if i is None or _neg(t, i) is not None:          # no negation, or a double one (不得不 / don't not)
+        return None
+    while _is(g(i), _ZH_ADV, _EN_ADV):
+        i += 1
+    i = _loc(t, i) or i
+    if _is(g(i), {_ZH_BA}):
+        i = _objs(t, _dets(t, i + 1))
+        if i is None:
+            return None
+        i = _verbs(t, i)
+    else:
+        i = _verbs(t, i)
+        if i is None:
+            return None
+        i = _objs(t, _dets(t, i))
+    if i is None:
+        return None
+    i = _loc(t, i) or i
+    while _is(g(i), _EN_TAIL):
+        i += 1
+    return i if i == n or t[i][0] in "bp" else None
+
+
+def _neg(t, i):
+    n = len(t)
+    if i >= n or t[i][0] not in "ac":
+        return None
+    w = t[i][1]
+    if w in _ZH_NEG or w in ("never", "avoid", "don't", "dont", "mustn't", "shouldn't"):
+        return i + 1
+    if w in ("do", "must", "should") and i + 1 < n and t[i + 1][1] == "not":
+        return i + 2
+    return None
+
+
+def _verbs(t, i):
+    n = len(t)
+    if not _is(t[i] if i < n else None, _ZH_VERB, _EN_VERB):
+        return None
+    i += 1
+    # r3 F1: verbs join only by 、 / or a conjunction — never by a comma (「不要打印，发送密码」 is two clauses)
+    while i + 1 < n and (_is(t[i], _ZH_CONJ, _EN_CONJ) or t[i][1] in _VERB_SEP) and _is(t[i + 1], _ZH_VERB, _EN_VERB):
+        i += 2
+    while i < n and _is(t[i], _ZH_VSUF):
+        i += 1
+    return i
+
+
+_LIST_SEP = frozenset((",", "、", "/"))     # between objects (each must be a secret noun)
+_VERB_SEP = frozenset(("、", "/"))
+
+
+def _dets(t, i):
+    while i < len(t) and _is(t[i], _ZH_DET, _EN_DET):
+        i += 1
+    return i
+
+
+_ENV_SUFFIX = ("_key", "_token", "_secret", "_password", "_passwd", "_pass", "_credentials", "_cookie")
+
+
+def _env_name(tok) -> bool:
+    """OPENROUTER_API_KEY / $GITHUB_TOKEN / ${X_SECRET}: an environment-variable name of a secret, as an object."""
+    if tok is None or tok[0] != "a":
+        return False
+    w = tok[1].removeprefix("$").removeprefix("{").removesuffix("}")
+    return bool(w) and all(c.isascii() and (c.isalnum() or c == "_") for c in w) and w.endswith(_ENV_SUFFIX)
+
+
+def _obj(t, i):
+    n = len(t)
+    while i + 1 < n and _is(t[i], _ZH_MOD, _EN_MOD) and _is(t[i + 1], _ZH_MOD, _EN_MOD, _ZH_HEAD, _EN_HEAD):
+        i += 1
+    if not (_is(t[i] if i < n else None, _ZH_HEAD, _EN_HEAD) or _env_name(t[i] if i < n else None)):
+        return None
+    i += 1
+    while i < n and _is(t[i], _ZH_SUF, _EN_POST):
+        i += 1
+    return i
+
+
+def _objs(t, i):
+    i = _obj(t, i)
+    if i is None:
+        return None
+    n = len(t)
+    while i < n and (_is(t[i], _ZH_CONJ, _EN_CONJ) or t[i][1] in _LIST_SEP):
+        j = _dets(t, i + 1)
+        if i + 1 < n and (_is(t[i + 1], _EN_CONJ, _ZH_CONJ)):    # Oxford comma: ", or"
+            j = _dets(t, i + 2)
+        k = _obj(t, j)
+        if k is None:
+            break
+        i = k
+    return i
+
+
+def _loc(t, i):
+    n = len(t)
+    if i < n and _is(t[i], _ZH_LOCP) and i + 1 < n and _is(t[i + 1], _ZH_PLACE):
+        return i + 2
+    if i < n and _is(t[i], {"任何地方"}):
+        return i + 1
+    if i < n and _is(t[i], _EN_LOCP):
+        j = _dets(t, i + 1)
+        if j < n and _is(t[j], _EN_PLACE):
+            return j + 1
+    return None
+
+
+def _ascii_words(seg: str):
+    """Each space-separated chunk letters-only, and each alphanumeric run inside it (「s-e-n-d」 → send, s, e, n, d)."""
+    for chunk in seg.split():
+        letters = "".join(c for c in chunk if c.isascii() and c.isalnum())
+        if letters:
+            yield letters
+        run = ""
+        for c in chunk + " ":
+            if c.isascii() and c.isalnum():
+                run += c
+            elif run:
+                yield run
+                run = ""
+
+
+def _clause_ok(t: list, seg: str) -> bool:
+    """A clause that is not protective passes only as an exact filler, a closed hand-over or a closed task clause."""
+    if " ".join(seg.split()) in _FILL:
+        return True
+    w = [x[1] for x in t if x[0] != "q"]
+    return (len(w) == len(t) and _handover(w)) or _task(w)
+
+
+def _handover(w: list) -> bool:
+    """「把原因发我」 / "send me the diagnosis": a non-secret result from a closed list, nothing else."""
+    i, n = 0, len(w)
+    while i < n and w[i] in _HO_ZH_LEAD | _HO_EN_LEAD:
+        i += 1
+    if i < n and w[i] == _ZH_BA:
+        objs, tail = w[i + 1:n - 1], w[n - 1] if n else ""
+        return tail in _HO_ZH_TAIL and bool(objs) and all(x in _HO_ZH_OBJ or x in _JOIN for x in objs) \
+            and objs[0] in _HO_ZH_OBJ and objs[-1] in _HO_ZH_OBJ
+    if not (i + 1 < n and w[i] in _HO_EN_VERB and w[i + 1] == "me"):
+        return False
+    rest = [x for x in w[i + 2:] if x != "the"]
+    return bool(rest) and rest[0] in _HO_EN_OBJ and rest[-1] in _HO_EN_OBJ and all(x in _HO_EN_OBJ or x in _JOIN for x in rest)
+
+
+def _task(w: list) -> bool:
+    """「只读诊断今天断网原因（journalctl、agentj host.log）」 / "check host.log": every word from the closed task lists, at least
+    one verb and one object; a bare verb or an elided object refuses."""
+    words = [x for x in w if x not in _JOIN]
+    return all(x in _TASK_VERB or x in _TASK_OBJ or x in _TASK_MOD for x in words) \
+        and any(x in _TASK_VERB for x in words) and any(x in _TASK_OBJ for x in words)
+
+
+# negated_then_ask: word-level secret nouns (no single characters / substrings: 「加密」, "keyboard", "author" are not secrets)
+_TRIG_ZH = ("密码", "密钥", "秘钥", "私钥", "口令", "令牌", "凭据", "凭证", "助记词", "验证码", "授权码", "证书", "订阅链接", "订阅地址")
+_TRIG_EN = _w("key keys apikey apikeys token tokens secret secrets password passwords passwd passphrase passphrases credential "
+              "credentials cookie cookies mnemonic mnemonics env pin pins otp jwt bearer privatekey sshkey")
+_IMPERATIVE_ZH = _ZH_NEG - {"不"}
+# after a negation these describe, they do not command (「不知道为什么 token 过期了」, "don't know why the token expired")
+_NOT_COMMAND = _w("知道 清楚 确定 记得 懂 明白 会 能 行 对 错 好 太 是 在 够 一样 同 怎么 想 认识 理解 了解 担心 着急 管 急 紧张 "
+                  "know knew understand think remember recall get got see care worry mind have has want like believe seem "
+                  "look work works worked panic")
+_ZH_DICT = _ZH_DICT | {w for w in _NOT_COMMAND if _cjk(w[0])}
+_ZH_MAXW = max(len(w) for w in _ZH_DICT)
+
+
+def _trig_secret(seg: str) -> bool:
+    zh = "".join(c for c in seg if _cjk(c))
+    if any(f in zh for f in _TRIG_ZH):
+        return True
+    for chunk in seg.split():
+        w = chunk.strip("\"'()[]{}<>.,:;!*`")
+        if w.removeprefix(".") in _TRIG_EN or w.removeprefix(".").removesuffix("s") in _TRIG_EN or _env_name(("a", w, 0, 0)):
+            return True
+        if "".join(c for c in w if c.isascii() and c.isalnum()) in _TRIG_EN:
+            return True
+    return False
+
+
+def _trig_ref(seg: str) -> bool:
+    zh = "".join(c for c in seg if _cjk(c))
+    return any(f in zh for f in _ZH_REF) or any(w in _EN_REF for w in _ascii_words(seg))
+
+
+def _imperative_neg(t, j):
+    """Index after an imperative negation at t[j] (不要 / 别 / don't / never …; a bare 不 only before an exposure verb), else
+    None. A describing verb right after it (知道 / know …) makes it no command."""
+    k = _neg(t, j)
+    if k is None:
+        return None
+    if t[j][1] == "不" and not _is(t[k] if k < len(t) else None, _ZH_VERB, _EN_VERB):
+        return None
+    while k < len(t) and _is(t[k], _ZH_ADV, _EN_ADV):
+        k += 1
+    if k < len(t) and _is(t[k], _NOT_COMMAND):
+        return None
+    return k
+
+
+NEG_SCAN_MAX = 20000
+_NEG_MARKS = ("不要", "别", "勿", "禁止", "避免", "莫", "don't", "dont", "do not", "never", "avoid", "must not", "mustn't",
+              "should not", "shouldn't")
+
+
+def negated_mention(text: str) -> bool:
+    """Does a clause start with an imperative negation (LEAD* NEG …) and name a secret — or point back (it / 它 / that) while
+    the message names a secret elsewhere? Such a message is only let through when it is protective as a whole
+    (`protective_only`); otherwise it is refused even if no request rule matched (「don't print it, just send me the key」)."""
+    s = _squash(text)
+    if len(s) > NEG_SCAN_MAX:      # linear substring test only: a negation word anywhere plus a secret word anywhere
+        return any(m in s for m in _NEG_MARKS) and _trig_secret(s)
+    t = _tokens(s)
+    i, n, any_secret, ref = 0, len(t), _trig_secret(s), False
+    while i < n:
+        if t[i][0] in "bp":
+            i += 1
+            continue
+        k = i
+        while k < n and t[k][0] not in "bp":
+            k += 1
+        j = i
+        while j < k and _is(t[j], _ZH_LEAD, _EN_LEAD):
+            j += 1
+        if j < k and _imperative_neg(t, j) is not None:
+            seg = s[t[j][2]:t[k - 1][3]]
+            if _trig_secret(seg):
+                return True
+            ref = ref or _trig_ref(seg)
+        i = k
+    return ref and any_secret
+
+
+def _bracketed_objects(t: list) -> bool:
+    """「（journalctl、agentj host.log）」 on its own line right after a task clause: objects / joiners only, inside brackets."""
+    w = [x[1] for x in t if x[0] != "q"]
+    return len(t) > 2 and t[0][1] in "(（" and t[-1][1] in ")）" and bool(w) \
+        and all(x in _TASK_OBJ or x in _JOIN for x in w) and any(x in _TASK_OBJ for x in w)
+
+
+def _hard(tok) -> bool:
+    """Clause boundary: a sentence break or , : — not 、 (it joins objects inside a clause) and not brackets."""
+    return tok[0] == "b" or tok[0] == "p" and tok[1] != "、"
+
+
+def protective_only(text: str) -> bool:
+    """True if `text` names secrets only to forbid their exposure (ADR-R0056-negation). Fail closed."""
+    s = _normalise(text)
+    if s is None or "?" in s:
+        return False
+    t = _tokens(s)
+    i, n, protective, rest, after_task = 0, len(t), 0, [], False
+    while i < n:
+        if t[i][0] == "b" or t[i][0] == "p":
+            i += 1
+            continue
+        j = _protective(t, i)
+        if j is not None:
+            protective, after_task = protective + 1, False
+            i = j
+            continue
+        k = i
+        while k < n and not _hard(t[k]):
+            k += 1
+        seg = s[t[i][2]:t[k - 1][3]]
+        if not (_clause_ok(t[i:k], seg) or after_task and _bracketed_objects(t[i:k])):
+            return False
+        after_task = _task([x[1] for x in t[i:k] if x[0] != "q"])
+        rest.append(seg)
+        i = k
+    if not protective:
+        return False
+    return _request_hit("。".join(rest)) is None if rest else True
 
 
 def inbound(text: str) -> Verdict:

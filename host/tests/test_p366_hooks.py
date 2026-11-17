@@ -407,9 +407,14 @@ class Review(unittest.TestCase):
 
     def test_l1_jev_never_judges_a_host_card(self):
         src = (Path(hooks.__file__).with_name("serve.py")).read_text()
-        self.assertIn("host_card = approval_level.host_card(tool, tool_input, requirement=requirement)", src)
+        # R-0049 S6: the legacy engine that computed host_card in serve.py was unreachable and is deleted; the live
+        # path hands the caller-set host_card straight to the explicit-list core, and neither file lets Jev judge.
+        self.assertIn("return await list_approval.ask(self, Ask, tool, tool_input, gone=gone, ttl=ttl,", src)
+        self.assertIn("only=only, host_card=_host_card,", src)
         self.assertNotIn("approval_level.host_card(tool)", src)
         self.assertNotIn("approval_jev.judge(", src)  # no model authorizes any approval card
+        core = (Path(hooks.__file__).with_name("list_approval.py")).read_text()
+        self.assertNotIn("approval_jev.judge(", core)
 
 
 class Pipeline(unittest.TestCase):

@@ -179,12 +179,14 @@ class History:
         n = len(line.encode()) + 1
         if t["id"] in self.turns:
             self._set_size(t["id"], n)
+        self.last_write_ok = not self.on  # memory-only history is committed in memory
         if not self.on:
             self._trim(MEM_KEEP)
             return
         try:
             self._mkdir(self.dir)
             self.st.append_private(self.cur_path, line)
+            self.last_write_ok = True
             self.lines += 1
             self.fbytes += n
             # P33-C06: every change appends the whole turn, so a long reply streamed in many pieces grows the file fast —
@@ -236,6 +238,7 @@ class History:
             return []
         changed = [t]
         first = t
+        next_id = self.next_id   # R-0049 H8: meta.json only changes when a continuation page takes a new id
         from .silent import is_silent
         final = text if text is not None else append
         silent_final = is_silent(final) if final is not None else None
@@ -302,7 +305,8 @@ class History:
                     t[k] = v
                 else:
                     t.pop(k, None)
-        self._save_meta()
+        if self.next_id != next_id:
+            self._save_meta()        # (it used to be rewritten — tmp, rename, fsync — for every streamed chunk)
         for x in changed:
             self._append(x)
         self._notify()

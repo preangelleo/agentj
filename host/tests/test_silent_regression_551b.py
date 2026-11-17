@@ -73,7 +73,9 @@ class Regression(unittest.TestCase):
                    hist_update=Mock(),hist_add=Mock(return_value={'id':8}),_agent_src=lambda:{'k':'agent','text':''},
                    st=NS(log=Mock()),media_later=Mock())
             Host.desktop_text(h,'〔不回群〕')
-            h.st.log.assert_called_once_with('silent_folded',turn=tid if tid else 8)
+            folded = [c for c in h.st.log.call_args_list if c.args and c.args[0]=='silent_folded']
+            self.assertEqual([((('silent_folded',),{'turn':tid if tid else 8}))], [(c.args,c.kwargs) for c in folded])
+            self.assertNotIn(('desktop_reply_push',), [c.args for c in h.st.log.call_args_list if c.kwargs.get('reason')=='committed'])  # R-0059: a silent page never pushes
             h.media_later.assert_not_called()
 
     def test_projection_preserves_local_raw_and_opaque_signed_fields(self):

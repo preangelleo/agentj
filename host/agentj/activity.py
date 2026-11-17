@@ -36,6 +36,34 @@ def enabled(st) -> bool:
         return False
 
 
+SETTLED_S = 2.0   # R-0049 H11: a config.json older than this when read may be trusted by its stat alone
+
+
+def _enabled_fast(st) -> bool:
+    """`enabled(st)` for every record() on the event loop without rereading config.json each time: the answer is kept
+    for the file's (inode, size, mtime_ns, ctime_ns) and this process's private-write count, and only once the file is
+    SETTLED_S old when read (an in-place rewrite inside one timestamp tick of a young file is read again)."""
+    from . import state as state_mod
+    if not isinstance(st, state_mod.State) or "config" in getattr(st, "__dict__", {}) \
+            or type(st).config is not state_mod.State.config:
+        return enabled(st)                 # only a real State reads config.json; anything else answers as before
+    try:
+        stt = os.stat(st.config_path)
+    except (OSError, TypeError, ValueError):
+        return enabled(st)
+    key = (stt.st_ino, stt.st_size, stt.st_mtime_ns, stt.st_ctime_ns, state_mod._WRITES[0])
+    hit = st.__dict__.get("_activity_on")
+    if hit is not None and hit[0] == key:
+        return hit[1]
+    on = enabled(st)
+    now = time.time()
+    if now - stt.st_mtime >= SETTLED_S and now - stt.st_ctime >= SETTLED_S:
+        st.__dict__["_activity_on"] = (key, on)
+    else:
+        st.__dict__.pop("_activity_on", None)
+    return on
+
+
 def set_enabled(st, on: bool) -> None:
     with st.config_lock():
         cfg = st.config()
@@ -56,7 +84,7 @@ def _short(v, n: int = TEXT_MAX):
 
 def record(st, kind: str, **fields) -> dict | None:
     """Append one entry (or nothing when switched off). Never raises: a full disk must not stop serve."""
-    if kind not in KINDS or not enabled(st):
+    if kind not in KINDS or not _enabled_fast(st):
         return None
     now = time.time()
     rec = {"ts": int(now * 1000), "k": kind, **{k: _short(v) for k, v in fields.items() if v is not None}}
@@ -163,9 +191,9 @@ def _read_day(st, name: str) -> list[dict]:
     return out
 
 
-def page(st, before: str | None = None, n: int = PAGE, since_ms: int | None = None) -> tuple[list[dict], str | None]:
+def page(st, before: str | None = None, n: int = PAGE, since_ms: int | None = None, _read=None) -> tuple[list[dict], str | None]:
     """≤ n entries strictly older than the cursor `before` ("YYYY-MM-DD:<line index>"), newest first, each with its own
-    cursor `c`; returns (items, next cursor or None)."""
+    cursor `c`; returns (items, next cursor or None). `_read` (all_since): the day reader to use."""
     n = max(1, min(int(n), PAGE))
     bday, bidx = None, None
     if isinstance(before, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}:\d{1,7}", before):
@@ -175,7 +203,7 @@ def page(st, before: str | None = None, n: int = PAGE, since_ms: int | None = No
         day = name[:10]
         if bday and day > bday:
             continue
-        rows = _read_day(st, name)
+        rows = _read(name) if _read is not None else _read_day(st, name)
         idxs = range(len(rows) - 1, -1, -1)
         for i in idxs:
             if bday == day and i >= bidx:
@@ -190,10 +218,17 @@ def page(st, before: str | None = None, n: int = PAGE, since_ms: int | None = No
 
 
 def all_since(st, since_ms: int | None = None, limit: int = 100_000) -> list[dict]:
-    """Oldest first (for `agentj activity`)."""
+    """Oldest first (for `agentj activity`). R-0049 H11: one parse per day for the whole walk (each page used to reread
+    and reparse the day — up to 8 MiB — every 50 rows); only the day being walked is held."""
+    last: list = [None, None]
+
+    def read(name):
+        if last[0] != name:
+            last[0], last[1] = name, _read_day(st, name)
+        return last[1]
     items, cur = [], None
     while len(items) < limit:
-        got, cur = page(st, cur, PAGE, since_ms)
+        got, cur = page(st, cur, PAGE, since_ms, _read=read)
         items += got
         if not cur:
             break

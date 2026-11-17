@@ -214,7 +214,7 @@ class Registered(unittest.TestCase):
                      and any(isinstance(t, ast.Name) and t.id == "p" for t in n.targets))
         end = next(i for i, n in enumerate(main.body) if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call)
                    and isinstance(n.value.func, ast.Attribute) and n.value.func.attr == "parse_args")
-        ns = dict(vars(cli))
+        ns = dict(vars(cli), args=[])   # as site/generate-cli.py (447cbfb794): parser-only capture has no requested command
         exec(compile(ast.Module(body=main.body[start:end], type_ignores=[]), str(cli.__file__), "exec"), ns)
         return ns["p"], cli
 

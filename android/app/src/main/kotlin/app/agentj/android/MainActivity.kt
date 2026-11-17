@@ -374,7 +374,7 @@ class MainActivity : Activity() {
                     if (req.url.host == "status") startActivity(Intent(this@MainActivity, StatusActivity::class.java))
                     return true
                 }
-                try { startActivity(Intent(Intent.ACTION_VIEW, req.url)) } catch (_: Exception) {}
+                if (externalAllowed(u)) try { startActivity(Intent(Intent.ACTION_VIEW, req.url)) } catch (_: Exception) {}
                 return true
             }
             override fun onPageFinished(view: WebView, url: String) {
@@ -948,6 +948,31 @@ class MainActivity : Activity() {
         noticeDialog = dialog
         main.postDelayed({ if (dialog.isShowing) dialog.dismiss() }, 3600)
     }
+}
+
+/** R-0051 W9: what an off-origin navigation may hand to the system — a web page (http/https with a host) or a mail address
+ *  (the page's own md.js links and the feedback address use mailto:). intent:, market:, file:, content:, javascript:, tel: and
+ *  any other app deep link are dropped: page content must not launch arbitrary apps. Plain string check (JVM-testable). */
+fun externalAllowed(url: String): Boolean {
+    val i = url.indexOf(':')
+    if (i <= 0) return false
+    return when (url.substring(0, i).lowercase()) {
+        "https", "http" -> url.startsWith("://", i) && webHost(url.substring(i + 3)).isNotBlank()
+        "mailto" -> url.length > i + 1
+        else -> false
+    }
+}
+
+/** The host of an http(s) authority (`[user@]host[:port]`, IPv6 in brackets); "" when there is none ("https://@",
+ *  "https://:443/path", "https:///x"). */
+private fun webHost(rest: String): String {
+    val end = rest.indexOfAny(charArrayOf('/', '\\', '?', '#')).let { if (it < 0) rest.length else it }
+    val hostPort = rest.substring(0, end).substringAfterLast('@')
+    if (hostPort.startsWith("[")) {
+        val close = hostPort.indexOf(']')
+        return if (close > 1) hostPort.substring(1, close) else ""
+    }
+    return hostPort.substringBefore(':').trim()
 }
 
 /** scheme://host[:port], lower-cased; "" when it is not an http(s) URL. */

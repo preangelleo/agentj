@@ -66,10 +66,6 @@
    "category": "state",
    "why": "The owner already denied this exact request; repeat is not re-asked."
   },
-  "owner_grant": {
-   "category": "frozen",
-   "why": "Signed owner grant is required/used (frozen signed-grant layer)."
-  },
   "owner_grant_scope": {
    "category": "frozen",
    "why": "A same-owner (OTG) task asked for a UV step (uv_list.required / #537 list, or a UV card such as a plaza secret grant) outside its signed grant (frozen signed-grant layer); non-UV steps follow the ordinary same-owner rules since 0304 A2-2."
@@ -101,10 +97,6 @@
   "owner_revoked": {
    "category": "state",
    "why": "Owner revoked this subscription."
-  },
-  "owner_scope": {
-   "category": "frozen",
-   "why": "Approval scope tied to the owner's signed card (frozen card envelope)."
   },
   "owner_signature_required": {
    "category": "frozen",

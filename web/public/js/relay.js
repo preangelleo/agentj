@@ -1275,7 +1275,7 @@ addEventListener('storage', e => {
 // paging history (or the full-screen reader) is never interrupted, the page capsule flashes instead. `tailWait` = he is on
 // the newest page whose turn has no visible reply yet (a pending input stays behind the reply he reads, P87) — the intent
 // survives, so that reply, when it lands, still takes him there.
-const hist = {activityRevision: 0, turns: [], count: 0, firstId: 0, lastId: 0, epoch: 0, route: true, busy: false, want: 0, older: false};
+const hist = {activityRevision: 0, turns: [], count: 0, firstId: 0, lastId: 0, epoch: 0, route: true, busy: false, want: 0, older: false, trimmed: []};
 let histSettled = () => false;   // P398: settleQueued (the queue section sets it) — a page the host updated may end a queued send
 let pageAt = -1, follow = true, tailWait = false, pagesCache = null, shownKey = null, unreadReply = false;
 const noticeReads = new Set();
@@ -1345,7 +1345,37 @@ function pages(){
   if (!out.length) out.push({id: null, reply: "", source: null, ts: null});
   return (pagesCache = out);
 }
-function totalPages(){ return pages().filter(p=>p.id!==null).length + Math.max(0, hist.count - hist.turns.length); }
+function totalPages(){ return pages().filter(p=>p.id!==null).length + Math.max(0, hist.count - hist.turns.length) + trimAdj(); }
+// R-0051 W11b: a page left open for days kept every turn the host pushed, and each streamed chunk rebuilds the pages from all
+// of them. Past HIST_KEEP + HIST_SLACK loaded turns, while the owner is on the newest page with nothing open over it, the
+// oldest finished turns are let go — exactly the state of a page that has not paged back that far yet: hist.firstId stays the
+// host's first id, so 上一页 / 「更早」 / a quote jump / search fetch them again with the host's own paging (before = oldest
+// loaded id). The page counter stays where it was: each trimmed block remembers (its pages − its turns) while it is unloaded.
+const HIST_KEEP = 2000, HIST_SLACK = 500;
+function trimAdj(){
+  const first = hist.turns.length ? hist.turns[0].id : Infinity;
+  let a = 0;
+  for (const b of hist.trimmed) if (b.hi < first) a += b.delta;
+  return a;
+}
+function trimLoaded(){
+  const n = hist.turns.length;
+  if (n <= HIST_KEEP + HIST_SLACK || !follow || rdAt || mediaViewerOpen() || hist.older || historySync || search.isOpen()) return;
+  const silent = document.getElementById("silent");
+  if (silent && !silent.hidden) return;
+  let keepFrom = hist.turns[n - HIST_KEEP].id;   // never past an open turn, a queued send's page or the turn the Agent took
+  for (const x of hist.turns) { if (x.id >= keepFrom) break; if (x.end === "open") { keepFrom = x.id; break; } }
+  for (const q of queued) if (Number.isInteger(q.turn)) keepFrom = Math.min(keepFrom, q.turn);
+  if (Number.isInteger(activeTurn)) keepFrom = Math.min(keepFrom, activeTurn);
+  let cut = 0;
+  while (cut < n && hist.turns[cut].id < keepFrom) cut++;
+  if (cut <= 0) return;
+  pagesCache = null;
+  const before = pages().filter(p => p.id !== null).length, lo = hist.turns[0].id, hi = hist.turns[cut - 1].id;
+  hist.turns = hist.turns.slice(cut); hist.activityRevision++; pagesCache = null;
+  const after = pages().filter(p => p.id !== null).length;
+  hist.trimmed.push({lo, hi, delta: (before - after) - cut});
+}
 function noteHistory(s){
   const h = s.history;
   if (h && typeof h.last_id === "number"){
@@ -1361,22 +1391,29 @@ function noteHistory(s){
 }
 function resetHistory(ep){
   search.onEpoch(ep);                                // P188: a /clear empties the search cache
-  hist.count = 0; hist.epoch = ep; hist.turns = []; hist.lastId = 0; hist.firstId = 0; hist.want = 0;
+  hist.count = 0; hist.epoch = ep; hist.turns = []; hist.lastId = 0; hist.firstId = 0; hist.want = 0; hist.trimmed = [];
   pagesCache = null; follow = true; tailWait = false; pageAt = -1; shownKey = null; tailSeen.id = 0; tailSeen.primed = false; tailSeen.seg = ""; unreadReply = false;
   split.reset(); steered.clear();   // 0.26.9 #471
 }
 /** A turn pushed by the host (hist_turn): new, a reply part appended, or its end. */
+// R-0051 W11: hist.turns is kept in id order (push = newer, loadOlderBatch = older, syncHistory sorts), and a streamed chunk
+// almost always updates the newest turn — one scan from the end, stopping at the first smaller id.
+function turnIndex(id){
+  for (let k = hist.turns.length - 1; k >= 0; k--){ const x = hist.turns[k].id; if (x === id) return k; if (x < id) return -1; }
+  return -1;
+}
 export function upsertTurn(p){
   hist.activityRevision++;
   p = displayTurn(p);
-  const previous=hist.turns.find(x=>x.id===p.id);
+  const i = turnIndex(p.id);
+  const previous = i >= 0 ? hist.turns[i] : undefined;
   if(previous?.end==='open' && p.end==='done' && !silentTurn(p)) announceTurn(p,true);
-  const i = hist.turns.findIndex(x => x.id === p.id);
   if (i >= 0) hist.turns[i] = p;
   else if (!hist.turns.length || p.id > hist.turns[hist.turns.length - 1].id){
     if (hist.lastId && p.id > hist.lastId + 1 && hist.turns.length){ syncHistory(p.id); return; }   // a gap: fetch it in order
     hist.turns.push(p); hist.lastId = p.id; hist.count = Math.max(hist.count, hist.turns.length);
     if (!hist.firstId) hist.firstId = p.id;
+    trimLoaded();
   } else return;
   pagesCache = null;
   if (p.source && ["phone","cmd"].includes(p.source.k) && p.source.dev === C.myDev() && p.end === "open" && !previous && onNewestPage()){ follow = true; shownKey = null; }
@@ -1560,6 +1597,7 @@ async function loadOlderBatch(){
       const older = j.turns.filter(t => t && typeof t.id === "number" && t.id < hist.turns[0].id).map(displayTurn);
       hist.activityRevision++; hist.turns = older.concat(hist.turns); hist.firstId = j.first_id || hist.firstId;
       if (!older.length) hist.firstId = hist.turns[0].id;
+      if (hist.turns.length) hist.trimmed = hist.trimmed.filter(b => b.lo < hist.turns[0].id);   // W11b: blocks loaded again
       pagesCache = null;
       const shown = older.filter(visiblePage).length;
       if (!follow) pageAt += shown;
@@ -6136,7 +6174,7 @@ window.agentjNative=Object.freeze({snapshot:()=>({
   ready:isReady(),
   wake_threshold:userPreferences.voice?.wake_threshold||0.25,
   wake_tokens:userPreferences.voice?.wake_tokens||'',wake_enabled:userPreferences.voice?.wake_enabled===true,
-  latest:hist.turns.filter(x=>x.end==='done').at(-1)?.id||0,
+  latest:hist.turns.filter(x=>x.end==='done' && visibleReply(x)).at(-1)?.id||0,
   speak_notifications:userPreferences.voice?.speak_notifications===true,
   theme:userPreferences.appearance?.theme||'system',
   tts_mode:userPreferences.voice?.tts?.mode||'phone',tts_voice:userPreferences.voice?.tts?.voice||'',tts_rate:userPreferences.voice?.tts?.rate||1,language:userPreferences.appearance?.language||'zh'

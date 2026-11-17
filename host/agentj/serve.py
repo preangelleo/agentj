@@ -125,6 +125,7 @@ SYNC_IDLE = 60         # …and this often while not bound / unbound (a `agentj 
 SYNC_MIN_GAP = 2       # never sync faster than this, whatever the answers say (review A31-01)
 REMOTE_UNBIND_PER_HOUR = 3   # the host's own cap on executed Dashboard unbinds, persisted (review A31-02/03)
 REMOTE_DECISIONS_PER_HOUR = 30   # cap on all decisions incl. refusals: bounds log / terminal volume (review A31-01)
+PREFS_SETTLED_S = 2.0   # R-0049 H12: a preferences file this old when hashed may be skipped by its stat alone
 ASK_TTL = _ttl("AGENTJ_TEST_ASK_TTL", 120)   # a permission request the phone does not answer in time is denied (s)
 BACKLOG = 100          # recent chat kept in memory (never on disk) and replayed to a device after it (re)connects
 MAX_ASKS = 16          # outstanding permission requests at once; more are denied at once
@@ -643,6 +644,13 @@ async def claim_control_sock(sock, log=None) -> None:
             raise SystemExit(f"agentj serve: cannot clear {sock}: {e}") from None
     if log:
         log("control_sock_stale", kind=kind, status="moved" if aside else "removed")
+
+
+def _desktop_push_log(host, **kw) -> None:
+    """R-0059: bounded desktop reply-push audit (trigger + reason only, never text or device id)."""
+    st = getattr(host, "st", None)
+    if st is not None:
+        st.log("desktop_reply_push", **kw)
 
 class Host:
     def __init__(self, st: State, events: str = "text", read_stdin: bool = True):
@@ -4082,9 +4090,21 @@ class Host:
         await res(True, name=name)
 
     async def preferences_loop(self):
+        # R-0049 H12: (1) a file whose (inode, size, mtime_ns, ctime_ns) is what the last pass hashed, and that was already
+        # PREFS_SETTLED_S old then, is not re-read + re-hashed; (2) any failure is logged and the loop goes on — it used
+        # to catch only OSError, so any other exception out of apply_preferences ended config hot-reload until restart.
+        seen = None
         while not self.stopping.is_set():
             try:
-                raw = preferences.path().read_bytes()
+                p = preferences.path()
+                stt = os.stat(p)
+                key = (stt.st_ino, stt.st_size, stt.st_mtime_ns, stt.st_ctime_ns)
+                if key == seen and self.config_stamp is not None:
+                    await asyncio.sleep(0.5)
+                    continue
+                raw = p.read_bytes()
+                now = time.time()
+                seen = key if now - stt.st_mtime >= PREFS_SETTLED_S and now - stt.st_ctime >= PREFS_SETTLED_S else None
                 import hashlib
                 stamp = hashlib.sha256(raw).digest()
                 if stamp != self.config_stamp:
@@ -4102,6 +4122,8 @@ class Host:
                 pass
             except OSError:
                 self.config_problem = {"ok": False, "key": "/", "error": "configuration unreadable"}
+            except Exception as e:  # noqa: BLE001 — R-0049 H12: logged (rate-limited); the next change is applied again
+                bg.swallowed(bg.host_log(self), "preferences_loop_failed", e)
             await asyncio.sleep(0.5)
 
     def busy_msg(self) -> dict:
@@ -4834,14 +4856,20 @@ class Host:
         page = self.hist.get(tid) if tid is not None else None
         if page and page["src"].get("text", "").strip() == "/" + name and not page["reply"]["text"]:
             self.hist_update(tid, append=slash.done_line(name, self.lang, getattr(self, "preferences", None)))
+            self._desktop_command_only = True
             self.desktop_end()
 
     def desktop_text(self, text: str) -> None:
+        via = getattr(self, "proactive_via", None)
+        trigger = via if via in ("task", "loop") and getattr(self, "desktop_turn", None) is None else "desktop"
         if not text or not text.strip():
+            _desktop_push_log(self, trigger=trigger, reason="blank")
             return
         tid = getattr(self, "desktop_turn", None)
         from .silent import is_silent
         if is_silent(text):
+            _desktop_push_log(self, trigger=trigger, reason="silent")
+            self.__dict__.pop("_desktop_pending_reply", None)
             if tid is None:
                 tid = self.hist_add(self._agent_src(), text, "done")["id"]
                 self.st.log("silent_folded", turn=tid)
@@ -4855,8 +4883,12 @@ class Host:
             return
         if tid is None:     # P205 (6): a finished page of its own (e.g. 后台任务完成) — its files are offered like any page's
             if _echo_page(self, text):
+                _desktop_push_log(self, trigger=trigger, reason="echo")
                 return
-            self.media_later(tid := self.hist_add(self._agent_src(), text, "done")["id"])
+            tid = self.hist_add(self._agent_src(), text, "done")["id"]
+            hist = getattr(self, "hist", None)
+            self._desktop_pending_reply = tid if hist is not None and getattr(hist, "last_write_ok", False) else None
+            self.media_later(tid)
         else:
             changed = self.hist_update(tid, append=text)
             if changed:
@@ -4867,13 +4899,32 @@ class Host:
     def desktop_end(self) -> None:
         from . import main_thread
         main_thread.completed(self)
+        via = getattr(self, "proactive_via", None)
         self.proactive_via = None
         self.proactive_input = ""
         _hb_touch(self)
         tid = getattr(self, "desktop_turn", None)
+        pending = self.__dict__.pop("_desktop_pending_reply", None)
+        command_only = self.__dict__.pop("_desktop_command_only", False)
+        hist = getattr(self, "hist", None)
+        trigger = via if via in ("task", "loop") and tid is None else "desktop"
+        changed = None
         if tid is not None:
-            self.hist_update(tid, end="done")
+            changed = self.hist_update(tid, end="done")
+            committed = bool(changed) and hist is not None and getattr(hist, "last_write_ok", False)
             self.media_later(tid)
+        else:
+            committed = pending is not None
+        page = hist.get(tid if tid is not None else pending) if hist is not None and (tid is not None or pending is not None) else None
+        from .silent import is_silent
+        if (not command_only and committed and page and page["end"] == "done" and
+                page["reply"]["text"].strip() and not page.get("silent") and
+                not is_silent(page["reply"]["text"]) and page["src"]["k"] in ("host", "agent")):
+            if hasattr(self, "push_notify"):
+                _desktop_push_log(self, trigger=trigger, reason="committed")
+                self.push_notify("reply")
+        elif tid is not None or pending is not None:
+            _desktop_push_log(self, trigger=trigger, reason="no_visible_reply")
         self.desktop_turn = None
 
     def agent_recovery_notice(self, text: str) -> None:
@@ -5856,8 +5907,8 @@ class Host:
                   known_recipients: bool = False, _host_card: bool = False, _settings_session=None, _learn_proposal=None, _plan_only: bool = False, _bounded_context=None, _harness_permission=False, _native_context=None, _settings_context=None,
                   _front: dict | None = None, _order_owner: bool = False) -> dict:
 
-        # Chairman 2026-11-08: main approval is explicit-list only. The legacy
-        # implementation below is retained for rollback, never called here.
+        # Chairman 2026-11-08: main approval is explicit-list only. R-0049 S6: the
+        # unreachable legacy engine that followed this return is deleted; rollback is git.
         if tool == "AskUserQuestion" and self.agent and self.agent.kind == "claude":
             return await self._ask_user_question(tool_input, gone)
         from . import list_approval, bounded_plan, policy_registry
@@ -5873,870 +5924,6 @@ class Host:
             task_actions=task_actions, task_target=task_target, native_context=_native_context, settings_context=_settings_context,
             front=_front, background=("avatar", str(avatar)[:40]) if avatar is not None else background,
             order_owner=_order_owner is True)
-
-        def observe(reason, shown=None):
-            if type(_receipt) is dict:
-                _receipt.update(reason=reason, approval_card_shown=shown)
-        observe('unknown')
-        def stopping_result():
-            observe('serve_stop', False)
-            rid = secrets.token_hex(16)
-            base = dict(rid=rid, agent=getattr(self.agent, "kind", "?"), tool=tool,
-                        input_sha256=approvals.input_digest(tool_input), shown_sha256=approvals.shown_digest(tool, ""), cats=[])
-            approvals.record(self.st, **base, decision="deny", reason="serve_stop")
-            self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="serve_stop")
-            self.activity("decision", id=rid, tool=tool, result="deny", reason="serve_stop", cats=[], summary="")
-            self.emit("ask_done", id=rid, result="deny", reason="serve_stop")
-            return {"behavior": "deny", "message": "agentj serve 已停止：默认拒绝。", **({"reason": "serve_stop"} if grant_info else {})}
-        if self.stopping.is_set():
-            return stopping_result()
-        # #488: unreadable launcher execution is never authorized by full
-        # access, a prior grant, a dispatch identity, or even a fresh UV.
-        if danger.unresolved_execution(tool, tool_input):
-            observe('unresolved_execution', False)
-            self.st.log("ask_done", tool=tool, decision="deny", reason="unresolved_execution")
-            return {"behavior": "deny", "message": "Agent J: cannot resolve launcher execution; denied.",
-                    **({"reason": "unresolved_execution"} if grant_info else {})}
-        from . import policy_registry
-        learned = (tool == "agentj learn" and _learn_proposal is not None
-                   and self.learner.authorize(_learn_proposal, tool_input))
-        if tool == "agentj learn" and not learned:
-            policy_registry.log_unknown(self.st, tool, tool_input, agent=getattr(self.agent, "kind", "?"))
-            return {"behavior": "deny", "message": UNKNOWN_ACTION}
-        if learned:
-            require_passkey, grant_info, always_ask, batch = True, True, True, False
-        own = _company_proposal is policy_registry.HOST_CARD    # P570b L-c: not judged by the main turn's source
-        from . import bounded_plan
-        if tool == bounded_plan.TOOL and (not isinstance(_bounded_context, bounded_plan.SealedPlan)
-                or _bounded_context.owner is not bounded_plan.manager(self) or not own):
-            return {"behavior":"deny", "message":"Host-owned bounded executor requires a sealed concrete plan."}
-        review_limit = approval_review.explanation_tool_allowed(self, tool, tool_input)
-        if review_limit is False and not (tool == bounded_plan.TOOL and getattr(_bounded_context, "renewed_from", None) == (getattr(getattr(self.agent, "cur_send", None), "approval_review", None) or {}).get("id")):
-            return {"behavior":"deny", "message":("Approval explanation permits ordinary read-only inspection only." if card_lang(self.lang) == "en" else "解释只允许普通只读核对；不能借解释执行原操作。")}
-        if review_limit == "renew_uv":
-            require_passkey = always_ask = True
-        caller_uv = require_passkey
-        if avatar is None and not own and (via := provenance.owner_channel_turn(self.agent)):
-            from . import owner_channels
-            return await owner_channels.ask(self, via, lambda lbl: self.ask(
-                tool, tool_input, gone, batch, risk_scope, require_passkey, context, ttl, grant_info, origin, allow_offer,
-                _company_proposal, bind, avatar=lbl, background=background, always_ask=always_ask, task_actions=task_actions, task_target=task_target, only=only, _receipt=_receipt,
-                known_recipients=known_recipients, _host_card=_host_card, _settings_session=_settings_session, _learn_proposal=_learn_proposal, _plan_only=_plan_only, _bounded_context=_bounded_context))
-        if tool == "AskUserQuestion" and not self.stopped() and approval_level.level(self.preferences, self.st) == "harness":
-            self.st.log("question_autonomous", tool=tool, reason="level_harness")
-            return {"behavior": "deny", "message": AUTONOMOUS_CHOICE}
-        if avatar is not None and tool == "AskUserQuestion":            # P543: the channel asks in its reply instead
-            return {"behavior": "deny", "message": "这条消息来自主人的通道，不能弹出提问卡，请直接在回复里问主人。 / Ask the owner in your reply instead."}
-        always_ask = always_ask or task_actions is not None
-        strict = always_ask and grant_info      # #428 Info: only a paired device's signed allow may answer this card
-        batch = batch and not strict
-        bound, own_pk = policy_registry_bound(tool, bind), require_passkey or always_ask   # own_pk: the caller's own card
-        if tool == "AskUserQuestion" and self.agent and self.agent.kind == "claude" and isinstance(tool_input, dict) and avatar is None:
-            return await self._ask_user_question(tool_input, gone)       # §10.7: a question card, not an approval card
-        from . import handoff           # P539 (#301): reading Agent J's own handoff file never needs the owner
-        if not strict and not self.stopped() and handoff.owner_side(self.agent) and (handoff.own_read(tool, tool_input, self._switch_cfg()) or handoff.own_state(tool, tool_input, self._switch_cfg())):
-            own_rid = await asyncio.to_thread(handoff.record_own, self.st, getattr(self.agent, "kind", None), tool, tool_input)
-            if self.stopping.is_set():
-                return stopping_result()
-            self.st.log("ask_done", id=own_rid, tool=tool, decision="allow", reason="own_handoff")
-            return {"behavior": "allow", "updatedInput": tool_input}
-        from . import background_done as bd_mod   # #450 1b: a known completion turn reads its own report (ADR-#450)
-        own_t = None if strict or self.stopped() or avatar is not None or own else bd_mod.own_report(self.agent, tool, tool_input, (self.agent_cfg or {}).get("dir"))
-        if own_t and (own_t == "busy" or await asyncio.to_thread(bd_mod.own_clean, own_t, (self.agent_cfg or {}).get("dir"))):
-            own_rid = secrets.token_hex(16)
-            await asyncio.to_thread(approvals.record, self.st, rid=own_rid, agent=getattr(self.agent, "kind", "?"), tool=tool,
-                                    input_sha256=approvals.input_digest(tool_input), shown_sha256=approvals.shown_digest(tool, bd_mod.OWN_SHOWN),
-                                    decision="allow", reason="own_report", cats=[])
-            if self.stopping.is_set():
-                return stopping_result()
-            self.st.log("ask_done", id=own_rid, tool=tool, decision="allow", reason="own_report", via="system")
-            return {"behavior": "allow", "updatedInput": tool_input}
-        from . import untrusted_dispatch
-        if (not strict and not always_ask and not bound and avatar is None and not own and not self.stopped()
-                and await asyncio.to_thread(untrusted_dispatch.safe_command, self, tool, tool_input)):
-            if self.stopping.is_set():
-                return stopping_result()
-            rid = secrets.token_hex(16)
-            approvals.record(self.st, rid=rid, agent=getattr(self.agent, "kind", "?"), tool=tool,
-                             input_sha256=approvals.input_digest(tool_input), shown_sha256=approvals.shown_digest(tool, "CEO data diagnosis"),
-                             decision="allow", reason="ceo_data_only", cats=[])
-            return {"behavior": "allow", "updatedInput": tool_input}
-        policy_env = getattr(self.agent, "approval_env", None)
-        requirement = ("uv" if learned else policy_registry.decision("main", bound) if bound else
-                       policy_registry.main_requirement(tool, tool_input, env=policy_env, cwd=(self.agent_cfg or {}).get("dir")))
-        if requirement == "deny":
-            observe('unknown_action', False)
-            policy_registry.log_unknown(self.st, tool, tool_input, agent=getattr(self.agent, "kind", "?"))   # P553
-            return {"behavior": "deny", "message": UNKNOWN_ACTION}
-        v = self._classify(tool, tool_input)
-        if not bound and not learned:
-            requirement = self.owner_hosts.narrow_requirement(tool, tool_input, requirement, v)
-        # #510: only the host can prove this installed running service; never a model flag.
-        restart_input = None
-        if not strict and not always_ask and not own_pk and not bound and avatar is None and not own:
-            restart_input = await asyncio.to_thread(restart_guard.prove, tool, tool_input)
-        from . import peer_origin
-        dispatch = False
-        if tool == "Bash" and set(v.rules) <= {"cred.service"} and isinstance(tool_input, dict) and not set(tool_input) - {"command", "description", "timeout"}:
-            unit, why = await asyncio.to_thread(self._dispatch_check, tool_input.get("command"))
-            if unit and why == "ok" and not self._dispatch_turn():
-                why = "turn"
-            dispatch = why == "ok" and requirement in ("uv", "allow") and not strict and not bound and avatar is None and not own
-            dispatch_boundary_invalid = bool(unit and why not in ("ok", "shape", "turn"))
-            if not dispatch and (unit or set(v.rules) == {"cred.service"}):  # #572: service launches are not credential changes
-                # Preserve the existing UV rule while showing the actual class.
-                # #469: the shape is not 「改凭据」 — the card names its class and why (ADR-#455 F3 B)
-                v = peer_origin.unproven(why if why != "ok" else "turn", card_lang(self.lang))
-                self.st.log("dispatch_unproven", why=why)
-        if dispatch:                            # #455: CEO dispatch whitelist — owner: no Face ID; same_host: no card (ADR-#455)
-            v, requirement = danger.Verdict(), "allow"
-        opaque = approval_jev.gray(v)
-        if opaque and requirement == "allow":
-            requirement = "hold"
-        host_card = approval_level.host_card(tool, tool_input, requirement=requirement)
-        if requirement in ("hold", "uv"):
-            batch = False
-        if requirement == "uv":
-            require_passkey = True
-        delegated = not own and provenance.delegated_turn(self.agent)
-        unattended = provenance.unattended_turn(self.agent) if avatar is None and not own else None
-        if unattended:
-            delegated = True
-        peer = unattended == "same_host"        # #455: never an auto path below this branch (ADR-#455)
-        if peer:
-            origin = origin or pick(self.lang, "来源：同机 Agent 会话 ", "Asked during: same-computer Agent session ") + str(provenance.turn_source(self.agent).get("unit"))[:80]
-        if avatar is not None:
-            delegated, batch = True, False
-            origin = origin or avatar
-        if tool == "company.write" and _company_proposal is policy_registry.COMPANY_PROPOSAL:
-            delegated = True
-        if delegated:
-            batch = False
-        kind = self.agent.kind if self.agent else "?"
-        same_owner = avatar is None and not unattended and _same_owner_turn(self.agent)   # P573 (f)
-        try:
-            # Every card display must use one complete, request-bound inventory.
-            from . import peer_guard
-            card_index = await asyncio.to_thread(peer_guard.SecretIndex.build, workdir=(self.agent_cfg or {}).get("dir") or os.getcwd(), fragment_size=8)
-            await asyncio.to_thread(card_index.require_complete)
-            summary = (tool_input["card"] if learned else tool_input["summary"] if own else
-                       tool_input["card"] if tool == owner_grant.TOOL and isinstance(tool_input, dict)
-                       and isinstance(tool_input.get("card"), str) else
-                       computer_use_script_summary(tool_input, self.lang) if bound else
-                       action_policy.summary(tool, tool_input, lang=self.lang, workdir=(self.agent_cfg or {}).get("dir")) if opaque or tool in
-                       ("agentj mail", "agentj mail send", "agentj mail notes", "agentj mail reply", "agentj calendar", "company.write", "agentj data", "agentj report script")
-                       else approval_summary(tool, tool_input, v, self.lang, workdir=(self.agent_cfg or {}).get("dir")))
-        except OSError as exc:
-            if str(exc) == "local_secret_scan_incomplete":
-                return {"behavior": "deny", "message": "本地密钥扫描不完整，已拒绝 / local secret scan incomplete; refused"}
-            return {"behavior": "deny", "message": "动作参数无效 / invalid action parameters"}
-        except (ValueError, TypeError, RecursionError):
-            return {"behavior": "deny", "message": "动作参数无效 / invalid action parameters"}
-        if len(summary.encode()) > 24000:
-            return {"behavior":"deny", "message":("日历内容过长，无法完整确认 / calendar content is too large to review"
-                                                   if tool == "agentj calendar" else "邮件内容过长，无法完整确认 / mail is too large to review")}
-        if require_passkey:
-            batch = False
-        if tool == "SandboxOnce" and (require_passkey or always_ask):
-            from . import fence
-            batch = False
-            if card_lang(self.lang) == "en":
-                why = {"no_bwrap": "bubblewrap (bwrap) is missing; on the Agent J host run: sudo apt-get install -y bubblewrap socat (Ubuntu / Debian / WSL)",
-                       "bwrap_failed": "bubblewrap failed; check user namespaces and container policy",
-                       "apparmor_userns": "AppArmor blocks user namespaces; ask for agentj doctor repair guidance",
-                       "no_sandbox_exec": "macOS sandbox-exec is missing",
-                       "sandbox_failed": "macOS sandbox-exec failed; check whether Agent J is already sandboxed",
-                       "unsupported_os": "isolation is supported on Linux and macOS; use WSL2 on Windows"}.get(tool_input.get("reason"), "isolation check failed")
-                summary = ("Sandbox unavailable; Agent J has not started: " + why + ".\nRepair the isolation tool and retry; "
-                           "installation/admin approval can be completed on the phone.\nRun this launch without isolation: "
-                           "it may access local files and credentials. The owner confirms on a paired remote; this launch only.")
-            else:
-                why = fence.REASONS.get(tool_input.get("reason"), "隔离检查失败")
-                summary = ("沙箱不可用，Agent J 尚未启动：" + why + "。\n修复隔离工具后重试；"
-                           "需要安装或管理员权限时，可在手机上批准。\n本次不隔离运行：批准后会在沙箱外运行，可能访问本机文件和凭据。仅本次启动有效，需主人在已配对的遥控器上确认。")
-            summary += "\n" + approval_summary(tool, tool_input, v, self.lang, workdir=(self.agent_cfg or {}).get("dir"))
-        if risk_scope:
-            summary += CARD_TEXT[card_lang(self.lang)]["risk_scope"]
-        if bound and not delegated and ttl is None and approval_level.level(self.preferences, self.st) != "safe":
-            summary += "\n" + CU_SCRIPT_GRANT_NOTE[card_lang(self.lang)]   # P539: the 免问 box would free arbitrary scripts
-        if origin:
-            summary += "\n" + str(origin)[:120]     # last line: the first stays the command (notices, push)
-        if len(summary.encode()) > 24000:
-            return {"behavior": "deny", "message": ("日历内容过长，无法完整确认 / calendar content is too large to review"
-                                                    if tool == "agentj calendar" else "动作内容过长，无法完整确认 / action is too large to review")}
-        plan_scope = None
-        if task_actions is not None:
-            try:
-                if not isinstance(task_actions, list) or not 1 <= len(task_actions) <= TASK_GRANT_MAX:
-                    raise ValueError("plan size")
-                actions, lines, object_bindings = [], [], {}
-                for step in task_actions:
-                    if not isinstance(step, dict) or set(step) != {"tool", "input"} or not isinstance(step["input"], dict):
-                        raise ValueError("plan shape")
-                    name, inp = step["tool"], step["input"]
-                    if not policy_registry.tool_action(name) or name in approval_level.HARNESS_KEEPS or name in goal_mod.SOFT_EXEMPT:
-                        raise ValueError("own card")
-                    if name == "Bash":
-                        command = inp.get("command")
-                        if not isinstance(command, str) or any(x in command for x in ("$", "`", "*", "?", "[", "{", "\n")):
-                            raise ValueError("dynamic plan operand")
-                        parsed = danger.lex(command)
-                        forbidden = set(danger._SHELLS) | {"python", "python3", "node", "ruby", "perl", "php", "eval", "source", ".", "xargs", "find"}
-                        if not parsed or any(c.subst or any(p.name in forbidden for p in danger.unwrap(c)) for c in parsed):
-                            raise ValueError("unbounded plan program")
-                    verdict = self._classify(name, inp)
-                    if (set(verdict.cats) & {"credentials", "opaque"}
-                            or secret_display_route.reveals_to_session(name, inp, (self.agent_cfg or {}).get("dir"), policy_env)):
-                        raise ValueError("individual UV required")
-                    from . import bounded_plan
-                    binding = bounded_plan.shell_seal(name, inp, (self.agent_cfg or {}).get("dir"), self.__dict__.setdefault("_plan_seal_key", secrets.token_bytes(32)))
-                    object_bindings[name + ":" + approvals.input_digest(inp)] = binding
-                    actions.append({"tool": name, "input_sha256": approvals.input_digest(inp),
-                                    "class": self._task_class(name, verdict)})
-                    lines.append(approval_summary(name, inp, verdict, self.lang, workdir=(self.agent_cfg or {}).get("dir")))
-                    require_passkey |= self._task_uv(name, inp, verdict, policy_env)
-                if not any(x["tool"] == tool and x["input_sha256"] == approvals.input_digest(tool_input) for x in actions):
-                    raise ValueError("first action absent")
-                if any(len(line) > 1000 for line in lines):
-                    raise ValueError("plan display too large")
-                if len({(x["tool"], x["input_sha256"]) for x in actions}) != len(actions):
-                    raise ValueError("duplicate plan step")
-                task = self._task_id()
-                plan_scope = json.dumps({"task": task, "actions": actions, "target": task_target, "uv": bool(require_passkey),
-                                         "expires": int(time.time()) + TASK_GRANT_SECS,
-                                         "display_steps": [approval_review.safe_text(line, 1000) for line in lines], "object_bindings": object_bindings}, sort_keys=True, separators=(",", ":"))
-                summary += "\n具体动作 / Exact actions:\n" + "\n".join(str(i + 1) + ". " + line for i, line in enumerate(lines))
-                if task_target:
-                    summary += "\n接收设备 / Receiver: " + str(task_target.get("receiver", ""))
-                if len(summary.encode()) + len(plan_scope.encode()) > 14000:
-                    raise ValueError("plan too large")
-                batch = False
-            except (ValueError, TypeError, KeyError, RecursionError):
-                return {"behavior": "deny", "message": "任务动作清单无效 / invalid task action plan"}
-        digest, isha = approvals.shown_digest(tool, summary), approvals.input_digest(tool_input)
-        rid = secrets.token_hex(16)
-        workdir = (self.agent_cfg or {}).get("dir")
-        lv = approval_level.level(self.preferences, self.st)   # P336: safe | standard (as before) | full (signed only)
-        if lv != "full" and not self.__dict__.get("_unsigned_full_told") and approval_level.unsigned_full(self.preferences, self.st):
-            self._unsigned_full_told = True    # the file says full, no live signed switch backs it: standard, told once
-            self.st.log("approval_level_unsigned")
-            self.agent_notice(approval_level.unsigned_text(self.lang, preferences.get(self.preferences, approval_level.KEY)))
-        sc = None if v.danger or not batch or lv == "safe" else danger.batch_scope(tool, tool_input, workdir, self.danger_extra)
-        base = dict(rid=rid, agent=kind, tool=tool, input_sha256=isha, shown_sha256=digest, cats=v.cats)
-        if background == "order" and origin:
-            base["order_origin"] = str(origin)[:600]
-        # #562: fixed display labels only; this projection never participates in admission.
-        try:
-            from . import approval_audit
-            audits = self.__dict__.setdefault("_approval_audits", {})
-            audits[rid] = approval_audit.presentation({}, tool, tool_input, lang=self.lang)
-            while len(audits) > 128:
-                audits.pop(next(iter(audits)))
-        except Exception:  # noqa: BLE001 — presentation never changes permission
-            pass
-        if self.stopped():                # stopped: nothing is asked, nothing runs
-            observe('estop', False)
-            approvals.record(self.st, **base, decision="deny", reason="estop")
-            self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="estop")
-            self.activity("decision", id=rid, tool=tool, result="deny", reason="estop", cats=v.cats, summary=summary)
-            return {"behavior": "deny", "message": "已急停（全部停下）：什么都不执行，等人恢复。", **({"reason": "estop"} if grant_info else {})}
-        if self.stopping.is_set():
-            observe('serve_stop', False)
-            approvals.record(self.st, **base, decision="deny", reason="serve_stop")
-            self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="serve_stop")
-            self.activity("decision", id=rid, tool=tool, result="deny", reason="serve_stop", cats=v.cats, summary=summary)
-            self.emit("ask_done", id=rid, result="deny", reason="serve_stop")
-            return {"behavior": "deny", "message": "agentj serve 已停止：默认拒绝。", **({"reason": "serve_stop"} if grant_info else {})}
-        if provenance.untrusted_turn(self.agent) and not delegated and not own:
-            observe('group_source', False)
-            recovery = getattr(getattr(self, "background_done", None), "recovery", None)
-            if recovery is not None:
-                await asyncio.to_thread(recovery.refusal, tool, tool_input, "group_source")
-            approvals.record(self.st, **base, decision="deny", reason="group_source")
-            self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="group_source")
-            self.activity("decision", id=rid, tool=tool, result="deny", reason="group_source", cats=v.cats, summary=summary)
-            self.emit("ask_done", id=rid, result="deny", reason="group_source")
-            return {"behavior": "deny", "message": provenance.refusal_text(self.agent) + "\n" + untrusted_dispatch.HINT, **({"reason": "group_source"} if grant_info else {})}
-        # Owner 11-07: ordinary maintenance is not a credential/payment/publication
-        # action. Qualify effects only for the same real owner ingress and task.
-        from . import native_scratch
-        scratch_context = native_scratch.context(self)
-        native_bg_scratch = scratch_context is not None and scratch_context.background is not None
-        if (not strict and not always_ask and not bound and not learned and avatar is None
-                and not own and (not delegated or native_bg_scratch) and not caller_uv and lv != "safe"
-                and not provenance.owner_grant_required(self.agent)):
-            from . import ordinary_maintenance, approval_special
-            maintenance_source, maintenance_task = approval_special._current_context(self)
-            source_owner = (maintenance_source and maintenance_source.get("verified") is True
-                            and not maintenance_source.get("suspicious")
-                            and (provenance.is_owner(provenance.turn_source(self.agent))
-                                 or scratch_context is not None and scratch_context.background is not None))
-            if source_owner:
-                actor = self.agent
-                sender = getattr(actor, "cur_send", None)
-                device = getattr(sender, "device", None)
-                key = self.st.sign_key(device) if device else None
-                state, epoch = self.st, self.hist.epoch
-                maintenance_root, pairing_epoch = self.st.root, getattr(self, "_pairing_epoch", None)
-                ordinary = await asyncio.to_thread(ordinary_maintenance.qualify, tool, tool_input,
-                    cwd=workdir, state_root=self.st.root, _native_scratch=scratch_context)
-                if ordinary:
-                    effect_live = await asyncio.to_thread(ordinary_maintenance.still_valid, ordinary)
-                    current_source, current_task = approval_special._current_context(self)
-                    if (not effect_live or self.stopped() or self.stopping.is_set() or self.st is not state or self.hist.epoch != epoch
-                            or self.st.root != maintenance_root or getattr(self, "_pairing_epoch", None) != pairing_epoch
-                            or self.agent is not actor or getattr(actor, "cur_send", None) is not sender
-                            or getattr(actor, "halting", False) or getattr(sender, "state", None) == "cancelled"
-                            or current_source != maintenance_source or current_task != maintenance_task
-                            or approval_level.level(self.preferences, self.st) != lv
-                            or (self.agent_cfg or {}).get("dir") != workdir
-                            or policy_registry.main_requirement(tool, tool_input,
-                                env=getattr(actor, "approval_env", None), cwd=workdir) == "deny"
-                            or device and (not key or self.st.sign_key(device) != key)):
-                        return {"behavior":"deny", "message":"来源已变化，重新核验 / Source changed"}
-                    approvals.record(self.st, **base, decision="allow", reason="ordinary_maintenance", auto="owner")
-                    return {"behavior":"allow", "updatedInput":tool_input}
-        if (restart_input is not None and set(v.cats) == {"service"} and set(v.rules) == {"service.restart"}
-                and not provenance.owner_grant_required(self.agent)):
-            return await self._restart_request(tool, tool_input, restart_input, v, base, summary, gone, lv,
-                                               full=not delegated or bool(unattended))
-        if dispatch and unattended is None and avatar is None and not own:
-            approvals.record(self.st, **base, decision="allow", reason="dispatch")
-            await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
-            self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="dispatch")
-            self.activity("auto", id=rid, tool=tool, summary=summary, by="dispatch", task=self.task_label)
-            self.emit("auto", id=rid, tool=tool, grant=None)
-            return {"behavior": "allow", "updatedInput": tool_input}
-        if peer and lv != "harness" and not _peer_floor(self, tool, tool_input, v, requirement, opaque, host_card, require_passkey or own_pk or always_ask, bound, ttl, lv, dispatch):
-            approvals.record(self.st, **base, decision="allow", reason="same_host")
-            if dispatch:
-                await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
-            self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="same_host", via="same_host")
-            self.activity("auto", id=rid, tool=tool, summary=summary, by="same_host", cats=v.cats, task=self.task_label)
-            self.emit("auto", id=rid, tool=tool, grant=None)
-            return {"behavior": "allow", "updatedInput": tool_input}
-        # hotfix #455: a host system notice turn (a background completion, a heartbeat, a compaction recovery) is the
-        # same-computer tier, like a verified same_host session: the same allowlist runs without a card; any step with a
-        # dangerous row (delete / send / publish / spend / price / secrets) always raises the owner's card, parked so the
-        # rest goes on. A loop wake-up keeps P570c. External sources never reach here (unattended is None for them).
-        sm_card = False
-        if (unattended == "system" and avatar is None and not own
-                and not strict and not always_ask and ttl is None and not bound and task_actions is None):
-            # S2: the no-card path only when no outside text entered the session since the owner spoke
-            # at 「减少弹窗」 the level's own path allows these as before (label level_harness); here only the default levels
-            if lv != "harness" and not _peer_floor(self, tool, tool_input, v, requirement, opaque, host_card, require_passkey or own_pk, bound, ttl, lv, dispatch):
-                approvals.record(self.st, **base, decision="allow", reason="same_machine")
-                if dispatch:
-                    await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
-                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="same_machine", via="system")
-                self.activity("auto", id=rid, tool=tool, summary=summary, by="same_machine", cats=v.cats, task=self.task_label)
-                self.emit("auto", id=rid, tool=tool, grant=None)
-                return {"behavior": "allow", "updatedInput": tool_input}
-            sm_card = lv != "harness" and await asyncio.to_thread(_same_machine_card, self, tool, tool_input, v, requirement, dispatch, policy_env, known_recipients)
-            if sm_card:
-                batch = False
-        if same_owner and self.peers is not None:
-            sender = getattr(self.agent, "cur_send", None)
-            owner = self.peers.same_owner
-            data = getattr(sender, "data", {})
-            if owner.explicit_plan(data) and (not owner.valid_plan(getattr(sender, "fid", None), data)
-                                               or getattr(sender, "turn", None) != self.cur_turn):
-                from .same_owner import PLAN_ROOT_NOTE
-                return {"behavior": "deny", "message": PLAN_ROOT_NOTE["zh" if self.lang == "zh" else "en"]}
-        og_turn = provenance.owner_grants(self.agent) if avatar is None and self.peers is not None else None
-        if not always_ask and avatar is None and background is None and (og_turn or (self.peers is not None and self.peers.xfer.task_scope())) and tool != owner_grant.TOOL and tool not in goal_mod.SOFT_EXEMPT:
-            # P574 (#389): a same-owner task under the grant the owner signed on the remote that started it — the step it
-            # lists runs here with no card (counted, attack / opaque / credentials never covered); the phone gets one line
-            try:
-                if og_turn:
-                    hit = await asyncio.to_thread(self.peers.xfer.grant_tier, og_turn[0], og_turn[1], tool, tool_input, v,
-                                                  (self.agent_cfg or {}).get("dir"), self._classify)
-                else:
-                    hit = await asyncio.to_thread(self.peers.xfer.origin_tier, tool, tool_input, v,
-                                                  (self.agent_cfg or {}).get("dir"), self._classify)
-            except Exception:  # noqa: BLE001 — a receiving OTG task fails closed below
-                hit = None
-            if self.stopped():
-                observe('estop', False)
-                approvals.record(self.st, **base, decision="deny", reason="estop")
-                self.emit("ask_done", id=rid, result="deny", reason="estop")
-                return {"behavior":"deny", "message":"已急停 / Stop everything is on", **({"reason": "estop"} if grant_info else {})}
-            if hit:
-                approvals.record(self.st, **base, decision="allow", reason="owner_grant", grant=hit["tid"], auto="owner_grant")
-                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="owner_grant", steps=hit["steps"])
-                self.activity("auto", id=rid, tool=tool, summary=summary, by="owner_grant", cats=v.cats, task=self.task_label,
-                              origin=hit["origin"])
-                self.emit("auto", id=rid, tool=tool, grant=hit["tid"])
-                line = (("按「" + hit["origin"] + "」签的授权单：") if card_lang(self.lang) == "zh" else
-                        ("Under the grant signed on “" + hit["origin"] + "”: ")) + summary.split("\n", 1)[0][:180]
-                return {"behavior": "allow", "updatedInput": tool_input}
-        if (avatar is None and provenance.owner_grant_required(self.agent)
-                and (v.danger or require_passkey or requirement in ("hold", "uv"))):
-            # A delegated OTG task returns to its origin for extra scope; the receiving host never opens another card.
-            observe('owner_grant_scope', False)
-            approvals.record(self.st, **base, decision="deny", reason="owner_grant_scope")
-            self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="owner_grant_scope")
-            self.emit("ask_done", id=rid, result="deny", reason="owner_grant_scope")
-            return {"behavior":"deny", "message":"授权单未覆盖这一步或已失效，请回发起主机补授权。 / The grant does not cover this step or is no longer valid; ask the originating host for added scope.", **({"reason": "owner_grant_scope"} if grant_info else {})}
-        # #520: Full access is one standing authorisation, also in native/system/task turns.
-        # Source admission and exact delegated grant boundaries above remain authoritative.
-        full_source = (own or not provenance.untrusted_turn(self.agent)
-                       or provenance.unattended_turn(self.agent) in ("system", "same_host", "scheduled_task")
-                       or bool(provenance.owner_channel_turn(self.agent)))
-        if lv == "harness" and full_source and not learned and not provenance.owner_grant_required(self.agent):
-            def full_boundary():
-                return (id(self.agent), id(getattr(self.agent, "cur_send", None)), self.cur_turn,
-                        provenance.turn_source(self.agent), provenance._REQUEST.get(),
-                        provenance.untrusted_turn(self.agent), provenance.unattended_turn(self.agent))
-            boundary = full_boundary()
-            keep = await asyncio.to_thread(approval_level.full_access_keep, tool, tool_input, v,
-                                           env=policy_env, workdir=workdir, requirement=requirement,
-                                           require_passkey=require_passkey)
-            if self.stopped():
-                observe('estop', False)
-                approvals.record(self.st, **base, decision="deny", reason="estop")
-                return {"behavior": "deny", "message": "已急停 / Stop everything is on"}
-            if boundary != full_boundary() or provenance.owner_grant_required(self.agent):
-                observe('group_source', False)
-                approvals.record(self.st, **base, decision="deny", reason="group_source")
-                return {"behavior": "deny", "message": "来源已变化，重新核验后继续 / Source changed; revalidate before continuing"}
-            if self.stopping.is_set():
-                return stopping_result()
-            if keep is None:
-                if dispatch:
-                    await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
-                    if self.stopping.is_set():
-                        return stopping_result()
-                    if self.stopped():
-                        approvals.record(self.st, **base, decision="deny", reason="estop")
-                        return {"behavior": "deny", "message": "已急停 / Stop everything is on"}
-                    if boundary != full_boundary() or provenance.owner_grant_required(self.agent):
-                        approvals.record(self.st, **base, decision="deny", reason="group_source")
-                        return {"behavior": "deny", "message": "来源已变化，重新核验后继续 / Source changed; revalidate before continuing"}
-                grant = approval_level.level_grant(self.st)
-                if not grant or approval_level.level(self.preferences, self.st) != "harness":
-                    return {"behavior": "deny", "message": "授权已撤销 / Authorisation revoked"}
-                approvals.record(self.st, **base, decision="allow", reason="level_harness", grant=grant, auto="level")
-                observe('level_harness', False)
-                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="level_harness",
-                            **({"via": "avatar"} if avatar is not None else {"via": unattended} if unattended else {}))
-                self.activity("auto", id=rid, tool=tool, summary=summary, by="harness", cats=v.cats, task=self.task_label)
-                self.emit("auto", id=rid, tool=tool, grant=grant)
-                line = summary.split("\n", 1)[0][:200]
-                answer = {"behavior": "allow", "updatedInput": tool_input}
-                if grant_info:
-                    signer = approval_level._live(self.st, approval_level.KEY)
-                    if signer is None:
-                        return {"behavior": "deny", "message": "授权已撤销 / Authorisation revoked"}
-                    answer["grant_info"] = {"rid": rid, "device": signer["device"],
-                                             "sign_pub": self.st.sign_key(signer["device"]), "inherited": True, "parent_grant": grant}
-                return answer
-            # Downloaded/decoded unknown code retains its ordinary card even
-            # under Full access; it is not itself a credential or other UV effect.
-            if keep == "injection":
-                batch, own_pk, strict, always_ask = False, True, True, True
-            else:
-                # A true UV effect cannot fall through into legacy no-card routes.
-                require_passkey, batch, own_pk, strict = True, False, True, True
-        if policy_registry.dispatch(tool) and not strict:
-            approvals.record(self.st, **base, decision="allow", reason="dispatch")
-            self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="dispatch")
-            self.activity("auto", id=rid, tool=tool, summary=summary, by="dispatch", cats=v.cats, task=self.task_label)
-            return {"behavior": "allow", "updatedInput": tool_input}
-        prow, scope_park = "", False        # 0269-w3-policy E1 / E2: the default policy table (ADR-0269-w3-policy)
-        chain = _chain_turn(self.agent) if unattended == "system" and avatar is None and not own else None
-        if (not strict and not always_ask and not own_pk and avatar is None and not own and not peer and ttl is None and not bound
-                and task_actions is None and self.task_label is None
-                and (chain or (not delegated and not same_owner and not provenance.untrusted_turn(self.agent)))
-                and self._approvers() and approval_policy.in_force(self.preferences, self.st)):   # no paired phone: deny as before
-            try:   # worker thread: reversibility may ask git; the budget file is read there too
-                ptier, prow = await asyncio.to_thread(lambda: approval_policy.decide(
-                    tool, tool_input, v, requirement=requirement, dispatch=dispatch, workdir=workdir, env=policy_env,
-                    classify=self._classify, budget=budget_mod.state(self.st), known_recipients=known_recipients, chain=bool(chain)))
-            except Exception:  # noqa: BLE001 — cannot tell → the strictest step
-                ptier, prow = approval_policy.FACE, "self_protect"
-            if self.stopped():
-                observe('estop', False)
-                approvals.record(self.st, **base, decision="deny", reason="estop")
-                return {"behavior": "deny", "message": "已急停 / Stop everything is on", **({"reason": "estop"} if grant_info else {})}
-            if ptier == approval_policy.NONE:
-                observe('owner_scope', False)
-                approvals.record(self.st, **base, decision="allow", reason="owner_scope", policy=prow)
-                if dispatch:
-                    await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
-                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="owner_scope", policy=prow,
-                            **({"via": "chain"} if chain else {}))
-                self.activity("auto", id=rid, tool=tool, summary=summary, by="owner_scope", cats=v.cats, task=self.task_label)
-                self.emit("auto", id=rid, tool=tool, grant=None)
-                return {"behavior": "allow", "updatedInput": tool_input}
-            if ptier == approval_policy.TAP:
-                requirement, require_passkey, batch = "hold", False, False
-            elif ptier == approval_policy.FACE:
-                require_passkey, batch = True, False
-            scope_park = ptier is not None
-            if chain and ptier is not None:     # E2: the card says whose words authorised the chain (signed with the summary)
-                quote = pick(self.lang, "主人原话：「", "The owner's words: “") + str((chain.get("words") or [""])[0])[:80] + \
-                    pick(self.lang, "」", "”") + " · " + pick(self.lang, "任务链 ", "chain ") + str((chain.get("ids") or ["?"])[0])[:8]
-                summary += "\n" + quote
-                digest = approvals.shown_digest(tool, summary)
-                base["shown_sha256"] = digest
-        if lv != "safe" and (not delegated or (unattended and lv == "harness")) and avatar is None and ttl is None and not own_pk and (not peer or lv == "harness") \
-                and not sm_card:     # hotfix #455: a same-computer card stays a card
-            from . import background as bgmod   # P552 (#325 ②): background work, decided from the real call — never the model's words
-            bgk = (("headless:" + h) if (h := bgmod.headless(tool, tool_input)) else
-                   background if background in ("order", "task") else None)
-            if bgk:
-                try:
-                    keep = confirm_tier.harness_keeps(tool, tool_input, env=policy_env)
-                    floor = approval_level.harness_floor(tool, tool_input, v)
-                except Exception:  # noqa: BLE001 — cannot tell → the strictest step
-                    keep = "delete"
-                if keep:
-                    require_passkey, batch = True, False    # one of the four ③ kinds: Face ID, whoever runs it
-                elif requirement == "uv" and lv != "harness":
-                    pass        # review B2: outside 「减少弹窗」 the level's own ③ floor stays (P573: sudo / opaque are a button now)
-                elif tool not in approval_level.HARNESS_KEEPS and tool not in policy_registry.HOST_TOOLS and not floor:
-                    why = "dispatch_headless" if bgk.startswith("headless:") else "background"
-                    approvals.record(self.st, **base, decision="allow", reason=why)
-                    self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason=why, status=bgk,
-                                **({"via": unattended} if unattended else {}))
-                    self.activity("auto", id=rid, tool=tool, summary=summary, by=why, cats=v.cats, task=self.task_label)
-                    return {"behavior": "allow", "updatedInput": tool_input}
-        from . import preauth
-        pa_action = bound or policy_registry.tool_action(tool)
-        pa_bind = preauth.binding(pa_action, tool, bind) if pa_action in preauth.GRANTABLE else None
-        pa_action = pa_action if pa_bind is not None and not delegated and ttl is None and lv != "safe" and not strict else None
-        if pa_action and (pg := await asyncio.to_thread(preauth.live, self.st, pa_action, pa_bind)) is not None:
-            return self._preauth_use(pg, base, tool, tool_input, summary, v)   # P539: 「<remote> 批准过：Computer Use 免问」
-        harness_card = False
-        if same_owner and not own_pk and lv != "safe" and self.peers is not None:
-            proof = self.peers.same_owner.authorized(getattr(self.agent, "cur_send", None), tool, tool_input,
-                                                      self._task_class(tool, v))
-            if proof:
-                need_uv = require_passkey or self._task_uv(tool, tool_input, v, policy_env)
-                if need_uv and not json.loads(proof["task_scope"])["uv"]:
-                    message = "接收设备要求 Face ID；请在发起设备重新授权计划。 / This device requires Face ID; re-authorize the plan on the originating device."
-                    approvals.record(self.st, **base, decision="deny", reason="task_uv", grant=proof["id"],
-                                     task_scope=proof["task_scope"], task_uv=True)
-                    return {"behavior": "deny", "message": message}
-                approvals.record(self.st, **base, decision="allow", reason="same_owner", grant=proof["id"], task_uv=bool(need_uv),
-                                 task_scope=proof["task_scope"], peer_proof=proof, task_id=str(self.cur_turn),
-                                 task_action={"tool": tool, "input_sha256": isha, "class": self._task_class(tool, v)})
-                self.activity("auto", id=rid, tool=tool, summary=summary, by="same_owner", cats=v.cats, task=self.task_label)
-                return {"behavior": "allow", "updatedInput": tool_input}
-        if same_owner and tool == "AgentJSameOwnerAction" and lv != "safe" and not own_pk:
-            approvals.record(self.st, rid=rid, agent=kind, tool=tool, input_sha256=isha, shown_sha256=digest, cats=v.cats,
-                             decision="allow", reason="same_owner")
-            self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="same_owner")
-            self.activity("auto", id=rid, tool=tool, summary=summary, by="same_owner", cats=v.cats, task=self.task_label)
-            return {"behavior": "allow", "updatedInput": tool_input}
-        if lv == "harness" and (not delegated or avatar is not None or unattended) and ttl is None and not own_pk and (not peer or lv == "harness") \
-                and not sm_card and tool not in approval_level.HARNESS_KEEPS and not (unattended and tool == "AgentJSameOwnerAction"):
-            try:   # no folder: the Agent may have cd'd, and a `cwd` field is the model's — relative paths are not scratch
-                keep = confirm_tier.harness_keeps(tool, tool_input, env=policy_env) or approval_level.harness_floor(
-                    tool, tool_input, v)    # P556: + an attack on Agent J itself / fetch-and-run / an inline key going out
-            except Exception:  # noqa: BLE001 — cannot tell → the strictest step
-                keep = "delete"
-            if keep and keep not in confirm_tier.HARNESS_KINDS and keep not in approval_level.FLOOR_FACE:
-                harness_card, batch = True, False    # P573 (e): a fetch run in the same call — one button, still asked
-            elif keep:
-                require_passkey, batch = True, False
-            else:
-                grant = approval_level.level_grant(self.st)
-                approvals.record(self.st, **base, decision="allow", reason="level_harness",
-                                 **({"grant": grant, "auto": "level"} if grant else {}))
-                if dispatch:
-                    await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
-                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="level_harness",
-                            **({"via": "avatar"} if avatar is not None else {"via": unattended} if unattended else {}))
-                self.activity("auto", id=rid, tool=tool, summary=summary, by="level_harness", cats=v.cats, task=self.task_label)
-                self.emit("auto", id=rid, tool=tool, grant=None)
-                line = summary.split("\n", 1)[0][:200]
-                return {"behavior": "allow", "updatedInput": tool_input}
-        pkey = self._park_key(tool, isha)       # P336 N5: who is asking, fixed before any await
-        if not always_ask and (not delegated or unattended) and (not require_passkey or unattended or scope_park) and ttl is None:
-            ok = self._parked_take(pkey, uv=require_passkey)
-            if ok is not None:                # P336 (#36): the owner allowed this exact step on its parked card
-                approvals.record(self.st, **base, decision="allow", reason="parked", device=ok["device"], grant=ok["rid"],
-                                 auto="parked")
-                await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
-                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="parked", device=ok["device"])
-                self.activity("auto", id=rid, tool=tool, summary=summary, by="parked", task=self.task_label)
-                return {"behavior": "allow", "updatedInput": tool_input}
-        from .capability import goal_cli, host_mediated, staging_write
-        main_root = (self.agent_cfg or {}).get("dir") if self.task_label is None else None
-        if batch and ((not v.danger and (host_mediated(tool, tool_input) or staging_write(main_root, tool, tool_input)))
-                      or goal_cli(tool, tool_input)):     # P339: `agentj goal grant --match scp` is data, not cred.sql
-            approvals.record(self.st, **base, decision="allow", reason="host")
-            self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="host")
-            self.activity("auto", id=rid, tool=tool, summary=summary, by="host", task=self.task_label)
-            return {"behavior": "allow", "updatedInput": tool_input}
-        scope = getattr(self, "brief_scope", None)
-        if scope is not None and batch:
-            from .capability import brief_allows
-            if brief_allows(scope, tool, tool_input, bool(v.danger)):   # ADR-A194: inside the confirmed brief, no card
-                approvals.record(self.st, **base, decision="allow", reason="brief")
-                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="brief")
-                self.activity("auto", id=rid, tool=tool, summary=summary, by="brief", task=self.task_label)
-                return {"behavior": "allow", "updatedInput": tool_input}
-        g = None if delegated or not batch or v.danger or require_passkey else self._grant_for(tool, sc[:2] if sc else None)
-        if g is not None:                 # inside a live batch approval: allowed at once, logged, one quiet line on the phone
-            g.left -= 1
-            approvals.record(self.st, **base, decision="allow", reason="batch", device=g.device, grant=g.rid)
-            self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="batch", device=g.device)
-            self.activity("auto", id=rid, tool=tool, summary=summary, by=self._dname(g.device), task=self.task_label)
-            self.emit("auto", id=rid, tool=tool, grant=g.rid)
-            line = summary.split("\n", 1)[0][:200]
-            if g.left <= 0:
-                self.end_grant(g.rid, "limit")
-            else:
-                self._post(self._send_ready, lambda s: self._grant_msg(g))
-            return {"behavior": "allow", "updatedInput": tool_input}
-        tgk = self._task_grant_key(tool, v, delegated=delegated, same_owner=same_owner, avatar=avatar, ttl=ttl,
-                                   own_pk=caller_uv and task_actions is None, lv=lv)
-        tg = self._task_grant_use(tgk, tool, isha, require_passkey or self._task_uv(tool, tool_input, v, policy_env), tool_input) if tgk is not None else None
-        if tg is not None:                # P573 (#389): the owner already signed this kind of step in this task
-            if not await self._task_operation_reserve(tg, tool, isha):
-                return {"behavior":"deny", "message":"Safety ledger or task authority is unavailable; no operation executed."}
-            approvals.record(self.st, **base, decision="allow", reason="task_grant", device=tg["device"], grant=tg["rid"],
-                             auto="task", task_scope=tg["scope"], task_uv=bool(require_passkey or self._task_uv(tool, tool_input, v, policy_env)), task_id=self._task_id(), task_action=self._task_action(tool, isha, tgk))
-            self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="task_grant", device=tg["device"])
-            self.activity("auto", id=rid, tool=tool, summary=summary, by="task_grant", cats=v.cats, task=self.task_label)
-            self.emit("auto", id=rid, tool=tool, grant=tg["rid"])
-            line = summary.split("\n", 1)[0][:200]
-            return {"behavior": "allow", "updatedInput": tool_input}
-        gt, gwhy, gd = None, None, None
-        if not strict and not delegated and not harness_card and requirement not in ("hold", "uv") and not require_passkey and self.task_label is None and tool not in goal_mod.SOFT_EXEMPT:
-            gd = self.goals.current()
-            if gd is not None:                  # P158: the host sorts the request; the Agent's own words decide nothing
-                gt, gwhy = await asyncio.to_thread(goal_mod.tier, gd, tool, tool_input, v, (self.agent_cfg or {}).get("dir"),
-                                                   self._classify)
-                if gt == "granted" and gd.get("preauth") and approval_level.redline(tool, tool_input, v, self.danger_extra):
-                    gt, gwhy = "hold", "credentials"    # P336: a grant nobody signed never covers a red line
-        if gt in ("low", "granted"):
-            picks = gwhy if gt == "granted" else None
-            self.goals.count(gt, picks)
-            approvals.record(self.st, **base, decision="allow", reason="goal", grant=gd["grant"].get("rid"), auto="goal")
-            self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="goal", tier=gt)
-            self.activity("goal_auto", id=rid, tool=tool, summary=summary[:200], cats=v.cats, tier=gt,
-                          grant=[gd["grants"][i]["what"] for i in picks] if picks else None)
-            if gt == "granted":                 # a dangerous step under the grant: one quiet line; low risk stays silent
-                self.emit("auto", id=rid, tool=tool, grant=None)
-                line = summary.split("\n", 1)[0][:200]
-            return {"behavior": "allow", "updatedInput": tool_input}
-        if gt == "reversible" and (lv == "safe" or not preferences.get(self.preferences, "approval.goal_auto", True)):
-            gt, gwhy = "hold", gwhy             # the owner (enterprise / the safe level) switched the countdown off: a card
-        free = None                             # P336: full level / a goal without cards — everything but the red lines
-        if not strict and not delegated and not harness_card and not require_passkey and ttl is None and gt != "attack" and not host_card and self._approvers():
-            if lv == "full":
-                free = "level_full"
-            elif gd is not None and approval_level.goal_preauth(self.st, self.preferences):
-                free = "goal_nocard"
-            if free and approval_level.redline(tool, tool_input, v, self.danger_extra):
-                free = None                     # a suspected attack, credentials, money: still the owner's card
-        if free:
-            grant = gd["grant"].get("rid") if free == "goal_nocard" else approval_level.level_grant(self.st)
-            approvals.record(self.st, **base, decision="allow", reason=free,
-                             **({"grant": grant, "auto": "goal" if free == "goal_nocard" else "level"} if grant else {}))
-            self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason=free)
-            if free == "goal_nocard":
-                self.goals.count("nocard")
-            self.activity("auto", id=rid, tool=tool, summary=summary, by=free, cats=v.cats, task=self.task_label)
-            self.emit("auto", id=rid, tool=tool, grant=None)
-            line = summary.split("\n", 1)[0][:200]
-            by = "full" if free == "level_full" else "goal"
-            return {"behavior": "allow", "updatedInput": tool_input}
-        if avatar is None and provenance.owner_grant_required(self.agent):
-            observe('owner_grant_scope', False)
-            approvals.record(self.st, **base, decision="deny", reason="owner_grant_scope")
-            self.emit("ask_done", id=rid, result="deny", reason="owner_grant_scope")
-            return {"behavior":"deny", "message":"请回发起主机补授权。 / Return to the originating host for added scope.", **({"reason": "owner_grant_scope"} if grant_info else {})}
-        if not self._approvers():
-            observe('no_device', False)
-            approvals.record(self.st, **base, decision="deny", reason="no_device")
-            self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="no_device")
-            self.activity("decision", id=rid, tool=tool, result="deny", reason="no_device", cats=v.cats, summary=summary)
-            self.emit("ask_done", id=rid, result="deny", reason="no_device")
-            return {"behavior": "deny", "message": "没有能批准的已配对手机：默认拒绝。先用 agentj pair 配对一台手机。", **({"reason": "no_device"} if grant_info else {})}
-        parkable = ttl is None and gt != "reversible" and (
-            (not delegated and not require_passkey and not host_card) or
-            (bool(unattended) and (tool == "AgentJSameOwnerAction" or tool not in approval_level.HOST_CARDS + approval_level.HARNESS_KEEPS))
-            or scope_park)      # 0269-w3-policy E1: an owner-scoped step that needs a card waits; the rest of the task goes on
-        prev = self._parked_find(pkey) if parkable else None
-        if prev is not None:                    # P336 (#36): the same step's card is already waiting on the phone
-            return await self._parked_rewait(prev, base, gone, pkey, _receipt=_receipt)
-        if sum(1 for a in self.asks.values() if not a.fut.done()) >= MAX_ASKS:
-            observe('too_many', False)
-            approvals.record(self.st, **base, decision="deny", reason="too_many")
-            return {"behavior": "deny", "message": "同时等待批准的请求太多：默认拒绝。", **({"reason": "too_many"} if grant_info else {})}
-        wait = goal_mod.auto_secs() if gt == "reversible" else (ttl if ttl else self.ask_ttl)
-        g_who, g_what, g_add = "", "", None
-        if gt in ("reversible", "hold", "attack"):   # P339: who wants to do what, in plain words; maybe one-tap 加进目标授权
-            from .harness import LABEL as _HL
-            gl = card_lang(self.lang)
-            g_who = self.task_label or _HL.get(kind, kind if kind != "?" else "")
-            g_what = goal_mod.human(tool, tool_input, v, gl, self._classify)
-            if gt == "hold" and gwhy == "irreversible" and not allow_offer:
-                offer = goal_mod.offer_grant(tool, tool_input, v, (self.agent_cfg or {}).get("dir"), self._classify, gl)
-                if offer and len(gd.get("grants") or []) + len(offer) <= goal_mod.MAX_ALL_GRANTS:
-                    g_add = {"text": goal_mod.offer_text(offer, gl), "grants": offer, "gid": gd.get("id")}   # review #4: this goal only
-        a = Ask(rid, tool, summary, digest, tool_input, isha, time.monotonic() + wait,
-                asyncio.get_running_loop().create_future(), cats=v.cats, why=v.why, why_en=v.why_en, cred=v.cred,
-                only=only, scope=sc[:2] if sc else None, scope_text=sc[2] if sc else None, task=self.task_label, require_passkey=require_passkey,
-                goal={"reversible": "auto", "hold": "hold", "attack": "attack"}.get(gt or "", ""), goal_why=str(gwhy or ""),
-                goal_who=g_who, goal_what=g_what, goal_add=g_add,
-                allow_offer=[g_add["text"]] if g_add else [str(x) for x in allow_offer or []][:10],
-                reason=action_policy.reason(summary), host_card=_host_card is True,
-                settings_session=_settings_session if _host_card is True and tool == "AuthRescue" else None)
-        a.order_origin = [str(origin)[:600]] if background == "order" and origin else []
-        a.tg_key = tgk if not gt else None
-        a.task_scope = plan_scope if a.tg_key else None
-        a.prow = prow or approval_policy.card_row(tool, v, requirement, require_passkey, tool_input)
-        if pa_action and not g_add and require_passkey:   # P539: 「以后这台遥控器上 Computer Use 免问」 (signed pick, needs UV)
-            a.allow_offer.append(preauth.offer(pa_action))
-        a.bounded_plan = _bounded_context
-        if _bounded_context is not None:
-            _bounded_context.rid = a.rid
-        a.tg_plan_only = bool(_plan_only)
-        a.secret_display_route = secret_display_route.reveals_to_session(tool, tool_input, (self.agent_cfg or {}).get("dir"), policy_env)
-        source_before_bind = approval_review.snapshot(self)
-        approval_review.bind(self, a, origin=source_before_bind)
-        # Same source rule as _answer: never publish a card whose allow is disabled.
-        source = a.envelope["source"]
-        if source.get("verified") is not True or source.get("suspicious") is True:
-            observe('group_source', False)
-            approvals.record(self.st, **base, decision="deny", reason="group_source")
-            self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="group_source")
-            self.emit("ask_done", id=rid, result="deny", reason="group_source")
-            return {"behavior": "deny", "message": provenance.refusal_text(self.agent), **({"reason": "group_source"} if grant_info else {})}
-        self._interrupt("cards", face=require_passkey, chain=chain)
-        a.review_request_source = approval_review.digest(source_before_bind)
-        a.review_live_authority = self._approval_live_authority()
-        if _bounded_context is None:
-            from .bounded_plan import OperationOnce
-            ledger_path = self.st.root / "approval-operation-once.sqlite3"
-            ledger = self.__dict__.get("_approval_operation_once")
-            if ledger is None and ledger_path.exists():
-                ledger = self._approval_operation_once = OperationOnce(ledger_path)
-            if ledger is not None:
-                try:
-                    consumed = await asyncio.to_thread(ledger.consumed, a.operation_once_key)
-                except (ValueError, OSError):
-                    return {"behavior":"deny", "message":"Safety ledger is unavailable; no operation executed."}
-                if consumed:
-                    return {"behavior":"deny", "message":"This exact task operation is already consumed or terminal; do not retry."}
-                if self.stopped() or self.agent is not a.review_agent or approval_review.snapshot(self) != source_before_bind:
-                    return {"behavior":"deny", "message":"Task authority changed during safety metadata verification."}
-        self.asks[rid] = a
-        self.activity("ask", id=rid, tool=tool, cats=v.cats, why=v.why or None, why_en=v.why_en or None, cred=v.cred or None,
-                      summary=summary, task=self.task_label)
-        self.st.log("ask", id=rid, tool=tool, agent=kind, kind="danger" if v.danger or require_passkey else "low",
-                    tier="uv" if require_passkey else "hold" if requirement == "hold" else "card")
-        self.emit("ask", id=rid, tool=tool, summary=summary)
-        self._post(lambda fn: self._send_ready(lambda s: fn(s) if not a.only or a.only == s.device else None), lambda s: self._ask_msg(a, s))   # same queue as the Agent's text: order is kept
-        self.status_changed()
-        self.push_notify("ask")
-        offline = not self._online_approvers()
-        if offline and gt != "reversible":
-            self._remind_offline()               # P336 (#36): push above + one content-free Telegram / e-mail line
-        try:
-            waiters = {a.fut, a.review_pause} | ({gone} if gone else set())
-            if offline and parkable:
-                done, _ = await asyncio.wait(waiters, timeout=max(0.0, min(a.deadline - time.monotonic(),
-                                                                          approval_level.PARK_GRACE)),
-                                             return_when=asyncio.FIRST_COMPLETED)
-                if not done and not self._online_approvers() and not self.stopped() and not self.stopping.is_set():
-                    observe('offline')
-                    return self._park(a, base, summary, pkey, unattended)   # the card waits on; the Agent does the independent work
-            done, _ = await asyncio.wait(waiters, timeout=max(0.0, a.deadline - time.monotonic()),
-                                         return_when=asyncio.FIRST_COMPLETED)
-            if (not done and scope_park and parkable and not self.stopped() and not self.stopping.is_set()
-                    and not (a.goal == "auto")):
-                observe('unanswered')            # E1: no 120 s timeout-as-refusal for an owner-scoped step — it waits
-                return self._park(a, base, summary, pkey, unattended, why="unanswered")
-            if a.review_pause in done and not a.fut.done():
-                return self._park(a, base, summary, pkey, unattended, why="question")
-            if a.fut in done:
-                decision, did, sk, sig = a.fut.result()
-                reason = "device" if did else ("task_grant" if a.tg_by else "estop" if self.stopped() else "serve_stop")
-            else:
-                decision, did, sk, sig = "deny", None, None, None
-                reason = ("superseded" if _superseded(gone) else "agent_gone") if gone in done else \
-                    ("serve_stop" if self.stopping.is_set() else "timeout")      # P318: a newer card for the same item
-                if reason == "timeout" and a.goal == "auto" and not self.stopped() and self.goals.current() is not None:
-                    decision, reason = "allow", "goal_auto"     # P158: reversible step, nobody answered in 10 s
-                if not a.fut.done():
-                    a.fut.set_result((decision, None, None, None))
-        finally:
-            if not a.parked:
-                self.asks.pop(rid, None)
-        approval_review.finished(self, a, decision, reason)
-        gd = self.goals.current() if a.goal else None
-        picks = list(a.allow_add) if decision == "allow" and reason == "device" else []
-        if getattr(a, "answer_v", None) == 2:
-            base = {**base, "shown_sha256":a.answer_digest, "approval_v":2}
-        approvals.record(self.st, **base, decision=decision, reason=reason,
-                         device=did if reason != "task_grant" else getattr(a, "tg_dev", None), sign_pub=sk, sig=sig,
-                         scope=a.scope_text if decision == "allow_batch" else None,
-                         task_scope=a.task_scope, task_uv=(bool(a.require_passkey and a.uv_ok) if reason == "device" else bool(require_passkey or self._task_uv(tool, tool_input, v, policy_env))) if a.task_scope else None, task_id=self._task_id() if a.task_scope else None, task_action=self._task_action(tool, isha, tgk) if a.task_scope else None,
-                         scope_sha256=approvals.allow_add_line(picks) if picks else None,
-                         **({"grant": gd["grant"].get("rid"), "auto": "goal"} if reason == "goal_auto" and gd else
-                            {"grant": a.tg_by, "auto": "task"} if reason == "task_grant" else {}))
-        if decision in ("allow", "allow_batch") and reason == "device" and _superseded(gone):
-            approvals.record(self.st, **base, decision="deny", reason="superseded_after_allow", device=did)
-        if gd is not None:
-            if reason == "goal_auto":
-                self.goals.count("auto")
-            elif decision != "allow" and a.goal in ("hold", "attack") and reason in ("device", "timeout"):
-                self.goals.block(summary, a.goal_why or a.goal, tool=tool, cats=a.cats, human_text=a.goal_what, who=a.goal_who,
-                                 rule=a.why, rule_en=a.why_en)
-            elif decision == "allow" and reason == "device":
-                self._goal_grant_tap(a, did, picks)
-        if decision == "allow" and reason == "device" and pa_action in preauth.picked(picks) and a.uv_ok and sk:
-            await self._preauth_add(a, pa_action, did, sk, picks, pa_bind)
-        picks = preauth.strip(picks)
-        raw = decision
-        if decision == "allow" and reason == "device" and not a.goal and not _superseded(gone):
-            await self._task_grant_open(a, did, sk)
-        if decision == "allow_batch" and reason == "device":
-            self._open_grant(a, did)
-        decision = "allow" if decision == "allow_batch" else decision
-        result = decision if reason in ("device", "goal_auto", "task_grant") else {"timeout": "timeout", "estop": "stopped"}.get(reason, "gone")
-        self.st.log("ask_done", id=rid, tool=tool, decision=decision, reason=reason, device=did)
-        self.activity("decision", id=rid, tool=tool, result=raw if reason == "device" else reason, reason=reason,
-                      by=self._dname(did) if did else None, cats=a.cats, task=a.task, summary=summary[:200])
-        self.emit("ask_done", id=rid, result=result, reason=reason, device=did)
-        why = _done_why(reason, decision, a)
-        self._post(self._send_ready, lambda s: {"t": "ask_done", "id": rid, "result": result, **why})
-        self.status_changed()
-        observe(reason)
-        if decision == "allow":
-            if getattr(a, "secret_display_route", False):
-                observe("secret_display_route")
-                return {"behavior":"deny", "message":("Use agentj secret send for the controlled pickup card; values reach only the UV-confirming device." if card_lang(self.lang) == "en" else "请使用 agentj secret send 受控领取卡；秘密只交给完成本人验证的遥控器。")}
-            if reason == "device":
-                await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
-                if a.settings_session is not None and not _superseded(gone):
-                    from . import auth_settings_uv
-                    auth_settings_uv.mint(self, a.settings_session, a)
-            answer = {"behavior": "allow", "updatedInput": tool_input}
-            if risk_scope and reason == "device" and lv != "safe":   # P158: never from a countdown; P336: not under safe
-                answer["risk_grant"] = {"rid": rid, "device": did, "sign_pub": sk}
-            if grant_info and reason == "device":
-                answer["grant_info"] = {"rid": rid, "device": did, "sign_pub": sk, **({"approval_v":2,"envelope":a.envelope} if getattr(a,"answer_v",None)==2 else {})}
-                if getattr(a, "fa", None):      # P574: what another host needs to check this Face ID itself
-                    answer["grant_info"].update(fa=a.fa, sig=wire.b64u(sig), summary=summary, kind=a.pk_kind, channel=self.channel)
-            if picks and not a.goal_add:
-                answer["allow_add"] = picks
-            return answer
-        if a.goal in ("hold", "attack") and reason in ("device", "timeout"):
-            from .privacy import owner_text
-            gl = card_lang(self.lang)
-            return {"behavior": "deny", "message": goal_mod.hold_message(a.goal_why or a.goal, gl, reason,
-                                                                         owner_text(a.why_en if gl == "en" and a.why_en else a.why))}
-        msg = {"device": "用户在手机上拒绝了这个操作。", "timeout": _timeout_text(self.lang, int(self.ask_ttl), a.pk_fail),
-               "serve_stop": "agentj serve 已停止：默认拒绝。", "estop": "已急停（全部停下）：默认拒绝。"}.get(reason, "已拒绝。")
-        return {"behavior": "deny", "message": msg, **({"reason": reason} if grant_info else {})}
 
     async def _restart_request(self, tool, original, pinned, verdict, base, summary, gone, lv, *, full):
         """#510: paired tap or signed full; execute only the fixed host action, never the original shell."""

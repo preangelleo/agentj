@@ -1497,10 +1497,24 @@ class Board:
 
 
         paths = {scope: transcript} if transcript else dict(self.claude_transcripts)
+        seen = self.__dict__.setdefault("_reconciled", {})
         for owner, path in paths.items():
             if not path or not (any(v.get("session") == owner for v in list(self.mem.values()))
                                 or any(k.startswith(owner + ":") for k in self.native_starts)):
                 continue
+            # R-0049 H10: every effect below depends only on the transcript's tail and on which keys mem / alias /
+            # launched / native_starts hold. When neither changed since a pass that left nothing waiting on the clock,
+            # this pass would do nothing — skip the 256 KB read and reparse.
+            try:
+                stt = os.stat(path)
+            except OSError:
+                stt = None
+            mark = None if stt is None else (str(path), stt.st_ino, stt.st_size, stt.st_mtime_ns, stt.st_ctime_ns,
+                                             self._reconcile_state())
+            if mark is not None and seen.get(owner) == mark:
+                continue
+            seen.pop(owner, None)
+            clock_bound = False
             try:
                 with open(path, 'rb') as f:
                     f.seek(0, 2)
@@ -1550,6 +1564,7 @@ class Board:
                                 except (ValueError, OverflowError, OSError):
                                     continue
                                 if not self.native_starts[key]["since"] <= ended <= time.time() + 1:
+                                    clock_bound = clock_bound or ended > time.time() + 1   # may pass on a later pass
                                     continue
                                 self.start(key, None, session=owner, late=True,
                                            label=notification_label(notification, self.native_starts[key].get("label")))
@@ -1574,6 +1589,13 @@ class Board:
                                     self.stream_event({"type":"user", "message":{"content":[part]}}, owner)
                 elif ev.get("type") == "system" and ev.get("subtype") in ("task_notification", "task_updated"):
                     self.stream_event(ev, owner)
+            if mark is not None and not clock_bound and mark[-1] == self._reconcile_state():
+                seen[owner] = mark       # nothing changed by this pass either: the next identical pass is a no-op
+
+    def _reconcile_state(self):
+        """What reconcile_claude's effects depend on besides the transcript (see H10 above)."""
+        return (frozenset(self.mem), frozenset(self.alias.items()), frozenset(self.launched.items()),
+                frozenset((k, v.get("since"), v.get("generation"), v.get("label")) for k, v in self.native_starts.items()))
 
     @_board_locked
     def refresh_sources(self, processes=None):

@@ -41,6 +41,7 @@ BG_SETTLE_S = 3.0
 # ...or, registry busy with no background work we know of (e.g. started before Agent J attached), after this much silence.
 BUSY_FALLBACK_S = 60.0
 NATIVE_STALE_S = 3.0    # P198: native_turn with registry + hook state idle this long is a leftover flag, not a turn
+SEEN_MAX = 20000         # R-0049 H14: transcript record uuids remembered for de-duplication (oldest forgotten first)
 TURN_END_GRACE = 1.0    # P151: a turn end the transcript records (turn_duration) waits this long for its native Stop
 EMPTY_STOP_WAIT = 2.0   # P151b: a native Stop with no last_assistant_message: the transcript's end (or this) closes the turn
 END_TURN_TOOLS = ("ScheduleWakeup",)   # P151b: a tool that ends the turn — its result is the turn's end, Stop or not
@@ -137,17 +138,47 @@ def owner_session(d: dict) -> bool:
 PROBE_PIDS: set[int] = set()   # P258: auth_rescue.screen_check's short-lived interactive screens — never attached to
 
 
+# R-0049 H9: the shared observer asks 4 times a second. A registry file's parse is kept per path, keyed on its
+# (inode, size, mtime_ns, ctime_ns), and only once the file is REGISTRY_SETTLED_S old when read (Claude rewrites `status`
+# at the same size within one timestamp tick; a file still that young is read again every time). Liveness — kill(pid, 0),
+# the /proc start time, the socket — is checked live on every call; a returned row is a private copy.
+REGISTRY_SETTLED_S = 2.0
+_REGISTRY: dict[str, tuple] = {}
+
+
+def _registry_row(p: Path):
+    stt = os.stat(p)
+    key = (stt.st_ino, stt.st_size, stt.st_mtime_ns, stt.st_ctime_ns)
+    hit = _REGISTRY.get(str(p))
+    if hit is not None and hit[0] == key:
+        return hit[1]
+    d = json.loads(p.read_text())
+    now = time.time()
+    if now - stt.st_mtime >= REGISTRY_SETTLED_S and now - stt.st_ctime >= REGISTRY_SETTLED_S:
+        if len(_REGISTRY) >= 256:
+            _REGISTRY.clear()
+        _REGISTRY[str(p)] = (key, d)
+    else:
+        _REGISTRY.pop(str(p), None)
+    return d
+
+
 def claude_sessions(directory: str, sid: str = "", owner_only: bool = False) -> list[dict]:
+    import copy
     out = []
     registry = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / "sessions"
+    try:
+        want = os.path.realpath(directory)
+    except (OSError, ValueError, TypeError):
+        return []                        # as before: every row failed this comparison and was skipped
     for p in registry.glob("*.json"):
         try:
-            d = json.loads(p.read_text())
+            d = _registry_row(p)
             if not isinstance(d, dict) or not isinstance(d.get("cwd"), str):
                 continue
-            if os.path.realpath(d["cwd"]) != os.path.realpath(directory):
-                continue
             if sid and d.get("sessionId") != sid:
+                continue
+            if os.path.realpath(d["cwd"]) != want:
                 continue
             if d.get("kind") not in (None, "interactive") or type(d.get("pid")) is not int or d["pid"] <= 0:
                 continue
@@ -159,7 +190,7 @@ def claude_sessions(directory: str, sid: str = "", owner_only: bool = False) -> 
             sock = d.get("messagingSocketPath")
             if not isinstance(sock, str) or not Path(sock).is_socket():
                 continue
-            out.append(d)
+            out.append(copy.deepcopy(d))
         except (OSError, ValueError, TypeError):
             continue
     return sorted(out, key=lambda d: (int(d.get("updatedAt") or 0), int(d.get("startedAt") or 0),
@@ -248,6 +279,32 @@ def application_ingress_span(agent):
             application_ingress.open_span(host, native=True)
 
 
+class RecentIds:
+    """A set of the newest `cap` ids, oldest evicted first: `in`, `add`, `clear`, `len`. An id the observer skipped as a
+    duplicate is never re-added, so eviction follows first sight."""
+    __slots__ = ("cap", "_ids")
+
+    def __init__(self, cap: int):
+        self.cap, self._ids = cap, {}
+
+    def __contains__(self, ident) -> bool:
+        return ident in self._ids
+
+    def __len__(self) -> int:
+        return len(self._ids)
+
+    def add(self, ident) -> None:
+        ids = self._ids
+        if ident in ids:
+            return
+        ids[ident] = None
+        if len(ids) > self.cap:
+            del ids[next(iter(ids))]
+
+    def clear(self) -> None:
+        self._ids.clear()
+
+
 class SharedClaudeAgent(Agent):
     kind = "claude"
 
@@ -257,7 +314,7 @@ class SharedClaudeAgent(Agent):
         self.offset = 0
         self.discard_line = False
         self.transcript = None
-        self.seen = set()
+        self.seen = RecentIds(SEEN_MAX)   # R-0049 H14: bounded (was a set that grew for the whole session)
         self.observer = None
         self.done = asyncio.Event()
         self.input_seen = asyncio.Event()
