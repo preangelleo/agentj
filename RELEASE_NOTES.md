@@ -1,5 +1,5 @@
-# Agent J v0.30.35
+# Agent J v0.30.36
 
-Your remote asks you to confirm an upgrade requested by another host you own. A verified secret card in chat stays open when a system message arrives.
+Verified native tasks can validate an R15 report and render its email HTML using the matching installed report engine.
 
-自己的另一台主机请求升级时，遥控器会弹卡等你确认。聊天密钥卡已核实来源时，填卡期间收到系统消息也可以继续。
+主机核实原生任务和调用进程后，任务可以用匹配的报告引擎校验 R15 报告，并生成邮件正文。

@@ -15,6 +15,21 @@ import sys
 TRUSTED_SHA256 = '3a9b062cfdcd889fef5990bce4d55993e4e76eaf93e034ae4ca51388b623c590'
 
 
+# Separate full-tree pin for the R15 build with structured-table validation. This
+# build is never eligible for ordinary local execution or arbitrary package actions.
+WORKFLOW_R15_SHA256 = '8f5d9457e858aabfed275ba3613e73250d654e49fcce4a16e7ef3b05f76f7062'
+
+
+def workflow_r15(args):
+    # Exact argv emitted by the public report parser. The send helper, custom
+    # templates, web rendering, duplicate switches and other actions cannot match.
+    core = args[:-1] if args[-1:] == ['--json'] else args
+    if core[2:4] != ['--template', 'R15']:
+        return False
+    return ((len(core) == 4 and core[0] == 'validate')
+            or (len(core) == 7 and core[0] == 'render' and core[4] == '--out' and core[6] == '--email'))
+
+
 def digest(root: Path) -> str:
     rows = []
     for f in sorted(root.rglob('*')):
@@ -134,7 +149,7 @@ def validate_args(args):
     return final
 
 
-def run(engine: Path, original: list[str], args: list[str], root: Path, *, capture=False, _host=False, _job=None):
+def run(engine: Path, original: list[str], args: list[str], root: Path, *, capture=False, _host=False, _job=None, _workflow_check=None):
     """See ARCHITECTURE."""
     if not args or args[0] not in ('templates', 'schema', 'example', 'validate', 'render'):
         return None
@@ -147,8 +162,15 @@ def run(engine: Path, original: list[str], args: list[str], root: Path, *, captu
             return False
         info = real.stat()
         return info.st_uid == 0 and not info.st_mode & 0o022
-    if digest(engine) != TRUSTED_SHA256:
-        return None
+    fingerprint = digest(engine)
+    if fingerprint != TRUSTED_SHA256:
+        if sys.platform != 'linux' or fingerprint != WORKFLOW_R15_SHA256 or not workflow_r15(args):
+            return None
+        if not _host:
+            from . import report_host
+            return report_host.request(engine, original, args, root, capture=capture, workflow=True)
+        if _workflow_check is None:
+            return None
     if not all(system_helper(n) for n in ('bwrap', 'python3')):
         if sys.platform != 'linux':
             return None
@@ -201,6 +223,8 @@ def run(engine: Path, original: list[str], args: list[str], root: Path, *, captu
     try:
         if _host:
             from . import report_host
+            if _workflow_check is not None and not _workflow_check():
+                raise report_host.LocalFailure('authorization_source_refused')
             result = report_host.bounded_run(argv, env)
         else:
             result = subprocess.run(argv, env=env, text=True, capture_output=True, timeout=30)

@@ -6,6 +6,7 @@ import json
 import pathlib
 import os
 import stat
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -24,6 +25,10 @@ class LocalFailure(ValueError):
 
 
 def failure(code):
+    if code == 'authorization_source_refused':
+        return {'ok': False, 'code': code, 'reason': 'application_ingress_unverified',
+                'receipt': 'report-execution/' + code, 'approval_card_shown': False,
+                'recovery': 'Return this receipt to the workflow owner. Do not automatically resubmit.'}
     return {'ok': False, 'code': code, 'receipt': 'report-local/' + code,
             'approval_card_shown': False, 'recovery': 'Return this receipt to the workflow owner; repair host helpers/service and resume original inputs. Do not request another mail grant.'}
 
@@ -146,7 +151,7 @@ class _FrozenJob:
         return self.root / 'email.html'
 
 
-def request(engine, original, args, root, *, capture=False):
+def request(engine, original, args, root, *, capture=False, workflow=False):
     from . import elevate, names, report_local
     from .state import State
     try:
@@ -174,11 +179,13 @@ def request(engine, original, args, root, *, capture=False):
                         raise LocalFailure('input_limits')
                     files[name] = base64.b64encode(data).decode()
         final = [v.replace(str(root) + '/', '/input/', 1) if v.startswith(str(root) + '/') else v for v in final]
-        req = {'t': 'report_local', 'args': final, 'files': files}
+        req = {'t': 'report_workflow_r15' if workflow else 'report_local', 'args': final, 'files': files}
         if len(json.dumps(req).encode()) > MAX_WIRE:
             raise LocalFailure('input_limits')
         st = State()
         res = elevate.client_request(st, req, timeout=45, path=names.elevate_sock(st))
+        if workflow and isinstance(res, dict) and res.get('code') == 'use_existing_approval':
+            return None
         if not isinstance(res, dict) or 'code' not in res:
             res = failure('host_unavailable')
         if res.get('ok') and dest is not None and res.get('returncode') == 0:
@@ -192,12 +199,14 @@ def request(engine, original, args, root, *, capture=False):
         res = failure(exc.code)
     except (ValueError, OSError, KeyError, TypeError, IndexError):
         res = failure('path_or_output_refused')
-    result = subprocess.CompletedProcess(original, res.get('returncode', 0) if res.get('ok') else 4,
+    failure_status = 1 if res.get('code') == 'authorization_source_refused' else 4
+    result = subprocess.CompletedProcess(original, res.get('returncode', 0) if res.get('ok') else failure_status,
                                          res.get('stdout', ''), res.get('stderr', '') if res.get('ok') else json.dumps(res))
     if not capture:
         import sys
         print(result.stdout, end='')
-        print(result.stderr, end='', file=sys.stderr)
+        if not workflow or result.returncode == 0:
+            print(result.stderr, end='', file=sys.stderr)
     return result
 
 
@@ -214,11 +223,29 @@ def bounded_run(argv, env):
         return subprocess.CompletedProcess(argv, result.returncode, out.read(MAX_OUTPUT).decode('utf-8'), err.read(MAX_OUTPUT).decode('utf-8'))
 
 
-def execute(req):
+def workflow_caller(host, peer, uid):
+    from . import codex_procs, tasks, workflow_mail
+    scheduler = getattr(host, 'scheduler', None)
+    scope = getattr(scheduler, 'mail_scope', None)
+    birth = codex_procs.start_token(peer) if type(peer) is int and uid == os.getuid() else None
+
+    def check():
+        if (not birth or not scope or host.scheduler is not scheduler or scheduler.mail_scope is not scope
+                or codex_procs.start_token(peer) != birth or not workflow_mail.source(host, peer)
+                or not scheduler.completion_caller_known(peer)):
+            return False
+        admission = scope.get('mail_admission') or {}
+        run = tasks.load(host.st)['runs'].get(admission.get('run_id')) or {}
+        return (run.get('trigger') == 'manual' or
+                (admission.get('scheduled') is True and run.get('trigger') in ('schedule', 'catch_up')))
+    return check
+
+
+def execute(req, *, workflow_check=None):
     if not _JOB.acquire(blocking=False):
         return failure('host_busy')
     try:
-        return _execute(req)
+        return _execute(req, workflow_check) if workflow_check is not None else _execute(req)
     except LocalFailure as exc:
         return failure(exc.code)
     except subprocess.TimeoutExpired:
@@ -229,11 +256,47 @@ def execute(req):
         _JOB.release()
 
 
-def _execute(req):
+def _snapshot(source, engine):
+    # Bounded reads with no-follow FDs; even a mutable installed package
+    # cannot inflate the private copy after a preflight size check.
+    engine.mkdir()
+    count = size = 0
+    for path in source.rglob('*'):
+        if '__pycache__' in path.parts:
+            continue
+        count += 1
+        relative = path.relative_to(source)
+        if count > 1000 or len(relative.parts) > 12 or path.is_symlink():
+            raise LocalFailure('integrity')
+        target = engine / relative
+        if path.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise LocalFailure('integrity')
+            data = stream.read(MAX_OUTPUT - size + 1)
+        size += len(data)
+        if size > MAX_OUTPUT:
+            raise LocalFailure('integrity')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+
+
+def _execute(req, workflow_check=None):
     from . import report, report_local
-    if not isinstance(req, dict) or set(req) != {'t', 'args', 'files'} or req['t'] != 'report_local' or not isinstance(req['args'], list) or not req['args'] or len(req['args']) > 16 or not all(isinstance(v, str) and len(v) <= 4096 for v in req['args']) or not isinstance(req['files'], dict):
+    if not isinstance(req, dict) or set(req) != {'t', 'args', 'files'} or req['t'] not in ('report_local', 'report_workflow_r15') or not isinstance(req['args'], list) or not req['args'] or len(req['args']) > 16 or not all(isinstance(v, str) and len(v) <= 4096 for v in req['args']) or not isinstance(req['files'], dict):
         return failure('shape')
     args = req['args']
+    workflow = req['t'] == 'report_workflow_r15'
+    fixed_input = (report_local.workflow_r15(args) and args[1].startswith('/input/input-data/')
+                   and set(req['files']) == {args[1][len('/input/'):]})
+    if workflow:
+        if not fixed_input:
+            return failure('shape')
+        if workflow_check is None or not workflow_check():
+            return failure('authorization_source_refused')
     if args[0] not in ('templates', 'schema', 'example', 'validate', 'render'):
         return failure('shape')
     try:
@@ -266,34 +329,29 @@ def _execute(req):
         source = report.find_engine()
         if source is None:
             return failure('engine_missing')
-        # Bounded reads with no-follow FDs; even a mutable installed package
-        # cannot inflate the private copy after a preflight size check.
+        expected = report_local.WORKFLOW_R15_SHA256 if workflow else report_local.TRUSTED_SHA256
         engine = root / 'engine'
-        engine.mkdir()
-        count = size = 0
-        for path in source.rglob('*'):
-            if '__pycache__' in path.parts:
-                continue
-            count += 1
-            relative = path.relative_to(source)
-            if count > 1000 or len(relative.parts) > 12 or path.is_symlink():
+        _snapshot(source, engine)
+        effect_check = workflow_check if workflow else None
+        if report_local.digest(engine) != expected:
+            if not fixed_input or workflow_check is None:
                 return failure('integrity')
-            target = engine / relative
-            if path.is_dir():
-                target.mkdir(parents=True, exist_ok=True)
-                continue
-            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-            with os.fdopen(fd, 'rb') as stream:
-                if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                    return failure('integrity')
-                data = stream.read(MAX_OUTPUT - size + 1)
-            size += len(data)
-            if size > MAX_OUTPUT:
+            if not workflow_check():
+                return failure('authorization_source_refused')
+            # The client selected a different installed copy. Search only the host's
+            # three standard skill roots; the wire never supplies a package path.
+            from .market import skills_root
+            for kind in ('claude_code', 'codex', 'opencode'):
+                candidate = skills_root(kind) / report.PACKAGE
+                if candidate == source or not (candidate / report.ENGINE).is_file():
+                    continue
+                shutil.rmtree(engine)
+                _snapshot(candidate, engine)
+                if report_local.digest(engine) == expected:
+                    effect_check = workflow_check
+                    break
+            else:
                 return failure('integrity')
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(data)
-        if report_local.digest(engine) != report_local.TRUSTED_SHA256:
-            return failure('integrity')
         for name in ('bwrap', 'python3', 'prlimit'):
             path = (pathlib.Path('/usr/bin') / name).resolve()
             if pathlib.Path('/usr') not in path.parents or not path.is_file():
@@ -305,7 +363,8 @@ def _execute(req):
         if args[0] == 'render':
             args[args.index('--out') + 1] = str(root / 'email.html')
         job = _FrozenJob(root, files)
-        result = report_local.run(engine, args, args, root, capture=True, _host=True, _job=job)
+        result = report_local.run(engine, args, args, root, capture=True, _host=True, _job=job,
+                                  _workflow_check=effect_check)
         if result is None:
             return failure('integrity')
         if result.returncode and ('bwrap:' in result.stderr or 'prlimit:' in result.stderr):
@@ -313,6 +372,8 @@ def _execute(req):
         res = {'ok': True, 'code': 'executed', 'receipt': 'report-local/executed', 'returncode': result.returncode,
                'stdout': result.stdout, 'stderr': result.stderr, 'approval_card_shown': False}
         if args[0] == 'render' and result.returncode == 0:
+            if effect_check is not None and not effect_check():
+                return failure('authorization_source_refused')
             res['email'] = base64.b64encode((root / 'email.html').read_bytes()).decode()
         from .elevate import MAX_FRAME
         if len(json.dumps(res, ensure_ascii=False).encode()) + 1 > MAX_FRAME:

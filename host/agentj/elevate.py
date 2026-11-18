@@ -2547,10 +2547,20 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
-            if isinstance(req, dict) and req.get("t") == "report_local":
-                from . import report_host
-                res = (await asyncio.to_thread(report_host.execute, req) if peer is not None
-                       else report_host.failure("peer_unverified"))
+            if isinstance(req, dict) and req.get("t") in ("report_local", "report_workflow_r15"):
+                from . import report_host, report_local
+                args = req.get("args")
+                if peer is None or uid != os.getuid():
+                    res = report_host.failure("peer_unverified")
+                elif isinstance(args, list) and report_local.workflow_r15(args):
+                    check = report_host.workflow_caller(self.host, peer, uid)
+                    res = await asyncio.to_thread(report_host.execute, req, workflow_check=check)
+                    if (req['t'] == 'report_workflow_r15' and res.get('code') == 'authorization_source_refused'
+                            and application_ingress.allowed(self.host)):
+                        # An ordinary caller keeps the existing package approval path.
+                        res = {'ok': False, 'code': 'use_existing_approval'}
+                else:
+                    res = await asyncio.to_thread(report_host.execute, req)
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
                 await w.drain()
                 w.close()
