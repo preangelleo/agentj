@@ -414,7 +414,7 @@ def _install_attempts(run, cmd, say, out, pin, lease_end=None):
         except auto_update.RetryExpired:
             return prev                               # the previous failure stands; nothing more was launched
         except ValueError:
-            return 1, "", {**fields, "reason": auto_update.ARTIFACT_CHANGED, "retry_count": retries}
+            return 1, "", {"reason": auto_update.ARTIFACT_CHANGED, "retry_count": retries}
         except subprocess.TimeoutExpired as e:      # the retry's own share of the budget ran out: a failure, no further retry
             tl = (upgrade_diag.tail(getattr(e, "stderr", None) or "") or "TimeoutExpired: installer could not complete")
             return 124, tl, {**upgrade_diag.dependency_evidence(tl, auto_update.run_env(cmd) or os.environ),
@@ -1855,6 +1855,10 @@ def result_block(res: dict) -> str:
     if res.get("granted"):
         lines.append(f"authorized_version: {res['granted']}")
     zh, en = AUTH_REASONS[res["reason"]][1:] if res["reason"] in AUTH_REASONS else REASON_EXTRA.get(res["reason"], ("", ""))
+    from .upgrade_diag import UPGRADE_REPAIR_GUIDE, dependency_message
+    if message := dependency_message(res, "zh"):
+        zh, en = message, dependency_message(res, "en")
+        lines.append("repair_guide: " + UPGRADE_REPAIR_GUIDE)
     if res.get("reason") == "friend_request" and res.get("card") == "rate_limited":   # R-0060 r3: no card right now
         zh, en = FRIEND_RECENT_WHY
     if res.get("service") == "no_systemd":        # P278: installed, no systemd to restart it — no rollback was tried

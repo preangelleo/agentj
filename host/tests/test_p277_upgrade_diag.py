@@ -249,7 +249,7 @@ class Report(_Env):
                 return 200, {"thread": "st_" + "C" * 22, "seq": 1}
         with mock.patch.object(support, "channel_for", return_value=Ch()), mock.patch.object(support, "remember"), \
                 mock.patch.object(support, "doctor_text", return_value="agentj 0.20.3a1 · /ho" "me/winuser/x\n✗ service: down"), \
-                mock.patch.object(privacy, "layer2", return_value=privacy.Verdict("ok", 0.01)):
+                mock.patch.object(privacy, "outbound_check", return_value=privacy.Verdict("ok", 0.01)):
             res = upgrade_diag.after_failure(self.st, self.failed(), lang="zh")
         self.assertEqual(res["support"], "sent (st_" + "C" * 22 + ")")
         f = fields[0]
@@ -259,7 +259,7 @@ class Report(_Env):
         for leak in ("winuser", "DESKTOP-TEST123"):
             self.assertNotIn(leak, f["body"] + f["attach"])
 
-    def test_p573_jev_unavailable_holds_the_automatic_report(self):
+    def test_unavailable_broker_holds_the_full_automatic_report(self):
         from agentj import privacy, support
         sent = []
 
@@ -271,9 +271,9 @@ class Report(_Env):
                 return 200, {"thread": "st_" + "C" * 22, "seq": 1}
         with mock.patch.object(support, "channel_for", return_value=Ch()), mock.patch.object(support, "remember"), \
                 mock.patch.object(support, "doctor_text", return_value="agentj 0.20.3a1\n✗ service: down"), \
-                mock.patch.object(privacy, "layer2", return_value=privacy.Verdict("unavailable")):
+                mock.patch.object(privacy, "outbound_check", return_value=privacy.Verdict("unavailable", reason="privacy-check/broker_unavailable")):
             res = upgrade_diag.after_failure(self.st, self.failed(), lang="zh")
-        # P573 chairman item 6: Jev unavailable → the full report (installer tail, doctor) is never sent directly.
+        # A failed broker check holds the full report. Model-only unavailability follows the optional-review policy.
         # #475 (CEO brief, PR1): only the fixed-vocabulary metadata form goes out instead — no tail, no attachment.
         self.assertEqual(len(sent), 1)
         self.assertNotIn("attach", sent[0])
@@ -314,7 +314,7 @@ class Report(_Env):
         res = {"from": __version__, "to": NEW, "service": "unchanged", "result": "failed", "reason": "download_failed", "exit": 1,
                "step": "download", "detail": "URLError"}
         out = io.StringIO()
-        a = mock.Mock(mode="apply", authorization=None, from_email=None, version=NEW, json=False, yes=True)
+        a = mock.Mock(mode="apply", wheel=None, authorization=None, from_email=None, version=NEW, json=False, yes=True)
         with mock.patch.object(update, "check", return_value={"status": "newer", "latest": NEW}), \
                 mock.patch.object(update, "apply", return_value=res), \
                 mock.patch.object(upgrade_diag, "report", return_value={"status": "sent", "thread": "st_" + "B" * 22}), \

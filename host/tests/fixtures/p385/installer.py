@@ -759,7 +759,147 @@ def install(code, uv, working_root, *, post=request, run=command, approve=consen
         except InstallError: print('临时授权回收未确认，将按硬到期失效。/ Revocation unconfirmed; hard expiry remains enforced.')
 
 
-def upgrade_existing(uv, *, home=None, run=command):
+REPAIR_CDN_URL = re.compile(r'https://files\.pythonhosted\.org/packages/[0-9a-f]{2}/[0-9a-f]{2}/[0-9a-f]{60}/([A-Za-z0-9_+.\-]+\.whl)')
+
+
+def repair_download(url, digest, size, dest):
+    if not REPAIR_CDN_URL.fullmatch(url) or not re.fullmatch(r'[0-9a-f]{64}', digest):
+        raise InstallError('repair_dependency_lock_invalid')
+    if type(size) is not int or not 0 < size <= 100_000_000:
+        raise InstallError('repair_dependency_lock_invalid')
+    data = fetch(url, size)
+    if len(data) != size or hashlib.sha256(data).hexdigest() != digest:
+        raise InstallError('repair_dependency_integrity_failed:' + dest.name)
+    dest.write_bytes(data)
+    dest.chmod(0o600)
+
+
+def repair_artifacts(lock, tag_order, marker, parse_name):
+    """Offer only the target interpreter's locked runtime closure to uv's resolver."""
+    packages = {p['name']: p for p in lock['package']
+                if not p.get('resolution-markers') or any(marker(m).evaluate() for m in p['resolution-markers'])}
+    pending = ['agentj']
+    seen = set()
+    selected = {}
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        row = packages.get(name)
+        if not row:
+            raise InstallError('repair_dependency_lock_incomplete')
+        dependencies = list(row.get('dependencies', []))
+        for optional in row.get('optional-dependencies', {}).values():
+            dependencies.extend(optional)
+        pending.extend(dep['name'] for dep in dependencies if not dep.get('marker') or marker(dep['marker']).evaluate())
+        if name == 'agentj':
+            continue
+        matches = []
+        for item in row.get('wheels', []):
+            url_match = REPAIR_CDN_URL.fullmatch(item['url'])
+            if not url_match or not re.fullmatch(r'sha256:[0-9a-f]{64}', item['hash']):
+                raise InstallError('repair_dependency_lock_invalid')
+            filename = url_match[1]
+            dist, version, _, tags = parse_name(filename)
+            if dist != name or str(version) != row['version']:
+                raise InstallError('repair_dependency_lock_invalid')
+            ranks = [tag_order[t] for t in tags if t in tag_order]
+            if ranks:
+                matches.append((min(ranks), filename, item))
+        if not matches:
+            raise InstallError('repair_dependency_platform_unsupported:' + name)
+        _, filename, item = min(matches, key=lambda matched: matched[:2])
+        selected[filename] = (item['url'], item['hash'][7:], item['size'])
+    return selected
+
+
+def select_repair_artifacts(work, wheel):
+    import tomllib
+    import zipfile
+    # The caller has already verified the host wheel's release signature. The
+    # signed host itself pins both the external lock and the tag implementation.
+    lock_bytes = Path(__file__).with_name('host.lock').read_bytes()
+    with zipfile.ZipFile(wheel) as archive:
+        try:
+            info = archive.getinfo('agentj/repair-sources.json')
+            if info.file_size > 4096:
+                raise InstallError('repair_manifest_invalid')
+            sources = json.loads(archive.read(info))
+            if sources['version'] != 1 or sources['host_lock_sha256'] != hashlib.sha256(lock_bytes).hexdigest():
+                raise InstallError('repair_dependency_lock_mismatch')
+            tag_pin = sources['packaging']
+            helper = work / 'packaging.whl'
+            repair_download(tag_pin['url'], tag_pin['sha256'], tag_pin['size'], helper)
+        except KeyError:
+            raise InstallError('repair_manifest_missing') from None
+    sys.path.insert(0, str(helper))
+    try:
+        import packaging
+        if Path(packaging.__file__).parent.parent != helper:
+            raise InstallError('repair_tag_runtime_invalid')
+        from packaging.markers import Marker
+        from packaging.tags import sys_tags
+        from packaging.utils import parse_wheel_filename
+        lock = tomllib.loads(lock_bytes.decode())
+        return repair_artifacts(lock, {tag: i for i, tag in enumerate(sys_tags())}, Marker, parse_wheel_filename)
+    finally:
+        sys.path.pop(0)
+
+
+def repair_trusted_path(path, *, require_owner=True):
+    """Accept root or owner ancestors. Only a root-owned sticky ancestor may be writable."""
+    import stat
+    uid = os.getuid()
+    target = path.resolve(strict=True)
+    for current in (target, *target.parents):
+        meta = current.stat()
+        sticky_parent = (current != target and meta.st_uid == 0
+                         and stat.S_ISDIR(meta.st_mode) and bool(meta.st_mode & stat.S_ISVTX))
+        if meta.st_uid not in (uid, 0) or (meta.st_mode & 0o022 and not sticky_parent):
+            raise InstallError('repair_requires_private_directory')
+    if require_owner and target.stat().st_uid != uid:
+        raise InstallError('repair_requires_installation_owner')
+
+
+def private_owned(path, *, directory=False):
+    import stat
+    mode = path.lstat()
+    kind = stat.S_ISDIR if directory else stat.S_ISREG
+    return kind(mode.st_mode) and mode.st_uid == os.getuid() and not mode.st_mode & 0o022
+
+
+def repair_wheelhouse(directory, work, wheel, wheel_sha):
+    files = select_repair_artifacts(work, wheel)
+    expected = {name: (spec[1], spec[2]) for name, spec in files.items()}
+    expected[wheel.name] = (wheel_sha, wheel.stat().st_size)
+    key = hashlib.sha256(json.dumps(expected, sort_keys=True).encode()).hexdigest()
+    target = directory / ('wheelhouse-' + key)
+    if not target.exists():
+        # Keep the signed wheel and find-links URL valid for uv's own receipt.
+        # A concurrent repair can only publish a complete, identical directory.
+        with tempfile.TemporaryDirectory(prefix='.repair-', dir=directory) as temp:
+            staged = Path(temp) / 'wheels'
+            staged.mkdir(mode=0o700)
+            for name, (url, digest, size) in files.items():
+                repair_download(url, digest, size, staged / name)
+            shutil.copyfile(wheel, staged / wheel.name)
+            (staged / wheel.name).chmod(0o600)
+            try:
+                staged.rename(target)
+            except OSError:
+                if not target.is_dir():
+                    raise
+    if not private_owned(target, directory=True) or {f.name for f in target.iterdir()} != set(expected):
+        raise InstallError('repair_wheelhouse_invalid')
+    for name, (digest, size) in expected.items():
+        local = target / name
+        if not private_owned(local) or local.stat().st_size != size or hashlib.sha256(local.read_bytes()).hexdigest() != digest:
+            raise InstallError('repair_wheelhouse_invalid')
+    return target
+
+
+def upgrade_existing(uv, *, home=None, run=command, repair_index=False):
     """P516: repair-forward via today's verified bootstrap, without the old worker or a seat code.
     Pin both uv destinations from the installed tool receipt; never create a parallel installation.
     """
@@ -782,6 +922,14 @@ def upgrade_existing(uv, *, home=None, run=command):
             raise ValueError()
     except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError):
         raise InstallError('upgrade_requires_uv_install') from None
+    if repair_index:
+        if os.environ.get('SUDO_USER') or os.getuid() != os.geteuid():
+            raise InstallError('repair_requires_installation_owner')
+        for entry in (home, prefix, executable, prefix / 'uv-receipt.toml'):
+            repair_trusted_path(entry)
+        repair_trusted_path(prefix / 'bin/python', require_owner=False)
+        if os.path.realpath(prefix / 'bin/python') != os.path.realpath(getattr(sys, '_base_executable', sys.executable)):
+            raise InstallError('repair_requires_existing_interpreter')
     before = run([str(executable), '--version']).decode().strip()
     version_re = r'agentj (\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?'
     def version_key(text):
@@ -803,7 +951,14 @@ def upgrade_existing(uv, *, home=None, run=command):
         directory = home/'.local/share/agentj/upgrade-bin'
         if any(p.is_symlink() for p in (directory, *directory.parents)):
             raise InstallError('upgrade_runtime_symlink')
+        if repair_index:
+            for existing in (directory, *directory.parents):
+                if existing.exists():
+                    repair_trusted_path(existing, require_owner=existing.is_relative_to(home))
+                    break
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if repair_index and not private_owned(directory, directory=True):
+            raise InstallError('repair_requires_private_directory')
         persistent = directory/'uv'
         if persistent.is_symlink(): raise InstallError('upgrade_runtime_symlink')
         with tempfile.NamedTemporaryFile(prefix='.uv-', dir=directory, delete=False) as out:
@@ -816,7 +971,23 @@ def upgrade_existing(uv, *, home=None, run=command):
         env = {**os.environ, 'UV_TOOL_DIR': str(prefix.parent), 'UV_TOOL_BIN_DIR': str(entries[0].parent),
                'PATH': os.pathsep.join((str(directory), str(entries[0].parent), os.environ.get('PATH', '')))}
         python = os.path.realpath(getattr(sys, '_base_executable', sys.executable))
-        run([str(persistent), 'tool', 'install', '--force', '--python', python, str(wheel), *host_install_args()], env=env)
+        install_args = [str(persistent), 'tool', 'install', '--force', '--python', python]
+        install_env = env
+        if repair_index:
+            wheelhouse = repair_wheelhouse(directory, work, wheel, sha)
+            wheel = wheelhouse / name
+            # Only this explicitly requested repair uses the pinned offline source.
+            # uv gets a fresh cache and retains its normal resolver and receipt writer.
+            install_env = {k: v for k, v in env.items() if not k.startswith('UV_')}
+            install_env.update(UV_TOOL_DIR=str(prefix.parent), UV_TOOL_BIN_DIR=str(entries[0].parent))
+            install_args += ['--offline', '--no-index', '--no-config', '--no-cache', '--no-build',
+                             '--no-python-downloads', '--find-links', str(wheelhouse)]
+        try:
+            run([*install_args, str(wheel), *host_install_args()], env=install_env)
+        except InstallError as exc:
+            if repair_index and exc.reason == 'local_step_failed':
+                raise InstallError('repair_offline_install_failed') from None
+            raise
         if run([str(executable), '--version'], env=env).decode().strip() != target:
             raise InstallError('upgrade_version_mismatch')
         run([str(executable), 'service', 'install'], env=env)
@@ -830,6 +1001,7 @@ def main(argv=None):
     import argparse
     p=argparse.ArgumentParser(description='Local installation assistant; no remote shell')
     p.add_argument('--upgrade-only', action='store_true', help='Repair an existing uv installation; preserve its seat and pairing')
+    p.add_argument('--repair-index', action='store_true', help='Use release-pinned PyPI CDN wheels to repair an unreachable dependency index')
     p.add_argument('code', nargs='?'); p.add_argument('--code-file', default=os.environ.get('AGENTJ_CODE_FILE'), help=argparse.SUPPRESS)
     p.add_argument('--one-command', action='store_true', help='Run by https://agentj.app/install.sh: no duplicate questions')
     p.add_argument('--ai-later', action='store_true', help='The owner chose to connect an AI later')
@@ -838,8 +1010,13 @@ def main(argv=None):
     a=p.parse_args(argv)
     try:
         if not a.uv: raise InstallError('verified_uv_required')
+        if a.repair_index and not a.upgrade_only:
+            raise InstallError('repair_index_requires_upgrade_only')
         if a.upgrade_only:
-            upgrade_existing(a.uv)
+            if a.repair_index:
+                upgrade_existing(a.uv, repair_index=True)
+            else:
+                upgrade_existing(a.uv)
             return 0
         if not a.code and a.code_file:
             a.code = read_code_file(a.code_file)

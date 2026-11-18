@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.28.57
-released: 2026-11-18
+version: 0.28.58
+released: 2026-11-19
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.30.36
-source_tag: v0.30.36
-host_wheel: agentj-0.30.36-py3-none-any.whl
-host_wheel_sha256: 157ba570b68c3c3427dc32d32aac8571b907932b181c39062aeb965fc182a0a0
-host_sdist: agentj-0.30.36.tar.gz
-host_sdist_sha256: 23f5a3c0bc2a0635e41c5d5706064743f7ca760af483b40e30c1238d987e5bb1
+host_version: 0.30.37
+source_tag: v0.30.37
+host_wheel: agentj-0.30.37-py3-none-any.whl
+host_wheel_sha256: def58e194240918b23dfe7c69d8cbd3b47d55f9afcf827e84222d4a7d6e135b2
+host_sdist: agentj-0.30.37.tar.gz
+host_sdist_sha256: 8db4b1388289364d7924bc8f8b915db4aa3764aa3bea10128b6550f210d12d93
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 docs_index: https://agentj.app/llms.txt (also https://agentj.app/docs/index.json; every page as raw Markdown at https://agentj.app/docs/<slug>/en.md and /zh.md)
@@ -731,7 +731,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.30.36` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.30.37` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -773,13 +773,13 @@ uv tool install "./$W"          # the wheel; its dependencies come from PyPI or 
 `https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.9`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.36#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.37#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.36#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.37#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.36`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.37`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1784,7 +1784,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.36#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.37#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -3424,6 +3424,18 @@ curl --proto '=https' --tlsv1.2 -fsSL https://agentj.app/install-assistant.sh | 
 ```
 
 It verifies hashes and the release signature, pins the existing uv tool and executable directories, preserves the seat and pairing, and refreshes the service PATH using a retained uv binary before restart and doctor. It needs no new code. It refuses non-uv installs, unknown versions and downgrades; Olares Market apps update through Market. A missing executable in the old worker cannot be repaired just by changing the new wheel.
+
+如果通过 uv 安装的主机反复报告依赖下载失败，主人可以选择从 PyPI 文件服务器获取发行清单指定的依赖。请先确认主机可访问 agentj.app 和 files.pythonhosted.org，且组织允许从 PyPI 下载文件。由主人使用原安装账号在主机终端运行：
+
+If dependency downloads repeatedly fail on an existing uv installation, the owner can choose to fetch the release-pinned wheels from the PyPI file server. Confirm that the host can reach agentj.app and files.pythonhosted.org and that organizational policy permits downloads from PyPI. As the original OS user, run this command in a terminal on the host.
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL https://agentj.app/install-assistant.sh | sh -s -- --upgrade-only --repair-index
+```
+
+安装器验证发行签名与依赖哈希，安装后重启服务并自检。运行 `agentj --version` 和 `agentj doctor` 核对结果。席位、配对和设置都会保留。
+
+The installer verifies the release signature and dependency hashes, then restarts the service and checks its health after installation. Run `agentj --version` and `agentj doctor` to confirm the result. Your seat, pairing and settings are preserved.
 
 ### Exposed passkeys and secure setup
 

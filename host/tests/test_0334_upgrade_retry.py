@@ -163,6 +163,44 @@ class Retry(_Env):
             self.assertIn(f"{k}: {v}", meta.split("\n"))
         self.assertIn("dependency_package: websockets", upgrade_diag.body(self.sent[0], "uv"))
 
+    def test_last_installer_exit_describes_only_its_own_failure(self):
+        # First invocation raised, later invocation exited. The first dependency, DNS cause and exception are stale.
+        first = subprocess.CalledProcessError(1, ["uv"], stderr=NET_ERR)
+        final = "Failed to fetch package index: TLS handshake error"
+        r = self.attempt([first, (2, final), (2, final), (2, final)])
+        self.assertEqual(r["reason"], "dependency_download_failed")
+        self.assertEqual(r["uv_failure_class"], "tls")
+        for obj in (r, self.sent[0], upgrade_diag.read(self.st)):
+            self.assertEqual(obj["failure_stage"], "install")
+            self.assertNotIn("dependency_package", obj)
+            self.assertNotIn("exception_type", obj)
+        meta = upgrade_diag.metadata_body(self.sent[0])
+        self.assertTrue(support.metadata_ok(meta))
+        self.assertIn("uv_failure_class: tls", meta)
+        self.assertNotIn("exception_type:", meta)
+        self.assertIn("TLS 安全连接失败", auto_update.notice(r))
+        self.assertIn("TLS negotiation failed", upgrade_diag.owner_sentence(self.sent[0], {}, "en"))
+
+    def test_fetch_without_specific_cause_does_not_claim_a_connection_error(self):
+        r = self.attempt([(2, "Failed to download `websockets`")] * 4)
+        self.assertEqual(r["uv_failure_class"], "other")
+        self.assertIn("could not download websockets", auto_update.notice(r, "en"))
+        self.assertNotIn("network connection", auto_update.notice(r, "en"))
+
+    def test_failed_upgrade_and_failed_rollback_name_both_problems(self):
+        def broken_rollback(run):
+            def fail(cmd):
+                if _names(cmd, __version__) or cmd[-1] == "--version":
+                    return subprocess.CompletedProcess(cmd, 1, "", "rollback command failed")
+                return run(cmd)
+            return fail
+        r = self.attempt([1] * 4, runner_extra=broken_rollback)
+        self.assertEqual(r["reason"], "rollback_failed")
+        notice = auto_update.notice(r, "en")
+        self.assertIn("DNS lookup failed", notice)
+        self.assertIn("rollback also failed", notice)
+        self.assertIn(upgrade_diag.UPGRADE_REPAIR_GUIDE, notice)
+
     def test_non_network_failures_are_not_retried(self):
         for out, reason in (((1, CONFLICT_ERR), "dependency_conflict"),
                             ((1, "error: Failed to install: x\n  Caused by: Permission denied (os error 13)"), "permission_denied"),
@@ -310,6 +348,16 @@ class ManualAndPhone(_Env):
         self.assertTrue(support.metadata_ok(meta))
         for bad in ("corp-example", FAKE_TOKEN, "custuser", "://"):
             self.assertNotIn(bad, json.dumps(upgrade_diag.dependency_fields(r)) + meta)
+
+    def test_manual_retry_uses_the_last_symptom_and_package_only(self):
+        from agentj import update
+        tls = (2, "Failed to fetch package index: TLS handshake error")
+        r = self.apply([1, tls, tls, tls])
+        self.assertNotIn("dependency_package", r)
+        self.assertEqual(r["uv_failure_class"], "tls")
+        block = update.result_block(r)
+        self.assertIn("TLS 安全连接失败", block)
+        self.assertIn("repair_guide: " + upgrade_diag.UPGRADE_REPAIR_GUIDE, block)
 
     def test_manual_non_network_not_retried(self):
         for out in ((1, CONFLICT_ERR), (1, "error: Failed to install: x\n  Caused by: Permission denied (os error 13)"),
@@ -622,6 +670,8 @@ class ArtifactPinning(_Env):
             with self.subTest(hook=hook.__name__):
                 r, _ = self.manual([1, 0], on_sleep=hook)
                 self.assertEqual((r["result"], r["reason"]), ("failed", "install_artifact_changed"))
+                self.assertNotIn("dependency_package", r)
+                self.assertNotIn("uv_failure_class", r)
                 self.assertEqual(len(self.consumed), 1)
                 self.assertEqual(r["retry_count"], 1)
 

@@ -93,8 +93,7 @@ _UV_CLASS_NEEDLES = (
     ("http_status", ("http status", "status code", "403 forbidden", "404 not found", "502 bad gateway",
                      "503 service unavailable")),
     ("connect", ("connection refused", "connection reset", "connection closed", "connection aborted", "tcp connect error",
-                 "network is unreachable", "failed to establish a new connection", "broken pipe", "error sending request",
-                 "failed to fetch", "failed to download", "request failed after")),
+                 "network is unreachable", "failed to establish a new connection", "broken pipe")),
 )
 _IN_TICKS = re.compile(r"(?i)failed to (download and build|download|build|install|fetch|prepare)[^`\n]{0,40}`([^`\n]{1,400})`")
 _NOT_FOUND = re.compile(r"(?i)because ([A-Za-z0-9][A-Za-z0-9._-]{0,63}) was not found in the package registry")
@@ -866,6 +865,42 @@ REASON_WORDS = {
 }
 
 
+_DOWNLOAD_SYMPTOM = {
+    "dns": ("域名解析失败", "DNS lookup failed"),
+    "tls": ("TLS 安全连接失败", "TLS negotiation failed"),
+    "timeout": ("请求超时", "the request timed out"),
+    "http_status": ("服务器返回了 HTTP 错误", "the server returned an HTTP error"),
+    "connect": ("网络连接失败", "the network connection failed"),
+}
+
+
+def dependency_message(res: dict, lang: str) -> str:
+    """Explain a dependency fetch with closed fields only, including older records with no symptom."""
+    reason = res.get("reason")
+    if reason == "rollback_failed":
+        reason = res.get("install_failure")
+    if reason != "dependency_download_failed" and not (
+            reason == "uv_failed" and installer_reason(stderr=res.get("stderr_tail")) == "dependency_download_failed"):
+        return ""
+    en = lang == "en"
+    fields = dependency_fields(res)
+    pkg = fields.get("dependency_package")
+    what = pkg if pkg in DEPENDENCY_NAMES else ("dependencies" if en else "依赖包")
+    msg = f"could not download {what}" if en else f"{what}下载失败"
+    symptom = _DOWNLOAD_SYMPTOM.get(fields.get("uv_failure_class"))
+    if symptom:
+        msg += (", " if en else "，") + symptom[en]
+    return msg
+
+
+UPGRADE_REPAIR_GUIDE = "https://agentj.app/docs/install/#upgrade-failed"
+
+
+def dependency_repair(lang: str) -> str:
+    return ((" If this keeps happening, the host owner can choose a repair in the upgrade guide: " if lang == "en" else
+             " 若反复失败，主机主人可按升级修复说明选择处理方式。") + UPGRADE_REPAIR_GUIDE)
+
+
 def install_unchanged(res: dict) -> bool:
     """Journal phase wins; recognise pre-P487 download records without trusting their spurious recover line."""
     if "phase" in res:
@@ -880,6 +915,8 @@ def owner_sentence(res: dict, rep: dict, lang: str = "zh") -> str:
         from .upgrade_owner import sentence
         return sentence(res, lang)
     why = REASON_WORDS.get(res.get("reason"), (f"原因 {res.get('reason')}", f"reason {res.get('reason')}"))[1 if en else 0]
+    dependency = dependency_message(res, lang)
+    why = dependency or why
     to, frm = res.get("to") or "?", res.get("from") or __version__
     if res.get("rollback") == "ok" or install_unchanged(res):
         where = f"still on {frm}, working as before" if en else f"Agent J 主机仍是 {frm}，照常可用"
@@ -911,7 +948,7 @@ def owner_sentence(res: dict, rep: dict, lang: str = "zh") -> str:
     else:
         tail_ = ("it could not be sent to support automatically; I can send it with `agentj support ask --attach-doctor`" if en else
                  "没能自动发给客服，我可以用 agentj support ask --attach-doctor 再发")
-    own = ""
+    own = dependency_repair(lang) if dependency else ""
     if res.get("owner_kind") and res.get("fix"):    # #475: the installer hit files another account owns
         from .upgrade_owner import sentence
         own = " " + sentence(res, lang)

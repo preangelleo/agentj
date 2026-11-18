@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "host_lock_sha256": "f51839dc8d946dddff9c389d9f350c57a4a1b81a8b01c328c19e7ce69089a314",
+  "packaging": {
+    "url": "https://files.pythonhosted.org/packages/20/12/38679034af332785aac8774540895e234f4d07f7545804097de4b666afd8/packaging-25.0-py3-none-any.whl",
+    "size": 66469,
+    "sha256": "29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484"
+  }
+}

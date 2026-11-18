@@ -915,6 +915,8 @@ def finish(st, result, diag=None):
     if result.get('result') != 'ok' and (diag or {}).get('failure') in ('permission_denied', 'not_owner'):
         own = update.owner_check({'reason': (diag or {})['failure']})
         result.update({k: own[k] for k in ('owner_kind', 'fix') if k in own})
+    if result.get('reason') == 'rollback_failed' and (diag or {}).get('failure') == 'dependency_download_failed':
+        result['install_failure'] = diag['failure']
     with st.config_lock():
         _finish(st, result)
     _diagnose(st, result, diag or {})
@@ -968,19 +970,22 @@ def notice(r, lang='zh', prefs=None, harness=None):
     if r.get('result') == 'ok':
         summary = summary or humane.say('update.auto_ok_default', lang)
         return humane.say('update.auto_ok', lang, prefs, to=r['to'], summary=str(summary).rstrip('。.'))
+    dependency = upgrade_diag.dependency_message(r, lang)
+    guide = upgrade_diag.dependency_repair(lang) if dependency else ''
+    reason = dependency or r['reason']
     if r.get('result') == 'rolled_back':
         own = (' ' + upgrade_owner.sentence(r, lang)) if r.get('owner_kind') and r.get('fix') else ''   # #475
-        return humane.say('update.auto_rollback', lang, prefs, **{'from': r['from'], 'reason': r['reason']}) + own
-    text = (f"Automatic update did not complete ({r['reason']}). Use Repair connection below, or Settings → Emergency repair." if lang == 'en' else
-            f"自动升级未完成，原因：{r['reason']}。使用下方「修复连接」，或前往设置中的「紧急修复」。")
+        return humane.say('update.auto_rollback', lang, prefs, **{'from': r['from'], 'reason': reason}) + own + guide
+    text = (f"Automatic update did not complete ({reason}). Use Repair connection below, or Settings → Emergency repair." if lang == 'en' else
+            f"自动升级未完成，原因：{reason}。使用下方「修复连接」，或前往设置中的「紧急修复」。")
     if upgrade_diag.install_unchanged(r):
         frm = r.get('from') or __version__
-        return (f"Automatic update did not complete ({r['reason']}); still on {frm}, working as before." if lang == 'en' else
-                f"自动升级未完成，原因：{r['reason']}；Agent J 主机仍是 {frm}，照常可用。")
-    if r.get('reason') == 'rollback_failed' and r.get('recover'):
+        return (f"Automatic update did not complete ({reason}); still on {frm}, working as before." if lang == 'en' else
+                f"自动升级未完成，原因：{reason}；Agent J 主机仍是 {frm}，照常可用。") + guide
+    if r.get('reason') == 'rollback_failed' and (dependency or r.get('recover')):
         text += (" Automatic rollback also failed. Repair connection checks the existing host link; contact AgentJ support if it cannot recover." if lang == 'en' else
                  " 自动回滚也未完成。「修复连接」会检查现有主机连接；仍未恢复时，请联系 AgentJ 支持。")
-    return text
+    return text + guide
 
 
 def take_notice(st, lang='zh', prefs=None, harness=_UNSET_HARNESS):
@@ -1086,18 +1091,25 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 st.log('upgrade_install_retry', status=str(retries), reason=d['failure'])
                 sleep(wait)
                 return True
+            def clear_attempt():
+                for key in ('exit', 'stderr_tail', 'failure', 'exception', 'exception_type', 'errno', 'failure_stage',
+                            'failure_at', *upgrade_diag.DEPENDENCY_KEYS):
+                    d.pop(key, None)
             def attempt(argv):
                 try:
                     if pinned.root is not None:
                         check_artifact(pinned)      # before EVERY attempt: a changed / swapped artifact stops here, no retry
                 except ValueError:
                     if diagnose:
+                        clear_attempt()
                         d['retry_count'] = retries
                     raise
                 if retries:     # 0334 r3: read after the wait and the re-hash; an exhausted deadline launches nothing
                     left = limit - clock()
                     if left < RETRY_FLOOR:
                         raise RetryExpired()
+                    # A new installer is about to run. Its evidence must describe only this attempt.
+                    clear_attempt()
                     if runner is quiet:     # what is left before the rollback's reserved window
                         return quiet(argv, timeout=int(left))
                 return runner(argv)
@@ -1124,7 +1136,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                             continue
                         raise ValueError('install_failed') from None
                     if r.returncode:
-                        d['exit'] = r.returncode
+                        d.update(exit=r.returncode, failure_stage=stage, failure_at=int(time.time()))
                         d['stderr_tail'] = tail(getattr(r, 'stderr', '') or '') or tail(getattr(r, 'stdout', '') or '')
                         d['failure'] = upgrade_diag.installer_reason(stderr=d['stderr_tail'])
                         if again(f"{getattr(r, 'stdout', '') or ''}\n{getattr(r, 'stderr', '') or ''}", argv):
@@ -1133,9 +1145,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                     break
             if diagnose and retries:
                 # Succeeded after retries: the failed attempts' evidence must not describe a later, different failure.
-                for k in ('exit', 'stderr_tail', 'failure', 'exception', 'exception_type', 'errno', 'failure_stage',
-                          'failure_at', *upgrade_diag.DEPENDENCY_KEYS):
-                    diag.pop(k, None)
+                clear_attempt()
                 diag['retry_count'] = job['retry_count'] = retries
         if not diagnose:
             # 0334 r2 (F5): the previous version's store copy, when it still hashes to its sidecar, needs no cache
@@ -1276,7 +1286,9 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             raise ValueError(upgrade_diag.category(job.get('failure', 'worker_interrupted')))
     except Exception as e:
         # Exception details may contain URLs or owner content: fixed codes only.
-        if 'exception_type' not in diag and job.get('phase') != 'rollback':
+        # install_failed transfers control to rollback after a child exits or raises. It carries no new exception.
+        installer_failure = isinstance(e, ValueError) and str(e) == 'install_failed'
+        if not installer_failure and job.get('phase') != 'rollback':
             diag.update(upgrade_diag.exception_evidence(e, stage))
         reason = str(e) if isinstance(e, ValueError) and str(e) in fixed_reasons() else upgrade_diag.category(e)
         result = {'attempt': job.get('attempt'), 'from': job.get('from', __version__), 'to': job.get('to'), 'result': 'failed', 'reason': reason,
