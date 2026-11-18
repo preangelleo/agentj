@@ -37,8 +37,10 @@ def read(st):
     return max(records, key=lambda r:r['at']) if records else None
 
 
-def record(st, status, target, reason=None, *, external=False):
+def record(st, status, target, reason=None, *, external=False, verified_upgrade=False):
     rec = {'status': status, 'target': target, 'at': time.time()}
+    if verified_upgrade:
+        rec['source'] = 'upgrade_worker'
     if reason:
         rec['reason'] = reason
     data = json.dumps(rec).encode()
@@ -293,7 +295,7 @@ def run(st, target, *, timeout=45, install=None, status=None, ready=None, runner
                     return 1
             raise
         (st.root / update.PENDING).unlink(missing_ok=True)
-        record(st, 'ok', target)
+        record(st, 'ok', target, verified_upgrade=(live == target and not os.environ.get(SIBLING_ENV)))
         (st.root / NOTICE).unlink(missing_ok=True)
         restart_siblings(st, target)
         recovered = True

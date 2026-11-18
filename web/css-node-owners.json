@@ -4,7 +4,7 @@
   "sourceHashes": {
     "public/index.html": "cffad83d1d8fe46bb1908ecb53446667877d47ea8029e46e8eae0b09a6b3803c",
     "component-ownership.json": "28899b06420306dff7bedde1bb7225c1ca0cd871779a1b3237f08b6dedb93135",
-    "public/js/relay.js": "1fc6210ce7f282448faad90630ce29b6d7e74717ae950342dec1c484b83a5746"
+    "public/js/relay.js": "4c212c81e4d72b877748bf8f1bee465f191268a4314d853e80d3a7382e040e65"
   },
   "idOwners": {
     "version-notice": {

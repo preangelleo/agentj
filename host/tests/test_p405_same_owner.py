@@ -322,11 +322,16 @@ class SameOwnerTests(Base):
     async def test_status_roundtrip_allowlist_and_revocation(self):
         await self.confirm()
         self.other.meter_state = {'model':'gpt-6.1-sol','secret':'never','week':{'pct':5,'reset':__import__('time').time()+86400}}
+        before = [list(rows) for rows in (self.pages, self.sends, self.other_pages, self.other_sends)]
+        network_start = [len(svc.net.sent) for svc in (self.svc, self.remote)]
         job = asyncio.create_task(self.svc.cli({'t':'status','friend':self.b}))
         await asyncio.sleep(0)
         await self.pump()
         result = await job
         self.assertTrue(result['ok'])
+        self.assertEqual([self.pages, self.sends, self.other_pages, self.other_sends], before)
+        for svc, offset, packet_type in zip((self.svc, self.remote), network_start, ('owner_status', 'owner_status_res')):
+            self.assertEqual([p['t'] for _, p in svc.net.sent[offset:]], [packet_type])
         self.assertIn('load', result['status'])
         self.assertNotIn('secret', json.dumps(result))
         self.assertNotIn('path', json.dumps(result))

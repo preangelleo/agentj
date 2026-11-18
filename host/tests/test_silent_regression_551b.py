@@ -9,7 +9,7 @@ from types import SimpleNamespace as NS
 import unittest
 from unittest.mock import Mock
 
-from agentj import silent
+from agentj import provenance, silent
 from agentj.history import History
 from agentj.readmark import ReadMark
 from agentj.serve import Host
@@ -25,7 +25,8 @@ class Regression(unittest.TestCase):
         js = (root/'web/public/js/relay.js').read_text()
         predicate = re.search(r'const isSilent = [^;]+;', js).group()
         markers = re.search(r'const SILENT_MARKERS = [^;]+;', js)
-        current = (markers.group() + '\n' if markers else '') + predicate
+        clean = re.search(r'const cleanSilentMarkers = [^;]+;', js).group()
+        current = '\n'.join((markers.group(), clean, predicate))
         legacy = 'const isSilent = text => typeof text === "string" && text.trim() === "\\u3014\\u4e0d\\u56de\\u7fa4\\u3015";'  # byte-exact source 6cc8b64754
         frames = []
         for marker in MARKERS:
@@ -44,7 +45,7 @@ class Regression(unittest.TestCase):
         normal = {'t':'hist_turn','turn':{'reply':{'text':'ordinary answer'}}}
         self.assertEqual(normal,silent.public_message(normal))
 
-    def test_real_shared_claude_committed_final_logs_every_silent_turn(self):
+    def test_shared_claude_group_final_logs_each_channel_silence_marker(self):
         for marker in MARKERS:
             for text in (marker, marker+'body', 'body'+marker):
                 with self.subTest(text=text), tempfile.TemporaryDirectory() as tmp:
@@ -55,8 +56,9 @@ class Regression(unittest.TestCase):
                            wait_note=None,hist_emit=Mock(),emit=Mock(),_remember=Mock(),_post=Mock(),turn_queued_note=Mock())
                     h.hist_update = lambda tid,**kw: Host.hist_update(h,tid,**kw)
                     h.agent_text = lambda text: Host.agent_text(h,text)
-                    a = NS(untrusted_state=None,transcript=None,end_claimed=None,phone_turn=True,phone_seen=True,
-                           phone_claim=False,streamed=set(),host=h,done=asyncio.Event(),_limit_check=Mock())
+                    a = SharedClaudeAgent(h, {"kind":"claude","dir":tmp})
+                    a.phone_turn = a.phone_seen = True
+                    a.pending_source = provenance.telegram_group(-42,7,"family",1)
                     # Real Stop's last_assistant_message is a plain string (the #7271 shape).
                     SharedClaudeAgent._finish_stop(a,text)
                     self.assertTrue(hist.get(page['id'])['silent'])

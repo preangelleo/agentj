@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import secrets
@@ -43,12 +44,22 @@ BUSY_FALLBACK_S = 60.0
 NATIVE_STALE_S = 3.0    # P198: native_turn with registry + hook state idle this long is a leftover flag, not a turn
 SEEN_MAX = 20000         # R-0049 H14: transcript record uuids remembered for de-duplication (oldest forgotten first)
 TURN_END_GRACE = 1.0    # P151: a turn end the transcript records (turn_duration) waits this long for its native Stop
+WAKEUP_CONTINUATION_WAIT = 11.0  # native tool result can precede the final public report by 2–10 s
 EMPTY_STOP_WAIT = 2.0   # P151b: a native Stop with no last_assistant_message: the transcript's end (or this) closes the turn
 END_TURN_TOOLS = ("ScheduleWakeup",)   # P151b: a tool that ends the turn — its result is the turn's end, Stop or not
 WAIT_NOTE_AFTER = 60    # P151b (追加 4): a phone turn this long without its reply shows what the host sees
 TURN_WAIT = 300         # phone turn: a stall card (继续等 / 中断) after this long without a turn end
 ASK_RESCUE_S = 20       # P307: a phone answer to AskUserQuestion the session has not taken by then is sent to it as text
 ASK_LOOSE = ("answers", "annotations")   # P307: what Claude Code adds to AskUserQuestion's input once it is answered
+
+
+@dataclass(frozen=True)
+class TranscriptEnd:
+    session_id: str
+    generation: int
+    nonce: str | None
+    prompt_id: str | None
+    texts: set[str]
 
 
 def card_digest(tool, inp) -> str:
@@ -407,6 +418,11 @@ class SharedClaudeAgent(Agent):
         self.stop_since_end = False     # a committed native Stop arrived since the last recorded turn end
         self.turn_closed = False        # P151b: this turn's end is already handled (end-turn tool result / empty Stop)
         self.turn_gen = 0               # P151b: bumped at every turn start
+        self.turn_prompt_id = None      # Claude’s native prompt id, for display correlation only
+        self.receipt_gen = None         # generation opened by this Send’s first transcript receipt
+        self.stop_event_context = None  # native Stop may be held by the foreground-agent watchdog
+        self.wakeup_end = None          # provisional tool-result timer for this generation
+        self.turn_wakeup = False
         self.endturn_ids = set()        # P151b: tool_use ids of END_TURN_TOOLS calls of this turn
         self.last_tool = None           # P151b (追加 4): (name, short description, wall clock started, tool_use id) or None
         self.tool_digests = {}          # P307: main-thread tool_use id → card_digest (a transcript tool_result withdraws)
@@ -419,7 +435,7 @@ class SharedClaudeAgent(Agent):
         self.flushed = 0                # turn_texts[:flushed] are delivered (or not the phone's)
         self.phone_anchored = False     # the phone input itself is in the transcript: what follows answers it
         self.streamed = []              # public texts of this phone turn already on the phone
-        self.end_claimed = None         # (public reply, monotonic) a turn end without Stop already delivered
+        self.end_claimed = None         # last transcript-delivered reply awaiting its possible native Stop
         self.stop_gens = []             # P424 (#87): the turn_gens committed Stops answered (newest 8) — their recorded ends add nothing
         self.stop_claimed = None        # P424 (#87): (public reply, monotonic) the reply a committed Stop delivered
         # P151 (追加 1/2): compaction / clear handoff — the host's own recovery message when no new turn comes
@@ -465,25 +481,77 @@ class SharedClaudeAgent(Agent):
         elif not on and self.status == "compacting":
             self.set_status(getattr(self, "_pre_compact", None) or "idle")
 
+    def _stop_context(self):
+        return (self.turn_gen, (self.session or {}).get("sessionId"), self.cur_send, self.native_request)
+
+    def _stop_current(self, context):
+        gen, sid, send, att = context
+        if sid != (self.session or {}).get("sessionId") or send is not self.cur_send or att is not self.native_request:
+            return False
+        # Reading this exact Send's first receipt opens its display generation.
+        return gen == self.turn_gen or (att is not None and gen + 1 == self.turn_gen == self.receipt_gen
+                                        and shared_turn_origin.display_received(self))
+
+    def _accept_stop(self, event):
+        # prompt_id (hook) and promptId (transcript) identify a native prompt.
+        # After a fallback, a legacy hook can also be corroborated by body text
+        # independently written *after* the new input, distinct from the old reply.
+        prompt_id = event.get("prompt_id")
+        bound = isinstance(prompt_id, str) and bool(prompt_id) and bool(self.turn_prompt_id)
+        claimed = self.end_claimed
+        if claimed and claimed.session_id != (self.session or {}).get("sessionId"):
+            self.end_claimed = claimed = None
+        if not claimed:
+            return not bound or prompt_id == self.turn_prompt_id
+        if self.turn_gen == claimed.generation:
+            pending = self.phone_turn and claimed.nonce != getattr(self.native_request, "nonce", None)
+            return not pending and (not bound or prompt_id == self.turn_prompt_id)
+        if prompt_id and claimed.prompt_id == prompt_id and self.turn_prompt_id != prompt_id:
+            self.end_claimed = None  # positively identified late Stop for the retired prompt
+            return False
+        if bound:
+            return prompt_id == self.turn_prompt_id
+        text = public_text(str(event.get("last_assistant_message") or "")).strip()
+        return bool(text and self.turn_texts and text == public_text(self.turn_texts[-1]).strip()
+                    and text not in claimed.texts)
+
     def _committed_stop(self, event, reply):
+        saved = self.stop_event_context
+        if event.get("hook_event_name") == "Stop" and (saved is None or saved[0] != id(event)):
+            return  # superseded watchdog event has no current destination
+        context = saved[1] if saved else self._stop_context()
+        self.stop_event_context = None
+        if not self._stop_current(context):
+            return
         if self.untrusted_state == "running":
             self.untrusted_state = None
         if self.loop:
-            self.loop.call_soon_threadsafe(self._finish_stop, reply)
+            try:
+                on_loop = asyncio.get_running_loop() is self.loop
+            except RuntimeError:
+                on_loop = False
+            if on_loop:
+                self._finish_stop(reply, "committed-Stop", context[0], context)
+            else:
+                self.loop.call_soon_threadsafe(self._finish_stop, reply, "committed-Stop", context[0], context)
 
-    def _finish_stop(self, reply, source="committed-Stop"):
-        # Native Stop can precede the final transcript flush. Its committed reply
-        # is authoritative, exactly as in relay; never turn that race into an
-        # early empty phone completion or a later desktop duplicate.
+    def _finish_stop(self, reply, source="committed-Stop", gen=None, context=None):
         import time
-        self.ended_at = time.time()     # P198: the turn's late lines (read below or by the observer) must not reopen it
+        context = context or self._stop_context()
+        if (gen is not None and gen != context[0]) or not self._stop_current(context):
+            return
         if source == "committed-Stop":
-            claimed, self.end_claimed = self.end_claimed, None
-            if claimed and claimed[0] == public_text(reply) and time.monotonic() - claimed[1] < 60:
-                return                  # P151: a Stop later than its turn end; that reply was already delivered
-            self.stop_claimed = (public_text(reply), time.monotonic())
-        if self.transcript and self.transcript.is_file():
-            self.read_transcript()
+            if self.transcript and self.transcript.is_file():
+                self.read_transcript()
+            if not self._stop_current(context):
+                return
+            claimed = self.end_claimed
+            if claimed and self.turn_gen == claimed.generation and public_text(reply).strip() in claimed.texts:
+                return                  # this generation’s fallback already delivered the reply
+            self.stop_claimed = (public_text(reply), time.monotonic(), self.turn_gen)
+            reply = self._display_reply(reply)
+        self.ended_at = time.time()
+        self._clear_texts()
         if self.untrusted_state == "running":
             self.untrusted_state = None
         emit = getattr(self.host, "emit", None)
@@ -1001,6 +1069,15 @@ class SharedClaudeAgent(Agent):
             return {}
         name = event.get("hook_event_name")
         aid = event.get("agent_id")
+        if name == "Stop" and not aid:
+            context = self._stop_context()
+            if self.transcript and self.transcript.is_file():
+                self.read_transcript()
+            if not self._stop_current(context):
+                return {}
+            if not self._accept_stop(event):
+                return {}
+            self.stop_event_context = (id(event), self._stop_context())
         from . import main_thread
         main_thread.of(self).observe(event)
         if name == 'PreToolUse':
@@ -1099,7 +1176,7 @@ class SharedClaudeAgent(Agent):
                     self._schedule_empty_stop()
             elif name == "UserPromptSubmit":
                 self.stop_since_end = False
-                self._turn_begins()
+                self._turn_begins(event.get("prompt_id"))
                 recover_prompt = getattr(self, "_compact_recover_prompt", None)
                 if recover_prompt and event.get("prompt") == recover_prompt and handoff.fresh(None):
                     self._compact_read_wait = self.turn_gen
@@ -1141,6 +1218,8 @@ class SharedClaudeAgent(Agent):
         self._note_background(name, event)
         self._note_skill(name, event)
         self.state.handle(event)
+        if name == "Stop" and not aid and getattr(self.state, "_deferred_stop", None) is not event:
+            self.stop_event_context = None
         if name == "Stop" and not event.get("agent_id") and getattr(self.state, "_deferred_stop", None) is event:
             self.stop_since_end = False         # P151b: held as a fake Stop (foreground sub-agent) — not this turn's end
             self.stop_gens = [g for g in self.stop_gens if g != self.turn_gen]
@@ -1869,6 +1948,7 @@ class SharedClaudeAgent(Agent):
         if self.session is not None:
             self.lost_started = int(self.session.get("startedAt") or 0)
             self.host.st.log("shared_lost", agent="claude", session=str(self.session.get("sessionId", ""))[:8])
+        self._clear_texts()
         self.session = None
 
     def _repin(self, old, new, how):
@@ -2304,8 +2384,12 @@ class SharedClaudeAgent(Agent):
                 if not text or role not in ("user", "assistant"):
                     continue
                 if role == "user":
-                    shared_turn_origin.received(self, item, text)
+                    receipt = shared_turn_origin.received(self, item, text)
                     delivery_echo = shared_turn_origin.delivered(self, item, text)
+                    if receipt or delivery_echo:
+                        self.stop_since_end = False
+                        self._turn_begins(item.get("promptId"))  # pre-delivery prose cannot answer this Send
+                        self.receipt_gen = self.turn_gen
                     from .transcript_input import human_input, proactive_origin
                     if item.get("isMeta") and self._from_phone(item, text):
                         self._held_seen(text)
@@ -2328,9 +2412,8 @@ class SharedClaudeAgent(Agent):
                             successful=bool(ids) and re.findall(r"<status>([^<]*)</status>", text)==["completed"]*len(ids))
                         self.native_turn = True
                         self.stop_since_end = False   # P151: a harness-started turn begins (loop tick, task notification)
-                        self._turn_begins()
+                        self._turn_begins(item.get("promptId"))
                         self.turn_began_at = handoff.now()
-                        self._clear_texts()
                         mark = getattr(self.host, "proactive_turn", None)   # P132: the next agent-only page says where it came from
                         if mark:
                             mark(via)
@@ -2350,8 +2433,7 @@ class SharedClaudeAgent(Agent):
                         self.peer_low = self.peer_low or self.native_turn
                         continue
                     self.stop_since_end = False   # P151: a new turn begins
-                    self._turn_begins()
-                    self._clear_texts()
+                    self._turn_begins(item.get("promptId"))
                     if self.untrusted_state == "pending" and provenance.names_untrusted(text):
                         self._mark_untrusted("running", provenance.names_untrusted(text, True))   # a native version that runs it without UserPromptSubmit
                     if self._from_phone(item, text):
@@ -2439,6 +2521,11 @@ class SharedClaudeAgent(Agent):
         return
 
     def _clear_texts(self):
+        if self.wakeup_end:
+            self.wakeup_end.cancel()
+            self.wakeup_end = None
+        self.turn_wakeup = False
+        self.endturn_ids.clear()
         self.turn_texts, self.turn_thinking, self.flushed = [], None, 0
 
     def _stream_texts(self):
@@ -2448,6 +2535,9 @@ class SharedClaudeAgent(Agent):
             return
         for t in new:
             pub = public_text(t).strip()
+            if (self.pending_source or {}).get("kind") in ("phone", "automation", "system"):
+                from .silent import strip_markers
+                pub = strip_markers(pub).strip()  # a marker-only block waits for the actual end
             if not pub:
                 continue
             if self.phone_claim and not self.streamed:
@@ -2457,10 +2547,12 @@ class SharedClaudeAgent(Agent):
             self.streamed.append(pub)
             self.host.agent_text(pub)
 
-    def _turn_begins(self):
+    def _turn_begins(self, prompt_id=None):
+        self.turn_prompt_id = prompt_id if isinstance(prompt_id, str) and prompt_id else None
+        self.receipt_gen = None
         self.turn_closed = False
         self.turn_gen += 1
-        self.endturn_ids.clear()
+        self._clear_texts()
         self.last_tool = None
 
     def _turn_output(self, msg, blocks, cwd=None):
@@ -2478,6 +2570,9 @@ class SharedClaudeAgent(Agent):
             elif b.get("type") == "thinking" and str(b.get("thinking") or "").strip():
                 self.turn_thinking = (msg.get("id"), b["thinking"])
             elif b.get("type") == "tool_use" and isinstance(b.get("name"), str):
+                if self.wakeup_end:
+                    self.wakeup_end.cancel()
+                    self.wakeup_end = None
                 self._stream_texts()
                 if self.phone_turn and self.phone_seen and getattr(self.host, "peers", None) is not None:
                     # the native Bash cwd (Claude records it per line; the shell may have cd'd); attach keeps the root ceiling
@@ -2489,6 +2584,7 @@ class SharedClaudeAgent(Agent):
                     while len(self.tool_digests) > 64:
                         self.tool_digests.pop(next(iter(self.tool_digests)))
                 if b["name"] in END_TURN_TOOLS and b.get("id"):
+                    self.turn_wakeup = True
                     self.endturn_ids.add(b["id"])
 
     def _tool_results(self, blocks):
@@ -2513,7 +2609,17 @@ class SharedClaudeAgent(Agent):
                 self.last_tool = (self.last_tool[0], self.last_tool[1], None, ident)   # finished: the model thinks on
             if ident in self.endturn_ids:
                 self.endturn_ids.discard(ident)
-                self._turn_recorded_end(tool=True)
+                if not self.stop_since_end and not self.turn_closed:
+                    loop = self.loop
+                    if loop is None:
+                        with contextlib.suppress(RuntimeError):
+                            loop = asyncio.get_running_loop()
+                    if loop is None:
+                        continue
+                    if self.wakeup_end:
+                        self.wakeup_end.cancel()
+                    self.wakeup_end = loop.call_later(WAKEUP_CONTINUATION_WAIT, self._wakeup_timeout,
+                                                     self.turn_gen, (self.session or {}).get("sessionId"))
 
     def _ask_watch(self, digest, answers):
 
@@ -2552,6 +2658,11 @@ class SharedClaudeAgent(Agent):
                 + ("Your answer was sent to the Agent as text; " if ok else "The answer could not be handed to the Agent; ")
                 + "if the question is still open on the Agent J host, press Esc there and the Agent continues with your answer."))
 
+    def _wakeup_timeout(self, gen, sid):
+        self.wakeup_end = None
+        if sid and sid == (self.session or {}).get("sessionId") and gen == self.turn_gen:
+            self._empty_stop_end(gen)
+
     def _schedule_empty_stop(self):
         loop = self.loop
         if loop is None:
@@ -2565,39 +2676,51 @@ class SharedClaudeAgent(Agent):
         if self.transcript is not None and self.transcript.is_file():
             with contextlib.suppress(OSError, ValueError):
                 self.read_transcript()
-        if gen != self.turn_gen or self.turn_closed or self.stop_since_end:
+        if gen != self.turn_gen or self.turn_closed or self.stop_since_end or self.wakeup_end:
             return
         self.turn_closed = True
         reply = self._turn_reply()
-        self._clear_texts()
         self.host.st.log("shared_turn_end_empty_stop", reply=bool(reply))
         self._end_without_stop(reply)
+
+    def _display_reply(self, reply):
+        from .silent import is_silent, strip_markers
+        # An explicit no-reply in a group, mail or other recipient's channel
+        # remains that channel's contract. Only the main owner display recovers prose.
+        if self.phone_turn and (self.pending_source or {}).get("kind") not in ("phone", "automation", "system"):
+            return reply
+        if not self.turn_wakeup and not is_silent(reply):
+            return reply
+        blocks = list(self.turn_texts)
+        if not blocks or blocks[-1].strip() != reply.strip():
+            blocks.append(reply)
+        streamed = self.streamed if self.phone_turn else ()
+        visible = [strip_markers(block).strip() for block in blocks if block.strip()]
+        pending = [block for block in visible if block and public_text(block) not in streamed]
+        if pending:
+            return "\n\n".join(pending)
+        return next((block for block in reversed(visible) if block), reply)
 
     def _turn_reply(self):
 
         if self.turn_texts:
-            return self.turn_texts[-1].strip()
+            return self._display_reply(self.turn_texts[-1].strip())
         if self.phone_turn and provenance.is_owner(self.pending_source) and self.turn_thinking \
                 and self.turn_thinking[0] == self.turn_last_msg:
             return self.turn_thinking[1].strip()
         return ""
 
-    def _turn_recorded_end(self, tool=False):
+    def _turn_recorded_end(self):
 
-        if self.turn_closed and not tool:
+        if self.turn_closed:
             return                      # the turn_duration after the end-turn tool's result: already handled
         if self.stop_since_end:
-            if tool:                    # a committed Stop already answered; the turn_duration that follows pairs with it
-                self.turn_closed = True
-                return
             self.stop_since_end = False
-            self._clear_texts()
-            return
-        if self.turn_closed:
+            # Stop's callback and the transcript observer may run in either order.
+            # _finish_stop consumes the public blocks and clears this generation.
             return
         self.turn_closed = True
         reply = self._turn_reply()
-        self._clear_texts()
         loop = self.loop
         if loop is None:
             with contextlib.suppress(RuntimeError):
@@ -2608,6 +2731,8 @@ class SharedClaudeAgent(Agent):
 
     def _end_without_stop(self, reply, gen=None):
         import time
+        if gen is not None and gen != self.turn_gen:
+            return  # an older end cannot consume the next generation's page or prose
         if self.stop_since_end:         # the native Stop came after all (later than the transcript's end record)
             self.stop_since_end = False
             return
@@ -2616,7 +2741,7 @@ class SharedClaudeAgent(Agent):
         # and put the same reply on a second 「后台任务完成」 page. A turn a committed Stop answered never ends twice.
         claimed = self.stop_claimed
         if (gen is not None and gen in self.stop_gens) or (
-                reply and claimed and claimed[0] == public_text(reply) and time.monotonic() - claimed[1] < 60):
+                reply and claimed and claimed[2] == self.turn_gen and claimed[0] == public_text(reply) and time.monotonic() - claimed[1] < 60):
             self.host.st.log("shared_turn_end_dup_dropped")
             return
         phone = self.phone_turn and (self.phone_seen or self.phone_claim or shared_turn_origin.display_received(self))
@@ -2626,9 +2751,13 @@ class SharedClaudeAgent(Agent):
         if end:
             end(reply or None)
         if reply:
-            self.end_claimed = (public_text(reply), time.monotonic())
-            self._finish_stop(reply, source="turn-end")
+            tail = self.turn_texts[-1] if self.turn_texts else reply
+            self.end_claimed = TranscriptEnd((self.session or {}).get("sessionId"), self.turn_gen,
+                                             getattr(self.native_request, "nonce", None), self.turn_prompt_id,
+                                             {public_text(reply).strip(), public_text(tail).strip()})
+            self._finish_stop(reply, source="turn-end", gen=self.turn_gen)
             return
+        self._clear_texts()
         if self.untrusted_state == "running":
             self.untrusted_state = None
         self.native_turn = self.peer_low = False
@@ -2932,7 +3061,6 @@ class SharedClaudeAgent(Agent):
         reply = self._turn_reply() if self.phone_seen or self.phone_claim else ""
         if reply and await asyncio.to_thread(self._registry_idle):
             self.host.st.log("shared_turn_end_no_stop", phone=True, reply=True, via="registry-idle")
-            self._clear_texts()
             self._end_without_stop(reply)
             return True
         return False
@@ -3127,6 +3255,7 @@ class SharedClaudeAgent(Agent):
         return result == "sent"
 
     async def stop(self):
+        self._clear_texts()
         await self.menu_desk.stop()
         self.meter(model=None, model_name=None, effort=None, ctx=None, h5=None, week=None, source_at=None)
         # Dispose only the actor we launched. Never call Agent.halt on an owner TUI.

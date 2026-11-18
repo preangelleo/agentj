@@ -43,6 +43,13 @@ class Prices(unittest.TestCase):
         p = usage.price_of("claude-sonnet-5-5")
         self.assertEqual((p["in"], p["out"]), (2.0, 10.0))
 
+    def test_fable_fast_mode_rates(self):
+        tokens = dict.fromkeys(usage.TOKEN_KEYS, 1_000_000)
+        for model_id, expected in (("claude-fable-5-2", 58.2), ("claude-fable-5-2-fast", 116.4),
+                                   ("anthropic/claude-fable-5-2-fast-20261116", 116.4)):
+            with self.subTest(model_id=model_id):
+                self.assertEqual(usage.estimate(tokens, usage.price_of(model_id)), expected)
+
     def test_estimate_counts_cache_at_cache_prices(self):
         p = usage.PRICES["claude-opus-5-5"]
         usd = usage.estimate({"i": 1_000_000, "o": 1_000_000, "cr": 1_000_000, "cw": 1_000_000}, p)

@@ -1288,9 +1288,9 @@ let pageAt = -1, follow = true, tailWait = false, pagesCache = null, shownKey = 
 const noticeReads = new Set();
 // Compatibility recognition stays at the display boundary for older hosts.
 const SILENT_MARKERS = ["〔静默消息〕", "[silent]", "\u3014\u4e0d\u56de\u7fa4\u3015"];
-const isSilent = text => typeof text === "string" && SILENT_MARKERS.some(m => text.trim().startsWith(m) || text.trim().endsWith(m));
-const silentTurn = p => p?.silent === true || isSilent(p?.reply);
 const cleanSilentMarkers = text => typeof text === "string" ? SILENT_MARKERS.reduce((s,m) => s.split(m).join(""), text).trim() : "";
+const isSilent = text => typeof text === "string" && !!text.trim() && !cleanSilentMarkers(text);
+const silentTurn = p => p?.silent === true || isSilent(p?.reply);
 function displayTurn(p){
   // Legacy channel notices carry their real input in card.channel, never Agent words.
   const channel = chanCard(p);

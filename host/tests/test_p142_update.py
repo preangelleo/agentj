@@ -107,6 +107,27 @@ class RecoveryWorker(Base):
         self.assertEqual(order, [('ready', False), ('install', '0.0.1')])
         self.assertFalse((self.st.root / update.PENDING).exists())
 
+    def test_only_worker_with_verified_live_version_marks_recovery(self):
+        for live, sibling, verified in ((__version__, '', True), (None, '', False), (__version__, '1', False)):
+            with patch.dict(os.environ, {service_recovery.SIBLING_ENV: sibling}), \
+                    patch.object(service_recovery, 'stays_up'), patch.object(service_recovery, 'process_version', return_value=live), \
+                    patch.object(service_recovery, 'restart_siblings'):
+                rc = service_recovery.run(self.st, __version__, install=lambda st: None, ready=lambda st: 'idle')
+            self.assertEqual(rc, 0)
+            row = service_recovery.read(self.st)
+            self.assertEqual(row['status'], 'ok')
+            self.assertEqual(row.get('source'), 'upgrade_worker' if verified else None)
+
+    def test_manual_start_and_rescue_acknowledge_without_upgrade_proof(self):
+        for acknowledge in (lambda: service_recovery.acknowledge_after_start(self.st, True),
+                            lambda: service._acknowledge_recovery(self.st)):
+            service_recovery.record(self.st, 'failed', __version__)
+            with patch.object(service, 'status', return_value={'active': 'active'}):
+                acknowledge()
+            row = service_recovery.read(self.st)
+            self.assertEqual(row['status'], 'ok')
+            self.assertNotIn('source', row)
+
     def test_new_service_down_rolls_back_to_cached_wheel(self):
         old = wheel(self.st, __version__)
         update.write_pending(self.st, __version__, __version__, INFO, old)   # worker runs the "new" code = __version__
