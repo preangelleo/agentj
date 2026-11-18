@@ -153,7 +153,7 @@ export const CONTROL_ACTIONS = ['native_scheduler_control', 'heartbeat_write', '
   'task_migrate',                                                           // P570c: 定时任务 → 重新迁移 (id \n tsha, like task_on)
   'auth_rescue',                                                            // 0.26.9 (#464): the chat's 重新登录 — login / code / cancel
   'assist_grant', 'assist_revoke', 'assist_term_grant',                                          // 0.26.9 (#468, CONTRACT §B2): official remote assist
-  'owner_hosts_set', 'budget_set'];                                                            // 0.26.9 §E3 (#473 ③): day / month budget, {day?, month?}; raising = + fa
+  'owner_hosts_set', 'budget_set', 'upgrade_decision'];                                                            // 0.26.9 §E3 (#473 ③): day / month budget, {day?, month?}; raising = + fa
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
 export function controlObject(action, o) {
   if (action === 'fr_report_reply') return `${o.resend === true ? 'resend\n' : ''}${o.id}\n${o.text}`;
@@ -161,6 +161,7 @@ export function controlObject(action, o) {
   if (action === 'native_scheduler_control') return canonicalJson(o);
   if (action === 'host_write' || action === 'heartbeat_write' || action === 'owner_hosts_set') return canonicalJson(o);
   if (['bots_write', 'mail_fwd', 'private_file_get', 'private_file_revoke', 'main_thread_interrupt'].includes(action)) return canonicalJson(o.request);
+  if (action === 'upgrade_decision') return canonicalJson(o);
   if (action === 'update') return 'latest';
   if (action === 'cards_get') return 'cards';
   if (action === 'pair_new') return 'start';

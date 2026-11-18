@@ -19,11 +19,15 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
+import secrets
 import time
 
 # Turns carrying third-party data into the main session (a friend, a handed-over friend message, a WeChat request, an
 # official remote-assist task). scheduled_task is left out on purpose: it is the owner's own automation.
 KINDS = ("same_owner", "friend_task", "wechat_task", "official_assist")
+RESULT_SECONDS = 2700           # installer 1800s, deferred idle wait 600s, startup and delivery grace
+CLAIM_SECONDS = 3600            # includes the 600s card lifetime before the approved job starts
 RATE = 600                      # s: one card + notice per friend
 MUTATING_OPS = ("pending", "service", "prepare", "rollback", "marker", "clear")
 
@@ -124,30 +128,100 @@ def reply_line(cur: str, to: str, fenced: bool, recent: bool = False) -> str:
     return f"{zh} / {en}"
 
 
-async def open_card(host, who: dict, fenced: bool = False) -> dict:
+VERSION = r"[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}(?:(?:a|b|rc)[0-9]{1,4})?"
+REQUEST = re.compile(
+    r"(?:agentj update request-owner --version |(?:请\s*)?(?:把\s*(?:本机|Agent J)\s*)?升级(?:到|至)\s*[vV]?|"
+    r"(?:please\s+)?(?:upgrade|update)(?:\s+Agent J)?\s+to\s+v?)(" + VERSION + r")[。.!！]?", re.I)
+
+def requested_version(text, *, mentions=()):
+    if isinstance(text, str) and mentions and len(text) <= 512:
+        # Only prefixes naming verified recipients of a device-group message count as addressing.
+        from .owner_group import _word
+        names = sorted((name for name in mentions if isinstance(name, str) and name), key=len, reverse=True)
+        while text.lstrip().startswith('@'):
+            text = text.lstrip()
+            name = next((n for n in names if text[:len(n)+1].casefold() == ('@'+n).casefold()
+                         and (len(text) == len(n)+1 or not (_word(n[-1]) and _word(text[len(n)+1])))), None)
+            if not name:
+                return None
+            text = text[len(name)+1:].lstrip()
+    match = REQUEST.fullmatch(text.strip()) if isinstance(text, str) and len(text) <= 160 else None
+    return match.group(1) if match else None
+
+
+async def open_card(host, who: dict, fenced: bool = False, *, requested=None, live=None, bind=None) -> dict:
     """At most ONE upgrade card: a live card (the owner's own P203 card too) is reused, never replaced; one card + notice
     per friend per RATE s. Serialised: concurrent requests wait for the first and then see its card."""
     lock = host.__dict__.get("_upg_friend_lock")
     if lock is None:
         lock = host.__dict__["_upg_friend_lock"] = asyncio.Lock()
     async with lock:
+        def unavailable(reason):
+            return {"friend": who["kind"], "to": requested, "card": reason}
+        if live is not None and not live():
+            return unavailable("relationship_changed")
+        async def prepare(rid):
+            if bind is None:
+                return True
+            from . import diskq
+            # This coroutine returns directly to synchronous publication. Housekeeping must not expire the
+            # reserved ID while its binding is flushing. A host restart clears reservations and the unpublished card.
+            preparing = host.__dict__.setdefault('_upg_preparing', set())
+            preparing.add(rid)
+            try:
+                return bind(rid) and await diskq.aflush() and (live is None or live())
+            finally:
+                preparing.discard(rid)
         to = known_latest(host)
+        if requested is not None:
+            from . import update
+            if not isinstance(requested, str) or not re.fullmatch(VERSION, requested):
+                return unavailable("invalid_version")
+            if requested == update.__version__:
+                return unavailable("already_current")
+            if to != requested:
+                check = await asyncio.to_thread(update.check, timeout=3)
+                if check.get("latest") != requested or check.get("status") != "newer":
+                    return unavailable("version_unavailable")
+            to = requested
+            if live is not None and not live():
+                return unavailable("relationship_changed")
         key = (who["kind"], who["fid"])
         seen = host.__dict__.setdefault("_upg_friend_seen", {})
         now = time.monotonic()
         for k in [k for k, t in seen.items() if now - t >= RATE]:
             seen.pop(k)
-        live = getattr(host, "upg", None) is not None and host._upg_live()
-        if live or key in seen:
-            host.st.log("upgrade_friend", kind=who["kind"], fenced=fenced, result="reused" if live else "rate_limited")
-            return {"id": host.upg["id"] if live else None, "friend": who["kind"], "to": to, "card": "reused" if live else "rate_limited"}
+        has_card = getattr(host, "upg", None) is not None and host._upg_live()
+        if has_card and requested and host.upg.get("target") != requested:
+            return unavailable("other_card_pending")
+        if has_card or key in seen:
+            rid = host.upg['id'] if has_card else None
+            if rid and not await prepare(rid):
+                return unavailable('binding_changed')
+            host.st.log("upgrade_friend", kind=who["kind"], fenced=fenced, result="reused" if has_card else "rate_limited")
+            return {"id": rid, "friend": who["kind"], "to": to, "card": "reused" if has_card else "rate_limited"}
         name = await asyncio.to_thread(_name, host, who["fid"]) if who["fid"] else ""
+        if live is not None and not live():
+            return unavailable("relationship_changed")
         if getattr(host, "upg", None) is not None and host._upg_live():      # recheck after the await
-            return {"id": host.upg["id"], "friend": who["kind"], "to": to, "card": "reused"}
+            if requested and host.upg.get("target") != requested:
+                return unavailable("other_card_pending")
+            rid = host.upg['id']
+            if not await prepare(rid):
+                return unavailable('binding_changed')
+            return {"id": rid, "friend": who["kind"], "to": to, "card": "reused"}
+        rid = secrets.token_hex(16) if bind else None
+        if rid:
+            if not await prepare(rid):
+                return unavailable('binding_changed')
+            if getattr(host, 'upg', None) is not None and host._upg_live():
+                return unavailable('other_card_pending')
         seen[key] = now
         while len(seen) > 64:
             seen.pop(next(iter(seen)))
-        res = host.upg_open("agent")
+        res = host.upg_open("agent", **({"rid": rid} if rid else {}))
+        if requested:
+            host.upg.update(target=requested, to=requested, expires=int(time.time() * 1000) + int(max(0, host.upg["deadline"] - time.monotonic()) * 1000))
         host.upg["friend"] = key
         if to and not host.upg.get("to"):
             host.upg["to"] = to
@@ -155,6 +229,50 @@ async def open_card(host, who: dict, fenced: bool = False) -> dict:
         lang = "en" if getattr(host, "lang", "zh") == "en" else "zh"
         host.agent_notice(notice(name, to, who["kind"], fenced, lang))
         return {"id": res["id"], "friend": who["kind"], "to": to, "card": "new"}
+
+
+async def owner_request(host, version, pid=None, fenced=False):
+    from . import update
+    who = origin(host, pid, "fenced" if fenced else None)
+    if host.stopped() or who is None:
+        return {"ok": False, "why": "no_friend_request"}
+    if not isinstance(version, str) or not re.fullmatch(VERSION, version):
+        return {"ok": False, "why": "invalid_version"}
+    if update.market_managed():
+        return {"ok": False, "why": "market_managed"}
+    agent = getattr(host, "agent", None)
+    send = getattr(agent, "cur_send", None)
+    if send is None:
+        return {"ok": False, "why": "no_friend_request"}
+    from .same_owner import ForwardSend
+    def live():
+        return (not host.stopped() and host.agent is agent and getattr(agent, "cur_send", None) is send
+                and (not isinstance(send, ForwardSend) or send.delivery_allowed()))
+    if who['kind'] == 'same_owner' and not (isinstance(send, ForwardSend) and not send.approved
+            and not send.data.get('irt') and not send.data.get('end') and send.owner is host.peers.same_owner and live()):
+        return {"ok": False, "why": "no_friend_request"}
+    def bind(rid):
+        return send.owner.bind_upgrade(send.fid, send.data['mid'], send.token, send.turn, version, rid)
+    result = await open_card(host, who, fenced, requested=version, live=live,
+                             bind=bind if who['kind'] == 'same_owner' else None)
+    if result['card'] == 'binding_changed':
+        return {"ok": False, "why": "no_friend_request"}
+    return {"ok": True, **result}
+
+
+def request_owner(st, version):
+    from . import fence, update
+    from .names import ctl_call
+    if not isinstance(version, str) or not re.fullmatch(VERSION, version):
+        return {"ok": False, "why": "invalid_version"}
+    if fence.inside():
+        res = update._host(st, "request_owner", 20, version=version)
+    else:
+        try:
+            res = ctl_call(st, {"cmd": "upgrade_request_owner", "version": version}, 20)
+        except (OSError, ValueError, TimeoutError):
+            res = None
+    return res if isinstance(res, dict) and type(res.get("ok")) is bool else {"ok": False, "why": "host_unverified"}
 
 
 async def answer(host, pid=None, caller=None, fenced=False) -> dict:
@@ -206,3 +324,50 @@ def guard(st, action: str) -> dict | None:
     if not agent and not fenced:
         return None                     # the owner at a terminal without a running host: unchanged
     return _refused("host_unverified", "", fenced)
+
+
+async def phone_decision(host, session, obj):
+    """Consume the exact live offer on its paired device's signed decision. The generic /update has no card identity."""
+    import secrets
+    from . import controls, diskq, humane, phone_update, slash, update, wire
+    rid = obj.get("r")
+    if not wire.is_rid(rid):
+        return
+    target = obj.get("target")
+    offer = host.upg
+    why, job = None, None
+    if not host._paired_live(session):
+        why = "unpaired"
+    elif not isinstance(target, dict) or set(target) != {"id", "expires", "version", "decision"}:
+        why = "shape"
+    elif not offer or not offer.get("target") or not host._upg_live() or int(time.time() * 1000) >= offer["expires"]:
+        why = "expired"
+    elif (target["decision"] not in ("allow", "deny") or target["id"] != offer["id"]
+          or target["version"] != offer["target"] or type(target["expires"]) is not int or target["expires"] != offer["expires"]):
+        why = "stale"
+    else:
+        why = controls.check(host.st, host.nonces, host.channel, session.device, obj, "upgrade_decision", target)
+    if why is None and target["decision"] == "allow":
+        if host.stopped() or update.market_managed():
+            why = "unavailable"
+        elif not phone_update.reserve(host.st):
+            why = "busy"
+        else:
+            job = secrets.token_hex(16)
+    controls.log(host.st, action="upgrade_decision", device=session.device, result=why or "ok",
+                 obj=target if isinstance(target, dict) else None, sig=obj.get("sig") if why is None else None,
+                 n=obj.get("n") if why is None else None, ts=obj.get("ts") if why is None else None,
+                 extra={"card": offer["id"], "job": job} if offer and job else {})
+    if why is None:
+        host.upg_end("started" if job else "cancelled", by=session.device, job=job)
+    if job:
+        if not await diskq.aflush() or host.stopped() or not host._paired_live(session):
+            phone_update.record_outcome(host.st, job, target["version"], "failed")
+            phone_update.release(host.st)
+            why = "unavailable"
+        else:
+            turn = host.cmd_turn(session, "update")
+            by = session.name or session.device
+            host.cmd_card("update", slash.Result(humane.of(host, "update.started"), "info"), by, turn, interim=True)
+            host.phone_upgrade_task = asyncio.create_task(host.phone_upgrade(turn, by, target["version"], job))
+    await host._ctl_res(session, rid, "upgrade_decision", why is None, **({"why": why} if why else {}))

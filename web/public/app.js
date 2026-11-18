@@ -575,6 +575,7 @@ function onApp(m) {
     case 'lt_caps': longtask.showCaps(m); return;      // 「我的 Agent 会什么」
     case 'rt': gotTicket(m); return;                  // P122 (§12.1): this phone's renewal ticket → the HttpOnly cookie
     case 'question': snap.addQuestion(m); return;
+    case 'upg_target_card':
     case 'upg_card': upgcard.add(m); return;         // P203 (§29.2): what an upgrade now would interrupt — the owner decides
     case 'upg_card_done': upgcard.done(m); return;
     case 'question_done': snap.questionDone(m); return;

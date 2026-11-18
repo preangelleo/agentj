@@ -17,6 +17,10 @@ class AuthorityChanged(RuntimeError):
     pass
 
 
+class ChatExpired(AuthorityChanged):
+    """The chat input expired before its destination write."""
+
+
 class LiveContextMoved(AuthorityChanged):
     """0.30.7 (P541 N4b / N5a): the live task / source pinned when the owner's answer was accepted moved before the write.
     `why` is the typed reason the card ends with (elev_done / secret result / Settings answer): `new_task_during_validation`
@@ -77,6 +81,8 @@ class Adapter:
         self.host, self.card = host, card
         self.rid, self.deadline = card['id'], card['deadline']
         self.tool, self.tool_input = tool, {'display_fields': list(fields)}
+        if tool == 'SecretInput' and card.get('_chat_input') is not None:
+            self.tool_input['operation_sha256'] = card['_chat_operation']
         self.input_sha = review.digest(self.tool_input)
         self.task = self.task_scope = None
         self.summary = '\n'.join(fields)
@@ -162,7 +168,8 @@ class Adapter:
         # Hotfix 2026-11-10: a signed deny only ends the card (never grants), so a card whose turn moved on can still
         # be closed by its owner instead of sitting there blocking a fresh request until it times out.
         context_ok = (pickup_context_allows(self.card, self.host) if self.tool == 'SecretPickup' and op != 'renew'
-                      else secret_input_context_allows(self.card, self.host) if self.tool == 'SecretInput' and op != 'renew'
+                      else secret_input_context_allows(self.card, self.host, expired=op == 'renew')
+                      if self.tool == 'SecretInput' and (op != 'renew' or self.card.get('_chat_input') is not None)
                       else _context_allows(self,self.host))
         if op != 'deny' and not context_ok:
             return await refuse('authority_changed')
@@ -281,7 +288,7 @@ def pickup_context_allows(card, host):
                 and str(host.hist.epoch) == adapter.envelope['session'])
 
 
-def secret_input_context_allows(card, host):
+def secret_input_context_allows(card, host, *, expired=False):
     """Hotfix 2026-11-10 (STARAY / chairman 12:52): a secret-input card is owner delivery into a pinned destination.
 
     `agentj secret request` waits 100 s and then tells the Agent the card stays valid for its whole TTL; binding it to
@@ -293,9 +300,14 @@ def secret_input_context_allows(card, host):
     adapter = card.get('review_adapter')
     if adapter is None or adapter.tool != 'SecretInput' or card.get('kind') != 'secret':
         return False
-    own = bool(adapter.card is card and adapter.host is host and not adapter.terminal
-               and host.__dict__.get('_approval_special', {}).get(adapter.rid) is adapter)
+    chat = card.get('_chat_input')
     source = adapter.envelope['source']
+    if chat is not None and not (chat.valid(host, card) and source.get('channel') == 'phone'
+            and source.get('message_id') == chat.message and source.get('verified') is True and not source.get('suspicious')):
+        return False
+    own = bool(adapter.card is card and adapter.host is host
+               and (not adapter.terminal or chat is not None and expired and adapter.review_state == 'expired')
+               and host.__dict__.get('_approval_special', {}).get(adapter.rid) is adapter)
     if source.get('verified') is not True or source.get('suspicious') is True:
         # Security review R1: a card raised by an unverified / external turn keeps the live-turn rule — it must never
         # outlive that turn into the owner's next one, where an Agent-chosen destination / verify URL could be mistaken

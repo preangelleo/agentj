@@ -443,6 +443,23 @@ class PeerNet:
                                                     json.dumps(obj, ensure_ascii=False), ack, now, now + self.MSG_TTL))
         self._kick()
 
+    def send_upgrade_receipt(self, peer_id: str, obj: dict) -> None:
+        """Atomically enqueue this pinned final reply once, including after pack has removed its outbox row."""
+        if obj.get("t") != "pmsg" or obj.get("end") is not True or not obj.get("irt") or not obj.get("mid"):
+            raise ValueError("bad upgrade reply")
+        self.db.execute("CREATE TABLE IF NOT EXISTS upgrade_receipts(peer TEXT, mid TEXT, created REAL, PRIMARY KEY(peer, mid))")
+        self.db.execute("BEGIN IMMEDIATE")
+        try:
+            now = self.clock()
+            self.db.execute("DELETE FROM upgrade_receipts WHERE created < ?", (now - self.EXPIRED_KEEP,))
+            added = self.db.execute("INSERT OR IGNORE INTO upgrade_receipts VALUES(?,?,?)", (peer_id, obj["mid"], now)).rowcount
+            if added:
+                self.send(peer_id, obj)
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+
     def cancel_message(self, peer_id: str, mid: str) -> None:
         """P410: withdraw only this pending task frame; never another friend or process."""
         pid = parse_id(peer_id)

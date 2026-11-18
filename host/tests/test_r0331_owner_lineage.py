@@ -263,6 +263,21 @@ class Linux(_Matrix, unittest.IsolatedAsyncioTestCase):
                 await self.assert_owner(self.anchor.run())
                 self.end(self.host, agent)
 
+    async def test_secret_input_before_first_busy_event_holds_exact_phone_root(self):
+        agent = self.codex(self.host, self.anchor)
+        send = self.send(9, provenance.phone())
+        self.host._approval_origins = {9: send.approval_origin.copy()}
+        self.begin(self.host, agent, send)
+        self.host.busy.context.clear()
+        time.sleep(GAP)
+        caller = self.anchor.run()
+        self.assertIsNone(approval_material.verified_caller_origin(self.host, caller))
+        owner, origin = approval_material.verified_phone_chat(self.host, caller)
+        self.assertIs(owner, agent)
+        self.assertEqual(origin, send.approval_origin)
+        self.host._approval_origins.clear()
+        self.assertIsNone(approval_material.verified_phone_chat(self.host, caller))
+
     async def test_delegated_subagent_command_in_owner_turn_inherits(self):
         """The owner turn hands work to a sub-agent whose own command is two more hops down: same root, same turn."""
         for name, make in self.agents():

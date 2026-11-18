@@ -4156,5 +4156,6 @@
   "p0285.uv.ineligibleKey": "这台遥控器已有验证密钥，但不能批准本次设置。请用另一台持有独立密钥的遥控器批准；查看本机设置不会发起新申请。",
   "secretEditor.title": "粘贴 {name}",
   "ix.app.background": "打开后台、Webhook 和系统消息的已有记录列表",
-  "ixges.app.background": "在命令菜单点 /background"
+  "ixges.app.background": "在命令菜单点 /background",
+  "p0321.saveKey": "{key} 保存"
 }

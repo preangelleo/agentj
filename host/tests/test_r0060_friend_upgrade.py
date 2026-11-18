@@ -175,6 +175,68 @@ class Base(unittest.TestCase):
 
 
 class FriendRequest(Base):
+    def test_explicit_version_asks_once_without_install(self):
+        self.host.agent.cur_send = friend_task_send()
+        code, block, calls = self.with_serve(lambda: self.run_cli(mode="request-owner", version=LATEST))
+        self.assertIsNone(code, block)
+        self.assertEqual(json.loads(block)["card"], "new")
+        self.assertEqual(self.host.upg["target"], LATEST)
+        self.assertEqual(calls, {})
+
+    def test_target_decision_consumes_exact_card_and_binds_detached_worker(self):
+        from agentj import controls, phone_update
+        from test_controls import sign
+        self.host.agent.cur_send = friend_task_send()
+        async def run():
+            await upgrade_friend.owner_request(self.host, LATEST, fenced=True)
+            shown = self.host._upg_msg()
+            self.assertEqual(shown['t'], 'upg_target_card')
+            bound = dict(id=shown['id'], version=shown['to'], expires=shown['expires'], decision='allow')
+            def decision(target):
+                return sign(self.ph, 'upgrade_decision', target,
+                            {'t':'upgrade_decision','target':target,'r':'r0060'})
+            with mock.patch.object(self.host, 'phone_upgrade', new_callable=mock.AsyncMock) as worker:
+                old = decision({**bound, 'id':'0' * 32})
+                await self.host._app(self.s, old)
+                worker.assert_not_awaited()
+                frame = decision(bound)
+                await self.host._app(self.s, frame)
+                await asyncio.sleep(.02)
+                self.assertTrue(self.got('ctl_res')[-1]['ok'])
+                self.assertEqual(worker.await_count, 1)
+                job = worker.await_args.args[-1]
+                self.assertEqual(worker.await_args.args[-2], LATEST)
+                self.assertRegex(job, r'^[0-9a-f]{32}$')
+                await self.host._app(self.s, frame)
+                self.assertFalse(self.got('ctl_res')[-1]['ok'])
+                self.assertEqual(worker.await_count, 1)
+            with mock.patch('agentj.service_recovery.launch_job') as manager:
+                phone_update.launch_target(self.st, LATEST, job)
+                script = pathlib.Path(manager.call_args.args[1][1]).read_text()
+                self.assertIn(f"target={LATEST!r}, job={job!r}", script)
+            def apply(_st, *, target, **_kw):
+                self.assertEqual(target, LATEST)
+                return {'result':'failed','reason':'unknown','to':target}
+            phone_update.run(self.st, apply_fn=apply, target=LATEST, job=job)
+            self.assertEqual(phone_update.read_outcome(self.st, job, LATEST), 'failed')
+            self.assertIsNone(phone_update.read_outcome(self.st, '0'*32, LATEST))
+        asyncio.run(run())
+
+    def test_bound_recovery_requires_stable_live_target(self):
+        from agentj import __version__, phone_update, service_recovery as recovery
+        for job, live in [('a' * 32, __version__), ('b' * 32, None)]:
+            args = []
+            with mock.patch.object(recovery, 'launch_job', side_effect=lambda st, argv: args.extend(argv)), \
+                 mock.patch.object(recovery, 'record'):
+                recovery.schedule(self.st, ['agentj'], __version__, job=job)
+            self.assertEqual(args[-4:], ['--recovery-worker', __version__, '--peer-upgrade-job', job])
+            with mock.patch.object(recovery, 'record'), mock.patch.object(recovery, 'cleanup_job'), \
+                 mock.patch.object(recovery, 'restart_siblings'), mock.patch.object(recovery, 'stays_up'), \
+                 mock.patch.object(recovery, 'process_version', return_value=live):
+                rc = recovery.run(self.st, __version__, job=job, install=lambda st: None, ready=lambda st:'idle')
+            self.assertEqual(rc, 0 if live else 1)
+            self.assertEqual(phone_update.read_outcome(self.st, job, __version__), 'restarted' if live else 'failed')
+
     def check_refused(self, code, block, calls, to=LATEST):
         self.assertEqual(calls, {}, "no mutating call on a friend's request")
         self.assertEqual(code, 10)

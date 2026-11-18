@@ -71,6 +71,94 @@ class SecretCardAfterTurn(unittest.TestCase):
         with mock.patch.object(self.host, 'hist_emit'):
             self.host.desktop_input('A later owner message: the turn that asked for the key is over.')
 
+    @unittest.skipUnless(__import__('sys').platform.startswith('linux'), 'Linux SO_PEERCRED /proc evidence')
+    def test_first_phone_secret_from_owned_harness_survives_webhook(self):
+        self.phone_secret_through_harness([])
+
+    @unittest.skipUnless(__import__('sys').platform.startswith('linux') and pathlib.Path('/usr/bin/bwrap').is_file(),
+                         'Linux bwrap PID namespace')
+    def test_first_phone_secret_from_fenced_harness_survives_webhook(self):
+        import subprocess
+        fence = ['/usr/bin/bwrap', '--ro-bind', '/', '/', '--unshare-pid', '--as-pid-1']
+        if subprocess.run([*fence, '/bin/true'], capture_output=True).returncode:
+            self.skipTest('bwrap namespace unavailable')
+        self.phone_secret_through_harness(fence)
+
+    @unittest.skipUnless(__import__('sys').platform.startswith('linux') and pathlib.Path('/usr/bin/bwrap').is_file(),
+                         'Linux bwrap PID namespace')
+    def test_fenced_harness_with_prior_webhook_does_not_attest_new_chat(self):
+        import subprocess
+        fence = ['/usr/bin/bwrap', '--ro-bind', '/', '/', '--unshare-pid', '--as-pid-1']
+        if subprocess.run([*fence, '/bin/true'], capture_output=True).returncode:
+            self.skipTest('bwrap namespace unavailable')
+        self.phone_secret_through_harness(fence, prior_webhook=True)
+
+    def phone_secret_through_harness(self, fence, prior_webhook=False):
+        import os
+        import sys
+        import subprocess
+        from agentj import application_ingress, approval_material, compose, provenance
+        async def run():
+            host = self.host
+            await host.elevate.start()
+            try:
+                # An actual kernel child is the host's own, newly launched harness. Its first command connects
+                # to elevate.sock before the harness has emitted a busy-board process pin.
+                anchor = await asyncio.create_subprocess_exec(*fence, sys.executable, '-I', '-c',
+                    'import subprocess,sys;print(1,flush=True);sys.stdin.readline();subprocess.run(sys.argv[1:],check=True);sys.stdin.readline()',
+                    sys.executable, '-I', '-c',
+                    'import sys,socket,json;s=socket.socket(socket.AF_UNIX);s.connect(sys.argv[1]);'
+                    's.sendall((sys.argv[2]+chr(10)).encode());s.recv(4096);s.close()',
+                    str(host.elevate.sock_path), json.dumps({'t':'secret','name':'TEST_VALUE','purpose':'Owner test',
+                    'cwd':str(self.dest.parent),'dest':'file:'+str(self.d/'synthetic.txt'),'wait':0.3}),
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                try:
+                    self.assertEqual(await asyncio.wait_for(anchor.stdout.readline(), 5), b'1\n')
+                    host.agent.proc = anchor
+                    if prior_webhook:
+                        hook = compose.Send('system', 'earlier-hook', 1, source=provenance.system())
+                        hook.hook_notice = 'incoming'
+                        host.agent.cur_send = hook
+                        application_ingress.note_turn(host, hook)
+                        approval_material.turn_start(host, hook)
+                        application_ingress.close_span(host)
+                        await asyncio.sleep(0.12)
+                    source = provenance.phone()
+                    turn = host.hist_add({'k':'phone', 'dev':self.s.device,'text':'Please configure the test service.'}, '', 'open')
+                    send = compose.Send(self.s.device, 'first-secret', turn['id'], source=source)
+                    send.approval_origin = approval_review.remember(host, turn, source)
+                    host.agent.cur_send = send
+                    application_ingress.note_turn(host, send)
+                    approval_material.turn_start(host, send)
+                    await asyncio.sleep(0.12)
+                    anchor.stdin.write(b'go\n')
+                    await anchor.stdin.drain()
+                    shown = await self.wait_for('elev')
+                    if prior_webhook:
+                        self.assertIsNone(host.elevate.cards[shown['id']].get('_chat_input'))
+                        await host._app(self.s, answer(self.ph, shown, False))
+                        return
+                    self.assertTrue(shown['envelope']['source']['verified'])
+                    self.assertIsNotNone(host.elevate.cards[shown['id']].get('_chat_input'))
+                    self.assertEqual(shown['envelope']['source']['message_id'], turn['id'])
+                    hook = compose.Send('system','test-webhook',turn['id']+1,source=provenance.system())
+                    hook.hook_notice = 'incoming'
+                    host.agent.cur_send = hook
+                    application_ingress.note_turn(host, hook)
+                    approval_material.turn_start(host, hook)
+                    await asyncio.sleep(float(os.environ.get('AGENTJ_TEST_SECRET_WAIT', '0.1')))
+                    await host._app(self.s, answer(self.ph, shown, True, 'synthetic-test-value'))
+                    done = await self.wait_for('elev_done')
+                    self.assertEqual((done['result'], (self.d/'synthetic.txt').read_text().strip()),
+                                     ('saved', 'synthetic-test-value'))
+                finally:
+                    anchor.stdin.close()
+                    await anchor.wait()
+            finally:
+                await host.elevate.stop()
+        import json
+        asyncio.run(run())
+
     def test_owner_turn_card_source_is_verified_owner(self):
         async def run():
             task, shown, origin = await self.ask_card()

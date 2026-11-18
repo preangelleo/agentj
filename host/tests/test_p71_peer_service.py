@@ -59,6 +59,10 @@ class FakeNet:
             raise ValueError("too long")
         self.sent.append((pid, obj))
 
+    def send_upgrade_receipt(self, pid, obj):
+        if not any(friend == pid and frame.get('mid') == obj['mid'] for friend, frame in self.sent):
+            self.send(pid, obj)
+
     async def add(self, tid, card, note):
         rid = os.urandom(8).hex()
         self.adds.append((tid, card, note, rid))

@@ -187,10 +187,15 @@ class Handoff(existing.SameOwnerTests):
         self.assertEqual(len(self.sends), 1)
 
 
+from _p541_device import finish_phone_touch
 from test_p562_acceptance import _Real
 
 
 class ChannelProjection(_Real):
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.addAsyncCleanup(finish_phone_touch, self.host)
+
     async def signed_claim(self, channel, record):
         """Real selected held controller + paired signature, never a bool grant."""
         from agentj import approvals, wire

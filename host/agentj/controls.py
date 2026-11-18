@@ -67,7 +67,7 @@ ACTIONS += ("auth_rescue",)         # 0269-login: 「重新登录」 under a rep
 ACTIONS += ("mail_fwd", "private_file_get", "private_file_revoke", "main_thread_interrupt")  # #324: explicit owner forward, all original parameters signed
 ACTIONS += ("owner_hosts_set",)  # feedback400: paired owner SSH table, every change + UV
 ACTIONS += ("setup_run", "setup_cancel")  # isolated fixed-schema installation namespace
-ACTIONS += ("native_scheduler_control",)
+ACTIONS += ("native_scheduler_control", "upgrade_decision")
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -191,6 +191,8 @@ def object_text(action: str, obj: dict) -> str:
         return json.dumps(target, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     if action == "setup_mark":       # item id \n choice (selected | unused | later | start_exit) \n checklist revision
         return f"{obj['item']}\n{obj['choice']}\n{int(obj['rev'])}"
+    if action == "upgrade_decision":
+        return canonical_json(obj)
     if action == "update":
         return "latest"
     if action == "seat_transfer":    # P547: object {} — issue a seat transfer code (+ this remote's Face ID)

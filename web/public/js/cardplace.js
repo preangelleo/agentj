@@ -43,7 +43,7 @@ export const CARDS = Object.freeze({
   agent_caps:    { place: 'own', surface: '.ajmodal.lt-caps', msgs: ['lt_caps'], was: 'centred dialog over the whole screen', why: OWN_WHY },
   peer_approval: { place: 'own', surface: '.ajmodal.pkp', msgs: ['pk_peer_ask', 'pk_peer_done', 'pk_peer_close', 'pk_peer_answer_res'], was: 'centred dialog over the whole screen', why: OWN_WHY },
   contact_card:  { place: 'own', surface: '#ctCard', msgs: ['ct_card', 'ct_card_done', 'ct_card_err'], was: 'centred square dialog over the whole screen', why: OWN_WHY },
-  confirm:       { place: 'own', surface: '#confirm', msgs: ['upg_card', 'upg_card_done', 'pk_offer', 'roster_bind_offer', 'roster_bind_res'], was: 'centred dialog over the whole screen', why: OWN_WHY },
+  confirm:       { place: 'own', surface: '#confirm', msgs: ['upg_card', 'upg_target_card', 'upg_card_done', 'pk_offer', 'roster_bind_offer', 'roster_bind_res'], was: 'centred dialog over the whole screen', why: OWN_WHY },
   version_notice:{ place: 'exception', surface: '#version-notice', msgs: [], was: 'centred square over the whole screen',
                    why: 'the page\'s own 「我升级了 · 刷新」 notice about this web page (P150), not a card from the Agent J host; it never takes focus' },
   offline:       { place: 'exception', surface: '#connDlg, #session-help', msgs: [], was: 'rows under the header (#514 #connection-help, #514b #session-help)',

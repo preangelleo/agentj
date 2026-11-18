@@ -5656,7 +5656,8 @@ export default {
   "p0331.background": "后台",
   "p0331.system": "系统",
   "p0285.uv.ineligibleKey": "这台遥控器已有验证密钥，但不能批准本次设置。请用另一台持有独立密钥的遥控器批准；查看本机设置不会发起新申请。",
-  "secretEditor.title": "粘贴 {name}"
+  "secretEditor.title": "粘贴 {name}",
+  "p0321.saveKey": "{key} 保存"
  },
  "en": {
   "p0287.hideDone": "Hide completed",
@@ -11314,6 +11315,7 @@ export default {
   "p0331.background": "Background",
   "p0331.system": "System",
   "p0285.uv.ineligibleKey": "This remote has a verification key but cannot approve this setup. Use another remote with an independent key. Viewing this remote’s settings does not start another request.",
-  "secretEditor.title": "Paste {name}"
+  "secretEditor.title": "Paste {name}",
+  "p0321.saveKey": "{key} to save"
  }
 };

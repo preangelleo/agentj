@@ -24,6 +24,7 @@ from . import taskspec
 from .envcompat import getenv
 
 MAX_PROMPT = 100 * 1024
+MAX_DISCOVERED_TASKS = 200  # valid tasks per layout
 VERDICT_RE = re.compile(r"^[ \t>*`_#-]*VERDICT[*`_]*[ \t]*[:：][ \t*`_]*(ok|attention|fail)[*`_]*[ \t]*[—–-]+[ \t]*(.+?)[ \t*`_]*$",
                         re.M | re.I)
 
@@ -72,42 +73,44 @@ def _regular(path: str) -> bytes | None:
         os.close(fd)
 
 
-def _discover_legacy(workdir: str | None, direct: bool = False) -> list[dict]:
-    """[{id, dir, task|None, problems, tsha|None}] for every folder under <workdir>/workflows (symlinks are not followed)."""
-    if not workdir:
-        return []
-    root = workdir if direct else os.path.join(workdir, "workflows")
+def _directory(path: str) -> bool:
     try:
-        if stat.S_ISLNK(os.lstat(root).st_mode):
-            return []
+        return stat.S_ISDIR(os.lstat(path).st_mode)
+    except OSError:
+        return False
+
+
+def _task_dir(path: str, direct: bool) -> bool:
+    return _directory(path) and (not direct or os.path.lexists(os.path.join(path, "task.json")))
+
+
+def _discover_layout(root: str, direct: bool):
+    """Read root/<id> or workflows/<id> in name order, without following directory symlinks."""
+    if not _directory(root):
+        return
+    try:
         names = sorted(os.listdir(root))
     except OSError:
-        return []
-    out = []
-    for name in names[:200]:
+        return
+    for name in names:
         d = os.path.join(root, name)
-        try:
-            if not stat.S_ISDIR(os.lstat(d).st_mode):
-                continue
-        except OSError:
-            continue
-        if direct and not os.path.lexists(os.path.join(d, "task.json")):
+        if not _task_dir(d, direct):
             continue
         ent = {"relative_dir": name if direct else "workflows/" + name, "id": name, "dir": d, "task": None, "problems": [], "tsha": None}
         if not taskspec.ID_RE.fullmatch(name):
             ent["problems"] = ["folder name is not a task id"]
-            out.append(ent)
+            yield ent
             continue
         raw = _regular(os.path.join(d, "task.json"))
         if raw is None:
             ent["problems"] = ["task.json is missing (or not a regular file)"]
-            out.append(ent)
+            yield ent
             continue
         try:
             task = json.loads(raw)
         except (ValueError, UnicodeDecodeError):
             ent["problems"] = ["task.json is not valid UTF-8 JSON"]
-            out.append(ent)
+            yield ent
             continue
         probs = taskspec.problems(task, name)
         prompt = None
@@ -139,20 +142,32 @@ def _discover_legacy(workdir: str | None, direct: bool = False) -> list[dict]:
         if not probs:
             ent["tsha"] = contract_sha(raw, prompt, extra)
             ent["prompt_bytes"] = MappingProxyType(bodies)
-        out.append(ent)
-    return out
+        yield ent
 
 
 def discover(workdir: str | None) -> list[dict]:
-    """New root/<id> folders and unchanged legacy workflows/<id>; duplicates fail closed."""
-    rows = _discover_legacy(workdir, direct=True) + _discover_legacy(workdir)
-    counts = {}
-    for row in rows:
-        counts[row["id"]] = counts.get(row["id"], 0) + 1
-    for row in rows:
-        if counts[row["id"]] > 1:
-            row["problems"] = ["duplicate workflow id across root and legacy folders"]
-            row["tsha"] = None
+    """Count valid tasks per layout; a duplicate in the other layout always fails closed."""
+    if not workdir:
+        return []
+    legacy = os.path.join(workdir, "workflows")
+    rows = []
+    for root, other, direct in ((workdir, legacy, True), (legacy, workdir, False)):
+        valid = diagnostics = 0
+        other_exists = _directory(other)
+        for row in _discover_layout(root, direct):
+            # The other copy can lie beyond its own cap and can itself be invalid.
+            if other_exists and _task_dir(os.path.join(other, row["id"]), not direct):
+                row["problems"] = ["duplicate workflow id across root and legacy folders"]
+                row["tsha"] = None
+            if row["problems"]:
+                if diagnostics >= MAX_DISCOVERED_TASKS:
+                    continue
+                diagnostics += 1
+            else:
+                valid += 1
+            rows.append(row)
+            if valid == MAX_DISCOVERED_TASKS:
+                break
     return rows
 
 

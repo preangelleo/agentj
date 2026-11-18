@@ -392,6 +392,151 @@ class SameOwnerTests(Base):
         self.svc.on_app(self.b, self.remote.net.of('owner_status_res')[-1][1])
         self.assertFalse(await ready)
 
+    async def test_upgrade_request_is_handled_on_receipt_and_replies_with_running_version(self):
+        from agentj import update
+        await self.confirm()
+        self.host.upg = None
+        self.host._upg_live = lambda: self.host.upg is not None
+        self.host.hist_update = lambda *_, **kw: None
+        def open_card(_caller, *, rid):
+            self.host.upg = {"id": rid, "deadline": __import__("time").monotonic() + 600}
+            return {"id": rid, "phones": 1}
+        self.host.upg_open = open_card
+        self.host.st.set_agent_name("Olares")
+        elsewhere = pmsg("升级到 99.0.1", grp={"gid":"ef" * 8, "to":[self.b], "by":"phone", "re":None})
+        await self.svc.same_owner.forward(self.b, elsewhere, auto=True)
+        self.assertIsNone(self.host.upg)
+        self.assertFalse(self.sends)
+        msg = pmsg("@Olares请升级到 99.0.1", grp={"gid":"cd" * 8, "to":[self.a], "by":"phone", "re":None})
+        from agentj import diskq
+        flush = diskq.aflush
+        observed = []
+        async def flush_with_housekeeping():
+            if getattr(self.host, '_upg_preparing', None):
+                entry = self.svc.same_owner.row(self.b)['queue'][msg['mid']]
+                self.assertIsNone(self.host.upg)
+                await self.svc.same_owner._upgrade_receipt(self.b, msg['mid'], entry)
+                self.assertNotIn('receipt', self.svc.same_owner.row(self.b)['queue'][msg['mid']]['upgrade'])
+                observed.append(True)
+            return await flush()
+        with patch('agentj.upgrade_friend.known_latest', return_value='99.0.1'), patch.object(diskq, 'aflush', flush_with_housekeeping):
+            job = asyncio.create_task(self.svc.same_owner.forward(self.b, msg, auto=True))
+            for _ in range(20):
+                await self.pump()
+                if job.done():
+                    break
+            self.assertTrue(await job)
+        self.assertEqual(observed, [True])
+        leases = [data for _, data in self.net.of('relay_state') if data['state'] == 'claimed' and data['mid'] == msg['mid']]
+        self.assertEqual([(data.get('upgrade_pending'), data.get('target_upgrade')) for data in leases],
+                         [(True, None), (None, True)])
+        # Route those authentic control frames through the sender and run its actual shortest configured lease.
+        msg['relay'] = self.remote.guards.outgoing()
+        self.assertTrue(self.remote.guards.remember(self.a, msg, direction='out'))
+        cfg = {**self.remote.store.settings(), 'relay_claim_seconds': 20}
+        with patch.object(self.remote.store, 'settings', return_value=cfg):
+            self.remote.on_app(self.a, leases[0])
+            self.clock.t += 31  # a slow receiver flush may exceed the ordinary 20-second lease
+            self.remote.guards.sweep()
+            pending = self.remote.guards.row(self.a, msg['mid'], 'out')
+            self.assertEqual(pending['state'], 'claimed')
+            self.assertNotIn('upgrade_claimed', pending)
+            self.remote.on_app(self.a, leases[1])
+            self.assertEqual(self.remote.guards.row(self.a, msg['mid'], 'out')['upgrade_claimed'], self.clock.t)
+        self.assertFalse(self.sends)
+        self.assertEqual(self.host.upg["target"], "99.0.1")
+        self.assertFalse(self.net.of('pmsg'))
+        job_id = "a" * 32
+        self.svc.same_owner.upgrade_decision(self.host.upg["id"], "started", job=job_id)
+        await self.svc.same_owner.retry()
+        self.assertFalse(self.net.of('pmsg'))
+        self.clock.t += 30
+        with patch.object(update, '__version__', '99.0.1'):
+            await self.svc.same_owner.retry()
+            self.assertFalse(self.net.of('pmsg'))  # version alone has no job outcome
+            from agentj import phone_update
+            phone_update.record_outcome(self.host.st, job_id, '99.0.1', 'restarted')
+            self.clock.t += 30
+            await self.svc.same_owner.retry()
+            self.assertFalse(self.net.of('pmsg'))  # an old service is not a restart readback
+            del self.host._upgrade_generation
+            self.clock.t += 2450
+            self.svc.guards.sweep()
+            await self.svc.same_owner.retry()
+        reply = self.net.of('pmsg')[-1][1]
+        self.assertEqual((reply['text'], reply['irt'], reply['end']), ('Agent J 99.0.1 · running', msg['mid'], True))
+
+    async def test_explicit_same_owner_upgrade_recovers_reply_through_existing_sqlite_outbox(self):
+        from agentj import peer, phone_update, upgrade_friend, update
+        await self.confirm()
+        self.host.peers = self.svc
+        self.host.upg = None
+        self.host._upg_live = lambda: self.host.upg is not None
+        self.host.hist_update = lambda *_, **kw: None
+        def card(_caller, *, rid):
+            self.host.upg = {"id": rid, "deadline": __import__("time").monotonic() + 600}
+            return {"id": self.host.upg["id"], "phones": 1}
+        self.host.upg_open = card
+        msg = pmsg("请给主机办理升级")
+        await self.svc.same_owner.forward(self.b, msg)
+        send = self.sends[-1]
+        ready = asyncio.create_task(send.wait_ready())
+        await settle()
+        await self.pump()
+        self.assertTrue(await ready)
+        self.host.agent.cur_send = send
+        self.clock.t += 1500  # the explicit entry point is requested late in this turn
+        self.assertTrue(await self.svc.guards.begin_reply(self.b, msg['mid']))
+        with patch.object(upgrade_friend, 'known_latest', return_value='99.0.1'):
+            denied = await upgrade_friend.owner_request(self.host, '99.0.1', fenced=True)
+        self.assertFalse(denied['ok'])
+        self.assertIsNone(self.host.upg)
+        await self.svc.guards.release_reply(self.b, msg['mid'], 'unused')
+        with patch.object(upgrade_friend, 'known_latest', return_value='99.0.1'):
+            opened = await upgrade_friend.owner_request(self.host, '99.0.1', fenced=True)
+        self.assertEqual(opened['card'], 'new')
+        entry = self.svc.same_owner.row(self.b)['queue'][msg['mid']]['upgrade']
+        self.assertEqual(entry['id'], opened['id'])
+        await send.completed()
+        self.assertFalse((await self.svc.tell(self.b, 'card opened', reply_to=msg['mid']))['ok'])
+        job = 'b' * 32
+        self.svc.same_owner.upgrade_decision(opened['id'], 'started', job=job)
+        phone_update.record_outcome(self.host.st, job, '99.0.1', 'failed')
+        # Before enqueue: real JSON latch persisted, no SQLite row. Startup is safe to retry.
+        net = peer.PeerNet(self.host.st, self.svc.keys, 'ws://127.0.0.1:9', None, self.svc, clock=self.clock)
+        self.addCleanup(net.db.close)
+        with patch.object(self.svc, 'net', net):
+            import sqlite3
+            with patch.object(net, 'send_upgrade_receipt', side_effect=sqlite3.OperationalError('temporary')):
+                with self.assertRaises(sqlite3.OperationalError):
+                    await self.svc.same_owner.retry()
+            self.clock.t += 2250
+            self.svc.guards.sweep()
+            self.assertEqual(self.svc.guards.row(self.b, msg['mid'])['reply_state'], 'pending')
+            class SimulatedProcessExit(BaseException):
+                pass
+            with patch.object(net, 'send_upgrade_receipt', side_effect=SimulatedProcessExit()):
+                with self.assertRaises(SimulatedProcessExit):
+                    await self.svc.same_owner.retry()
+            guard = self.svc.guards.row(self.b, msg['mid'])
+            self.assertEqual(guard['reply_state'], 'sending')
+            self.assertEqual(guard['upgrade_reply_mid'], entry['reply_mid'])
+            self.svc.guards.recover_replies()
+            self.clock.t += 6
+            # After enqueue: crash before finish. The peer acknowledged and removed its outbox row.
+            with patch.object(self.svc.guards, 'finish_reply', side_effect=SimulatedProcessExit()):
+                with self.assertRaises(SimulatedProcessExit):
+                    await self.svc.same_owner.retry()
+            row = net.db.execute("SELECT obj FROM outbox WHERE mid=?", (entry['reply_mid'],)).fetchone()
+            wire_reply = json.loads(row['obj'])
+            self.assertEqual((wire_reply['text'], wire_reply['irt']), (f'Agent J {update.__version__} · upgrade_failed', msg['mid']))
+            net.cancel_message(self.b, entry['reply_mid'])
+            self.svc.guards.recover_replies()
+            self.clock.t += 6
+            await self.svc.same_owner.retry()
+            self.assertFalse(net.db.execute("SELECT 1 FROM outbox WHERE mid=?", (entry['reply_mid'],)).fetchone())
+            self.assertEqual(self.svc.guards.row(self.b, msg['mid'])['reply_state'], 'done')
+
     async def test_reply_to_forwarded_task_does_not_create_another_task(self):
         await self.confirm()
         m = pmsg('检查进度')

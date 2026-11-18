@@ -85,11 +85,19 @@ class RelayGuards:
                     del d[terminal]
                 d[key] = {'friend': fid, 'mid': m['mid'], 'thread': m['thread'], 'relay': m['relay'],
                           'created': self.svc.clock(), 'state': 'pending', 'direction': direction}
+                from . import upgrade_friend
+                if (upgrade_friend.requested_version(m.get('text')) and self.svc.same_owner.active(fid)
+                        and not m.get('irt') and not m.get('end')):
+                    d[key]['target_upgrade'] = True
         return True
 
     def receipt(self, fid, mid, state):
-        reason = (self.row(fid, mid) or {}).get('reason')
+        row = self.row(fid, mid) or {}
+        reason = row.get('reason')
         self.svc._send(fid, {'t': 'relay_state', 'mid': mid, 'state': state,
+                             **({'upgrade_pending': True} if state == 'claimed' and row.get('target_upgrade')
+                                and row.get('upgrade_claimed') is None else {}),
+                             **({'target_upgrade': True} if state == 'claimed' and row.get('upgrade_claimed') is not None else {}),
                              **({'why': reason} if isinstance(reason, str) and reason in ADMISSION else {})})
         # Stop the transport retry too. The richer state is an app receipt.
         self.svc._send(fid, {'t': 'pack', 'mid': mid, 's': 'got'})
@@ -221,7 +229,7 @@ class RelayGuards:
         self.receipt(fid, m['mid'], 'claimed')
         return True
 
-    async def begin_reply(self, fid, mid, *, report=False, retry_unknown=False, claim=None):
+    async def begin_reply(self, fid, mid, *, report=False, retry_unknown=False, claim=None, upgrade_mid=None):
         """Durable CAS shared by old question approval and explicit report reply.
 
         The transport lifecycle may already be claimed. reply_state is a separate
@@ -236,6 +244,10 @@ class RelayGuards:
                 self.svc.notice('这条消息已处理，请勿重复回复。' if self.svc.lang == 'zh'
                                 else 'This message has already been handled. Do not reply again.')
                 return False
+            if upgrade_mid is not None:
+                if not row.get('target_upgrade') or row.get('upgrade_reply_mid', upgrade_mid) != upgrade_mid:
+                    return False
+                row['upgrade_reply_mid'] = upgrade_mid
             row['reply_state'] = 'sending'
             if claim is not None:row['reply_claim'] = claim
         if await diskq.aflush():
@@ -264,7 +276,11 @@ class RelayGuards:
         """Called once at service startup, before accepting any owner actions."""
         with self.store._edit('relay-requests.json', {}) as d:
             for row in d.values():
-                if row.get('reply_state') == 'sending':
+                if row.get('reply_state') == 'sending' and row.get('upgrade_reply_mid'):
+                    # Retrying this exact outgoing mid is idempotent in PeerNet and at the recipient.
+                    row.update(reply_state='pending', reply_reason='restart')
+                    row.pop('reply_claim', None)
+                elif row.get('reply_state') == 'sending':
                     row.update(reply_state='unknown', reply_reason='restart')
                     self.svc.log('peer_reply', result='unknown', reason='restart')
 
@@ -289,6 +305,13 @@ class RelayGuards:
         prior = self.row(fid, mid, 'out')
         if not prior or prior.get('state') in FINAL or (prior.get('state') == 'claimed' and state == 'pending'):
             return
+        bound = obj.get('target_upgrade') is True
+        if state == 'claimed' and (bound or obj.get('upgrade_pending') is True) and self.svc.same_owner.active(fid):
+            with self.store._edit('relay-requests.json', {}) as rows:
+                lease = rows[self.key(fid, mid, 'out')]
+                lease['target_upgrade'] = True  # hold the original claim while the addressed receiver binds the offer
+                if bound:
+                    lease.setdefault('upgrade_claimed', self.svc.clock())
         why = obj.get('why')
         if isinstance(why, str) and why in ADMISSION and (self.row(fid, mid, 'out') or {}).get('state') not in FINAL and self.row(fid, mid, 'out').get('reason') != why:
             with self.store._edit('relay-requests.json', {}) as rows:
@@ -321,7 +344,12 @@ class RelayGuards:
                     self.block(r['friend'], r['mid'], 'admission_interrupted')
                     continue
             duration = cfg['relay_claim_seconds'] if state == 'claimed' else cfg['relay_pending_seconds']
-            if now < r.get('claimed', r['created']) + duration:
+            started = r.get('claimed', r['created'])
+            if state == 'claimed' and r.get('target_upgrade'):
+                started = max(started, r.get('upgrade_claimed', started))
+                from .upgrade_friend import CLAIM_SECONDS
+                duration = max(duration, CLAIM_SECONDS)
+            if now < started + duration:
                 continue
             end = 'released' if state == 'claimed' else 'expired'
             if self.state(r['friend'], r['mid'], end, r['direction']) and r['direction'] == 'in':

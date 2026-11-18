@@ -380,6 +380,69 @@ class Tasks(unittest.TestCase):
         r = next(r for r in tasks.rows(self.st, str(self.work)) if r["id"] == "daily-report")
         self.assertTrue(r["stale"] and not r["enabled"], "a changed prompt needs the human again")
 
+    def test_late_task_stays_visible_to_cli_and_keeps_existing_enable(self):
+        home = pathlib.Path(self.tmp.name)
+        isolated = mock.patch.dict(os.environ, {"HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config")})
+        isolated.start()
+        self.addCleanup(isolated.stop)
+        tid = "story-owner-material-mail"
+        task_dir(self.work, tid, "Local discovery fixture only.").rename(self.work / tid)
+        (self.work / "workflows").rmdir()
+        self.st.set_agent_config("claude", str(self.work))
+        original = tasks.find(str(self.work), tid)["tsha"]
+        tasks.set_enabled(self.st, str(self.work), tid, True, "terminal", tsha=original)
+        for i in range(201):
+            path = self.work / f"a-{i:03d}"
+            if i % 2:
+                path.mkdir()
+            else:
+                path.touch()
+        for i in range(30):
+            (self.work / f"z-{i:03d}").mkdir()
+        self.assertEqual(sorted(os.listdir(self.work)).index(tid) + 1, 202)
+        self.assertEqual(len(os.listdir(self.work)), 232)
+
+        def invoke(*args):
+            env = {**os.environ, "AGENTJ_STATE_DIR": str(self.st.root)}
+            proc = subprocess.run([sys.executable, "-m", "agentj.cli", "tasks", *args], env=env,
+                                  cwd=HERE.parent, capture_output=True, text=True, timeout=30)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            return proc.stdout
+
+        listed = json.loads(invoke("list", "--json"))
+        self.assertEqual([r["id"] for r in listed], [tid])
+        row = json.loads(invoke("show", tid))
+        self.assertEqual(row["tsha"], original)
+        self.assertTrue(row["enabled"])
+        self.assertFalse(row["stale"])
+        plan = json.loads(invoke("run", tid, "--dry-run"))
+        self.assertEqual(plan["prompt_file"], f"{tid}/RUN.md")
+        self.assertTrue(plan["read_only"])
+        self.assertFalse(tasks.load(self.st)["runs"])
+
+        async def queue_once():
+            host = serve.Host(self.st, read_stdin=False)
+            server = await asyncio.start_unix_server(host.on_ctl, str(self.st.sock_path))
+            async with server:  # exercise real queue admission without starting a runner
+                await asyncio.to_thread(invoke, "run", tid)
+            records = list(tasks.load(self.st)["runs"].values())
+            self.assertEqual([(r["id"], r["status"], r["tsha"]) for r in records], [(tid, "queued", original)])
+
+        asyncio.run(queue_once())
+
+    def test_valid_limit_excludes_invalid_and_preserves_cross_layout_collision(self):
+        task_dir(self.work, "a-invalid", "invalid fixture", mode="invalid")
+        for i in range(201):
+            task_dir(self.work, f"task-{i:03d}", "local fixture")
+        tid = "zz-duplicate"
+        task_dir(self.work, tid, "root copy").rename(self.work / tid)
+        task_dir(self.work, tid, "legacy copy after cap")
+        rows = tasks.discover(str(self.work))
+        valid = [r["id"] for r in rows if r["tsha"]]
+        self.assertEqual(valid, [f"task-{i:03d}" for i in range(200)])
+        self.assertTrue(next(r for r in rows if r["id"] == "a-invalid")["problems"])
+        self.assertIn("duplicate", tasks.find(str(self.work), tid)["problems"][0])
+
     def test_symlinked_workflows_are_ignored(self):
         other = pathlib.Path(self.tmp.name) / "elsewhere"
         task_dir(other, "x", "SAY: hi")

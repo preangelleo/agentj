@@ -252,3 +252,6 @@
 #ntf-tasks.aj-card-stack-list[data-aj-card-stack] {
   gap: var(--ui-space-card-stack);
 }
+/* P592 (chairman 0321): the ⌘/Ctrl+Enter hint beside 保存 in the card editors (computers only; card-form.js) */
+.jc-dialog .aj-save-key{display:inline-block;margin:0;vertical-align:middle;font-size:13px;line-height:1.4;color:var(--c-dust-of-the-moon)}
+.jc-cal-footer{flex-wrap:wrap}.jc-cal-footer .aj-save-key{flex:1 0 100%;margin:0;text-align:right}

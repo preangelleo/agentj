@@ -140,14 +140,17 @@ def cleanup_job(st):
                 service._launchctl('bootout', service._gui() + '/' + label)
 
 
-def schedule(st, argv, target):
+def schedule(st, argv, target, *, job=None):
+    if job is not None:
+        from .phone_update import outcome_path
+        outcome_path(st, job)  # validate the opaque job ID before forwarding it
     try:
         record(st, 'pending', target, external=True)
     except OSError as e:     # #460: name the step in the receipt (a P591 fence pins the unit folder read-only: EROFS)
         e.step = 'write ' + receipt_path().name
         raise
     try:
-        launch_job(st, argv + ['service', 'install', '--recovery-worker', target])
+        launch_job(st, argv + ['service', 'install', '--recovery-worker', target] + (['--peer-upgrade-job', job] if job else []))
     except Exception as e:
         reason = e.reason if isinstance(e, service.ServiceError) and e.reason in service.NO_MANAGER else 'launch_failed'
         record(st, 'failed', target, reason, external=True)
@@ -247,8 +250,12 @@ def stays_up(status, timeout: float, stable: float | None = None) -> None:
         time.sleep(.25)
 
 
-def run(st, target, *, timeout=45, install=None, status=None, ready=None, runner=None):
+def run(st, target, *, timeout=45, install=None, status=None, ready=None, runner=None, job=None):
     from . import __version__
+    from . import phone_update
+    if job is not None:
+        phone_update.outcome_path(st, job)
+    recovered = False
     record(st, 'running', target)
     pending = None
     try:
@@ -272,7 +279,7 @@ def run(st, target, *, timeout=45, install=None, status=None, ready=None, runner
             live = process_version(st)
             # Older test/host control endpoints have no version field; the current endpoint does,
             # and an explicit mismatch is always a hard failure.
-            if live is not None and live != target:
+            if live != target and (job or live is not None):
                 raise service.ServiceError("recovery_version_mismatch", "live process did not report target version")
         except Exception:
             # P142 (B15): the new service did not come up — auto_update's cached-wheel rollback, then the old service.
@@ -289,11 +296,14 @@ def run(st, target, *, timeout=45, install=None, status=None, ready=None, runner
         record(st, 'ok', target)
         (st.root / NOTICE).unlink(missing_ok=True)
         restart_siblings(st, target)
+        recovered = True
         return 0
     except Exception as e:
         record(st, 'failed', target, e.reason if isinstance(e, service.ServiceError) else type(e).__name__)
         return 1
     finally:
+        if job:
+            phone_update.record_outcome(st, job, target, 'restarted' if recovered else 'failed')
         cleanup_job(st)
 
 

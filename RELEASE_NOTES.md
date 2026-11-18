@@ -1,5 +1,5 @@
-# Agent J v0.30.34
+# Agent J v0.30.35
 
-/background rows now say what happened; same-owner read-only checks; busy-run work judged by who started it; upgrades retry network failures.
+Your remote asks you to confirm an upgrade requested by another host you own. A verified secret card in chat stays open when a system message arrives.
 
-后台动态每行有一句说明；同主人设备可做只读检查；busy 后台活按派出者判断；升级下载依赖遇网络错误会自动重试。
+自己的另一台主机请求升级时，遥控器会弹卡等你确认。聊天密钥卡已核实来源时，填卡期间收到系统消息也可以继续。

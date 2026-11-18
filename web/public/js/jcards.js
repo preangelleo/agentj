@@ -15,6 +15,7 @@ import {cardColor, setColors, resetColors} from './jcard-color.js';
 import * as PF from './pagefind.js';
 import {mountPalette,resetPalettes} from './palette.js';
 import {save as saveMedia} from './media.js';
+import { attachCardSaveShortcut } from './card-form.js';
 
 let system = [], list = null, busy = null, epoch = 0, view = 0;
 const subs = [];
@@ -632,7 +633,7 @@ function editNote(value, save, label = t('p386.edit'), fields = null, importText
     }
 
     dialog.addEventListener('cancel',e=>{e.preventDefault();done(null);});
-    dialog.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)&&!e.isComposing){e.preventDefault();e.stopPropagation();submit();}});
+    const saveKey=attachCardSaveShortcut(dialog,submit,ok,'aj-wallet');if(saveKey)dialog.append(saveKey);   // P415 ⌘/Ctrl+Enter, now the shared P592 helper (+ the hint)
     document.body.append(dialog);dialog.showModal();input.focus();
   });
 }

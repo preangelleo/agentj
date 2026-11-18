@@ -2824,7 +2824,7 @@ def cmd_tasks(a) -> None:
         t = e["task"]
         nx = tasks.next_run(t["schedule"], t["tz"])
         print(json.dumps({"id": a.id, "harness": c["kind"] if c else None, "cwd": memory_tilde(wd), "prompt_file":
-                          f"workflows/{a.id}/{t['prompt_file']}", "mode": t["mode"], "read_only": t["mode"] == "research",
+                          f"{e['relative_dir']}/{t['prompt_file']}", "mode": t["mode"], "read_only": t["mode"] == "research",
                           "fenced": bool(c and c.get("fence", True)), "timeout_s": int(tasks.RUN_TIMEOUT),
                           "next": nx.isoformat() if nx else None, "prompt_head": tasks.prompt_for(e, t["mode"] == "research")[:400]},
                          ensure_ascii=False, indent=1))
@@ -2944,7 +2944,8 @@ def cmd_service(a) -> None:
     try:
         if getattr(a, "recovery_worker", None):
             from . import service_recovery
-            raise SystemExit(service_recovery.run(State(), a.recovery_worker))
+            job = getattr(a, "peer_upgrade_job", None)
+            raise SystemExit(service_recovery.run(State(), a.recovery_worker, **({"job": job} if job else {})))
         if getattr(a, "deferred", None):
             from . import service_recovery, update
             if a.mode != "install" or a.deferred != __version__:
@@ -2952,7 +2953,8 @@ def cmd_service(a) -> None:
             from . import fence
             if fence.inside():       # #460: P591 hides the service manager; the host outside the fence hands off
                 raise SystemExit(service_recovery.via_host(State(), a.deferred))
-            service_recovery.schedule(State(), service.agentj_argv(), a.deferred)
+            job = getattr(a, "peer_upgrade_job", None)
+            service_recovery.schedule(State(), service.agentj_argv(), a.deferred, **({"job": job} if job else {}))
             print("✓ 服务重启已交给独立任务 / service restart scheduled independently")
             return
         if a.mode == "install" and service.needs_deferred_install():
@@ -3186,6 +3188,13 @@ SERVICE_NEXT = ("下一步：运行 `agentj doctor`，把每一行以 ! 或 ✗ 
 
 def cmd_update(a) -> None:
     from . import service, update
+    if a.mode == "request-owner":
+        from . import upgrade_friend
+        res = upgrade_friend.request_owner(State(), a.version)
+        print(json.dumps(res, ensure_ascii=False))
+        if not res.get("ok") or res.get("card") not in ("new", "reused", "already_current"):
+            raise SystemExit(10)
+        return
     if update.market_managed() and a.mode != "auto":
         if a.mode == "apply":
             print(update.result_block(update.market_result()))
@@ -3657,6 +3666,7 @@ def main(argv=None) -> None:
     sv.add_argument("--json", action="store_true", help="status 的机器可读输出 / machine-readable status")
     sv.add_argument("--deferred", help=argparse.SUPPRESS)
     sv.add_argument("--recovery-worker", help=argparse.SUPPRESS)
+    sv.add_argument("--peer-upgrade-job", help=argparse.SUPPRESS)
     sv.set_defaults(fn=cmd_service)
     rs = sub.add_parser("rescue", help="救援守护（手机「紧急修复」在 Agent J 没响应时也能用）：status · install · uninstall / "
                                        "the rescue watchdog (the phone's emergency repair works even when Agent J stops answering)",
@@ -3674,7 +3684,7 @@ def main(argv=None) -> None:
                         description="apply needs no y/N or terminal, restarts and runs doctor. F12 authorization remains optional.")
     up.add_argument("--reinstall", action="store_true", help="重新安装当前已签名版本 / reinstall signed current version")
     up.add_argument("--yes", action="store_true", help="跳过升级前确认：现在会打断的事照样打断 / skip the check of what a restart now would interrupt")
-    up.add_argument("mode", choices=["check", "apply", "auto", "rollback"])
+    up.add_argument("mode", choices=["check", "apply", "auto", "rollback", "request-owner"])
     up.add_argument("switch", nargs="?", choices=["on", "off", "status"], default="status", help="auto 的开关 / for auto")
     up.add_argument("--json", action="store_true", help="check 的机器可读输出 / machine-readable check")
     up.add_argument("--authorization", metavar="AJUP-…", help="主人升级邮件里的授权码 / the authorization code from the owner's upgrade email")

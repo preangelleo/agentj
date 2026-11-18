@@ -4771,6 +4771,9 @@ body:has(:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="center"
 .elev.secret .elev-acts>.aj-action{white-space:nowrap;text-wrap:nowrap}
 #elev.secret.aj-shared-popup[data-popup-system="grow"]{height:auto;max-height:calc(var(--vvh,100dvh) - var(--popup-top) - var(--ui-space-content))}
 #elev.secret.aj-shared-popup[data-popup-system="grow"]>.box{max-height:calc(var(--vvh,100dvh) - var(--popup-top) - var(--ui-space-content))}
+/* Secret form: the header uses the theme's readable text and the underlying tools keep their layout slot. */
+#elev.secret[data-popup-system="grow"] .elev-kicker{color:var(--callout-fg)}
+body:has(#elev.secret:not([hidden])) #tools{visibility:hidden}
 /* Metadata fields keep their own inset and a complete, independently rounded copy control. */
 .elev .elev-rows dd.mono.cc-in{min-height:calc(var(--ui-tap) + 2 * var(--sp-2));padding-right:calc(var(--ui-tap) + 2 * var(--sp-2));display:flex;align-items:center}
 .elev .cc-in>.cc-btn{width:var(--ui-tap);height:var(--ui-tap);top:var(--sp-2);right:var(--sp-2);border-radius:var(--r-md)}

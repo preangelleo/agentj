@@ -970,9 +970,9 @@ class PeerService:
         self.changed(fid)
 
     def _send_pmsg(self, fid: str, text: str, m_in: dict | None, auto: bool, end: bool = False, extra: dict | None = None,
-                   fresh: bool = False) -> str | None:
+                   fresh: bool = False, *, reply_mid=None) -> str | None:
         self.last_relay_refusal = None
-        mid = secrets.token_hex(8)
+        mid = reply_mid or secrets.token_hex(8)
         thread = (m_in or {}).get("thread") or self.threads.get(fid) or secrets.token_hex(8)
         obj = {"t": "pmsg", "mid": mid, "thread": thread, "irt": (m_in or {}).get("mid"), "text": text,
                "ts": int(self.clock() * 1000)}
@@ -994,7 +994,15 @@ class PeerService:
             obj.update(extra)                 # P426 #170: the 「我的设备」 group's `grp`
         if not (obj.get("irt") or obj.get("end")) and not self.guards.remember(fid, obj, "out"):
             return None
-        if not self._send(fid, obj):
+        if reply_mid:
+            try:
+                self.net.send_upgrade_receipt(fid, obj)
+                sent = True
+            except ValueError:
+                sent = False
+        else:
+            sent = self._send(fid, obj)
+        if not sent:
             self.guards.state(fid, mid, "cancelled", "out")
             return None
         self.threads[fid] = thread
@@ -1725,7 +1733,7 @@ class PeerService:
             self._send(fid, {"t": "relay_cancel", "mid": mid})
         return {"ok": changed}
 
-    async def tell(self, ref: str, text: str, reply_to=None, actions=None, grant=None, *, _authorized=None) -> dict:
+    async def tell(self, ref: str, text: str, reply_to=None, actions=None, grant=None, *, _authorized=None, _upgrade_mid=None) -> dict:
         if actions is not None and grant is not None:
             return {"ok": False, "why": "conflicting_authority"}
         if not isinstance(text, str) or not text.strip() or wire.text_problem(text, wire.MAX_TEXT_P33) is not None:
@@ -1795,42 +1803,60 @@ class PeerService:
         token = self.same_owner.row(fid).get('token') if latched else None
         claim = secrets.token_hex(16) if latched and _authorized is not None else None
         if latched:
-            if not await self.guards.begin_reply(fid, reply_to, **({'claim':claim} if claim else {})):
+            upgrade = self.same_owner.row(fid).get('queue', {}).get(reply_to, {}).get('upgrade') or {}
+            if upgrade and upgrade.get('reply_mid') and (
+                    _authorized is None or _upgrade_mid != upgrade['reply_mid'] or text != upgrade.get('receipt')):
+                return {"ok": False, "why": "upgrade_receipt_pending"}
+            if _upgrade_mid is not None and (_authorized is None or _upgrade_mid != upgrade.get('reply_mid')):
+                return {"ok": False, "why": "bad_reply"}
+            if _upgrade_mid is not None and extra and 'grp' in extra:
+                extra['grp']['gid'] = _upgrade_mid
+            if not await self.guards.begin_reply(fid, reply_to, **({'claim':claim} if claim else {}),
+                                                 **({'upgrade_mid': _upgrade_mid} if _upgrade_mid else {})):
                 return {"ok": False, "why": "bad_reply", "message": "这条可能已回复或已过期；若已回执，请用不带 --reply-to 的 friends tell。 / Reply already used or expired; if acknowledged, use friends tell without --reply-to."}
             if (not self.same_owner.active(fid) or self.same_owner.row(fid).get('token') != token
                     or self.host.stopped()):
                 await self.guards.release_reply(fid, reply_to, 'authority_changed', **({'claim':claim} if claim else {}))
                 return {"ok": False, "why": "bad_reply", "message": "这条可能已回复或已过期；若已回执，请用不带 --reply-to 的 friends tell。 / Reply already used or expired; if acknowledged, use friends tell without --reply-to."}
-        if _authorized is not None:
-            allowed=await _authorized()
-            # Fresh scanning may await. Recheck the original relationship and
-            # exact reply claim synchronously at the transport boundary.
-            if (not allowed or latched and (not self.same_owner.active(fid)
-                    or self.same_owner.row(fid).get('token') != token
-                    or not self.guards.owns_reply(fid,reply_to,claim))):
+        try:
+            if _upgrade_mid is not None and not latched:
+                return {'ok': False, 'why':'authority_changed'}
+            if _authorized is not None:
+                allowed=await _authorized()
+                # Fresh scanning may await. Recheck the original relationship and
+                # exact reply claim synchronously at the transport boundary.
+                if (not allowed or latched and (not self.same_owner.active(fid)
+                        or self.same_owner.row(fid).get('token') != token
+                        or not self.guards.owns_reply(fid,reply_to,claim))):
+                    if latched:
+                        await self.guards.release_reply(fid, reply_to, 'authority_changed', claim=claim)
+                    return {"ok":False,"why":"authority_changed"}
+            mid = self._send_pmsg(fid, text, reply, auto=False, end=reply is not None, extra=extra,
+                                  **({'reply_mid': _upgrade_mid} if _upgrade_mid else {}))
+            if mid is None:
                 if latched:
-                    await self.guards.release_reply(fid, reply_to, 'authority_changed', claim=claim)
-                return {"ok":False,"why":"authority_changed"}
-        mid = self._send_pmsg(fid, text, reply, auto=False, end=reply is not None, extra=extra)
-        if mid is None:
+                    await self.guards.release_reply(fid, reply_to, 'send_refused', **({'claim':claim} if claim else {}))
+                from .relay_guards import message
+                why = self.last_relay_refusal or "bad_text"
+                return {"ok": False, "why": why, **({"message": message(why, self.lang)} if why == "hops" else {})}
+            if grant is not None:
+                with self.store._edit("grants-out.json", {}) as d:
+                    if grant in d:
+                        d[grant].setdefault("tasks", {})[fid] = mid
             if latched:
-                await self.guards.release_reply(fid, reply_to, 'send_refused', **({'claim':claim} if claim else {}))
-            from .relay_guards import message
-            why = self.last_relay_refusal or "bad_text"
-            return {"ok": False, "why": why, **({"message": message(why, self.lang)} if why == "hops" else {})}
-        if grant is not None:
-            with self.store._edit("grants-out.json", {}) as d:
-                if grant in d:
-                    d[grant].setdefault("tasks", {})[fid] = mid
-        if latched:
-            await self.guards.finish_reply(fid, reply_to, **({'claim':claim} if claim else {}))
-        if reply_to:
-            self.guards.complete(fid, reply_to)
-        if extra and "grp" in extra:
-            self.devices.after_reply(fid, text, extra)
-        self.store.auto_round(fid, reset=True)
-        self.changed(fid)
-        return {"ok": True, "friend": fid, "name": self.store.name_of(fid), "mid": mid, "route": "main" if self.same_owner.active(fid) else "peer"}
+                await self.guards.finish_reply(fid, reply_to, **({'claim':claim} if claim else {}))
+            if reply_to:
+                self.guards.complete(fid, reply_to)
+            if extra and "grp" in extra:
+                self.devices.after_reply(fid, text, extra)
+            self.store.auto_round(fid, reset=True)
+            self.changed(fid)
+            return {"ok": True, "friend": fid, "name": self.store.name_of(fid), "mid": mid, "route": "main" if self.same_owner.active(fid) else "peer"}
+        except (Exception, asyncio.CancelledError):
+            if _upgrade_mid and latched:
+                # A post-enqueue error also retries safely: SQLite pins the outgoing mid with the outbox row.
+                await self.guards.release_reply(fid, reply_to, 'enqueue_failed', claim=claim)
+            raise
 
     async def approve_actions(self, actions, target=None):
         from . import approvals, provenance, bounded_plan

@@ -1222,6 +1222,10 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .ctm-err:empty{display:none}
 #ctmEdit .gdlg-row .ctm-del{color:var(--strawberry-field);border-color:var(--strawberry-field)}
 #ctmEdit .gdlg-row .ctm-del[hidden]{display:none}
+/* P592 (chairman 0320): 取消 and 保存 the same size side by side; 保存 is the 「修复连接」 primary — Lotion ground, Sooty text */
+#ctmEdit .gdlg-row #ctm-e-save{flex:1 1 0;background:var(--c-lotion);color:var(--c-sooty);border-color:var(--c-lotion)}
+#ctmEdit .gdlg-row #ctm-e-cancel{flex:1 1 0}
+#ctmEdit .aj-save-key{margin:var(--sp-2) 0 0;font-size:13px;line-height:1.4;text-align:right;color:var(--c-dust-of-the-moon)}
 /* P207: each shortcut row also names its mouse / touch gesture (drawn from interactions.json) */
 .keydl dd .keyges{display:block;margin-top:2px;color:var(--menu-muted);font-size:var(--ui-fs-small)}
 /* P207: a row with many keys (Ctrl+A · Ctrl+E · …) wraps inside its column instead of squeezing the descriptions */
@@ -1647,10 +1651,6 @@ html:root #ctm-e-del{
   display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
   width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
 }
-html:root #ctm-e-save{
-  display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
-  width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
-}
 html:root #phone-env-copy{
   display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
   width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
@@ -1687,7 +1687,6 @@ html:root #rm-addacts > .aj-action{
 html:root #quoteDlgDel > svg{width:21px;height:21px;flex:none}
 html:root #quoteDlgJump > svg{width:21px;height:21px;flex:none}
 html:root #ctm-e-del > svg{width:21px;height:21px;flex:none}
-html:root #ctm-e-save > svg{width:21px;height:21px;flex:none}
 html:root #phone-env-copy > svg{width:21px;height:21px;flex:none}
 html:root #rv-refresh > svg{width:21px;height:21px;flex:none}
 html:root #mail-add > svg{width:21px;height:21px;flex:none}

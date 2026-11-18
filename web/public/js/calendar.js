@@ -2,6 +2,7 @@
 import {ask1} from './session.js';
 import {t,locale} from './t.js';
 import {attach,setFlash,flashLine,syncStrip,conflictList,tags,undoText} from './calsync.js';
+import {attachCardSaveShortcut} from './card-form.js';   // P592 (0321): ⌘/Ctrl+Enter = 保存, shared with every card form
 const n=(tag,text,cls)=>{const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;e.setAttribute('data-aj-owner', 'aj-wallet-calendar'); return e;};
 const b=(text,fn)=>{const e=n('button',text,'fp-action');e.type='button';e.onclick=fn;return e;};
 export const dayKey=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -50,6 +51,7 @@ export function drawCalendar(box,m,hooks,reload){
    const ok=await modify(it?'edit':'add',event,it?.id);
    if(ok)close();else{save.disabled=false;message.textContent=error.textContent;}
   };
+  const hint=attachCardSaveShortcut(form,()=>form.requestSubmit(),save,'aj-wallet-calendar');if(hint)footer.append(hint);   // inside the sticky footer, under 保存
   dialog.showModal();title.focus();
  }
  function paint(){

@@ -7190,6 +7190,7 @@ usage: agentj service [-h] [--json]
 | `--json` | `false` | false | — | `machine-readable status` |
 | `--deferred` | `null` | false | — | `internal option (hidden from --help)` |
 | `--recovery-worker` | `null` | false | — | `internal option (hidden from --help)` |
+| `--peer-upgrade-job` | `null` | false | — | `internal option (hidden from --help)` |
 
 ### agentj setup
 
@@ -7997,7 +7998,8 @@ agentj update --help
 usage: agentj update [-h] [--reinstall] [--yes] [--json]
                      [--authorization AJUP-…] [--from-email FILE|-]
                      [--wheel FILE] [--version VERSION]
-                     {check,apply,auto,rollback} [{on,off,status}]
+                     {check,apply,auto,rollback,request-owner}
+                     [{on,off,status}]
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -8005,7 +8007,7 @@ usage: agentj update [-h] [--reinstall] [--yes] [--json]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--reinstall` | `false` | false | — | `reinstall signed current version` |
 | `--yes` | `false` | false | — | `skip the check of what a restart now would interrupt` |
-| `mode` | `null` | true | `check`, `apply`, `auto`, `rollback` | `` |
+| `mode` | `null` | true | `check`, `apply`, `auto`, `rollback`, `request-owner` | `` |
 | `switch` | `"status"` | false | `on`, `off`, `status` | `for auto` |
 | `--json` | `false` | false | — | `machine-readable check` |
 | `--authorization` | `null` | false | — | `the authorization code from the owner's upgrade email` |
@@ -15602,6 +15604,7 @@ usage: agentj service [-h] [--json]
 | `--json` | `false` | false | — | `status 的机器可读输出` |
 | `--deferred` | `null` | false | — | `内部参数（--help 隐藏）` |
 | `--recovery-worker` | `null` | false | — | `内部参数（--help 隐藏）` |
+| `--peer-upgrade-job` | `null` | false | — | `内部参数（--help 隐藏）` |
 
 ### agentj setup
 
@@ -16409,7 +16412,8 @@ agentj update --help
 usage: agentj update [-h] [--reinstall] [--yes] [--json]
                      [--authorization AJUP-…] [--from-email FILE|-]
                      [--wheel FILE] [--version VERSION]
-                     {check,apply,auto,rollback} [{on,off,status}]
+                     {check,apply,auto,rollback,request-owner}
+                     [{on,off,status}]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -16417,7 +16421,7 @@ usage: agentj update [-h] [--reinstall] [--yes] [--json]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--reinstall` | `false` | false | — | `重新安装当前已签名版本` |
 | `--yes` | `false` | false | — | `跳过升级前确认：现在会打断的事照样打断` |
-| `mode` | `null` | true | `check`, `apply`, `auto`, `rollback` | `` |
+| `mode` | `null` | true | `check`, `apply`, `auto`, `rollback`, `request-owner` | `` |
 | `switch` | `"status"` | false | `on`, `off`, `status` | `auto 的开关` |
 | `--json` | `false` | false | — | `check 的机器可读输出` |
 | `--authorization` | `null` | false | — | `主人升级邮件里的授权码` |

@@ -5,6 +5,7 @@ import asyncio
 import contextlib
 import contextvars
 import ctypes
+from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -17,12 +18,14 @@ import shlex
 import shutil
 import socket
 import struct
+import stat
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import weakref
 
 from cryptography.exceptions import InvalidSignature, InvalidTag
 from cryptography.hazmat.primitives import hashes, serialization
@@ -614,11 +617,7 @@ def _env_value(v: str) -> str:
     return '"' + v.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`") + '"'
 
 
-def write_secret(spec: dict, value: bytearray) -> None:
-
-    path = pathlib.Path(spec["path"])
-    if path.is_symlink():
-        raise Refused("dest", "the destination became a symlink")
+def _secret_bytes(spec, value, read_env):
     try:
         sval = value.decode("utf-8")
     except UnicodeDecodeError:
@@ -627,7 +626,7 @@ def write_secret(spec: dict, value: bytearray) -> None:
         raise Refused("value", "empty, or a line break / NUL in the value")
     if spec["mode"] == "env":
         try:
-            old = path.read_text("utf-8")
+            old = read_env()
         except FileNotFoundError:
             old = ""
         pat = re.compile(r"^(\s*(?:export\s+)?)" + re.escape(spec["key"]) + r"\s*=.*$")
@@ -645,6 +644,15 @@ def write_secret(spec: dict, value: bytearray) -> None:
         data = ("\n".join(lines) + "\n").encode()
     else:
         data = sval.encode()
+    return data
+
+
+
+def write_secret(spec: dict, value: bytearray) -> None:
+    path = pathlib.Path(spec["path"])
+    if path.is_symlink():
+        raise Refused("dest", "the destination became a symlink")
+    data = _secret_bytes(spec, value, lambda: path.read_text("utf-8"))
     tmp = path.with_name("." + path.name + ".agentj-" + secrets.token_hex(4))
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
     try:
@@ -659,8 +667,6 @@ def write_secret(spec: dict, value: bytearray) -> None:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
         raise
-    finally:
-        sval = None
     os.chmod(path, 0o600)
 
 
@@ -702,15 +708,22 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def _verification_request(card, value=None):
+    """Build the same GET for card inspection (unfilled template) and actual verification."""
+    name, template = card['verify_header'].split(':', 1)
+    url, header = card['verify_url'], template.strip()
+    if value is not None:
+        url = url.replace('{value}', urllib.parse.quote(value, safe=''))
+        header = header.replace('{value}', value)
+    return urllib.request.Request(url, method='GET', headers={name.strip(): header, 'User-Agent': 'agentj'})
+
+
 def verify_secret(card: dict, value: bytearray) -> dict:
 
     sval = value.decode("utf-8", "replace")
     try:
         if card.get("verify_url"):
-            name, tmpl = card["verify_header"].split(":", 1)
-            url = card["verify_url"].replace("{value}", urllib.parse.quote(sval, safe=""))
-            req = urllib.request.Request(url, method="GET",
-                                         headers={name.strip(): tmpl.strip().replace("{value}", sval), "User-Agent": "agentj"})
+            req = _verification_request(card, sval)
             opener = urllib.request.build_opener(_NoRedirect)
             try:
                 with opener.open(req, timeout=15) as r:
@@ -850,6 +863,218 @@ def check_record(st, r: dict) -> str:
 
 
 
+def _chat_file_id(path, *, directory=None):
+    # With a directory fd, check the exact entry used by the atomic commit.
+    try:
+        row = os.stat(path, dir_fd=directory, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(row.st_mode) or row.st_uid != os.getuid():
+        raise Refused("dest", "the destination changed")
+    return row.st_dev, row.st_ino, row.st_mtime_ns, row.st_size
+
+
+_CHAT_BINDING_KEY = secrets.token_bytes(32)
+
+
+def _chat_key_revision(text, key):
+    # A file can hold several unrelated requests. Bind just the selected assignments, without retaining their values.
+    pat = re.compile(r"^\s*(?:export\s+)?" + re.escape(key) + r"\s*=")
+    digest = hashlib.blake2b(key=_CHAT_BINDING_KEY, digest_size=32)
+    for line in text.splitlines():
+        if pat.match(line):
+            digest.update(line.encode() + b"\n")
+    return digest.hexdigest()
+
+
+def _chat_read_env(name, dfd, expected):
+    from . import approval_special
+    if expected is None:
+        return ""
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dfd)
+    with os.fdopen(fd, 'r', encoding='utf-8') as old:
+        row = os.fstat(fd)
+        if (row.st_dev, row.st_ino, row.st_mtime_ns, row.st_size) != expected:
+            raise approval_special.AuthorityChanged()
+        return old.read()
+
+
+def _chat_location(spec):
+    path = pathlib.Path(spec['path'])
+    dfd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        parent = os.fstat(dfd)
+        entry = _chat_file_id(path.name, directory=dfd)
+        target = entry
+        if spec['mode'] == 'env':
+            target = _chat_key_revision(_chat_read_env(path.name, dfd, entry), spec['key'])
+            if _chat_file_id(path.name, directory=dfd) != entry:
+                raise Refused('dest', 'the destination changed')
+        return (parent.st_dev, parent.st_ino), target
+    finally:
+        os.close(dfd)
+
+
+def _write_chat_secret(card, value, guard, state):
+    """Keep reads, temporary data and the final replacement inside the originally approved directory."""
+    from . import approval_special
+    chat = card['_chat_input']
+    spec, location = card['dest_spec'], chat.location
+    path = pathlib.Path(spec['path'])
+    dfd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    tmp = None
+    try:
+        parent = os.fstat(dfd)
+        entry = _chat_file_id(path.name, directory=dfd)
+        def check():
+            guard()
+            if ((chat.env_key is not None and chat.env_key.version != chat.version)
+                    or (parent.st_dev, parent.st_ino) != location[0] or not os.path.samestat(parent, path.parent.stat())
+                    or _chat_file_id(path.name, directory=dfd) != entry):
+                raise approval_special.AuthorityChanged()
+        check()
+        text, target = '', entry
+        if spec['mode'] == 'env':
+            text = _chat_read_env(path.name, dfd, entry)
+            target = _chat_key_revision(text, spec['key'])
+        if target != location[1]:
+            raise approval_special.AuthorityChanged()
+        data = _secret_bytes(spec, value, lambda: text)
+        name = '.agentj-' + secrets.token_hex(16)
+        fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=dfd)
+        tmp = name
+        with os.fdopen(fd, 'wb') as out:
+            out.write(data)
+            out.flush()
+            os.fchmod(out.fileno(), 0o600)
+            diskq.fsync(out.fileno())
+        async def commit():
+            # Pair removal (including other Host processes) uses this same allowlist lock.
+            # The Host loop orders stop, turn changes and all chat commits. No await between check and rename.
+            while True:
+                guard()
+                try:
+                    with state.devices_lock(blocking=False):
+                        check()
+                        os.replace(tmp, path.name, src_dir_fd=dfd, dst_dir_fd=dfd)
+                        if chat.env_key is not None:
+                            chat.env_key.version += 1
+                        card['_chat_committed'] = True
+                        return
+                except BlockingIOError:
+                    await asyncio.sleep(0.01)
+        asyncio.run_coroutine_threadsafe(commit(), card['_chat_loop']).result()
+        tmp = None
+    finally:
+        if tmp is not None:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp, dir_fd=dfd)
+        os.close(dfd)
+
+
+def _chat_display(value, limit):
+    from . import approval_review
+    text = approval_review.safe_text(value, limit)
+    if wire.units(text) > limit:
+        return text.encode('utf-16-le')[:2*(limit-1)].decode('utf-16-le', 'ignore') + '…'
+    return text
+
+
+def _chat_http_target(card):
+    # Fragments are not part of an HTTP request target. Limit this chat lane to a
+    # single unambiguous URL and end-server headers; do not assign it proxy credentials.
+    raw = card['verify_url']
+    if not raw:
+        return
+    if raw.count('#') > 1 or any(ord(ch) <= 32 or ord(ch) == 127 for ch in raw):
+        raise Refused('shape', 'verify-url: use one HTTP destination with URL-encoded characters')
+    target = raw.partition('#')[0]  # preserve the exact HTTP path, including an empty query or path parameter
+    card['verify_url'] = target
+    request = _verification_request(card)
+    # urllib has already decoded the authority and normalized header names and templates.
+    # IPv6 zone IDs and other unambiguous percent encodings remain valid.
+    from http import client
+    authority = request.host
+    header = card['verify_header'].split(':', 1)[0].strip().casefold()
+    try:
+        effective = urllib.parse.urlsplit('//' + authority)
+        if not effective.hostname or effective.netloc != authority or effective.username is not None or '\\' in authority:
+            raise ValueError()
+        effective.hostname.encode('idna')
+        # Build only the request line and header buffer. http.client does not connect or send
+        # until endheaders(); its own parser and encoders decide what can be transmitted.
+        probe = client.HTTPConnection(authority)
+        if effective.port is not None and effective.port != probe.port:
+            raise ValueError()
+        probe.putrequest(request.get_method(), request.selector, skip_host=True, skip_accept_encoding=True)
+        probe.putheader('Host', authority)
+        for name, value in request.header_items():
+            if name.casefold() != 'connection':  # urllib sets Connection: close at transmission
+                if any((ord(ch) < 32 and ch != '\t') or ord(ch) == 127 for ch in value):
+                    raise ValueError()
+                probe.putheader(name, value)
+    except (client.HTTPException, UnicodeError, ValueError):
+        raise Refused('shape', 'verify: use an encoded HTTP target and a valid header template') from None
+    if header.startswith('proxy-') or header in ('host', 'content-length', 'transfer-encoding', 'upgrade',
+                                                  'keep-alive', 'te', 'trailer', 'expect'):
+        raise Refused('shape', 'verify-header: use an end-server credential header')
+
+
+def _chat_verifier(card):
+    # An opaque route distinguishes actions without showing URL data; numbered fields identify
+    # exactly where the value is substituted, including repeated query names and custom templates.
+    url = urllib.parse.urlsplit(card['verify_url'])
+    request = _verification_request(card)
+    selector = request.selector or '/'
+    route = hashlib.blake2b(selector.encode('ascii'), key=_CHAT_BINDING_KEY, digest_size=6).hexdigest()
+    header = card['verify_header'].split(':', 1)[0].strip()
+    locations = []
+    if header.casefold() not in ('user-agent', 'connection'):  # fixed by verify_secret / urllib.do_open
+        locations.append('header ' + header)
+    if '{value}' in url.path:
+        locations.append('URL path')
+    fields = {'name': [], 'value': []}
+    for index, field in enumerate(url.query.split('&'), 1):
+        name, _, template = field.partition('=')
+        for which, part in (('name', name), ('value', template)):
+            if '{value}' in part:
+                fields[which].append(str(index))
+    for which, indices in fields.items():
+        if indices:
+            locations.append('URL query #' + ',#'.join(indices) + f' ({which})')
+    delivery = ', '.join(locations) if locations else 'no value sent'
+    return _chat_display(f"GET {request.type}://{request.host} · route {route} · {delivery}", 800)
+
+
+class _EnvKey:
+    """Live cards that target the same env key share a Host-only commit counter."""
+    version = 0
+
+
+def _chat_target(card):
+    from . import approval_review
+    keys = ('name', 'dest_spec', 'verify_url', 'verify_header', 'verify_cmd', 'verify_before_write')
+    return approval_review.digest([card.get(k) for k in keys])
+
+
+@dataclass(frozen=True)
+class _ChatInput:
+    request: dict
+    agent: object
+    session: str
+    message: int
+    target: str
+    location: tuple
+    env_key: _EnvKey | None
+    version: int
+
+    def valid(self, host, card):
+        return (host.agent is self.agent and str(host.hist.epoch) == self.session and card.get('kind') == 'secret'
+                and (card.get('dest_spec') or {}).get('mode') in ('file', 'env')
+                and 'sink' not in card and not any(k in card for k in ('settings_origin', 'only', 'button_only'))
+                and self.target == _chat_target(card))
+
+
 def _pins_live_context(c: dict) -> bool:
     """P541 pin scope (0.30.6): only a reviewed secret card that writes to a destination (the key-validation wait).
     The owner's terminal login / sink cards keep the 0.30.1 rule — the Agent's turn moving on never refuses them."""
@@ -903,6 +1128,7 @@ class Elevator:
         self.secret_waiters: dict[str, int] = {}
         self.review_requests: set[asyncio.Task] = set()
         self.review_operations: dict[str, dict] = {}
+        self._chat_env_keys = weakref.WeakValueDictionary()
         self.server = None
         self.sudo = None
         self.helper_status = None
@@ -1115,6 +1341,11 @@ class Elevator:
             d = x.get("dest_spec") or {}
             return x.get("name"), d.get("mode"), d.get("path"), d.get("key")
         for o in list(self.cards.values()):
+            # A verified chat receipt belongs to its exact signed operation, never to a Settings request.
+            if c.get('_chat_input') is not None or o.get('_chat_input') is not None:
+                if not (c.get('_chat_input') is not None and o.get('_chat_input') is not None and
+                        c.get('_chat_operation') == o.get('_chat_operation')):
+                    continue
             if o is not c and o["kind"] == "secret" and not o.get("busy") and target(o) == target(c):
                 self._finish(o, {"result": "saved", "elsewhere": True, **({"receipt": res["receipt"]} if res.get("receipt") else {})})
 
@@ -1129,6 +1360,8 @@ class Elevator:
         for c in list(self.cards.values()):
             if not c.get("busy"):
                 self._finish(c, {"result": result})
+            elif result == "stopped" and c.get('_chat_input') is not None:
+                c["cancel"].set()
         if result == "stopped":
             self.grants.clear(result)
             self.out.end_all(result)
@@ -1198,6 +1431,9 @@ class Elevator:
             return False
 
     async def request(self, card: dict, gone: asyncio.Future | None = None, on_card=None) -> dict:
+        return await self._request(card, gone, on_card)
+
+    async def _request(self, card, gone, on_card, *, _chat=None):
         from . import approval_review, provenance
         paired = provenance._PAIRED_REQUEST.get()
         creator_live = None
@@ -1214,11 +1450,17 @@ class Elevator:
                     if creator_live is not None and card.get('kind') == 'secret' and card.get('settings_origin') in SETTINGS_PAGES
                     else contextlib.nullcontext())
         with settings:
-            return await self._request_scoped(card, gone, on_card, creator_live)
+            return await self._request_scoped(card, gone, on_card, creator_live, _chat=_chat)
 
-    async def _request_scoped(self, card, gone, on_card, creator_live):
+    async def _request_scoped(self, card, gone, on_card, creator_live, *, _chat=None):
         from . import approval_review
-        binding = card
+        if any(k in card for k in ('_chat_input', '_chat_operation', '_chat_committed', '_chat_loop')):
+            return {'result': 'refused', 'why': 'authority_changed'}
+        if _chat is not None:
+            if type(_chat) is not _ChatInput or _chat.request is not card or not _chat.valid(self.host, card):
+                return {'result': 'refused', 'why':'authority_changed'}
+            card = {**card, 'dest_spec': dict(card['dest_spec'])}
+        binding = {'verified_phone_cli': card, 'location': _chat.location, 'version': _chat.version} if _chat is not None else card
         callback_entry = None
         callbacks = self.__dict__.setdefault('_review_callbacks', [])
         if card.get('kind') == 'secret' and 'sink' in card:
@@ -1240,7 +1482,7 @@ class Elevator:
                     return {'result': result.get('result'), 'id': old['id'], 'already_requested': True}
                 return {'result': 'questioned', 'id': old['id'], 'not_executed': True}
             pause = asyncio.get_running_loop().create_future()
-            worker = asyncio.create_task(self._request_impl(card, gone, on_card, pause, operation, creator_live))
+            worker = asyncio.create_task(self._request_impl(card, gone, on_card, pause, operation, creator_live, _chat))
             self.review_requests.add(worker)
             worker.add_done_callback(self.review_requests.discard)
             try:
@@ -1261,7 +1503,7 @@ class Elevator:
             callbacks[:] = [entry for entry in callbacks if entry['leases']
                             or any(entry['callback'] is live for live in retained)]
 
-    async def _request_impl(self, card, gone, on_card, review_pause, operation, _creator_live=None) -> dict:
+    async def _request_impl(self, card, gone, on_card, review_pause, operation, _creator_live=None, _chat=None) -> dict:
 
         if _creator_live is not None and not _creator_live():
             return {'result': 'refused', 'why': 'authority_changed'}
@@ -1291,6 +1533,15 @@ class Elevator:
         if _creator_live is not None and not _creator_live():
             return {'result': 'refused', 'why': 'authority_changed'}
         c = dict(card, id=secrets.token_hex(16), fails=0, fut=asyncio.get_running_loop().create_future())
+        if _chat is not None:
+            if not _chat.valid(self.host, c):
+                return {'result':'refused', 'why':'authority_changed'}
+            c['_chat_input'], c['_chat_operation'] = _chat, operation
+            c['_chat_loop'] = asyncio.get_running_loop()
+            for key, limit in (('purpose', 300), ('reason', 300), ('dest', 1100)):
+                c[key] = _chat_display(c.get(key), limit)
+            if c.get('verify_url'):
+                c['verify'] = _chat_verifier(c)
         if native_authority is not None:
             native_authority.card = c
             from .native_scheduler_control import digest as native_digest
@@ -1509,6 +1760,10 @@ class Elevator:
             # security r4 N4a: pin only once the answer passed every check (signature, nonce, not busy) — a later
             # frame for the same card can never re-pin it.
             c['_live_at_answer'] = approval_special.live_context(self.host)
+            if c.get('_chat_input') is not None:
+                self.host.__dict__.setdefault('_chat_secret_validation', set()).add(c['id'])
+                c['_chat_foreground'] = (self.host.task_epoch, getattr(self.host, 'desktop_turn', None),
+                                         (getattr(self.host, 'agent_cfg', None) or {}).get('dir'))
         c["busy"] = True
         c["want_grant"] = obj.get("grant") if ok else None
         c["started"] = time.monotonic()
@@ -1620,6 +1875,11 @@ class Elevator:
 
                 await worker
                 raise
+        except approval_special.ChatExpired:
+            c['cancel'].set()
+            c['busy'] = False
+            audit(self.st, c, result='timeout', reason='timeout', **signed)
+            self._finish(c, {'result':'timeout', '_logged':True})
         except approval_special.AuthorityChanged as e:
             c['cancel'].set()
             c['busy']=False
@@ -1632,6 +1892,8 @@ class Elevator:
             audit(self.st, c, result="failed", reason="execution", **signed)
             self._finish(c, {"result": "failed", "why": "execution", "_logged": True})
         finally:
+            if c.get('_chat_input') is not None:
+                self.host.__dict__.get('_chat_secret_validation', set()).discard(c['id'])
             progress.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await progress
@@ -1761,10 +2023,19 @@ class Elevator:
                 ensure_live()
             else:
                 res = await asyncio.to_thread(self._save, c, value)
-                ensure_live()
-                if res.get("result") == "saved":
-                    await self._reload_saved_env(c, res)
+                if c.get('_chat_input') is not None and c.get('_chat_committed'):
+                    # Cancellation after the atomic replacement cannot undo it. Further work still needs live authority.
+                    try:
+                        ensure_live()
+                    except approval_special.AuthorityChanged:
+                        pass
+                    else:
+                        await self._reload_saved_env(c, res)
+                else:
                     ensure_live()
+                    if res.get("result") == "saved":
+                        await self._reload_saved_env(c, res)
+                        ensure_live()
         except approval_special.AuthorityChanged:
             wipe(keep)
             keep=None
@@ -1966,8 +2237,17 @@ class Elevator:
                 if not callable(guard):raise approval_special.AuthorityChanged()
                 guard()
             if not self._source_allows(c):raise approval_special.AuthorityChanged()
+            chat = c.get('_chat_input')
+            if chat is not None and time.monotonic() >= min(c['deadline'], c['review_adapter'].deadline):
+                raise approval_special.ChatExpired()
             if pinned is not None and approval_special.live_context(self.host) != pinned:
-                raise approval_special.LiveContextMoved(validated)   # N4b: typed reason, never 「主机没有收下」
+                stamp = self.host.__dict__.get('_turn_started') if chat is not None else None
+                foreground = (self.host.__dict__.get('task_epoch'), getattr(self.host, 'desktop_turn', None),
+                              (getattr(self.host, 'agent_cfg', None) or {}).get('dir'))
+                if not (stamp and provenance.owner_turn_contract(src=getattr(stamp[0], 'source', None)) == 'host_system_turn'
+                        and c['id'] in self.host.__dict__.get('_chat_secret_validation', set())
+                        and c['_chat_foreground'] == foreground):
+                    raise approval_special.LiveContextMoved(validated)   # N4b: typed reason, never 「主机没有收下」
         ensure_source()
         if len(value) > MAX_VALUE:
             return {"result": "failed", "why": "value"}
@@ -2000,12 +2280,32 @@ class Elevator:
                 return {'result': 'failed', 'why': 'verify', 'detail': verified.get('detail', ''), **_key_hint(c, value)}
         ensure_source(verified is not None)
         try:
-            write_secret(c["dest_spec"], value)
+            if c.get('_chat_input') is None:
+                write_secret(c["dest_spec"], value)
+            else:
+                # Serialise the brief env read/merge/replace; verification stays outside the state lock.
+                merging = c['dest_spec']['mode'] == 'env'
+                with (self.st.file_lock('chat-env-write') if merging else contextlib.nullcontext()):
+                    _write_chat_secret(c, value, lambda: ensure_source(verified is not None), self.st)
         except Refused as e:
             return {"result": "failed", "why": e.why, "detail": e.detail}
         except OSError:
             return {"result": "failed", "why": "io"}
         receipt = {"name": c["name"], "dest": c["dest"], "length": len(value), "fingerprint": fingerprint(value)}
+        if c.get('_chat_input') is not None and c.get('verify_url'):
+            # .34 CLI: an optional HTTP check reports on an already-stored value. A cancelled/stale
+            # approval cannot start this separate external action after its destination commit.
+            try:
+                ensure_source()
+            except approval_special.AuthorityChanged:
+                verified = {'verify': 'skipped', 'detail': 'authority_changed'}
+            else:
+                try:
+                    verified = verify_secret(c, value)
+                except Exception:
+                    # Storage already committed. Optional transport failures cannot erase that fact
+                    # or expose an exception containing the request target or submitted value.
+                    verified = {'verify': 'fail', 'detail': 'network'}
         receipt.update(verified or verify_secret(c, value))
         if receipt.get("verify") == "fail":
             receipt.update(_key_hint(c, value))
@@ -2170,6 +2470,7 @@ class Elevator:
         peer = None
         origin_token = None
         app_scope = None
+        chat_source = None
         uid = None
         try:
             sock = w.get_extra_info("socket")
@@ -2192,7 +2493,11 @@ class Elevator:
                 if peer is None and sys.platform == "darwin":
                     from .core.process_evidence import peer_pid
                     peer = peer_pid(w)
-                incoming_origin = await asyncio.to_thread(bounded_plan.caller_origin, self.host, peer)
+                if req['t'] == 'secret' and uid == os.getuid():
+                    from . import approval_material
+                    chat_source = await asyncio.to_thread(approval_material.verified_phone_chat, self.host, peer)
+                incoming_origin = (chat_source[1] if chat_source else
+                                   await asyncio.to_thread(bounded_plan.caller_origin, self.host, peer))
                 if incoming_origin is None and ctl_auth.refusal(peer, os.getpid(), self.host._agent_pids()) is None and ctl_auth.has_tty(peer):
                     turn = self.host.hist_add({"k": "host", "name": "Agent J 主机", "text": "本人在本机终端发起这项受控操作。"}, "", "done")
                     incoming_origin = approval_review.remember(self.host, turn, provenance.terminal())
@@ -2314,7 +2619,9 @@ class Elevator:
                 from . import update, upgrade_friend
                 if not isinstance(req.get("op"), str):
                     raise Refused("shape", "upgrade: op")
-                if req["op"] == "friend":       # R-0060: the fenced Agent's `agentj update` asks first
+                if req["op"] == "request_owner":
+                    res = await upgrade_friend.owner_request(self.host, req.get("version"), fenced=True)
+                elif req["op"] == "friend":       # R-0060: the fenced Agent's `agentj update` asks first
                     res = await upgrade_friend.answer(self.host, fenced=True)
                 else:                           # … and install / restart / rollback ops refuse during a friend turn
                     res = upgrade_friend.host_op_refusal(self.host, req) or \
@@ -2589,7 +2896,26 @@ class Elevator:
                         shown["c"] = c
                         if inner is not None:
                             await inner(c)
-                    task = asyncio.ensure_future(self.request(card, None, note_card))
+                    if chat_source is not None:
+                        from . import approval_special
+                        _chat_http_target(card)
+                        spec = card['dest_spec']
+                        env_key = (self._chat_env_keys.setdefault((spec['path'], spec['key']), _EnvKey())
+                                   if spec['mode'] == 'env' else None)
+                        def snapshot_location():
+                            # Concurrent chat writes to other env keys can change the file identity during the snapshot.
+                            with (self.st.file_lock('chat-env-write') if env_key is not None else contextlib.nullcontext()):
+                                return _chat_location(spec), env_key.version if env_key is not None else 0
+                        try:
+                            location, version = await asyncio.to_thread(snapshot_location)
+                        except (OSError, UnicodeError, approval_special.AuthorityChanged):
+                            raise Refused('dest', 'the destination is unavailable or changed') from None
+                        chat = _ChatInput(card, chat_source[0], str(chat_source[1]['session']),
+                                          chat_source[1]['message_id'], _chat_target(card), location, env_key, version)
+                        request = self._request(card, None, note_card, _chat=chat)
+                    else:
+                        request = self.request(card, None, note_card)
+                    task = asyncio.ensure_future(request)
                     self.bg.add(task)
                     task.add_done_callback(self.bg.discard)
                     wait = req.get("wait")

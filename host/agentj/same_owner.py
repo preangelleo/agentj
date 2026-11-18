@@ -43,6 +43,8 @@ class ForwardSend(Send):
         row = svc.guards.row(self.fid, self.data.get('mid')) or {}
         if row.get('reply_state') in ('sending', 'done', 'unknown') or row.get('state') == 'done':
             return       # the Agent already sent its explicit --reply-to result
+        if self.owner.row(self.fid).get('queue', {}).get(self.data['mid'], {}).get('upgrade'):
+            return  # the host owns this upgrade's eventual threaded result
         host = svc.host
         page = host.hist.get(self.turn) or {}
         failed = host.cur_failed or getattr(host.agent, 'halting', False) or self.state in ('failed', 'uncertain', 'cancelled')
@@ -828,6 +830,91 @@ class SameOwner:
         used.add(key)
         return proof
 
+    def bind_upgrade(self, fid, mid, token, turn, target, card):
+        """Bind an already claimed incoming task, authenticated by ForwardSend, to the displayed offer."""
+        from .upgrade_friend import CLAIM_SECONDS
+        if not self.active(fid) or self.row(fid).get('token') != token:
+            return False
+        guard = self.svc.guards.row(fid, mid) or {}
+        if guard.get('state') != 'claimed' or guard.get('reply_state', 'pending') != 'pending':
+            return False
+        with self.svc.store._edit('same-owner.json', {}) as rows:
+            entry = rows.get(fid, {}).get('queue', {}).get(mid)
+            if not entry or entry.get('turn') != turn or entry.get('token') != token:
+                return False
+            current = entry.get('upgrade') or {}
+            if current.get('id') and (current['id'] != card or current['target'] != target):
+                return False
+            current.update(id=card, target=target, until=self.svc.clock() + CLAIM_SECONDS)
+            current.setdefault('reply_mid', secrets.token_hex(8))
+            entry['upgrade'] = current
+        with self.svc.store._edit('relay-requests.json', {}) as rows:
+            lease = rows[self.svc.guards.key(fid, mid)]
+            lease['target_upgrade'] = True
+            lease.setdefault('upgrade_claimed', self.svc.clock())
+        self.svc.guards.receipt(fid, mid, 'claimed')
+        return True
+
+    def upgrade_decision(self, rid, result, *, job=None):
+        """Remember the paired phone's decision against the original peer task through the restart."""
+        with self.svc.store._edit('same-owner.json', {}) as rows:
+            for relation in rows.values():
+                for entry in relation.get('queue', {}).values():
+                    waiting = entry.get('upgrade')
+                    if waiting and waiting['id'] == rid:
+                        waiting['decision'] = result
+                        if job:
+                            from .upgrade_friend import RESULT_SECONDS
+                            waiting.update(job=job, issuer=self._upgrade_generation(), until=self.svc.clock() + RESULT_SECONDS)
+
+    def _upgrade_generation(self):
+        if not hasattr(self.svc.host, '_upgrade_generation'):
+            self.svc.host._upgrade_generation = secrets.token_hex(16)
+        return self.svc.host._upgrade_generation
+
+    async def _upgrade_receipt(self, fid, mid, entry):
+        from . import phone_update, update
+        svc = self.svc
+        waiting = entry['upgrade']
+        decision = waiting.get('decision')
+        if waiting['id'] in getattr(svc.host, '_upg_preparing', ()):
+            return  # binding is visible to this serve; the same task has not published its card yet
+        if waiting['id'] is None and not waiting.get('status') and svc.clock() < waiting['until']:
+            return  # the live receiver is still completing its delivery checks
+        if not self.active(fid) or self.row(fid).get('token') != entry.get('token'):
+            svc.guards.block(fid, mid, 'relationship')
+            return
+        if waiting.get('status'):
+            state = waiting['status']
+        elif decision == 'started':
+            outcome = phone_update.read_outcome(svc.st, waiting.get('job'), waiting['target'])
+            if outcome == 'failed':
+                state = 'upgrade_failed'
+            elif (outcome == 'restarted' and waiting.get('issuer') != self._upgrade_generation()
+                  and update.__version__ == waiting['target']):
+                state = 'running'
+            elif svc.clock() < waiting['until']:
+                return
+            else:
+                state = 'upgrade_unconfirmed'
+        elif decision in ('cancelled', 'expired', 'replaced'):
+            state = decision
+        elif waiting['id'] and (getattr(svc.host, 'upg', None) or {}).get('id') == waiting['id'] and svc.host._upg_live():
+            return
+        else:
+            state = 'expired'
+        async def authorized():
+            return self.active(fid) and self.row(fid).get('token') == entry.get('token') and not svc.host.stopped()
+        # Pin both bytes and id before handing the reply to the existing idempotent peer outbox.
+        from . import diskq
+        with svc.store._edit('same-owner.json', {}) as rows:
+            item = rows[fid]['queue'][mid]['upgrade']
+            item.setdefault('status', state)
+            result = item.setdefault('receipt', f'Agent J {update.__version__} · {state}')
+            reply_mid = item.setdefault('reply_mid', secrets.token_hex(8))
+        if await diskq.aflush():
+            await svc.tell(fid, result, reply_to=mid, _authorized=authorized, _upgrade_mid=reply_mid)
+
     async def retry(self):
         """Only durable pending requests may be re-admitted, never claimed/uncertain execution."""
         now = self.svc.clock()
@@ -838,6 +925,12 @@ class SameOwner:
         for fid, relation in self.svc.store._read('same-owner.json', {}).items():
             for key, entry in list(relation.get('queue', {}).items()):
                 row = self.svc.guards.row(fid, key) or {}
+                if entry.get('upgrade') and row.get('state') == 'claimed':
+                    reply_state = row.get('reply_state', 'pending')
+                    if reply_state == 'pending':
+                        await self._upgrade_receipt(fid, key, entry)
+                    if reply_state != 'done':
+                        continue  # the pinned receipt survives an in-flight or unconfirmed handoff
                 if row.get('state') != 'pending':
                     self.queued.pop((fid, key), None)
                     with self.svc.store._edit('same-owner.json', {}) as rows:
@@ -1002,6 +1095,48 @@ class SameOwner:
             origin["chain"] = (origin.get("chain", []) + [{"kind": "same_owner", "id": fid}])[-16:]
             origin["task_record"] = "same-owner:" + action_proof["id"]
             send.approval_origin = origin
+        from . import upgrade_friend, update
+        mentions = []
+        group = data.get('grp') or {}
+        if group and svc.devices._grp_ok(group) and not is_reply:
+            if svc.keys.id not in group['to']:
+                return svc.guards.block(fid, key, 'delivery_guard')
+            from .owner_group import ALL_WORDS
+            mentions = [svc.st.agent_name(), svc.keys.id, *ALL_WORDS]
+            for other in group['to']:
+                if other != svc.keys.id and self.active(other):
+                    mentions.extend([other, svc.store.name_of(other)])
+        target = upgrade_friend.requested_version(text, mentions=mentions) if not approved and not is_reply and not action_proof and not otg else None
+        if target and not svc.host.stopped():
+            self.queued[(fid, key)] = (agent, send)
+            with svc.store._edit('same-owner.json', {}) as rows:
+                rows[fid]['queue'][key]['upgrade'] = {'id': None, 'target': target, 'until': svc.clock() + 60}
+            with svc.store._edit('relay-requests.json', {}) as rows:
+                rows[svc.guards.key(fid, key)]['target_upgrade'] = True
+            if not await send.wait_ready() or not send.delivery_allowed():
+                return False
+            if update.market_managed():
+                result = {"card": "market_managed"}
+            else:
+                def bind(rid):
+                    return self.bind_upgrade(fid, key, send.token, send.turn, target, rid)
+                result = await upgrade_friend.open_card(svc.host, {"kind": "same_owner", "fid": fid},
+                                                        requested=target, live=send.delivery_allowed, bind=bind)
+            if not send.delivery_allowed():
+                return False
+            # The transport has already acknowledged receipt. Reserve the only threaded reply for the installed
+            # version (or the decision that ended this card). The queue binds it to the relationship generation.
+            if result["card"] in ("new", "reused"):
+                svc.host.hist_update(page['id'], text=upgrade_friend.reply_line(update.__version__, target, False), end='done')
+                return True
+            # Fixed terminal outcomes use the same recoverable, idempotent transport handoff.
+            status = result["card"]
+            with svc.store._edit('same-owner.json', {}) as rows:
+                entry = rows[fid]['queue'][key]
+                entry['upgrade'].update(status=status, reply_mid=secrets.token_hex(8))
+            svc.host.hist_update(page["id"], text=f"Agent J {update.__version__} · {status}", end="done")
+            await self._upgrade_receipt(fid, key, entry)
+            return True
         if not agent and (approved or is_reply):
             svc.host.hist_update(page['id'], text=('暂时无法办理：主 Agent 未连接。' if zh else 'Cannot start: the main Agent is disconnected.'), end='failed')
             return svc.guards.block(fid, key, 'main_unavailable')

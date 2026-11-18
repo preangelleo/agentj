@@ -30,3 +30,9 @@ def _owner_host(st, sent):
     with mock.patch.object(host,'hist_emit'):
         host.desktop_input('Synthetic authenticated owner task for approval review.')
     return host
+
+
+async def finish_phone_touch(host):
+    """Finish this fixture's coalesced background write before deleting its state directory."""
+    while (task := getattr(host, '_touching', None)) is not None:
+        await task

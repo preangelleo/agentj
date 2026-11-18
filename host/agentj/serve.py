@@ -1530,7 +1530,7 @@ class Host:
         elif t == "cards_get":          # P203 (§29.1): a signed read — every card still waiting, as this device sees it
             if s.p33:
                 await self.on_cards_get(s, obj)
-        elif t in ("upg_check", "upg_card_off"):   # P203 (§29.2): what an upgrade now would interrupt · close the card
+        elif t in ("upg_check", "upg_card_off", "upgrade_decision"):   # P203 (§29.2): what an upgrade now would interrupt · close the card
             if s.p33:
                 await self.on_upg_phone(s, t, obj)
         elif t in ("files_get", "files_write") and s.p33:
@@ -2803,6 +2803,9 @@ class Host:
                     await self._ctl_send(w, {"ok": True, "items": self.upg_items("agent" if req.get("caller") == "agent" else None)})
                 elif cmd == "upgrade_card":         # P203: … and, when it is not empty, puts the confirmation card on the phones
                     await self._ctl_send(w, {"ok": True, **self.upg_open("agent" if req.get("caller") == "agent" else None)})
+                elif cmd == "upgrade_request_owner":
+                    from . import upgrade_friend
+                    await self._ctl_send(w, await upgrade_friend.owner_request(self, req.get("version"), pid=pid))
                 elif cmd == "upgrade_friend":       # R-0060: every mutating `agentj update` asks whether a friend's turn runs
                     from . import upgrade_friend
                     await self._ctl_send(w, await upgrade_friend.answer(self, pid, req.get("caller")))
@@ -5418,15 +5421,17 @@ class Host:
 
     def _upg_msg(self) -> dict:
         u = self.upg
-        return {"t": "upg_card", "id": u["id"], "items": self.upg_items(u.get("caller")), "from": update.__version__,
+        # Old pages ignore the targeted frame. Their manual signed /update stays a separate action.
+        return {"t": "upg_target_card" if u.get("target") else "upg_card",
+                **({"expires": u["expires"]} if u.get("target") else {}), "id": u["id"], "items": self.upg_items(u.get("caller")), "from": update.__version__,
                 "to": u.get("to") or "", "ttl": max(0, int(u["deadline"] - time.monotonic()))}
 
-    def upg_open(self, caller=None) -> dict:
+    def upg_open(self, caller=None, *, rid=None) -> dict:
 
         from . import auto_update
         items = self.upg_items(caller)
         latest = update.read_rec(self.st).get("latest")
-        rid = secrets.token_hex(16)
+        rid = rid or secrets.token_hex(16)
         old, self.upg = self.upg, {"id": rid, "deadline": time.monotonic() + UPG_TTL, "caller": caller,
                                     "to": latest if isinstance(latest, str) and auto_update.newer_known(self.st) else ""}
         if old is not None:
@@ -5439,10 +5444,12 @@ class Host:
         self.push_notify("ask")
         return {"id": rid, "phones": phones, "items": items}
 
-    def upg_end(self, result: str, by: str | None = None) -> None:
+    def upg_end(self, result: str, by: str | None = None, *, job=None) -> None:
         u, self.upg = self.upg, None
         if u is None:
             return
+        if u.get("target") and getattr(self.peers, "same_owner", None):
+            self.peers.same_owner.upgrade_decision(u["id"], result, job=job)
         self.st.log("upg_card_done", id=u["id"], result=result, device=by)
         self._post(self._send_p33, lambda s: {"t": "upg_card_done", "id": u["id"], "result": result})
 
@@ -5453,8 +5460,11 @@ class Host:
 
     async def on_upg_phone(self, s: Session, t: str, obj: dict) -> None:
 
+        if t == "upgrade_decision":
+            from . import upgrade_friend
+            return await upgrade_friend.phone_decision(self, s, obj)
         if t == "upg_card_off":
-            if self.upg is not None and obj.get("id") == self.upg["id"]:
+            if self.upg is not None and not self.upg.get("target") and obj.get("id") == self.upg["id"]:
                 self.upg_end("cancelled", by=s.device)
             return
         r = obj.get("r")
@@ -7466,7 +7476,7 @@ class Host:
                 return done(slash.Result(update.market_text(self.lang), "info"))
             if not phone_update.reserve(self.st):
                 return done(slash.Result("Upgrade in progress" if self.lang == "en" else "正在升级，请稍候", "info"))
-            self.upg_end("started", by=s.device)    # P203: the confirmation card (if any) is answered by this signed /update
+            self.upg_end("replaced" if (self.upg or {}).get("target") else "started", by=s.device)    # P203: the confirmation card (if any) is answered by this signed /update
             self.cmd_card("update", slash.Result(humane.of(self, "update.started"), "info"), by, turn, interim=True)
             self.phone_upgrade_task = asyncio.create_task(self.phone_upgrade(turn, by))
             return turn
@@ -7508,7 +7518,7 @@ class Host:
             self.cmd_waiting(cmd)
         return turn
 
-    async def phone_upgrade(self, turn, by):
+    async def phone_upgrade(self, turn, by, target=None, job=None):
         if update.market_managed():
             self.cmd_card("update", slash.Result(update.market_text(self.lang), "info"), by, turn)
             return
@@ -7517,12 +7527,17 @@ class Host:
         try:
             check = await asyncio.to_thread(update.check)
             if check["status"] != "newer":
+                if job:
+                    phone_update.record_outcome(self.st, job, target, "failed")
                 rec = {"reason": "already_current" if check["status"] == "current" else "unknown", "to": check.get("latest") or update.__version__}
                 self.cmd_card("update", slash.Result(phone_update.text(rec, self.lang), "info" if check["status"] == "current" else "error"), by, turn)
                 return
             if self.agent and self.agent.status != "idle":   # 0.26.10 #484: the signed /update answered the impact card:
                 self.upgrade_turn = self.turn_t0               # the restart does not wait for the turn running now
-            await asyncio.to_thread(phone_update.launch, self.st)
+            if target:
+                await asyncio.to_thread(phone_update.launch_target, self.st, target, job)
+            else:
+                await asyncio.to_thread(phone_update.launch, self.st)
             launched = True
             for _ in range(1800):
                 await asyncio.sleep(1)
@@ -7539,6 +7554,8 @@ class Host:
                 return
             self.cmd_card("update", slash.Result("Could not start upgrade: run `agentj update apply`" if self.lang == "en" else "无法启动升级：在Agent J 主机运行 `agentj update apply`", "error"), by, turn)
         finally:
+            if job and not launched:
+                phone_update.record_outcome(self.st, job, target, "failed")
             if not launched or not phone_update.busy(self.st):
                 phone_update.release(self.st)
 

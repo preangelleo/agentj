@@ -5,9 +5,17 @@ import unittest
 from agentj import approval_review as review
 import test_p541_approval_review as fixture
 
+from _p541_device import finish_phone_touch
+
+
+async def _set_up_context_review(case):
+    await fixture.Review.asyncSetUp(case)
+    case.addAsyncCleanup(finish_phone_touch, case.h)
+
+
 class ContextSubmission(unittest.IsolatedAsyncioTestCase):
     setUp=fixture.Review.setUp   # 0.30.7 ADR-0307-offlist: card-context machinery; Bash vehicle stays a listed card
-    asyncSetUp=fixture.Review.asyncSetUp
+    asyncSetUp = _set_up_context_review
     open=fixture.Review.open
     stop=fixture.Review.stop
 
@@ -108,7 +116,7 @@ class ReservationRelease(unittest.TestCase):
 class LiveAuthorityRace(unittest.IsolatedAsyncioTestCase):
     setUp=fixture.Review.setUp   # 0.30.7 ADR-0307-offlist: card-context machinery; Bash vehicle stays a listed card
     import test_p541_answer_race as _race
-    asyncSetUp=fixture.Review.asyncSetUp
+    asyncSetUp = _set_up_context_review
     open=fixture.Review.open
     stop=fixture.Review.stop
     race=_race.AnswerRace.race

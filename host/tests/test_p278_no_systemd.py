@@ -11,6 +11,7 @@ without systemd, `agentj service install [--deferred]` used to die with a FileNo
 - doctor's service row and the recovery notice say the same.
 All I/O hermetic (fake runners, fake files). The container runs are the private p278-container.sh script."""
 import _hermetic  # noqa: F401,I001
+import argparse
 import contextlib
 import io
 import json
@@ -147,7 +148,7 @@ class LaunchJob(unittest.TestCase):
 
     def test_cli_deferred_exits_78_with_the_sentence(self):
         from agentj import __version__, cli
-        a = mock.Mock(mode="install", recovery_worker=None, deferred=__version__, json=False)
+        a = argparse.Namespace(mode="install", recovery_worker=None, deferred=__version__, json=False)
         err = io.StringIO()
         with mock.patch.object(service_recovery, "launch_job", side_effect=service.ServiceError("wsl_systemd_off")), \
                 contextlib.redirect_stderr(err), self.assertRaises(SystemExit) as e:

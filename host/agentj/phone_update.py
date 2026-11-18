@@ -12,11 +12,15 @@ RESULT = "phone-update-result.json"
 LOCK = "phone-update-running.json"
 
 def launch(st):
+    return launch_target(st, None)
+
+
+def launch_target(st, target, job=None):
     if update.market_managed():
         return False
     from . import auto_update, service_recovery
     # 0.30.23: the job runs from a snapshot of this package — the install replaces the venv under it (see snapshot_worker)
-    worker = auto_update.snapshot_worker(st, "phone-lib", "agentj.phone_update")
+    worker = auto_update.snapshot_worker(st, "phone-lib", "agentj.phone_update", **({"target": target, "job": job} if target else {}))
     service_recovery.launch_job(st, [sys.executable, str(worker)], "update")
 
 def busy(st):
@@ -109,13 +113,16 @@ def _lang(st):
         return "zh"
 
 
-def _restart(rec, quiet):
+def _restart(rec, quiet, job=None):
     """Hand the restart to the freshly installed CLI (`service install --deferred`): its recovery worker waits for an idle
     serve, restarts the service and reads the live version back. → None, or the real failure reason."""
     from . import service
     argv = update.new_argv(update.install_kind())
     try:
-        r = quiet(argv + ["service", "install", "--deferred", rec["to"]], stdin=subprocess.DEVNULL)
+        args = ["service", "install", "--deferred", rec["to"]]
+        if job:
+            args += ["--peer-upgrade-job", job]
+        r = quiet(argv + args, stdin=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError) as e:
         return {"reason": "service_restart_failed", "service_error": type(e).__name__}
     if r.returncode == service.NO_MANAGER_EXIT:
@@ -126,7 +133,37 @@ def _restart(rec, quiet):
     return None
 
 
-def run(st, apply_fn=None, restart_fn=None):
+def outcome_path(st, job):
+    import re
+    if not isinstance(job, str) or not re.fullmatch(r"[0-9a-f]{32}", job):
+        raise ValueError("invalid upgrade job")
+    return st.root / "upgrade-cache" / "peer-results" / (job + ".json")
+
+
+def record_outcome(st, job, target, outcome):
+    path = outcome_path(st, job)
+    try:
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        st.write_private(path, json.dumps({"job": job, "target": target, "outcome": outcome}).encode())
+    except OSError:
+        return  # the receiver can only report unconfirmed if the durable outcome is unavailable
+    for old in path.parent.glob("*.json"):
+        with contextlib.suppress(OSError):
+            if old.stat().st_mtime < time.time() - 86400:
+                old.unlink()
+
+
+def read_outcome(st, job, target):
+    try:
+        item = json.loads(outcome_path(st, job).read_bytes())
+        if item.get("job") == job and item.get("target") == target and item.get("outcome") in ("restarted", "failed"):
+            return item["outcome"]
+    except (OSError, ValueError, AttributeError):
+        pass
+    return None
+
+
+def run(st, apply_fn=None, restart_fn=None, *, target=None, job=None):
     if update.market_managed():
         return update.market_result()
     from . import doctor, upgrade_diag
@@ -135,9 +172,12 @@ def run(st, apply_fn=None, restart_fn=None):
         return subprocess.run(argv, **{**kw, "stdout": subprocess.PIPE, "stderr": subprocess.PIPE,
                                       "text": True, "timeout": min(kw.get("timeout", 900), 900)})   # 0334: a retry's share
     rec = None
+    job_outcome = "failed"
     try:
         try:
             kw = {"lease_end": lease_end(st)} if apply_fn is None else {}     # 0334 r2: retries stay inside the lease
+            if target is not None:
+                kw["target"] = target
             rec = (apply_fn or update.apply)(st, svc_on=False, run=quiet, **kw)
         except Exception as e:  # noqa: BLE001 — the apply itself broke: its step stays unknown, the type is the reason
             rec = {"result": "failed", "reason": "apply_crashed", "error": type(e).__name__}
@@ -163,16 +203,21 @@ def run(st, apply_fn=None, restart_fn=None):
             if restart_fn:
                 restart_fn()
             else:
-                failed = _restart(rec, quiet)
+                verified = rec.get("result") == "ok" and rec.get("reason") == "upgraded" and rec.get("to") == target
+                failed = _restart(rec, quiet, job) if job and verified else _restart(rec, quiet)
             if failed:
                 # The new package is on disk but the old service keeps running: say so (never 「升级成功」, never a bare type).
                 rec = {**rec, **failed, "result": "failed", "installed": rec.get("to"), "exit": 1}
                 st.log("phone_update_restart", status="failed", reason=failed["reason"])
                 st.write_private(st.root / RESULT, json.dumps(rec).encode())
+            elif rec.get("result") == "ok" and rec.get("reason") == "upgraded" and rec.get("to") == target:
+                job_outcome = None  # the deferred recovery job writes the final live-process readback
     except Exception as e:  # noqa: BLE001
         st.write_private(st.root / RESULT, json.dumps({**(rec or {}), "result": "failed", "reason": "phone_update_crashed",
                                                        "error": type(e).__name__}).encode())
     finally:
+        if job and job_outcome:
+            record_outcome(st, job, target, job_outcome)
         release(st)
         from . import service_recovery
         service_recovery.cleanup_job(st)

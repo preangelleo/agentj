@@ -11,6 +11,7 @@ import { ask1, isReady } from './session.js';
 import { registerLayer } from './layers.js';
 import { signedWrite, whyText } from './controls.js';
 import * as contacts from './contacts.js';
+import { attachCardSaveShortcut, paintSaveKey } from './card-form.js';   // P592 (0321): ⌘/Ctrl+Enter = 保存
 
 export const OWNER_ID = 'c000000000000';
 const ADDR = /^[^\s@]{1,64}@[^\s@]{1,253}\.[^\s@]{2,}$/;
@@ -105,6 +106,7 @@ function edit(c) {
   el('ctm-e-phone').value = c ? first(phonesOf(c)) || '' : '';
   el('ctm-e-err').textContent = '';
   el('ctm-e-del').hidden = !c || c.id === OWNER_ID;
+  if (el('ctm-e-key')) paintSaveKey(el('ctm-e-key'));   // the hint follows the current language
   el('ctmEdit').hidden = false;
   el('ctm-e-name').focus({ preventScroll: true });
 }
@@ -244,6 +246,8 @@ function wire() {
   el('ctm-import').addEventListener('click', () => el('ctm-file').click());
   el('ctm-file').addEventListener('change', () => { const f = el('ctm-file').files[0]; el('ctm-file').value = ''; importFile(f); });
   el('ctm-form').addEventListener('submit', saveEdit);
+  const saveKey = attachCardSaveShortcut(el('ctm-form'), () => el('ctm-form').requestSubmit(), el('ctm-e-save'), 'aj-contacts');
+  if (saveKey) { saveKey.id = 'ctm-e-key'; el('ctm-e-save').parentElement.after(saveKey); }
   el('ctm-e-cancel').addEventListener('click', closeEdit);
   el('ctm-e-del').addEventListener('click', remove);
   el('ctmEdit').addEventListener('click', (e) => { if (e.target === el('ctmEdit')) closeEdit(); });

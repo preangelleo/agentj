@@ -27,6 +27,7 @@ export function clearSpecialApprovals(){records.clear();expired.clear();refreshS
 export function refreshSpecialVisibility(){
  let count=0,expanded=false,target;
  for(const entry of records.values()){
+  if (entry.c.chatInput && entry.c.collapsed && entry.c.review_state === 'pending') continue; // the reply has its own key-card button
   count++;if(entry.c.collapsed)target||=entry;else if(entry.root&&!entry.root.hidden)expanded=true;
  }
  setApprovalAnchor('special',{count,collapsed:!!target,expanded,open:()=>target&&reviewSpecial(target.c,'reopen')});
@@ -76,10 +77,11 @@ export function decorateSpecial(root,c,{title,metadata=[],allow,deny,fold,repain
  ui.hidden=false;box.querySelector('.special-buttons541').hidden=false;
  ui.querySelector('.special-fold541').setAttribute('aria-label',t('r.sheet.fold'));
  ui.querySelector('.special-fold541').onclick=()=>{c.collapsed=true;fold();refreshSpecialVisibility();};
- const warning=ui.querySelector('.auth-warn541');warning.hidden=src.verified===true&&!src.suspicious;warning.textContent=t(src.suspicious?'p541.suspicious':'p541.unknown');
+ const trustedSource=c.envelope_verified===true&&src.verified===true&&!src.suspicious;
+ const warning=ui.querySelector('.auth-warn541');warning.hidden=trustedSource;warning.textContent=t(src.suspicious?'p541.suspicious':'p541.unknown');
  const source=ui.querySelector('.auth-source541');source.replaceChildren();
  const ch=t('p541.channel.'+src.channel),tm=Number(src.time),stamp=tm>0?new Date(tm<1e12?tm*1000:tm).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false}):'';
- source.append(node('span','auth-meta541',src.history_outside_window?t('p541.initiator',{name:src.initiator||'Agent J'}):[ch.startsWith('p541.')?src.channel:ch,src.sender||t('p541.you'),stamp].filter(Boolean).join(' · ')),node('span','auth-text541',src.history_outside_window?t('p541.older'):src.text||t('p541.unknown')),node('span','auth-id541',src.history_outside_window?t('p541.task',{task:src.task_record||''}):'Message ID · '+(src.message_id||'—')));
+ source.append(node('span','auth-meta541',src.history_outside_window?t('p541.initiator',{name:src.initiator||'Agent J'}):[ch.startsWith('p541.')?src.channel:ch,src.sender||t('p541.you'),stamp].filter(Boolean).join(' · ')),node('span','auth-text541',src.history_outside_window?t('p541.older'):src.text||(trustedSource?'':t('p541.unknown'))),node('span','auth-id541',src.history_outside_window?t('p541.task',{task:src.task_record||''}):'Message ID · '+(src.message_id||'—')));
  source.disabled=!src.message_id||src.history_outside_window===true;source.onclick=()=>{c.collapsed=true;fold();dispatchEvent(new CustomEvent('approval541-locate',{detail:src}));refreshSpecialVisibility();};
  ui.querySelector('.auth-action541').textContent=stepReason(e);
  const details=ui.querySelector('details');for(const n of metadata)if(n)details.append(n);

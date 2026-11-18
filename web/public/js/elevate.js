@@ -176,6 +176,9 @@ export function add(m) {
   c.started = c.running && m.phase === 'started';
   if (c.started) c.t0 = Date.now() - (Number.isInteger(m.elapsed) ? m.elapsed : 0) * 1000;
   const old = cards.get(m.id);
+  // An incoming chat request belongs below the reply. Settings flows that own the input still open it immediately.
+  c.chatInput = old?.chatInput ?? (c.kind === 'secret' && c.approval_v === 2 && !c.auth && !m.request && document.getElementById('settings')?.hidden === true);
+  if (c.chatInput) c.collapsed = true;
   if (old) { c.out = old.out || ''; if (old.n === c.n) c.collapsed = old.collapsed; if (old.started && c.started) c.t0 = old.t0; }
   // P566 (#364 / #354): the Agent J host re-sends every open card after a reconnect — the one the Face ID sheet's drop cost.
   // The same arming (same nonce) is the same card: its typed field, its 「正在补交…」 and its reason stay; only a new nonce
@@ -271,6 +274,9 @@ export function refused(m) {
   if (shownId === m.id) { busy = false; paintButtons(); paintLeft(c); }
   toast(t(key), 5000, 'error');
   if (m.why === 'late' || m.why === 'gone') done({ id: c.id, result: m.why === 'late' ? 'timeout' : 'gone' });
+  // P592 (chairman 0323 ⑥): the host will never accept this card again — close it now (the notice above says why) rather
+  // than leave a counting-down, tappable card. `context` has no result line of its own, so no 「已撤回」 notice follows.
+  else if (m.why === 'context') done({ id: c.id, result: 'context' });
 }
 const REFUSED = { passkey: 'elev.fa.refused', late: 'p566.r.late', stale: 'p566.r.clock', replay: 'p566.r.replay', gone: 'p566.r.gone',
   bad_signature: 'p566.r.sig', no_key: 'p566.r.sig', shape: 'p566.r.shape', context: 'p0284.refusal.context' };
@@ -712,7 +718,7 @@ function paintOut(text) {
 function paintRun() {
   const b = runBar();
   clearTimeout(runTimer);
-  const list = [...cards.values()].filter((c) => c.started || c.collapsed && c.approval_v!==2);
+  const list = [...cards.values()].filter((c) => c.started || c.collapsed && (c.approval_v !== 2 || c.chatInput && c.review_state === 'pending'));
   const it = list.find((c) => c.collapsed && !c.running) || list.find((c) => c.started) || list[0] || null;
   const fin = !it && finished && (panelOpen && runShown === finished.id || Date.now() < finished.until) ? finished : null;
   if (!it && !fin) { b.hidden = true; panelOpen = false; runShown = null; document.body.dataset.elevrun = '0'; return; }

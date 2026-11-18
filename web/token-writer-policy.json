@@ -67,7 +67,7 @@
     {
       "path": "js/cardplace.js",
       "line": 198,
-      "sourceSha256": "3ba18887c15b357e67dcf6d00f2d0ef5d1af2a32edf3f31e93016adbfbf66dbf",
+      "sourceSha256": "341df6edcc7afbf39101fa012cfd870f8d55c086d94dae4f02a9d5b2ae7c1e20",
       "kind": "finite-layout-vars",
       "purpose": "Owner-approved0e858 finite viewport geometry; host badge owner and existing sheet action placement changed only metadata/placement, while the exact four finite geometry keys remain independently source-derived.",
       "tokenNames": [

@@ -479,7 +479,7 @@ function paintLeft(item){
   if (left > 0) leftTimer = setTimeout(() => paintLeft(item), 1000);
 }
 
-function approvalOptions(){return {busy:apprBusy,questioned:()=>toNewest(),fold:()=>{foldedCard=cur?.card?cardKey(cur.card):null;if(cur)renderCard(cur);},open:()=>{foldedCard=null;if(cur)renderCard(cur);},locate:async src=>{
+function approvalOptions(){return {busy:apprBusy,questioned:()=>toNewest(),fold:()=>{foldedCard=cur?.card?cardKey(cur.card):null;if(cur)renderCard(cur);},open:()=>{foldedCard=null;voidFold=null;if(cur)renderCard(cur);},locate:async src=>{
  if(src.session&&String(src.session)!==String(hist.epoch))return;
  const id=Number(src.message_id);if(!Number.isSafeInteger(id)||id<=0)return;
  await jumpToTurn(id);if(currentPage()?.id===id){el('om').classList.add('located541');setTimeout(()=>el('om').classList.remove('located541'),2600);}
@@ -505,6 +505,8 @@ function renderCard(s){
   if(s.card?.kind!=='permission'||!approval541.enabled(s.approval))approval541.reset();
   const card = s.card, a = s.ask || null, p = s.approval || null;
   const pending = !!card;   // P396: a retry card remains usable after its owner cleared the waiting colour
+  if (voidFold && (!card || card.id !== voidFold)) voidFold = null;   // P592: the void card is gone / replaced
+  if (voidFold) foldedCard = cardKey(card);
   const folded = pending && foldedCard === cardKey(card);
   if (!pending) foldedCard = null;
   const fin = !!a && ASK_FINAL.includes(a.state);
@@ -567,6 +569,7 @@ let apprSent = {id: null, state: null}, apprBusy = false, apprToasted = null, ap
 // P154 追加: the remote that sends the answer puts the card away at once (other remotes close when the host says so).
 // apprOpt = {id, key, action} while the host has not confirmed; apprFail = the reason the card came back (shown on it).
 let apprOpt = null, apprFail = null;
+let voidFold = null;   // P592 (0323 ⑥): the id of a card the host voided — kept put away until the owner reopens it
 let apprHold = null;
 
 function apprState(p){
@@ -696,6 +699,7 @@ function renderPermission(card, p){
   if(p&&waitsForNewRequest(p.id)){
     for(const id of ['apprAllow','apprBatch','apprGoalAdd'])el(id).disabled=true;
     el('askText').textContent=waitingText(p.id,cur?.hostStatus);
+    clearTimeout(leftTimer);el('askLeft').hidden=true;   // P592 (0323 ⑥): a void card does not count down
   }
 }
 // P339: the goal card's plain title (null = an older host's card: it renders exactly as before).
@@ -855,6 +859,9 @@ export function answerRefused(m, say) {
   apprDismissed = null; foldedCard = null;
   const text=say||rememberRefusal(m.id,m.why,cur?.hostStatus);   // 0304 R-F5: the caller's own line (the binding prompt)
   apprFail = {id:m.id,text};
+  // P592 (chairman 0323 ⑥): a card the host voided (context changed / card replaced) is no longer an approval — put it away
+  // at once (the toast says why); reopened from its tag it stays disabled with no countdown. View only: nothing is sent.
+  if(!say&&waitsForNewRequest(m.id)){voidFold=m.id;if(cur)renderCard(cur);}   // by id: snap re-adds the host's copy (a new key)
   return text;
 }
 export const approvalEnded=id=>forgetRefusal(id);
@@ -5325,7 +5332,7 @@ export function init(ctx){
     if (cur && cur.approval && APPR_FINAL.includes(cur.approval.state)) apprDismissed = cur.approval.id;
     if (cur) renderCard(cur);
   });
-  el("pendTag").addEventListener("click", () => { foldedCard = null; if (cur) renderCard(cur); });   // @ix app.pending
+  el("pendTag").addEventListener("click", () => { foldedCard = null; voidFold = null; if (cur) renderCard(cur); });   // @ix app.pending
 
   // chrome
   new MutationObserver(() => paintChrome()).observe(document.body,

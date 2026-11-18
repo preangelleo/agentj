@@ -862,7 +862,7 @@ def prune_artifacts(root, keep) -> None:
         os.close(fd)
 
 
-def snapshot_worker(st, folder: str, module: str) -> Path:
+def snapshot_worker(st, folder: str, module: str, *, target=None, job=None) -> Path:
     """Copy this agentj package (code and its packaged data) into the state directory and return a run.py that starts
     `module.run(State())` from that copy. `uv tool install --force` deletes and recreates the whole tool venv; a worker
     importing from the venv would load half the new package into the old process (0.30.23: the phone /update job crashed
@@ -876,7 +876,15 @@ def snapshot_worker(st, folder: str, module: str) -> Path:
             dst.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             st.write_private(dst, p.read_bytes())
     worker = snapshot / 'run.py'
-    st.write_private(worker, f"from {module} import run\nfrom agentj.state import State\nrun(State())\n".encode())
+    args = ""
+    if target is not None:
+        from .upgrade_friend import VERSION
+        if module != "agentj.phone_update" or not isinstance(target, str) or not re.fullmatch(VERSION, target):
+            raise ValueError("invalid phone upgrade target")
+        if not isinstance(job, str) or not re.fullmatch(r"[0-9a-f]{32}", job):
+            raise ValueError("invalid phone upgrade job")
+        args = f", target={target!r}, job={job!r}"
+    st.write_private(worker, f"from {module} import run\nfrom agentj.state import State\nrun(State(){args})\n".encode())
     return worker
 
 

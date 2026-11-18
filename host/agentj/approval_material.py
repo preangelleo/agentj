@@ -126,6 +126,11 @@ def turn_start(host, send):
     from .core.process_evidence import now
     stepped = clock_check(host)
     host.__dict__['_turn_started'] = (send, now(), time.time(), _continuous(), stepped)
+    active = host.__dict__.get('_chat_secret_validation')
+    if active:
+        from . import provenance
+        if provenance.owner_turn_contract(src=getattr(send, 'source', None)) != 'host_system_turn':
+            active.clear()
 
 
 def clock_check(host):
@@ -239,7 +244,30 @@ def _anchor_tainted(host, agent, anchor_born):
     return overlapped and _harness_leftovers(host, agent)
 
 
-def _direct_scope(host, peer):
+def _owned_process(process, pid):
+    import asyncio
+    import subprocess
+    return (isinstance(process, (asyncio.subprocess.Process, subprocess.Popen)) and process.pid == pid
+            and process.returncode is None)
+
+
+def _fence_init(supervisor, child):
+    """Identify the kernel PID 1 of our bwrap --unshare-pid --as-pid-1 launch."""
+    proc = Path('/proc')
+    try:
+        if not (proc / str(supervisor) / 'exe').samefile('/usr/bin/bwrap'):
+            return False
+        def namespace_pids(pid):
+            return next(line.split()[1:] for line in (proc / str(pid) / 'status').read_text().splitlines()
+                        if line.startswith('NSpid:'))
+        parent_ids, child_ids = namespace_pids(supervisor), namespace_pids(child)
+        return bool(parent_ids and len(child_ids) == len(parent_ids) + 1 and child_ids[-1] == '1'
+                    and not (proc / str(child) / 'ns/pid').samefile(proc / str(supervisor) / 'ns/pid'))
+    except (OSError, StopIteration):
+        return False
+
+
+def _direct_scope(host, peer, *, secret_input=False):
     """Independent harness/new-turn descendants and registered CEOs have host-held roots without Claude hooks."""
     from . import busy_launch, peer_origin
     if sys.platform == 'darwin':
@@ -280,8 +308,15 @@ def _direct_scope(host, peer):
             return None
     else:
         pins = getattr(getattr(host, 'busy', None), 'context', {})
-        if not any(value.get('pid') == pid and value.get('proc_start') == row[2]
-                   for value in pins.values() if isinstance(value, dict)) or getattr(process, 'returncode', None) is not None:
+        board_pin = any(value.get('pid') == pid and value.get('proc_start') == row[2]
+                        for value in pins.values() if isinstance(value, dict))
+        # A fresh Host-launched harness can request its first secret before its busy-board event is processed.
+        # The kernel's direct, still-unreaped child is an exact process-generation pin in its own right.
+        child_pin = (secret_input and row[0] == os.getpid() and _owned_process(process, pid)
+                     and source.get('channel') == 'phone' and source.get('verified') is True
+                     and not source.get('suspicious') and source.get('message_id') == getattr(send, 'turn', None)
+                     and source == host.__dict__.get('_approval_origins', {}).get(getattr(send, 'turn', None)))
+        if not (board_pin or child_pin) or getattr(process, 'returncode', None) is not None:
             return None
     # /proc starttime uses boot-time ticks. Convert the host-created monotonic task stamp to that clock;
     # a suspend between creation and this observation shifts the threshold later, conservatively rejecting ambiguity.
@@ -302,6 +337,12 @@ def _direct_scope(host, peer):
     # stamps it, host-held). No stamp / another Send's stamp proves nothing → ambiguous (`unknown_agent`: refused as a
     # caller, and still the stricter material-receipt outcome, never a silent None).
     ambiguous = (not desktop and stamp is None) or _anchor_tainted(host, agent, int(row[2]) / busy_launch.HZ)
+    # A namespace init may adopt children. Only a host-recorded process generation with wholly
+    # known owner-only history can identify it as the persistent root, even on an empty busy board.
+    anchor_born = int(row[2]) / busy_launch.HZ
+    clean_generation = (secret_input and anchor_born >= host.__dict__['_nonowner_floor']
+                        and not any(end is None or end + application_ingress.SPAN_MARGIN >= anchor_born
+                                    for _, end in host.__dict__.get('_nonowner_spans') or ()))
     while current > 1 and current != pid and current not in seen and len(seen) < 64:
         seen.add(current)
         branch = table.get(current)
@@ -310,13 +351,18 @@ def _direct_scope(host, peer):
         born = int(branch[2]) / busy_launch.HZ
         # R-0052: a hop born inside any host-held non-owner span (friend / guest / external / webhook turn on this anchor,
         # including a span still open when the owner's Send was merged into it) is guest-born, never the owner's caller.
-        ambiguous |= born < began or application_ingress._guest_born(host, born)
+        # The Host owns the outer supervisor. Only its unique namespace init is part of the persistent
+        # harness itself; the peer and every other child still need fresh, non-guest process generations.
+        fenced_harness = (secret_input and current != peer and branch[0] == pid and not desktop
+                          and not isinstance(session, dict) and child_pin and clean_generation and _fence_init(pid, current))
+        ambiguous |= (born < began and not fenced_harness) or application_ingress._guest_born(host, born)
         current = branch[0]
     if current != pid or peer not in table:
         return None
     return {'kind': 'unknown_agent' if ambiguous or not seen else 'desktop' if desktop else 'agent',
             'desktop': desktop, 'desktop_turn': getattr(host, 'desktop_turn', None),
             'agent': agent, 'send': send, 'anchor': (pid, row[2]),
+            **({'owned_process': process} if not isinstance(session, dict) and not board_pin else {}),
             'peer': (peer, table[peer][2]), 'origin': copy.deepcopy(source)}
 
 
@@ -430,6 +476,12 @@ def _scope_live(host, scope, peer):
     if scope['kind'] == 'unit':
         source = host.__dict__.get('_approval_launch_refs', {}).get(scope['unit'])
         return _unit(host, peer) == scope['unit'] and _root(source) == _root(scope['origin'])
+    if 'owned_process' in scope:
+        process = scope['owned_process']
+        root = peer_origin._stat(Path('/proc'), scope['anchor'][0])
+        if (host.agent is not scope['agent'] or getattr(host.agent, 'proc', None) is not process or not root
+                or root[1] != os.getpid() or not _owned_process(process, scope['anchor'][0])):
+            return False
     if scope.get('desktop'):
         source = host.__dict__.get('_approval_origins', {}).get(getattr(host, 'desktop_turn', None))
         return host.agent is scope['agent'] and getattr(host, 'desktop_turn', None) == scope['desktop_turn'] and \
@@ -662,3 +714,19 @@ def verified_caller_origin(host, peer):
     source = copy.deepcopy(scope['origin'])
     resolved = snapshot(host, source)
     return resolved if resolved is not None else source
+
+
+def verified_phone_chat(host, peer):
+    """Only a live chat descendant of the exact host-recorded phone Send can carry this proof."""
+    scope = _direct_scope(host, peer, secret_input=True)
+    if scope is None or scope['kind'] != 'agent' or not _scope_live(host, scope, peer):
+        return None
+    original = scope['origin']
+    turn = getattr(scope['send'], 'turn', None)
+    if type(turn) is not int or original != host.__dict__.get('_approval_origins', {}).get(turn):
+        return None
+    origin = snapshot(host, original) or original
+    if (origin.get('channel') != 'phone' or origin.get('verified') is not True or origin.get('suspicious')
+            or origin.get('message_id') != turn or str(origin.get('session')) != str(host.hist.epoch)):
+        return None
+    return scope['agent'], copy.deepcopy(origin)

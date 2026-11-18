@@ -214,12 +214,12 @@ class State:
             return {}  # damaged tombstone journal fails closed
 
     @contextlib.contextmanager
-    def devices_lock(self):
+    def devices_lock(self, *, blocking=True):
         """Exclusive lock around every allowlist read-modify-write, across threads and processes (serve approving, `agentj
         revoke` / `agentj admin` editing offline): two concurrent revokes can never resurrect each other's device."""
         fd = os.open(self.devices_lock_path, os.O_RDWR | os.O_CREAT, 0o600)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            fcntl.flock(fd, fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB)
             yield
         finally:
             os.close(fd)
