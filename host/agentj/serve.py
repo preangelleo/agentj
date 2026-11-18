@@ -2691,6 +2691,9 @@ class Host:
                 elif cmd == "agentsrelay_full_status":
                     from . import relay_full
                     await self._ctl_send(w, await relay_full.query(self, req))
+                elif cmd == "busy_native_stop":    # R-0047 item 3 (security r1): `agentj busy stop run:<key>`
+                    from . import busy_native
+                    await self._ctl_send(w, busy_native.stop(self, req, pid, puid))
                 elif cmd == "busy_native":
                     from . import busy_native
                     try:

@@ -117,8 +117,9 @@ class Irreversible(FakeHome):
     def test_no_file_deletion_shape_on_the_list(self):
         # chairman 11-11: deletion is covered by the trashbin; only the root / home / /home shape stays (no trash holds it)
         self.assertEqual([k for k in uv_list.IRREVERSIBLE if k.startswith("rm")], ["rm -r <home|/|/home>"])
+        # R-0047 item 3 (chairman 11-18): an owner-made busy dispatch's money / irreversible call takes this card too.
         self.assertEqual(uv_list.FINGERPRINT_SOURCES,
-                         frozenset({"owner_remote", "owner_terminal", "owner_channel"}))
+                         frozenset({"owner_remote", "owner_terminal", "owner_channel", "busy_dispatch"}))
 
 
 class NativeDelete(unittest.TestCase):

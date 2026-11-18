@@ -11,6 +11,12 @@ import test_p397_upgrade_recovery as recovery_fixture
 from agentj import __version__, auto_update as au, doctor, upgrade_diag as ud, update
 
 
+def _wheel_in(path, argv, version):
+    """0334: the installer runs on the private per-version store copy (<store>/install-artifacts/agentj-<v>-…whl)."""
+    p, name = str(path), f"/install-artifacts/agentj-{version}-py3-none-any.whl"
+    return any(isinstance(a, str) and (a == p or a.endswith(name)) for a in argv)
+
+
 class Failures(_Env):
     prepare = recovery_fixture.Worker.prepare
 
@@ -73,7 +79,7 @@ class Failures(_Env):
     def rollback_verify(self, broken=False, failure='health'):
         self.prepare()
         def runner(argv):
-            if str(self.new) in argv:
+            if _wheel_in(self.new, argv, NEW):
                 return subprocess.CompletedProcess(argv, 1, '', 'error: No space left on device')
             if '--version' in argv:
                 return subprocess.CompletedProcess(argv, int(broken), '' if broken else 'agentj '+__version__, '')
@@ -116,7 +122,7 @@ class Failures(_Env):
     def test_installer_unclassified_exception_is_fixed_and_redacted(self):
         self.prepare()
         def runner(argv):
-            if str(self.new) in argv:
+            if _wheel_in(self.new, argv, NEW):
                 raise subprocess.SubprocessError('private argv and URL')
             if '--version' in argv:
                 return subprocess.CompletedProcess(argv, 0, 'agentj '+__version__, '')

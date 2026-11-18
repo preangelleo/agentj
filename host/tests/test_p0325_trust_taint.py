@@ -591,7 +591,10 @@ class FullAccessPathsUntouched(_Settled):
                 main.cur_send = None; self.h.agent_turn_end()
             with self.subTest(command=command):
                 self.assertEqual(results[0], results[1])
-                self.assertEqual((False, {}), results[1])
+                # R-0047 item 3: this runner has no dispatch binding, so its call is `unknown` — no card, refused —
+                # instead of borrowing the main thread's heartbeat turn (which used to run it card-free).
+                self.assertFalse(results[1][0])
+                self.assertEqual('deny', results[1][1]['hookSpecificOutput']['permissionDecision'])
 
     async def test_guard_raised_fingerprint_calls_skip_the_seam(self):
         # review r3-4: the guards send fingerprint-list calls to Host.ask themselves (NativeContext). In a marked

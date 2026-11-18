@@ -41,7 +41,10 @@ try{
    await click(p,'#omQuote');await waitFor(p,`!document.getElementById('silent').hidden`);
    assert.equal(await evaluate(p,`document.querySelectorAll('#silentList details').length`),4);
    assert.equal(await evaluate(p,`document.getElementById('silentTitle').textContent`),words.activity);
-   assert.doesNotMatch(await evaluate(p,`[...document.querySelectorAll('#silentList summary')].map(x=>x.textContent).join(' ')`),/automation-report|unsafe|raw failure/);
+   // R-0005 (approved 0.30.34): rows carry a one-line summary, a failed row too; raw JSON never becomes the line.
+   const rowText=await evaluate(p,`[...document.querySelectorAll('#silentList summary')].map(x=>x.textContent).join(' ')`);
+   assert.doesNotMatch(rowText,/automation-report|unsafe/);
+   assert.match(rowText,new RegExp(' · '+words.failure+'raw failure object'));
    assert.match(await evaluate(p,`document.querySelector('#silentList details[open] .full').textContent`),/unsafe/);
    await key(p,'Escape');await waitFor(p,`document.getElementById('silent').hidden`);
    await fake.addTurn({k:'phone',text:'{"schema":"automation-report.v1"}'},'Owner JSON is an ordinary input');

@@ -358,7 +358,10 @@ class MetadataReport(_Mac):
                         # #0307 (贾维斯 dispatch 2026-11-10): closed words for the cache folder kind / level / owner kind
                         "cache_path", "cache_level", "cache_owner", "cache_fallback", "failed_checks",
                         # R-0045: P573 exception approved by 贾维斯 2026-11-16 — closed service_reason words only (pinned below)
-                        "service_reason"})
+                        "service_reason",
+                        # 0334 (hotfix brief HOTFIX-upgrade-0.30.25, 贾维斯): closed dependency-failure words, a bounded
+                        # retry count and only agentj's own dependency names (upgrade_diag.DEPENDENCY_NAMES; test_0334)
+                        "dependency_package", "dependency_phase", "dependency_source", "uv_failure_class", "retry_count"})
 
     def test_ruling_locks_the_exact_field_whitelist(self):
         self.assertEqual(frozenset(upgrade_diag.META_FIELDS), self.LOCKED)
@@ -372,7 +375,8 @@ class MetadataReport(_Mac):
                       "stderr_tail": "Permission denied /Users/catherine", "fix": "agentj sudo …"}
         body = upgrade_diag.metadata_body(everything, "uv")
         keys = {ln.split(": ", 1)[0] for ln in body.split("\n")[1:]}
-        self.assertEqual(keys, self.LOCKED - {"failed_checks", "service_reason"})
+        # 0334 dependency keys only come with an install failure (test_0334 covers them and the 20-line cap)
+        self.assertEqual(keys, self.LOCKED - {"failed_checks", "service_reason", *upgrade_diag.DEPENDENCY_KEYS})
         self.assertTrue(support.metadata_ok(body))
         for leak in ("catherine", "Permission", "agentj sudo", "platform", "python", "uv tool"):
             self.assertNotIn(leak, body)

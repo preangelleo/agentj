@@ -1,4 +1,4 @@
-import { activityKind, activityFailed, mergeOwnerInputs, ownerInput, ownerQueue, pendingAutomation } from './phone-activity.js';
+import { activityKind, activityFailed, activitySummary, mergeOwnerInputs, ownerInput, ownerQueue, pendingAutomation } from './phone-activity.js';
 import {paintRepair,repairOf,replyName,paintFix} from './repair-actions.js';
 import {fullAccess, supports as cmdSupports} from './cmdrun.js';
 import {waitsForNewRequest,rememberRefusal,waitingText,forgetRefusal,forgetRefusals} from './approval-notice.js';
@@ -4829,6 +4829,14 @@ const isM = e => !e.shiftKey && (e.key === "m" || e.key === "M" || (e.code === "
 function composerEmpty(){ return !input.value && !atts.length; }
 const typingIn = tg => !!tg && (tg.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName));
 var silentKey = "", silentBusy = false, activityMode = false;
+// R-0005 (0.30.34, chairman-approved 11-18): /background rows say source + time + one line of what happened instead of
+// the fixed 「已收起」 text. A failed row carries 「需检查」 after the source label and still shows the Agent's one line.
+// Display only: the line comes from the history text the row already shows on expansion; no new control or entry.
+function activityLine(turn, src){
+  const named = src ? sourceOf(src).label.trim() : '';
+  const label = named && !/[:：]$/.test(named) ? named : t('p0331.'+activityKind(turn));   // an unnamed automation: 「后台」
+  return {s: activityFailed(turn) ? label + ' · ' + t('p0331.failure') : label, l: activitySummary(turn, cleanSilentMarkers) || t('r.silent.noText')};
+}
 function silentWhen(ts){
   if (typeof ts !== "number") return "";
   const d = new Date((ts + skew) * 1000), now = new Date();
@@ -4859,8 +4867,9 @@ function renderSilent(focusId){
     const d = document.createElement("details"); d.dataset.id = String(turn.id); d.open = open.has(turn.id);
     const sm = document.createElement("summary"); sm.setAttribute('data-aj-owner', 'aj-history');
     const tm = document.createElement("span"); tm.className = "t"; tm.textContent = silentWhen(turn.ts) || "—";
-    const sc = document.createElement("span"); sc.className = "s"; sc.textContent = activityMode ? t('p0331.'+activityKind(turn)) : src ? sourceOf(src).label : t('r.silent.noSource');
-    const ln = document.createElement("span"); ln.className = "l"; ln.textContent = activityMode ? t(activityFailed(turn) ? 'p0331.failure' : 'p0331.record') : text.split("\n")[0] || t('r.silent.noText');
+    const act = activityMode ? activityLine(turn, src) : null;
+    const sc = document.createElement("span"); sc.className = "s"; sc.textContent = act ? act.s : src ? sourceOf(src).label : t('r.silent.noSource');
+    const ln = document.createElement("span"); ln.className = "l"; ln.textContent = act ? act.l : text.split("\n")[0] || t('r.silent.noText');
     sm.append(tm, sc, ln);
     const full = document.createElement("div"); full.className = "full"; full.textContent = text || t('r.silent.noText');
     const rp = document.createElement("div"); rp.className = "rep"; rp.textContent = t('r.silent.reply') + cleanSilentMarkers(turn.silent_reply || turn.reply);

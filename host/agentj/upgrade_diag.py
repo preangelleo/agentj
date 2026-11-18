@@ -64,8 +64,242 @@ UV_STDERR = (
     ("dependency_conflict", ("no solution found when resolving", "unsatisfiable", "resolutionimpossible")),
     ("dependency_download_failed", ("failed to fetch", "error sending request", "failed to download", "dns error",
                                     "connection refused", "connection reset", "network is unreachable", "tcp connect error",
-                                    "certificate", "request failed after", "operation timed out")),
+                                    "certificate", "request failed after", "operation timed out",
+                                    # 0334: resolver / pip (pipx) spellings of the same network failures
+                                    "failed to lookup address", "temporary failure in name resolution",
+                                    "name or service not known", "nodename nor servname", "failed to establish a new connection",
+                                    "read timed out")),
 )
+
+
+# ------------------------------------------------------------------ 0334: dependency failure evidence (fixed fields only)
+# A failed dependency install is described by five closed fields, parsed here from the installer's raw output and the
+# installer's environment — never the URL, host name, credential, path or any stderr text itself.
+DEP_PHASES = ("resolve", "download", "build", "install")
+DEP_SOURCES = ("pypi", "mirror", "proxy", "unknown")
+UV_CLASSES = ("dns", "connect", "timeout", "tls", "http_status", "other")
+RETRY_MAX = 9
+_PKG = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+# agentj's dependency closure (pyproject + their install-time requirements on every supported platform): the only names the
+# metadata-only form may carry (a shape alone is not a closed vocabulary). test_0334 ties it to pyproject.
+DEPENDENCY_NAMES = frozenset(("cryptography", "cffi", "pycparser", "typing-extensions", "websockets", "python-socks",
+                              "async-timeout", "pypinyin", "tomlkit", "json5", "pypdf", "segno", "importlib-metadata",
+                              "zipp", "zxing-cpp"))
+_UV_CLASS_NEEDLES = (
+    ("dns", ("dns error", "failed to lookup address", "name or service not known", "temporary failure in name resolution",
+             "nodename nor servname", "no such host", "name resolution")),
+    ("tls", ("certificate", "tls handshake", "ssl", "invalid peer")),
+    ("timeout", ("timed out", "network timeout", "read timeout", "connect timeout", "timeout error", "deadline has elapsed")),
+    ("http_status", ("http status", "status code", "403 forbidden", "404 not found", "502 bad gateway",
+                     "503 service unavailable")),
+    ("connect", ("connection refused", "connection reset", "connection closed", "connection aborted", "tcp connect error",
+                 "network is unreachable", "failed to establish a new connection", "broken pipe", "error sending request",
+                 "failed to fetch", "failed to download", "request failed after")),
+)
+_IN_TICKS = re.compile(r"(?i)failed to (download and build|download|build|install|fetch|prepare)[^`\n]{0,40}`([^`\n]{1,400})`")
+_NOT_FOUND = re.compile(r"(?i)because ([A-Za-z0-9][A-Za-z0-9._-]{0,63}) was not found in the package registry")
+_PIP_REQ = re.compile(r"(?i)(?:satisfies the requirement|matching distribution found for) ([A-Za-z0-9][A-Za-z0-9._-]{0,63})")
+EVIDENCE_MAX = 64 * 1024         # 0334 r1 (F6): only the last 64 KiB of installer output is parsed, each line ≤ 4 KiB
+EVIDENCE_LINE_MAX = 4096
+_URL_TAIL = re.compile(r"[^\s`'\")]{1,2048}")
+INDEX_ENV = ("UV_DEFAULT_INDEX", "UV_INDEX_URL", "UV_INDEX", "UV_EXTRA_INDEX_URL", "UV_FIND_LINKS",
+             "PIP_INDEX_URL", "PIP_EXTRA_INDEX_URL")
+PROXY_ENV = ("HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", "https_proxy", "http_proxy", "all_proxy")
+PYPI_HOSTS = frozenset(("pypi.org", "files.pythonhosted.org", "pypi.python.org"))
+_CFG_URL = re.compile(r"(?m)^\s*(?:index-url|extra-index-url|url|find-links)\s*=\s*\[?\s*[\"']([^\"']+)")
+
+
+def _norm(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def package_ok(value) -> bool:
+    """A package-name-shaped token only (never a URL / host / path / opaque token)."""
+    return (isinstance(value, str) and bool(_PKG.fullmatch(value)) and not _TOKEN.fullmatch(value)
+            and ".." not in value)
+
+
+def _urls(text: str):
+    """URLs by `://` anchors — linear: a bounded scheme backwards, a bounded run forwards (no backtracking regex scan)."""
+    i = text.find("://")
+    while i != -1:
+        j = i
+        while j > 0 and i - j < 32 and (text[j - 1].isalnum() or text[j - 1] in "+.-"):
+            j -= 1
+        m = _URL_TAIL.match(text, i + 3)
+        if j < i and m:
+            yield text[j:m.end()]
+        i = text.find("://", i + 3)
+
+
+def _hosts(text: str) -> set:
+    from urllib.parse import urlsplit
+    out = set()
+    for u in _urls(text):
+        try:
+            h = urlsplit(u).hostname
+        except ValueError:
+            continue
+        if h:
+            out.add(h.lower())
+    return out
+
+
+def bound_evidence(raw) -> str:
+    if isinstance(raw, bytes):
+        raw = raw[-EVIDENCE_MAX:].decode("utf-8", "replace")
+    raw = raw[-EVIDENCE_MAX:] if isinstance(raw, str) else ""
+    return "\n".join(ln[:EVIDENCE_LINE_MAX] for ln in raw.split("\n"))
+
+
+def _name_from_ref(ref: str):
+    """`pydantic-core==2.27.1` / `pkg @ file:///…` / a distribution URL → the distribution name, or None."""
+    ref = ref.strip()
+    if " @ " in ref:
+        return ref.split(" @ ", 1)[0]
+    if "://" in ref:
+        from urllib.parse import unquote, urlsplit
+        try:
+            path = unquote(urlsplit(ref).path or "")
+        except ValueError:
+            return None
+        m = re.search(r"/simple/([^/]+)/?$", path)
+        if m:
+            return m.group(1)
+        leaf = path.rstrip("/").rsplit("/", 1)[-1]
+        if leaf.endswith(".whl"):
+            return leaf.split("-", 1)[0]
+        for ext in (".tar.gz", ".zip", ".tar.bz2", ".tgz"):
+            if leaf.endswith(ext):
+                return leaf[: -len(ext)].rsplit("-", 1)[0]
+        return None
+    return re.split(r"[=<>~!@ ;\[(,]", ref, maxsplit=1)[0]
+
+
+def dependency_package(text: str):
+    """The first dependency the installer named as failing, normalised (PEP 503) — or None. Raw text stays here."""
+    if not isinstance(text, str):
+        return None
+    hosts = _hosts(text)
+    cands = [_name_from_ref(m.group(2)) for m in _IN_TICKS.finditer(text)]
+    cands += [m.group(1) for rx in (_NOT_FOUND, _PIP_REQ) for m in rx.finditer(text)]
+    for cand in cands:
+        if not cand or not package_ok(cand) or cand.lower() in hosts:
+            continue
+        cand = _norm(cand)
+        if cand != "agentj" and package_ok(cand):
+            return cand
+    return None
+
+
+def uv_failure_class(text: str) -> str:
+    low = text.lower() if isinstance(text, str) else ""
+    for cls, needles in _UV_CLASS_NEEDLES:
+        if any(n in low for n in needles):
+            return cls
+    return "other"
+
+
+def dependency_phase(text: str):
+    low = text.lower() if isinstance(text, str) else ""
+    if "no solution found" in low or "was not found in the package registry" in low or "resolving dependencies" in low \
+            or "could not find a version that satisfies" in low:
+        return "resolve"
+    if "failed to build" in low or ("download and build" in low and uv_failure_class(low) == "other"):
+        return "build"
+    m = re.search(r"failed to fetch[^`\n]{0,40}`([^`\n]{1,400})`", low)
+    if m and "/simple/" in m.group(1):
+        return "resolve"            # the index page: still choosing versions
+    if "failed to download" in low or "failed to fetch" in low or "download and build" in low:
+        return "download"
+    if "failed to install" in low or "failed to prepare" in low:
+        return "install"
+    return None
+
+
+def _config_urls(env) -> list:
+    """Index URLs from uv's user / system configuration files (read only; never leaves the host)."""
+    if env.get("UV_NO_CONFIG"):
+        return []
+    files = []
+    if env.get("UV_CONFIG_FILE"):
+        files.append(env["UV_CONFIG_FILE"])
+    else:
+        home = env.get("HOME") or os.path.expanduser("~")
+        files.append(os.path.join(env.get("XDG_CONFIG_HOME") or os.path.join(home, ".config"), "uv", "uv.toml"))
+        for d in (env.get("XDG_CONFIG_DIRS") or "/etc/xdg").split(":"):
+            if d:
+                files.append(os.path.join(d, "uv", "uv.toml"))
+        files.append("/etc/uv/uv.toml")
+    out = []
+    for f in files:
+        try:
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                out += _CFG_URL.findall(fh.read(65536))
+        except OSError:
+            continue
+    return out
+
+
+def source_category(env=None) -> str:
+    """pypi / mirror / proxy / unknown — from the configured index hosts and whether a proxy variable is set."""
+    from urllib.parse import urlsplit
+    env = dict(os.environ if env is None else env)
+    try:
+        urls = []
+        for k in INDEX_ENV:
+            for part in re.split(r"[\s,]+", env.get(k) or ""):
+                if "://" in part:
+                    urls.append(part.split("=", 1)[1] if "=" in part.split("://", 1)[0] else part)
+        urls += _config_urls(env)
+        hosts = set()
+        for u in urls:
+            if "://" not in u:
+                continue            # a local find-links directory is not a network source
+            h = urlsplit(u).hostname
+            if not h:
+                return "unknown"
+            hosts.add(h.lower())
+    except Exception:  # noqa: BLE001 — cannot tell
+        return "unknown"
+    if hosts - PYPI_HOSTS:
+        return "mirror"
+    if any(env.get(k) for k in PROXY_ENV):
+        return "proxy"
+    return "pypi"
+
+
+def dependency_evidence(raw, env=None) -> dict:
+    """The installer's raw output (stdout + stderr, never stored) → the closed dependency fields."""
+    raw = bound_evidence(raw)
+    try:
+        return dependency_fields({"dependency_package": dependency_package(raw), "dependency_phase": dependency_phase(raw),
+                                  "dependency_source": source_category(env), "uv_failure_class": uv_failure_class(raw)})
+    except Exception:  # noqa: BLE001 — evidence never changes the upgrade's own outcome
+        return {}
+
+
+DEPENDENCY_KEYS = ("dependency_package", "dependency_phase", "dependency_source", "uv_failure_class", "retry_count")
+
+
+def dependency_fields(res) -> dict:
+    """Project only valid values: one of agentj's own dependency names (anything else parsed → `other`; 0334 r1 F2/F5 — a
+    package-shaped word can still be a host, an IP, a private package or a short credential), closed enums, a bounded int.
+    Every output (result, last-upgrade.json, support bodies, result_block, phone result, host record) goes through here."""
+    out = {}
+    if not isinstance(res, dict):
+        return out
+    pkg = res.get("dependency_package")
+    if isinstance(pkg, str) and pkg:
+        out["dependency_package"] = pkg if pkg in DEPENDENCY_NAMES else "other"
+    for key, allowed in (("dependency_phase", DEP_PHASES), ("dependency_source", DEP_SOURCES),
+                         ("uv_failure_class", UV_CLASSES)):
+        if isinstance(res.get(key), str) and res[key] in allowed:
+            out[key] = res[key]
+    value = res.get("retry_count")
+    if type(value) is int and 0 <= value <= RETRY_MAX:
+        out["retry_count"] = value
+    return out
 
 
 def category(reason) -> str:
@@ -241,9 +475,10 @@ def tail(text, identity=None) -> str:
     return "\n".join(lines)[-TAIL_MAX:]
 
 
-def run_step(run, cmd, say, catch: bool = True) -> tuple[int, str]:
+def run_step(run, cmd, say, catch: bool = True, keep: dict | None = None) -> tuple[int, str]:
     """One installer command: output captured (and still shown through `say`), → (rc, redacted stderr tail). A command
-    that cannot start is rc 127 with its exception type (catch=False: the OSError is the caller's)."""
+    that cannot start is rc 127 with its exception type (catch=False: the OSError is the caller's). 0334: `keep` (a dict)
+    receives the raw output under "raw" for dependency_evidence only — it is never stored or sent."""
     try:
         r = run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True)
     except OSError as e:
@@ -251,6 +486,8 @@ def run_step(run, cmd, say, catch: bool = True) -> tuple[int, str]:
             raise
         return 127, f"{type(e).__name__}: {os.path.basename(str(cmd[0]))} could not be started"
     out, err = getattr(r, "stdout", None), getattr(r, "stderr", None)
+    if keep is not None:
+        keep["raw"] = "\n".join(s for s in (out, err) if isinstance(s, str))
     for s in (out, err):
         if isinstance(s, str) and s.strip():
             for ln in s.rstrip().splitlines()[-200:]:
@@ -275,9 +512,12 @@ def entry(res: dict, now: float | None = None) -> dict | None:
         result = "rolled_back" if res.get("rollback") == "ok" else "failed"
     rec = {"v": 1, "from": _clean_version(res.get("from")), "to": _clean_version(res.get("to")), "result": result,
            "reason": category(res.get("reason")), "at": int(time.time() if now is None else now)}
+    if result == "ok" and type(res.get("retry_count")) is int and 0 < res["retry_count"] <= RETRY_MAX:
+        rec["retry_count"] = res["retry_count"]     # 0334: the install succeeded after network retries
     if result != "ok":
         rec["step"] = res["step"] if res.get("step") in STEPS else "install"
         rec.update(installer_fields(res))
+        rec.update(dependency_fields(res))
         rec.update(exception_fields(res))
         rec.update(artifact_fields(res))
         if res.get("stderr_tail"):
@@ -445,7 +685,8 @@ def body(res: dict, kind: str | None = None) -> str:
              + (f" · rollback: {res['rollback']}" if res.get("rollback") else "")
              + (f" · service: {res['service']}" if res.get("service") else ""),
              f"install: {kind or '?'} · {_platform()}"]
-    for key, value in {**installer_fields(res), **artifact_fields(res), **exception_fields(res)}.items():
+    for key, value in {**installer_fields(res), **artifact_fields(res), **exception_fields(res),
+                       **dependency_fields(res)}.items():
         lines.append(f"{key}: {value}")
     checks = failed_checks(res)
     if checks:
@@ -478,7 +719,8 @@ def _known_reason(v):
 
 
 KNOWN_REASONS = frozenset({*CATEGORY.values(), *(r for r, _ in UV_STDERR), "uv_failed", "read_only_filesystem",
-                           "permission_denied", "rollback_failed", "unknown"})
+                           "permission_denied", "rollback_failed", "unknown", "install_artifact_changed",
+                           "install_artifact_unavailable"})
 
 
 def _metadata_check_ids(value: str) -> bool:
@@ -508,7 +750,15 @@ META_FIELDS = {
     # #0307 (贾维斯 dispatch 2026-11-10): which kind of cache folder refused the write and whether this account owns it —
     # closed words, never a path or an account name.
     **{k: (lambda allowed: lambda v: v in allowed)(allowed) for k, allowed in CACHE_FIELDS.items()},
+    # 0334 (hotfix brief .local/state/next-0.30.34/HOTFIX-upgrade-0.30.25.md, 贾维斯): which dependency, at which phase, from
+    # which kind of source, how many retries and which network failure class — closed words / a bounded int; the package
+    # name only when it is one of agentj's own dependencies (DEPENDENCY_NAMES), never a URL, host, path or stderr.
+    "dependency_package": lambda v: v in DEPENDENCY_NAMES or v == "other",
+    "dependency_phase": lambda v: v in DEP_PHASES, "dependency_source": lambda v: v in DEP_SOURCES,
+    "uv_failure_class": lambda v: v in UV_CLASSES,
+    "retry_count": lambda v: len(v) == 1 and v in "0123456789",      # ASCII digits only (0334 r2)
 }
+META_MAX_LINES = 20                                # = support.META_MAX_LINES (header included)
 
 
 def meta_line_ok(line: str) -> bool:
@@ -532,10 +782,10 @@ def metadata_body(res: dict, kind: str | None = None) -> str:
               **({"failed_checks": ", ".join(checks)} if checks and category(res.get("reason")) == "doctor_failed" else {}),
               **({"service_reason": service_reason(res.get("service_reason")) or "unknown"}
                  if "service" in checks and category(res.get("reason")) == "doctor_failed" and "service_reason" in res else {}),
-              **artifact_fields(res), **exception_fields(res)}
+              **artifact_fields(res), **exception_fields(res), **dependency_fields(res)}
     lines = [META_HEAD] + [f"{k}: {fields[k]}" for k in META_FIELDS
                            if fields.get(k) is not None and meta_line_ok(f"{k}: {fields[k]}")]
-    return "\n".join(lines)
+    return "\n".join(lines[:META_MAX_LINES])       # 0334: the later (dependency) keys give way, never the whole report
 
 
 def report(st, res: dict, *, send=None, now: float | None = None, kind: str | None = None, lang: str = "zh",
@@ -603,6 +853,8 @@ REASON_WORDS = {
     "dependency_conflict": ("新版的依赖包在这台 Agent J 主机上装不到一起", "the new version's dependencies could not be resolved on this computer"),
     "dependency_download_failed": ("下载依赖包失败，网络或软件源暂时连不上", "downloading the dependencies failed: no network or the package index is unreachable"),
     "upgrade_cache_unreadable": ("本地升级缓存读不出来", "the local upgrade cache could not be read"),
+    "install_artifact_changed": ("已校验的安装包在安装前被改动或替换，已停止安装", "the verified package changed or was replaced before installing, so installation stopped"),
+    "install_artifact_unavailable": ("Agent J 的私有安装包目录写不进去（磁盘满、配额或权限），什么都没装", "Agent J's private install-artifact folder could not be written (disk full, quota or permissions); nothing was installed"),
     "service_restart_failed": ("新版装好了但后台服务没能重启", "the new version installed but the background service did not restart"),
     "not_upgraded": ("装完后版本没有变成目标版本", "after installing, the version was not the target"),
     "doctor_failed": ("升级后自检没通过", "the post-upgrade self-check failed"),

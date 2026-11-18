@@ -50,6 +50,93 @@ def parse(argv):
     return prompt[0], opts
 
 
+class _TerminalOrigin(dict):
+    """R-0047 item 3: the origin policy() itself builds for an independent owner terminal (kernel/TTY gate passed).
+    Host-made type only; a deep copy keeps it, a wire / JSON dict never is one."""
+
+
+class Dispatch:
+    """R-0047 item 3 (chairman 11-18): the immutable, host-held binding of ONE native busy dispatch, made in start().
+
+    Its approvals are classified by the origin verified at dispatch time — never the main thread's turn that happens
+    to be running when the approval arrives, never approval_review.ORIGIN — and only while this exact dispatch is live.
+    `label` is approval_offlist's typed source for it: trust `host` only for a verified owner (or independent owner
+    terminal) origin; a friend / same-owner / external origin stays `external`, a host / system one `host_read`,
+    anything else `unknown`. Never `owner_dispatch`; money / irreversible calls still take the Face ID card
+    (uv_list.FINGERPRINT_SOURCES), never `fingerprint_headless`."""
+    __slots__ = ('key', 'binding', 'item', 'state', 'agent', 'epoch', 'estop', 'authority', 'label', 'task', 'ended',
+                 'watchers')
+
+    def __init__(self, host, key, binding, item, origin):
+        from . import approval_offlist
+        self.key, self.binding, self.item = key, binding, item
+        self.state, self.agent, self.epoch, self.estop = host.st, host.agent, str(host.hist.epoch), host.estop
+        task_id = getattr(host, '_task_id', None)
+        if callable(task_id):
+            task_id()        # list_approval initializes the host task epoch lazily; pin it before the snapshot
+        self.authority = _authority(host)
+        self.task, self.ended, self.watchers = None, False, set()
+        # The main turn at dispatch time, read by the same host-held rules as any approval (ctl handler context).
+        typed = approval_offlist.source(host)
+        verified = isinstance(origin, dict) and origin.get('verified') is True and not origin.get('suspicious')
+        if type(origin) is _TerminalOrigin and verified:
+            trust, name = 'host', ('本机终端', 'local terminal')     # independent owner terminal; its --sandbox ceiling stays
+        elif typed.get('trust') == 'owner':
+            # _main_peer admits ordinary dispatch with an unverified / suspicious origin: never trusted from that.
+            trust, name = ('host' if verified else 'unknown'), None
+        else:
+            trust, name = {'external': 'external', 'host': 'host_read', 'host_read': 'host_read'}.get(
+                typed.get('trust'), 'unknown'), None
+        if name is None:
+            name = (typed.get('label', ''), typed.get('label_en', ''))
+        self.label = approval_offlist.dispatch_label(name, trust)
+
+    def end(self):
+        """Authority first, then every pending approval of this dispatch is answered `gone` (refused, no allow)."""
+        self.ended = True
+        for fire in list(self.watchers):
+            fire()
+
+    def live(self, host):
+        """Not done / stopped, no emergency stop since start (even if resumed), same State / epoch / main agent /
+        task epoch / working folder, and still the registered dispatch of its key."""
+        try:
+            row = host.__dict__.get('_busy_native', {}).get(self.key) or {}
+            return (not self.ended and row.get('dispatch') is self and (self.task is None or not self.task.done())
+                    and host.st is self.state and host.agent is self.agent and not host.stopped()
+                    and not host.stopping.is_set() and host.estop is self.estop
+                    and str(host.hist.epoch) == self.epoch and _authority(host) == self.authority)
+        except (AttributeError, TypeError, KeyError, ValueError):
+            return False
+
+
+def _authority(host):
+    """The long-lived part of Host._approval_live_authority (a detached dispatch outlives the turn that made it)."""
+    from . import approval_review
+    return approval_review.digest([host.__dict__.get('task_epoch'), getattr(host.agent, 'kind', None),
+                                   (getattr(host, 'agent_cfg', None) or {}).get('dir')])
+
+
+def stop(host, req, pid, uid):
+    """security r1 (Codex F3 / Claude F4): `agentj busy stop run:<key>` for a native dispatch, through the Host.
+    The binding ends and its pending approvals are refused BEFORE the job is cancelled; stopping only removes
+    authority, so any same-user caller may ask (as removing the board file always could)."""
+    key = req.get('key')
+    if uid != os.getuid() or not isinstance(key, str) or not re.fullmatch(r'run:[a-f0-9]{12}', key):
+        return {'ok': False, 'error': 'invalid busy key'}
+    row = host.__dict__.get('_busy_native', {}).get(key)
+    if row is None:
+        return {'ok': True, 'native': False}
+    if type(row.get('dispatch')) is Dispatch:
+        row['dispatch'].end()
+    task = row.get('task')
+    running = task is not None and not task.done()
+    if running:
+        task.cancel()
+    host.st.log('busy_native_stop', key=key, running=running)
+    return {'ok': True, 'native': True, 'stopped': running}
+
+
 def _main_peer(host, pid, table):
     """A live main-harness descendant, independent of a human-message reference."""
     from . import provenance
@@ -102,8 +189,8 @@ def policy(host, req, pid, uid):
             raise ValueError('unknown source; dispatch inside the paired Host owner session, or use an independent owner terminal with explicit --sandbox')
         # An independent terminal is authenticated by the existing kernel/TTY gate;
         # it still runs through Host approvals and the configured Agent fence.
-        origin = {'verified': True, 'suspicious': False, 'channel': 'terminal',
-                  'session': str(host.hist.epoch), 'text': '', 'chain': []}
+        origin = _TerminalOrigin({'verified': True, 'suspicious': False, 'channel': 'terminal',
+                                  'session': str(host.hist.epoch), 'text': '', 'chain': []})
     thread = getattr(agent, 'thread', None)
     if not isinstance(thread, dict):
         raise ValueError('current session sandbox is unverified; attach via the Host first')
@@ -173,7 +260,12 @@ async def start(host, req, pid, uid, *, relay_profile=None):
     receipt = {'ok': True, 'key': key, 'manager': 'host-native-adapter', 'harness': 'codex app-server',
                'sandbox': mode, 'model': cfg.get('model') or getattr(host.agent, 'thread', {}).get('model'), 'approval': copy.deepcopy(cfg['_native_permissions'].get('approvalPolicy', 'native default')), 'fence': bool(cfg.get('fence', True)),
                'network': 'not checked: no approved probe target'}
-    rows[key] = {'binding': (pid, proc_start, digest), 'receipt': receipt}
+    # R-0047 item 3: the dispatch-bound approval source. A reused key never gets here (refused or the old receipt).
+    try:
+        dispatch = Dispatch(host, key, (pid, proc_start, digest), it, origin)
+    except (AttributeError, TypeError, ValueError, KeyError):
+        dispatch = None       # fail closed: an unbound runner's approvals are `unknown`, the dispatch itself is unchanged
+    rows[key] = {'binding': (pid, proc_start, digest), 'receipt': receipt, 'dispatch': dispatch}
     token = approval_review.ORIGIN.set(copy.deepcopy(origin))
     try:
         if relay_profile is not None:
@@ -185,15 +277,19 @@ async def start(host, req, pid, uid, *, relay_profile=None):
     finally:
         approval_review.ORIGIN.reset(token)
     rows[key]['task'] = task
+    if dispatch is not None:
+        dispatch.task = task
     return receipt
 
 
-def _runner_host(host):
+def _runner_host(host, dispatch=None):
     from . import owner_avatar
     from .list_approval import NativeContext
     class Context(NativeContext):
         def live(self, controller):
-            return controller is host and super().live(proxy)
+            # R-0047 item 3: list_approval re-checks this after every await / card wait and right before allow.
+            return (controller is host and super().live(proxy)
+                    and (dispatch is None or dispatch.live(controller)))
     class Proxy(owner_avatar._Host):
         async def ask(self, tool, inp, gone=None, **kw):
             context = kw.get('_native_context')
@@ -201,7 +297,27 @@ def _runner_host(host):
                 context = NativeContext.capture(self.runner)
             if type(context) is NativeContext and context.live(self):
                 kw['_native_context'] = Context(context.adapter, context.process, context.cwd, context.session)
-            return await host.ask(tool, inp, gone, **kw)
+            # R-0047 item 3: every approval of this runner (its Codex approval requests, which say background="task",
+            # and its PreToolUse guard, which says nothing) is the dispatch's own — never the main thread's current
+            # turn. No live binding → approval_offlist.source answers `unknown`.
+            kw.pop('avatar', None)
+            kw['background'] = ('busy_dispatch', dispatch)
+            if dispatch is None:
+                return await host.ask(tool, inp, gone, **kw)
+            # A `busy stop` / job end while this approval waits (decision, audit, card) answers it `gone`.
+            ended = asyncio.get_running_loop().create_future()
+            def fire(_=None):
+                if not ended.done():
+                    ended.set_result(True)
+            dispatch.watchers.add(fire)
+            if gone is not None:
+                gone.add_done_callback(fire)
+            if dispatch.ended:
+                fire()
+            try:
+                return await host.ask(tool, inp, ended, **kw)
+            finally:
+                dispatch.watchers.discard(fire)
     proxy = Proxy(host, 'Busy native dispatch', None)
     return proxy
 
@@ -238,7 +354,9 @@ async def run(host, cfg, text, mode, it):
             value = super().policy()
             value.update(sandbox=mode, **cfg.get('_native_permissions', {}))
             return value
-    proxy = _runner_host(host)
+    row = (getattr(host, '__dict__', None) or {}).get('_busy_native', {}).get(it.get('key')) or {}
+    dispatch = row.get('dispatch') if type(row.get('dispatch')) is Dispatch and row['dispatch'].item is it else None
+    proxy = _runner_host(host, dispatch)
     runner = BusyCodex(proxy, cfg, persist=False)
     proxy.runner = runner
     code = None
@@ -305,6 +423,8 @@ async def run(host, cfg, text, mode, it):
     except (OSError, ValueError, RuntimeError):
         it['log_tail'] = 'native adapter failed; inspect delivery; outcome unknown; never replay automatically'
     finally:
+        if dispatch is not None:
+            dispatch.end()             # R-0047 item 3: no approval authority after the job ends, however it ended
         stop.set()
         beat.cancel()
         await asyncio.gather(beat, return_exceptions=True)

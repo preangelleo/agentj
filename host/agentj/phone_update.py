@@ -25,6 +25,20 @@ def busy(st):
     except (OSError, ValueError, KeyError, TypeError):
         return False
 
+LEASE = 1800
+
+
+def lease_end(st):
+    """0334 r2: when the reserved lease (busy() above) runs out, on the time.monotonic clock; None without one."""
+    try:
+        at = json.loads((st.root / LOCK).read_text())["at"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(at, (int, float)):
+        return None
+    return time.monotonic() + (at + LEASE - time.time())
+
+
 def reserve(st):
     if busy(st):
         return False
@@ -119,11 +133,12 @@ def run(st, apply_fn=None, restart_fn=None):
     def quiet(argv, **kw):
         kw.pop("capture_output", None)
         return subprocess.run(argv, **{**kw, "stdout": subprocess.PIPE, "stderr": subprocess.PIPE,
-                                      "text": True, "timeout": 900})
+                                      "text": True, "timeout": min(kw.get("timeout", 900), 900)})   # 0334: a retry's share
     rec = None
     try:
         try:
-            rec = (apply_fn or update.apply)(st, svc_on=False, run=quiet)
+            kw = {"lease_end": lease_end(st)} if apply_fn is None else {}     # 0334 r2: retries stay inside the lease
+            rec = (apply_fn or update.apply)(st, svc_on=False, run=quiet, **kw)
         except Exception as e:  # noqa: BLE001 — the apply itself broke: its step stays unknown, the type is the reason
             rec = {"result": "failed", "reason": "apply_crashed", "error": type(e).__name__}
         installed = rec.get("reason") in ("upgraded", "doctor_failed")

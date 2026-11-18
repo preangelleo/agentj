@@ -1,8 +1,8 @@
 {
   "v": 1,
-  "version": "0.30.33",
+  "version": "0.30.34",
   "algo": "sha256",
-  "combined": "1fbab8060cbd0dd6069084218492c483887c7ba2dacef6393343b0bf4246d4ad",
+  "combined": "623e2816d9095b5532d1e31f96e873a97a56d00cfda0b6fd31cc1232e28b20c9",
   "files": {
     "app.css": "ef95e81977d25f7c13aa49c0a99175d2a1735bcc8edbeb452e7fb3ed11b7006c",
     "app.js": "e7844af138ad59bf0e6b6f75929a2f6c9f04752160c54248b402810eff8cfc45",
@@ -183,7 +183,7 @@
     "js/palette-color.js": "9513f70344139ef8911e44bb60dfb58c01954f7e6fe3acf4ccd06fa6f50f253e",
     "js/palette.js": "bb129667be3d9f4bd863baca9062ef9faceb88fa457c027f54918f907943004d",
     "js/paste-route.js": "b619704c9731837529358fb7364f6698e638ec213eb23188725a577b916bd4c6",
-    "js/phone-activity.js": "e6f460fa532ed3260596a959bc8b5ef430f1a63d623a7e2ff1f1e6f922621cd4",
+    "js/phone-activity.js": "b9cdd505457421900cc10050a1d8d29ae68ad6a5b34d578ebad9df65ec84cfed",
     "js/phone-env.js": "f22b7289bff07730eae417b60f7f4364252037f9551cf619bfb1dd1cbb9d6e84",
     "js/pk-test-result.js": "ba6945224b90c92d5901e3af0010b5cf96652a5bd6118f79aab571313b8dc400",
     "js/pkassist.js": "a8321afa64842e7c51357230f894ad27d3ac6576501b3f806d1360cad9c639f9",
@@ -205,7 +205,7 @@
     "js/reader-swipe.js": "1e6be9315f11e57e891b8a9774f7f0c3b29edd4dedcaee0bb20a89cbc1ec80eb",
     "js/reconnect.js": "c3d65248eb3fd5e8252d9c3bf669cae414db8493d5da3d0ab82f87609deeb9c5",
     "js/recovery574.js": "1ba63b6b785598cb42711c5a9ef8334b99bb22f0d0971eeeb712e2f644ecea85",
-    "js/relay.js": "01e285b0d1935a56ae5570e25b0908893a8034713e59d0c9877bc3e1d204fa4c",
+    "js/relay.js": "2ff9bc998919744f4ea0bc98ebb07a0a01158d5ae08a26db1d5f87f054d27f4f",
     "js/reload-guard.js": "58101ea796e67d7b8757c258aa83069a5ae8fb9fe6c39fd4d6931b2c94bbcc98",
     "js/remote-names-rules.js": "8498c7eb04b4f304fbba4e8fe6dfcfac1e5feb60d7e5f24e3456ab66b59e1ca7",
     "js/remote-names.js": "926620ebcbe526b9c4818bd39489665f48872d589366a2aca476b369a85c5aac",

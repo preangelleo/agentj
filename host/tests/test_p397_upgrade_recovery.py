@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from test_p277_upgrade_diag import _Env, INFO, NEW, UV_ERR, FAKE_GH
 from agentj import __version__, auto_update as au, update, upgrade_diag as ud
+from test_p277_upgrade_diag import _wheel_in  # noqa: E402 — 0334 r1 pinned install copy
 
 
 class Categories(unittest.TestCase):
@@ -60,7 +61,7 @@ class Worker(_Env):
     def attempt(self, failure, rollback_ok=False):
         self.prepare()
         def run(argv):
-            if str(self.new) in argv:
+            if _wheel_in(self.new, argv, NEW):
                 if isinstance(failure, BaseException):
                     raise failure
                 return subprocess.CompletedProcess(argv, 2, '', failure)
@@ -158,6 +159,11 @@ au.write(st, {'from':__version__,'to':'9.9.9','install':{'kind':'uv','where':'/m
 au.minisign.verify = lambda *a: 'agentj-host/v1 version=9.9.9 sha256='+hashlib.sha256(b'w').hexdigest()
 au.enabled = lambda st: True
 from agentj import service_recovery
+
+# 0334: the installer runs on the private per-version store copy (<store>/install-artifacts/agentj-<v>-...whl)
+def _wheel_in(path, argv, version):
+    p, name = str(path), '/install-artifacts/agentj-%s-py3-none-any.whl' % version
+    return any(isinstance(a, str) and (a == p or a.endswith(name)) for a in argv)
 service_recovery.cleanup_job = lambda st: None
 # First-init bookkeeping now loads humane; evict it to retain the original
 # post-deletion cold-import failure shape rather than skipping the guard.
@@ -165,7 +171,7 @@ sys.modules.pop('agentj.humane', None)
 assert 'agentj.humane' not in sys.modules
 assert Path(au.__file__).is_relative_to(sys.argv[1])
 def run(argv):
- if str(new) in argv:
+ if _wheel_in(new, argv, '9.9.9'):
   shutil.rmtree(sys.argv[1])
  raise FileNotFoundError('private-error-content')
 r = au.run(st, runner=run, restart=lambda v: None)
@@ -190,7 +196,9 @@ assert 'private-error-content' not in json.dumps(ud.read(st))
             'import pathlib, shutil, sys\n' +
             f'env = pathlib.Path({str(envdir)!r})\n' +
             f'new = {str(self.new)!r}\n' +
-            'if new in sys.argv:\n shutil.rmtree(env); print("install failed", file=sys.stderr); sys.exit(2)\n' +
+            # 0334: the install runs on the private per-version store copy
+            'if any(a == new or a.endswith("/install-artifacts/agentj-9.9.9-py3-none-any.whl") for a in sys.argv):\n'
+            ' shutil.rmtree(env); print("install failed", file=sys.stderr); sys.exit(2)\n' +
             'assert "--python" in sys.argv, "recovery must pin an independent interpreter"\n' +
             'assert pathlib.Path(sys.argv[sys.argv.index("--python")+1]).is_file()\n' +
             'env.mkdir(); (env/"restored").write_text("ok")\n')

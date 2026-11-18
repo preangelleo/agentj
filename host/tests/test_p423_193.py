@@ -23,6 +23,12 @@ from unittest import mock
 from agentj import __version__, auto_update, update, upgrade_diag
 from agentj.state import State
 
+
+def _wheel_in(path, argv, version):
+    """0334: the installer runs on the private per-version store copy (<store>/install-artifacts/agentj-<v>-…whl)."""
+    p, name = str(path), f"/install-artifacts/agentj-{version}-py3-none-any.whl"
+    return any(isinstance(a, str) and (a == p or a.endswith(name)) for a in argv)
+
 NEW = "9.9.9"
 IDENTITY = ("box-193", "owner193")
 
@@ -220,7 +226,7 @@ class NotUpgradedDiagnostics(_Env):
             r = auto_update.run(self.st, runner=runner, restart=lambda v: None)
         self.assertEqual(r["result"], "rolled_back")
         self.assertTrue(r["recover"].startswith(f"UV_TOOL_DIR={self.tools_a} "))
-        reinstall = [a for a in seen if "install" in a and str(old) in a]
+        reinstall = [a for a in seen if "install" in a and _wheel_in(old, a, __version__)]
         self.assertTrue(reinstall and all(getattr(a, "env", {}).get("UV_TOOL_DIR") == str(self.tools_a) for a in reinstall))
         rec = upgrade_diag.read(self.st)
         self.assertEqual((rec["reason"], rec["step"], rec["detail"]),

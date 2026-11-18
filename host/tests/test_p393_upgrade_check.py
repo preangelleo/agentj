@@ -17,6 +17,12 @@ from unittest import mock
 from test_p277_upgrade_diag import _Env, INFO, NEW
 from agentj import __version__, auto_update, update, upgrade_diag
 
+
+def _wheel_in(path, argv, version):
+    """0334: the installer runs on the private per-version store copy (<store>/install-artifacts/agentj-<v>-…whl)."""
+    p, name = str(path), f"/install-artifacts/agentj-{version}-py3-none-any.whl"
+    return any(isinstance(a, str) and (a == p or a.endswith(name)) for a in argv)
+
 WAITING = {"id": "main-inject", "status": "fail", "summary": "no verified main Agent launch yet; start a conversation"}
 WAITING_ZH = {"id": "main-inject", "status": "warn",
               "summary": "服务重启后还没收到手机消息，从手机发一句话即可完成验证 / No phone message since the service restarted"}
@@ -53,9 +59,9 @@ class Worker(_Env):
         state = {"current": __version__, "doctor": 0}
 
         def runner(argv):
-            if str(new) in argv:
+            if _wheel_in(new, argv, NEW):
                 state["current"] = NEW
-            elif str(old) in argv:
+            elif _wheel_in(old, argv, __version__):
                 state["current"] = __version__
             if argv[-1] == "--version":
                 return subprocess.CompletedProcess(argv, 0, f"agentj {state['current']}", "")

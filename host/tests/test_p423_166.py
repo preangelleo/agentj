@@ -14,6 +14,12 @@ from test_p277_upgrade_diag import _Env, INFO, NEW, FAKE_GH
 from agentj import __version__, auto_update as au, upgrade_diag as ud
 
 
+def _wheel_in(path, argv, version):
+    """0334: the installer runs on the private per-version store copy (<store>/install-artifacts/agentj-<v>-…whl)."""
+    p, name = str(path), f"/install-artifacts/agentj-{version}-py3-none-any.whl"
+    return any(isinstance(a, str) and (a == p or a.endswith(name)) for a in argv)
+
+
 class UvStderr(unittest.TestCase):
     def test_uv_exit_is_classified_by_its_output(self):
         for text, expected in (
@@ -81,9 +87,9 @@ class Rollback(_Env):
         self.prepare()
         noise = ''.join(f'rollback noise line {i} ' + 'x'*200 + '\n' for i in range(40))
         def run(argv):
-            if str(self.new) in argv:
+            if _wheel_in(self.new, argv, NEW):
                 return subprocess.CompletedProcess(argv, 2, '', 'error: first failure (exit 2)')
-            if str(self.old) in argv:
+            if _wheel_in(self.old, argv, __version__):
                 return subprocess.CompletedProcess(argv, 1, '', noise + f'token={FAKE_GH}\nerror: No space left on device (os error 28)\n')
             if argv[-1] == '--version':      # the tool env now answers with neither version: nothing to claim
                 return subprocess.CompletedProcess(argv, 1, '', '')
@@ -108,7 +114,7 @@ class Rollback(_Env):
         """P487: a runnable old version is rolled_back; its self-check failure stays visible in diagnostic fields."""
         self.prepare()
         def run(argv):
-            if str(self.new) in argv:
+            if _wheel_in(self.new, argv, NEW):
                 return subprocess.CompletedProcess(argv, 2, '', 'error: failed')
             if argv[-1] == '--version':
                 return subprocess.CompletedProcess(argv, 0, 'agentj '+__version__, '')

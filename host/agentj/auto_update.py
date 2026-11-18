@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import subprocess
@@ -28,6 +29,30 @@ ORIGIN = 'https://agentj.app/dl/'
 SELF_CHECK_TRIES = 3
 SELF_CHECK_WAIT = 10
 TRANSIENT_CHECKS = frozenset(('serve', 'service'))
+# 0334: a dependency install that fails on the network (DNS, connect, timeout, TLS, fetch) is retried with the same command and
+# the same verified wheel, at most INSTALL_RETRIES times with INSTALL_BACKOFF s between, all inside INSTALL_BUDGET s — the one
+# installer timeout a single attempt always had (quiet), so retries never lengthen the worker's worst case. A retry starts
+# only with at least INSTALL_MIN_ATTEMPT s of that budget left; its own timeout is the remainder.
+INSTALL_TIMEOUT = 900
+INSTALL_RETRIES = 3
+INSTALL_BACKOFF = (5, 15, 45)
+INSTALL_BUDGET = INSTALL_TIMEOUT
+INSTALL_MIN_ATTEMPT = 60
+RETRYABLE_INSTALL = frozenset(('dependency_download_failed',))
+# 0334 r2 (F4): a retry also leaves room for the rollback. Retries end by retry_limit(): ROLLBACK_RESERVE s before the end of
+# INSTALL_BUDGET and, when the job holds the 1800 s phone/worker lease, one full INSTALL_TIMEOUT (the rollback installer's
+# own cap) before the lease ends. Parsing, hashing and the backoff all count (the clock is read after them).
+ROLLBACK_RESERVE = 300
+RETRY_FLOOR = 30        # 0334 r3: a retry with less than this left (after the wait and the re-hash) is not launched
+
+
+class RetryExpired(Exception):
+    """0334 r3: the retry deadline passed during the backoff or the re-hash — the previous failure stands."""
+
+
+def retry_limit(started, lease_end=None):
+    limit = started + INSTALL_BUDGET - ROLLBACK_RESERVE
+    return limit if lease_end is None else min(limit, lease_end - INSTALL_TIMEOUT)
 _UNSET_HARNESS = object()
 
 
@@ -619,6 +644,224 @@ def install_template(info):
         info['kind'], 'python -m pip install --no-deps --force-reinstall <wheel>')
 
 
+# 0334 (security r1/r2): the installer never reads the download cache. Bytes that were just verified are written into
+# Agent J's private install-artifact store `<state>/install-artifacts/agentj-<version>-py3-none-any.whl` — inside the
+# state directory, which the Agent fence hides (empty mount), so no fenced Agent can write it; the race between our hash
+# and the installer opening the path is closed by that location, not by another hash. Every operation goes through
+# verified directory descriptors (state dir and store: real directories, ours, no group/other bits; files: regular,
+# ours, mode exactly 0400). A sidecar `<name>.json` records the expected sha256 (and whether a signature was checked)
+# at pin time. Before EVERY attempt the stored file is re-hashed (check_artifact); any difference stops the install
+# with ARTIFACT_CHANGED (no retry). A store that cannot be written is ARTIFACT_UNAVAILABLE (a fixed reason, nothing
+# installed). The path is stable on purpose: uv-receipt.toml (`requirements = [{ name, path }]`) and pipx's
+# package_or_url record it. The store keeps the current and the previous version; prune_artifacts runs only after a
+# successful install (stale `.tmp` files only when older than STORE_TMP_AGE).
+ARTIFACT_CHANGED = 'install_artifact_changed'
+ARTIFACT_UNAVAILABLE = 'install_artifact_unavailable'
+ARTIFACTS = 'install-artifacts'
+STORE_TMP_AGE = 600
+_NOFOLLOW_DIR = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, 'O_CLOEXEC', 0)
+
+
+def read_nofollow(path) -> bytes:
+    """A regular file's bytes through an O_NOFOLLOW descriptor (≤ MAX_WHEEL), else ValueError(ARTIFACT_CHANGED)."""
+    import stat
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, 'O_CLOEXEC', 0) | getattr(os, 'O_NONBLOCK', 0))
+    except OSError:
+        raise ValueError(ARTIFACT_CHANGED) from None
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError(ARTIFACT_CHANGED)
+        with os.fdopen(os.dup(fd), 'rb') as f:
+            data = f.read(MAX_WHEEL + 1)
+    except OSError:
+        raise ValueError(ARTIFACT_CHANGED) from None
+    finally:
+        os.close(fd)
+    if len(data) > MAX_WHEEL:
+        raise ValueError(ARTIFACT_CHANGED)
+    return data
+
+
+def artifact_name(version) -> str:
+    if not isinstance(version, str) or update.parse(version) is None or not re.fullmatch(r'[0-9A-Za-z.+_-]{1,32}', version):
+        raise ValueError(ARTIFACT_CHANGED)
+    return f'agentj-{version}-py3-none-any.whl'
+
+
+def _private_dir(fd) -> bool:
+    import stat
+    m = os.fstat(fd)
+    return stat.S_ISDIR(m.st_mode) and m.st_uid == os.geteuid() and not m.st_mode & 0o077
+
+
+def _store_fd(root, *, create=True) -> int:
+    """The store as a verified directory descriptor: the state dir and the store are real (no-follow) directories this
+    account owns with no group/other bits. A symlink or foreign folder → ARTIFACT_CHANGED; an OS error →
+    ARTIFACT_UNAVAILABLE."""
+    import stat
+    try:
+        if stat.S_ISLNK(os.lstat(root).st_mode):
+            raise ValueError(ARTIFACT_CHANGED)
+        rootfd = os.open(root, _NOFOLLOW_DIR)
+    except FileNotFoundError:
+        raise ValueError(ARTIFACT_UNAVAILABLE) from None
+    except OSError:
+        raise ValueError(ARTIFACT_CHANGED) from None
+    try:
+        if not _private_dir(rootfd):
+            raise ValueError(ARTIFACT_CHANGED)
+        if create:
+            try:
+                os.mkdir(ARTIFACTS, 0o700, dir_fd=rootfd)
+            except FileExistsError:
+                pass
+            except OSError:
+                raise ValueError(ARTIFACT_UNAVAILABLE) from None
+        try:
+            fd = os.open(ARTIFACTS, _NOFOLLOW_DIR, dir_fd=rootfd)
+        except FileNotFoundError:
+            raise ValueError(ARTIFACT_UNAVAILABLE) from None
+        except OSError:
+            raise ValueError(ARTIFACT_CHANGED) from None
+    finally:
+        os.close(rootfd)
+    if not _private_dir(fd):
+        os.close(fd)
+        raise ValueError(ARTIFACT_CHANGED)
+    return fd
+
+
+def _read_at(dfd, name, limit) -> bytes:
+    """A store file through the store descriptor: regular, ours, mode exactly 0400, ≤ limit — else ARTIFACT_CHANGED."""
+    import stat
+    try:
+        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, 'O_CLOEXEC', 0), dir_fd=dfd)
+    except OSError:
+        raise ValueError(ARTIFACT_CHANGED) from None
+    try:
+        m = os.fstat(fd)
+        if not stat.S_ISREG(m.st_mode) or m.st_uid != os.geteuid() or stat.S_IMODE(m.st_mode) != 0o400 or m.st_size > limit:
+            raise ValueError(ARTIFACT_CHANGED)
+        with os.fdopen(os.dup(fd), 'rb') as f:
+            data = f.read(limit + 1)
+    except OSError:
+        raise ValueError(ARTIFACT_CHANGED) from None
+    finally:
+        os.close(fd)
+    if len(data) > limit:
+        raise ValueError(ARTIFACT_CHANGED)
+    return data
+
+
+def _write_at(dfd, name, data) -> None:
+    """A fresh 0400 file written O_EXCL beside `name`, then renamed over it (a planted symlink is replaced, never
+    followed). OSError propagates (the caller maps it to ARTIFACT_UNAVAILABLE)."""
+    tmp = f'.{name}.{secrets.token_hex(8)}.tmp'
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | getattr(os, 'O_CLOEXEC', 0), 0o400, dir_fd=dfd)
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, name, src_dir_fd=dfd, dst_dir_fd=dfd)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp, dir_fd=dfd)
+        raise
+
+
+class Pinned(tuple):
+    """(root, version, sha256, path) of one stored artifact."""
+    root = property(lambda s: s[0])
+    version = property(lambda s: s[1])
+    digest = property(lambda s: s[2])
+    path = property(lambda s: s[3])
+
+
+def pin_artifact(data: bytes, version: str, root, *, signed: bool = False) -> Pinned:
+    """Already-verified bytes → the stable store file for `version` plus its sidecar. An existing file is reused only
+    when it is a 0400 regular file of ours with exactly these bytes; anything else is replaced atomically."""
+    name = artifact_name(version)
+    digest = hashlib.sha256(data).hexdigest()
+    fd = _store_fd(root)
+    try:
+        try:
+            same = hashlib.sha256(_read_at(fd, name, MAX_WHEEL)).hexdigest() == digest
+        except ValueError:
+            same = False
+        if same and not signed:     # 0334 r3: the same bytes once verified with a signature stay marked signed
+            try:
+                old = json.loads(_read_at(fd, name + '.json', 4096))
+                signed = isinstance(old, dict) and old.get('sha256') == digest and old.get('signed') is True
+            except ValueError:
+                pass
+        try:
+            if not same:
+                _write_at(fd, name, data)
+            _write_at(fd, name + '.json', json.dumps({'sha256': digest, 'signed': bool(signed)}).encode())
+        except OSError:
+            raise ValueError(ARTIFACT_UNAVAILABLE) from None
+    finally:
+        os.close(fd)
+    return Pinned((root, version, digest, Path(root) / ARTIFACTS / name))
+
+
+def check_artifact(pin) -> None:
+    """Re-hash the stored file through the verified store descriptor; any difference → ValueError(ARTIFACT_CHANGED)."""
+    root, version, digest, _ = pin
+    try:
+        fd = _store_fd(root, create=False)
+    except ValueError:
+        raise ValueError(ARTIFACT_CHANGED) from None
+    try:
+        if hashlib.sha256(_read_at(fd, artifact_name(version), MAX_WHEEL)).hexdigest() != digest:
+            raise ValueError(ARTIFACT_CHANGED)
+    finally:
+        os.close(fd)
+
+
+def stored_artifact(root, version, *, signed_only: bool = False):
+    """The previous version's store copy when its bytes still hash to the sidecar's sha256 (signed_only: and the sidecar
+    says a signature was checked) → Pinned, else None. Never raises."""
+    try:
+        name = artifact_name(version)
+        fd = _store_fd(root, create=False)
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        side = json.loads(_read_at(fd, name + '.json', 4096))
+        digest = hashlib.sha256(_read_at(fd, name, MAX_WHEEL)).hexdigest()
+        if not isinstance(side, dict) or side.get('sha256') != digest or (signed_only and side.get('signed') is not True):
+            return None
+        return Pinned((root, version, digest, Path(root) / ARTIFACTS / name))
+    except Exception:  # noqa: BLE001
+        return None
+    finally:
+        os.close(fd)
+
+
+def prune_artifacts(root, keep) -> None:
+    """After a successful install only: drop stored wheels (and sidecars) except the `keep` versions (current +
+    previous) and `.tmp` files older than STORE_TMP_AGE. Never raises."""
+    try:
+        names = {n for v in keep if v for n in (artifact_name(v), artifact_name(v) + '.json')}
+        fd = _store_fd(root, create=False)
+    except Exception:  # noqa: BLE001
+        return
+    try:
+        now = time.time()
+        for n in os.listdir(fd):
+            with contextlib.suppress(OSError):
+                if n.endswith('.tmp'):
+                    if now - os.stat(n, dir_fd=fd, follow_symlinks=False).st_mtime > STORE_TMP_AGE:
+                        os.unlink(n, dir_fd=fd)
+                elif n not in names and n.startswith('agentj-') and n.endswith(('.whl', '.whl.json')):
+                    os.unlink(n, dir_fd=fd)
+    finally:
+        os.close(fd)
+
+
 def snapshot_worker(st, folder: str, module: str) -> Path:
     """Copy this agentj package (code and its packaged data) into the state directory and return a run.py that starts
     `module.run(State())` from that copy. `uv tool install --force` deletes and recreates the whole tool venv; a worker
@@ -658,6 +901,7 @@ def finish(st, result, diag=None):
     from . import upgrade_diag
     result.update(upgrade_diag.artifact_fields(diag or {}))
     result.update(upgrade_diag.exception_fields(diag or {}))
+    result.update(upgrade_diag.dependency_fields(diag or {}))     # 0334
     if (diag or {}).get('step') == 'download':
         result.update(step='download', detail=diag.get('detail', 'Exception'))
     if result.get('result') != 'ok' and (diag or {}).get('failure') in ('permission_denied', 'not_owner'):
@@ -673,7 +917,8 @@ def _diagnose(st, result, diag):
     the redacted installer tail; `updates.report_failures`). Never raises: the phone notice above is already recorded."""
     try:
         from . import upgrade_diag
-        res = {**result, **upgrade_diag.exception_fields(diag), **upgrade_diag.installer_fields(diag), 'reason': upgrade_diag.category(result.get('reason')), 'step': diag.get('step') or 'install',
+        res = {**result, **upgrade_diag.exception_fields(diag), **upgrade_diag.installer_fields(diag),
+               **upgrade_diag.dependency_fields(diag), 'reason': upgrade_diag.category(result.get('reason')), 'step': diag.get('step') or 'install',
                **({'stderr_tail': diag['stderr_tail']} if diag.get('stderr_tail') else {}),
                **({'failed_checks': update.check_ids(diag['failed_checks'])} if diag.get('failed_checks') else {}),
                **({'service_reason': diag['service_reason']} if upgrade_diag.service_reason(diag.get('service_reason')) else {}),
@@ -752,7 +997,8 @@ def quiet(argv, **kw):
     env = run_env(argv)
     if env is not None and 'env' not in kw:     # P423 (#193): the pinned uv tool directory
         kw['env'] = env
-    return subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=900, **kw)
+    timeout = kw.pop('timeout', INSTALL_TIMEOUT)
+    return subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout, **kw)
 
 
 def fixed_reasons():
@@ -760,7 +1006,8 @@ def fixed_reasons():
     from . import upgrade_diag
     return {'install_failed', 'version_mismatch', 'restart_failed', 'upgrade_self_check_failed', 'worker_interrupted',
             'artifact_hash_mismatch', 'artifact_signature_mismatch', 'artifact_identity_mismatch', 'unsupported_install',
-            'upgrade_cache_unreadable', 'revocation_downgrade_blocked', 'not_owner', *upgrade_diag.CATEGORY.values(), *upgrade_diag.REASON_WORDS}
+            'upgrade_cache_unreadable', 'revocation_downgrade_blocked', 'not_owner', ARTIFACT_CHANGED, ARTIFACT_UNAVAILABLE,
+            *upgrade_diag.CATEGORY.values(), *upgrade_diag.REASON_WORDS}
 
 
 def failure_reason(e, d):
@@ -782,7 +1029,8 @@ def installed_is(argv, version, runner):
         return False
 
 
-def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=None):
+def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=None, sleep=time.sleep,
+        clock=time.monotonic, lease_end=None):
     """Journal before mutations. A killed installing worker restores the cached old wheel.
     A manager retries abnormal termination; a file lock excludes competing workers.
     """
@@ -793,6 +1041,8 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
     fd = os.open(st.root/'auto-update-worker.lock', os.O_CREAT | os.O_RDWR, 0o600)
     fcntl.flock(fd, fcntl.LOCK_EX)
     job = read(st, JOB)
+    if lease_end is None and clock is time.monotonic:
+        lease_end = phone_update.lease_end(st)     # 0334 r2: the 1800 s lease launch() reserved
     diag = job.get('diagnostic') or {}  # Preserve the first failure across a manager retry during rollback.
     stage = 'download'
     rb = {}                             # #166/#192: the rollback's own failure evidence (category, exit, redacted tail)
@@ -806,6 +1056,84 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
         d = diag if diagnose else rb
         from .credential_revoke import require_compatible_version
         require_compatible_version(st, job['to'] if diagnose else job['from'])
+        def attempts(pinned):
+            cmds = (recovery_commands(job['install'], pinned.path) if not diagnose else install_commands(job['install'], pinned.path))
+            if diagnose:
+                save('installing')  # Validation/refusal above has not changed installed files.
+            started, retries = clock(), 0
+            limit = retry_limit(started, lease_end)
+            def again(raw, argv):
+                # 0334: the closed dependency evidence of this attempt; retry only a network-class failure of the upgrade
+                # itself (never the rollback), within the budget. The same argv = the same already-verified wheel path.
+                nonlocal retries
+                if not diagnose:
+                    return False
+                d.update(upgrade_diag.dependency_evidence(raw, run_env(argv) or os.environ), retry_count=retries)
+                if d.get('failure') not in RETRYABLE_INSTALL or retries >= INSTALL_RETRIES:
+                    return False
+                wait = INSTALL_BACKOFF[min(retries, len(INSTALL_BACKOFF) - 1)]
+                if clock() + wait + INSTALL_MIN_ATTEMPT > limit:     # 0334 r2: leaves the rollback its window
+                    return False
+                retries += 1
+                st.log('upgrade_install_retry', status=str(retries), reason=d['failure'])
+                sleep(wait)
+                return True
+            def attempt(argv):
+                try:
+                    if pinned.root is not None:
+                        check_artifact(pinned)      # before EVERY attempt: a changed / swapped artifact stops here, no retry
+                except ValueError:
+                    if diagnose:
+                        d['retry_count'] = retries
+                    raise
+                if retries:     # 0334 r3: read after the wait and the re-hash; an exhausted deadline launches nothing
+                    left = limit - clock()
+                    if left < RETRY_FLOOR:
+                        raise RetryExpired()
+                    if runner is quiet:     # what is left before the rollback's reserved window
+                        return quiet(argv, timeout=int(left))
+                return runner(argv)
+            for argv in cmds:
+                from .upgrade_diag import tail
+                if diagnose:
+                    diag['command'] = install_template(job['install'])
+                while True:
+                    try:
+                        r = attempt(argv)
+                    except RetryExpired:
+                        raise ValueError('install_failed') from None     # the previous attempt's evidence stays in d
+                    except (OSError, subprocess.SubprocessError) as e:
+                        # Never stringify the exception: it can contain argv, URLs or owner paths.
+                        d.update(upgrade_diag.exception_evidence(e, stage))
+                        d['exception'] = type(e).__name__
+                        if type(getattr(e, 'returncode', None)) is int:
+                            d['exit'] = e.returncode
+                        d['stderr_tail'] = (tail(getattr(e, 'stderr', '') or '')
+                                            or tail(getattr(e, 'stdout', '') or '')
+                                            or type(e).__name__ + ': installer could not complete')
+                        d['failure'] = upgrade_diag.installer_reason(e, d.get('stderr_tail', ''))
+                        if again(f"{getattr(e, 'stdout', '') or ''}\n{getattr(e, 'stderr', '') or ''}", argv):
+                            continue
+                        raise ValueError('install_failed') from None
+                    if r.returncode:
+                        d['exit'] = r.returncode
+                        d['stderr_tail'] = tail(getattr(r, 'stderr', '') or '') or tail(getattr(r, 'stdout', '') or '')
+                        d['failure'] = upgrade_diag.installer_reason(stderr=d['stderr_tail'])
+                        if again(f"{getattr(r, 'stdout', '') or ''}\n{getattr(r, 'stderr', '') or ''}", argv):
+                            continue
+                        raise ValueError('install_failed')
+                    break
+            if diagnose and retries:
+                # Succeeded after retries: the failed attempts' evidence must not describe a later, different failure.
+                for k in ('exit', 'stderr_tail', 'failure', 'exception', 'exception_type', 'errno', 'failure_stage',
+                          'failure_at', *upgrade_diag.DEPENDENCY_KEYS):
+                    diag.pop(k, None)
+                diag['retry_count'] = job['retry_count'] = retries
+        if not diagnose:
+            # 0334 r2 (F5): the previous version's store copy, when it still hashes to its sidecar, needs no cache
+            stored = stored_artifact(st.root, job['from'])
+            if stored:
+                return attempts(stored)
         p = Path(wheel)
         try:
             rec = json.loads(p.with_suffix('.verified.json').read_text())
@@ -818,31 +1146,15 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             raise ValueError('artifact_hash_mismatch')
         if str(p) == job.get('new') and minisign.verify(data, rec.get('signature', ''), minisign.keyring('release')) != f"agentj-host/v1 version={job['to']} sha256={digest}":
             raise ValueError('artifact_signature_mismatch')
-        cmds = (recovery_commands(job['install'], wheel) if not diagnose else install_commands(job['install'], wheel))
-        if diagnose:
-            save('installing')  # Validation/refusal above has not changed installed files.
-        for argv in cmds:
-            from .upgrade_diag import tail
+        # 0334: install exactly the bytes verified above, from the private per-version store (rollback: the previous
+        # version's copy)
+        try:
+            pin = pin_artifact(data, job['to'] if diagnose else job['from'], st.root, signed=str(p) == job.get('new'))
+        except ValueError:
             if diagnose:
-                diag['command'] = install_template(job['install'])
-            try:
-                r = runner(argv)
-            except (OSError, subprocess.SubprocessError) as e:
-                # Never stringify the exception: it can contain argv, URLs or owner paths.
-                d.update(upgrade_diag.exception_evidence(e, stage))
-                d['exception'] = type(e).__name__
-                if type(getattr(e, 'returncode', None)) is int:
-                    d['exit'] = e.returncode
-                d['stderr_tail'] = (tail(getattr(e, 'stderr', '') or '')
-                                    or tail(getattr(e, 'stdout', '') or '')
-                                    or type(e).__name__ + ': installer could not complete')
-                d['failure'] = upgrade_diag.installer_reason(e, d.get('stderr_tail', ''))
-                raise ValueError('install_failed') from None
-            if r.returncode:
-                d['exit'] = r.returncode
-                d['stderr_tail'] = tail(getattr(r, 'stderr', '') or '') or tail(getattr(r, 'stdout', '') or '')
-                d['failure'] = upgrade_diag.installer_reason(stderr=d['stderr_tail'])
-                raise ValueError('install_failed')
+                raise           # nothing installed yet: a fixed reason (install_artifact_changed / _unavailable)
+            pin = Pinned((None, None, None, p))      # rollback: as before 0334, from the verified cache path
+        attempts(pin)
     def verify(version, *, diagnose=True):
         nonlocal stage
         stage = 'verify'
@@ -947,7 +1259,8 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             raise ValueError('worker_interrupted')
         if job['phase'] == 'installed':
             verify(job['to'])
-            result = {**{k:job[k] for k in ('attempt','from','to','summary','summary_en','when') if k in job}, 'result': 'ok', 'reason': 'upgraded'}
+            prune_artifacts(st.root, (job['to'], job.get('from')))    # 0334: keep the current + the previous version
+            result = {**{k:job[k] for k in ('attempt','from','to','summary','summary_en','when','retry_count') if k in job}, 'result': 'ok', 'reason': 'upgraded'}
             finish(st, result, {'step': 'health'})
             save('done')
             return result

@@ -26,6 +26,12 @@ from unittest import mock
 from agentj import __version__, auto_update, cli, cloud, minisign, update, upgrade_diag
 from agentj.state import State
 
+
+def _wheel_in(path, argv, version):
+    """0334: the installer runs on the private per-version store copy (<store>/install-artifacts/agentj-<v>-…whl)."""
+    p, name = str(path), f"/install-artifacts/agentj-{version}-py3-none-any.whl"
+    return any(isinstance(a, str) and (a == p or a.endswith(name)) for a in argv)
+
 INFO = {"kind": "uv", "where": "/fake", "legacy": False}
 NEW = "9.9.9"
 FAKE_GH = "ghp" + "_" + "abcdefghijklmnopqrstuvwxyz0123456789"     # built at run time: a fake token shape, never a key
@@ -401,7 +407,7 @@ class Worker(_Env):
                 return subprocess.CompletedProcess(argv, 0, f"agentj {__version__}", "")
             if "doctor" in argv:
                 return subprocess.CompletedProcess(argv, 0, json.dumps({"checks": [{"id": "version", "status": "ok"}]}), "")
-            if "install" in argv and str(old) in argv:
+            if "install" in argv and _wheel_in(old, argv, __version__):
                 return subprocess.CompletedProcess(argv, 0, "", "")
             return subprocess.CompletedProcess(argv, 1, "", "")
         sent = []

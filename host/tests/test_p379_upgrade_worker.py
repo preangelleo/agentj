@@ -14,6 +14,12 @@ from test_p277_upgrade_diag import _Env, INFO, NEW, UV_ERR, FAKE_GH
 from agentj import __version__, auto_update, upgrade_diag, update
 
 
+def _wheel_in(path, argv, version):
+    """0334: the installer runs on the private per-version store copy (<store>/install-artifacts/agentj-<v>-…whl)."""
+    p, name = str(path), f"/install-artifacts/agentj-{version}-py3-none-any.whl"
+    return any(isinstance(a, str) and (a == p or a.endswith(name)) for a in argv)
+
+
 class Tail(unittest.TestCase):
     def test_redacts_private_key_before_choosing_last_lines(self):
         secret = 'private key body line'
@@ -94,7 +100,7 @@ class Worker(_Env):
         auto_update.write(self.st, {'attempt': 'a', 'from': __version__, 'to': NEW, 'install': INFO,
             'argv': ['agentj'], 'old': str(old), 'new': str(new), 'phase': 'prepared'}, auto_update.JOB)
         def runner(argv):
-            if str(new) in argv:
+            if _wheel_in(new, argv, NEW):
                 if isinstance(failure, Exception):
                     raise failure
                 return subprocess.CompletedProcess(argv, 1, '', UV_ERR)

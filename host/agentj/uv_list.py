@@ -504,7 +504,9 @@ def fingerprint_command(tool, tool_input, *, cwd=None, env=None, host=None):
 # ADR-0308-fingerprint-scope: the fingerprint card for a fingerprint_command() hit is for the MAIN thread only — the
 # owner's own turns (approval_offlist.source types). Host heartbeat and all host-held background work run without
 # runtime fingerprint cards or refusals, regardless of dispatch provenance; other off-list safety rules still apply.
-FINGERPRINT_SOURCES = frozenset({'owner_remote', 'owner_terminal', 'owner_channel'})
+# R-0047 item 3 (chairman 11-18 「不免卡花钱」): a busy dispatch an owner turn made (approval_offlist type busy_dispatch,
+# trust host) takes this card too, never fingerprint_headless; a non-owner dispatch's trust keeps it refused off-list.
+FINGERPRINT_SOURCES = frozenset({'owner_remote', 'owner_terminal', 'owner_channel', 'busy_dispatch'})
 
 
 def required(tool, tool_input=None, *, cwd=None, env=None):

@@ -54,3 +54,27 @@ export function pendingAutomation(p){
       Object.keys(c).some(k=>!['queued','held','waited_s','stuck','wait','notice','detail','activity_failure','busy_stalled'].includes(k))) return false;
   return pendingQueue(p) || ['open','done'].includes(p?.end) && !p?.reply?.trim();
 }
+
+// R-0005 (0.30.31, chairman approval pending — relay.js keeps it off by default): one line that says what a
+// background record is about. Display only: it reads the same host-projected history text the row already shows on
+// expansion, never a new field. Agent-started records lead with the Agent's words (their prompt is a fixed check
+// text); system and automation records lead with the message that arrived. JSON, code fences and markup are skipped.
+const MARKUP = /^(?:#{1,6}\s+|[-*+]\s+|>\s*|\d+[.)]\s+)+/;
+function oneLine(v){
+  const s = typeof v === 'string' ? v : typeof v?.text === 'string' ? v.text : '';
+  let fence = false;
+  for (const raw of s.split('\n')){
+    if (raw.trim().startsWith('```')){ fence = !fence; continue; }
+    if (fence || /^[-=*_\s]{3,}$/.test(raw.trim())) continue;
+    const l = raw.replace(MARKUP, '').replace(/\*\*|__|`/g, '').replace(/\s+/g, ' ').trim();
+    if (!l || /^\{|^\[\s*[[{"\d\]]/.test(l)) continue;
+    return l.length > 160 ? l.slice(0, 159) + '…' : l;
+  }
+  return '';
+}
+export function activitySummary(p, clean = x => x){
+  const text = p?.source?.text, reply = clean(typeof p?.reply === 'string' ? p.reply : p?.reply?.text || '');
+  const order = p?.source?.k === 'agent' ? [reply, text] : [text, reply];
+  for (const v of order){ const l = oneLine(v); if (l) return l; }
+  return '';
+}

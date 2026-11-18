@@ -61,6 +61,7 @@ _LABELS = {
     "external_channel": ("外部消息 · {name}", "External message · {name}"),
     "external_mcp": ("外部连接器 {name}", "External connector {name}"),
     "avatar": ("已核实 · 主人通道分身 {name}", "Verified · owner channel avatar {name}"),
+    "busy_dispatch": ("后台派单 · {name}", "Background dispatch · {name}"),     # R-0047 item 3 (busy_native.Dispatch)
     "unknown": ("来源未知", "Unknown source"),
 }
 _SYSTEM_NAMES = {"compact_resume": ("压缩恢复", "compaction recovery"), "background_done": ("后台活结束", "background job done"),
@@ -130,7 +131,11 @@ def _from_normalized(host, src, send=None):
             out["handoff_fid"] = row["fid"]
         return out
     if kind == "same_owner":
-        return _make("same_owner", _short(getattr(send, "fid", None) or src.get("fid") or src.get("relay") or "", 12), "external")
+        out = _make("same_owner", _short(getattr(send, "fid", None) or src.get("fid") or src.get("relay") or "", 12), "external")
+        seat = _SameOwnerSeat.capture(host, src, send)
+        if seat is not None:     # R-0056: a host-verified paired same-owner device's own forwarded task (closed_diag)
+            out.update(verified_same_owner=True, same_owner_seat=seat)
+        return out
     if kind in ("wechat_task", "official_assist", "telegram", "email"):
         names = {"wechat_task": ("微信任务", "WeChat task"), "official_assist": ("官方协助", "official assist"),
                  "telegram": ("Telegram 群/转发", "Telegram group/forward"), "email": ("访客邮件", "guest mail")}
@@ -138,6 +143,40 @@ def _from_normalized(host, src, send=None):
     if kind == "external_mcp":
         return _make("external_mcp", _short(src.get("connector"), 8), "external")
     return _make("unknown", None, "unknown")
+
+
+class _SameOwnerSeat:
+    """R-0056 (chairman 11-18): the live, host-held fact that this turn is the paired same-owner device's own forwarded
+    task — never a friend's (`friend_task`), never 「本机另一个会话」 (provenance.SameHost), never a reply / end message,
+    never a wire- or transcript-shaped dict. Only `capture` makes one; `live()` is re-read at decision time."""
+    __slots__ = ("host", "send")
+
+    def __init__(self, host, send):
+        self.host, self.send = host, send
+
+    @classmethod
+    def capture(cls, host, src, send):
+        from . import provenance
+        if type(src) is not provenance.HostDelegated or src.get("kind") != "same_owner" or send is None:
+            return None
+        seat = cls(host, send)
+        return seat if seat.live() else None
+
+    def live(self):
+        from . import provenance
+        from .same_owner import ForwardSend
+        try:
+            host, send = self.host, self.send
+            owner = getattr(getattr(host, "peers", None), "same_owner", None)
+            data = send.data if isinstance(getattr(send, "data", None), dict) else {}
+            return (type(send) is ForwardSend and owner is not None and send.owner is owner and not send.approved
+                    and not data.get("irt") and not data.get("end")
+                    and type(send.source) is provenance.HostDelegated and send.source.get("kind") == "same_owner"
+                    and getattr(getattr(host, "agent", None), "cur_send", None) is send
+                    and getattr(host, "cur_turn", None) == send.turn and not host.stopped()
+                    and owner.active(send.fid) and owner.row(send.fid).get("token") == send.token)
+        except Exception:  # noqa: BLE001 — no seat
+            return False
 
 
 def _handoff(host, send):
@@ -171,12 +210,34 @@ def _handoff_reply(src, tool, inp):
             and not x.args[4].startswith("-") and not x.args[5].startswith("-"))   # security r2 N2: exactly one plain reply
 
 
+def dispatch_label(name, trust):
+    """R-0047 item 3: the typed source of a busy dispatch (busy_native.Dispatch). Never `owner_dispatch`."""
+    nzh, nen = (_short(n, 48) for n in name)
+    return _make("busy_dispatch", (nzh, nen), trust if trust in ("host", "host_read", "external") else "unknown")
+
+
+def _dispatch_live(host, background):
+    """The busy dispatch named by `background` is still live (not stopped / estopped / ended, same epoch)."""
+    if isinstance(background, tuple) and len(background) == 2 and background[0] == "busy_dispatch":
+        from .busy_native import Dispatch
+        return type(background[1]) is Dispatch and background[1].live(host)
+    return True
+
+
 def source(host, *, settings_context=None, background=None, order_owner=False):
     """The typed label of the turn asking now. Host-held objects only; `unknown` only when none says who.
     `owner_dispatch` (security 0310 H1): True only where the owner created / started this work — settings pages, an
     order the owner's own turn dispatched (host-held parent), a scheduled run the owner enabled / started."""
     from . import host_turns, provenance
     try:
+        if isinstance(background, tuple) and len(background) == 2 and background[0] == "busy_dispatch":
+            # R-0047 item 3: a native busy dispatch's runner (busy_native._runner_host) — the label bound at dispatch,
+            # only while that exact dispatch is live; never the main thread's turn, never approval_review.ORIGIN.
+            from .busy_native import Dispatch
+            dispatch = background[1]
+            if type(dispatch) is Dispatch and dispatch.live(host):
+                return dict(dispatch.label)
+            return _make("unknown", None, "unknown")
         if settings_context is not None:
             page = getattr(settings_context, "page", None) or ("通用", "general")
             return dict(_make("settings", page, "host"), owner_dispatch=True)
@@ -449,6 +510,20 @@ def _dir_ok(word, here, roots, host=None):
     return real is not None and os.path.isdir(real) and _within_any(real, roots) and not _private(host, real)
 
 
+def _cd_target(word, here):
+    """security r3 F1: the real directory of `cd <word>`, only when the shell's logical move (typed path, `..` taken
+    lexically) lands where the real path says — no symlink component followed by `..`. Else None."""
+    from .host_turns import _path
+    real = _path(word, here)
+    if real is None:
+        return None
+    for prefix in ("$HOME/", "${HOME}/"):
+        if word.startswith(prefix):
+            word = "~/" + word[len(prefix):]
+    typed = os.path.normpath(os.path.join(os.path.realpath(here or os.sep), os.path.expanduser(word)))
+    return real if typed == real else None
+
+
 def closed_read(host, tool, inp, cwd, trust):
     """security r1 C1/C2/H2: the only reads a host_read / external / unknown turn runs without the owner — a closed
     program list on closed flags and verified operands, never danger.readonly's open list."""
@@ -483,7 +558,7 @@ def closed_read(host, tool, inp, cwd, trust):
             return False
         args = list(s.args)
         if s.name == "cd":
-            if len(args) != 1 or not _dir_ok(args[0], here, roots, host):
+            if len(args) != 1 or not _dir_ok(args[0], here, roots, host) or _cd_target(args[0], here) is None:
                 return False
             here = host_turns._path(args[0], here)
         elif s.name == "pwd":
@@ -513,6 +588,287 @@ def closed_read(host, tool, inp, cwd, trust):
     return True
 
 
+# ------------------------------------------------------------------ R-0056: same-owner read-only diagnostics
+# Chairman 11-18: a host-verified paired same-owner device (not a friend) runs this CLOSED diagnostic list directly; UV-level
+# actions keep the on-site card (uv_list.required() runs first in list_approval). Positive grammars only: anything not
+# spelled out below is refused (security r0 Claude + Codex). Output still passes peer_guard.outbound before it leaves.
+_DIAG_LS = frozenset("lahAt1SrdFpinsgoGcuUXv")          # read-only ls letters; never R (recurse) / L / H (follow links)
+_DIAG_LS_LONG = frozenset({"--all", "--almost-all", "--human-readable", "--full-time"})
+_DIAG_FIND = {"-name": "pattern", "-iname": "pattern", "-path": "pattern", "-type": "type", "-maxdepth": "depth",
+              "-mtime": "number", "-size": "size", "-print": None}
+_DIAG_SYSTEM = frozenset({"journalctl", "systemctl", "ls", "find", "cat", "head", "tail", "nl", "wc"})
+
+
+def _diag_units():
+    """The agentj service and its rescue watchdog, as service.py names them (with and without `.service`)."""
+    from . import service
+    try:
+        names = {service.name()}
+        names.add(service.rescue_name(next(iter(names))))
+    except Exception:  # noqa: BLE001 — no unit name, no journal
+        return frozenset()
+    return frozenset(names | {n + ".service" for n in names})
+
+
+def _journal_ok(args):
+    import re
+    units, seen, i, n_units = _diag_units(), set(), 0, 0
+    since = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}(?: [0-9]{2}:[0-9]{2}(?::[0-9]{2})?)?")
+    while i < len(args):
+        a, v = args[i], (args[i + 1] if i + 1 < len(args) else None)
+        if a in ("--user", "--no-pager") and a not in seen:
+            seen.add(a); i += 1
+        elif a == "-u" and v in units and n_units < 2:
+            n_units += 1; i += 2
+        elif a == "-n" and "-n" not in seen and v is not None and re.fullmatch(r"[0-9]{1,3}", v) and 1 <= int(v) <= 500:
+            seen.add(a); i += 2
+        elif a == "--since" and a not in seen and v is not None and since.fullmatch(v):
+            seen.add(a); i += 2
+        elif a == "-o" and a not in seen and v in ("short", "short-iso"):
+            seen.add(a); i += 2
+        else:
+            return False     # -f, --file, -D, --root, -M, -m, --system, -k, -o json, --cursor-file, writers, abbreviations …
+    return {"--user", "--no-pager"} <= seen and n_units >= 1
+
+
+def _systemctl_ok(args):
+    units = _diag_units()
+    return len(args) >= 3 and args[2] in units and (args == ["--user", "is-active", args[2]]
+                                                    or args == ["--user", "status", args[2], "--no-pager", "-n", "0"])
+
+
+def _agentj_ok(args):
+    from . import host_turns
+    # `doctor --json` repairs (Codex r0 BLOCK): only the closed --read-only path. AGENTJ_READ = listing branches only.
+    return (args in (["status"], ["doctor", "--read-only", "--json"])
+            or any(args == list(p) or args == list(p) + ["--json"] for p in host_turns.AGENTJ_READ))
+
+
+def _ls_ok(args, here, roots, host):
+    for a in args:
+        if a.startswith("--"):
+            if a not in _DIAG_LS_LONG:
+                return False
+        elif a.startswith("-") and len(a) > 1:
+            if set(a[1:]) - _DIAG_LS:
+                return False
+        elif not (_dir_ok(a, here, roots, host) or _file_ok(a, here, roots, host)):
+            return False
+    return not _private(host, os.path.realpath(here))
+
+
+def _find_ok(args, here, roots, host):
+    import re
+    from .host_turns import _path, _within
+    i, starts = 0, []
+    while i < len(args) and not args[i].startswith("-"):
+        starts.append(args[i]); i += 1
+    home = os.path.realpath(os.path.expanduser("~"))
+    for word in starts or ["."]:
+        real = _path(word, here)
+        # Every start point is a working-folder directory that does not hold the home folder or Agent J's state dir
+        # (find -P never follows links, but it would list the names of a private tree it starts above).
+        if (not _dir_ok(word, here, roots, host) or real is None or _within(home, real)
+                or any(_within(r, real) for r in _private_roots(host))):
+            return False
+    checks = {"pattern": lambda v: not v.startswith("-") and not any(c in v for c in "\n\x00"),
+              "type": lambda v: v in ("f", "d", "l"),
+              "depth": lambda v: re.fullmatch(r"[0-3]", v) is not None,
+              "number": lambda v: re.fullmatch(r"[+-]?[0-9]{1,5}", v) is not None,
+              "size": lambda v: re.fullmatch(r"[+-]?[0-9]{1,10}[bcwkMG]?", v) is not None}
+    while i < len(args):
+        kind = _DIAG_FIND.get(args[i], False)
+        if kind is False:
+            return False     # -L/-H/-follow, -files0-from, -D, -newer*, -fprint*, -fls, -exec*, -ok*, -delete, ( ! -o …
+        if kind is None:
+            i += 1
+            continue
+        if i + 1 >= len(args) or not checks[kind](args[i + 1]):
+            return False
+        i += 2
+    return True
+
+
+def _log_ok(host, word, here):
+    """Exactly the host-owned redacted host.log (_host_redacted_log), named without any symlink on the way."""
+    from .host_turns import _path
+    real = _path(word, here)
+    try:
+        for prefix in ("$HOME/", "${HOME}/"):
+            if word.startswith(prefix):
+                word = "~/" + word[len(prefix):]
+        configured = os.path.abspath(str(host.st.log_path))
+        # The spelled path itself (lexically) must already be the real path: no symlink in any ancestor.
+        typed = os.path.normpath(os.path.join(os.path.realpath(here or os.sep), os.path.expanduser(word)))
+    except Exception:  # noqa: BLE001
+        return False
+    return (real is not None and real == configured == os.path.realpath(configured) == typed
+            and _host_redacted_log(host, real))
+
+
+def _exe_ok(host, name, cwd):
+    """The program the shell would run for `name` (host PATH) is a real installed binary: no relative PATH entry before
+    it, not inside the working folder, not group/other-writable; system tools root-owned (not a planted `journalctl`)."""
+    from . import uv_list
+    from .host_turns import _within
+    env = uv_list.host_environment(host) if host is not None else os.environ
+    work = os.path.realpath(cwd or os.sep)
+    for entry in (env.get("PATH") or "").split(os.pathsep):
+        if not entry or not os.path.isabs(entry):
+            return False
+        candidate = os.path.join(entry, name)
+        if not (os.path.isfile(candidate) and os.access(candidate, os.X_OK)):
+            continue
+        real = os.path.realpath(candidate)
+        try:
+            row = os.stat(real)
+        except OSError:
+            return False
+        if _within(real, work) or row.st_mode & 0o022 or _private(host, real):
+            return False
+        return row.st_uid == 0 if name in _DIAG_SYSTEM else row.st_uid in (0, os.getuid())
+    return False
+
+
+_DIAG_PLAIN = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._/=:,+@%-")
+_DIAG_GLOB = frozenset("*?[]")
+_DIAG_PATTERN_OPS = frozenset({"-name", "-iname", "-path"})
+
+
+def _diag_tokens(text):
+    r"""security r1/r2: the ONLY words a diagnostic request may be, by a positive whole-text grammar independent of
+    danger.lex — one simple command on one line. Outside quotes: [A-Za-z0-9._/=:,+@%-] and single spaces between
+    words; inside '…' or "…": the same plus space and * ? [ ] (a quoted glob, kept for find patterns only). Nothing
+    else anywhere — no newline / CR / NUL / tab, # ; & | < > ( ) $ ` \ { } ~ !, no empty or unterminated quotes.
+    Returns (words, glob flags) or None."""
+    if not isinstance(text, str) or not text or len(text) > 4096:
+        return None
+    words, globbed, cur, glob, quote, opened = [], [], None, False, None, 0
+    for c in text:
+        if quote is not None:
+            if c == quote:
+                quote = None
+                if len(cur) == opened:
+                    return None          # an empty '' / "" segment: nothing a diagnostic needs
+            elif c in _DIAG_PLAIN or c == " " or c in _DIAG_GLOB:
+                cur, glob = cur + c, glob or c in _DIAG_GLOB
+            else:
+                return None
+        elif c in "'\"":
+            quote, cur = c, cur if cur is not None else ""
+            opened = len(cur)
+        elif c == " ":
+            if cur is not None:
+                words.append(cur); globbed.append(glob)
+                cur, glob = None, False
+        elif c in _DIAG_PLAIN:
+            if cur is None and c == "=":
+                return None              # zsh (macOS default shell) expands a word-initial `=cmd` to a path
+            cur = (cur or "") + c
+        else:
+            return None
+    if quote is not None:
+        return None
+    if cur is not None:
+        words.append(cur); globbed.append(glob)
+    if not words or any(w == "" for w in words):
+        return None
+    return words, globbed
+
+
+def _diag_command(text, cwd):
+    """(directory, command text, words) of a diagnostic request: one simple command, optionally behind EXACTLY the prefix the host
+    itself writes for a harness-reported folder (approval_jev.with_cwd: "cd " + shlex.quote(dir) + " && "). Else None."""
+    import shlex
+    here, rest = cwd, text
+    if isinstance(text, str) and text.startswith("cd ") and " && " in text:
+        cut = text.rindex(" && ")
+        try:
+            parts = shlex.split(text[3:cut])
+        except ValueError:
+            return None
+        if len(parts) != 1 or not os.path.isabs(parts[0]) or "cd " + shlex.quote(parts[0]) + " && " != text[:cut + 4]:
+            return None
+        # security r3 F1: the typed directory IS its own real path — no `.` / `..` / `//`, no symlink component — so
+        # the shell's logical `cd` and this judgement land in the same place.
+        if not parts[0] == os.path.normpath(parts[0]) == os.path.realpath(parts[0]):
+            return None
+        here, rest = parts[0], text[cut + 4:]
+    parsed = _diag_tokens(rest)
+    if parsed is None:
+        return None
+    words, globbed = parsed
+    # A quoted glob only as the argument of a find -name / -iname / -path predicate.
+    if any(g and not (words[0] == "find" and i > 0 and words[i - 1] in _DIAG_PATTERN_OPS) for i, g in enumerate(globbed)):
+        return None
+    return here, rest, words
+
+
+def closed_diag(host, tool, inp, cwd):
+    """R-0056: closed_read's shapes plus the closed diagnostic list, for a verified same-owner device only (decide)."""
+    from . import danger, host_turns
+    if not isinstance(inp, dict) or not cwd:
+        return False
+    roots = [os.path.realpath(cwd)]
+    op = _operation(tool)
+    if op in ("read", "read_file", "file_read"):
+        if set(inp) - {"file_path", "filePath", "path", "offset", "limit"}:
+            return False
+        word = inp.get("file_path") or inp.get("filePath") or inp.get("path")
+        return isinstance(word, str) and (_file_ok(word, cwd, roots, host) or _log_ok(host, word, cwd))
+    if op not in _SHELL_TOOLS:
+        return False
+    parsed = _diag_command(_command(inp), cwd)
+    if parsed is None:
+        return False
+    here, rest, words = parsed
+    if not _dir_ok(here, cwd, roots, host):
+        return False
+    here = host_turns._path(here, cwd)
+    # danger.lex must see exactly the same words (security r2: any comment / quote desync is a refusal, never an allow).
+    commands = danger.lex(rest)
+    if len(commands) != 1 or list(commands[0].words) != words:
+        return False
+    for command in commands:
+        if (command.subst or command.heredoc or command.ins or command.piped or command.redirs
+                or getattr(command, "owner", None) is not None):
+            return False
+        simples = danger.unwrap(command)
+        if len(simples) != 1:
+            return False
+        s = simples[0]
+        if s.ins or s.redirs or s.flags or command.words[:1] != [s.name] or [s.name] + list(s.args) != words:
+            return False
+        args = list(s.args)
+        if not _exe_ok(host, s.name, cwd):
+            return False
+        if s.name != "find" and any(c in a for a in args for c in "*?["):
+            return False     # a quoted glob is only ever a find -name / -iname / -path pattern
+        if s.name == "ls":
+            ok = _ls_ok(args, here, roots, host)
+        elif s.name == "find":
+            ok = _find_ok(args, here, roots, host)
+        elif s.name == "journalctl":
+            ok = _journal_ok(args)
+        elif s.name == "systemctl":
+            ok = _systemctl_ok(args)
+        elif s.name == "agentj":
+            ok = _agentj_ok(args)
+        elif s.name in host_turns.READERS:
+            operands = host_turns._operands(s)      # closed flags: no -f / -F / --follow, no --files0-from
+            ok = bool(operands) and all(_file_ok(w, here, roots, host) or _log_ok(host, w, here) for w in operands)
+        else:
+            ok = False
+        if not ok:
+            return False
+    return True
+
+
+def _same_owner_live(src):
+    seat = src.get("same_owner_seat")
+    return src.get("verified_same_owner") is True and type(seat) is _SameOwnerSeat and seat.live()
+
+
 def decide(host, tool, inp, cwd, src):
     """(decision, reason, message_key) for an off-list request. Pure apart from filesystem stats."""
     from . import danger
@@ -529,6 +885,8 @@ def decide(host, tool, inp, cwd, src):
         return "allow", "off_list", None
     if closed_read(host, tool, inp, cwd, trust):
         return "allow", "off_list_read", None
+    if trust == "external" and _same_owner_live(src) and closed_diag(host, tool, inp, cwd):
+        return "allow", "off_list_diag", None      # R-0056: the relation is re-checked here, at decision time
     if _handoff_reply(src, tool, inp):
         return "allow", "off_list_handoff_reply", None
     return "deny", "off_list_write_" + trust, "write"
@@ -539,6 +897,10 @@ async def answer(host, tool, inp, cwd, *, receipt=None, settings_context=None, s
     """The answer to an off-list request: audited, never a card. The source is read on the loop (paired requests and
     shared children are bound to the running task); filesystem checks and the audit row run off-loop."""
     import asyncio
+    def live():     # R-0047 item 3 / R-0056 (security r1 F2): dispatch binding and same-owner seat, wherever the State is
+        return (state_subject.live(host) and (src.get("type") != "busy_dispatch" or _dispatch_live(host, background))
+                and (src.get("verified_same_owner") is not True or _same_owner_live(src)))
+
     def changed():
         if isinstance(receipt, dict):
             receipt.update(reason='state_authority_changed', approval_card_shown=False)
@@ -547,29 +909,31 @@ async def answer(host, tool, inp, cwd, *, receipt=None, settings_context=None, s
     if not state_subject.live(host):
         return changed()
     src = src or source(host, settings_context=settings_context, background=background)
+    if not live():
+        return changed()
     if not cwd:     # no host agent_cfg (e.g. a configured-later host): the running adapter's own working directory
         cwd = ((getattr(getattr(host, "agent", None), "cfg", None) or {}).get("dir")) or None
     from . import handoff
     own_cfg = None
     try:   # P539 (#301): Agent J's own handoff file in an owner / host-system turn (read on the loop: contextvars)
-        if (src.get("type") not in ("unknown", "avatar") and handoff.owner_side(getattr(host, "agent", None))
-                and not host.stopped()):    # security r2 L4: never for a detached / avatar request
+        if (src.get("type") not in ("unknown", "avatar", "busy_dispatch") and handoff.owner_side(getattr(host, "agent", None))
+                and not host.stopped()):    # security r2 L4: never detached / avatar / dispatch
             own_cfg = host._switch_cfg()
     except Exception:  # noqa: BLE001 — no exemption, the ordinary decision below
         own_cfg = None
     own = own_cfg is not None and await asyncio.to_thread(
         lambda: handoff.own_read(tool, inp, own_cfg) or handoff.own_state(tool, inp, own_cfg))
-    if not state_subject.live(host):
+    if not live():
         return changed()
     decision, reason, key = ("allow", "own_handoff", None) if own else await asyncio.to_thread(decide, host, tool, inp, cwd, src)
-    if not state_subject.live(host):
+    if not live():
         return changed()
     if fingerprint and decision == "allow":
         # 董事长 11-11 定: a charge / irreversible call in a headless job or automation follows its harness — no card, no
         # refusal, only this log line (the shape label, never the command text).
         reason = "fingerprint_headless"
     recorded = await asyncio.to_thread(_record, host, tool, inp, decision, reason, state_subject)
-    if recorded is None or not state_subject.live(host):
+    if recorded is None or not live():
         return changed()
     rid, agent = recorded
     host.st.log("ask_done", id=rid, agent=agent, tool=tool, decision=decision, reason=reason,
@@ -577,7 +941,7 @@ async def answer(host, tool, inp, cwd, *, receipt=None, settings_context=None, s
                 **({"shape": log_shape(fingerprint)} if fingerprint else {}))
     if isinstance(receipt, dict):
         receipt.update(id=rid, reason=reason, approval_card_shown=False, source=src["type"])
-    if not state_subject.live(host):
+    if not live():
         return changed()
     if decision == "allow":
         return {"behavior": "allow", "updatedInput": inp}

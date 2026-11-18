@@ -1941,7 +1941,18 @@ def cmd_busy(a) -> int:
         print(it["key"])
         return 0
     if a.busy_cmd == "stop":
-        return 0 if remove_item(root, a.key if a.key.startswith(("cli:", "run:")) else "cli:" + a.key) else 1
+        key = a.key if a.key.startswith(("cli:", "run:")) else "cli:" + a.key
+        native = False
+        if key.startswith("run:"):
+            # R-0047 item 3 (security r1): a Host-native dispatch ends at the Host first (authority, pending approvals,
+            # then the job); the board file goes after. No Host → nothing native is running.
+            from . import names
+            from .state import State
+            try:
+                native = bool((names.ctl_call(State(root), {"cmd": "busy_native_stop", "key": key}, timeout=10) or {}).get("native"))
+            except (names.ServeBusy, OSError, ValueError):
+                native = False
+        return 0 if remove_item(root, key) or native else 1
     if a.busy_cmd == "delegate":
         from . import names
         from .state import State

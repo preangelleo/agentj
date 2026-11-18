@@ -3,6 +3,7 @@ F12 codes remain an optional compatibility path; native filesystem limits remain
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -273,6 +274,154 @@ def _pinned(run):
         env = run_env(cmd)
         return run(cmd, **kw, **({"env": env} if env is not None and "env" not in kw else {}))
     return go
+
+
+_install_sleep = time.sleep          # 0334: test seams for the install retry below
+_install_clock = time.monotonic
+
+
+def artifact_store(st, fenced=False):
+    """0334 r2: the install-artifact store root — the Agent J state directory, which the Agent fence hides (empty mount),
+    so pinning + installing happen only in the unfenced host process. None inside the fence or without a state
+    directory: those paths keep the pre-0334 behaviour (one attempt on the plan's own argv, no store, no retry)."""
+    exists = getattr(st, "exists", None)
+    if fenced or st is None or (callable(exists) and not exists()):
+        return None
+    return st.root
+
+
+def _pin_plan_wheel(cmd, target, store):
+    """0334 r2 (F1): the published plan's wheel → (command on the store copy, Pinned). The bytes pinned are exactly the
+    ones the verifier's own no-follow reader accepts right now (auto_update.signed_cached_bytes: signed receipt, sha256
+    and minisign identity for `target` over the same in-memory bytes) — never whatever happens to sit at the cache path.
+    Anything missing (wheel, receipt, signature, standard name / cache layout) fails closed: ValueError(ARTIFACT_CHANGED);
+    a store that cannot be written: ValueError(ARTIFACT_UNAVAILABLE). Never the original argv."""
+    from . import auto_update
+    from .state import State
+    idx = [i for i, a in enumerate(cmd) if isinstance(a, str) and a.endswith(".whl")]
+    if len(idx) != 1:
+        raise ValueError(auto_update.ARTIFACT_CHANGED)
+    src = Path(cmd[idx[0]])
+    if src.name != auto_update.artifact_name(target) or src.parent.name != "upgrade-cache":
+        raise ValueError(auto_update.ARTIFACT_CHANGED)
+    data = auto_update.signed_cached_bytes(State(src.parent.parent), target)
+    if data is None and _loose_cache(src.parent):
+        data = _restaged_signed_bytes(src, target)     # 0334 r3: a 0755 / symlinked cache folder (base upgraded there)
+    if data is None:
+        raise ValueError(auto_update.ARTIFACT_CHANGED)
+    pin = auto_update.pin_artifact(data, target, store, signed=True)
+    argv = list(cmd)
+    argv[idx[0]] = str(pin.path)
+    return (auto_update.Command(argv, cmd.env) if isinstance(cmd, auto_update.Command) else argv), pin
+
+
+def _loose_cache(folder) -> bool:
+    """The cache folder or its parent is a symlink, not ours, or open to group/other — the only refusals of
+    signed_cached_bytes that a private re-staging can lift (the bytes are still verified there)."""
+    import stat
+    for d in (Path(folder).parent, Path(folder)):
+        try:
+            m = os.lstat(d)
+        except OSError:
+            return False
+        if stat.S_ISLNK(m.st_mode) or m.st_uid != os.geteuid() or m.st_mode & 0o077:
+            return True
+    return False
+
+
+def _restaged_signed_bytes(src, target):
+    """Copy the wheel and its receipt (no-follow file reads) into a fresh private folder (_private_tmp_cache, 0700) and run
+    the same sealed verifier reader there once; the folder is removed afterwards. → verified bytes or None."""
+    from . import auto_update
+    tmp = None
+    try:
+        wheel = auto_update.read_nofollow(src)
+        receipt = auto_update.read_nofollow(Path(src).with_suffix(".verified.json"))
+        tmp = _private_tmp_cache()
+        cache = tmp.root / "upgrade-cache"
+        cache.mkdir(mode=0o700)
+        tmp.write_private(cache / Path(src).name, wheel)
+        tmp.write_private((cache / Path(src).name).with_suffix(".verified.json"), receipt)
+        return auto_update.signed_cached_bytes(tmp, target)
+    except (OSError, ValueError):
+        return None
+    finally:
+        if tmp is not None:
+            shutil.rmtree(tmp.root, ignore_errors=True)
+
+
+def install_step(run, cmd, say, out: dict, target: str | None = None, store=None, *, sealed: bool = False,
+                 lease_end=None) -> tuple[int, str, dict]:
+    """0334: one installer command of the manual / phone / mail path with auto_update's retry rule — a failure the installer
+    output names dependency_download_failed (network class) is run again, same argv, up to auto_update.INSTALL_RETRIES
+    times with INSTALL_BACKOFF, only while auto_update.retry_limit (install budget minus the rollback reserve, and the
+    lease minus the rollback installer's cap) allows. `sealed` (the plan came from verified_plan): the wheel is pinned
+    from the verifier's bytes into `store` and re-hashed before every attempt. `store` None (inside the fence, no state
+    dir): the pre-0334 single attempt. → (rc, redacted tail, closed fields; `reason` install_artifact_changed /
+    install_artifact_unavailable, `_untouched` when no installer ran); a success after retries sets out["retry_count"]."""
+    from . import auto_update, upgrade_diag
+    if store is None:
+        keep = {}
+        rc, tl = upgrade_diag.run_step(run, cmd, say, keep=keep)
+        return rc, tl, ({**upgrade_diag.dependency_evidence(keep.get("raw") or tl, auto_update.run_env(cmd) or os.environ),
+                         "retry_count": 0} if rc else {})
+    pin = None
+    if sealed:
+        try:
+            cmd, pin = _pin_plan_wheel(cmd, target, store)
+        except ValueError as e:
+            why = str(e) if str(e) == auto_update.ARTIFACT_UNAVAILABLE else auto_update.ARTIFACT_CHANGED
+            return 1, "", {"reason": why, "retry_count": 0, "_untouched": True}
+    return _install_attempts(run, cmd, say, out, pin, lease_end)
+
+
+def _install_attempts(run, cmd, say, out, pin, lease_end=None):
+    from . import auto_update, upgrade_diag
+    started, retries, keep = _install_clock(), 0, {}
+    limit = auto_update.retry_limit(started, lease_end)
+
+    def step(r):
+        if pin:
+            auto_update.check_artifact(pin)          # before EVERY attempt (ValueError: changed / swapped)
+        return upgrade_diag.run_step(r, cmd, say, keep=keep)
+
+    def launch(c, **kw):
+        # 0334 r3: read after the wait and the re-hash; an exhausted deadline launches nothing (never clamped to 1 s)
+        left = limit - _install_clock()
+        if left < auto_update.RETRY_FLOOR:
+            raise auto_update.RetryExpired()
+        return run(c, timeout=int(left), **kw)
+    try:
+        rc, tl = step(run)
+    except ValueError:
+        return 1, "", {"reason": auto_update.ARTIFACT_CHANGED, "retry_count": 0, "_untouched": True}
+    while rc:
+        fields = {**upgrade_diag.dependency_evidence(keep.get("raw") or tl, auto_update.run_env(cmd) or os.environ),
+                  "retry_count": retries}
+        if (upgrade_diag.installer_reason(stderr=tl) not in auto_update.RETRYABLE_INSTALL
+                or retries >= auto_update.INSTALL_RETRIES):
+            return rc, tl, fields
+        wait = auto_update.INSTALL_BACKOFF[min(retries, len(auto_update.INSTALL_BACKOFF) - 1)]
+        if _install_clock() + wait + auto_update.INSTALL_MIN_ATTEMPT > limit:
+            return rc, tl, fields
+        retries += 1
+        say(f"  依赖下载失败（网络），{wait} 秒后重试 {retries}/{auto_update.INSTALL_RETRIES} / dependency download failed "
+            f"(network); retry {retries}/{auto_update.INSTALL_RETRIES} in {wait} s")
+        _install_sleep(wait)
+        prev, keep = (rc, tl, fields), {}
+        try:     # the timeout is taken when the installer starts, after the re-hash
+            rc, tl = step(launch)
+        except auto_update.RetryExpired:
+            return prev                               # the previous failure stands; nothing more was launched
+        except ValueError:
+            return 1, "", {**fields, "reason": auto_update.ARTIFACT_CHANGED, "retry_count": retries}
+        except subprocess.TimeoutExpired as e:      # the retry's own share of the budget ran out: a failure, no further retry
+            tl = (upgrade_diag.tail(getattr(e, "stderr", None) or "") or "TimeoutExpired: installer could not complete")
+            return 124, tl, {**upgrade_diag.dependency_evidence(tl, auto_update.run_env(cmd) or os.environ),
+                             "retry_count": retries}
+    if retries:
+        out["retry_count"] = retries
+    return 0, tl, {}
 
 
 def uv_tool_dir(environ: dict | None = None) -> str | None:
@@ -650,6 +799,16 @@ def roll_back(st, info: dict, wheel, frm: str, run, *, signed_only=False) -> boo
         require_compatible_version(st, frm)
         (st.root / UPGRADED).unlink(missing_ok=True)
         (st.root / PENDING).unlink(missing_ok=True)
+        from . import auto_update as _au
+        store = artifact_store(st)
+        stored = _au.stored_artifact(store, frm, signed_only=signed_only) if store else None
+        if stored:      # 0334 r2 (F5): the previous version's store copy, still matching its sidecar — no cache needed
+            for cmd in _au.install_commands(info, stored.path):
+                _au.check_artifact(stored)
+                if run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True).returncode:
+                    return False
+            v = run(new_argv(info) + ["--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
+            return not v.returncode and frm in ((v.stdout or "") + " " + (v.stderr or "")).split()
         if not wheel:
             return False
         import hashlib
@@ -661,6 +820,7 @@ def roll_back(st, info: dict, wheel, frm: str, run, *, signed_only=False) -> boo
         # The legacy upgrade rollback may have a RECORD-verified, unsigned
         # current wheel. Explicit phone/CLI rollback never selects that lane.
         sealed_bytes = auto_update.signed_cached_bytes(st, frm)
+        legacy = sealed_bytes is None
         if sealed_bytes is None:
             if signed_only:
                 return False
@@ -671,19 +831,32 @@ def roll_back(st, info: dict, wheel, frm: str, run, *, signed_only=False) -> boo
             if hashlib.sha256(sealed_bytes).hexdigest() != rec["sha256"]:
                 return False
         # Copy the verified bytes to a private wheel pathname. The mutable
-        # cache path is never passed to an installer.
-        import contextlib
-        with contextlib.ExitStack() as stack:
-            import tempfile
-            scratch = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="agentj-rollback-")))
-            scratch.chmod(0o700)
-            wheel_copy = scratch / f"agentj-{frm}-py3-none-any.whl"
-            with open(wheel_copy, "xb") as dst:
-                dst.write(sealed_bytes)
-            wheel_copy.chmod(0o400)
-            for cmd in auto_update.install_commands(info, wheel_copy):
+        # cache path is never passed to an installer. 0334: into the stable store when there is one (uv / pipx receipts
+        # record this path), re-hashed before each command; otherwise, or when the store cannot be written, as before.
+        pin = None
+        if store:
+            try:
+                pin = auto_update.pin_artifact(sealed_bytes, frm, store, signed=not legacy)
+            except ValueError:
+                pin = None
+        if pin:
+            for cmd in auto_update.install_commands(info, pin.path):
+                auto_update.check_artifact(pin)
                 if run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True).returncode:
                     return False
+        else:
+            import contextlib
+            with contextlib.ExitStack() as stack:
+                import tempfile
+                scratch = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="agentj-rollback-")))
+                scratch.chmod(0o700)
+                wheel_copy = scratch / f"agentj-{frm}-py3-none-any.whl"
+                with open(wheel_copy, "xb") as dst:
+                    dst.write(sealed_bytes)
+                wheel_copy.chmod(0o400)
+                for cmd in auto_update.install_commands(info, wheel_copy):
+                    if run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True).returncode:
+                        return False
         v = run(new_argv(info) + ["--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
         return not v.returncode and frm in ((v.stdout or "") + " " + (v.stderr or "")).split()
     except Exception as e:  # noqa: BLE001 — a failed rollback is reported, never raised
@@ -1069,6 +1242,14 @@ AUTH_REASONS = {
     "signature_or_hash_mismatch": (1, "下载到的发布包签名或哈希校验不对，拒绝安装，什么都没装。不要绕过校验；稍后重试，仍失败就交给客服",
                                    "the downloaded release failed its signature/hash check and was refused; nothing was installed. "
                                    "Never bypass the check; retry later, and leave it to support if it keeps failing"),
+    "install_artifact_unavailable": (1, "Agent J 的私有安装包目录写不进去（磁盘满、配额或权限），什么都没装。腾出空间或修好权限后再运行同一条命令",
+                                     "Agent J's private install-artifact folder could not be written (disk full, quota or "
+                                     "permissions); nothing was installed. Free space or fix permissions, then run the same command again"),
+    "install_artifact_changed": (1, "已校验的安装包在安装前被改动、替换或缺了签名记录，已停止安装、不再重试；如果之前已有安装尝试，rollback 行说明是否回滚。"
+                                    "不要绕过校验；先运行 agentj doctor，再运行同一条命令",
+                                 "the verified package was changed, replaced or lost its signature record before installing, so "
+                                 "installation stopped with no retry; if an install attempt had already run, the rollback line says "
+                                 "whether it was rolled back. Never bypass the check; run agentj doctor, then the same command again"),
     "uv_failed": (1, "安装命令失败，原文见 stderr 行；已尝试回滚到原版本（见 rollback 行）。修好原因后再运行同一条命令",
                   "the install command failed (its own words are on the stderr lines); a rollback to the previous version was "
                   "tried (see rollback). Fix the cause, then run the same command again"),
@@ -1209,10 +1390,13 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
     from .auto_update import command_line
     for c in plan:
         say("$ " + command_line(c))
-        rc, tl = run_step(_pinned(run), c, say)
+        rc, tl, dep = install_step(_pinned(run), c, say, out, target, artifact_store(st),   # 0334: network-class retries
+                                   sealed=plan_fn is None)
         if rc != 0:
             st.log("upgrade_failed", status=str(rc))
-            return back("uv_failed", stderr_tail=tl)
+            if dep.pop("_untouched", False):          # nothing ran: no rollback needed
+                return done(dep.pop("reason"), **dep)
+            return back(dep.pop("reason", "uv_failed"), **({"stderr_tail": tl} if tl else {}), **dep)
     argv = new_argv(info)
     out["step"] = "verify"
     try:
@@ -1224,6 +1408,9 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
         st.log("upgrade_failed", status="version")
         return back("not_upgraded", **version_diag(v, target, __version__, info))
     st.log("upgrade_done", status=target)
+    from .auto_update import prune_artifacts
+    if artifact_store(st):
+        prune_artifacts(artifact_store(st), (target, __version__))     # 0334: installed — keep the current + previous
     if svc_on is None:
         from . import service
         try:
@@ -1303,7 +1490,7 @@ def apply(st, target=None, *, fenced=None, **kw):
 
 
 def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, svc_on=None, plan_fn=None, rollback_fn=None,
-           fenced=None):
+           fenced=None, lease_end=None):
     if market_managed() or market_managed(prefix):
         return market_result()
     run, say = run or subprocess.run, say or (lambda line: None)
@@ -1369,11 +1556,14 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
     from .auto_update import command_line
     for cmd in plan:
         say("$ " + command_line(cmd))
-        rc, tl = run_step(_pinned(run), cmd, say)
+        rc, tl, dep = install_step(_pinned(run), cmd, say, out, target, artifact_store(st, fenced),   # 0334: retries
+                                   sealed=plan_fn is None, lease_end=lease_end)
         if rc:
             if not fenced and st.exists():
                 st.log("upgrade_failed", status=str(rc))
-            return back("uv_failed", stderr_tail=tl)
+            if dep.pop("_untouched", False):          # nothing ran: no rollback needed
+                return done(dep.pop("reason"), **dep)
+            return back(dep.pop("reason", "uv_failed"), **({"stderr_tail": tl} if tl else {}), **dep)
     out["step"] = "verify"
     argv = new_argv(info)
     handed = False      # P192 (B15): until the service hand-off / marker, any failure rolls back (an OSError included)
@@ -1392,6 +1582,9 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
         v = run(argv + ["--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
         if v.returncode or target not in ((v.stdout or "") + " " + (v.stderr or "")).split():
             return back("not_upgraded", **version_diag(v, target, __version__, info))
+        from .auto_update import prune_artifacts
+        if artifact_store(st, fenced):
+            prune_artifacts(artifact_store(st, fenced), (target, __version__))  # 0334: installed — keep current + previous
         if svc_on:
             record("pending")
             out["step"] = "service"
@@ -1486,6 +1679,7 @@ def repair_install(st, *, target=None, runner=None, service_installed=None, plan
         import tempfile
         from .state import State
         with contextlib.ExitStack() as stack:
+            pinned = None
             if plan_fn is not None:  # injected isolated tests; production always seals the published bytes
                 plan = plan_fn(st, info, target)
             else:
@@ -1494,15 +1688,30 @@ def repair_install(st, *, target=None, runner=None, service_installed=None, plan
                 sealed_bytes = auto_update.signed_cached_bytes(State(wheel.parent.parent), target)
                 if sealed_bytes is None:
                     return finish("artifact_signature_mismatch")
-                scratch = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="agentj-reinstall-")))
-                scratch.chmod(0o700)
-                wheel_copy = scratch / f"agentj-{target}-py3-none-any.whl"
-                with open(wheel_copy, "xb") as dst:
-                    dst.write(sealed_bytes)
-                wheel_copy.chmod(0o400)
+                # 0334: the stable store copy when there is a store (receipts record the path), re-hashed below before
+                # each command; otherwise, or when the store cannot be written, the temporary copy as before
+                store = artifact_store(st)
+                try:
+                    pinned = auto_update.pin_artifact(sealed_bytes, target, store, signed=True) if store else None
+                except ValueError:
+                    pinned = None
+                if pinned:
+                    wheel_copy = pinned.path
+                else:
+                    scratch = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="agentj-reinstall-")))
+                    scratch.chmod(0o700)
+                    wheel_copy = scratch / f"agentj-{target}-py3-none-any.whl"
+                    with open(wheel_copy, "xb") as dst:
+                        dst.write(sealed_bytes)
+                    wheel_copy.chmod(0o400)
                 plan = auto_update.install_commands(info, wheel_copy)
             _pre_snapshot(st)
             for cmd in plan:
+                if pinned:
+                    try:
+                        auto_update.check_artifact(pinned)
+                    except ValueError:
+                        return finish(auto_update.ARTIFACT_CHANGED)
                 if runner(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=300).returncode:
                     return finish("uv_failed")
         v = runner(new_argv(info) + ["--version"], stdin=subprocess.DEVNULL,
@@ -1540,6 +1749,7 @@ def host_op(st, req: dict, mem: dict, run=None) -> dict:
         keep = {k: rec[k] for k in ("v", "from", "to", "result", "reason", "at", "step") if k in rec}
         keep.update(upgrade_diag.artifact_fields(rec))
         keep.update(upgrade_diag.exception_fields(rec))
+        keep.update(upgrade_diag.dependency_fields(rec))      # 0334: closed values, re-validated here
         if isinstance(rec.get("detail"), str):
             keep["detail"] = rec["detail"][:120]
         if isinstance(rec.get("stderr_tail"), str):
@@ -1630,9 +1840,12 @@ def result_block(res: dict) -> str:
         lines.append("failed_checks: " + ", ".join(check_ids(res["failed_checks"])))
     if res.get("detail") and res.get("result") != "ok":
         lines.append(f"detail: {res['detail']}")
-    from .upgrade_diag import artifact_fields
+    from .upgrade_diag import artifact_fields, dependency_fields
     for key, value in artifact_fields(res).items():
         lines.append(f"{key}: {value}")
+    if res.get("result") != "ok" or res.get("retry_count"):     # 0334: closed dependency-failure words / retries made
+        for key, value in dependency_fields(res).items():
+            lines.append(f"{key}: {value}")
     if res.get("stderr_tail") and res.get("result") != "ok":
         lines += ["stderr: " + ln for ln in str(res["stderr_tail"]).splitlines()]
     if res.get("latest"):
