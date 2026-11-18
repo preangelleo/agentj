@@ -18,7 +18,8 @@ try {
   try {
    await page.send('Page.addScriptToEvaluateOnNewDocument',{source:`Object.defineProperty(window,'BarcodeDetector',{value:undefined}); Object.defineProperty(navigator,'standalone',{value:true});`});
    await navigate(page,server.url);await waitFor(page,`!document.getElementById('pair-view').hidden`);
-   assert.equal(await evaluate(page,`typeof window.jsQR`),'function');
+   assert.equal(await evaluate(page,`typeof window.jsQR`),'undefined');
+   assert.equal(await evaluate(page,`performance.getEntriesByType('resource').some(r=>r.name.endsWith('/vendor/jsQR.js'))`),false);
    assert.equal(await evaluate(page,`document.getElementById('scan').hidden`),false);
    await evaluate(page,`document.getElementById('scan').click()`);
    try { await waitFor(page,`document.body.dataset.view==='scan' && document.getElementById('scan-video').srcObject?.active`); }
@@ -27,10 +28,12 @@ try {
     throw error;
    }
    assert.equal(await evaluate(page,`!!document.getElementById('scan-video').srcObject`),true);
+   assert.equal(await evaluate(page,`typeof window.jsQR`),'function');
    const entry=await evaluate(page,`(()=>{const v=document.getElementById('scan-video'),r=v.getBoundingClientRect();let hidden=false;for(let e=v;e;e=e.parentElement){const s=getComputedStyle(e);hidden ||= e.hidden || s.display==='none' || s.visibility==='hidden';}return {view:document.body.dataset.view,state:window.__ajState,visible:document.visibilityState,focused:document.hasFocus(),active:v.srcObject?.active,hiddenAncestor:hidden,rect:{x:r.x,y:r.y,width:r.width,height:r.height},media:window.__ajMediaDiagnostics};})()`);
    assert.equal(entry.hiddenAncestor,false);assert.equal(entry.active,true);
    assert.deepEqual(entry.rect,{x:0,y:0,width:w,height:h});
    console.log('p40-camera-entry-ok',JSON.stringify(entry));
+   console.log('on-demand QR camera at '+w+' PASS');
    await evaluate(page,`document.getElementById('scan-stop').click()`);
    assert.equal(await evaluate(page,`document.getElementById('scan-video').srcObject`),null);
    const qrLink=fake.newPairing(server.url);

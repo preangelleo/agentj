@@ -337,6 +337,10 @@ export function toPage(t) {
       ...assistCarry(src),   // 0.26.9 #468: k = official_assist (+ the task id) whichever way the host wrote it
       ...(k === 'phone' && src.term && typeof src.term === 'object' ? { term: src.term } : {}) },   // P414 (§37.12): a 「!」 line's result (js/bang.js termOf)
     reply: typeof reply.text === 'string' ? dropReplacement(reply.text) : '',
+    // Unknown wire sources also receive the system presentation. Only an explicit
+    // host system turn with the exact payload-free privacy card gets retry copy.
+    ...(src.k === 'sys' && !src.via && t.card?.kind === 'support_feedback_retry'
+      && Object.keys(t.card).length === 1 ? {feedbackRetry:true} : {}),
     silent: t.silent === true,
     silent_reply: t.silent === true && typeof reply.pre === "string" ? dropReplacement(reply.pre) : "",
     part: Array.isArray(reply.part) && reply.part.length === 2 ? reply.part.map(Number) : null,

@@ -1,5 +1,5 @@
 {
-  "version": "0.30.38",
-  "zh": "共享 Claude 调用定时唤醒时，报告正文归入同一条回复。带静默标记的报告保留正文。发版自检通过设备状态查询完成，价目表补上 Fable 5.2 快速模式。",
-  "en": "Shared Claude keeps reports around wakeups and silence markers. Release checks quietly query device status. Usage prices include Fable 5.2 fast mode."
+  "version": "0.30.39",
+  "zh": "配对过程中再次打开配对，原手机可以继续。反馈因隐私检查暂时无法发送时，手机会提示保留草稿。扫码备用解码器按需加载，英文安装指南修正了审批按钮名称。",
+  "en": "A second local pairing request preserves the first. Feedback privacy checks explain when to retry. The QR scanner loads its fallback decoder on demand."
 }

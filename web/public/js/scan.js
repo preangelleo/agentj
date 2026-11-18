@@ -54,3 +54,19 @@ export function scanPixels(data, w, h, invert, jsQR) {
   if (invert) for (let i = 0; i < data.length; i += 4) { data[i] = 255 - data[i]; data[i + 1] = 255 - data[i + 1]; data[i + 2] = 255 - data[i + 2]; }
   return jsQR(data, w, h, { inversionAttempts: 'dontInvert' })?.data;
 }
+
+let decoderLoad;
+
+/** Share an in-flight load across quick scanner restarts. A later scan can retry after a network error. */
+export function loadQrDecoder() {
+  if (window.jsQR) return Promise.resolve();
+  if (!decoderLoad) {
+    decoderLoad = new Promise(resolve => {
+      const script = document.createElement('script');
+      script.src = 'vendor/jsQR.js';
+      script.onload = script.onerror = () => { script.remove(); resolve(); };
+      document.head.appendChild(script);
+    }).finally(() => { decoderLoad = undefined; });
+  }
+  return decoderLoad;
+}

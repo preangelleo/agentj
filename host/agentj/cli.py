@@ -479,6 +479,8 @@ def cmd_pair(a) -> None:
         await w.drain()
         first = json.loads(await r.readline() or b"{}")
         if first.get("ev") != "link":
+            if first.get("reason") == "pair_busy":
+                sys.exit("另一次配对正在进行。请在原窗口完成或取消后重试。 / Another pairing is in progress. Finish or cancel it in the original window, then retry.")
             sys.exit(f"无法开始配对：{first.get('reason', first)}")
         if not a.no_qr:
             print("方法一：用手机扫码 / Way 1: scan with your phone", flush=True)

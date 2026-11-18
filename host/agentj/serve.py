@@ -3158,20 +3158,16 @@ class Host:
         return len(victims)
 
     async def _ctl_pair(self, r: asyncio.StreamReader, w: asyncio.StreamWriter, pid=None) -> None:
-        epoch = getattr(self, '_pairing_epoch', 0)
         if getattr(self, '_unbinding_all', False):
             return await self._ctl_send(w, {'ev': 'error', 'reason': 'unbound_all'})
         if self.seat_refusal():                 # P185: no usable seat → no new remote (checked before relay_down: it is the cause)
             return await self._ctl_send(w, {"ev": "error", "reason": "seat_required"})
         if not self.relay_up:
             return await self._ctl_send(w, {"ev": "error", "reason": "relay_down"})
-        old = self.pairing
-        if old:
-            self._pair_finish(old, {"ev": "replaced"})
-            if old.cid is not None:
-                await self.close_cid(old.cid, "pair_replaced")
-        if getattr(self, '_unbinding_all', False) or epoch != getattr(self, '_pairing_epoch', 0):
-            return await self._ctl_send(w, {'ev': 'error', 'reason': 'unbound_all'})
+        # Control-socket clients may start a pairing without a claim. Each
+        # stream owns only its own pairing, until it ends or its window closes.
+        if self.pairing is not None:
+            return await self._ctl_send(w, {"ev": "error", "reason": "pair_busy"})
         p = Pairing(secrets.token_bytes(16), secrets.token_bytes(32), time.time() + PAIR_TTL, time.monotonic() + PAIR_TTL, w)
         self.pairing = p
         p.timer = asyncio.create_task(self._expire_pairing(p))

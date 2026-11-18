@@ -101,7 +101,7 @@ import * as shotclip from './js/shotclip.js'; // P154: a screenshot copied on a 
 import { hintKey, hostKind, HINT_AFTER_MS } from './js/offhint.js';   // P287: the offline line under 「电脑离线」
 import { createGate, DOWN_DEBOUNCE_MS } from './js/reconnect.js';   // P393: the five-second rule (one constant for every 「连不上」)
 import { parseAgentId } from './proto/wire.js';
-import { SCAN_CONSTRAINTS, SCAN_FALLBACK, SCAN_SLOW_MS, scanFrame } from './js/scan.js';   // F29 (ADR-A177)
+import { SCAN_CONSTRAINTS, SCAN_FALLBACK, SCAN_SLOW_MS, scanFrame, loadQrDecoder } from './js/scan.js';   // F29 (ADR-A177)
 import { hiddenTooLong } from './js/microphone.js';   // security r1 L3: the bounded wait behind a permission dialog
 import { classifyScan, RV_PREFIX } from './proto/wire.js';
 import * as rvpair from './js/rvpair.js';   // P190 (§27): be scanned on the pairing screen; scan a new device from a paired one
@@ -1350,10 +1350,13 @@ async function startScan(mode = 'pair') {
     if (window.BarcodeDetector && (await window.BarcodeDetector.getSupportedFormats()).includes('qr_code'))
       det = new window.BarcodeDetector({ formats: ['qr_code'] });
   } catch { /* bundled decoder below */ }
+  if (navigator.mediaDevices?.getUserMedia && !det && !window.jsQR) {
+    await loadQrDecoder();
+  }
+  if (generation !== scanGeneration) return;
   if (!navigator.mediaDevices?.getUserMedia || (!det && !window.jsQR)) {
     fillText(hint, t('pair.scanHint')); hint.hidden = false; stopScan(false); return;
   }
-  if (generation !== scanGeneration) return;
   let stream;
   try {
     // F29: ask for 1080p (iOS gives ~640×480 otherwise); a camera that fails on it (not a refusal) gets the old request

@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.28.59
+version: 0.28.60
 released: 2026-11-19
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.30.38
-source_tag: v0.30.38
-host_wheel: agentj-0.30.38-py3-none-any.whl
-host_wheel_sha256: 74c2a31ecaaf772b3827c55857cbdb32b6111288dc01c0c9d773cebdbac416e0
-host_sdist: agentj-0.30.38.tar.gz
-host_sdist_sha256: 25fdf2bbff43a8e3ecb74ed8c625ed3a31f51364b98b5a3c9ac33b047ecff48d
+host_version: 0.30.39
+source_tag: v0.30.39
+host_wheel: agentj-0.30.39-py3-none-any.whl
+host_wheel_sha256: ff309647426a21c7a483ee2eceb9972c1bcfe86b12353464a443194520cc1c26
+host_sdist: agentj-0.30.39.tar.gz
+host_sdist_sha256: c2f9b081fa403a484c02a8de7d08d71d1b4d09a36cb3cef4665132cefa90a99b
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 docs_index: https://agentj.app/llms.txt (also https://agentj.app/docs/index.json; every page as raw Markdown at https://agentj.app/docs/<slug>/en.md and /zh.md)
@@ -731,7 +731,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.30.38` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.30.39` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -773,13 +773,13 @@ uv tool install "./$W"          # the wheel; its dependencies come from PyPI or 
 `https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.9`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.38#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.39#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.38#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.39#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.38`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.39`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1784,7 +1784,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.38#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.39#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -3041,8 +3041,7 @@ folder; setup codes and pairing links never go into chat.
 若 Agent 真停在终端里的某个确认上，手机会收到「在Agent J 主机上处理」卡，原样引用终端里的文字。
 
 A slow, silent first message on a new computer was one of: the model service unreachable (Claude Code retries for about
-three minutes — the phone now says so when it is still failing after about 10 seconds); bubblewrap missing (stock WSL2 Ubuntu — the phone shows the
-「Run this launch without isolation」 card each start; fix with `sudo apt-get install -y bubblewrap socat`); root with
+three minutes — the phone now says so when it is still failing after about 10 seconds); bubblewrap missing (stock WSL2 Ubuntu — the phone shows a "Sandbox unavailable" card at each start. Its "Run this launch without isolation" button requires the owner's passkey. Install the missing tools with `sudo apt-get install -y bubblewrap socat`); root with
 bypassPermissions (Claude Code refuses to start — Agent J starts it in the default permission mode and says so once); a
 model the provider does not serve (400 — the host retries once on Opus 5.5 · medium, Agent J's default). `agentj agent
 <tool>` answers the tool's one-time terminal screens ahead (merge only, no key read); doctor row `first-setup`. A

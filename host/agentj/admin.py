@@ -175,7 +175,7 @@ class Pairing:
         if first.get("ev") != "link" or not isinstance(first.get("link"), str):
             self.close()
             reason = first.get("reason")
-            raise PairError(reason if reason in DENY_REASONS else "pair_failed")
+            raise PairError(reason if reason == "pair_busy" or reason in DENY_REASONS else "pair_failed")
         self.link, self.expires = first["link"], int(first.get("expires") or 0)
         from . import wire
         self.qr_svg = wire.pairing_qr(self.link).svg_data_uri(scale=6, border=2, dark="#141414", light="#faf9f5")
@@ -322,6 +322,9 @@ class Admin:
             return 409, {"ok": False, "error": "passphrase_not_set"}
         with self.lock:
             if self.pairing:
+                current = self.pairing.view()
+                if current["phase"] in ("waiting", "pending", "full"):
+                    return 200, {"ok": True, "pairing": current}
                 self.pairing.close()
                 self.pairing = None
             try:

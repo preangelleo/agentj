@@ -40,13 +40,19 @@ try {
   await page.send('Page.addScriptToEvaluateOnNewDocument', { source: NO_DETECTOR + `Object.defineProperty(navigator,'standalone',{value:true});` });
   await navigate(page, server.url);
   await waitFor(page, `!document.getElementById('pair-view').hidden`);
+  assert.equal(await evaluate(page, "typeof window.jsQR"), 'undefined');
+  await evaluate(page, `const video = document.getElementById('scan-video');
+    video.addEventListener('loadedmetadata', () => {
+      const {width,height} = video.srcObject.getVideoTracks()[0].getSettings();
+      window.scanDimensions = {videoWidth:video.videoWidth,videoHeight:video.videoHeight,settings:{width,height}};
+    }, {once:true});`);
   const t0 = Date.now();
   await evaluate(page, `document.getElementById('scan').click()`);
-  await waitFor(page, `document.getElementById('scan-video').videoWidth > 0`);
-  result.stream = await evaluate(page, `(()=>{const v=document.getElementById('scan-video'),s=v.srcObject.getVideoTracks()[0].getSettings();return {videoWidth:v.videoWidth,videoHeight:v.videoHeight,settings:{width:s.width,height:s.height}};})()`);
-  assert.equal(result.stream.videoWidth, 1920); assert.equal(result.stream.videoHeight, 1080);
-  await evaluate(page, `document.getElementById('scan-trigger').click()`);
   await waitState(page, 'awaiting-approval', 15000);
+  result.stream = await evaluate(page, 'window.scanDimensions');
+  assert.equal(result.stream.videoWidth, 1920); assert.equal(result.stream.videoHeight, 1080);
+  result.decoderRequests = await evaluate(page, "performance.getEntriesByType('resource').filter(r=>r.name.endsWith('/vendor/jsQR.js')).length");
+  assert.equal(result.decoderRequests, 1);
   result.scanToPairMs = Date.now() - t0;
   await fake.approve();
   await waitState(page, 'ready');
@@ -64,7 +70,6 @@ try {
     await waitFor(page, `!document.getElementById('pair-view').hidden`);
     await evaluate(page, `document.getElementById('scan').click()`);
     await waitFor(page, `document.getElementById('scan-video').videoWidth > 0`);
-    await evaluate(page, `document.getElementById('scan-trigger').click()`);
     const aim = await evaluate(page, `document.getElementById('camera-hint').textContent`);
     await sleep(8000);
     assert.equal(await evaluate(page, `document.getElementById('camera-hint').textContent`), aim, 'no hint before 10 s');

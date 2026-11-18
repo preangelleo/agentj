@@ -4412,6 +4412,9 @@
     "count": "{n} new remotes verified; {old} old remotes remain.",
     "failed": "Not completed. Use a newly paired remote with a new passkey, reconnect, and try again."
   },
+  "p0325": {
+    "retry": "Your feedback hasn’t been sent. Keep your draft and submit it again when the privacy check is available."
+  },
   "p498": {
     "resume": "Continue from the failed step",
     "queued": "Queued to continue from the failed step.",

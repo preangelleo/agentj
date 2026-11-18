@@ -39,24 +39,24 @@
       }
     },
     "web/public/i18n.js": {
-      "sha256": "503475a6eec8a3c249de33706b6491b4a60642c8a052f7b2fa9212c722bfd2af",
+      "sha256": "4bd1a6060d606b1819b6d92dc768cb3a0f4f2f2217c61569daa29102556189d0",
       "approved": [
         "r3_final_decision"
       ],
       "propagation": {
-        "baseline_sha256": "7c463310f6170195dc1770a3f2e4a3474707d4970a175915e59ae75549204c3a",
-        "reason": "0.30.33 MQ-0320 (chairman INCOMING-0320/0321/0323 \u2465, fix/0333-mq): contact edit dialog \u4fdd\u5b58 becomes a worded Lotion/Sooty button the size of \u53d6\u6d88; shared \u2318/Ctrl+Enter save helper (card-form.js) with the p0321.saveKey hint on calendar, notes/to-do and contact forms; a host-voided approval / admin card is put away at once (web view only, nothing sent). Before/after images ~/.local/state/next-0.30.33/preview/MQ-0320/ \u2014 pending chairman image approval; do not ship before it."
+        "baseline_sha256": "503475a6eec8a3c249de33706b6491b4a60642c8a052f7b2fa9212c722bfd2af",
+        "reason": "0.30.39 adds the localized manual-retry message for a system feedback privacy-check failure. Reviewed under the 0.30.39 night order. The 0.30.22 decision and 0319 approval remain separate."
       }
     },
     "web/public/index.html": {
-      "sha256": "cffad83d1d8fe46bb1908ecb53446667877d47ea8029e46e8eae0b09a6b3803c",
+      "sha256": "325219f1b4059f541bdac50fde1ddbf934ab2640a7c8a39646ae82eb0ac6ae73",
       "approved": [
         "r3_final_decision",
         "0.30.24_owner_ruling"
       ],
       "propagation": {
-        "baseline_sha256": "ccb6703561a4f29e6ccc34597c62b47fd186a9a65e4be46cff7d7fd0afb99b88",
-        "reason": "0.30.33 MQ-0320 (chairman INCOMING-0320/0321/0323 \u2465, fix/0333-mq): contact edit dialog \u4fdd\u5b58 becomes a worded Lotion/Sooty button the size of \u53d6\u6d88; shared \u2318/Ctrl+Enter save helper (card-form.js) with the p0321.saveKey hint on calendar, notes/to-do and contact forms; a host-voided approval / admin card is put away at once (web view only, nothing sent). Before/after images ~/.local/state/next-0.30.33/preview/MQ-0320/ \u2014 pending chairman image approval; do not ship before it."
+        "baseline_sha256": "cffad83d1d8fe46bb1908ecb53446667877d47ea8029e46e8eae0b09a6b3803c",
+        "reason": "0.30.39 removes the eager QR decoder script from the pairing page. Reviewed under the 0.30.39 night order. The 0.30.22 decision and 0319 approval remain separate."
       }
     },
     "web/public/js/accounts.js": {
@@ -110,43 +110,43 @@
       }
     },
     "web/i18n/web.zh.json": {
-      "sha256": "a28f8bb29f6e82495383698d35a9e7cb5e2bd07c296fe9e9ad0004c193e5567c",
+      "sha256": "f1b06d72303b7b66934b766781f625afcc98305da6b574792edd2741a7bf5ab8",
       "approved": [
         "r3_final_decision"
       ],
       "propagation": {
-        "baseline_sha256": "73fb3553d91b8c5592392857ae675f4ac613ec158bfbc347459e4f2b3401de5e",
-        "reason": "0.30.33 MQ-0320 (chairman INCOMING-0320/0321/0323 \u2465, fix/0333-mq): contact edit dialog \u4fdd\u5b58 becomes a worded Lotion/Sooty button the size of \u53d6\u6d88; shared \u2318/Ctrl+Enter save helper (card-form.js) with the p0321.saveKey hint on calendar, notes/to-do and contact forms; a host-voided approval / admin card is put away at once (web view only, nothing sent). Before/after images ~/.local/state/next-0.30.33/preview/MQ-0320/ \u2014 pending chairman image approval; do not ship before it."
+        "baseline_sha256": "a28f8bb29f6e82495383698d35a9e7cb5e2bd07c296fe9e9ad0004c193e5567c",
+        "reason": "0.30.39 adds the localized manual-retry message for a system feedback privacy-check failure. Reviewed under the 0.30.39 night order. The 0.30.22 decision and 0319 approval remain separate."
       }
     },
     "web/i18n/web.en.json": {
-      "sha256": "953d85766bdaa826519410dfd28d282c5baae6ca710946dc7317f8c2509fc3f8",
+      "sha256": "c9d104bcff6c588cfaadef766a6a85a8484fcbe1d5cbd48ccf9214d31016d3d3",
       "approved": [
         "r3_final_decision"
       ],
       "propagation": {
-        "baseline_sha256": "94304c089908ca926c79c9251b8ea5a28af5abe2e6d369c6881bc2c10ea6bd6c",
-        "reason": "0.30.33 MQ-0320 (chairman INCOMING-0320/0321/0323 \u2465, fix/0333-mq): contact edit dialog \u4fdd\u5b58 becomes a worded Lotion/Sooty button the size of \u53d6\u6d88; shared \u2318/Ctrl+Enter save helper (card-form.js) with the p0321.saveKey hint on calendar, notes/to-do and contact forms; a host-voided approval / admin card is put away at once (web view only, nothing sent). Before/after images ~/.local/state/next-0.30.33/preview/MQ-0320/ \u2014 pending chairman image approval; do not ship before it."
+        "baseline_sha256": "953d85766bdaa826519410dfd28d282c5baae6ca710946dc7317f8c2509fc3f8",
+        "reason": "0.30.39 adds the localized manual-retry message for a system feedback privacy-check failure. Reviewed under the 0.30.39 night order. The 0.30.22 decision and 0319 approval remain separate."
       }
     },
     "web/i18n/web.zh.src.json": {
-      "sha256": "0080c4978b32723b8ebe75318314ff6880e81a502024340e30d296f8b3d2dbdf",
+      "sha256": "f4cfc10877972da38afa5259d653ed5d0aa2396cb1ed0e79da34ffc9f4468d19",
       "approved": [
         "r3_final_decision"
       ],
       "propagation": {
-        "baseline_sha256": "5327c8cbb4b6ee34666ef0d3c452ebc20463e2c0b6d402b7ceca2224f794eeaf",
-        "reason": "0.30.33 MQ-0320 (chairman INCOMING-0320/0321/0323 \u2465, fix/0333-mq): contact edit dialog \u4fdd\u5b58 becomes a worded Lotion/Sooty button the size of \u53d6\u6d88; shared \u2318/Ctrl+Enter save helper (card-form.js) with the p0321.saveKey hint on calendar, notes/to-do and contact forms; a host-voided approval / admin card is put away at once (web view only, nothing sent). Before/after images ~/.local/state/next-0.30.33/preview/MQ-0320/ \u2014 pending chairman image approval; do not ship before it."
+        "baseline_sha256": "0080c4978b32723b8ebe75318314ff6880e81a502024340e30d296f8b3d2dbdf",
+        "reason": "0.30.39 adds the localized manual-retry message for a system feedback privacy-check failure. Reviewed under the 0.30.39 night order. The 0.30.22 decision and 0319 approval remain separate."
       }
     },
     "web/i18n/web.zh.override.json": {
-      "sha256": "ba7d8a209b6838fcc123e176ef3d260f2504cf64b89a896fed83d587bd966e0d",
+      "sha256": "45acf2f5f28ec48d6d3327885be0a4f7c51bb0afab5127efc3e1eee941adbba4",
       "approved": [
         "r3_final_decision"
       ],
       "propagation": {
-        "baseline_sha256": "f03b0fc69e5af2404e96d324128a6e39ea9f1ef10e8b4f3376d9b95d6b670a64",
-        "reason": "0.30.33 MQ-0320 (chairman INCOMING-0320/0321/0323 \u2465, fix/0333-mq): contact edit dialog \u4fdd\u5b58 becomes a worded Lotion/Sooty button the size of \u53d6\u6d88; shared \u2318/Ctrl+Enter save helper (card-form.js) with the p0321.saveKey hint on calendar, notes/to-do and contact forms; a host-voided approval / admin card is put away at once (web view only, nothing sent). Before/after images ~/.local/state/next-0.30.33/preview/MQ-0320/ \u2014 pending chairman image approval; do not ship before it."
+        "baseline_sha256": "ba7d8a209b6838fcc123e176ef3d260f2504cf64b89a896fed83d587bd966e0d",
+        "reason": "0.30.39 adds the localized manual-retry message for a system feedback privacy-check failure. Reviewed under the 0.30.39 night order. The 0.30.22 decision and 0319 approval remain separate."
       }
     },
     "web/public/brand/account-links.js": {

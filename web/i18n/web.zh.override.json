@@ -4157,5 +4157,6 @@
   "secretEditor.title": "粘贴 {name}",
   "ix.app.background": "打开后台、Webhook 和系统消息的已有记录列表",
   "ixges.app.background": "在命令菜单点 /background",
-  "p0321.saveKey": "{key} 保存"
+  "p0321.saveKey": "{key} 保存",
+  "p0325.retry": "反馈尚未发送。请保留草稿，等隐私检查恢复后再提交。"
 }

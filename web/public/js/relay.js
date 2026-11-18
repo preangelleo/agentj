@@ -1303,7 +1303,7 @@ function displayTurn(p){
       text: p.source?.text?.trim() ? p.source.text : channel.text,
       name: channel.label || p.source?.name || '', input_channel: channel.source}};
   }
-  return {...p, silent: silentTurn(p), reply: cleanSilentMarkers(p.reply)}; }
+  return {...p, silent: silentTurn(p), reply: p.feedbackRetry ? t('p0325.retry') : cleanSilentMarkers(p.reply)}; }
 const tailSeen = {primed: false, id: 0, reply: "", virt: false, seg: ""};
 function newTurnArrived(ps){
   const tt = ps.findLast(p => visibleReply(p)) || {id: null, reply: ""};

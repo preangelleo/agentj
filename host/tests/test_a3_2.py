@@ -1049,6 +1049,40 @@ class PagePairing(unittest.TestCase):
     def wrong(self, code):
         return f"{(int(code) + 1) % 1_000_000:06d}"
 
+    def test_admin_waits_for_other_pairing_to_finish(self):
+        with socket.socket(socket.AF_UNIX) as terminal:
+            terminal.settimeout(5)
+            terminal.connect(str(self.st.sock_path))
+            with terminal.makefile("rb") as stream:
+                terminal.sendall(b'{"cmd":"pair"}\n')
+                self.assertEqual(json.loads(stream.readline())["ev"], "link")
+                status, reply = self.post("/api/pair/start", {})
+                self.assertEqual((status, reply.get("error")), (409, "pair_busy"))
+                self.assertNotIn("pairing", reply)
+        dev, code, _ = self.start_and_pair("Phone B")
+        status, reply = self.post("/api/pair/code", {"code": code, "passphrase": PASS})
+        self.assertEqual((status, reply["pairing"]["phase"]), (200, "approved"))
+        self.assertEqual(dev.app(), {"t": "approved"})
+
+    def test_other_pair_start_preserves_pending_device(self):
+        dev, code, _ = self.start_and_pair("Phone A")
+        second = names.ctl_call(self.st, {"cmd": "pair"})
+        self.assertEqual(second.get("ev"), "error")
+        self.assertEqual(second.get("reason"), "pair_busy")
+        self.assertNotIn("link", second)
+        status, page = self.post("/api/pair/start", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(page["pairing"]["device"]["id"], dev.id)
+        self.assertEqual(page["pairing"]["phase"], "pending")
+        self.assertNotIn(dev.id, self.st.devices())
+        status, result = self.post("/api/pair/code", {"code": code, "passphrase": PASS})
+        self.assertEqual((status, result["pairing"]["phase"]), (200, "approved"))
+        self.assertEqual(dev.app(), {"t": "approved"})
+        self.assertIn(dev.id, self.st.devices())
+        status, fresh = self.post("/api/pair/start", {})
+        self.assertEqual((status, fresh["pairing"]["phase"]), (200, "waiting"))
+        self.post("/api/pair/cancel", {})
+
     def test_right_code_approves_wrong_code_denies(self):
         dev, code, st = self.start_and_pair("Leo 的手机\x1b[2J 123456")
         p = st["pairing"]
