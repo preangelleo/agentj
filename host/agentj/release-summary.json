@@ -1,5 +1,5 @@
 {
-  "version": "0.30.41",
-  "zh": "手机重连时，Face ID 或 Touch ID 按钮会在“稍后”上方完整显示，较长的文字会自动换行。",
-  "en": "When reconnecting on your phone, the Face ID or Touch ID button appears above Later. Long button labels wrap to fit the screen."
+  "version": "0.30.42",
+  "zh": "手机重连时，验证按钮显示“用 Face ID/Touch ID 继续”。",
+  "en": "When reconnecting on your phone, tap “Continue with Face ID/Touch ID”."
 }

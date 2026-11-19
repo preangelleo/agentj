@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // P198 (F: F20 over F36, Jarvis's decision) — the side that was taken over (Safari → Home Screen app → private tab) gets
-// one button, 「用 Face ID 在这里继续」, and comes back with the same passkey; no prompt, nothing else. REAL web client in
+// one button, 「用 Face ID/Touch ID 继续」, and comes back with the same passkey; no prompt, nothing else. REAL web client in
 // headless Chromium with a CDP virtual platform authenticator (Face ID's stand-in), REAL host CLI, local workerd relay —
 // the e2e_p57_passkey.mjs setup. Walks:
 //   A pair by QR → save the passkey · B a fresh context, same passkey → Face ID → ready (A is now taken over)
@@ -146,7 +146,7 @@ async function journey() {
     await a2.waitFor(offer, 45000);
     check(await a2.eval('window.passkeyRequests === 0'), 'legacy phone offers recovery without requesting system authentication');
     check((await a2.eval(hostRec))?.approved === true, 'opaque closes preserve the existing local pairing');
-    check(await a2.eval(text('connRetry')) === '用 Touch ID 在这里继续', 'legacy host offers explicit passkey recovery');
+    check(await a2.eval(text('connRetry')) === '用 Touch\u00a0ID 继续', 'legacy host offers explicit passkey recovery');
     check(Object.keys(readDevs()).length === 1 && !readDevs()[idA], 'no automatic identity change before the tap');
     await a2.send('WebAuthn.setUserVerified', { authenticatorId: a2.auth, isUserVerified: false });
     await a2.tap('#connRetry');
@@ -169,7 +169,7 @@ async function journey() {
     `A reopened → 「${s.title}」, button ${s.btn}, 重新配对 ${s.repair}, lead ${s.lead}`);
   // P559 naming (chairman 10-27): Face ID only on iPhone / iPad — this headless Chromium says Linux → Touch ID
   check(await a2.eval('window.passkeyRequests === 0'), 'authenticated removal offers recovery without requesting system authentication');
-  check(await a2.eval(text('takeover-pk')) === '用 Touch ID 在这里继续', 'A: the button says 「用 Touch ID 在这里继续」');
+  check(await a2.eval(text('takeover-pk')) === '用 Touch\u00a0ID 继续', 'A: the button says 「用 Touch ID 继续」');
   check(await a2.eval(`document.getElementById('confirm').hidden`), 'A: no prompt or sheet, only the button');
   await a2.shot(join(SHOTS, 'A-taken-over-zh.png'));
   await a2.tap('#takeover-pk');
@@ -195,7 +195,7 @@ async function journey() {
   await b2.goto(FRESH + '&lang=en');
   s = await takenOver(b2);
   const enBtn = await b2.eval(text('takeover-pk')), enLead = await b2.eval(text('revoked-lead'));
-  check(s.ok && s.btn && enBtn === 'Continue here with Touch ID' && /Touch ID/.test(enLead) && s.title === 'This pairing has been replaced',
+  check(s.ok && s.btn && enBtn === 'Continue with Touch\u00a0ID' && /Touch ID/.test(enLead) && s.title === 'This pairing has been replaced',
     `B (en) → 「${s.title}」 / 「${enBtn}」`);
   await b2.shot(join(SHOTS, 'B-taken-over-en.png'));
   await b2.eval(`localStorage.setItem('aj.lang', 'zh')`);

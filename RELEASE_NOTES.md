@@ -1,5 +1,5 @@
-# Agent J v0.30.41
+# Agent J v0.30.42
 
-When reconnecting on your phone, the Face ID or Touch ID button appears above Later. Long button labels wrap to fit the screen.
+When reconnecting on your phone, tap “Continue with Face ID/Touch ID”.
 
-手机重连时，Face ID 或 Touch ID 按钮会在“稍后”上方完整显示，较长的文字会自动换行。
+手机重连时，验证按钮显示“用 Face ID/Touch ID 继续”。

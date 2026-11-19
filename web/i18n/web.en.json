@@ -2363,7 +2363,7 @@
     "scanAdd": "Scan to add a remote"
   },
   "r.mail.idle": "Forward by e-mail",
-  "revoked.takeoverPk": "Continue here with Face ID",
+  "revoked.takeoverPk": "Continue with Face ID/Touch ID",
   "revoked.takeoverLead": "If you registered Face ID, use it to restore access without scanning a code. This disconnects the other session using this pairing. If Face ID is unavailable, select Pair again.",
   "revoked.takeoverNone": "Face ID didn't confirm. It may have been cancelled, or this phone has no saved Agent J Face ID record. Tap again, or keep using the other one.",
   "r.ptt.intText": "The system interrupted the recording (screen lock or another app); the {d} recorded is being turned into text for the message field",

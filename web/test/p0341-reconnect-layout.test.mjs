@@ -36,6 +36,16 @@ function measure(stress) {
       buttons: buttons.map(b => {
         const style = getComputedStyle(b), range = document.createRange();
         range.selectNodeContents(b);
+        const lines = [...range.getClientRects()].map(r => ({...r.toJSON(), text:''}));
+        // Associate each displayed character with the actual WebKit line rectangle.
+        const character = document.createRange();
+        for (let i = 0; i < b.firstChild.length; i++) {
+          character.setStart(b.firstChild, i);
+          character.setEnd(b.firstChild, i + 1);
+          const box = character.getBoundingClientRect();
+          const line = lines.find(line => Math.abs(line.top - box.top) < 0.5);
+          if (line) line.text += character.toString();
+        }
         const biometricNames = [];
         for (const match of b.textContent.matchAll(/(?:Face|Touch)\sID/g)) {
           const name = document.createRange();
@@ -45,8 +55,9 @@ function measure(stress) {
         }
         return {
           id: b.id, text: b.textContent, biometricNames, rect: rect(b), foreground: style.color, background: style.backgroundColor,
+          paddingLeft: style.paddingLeft, paddingRight: style.paddingRight,
           borders: ['Top','Right','Bottom','Left'].map(side => style['border'+side+'Width']),
-          lines: [...range.getClientRects()].map(r => r.toJSON()),
+          lines,
         };
       }),
     };
@@ -63,12 +74,21 @@ function verify(data, width, lang, theme, stress) {
   assert.equal(data.background, 'rgb(44, 43, 38)');
   assert.equal(buttons.length, 2);
   const primary = buttons.find(b => b.id === 'connRetry'), later = buttons.find(b => b.id === 'connLater');
-  assert.match(primary.text.replace(/\s/g, ' '), lang === 'zh' ? /用 Face ID\/Touch ID 在这里继续/ : /Continue here with Face ID\/Touch ID/);
-  if (lang === 'en') {
-    assert.deepEqual(primary.biometricNames.map(name => name.text.replace(/\s/g, ' ')), ['Face ID','Touch ID']);
-    for (const name of primary.biometricNames) {
-      assert.equal(name.lines.length, 1, name.text+' must fit on a single line');
+  const expected = lang === 'zh' ? '用 Face ID/Touch ID 继续' : 'Continue with Face ID/Touch ID';
+  const normalize = text => text.replaceAll('\u00a0', ' ');
+  assert.equal(normalize(primary.text), stress ? expected + ' ' + 'W'.repeat(105) : expected);
+  if (!stress && lang === 'en' && width === 360) {
+    assert.ok(primary.lines.length <= 2, '360 English label exceeds two lines');
+    if (primary.lines.length === 2) {
+      const secondLine = normalize(primary.lines[1].text).trim();
+      assert.ok(secondLine && secondLine !== 'ID', 'ID may not stand alone on the second line');
     }
+  } else if (!stress) {
+    assert.equal(primary.lines.length, 1, width+' '+lang+' '+theme+' primary label wraps');
+  }
+  assert.deepEqual(primary.biometricNames.map(name => normalize(name.text)), ['Face ID','Touch ID']);
+  for (const name of primary.biometricNames) {
+    assert.equal(name.lines.length, 1, name.text+' must fit on a single line');
   }
   assert.match(later.text, lang === 'zh' ? /^稍后/ : /^Later/);
   assert.ok(primary.rect.bottom <= later.rect.top, 'primary above Later');
@@ -97,6 +117,7 @@ test('reconnect passkey actions fit all mobile widths, languages and themes', as
   const browser = await webkit.launch();
   t.after(() => browser.close());
   const receipt = {engine:'webkit', version:browser.version(), cases:[]};
+  const failures = [];
   for (const lang of ['zh', 'en']) {
     host.reset();
     host.st.prefs = {appearance:{language:lang}};
@@ -137,7 +158,11 @@ test('reconnect passkey actions fit all mobile widths, languages and themes', as
           for (const stress of [false,true]) {
             const data = await page.evaluate(measure,stress);
             receipt.cases.push({name,stress,...data});
-            verify(data,width,lang,theme,stress);
+            try {
+              verify(data,width,lang,theme,stress);
+            } catch (error) {
+              failures.push(name + (stress ? ' stress' : '') + ' — ' + error.message);
+            }
           }
         }
       }
@@ -148,4 +173,5 @@ test('reconnect passkey actions fit all mobile widths, languages and themes', as
       await writeFile(join(out,'browser.json'), JSON.stringify(receipt,null,2)+'\n');
     }
   }
+  assert.deepEqual(failures, [], 'reconnect screenshot gate');
 });

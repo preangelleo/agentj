@@ -46,7 +46,13 @@ export const tRaw = (key, vars) => raw(key, vars);
 export function t(key, vars) {
   const os = textOs();
   if (!SUB_OS.includes(os)) return raw(key, vars);
-  return fmtVars(bioWords(raw(key), os, lang()), vars);   // only our words change, never host text inside {vars}
+  const source = raw(key);
+  if (key === 'revoked.takeoverPk') {
+    // Resolve the device name before keeping each biometric name on a single line.
+    const label = bioWords(source.replaceAll('\u00a0', ' '), os, lang());
+    return label.replace(/(Face|Touch) ID/g, '$1\u00a0ID');
+  }
+  return fmtVars(bioWords(source, os, lang()), vars);   // only our words change, never host text inside {vars}
 }
 /** P344: one key's text in both languages (the shortcut sheet's search matches 中文 and English alike). */
 export const both = (key) => [DICT.zh[key], DICT.en[key]].filter(Boolean);
