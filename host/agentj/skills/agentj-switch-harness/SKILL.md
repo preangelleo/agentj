@@ -35,10 +35,10 @@ switching back resumes that one. To switch, the owner just replies 「切换到 
    updated itself) needs nothing; another install listed as unused may be removed if the owner wants.
    Claude Code / Codex fail with "region not supported", or the owner is in Hong Kong / Macau / mainland China: run
    `agentj agent route` — where they are not offered: mainland China from zero → Volcano Ark Agent Plan, Medium first (Kimi
-   K3 from Medium; `agentj provider ark`; an existing Coding Plan: `--plan coding`); Hong Kong / overseas → Kimi membership Plus or higher (Go has no
+   K3 from Medium; use the Agent J Ark preset below. An existing Coding Plan uses `--plan coding`); Hong Kong / overseas → Kimi membership Plus or higher (Go has no
    coding quota) in OpenCode or Kimi Code CLI (`kimi`); already on one → keep it. The owner decides. Give Kimi's link with the sentence right after it, never apart: 「这是 Agent J 官方的邀请链接，您和我们各得一次抽奖」
    (en: "This is Agent J's official invite link: you and we each get one prize draw"), plus its alternatives; the key only
-   via the phone key card it prints (`KIMI_API_KEY` / `ARK_AGENT_PLAN_API_KEY` — the Agent Plan's own key from 订阅 → Agent Plan → 使用配置, not API Key management), then `agentj service restart` and scan again. Also
+   via the paired phone's key card. For Kimi, restart the service and scan again after saving `KIMI_API_KEY`. The Ark Agent Plan card uses the dedicated key from 订阅 → Agent Plan → 使用配置 and retries the original switch after saving. Also
    possible on the mainland: an Alibaba Cloud Bailian Token Plan, personal (¥39–499 a month; Qwen 3.8 Max / Flash read images):
    `agentj provider bailian` writes OpenCode's config without touching what is there and prints the key card
    (`BAILIAN_TOKEN_PLAN_API_KEY`); then `agentj agent switch opencode --model bailian-token-plan-personal/qwen3.8-max` (or
@@ -48,8 +48,7 @@ switching back resumes that one. To switch, the owner just replies 「切换到 
    **OpenCode · Volcano Ark (P371)** in one step: `agentj agent switch opencode --preset ark --plan agent|coding|payg [--model …]`.
    Ask first: Agent Plan (default, …/api/plan/v3, `ARK_AGENT_PLAN_API_KEY`), Coding Plan (…/api/coding/v3 — both plans are for coding Agents only; other programs using them can get the account banned) or
    pay-as-you-go (…/api/v3, per token, `ARK_API_KEY`, checked against Ark's model list). It finds OpenCode (arkcli only
-   detected), prints the key card when the key is missing (run it, then the same command again), writes the provider and
-   switches only after one real call; on failure it switches back and removes the provider it added. A failed check (any
+   detected), configures the provider and calls the selected model before switching. If a switch requested on a paired phone opens the Ark Agent Plan key card, ask the owner to enter the dedicated plan key there. Saving it retries that switch automatically. For a missing pay-as-you-go key, follow the key card and repeat the switch after saving. A failed check (any
    harness) may end with OpenCode's own one-line error — read it to the owner as it is (credentials are already redacted).
 3. **Not installed / not signed in**:
    - The owner asked to switch to it (or to use it) → install it directly, no extra yes; if they only asked what is available, offer it. Follow https://agentj.app/docs/setup-agents/en.md (one-command `setup-agents.sh`
@@ -131,9 +130,11 @@ Kimi Code 用 `kimi login --region mainland-cn`（海外站 `global`）或手机
 都由它完成；未指定 `--model` 时，Claude Code 使用自己的默认或当前模型，明确指定时照常写入。切换只核对目标 harness 是否正确、能否应答，不因模型名不同回退。失败自动切回原 harness 并说明；原 harness 自检失败不阻止切换。应急用 `--force` 跳过预检，支持全部六种 harness；切换前 Agent J 会发〔Agent J 系统提示〕让你按 agentj-handoff 格式把交接写进它点名的 `switch.md`（只留要点、≤ 150 行、
 不写凭据），写完回一句就停；新 harness 的第一条提示里直接带着交接（没带上才读文件），看完再打招呼，随后接着干；3 分钟没写成也照切，超时明确说明已等 180 秒，改用更完整的本机脱敏摘录（最多最近 16 轮请求和回复，过长处标出省略），遗漏进度和决定须核实；⑤ `agentj agent switch --result` 看结果（带原因和下一步，照着转告主人）；⑥ 切回上一个却过不了检查时，用 `agentj agent switch --undo`
 不经预检原样切回（起不来自动回到现在这个）。「没登录」指后台服务看不到登录：照扫描结果那句一步做法讲给主人（`claude` 里 `/login`
-一次，或 `agentj service import-key CLAUDE_CODE_OAUTH_TOKEN` 再 `agentj service restart`）；你自己会话里能用不算数。「OpenCode · 火山方舟」一步到位：先确认主人用 Agent Plan（默认，…/api/plan/v3）、已有 Coding Plan（…/api/coding/v3）还是按量付费（…/api/v3），使用各自对应的 key 和模型名，再运行 `agentj agent switch opencode --preset ark --plan agent|coding|payg`，缺 key 它会给密钥卡命令，实测一次才切、不通自动切回。OpenCode 没 key 时可以先用它的免费模型（`--model opencode/<免费模型>`），切换结果里那句数据提示原样转告主人。绝不绕过闸门直接改配置或重启服务。
+一次，或 `agentj service import-key CLAUDE_CODE_OAUTH_TOKEN` 再 `agentj service restart`）；你自己会话里能用不算数。「OpenCode · 火山方舟」一步到位：先确认主人用 Agent Plan（默认，…/api/plan/v3）、已有 Coding Plan（…/api/coding/v3）还是按量付费（…/api/v3），使用各自对应的 key 和模型名，再运行 `agentj agent switch opencode --preset ark --plan agent|coding|payg`，切换前会实测所选模型。用配对手机发起切换后，如果出现方舟 Agent Plan 密钥卡，请主人在卡里填套餐专属 key，保存后会自动重试原来的切换。按量付费缺 key 时，填完卡再切换一次。OpenCode 没 key 时可以先用它的免费模型（`--model opencode/<免费模型>`），切换结果里那句数据提示原样转告主人。绝不绕过闸门直接改配置或重启服务。
 切换、扫描、`--undo` 不需要管理员权限，也不需要主人开终端（经 Agent J 自己的通道，隔离里也能用）：绝不为此用 `agentj sudo`，不让主人跑 `agentj service start` 或 launchctl；`agentj service status` 说 serve 在应答就是在运行；隔离里也能通过该通道读宿主结果；已排队、探测中、等待中、切换中和退出码 4 都是尚未确认，不算成功或失败，读不到宿主结果也不能猜。先结束当前轮释放切换，下一轮用 `agentj agent switch --result` 查结果，不让主人从网页菜单重发；失败只转告打印的原因。
 Ark401: Agent Plan and Coding Plan keys are not interchangeable. A confirmed mismatch exposes a signed one-use phone button in the failure banner and Emergency repair: Use Agent Plan/Coding Plan and retry. Direct the owner to tap it; never request the same key again, copy it yourself, bypass the probe, or replay the failed message. The host reuses the exact local key, configures the matching provider and verifies the same model with native OpenCode before switching. Existing different target credentials/providers are retained. Show the redacted upstream error line from the switch result.
+
+火山方舟 Agent Plan 专属 key 需要北京套餐地址。选 Agent Plan 时用 Agent J 的 `--preset ark --plan agent` 配置 `ark-agent-plan`。OpenCode 内置的 Volcengine Ark、Volcengine Ark Coding Plan 和 BytePlus ModelArk 使用其他地址，会拒绝这把 key。 / Use the Agent J Ark Agent Plan preset with the dedicated key. The three built-in integrations use different endpoints.
 
 方舟套餐误配时，把主人引导到失败提示或「紧急修复」的「改用 Agent Plan / Coding Plan 并重试」按钮；不用再贴 key，验证成功才切。
 

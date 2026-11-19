@@ -498,13 +498,13 @@ FACT = {
     "not_bound": ("还没完成：这台Agent J 主机还没加入你的 Agent J 账号。", "Not done: the Agent J host has not joined your Agent J account."),
     "no_agent": ("还没完成：还没选主 AI。", "Not done: no main AI chosen yet."),
     "agent_not_running": ("没通过：主 AI 现在没在运行。", "Not passed: the main AI is not running."),
-    "no_agent_kimi": ("还没完成：还没选主 AI。这台Agent J 主机所在地区用不了 Claude Code 和 Codex。中国大陆从零开始首推火山方舟 Coding Plan，"
-                      "先买 Lite（和 Pro 能力一样，只差 5 倍用量；`agentj provider ark`）；香港 / 海外推荐 Kimi 会员 Plus 或更高档"
+    "no_agent_kimi": ("还没完成：还没选主 AI。这台Agent J 主机所在地区用不了 Claude Code 和 Codex。中国大陆从零开始首推火山方舟 Agent Plan，"
+                      "配对后选择 Agent Plan（`agentj agent switch opencode --preset ark --plan agent`）；香港 / 海外推荐 Kimi 会员 Plus 或更高档"
                       "（Go 档没有编程额度），用 OpenCode 接入：{kimi}。已经有其中一家的就继续用。详细步骤：`agentj agent route`。"
                       "订阅后让 Agent 发手机密钥卡收 key。",
                       "Not done: no main AI chosen yet. Claude Code and Codex are not available where the Agent J host is. In "
-                      "mainland China, starting from zero, we recommend Volcano Ark Coding Plan — buy Lite first (same as Pro, "
-                      "only 1/5 of the quota; `agentj provider ark`). In Hong Kong / overseas, a Kimi membership, Plus or higher "
+                      "mainland China, starting from zero, choose Volcano Ark Agent Plan after pairing "
+                      "(`agentj agent switch opencode --preset ark --plan agent`). In Hong Kong / overseas, a Kimi membership, Plus or higher "
                       "(Go has no coding quota), through OpenCode: {kimi}. Already paying for one of them? Keep it. Step by step: "
                       "`agentj agent route`. After subscribing, ask your Agent for the phone key card."),
     "agent_not_running_kimi": ("没通过：主 AI 现在没在运行，而这台Agent J 主机所在地区用不了 Claude Code 和 Codex。中国大陆推荐改用火山方舟 "

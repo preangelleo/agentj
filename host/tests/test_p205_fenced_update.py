@@ -199,6 +199,14 @@ class _Apply(unittest.IsolatedAsyncioTestCase):
 
 
 class FencedWithHost(_Apply):
+    async def test_read_only_chat_requests_phone_card_before_install(self):
+        run = Runner()
+        with (patch.object(update, 'writable', return_value=False),
+              patch.object(update, '_host', return_value={'ok':True, 'card':'new'}) as host):
+            res = await self.apply(run)
+        host.assert_called_once_with(self.view, 'phone_offer', 10, version=NEW)
+        self.assertEqual((res['reason'], res['exit'], run.calls), ('upgrade_card_ready', 10, []))
+
     async def test_success_host_records_and_checks(self):
         await self.start_host()
         run = Runner(doctor_rows=fenced_rows())

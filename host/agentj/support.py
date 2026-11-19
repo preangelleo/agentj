@@ -470,6 +470,11 @@ def cmd(a) -> None:
         _run(run_list)
 
 
+def default_wait(command):
+    # A feedback submission returns its ticket. Questions and reports await the support reply.
+    return 0 if command == "feedback" else DEFAULT_WAIT
+
+
 def add_parser(sub) -> None:
     sp = sub.add_parser("support", help="找 Agent J 客服：遇到报错 / 看不懂的提示 / 疑似 bug / 文档误导 / 工作流想法，先自己问客服 / "
                                         "ask the Agent J support desk first (errors, unclear hints, bugs, docs, workflow ideas)",
@@ -485,7 +490,7 @@ def add_parser(sub) -> None:
         s.add_argument("--file", help="从文件读正文 / read the text from a file")
         s.add_argument("--attach-doctor", action="store_true", help="附上脱敏后的 agentj doctor 输出和版本 / attach the redacted doctor output + version")
         s.add_argument("--thread", help="接着一个已有会话问 / continue a thread (st_…)")
-        s.add_argument("--wait", type=int, default=DEFAULT_WAIT, help="等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)")
+        s.add_argument("--wait", type=int, default=default_wait(name), help="等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)")
         s.add_argument("--lang", choices=("zh", "en"))
         s.add_argument("--owner-confirmed", action="store_true",
                        help="主人已读过原文并同意（仅用于模型指出的非凭据个人信息；模型不可用无需确认）/ owner consent for noncredential model findings; not needed when model review is unavailable")

@@ -143,6 +143,18 @@ REASON["en"].update({
     "no_way_back": "there would be no way back to {x}: {x} fails the same check in the background service",
     "nothing_to_undo": "there is no switch to undo", "stale_job": "a stale switch job was not run"})
 
+REASON["zh"].update(ark_route_conflict="现有 OpenCode 配置与官方火山方舟 Agent Plan 路由冲突，已保留原配置。",
+                    first_pair="首次连接请先在掌枢完成手机配对，再选择火山方舟 Agent Plan。",
+                    first_device="首次连接需要从主机本人终端确认一台已配对的手机，才能发送密钥卡。")
+REASON["en"].update(ark_route_conflict="The existing OpenCode configuration conflicts with the Beijing Agent Plan provider. Your configuration was preserved.",
+                    first_pair="Pair your phone in Agent J, then select Volcano Ark Agent Plan.",
+                    first_device="First connection needs one identifiable paired phone and a request from the owner’s host terminal.")
+REASON["zh"]["owner_provider_key"] = "外部 OpenCode 服务器配置的模型密钥缺失或无效"
+REASON["en"]["owner_provider_key"] = "The external OpenCode server has a missing or invalid provider key"
+REASON["zh"]["owner_model_unconfirmed"] = "外部 OpenCode 服务器未提供独立验证所选模型的接口，无法确认这次切换。"
+REASON["en"]["owner_model_unconfirmed"] = "The external OpenCode server does not provide a way to independently verify the selected model."
+REASON["zh"].update(provider_key="{x} 的密钥缺失或无效", probe_model_unconfirmed="无法确认回复来自所选模型")
+REASON["en"].update(provider_key="{x} has a missing or invalid key", probe_model_unconfirmed="Could not confirm the selected model answered")
 REASON["zh"].update({"unknown_model": "{x} 没有这个模型（`kimi` 里 /model 列出可选的）",
                      "native_tool_refused": "{x} 在测试消息里想调用工具（测试只许直接回答）"})
 REASON["en"].update({"unknown_model": "{x} does not offer this model (/model in kimi lists them)",
@@ -340,6 +352,9 @@ def _hello_prompt(kind: str, req: dict, lang: str = "zh", where: str | None = No
     outcome, frm, to, code = req.get("outcome"), req.get("from"), req.get("to"), req.get("reason") or ""
     ho = req.get("handoff")
     detail, err = req.get("detail"), req.get("err")
+    if outcome == "first" and kind == to == "opencode" and frm is None and ho is None and not code:
+        return ("[Agent J system note] Tell the owner you are ready. Reply with the single word Ready. Use no tools."
+                if lang == "en" else "〔Agent J 系统提示〕首次连接已经完成。请只回复「可用」，不要调用工具。")
     if outcome not in ("ok", "rolled_back") or frm not in KINDS or to not in KINDS or not (code == "" or _CODE.fullmatch(code)) \
             or ho not in (None, "ok", "none"):
         return None
@@ -592,7 +607,7 @@ def _result_meta(rec):
             out[k] = v
         elif k in ("at", "waited", "start_secs") and type(v) in (int, float) and 0 <= v < 1e12:
             out[k] = v
-        elif k in ("undo", "installed", "callable") and type(v) is bool:
+        elif k in ("undo", "installed", "callable", "managed_provider", "project_extensions_skipped") and type(v) is bool:
             out[k] = v
         elif isinstance(v, str) and privacy.redact(v) == v and ((k == "job" and _JOB.fullmatch(v)) or
                 (k == "model" and len(v) <= 160 and (_OC_MODEL.fullmatch(v) or MODEL_RE.fullmatch(v))) or
@@ -648,7 +663,7 @@ def gate(target: str, model: str | None = None, probe=None) -> dict:
     if not h or not h.get("installed"):
         return {"ok": False, "reason": "ambiguous_install" if h and h.get("resolution", {}).get("reason") == "ambiguous_install" else "not_installed", "version": None}
     if h.get("callable"):
-        return {"ok": True, "version": h.get("version")}
+        return {"ok": True, "version": h.get("version"), **({"start_checked": h["start_checked"]} if "start_checked" in h else {})}
     code = h.get("probe_reason") or "call_failed"
     return {"ok": False, "reason": code if _CODE.fullmatch(code) else "call_failed", "version": h.get("version"),
             **({"line": h["probe_error"]} if isinstance(h.get("probe_error"), str) else {})}   # P395
@@ -691,7 +706,9 @@ def request(st, target: str | None, model: str | None = None, dry_run: bool = Fa
     if model and not (_OC_MODEL.fullmatch(model) if target == "opencode" else MODEL_RE.fullmatch(model)):
         return {"ok": False, "reason": "bad_model", "target": target}
     cur = current_kind(st)
-    if cur == target:
+    from . import ark_connect
+    same_plan = target == "opencode" and ark_connect.chosen(model)
+    if cur == target and not same_plan and not undo:
         return {"ok": False, "reason": "same", "target": target, "from": cur}
 
     spec = {"kind": "switch", "target": None if undo else target, "model": model if model and not undo else None,
@@ -699,7 +716,7 @@ def request(st, target: str | None, model: str | None = None, dry_run: bool = Fa
     try:        # P339 review: serve picks the job id (and writes "probing"); launched here, the caller does as before
         job = _launch(st, spec, launch, lambda j: write_receipt(st, {"status": "probing", "target": target, "from": cur, "job": j}))
     except HostRefused as e:
-        if e.args[0] in _WAIT:      # another job is in flight: its receipt stays
+        if e.args[0] in (*_WAIT, "first_pair", "first_device", "no_service"):      # another job is in flight: its receipt stays
             return {"ok": False, "reason": e.args[0], "target": target, "from": cur}
         write_receipt(st, {"status": "failed", "target": target, "from": cur, "reason": "launch_failed"})
         return {"ok": False, "reason": "launch_failed", "target": target, "from": cur}
@@ -811,7 +828,7 @@ def _admit(st, kind: str) -> dict | None:
     return None
 
 
-def host_job(st, req, launch_job=None) -> dict:
+def host_job(st, req, launch_job=None, *, after=None, live=None, origin=None) -> dict:
     """P339: serve launches the job for any caller (a fenced one cannot reach launchd / systemd). Blocking: in a thread."""
     spec, err = check_spec(req)
     if err:
@@ -820,14 +837,28 @@ def host_job(st, req, launch_job=None) -> dict:
     if launch_job is None:
         from .service_recovery import launch_job
     with _LOCK:
+        if after is not None:
+            previous = read_receipt(st) or {}
+            if (not live or not live() or previous.get("job") != after or previous.get("status") != "failed" or previous.get("reason") != "provider_key"
+                    or previous.get("model") != spec.get("model") or current_kind(st) != previous.get("from")):
+                return {"ok": False, "error": "stale_job"}
         held = _admit(st, spec["kind"])
         if held:
             st.log("harness_job", result=held.get("error") or "reused", kind=spec["kind"])
             return held
+        first = {}
+        if spec["kind"] == "switch" and spec.get("target") == "opencode" and str(spec.get("model")).startswith("ark-agent-plan/") and not st.agent_config():
+            from . import ark_connect
+            if not spec.get("dry_run"):
+                if not st.devices():
+                    return {"ok":False,"error":"first_pair"}
+                if not origin or origin.agent is not None or st.sign_key(origin.device) != origin.signing_key or len(st.devices()) != 1:
+                    return {"ok":False,"error":"first_device"}
+                first = ark_connect.authority(st, origin.device)
         job = spec["job"] = os.urandom(8).hex()
         if spec["kind"] == "switch":
             write_receipt(st, {"status": "probing", "target": spec["target"] or (_previous(st) or {}).get("kind"),
-                               "from": current_kind(st), "job": job})
+                               "from": current_kind(st), "job": job, **first})
         try:
             launch_job(st, job_argv(spec), purpose="switch", extra_env={"AGENTJ_JOB_AT": str(int(time.time()))})
         except Exception as e:  # noqa: BLE001
@@ -1190,8 +1221,14 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
     if target not in KINDS:
         return done("failed", "bad_target")
     if not prev or not raw:
+        from . import ark_connect
+        if target == "opencode" and ark_connect.chosen(model) and not undo:
+            why = ark_connect.first(st,job,model,dry_run,probe,ctl,restart,sleep,clock)
+            return done("failed",why) if why else done("probe_ok" if dry_run else "ok")
         return done("failed", "no_agent")
-    if prev["kind"] == target:
+    from . import ark_connect
+    same_plan = prev["kind"] == target == "opencode" and ark_connect.chosen(model)
+    if prev["kind"] == target and not same_plan and not undo:
         return done("failed", "same")
     try:                            # a switch restarts the service by itself: there must be one (not a serve in a terminal)
         sv = (status or service.status)()
@@ -1210,10 +1247,28 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
             model = mine["model"]
 
         _progress(ctl, "probing", target)
-        g = gate(target, model, probe)
+        from . import shared_pin
+        start_cfg = {**prev, "kind": target, "model": model,
+                     "shared_session_id": shared_pin.resolve(st, target, prev.get("shared_pin_owner", ""), prev["dir"])}
+        from . import ark_connect
+        explicit_plan = target == "opencode" and ark_connect.chosen(model) and not (
+            start_cfg.get("session_mode") == "shared" and start_cfg.get("shared_opencode_port"))
+        if explicit_plan:
+            start_cfg["_agent_plan"] = True
+            try:
+                _, skipped = ark_connect.project_settings(os.environ,start_cfg["dir"])
+                if skipped:
+                    extra["project_extensions_skipped"] = True
+            except (ValueError,OSError,opencode_free.ProbeError):
+                return done("failed","ark_route_conflict")
+        target_probe = probe
+        if target == "opencode" and model and probe is None:
+            from functools import partial
+            target_probe = partial(harness.probe, opencode_launch=(st, start_cfg))
+        g = gate(target, model, target_probe)
         version = g.get("version")
         if not g["ok"]:
-            if target == "opencode" and isinstance(g.get("line"), str) and re.search(r"\b401\b", g["line"]):
+            if target == "opencode" and not dry_run and not explicit_plan and re.search(r"\b401\b", g.get("line") or ""):
                 from . import ark_plan_fix
                 fix = ark_plan_fix.diagnose(st, model, force=force)
                 if fix:
@@ -1223,16 +1278,19 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
             return done("failed", g["reason"])
 
 
-        if not force:
+        if explicit_plan and not dry_run:
+            try:
+                if ark_connect.install(os.environ,start_cfg["dir"],model) == "managed":
+                    extra["managed_provider"] = True
+            except (opencode_free.ProbeError,OSError):
+                return done("failed","ark_route_conflict")
+        if not force and not same_plan:
             _phase(ctl, "probe_back", target, prev["kind"])
             gb = gate(prev["kind"], _probe_model(st, prev["kind"], raw), probe)
             if not gb["ok"]:
                 back_reason = gb["reason"]
                 extra["back_unavailable"] = back_reason  # P567: escaping a broken harness must remain possible
-        from . import shared_pin
-        start_cfg = {**prev, "kind": target, "model": model,
-                     "shared_session_id": shared_pin.resolve(st, target, prev.get("shared_pin_owner", ""), prev["dir"])}
-        m = start(st, target, start_cfg)  # target model/pin, same folder / launch
+        m = {"secs": g["start_checked"]} if "start_checked" in g else start(st, target, start_cfg)  # target model/pin, same folder / launch
         if m:
             extra["start_secs"] = int(m.get("secs") or 0)
             if m.get("err"):
@@ -1256,7 +1314,7 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
         return done("failed", "estop")
 
 
-    ho = _write_handoff(st, ctl, prev, prev["kind"], target, sleep, clock)
+    ho = "unchanged" if prev["kind"] == target else _write_handoff(st, ctl, prev, prev["kind"], target, sleep, clock)
     extra["handoff"] = ho
     if undo:
         _phase(ctl, "undo", target, prev["kind"])
@@ -1396,6 +1454,9 @@ def _say(r: dict, lang: str) -> str:
     if r.get("ark_plan_fix"):
         from .ark_plan_fix import guidance
         return _say({k:v for k,v in r.items() if k != "ark_plan_fix"}, lang) + "\n" + guidance(r["ark_plan_fix"], lang)
+    if r.get("reason") in ("provider_key","owner_provider_key") and r.get("target") == "opencode":
+        from .opencode_switch_key import explanation
+        return explanation(r, lang)
     if r.get('reason') == 'not_installed' and r.get('target') == 'opencode':
         from . import opencode_install
         return opencode_install.install_text(lang, native_only=True)
@@ -1459,6 +1520,12 @@ def _say_receipt(rec: dict | None, lang: str) -> str:
         model = rec.get("model") or ""
         plan = "Agent Plan" if model.startswith("ark-agent-plan/") else "Coding Plan" if model.startswith("ark-coding-plan/") else None
         out = f"{when} ✓ {F} → {T}" + ((f" · Now using Volcano {plan}" if lang == "en" else f" · 已改用火山 {plan}") if plan else "")
+        if rec.get("managed_provider"):
+            out += (" · Both native config files are in use. Agent J loads the plan for its own OpenCode process." if lang == "en" else
+                    " · 两份原生配置均已在用，掌枢会为自己的 OpenCode 进程载入此套餐。")
+        if rec.get("project_extensions_skipped"):
+            out += (" · Project extensions and extra instruction-file references are disabled while the managed plan key is in use." if lang == "en" else
+                    " · 使用托管套餐密钥时，停用项目扩展和额外说明文件引用。")
         k = KEPT["en" if lang == "en" else "zh"]
         if rec.get("kept") in ("busy", "card", "deferred"):
             out += (" · " + T + " " + k[rec["kept"]] + k[""]).format(t=T, f=F)
@@ -1476,6 +1543,9 @@ def _say_receipt(rec: dict | None, lang: str) -> str:
             + _choices(rec, lang)
     if st == "probe_ok":
         return f"{when} ✓ {T}: " + ("passed the check (dry run)" if lang == "en" else "检查通过（只检查，没切换）")
+    if st == "failed" and rec.get("reason") in ("provider_key","owner_provider_key") and rec.get("target") == "opencode":
+        from .opencode_switch_key import explanation
+        return explanation(rec, lang)
     if st == "failed":
         return f"{when} ✗ {F} → {T}: " + reason_text(rec.get("reason") or "", rec.get("target") or "", lang, None,
                                                      rec.get("err"), rec.get("line")) + secs

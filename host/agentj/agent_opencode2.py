@@ -782,7 +782,7 @@ def probe_line(err, secrets_in=()) -> str | None:
 
 
 def probe(exe: str, model: str | None, env: dict, timeout: float, *, waits=(), sleep=time.sleep,
-          clock=time.monotonic, prompt=None, diagnostic=False) -> str:
+          clock=time.monotonic, prompt=None, diagnostic=False, launch=None) -> str:
     """One greeting through a 2.x `opencode serve` in an empty scratch folder → the reply text; raises
     opencode_free.ProbeError(code, line) — `line` is OpenCode's own error (probe_line) or None. A free-tier refusal / 429 is
     retried after each of `waits` while `timeout + sum(waits)` allows."""
@@ -794,7 +794,7 @@ def probe(exe: str, model: str | None, env: dict, timeout: float, *, waits=(), s
     import urllib.request
     from . import scratch
     from .agent_opencode import _rule, opencode_env
-    from .opencode_free import PROMPT, START_WAIT, ProbeError, _env, _port, _stop, serve
+    from .opencode_free import PROMPT, START_WAIT, ProbeError, _env, _port, _stop, check_reply_model, classify, serve
     from . import olares_probe
     if olares_probe.required():
         raise ProbeError('fence_unavailable')
@@ -853,12 +853,18 @@ def probe(exe: str, model: str | None, env: dict, timeout: float, *, waits=(), s
         return None
 
     try:
-        proc = serve(exe, opencode_env(_env(env), password), root, port, min(deadline, clock() + START_WAIT), clock)
+        launch_env = opencode_env(_env(env), password)
+        if launch:
+            from .opencode_probe_route import environment
+            launch_env = environment(launch_env, launch[1]["dir"], model, root, agent_plan=launch[1].get("_agent_plan") is True)
+        proc = serve(exe, launch_env, root, port, min(deadline, clock() + START_WAIT), clock, **({"launch": launch} if launch else {}))
         threading.Thread(target=listen, daemon=True).start()
         up = clock() + 3
         while not events and clock() < up:             # `server.connected` first, so no failure event is missed
             sleep(0.05)
         rules = rules_to_v2(session_rules([], research=True) + [_rule("webfetch", "*", "deny")])
+        if launch:
+            rules = rules_to_v2([_rule("*", "*", "deny")])
         if diagnostic:
             rules = rules_to_v2([_rule("*", "*", "deny"), _rule("read", root + "/*", "allow")])
         body = {"title": "Agent J probe", "location": {"directory": root}, "permissions": rules}
@@ -887,16 +893,18 @@ def probe(exe: str, model: str | None, env: dict, timeout: float, *, waits=(), s
                              and x.get("type") == "assistant" and ((x.get("time") or {}).get("created") or 0) >= t0), {})
                 text = "\n".join(c.get("text") or "" for c in last.get("content") or []
                                  if isinstance(c, dict) and c.get("type") == "text").strip()
-                if outcome == "succeeded" and text:
-                    return text
                 err = last.get("error") if isinstance(last.get("error"), dict) else next(
                     (e["data"]["error"] for e in events[seen:] if isinstance(e, dict) and isinstance(e.get("data"), dict)
                      and e["data"].get("sessionID") == sid and isinstance(e["data"].get("error"), dict)), None)
                 if outcome == "succeeded" and not err:
-                    raise ProbeError("empty_probe_reply", None)
-                blob = json.dumps(err or {})
-                code = ("free_tier" if "FreeTierError" in blob or (err or {}).get("status") == 429 else
-                        "provider_unavailable" if (err or {}).get("type") == "provider.no-route" else "native_failed")
+                    if not text:
+                        raise ProbeError("empty_probe_reply", None)
+                    if launch:
+                        check_reply_model(model, last.get("model"))
+                    return text
+                name, data = v2_error(err)
+                code = ("provider_unavailable" if name == "provider.no-route" else
+                        classify({"name": name, "data": data}))
                 if code != "free_tier" or wait is None or clock() + wait >= deadline:
                     raise ProbeError(code, probe_line(err, keys))
                 sleep(wait)

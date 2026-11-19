@@ -102,7 +102,7 @@ class V2(_Base):
         os.environ["FAKE_OC2_FAIL"] = "BADKEY"
         h = self.probe(self.v2)
         self.assertFalse(h["callable"])
-        self.assertEqual(h["probe_reason"], "native_failed")
+        self.assertEqual(h["probe_reason"], "provider_key")
         self.assertEqual(h["probe_error"], "provider.auth 401 User not found.")
 
     def test_v2_line_never_carries_a_token(self):
@@ -147,7 +147,7 @@ class Owner(_Base):
         os.environ["FAKE_OC2_FAIL"] = "BADKEY"
         os.environ["AGENTJ_OPENCODE_BIN"] = self.v2
         g = sh.gate("opencode", "deepseek/chat")
-        self.assertEqual((g["ok"], g["reason"], g["line"]), (False, "native_failed", "provider.auth 401 User not found."))
+        self.assertEqual((g["ok"], g["reason"], g["line"]), (False, "provider_key", "provider.auth 401 User not found."))
         zh = sh.reason_text(g["reason"], "opencode", "zh", line=g["line"])
         en = sh.reason_text(g["reason"], "opencode", "en", line=g["line"])
         self.assertIn("OpenCode 原话：provider.auth 401 User not found.", zh)
@@ -155,7 +155,7 @@ class Owner(_Base):
         text = sh.reason_text("native_failed", "opencode", "zh")
         self.assertTrue(text.startswith(sh.REASON["zh"]["native_failed"].format(x="OpenCode")))
         self.assertIn("AJ_START_OPENCODE_NATIVE_FAILED", text)
-        self.assertIn("agentj provider bailian", text)
+        self.assertIn("unknown", text)  # unclassified native failure has no provider-specific diagnosis
 
     def test_receipt_and_scan_texts_carry_the_line(self):
         import time as _t

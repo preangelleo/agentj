@@ -158,7 +158,7 @@ class CardEntrypoints(unittest.TestCase):
     def test_ark_switch_missing_key_opens_card_dry_run_does_not(self):
         for dry in (True,False):
             with patch.object(elevate,'client_request',return_value={'result':'pending','id':'card'}) as request:
-                r=ark.switch(None,dry_run=dry,detector=lambda:{'opencode':'1.0'},key=lambda *a:False)
+                r=ark.switch(None,plan='payg',dry_run=dry,detector=lambda:{'opencode':'1.0'},key=lambda *a:False)
             self.assertEqual(r['reason'],'need_key')
             self.assertEqual(request.call_count,0 if dry else 1)
 

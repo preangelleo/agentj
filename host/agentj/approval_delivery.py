@@ -46,6 +46,15 @@ def drop_device(host, device):
     _write(host, rows)
 
 
+def _bound(host, session):
+    current = host.st.devices().get(session.device)
+    return (session.state == "ready" and host.st.is_allowed(session.pub)
+            and isinstance(current, dict) and current.get("device", session.device) == session.device
+            and current.get("pub") == wire.b64u(session.pub)
+            and current.get("sk") == wire.b64u(session.sign_pub)
+            and host.st.sign_key(session.device) == session.sign_pub)
+
+
 async def deliver(host, obj_fn, *, rid: str, only=None) -> dict:
     """Send to every eligible online paired remote; queue each unavailable target.
 
@@ -54,7 +63,8 @@ async def deliver(host, obj_fn, *, rid: str, only=None) -> dict:
     """
     targets = {only} if isinstance(only, str) else set(only or host._approvers())
     online = [s for s in list(host.sessions.values())
-              if s.state == "ready" and s.device in targets and host.st.is_allowed(s.pub)]
+              if s.state == "ready" and s.device in targets and host.st.is_allowed(s.pub)
+              and (not s.sign_pub or _bound(host, s))]
     online_devices = {s.device for s in online}
     queued = targets - online_devices
     for device in queued:
@@ -71,6 +81,10 @@ async def deliver(host, obj_fn, *, rid: str, only=None) -> dict:
         else:
             failed.add(session.device)
             _put(host, rid, session.device)
+    # A second tab may have disconnected after another tab accepted the frame.
+    failed -= accepted
+    for device in accepted:
+        _drop(host, rid, device)
     return {"accepted": accepted, "queued": queued | failed, "failed": failed,
             "targets": targets, "complete": bool(targets) and accepted == targets}
 
@@ -78,13 +92,7 @@ async def deliver(host, obj_fn, *, rid: str, only=None) -> dict:
 async def replay(host, session) -> int:
     """Replay queued open cards only after repeating every live-boundary check."""
     count = 0
-    if session.state != "ready" or not host.st.is_allowed(session.pub):
-        return 0
-    current = host.st.devices().get(session.device) if hasattr(host.st, "devices") else None
-    if (not isinstance(current, dict) or current.get("device", session.device) != session.device
-            or current.get("pub") != wire.b64u(session.pub)
-            or current.get("sk") != wire.b64u(session.sign_pub)
-            or host.st.sign_key(session.device) != session.sign_pub):
+    if not _bound(host, session):
         return 0
     # The replay check and the encrypted frame write must share the transport
     # lock.  This closes the revoke/unbind window for single-frame cards too.
@@ -127,5 +135,7 @@ async def replay(host, session) -> int:
               ok = False
           if ok:
               _drop(host, rid, session.device)
+              if obj.get("t") == "elev" and obj.get("kind") == "secret":
+                  host.st.log("elev_delivery", id=rid, kind="secret", result="replayed")
               count += 1
     return count

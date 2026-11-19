@@ -39,6 +39,7 @@ class NativeFeedback(unittest.IsolatedAsyncioTestCase):
         await self.f.asyncSetUp()
         self.addCleanup(self.f.doCleanups)
         self.h, self.a = self.f.h, self.f.agent
+        self.a.kind = "codex"  # RealHost copies attributes from a Claude fixture.
         self.root = Path(self.h.agent_cfg['dir'])
         from agentj import peer_service
         self.h.peers = peer_service.PeerService(self.h)
@@ -54,8 +55,8 @@ class NativeFeedback(unittest.IsolatedAsyncioTestCase):
         self.h.busy.set_context('feedback-native',harness='codex',cwd=str(self.root),pid=self.worker.pid)
         self.proof_rows=[]
         original_scope=approval_material._direct_scope
-        def observe_scope(host,peer):
-            result=original_scope(host,peer)
+        def observe_scope(host,peer,**kw):
+            result=original_scope(host,peer,**kw)
             if host is self.h:self.proof_rows.append({'kind':result.get('kind') if result else None})
             return result
         observer=patch.object(approval_material,'_direct_scope',side_effect=observe_scope)
@@ -112,10 +113,12 @@ class NativeFeedback(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(answer_while_native_task_is_live(), timeout=15)
         self.assertEqual(self.a._answer.call_args.args[1],{'decision':'accept'})
 
-    async def cli(self, text='Synthetic feedback', old=False):
+    async def cli(self, text='Synthetic feedback', old=False, explicit_wait=True):
         env = {'PATH':os.environ['PATH'],'HOME':str(self.root),'PYTHONPATH':str(Path(__file__).resolve().parents[1]),
                'AGENTJ_STATE_DIR':str(self.h.st.root),'AGENTJ_ELEVATE_SOCK':str(self.h.elevate.sock_path)}
-        argv=[sys.executable,'-m','agentj.cli','support','feedback',text,'--wait','0']
+        argv=[sys.executable,'-m','agentj.cli','support','feedback',text]
+        if explicit_wait:
+            argv.extend(['--wait', '0'])
         self.worker.stdin.write((json.dumps({'argv':argv,'env':env,'op':'old' if old else 'new'})+'\n').encode());await self.worker.stdin.drain()
         return json.loads(await asyncio.wait_for(self.worker.stdout.readline(),5))
 
@@ -123,6 +126,68 @@ class NativeFeedback(unittest.IsolatedAsyncioTestCase):
         self.a._on_note('item/completed',{'threadId':'other-child' if child else self.a.tid,'turnId':turn,'item':{
             'type':'commandExecution','id':call,'status':'completed','exitCode':0,'aggregatedOutput':output}})
         await self.broker.drain()
+
+    def receipts(self):
+        return [row['reply']['text'] for row in self.h.hist.turns.values()
+                if row['src'].get('k') == 'agent' and row['src'].get('quote', {}).get('id') == self.send.turn]
+
+    async def test_native_feedback_ticket_visible_once_on_original_page(self):
+        await self.admit()
+        result = await self.cli()
+        await self.complete(result['out'])
+        await self.complete(result['out'])
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(len(self.receipts()), 1)
+        self.assertIn('st_' + 'a' * 22, self.receipts()[0])
+        self.assertNotIn('Synthetic feedback', self.receipts()[0])
+
+    async def test_native_feedback_failure_is_visible_without_raw_detail_or_ticket(self):
+        await self.admit()
+        result = await self.cli()
+        with patch.object(support, 'channel_for', side_effect=support.SupportError('QA_UNTRUSTED_DETAIL')):
+            await self.complete(result['out'])
+        self.assertEqual(len(self.calls), 0)
+        self.assertEqual(len(self.receipts()), 1)
+        self.assertNotIn('QA_UNTRUSTED_DETAIL', self.receipts()[0])
+        self.assertNotIn('st_', self.receipts()[0])
+
+    async def change_after_http(self, change):
+        import threading
+        started, proceed = threading.Event(), threading.Event()
+        channel = support.channel_for()
+        send = channel.send
+        def pause_after_response(fields):
+            receipt = send(fields)
+            started.set()
+            if not proceed.wait(5):
+                raise TimeoutError
+            return receipt
+        await self.admit()
+        result = await self.cli()
+        with patch.object(type(channel), 'send', lambda _,fields:pause_after_response(fields)):
+            running=asyncio.create_task(self.complete(result['out']))
+            try:
+                self.assertTrue(await asyncio.to_thread(started.wait, 5))
+                change()
+            finally:
+                proceed.set()
+            await running
+        self.assertEqual(len(self.calls), 1)
+        self.assertFalse(self.receipts())
+        self.assertFalse(any('st_'+'a'*22 in row['reply']['text'] for row in self.h.hist.turns.values()))
+
+    async def test_changed_owner_after_http_never_gets_previous_ticket(self):
+        from agentj import provenance
+        def another_owner_message():
+            later = self.h.hist_add({'k':'phone', 'dev':'another-device', 'text':'Different request'}, '', 'open')
+            approval_review.remember(self.h, later, provenance.phone())
+        await self.change_after_http(another_owner_message)
+
+    async def test_changed_native_thread_after_http_never_gets_previous_ticket(self):
+        await self.change_after_http(lambda:setattr(self.a, 'tid', 'different-thread'))
+
+    async def test_revoked_remote_after_http_never_gets_previous_ticket(self):
+        await self.change_after_http(lambda:self.h.st.remove_device(self.f.ph.did))
 
     async def test_exact_native_result_is_required_before_http(self):
         await self.admit()
@@ -144,6 +209,74 @@ class NativeFeedback(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.calls[0]['body'],'Synthetic feedback')
         await self.complete(result['out'])
         self.assertEqual(len(self.calls),1)
+
+    async def test_phone_codex_native_execution_without_approval_rpc(self):
+        command = "agentj support feedback 'Synthetic feedback'"
+        from agentj import shared_risk
+        await shared_risk.NativePathGuard(self.a).hook_event({
+            'hook_event_name': 'PreToolUse', 'tool_name': 'Bash', 'tool_input': {'command': command},
+            '_agentj_path_authenticated': True, 'session_id': self.a.tid, 'turn_id': 'turn1',
+            'tool_use_id': 'native-start', 'cwd': str(self.root)})
+        self.assertEqual((await self.cli())['exit'], 3)
+        self.a._on_note('item/started', {'threadId': self.a.tid, 'turnId': 'turn1', 'item': {
+            'type': 'commandExecution', 'id': 'native-start', 'status': 'inProgress',
+            'command': '/bin/bash -lc ' + shlex.quote(command), 'cwd': str(self.root)}})
+        async def answer():
+            while True:
+                for ask in list(self.h.asks.values()):
+                    if not ask.fut.done():
+                        await self.h._answer(self.f.s, self.f.ph.answer(self.h._ask_msg(ask, self.f.s), True))
+                await asyncio.sleep(.005)
+        responder = asyncio.create_task(answer())
+        try:
+            result = await self.cli(explicit_wait=False)
+        finally:
+            responder.cancel()
+            await asyncio.gather(responder, return_exceptions=True)
+        self.assertTrue(result['out'].startswith('SUPPORT_TASK_PENDING:'), result)
+        self.assertEqual(self.calls, [])
+        await self.complete(result['out'], call='native-start')
+        await self.complete(result['out'], call='native-start')
+        self.assertEqual(len(self.calls), 1)
+
+    async def test_mismatched_native_start_and_repeated_prehook_cannot_admit(self):
+        from agentj import feedback_native
+        cmd = "agentj support feedback 'Synthetic feedback'"
+        for cid in ('different-command', 'duplicate-hook'):
+            evt = {'_agentj_path_authenticated': True, 'session_id': self.a.tid, 'turn_id': self.a.turn_id,
+                   'tool_use_id': cid, 'cwd': str(self.root)}
+            feedback_native.codex_prehook(self.a, evt, 'Bash', {'command': cmd})
+            if cid == 'duplicate-hook':
+                feedback_native.codex_prehook(self.a, evt, 'Bash', {'command': cmd})
+            item = {'type': 'commandExecution', 'id': cid, 'status': 'inProgress', 'cwd': str(self.root),
+                    'command': cmd if cid == 'duplicate-hook' else "agentj support feedback 'Another draft'"}
+            self.a._on_note('item/started', {'threadId':self.a.tid, 'turnId':self.a.turn_id, 'item':item})
+            self.assertEqual((await self.cli())['exit'], 3)
+        self.assertEqual(self.calls, [])
+
+    async def test_fenced_owner_update_opens_one_version_bound_phone_card(self):
+        from agentj import update
+        approval_material.turn_start(self.h, self.send)
+        await asyncio.sleep(.035)
+        with patch.object(update, 'check', return_value={'status':'newer', 'latest':'1.2.3'}):
+            for _ in range(2):
+                result = await self.update_offer()
+                self.assertTrue(result['ok'], result)
+                self.assertEqual(self.h.upg['target'], '1.2.3')
+                self.assertEqual(result['id'], self.h.upg['id'])
+            self.assertEqual(result['card'], 'reused')
+            self.a.cur_send = None
+            self.assertFalse((await self.update_offer())['ok'])
+
+    async def update_offer(self):
+        env = {'PATH':os.environ['PATH'], 'HOME':str(self.root), 'AGENTJ_ELEVATE_SOCK':str(self.h.elevate.sock_path),
+               'PYTHONPATH':str(Path(__file__).resolve().parents[1]), 'AGENTJ_STATE_DIR':str(self.h.st.root)}
+        code = ("from agentj import elevate; import json,os; "
+                "print(json.dumps(elevate.client_request(None,{'t':'upgrade','op':'phone_offer','version':'1.2.3'},"
+                "5,path=os.environ['AGENTJ_ELEVATE_SOCK'])))")
+        self.worker.stdin.write((json.dumps({'argv':[sys.executable,'-c',code],'env':env})+'\n').encode())
+        await self.worker.stdin.drain()
+        return json.loads(json.loads(await asyncio.wait_for(self.worker.stdout.readline(),7))['out'])
 
     async def test_modified_payload_never_gets_ticket_or_sends(self):
         await self.admit()
@@ -271,8 +404,8 @@ class NativeFeedback(unittest.IsolatedAsyncioTestCase):
 class Grammar(unittest.TestCase):
     def test_only_closed_literal_wait_zero_profile(self):
         from agentj.feedback_native import command as parse
-        for c in ("agentj support feedback 'safe' --wait 0",'agentj support report --file draft.txt --wait 0'):
+        for c in ('agentj support feedback safe', "agentj support feedback 'safe' --wait 0",'agentj support report --file draft.txt --wait 0'):
             self.assertIsNotNone(parse('Bash',{'command':c},'/tmp'))
-        for c in ('agentj support feedback safe','agentj support feedback safe --wait 10',
+        for c in ('agentj support ask safe','agentj support feedback safe --wait 10',
                   'agentj support feedback $BODY --wait 0','agentj support feedback safe --wait 0; echo later'):
             self.assertIsNone(parse('Bash',{'command':c},'/tmp'))

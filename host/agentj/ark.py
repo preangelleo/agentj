@@ -342,17 +342,23 @@ def switch(st, plan: str = DEFAULT_PLAN, model: str | None = None, dry_run: bool
     when the switch fails; one that was already there stays exactly as it was."""
     if plan not in PLANS:
         return {"ok": False, "reason": "bad_plan", "preset": "ark"}
-    found = (detector or detect)()
+    found = {} if plan == "agent" and detector is None else (detector or detect)()
     d = plan_data(plan)
     base = {"preset": "ark", "plan": plan, "target": "opencode", "arkcli": found.get("arkcli")}
-    if not found.get("opencode"):
+    if (plan != "agent" or detector is not None) and not found.get("opencode"):
         return {**base, "ok": False, "reason": "not_installed", "install_action": opencode_install.offer(st), "next": "agentj setup checklist --resume"}
     try:
         model = _model(model, plan)
     except op.ProviderError as e:
         return {**base, "ok": False, "reason": "bad_model", "error": str(e)}
+    if plan == "agent":
+        if request is None:
+            from .switch_harness import request
+        selected = d["provider"] + "/" + model
+        result = request(st,"opencode",selected,dry_run=dry_run)
+        return {**result, **base, "model":selected}
     has = (key or key_known)(d["key_env"], environ)
-    if has is False:
+    if has is False and plan == "payg":
         out = {**base, "ok": False, "reason": "need_key", "key_env": d["key_env"], "next": steps(model, plan)}
         op.open_key_card(out, dry_run)
         return out
@@ -367,10 +373,10 @@ def switch(st, plan: str = DEFAULT_PLAN, model: str | None = None, dry_run: bool
     if r.get("reason") == "same":          # already on OpenCode: keep the block, change the model instead
         return {**out, "hint": f"agentj agent opencode --model {inst['model']}"}
     if not r.get("ok") and not r.get("pending"):
-        if inst["written"] and not inst["kept"]:
+        if inst["written"] and not inst["kept"] and (dry_run or r.get("reason") != "provider_key"):
             op.remove(d["provider"], environ)
             out["config_restored"] = True
-        if has is None and r.get("reason") not in ("same", "busy", "too_soon"):
+        if has is None and r.get("reason") not in ("provider_key", "same", "busy", "too_soon"):
             out["next"] = steps(model, plan)       # inside the fence nobody could tell whether the key is there
     return out
 
@@ -396,6 +402,8 @@ def say_switch(r: dict, lang: str = "zh") -> str:
             body += ("\n  （key 在 " + KEY_HINT["zh"] + "）" if zh else "\n  (the key: " + KEY_HINT["en"] + ")")
     elif reason in ("bad_model", "bad_plan", "invalid_native_config"):
         body = r.get("error") or reason
+    elif reason == "same" and not r.get("hint"):
+        body = "当前主 Agent 已经是 OpenCode；可在手机「模型和 API Key」选择模型。" if zh else "OpenCode is already active. Select the model in Models & API keys on the phone."
     elif reason == "same":
         body = ("现在用的就是 OpenCode：方舟服务商已写好，换成方舟的模型：\n  " if zh else
                 "Already on OpenCode: the Ark provider is in place; change the model:\n  ") + r["hint"] + "\n  agentj service restart"

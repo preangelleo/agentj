@@ -126,9 +126,13 @@ def probe(provider):
     return coding_usage.parse(plan[0], data) if plan else windows(data)
 
 
-async def request_key(host, provider, *, session=None, on_card=None, settings=False):
+async def request_key(host, provider, *, session=None, on_card=None, settings=False, purpose=None, switch=None):
     from . import elevate
-    name = key_name(provider)
+    from . import ark
+    preset = ark.plan_data(ark.plan_of(provider)) if switch and ark.plan_of(provider) else None
+    if switch and not preset:
+        return {'result': 'unsupported'}
+    name = preset['key_env'] if preset else key_name(provider)
     if not name:
         return {'result': 'unsupported'}
     # One open card per provider, including automatic error retries.
@@ -139,12 +143,11 @@ async def request_key(host, provider, *, session=None, on_card=None, settings=Fa
     host._provider_cards.add(provider)
     try:
         from .opencode_provider import NPM, HEADER
-        p = configured().get(provider, {})
+        p = preset['block'] if preset else configured().get(provider, {})
         api = next((api for api, npm in NPM.items() if p.get('npm') == npm), None)
         if not api:
             return {'result': 'unsupported'}
         from .bailian import verify_for
-        from . import ark
         fixed = verify_for(provider)   # P310: Bailian's Anthropic base has no model list; its OpenAI one does (or none: Coding Plan)
         if fixed is None:
             fixed = ark.verify_for(provider)   # P315: Ark's coding address has no published read-only check
@@ -152,10 +155,12 @@ async def request_key(host, provider, *, session=None, on_card=None, settings=Fa
         if not url and not fixed:
             host.agent_notice('无法验证该服务商地址，暂不能打开密钥卡。' if getattr(host, 'lang', 'en') == 'zh' else 'Cannot verify this provider address; the key card is unavailable.')
             return {'result': 'unsupported'}
-        card = elevate.norm_secret({'name': name, 'purpose': provider+' API Key',
+        card = elevate.norm_secret({'name': name, 'purpose': purpose or provider+' API Key',
             'dest': 'env:'+env_path()+'#'+name, 'verify_url': url or '', 'verify_header': (fixed[1] if fixed else HEADER[api]) if url else ''},
             host.st.root)
         card["verify_before_write"] = bool(url)
+        if switch:
+            card['_switch_job'], card['only'] = switch
         if session is not None:
             from . import provenance
             card['only'] = session.device

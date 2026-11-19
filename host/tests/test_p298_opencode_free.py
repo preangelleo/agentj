@@ -138,7 +138,7 @@ class Lists(unittest.TestCase):
         self.assertIn("free_tier", oc.PROVIDER_NOTES)
         self.assertEqual(oc.provider_error_reason("APIError", {"statusCode": 403, "message": "forbidden"}), "access")
         self.assertEqual(of.classify({"name": "APIError", "data": {"statusCode": 429}}), "free_tier")
-        self.assertEqual(of.classify({"name": "ProviderAuthError", "data": {}}), "native_failed")
+        self.assertEqual(of.classify({"name": "ProviderAuthError", "data": {}}), "provider_key")
 
 
 class Fake(unittest.TestCase):
@@ -309,7 +309,7 @@ class Probe(Fake):
     def test_other_failures_on_the_formal_path_keep_a_fixed_code(self):
         self.set("serve.mode", "no_key")
         h = self.probe("opencode/space-bunny-free")
-        self.assertEqual((h["callable"], h["probe_reason"]), (False, "native_failed"))
+        self.assertEqual((h["callable"], h["probe_reason"]), (False, "provider_key"))
 
 
 class Native(unittest.TestCase):

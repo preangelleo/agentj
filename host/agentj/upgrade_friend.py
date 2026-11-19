@@ -231,6 +231,36 @@ async def open_card(host, who: dict, fenced: bool = False, *, requested=None, li
         return {"id": res["id"], "friend": who["kind"], "to": to, "card": "new"}
 
 
+async def phone_offer(host, version, peer):
+    """A read-only Agent may offer the official release. Only the paired phone can install it."""
+    from . import approval_material, provenance, update
+    agent = host.agent
+    send = getattr(agent, 'cur_send', None)
+    def live():
+        proof = approval_material.verified_phone_chat(host, peer)
+        return (proof and proof[0] is agent and send is not None and agent.cur_send is send
+                and proof[1] == send.approval_origin and not host.stopped()
+                and not provenance.untrusted_turn(agent) and not provenance.owner_grant_required(agent)
+                and send.device and host.st.sign_key(send.device))
+    if not isinstance(version, str) or not re.fullmatch(VERSION, version) or update.market_managed() or not live():
+        return {'ok': False, 'why': 'unavailable'}
+    check = await asyncio.to_thread(update.check, timeout=3)
+    if check.get('status') != 'newer' or check.get('latest') != version or not live():
+        return {'ok': False, 'why': 'unavailable'}
+    if host._upg_live():
+        if host.upg.get('target') != version:
+            return {'ok': False, 'why': 'other_card_pending'}
+        return {'ok': True, 'card': 'reused', 'id': host.upg['id']}
+    turn = (str(host.hist.epoch), send.turn, send.device)
+    if getattr(host, '_update_offer_turn', None) == turn:
+        return {'ok': False, 'why': 'offer_closed'}
+    card = host.upg_open('agent')
+    remaining = max(0, host.upg['deadline'] - time.monotonic())
+    host.upg.update(target=version, to=version, expires=int((time.time() + remaining) * 1000))
+    host._update_offer_turn = turn
+    return {'ok': True, 'card': 'new', 'id': card['id']}
+
+
 async def owner_request(host, version, pid=None, fenced=False):
     from . import update
     who = origin(host, pid, "fenced" if fenced else None)

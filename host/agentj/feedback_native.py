@@ -36,6 +36,86 @@ def command(tool, inp, cwd):
     return parse(words, cwd)
 
 
+def codex_prehook(agent, event, tool, inp):
+    """Snapshot process lineage before exec. The hook alone never admits a call."""
+    if (tool != 'Bash' or not isinstance(inp, dict) or not isinstance(inp.get('command'), str)
+            or 'support' not in inp['command'] or getattr(agent, 'research', False)
+            or not event.get('_agentj_path_authenticated')):
+        return
+    call, cwd = event.get('tool_use_id'), event.get('cwd')
+    native = (event.get('session_id'), event.get('turn_id'))
+    peers = getattr(agent.host, 'peers', None)
+    if (peers is None or not all(isinstance(v, str) and v for v in (call, cwd, *native))
+            or native != (agent.tid, agent.turn_id) or not os.path.isabs(cwd)
+            or command(tool, inp, cwd) is None):
+        return
+    broker = peers.xfer.broker
+    if not broker.feedback_applicable():
+        return
+    row = broker.calls.get(call)
+    if row is None:
+        broker.register(call, tool, inp, cwd, native=native, prehook=True)
+    elif row.get('awaiting_native'):
+        # Competing pre-hooks cannot move the launch boundary earlier than the real call.
+        row['feedback'].closed = True
+        row['native_ready'].set()
+
+
+def codex_started(agent, params, item):
+    """Independently match Codex's actual root execution before the CLI may ask the Host."""
+    from .agent_codex import unwrap_shell
+    from .approval_jev import with_cwd
+    call, raw, cwd = item.get('id'), item.get('command'), item.get('cwd')
+    turn = params.get('turnId')
+    if (not isinstance(call, str) or not isinstance(raw, str) or 'support' not in raw or not isinstance(cwd, str)
+            or not os.path.isabs(cwd) or not isinstance(turn, str) or turn != agent.turn_id
+            or getattr(agent, 'research', False) or item.get('status') != 'inProgress'):
+        return
+    broker = agent.host.peers.xfer.broker
+    row = broker.calls.get(call)
+    if not row or not row.get('awaiting_native'):
+        return
+    spec = command('Bash', {'command': unwrap_shell(raw)}, cwd)
+    if spec != row['request'] or row['native'] != (agent.tid, turn) or not row['feedback'].live():
+        row['feedback'].closed = True
+        row['native_ready'].set()
+        return
+    row['input'] = {'command': with_cwd(unwrap_shell(raw), cwd, agent.cfg['dir'])}
+    row.pop('awaiting_native')
+    row['observed_start'] = True
+    row['native_ready'].set()
+
+
+async def receive(broker, req, peer):
+    """The observed command receives the identical Host policy decision as requestApproval."""
+    body = canonical(req)
+    matches = []
+    if body is not None:
+        for cid, row in list(broker.calls.items()):
+            bound = row.get('feedback')
+            if not (row.get('observed_start') or row.get('awaiting_native')) or row.get('admitted') or not bound or not bound.peer(peer):
+                continue
+            try:
+                expected = await asyncio.to_thread(payload, row['request'], bound.root)
+            except (OSError, ValueError, UnicodeError):
+                continue
+            if expected == body:
+                matches.append((cid, row))
+    if len(matches) == 1:
+        cid, row = matches[0]
+        if row.get('awaiting_native'):
+            # The local socket and the app-server stream are independent. A timeout grants nothing.
+            try:
+                await asyncio.wait_for(row['native_ready'].wait(), 2)
+            except asyncio.TimeoutError:
+                pass
+        if broker.calls.get(cid) is row and row.pop('observed_start', False):
+            result = await broker.execute('Bash', row['input'], cid)
+            if not result or result.get('behavior') != 'allow':
+                return {'exit': 3, 'output': 'NOT SENT — feedback approval refused or expired.\n'}
+    return broker.feedback_receipt(req, peer)
+
+
 def parse(words, cwd):
     if words[1:2] != ['support'] or len(words) < 3 or words[2] not in ('ask', 'report', 'feedback'):
         return None
@@ -44,7 +124,8 @@ def parse(words, cwd):
     p.add_argument('--kind', choices=('bug', 'report'), default='report' if words[2] == 'feedback' else 'bug')
     p.add_argument('--file')
     p.add_argument('--thread')
-    p.add_argument('--wait', type=int, default=180)
+    from .support import default_wait
+    p.add_argument('--wait', type=int, default=default_wait(words[2]))
     p.add_argument('--lang', choices=('zh', 'en'))
     p.add_argument('--attach-doctor', action='store_true')
     p.add_argument('--owner-confirmed', action='store_true')
@@ -136,6 +217,9 @@ class Binding:
         self.root = os.path.realpath((h.agent_cfg or {}).get('dir') or '')
         self.expires, self.closed, self.body = time.monotonic() + TTL, False, None
         self.body_sha256 = None
+        self.stored_thread = h.st.agent_session(self.agent.kind)
+        self.ticket = None
+        self.attempted = False
         if self.proc is None or not self.key:
             raise ValueError('native identity')
         from .peer_origin import _stat
@@ -283,13 +367,48 @@ class Binding:
         try: yield
         finally: privacy_host._BROKER_REVIEW.reset(token)
 
+    def report(self):
+        """Project a fixed result onto the original owner's main history after the HTTP attempt."""
+        h = self.host
+        message = self.origin['message_id']
+        refs = h.__dict__.get('_approval_origins', {})
+        page = h.hist.get(message) or {}
+        src = page.get('src') or {}
+        native_thread = (self.row.get('native') or (None,))[0]
+        current_thread = getattr(self.agent, 'tid', None) or self.stored_thread
+        if (self.closed or h.st is not self.state or h.agent is not self.agent
+                or str(h.hist.epoch) != self.epoch or h.estop is not self.estop
+                or h.stopped() or h.stopping.is_set() or h.task_epoch != self.task_epoch
+                or os.path.realpath((h.agent_cfg or {}).get('dir') or '') != self.root
+                or h.st.agent_session(self.agent.kind) != self.stored_thread
+                or native_thread and current_thread != native_thread
+                or self.origin.get('channel') != 'phone' or self.send.turn != message
+                or src.get('k') != 'phone' or src.get('dev') != self.device
+                or h.st.sign_key(self.device) != self.key
+                or max(refs, default=None) != message or refs.get(message) != self.origin):
+            return
+        if self.ticket:
+            text = (f'反馈已提交给客服，工单号 {self.ticket}。',
+                    f'Your feedback was submitted to support. Ticket {self.ticket}.')
+        elif self.attempted:
+            text = ('暂未收到客服工单号，无法确认这次反馈是否提交成功。',
+                    'Support has not confirmed this feedback with a ticket number.')
+        else:
+            text = ('这次反馈未能发给客服。', 'Your feedback could not be sent to support.')
+        h.hist_add({'k':'agent', 'text':'', 'quote':{'id':message}}, text[h.lang == 'en'], 'done')
+
     def channel(self, original):
         binding = self
         class Guarded:
             signed, st = original.signed, original.st
             def send(self, fields):
-                from .support import SupportError
+                from .support import SupportError, _THREAD
                 if not binding.live():
                     raise SupportError('NOT SENT — original native feedback task expired.')
-                return original.send(fields)
+                binding.attempted = True
+                status, response = original.send(fields)
+                ticket = response.get('thread') if isinstance(response, dict) else None
+                if 200 <= status < 300 and isinstance(ticket, str) and _THREAD.fullmatch(ticket):
+                    binding.ticket = ticket
+                return status, response
         return Guarded()

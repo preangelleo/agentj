@@ -167,9 +167,24 @@ def classify(error) -> str:
         return "native_failed"
     data = error.get("data") if isinstance(error.get("data"), dict) else {}
     blob = (str(error.get("name") or "") + " " + str(data.get("message") or "") + " " + str(data.get("responseBody") or ""))
+    from .agent_opencode import provider_error_reason
+    reason = provider_error_reason(error.get("name") or "", data)
+    if reason in ("quota_window", "balance"):
+        return "quota_exhausted"
+    if reason == "login" or re.search(r"api key or ak/sk .*missing or invalid|the api key doesn.t exist", blob, re.I):
+        return "provider_key"
     if "FreeTierError" in blob or data.get("statusCode") == 429:
         return "free_tier"
     return "native_failed"
+
+
+def check_reply_model(expected, actual):
+    """Compare native route IDs only, before switching. A greeting from a fallback is insufficient."""
+    if not expected:
+        return
+    actual = actual if isinstance(actual, dict) else {}
+    if expected.split("/", 1) != [actual.get("providerID"), actual.get("modelID") or actual.get("id")]:
+        raise ProbeError("probe_model_unconfirmed")
 
 
 def _port() -> int:
@@ -194,14 +209,23 @@ def _stop(proc) -> None:
         proc.stdout.close()
 
 
-def serve(exe: str, senv: dict, root: str, port: int, up_by: float, clock=time.monotonic):
+def serve(exe: str, senv: dict, root: str, port: int, up_by: float, clock=time.monotonic, *, launch=None):
     """`opencode serve` on 127.0.0.1:<port> in `root`, once it says it listens (by `up_by`); else ProbeError. P395: shared by
     the 2.x probe (agent_opencode2.probe) — the caller stops the process (_stop)."""
     from . import olares_probe
     if olares_probe.required():
         raise ProbeError('fence_unavailable')
     try:
-        proc = subprocess.Popen(resource_policy.work_argv([exe, "serve", "--hostname", "127.0.0.1", "--port", str(port)]), cwd=root, env=senv,
+        argv = [exe, "serve", "--hostname", "127.0.0.1", "--port", str(port)]
+        if launch:
+            from . import fence
+            state, cfg = launch
+            if cfg.get("fence", True):
+                if fence.problem(state, root):
+                    raise ProbeError("fence_unavailable")
+                argv = fence.wrap(state, argv, root, allow_docker=bool(cfg.get("docker")))
+                senv = fence.launch_environment(senv, bool(cfg.get("docker")), "opencode")
+        proc = subprocess.Popen(resource_policy.work_argv(argv), cwd=root, env=senv,
                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                 start_new_session=True)
     except OSError:
@@ -226,7 +250,7 @@ def serve(exe: str, senv: dict, root: str, port: int, up_by: float, clock=time.m
 
 
 def probe(exe: str, model: str | None, env: dict, timeout: float, *, sleep=time.sleep, clock=time.monotonic,
-          waits=None, prompt=None, diagnostic=False) -> str:
+          waits=None, prompt=None, diagnostic=False, launch=None) -> str:
     """One greeting through `opencode serve` with Agent J's read-only session rules, in an empty scratch folder; the
     session is deleted afterwards. Returns the reply text; raises ProbeError(code). A FreeTierError / 429 is retried after
     each of `waits` (the warm-up) while the overall bound `timeout + sum(waits)` allows."""
@@ -263,8 +287,14 @@ def probe(exe: str, model: str | None, env: dict, timeout: float, *, sleep=time.
             raise ProbeError("native_failed") from None
 
     try:
-        proc = serve(exe, opencode_env(_env(env), password), root, port, min(deadline, clock() + START_WAIT), clock)
+        launch_env = opencode_env(_env(env), password)
+        if launch:
+            from .opencode_probe_route import environment
+            launch_env = environment(launch_env, launch[1]["dir"], model, root, agent_plan=launch[1].get("_agent_plan") is True)
+        proc = serve(exe, launch_env, root, port, min(deadline, clock() + START_WAIT), clock, **({"launch": launch} if launch else {}))
         rules = session_rules([], research=True) + [_rule("webfetch", "*", "deny")]
+        if launch:
+            rules = [_rule("*", "*", "deny")]
         if diagnostic:
             # Only scratch reads; no shell, skills, LSP, network or external files, even if the model asks.
             rules = [_rule("*", "*", "deny"), _rule("read", root + "/*", "allow")]
@@ -288,6 +318,8 @@ def probe(exe: str, model: str | None, env: dict, timeout: float, *, sleep=time.
                                      if isinstance(p, dict) and p.get("type") == "text").strip()
                     if not text:
                         raise ProbeError("empty_probe_reply")
+                    if launch:
+                        check_reply_model(model, info)
                     return text
                 if code != "free_tier" or wait is None or clock() + wait >= deadline:
                     raise ProbeError(code)

@@ -37,7 +37,7 @@ def _prefs():
         return preferences.defaults()
 
 
-async def _answers(client, pin: str | None = None) -> str | None:
+async def _answers(client, pin: str | None = None, model=None, directory=None) -> str | None:
     """None = the server is usable; else a reason code."""
     from .agent_opencode import HTTPError
     try:
@@ -45,7 +45,19 @@ async def _answers(client, pin: str | None = None) -> str | None:
         if st == 401:
             return "owner_password"
         if st == 200 and isinstance(info, dict) and str(info.get("version", "")).lstrip("v").startswith("2"):
-            return None                                   # v2: attached by shared_opencode2 (its own checks)
+            if pin is not None and model:
+                if not OC_SESSION.fullmatch(pin):
+                    return "owner_session"
+                status, native = await client.request("GET", f"/api/session/{pin}", timeout=10)
+                data = native.get("data") if isinstance(native,dict) else None
+                if status != 200 or not isinstance(data,dict) or data.get("id") != pin:
+                    return "owner_session"
+                if directory and os.path.realpath((data.get("location") or {}).get("directory") or "") != os.path.realpath(directory):
+                    return "owner_session"
+                actual = data.get("model") or {}
+                if not isinstance(actual,dict) or [actual.get("providerID"),actual.get("id")] != model.split("/",1):
+                    return "owner_model_unconfirmed"
+            return None
         if pin is None:
             st, path = await client.request("GET", "/path", timeout=10)
             return None if st == 200 and isinstance(path, dict) else "start_failed"
@@ -59,13 +71,40 @@ async def _answers(client, pin: str | None = None) -> str | None:
         return "owner_unreachable" if pin is not None else "start_failed"
 
 
-def _owner(cfg: dict, port) -> dict:
+async def owner_model(client, model, timeout):
+    """The external server authenticates the provider. No transcript, tools or project instructions enter a stateless generation."""
+    from .agent_opencode import HTTPError, split_model
+    from .opencode_free import PROMPT
+    sel = split_model(model)
+    if not sel:
+        return "bad_model"
+    try:
+        code, result = await client.request("POST", "/api/experimental/generate/text",
+             {"model": {"id": sel["modelID"], "providerID": sel["providerID"]}, "prompt": PROMPT}, timeout=timeout)
+    except (HTTPError, OSError, ValueError, asyncio.TimeoutError):
+        return "owner_unreachable"
+    result = result if isinstance(result, dict) else {}
+    if code == 200:
+        data = result.get("data")
+        return None if isinstance(data, dict) and isinstance(data.get("text"), str) and data["text"].strip() else "owner_model_unconfirmed"
+    if code == 401:
+        return "owner_password"
+    if result.get("_tag") == "ProviderRequestError" and result.get("providerID") == sel["providerID"]:
+        return {"authentication":"owner_provider_key", "rate_limit":"rate_limited"}.get(result.get("reason"), "call_failed")
+    if result.get("_tag") in ("ModelNotFoundError", "ProviderNotFoundError"):
+        return "model_missing"
+    return "owner_model_unconfirmed"
+
+
+def _owner(cfg: dict, port, limit=60) -> dict:
     from .agent_opencode import Client
     if type(port) is not int or not 1 <= port <= 65535:
         return {"secs": 0, "reason": "owner_unreachable"}
     t0 = time.monotonic()
     client = Client(port, os.environ.get("OPENCODE_SERVER_PASSWORD", ""), os.environ.get("OPENCODE_SERVER_USERNAME", "opencode"))
-    why = asyncio.run(_answers(client, str(cfg.get("shared_session_id") or "")))
+    why = asyncio.run(_answers(client, str(cfg.get("shared_session_id") or ""),cfg.get("model"),cfg.get("dir")))
+    if not why and cfg.get("model"):
+        why = asyncio.run(owner_model(client, cfg["model"], limit))
     return {"secs": round(time.monotonic() - t0, 1), **({"reason": why} if why else {})}
 
 
@@ -79,7 +118,7 @@ def start_probe(st, cfg: dict, limit: float = 150, *, clock=time.monotonic) -> d
     shared = cfg.get("session_mode") == "shared"
     port = cfg.get("shared_opencode_port")
     if shared and port:
-        return _owner(cfg, port)
+        return _owner(cfg, port, limit)
     from . import fence, proxy
     from .agent import _bin
     from .agent_opencode import Client, free_port, opencode_env
@@ -91,6 +130,14 @@ def start_probe(st, cfg: dict, limit: float = 150, *, clock=time.monotonic) -> d
     argv = [exe, "serve", "--hostname", "127.0.0.1", "--port", str(port)]
     try:
         env = opencode_env(proxy.environment(fresh_environment(os.environ), _prefs()), password)
+        from . import ark_connect, opencode_free
+        if ark_connect.chosen(cfg.get("model")):
+            try:
+                env = ark_connect.runtime(env, d, cfg["model"])
+                env.pop("OPENCODE_CONFIG_DIR",None)
+                env.pop("OPENCODE_CONFIG",None)
+            except (opencode_free.ProbeError,ValueError,OSError):
+                return {"secs":0,"reason":"ark_route_conflict"}
         if cfg.get("fence", True):
             if fence.problem(st, d):
                 return None

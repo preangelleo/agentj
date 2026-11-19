@@ -174,8 +174,11 @@ class Elsewhere(unittest.TestCase):
         self.assertIn("…/api/plan", ark.say_switch(r))
 
     def test_switch_need_key_names_the_console_path(self):
-        r = ark.switch(None, detector=lambda: {"opencode": "1.19.3", "arkcli": None}, key=lambda n, e=None: False)
-        self.assertEqual((r["reason"], r["key_env"]), ("need_key", "ARK_AGENT_PLAN_API_KEY"))
+        with tempfile.TemporaryDirectory() as home:
+            r = ark.switch(None, detector=lambda: {"opencode": "1.19.3", "arkcli": None}, key=lambda n, e=None: False,
+                           environ={"XDG_CONFIG_HOME":home},
+                           request=lambda *a, **kw: {"reason":"provider_key","ok":False})
+        self.assertEqual(r["reason"], "provider_key")
         self.assertIn("使用配置", ark.say_switch(r))
 
     def test_agent_switch_parser_plan(self):

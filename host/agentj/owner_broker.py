@@ -98,7 +98,7 @@ class Broker:
                 and cfg.get('session_mode') != 'shared' and getattr(a, 'proc', None) is not None
                 and getattr(a, 'kind', None) in ('claude', 'codex'))
 
-    def register(self, call, tool, inp, cwd, raw=None, native=None):
+    def register(self, call, tool, inp, cwd, raw=None, native=None, *, prehook=False):
         x = self.xfer
         req = parse(tool, raw if raw is not None else inp, cwd)
         if req is None and self.feedback_applicable():
@@ -109,8 +109,13 @@ class Broker:
             return
         if req['t'] == 'support_native' and call in self.calls:
             old = self.calls[call]
-            if old.get('request') == req and old.get('native') == native and old.get('execution') is execution and old.get('input') == inp:
-                return  # repeated native admission never refreshes its original source/timeout
+            if old.get('request') == req and old.get('native') == native and old.get('execution') is execution:
+                if not prehook and old.pop('awaiting_native', False):
+                    old['native_ready'].set()
+                    old['input'] = copy.deepcopy(inp)  # real requestApproval supplies the final displayed input
+                    return
+                if old.get('input') == inp:
+                    return  # a repeated native admission never refreshes its source/timeout
             if old.get('feedback'):
                 old['feedback'].closed = True
             return
@@ -126,7 +131,9 @@ class Broker:
         if req['t'] == 'support_native':
             from .feedback_native import Binding
             row = self.calls[call]
-            row.update(input=copy.deepcopy(inp), registered_at=time.monotonic())
+            row.update(input=copy.deepcopy(inp), registered_at=time.monotonic(), awaiting_native=prehook)
+            if prehook:
+                row['native_ready'] = asyncio.Event()
             try:
                 row['feedback'] = Binding(self, row)
                 self.feedback_seen.add((call, native))
@@ -149,6 +156,8 @@ class Broker:
         if len(matches) != 1:
             return {'behavior':'deny', 'message':'Ambiguous native secret call'}
         cid, row = matches[0]
+        if row.get('awaiting_native'):
+            return {'behavior':'deny', 'message':'No live native feedback admission'}
         if row.get('admitted'):
             # PreToolUse observes the call even when native rules skip PermissionRequest.
             # A later PermissionRequest for the *same* file call must not invalidate it.
@@ -239,6 +248,11 @@ class Broker:
         row = self.calls.get(call)
         if row and row.get('feedback') and child:
             return  # a nested native result never completes a root's feedback call
+        if row and row.get('native_ready') and row.get('native') == native and not row.get('issued'):
+            row['feedback'].closed = True
+            row['native_ready'].set()
+            self.calls.pop(call)
+            return
         if not row or not row.get('admitted') or not row.get('issued') or row.get('native') != native:
             return
         if tool is not None and (tool != row['tool'] or inp != row['input'] or os.path.abspath(cwd or '') != row['request']['cwd']):
@@ -266,10 +280,12 @@ class Broker:
             request = {'t':'host_diagnostics', 'op':'support', **json.loads(binding.body)}
             try:
                 with owner_call.request(binding.live), provenance.request_source(binding.source), approval_review.origin_scope(binding.origin), binding.review_scope():
-                    result = await asyncio.to_thread(host_diagnostics.execute, x.svc.host.st, request, _support_binding=binding)
-                x.svc.host.agent_notice('SUPPORT_TASK_RESULT: ' + json.dumps(result, ensure_ascii=False))
+                    await asyncio.to_thread(host_diagnostics.execute, x.svc.host.st, request, _support_binding=binding)
             finally:
-                binding.closed = True
+                try:
+                    binding.report()
+                finally:
+                    binding.closed = True
             return
         with owner_call.request(row['check']), provenance.request_source(row['source']):
             from . import file_show

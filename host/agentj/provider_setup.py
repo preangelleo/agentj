@@ -52,8 +52,9 @@ def scope_stamp(host):
     """Local metadata only. A later owner edit ends the approved override, including project/config-content choices."""
     import os
     base = Path(op.config_file())
-    paths = {base, base.with_suffix('.jsonc')}
-    directory = Path(host.agent.cfg.get('dir') or '.').resolve()
+    paths = {base, base.with_suffix('.jsonc'), base.parent/'config.json'}
+    from . import working_root
+    directory = Path(host.agent.cfg.get('dir') or '.').resolve() if host.agent else working_root.select(host.st)
     for parent in (directory, *directory.parents):
         paths.update(parent / name for name in ('opencode.json', 'opencode.jsonc', '.opencode/opencode.json', '.opencode/opencode.jsonc'))
     if os.environ.get('OPENCODE_CONFIG'):

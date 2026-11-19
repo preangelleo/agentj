@@ -458,7 +458,7 @@ def _kimi_region() -> str | None:
         return None
 
 
-def probe(only: tuple | list | None = None, model: str | None = None, timeout: float = PROBE_TIMEOUT) -> dict:
+def probe(only: tuple | list | None = None, model: str | None = None, timeout: float = PROBE_TIMEOUT, *, opencode_launch=None) -> dict:
     """One tool-free call per installed supported CLI; never return native output or credentials.
 
     Detection is advisory. Only a parsed nonempty model reply qualifies. Reuse the
@@ -468,6 +468,15 @@ def probe(only: tuple | list | None = None, model: str | None = None, timeout: f
     carries a fixed code in probe_reason (never native output).
     """
     from . import olares_probe
+    if (opencode_launch and opencode_launch[1].get("session_mode") == "shared"
+            and opencode_launch[1].get("shared_opencode_port")):
+        from . import opencode_start
+        row = _one("opencode")
+        tested = opencode_start.start_probe(*opencode_launch, limit=timeout) if row["installed"] else None
+        ok = bool(tested is not None and not tested.get("reason"))
+        row.update(callable=ok, start_checked=(tested or {}).get("secs", 0),
+                   probe_reason=(tested or {}).get("reason", "owner_model_unconfirmed"))
+        return {"harnesses": [row], "usable": ["opencode"] if ok else [], "decision": "use:opencode" if ok else "none"}
     if olares_probe.required():
         hs = []
         for kind in NAMES:
@@ -502,7 +511,19 @@ def probe(only: tuple | list | None = None, model: str | None = None, timeout: f
                 (root / "system.md").write_text("Reply to the supplied greeting only. No tools are available.")
                 cfg = SimpleNamespace(name=h["name"], model=model if only is not None and len(only) == 1 else None)
                 oc_model = (cfg.model or opencode_model()) if h["name"] == "opencode" else None
-                if h["name"] == "core":          # P359: one tool-free call on the chosen preset, key by name
+                if h["name"] == "opencode" and opencode_launch:
+                    from . import agent_opencode2, opencode_free, proxy
+                    from .opencode_start import _prefs
+                    native_probe = agent_opencode2.probe if opencode_v2(h.get("version")) else opencode_free.probe
+                    try:
+                        reply = native_probe(h["executable"], oc_model, proxy.environment(env, _prefs()), timeout,
+                                             launch=opencode_launch,
+                                             waits=opencode_free.WARM_WAITS if _free_path(oc_model, h) else ())
+                    except opencode_free.ProbeError as e:
+                        if len(e.args) > 1 and e.args[1] and e.args[0] != "provider_key":
+                            h["probe_error"] = e.args[1]
+                        raise BotError(e.args[0]) from None
+                elif h["name"] == "core":          # P359: one tool-free call on the chosen preset, key by name
                     from .core.llm import hello
                     try:
                         reply = hello(cfg.model, timeout)

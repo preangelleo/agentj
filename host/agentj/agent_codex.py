@@ -972,6 +972,10 @@ class CodexAgent(Agent):
                         calls.pop(next(iter(calls)))
                 else:
                     calls.pop(it["id"], None)
+            if (method == "item/started" and it.get("type") == "commandExecution" and th == self.tid
+                    and getattr(self.host, "peers", None) is not None):
+                from . import feedback_native
+                feedback_native.codex_started(self, p, it)
             if method == "item/completed" and it.get("type") == "commandExecution" and th == self.tid and getattr(self.host, "peers", None) is not None:
                 self.host.peers.xfer.broker.complete(it.get("id"), it.get("status") == "completed" and it.get("exitCode") == 0, it.get("aggregatedOutput"), native=(th, p.get("turnId")))
             if isinstance(it.get("id"), str) and it.get("type") in ("fileChange", "commandExecution"):

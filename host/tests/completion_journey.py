@@ -86,7 +86,11 @@ def install(cls):
         assert root == host.st.root.parent and root.name.startswith("aj-history-journey-")
         async def guarded():
             try:
-                await drive(host, root)
+                if os.environ.get("AGENTJ_TEST_NATIVE_CODEX_REPORT"):
+                    from codex_report_journey import drive_native
+                    await drive_native(host, root)
+                else:
+                    await drive(host, root)
             except Exception as error:
                 frame = traceback.extract_tb(error.__traceback__)[-1]
                 (root / "fixture-error").write_text(f"{type(error).__name__} {Path(frame.filename).name}:{frame.lineno}")

@@ -1343,6 +1343,7 @@ class Host:
         msg2 = hs.write_message(b"")
         s.send, s.recv, s.h = hs.split()
         s.pub, s.device, s.mode, s.state = hs.rs, wire.device_id(hs.rs), "resume", "hello"
+        s.sign_pub = sk  # Replay compares this Noise-authenticated key with the current pairing record.
         s.name = self._dev_label(s.device)
         await self._op(wire.OP_DATA, s.cid, bytes([wire.HS_RESP]) + msg2)
 
@@ -2886,7 +2887,11 @@ class Host:
                     await self._ctl_send(w, self.harness_progress(req))
                 elif cmd == "harness_job":          # P339: `agentj agent switch` → serve launches the job (semantic fields only)
                     from . import switch_harness
-                    await self._ctl_send(w, await asyncio.to_thread(switch_harness.host_job, self.st, req))
+                    from . import opencode_switch_key
+                    origin = opencode_switch_key.capture(self, req, pid)
+                    res = await asyncio.to_thread(switch_harness.host_job, self.st, req, **({"origin":origin} if origin else {}))
+                    opencode_switch_key.admitted(self, req, res, origin)
+                    await self._ctl_send(w, res)
                 elif cmd == "reload":               # P320 `agentj reload`: an Agent's terminal is not trusted with security keys
                     trusted = ctl_auth.refusal(pid, os.getpid(), self._agent_pids()) is None and ctl_auth.has_tty(pid)
                     await self._ctl_send(w, await self.reload_config(trusted=trusted, by="terminal" if trusted else "agent"))

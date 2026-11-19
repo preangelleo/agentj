@@ -1221,6 +1221,8 @@ AUTH_REASONS = {
                          "upgrading now would interrupt the items above: an upgrade confirmation card is on the phone; when your human taps "
                          "Upgrade now the Agent J host upgrades and reports. Do not run this command again or bypass it with --yes (unless your "
                          "human explicitly says to upgrade anyway)"),
+    "upgrade_card_ready": (10, "请点手机卡片上的「现在升级」，主机会安装所选版本并把结果发回对话。",
+                           "Tap Upgrade now on the phone card. The host will install the selected version and report here."),
     "not_confirmed": (10, "没有确认，没有升级", "not confirmed; nothing was installed"),
     # R-0060 (upgrade_friend.py): a friend — a Same owner device too — asked; never upgraded on the friend's authority
     "host_unverified": (10, "Agent 运行的升级要先经主机核实是谁要求的；现在核实不了（主机没回答或连不上），什么都没装。请主人在遥控器发 /update，"
@@ -1515,6 +1517,10 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
     if target != r.get("latest"):
         return done("not_latest")
     if not writable(prefix):
+        if fenced:
+            offer = _host(st, "phone_offer", 10, version=target)
+            if offer and offer.get("card") in ("new", "reused"):
+                return done("upgrade_card_ready")
         return done("read_only")
     info = install_kind(prefix)
     if svc_on is None:

@@ -2158,6 +2158,9 @@ def _first_connect(st: State, a) -> bool:
             return False
     except Exception:  # noqa: BLE001 — an unreadable state is the switch's business, as before
         return False
+    if target == "opencode" and ((getattr(a,"preset",None) == "ark" and getattr(a,"plan",None) in (None,"agent"))
+                                 or str(getattr(a,"model",None)).startswith("ark-agent-plan/")):
+        return False  # the signed Agent Plan first-connect job owns its model check and initial configuration
     print(("No Agent is connected yet, so there is nothing to switch from: connecting %s now." if _lang(st) == "en" else
            "还没接任何 Agent，不用切换：现在直接接上 %s。") % target, flush=True)
     a.mode = target

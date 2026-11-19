@@ -918,7 +918,7 @@ def _chat_location(spec):
 def _write_chat_secret(card, value, guard, state):
     """Keep reads, temporary data and the final replacement inside the originally approved directory."""
     from . import approval_special
-    chat = card['_chat_input']
+    chat = card.get('_chat_input') or card['_switch_input']
     spec, location = card['dest_spec'], chat.location
     path = pathlib.Path(spec['path'])
     dfd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -954,7 +954,13 @@ def _write_chat_secret(card, value, guard, state):
             while True:
                 guard()
                 try:
-                    with state.devices_lock(blocking=False):
+                    from . import switch_harness
+                    with contextlib.ExitStack() as locks:
+                        if '_switch_input' in card:
+                            if not switch_harness._LOCK.acquire(blocking=False):
+                                raise BlockingIOError
+                            locks.callback(switch_harness._LOCK.release)
+                        locks.enter_context(state.devices_lock(blocking=False))
                         check()
                         os.replace(tmp, path.name, src_dir_fd=dfd, dst_dir_fd=dfd)
                         if chat.env_key is not None:
@@ -965,6 +971,7 @@ def _write_chat_secret(card, value, guard, state):
                     await asyncio.sleep(0.01)
         asyncio.run_coroutine_threadsafe(commit(), card['_chat_loop']).result()
         tmp = None
+        os.fsync(dfd)  # durable entry before the chat or OpenCode switch reports a saved key
     finally:
         if tmp is not None:
             with contextlib.suppress(OSError):
@@ -1067,6 +1074,7 @@ class _ChatInput:
     location: tuple
     env_key: _EnvKey | None
     version: int
+    report: object = None
 
     def valid(self, host, card):
         return (host.agent is self.agent and str(host.hist.epoch) == self.session and card.get('kind') == 'secret'
@@ -1341,6 +1349,8 @@ class Elevator:
             d = x.get("dest_spec") or {}
             return x.get("name"), d.get("mode"), d.get("path"), d.get("key")
         for o in list(self.cards.values()):
+            if c.get('_switch_input') is not None or o.get('_switch_input') is not None:
+                continue
             # A verified chat receipt belongs to its exact signed operation, never to a Settings request.
             if c.get('_chat_input') is not None or o.get('_chat_input') is not None:
                 if not (c.get('_chat_input') is not None and o.get('_chat_input') is not None and
@@ -1399,6 +1409,10 @@ class Elevator:
 
     def _source_allows(self, card):
         from . import approval_special
+        if '_switch_job' in card:
+            live = self.host.__dict__.get('_switch_key_guards', {}).get(card['_switch_job'])
+            if not live or not live():
+                return False
         if card.get('kind') in ('login', 'vshare') and '_term_native' in card:
             # 0.30.1 hotfix: the owner's own web-terminal unlock / password-share card. Its authority is the signed +
             # UV-checked term_open / vault_share of that one device (`only`), the signed answer and, for login, sudo's
@@ -1533,6 +1547,18 @@ class Elevator:
         if _creator_live is not None and not _creator_live():
             return {'result': 'refused', 'why': 'authority_changed'}
         c = dict(card, id=secrets.token_hex(16), fails=0, fut=asyncio.get_running_loop().create_future())
+        if '_switch_job' in c:
+            if not self._source_allows(c):
+                return {'result':'refused', 'why':'authority_changed'}
+            from types import SimpleNamespace
+            spec = c['dest_spec']
+            key = self._chat_env_keys.setdefault((spec['path'], spec['key']), _EnvKey())
+            try:
+                c['_switch_input'] = SimpleNamespace(location=await asyncio.to_thread(_chat_location, spec),
+                                                      env_key=key, version=key.version)
+            except (Refused, OSError):
+                return {'result':'refused', 'why':'dest'}
+            c['_chat_loop'] = asyncio.get_running_loop()
         if _chat is not None:
             if not _chat.valid(self.host, c):
                 return {'result':'refused', 'why':'authority_changed'}
@@ -1588,7 +1614,7 @@ class Elevator:
         self._remind_card(c)
         try:
             delivery = await self._deliver_card(lambda s: self.card_msg(c, s), only, c["id"])
-            if on_card is not None:
+            if c["kind"] == "secret" or on_card is not None:
                 # The callback is a delivery receipt, not a card-construction
                 # hook.  Keep the one-argument contract, but expose the exact
                 # fan-out state so CLI callers never claim "sent" for queued,
@@ -1596,8 +1622,12 @@ class Elevator:
                 c["delivery_status"] = (
                     "sent" if delivery.get("complete") else
                     "partial" if delivery.get("accepted") and delivery.get("queued") else
-                    "queued" if delivery.get("queued") else "failed")
+                    "failed" if delivery.get("failed") else
+                    "queued" if delivery.get("queued") else "unpaired")
                 c["delivery_accepted"] = bool(delivery.get("accepted"))
+                if c["kind"] == "secret":
+                    self.st.log("elev_delivery", id=c["id"], kind="secret", result=c["delivery_status"])
+            if on_card is not None:
                 try:
                     await on_card(c)
                 except Exception as e:
@@ -1688,6 +1718,13 @@ class Elevator:
             remember(self.st, c["id"], {"result": res["result"], "until": None,
                                         **{k: res[k] for k in ("why", "detail", "receipt", "key_hint") if res.get(k) is not None}})
         res["id"] = c["id"]
+        report = getattr(c.get('_chat_input'), 'report', None)
+        if report is not None:
+            try:
+                report.finished(c, res)
+            except Exception as e:
+                from . import bg
+                bg.swallowed(self.st.log, "secret_chat_receipt_failed", e)
         if cancelled:raise asyncio.CancelledError
         return res
 
@@ -1745,6 +1782,8 @@ class Elevator:
             return
         sk = self.st.sign_key(s.device)
         ok = obj["ok"]
+        if c["kind"] == "secret":
+            self.st.log("elev_delivery", id=c["id"], kind="secret", result="answered")
         ct_sha = hashlib.sha256(wire.unb64u(obj["ct"])).hexdigest() if ok and "ct" in obj else None
         signed = dict(device=s.device, sk=wire.b64u(sk), sig=obj["sig"], n=obj["n"], sig_ts=obj["ts"],
                       decision="allow" if ok else "deny", ct_sha256=ct_sha, channel=self.host.channel,
@@ -2023,14 +2062,15 @@ class Elevator:
                 ensure_live()
             else:
                 res = await asyncio.to_thread(self._save, c, value)
-                if c.get('_chat_input') is not None and c.get('_chat_committed'):
+                if (c.get('_chat_input') is not None or c.get('_switch_input') is not None) and c.get('_chat_committed'):
                     # Cancellation after the atomic replacement cannot undo it. Further work still needs live authority.
                     try:
                         ensure_live()
                     except approval_special.AuthorityChanged:
                         pass
                     else:
-                        await self._reload_saved_env(c, res)
+                        if res.get("result") == "saved":
+                            await self._reload_saved_env(c, res)
                 else:
                     ensure_live()
                     if res.get("result") == "saved":
@@ -2238,6 +2278,8 @@ class Elevator:
                 guard()
             if not self._source_allows(c):raise approval_special.AuthorityChanged()
             chat = c.get('_chat_input')
+            if c.get('_switch_input') is not None and time.monotonic() >= c['deadline']:
+                raise approval_special.AuthorityChanged()
             if chat is not None and time.monotonic() >= min(c['deadline'], c['review_adapter'].deadline):
                 raise approval_special.ChatExpired()
             if pinned is not None and approval_special.live_context(self.host) != pinned:
@@ -2280,7 +2322,7 @@ class Elevator:
                 return {'result': 'failed', 'why': 'verify', 'detail': verified.get('detail', ''), **_key_hint(c, value)}
         ensure_source(verified is not None)
         try:
-            if c.get('_chat_input') is None:
+            if c.get('_chat_input') is None and c.get('_switch_input') is None:
                 write_secret(c["dest_spec"], value)
             else:
                 # Serialise the brief env read/merge/replace; verification stays outside the state lock.
@@ -2290,6 +2332,8 @@ class Elevator:
         except Refused as e:
             return {"result": "failed", "why": e.why, "detail": e.detail}
         except OSError:
+            if c.get("_chat_committed"):
+                return {"result": "unknown", "why": "persistence_unconfirmed"}
             return {"result": "failed", "why": "io"}
         receipt = {"name": c["name"], "dest": c["dest"], "length": len(value), "fingerprint": fingerprint(value)}
         if c.get('_chat_input') is not None and c.get('verify_url'):
@@ -2571,7 +2615,8 @@ class Elevator:
                 why = host_diagnostics.caller_refusal(req, sock, self.host)
                 broker = getattr(getattr(getattr(self.host, 'peers', None), 'xfer', None), 'broker', None)
                 if req.get('op') == 'support' and broker is not None and broker.feedback_applicable() and not external_send:
-                    res = broker.feedback_receipt(req, peer)
+                    from . import feedback_native
+                    res = await feedback_native.receive(broker, req, peer)
                 elif why:
                     res = host_diagnostics.refused(why)
                 else:
@@ -2629,7 +2674,9 @@ class Elevator:
                 from . import update, upgrade_friend
                 if not isinstance(req.get("op"), str):
                     raise Refused("shape", "upgrade: op")
-                if req["op"] == "request_owner":
+                if req["op"] == "phone_offer" and set(req) == {"t", "op", "version"}:
+                    res = await upgrade_friend.phone_offer(self.host, req["version"], peer)
+                elif req["op"] == "request_owner":
                     res = await upgrade_friend.owner_request(self.host, req.get("version"), fenced=True)
                 elif req["op"] == "friend":       # R-0060: the fenced Agent's `agentj update` asks first
                     res = await upgrade_friend.answer(self.host, fenced=True)
@@ -2655,7 +2702,10 @@ class Elevator:
                     res = {"ok": True, "serve": "answering"}
                 else:
                     from . import switch_harness
-                    res = await asyncio.to_thread(switch_harness.host_job, self.st, req)
+                    from . import opencode_switch_key
+                    origin = opencode_switch_key.capture(self.host, req, peer)
+                    res = await asyncio.to_thread(switch_harness.host_job, self.st, req, **({"origin":origin} if origin else {}))
+                    opencode_switch_key.admitted(self.host, req, res, origin)
                 w.write((json.dumps(res) + "\n").encode())
                 await w.drain()
                 w.close()
@@ -2880,7 +2930,7 @@ class Elevator:
                 on_card = None
                 if req.get("early") is True:
                     async def on_card(c):
-                        w.write((json.dumps({"t": "card", "id": c["id"], "kind": c["kind"], "ttl": TTL[c["kind"]]}) + "\n").encode())
+                        w.write((json.dumps({"t": "card", "id": c["id"], "kind": c["kind"], "ttl": TTL[c["kind"]], "delivery_status": c.get("delivery_status", "unknown")}) + "\n").encode())
                         await w.drain()
                 if card["kind"] == "sudo":
 
@@ -2906,8 +2956,10 @@ class Elevator:
                         shown["c"] = c
                         if inner is not None:
                             await inner(c)
+                    report = None
                     if chat_source is not None:
-                        from . import approval_special
+                        from . import approval_special, chat_secret_report
+                        report = chat_secret_report.Receipt(self.host, chat_source)
                         _chat_http_target(card)
                         spec = card['dest_spec']
                         env_key = (self._chat_env_keys.setdefault((spec['path'], spec['key']), _EnvKey())
@@ -2921,7 +2973,7 @@ class Elevator:
                         except (OSError, UnicodeError, approval_special.AuthorityChanged):
                             raise Refused('dest', 'the destination is unavailable or changed') from None
                         chat = _ChatInput(card, chat_source[0], str(chat_source[1]['session']),
-                                          chat_source[1]['message_id'], _chat_target(card), location, env_key, version)
+                                          chat_source[1]['message_id'], _chat_target(card), location, env_key, version, report)
                         request = self._request(card, None, note_card, _chat=chat)
                     else:
                         request = self.request(card, None, note_card)
@@ -2938,8 +2990,13 @@ class Elevator:
                         cli_gone.cancel()
                     if task.done():
                         res = task.result()
+                        if report is not None and (cli_gone.done() and not cli_gone.cancelled() or res.get('result') == 'questioned'):
+                            report.detach()
                     else:
-                        task.add_done_callback(self._secret_settled)
+                        if report is not None:
+                            report.detach()
+                        else:
+                            task.add_done_callback(self._secret_settled)
                         c = shown.get("c") or {}
                         res = {"result": "pending", "id": c.get("id", ""), "name": card["name"],
                                "secs": max(0, int(c.get("deadline", time.monotonic()) - time.monotonic()))}
@@ -3242,7 +3299,7 @@ def cmd_secret(a) -> int:
         return _secret_report(res, a.json)
 
     def on_card(c):
-        status = c.get("delivery_status", "queued")
+        status = c.get("delivery_status", "unknown")
         headline, english = _secret_card_delivery_copy(status)
         print(f"SECRET_CARD: {c['id']} — {headline}（有效 {c.get('ttl', TTL['secret']) // 60} 分钟），本命令最多等 {REQUEST_WAIT} 秒。"
               f"若本命令被中断（超时/被杀），卡片仍然有效，主人提交后结果会以〔Agent J 系统提示〕自动告诉你；也可运行 "
@@ -3260,9 +3317,10 @@ def cmd_secret(a) -> int:
 def _secret_card_delivery_copy(status):
     """Describe fan-out delivery without implying every remote received it."""
     copies = {
-        "sent": ("已发到主人手机", "Card sent to the owner's phone"),
+        "sent": ("已发送到已配对遥控器，等待填写", "Sent to the paired remote, awaiting input"),
         "partial": ("部分设备已送达，其余排队/失败", "Partially delivered; remaining remotes are queued or failed"),
-        "queued": ("批准卡已排队，当前遥控器离线", "Approval card queued; the remote is offline"),
+        "queued": ("批准卡已排队，等待已配对遥控器连接", "Card queued, waiting for a paired remote to connect"),
+        "unpaired": ("当前没有可接收批准卡的已配对遥控器", "No paired remote is eligible to receive the card"),
         "failed": ("批准卡投递失败", "Approval card delivery failed"),
     }
     return copies.get(status, ("批准卡待投递", "Approval card pending delivery"))

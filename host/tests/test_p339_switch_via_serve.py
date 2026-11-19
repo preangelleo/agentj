@@ -52,12 +52,15 @@ class ServeThread:
 
     def __init__(self, st):
         self.st, self.loop = st, asyncio.new_event_loop()
-        self.el = elevate.Elevator(types.SimpleNamespace(st=st))
         self.t = threading.Thread(target=self.loop.run_forever, daemon=True)
 
     def __enter__(self):
         self.t.start()
-        asyncio.run_coroutine_threadsafe(self.el.start(), self.loop).result(10)
+        async def start():
+            from agentj.serve import Host
+            self.el = Host(self.st, events="jsonl", read_stdin=False).elevate
+            await self.el.start()
+        asyncio.run_coroutine_threadsafe(start(), self.loop).result(10)
         return self
 
     def __exit__(self, *exc):
@@ -180,7 +183,7 @@ class Spec(unittest.TestCase):
 
     def test_serve_dispatches_it_and_it_is_not_sensitive(self):
         self.assertIn('elif cmd == "harness_job":', SERVE_SRC)
-        self.assertIn("asyncio.to_thread(switch_harness.host_job, self.st, req)", SERVE_SRC)
+        self.assertIn("asyncio.to_thread(switch_harness.host_job, self.st, req,", SERVE_SRC)
         self.assertNotIn("harness_job", ctl_auth.SENSITIVE)
 
 

@@ -208,20 +208,19 @@ def ark_steps(lang: str) -> list[str]:
                 "Kimi K3 从 Medium 起才有，不够再升级。",
                 f"主人在方舟控制台 {a['console_url']} 用手机号注册火山引擎、完成实名，订阅 Agent Plan；key 在 {a['key_hint']['zh']}"
                 "（不要发到聊天里）。",
-                "你运行 `agentj provider ark`：把 Agent Plan 的模型写进 OpenCode 配置（已有的配置不动），并直接打开手机密钥卡；"
-                f"主人只把 key 粘贴进手机密钥卡（{a['key_env']}）。",
-                f"`agentj service restart`，然后 `agentj agent switch opencode --model {a['model']}`（能看图；方舟没有只读核对，"
-                "第一条回复就是核对）。想用 Claude Code：`agentj provider ark --harness claude`。还在用旧的 Coding Plan：加 `--plan coding`。",
+                f"完成手机配对后运行 `agentj agent switch opencode --preset ark --plan agent --model {a['model'].split('/',1)[1]}`。"
+                "掌枢使用北京 Agent Plan 自定义提供商，实测所选模型。密钥缺失或无效时，主人在手机密钥卡填写专属 key，保存后自动重试。"
+                "内置 Volcengine Ark、Coding Plan 和 BytePlus 国际站不支持 Agent Plan 专属密钥。",
+                "Claude Code 使用 `agentj provider ark --harness claude`。已有 Coding Plan 可选 --plan coding。",
                 "⚠ " + ark.TERMS_AGENT["zh"]]
     return [f"Ark Agent Plan prices (Volcano Engine's page on {a['prices_checked']}; the order page is authoritative): {tiers}. "
             f"Start with **{a['start_tier']}**: Kimi K3 needs Medium or above; upgrade if it runs short.",
             f"The owner signs up to Volcano Engine in the Ark console {a['console_url']} with a phone number, verifies their identity "
             f"and subscribes to the Agent Plan; the key is under {a['key_hint']['en']} (never paste it into chat).",
-            "You run `agentj provider ark`: it adds the Agent Plan's models to OpenCode's config (existing settings untouched) and "
-            f"opens the phone key card; the owner pastes the key only into the phone's key card ({a['key_env']}).",
-            f"`agentj service restart`, then `agentj agent switch opencode --model {a['model']}` (reads images; Ark has no "
-            "read-only check, so the first reply is the check). For Claude Code: `agentj provider ark --harness claude`. "
-            "Still on the older Coding Plan: add `--plan coding`.",
+            f"After pairing the phone, run `agentj agent switch opencode --preset ark --plan agent --model {a['model'].split('/',1)[1]}`. "
+            "Agent J tests the selected model on the Beijing Agent Plan provider. A missing or invalid dedicated key opens a phone key card and saving retries the selection. "
+            "The built-in Volcengine Ark, Coding Plan and BytePlus international integrations reject this dedicated key.",
+            "For Claude Code use `agentj provider ark --harness claude`. Existing Coding Plan users can select --plan coding.",
             "⚠ " + ark.TERMS_AGENT["en"]]
 
 
@@ -258,7 +257,7 @@ def domestic_routes():
     a, b, k = ark_info(), bailian_info(), data()
     return [
         {'id': 'ark', 'name': 'Volcano Ark Agent Plan', 'name_zh': '火山方舟 Agent Plan',
-         'harnesses': a['harness_options'], 'model': a['model'], 'setup': 'agentj provider ark'},
+         'harnesses': a['harness_options'], 'model': a['model'], 'setup': 'agentj agent switch opencode --preset ark --plan agent'},
         {'id': 'bailian', 'name': 'Alibaba Bailian Token Plan', 'name_zh': '阿里百炼 Token Plan',
          'harnesses': b['harness_options'], 'model': b['model'], 'setup': 'agentj provider bailian'},
         {'id': 'kimi', 'name': 'Kimi Code', 'name_zh': 'Kimi Code', 'harnesses': ['kimi'], 'model': k['model'],

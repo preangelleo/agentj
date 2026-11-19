@@ -752,6 +752,10 @@ class OpenCodeAgent(Agent):
         installer(self.cfg['dir'], self._control_channel.path)
 
     async def _stop_control_paths(self):
+        view = getattr(self,"_ark_view",None)
+        if view:
+            self._ark_view = None
+            await asyncio.to_thread(view.cleanup)
         channel = getattr(self, '_control_channel', None)
         if channel:
             await channel.stop()
@@ -821,6 +825,26 @@ class OpenCodeAgent(Agent):
             env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"), plan_keys=True, host_state=self.host.st)   # P348
         if self.cfg.get("fence", True):
             env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
+        from . import ark_connect, opencode_free
+        if ark_connect.chosen(self.cfg.get("model")):
+            try:
+                env = await asyncio.to_thread(ark_connect.runtime,env,self.cfg["dir"],self.cfg["model"])
+                def make_view():
+                    from . import scratch
+                    view = tempfile.TemporaryDirectory(prefix="agentj-route-",dir=scratch.root())
+                    try:
+                        channel = getattr(self,"_control_channel",None) or getattr(self,"risk_channel",None)
+                        if channel is None:
+                            raise ValueError("missing_product_hook")
+                        return view, ark_connect.project_view(env,self.cfg["dir"],view.name,version2=self.v2,channel=channel.path)
+                    except Exception:
+                        view.cleanup()
+                        raise
+                self._ark_view, env = await asyncio.to_thread(make_view)
+            except (opencode_free.ProbeError, ValueError, OSError):
+                self.failed_start = True
+                self.fail_notice("火山方舟 Agent Plan 配置已变更，未连接。 / The Ark Agent Plan route changed; connection stopped.")
+                return False
         from .static_shell import interpreter_env
         self.approval_env = interpreter_env(env)
         try:

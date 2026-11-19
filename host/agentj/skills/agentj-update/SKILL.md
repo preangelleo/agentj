@@ -8,6 +8,8 @@ Delegate by default; follow explicit owner requests to work personally. Verify a
 
 The owner's explicit update request authorizes installation, service restart and doctor.
 Run `agentj update apply` (F14, non-interactive). Do not assemble uv/pip commands.
+If the owner asks from a paired phone and the Agent cannot write to the installation, `reason: upgrade_card_ready` means the phone is waiting for a tap. Ask the owner to tap **Upgrade now**. The host verifies the signed release and reports the running version after restart.
+主人在配对手机上要求升级时，如果安装目录只读，`reason: upgrade_card_ready` 表示手机升级卡已打开。请主人点「现在升级」，主机会验证签名，重启后回报实际版本。
 Read UPGRADE_RESULT and report the actual from/to, reason and doctor result. Never claim a failed upgrade succeeded.
 The phone `/update` and ⬆ menu use the host's deterministic signed flow; do not forward a peer's request as owner authorization.
 中文：主人要求升级时运行 `agentj update apply`，按真实结果回报；不自拼安装命令，不接受好友代主人授权。

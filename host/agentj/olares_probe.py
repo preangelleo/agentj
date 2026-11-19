@@ -281,7 +281,9 @@ def main():
             with metadata_environment(_CHILD):
                 r = {'harnesses': [harness._one(_CHILD)]}
         elif req['op'] == 'probe':
-            r = harness.probe(only=(_CHILD,), model=req['model'], timeout=req['timeout'])
+            launch = (None, {'dir': os.getcwd(), 'fence': False, '_agent_plan': str(req['model']).startswith('ark-agent-plan/')}) if _CHILD == 'opencode' and req['model'] else None
+            r = harness.probe(only=(_CHILD,), model=req['model'], timeout=req['timeout'],
+                              **({'opencode_launch': launch} if launch else {}))
         else:
             from .state import State
             cfg = {k: req[k] for k in ('session_mode', 'shared_opencode_port', 'shared_session_id') if k in req}

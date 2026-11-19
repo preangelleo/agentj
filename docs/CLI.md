@@ -7543,7 +7543,7 @@ usage: agentj support feedback [-h] [--kind {bug,report}] [--file FILE]
 | `--file` | `null` | false | — | `read the text from a file` |
 | `--attach-doctor` | `false` | false | — | `attach the redacted doctor output + version` |
 | `--thread` | `null` | false | — | `continue a thread (st_…)` |
-| `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
+| `--wait` | `0` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
 | `--lang` | `null` | false | `zh`, `en` | `` |
 | `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（仅用于模型指出的非凭据个人信息；模型不可用无需确认）/ owner consent for noncredential model findings; not needed when model review is unavailable` |
 
@@ -15957,7 +15957,7 @@ usage: agentj support feedback [-h] [--kind {bug,report}] [--file FILE]
 | `--file` | `null` | false | — | `从文件读正文` |
 | `--attach-doctor` | `false` | false | — | `附上脱敏后的 agentj doctor 输出和版本` |
 | `--thread` | `null` | false | — | `接着一个已有会话问` |
-| `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
+| `--wait` | `0` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
 | `--lang` | `null` | false | `zh`, `en` | `` |
 | `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（仅用于模型指出的非凭据个人信息；模型不可用无需确认）/ owner consent for noncredential model findings; not needed when model review is unavailable` |
 

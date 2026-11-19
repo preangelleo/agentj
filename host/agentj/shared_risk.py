@@ -250,6 +250,8 @@ class NativePathGuard:
         tool, inp = event.get('tool_name', '?'), event.get('tool_input') or {}
         if a.kind == 'codex':
             tool = policy_registry.codex_hook_tool(tool)
+            from . import feedback_native
+            feedback_native.codex_prehook(a, event, tool, inp)
         if (refusal := credential_read_refusal(a.host, tool, inp, a.cfg.get('dir'))) is not None:
             return refusal
         if (text := uv_list.agentj_delete_refusal(tool, inp, cwd=event.get('cwd') or a.cfg.get('dir'))):

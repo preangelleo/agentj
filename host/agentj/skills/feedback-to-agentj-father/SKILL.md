@@ -17,6 +17,8 @@ If a configured model flags noncredential personal details, show the redacted te
 Use `--kind bug` for a bug, default report for an idea or general feedback; both use the existing official support thread.
 Prefer `--file <private local draft>` for multiline content or shell metacharacters; never interpolate raw user text into a shell command.
 Only `/feedback-to-agentj-father` with no content: ask “想反馈什么？” / “What would you like to report?” and do not send yet.
+收到 `SUPPORT_TASK_PENDING` 表示主机仍在处理。把本次请求交给主机完成，等待期间不要重发。主机会把客服返回的工单号或失败结果送到发起反馈的手机主对话；看到工单号才能说「已提交」。
+On `SUPPORT_TASK_PENDING`, leave the original submission with the host. The host posts the support ticket number or the unsuccessful outcome in the originating phone conversation. Confirm submission only when a ticket number is available.
 After success, answer “已提交 + 编号” / “Submitted + ticket ID”. Exit 5 with a thread ID means submitted, reply pending; read it later with `agentj support thread <id>`.
 Never claim submitted if sending failed or privacy checks blocked it; explain briefly and retain only the redacted draft for retry.
 
