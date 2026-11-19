@@ -64,6 +64,17 @@ class Messages(unittest.TestCase):
         s = SimpleNamespace(state="ready", device=dev, p33=True, pub=b"k", cid=1)
         asyncio.run(Host._app_frame(h, s, obj))
 
+    def test_recovered_subscription_is_stored_with_its_categories_in_one_write(self):
+        with tempfile.TemporaryDirectory() as d:
+            h = self.host(d)
+            sub = a_sub()
+            self.app(h, "d1", dict(sub, kinds=["ask"]))
+            self.assertFalse(webpush.wants(webpush.load_subs(h.st)["d1"], "reply"))
+            self.app(h, "d1", dict(sub, kinds=[]))
+            self.assertEqual(webpush.load_subs(h.st)["d1"]["kinds"], [])
+            self.app(h, "d2", dict(sub, kinds=["unrecognized"]))
+            self.assertNotIn("d2", webpush.load_subs(h.st))
+
     def test_pref_is_stored_and_survives_a_resubscribe(self):
         with tempfile.TemporaryDirectory() as d:
             h = self.host(d)

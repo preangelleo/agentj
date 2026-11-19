@@ -681,7 +681,9 @@ App messages (all inside §3 transport messages):
   404 / 410 (only if the rejected subscription is still the stored one). **The subscription never reaches our servers.**
 - On ready the host sends `{"t":"push_state","on":bool}` for this device's persisted record before `push_key`. It also sends
   `push_state` after `push_sub` (true only when accepted) or `push_off` (false). With browser notification permission granted,
-  the page may re-send an existing subscription; it may silently create a missing subscription only when the host confirms
+  a ready `on:false` snapshot may include `restore_existing:true`. This allows the paired page to re-register an existing
+  subscription for the same service-worker scope and VAPID key when both seat-scoped stores confirm an earlier explicit opt-in.
+  Other negative acknowledgements cancel the repair. The page may silently create a missing subscription only when the host confirms
   `on:true` for that device. Permission alone cannot opt in. An explicit off persists seat-scoped local off intent (localStorage, with bounded IndexedDB fallback), unsubscribes and sends
   `push_off` with a UUID `r`; only the paired Host's `push_state {on:false,r}` with that same UUID confirms success. Missing
   acknowledgement fails visibly and the off request retries on reconnect; a later explicit on is required to resume.
@@ -700,7 +702,8 @@ App messages (all inside §3 transport messages):
   its urgency, the host's IP (or its proxy's) and the host's VAPID public key. Never text, never which kind.
 - **Kinds per device (P204, 0.21).** `{"t":"push_pref","kinds":[…]}` (a subset of `"ask"` 审批 · `"reply"` 完成 · `"security"`
   告警; strict: anything else is refused and logged) is stored with that device's entry in `push.json` and kept across every
-  re-sent `push_sub`; a device without a choice gets every kind (as before). The page keeps its choice (localStorage
+  re-sent `push_sub` without categories. An optional validated `kinds` on `push_sub` saves the choice atomically with the
+  subscription. An invalid list refuses the frame. A device without a choice gets every kind (as before). The page keeps its choice (localStorage
   `aj.pushKinds`) and re-sends it after every subscribe; Settings → 锁屏提醒 shows three switches while alerts are on. A turn
   whose whole final reply is 〔不回群〕 sets no reply push (it is silent everywhere); a scheduled run's page still pushes `reply`.
   The push itself is unchanged: an empty, constant-size signal; the page fetches everything over §3 after it opens.

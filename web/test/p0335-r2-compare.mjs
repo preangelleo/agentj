@@ -37,7 +37,7 @@ try{
     const png=await stableShot(p),snap=await dom(p);writeFileSync(join(out,`${label}-${id}-main.png`),png);writeFileSync(join(out,`${label}-${id}-dom.json`),JSON.stringify(snap,null,2));captures.push({label,snap,png});
     if(label==='candidate'&&process.env.AJ_0335_R2_INTERACTIONS!=='0'){
      assert.equal(await evaluate(p,`document.getElementById('commandsOpen')`),null);
-     await fake.addTurn({k:'auto',text:'Background fixture'},'Automation result');await fake.addTurn({k:'sys',text:'System fixture'},'System result');await fake.addTurn({k:'agent',via:'hook',text:'Webhook fixture'},'Webhook result');
+     await fake.addTurn({k:'auto',text:'Background fixture'},'Automation result');await fake.addTurn({k:'sys',text:'System fixture'},'System result');await fake.addTurn({k:'agent',via:'hook',text:'Webhook fixture'},'Webhook failure','failed',{activity_failure:true});
      await waitFor(p,`document.getElementById('pg').textContent==='1 / 1'`);
      assert.equal(await evaluate(p,`document.getElementById('words').textContent.trim()`),'The final main Agent reply');
      const afterArrival=await stableShot(p),arrivalDiff=await pixels(p,png,afterArrival);

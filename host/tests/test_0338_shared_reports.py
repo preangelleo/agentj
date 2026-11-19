@@ -52,9 +52,16 @@ class SharedReport(unittest.IsolatedAsyncioTestCase):
         self.rows({"type":"assistant","message":{"content":[{"type":"tool_use","id":"w","name":"ScheduleWakeup","input":{}}]}},
                   {"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"w","content":"scheduled"}]}})
 
-    def owner_turn(self, *, unread=False, prompt_id=None):
+    def owner_turn(self, *, unread=False, prompt_id=None, via=None):
         page = self.host.hist.add({"k":"phone","text":"please report"}, "", "open")
         send = Send("fixture", "request", page["id"], text="please report", source=provenance.phone())
+        if via is not None:
+            send.source = provenance.system()
+            page["src"] = {"k": "agent", "via": via, "text": send.text}
+            if via == "hook":
+                send.hook_notice = "fixture"
+            else:
+                send.background_done_ids = ["fixture"]
         self.a.cur_send = send
         self.host.agent_turn_start(send.text, send)
         self.a.phone_turn = True
@@ -101,6 +108,46 @@ class SharedReport(unittest.IsolatedAsyncioTestCase):
         self.host.agent_turn_end()
         self.assertEqual(page["reply"]["text"],"report ready")
         self.assertEqual(self.pushes,["reply"])
+
+    async def test_system_report_followed_by_explicit_hook_silence(self):
+        page = self.owner_turn(via="background_done")
+        self.text("release confirmed")
+        await self.native_stop("release confirmed")
+        self.host.agent_turn_end()
+        self.assertEqual(page["reply"]["text"], "release confirmed")
+        hook = self.owner_turn(via="hook")
+        self.text("〔静默消息〕 background detail")
+        self.a._stream_texts()
+        self.assertFalse(hook["reply"]["text"], "unclassified hook prose must not stream")
+        await self.native_stop("〔静默消息〕 background detail")
+        self.host.agent_turn_end()
+        self.assertTrue(hook["silent"])
+        self.assertEqual(self.pushes, ["reply"])
+
+    async def test_wakeup_completion_keeps_report_without_marker_explanation(self):
+        page = self.owner_turn(via="background_done")
+        self.text("report before scheduled continuation")
+        self.wakeup()
+        self.text("[silent] internal explanation")
+        await self.native_stop("[silent] internal explanation")
+        self.host.agent_turn_end()
+        self.assertEqual(page["reply"]["text"], "report before scheduled continuation")
+        self.assertEqual(self.pushes, ["reply"])
+
+    async def test_system_marker_with_trailing_explanation_and_separate_marker(self):
+        hook = self.owner_turn(via="hook")
+        self.text("background reason [silent]")
+        await self.native_stop("background reason [silent]")
+        self.host.agent_turn_end()
+        self.assertTrue(hook["silent"])
+        self.assertEqual(self.pushes, [])
+        page = self.owner_turn(via="background_done")
+        self.text("release report")
+        self.text("[silent]")
+        await self.native_stop("[silent]")
+        self.host.agent_turn_end()
+        self.assertEqual(page["reply"]["text"], "release report")
+        self.assertEqual(self.pushes, ["reply"])
 
     async def test_native_loop_stop_keeps_report(self):
         self.rows({"type":"user","turnOrigin":"scheduled","message":{"content":"scheduled tick"}})

@@ -55,8 +55,11 @@ try {
   const yesterday = Date.now() - 86400000;
   for (let id=1;id<=152;id++){
     const owner = [1,51,103,152].includes(id);
-    const row = await host.addTurn(owner ? {k:'phone',text:'Question '+id} :
-      {k:'agent',via:'background_done',text:'Background task'}, owner ? 'Answer '+id : 'Task completed');
+    const src = owner ? {k:'phone',text:'Question '+id} : {k:'agent',via:'background_done',text:'Background task'};
+    const row = owner ? await host.addTurn(src, 'Answer '+id) :
+      id === 102 ? await host.addTurn(src, 'Progress report 102') :
+      await host.addTurn(src, '〔静默消息〕');
+    if (!owner && id !== 102) row.silent = true; // Retained and sent in the subsequent cold history frame.
     row.ts = id <= 51 ? yesterday : Date.now();
   }
   const reads = [];
@@ -73,11 +76,15 @@ try {
     document.getElementById('a2hs-ok')?.click();
   });
   async function assertCard(id) {
+    if (id === 102) {
+      await reopened.waitForFunction(()=>document.getElementById('words').textContent==='Progress report 102');
+      return;
+    }
     await reopened.waitForFunction(id=>document.getElementById('omText').textContent==='Question '+id &&
       document.getElementById('words').textContent.includes('Answer '+id), id, {timeout:4000});
   }
   await assertCard(152);
-  for (const id of [103,51,1]) {
+  for (const id of [103,102,51,1]) {
     // WebKit automation only exposes native tap. Feed a rightward swipe into the product DOM gesture handler.
     await reopened.locator('#deck').evaluate(deck=>{
       for (const [type,x] of [['touchstart',80],['touchmove',250],['touchend',250]]) {
@@ -116,5 +123,5 @@ try {
   await next.waitForFunction(()=>window.__ajState==='ready' && document.getElementById('words').textContent.includes('Answer 152'));
   assert.equal(host.st.turns.length,152,'manual repair preserves the server history');
   console.log(JSON.stringify({engine:'WebKit',version:browser.version(),viewport:390,resumed:true,reads,
-    ownerCards:[152,103,51,1],crossedYesterday:true,authenticatedRemoval:true,noStaleResume:true,manualPairApproved:true,noTicketProofForNewIdentity:true}));
+    ownerCards:[152,103,51,1],backgroundReport:102,crossedYesterday:true,authenticatedRemoval:true,noStaleResume:true,manualPairApproved:true,noTicketProofForNewIdentity:true}));
 } finally {await browser.close();await host.stop();await web.stop();}

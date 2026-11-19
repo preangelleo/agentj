@@ -1,4 +1,4 @@
-import { activityKind, activityFailed, activitySummary, mergeOwnerInputs, ownerInput, ownerQueue, pendingAutomation } from './phone-activity.js';
+import { backgroundReport, activityKind, activityFailed, activitySummary, mergeOwnerInputs, ownerInput, ownerQueue, pendingAutomation } from './phone-activity.js';
 import {paintRepair,repairOf,replyName,paintFix} from './repair-actions.js';
 import {fullAccess, supports as cmdSupports} from './cmdrun.js';
 import {waitsForNewRequest,rememberRefusal,waitingText,forgetRefusal,forgetRefusals} from './approval-notice.js';
@@ -1352,7 +1352,14 @@ const isSteered = p => !!p && Number.isInteger(p.id) && (steered.has(p.id) || (p
 function pages(){
   if (pagesCache) return pagesCache;
   let out = [];
-  for (const p of mergeOwnerInputs(hist.turns.filter(p => !pendingAutomation(p) && !activityKind(p)))) if (visiblePage(p) && !echoPage(p, out[out.length - 1])) out.push(p);
+  const candidates = hist.turns.filter(p => !pendingAutomation(p) && (!activityKind(p) || backgroundReport(p)));
+  for (const p of mergeOwnerInputs(candidates)){
+    if (!visiblePage(p)) continue;
+    const report = backgroundReport(p);
+    if (!report && echoPage(p, out[out.length - 1])) continue;
+    // The event envelope stays available in Background activity. The main page shows the Agent's reply.
+    out.push(report ? {...p, source: {...p.source, text: ''}} : p);
+  }
   split.note(hist.turns, visibleReply);
   out = split.layout(out, p => visibleReply(p) && !isSteered(p));
   if (!out.length) out.push({id: null, reply: "", source: null, ts: null});
@@ -2379,10 +2386,14 @@ async function jumpToTurn(id){
   while (!hist.turns.some(p => p.id === id) && olderLeft() && hist.turns[0].id > id){
     const b = await loadOlderBatch(); if (!b || !b.all) break;
   }
-  if (hist.turns.some(p => p.id === id && activityKind(p))){ openSilent(id,true); return; }
-  if (hist.turns.some(p => p.id === id && silentTurn(p))){ openSilent(id); return; }
   const i = pages().findIndex(p => p.id === id || p.mergedIds?.includes(id));
-  if (i < 0){ toast(t('r.quote.gone'), 2200); return; }
+  if (i < 0){
+    const turn = hist.turns.find(p => p.id === id);
+    if (turn && activityKind(turn)) openSilent(id,true);
+    else if (turn && silentTurn(turn)) openSilent(id);
+    else toast(t('r.quote.gone'), 2200);
+    return;
+  }
   pageAt = i; follow = i === pages().length - 1; tailWait = false; shownKey = null; showPage();
 }
 

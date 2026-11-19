@@ -2192,6 +2192,8 @@ class SharedClaudeAgent(Agent):
             self.failed_start = True
             return False
         self.offset = self.transcript.stat().st_size if self.transcript.exists() else 0
+        from . import shared_report_history
+        shared_report_history.attach(self)
         busy = getattr(self.host, "busy", None)
         if busy is not None:
             busy.claude_transcripts[f"shared-{self.kind}:{sid}"] = str(self.transcript)
@@ -2528,11 +2530,20 @@ class SharedClaudeAgent(Agent):
         self.endturn_ids.clear()
         self.turn_texts, self.turn_thinking, self.flushed = [], None, 0
 
+    def _system_report_turn(self):
+        send = self.cur_send
+        if not self.phone_turn or not (self.phone_seen or self.phone_claim or shared_turn_origin.display_received(self)):
+            return False
+        return any(getattr(send, name, None) for name in (
+            "hook_notice", "background_done_ids", "heartbeat_key", "quota_resume_id", "auto_notify"))
+
     def _stream_texts(self):
 
         new, self.flushed = self.turn_texts[self.flushed:], len(self.turn_texts)
         if not (self.phone_turn and self.phone_anchored and (self.phone_seen or self.phone_claim)) or self.phone_reply_seen:
             return
+        if self._system_report_turn():
+            return  # the final reply determines whether the report belongs in main history
         for t in new:
             pub = public_text(t).strip()
             if (self.pending_source or {}).get("kind") in ("phone", "automation", "system"):
@@ -2685,6 +2696,15 @@ class SharedClaudeAgent(Agent):
 
     def _display_reply(self, reply):
         from .silent import is_silent, strip_markers
+        system_report = self._system_report_turn()
+        if system_report and is_silent(reply):
+            if self.turn_wakeup or not strip_markers(reply).strip():
+                # Preserve a separate public report on a later marker-only or scheduled end.
+                # No explanation attached to a marker belongs in the main stream.
+                report = [b for b in self.turn_texts if b.strip() and not is_silent(b)]
+                if report:
+                    return "\n\n".join(report)
+            return reply
         # An explicit no-reply in a group, mail or other recipient's channel
         # remains that channel's contract. Only the main owner display recovers prose.
         if self.phone_turn and (self.pending_source or {}).get("kind") not in ("phone", "automation", "system"):
@@ -2695,7 +2715,7 @@ class SharedClaudeAgent(Agent):
         if not blocks or blocks[-1].strip() != reply.strip():
             blocks.append(reply)
         streamed = self.streamed if self.phone_turn else ()
-        visible = [strip_markers(block).strip() for block in blocks if block.strip()]
+        visible = [strip_markers(block).strip() for block in blocks if block.strip() and not (system_report and is_silent(block))]
         pending = [block for block in visible if block and public_text(block) not in streamed]
         if pending:
             return "\n\n".join(pending)

@@ -41,4 +41,8 @@ if fake_asr:
             return {"ok": True, "text": f"{fake_asr} {os.path.getsize(path)}", "engine": "fake", "ms": 1}
     serve.asr_mod = _FakeASR()
 
+if os.environ.get("AGENTJ_TEST_COMPLETION_JOURNEY") and sys.argv[1:2] == ["serve"]:
+    from completion_journey import install
+    install(serve.Host)
+
 cli.main()

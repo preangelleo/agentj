@@ -15,19 +15,38 @@ export function activityKind(p){
   if (s.k==='auto' || s.k==='task' || s.k==='agent' && BACKGROUND.has(s.via)) return 'background';
   return null;
 }
+// The history source records who triggered the turn. Its final reply can still be the main Agent's.
+export function backgroundReport(p){
+  if (p?.end !== 'done' || p.silent || !p.reply?.trim() || pendingAutomation(p)) return false;
+  const source = p.source;
+  if (source?.input_channel || p.card?.channel) return false;
+  return source?.k === 'agent' && BACKGROUND.has(source.via) ||
+    source?.k === 'auto' && source.source_kind === 'automation' && source.source_role === 'data';
+}
 export function activityFailed(p){return p?.card?.activity_failure===true || p?.end==='failed' || Array.isArray(p?.card?.busy_stalled);}
 export function mergeOwnerInputs(rows){
-  const out=[]; let pending=[];
-  for (const p of rows){
-    if (mergedTurn(p)){pending.push(p);continue;}
-    if (pending.length && ['phone','host'].includes(p.source?.k)) {
-      const sources=[...pending.map(x=>x.source),p.source];
-      out.push({...p,mergedIds:[...pending.map(x=>x.id),p.id],source:{...p.source,text:sources.map(x=>x?.text || '').filter(Boolean).join('\n\n'),
-        att:sources.flatMap(x=>x?.att || [])}}); pending=[];
-    } else {out.push(...pending.map(x=>({...x,reply:''})),p);pending=[];}
+  const out = [];
+  let pending = [];
+  for (const turn of rows){
+    if (mergedTurn(turn)){
+      pending.push(out.length);
+      out.push({...turn, reply:''});
+      continue;
+    }
+    if (pending.length && ['phone','host'].includes(turn.source?.k)){
+      const inputs = pending.map(i => out[i]);
+      const sources = [...inputs.map(row => row.source), turn.source];
+      for (const i of pending) out[i] = null;
+      out.push({...turn, mergedIds:[...inputs.map(row => row.id),turn.id],
+        source:{...turn.source,text:sources.map(s=>s?.text || '').filter(Boolean).join('\n\n'),att:sources.flatMap(s=>s?.att || [])}});
+      pending = [];
+    } else {
+      // A completed background report can land between related owner messages.
+      if (pending.length && !backgroundReport(turn)) pending = [];
+      out.push(turn);
+    }
   }
-  out.push(...pending.map(x=>({...x,reply:''})));
-  return out;
+  return out.filter(Boolean);
 }
 
 // 0332: host-normalized provenance is presentation data, never execution authority.

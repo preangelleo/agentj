@@ -18,5 +18,5 @@ test('worker upgrade changes its version and keeps per-seat relative scope', () 
   assert.match(push, /await storedOff\(\)/);
   assert.match(push, /AJSeat\?\.db\?\.\('aj-push-intent'\)/);
   assert.match(push, /push intent store timeout/);
-  assert.match(pub('app.js'), /case 'push_state': push\.gotPushStatus\(m\.on, m\.r\)/);
+  assert.match(pub('app.js'), /case 'push_state': push\.gotPushStatus\(m\.on, m\.r, m\.restore_existing\)/);
 });

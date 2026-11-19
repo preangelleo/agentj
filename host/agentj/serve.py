@@ -965,6 +965,9 @@ class Host:
             current = getattr(getattr(self, 'private_files', None), 'direct', None)
             return bool(direct is not None and current is direct and await direct.delivery_live(s, file_message))
         from .silent import public_message
+        if obj.get("t") in ("hist_page", "hist_turn"):
+            from . import shared_report_history
+            obj = await shared_report_history.message(getattr(self, "agent", None), obj)
         obj = public_message(obj)
         from . import display_privacy
         if isinstance(obj, dict) and obj.get("t") in display_privacy.DISPLAY_MESSAGES:
@@ -1496,13 +1499,16 @@ class Host:
             await self.capabilities.on_phone(s, obj)
         elif t == "push_sub":
             sub = webpush.parse_sub(obj)
-            if sub is None:
+            kinds = webpush.parse_kinds(obj) if "kinds" in obj else None
+            if sub is None or ("kinds" in obj and kinds is None):
                 self.st.log("push_sub_refused", device=s.device)
                 await self.send_app(s, {"t": "push_state", "on": s.device in webpush.load_subs(self.st)})
                 return
             subs = webpush.load_subs(self.st)
             old = subs.get(s.device) or {}
-            if isinstance(old.get("kinds"), list):          # P204: a re-subscribe keeps the device's categories
+            if kinds is not None:
+                sub["kinds"] = kinds
+            elif isinstance(old.get("kinds"), list):          # P204: a re-subscribe keeps the device's categories
                 sub["kinds"] = old["kinds"]
             if old != sub:
                 subs[s.device] = sub
@@ -3391,7 +3397,8 @@ class Host:
         if s.p33 and self.quota_resume.items:            # P314 (§32): 「额度用完，预计 HH:MM 自动继续」
             await self.send_app(s, self.quota_resume.msg())
         # Host persistence is authoritative on reconnect; announce it before the key prompts browser recovery.
-        await self.send_app(s, {"t": "push_state", "on": s.device in await asyncio.to_thread(webpush.load_subs, self.st)})
+        registered = s.device in await asyncio.to_thread(webpush.load_subs, self.st)
+        await self.send_app(s, {"t": "push_state", "on": registered, **({} if registered else {"restore_existing": True})})
         await self.send_app(s, {"t": "push_key", "k": webpush.b64u(webpush.vapid_public(self._push_key()))})
         if s.p33:                       # §10.5: history pages instead of §8's msg replay; meters, models (§10.10 / §10.11)
             await self.send_app(s, self._meter_msg())
@@ -8264,7 +8271,9 @@ class Host:
             if not isinstance(q, str) or not q.strip() or text_units(q) > hsearch.Q_MAX or sort not in hsearch.SORTS \
                     or type(lim) is not int or not 1 <= lim <= hsearch.HITS_MAX:
                 return await self.send_app(s, {"t": "hist_found", "r": r, "error": "shape"})
-            turns = list(self.hist.turns.values())
+            from . import shared_report_history
+            proof = await shared_report_history.for_display(getattr(self, "agent", None), self.hist.epoch)
+            turns = [shared_report_history.turn(proof, row) for row in self.hist.turns.values()]
             hits, n = await asyncio.to_thread(hsearch.search, turns, q, sort, lim)
             self.st.log("hist_find", device=s.device, count=n)          # never the query or the words
             return await self.send_app(s, {"t": "hist_found", "r": r, "epoch": self.hist.epoch, "sort": sort, "hits": hits,

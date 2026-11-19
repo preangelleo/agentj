@@ -97,7 +97,7 @@ class PushHost(unittest.TestCase):
             webpush.save_subs(restarted, {})
             sent.clear()
             asyncio.run(host.on_ready(session, 0))
-            self.assertEqual(next(m for _, m in sent if m['t'] == 'push_state'), {'t': 'push_state', 'on': False})
+            self.assertEqual(next(m for _, m in sent if m['t'] == 'push_state'), {'t': 'push_state', 'on': False, 'restore_existing': True})
 
     def test_legacy_state_move_preserves_subscription_and_vapid(self):
         with tempfile.TemporaryDirectory() as d:

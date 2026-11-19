@@ -1,6 +1,6 @@
 // Web Push (PROTOCOL §9): the subscription goes to the host only (end to end), pushes carry no content; and the
 // 「添加到主屏幕」 hint (phones only, not when installed, dismissed once — localStorage "aj.a2hs").
-import { sendApp, isReady } from './session.js';
+import { sendApp, isReady, gen } from './session.js';
 import { t, lang, fillText } from './t.js';
 import { el } from './ui.js';
 
@@ -34,7 +34,7 @@ function offDb(value) {
         try {
           const tx = db.transaction('flags', value === undefined ? 'readonly' : 'readwrite');
           const r = value === undefined ? tx.objectStore('flags').get('off') : tx.objectStore('flags').put(value, 'off');
-          r.onsuccess = () => { if (value === undefined) finish(true, r.result === true); };
+          r.onsuccess = () => { if (value === undefined) finish(true, r.result); };
           r.onerror = () => finish(false, r.error);
           tx.oncomplete = () => { if (value !== undefined) finish(true, true); };
           tx.onerror = () => finish(false, tx.error);
@@ -44,9 +44,10 @@ function offDb(value) {
     } catch (e) { finish(false, e); }
   });
 }
+const savedIntent = () => localStorage.getItem(OFF_KEY);
 async function storedOff() {
   let ls;
-  try { ls = localStorage.getItem(OFF_KEY) === '1'; } catch { return true; }
+  try { ls = savedIntent() === '1'; } catch { return true; }
   if (ls) return true;
   try { return localOff || await offDb(); } catch { return true; }
 }
@@ -62,6 +63,7 @@ async function markOff(off) {
 }
 let hostEnabled = null; // The host's per-device record, not a guess from browser permission.
 let lastKey = null;
+let restoreSession = null, restoring = null;
 let intent = 0;
 let offSend = null, pendingOff = null, hostOnSerial = 0;
 // A socket write is not a Host acknowledgement. Bind the reply to this request so stale on:false
@@ -87,8 +89,11 @@ function retryOff() {
   return offSend;
 }
 // Ignore delayed acknowledgements after a local off; an older host-on reply cannot grant consent.
-export function gotPushStatus(enabled, r) {
+export function gotPushStatus(enabled, r, restoreExisting) {
   if (typeof enabled !== 'boolean') return;
+  restoreSession = !enabled && restoreExisting === true && !r ? gen() : null;
+  const restored = enabled && restoring !== null && restoring === gen();
+  restoring = null;
   if (enabled && explicitlyOff()) ++hostOnSerial;
   if (!enabled && pendingOff && r === pendingOff.r && explicitlyOff()) pendingOff.finish(true);
   if (explicitlyOff()) {
@@ -102,7 +107,8 @@ export function gotPushStatus(enabled, r) {
   if (hostEnabled === enabled) return; // push_sub acknowledgement is not a new intent
   hostEnabled = enabled;
   ++intent;
-  if (!enabled) pushUi('offer');
+  if (restored) pushUi('on');
+  else if (!enabled) pushUi('offer');
   else if (lastKey && pushState !== 'on') gotPushKey(lastKey);
 }
 export const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && window.isSecureContext;
@@ -128,21 +134,24 @@ const sameKey = (sub, key) => {
   const a = new Uint8Array(k);
   return a.length === key.length && a.every((x, i) => x === key[i]);
 };
-function subMsg(sub) {
+function subMsg(sub, selected = kinds()) {
   const j = sub.toJSON();
-  return { t: 'push_sub', endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth };
+  return { t: 'push_sub', endpoint: j.endpoint, p256dh: j.keys?.p256dh, auth: j.keys?.auth, kinds: selected };
 }
 // P204 (§9): which kinds this phone wants — 审批 ask · 完成 reply · 告警 security. Kept here (localStorage "aj.pushKinds")
 // and told to the computer after every subscribe; the computer then sends only those (the push itself stays empty).
 export const KINDS = ['ask', 'reply', 'security'];
 const PUSH_KINDS_KEY = 'aj.pushKinds';
-export function kinds() {
+function storedKinds() {
   try {
-    const k = JSON.parse(localStorage.getItem(PUSH_KINDS_KEY) || 'null');
-    if (Array.isArray(k) && k.every((x) => KINDS.includes(x))) return KINDS.filter((x) => k.includes(x));
-  } catch { /* blocked storage / garbage: all of them */ }
-  return KINDS.slice();
+    const raw = localStorage.getItem(PUSH_KINDS_KEY);
+    if (raw === null) return KINDS.slice();
+    const k = JSON.parse(raw);
+    if (Array.isArray(k) && k.every(x => KINDS.includes(x))) return KINDS.filter(x => k.includes(x));
+  } catch { /* failed to read this seat's choice */ }
+  return null;
 }
+export function kinds() { return storedKinds() || KINDS.slice(); }
 const sendKinds = () => sendApp({ t: 'push_pref', kinds: kinds() }).catch(() => {});
 export async function setKind(kind, on) {
   if (!KINDS.includes(kind)) return kinds();
@@ -162,6 +171,23 @@ export function pushUi(stateName = pushState) {
   pushState = stateName;
   for (const f of watchers) { try { f(stateName); } catch { /* a view's problem, not the push state's */ } }
 }
+// Ready may have no record after replacing the pairing. Re-send only this seat's
+// existing subscription when both durable markers record an explicit earlier opt-in.
+async function restoreExisting(key, generation, session) {
+  const current = () => session === gen() && restoreSession === session && generation === intent && !explicitlyOff();
+  const optedIn = async () => globalThis.AJSeat?.scoped && savedIntent() === '0' && await offDb() === false;
+  if (Notification.permission !== 'granted' || !current() || !await optedIn()) return;
+  const reg = await registration();
+  if (reg.scope !== new URL('./', location.href).href || !current()) return;
+  const sub = await reg.pushManager.getSubscription();
+  if (!sameKey(sub, key) || !await optedIn() || !current()) return;
+  const selected = storedKinds();
+  if (selected === null) return;
+  restoreSession = null;
+  restoring = session;
+  await sendApp(subMsg(sub, selected), session);
+}
+
 export async function gotPushKey(k) {
   let key;
   try { key = Uint8Array.from(atob(k.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((k.length + 3) % 4)), (c) => c.charCodeAt(0)); } catch { return; }
@@ -175,6 +201,10 @@ export async function gotPushKey(k) {
   if (Notification.permission === 'denied') return pushUi('denied');
   let created = null;
   try {
+    if (hostEnabled === false && restoreSession) {
+      await restoreExisting(key, generation, restoreSession);
+      return;
+    }
     if (!current() || await storedOff()) { if (current()) { pushUi('offer'); retryOff(); } return; }
     const reg = await registration();
     if (!current() || await storedOff()) { retryOff(); return; }

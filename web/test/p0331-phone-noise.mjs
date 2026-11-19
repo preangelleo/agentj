@@ -24,14 +24,11 @@ try{
    await waitFor(p,`document.getElementById('words').textContent.includes('The final main Agent reply')`);
    await fake.addTurn({k:'auto',name:'hourly',text:'{"schema":"automation-report.v1","payload":"raw background"}'},'Intermediate automation notice');
    await fake.addTurn({k:'sys',text:'internal wakeup'},'Internal system prompt');
-   await fake.addTurn({k:'agent',via:'background_done',text:'job event'},'finished result');
+   const completion = await fake.addTurn({k:'agent',via:'background_done',text:'Internal job envelope'},'finished result');
    const failed=await fake.addTurn({k:'auto',text:'{"unsafe":"do not show this JSON in summary"}'},'raw failure object','failed');
-   if(process.env.AJ_0331_PHASE==='before'){
-    await waitFor(p,`document.getElementById('words').textContent.includes('raw failure object')`);
-    assert.match(await evaluate(p,`document.getElementById('words').textContent`),/The final main Agent reply/,'background noise must not replace the main reply');
-   }
-   assert.match(await evaluate(p,`document.getElementById('words').textContent`),/The final main Agent reply/);
-   assert.equal(await evaluate(p,`document.getElementById('pg').textContent`),'1 / 1');
+   await waitFor(p,`document.getElementById('words').textContent.includes('finished result')`);
+   assert.doesNotMatch(await evaluate(p,`document.getElementById('deck').textContent`),/Internal job envelope|Intermediate automation notice|raw failure object/);
+   assert.equal(await evaluate(p,`document.getElementById('pg').textContent`),'2 / 2');
    assert.equal(await evaluate(p,`document.getElementById('backgroundEntry')`),null);
    assert.doesNotMatch(await evaluate(p,`document.getElementById('omLabel').textContent`),/^(?:主人|Owner) · /);
    writeFileSync(join(out,`${lang}-${theme}-${width}-main.png`),await shoot(p));
@@ -47,6 +44,13 @@ try{
    assert.match(rowText,new RegExp(' · '+words.failure+'raw failure object'));
    assert.match(await evaluate(p,`document.querySelector('#silentList details[open] .full').textContent`),/unsafe/);
    await key(p,'Escape');await waitFor(p,`document.getElementById('silent').hidden`);
+   await fake.addTurn({k:'phone',text:'Quote completion',quote:{id:completion.id,text:'finished result',who:'Agent'}},'Latest owner reply');
+   await waitFor(p,`document.getElementById('words').textContent.includes('Latest owner reply')`);
+   await click(p,'#omQuote');
+   await waitFor(p,`document.getElementById('silent').hidden && document.getElementById('words').textContent.includes('finished result')`);
+   await p.send('Page.reload');
+   await waitState(p,'ready');
+   await waitFor(p,`document.getElementById('words').textContent.includes('Latest owner reply')`);
    await fake.addTurn({k:'phone',text:'{"schema":"automation-report.v1"}'},'Owner JSON is an ordinary input');
    await waitFor(p,`document.getElementById('words').textContent.includes('Owner JSON is an ordinary input')`);
    await fake.addTurn({k:'agent',text:''},'{"schema":"automation-report.v1","final":"main Agent final JSON"}');
