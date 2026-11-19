@@ -29,6 +29,8 @@ function parse(x) {
     minutes, idle_s: Number.isInteger(x.idle_s) && x.idle_s > 0 ? x.idle_s : 300, open: x.open === true,
     until: Number.isInteger(x.until) ? x.until : null, pk: x.pk !== false,   // P417 #185: pk absent (older host) → no Face ID line
     mobile: x.mobile === true, resume: x.resume === true, prefill: x.prefill === true,
+    resumeId: x.resume === true && typeof x.resume_id === 'string' && /^[0-9a-f]{16}$/.test(x.resume_id) ? x.resume_id : null,
+    expiresAt: Number.isSafeInteger(x.expires_at) && x.expires_at > 0 ? x.expires_at : null,
     kind: ['phone', 'desktop', 'unknown'].includes(x.kind) ? x.kind : null,   // P417 #185: null = an older host (no remote enable)
     pty: Array.isArray(x.modes) && x.modes.includes('pty') };   // 0.26.9 #463: the host can run a real terminal (cap term_pty1)
 }

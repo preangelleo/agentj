@@ -1,5 +1,5 @@
 {
-  "version": "0.30.45",
-  "zh": "切换 OpenCode 会验证已安装版本与所选模型，手机可查看使用的程序路径、版本和失败后的处理方法。",
-  "en": "OpenCode checks installed versions with your selected model. Your phone shows which version and path it used, with next steps if switching fails."
+  "version": "0.30.46",
+  "zh": "网页终端回到前台后会同步连接状态。短暂断网后，可在同一台配对遥控器上重新验证，接回原终端并查看剩余时间。",
+  "en": "The web terminal now recovers after a brief disconnect. Verify on the same paired device to resume your shell and see how much time remains."
 }

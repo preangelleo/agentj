@@ -153,6 +153,194 @@ class FullWebTerminal(pty_tests.Pty):
             self.assertEqual(self.msgs("term_close")[-1]["why"], "relay_lost")
         self.run_async(go)
 
+    def test_same_remote_reopens_while_stale_socket_is_still_listed(self):
+        self.mobile()
+        other = Phone(self.st, name="网页 · Android Chrome")
+        outsider = _ready(self.host, other, cid=12)
+        self.passkey(other)
+        self.enable(self.phone, other)
+        async def go():
+            await self.open_pty()
+            x = self.desk.term
+            original_pid, end = x.proc.pid, x.expires
+            old = self.s
+            new = _ready(self.host, self.phone, cid=13)
+            new.p33 = True
+            obj = {"t": "term_open", "mode": "pty", "r": R, "cols": 90, "rows": 25}
+            await self.desk.on_phone(outsider, obj)
+            self.assertNotIn("resume", self.msgs("ctl_res")[-1])
+            self.assertNotIn("resume_id", self.desk.info(other.did))
+            await self.desk.on_phone(new, obj)
+            busy = self.msgs("ctl_res")[-1]
+            self.assertEqual((busy["why"], busy["resume"]), ("busy", x.id))
+            self.assertTrue(0 < busy["resume_s"] <= busy["remaining_s"] <= 900)
+            self.assertEqual(self.desk.info(self.phone.did)["resume_id"], x.id)
+            await self.resume(new)
+            self.assertIs(x.s, new)
+            self.assertEqual(x.viewers, [new])
+            self.assertEqual((x.proc.pid, x.expires), (original_pid, end))
+            self.assertEqual(self.msgs("term_close", old.cid)[-1]["why"], "replaced")
+            await self.desk.on_phone(old, {"t": "term_in", "id": x.id, "d": "touch rejected-old-input\r"})
+            await self.desk.on_phone(old, {"t": "term_close", "id": x.id})
+            self.host._detach(old.cid)  # old socket's delayed close must leave the new one attached
+            self.s = new
+            self.assertIsNone(x.disconnected_at)
+            await self.run_line("echo NEW-SESSION-OK", "NEW-SESSION-OK")
+            self.assertFalse((self.work / "rejected-old-input").exists())
+        self.run_async(go)
+
+    def test_resume_challenge_binds_connection_and_writer_incarnation(self):
+        self.mobile()
+        async def go():
+            await self.open_pty()
+            x = self.desk.term
+            first = _ready(self.host, self.phone, cid=17)
+            winner = _ready(self.host, self.phone, cid=18)
+            target = {"mode": "pty", "resume": x.id}
+            obj = {"t": "term_open", "r": R, "cols": 80, "rows": 25, **target}
+            await self.desk.on_phone(first, obj)
+            challenge = self.msgs("ctl_res")[-1]
+            response = {**obj, "fa": FA, **signed(self.phone, "term_open", target, challenge["n"])}
+            await self.desk.on_phone(winner, response)
+            self.assertEqual(self.msgs("ctl_res")[-1]["why"], "stale")
+            await self.desk.on_phone(first, obj)
+            challenge = self.msgs("ctl_res")[-1]
+            await self.resume(winner)
+            await self.desk.on_phone(first, {**obj, "fa": FA, **signed(self.phone, "term_open", target, challenge["n"])})
+            self.assertEqual(self.msgs("ctl_res")[-1]["why"], "stale")
+            self.assertIs(x.s, winner)
+        self.run_async(go)
+
+    def test_disconnected_delivery_and_dead_pty_do_not_advertise_connected(self):
+        self.mobile()
+        async def go():
+            await self.open_pty()
+            x = self.desk.term
+            original = self.host.send_app
+            async def fail_ready(s, msg):
+                if msg["t"] == "term_ready":
+                    return False
+                return await original(s, msg)
+            new = _ready(self.host, self.phone, cid=20)
+            with mock.patch.object(self.host, "send_app", fail_ready):
+                await self.resume(new)
+            self.assertIsNotNone(x.disconnected_at)
+            self.assertFalse(x.viewers)
+            x.disconnected_at -= terminal.RECONNECT_S + 1
+            await self.desk.tick()
+            self.assertIsNone(self.desk.term)  # new session being listed is no proof it ever got ready
+            self.s = new
+            new.p33 = True
+            await self.open_pty()
+            x = self.desk.term
+            with mock.patch("agentj.term_pty.os.write", side_effect=OSError("fixture")):
+                self.assertFalse(x.io.write(b"x"))
+            self.assertNotIn("resume_id", self.desk.info(self.phone.did))
+            await self.desk.tick()
+            self.assertIsNone(self.desk.term)
+        self.run_async(go)
+
+    def test_live_replay_is_serial_and_old_queued_wire_frame_is_rejected(self):
+        self.mobile()
+        async def go():
+            from agentj.serve import Host
+            await self.open_pty()
+            x = self.desk.term
+            old, new = self.s, _ready(self.host, self.phone, cid=21)
+            await self.desk._frame(x, "REPLAY_FIXTURE", False)
+            entering, release = asyncio.Event(), asyncio.Event()
+            original = self.host.send_app
+            async def pause(s, msg):
+                if msg.get("d") == "REPLAY_FIXTURE" and s is new:
+                    entering.set()
+                    await release.wait()
+                return await original(s, msg)
+            async with self.host.send_lock:
+                delayed = asyncio.create_task(Host.send_app(self.host, old, {"t":"term_out","id":x.id,"seq":3,"d":"old"}))
+                await asyncio.sleep(0)
+                with mock.patch.object(self.host, "send_app", pause):
+                    resuming = asyncio.create_task(self.resume(new))
+                    await asyncio.wait_for(entering.wait(), 3)
+                    output = asyncio.create_task(self.desk._frame(x, "LIVE_FIXTURE", False))
+                    await asyncio.sleep(0)
+                    self.assertFalse(output.done())
+                    release.set()
+                    await asyncio.gather(resuming, output)
+            self.assertFalse(await delayed)
+            values = [m["d"] for m in self.msgs("term_out", new.cid)]
+            self.assertEqual([v for v in values if v in ("REPLAY_FIXTURE","LIVE_FIXTURE")], ["REPLAY_FIXTURE","LIVE_FIXTURE"])
+            self.assertFalse(any(m.get("d") == "LIVE_FIXTURE" for m in self.msgs("term_out", old.cid)))
+        self.run_async(go)
+
+    def test_unsubmitted_draft_requires_new_session_and_is_never_entered(self):
+        self.mobile()
+        async def go():
+            await self.open_pty()
+            x = self.desk.term
+            await self.typed("touch rejected-draft")
+            self.host._detach(self.s.cid)
+            await self.until(lambda: self.desk.term is None)
+            self.assertEqual(self.msgs("term_close")[-1]["why"], "unfinished_input")
+            self.s = _ready(self.host, self.phone, cid=22)
+            self.s.p33 = True
+            await self.open_pty()
+            self.assertNotEqual(self.desk.term.id, x.id)
+            await self.typed("\r")
+            await self.run_line("echo NO-DRAFT", "NO-DRAFT")
+            self.assertFalse((self.work / "rejected-draft").exists())
+        self.run_async(go)
+
+    def test_expired_temporary_grant_cannot_become_permanent_on_reopen(self):
+        import time
+        self.mobile()
+        limit = int(time.time()) + 60
+        self.enable(until=limit)
+        async def go():
+            await self.open_pty()
+            x = self.desk.term
+            self.assertEqual(self.msgs("term_ready")[-1]["expires_at"], limit)
+            self.assertEqual(self.desk.info(self.phone.did)["expires_at"], limit)
+            self.desk.wall = lambda: limit + 1
+            self.assertNotIn("resume_id", self.desk.info(self.phone.did))
+            await self.desk.tick()
+            self.assertIsNone(self.desk.term)
+            with mock.patch.object(term_store.time, "time", return_value=limit + 1):
+                result = await self.resume(self.s, target={"mode":"pty","resume":x.id})
+                self.assertEqual(result["why"], "device_not_allowed")
+                await self.desk.on_phone(self.s, {"t":"term_open","r":R,"mode":"pty","cols":90,"rows":25})
+                self.assertEqual(self.msgs("ctl_res")[-1]["why"], "device_not_allowed")
+                self.assertIsNone(term_store.entry(term_store.read_config(self.st), self.phone.did))
+        self.run_async(go)
+
+    def test_revoke_before_askpass_guard_or_queued_write_is_observed(self):
+        self.mobile()
+        async def go():
+            await self.open_pty()
+            x = self.desk.term
+            old_check = self.desk._sudo_authority(x)
+            self.assertTrue(old_check())
+            self.desk.device_gone(x.device)
+            self.assertFalse(old_check())
+            self.assertFalse(self.desk._sudo_authority(x)())
+            self.assertFalse(x.io.write(b"rejected"))
+            await self.until(lambda: self.desk.term is None)
+        self.run_async(go)
+
+    def test_pending_login_does_not_keep_the_open_lock_after_disconnect(self):
+        self.mobile()
+        async def go():
+            signed_request = await self.step1()
+            await self.step2(signed_request)
+            await self.until(lambda: any(row.get("kind") == "login" for row in self.msgs("elev")))
+            second = _ready(self.host, self.phone, cid=24)
+            busy = await self.step1(second)
+            self.assertEqual((busy["why"], busy["opening"]), ("busy", True))
+            self.host._detach(self.s.cid)
+            await self.until(lambda: self.desk.opening is None)
+            self.assertIsNone(self.desk.term)
+            self.assertEqual((await self.step1(second))["why"], "passkey_required")
+        self.run_async(go)
+
     def test_resume_nonce_cannot_change_terminal_id_and_bounded_replay(self):
         self.mobile()
         async def go():

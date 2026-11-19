@@ -150,6 +150,7 @@ class PtyIO:
         self.write_guard = write_guard
         self.loop = asyncio.get_running_loop()
         self._writing = False
+        self.write_failed = False
 
     async def read(self, n: int, timeout: float) -> bytes | None:
         """→ bytes, b"" at the end (EIO once the slave side is gone), None after `timeout` with nothing to read."""
@@ -183,7 +184,7 @@ class PtyIO:
             return False
         self.out += data
         self._flush()
-        return True
+        return not self.closed
 
     def _flush(self) -> None:
         while self.out and not self.closed:
@@ -196,7 +197,9 @@ class PtyIO:
             except BlockingIOError:
                 break
             except OSError:
+                self.write_failed = True
                 self.out.clear()
+                self.close()
                 return
             del self.out[:k]
         if self.out and not self._writing and not self.closed:
@@ -546,6 +549,8 @@ class PtyDesk:
                     await self._pty_out(x, x.vmask.flush(force=x.at_prompt and x.hold is None), False)
                     continue
                 if not raw:
+                    if x.io.write_failed:
+                        why = "host"
                     break
                 buf = await self._pty_text(x, buf + dec.decode(raw))
                 h = x.vmask.held()
@@ -625,6 +630,7 @@ class PtyDesk:
 
     # ------------------------------------------------------------ prompt / report
     def _pty_prompt(self, x) -> None:
+        x.program_input = False
         x.at_prompt, x.running, x.edit, x.edit_ok, x.paste = True, False, "", True, False
         if x.hold == "after":
             x.hold = None
@@ -744,7 +750,8 @@ class PtyDesk:
             self._after(x)
             return
         if not x.at_prompt or not front or password_mode(x.io.fd):   # a program in front: its input, never classified or kept
-            self._pty_write(x, d)
+            if self._pty_write(x, d):
+                x.program_input = True
             return
         i, start = 0, 0
         while i < len(d):

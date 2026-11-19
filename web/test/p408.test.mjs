@@ -26,7 +26,7 @@ test('dictionaries: every p408 key the code uses exists in zh and en (and the zh
   for (const k of ['prf', 'local', 'session', 'none']) used.add('p408.mode.' + k);
   const close = TERM.match(/const CLOSE_WHY = \[([^\]]+)\]/)[1].match(/'(\w+)'/g).map((x) => x.slice(1, -1));
   const open = TERM.match(/const OPEN_WHY = \[([^\]]+)\]/)[1].match(/'(\w+)'/g).map((x) => x.slice(1, -1));
-  assert.deepEqual(close, ['owner', 'timeout', 'idle', 'background', 'relay_lost', 'estop', 'host', 'disabled'], '§38 close reasons');
+  assert.deepEqual(close, ['owner', 'timeout', 'idle', 'background', 'relay_lost', 'estop', 'host', 'disabled', 'replaced', 'unfinished_input'], '§38 close reasons');
   for (const w of ['disabled', 'os', 'device_not_allowed', 'web_not_allowed', 'no_passkey', 'passkey_failed', 'stale', 'replay', 'bad_signature', 'busy', 'estop', 'locked', 'bad_password', 'cancelled', 'shape'])
     assert.ok(open.includes(w), '§38 open refusal ' + w);
   for (const w of close) used.add('p408.why.' + w);

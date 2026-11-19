@@ -25,7 +25,7 @@ import { attachSpecial, canSpecialApprove, decorateSpecial, forgetSpecial, refre
 // `term_resize`, `term_out.d` → xterm. Face ID, the login card, limits, 结束, the confirm / sudo sheets stay this page's.
 // A host without "pty", a 「!」 line or a module that did not load → the line mode above.
 import { register, termInfo } from './termhook.js';
-import { request, done, sendApp, gen, channel } from './session.js';
+import { request, done, sendApp, gen, channel, hostId, disconnectGeneration } from './session.js';
 import { controlMessage, controlObject, sealValue, elevateFields, elevateDigest, elevateMessage, sha256hex, b64u, unb64u } from '../proto/wire.js';
 import { signKey } from './store.js';
 import { myDeviceId } from './api.js';
@@ -47,7 +47,7 @@ export const KEYS = { int: 'Ctrl+C', quit: 'Ctrl+\\' };
 const INSERT = ['|', '~', '/', '-'];
 const OPEN_WHY = ['disabled', 'os', 'device_not_allowed', 'web_not_allowed', 'no_passkey', 'passkey_failed', 'stale', 'replay',
   'bad_signature', 'busy', 'estop', 'locked', 'bad_password', 'cancelled', 'shape', 'timeout', 'offline', 'phone', 'device_type'];
-const CLOSE_WHY = ['owner', 'timeout', 'idle', 'background', 'relay_lost', 'estop', 'host', 'disabled'];
+const CLOSE_WHY = ['owner', 'timeout', 'idle', 'background', 'relay_lost', 'estop', 'host', 'disabled', 'replaced', 'unfinished_input'];
 const HEX32 = /^[0-9a-f]{32}$/, HEX16 = /^[0-9a-f]{16}$/;
 // 0.26.9 #463: term_in frame / rate caps (contract §A) and the most the page holds back while the rate cap drains
 export const PTY_FRAME = 8192, PTY_RATE = 65536, PTY_QUEUE = 1 << 20;
@@ -58,10 +58,10 @@ const BANG_MS = 130000;   // P414: the host answers a 「!」 line within 120 s 
 const RUN_MS = 310000;    // #584: a reply code block's 「执行」 — the host waits up to 300 s
 let S = fresh();
 function fresh() {
-  return { phase: 'idle', minutes: 15, G: null, ch: null, r1: null, r2: null, id: null, expires: 0, fa: null, seq: 0, atPrompt: true,
+  return { phase: 'idle', minutes: 15, G: null, ch: null, r1: null, r2: null, id: null, expires: 0, deadline: null, fa: null, seq: 0, atPrompt: true,
     hist: [], hi: -1, draft: '', prefill: '', login: null, hiddenAt: 0,
     view: 'full', origin: 'settings', bang: null, pendBang: null, go: null, reCollapse: false,   // P414
-    enable: false, resume: null, prefillSeq: 0, prefillBusy: null, prefillPending: false, prefillCap: false, resumeCap: false,   // P417 #185
+    enable: false, recoveryHost: null, recovery: null, resumeUntil: null, resume: null, prefillSeq: 0, prefillBusy: null, prefillPending: false, prefillCap: false, resumeCap: false,   // P417 #185
     pty: false, px: null, sentSize: null, inSeq: 0, inQ: [], inQb: 0, budget: PTY_RATE, budgetAt: 0, inTimer: 0, size: null, rsTimer: 0 };   // 0.26.9 #463
 }
 let root = null, tick = 0, hideTimer = 0, closeTimer = 0;
@@ -148,7 +148,7 @@ function build() {
   $('term-shot').addEventListener('click', () => { shot().catch(() => toast(t('p414.shotFail'), 3600, 'error')); });
   go.addEventListener('click', () => takeGo());
   $('term-back').addEventListener('click', () => hide());
-  $('term-resume').addEventListener('click', () => { const i = termInfo(); if (i && S.resume) open('', i); });
+  $('term-resume').addEventListener('click', recover);
   $('term-rescue').addEventListener('click', () => { hide(); H.openRescue(); });
   form.addEventListener('submit', (e) => { e.preventDefault(); sendLine(); });
   input.addEventListener('keydown', (e) => {
@@ -188,7 +188,7 @@ function labels() {
   $('term-k-up').setAttribute('aria-label', t('p408.k.up'));
   $('term-k-down').setAttribute('aria-label', t('p408.k.down'));
   for (const b of root.querySelectorAll('[data-ins]')) b.setAttribute('aria-label', t('p408.k.ins', { c: b.dataset.ins }));
-  $('term-resume').textContent = t('terminal.resume'); $('term-resume').hidden = !S.resume;
+  paintRecovery();
   $('term-rescue').textContent = t('p408.rescue');
   $('term-back').textContent = t('p408.back');
   for (const [id, k] of [['term-grab', 'p414.grab'], ['term-exit', 'p414.exit']]) { $(id).setAttribute('aria-label', t(k)); $(id).title = t(k); }
@@ -230,7 +230,7 @@ function show() {
 /** Leave the page (after a close): back to Settings (P414: or the chat, when it was opened from there), the closed line under
  *  the row. Wipes everything in memory. */
 function hide() {
-  clearTimeout(closeTimer); clearInterval(tick); tick = 0;
+  clearTimeout(hideTimer); clearTimeout(closeTimer); clearInterval(tick); tick = 0;
   if (!root) return;
   const line = S.phase === 'closed' ? $('term-status').textContent : '';
   const back = S.origin === 'settings' && S.view === 'full';
@@ -433,12 +433,16 @@ function noPasskey() {
  *  o.go = {cmd, h} — the Agent's term_go: the line goes into the input (never sent) with its note. */
 function open(prefill, info, o = {}) {
   if (S.phase === 'ready') { show(); setInput(prefill); return true; }
-  if (S.phase !== 'idle') { show(); if (o.go) S.go = o.go; return true; }
+  if (S.phase !== 'idle' && S.phase !== 'closed') { show(); if (o.go) S.go = o.go; return true; }
   if (phoneConfirmation()) return false;
   if (!o.bang && !info?.pty) { toast(t('terminal.upgradePty'), 7000, 'error'); return false; }
   if (!canAssert()) { noPasskey(); return false; }
-  const resume = S.resume && info?.resume ? S.resume : null;
-  S = fresh(); S.resume = resume; S.prefillCap = info?.prefill === true; S.resumeCap = info?.resume === true; S.prefill = prefill || ''; S.minutes = info?.minutes || 15;
+  const sameHost = S.recoveryHost && S.recoveryHost === hostId();
+  const resume = !o.fresh && !o.enable && !o.bang && info?.pty && info.resume
+    ? (sameHost && S.resume || info.resumeId || null) : null;
+  clearTimeout(hideTimer); clearTimeout(closeTimer); clearInterval(tick);
+  const originalExpiry = sameHost && S.resume === resume ? S.expires : info?.expiresAt;
+  S = fresh(); S.recoveryHost = hostId(); S.resume = resume; S.expires = resume ? originalExpiry || 0 : 0; S.prefillCap = info?.prefill === true; S.resumeCap = info?.resume === true; S.prefill = prefill || ''; S.minutes = info?.minutes || 15;
   build(); wipe(); S.prefill = prefill || '';
   S.origin = o.bang || o.go ? 'chat' : 'settings'; S.pendBang = o.bang || null; S.go = o.go || null;
   S.enable = !!o.enable && !o.bang && !o.go;
@@ -447,24 +451,26 @@ function open(prefill, info, o = {}) {
   S.phase = 'intro'; S.G = gen();
   paintChrome(); show();
   const text = o.bang ? t('p414.introBang', { line: o.bang.line.slice(0, 200), n: S.minutes }) : o.go ? t('p414.introGo', { n: S.minutes })
-    : S.enable ? t('p417.intro', { n: S.minutes }) : t('p408.intro', { n: S.minutes });
+    : resume ? t('terminal.resumeIntro') : S.enable ? t('p417.intro', { n: S.minutes }) : t('p408.intro', { n: S.minutes });
   openSheet({ kind: 'intro', title: t('p408.title'), text, yes: t('p408.preparing'), no: t('sheet.cancel'), wait: true,
     onYes: introYes, onNo: () => { const b = S.pendBang; S.phase = 'idle'; abandon(); if (b) unrun(b, 'cancel'); } });
+  const opening = S;
   if (!S.pty) fetchChallenge();
-  else loadPty().then(() => { if (S.phase === 'intro') fetchChallenge(); },
-    () => { if (S.phase !== 'intro') return; closeSheet(); abandon(); toast(t('terminal.loadFailed'), 7000, 'error'); });   // fallback: line mode
+  else loadPty().then(() => { if (S === opening && S.phase === 'intro') fetchChallenge(); },
+    () => { if (S !== opening || S.phase !== 'intro') return; closeSheet(); abandon(); toast(t('terminal.loadFailed'), 7000, 'error'); });   // fallback: line mode
   return true;
 }
 function abandon() { if (S.r1) done(S.r1); if (S.r2) done(S.r2); S.phase = 'idle'; hideQuiet(); }
 /** Cancelled before anything opened: leave without a 「已关闭」 line. */
 function hideQuiet() { S.phase = 'idle'; hide(); }
 function fetchChallenge() {
+  const opening = S;
   S.ch = null;
   let timer = 0;
   const r = request(S.enable ? { t: 'term_open', ...(S.pty ? ptyOpen() : {}), mode: 'enable' } : S.pty ? { t: 'term_open', ...ptyOpen() } : { t: 'term_open' }, (m) => {
     if (m.t !== 'ctl_res' && m.t !== 'offline') return;
     clearTimeout(timer); done(r); if (S.r1 === r) S.r1 = null;
-    if (S.phase !== 'intro') return;
+    if (S !== opening || S.phase !== 'intro') return;
     if (m.t === 'offline') return refuse('offline');
     if (m.ok === false && m.why === 'passkey_required' && HEX32.test(m.n || '') && typeof m.fa === 'string' && typeof m.fa_ch === 'string' && epkOk(m.epk)) {
       S.ch = { n: m.n, fa: m.fa, fa_s: faState(m.fa_s), fa_ch: m.fa_ch, salt: saltOf(m.salt), vn: saltOf(m.vn), epk: m.epk, at: Date.now() };
@@ -475,10 +481,12 @@ function fetchChallenge() {
   }, S.G);
   S.r1 = r;
   if (!r) { refuse('offline'); return; }
-  timer = setTimeout(() => { done(r); if (S.phase === 'intro' && !S.ch) refuse('timeout'); }, 20000);
+  timer = setTimeout(() => { done(r); if (S === opening && S.phase === 'intro' && !S.ch) refuse('timeout'); }, 20000);
 }
 /** 「用 Face ID 确认」: the assertion starts here, inside the tap. */
 function introYes() {
+  const opening = S;
+  const current = () => S === opening && S.phase === 'intro' && gen() === S.G;
   const c = S.ch;
   if (!c) return;
   if (Date.now() - c.at > NONCE_MS) { sheetBusy(true); $('term-sh-yes').textContent = t('p408.preparing'); fetchChallenge(); return; }
@@ -487,11 +495,12 @@ function introYes() {
   sheetBusy(true);
   p.then(async ({ fa, prf }) => {
     try {   // P414 (R3-4): the PRF is zeroed even when signing throws before the seal
-      if (S.phase !== 'intro') return;
+      if (!current()) return;
       S.fa = c.fa; S.faS = c.fa_s;   // P539: the later sheets (confirm / sudo) say the same about this passkey
       const obj = { mode: S.enable ? 'enable' : S.pty ? 'pty' : 'line', ...(S.resume ? {resume: S.resume} : {}) };   // P417 #185 · 0.26.9 #463: the signature names what it is for
       const signed = await signCtl('term_open', obj, c.n);
       const sealed = prf ? await sealPrf(c.epk, prf, c.n, 'term_open', obj) : {};
+      if (!current()) return;
       closeSheet();
       S.phase = 'opening'; paintChrome(); status(t('p408.opening'));
       const size = S.pty ? ptyOpen() : null;
@@ -499,14 +508,15 @@ function introYes() {
       openStep2({ t: 'term_open', ...(S.enable ? { ...(size || {}), mode: 'enable' } : size || {}), ...signed, fa, ...sealed });
     } finally { prf?.fill(0); }
   }, (e) => {
-    if (S.phase !== 'intro') return;
+    if (!current()) return;
     sheetBusy(false);
     if (!sheetPkFail(sheet?.kind === 'intro' ? sheet : null, e)) toast(t('p408.faCancel'), 3600);
-  }).catch(() => { if (S.phase === 'intro' || S.phase === 'opening') refuse('passkey_failed'); });
+  }).catch(() => { if (S === opening && (S.phase === 'intro' || S.phase === 'opening')) refuse('passkey_failed'); });
 }
 function openStep2(obj) {
+  const opening = S;
   let timer = 0;
-  const arm = (ms) => { clearTimeout(timer); timer = setTimeout(() => { done(r); if (S.phase === 'opening') refuse('timeout'); }, ms); };
+  const arm = (ms) => { clearTimeout(timer); timer = setTimeout(() => { done(r); if (S === opening && S.phase === 'opening') refuse('timeout'); }, ms); };
   const r = request(obj, (m) => {
     if (S.r2 !== r) return;
     if (m.t === 'ctl_pending' && m.action === 'term_open') { arm(Number.isInteger(m.timeout_ms) && m.timeout_ms > 0 && m.timeout_ms <= 600000 ? m.timeout_ms : 180000); return; }
@@ -522,6 +532,20 @@ function refuse(why, m = {}) {
   if (S.phase !== 'intro' && S.phase !== 'opening') return;
   if (S.r1) done(S.r1); if (S.r2) done(S.r2);
   const b = S.pendBang;
+  if (S.pty && !b && ['busy', 'offline', 'stale', 'not_open', 'disabled', 'device_not_allowed', 'web_not_allowed', 'unfinished_input'].includes(why)) {
+    const owned = why === 'busy' && S.resumeCap && HEX16.test(m.resume || '');
+    const seconds = Number.isSafeInteger(m.remaining_s) && m.remaining_s >= 0 ? m.remaining_s : null;
+    if (owned) {
+      S.resume = m.resume;
+      if (Number.isSafeInteger(m.resume_s) && m.resume_s >= 0) S.resumeUntil = Date.now() + m.resume_s * 1000;
+    }
+    else if (why !== 'offline') S.resume = null;
+    if (seconds !== null) S.expires = Math.floor(Date.now() / 1000) + seconds;
+    const explanation = owned ? 'terminal.ownBusy' : why === 'busy' && m.opening === true ? 'terminal.openingBusy' : why === 'busy' ? 'terminal.otherBusy'
+      : why === 'offline' ? 'p408.no.offline' : why === 'not_open' || why === 'stale' ? 'terminal.resumeExpired' : why === 'unfinished_input' ? 'p408.why.unfinished_input' : 'terminal.accessEnded';
+    recoveryScreen(explanation, !!S.resume);
+    return;
+  }
   S.phase = 'idle';
   hideQuiet();
   if (b) unrun(b, 'open');
@@ -531,8 +555,11 @@ function refuse(why, m = {}) {
 }
 function ready(m) {
   if (S.phase !== 'opening' || typeof m.id !== 'string' || !HEX16.test(m.id) || !Number.isInteger(m.expires_at)) return refuse('shape');
+  if (!S.G || gen() !== S.G || (S.resume && S.resume !== m.id)) return refuse('stale');
   closeSheet();
-  S.phase = 'ready'; S.resume = null; S.id = m.id; S.expires = m.expires_at; S.seq = 0; S.atPrompt = true; S.login = null;
+  S.phase = 'ready'; S.resume = null; S.id = m.id; S.expires = Number.isSafeInteger(m.remaining_s) && m.remaining_s >= 0 ? Date.now() / 1000 + m.remaining_s : m.expires_at; S.seq = 0; S.atPrompt = true; S.login = null;
+  // Only an explicit relative duration from the host can stop input locally. Older hosts enforce their own expiry.
+  S.deadline = Number.isSafeInteger(m.remaining_s) && m.remaining_s >= 0 ? performance.now() + m.remaining_s * 1000 : null;
   status('');
   paintChrome();
   // 0.30.3 (董事长 14:5x): the first switch-on asks the host password in the shared popup over the chat (root hidden,
@@ -640,7 +667,12 @@ function badLine(key) {
   return false;
 }
 function sendKey(key) { if (S.phase === 'ready' && Object.hasOwn(KEYS, key)) send({ t: 'term_keys', id: S.id, key }); }
-function send(obj) { sendApp(obj, S.G).catch(() => dropped()); }
+function send(obj) {
+  const writer = S;
+  sendApp(obj, writer.G).catch(() => {
+    if (writer === S && S.phase === 'ready' && !disconnectGeneration(writer.G)) dropped();
+  });
+}
 function histStep(d) {
   if (S.phase !== 'ready' || !S.hist.length) return;
   const i = $('term-input');
@@ -849,7 +881,10 @@ function onMsg(m) {
   if (m.t === 'term_bang') return onBang(m);                               // P414 (§37.12)
   if (m.t === 'term_confirm') { expand(true); return confirmLine(m); }      // P414: a card that needs the owner brings the page up
   if (m.t === 'term_sudo') { expand(true); return sudoAsk(m); }
-  if (m.t === 'term_close') return closed(CLOSE_WHY.includes(m.why) ? m.why : 'host');
+  if (m.t === 'term_close') {
+    if (Number.isSafeInteger(m.remaining_s) && m.remaining_s >= 0) S.expires = Math.floor(Date.now() / 1000) + m.remaining_s;
+    return closed(CLOSE_WHY.includes(m.why) ? m.why : 'host');
+  }
 }
 function confirmLine(m) {
   // P573: `uv` 1 = Face ID, 0 = the button alone (the signed line still goes); no `uv` (an older host) = Face ID as before
@@ -913,8 +948,55 @@ function endNow() {
   send({ t: 'term_close', id: S.id });
   closed('owner');
 }
+function remainingText(expires) {
+  if (!expires) return '';
+  const seconds = Math.max(0, Math.ceil(expires - Date.now() / 1000));
+  return t('terminal.timeRemaining', {time: Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0')});
+}
+function needsOwnerAccess(info) {
+  return S.recovery === 'terminal.accessEnded' || !!info && (!info.me || !info.on || !info.web_ok ||
+    (info.until && info.until <= Date.now() / 1000));
+}
+function paintRecovery() {
+  const button = $('term-resume');
+  button.hidden = !S.recovery || S.recovery === 'p408.why.replaced' || S.recovery === 'p408.why.estop';
+  if (!S.recovery) return;
+  if (S.resume && S.resumeUntil && Date.now() >= S.resumeUntil) {
+    S.resume = null;
+    S.recovery = 'terminal.resumeExpired';
+  }
+  button.textContent = t(needsOwnerAccess(termInfo()) ? 'terminal.askOwner' : S.resume ? 'terminal.resume' : ['terminal.otherBusy', 'terminal.openingBusy'].includes(S.recovery) ? 'terminal.checkAgain' : 'terminal.requestAgain');
+  button.disabled = !gen() || navigator.onLine === false;
+  const grace = S.resume && S.resumeUntil ? t('terminal.resumeWindow', {s: Math.max(0, Math.ceil((S.resumeUntil - Date.now()) / 1000))}) : '';
+  status([t(S.recovery), remainingText(S.expires), grace].filter(Boolean).join(' '));
+  $('term-stacts').hidden = false;
+}
+function recover() {
+  const info = termInfo();
+  if (!S.recovery || !gen() || !info || navigator.onLine === false) return;
+  if (S.recoveryHost && S.recoveryHost !== hostId()) { hide(); return; }
+  if (needsOwnerAccess(info)) {
+    hide(); H.goChat(); H.insert(t('terminal.requestDraft'));
+    return;
+  }
+  open('', info, { fresh: !S.resume });
+}
+function recoveryScreen(reason, resume) {
+  S.phase = 'closed';
+  S.recovery = reason;
+  if (!resume) S.resume = null;
+  queue.length = 0; closeSheet();
+  clearTimeout(hideTimer); clearTimeout(closeTimer); clearInterval(tick);
+  clearTimeout(S.bang?.timer);
+  wipe(); paintChrome(); show(); paintRecovery();
+  tick = setInterval(paintRecovery, 1000);
+}
 function closed(why) {
   if (S.phase !== 'ready') return;
+  if (S.pty && ['idle','timeout','background','relay_lost','disabled','host','replaced','unfinished_input','estop'].includes(why)) {
+    if (why === 'timeout' || why === 'disabled') S.expires = Math.floor(Date.now() / 1000);
+    return recoveryScreen(why === 'disabled' ? 'terminal.accessEnded' : 'p408.why.' + why, false);
+  }
   S.phase = 'closed';
   queue.length = 0; closeSheet();
   clearInterval(tick); tick = 0;
@@ -930,27 +1012,41 @@ function dropped() {
   if (S.phase === 'intro' || S.phase === 'opening') return refuse('offline');
   if (S.phase !== 'ready') return;
   const resume = S.pty && S.resumeCap ? S.id : null;
+  if (resume) {
+    S.resume = resume;
+    return recoveryScreen('terminal.connectionLost', true);
+  }
   S.phase = 'closed';
   queue.length = 0; closeSheet();
   clearInterval(tick); tick = 0;
   clearTimeout(S.bang?.timer); { const b = S.bang; S.bang = null; if (b && b.run) unrun(b, 'closed'); }
-  if (S.view === 'collapsed') { wipe(); toast(t('p408.dropped'), 5000, 'error'); hide(); S.resume = resume; return; }   // P414
+  if (S.view === 'collapsed') { wipe(); toast(t('p408.dropped'), 5000, 'error'); hide(); return; }   // P414
   paintChrome();
-  status(t(resume ? 'terminal.reconnect' : 'p408.dropped'));
+  status(t('p408.dropped'));
   $('term-stacts').hidden = false;
-  wipe(); S.phase = 'idle'; S.resume = resume; $('term-resume').hidden = !resume;
+  wipe(); S.phase = 'idle'; $('term-resume').hidden = true;
 }
 function onTick() {
   if (S.phase !== 'ready') return;
   if (gen() !== S.G) return dropped();
+  if (S.deadline !== null && performance.now() >= S.deadline) {
+    const writer = S.G;
+    closed('timeout');
+    disconnectGeneration(writer);
+    return;
+  }
   paintLeft(); paintChip();
 }
+addEventListener('offline', () => {
+  if (['intro', 'opening', 'ready'].includes(S.phase) && !disconnectGeneration(S.G)) dropped();
+});
 document.addEventListener('visibilitychange', () => {
   if (S.phase !== 'ready') return;
   clearTimeout(hideTimer);
   if (document.visibilityState === 'hidden') {
     S.hiddenAt = Date.now();
-    hideTimer = setTimeout(() => { if (S.phase === 'ready') { send({ t: 'term_close', id: S.id, why: 'background' }); closed('background'); } }, HIDDEN_MS);
+    const hiddenSession = S;
+    hideTimer = setTimeout(() => { if (S === hiddenSession && S.phase === 'ready' && document.visibilityState === 'hidden') { send({ t: 'term_close', id: S.id, why: 'background' }); closed('background'); } }, HIDDEN_MS);
   } else if (S.hiddenAt && Date.now() - S.hiddenAt >= HIDDEN_MS) {   // a frozen timer (iOS): the minute passed anyway
     send({ t: 'term_close', id: S.id, why: 'background' }); closed('background');
   } else S.hiddenAt = 0;

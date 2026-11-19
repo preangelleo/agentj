@@ -103,6 +103,16 @@ export function closeSession() {
   if (s) { endGen(s); s.closedByUs = true; try { s.ws.close(1000); } catch { /* already closed */ } }
 }
 
+/** Invalidate unsent frames on a disconnected writer before retrying the existing pairing. */
+export function disconnectGeneration(g) {
+  if (!g || g !== gen()) return false;
+  dropped('offline');
+  closeSession();
+  H.onHostDown();
+  scheduleReconnect();
+  return true;
+}
+
 export function openSession(mode, ctx) {
   closeSession();
   const quiet = mode === 'resume' && Date.now() < quietUntil;
@@ -281,7 +291,7 @@ function enterReady(s) {
   refusals = 0; removalProbe = false;
   H.onReady();
   armHeartbeat();
-  if (document.visibilityState !== 'visible') sendApp({ t: 'vis', fg: false }).catch(() => {});
+  sendVisibility();
 }
 
 async function hostUp(s) {
@@ -494,8 +504,21 @@ export function ask1(obj, want, ms = 20000, onUpdate = null) {
 }
 export const pendingCount = () => pending.size;
 
+// Each report pins the current Noise generation; queued reports retain observation order.
+function sendVisibility() {
+  const g = gen();
+  if (g) sendApp({t: 'vis', fg: document.visibilityState === 'visible'}, g).catch(() => {});
+}
+function syncVisiblePage() {
+  if (globalThis.document?.visibilityState === 'visible') sendVisibility();
+}
+globalThis.addEventListener?.('pageshow', syncVisiblePage);
+globalThis.addEventListener?.('focus', syncVisiblePage);
+globalThis.document?.addEventListener?.('resume', syncVisiblePage);
+
 // iOS freezes background timers; a foreground probe starts a fresh deadline instead of expiring an old one.
 globalThis.document?.addEventListener?.('visibilitychange', () => {
+  sendVisibility();
   clearTimeout(heartbeatTimer); heartbeatTimer = null; heartbeatRun++;
   if (document.visibilityState === 'hidden' && sess) sess.foreground = false;
   if (document.visibilityState === 'visible') { refusals = 0; reconnectNow(); }

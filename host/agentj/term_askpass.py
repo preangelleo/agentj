@@ -222,9 +222,18 @@ class SudoDesk:
     """`term_sudo` → Face ID (+ PRF) → `term_sudo_ok`: the password once to the helper, then zeroed (C2). A second askpass
     call from the same sudo = the password was refused; the cache is deleted only after sudo's own wrong-password message
     (N4), never on a timeout or an interrupted prompt."""
+    def _sudo_authority(self, x):
+        # Official support has its own scoped Writer guard. The ordinary paired PTY
+        # must retain the exact same controller through every asynchronous stage.
+        if x.kind == "pty" and getattr(self.h, "term_desk", None) is self:
+            s, epoch = x.s, x.writer_epoch
+            return lambda: epoch == x.writer_epoch and self.pty_writer_live(x, s)
+        return lambda: self.term is x and not x.closing
+
     async def _askpass(self, x, rd, wr) -> None:
         from .shared_hook import peer_pid
         buf = None
+        permitted = self._sudo_authority(x)
         try:
             pid, uid = peer_pid(wr.get_extra_info("socket"))
             if uid is None and term_mac.DARWIN:          # P437: macOS LOCAL_PEERPID gives no uid — LOCAL_PEERCRED does
@@ -234,13 +243,15 @@ class SudoDesk:
                 why, spid = "closed", None
             else:
                 why, spid = await asyncio.to_thread(check_peer, pid, uid, token, x.token, x.proc.pid, x.helper, self.proc)
+            if not why and not permitted():
+                why = "closed"
             if not why and not x.running:
                 why = "idle"
             if why:
                 self.st.log("term_askpass", device=x.device, result="refused", reason=why)
             else:
                 buf = await self._sudo_pw(x, spid)
-            out = bytearray(b"+") + buf + b"\n" if buf else bytearray(b"-")
+            out = bytearray(b"+") + buf + b"\n" if buf and permitted() else bytearray(b"-")
             try:
                 wr.write(out)
                 await wr.drain()
@@ -258,6 +269,9 @@ class SudoDesk:
                 wr.close()
 
     async def _sudo_pw(self, x, spid: int):
+        permitted = self._sudo_authority(x)
+        if not permitted():
+            return None
         n_seen = x.seen.get(spid, 0) + 1
         x.seen[spid] = n_seen
         if n_seen == 1:
@@ -269,7 +283,7 @@ class SudoDesk:
                 if SUDO_WRONG.search(x.recent):
                     break
                 await asyncio.sleep(0.1)
-            if SUDO_WRONG.search(x.recent):                  # … but only sudo's own message deletes the cache (N4)
+            if permitted() and SUDO_WRONG.search(x.recent):  # … but only sudo's own message deletes the cache (N4)
                 await asyncio.to_thread(store.forget_kid, self.st, x.device)   # P414 (L2): that kid and every wrap on it
                 if x.pw:
                     from .elevate import wipe
@@ -279,6 +293,8 @@ class SudoDesk:
                 self._prefs()
             return None
         info = await asyncio.to_thread(proc_info, spid, self.proc) or {"argv": []}
+        if not permitted():
+            return None
         from .privacy import owner_text
         argv = [owner_text(a)[:500] for a in info["argv"][:64]]
         cmd = [a for a in argv[1:] if a != "-A"]
@@ -311,7 +327,14 @@ class SudoDesk:
         if prf is None:
             return None
         try:
-            return await self._sudo_take(x, rid, prf, vn)
+            if not permitted():
+                return None
+            value = await self._sudo_take(x, rid, prf, vn)
+            if value is not None and not permitted():
+                from .elevate import wipe
+                wipe(value)
+                return None
+            return value
         finally:
             from .elevate import wipe
             wipe(prf)                                        # R3: the PRF output lives in a bytearray, zeroed here

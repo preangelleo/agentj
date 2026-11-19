@@ -972,7 +972,15 @@ class Host:
         from . import display_privacy
         if isinstance(obj, dict) and obj.get("t") in display_privacy.DISPLAY_MESSAGES:
             obj = await asyncio.to_thread(display_privacy.project, self, obj)
+        # A live PTY may change writers while a masked frame waits on the global wire lock.
+        desk = getattr(self, "term_desk", None)
+        terminal = getattr(desk, "term", None)
+        guarded_terminal = (obj.get("t") in ("term_ready", "term_out", "term_sudo", "term_confirm", "term_bang")
+                            and terminal is not None and terminal.kind == "pty" and terminal.id == obj.get("id"))
+        writer_epoch = terminal.writer_epoch if guarded_terminal else None
         def special_delivery_live():
+            if guarded_terminal and (terminal.writer_epoch != writer_epoch or not desk.pty_writer_live(terminal, s)):
+                return False
             if obj.get('t')!='secret_out_val':return True
             from . import approval_special
             out=getattr(getattr(self,'elevate',None),'out',None)

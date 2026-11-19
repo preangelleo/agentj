@@ -76,6 +76,10 @@ export async function runP0269Term({ B, web, fake, out = OUT }) {
       if (m.t === 'term_open' && !m.sig) {
         const mode = ['enable', 'pty'].includes(m.mode) ? m.mode : 'line';
         H.calls.push({ step: 1, mode, resume:m.resume, cols: m.cols, rows: m.rows });
+        if (H.busyReply && !m.resume) {
+          await send({t:'ctl_res',r:m.r,ok:false,why:'busy',...H.busyReply});
+          return true;
+        }
         const n = hex(16), k = await oneTimeKey(), salt = randomBytes(32), digest = await sha(controlObject('term_open', { mode, ...(m.resume?{resume:m.resume}:{}) }));
         const ch = b64u(Buffer.from(await subtle.digest('SHA-256', enc.encode(['p0269', n, digest].join('\n')))));
         H.ch.set(n, { k, salt, ch, used: false, mode, resume:m.resume });
@@ -422,12 +426,25 @@ export async function runP0269Term({ B, web, fake, out = OUT }) {
           } else {await until('ECONNREFUSED');check(true,'Claude TUI starts with isolated network; login/model unavailable offline '+tag);}
 
         }
+        await type('AJ_TERM_CHECK=267');
+        await until('AJ_TERM_CHECK=267');
         const original=H.id, inputCount=H.ins.length, callsBefore=H.calls.length;
-        fake.kick();await waitFor(p, `!document.getElementById('term-resume').hidden`);await waitState(p,'ready',15000);
+        // Block a single harmless keystroke behind the old transport queue. Going offline must invalidate it.
+        await evaluate(p, `(async()=>{const s=await import('./js/session.js'),g=s.gen();globalThis.qaOldGeneration=g;
+          const before=g.chain;let release;const gate=new Promise(r=>{release=r});g.chain=before.then(()=>gate);
+          globalThis.qaRelease=release;document.querySelector('#term-xt .xterm-helper-textarea').focus();return true;})()`);
+        await p.send('Input.insertText',{text:'x'});
+        await evaluate(p, `dispatchEvent(new Event('offline'));globalThis.qaRelease();true`);
+        await waitFor(p, `!document.getElementById('term-resume').hidden`);await waitState(p,'ready',15000);
+        await waitFor(p, `import('./js/session.js').then(s=>s.gen() && s.gen()!==globalThis.qaOldGeneration)`);
+        check(await evaluate(p,`globalThis.qaOldGeneration.live===false`),'offline while a write waits invalidates the original encrypted connection');
         check(H.ins.length===inputCount && H.calls.length===callsBefore,'disconnect does not type or reopen automatically '+tag);
-        await click('term-resume');await waitFor(p, `document.getElementById('term-sheetwrap').dataset.kind==='intro' && !document.getElementById('term-sh-yes').disabled`);
+        await waitFor(p, `!document.getElementById('term-resume').disabled`);await click('term-resume');await waitFor(p, `document.getElementById('term-sheetwrap').dataset.kind==='intro' && !document.getElementById('term-sh-yes').disabled`);
         await click('term-sh-yes');await waitFor(p, `document.getElementById('term').dataset.phase==='ready'`);
         const resumed=H.calls.at(-1);check(H.id===original && resumed.resume===original && resumed.fa && resumed.sigOk && !resumed.reuse && H.ins.length===inputCount,'resume original id requires fresh signed UV and sends no automatic input '+tag);
+        realOutput='';
+        await type('printf "REJOINED=%s\\n" "$((AJ_TERM_CHECK + 1))"');
+        await until('REJOINED=268');
         }
         realPty.stdin.end();await new Promise(resolve=>realPty.once('exit',resolve));rl.close();realPty=null;
       }
@@ -436,8 +453,30 @@ export async function runP0269Term({ B, web, fake, out = OUT }) {
       check(!st.ls.length, 'nothing about the terminal in localStorage ' + tag + JSON.stringify(st));
       // the host closes it → the page closes, the xterm is gone
       await fake.send({ t: 'term_close', id: H.id, why: 'idle', minutes: 3 });
-      await waitFor(p, `${$('term')}.hidden`, 6000);
+      await waitFor(p, `${$('term')}.dataset.phase === 'closed' && !${$('term-resume')}.hidden`, 6000);
+      check(await evaluate(p, `${$('term-status')}.textContent.includes(':') && ${$('term-input')}.disabled`), 'idle recovery shows remaining time and locks input ' + tag);
       check(await evaluate(p, `!document.querySelector('.xterm') && !document.getElementById('term-xkeys')`), 'closed → xterm and its keys disposed ' + tag);
+      if (tag === 'zh-light-390') {
+        const calls = H.calls.length, previous = H.id;
+        H.busyReply = {resume:previous,remaining_s:83,resume_s:25};
+        await click('term-resume');
+        await waitFor(p, `${$('term-status')}.textContent.includes('仍在运行')`);
+        check(await evaluate(p, `${$('term-status')}.textContent.includes('1:') && ${$('term-resume')}.textContent.includes('恢复')`),
+          'same-device refusal offers signed recovery and original time limit');
+        check(H.calls.length === calls+1 && !H.calls.at(-1).resume, 'old writer is untouched before owner chooses to recover');
+        await click('term-resume');
+        await waitFor(p, `${$('term-sheetwrap')}.dataset.kind === 'intro' && !${$('term-sh-yes')}.disabled`);
+        await click('term-sh-yes');await waitFor(p,`${$('term')}.dataset.phase==='ready'`);
+        check(H.id===previous && H.calls.at(-1).resume===previous && H.calls.at(-1).sigOk && H.calls.at(-1).fa, 'owner accepted fresh verification for identified old terminal');
+        H.busyReply=null;
+        await setBlock(BLOCK({me:false}));
+        await fake.send({t:'term_close',id:H.id,why:'disabled',remaining_s:0});
+        await waitFor(p,`${$('term-resume')}.textContent.includes('申请')`);
+        const beforeDraft=H.calls.length;
+        await click('term-resume');
+        await waitFor(p,`${$('input')}.value.includes('申请限时网页终端权限')`);
+        check(H.calls.length===beforeDraft, 'expired access drafts an owner request without opening or enabling a terminal');
+      }
       check(!H.errors.length, 'fake host saw no malformed message ' + tag + ' ' + H.errors.join(' | '));
       const problems = p.problems.filter((x) => !/WebSocket|ERR_CONNECTION|net::/i.test(x));
       check(!problems.length && !p.offsite.length, 'no console errors / off-site requests ' + tag + ' ' + JSON.stringify([problems.slice(0, 3), p.offsite.slice(0, 3)]));

@@ -5,6 +5,7 @@ import asyncio
 import codecs
 import contextlib
 import json
+import math
 import os
 import re
 import secrets
@@ -61,6 +62,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         self.h = host
         self.term: Term | None = None
         self.opening: str | None = None      # the device whose open is past step 2 (busy)
+        self.open_connection = self.open_gone = None
         self.opens: dict[str, dict] = {}      # host nonce → step-1 record
         self.clock, self.wall = time.monotonic, time.time
         self.sudo = None                      # tests: a stand-in sudo (else checked_sudo())
@@ -153,7 +155,63 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             out["external_url"] = url
         if e and "until" in e:
             out["until"] = e["until"]
+        if t and self._same_owner(t, device) and cfg["on"] and e and out["web_ok"]:
+            timing = self._timing(t, e)
+            if self._pty_live(t) and timing["resume_s"] > 0 and not self.h.stopped():
+                out.update(resume_id=t.id, **timing)
         return out
+
+    def _owner_binding(self, device):
+        rec = self.st.devices().get(device) or {}
+        pk = self.st.passkey_of_device(device) or {}
+        if not rec.get("pub") or not rec.get("sk") or not pk.get("id") or not pk.get("pub"):
+            return None
+        return (rec["pub"], rec["sk"], rec.get("paired_at"), pk["id"], pk["pub"],
+                getattr(self.h.hist, "epoch", None))
+
+    def _same_owner(self, x, device):
+        return bool(x.device == device and x.owner_binding and x.owner_binding == self._owner_binding(device))
+
+    @staticmethod
+    def _pty_live(x):
+        return (x.kind == "pty" and not x.closing and x.ready_msg is not None
+                and not x.unsafe_draft and x.proc is not None and x.proc.returncode is None and x.io is not None and not x.io.closed)
+
+    def pty_problem(self, x):
+        """Current authorization and process state for an ordinary owner PTY."""
+        if self.term is not x or x.closing:
+            return "not_open"
+        if self.h.stopped():
+            return "estop"
+        if not self._same_owner(x, x.device):
+            return "disabled"
+        cfg = store.read_config(self.st)
+        e = store.entry(cfg, x.device)
+        if not cfg["on"] or not e or e.get("until", self.wall() + 1) <= self.wall() or (store.is_web(self.st, x.device) and not e["web"]):
+            return "disabled"
+        if self.clock() >= x.expires:
+            return "timeout"
+        if self.clock() - x.last >= store.IDLE_S:
+            return "idle"
+        if x.unsafe_draft:
+            return "unfinished_input"
+        if x.proc is None or x.proc.returncode is not None or x.io is None or x.io.closed:
+            return "host"
+        return None
+
+    def pty_writer_live(self, x, s):
+        return x.s is s and x.disconnected_at is None and self.h._paired_live(s) and self.pty_problem(x) is None
+
+    def _timing(self, x, entry):
+        now, wall = self.clock(), self.wall()
+        end = x.expires - now
+        if entry and "until" in entry:
+            end = min(end, entry["until"] - wall)
+        resume = min(end, store.IDLE_S - (now - x.last))
+        if x.disconnected_at is not None:
+            resume = min(resume, RECONNECT_S - (now - x.disconnected_at))
+        return {"expires_at": min(x.expires_at, (entry or {}).get("until", x.expires_at)),
+                "remaining_s": max(0, math.ceil(end)), "resume_s": max(0, math.ceil(resume))}
 
     def vault_info(self, device: str | None) -> dict:
         """P414 (§37.9): this session's `vault` host block."""
@@ -191,6 +249,15 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             return
         if t == "term_prefill":
             return await self.on_prefill(x, s, obj)
+        if x.kind == "pty" and type(self) is Desk and t != "term_close":
+            if not self.h._paired_live(s) or not x.ready_msg:
+                return
+            problem = self.pty_problem(x)
+            if problem:
+                if t == "term_prefill":
+                    return await self.h.send_app(s, {"t": "term_prefill_res", "id": x.id, "seq": obj.get("seq"),
+                                                     "ok": False, "why": problem})
+                return await self.close(problem)
         if t == "term_in":                                   # 0.26.9 (§B): only from a device on this session's writer list
             if s.device not in x.writers:
                 self.refused(s.device, t, "not_writer")      # w2-sec L-4: once per minute, not once per frame
@@ -263,11 +330,20 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             x = self.term
             if x is None or x.closing or x.kind != "pty" or x.id != resume or x.device != s.device:
                 return "not_open", {}
-            if x.disconnected_at is None:
-                return "busy", {}
-            if self.clock() - x.disconnected_at >= RECONNECT_S or self.clock() >= x.expires or self.clock() - x.last >= store.IDLE_S:
-                return "stale", {}
+            if not self._same_owner(x, s.device) or not self._pty_live(x):
+                return "not_open", {}
+            timing = self._timing(x, e)
+            if not timing["resume_s"]:
+                return "stale", timing
         elif self.term is not None or self.opening:
+            x = self.term
+            if x and self._same_owner(x, s.device):
+                timing = self._timing(x, e)
+                if self._pty_live(x) and timing["resume_s"]:
+                    timing["resume"] = x.id
+                return "busy", timing
+            if not x and self.opening == s.device:
+                return "busy", {"opening": True}
             return "busy", {}
         if self.h.stopped():
             return "estop", {}
@@ -310,7 +386,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             from .elevate import _raw_pub
             self.opens[n] = {"device": s.device, "r": r, "at": now, "salt": salt, "priv": priv, "vn": vn, "mode": mode}
             if resume is not None:
-                self.opens[n]["resume"] = resume
+                self.opens[n].update(resume=resume, connection=s, writer_epoch=self.term.writer_epoch)
             if self.pty_supported() and size_ok(*size) and mode in ("pty", "enable"):
                 self.opens[n]["size"] = size
             ch = passkey.elevate_challenge(self.h.channel, s.device, n, "term_open", n, controls.object_digest("term_open", target))
@@ -322,6 +398,8 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             why = "replay" if isinstance(n, str) and _HEX32.fullmatch(n) else "shape"
         elif pend["mode"] != mode or pend.get("resume") != resume:
             why = "shape"
+        elif resume is not None and (pend["connection"] is not s or pend["writer_epoch"] != self.term.writer_epoch):
+            why = "stale"
         elif self.clock() - pend["at"] > NONCE_TTL:
             why = "stale"
         else:
@@ -348,7 +426,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
                 wipe(prf)
             self.st.log("control_refused", device=s.device, action="term_open", reason=why)
             self._log("term_open", s.device, "refused:" + why, target)
-            return await self._res(s, r, "term_open", False, why=why, **(extra if why == "locked" else {}))
+            return await self._res(s, r, "term_open", False, why=why, **(extra if why in ("locked", "busy", "stale") else {}))
         if size_ok(*size) and "size" in pend:
             pend["size"] = size                   # step 2's size (the window may have changed since step 1)
         self._log("term_open", s.device, "start", target, sig=obj.get("sig"), n=n, ts=obj.get("ts"))
@@ -361,6 +439,8 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         pend['approval_origin'] = phone_origin(self.h, s,
             'terminal_enable' if mode == 'enable' else 'terminal_login', mode)
         self.opening = s.device
+        self.open_connection = s
+        self.open_gone = asyncio.get_running_loop().create_future()
         self.h._bg(self._open(s, r, pend, prf, pk), "term_open")
         with contextlib.suppress(Exception):
             await self.h.send_app(s, {"t": "ctl_pending", "r": r, "action": "term_open", "timeout_ms": PENDING_MS})
@@ -414,6 +494,14 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
                     self._enabled(s.device)
             if not why and (self.h.stopped() or self.term is not None):
                 why = "estop" if self.h.stopped() else "busy"
+            if not why and type(self) is Desk:
+                current = store.read_config(self.st)
+                entry = store.entry(current, s.device) or {}
+                if (not self.h._paired_live(s) or not current["on"] or not entry
+                        or entry.get("until", self.wall() + 1) <= self.wall()
+                        or (store.is_web(self.st, s.device) and not entry["web"])
+                        or (self.st.passkey_of_device(s.device) or {}).get("pub") != pk["pub"]):
+                    why = "device_not_allowed"
             if not why:
                 try:
                     await self._start(s, r, mode, pw, pend.get("size"))
@@ -427,7 +515,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             bg.swallowed(self.st.log, "term_open_failed", ex)
             why = why or "cancelled"
         finally:
-            self.opening = None
+            self.opening = self.open_connection = self.open_gone = None
             if prf is not None:
                 from .elevate import wipe
                 wipe(prf)                     # R3: the PRF output is a bytearray, zeroed once the open is decided
@@ -461,6 +549,8 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         sudo, channel, device, st = self.sudo_path(), self.h.channel, s.device, self.st
 
         login_guard = getattr(self, "login_guard", None)
+        if type(self) is Desk:
+            login_guard = lambda: self.h._paired_live(s) and not self.h.stopped()
         def sink(value: bytearray) -> dict:
             from .elevate import run_sudo
             if login_guard is not None and not login_guard():
@@ -496,7 +586,10 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         card = {"kind": "login", "term": r, "only": device, "sink": sink, "cwd": "/"}
         from .approval_review import origin_scope
         with origin_scope(pend.get('approval_origin') or {}), self.h_paired(s), self.native_card(card):
-            res = await self.h.elevate.request(card)
+            if type(self) is Desk:
+                res = await self.h.elevate.request(card, gone=self.open_gone)
+            else:
+                res = await self.h.elevate.request(card)
         if res.get("result") == "saved" and "pw" in keep:
             res["_pw"] = keep.pop("pw")
         for v in keep.values():
@@ -509,6 +602,12 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         x = Term(s, r, mode, pw, cfg["minutes"], self.clock, self.wall)
         if size is not None and self.pty_supported():          # 0.26.9 (ADR-0269-pty)
             x.kind, (x.cols, x.rows), x.vmask = "pty", size, VtMasker()
+        if x.kind == "pty" and type(self) is Desk:
+            x.owner_binding = self._owner_binding(s.device)
+        entry = store.entry(cfg, s.device) or {}
+        if "until" in entry:
+            x.expires_at = min(x.expires_at, entry["until"])
+            x.expires = min(x.expires, self.clock() + max(0, entry["until"] - self.wall()))
         self.term = x
         self.tr_start(x, store.entry(cfg, s.device) or {})        # P414: the transcript (none for a friend's session, L3)
         self.owner_acted()
@@ -601,8 +700,12 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
                      {"term": "open"})   # 0.30.3 (董事长 14:5x): the phone that opened it gets 「进入终端」 under this line
         m = {"t": "term_ready", "r": r, "id": x.id, "expires_at": x.expires_at, "idle_s": store.IDLE_S, "sudo": mode,
              "cwd": service.tilde(cwd), "mode": x.kind}
+        if x.kind == "pty" and type(self) is Desk:
+            m.update(self._timing(x, entry))
+            x.io.write_guard = lambda: self.pty_writer_live(x, x.s)
         x.ready_msg = dict(m)
-        await self.h.send_app(s, m)
+        if await self.h.send_app(s, m) is False and type(self) is Desk:
+            self.session_gone(s)
         self._prefs()
 
     # ------------------------------------------------------------ lines
@@ -641,26 +744,69 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         await self.h.send_app(s, {"t": "term_prefill_res", "id": x.id, "seq": seq, "ok": why is None,
                                   **({"why": why} if why else {})})
 
+    def _drop_writer(self, x):
+        # We cannot know what a foreground application did with the previous writer's
+        # keystrokes. An uncertain draft is closed, never joined to a new writer's Enter.
+        x.unsafe_draft |= bool(x.program_input or x.edit or not x.edit_ok or x.paste or x.early
+                               or x.hold in ("query", "confirm") or x.io and x.io.out)
+        if x.report is not None and not x.report.done():
+            x.report.cancel()
+        x.report = x.early = None
+        if x.after_task is not None:
+            x.after_task.cancel()
+            x.after_task = None
+        x.confirms.clear()
+        if x.io is not None:
+            x.io.out.clear()
+        x.hold = x.hold_n = None
+        x.pending = ""
+        x.hold_key = "\r"
+        for ask in x.sudo.values():
+            if not ask["fut"].done():
+                ask["fut"].set_result(None)
+
+    async def _end_draft(self, x):
+        if self.term is x and x.unsafe_draft:
+            await self.close("unfinished_input")
+
     async def _resume(self, s, r, pend) -> None:
         """Fresh UV bound to the old id; same paired owner, original expiry, no new writer."""
         x = self.term
+        if x is None:
+            return await self._res(s, r, "term_open", False, why="not_open")
         async with x.frame_lock:
             why, extra = self._refusal(s, False, pend["resume"])
             if why:
                 return await self._res(s, r, "term_open", False, why=why, **extra)
-            if x.hold is not None:
-                self._pty_cancel(x, "reconnect")
-            for ask in x.sudo.values():
-                if not ask["fut"].done():
-                    ask["fut"].set_result(None)
+            if pend["writer_epoch"] != x.writer_epoch or pend["connection"] is not s:
+                return await self._res(s, r, "term_open", False, why="stale")
+            previous = x.s
+            if x.disconnected_at is None:
+                self._drop_writer(x)
+            if x.unsafe_draft:
+                self.h._bg(self._end_draft(x), "term_close")
+                return await self._res(s, r, "term_open", False, why="unfinished_input", remaining_s=0)
+            x.writer_epoch += 1
             x.s = s
+            x.viewers = []
             x.disconnected_at, x.hidden = None, None
-            await self.h.send_app(s, {**x.ready_msg, "r": r, "resumed": 1})
+            entry = store.entry(store.read_config(self.st), s.device)
+            if not await self.h.send_app(s, {**x.ready_msg, **self._timing(x, entry), "r": r, "resumed": 1}):
+                self.session_gone(s)
+                return
             for data, prompt in x.replay:
+                if x.s is not s or x.closing or x.disconnected_at is not None:
+                    return
                 x.seq += 1
-                await self.h.send_app(s, {"t": "term_out", "id": x.id, "seq": x.seq, "d": data,
-                                          **({"prompt": True} if prompt else {})})
+                if not await self.h.send_app(s, {"t": "term_out", "id": x.id, "seq": x.seq, "d": data,
+                                                 **({"prompt": True} if prompt else {})}):
+                    self.session_gone(s)
+                    return
+            if x.disconnected_at is not None or x.closing:
+                return
             x.viewers = [s]
+            if previous is not s and self.h.sessions.get(previous.cid) is previous:
+                await self.h.send_app(previous, {"t": "term_close", "id": x.id, "why": "replaced", "remaining_s": 0})
             if "size" in pend:
                 await self.on_resize(x, s, {"cols": pend["size"][0], "rows": pend["size"][1]})
             self._log("term_resume", x.device, "ready", {"id": x.id})
@@ -872,7 +1018,9 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
                 m["prompt"] = True
             for v in list(x.viewers):
                 with contextlib.suppress(Exception):
-                    await self.h.send_app(v, m)
+                    delivered = await self.h.send_app(v, m)
+                    if delivered is False and v is x.s and x.kind == "pty":
+                        self.session_gone(v)
 
     # ------------------------------------------------------------ the recording (asciicast v2, M4)
     def _cast_open(self, x: Term):
@@ -935,7 +1083,11 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             return await self.close("timeout")
         if now - x.last >= store.IDLE_S:
             return await self.close("idle")
-        if self.h.sessions.get(s.cid) is not s or s.state != "ready":
+        if x.unsafe_draft:
+            return await self._end_draft(x)
+        if x.kind == "pty" and x.ready_msg and (not self._pty_live(x) or not self._same_owner(x, x.device)):
+            return await self.close("host" if not self._pty_live(x) else "disabled")
+        if x.disconnected_at is not None or self.h.sessions.get(s.cid) is not s or s.state != "ready":
             self.session_gone(s)
             if x.kind != "pty" or now - x.disconnected_at >= RECONNECT_S:
                 return await self.close("relay_lost")
@@ -957,17 +1109,17 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
 
     def session_gone(self, s) -> None:
         """PTY: bounded reconnect grace; line mode retains its immediate-close contract."""
+        if getattr(self, "open_connection", None) is s and not self.open_gone.done():
+            self.open_gone.set_result(None)
         x = self.term
         if x is not None and x.s is s and not x.closing:
             if x.kind == "pty":
                 if x.disconnected_at is None:
-                    if x.hold is not None:
-                        self._pty_cancel(x, "disconnect")
+                    self._drop_writer(x)
                     x.disconnected_at = self.clock()
                     x.viewers = []
-                    for ask in x.sudo.values():
-                        if not ask["fut"].done():
-                            ask["fut"].set_result(None)
+                    if x.unsafe_draft:
+                        self.h._bg(self._end_draft(x), "term_close")
                     self._log("term_disconnect", x.device, "waiting", {"id": x.id})
             else:
                 self.h._bg(self.close("relay_lost"), "term_close")
@@ -1018,9 +1170,10 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
         self.st.log("term_close", device=x.device, why=why, ms=int((self.clock() - x.t0) * 1000))
         self._log("term_close", x.device, f"{why}:{minutes}m" + (f":{cast}" if cast else ""))
         with contextlib.suppress(Exception):
-            await self.h.send_app(x.s, {"t": "term_close", "id": x.id, "why": why, "minutes": minutes})
+            await self.h.send_app(x.s, {"t": "term_close", "id": x.id, "why": why, "minutes": minutes, "remaining_s": 0})
         zh = {"owner": "主动结束", "timeout": "到时间了", "idle": "太久没输入", "background": "手机切到后台", "relay_lost": "连接断了",
-              "estop": "全部停下", "host": "Agent J 主机端结束", "disabled": "已在 Agent J 主机上关闭"}.get(why, why)
+              "estop": "全部停下", "host": "Agent J 主机端结束", "disabled": "已在 Agent J 主机上关闭",
+              "unfinished_input": "前一连接可能有未提交的输入，请重新打开"}.get(why, why)
         self._notice(f"网页终端已关闭（{zh}，{minutes} 分钟）", f"Web terminal closed ({why}, {minutes} min)")
         self._prefs()
 
@@ -1048,6 +1201,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
             store.prune(self.st)
             store.forget(self.st, did)
         if self.term is not None and self.term.device == did:
+            self.term.owner_binding = None
             self.h._bg(self.close("disabled"), "term_close")
 
     def config_applied(self) -> None:

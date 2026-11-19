@@ -440,6 +440,8 @@ Under Emergency repair, Terminal Commands offers fixed terminal checks with Run.
 
 Five minutes without input/output, 60 seconds hidden, expiry, Stop everything or revoked access closes the terminal. A disconnection allows 30 seconds for the same device’s fresh passkey check; process and original expiry stay unchanged. ✕ collapses; **End** closes; Esc at the terminal goes to the program.
 
+On the original remote, choose **Verify and resume terminal** and use your passkey to return to the same process. The page shows the remaining time. Unsubmitted input on the old connection can require a new terminal. Choose **Verify and open again** while you still have access. If temporary access expired, choose **Prepare an access request**, review the draft in chat and send it for the owner to approve.
+
 **Operation log recording** links to [what is recorded](https://agentj.app/docs/web-terminal-log/): masked output and resize, no separate keystrokes; legacy line mode also logs commands. Logs stay on the host for 30 days; no camera, recording or automatic upload. Masking misses unusual secret formats/encodings, and end-to-end encryption cannot stop programs displaying secrets to your own device. Do not print or forward credentials. [Password storage](https://agentj.app/docs/web-terminal/#computer-password) · [authorization and limits](https://agentj.app/docs/web-terminal/).
 
 ### Models & API keys

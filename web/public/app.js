@@ -1724,7 +1724,6 @@ function wire() {
   document.addEventListener('visibilitychange', () => {
     const fg = document.visibilityState === 'visible';
     if (fg) wakeLink();                                // P393: back in front — reconnect silently for a fresh five seconds
-    if (session.isReady()) session.sendApp({ t: 'vis', fg }).catch(() => {});   // the host pushes only while hidden
     if (fg) session.reconnectNow();
     if (fg && session.isReady()) cardsync.sync();   // P203: back in front on a live session — cards sent while frozen
     if (fg && view === 'pair' && state === 'idle') renderPk().catch(() => {});   // a fresh challenge timestamp
