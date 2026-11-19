@@ -70,7 +70,7 @@ class Kept(unittest.TestCase):
         self.clock = Clock()
 
     def run_job(self, st, fake, target, model=None):
-        return sw.worker(st, target, model, probe=fake_probe(), ctl=fake, restart=fake.restart, status=UP,
+        return sw.worker(st, target, model, job="a" * 16, probe=fake_probe(), ctl=fake, restart=fake.restart, status=UP,
                          ready=lambda st, limit: "idle", sleep=self.clock.sleep, clock=self.clock)
 
     def test_answered_then_busy_is_kept_not_rolled_back(self):
@@ -88,11 +88,11 @@ class Kept(unittest.TestCase):
         self.assertIn("已改用火山 Agent Plan", zh)
         self.assertIn("还在忙", zh)
         self.assertIn("切回 Codex", zh)
-        self.assertIn("agentj agent switch --undo", zh)
+        self.assertNotIn("agentj agent switch --undo", zh)
         self.assertNotIn("没有空下来", zh)
         self.assertIn("still busy", sw._say_receipt(rec, "en"))
         self.assertEqual(sw.result_code(rec), 0)
-        self.assertTrue(fake.sent and "还在忙" in fake.sent[-1])        # the phone notice is the receipt
+        self.assertIn({"cmd":"switch_result","job":"a" * 16}, fake.calls)
 
     def test_a_card_from_the_new_agent_is_alive(self):
         st = mk_state(self.tmp.name, "codex")
@@ -159,10 +159,10 @@ class Kept(unittest.TestCase):
         self.assertEqual((rec["status"], rec["reason"]), ("rolled_back", "no_reply"))
         zh = sw._say_receipt(rec, "zh")
         self.assertIn("已切回 Codex", zh)
-        self.assertIn("两条路", zh)
+        self.assertIn("继续用 Codex", zh)
         self.assertIn("再切一次 OpenCode", zh)
-        self.assertIn("agentj agent switch opencode --model ark-agent-plan/doubao-seed-2.1-pro", zh)
-        self.assertIn("Two ways on", sw._say_receipt(rec, "en"))
+        self.assertNotIn("网页终端", zh)
+        self.assertIn("Stay on Codex", sw._say_receipt(rec, "en"))
 
     def hello_timeline(self, status, **kw):
         def ctl(req):
@@ -212,7 +212,7 @@ class Kept(unittest.TestCase):
         rec = {"status": "switching", "detail": "lost", "target": "opencode", "from": "codex", "at": 0}
         self.assertEqual(sw.result_code(rec), 4)
         self.assertIn("还没确认", sw._say_receipt(rec, "zh"))
-        self.assertIn("agentj agent switch --undo", sw._say_receipt(rec, "en"))
+        self.assertIn("ask in this chat", sw._say_receipt(rec, "en"))
 
     def test_worker_pending_receipt_then_recovery_and_final_receipt(self):
         st = mk_state(self.tmp.name, "codex")
@@ -233,18 +233,16 @@ class Kept(unittest.TestCase):
         self.assertNotIn("detail", receipts[-1])
         self.assertEqual(fake.restarts, 1)
 
-    def test_retry_command_rejects_shell_syntax_and_quotes_argv(self):
+    def test_retry_from_chat_rejects_shell_syntax_and_omits_raw_model(self):
         rec = {"target": "opencode", "from": "codex"}
         for model in ("ark/model;id", "ark/model$(id)", "ark/model`id`", "ark/model|id", "ark/model>out", "ark/model&x"):
             with self.subTest(model=model):
                 self.assertIsNone(sw.check_spec({"kind": "switch", "target": "opencode", "model": model})[0])
                 self.assertNotIn(model, sw._choices({**rec, "model": model}, "en"))
         model = "ark-agent-plan/doubao-seed-2.1-pro"
-        with mock.patch.object(sw.shlex, "quote", wraps=shlex.quote) as quote:
-            en = sw._choices({**rec, "model": model}, "en")
-        quote.assert_any_call(model)
-        quote.assert_any_call("opencode")
-        self.assertIn("Web Terminal", en)
+        en = sw._choices({**rec, "model": model}, "en")
+        self.assertIn("try switching to OpenCode again", en)
+        self.assertNotIn("Web Terminal", en)
 
     def test_choices_never_echo_an_odd_model(self):
         rec = {"status": "rolled_back", "target": "opencode", "from": "codex", "at": 0, "reason": "no_reply",

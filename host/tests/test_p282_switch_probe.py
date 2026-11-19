@@ -255,7 +255,7 @@ class WayBack(unittest.TestCase):
                 self.job(st_, fake, argv[argv.index("switch") + 1], probe_by({}), job=argv[argv.index("--job") + 1])
         r = sw.request(st, "claude", launch=launch, sleep=self.clock.sleep, clock=self.clock)
         self.assertEqual((r["ok"], r["reason"], r.get("undo_possible")), (False, "not_logged_in", True))
-        self.assertIn("agentj agent switch --undo", sw._say(r, "zh"))
+        self.assertIn("切回上次的 Agent", sw._say(r, "zh"))
         r = sw.request(st, None, undo=True, launch=launch, sleep=self.clock.sleep, clock=self.clock)
         self.assertTrue(r["ok"], r)
         self.assertIn("--undo", launched[-1])

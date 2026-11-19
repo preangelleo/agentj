@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.28.65
+version: 0.28.66
 released: 2026-11-19
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.30.44
-source_tag: v0.30.44
-host_wheel: agentj-0.30.44-py3-none-any.whl
-host_wheel_sha256: 14c669fa5cf7f61e3d27cd4be039fc2a91724b971cfc3d29053a290a3b9b0aea
-host_sdist: agentj-0.30.44.tar.gz
-host_sdist_sha256: d4e9f2439e05377e02e974392317fd96cf6c283cc59d8f1a5c83c6e7582c6c0b
+host_version: 0.30.45
+source_tag: v0.30.45
+host_wheel: agentj-0.30.45-py3-none-any.whl
+host_wheel_sha256: 3f5c9838d2c686f1fb197c025832e6ad720cec2d0e71ec3f0870126561a11356
+host_sdist: agentj-0.30.45.tar.gz
+host_sdist_sha256: ed80a6cd1291adf0d9557613b1131b0a226a50920c7b0c629de3dee6ae8cf487
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 docs_index: https://agentj.app/llms.txt (also https://agentj.app/docs/index.json; every page as raw Markdown at https://agentj.app/docs/<slug>/en.md and /zh.md)
@@ -354,7 +354,9 @@ https://agentj.app/docs/support-chat/ 中文：在线客服 https://support.agen
 
 ---
 
-Before selecting OpenCode, run `agentj agent detect --json` after installing Agent J: it lists all discovered installations and marks the executable Agent J uses. Multiple versions can coexist; PATH order affects your terminal. Agent J bypasses known mise/asdf wrappers without running them. An existing `AGENTJ_OPENCODE_BIN` remains authoritative. If resolution is ambiguous, set it to the real executable and run `agentj service install` again.
+Ask Agent J on your phone to switch to OpenCode and name the model or plan. For a managed switch with multiple trusted installations, Agent J checks the selected model on a supported version, preferring newer versions. The phone receipt identifies the executable path and version. If your Ark Agent Plan key is already saved in Agent J, the managed Beijing provider can use it when your OpenCode settings reference a key file.
+
+中文：在手机上告诉 Agent J 要切到 OpenCode，并说出模型或套餐。主机有多个可信安装时，掌枢优先检查较新的受支持版本，实际调用所选模型；手机回执列出使用的程序路径和版本。如果已在掌枢保存火山方舟 Agent Plan 密钥，即使 OpenCode 设置使用文件引用，也可以直接在手机重试。
 
 ## 3. Check the prerequisites — stage `2-probe`
 
@@ -732,7 +734,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.30.44` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.30.45` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -774,13 +776,13 @@ uv tool install "./$W"          # the wheel; its dependencies come from PyPI or 
 `https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.9`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.44#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.45#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.44#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.45#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.44`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.45`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1785,7 +1787,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.44#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.45#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install

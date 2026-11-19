@@ -136,6 +136,9 @@ Ark401: Agent Plan and Coding Plan keys are not interchangeable. A confirmed mis
 
 火山方舟 Agent Plan 专属 key 需要北京套餐地址。选 Agent Plan 时用 Agent J 的 `--preset ark --plan agent` 配置 `ark-agent-plan`。OpenCode 内置的 Volcengine Ark、Volcengine Ark Coding Plan 和 BytePlus ModelArk 使用其他地址，会拒绝这把 key。 / Use the Agent J Ark Agent Plan preset with the dedicated key. The three built-in integrations use different endpoints.
 
+多套 OpenCode 并存时，让掌枢用所选模型验证可信安装。读回本次切换的程序路径、版本和结果。只有回执记载实际超时才能告诉主人“该版本超时”；仅跳过较旧版就说明采用了哪个版本。主人可在手机上重试或查看最新切换结果，不需要改 PATH。请勿查看、复制或让主人粘贴密钥文件内容。
+When multiple OpenCode versions are installed, use Agent J’s model check and read back the executable path, version and outcome for this switch. Report a timeout only for an installation that was tried and timed out. The owner can retry and read the latest switch result on the paired phone. Keep key-file contents out of the conversation.
+
 方舟套餐误配时，把主人引导到失败提示或「紧急修复」的「改用 Agent Plan / Coding Plan 并重试」按钮；不用再贴 key，验证成功才切。
 
 **Same harness, other account (#427)** — 「换 Claude 备用账号」 is no harness switch: `agentj account list`, then

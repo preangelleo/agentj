@@ -8,13 +8,12 @@ from __future__ import annotations
 import json
 import os
 import re
-import shlex
 import sys
 import threading
 import time
 from pathlib import Path
 
-from . import harness, opencode_free, service
+from . import harness, opencode_free, service, switch_outcome, switch_report
 from .compose import Send
 from .text import clean_line
 
@@ -381,7 +380,7 @@ def _hello_prompt(kind: str, req: dict, lang: str = "zh", where: str | None = No
                        "ask about any missing key points)." if ho == "none" else "")
                     + " Do not use tools and do not mention this note.")
         return ("[Agent J system note — not from the owner] The owner asked to switch to " + T + ", but the check after the "
-                "switch failed (" + reason_text(code, to, "en", detail, err) + "), so Agent J switched back to you (" + F + ") by itself. In "
+                "switch failed (" + _phone_reason(code, to, "en", detail, err) + "), so Agent J switched back to you (" + F + ") by itself. In "
                 "one or two sentences tell the owner: the switch did not work, you are back on the original harness, the reason "
                 "in plain words, and the next step (the one the reason names, else send /switch-harness again so you re-check). Do not use tools and do "
                 "not mention this note.")
@@ -396,7 +395,7 @@ def _hello_prompt(kind: str, req: dict, lang: str = "zh", where: str | None = No
                 + " 那边，主人说「切回 " + F + "」就能回去。"
                 + ("这次 " + F + " 没写成交接：用一句话告诉主人（可参考下方本地对话摘录，缺失要点再问主人）。" if ho == "none" else "")
                 + "不要调用工具，不要提这条提示。")
-    return ("〔Agent J 系统提示，不是主人发的〕主人刚才要求切换到 " + T + "，但切换后的自检没有通过（" + reason_text(code, to, "zh", detail, err)
+    return ("〔Agent J 系统提示，不是主人发的〕主人刚才要求切换到 " + T + "，但切换后的自检没有通过（" + _phone_reason(code, to, "zh", detail, err)
             + "），Agent J 已经自动切回你（" + F + "）。用一两句话告诉主人：切换没成功、已经回到原来的 harness、失败原因的大白话，"
             "以及下一步建议（原因里写了下一步就照它说，否则再发一次 /switch-harness 让你重新检查）。不要调用工具，不要提这条提示。")
 
@@ -599,7 +598,7 @@ def _result_meta(rec):
     from . import privacy
     enums = {"status": (*LIVE, "ok", "probe_ok", "failed", "rolled_back", "scan"),
              **dict.fromkeys(("target", "from", "current", "name"), KINDS),
-             "reason": REASON["en"], "back": REASON["en"], "detail": DETAIL["en"], "err": ERR["en"],
+             "reason": REASON["en"].keys() | switch_outcome.PLAIN.keys(), "back": REASON["en"].keys() | switch_outcome.PLAIN.keys(), "detail": DETAIL["en"], "err": ERR["en"],
              "kept": ("busy", "card", "deferred"), "handoff": ("ok", "missing", "unchanged", "timeout", "refused"), "login": ("free",)}
     out = {}
     for k, v in rec.items():
@@ -609,10 +608,15 @@ def _result_meta(rec):
             out[k] = v
         elif k in ("undo", "installed", "callable", "managed_provider", "project_extensions_skipped") and type(v) is bool:
             out[k] = v
-        elif isinstance(v, str) and privacy.redact(v) == v and ((k == "job" and _JOB.fullmatch(v)) or
+        elif isinstance(v, str) and ((k == "job" and _JOB.fullmatch(v)) or
                 (k == "model" and len(v) <= 160 and (_OC_MODEL.fullmatch(v) or MODEL_RE.fullmatch(v))) or
-                (k == "version" and re.fullmatch(r"v?\d+(?:\.\d+){1,3}(?:(?:a|b|rc)\d+|-(?:alpha|beta|rc)\.?\d+)?", v))):
+                (k == "version" and switch_outcome.VERSION.fullmatch(v))) and privacy.redact(v) == v:
             out[k] = v
+    fix = rec.get("ark_plan_fix")
+    if isinstance(fix,dict) and fix.get("plan") in ("agent","coding"):
+        out["ark_plan_fix"] = {"plan":fix["plan"]}
+    if out.get("target") == "opencode":
+        out.update(switch_outcome.binary_meta(rec))
     return out
 
 
@@ -660,13 +664,15 @@ def gate(target: str, model: str | None = None, probe=None) -> dict:
     """Installed AND one tool-free headless call answered with the owner's own login. {ok, reason?, version}."""
     d = (probe or harness.probe)(only=(target,), model=model)
     h = next((x for x in d.get("harnesses", []) if x.get("name") == target), None)
+    metadata = {k:h[k] for k in ("executable","version","executable_source","binary_candidates","opencode_binary") if h and h.get(k) is not None}
     if not h or not h.get("installed"):
-        return {"ok": False, "reason": "ambiguous_install" if h and h.get("resolution", {}).get("reason") == "ambiguous_install" else "not_installed", "version": None}
+        why = (h or {}).get("probe_reason")
+        return {"ok":False,"reason":why if why == "no_trusted_binary" else "ambiguous_install" if h and h.get("resolution",{}).get("reason")=="ambiguous_install" else "not_installed", "version":None, **metadata}
     if h.get("callable"):
-        return {"ok": True, "version": h.get("version"), **({"start_checked": h["start_checked"]} if "start_checked" in h else {})}
+        return {"ok": True, "version": h.get("version"), **metadata, **({"start_checked": h["start_checked"]} if "start_checked" in h else {})}
     code = h.get("probe_reason") or "call_failed"
-    return {"ok": False, "reason": code if _CODE.fullmatch(code) else "call_failed", "version": h.get("version"),
-            **({"line": h["probe_error"]} if isinstance(h.get("probe_error"), str) else {})}   # P395
+    return {"ok":False,"reason":code if _CODE.fullmatch(code) else "call_failed","version":h.get("version"),**metadata,
+            **({"line":h["probe_error"]} if isinstance(h.get("probe_error"),str) else {})}
 
 
 def start_probe(st, target: str, cfg: dict, limit: float = START_LIMIT) -> dict | None:
@@ -739,9 +745,13 @@ def request(st, target: str | None, model: str | None = None, dry_run: bool = Fa
         note = model_note(m, "en" if _lang_of(st) == "en" else "zh") or ark_note(m, "en" if _lang_of(st) == "en" else "zh")
     base = {"target": target, "from": rec.get("from") or cur, "version": rec.get("version"), "job": job,
             **({"model": m} if m else {}), **({"privacy": note} if note else {}),
+            **(switch_outcome.binary_meta(rec) if target == "opencode" else {}), "status": rec["status"],
+            **({"at":rec["at"]} if "at" in rec else {}),
             **({"back": rec["back"]} if isinstance(rec.get("back"), str) else {}), **({"undo": True} if undo else {}),
             **({"undo_possible": True} if not undo and (_previous(st) or {}).get("kind") == target else {}),
-            **{k: rec[k] for k in ("err", "start_secs", "line", "ark_plan_fix") if k in rec}}
+            **{k: rec[k] for k in ("detail", "err", "start_secs", "line", "ark_plan_fix") if k in rec}}
+    if rec["status"] == "ok":
+        return {"ok":True,"complete":True,"scheduled":True, **_result_meta(rec), **base}
     if rec["status"] == "probe_ok":
         return {"ok": True, "dry_run": True, **base}
     if rec["status"] in ("failed", "rolled_back"):
@@ -857,6 +867,10 @@ def host_job(st, req, launch_job=None, *, after=None, live=None, origin=None) ->
                 first = ark_connect.authority(st, origin.device)
         job = spec["job"] = os.urandom(8).hex()
         if spec["kind"] == "switch":
+            try:
+                switch_report.bind(st, job, origin)
+            except OSError:
+                return {"ok":False,"error":"launch_failed"}
             write_receipt(st, {"status": "probing", "target": spec["target"] or (_previous(st) or {}).get("kind"),
                                "from": current_kind(st), "job": job, **first})
         try:
@@ -898,6 +912,7 @@ def _launch(st, spec, launch, before=None) -> str:
         return job
     job = os.urandom(8).hex()
     if before:
+        switch_report.bind(st, job)
         before(job)
     argv = job_argv({**spec, "job": job})
     if launch:
@@ -1040,10 +1055,11 @@ def _lang_of(st) -> str:
         return "zh"
 
 
-def _apply(st, target: str, directory: str, model, effort, raw: dict) -> None:
+def _apply(st, target: str, directory: str, model, effort, raw: dict, opencode_binary=None) -> None:
     """The new agent entry: same folder / isolation / docker; that harness's own model and effort."""
     st.set_agent_config(target, directory, model, fence=raw.get("fence") is not False,
-                        docker=raw.get("docker") is True, effort=effort, record_root=False)
+                        docker=raw.get("docker") is True, effort=effort, record_root=False,
+                        **({"opencode_binary":opencode_binary} if opencode_binary is not None else {}))
 
 
 class _Ctl:
@@ -1206,10 +1222,15 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
             rec["version"] = version
         if isinstance(model, str) and model and not undo:
             rec["model"] = model
-        final = write_receipt(st, rec)
-        if status in ("ok", "rolled_back", "failed"):
+        write_receipt(st, rec)
+        if job and status in ("ok", "rolled_back", "failed"):
             try:
-                ctl({"cmd": "send", "text": _say_receipt(final, _lang_of(st))})
+                for attempt in range(3):
+                    published = ctl({"cmd":"switch_result","job":job})
+                    if published and published.get("error") != "busy":
+                        break
+                    if attempt < 2:
+                        sleep(0.25)
             except Exception:
                 st.log("harness_result_notice", result="unavailable")
         st.log("harness_switch", status=status, frm=rec["from"], to=target, reason=reason,
@@ -1223,7 +1244,7 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
     if not prev or not raw:
         from . import ark_connect
         if target == "opencode" and ark_connect.chosen(model) and not undo:
-            why = ark_connect.first(st,job,model,dry_run,probe,ctl,restart,sleep,clock)
+            why = ark_connect.first(st,job,model,dry_run,probe,ctl,restart,sleep,clock,metadata=extra)
             return done("failed",why) if why else done("probe_ok" if dry_run else "ok")
         return done("failed", "no_agent")
     from . import ark_connect
@@ -1267,6 +1288,9 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
             target_probe = partial(harness.probe, opencode_launch=(st, start_cfg))
         g = gate(target, model, target_probe)
         version = g.get("version")
+        extra.update({k:g[k] for k in ("executable","executable_source","binary_candidates") if k in g})
+        if "opencode_binary" in g:
+            start_cfg["opencode_binary"] = g["opencode_binary"]
         if not g["ok"]:
             if target == "opencode" and not dry_run and not explicit_plan and re.search(r"\b401\b", g.get("line") or ""):
                 from . import ark_plan_fix
@@ -1310,7 +1334,6 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
     s = ctl({"cmd": "status"}) or {}
     stop = s.get("estop")          # serve reports {"on": bool, "at", "by"} (older: a bool)
     if (stop.get("on") is True) if isinstance(stop, dict) else stop is True:
-        ctl({"cmd": "send", "text": reason_text("estop", target) + "：没有切换 / not switched"})
         return done("failed", "estop")
 
 
@@ -1324,10 +1347,10 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
         st.write_private(st.root / SAVED, json.dumps(saved).encode())
         effort = mine.get("effort") if model == mine.get("model") else None
         try:
-            _apply(st, target, prev["dir"], model, effort, raw)
-        except Exception:
+            _apply(st, target, prev["dir"], model, effort, raw, **({"opencode_binary":g["opencode_binary"]} if "opencode_binary" in g else {}))
+        except Exception as exc:
             _restore(st, raw)
-            return done("failed", "config_write_failed")
+            return done("failed","binary_changed" if exc.args == ("binary_changed",) else "config_write_failed")
         if not _reads_back(st, target):     # P298: the script checks what it wrote, not anyone's account of it
             _restore(st, raw)
             return done("failed", "config_mismatch")
@@ -1354,7 +1377,10 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
     if reason is None:
         if not undo and target == "opencode":
             actual = ctl({"cmd": "status"}) or {}
-            if actual.get("ok") is not True or actual.get("agent_status") in ("down", "stopped", "failed") or \
+            pin = g.get("opencode_binary")
+            if pin and actual.get("agent_binary") != {k:pin[k] for k in ("path","source","version")}:
+                reason = "binary_changed"
+            elif actual.get("ok") is not True or actual.get("agent_status") in ("down", "stopped", "failed") or \
                     actual.get("agent_phase") == "failed" or actual.get("agent_turn_failed") or actual.get("agent_err") == "auth":
                 reason = "no_reply"
         if reason is None and not _reads_back(st, target):
@@ -1450,19 +1476,30 @@ def _where_lines(h: dict, lang: str) -> list[str]:
     return out
 
 
+def _phone_reason(code, target, lang, detail=None, err=None):
+    language = "en" if lang == "en" else "zh"
+    return switch_outcome.reason(code, target, language, REASON[language], LABEL, detail, err, ERR[language])
+
+
 def _say(r: dict, lang: str) -> str:
+    return _say_message(r, lang) + switch_outcome.binaries(r, lang)
+
+
+def _say_message(r: dict, lang: str) -> str:
+    if r.get("at") and r.get("status") in ("ok","rolled_back"):
+        return _receipt_message(r, lang)
     if r.get("ark_plan_fix"):
         from .ark_plan_fix import guidance
-        return _say({k:v for k,v in r.items() if k != "ark_plan_fix"}, lang) + "\n" + guidance(r["ark_plan_fix"], lang)
+        return _say_message({k:v for k,v in r.items() if k != "ark_plan_fix"}, lang) + "\n" + guidance(r["ark_plan_fix"], lang)
     if r.get("reason") in ("provider_key","owner_provider_key") and r.get("target") == "opencode":
         from .opencode_switch_key import explanation
         return explanation(r, lang)
     if r.get('reason') == 'not_installed' and r.get('target') == 'opencode':
-        from . import opencode_install
-        return opencode_install.install_text(lang, native_only=True)
+        return ("OpenCode is not installed. Open the Agent J setup checklist on your phone and choose Install OpenCode."
+                if lang == "en" else "主机还没有安装 OpenCode。请在手机上打开掌枢安装清单，选择安装 OpenCode。")
     T, F = LABEL.get(r.get("target"), r.get("target")), LABEL.get(r.get("from") or "", r.get("from") or "")
     if r.get("ok") and r.get("privacy"):        # P298: a free model whose provider keeps / trains on the conversation
-        return _say({k: v for k, v in r.items() if k != "privacy"}, lang) + "\n" + r["privacy"]
+        return _say_message({k: v for k, v in r.items() if k != "privacy"}, lang) + "\n" + r["privacy"]
     if r.get("ok") and r.get("dry_run"):
         return (f"✓ {T} passed the check (installed, answered one headless call"
                 + (", its long-running session opens" if isinstance(r.get("start_secs"), int) else "") + "): it can be switched to (--dry-run, nothing changed)"
@@ -1482,35 +1519,33 @@ def _say(r: dict, lang: str) -> str:
         return (f"… {T} passed the check; the switch is not complete. Switch scheduled: {when_en} Agent J restarts with {T}; the remote disconnects "
                 f"for a few seconds and reconnects by itself, then {T} introduces itself.{back}" if lang == "en" else
                 f"… {T} 检查通过，尚未完成切换。已安排切换：{when_zh} Agent J 重启并换成 {T}，遥控器会断开几秒再自动连上，然后 {T} 会先自报家门。{back}"
-               ) + r.get("note", "") + (" Read the final outcome: agentj agent switch --result --wait 900." if lang == "en" else
-                                           "最终结果请查：agentj agent switch --result --wait 900。")
+               ) + r.get("note", "") + (" The result will appear in this chat." if lang == "en" else
+                                           "最终结果会在当前对话显示。")
     if r.get("pending"):
-        return ("… The check of {t} is still running; see the outcome with `agentj agent switch --result` in a minute.".format(t=T)
-                if lang == "en" else f"… {T} 还在检查中，一分钟后用 `agentj agent switch --result` 看结果。")
+        return ("… The check of {t} is still running; ask for the result in this chat shortly.".format(t=T)
+                if lang == "en" else f"… {T} 还在检查中，稍后可在当前对话询问切换结果。")
     if r.get("reason") == "no_way_back":        # P282: the target works, the way back does not
-        why = reason_text(r.get("back") or "call_failed", r.get("from") or "", lang)
-        return (f"✗ Not switched to {T}: it works, but afterwards there would be no way back to {F}, which fails the same check "
-                f"in the background service. Why: {why}. Fix {F} first; to switch anyway add --force (agentj agent switch --undo "
-                f"then goes back with no check). Nothing was changed." if lang == "en" else
-                f"✗ 没有切到 {T}：{T} 能用，但切过去以后就切不回 {F} 了，{F} 在后台服务里过不了同样的检查。原因：{why}。"
-                f"先把 {F} 修好；确定要切就加 --force，之后用 agentj agent switch --undo 不经检查直接切回。没有改任何东西。")
+        why = _phone_reason(r.get("back") or "call_failed", r.get("from") or "", lang)
+        return (f"{T} passed its check. The return path to {F} failed, so the switch was stopped. {why}" if lang == "en" else
+                f"{T} 已通过检查，但返回 {F} 的检查失败，已停止切换。{why}")
     if r.get("reason") == "rollback_failed":
-        return "✗ " + reason_text("rollback_failed", r.get("target") or "", lang)
-    why = reason_text(r.get("reason") or "call_failed", r.get("target") or "", lang, None, r.get("err"), r.get("line"))
-    undo = ((" It is the harness used before the last switch: agentj agent switch --undo goes back to it with no check "
-             "(if it does not come up, Agent J returns here by itself).") if lang == "en" else
-            "这是上次切走前用的那个：agentj agent switch --undo 可以不经检查直接切回（起不来会自动回到现在这个）。"
-            ) if r.get("undo_possible") else ""
+        return "✗ " + _phone_reason("rollback_failed", r.get("target") or "", lang)
+    why = _phone_reason(r.get("reason") or "call_failed", r.get("target") or "", lang, r.get("detail"), r.get("err"))
+    undo = ((" Ask in this chat to switch back to the previous agent." if lang == "en" else
+             "也可在当前对话说「切回上次的 Agent」。") if r.get("undo_possible") else "")
     if not T:
-        return f"✗ {why}." if lang == "en" else f"✗ {why}。"
-    return (f"✗ Cannot switch to {T}: {why}. Nothing was changed.{undo}" if lang == "en" else
-            f"✗ 不能切换到 {T}：{why}。没有改任何东西。{undo}")
+        return f"✗ {why}"
+    return (f"✗ Cannot switch to {T}. {why}{undo}" if lang == "en" else f"✗ 不能切换到 {T}。{why}{undo}")
 
 
 def _say_receipt(rec: dict | None, lang: str) -> str:
+    return _receipt_message(rec, lang) + switch_outcome.binaries(rec or {}, lang)
+
+
+def _receipt_message(rec: dict | None, lang: str) -> str:
     if rec and rec.get("ark_plan_fix"):
         from .ark_plan_fix import guidance
-        return _say_receipt({k:v for k,v in rec.items() if k != "ark_plan_fix"}, lang) + "\n" + guidance(rec["ark_plan_fix"], lang)
+        return _receipt_message({k:v for k,v in rec.items() if k != "ark_plan_fix"}, lang) + "\n" + guidance(rec["ark_plan_fix"], lang)
     if not rec:
         return "No switch yet." if lang == "en" else "还没有切换过。"
     T, F = LABEL.get(rec.get("target"), rec.get("target")), LABEL.get(rec.get("from") or "", rec.get("from") or "—")
@@ -1531,32 +1566,32 @@ def _say_receipt(rec: dict | None, lang: str) -> str:
             out += (" · " + T + " " + k[rec["kept"]] + k[""]).format(t=T, f=F)
         return out
     if st == "switching" and rec.get("detail") == "lost":
-        return ("Not yet confirmed: the Agent J host's status is unavailable. To go back, run agentj agent switch --undo in Web Terminal."
-                if lang == "en" else "还没确认，Agent J 主机暂时查不到状态。要切回可在网页终端运行 agentj agent switch --undo。")
+        return ("Not yet confirmed: the Agent J host's status is unavailable. Once it reconnects, ask in this chat to check the result or switch back."
+                if lang == "en" else "还没确认，Agent J 主机暂时查不到状态。重新连接后，可在当前对话询问结果或要求切回。")
     waited = rec.get("waited")
     secs = ((f" (waited {waited} s)" if lang == "en" else f"（等了 {waited} 秒）") if isinstance(waited, int) else "") + (
         (f" · session start measured before the switch: {rec['start_secs']} s" if lang == "en" else
          f" · 切换前实测会话启动 {rec['start_secs']} 秒") if isinstance(rec.get("start_secs"), int) else "")
     if st == "rolled_back":
-        return f"{when} ✗ {F} → {T}: " + reason_text(rec.get("reason") or "", rec.get("target") or "", lang, rec.get("detail"),
-                                                     rec.get("err")) + (f"; back on {F}" if lang == "en" else f"；已切回 {F}") + secs \
-            + _choices(rec, lang)
+        back = f" · Back on {F}. " if lang == "en" else f" · 已切回 {F}。"
+        return f"{when} ✗ {F} → {T}" + back + _phone_reason(rec.get("reason") or "", rec.get("target") or "", lang,
+                                                              rec.get("detail"), rec.get("err")) + secs + _choices(rec, lang)
     if st == "probe_ok":
         return f"{when} ✓ {T}: " + ("passed the check (dry run)" if lang == "en" else "检查通过（只检查，没切换）")
     if st == "failed" and rec.get("reason") in ("provider_key","owner_provider_key") and rec.get("target") == "opencode":
         from .opencode_switch_key import explanation
         return explanation(rec, lang)
     if st == "failed":
-        return f"{when} ✗ {F} → {T}: " + reason_text(rec.get("reason") or "", rec.get("target") or "", lang, None,
-                                                     rec.get("err"), rec.get("line")) + secs
+        return f"{when} ✗ {F} → {T}: " + _phone_reason(rec.get("reason") or "", rec.get("target") or "", lang, None,
+                                                     rec.get("err")) + secs
     return f"{when} … {F} → {T}: {st}"
 
 
 KEPT = {   # P578: answered (or opened a card) but not idle in time — kept
     "zh": {"deferred": "自报家门已排队，确认共享会话空闲后发送", "busy": "已经回答，还在忙后面的消息", "card": "已经接上，在等你处理遥控器上的卡片",
-           "": "，就先留在 {t}。想回去：跟它说「切回 {f}」，或在网页终端运行 agentj agent switch --undo"},
+           "": "，就先留在 {t}。想回去：跟它说「切回 {f}」"},
     "en": {"deferred": "has its introduction queued until the shared session is confirmed idle", "busy": "answered and is still busy with the messages after it", "card": "is up and waiting for its card on the remote",
-           "": ", so it stays. To go back: tell it \"switch back to {f}\", or run agentj agent switch --undo in the web terminal"},
+           "": ", so it stays. To go back: tell it \"switch back to {f}\""},
 }
 
 
@@ -1565,10 +1600,8 @@ def _choices(rec: dict, lang: str) -> str:
     if t not in SWITCH_CLI or rec.get("undo"):
         return ""
     T, F = LABEL[t], LABEL.get(rec.get("from") or "", rec.get("from") or "")
-    model = rec.get("model") if isinstance(rec.get("model"), str) and _OC_MODEL.fullmatch(rec["model"]) and t == "opencode" else None
-    cmd = f"agentj agent switch {shlex.quote(t)}" + (f" --model {shlex.quote(model)}" if model else "")
-    return (f"\nTwo ways on: stay on {F}, or try {T} again — tell {F} \"switch to {T} again\", or run {cmd} in Web Terminal." if lang == "en" else
-            f"\n两条路：留在 {F}；或再试 {T}——跟 {F} 说「再切一次 {T}」，或在网页终端运行 {cmd}。")
+    return (f'\nStay on {F}, or say “try switching to {T} again” in this chat.' if lang == "en" else
+            f"\n可以继续用 {F}，或在当前对话说「再切一次 {T}」。")
 
 
 def wait_result(st, seconds=0, *, sleep=time.sleep, clock=time.monotonic):
@@ -1601,24 +1634,24 @@ def cli(a, st, lang: str) -> int:
     if getattr(a, "scan", False):
         r = scan(st)
         print(json.dumps(r, ensure_ascii=False) if a.json else _say_scan(r, lang))
-        return 4 if r.get("scheduled") or r.get("pending") else 0 if r.get("ok") else 3
+        return 0 if r.get("complete") else 4 if r.get("scheduled") or r.get("pending") else 0 if r.get("ok") else 3
     target = getattr(a, "target", None)
     if getattr(a, "undo", False):
         r = request(st, None, undo=True)
         print(json.dumps(r, ensure_ascii=False) if a.json else _say(r, lang))
-        return 4 if r.get("scheduled") or r.get("pending") else 0 if r.get("ok") else 3
+        return 0 if r.get("complete") else 4 if r.get("scheduled") or r.get("pending") else 0 if r.get("ok") else 3
     if getattr(a, "preset", None) == "ark" and target == "opencode":    # P371: 「OpenCode · 火山方舟」
         from . import ark
         r = ark.switch(st, getattr(a, "plan", None) or ark.DEFAULT_PLAN, a.model, dry_run=getattr(a, "dry_run", False))
         print(json.dumps(r, ensure_ascii=False) if a.json else ark.say_switch(r, lang))
-        return 4 if r.get("scheduled") or r.get("pending") else 0 if r.get("ok") else 3
+        return 0 if r.get("complete") else 4 if r.get("scheduled") or r.get("pending") else 0 if r.get("ok") else 3
     if target not in KINDS:
         print("agentj agent switch <claude|codex|opencode> [--model M] [--dry-run] [--force] [--json] · agentj agent switch opencode --preset ark [--plan agent|coding|payg] · --scan · --undo · --result",
               file=sys.stderr)
         return 2
     r = request(st, target, a.model, dry_run=getattr(a, "dry_run", False), force=getattr(a, "force", False))
     print(json.dumps(r, ensure_ascii=False) if a.json else _say(r, lang))
-    return 4 if r.get("scheduled") or r.get("pending") else 0 if r.get("ok") else 3
+    return 0 if r.get("complete") else 4 if r.get("scheduled") or r.get("pending") else 0 if r.get("ok") else 3
 
 
 def _job(a, st) -> int:

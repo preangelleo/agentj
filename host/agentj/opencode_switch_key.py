@@ -16,13 +16,15 @@ def explanation(rec, lang):
              {'agent':'Agent Plan', 'coding':'Coding Plan', 'payg':'API'}[plan]) if plan else provider or 'OpenCode'
     message = f'The {label} key is missing or invalid.' if english else f'{label} 的密钥缺失或无效。'
     if rec.get('reason') == 'owner_provider_key':
-        return message + (' Update it in the external OpenCode server’s provider settings.' if english else '请在外部 OpenCode 服务器的提供商设置中更新密钥。')
+        return message + (' Ask in this chat to use a provider managed by Agent J, or update the key in the external server’s settings.' if english else '可在当前对话请求改用掌枢托管的提供商，或在外部服务器设置中更新密钥。')
     if provider in ('volcengine','volcengine-coding-plan','byteplus','byteplus-modelark','byteplus-coding-plan') or plan in ('coding','payg'):
         message += (' The dedicated Ark Agent Plan key only works with the Beijing ark-agent-plan provider. Choose Volcano Ark Agent Plan in Agent J.'
                     if english else '方舟 Agent Plan 专属密钥不能用于内置 Volcengine Ark、Coding Plan 或 BytePlus 国际站；请在掌枢选择「火山方舟 Agent Plan」。')
     if plan == 'agent':
         message += (' Use the dedicated key from Ark console → Subscription → Agent Plan → Usage configuration in the phone key card.'
                     if english else '请在手机密钥卡填写方舟控制台「订阅 → Agent Plan → 使用配置」里的专属 API Key。')
+    if not plan:
+        message += (' Choose the provider in Models & API keys on your phone.' if english else '请在手机「模型和 API Key」中选择对应提供商。')
     return message
 
 
@@ -104,7 +106,7 @@ class Origin:
 
 
 def capture(host, req, pid):
-    if switch_harness.check_spec(req)[1] or req.get('kind') != 'switch' or req.get('target') != 'opencode' or req.get('dry_run') or req.get('undo'):
+    if switch_harness.check_spec(req)[1] or req.get('kind') != 'switch' or req.get('dry_run'):
         return None
     from . import approval_material, approval_review, ctl_auth, provenance, provider_setup
     proof = approval_material.verified_phone_chat(host, pid)
@@ -115,7 +117,8 @@ def capture(host, req, pid):
         device = getattr(send, 'device', None)
     elif (type(pid) is int and ctl_auth.refusal(pid, os.getpid(), host._agent_pids()) is None
           and ctl_auth.has_tty(pid) and len(host.st.devices()) == 1):
-        row = host.hist_add({'k':'host', 'name':'Agent J', 'text':'OpenCode switch'}, '', 'done')
+        label = switch_harness.LABEL.get(req.get('target'), 'Agent')
+        row = host.hist_add({'k':'host', 'name':'Agent J', 'text':label + ' switch'}, '', 'done')
         source = approval_review.remember(host, row, provenance.terminal())
         device = next(iter(host.st.devices()), None)
     else:
@@ -129,7 +132,10 @@ def capture(host, req, pid):
 
 
 def admitted(host, request, result, origin):
+    from . import switch_report
     if result.get('ok') and origin:
+        switch_report.watch(host, result['job'])
+    if result.get('ok') and origin and request.get('target') == 'opencode' and not request.get('undo'):
         host._bg(_follow(host, result['job'], request.get('force', False), origin,request.get('model')), 'switch_key')
 
 
@@ -217,5 +223,9 @@ async def _follow(host, job, force, origin, expected_model=None):
         origin.report(host, '密钥已保存，暂时无法确认切换是否已启动。请查看当前模型。',
                       'Your key was saved. The switch could not be confirmed. Check the current model.')
         return
-    if not result.get('ok'):
+    if result.get('ok'):
+        if result.get('job'):
+            from . import switch_report
+            switch_report.watch(host, result['job'])
+    else:
         origin.report(host, *retry_failed)

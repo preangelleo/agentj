@@ -220,6 +220,12 @@ def serve(exe: str, senv: dict, root: str, port: int, up_by: float, clock=time.m
         if launch:
             from . import fence
             state, cfg = launch
+            if pin := cfg.get("opencode_binary"):
+                from . import opencode_binary
+                try:
+                    argv = opencode_binary.argv(pin,argv[1:])
+                except ValueError:
+                    raise ProbeError("binary_changed") from None
             if cfg.get("fence", True):
                 if fence.problem(state, root):
                     raise ProbeError("fence_unavailable")

@@ -15,7 +15,6 @@ def install(directory, channel):
         raise ValueError('dispatch_plugin_symlink')
     script = r'''
 import {spawn} from 'node:child_process';
-import {Plugin} from '@opencode/plugin';
 const python=PYTHON, hook=HOOK, channel=CHANNEL;
 function request(event){
   return new Promise((resolve,reject)=>{
@@ -27,13 +26,21 @@ function request(event){
     child.stdin.end(JSON.stringify(event));
   });
 }
-export default Plugin.define({
+export default {
  id:'agentj.dispatch-budget',
  async setup(ctx){
   const directory=ctx.location.directory;
+  // Older 2.x clients expose the mutable context hook, newer ones also have stored instruction entries.
+  const entry=ctx.session.instructions?.entry;
+  const reminders=new Map();
+  if(!entry)await ctx.session.hook('context',async event=>{
+    const text=reminders.get(event.sessionID);
+    if(text)event.system.push({type:'text',text});
+  });
   await ctx.session.hook('prompt',async event=>{
     await request({hook_event_name:'UserPromptSubmit',session_id:event.sessionID,cwd:directory});
-    await ctx.session.instructions.entry.remove({sessionID:event.sessionID,key:'agentj.dispatch-budget'});
+    reminders.delete(event.sessionID);
+    if(entry)await entry.remove({sessionID:event.sessionID,key:'agentj.dispatch-budget'});
   });
   await ctx.tool.hook('execute.before',async event=>{
     const names={shell:'Bash',bash:'Bash',read:'Read',write:'Write',edit:'Edit',glob:'Glob',grep:'Grep',webfetch:'WebFetch',task:'Task',subagent:'Task'};
@@ -42,12 +49,15 @@ export default Plugin.define({
     const result=await request({hook_event_name:'PreToolUse',session_id:event.sessionID,cwd:directory,
       tool_name:names[raw]||raw||'?',tool_input:input});
     const output=result.hookSpecificOutput||{};
-    if(output.additionalContext)await ctx.session.instructions.entry.put({sessionID:event.sessionID,key:'agentj.dispatch-budget',value:output.additionalContext});
+    if(output.additionalContext){
+      if(entry)await entry.put({sessionID:event.sessionID,key:'agentj.dispatch-budget',value:output.additionalContext});
+      else reminders.set(event.sessionID,output.additionalContext);
+    }
     if(output.permissionDecision==='deny'||output.permissionDecision==='ask')throw new Error(output.permissionDecisionReason||'Agent J dispatch budget refused this main-thread work');
   });
   await request({hook_event_name:'SharedGuardReady',cwd:directory});
  }
-});
+};
 '''.replace('PYTHON',json.dumps(sys.executable)).replace('HOOK',json.dumps(str(Path(shared_hook.__file__).resolve()))).replace('CHANNEL',json.dumps(str(channel)))
     data = HEADER + script
     if path.exists() and not path.read_text().startswith(HEADER):

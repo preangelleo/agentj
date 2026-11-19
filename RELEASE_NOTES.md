@@ -1,5 +1,5 @@
-# Agent J v0.30.44
+# Agent J v0.30.45
 
-OpenCode tests your chosen model. Saving your Ark plan key on the phone retries the switch. Codex feedback is fixed. Read-only agents can request an upgrade.
+OpenCode checks installed versions with your selected model. Your phone shows which version and path it used, with next steps if switching fails.
 
-切换 OpenCode 会实测所选模型。方舟 Agent Plan 密钥无效时，在配对手机上补填后会自动重试。修复 Codex 对话发反馈失败、只读环境无法发起升级的问题。
+切换 OpenCode 会验证已安装版本与所选模型，手机可查看使用的程序路径、版本和失败后的处理方法。

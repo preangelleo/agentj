@@ -78,7 +78,14 @@ def version_sibling(a, b):
     if len(pa) != len(pb):
         return False
     diff = [(x, y) for x, y in zip(pa, pb) if x != y]
-    return len(diff) == 1 and all(re.search(r"\d", c) for c in diff[0])
+    if len(diff) != 1:
+        return False
+    def component(value):
+        # Installer versions may have an unchanged platform prefix/suffix. Never heal a new pin down to an old PATH.
+        m = re.fullmatch(r"([^0-9]*)([0-9]+(?:\.[0-9]+)+)([^0-9].*)?",value)
+        return (m[1],m[3],tuple(int(n) for n in m[2].split("."))) if m else None
+    old, new = map(component,diff[0])
+    return bool(old and new and old[:2] == new[:2] and new[2] > old[2])
 
 
 def resolve(name, environ=None):

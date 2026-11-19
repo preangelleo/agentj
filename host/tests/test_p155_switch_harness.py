@@ -423,8 +423,8 @@ class Request(unittest.TestCase):
         r = self.req("codex")
         self.assertEqual((r["ok"], r["reason"]), (False, "native_timeout"))
         self.assertEqual(self.st.config()["agent"], raw)
-        self.assertIn("60", sw._say(r, "zh"))
-        self.assertIn("Nothing was changed", sw._say(r, "en"))
+        self.assertIn("时限内", sw._say(r, "zh"))
+        self.assertIn("Retry", sw._say(r, "en"))
 
     def test_pass_switches_through_the_job(self):
         r = self.req("opencode", model="zhipuai/glm-5.3")
@@ -434,8 +434,9 @@ class Request(unittest.TestCase):
         self.assertIn("--worker", argv)
         self.assertEqual(argv[argv.index("switch") + 1], "opencode")
         self.assertEqual(self.st.agent_config()["kind"], "opencode")   # switched by the job, not by the caller
-        self.assertIn("自报家门", sw._say(r, "zh"))
-        self.assertIn("introduces itself", sw._say(r, "en"))
+        self.assertTrue(r["complete"])
+        for lang in ("zh","en"):
+            self.assertIn("✓ Claude Code → OpenCode", sw._say(r, lang))
 
     def test_refusals_before_any_job_and_no_service_in_the_job(self):
         for target, model, why in (("claude", None, "same"), ("opencode", "glm-5.3", "bad_model"), ("gemini", None, "bad_target")):
@@ -486,7 +487,7 @@ class Request(unittest.TestCase):
         r = self.req("codex", launch=lambda st, argv: None)            # the job never answers in time
         self.assertEqual((r["ok"], r.get("pending")), (False, True))
         self.assertGreaterEqual(self.clock.t, sw.PROBE_WAIT)
-        self.assertIn("--result", sw._say(r, "zh"))
+        self.assertIn("当前对话询问切换结果", sw._say(r, "zh"))
         r = self.req("codex", launch=mock.Mock(side_effect=RuntimeError("no systemd-run")))
         self.assertEqual(r["reason"], "launch_failed")
 
@@ -661,7 +662,7 @@ class Surfaces(unittest.TestCase):
             back = sw.hello_prompt("claude", {"outcome": "rolled_back", "from": "claude", "to": "codex", "reason": "no_reply"}, lang)
             self.assertIn("Codex", ok)
             self.assertIn("Claude Code", back)
-            self.assertIn(sw.reason_text("no_reply", "codex", lang), back)   # the reason, in words
+            self.assertIn(sw._phone_reason("no_reply", "codex", lang), back)   # the reason, in words
 
 
 if __name__ == "__main__":

@@ -695,6 +695,7 @@ class State:
         directory = os.path.realpath(os.path.expanduser(root)) if root else a["dir"]
         owner_pin = preferences.get(prefs, "agent.shared_session_id", "")
         return {"kind": a["kind"], "dir": directory, "working_root": directory,
+                **({"opencode_binary":a["opencode_binary"]} if a["kind"] == "opencode" and "opencode_binary" in a else {}),
                 "instructions": preferences.get(prefs, "agent.instructions", ""),
                 "private_instructions_file": preferences.get(prefs, "agent.private_instructions_file", ""),
                 "shared_identity": preferences.get(prefs, "agent.shared_identity", True) is not False,
@@ -718,7 +719,7 @@ class State:
                 "region": a.get("region") if a.get("region") in ("mainland-cn", "global") else None}
 
     def set_agent_config(self, kind: str | None, directory: str | None = None, model: str | None = None,
-                         fence: bool = True, docker: bool = False, effort: str | None = None, record_root: bool = True) -> None:
+                         fence: bool = True, docker: bool = False, effort: str | None = None, record_root: bool = True, opencode_binary=None) -> None:
         with self.config_lock():
             cfg = self.config()
             if kind is None:
@@ -734,6 +735,11 @@ class State:
                     if d == p or d.startswith(p.rstrip(os.sep) + os.sep):
                         raise ValueError("protected_dir")
                 cfg["agent"] = {"kind": kind, "dir": d, "model": model or None, "fence": bool(fence)}
+                if kind == "opencode" and opencode_binary is not None:
+                    from .opencode_binary import valid
+                    if not valid(opencode_binary):
+                        raise ValueError("binary_changed")
+                    cfg["agent"]["opencode_binary"] = opencode_binary
                 if effort:                         # P219: the default (or the owner's earlier) effort survives `agentj agent`
                     cfg["agent"]["effort"] = effort
                 if docker:

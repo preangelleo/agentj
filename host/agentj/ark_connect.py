@@ -108,7 +108,7 @@ def authority(st, device):
             'setup_root':str(working_root.select(st))} if key else {}
 
 
-def _set_first(st,root,model,expected,*,remove=False,live=None):
+def _set_first(st,root,model,expected,*,remove=False,live=None,pin=None):
     from .state import _write_private
     from contextlib import nullcontext
     with st.config_lock(), (st.devices_lock() if live else nullcontext()):
@@ -119,11 +119,16 @@ def _set_first(st,root,model,expected,*,remove=False,live=None):
             cfg.pop('agent',None)
         else:
             cfg['agent'] = {'kind':'opencode','dir':root,'model':model,'fence':True}
+            if pin is not None:
+                from .opencode_binary import valid
+                if not valid(pin):
+                    return False
+                cfg['agent']['opencode_binary'] = pin
         _write_private(st.config_path,json.dumps(cfg,ensure_ascii=False,indent=1).encode())
         return True
 
 
-def first(st,job,model,dry_run,native,ctl,restart,sleep,clock):
+def first(st,job,model,dry_run,native,ctl,restart,sleep,clock,*,metadata=None):
     """First connection has no harness to roll back to. Pairing, model and persisted selection are checked separately."""
     import time
     from functools import partial
@@ -142,6 +147,10 @@ def first(st,job,model,dry_run,native,ctl,restart,sleep,clock):
         return 'config_write_failed'
     cfg = {'kind':'opencode','dir':root,'fence':True,'model':model,'_agent_plan':True}
     test = switch.gate('opencode',model,native or partial(harness.probe,opencode_launch=(st,cfg)))
+    if metadata is not None:
+        metadata.update({k:test[k] for k in ("executable","executable_source","binary_candidates","version") if k in test})
+    if "opencode_binary" in test:
+        cfg["opencode_binary"] = test["opencode_binary"]
     if not test['ok'] or dry_run:
         return test.get('reason')
     if not live():
@@ -151,7 +160,7 @@ def first(st,job,model,dry_run,native,ctl,restart,sleep,clock):
     except (opencode_free.ProbeError,OSError):
         return 'ark_route_conflict'
     expected = {k:v for k,v in cfg.items() if k != '_agent_plan'}
-    if not live() or not _set_first(st,root,model,None,live=live):
+    if not live() or not _set_first(st,root,model,None,live=live,pin=test.get("opencode_binary")):
         return 'config_mismatch'
     try:
         restart()
@@ -161,6 +170,9 @@ def first(st,job,model,dry_run,native,ctl,restart,sleep,clock):
             greeting = switch._hello(ctl,{'outcome':'first','to':'opencode'},sleep,clock,verify=check)
             if greeting is not None:
                 why = greeting.get('reason') or (None if greeting.get('busy') else 'no_reply')
+            pin = cfg.get('opencode_binary')
+            if pin and not why and (ctl({'cmd':'status'}) or {}).get('agent_binary') != {k:pin[k] for k in ('path','source','version')}:
+                why = 'binary_changed'
     except Exception:
         why = 'restart_failed'
     if why and _set_first(st,root,model,expected,remove=True):
@@ -218,4 +230,10 @@ def project_view(env, project, view, *, version2, channel):
         fd = os.open(directory/'opencode.json',os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
         with os.fdopen(fd,'w',encoding='utf-8') as handle:
             json.dump(options,handle,ensure_ascii=False)
-    return {k:v for k,v in env.items() if k != 'OPENCODE_CONFIG'} | {'OPENCODE_CONFIG_DIR':str(directory)}
+    # Native loaders expand file references before merging the final overlay. This private
+    # global config prevents a second, independent read of a customer's credential file.
+    config = Path(view)/'config'/'opencode'
+    config.mkdir(parents=True,mode=0o700)
+    (config/'opencode.json').write_text(json.dumps({'provider':{'ark-agent-plan':ark.plan_data('agent')['block']}}))
+    return {k:v for k,v in env.items() if k != 'OPENCODE_CONFIG'} | {
+        'XDG_CONFIG_HOME':str(config.parent), 'OPENCODE_CONFIG_DIR':str(directory)}

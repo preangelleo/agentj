@@ -206,10 +206,10 @@ class Hello(unittest.TestCase):
         rec = sw.read_receipt(self.st)
         self.assertEqual(rec["detail"], "turn")
         self.assertGreaterEqual(rec["waited"], 170 + sw.TURN_MIN - 1)
-        self.assertIn('codex exec "say hi"', sw._say_receipt(rec, "zh"))
+        self.assertIn("检查网络或代理", sw._say_receipt(rec, "zh"))
 
     def test_prompt_and_approval_details(self):
-        for ph, word in (("prompt", "终端"), ("approval", "批准卡")):
+        for ph, word in (("prompt", "交互确认提示"), ("approval", "批准卡")):
             self.setUp()
             fake = Phases(self.st, "claude", self.clock, [(9999, ph, None)])
             self.assertEqual(self.job(fake), 2)
@@ -236,7 +236,7 @@ class Hello(unittest.TestCase):
         rec = sw.read_receipt(self.st)
         self.assertEqual((rec["status"], rec["reason"], rec["err"], fake.restarts), ("failed", "start_failed", "auth", 0))
         self.assertEqual(self.st.config()["agent"], self.raw)                 # nothing changed
-        self.assertIn("codex login", sw._say_receipt(rec, "zh"))
+        self.assertIn("重新连接提供商", sw._say_receipt(rec, "zh"))
         seen = []
         launch_configs = []
         agent_config = self.st.agent_config
@@ -276,9 +276,9 @@ class Codes(unittest.TestCase):
         self.assertIsNone(sw.hello_prompt("claude", {**base, "detail": "rm -rf"}))
         self.assertIsNone(sw.hello_prompt("claude", {**base, "err": "Unauthorized"}))
         zh = sw.hello_prompt("claude", {**base, "detail": "turn", "err": "network"})
-        self.assertIn("没说话", zh)
+        self.assertIn("尚未回答", zh)
         self.assertIn("代理", zh)
-        self.assertIn("never spoke", sw.hello_prompt("claude", {**base, "detail": "turn"}, "en"))
+        self.assertIn("without a reply", sw.hello_prompt("claude", {**base, "detail": "turn"}, "en"))
         for lang in ("zh", "en"):
             self.assertEqual(set(sw.DETAIL[lang]), set(sw.DETAIL["zh"]))
             self.assertEqual(set(sw.ERR[lang]), set(sw.ERR["zh"]))

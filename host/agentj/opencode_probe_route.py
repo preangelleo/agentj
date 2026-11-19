@@ -129,7 +129,25 @@ def selected_route(env, project, model):
                 raise ValueError
         route = {'model': model, 'instructions': [], 'plugin': [], 'mcp': {}, 'permission': {'*':'deny'}}
         if trusted is not None:
-            route['provider'] = {provider:_block(trusted, mid)}
+            # A global official Plan block may use OpenCode's native file reference.
+            # Never resolve the referenced path: project/native files cannot select a host secret.
+            if provider == 'ark-agent-plan':
+                from .ark import plan_data
+                preset = plan_data('agent')['block']
+                opts = trusted.get('options', {})
+                ref = opts.get('apiKey') if isinstance(opts,dict) else None
+                if isinstance(ref,str) and re.fullmatch(r'\{file:[^{}\r\n]+\}',ref):
+                    if trusted.get('npm') != preset['npm'] or set(opts) != {'apiKey','baseURL'} or opts['baseURL'] != preset['options']['baseURL']:
+                        raise opencode_free.ProbeError('ark_route_conflict')
+                    trusted = {**trusted, 'options':preset['options']}
+            block = _block(trusted,mid)
+            if block['options'].get('apiKey') == '{env:ARK_AGENT_PLAN_API_KEY}':
+                from .ark import plan_data
+                preset = plan_data('agent')['block']
+                if (provider != 'ark-agent-plan' or block.get('npm') != preset['npm'] or block['options'] != preset['options']
+                        or mid not in preset['models'] or block.get('models',{}).get(mid,{}).get('id',mid) != mid):
+                    raise opencode_free.ProbeError('ark_route_conflict')
+            route['provider'] = {provider:block}
         return route
     except (ValueError, AttributeError, OSError, TypeError):
         raise opencode_free.ProbeError('probe_model_unconfirmed') from None
@@ -152,8 +170,11 @@ def environment(env, project, model, root, *, agent_plan=False):
     config.chmod(0o600)
     keep = BASE_ENV | {key}
     child = {k:v for k,v in env.items() if k in keep or k.lower() in ('https_proxy','http_proxy','all_proxy','no_proxy')}
-    # Retain only the native credential store location. No owner instructions, plugins, history or other inherited keys.
+    # A named credential needs no owner database. The native server creates logs/state here even for a first
+    # connection, so give key-backed probes a fresh writable data directory inside the existing fence.
+    data = Path(root)/'data' if agent_plan or (auth and env.get(key)) else env.get('XDG_DATA_HOME') or home/'.local/share'
+    # Other providers can reuse the native login store.
     return {**child, 'HOME':root, 'XDG_CONFIG_HOME':str(config.parent.parent),
-            'XDG_DATA_HOME':str(env.get('XDG_DATA_HOME') or home/'.local/share'),
+            'XDG_DATA_HOME':str(data),
             'OPENCODE_DISABLE_PROJECT_CONFIG':'1', 'OPENCODE_DISABLE_DEFAULT_PLUGINS':'1',
             'OPENCODE_DISABLE_EXTERNAL_SKILLS':'1','OPENCODE_DISABLE_CLAUDE_CODE':'1'}

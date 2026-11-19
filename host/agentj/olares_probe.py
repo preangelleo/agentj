@@ -156,6 +156,27 @@ def row(value, kind):
         return isinstance(v, str) and len(v) <= 1024 and v.startswith('/') and not any(ord(c) < 32 for c in v)
     if path(value.get('executable')):
         out['executable'] = value['executable']
+    if kind == 'opencode':
+        from . import opencode_binary as binary
+        source = value.get('executable_source')
+        if source in (*binary.SOURCES,'external'):
+            out['executable_source'] = source
+        if 'start_checked' in value and type(value['start_checked']) in (int,float) and 0 <= value['start_checked'] <= 600:
+            out['start_checked'] = value['start_checked']
+        pin = value.get('opencode_binary')
+        if pin is not None:
+            if not binary.valid(pin) or (pin['path'],pin['version'],pin['source']) != (
+                    out.get('executable'),out.get('version'),source):
+                raise ValueError('bad_binary')
+            out['opencode_binary'] = {k:pin[k] for k in ('path','source','version','identity')}
+        if isinstance(value.get('binary_candidates'),list):
+            out['binary_candidates'] = []
+            for item in value['binary_candidates'][:binary.LIMIT]:
+                if (not isinstance(item,dict) or not path(item.get('path')) or item.get('source') not in binary.SOURCES
+                        or not re.fullmatch('[a-z_]{1,40}',str(item.get('reason')))
+                        or (item.get('version') is not None and not binary.VERSION.fullmatch(str(item['version'])))):
+                    raise ValueError('bad_candidate')
+                out['binary_candidates'].append({k:item[k] for k in ('path','version','source','reason')})
     r = value.get('resolution')
     if isinstance(r, dict):
         out['resolution'] = {k: v for k, v in r.items() if (k in ('requested', 'path', 'pinned') and path(v)) or
@@ -177,10 +198,11 @@ def result(value, kind, op):
     if op == 'start':
         if value is None:
             return {'secs': 0, 'reason': 'start_failed'}  # unavailable isolation is never a successful measurement
-        if not isinstance(value, dict) or set(value) - {'secs', 'reason', 'err'} or type(value.get('secs')) not in (int, float) or \
+        if not isinstance(value, dict) or set(value) - {'secs', 'reason', 'err', 'external_version'} or type(value.get('secs')) not in (int, float) or \
                 not math.isfinite(value['secs']) or not 0 <= value['secs'] <= 600:
             raise ValueError('bad_result')
-        return {k: v for k, v in value.items() if k == 'secs' or isinstance(v, str) and re.fullmatch('[a-z_]{1,40}', v)}
+        return {k:v for k,v in value.items() if k == 'secs' or isinstance(v,str) and
+                (re.fullmatch(r'2\.\d{1,5}\.\d{1,5}',v) if k == 'external_version' else re.fullmatch('[a-z_]{1,40}', v))}
     if not isinstance(value, dict) or not isinstance(value.get('harnesses'), list) or len(value['harnesses']) != 1:
         raise ValueError('bad_result')
     r = row(value['harnesses'][0], kind)
@@ -227,6 +249,12 @@ def run(op, kind, model=None, timeout=60, *, cfg=None, environ=None):
         if (op == 'start' and kind == 'opencode' and req.get('session_mode') == 'shared' and
                 type(req.get('shared_opencode_port')) is int and req['shared_opencode_port'] > 0):
             env.update({k: original[k] for k in OWNER_SERVER_ENV if k in original})
+        if op == 'probe' and kind == 'opencode' and model:
+            from . import opencode_binary
+            # Filesystem metadata only. Resolution and every native execution still happen inside the fence.
+            # Names are rediscovered by that image child; no path or executable command crosses this channel.
+            req['_image_witnesses'] = [opencode_binary._identity(path.stat())
+                                       for _,path in opencode_binary.candidates(env,work)]
         cmd = fence.bwrap_argv(st, str(work), environ=original)
         cmd[0] = '/usr/bin/bwrap'  # never execute PATH-selected helpers before confinement
         # Probes get no control-plane sockets, including the usual Agent-facing ones.
@@ -254,6 +282,11 @@ def run(op, kind, model=None, timeout=60, *, cfg=None, environ=None):
             if p.wait(timeout=3) != 0:
                 raise ValueError('probe_failed')
             value = result(json.loads(data), kind, op)
+            if op == 'probe' and kind == 'opencode':
+                from . import opencode_binary
+                pin = value['harnesses'][0].get('opencode_binary')
+                if pin and (pin['source'],Path(pin['path'])) not in opencode_binary.candidates(env,work):
+                    return failure(kind,op)
             if op == 'detect' and any(original.get(k) for k in login_names(kind)):
                 # Presence hint only: version candidates never receive the value.
                 value['harnesses'][0]['logged_in'] = True
@@ -273,10 +306,19 @@ def main():
     from . import harness, fence
     fence.no_dump()
     try:
-        req = spec(json.loads(sys.stdin.buffer.readline(4097)))
+        payload = json.loads(sys.stdin.buffer.readline(4097))
+        witnesses = payload.pop('_image_witnesses',[])
+        req = spec(payload)
         if not sealed():
             raise ValueError('fence_unavailable')
         _CHILD = req['kind']
+        if witnesses:
+            from . import opencode_binary
+            if (req['op'] != 'probe' or _CHILD != 'opencode' or not isinstance(witnesses,list)
+                    or len(witnesses)>opencode_binary.LIMIT or any(not isinstance(w,list) or len(w)!=5 or
+                    any(type(i) is not int or i < 0 for i in w) for w in witnesses)):
+                raise ValueError('bad_images')
+            opencode_binary._CHILD_FILES = frozenset(tuple(w) for w in witnesses)
         if req['op'] == 'detect':
             with metadata_environment(_CHILD):
                 r = {'harnesses': [harness._one(_CHILD)]}

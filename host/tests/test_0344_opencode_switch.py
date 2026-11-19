@@ -397,8 +397,12 @@ class FirstSetup(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(host.hist.get(origin.latest)['src']['k'], 'host')
         receipts = [r for r in host.hist.turns.values() if r['src'].get('k') == 'agent'
                     and r['src'].get('quote', {}).get('id') == origin.latest]
-        self.assertEqual(len(receipts), 1)
-        self.assertTrue('已保存' in receipts[0]['reply']['text'] or 'has been saved' in receipts[0]['reply']['text'])
+        saved = [r for r in receipts if '已保存' in r['reply']['text'] or 'has been saved' in r['reply']['text']]
+        final = [r for r in receipts if r['src'].get('switch_job')]
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(len(final), 1)
+        self.assertLess(saved[0]['id'], final[0]['id'])
+        self.assertIn('OpenCode', final[0]['reply']['text'])
         self.assertEqual(st.agent_config()['model'],model)
         self.assertEqual(switch_harness.read_receipt(st)['status'],'ok')
         self.assertIsNotNone(ark_connect.official(os.environ,work,model)[0])

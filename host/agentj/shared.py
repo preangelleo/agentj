@@ -3719,6 +3719,10 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         return "not_listening"
 
     async def _installed_v2(self):
+        if "opencode_binary" in getattr(self,"cfg",{}):
+            from . import opencode_binary
+            pin=self.cfg["opencode_binary"]
+            return opencode_binary.valid(pin) and pin["version"].startswith("2.")
         from .harness import selected_version, opencode_v2
         exe = _bin("AGENTJ_OPENCODE_BIN", "opencode")
         return bool(exe) and opencode_v2(await asyncio.to_thread(selected_version, 'opencode', exe))

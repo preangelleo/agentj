@@ -2812,6 +2812,7 @@ class Host:
                                              "identity_ok": self.identity_ok,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
                                              "agent_model": self.agent.cur_model() if self.agent else None,
+                                             "agent_binary": getattr(self.agent,"_live_binary",None) if getattr(getattr(self.agent,"proc",None),"returncode",-1) is None else None,
                                              "agent_hello_deferred": isinstance(self.agent, SharedClaudeAgent) and self.agent.hello_deferred(),
                                              "agent_hello_at": getattr(self.agent, "_hello_at", 0),
                                              "agent_hello_failed": getattr(self.agent, "_hello_failed", False),
@@ -3039,6 +3040,9 @@ class Host:
                 elif cmd == "notify":                # P365: the owner's own automation → one page on the phones
                     from . import notify
                     await self._ctl_send(w, await notify.post(self, req, puid))
+                elif cmd == "switch_result":
+                    from . import switch_report
+                    await self._ctl_send(w, switch_report.receive(self, req, pid, puid))
                 elif cmd == "send":
                     text = str(req.get("text", ""))
                     if text_units(text) > wire.MAX_TEXT:
@@ -9339,6 +9343,8 @@ class Host:
             os.umask(old)
         os.chmod(sock, 0o600)
         self.st.log("serve_start", channel=self.channel)
+        from . import switch_report
+        switch_report.watch(self)
         self.receipts_restart()                      # P313: what the last serve left half-done → one line, never a replay
         from . import codex_procs                    # ADR-A178: app-servers an earlier serve left behind (one serve per state)
         ended = await asyncio.to_thread(codex_procs.sweep, self.st)

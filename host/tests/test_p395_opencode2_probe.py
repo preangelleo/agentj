@@ -157,15 +157,17 @@ class Owner(_Base):
         self.assertIn("AJ_START_OPENCODE_NATIVE_FAILED", text)
         self.assertIn("unknown", text)  # unclassified native failure has no provider-specific diagnosis
 
-    def test_receipt_and_scan_texts_carry_the_line(self):
+    def test_phone_result_is_fixed_and_local_scan_keeps_the_diagnostic(self):
         import time as _t
         line = "provider.auth 401 User not found."
         r = {"ok": False, "reason": "native_failed", "target": "opencode", "from": "claude", "line": line}
-        self.assertIn("OpenCode 原话：" + line, sh._say(r, "zh"))
-        self.assertIn("OpenCode said: " + line, sh._say(r, "en"))
+        self.assertNotIn(line, sh._say(r, "zh"))
+        self.assertIn("当前对话", sh._say(r, "zh"))
+        self.assertNotIn(line, sh._say(r, "en"))
+        self.assertIn("this chat", sh._say(r, "en"))
         rec = {"status": "failed", "target": "opencode", "from": "claude", "reason": "native_failed", "line": line,
                "at": _t.time()}
-        self.assertIn(line, sh._say_receipt(rec, "zh"))
+        self.assertNotIn(line, sh._say_receipt(rec, "zh"))
         scan = {"ok": True, "current": "claude", "harnesses": [{"name": "opencode", "installed": True, "callable": False,
                                                                 "version": "2.0.24", "reason": "native_failed", "line": line}]}
         self.assertIn(line, sh._say_scan(scan, "zh"))

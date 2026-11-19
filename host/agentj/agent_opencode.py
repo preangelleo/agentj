@@ -689,8 +689,11 @@ class OpenCodeAgent(Agent):
         return t
 
     def argv(self, port: int) -> list[str]:
-        exe = _bin("AGENTJ_OPENCODE_BIN", "opencode") or "opencode"
-        return [exe, "serve", "--hostname", "127.0.0.1", "--port", str(port)]
+        parts = ["serve","--hostname","127.0.0.1","--port",str(port)]
+        if "opencode_binary" in self.cfg:
+            from . import opencode_binary
+            return opencode_binary.argv(self.cfg["opencode_binary"],parts)
+        return [_bin("AGENTJ_OPENCODE_BIN","opencode") or "opencode", *parts]
 
     # ------------------------------------------------ start
     def _sub_mode(self) -> bool:
@@ -774,7 +777,14 @@ class OpenCodeAgent(Agent):
             return await self._spawn_native()
 
     async def _spawn_native(self) -> bool:
-        if not _bin("AGENTJ_OPENCODE_BIN", "opencode"):
+        pin = self.cfg.get("opencode_binary")
+        if "opencode_binary" in self.cfg:
+            from .opencode_binary import valid
+            if not valid(pin):
+                self.failed_start = True
+                self._startup_failure("launch","binary_changed")
+                return False
+        if pin is None and not _bin("AGENTJ_OPENCODE_BIN", "opencode"):
             self.failed_start = True
             from .startup_help import guidance
             self.fail_notice("后台环境里没找到 OpenCode（opencode 命令）/ OpenCode executable missing in the background environment.\n" +
@@ -786,7 +796,7 @@ class OpenCodeAgent(Agent):
             self._startup_failure('launch', 'native_runtime_unavailable')
             return False
         from .harness import selected_version, opencode_v2
-        version = await asyncio.to_thread(selected_version, 'opencode', _bin('AGENTJ_OPENCODE_BIN', 'opencode'))
+        version = pin['version'] if pin else await asyncio.to_thread(selected_version, 'opencode', _bin('AGENTJ_OPENCODE_BIN', 'opencode'))
         own = self._own_protocol()
         if own:
             self._switch(version)
@@ -801,7 +811,12 @@ class OpenCodeAgent(Agent):
             return False
         await self._prepare_control_paths()
         port, password = free_port(), secrets.token_urlsafe(32)
-        argv = await self.authorized_launch_argv(self.argv(port))
+        try:
+            argv = await self.authorized_launch_argv(self.argv(port))
+        except ValueError:
+            self.failed_start = True
+            self._startup_failure("launch","binary_changed")
+            return False
         if argv is None:
             self.failed_start = True
             return False
@@ -809,7 +824,11 @@ class OpenCodeAgent(Agent):
         from .provider_runtime import fresh_environment
         self.auth_fp = auth_fingerprint()        # P59: what the credentials looked like when this serve started
         from . import fence
-        env = opencode_env(environment(fresh_environment(os.environ), self.host.preferences), password)
+        from .ark_connect import chosen
+        extra = ('ARK_AGENT_PLAN_API_KEY',) if chosen(self.cfg.get('model')) else ()
+        env = opencode_env(environment(fresh_environment(os.environ,extra), self.host.preferences), password)
+        if not extra:
+            env.pop('ARK_AGENT_PLAN_API_KEY',None)
         if getattr(self, "_sub_mode", bool)() and not self.v2:   # P426: v1 sub-agents get our rules per agent (v2: inherited)
             if not self.sub_inject:
                 self.sub_inject = dict(_SUB_CACHE.get(self.cfg.get("dir"), {}))
@@ -858,6 +877,7 @@ class OpenCodeAgent(Agent):
         from . import workflow_mail
         workflow_mail.pin_current(proc)
         self.proc, self.client, self.sid = proc, None, None
+        self._live_binary = None
         ready = False
         try:
             self.err_tail, self.quiet_exit, self.failed_start = "", False, False
@@ -951,6 +971,9 @@ class OpenCodeAgent(Agent):
                     self.host.agent_notice(f"已切到 OpenCode {v}" if getattr(self.host, "lang", "zh") == "zh" else f"Now using OpenCode {v}")
                     self._upgrade_notice = None
             ready = self.proc is proc and self._transport_ready()
+            if ready and pin:
+                self._live_binary = {k:pin[k] for k in ('path','version','source')}
+                self.host.st.log('opencode_launch_selected',**self._live_binary)
             return ready
         finally:
             if not ready:
@@ -1697,6 +1720,11 @@ class OpenCodeAgent(Agent):
 
     async def _protocol(self) -> bool:
         """Ask `opencode --version` once per executable (path + mtime: an upgrade in place is seen) and switch the class."""
+        if 'opencode_binary' in getattr(self,'cfg',{}):
+            # The running adapter and restart use only the previously tested image.
+            pin = self.cfg['opencode_binary']
+            from .opencode_binary import valid
+            return self._switch(pin['version']) if self._own_protocol() and valid(pin) else False
         exe = _bin("AGENTJ_OPENCODE_BIN", "opencode")
         if not exe or not self._own_protocol():
             return False

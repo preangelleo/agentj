@@ -37,7 +37,7 @@ def _prefs():
         return preferences.defaults()
 
 
-async def _answers(client, pin: str | None = None, model=None, directory=None) -> str | None:
+async def _answers(client, pin: str | None = None, model=None, directory=None, metadata=None) -> str | None:
     """None = the server is usable; else a reason code."""
     from .agent_opencode import HTTPError
     try:
@@ -45,6 +45,8 @@ async def _answers(client, pin: str | None = None, model=None, directory=None) -
         if st == 401:
             return "owner_password"
         if st == 200 and isinstance(info, dict) and str(info.get("version", "")).lstrip("v").startswith("2"):
+            if metadata is not None and re.fullmatch(r'v?2\.\d{1,5}\.\d{1,5}',str(info['version'])):
+                metadata['external_version'] = info['version'].lstrip('v')
             if pin is not None and model:
                 if not OC_SESSION.fullmatch(pin):
                     return "owner_session"
@@ -102,10 +104,11 @@ def _owner(cfg: dict, port, limit=60) -> dict:
         return {"secs": 0, "reason": "owner_unreachable"}
     t0 = time.monotonic()
     client = Client(port, os.environ.get("OPENCODE_SERVER_PASSWORD", ""), os.environ.get("OPENCODE_SERVER_USERNAME", "opencode"))
-    why = asyncio.run(_answers(client, str(cfg.get("shared_session_id") or ""),cfg.get("model"),cfg.get("dir")))
+    meta = {}
+    why = asyncio.run(_answers(client, str(cfg.get("shared_session_id") or ""),cfg.get("model"),cfg.get("dir"),meta))
     if not why and cfg.get("model"):
         why = asyncio.run(owner_model(client, cfg["model"], limit))
-    return {"secs": round(time.monotonic() - t0, 1), **({"reason": why} if why else {})}
+    return {**meta, "secs": round(time.monotonic() - t0, 1), **({"reason": why} if why else {})}
 
 
 def start_probe(st, cfg: dict, limit: float = 150, *, clock=time.monotonic) -> dict | None:
@@ -123,15 +126,23 @@ def start_probe(st, cfg: dict, limit: float = 150, *, clock=time.monotonic) -> d
     from .agent import _bin
     from .agent_opencode import Client, free_port, opencode_env
     from .provider_runtime import fresh_environment
-    exe = _bin("AGENTJ_OPENCODE_BIN", "opencode")
+    from . import opencode_binary
+    pin = cfg.get('opencode_binary')
+    if pin is not None and not opencode_binary.valid(pin):
+        return {'secs':0,'reason':'binary_changed'}
+    exe = pin['path'] if pin else _bin("AGENTJ_OPENCODE_BIN", "opencode")
     if not exe:
         return {"secs": 0, "reason": "start_failed"}
     port, password = free_port(), secrets.token_urlsafe(32)
     argv = [exe, "serve", "--hostname", "127.0.0.1", "--port", str(port)]
     try:
+        if pin:
+            argv = opencode_binary.argv(pin,argv[1:])
         env = opencode_env(proxy.environment(fresh_environment(os.environ), _prefs()), password)
         from . import ark_connect, opencode_free
-        if ark_connect.chosen(cfg.get("model")):
+        if not ark_connect.chosen(cfg.get("model")):
+            env.pop("ARK_AGENT_PLAN_API_KEY",None)
+        else:
             try:
                 env = ark_connect.runtime(env, d, cfg["model"])
                 env.pop("OPENCODE_CONFIG_DIR",None)

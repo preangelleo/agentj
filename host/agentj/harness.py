@@ -471,13 +471,17 @@ def probe(only: tuple | list | None = None, model: str | None = None, timeout: f
     if (opencode_launch and opencode_launch[1].get("session_mode") == "shared"
             and opencode_launch[1].get("shared_opencode_port")):
         from . import opencode_start
-        row = _one("opencode")
-        tested = opencode_start.start_probe(*opencode_launch, limit=timeout) if row["installed"] else None
+        row = {"name":"opencode","installed":True,"supported":True,"logged_in":None,"executable_source":"external"}
+        tested = opencode_start.start_probe(*opencode_launch, limit=timeout)
+        if tested and tested.get("external_version"):
+            row["version"] = tested["external_version"]
         ok = bool(tested is not None and not tested.get("reason"))
         row.update(callable=ok, start_checked=(tested or {}).get("secs", 0),
                    probe_reason=(tested or {}).get("reason", "owner_model_unconfirmed"))
         return {"harnesses": [row], "usable": ["opencode"] if ok else [], "decision": "use:opencode" if ok else "none"}
     if olares_probe.required():
+        if opencode_launch and tuple(only or ()) == ('opencode',) and model:
+            return olares_probe.run('probe','opencode',model,timeout)
         hs = []
         for kind in NAMES:
             op = 'probe' if only is None or kind in only else 'detect'
@@ -488,6 +492,11 @@ def probe(only: tuple | list | None = None, model: str | None = None, timeout: f
                 hs.append(h)
         usable = [h['name'] for h in hs if h.get('callable')]
         return {'harnesses': hs, 'usable': usable, 'decision': 'use:' + usable[0] if len(usable) == 1 else 'ask_owner' if usable else 'none'}
+    if opencode_launch and tuple(only or ()) == ("opencode",) and model:
+        from . import opencode_binary
+        row = opencode_binary.run(*opencode_launch,model,timeout)
+        ok = row["callable"]
+        return {"harnesses":[row],"usable":["opencode"] if ok else [],"decision":"use:opencode" if ok else "none"}
     from types import SimpleNamespace
     from .bots import native
     from .bots.store import BotError
