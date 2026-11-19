@@ -1,6 +1,8 @@
 """#175: native API dispatch, never a natural-language menu-command substitute."""
 import _hermetic
 import asyncio
+import tempfile
+from pathlib import Path
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -13,9 +15,11 @@ class Routes(unittest.TestCase):
         self.assertEqual(harness_cmds.route('codex','review'),'run')
         for kind in ('opencode','opencode2'):
             for name in ('init','review'): self.assertEqual(harness_cmds.route(kind,name),'run')
-        for kind,name in (('codex','init'),('codex','diff'),('codex','approvals'),('opencode','sessions')):
+        for kind,name in (('codex','approvals'),('opencode','share')):
             self.assertEqual(harness_cmds.route(kind,name),'none')
             self.assertTrue(harness_cmds.none_note(kind,name,'zh'))
+        for kind,name in (('codex','init'),('codex','diff'),('opencode','sessions')):
+            self.assertEqual(harness_cmds.route(kind,name),'agent')
         self.assertIsNone(harness_cmds.agent_text('/review','codex'))
 
     def test_opencode_native_shapes(self):
@@ -31,8 +35,14 @@ class Routes(unittest.TestCase):
 
 
 class CodexReview(unittest.IsolatedAsyncioTestCase):
+    def review_agent(self):
+        agent = object.__new__(CodexAgent)
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        agent.host = SimpleNamespace(agent=agent, channel="fixture", sessions={}, st=SimpleNamespace(root=root))
+        return agent
+
     async def test_turn_calls_review_start_and_waits_on_same_turn(self):
-        a=object.__new__(CodexAgent)
+        a=self.review_agent()
         a._ready=AsyncMock(return_value=True);a.persist=False;a.cfg={};a.tid='thread-fixture'
         a.proc=object();a.tail_reset=Mock();a.revert=None;a.halting=False
         a.call=AsyncMock(return_value={'turn':{'id':'review-turn'}});a.await_turn=AsyncMock()
@@ -43,7 +53,7 @@ class CodexReview(unittest.IsolatedAsyncioTestCase):
         a.await_turn.assert_awaited_once();self.assertEqual(a.turn_id,'review-turn')
 
     async def test_custom_review_uses_native_custom_target(self):
-        a=object.__new__(CodexAgent);a._ready=AsyncMock(return_value=True);a.persist=False;a.cfg={}
+        a=self.review_agent();a._ready=AsyncMock(return_value=True);a.persist=False;a.cfg={}
         a.tid='thread-fixture';a.proc=object();a.tail_reset=Mock();a.revert=None;a.halting=False
         a.call=AsyncMock(return_value={});a.await_turn=AsyncMock()
         async def deliver(fn): return await fn()

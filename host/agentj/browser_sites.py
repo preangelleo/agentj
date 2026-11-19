@@ -190,12 +190,17 @@ def _rule(rec: dict) -> dict | None:
     return None                    # custom: no trusted probe → unknown
 
 
-def probe(cdp: CDP, rule: dict, url: str, secs: float = TRY_SECS, clock=time.monotonic, sleep=time.sleep) -> tuple[str, str]:
+def probe(cdp: CDP, rule: dict, url: str, secs: float = TRY_SECS, clock=time.monotonic, sleep=time.sleep,
+          *, fresh=False) -> tuple[str, str]:
     """Open the fixed check page in a new background tab, watch its URL, close the tab. → (status, reason)."""
     target = cdp.new_tab("about:blank")
     try:
         session = cdp.attach(target)
+        if fresh:
+            cdp.call("Network.setCacheDisabled", {"cacheDisabled": True}, session=session)
+            cdp.call("Network.setBypassServiceWorker", {"bypass": True}, session=session)
         cdp.call("Page.navigate", {"url": url}, session=session, timeout=secs)
+        reload_needed, previous_loader = fresh, None
         end, last, since = clock() + secs, None, clock()
         while clock() < end:
             try:
@@ -208,9 +213,31 @@ def probe(cdp: CDP, rule: dict, url: str, secs: float = TRY_SECS, clock=time.mon
                     c = "out" if present(cdp, session, rule["out_dom"]) else "in"
                 except CDPError:
                     c = "none"
+            if c == "in" and ready == "complete" and (reload_needed or previous_loader):
+                frame = cdp.call("Page.getFrameTree", session=session).get("frameTree", {}).get("frame", {})
+                loader = frame.get("loaderId")
+                if not loader:
+                    return "unknown", "error"
+                if reload_needed:
+                    # A navigation may still reuse a warm HTTP entry. Reload this probe document from the origin.
+                    cdp.call("Page.reload", {"ignoreCache": True, "loaderId": loader}, session=session)
+                    previous_loader, reload_needed = loader, False
+                elif loader != previous_loader:
+                    previous_loader = None
+                last = None
+                sleep(0.1)
+                continue
             if c != last:
                 last, since = c, clock()
             if c == "in" and ready == "complete" and clock() - since >= STABLE_IN:   # apps redirect to sign-in after load
+                if fresh:
+                    response = cdp.call("Runtime.evaluate", {
+                        "expression": "(() => {const n = performance.getEntriesByType('navigation')[0];"
+                                      "return n?.transferSize > 0 && n.workerStart === 0 ? n.responseStatus : 0})()",
+                        "returnByValue": True}, session=session)
+                    code = (response.get("result") or {}).get("value")
+                    if type(code) is not int or not 200 <= code < 300:
+                        return "unknown", "error"
                 return "logged_in", "ok"
             if c in ("out", "error", "offsite") and ready == "complete" and clock() - since >= STABLE:
                 return {"out": ("auth_required", "signed_out"), "error": ("unavailable", "offline"),
@@ -227,6 +254,52 @@ def probe(cdp: CDP, rule: dict, url: str, secs: float = TRY_SECS, clock=time.mon
 
 def _audit(st: State, **kw) -> None:
     st.append_private(browser.bdir(st) / "checks.jsonl", json.dumps({"ts": int(time.time()), **kw}, ensure_ascii=False))
+
+
+def _record(st: State, data: dict, results: dict, reason: str) -> list:
+    """Write observations while holding sites.lock."""
+    changed = []
+    at = int(time.time())
+    for site, (status, why) in results.items():
+        rec = data["sites"].get(site)
+        if rec is None:
+            continue
+        if rec.get("status") != status:
+            changed.append({"site": site, "from": rec.get("status"), "to": status})
+        rec.update(status=status, reason=why, checked_at=at, adapter_version=adapter_version())
+        _audit(st, site=site, status=status, reason=why, by=reason)
+    if results:
+        _save(st, data)
+    return changed
+
+
+def check_login(st: State, site: str, cdp: CDP, source_state) -> str:
+    """Confirm directly from a fresh probe of the browser that owns the original login tab."""
+    try:
+        with _lock(st, "profile.lock", wait=False):
+            rec = load(st)["sites"].get(site)
+            rule = _rule(rec) if rec else None
+            if not rule:
+                return "unavailable"
+            before = source_state(rule)
+            if before == "gone":
+                return "unavailable"
+            status, why = probe(cdp, rule, rule["check_url"], fresh=True)
+            with _lock(st, wait=False):
+                data = load(st)
+                if data["sites"].get(site) != rec:
+                    return "unknown"
+                after = source_state(rule)
+                if after == "gone":
+                    return "unavailable"
+                if status == "logged_in" and (before not in ("in", "landing") or after not in ("in", "landing")):
+                    return "unknown"
+                _record(st, data, {site: (status, why)}, "login")
+            return status
+    except BlockingIOError:
+        return "unknown"
+    except (CDPError, OSError):
+        return "unavailable"
 
 
 def check(st: State, sites=None, if_stale: bool = False, reason: str = "manual", _cdp=None) -> dict:
@@ -268,20 +341,8 @@ def check(st: State, sites=None, if_stale: bool = False, reason: str = "manual",
             finally:
                 if _cdp is None:
                     cdp.close()
-    changed = []
     with _lock(st):
-        d = load(st)
-        at = int(time.time())
-        for s, (status, why) in results.items():
-            rec = d["sites"].get(s)
-            if rec is None:
-                continue
-            if rec.get("status") != status:
-                changed.append({"site": s, "from": rec.get("status"), "to": status})
-            rec.update(status=status, reason=why, checked_at=at, adapter_version=adapter_version())
-            _audit(st, site=s, status=status, reason=why, by=reason)
-        if results:
-            _save(st, d)
+        changed = _record(st, load(st), results, reason)
     st.log("browser_check", n=len(results), by=reason)
     return {"ok": True, "checked": len(results), "changed": changed, "sites": summary(st)}
 

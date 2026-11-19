@@ -126,18 +126,20 @@ class Tables(unittest.TestCase):
             self.assertEqual(R("claude", n, real), "none", n)
         self.assertEqual({n for n in harness_cmds.RUN["claude"]}, {"init", "review", "security-review", "pr-comments",
                                                                   "release-notes", "recap", "insights"}, "run = a fixed list")
-        for n in ("config", "mcp", "effort", "permissions", "hooks", "agents", "fast", "output-style", "resume"):
+        for n in ("config", "mcp", "effort", "hooks", "agents", "fast", "output-style", "resume"):
             self.assertEqual(R("claude", n, INIT), "agent", n)
-        for n in ("exit", "login", "logout", "vim", "ide", "terminal-setup", "ultrareview", "bug"):
+        for n in ("exit", "login", "logout", "permissions", "vim", "ide", "terminal-setup", "ultrareview", "bug"):
             self.assertEqual(R("claude", n, INIT), "none", n)
             self.assertTrue(harness_cmds.none_note("claude", n, "zh") and harness_cmds.none_note("claude", n, "en"))
-        # P495: dedicated headless APIs run; terminal-only commands are explicitly unavailable.
+        # Dedicated headless APIs run. The controlled delegation list routes to the Agent.
         self.assertEqual(R("codex", "review"), "run")
-        for n in ("init", "approvals", "mcp", "diff"):
-            self.assertEqual(R("codex", n), "none", n)
+        self.assertEqual(R("codex", "approvals"), "none")
+        for n in ("init", "mcp", "diff"):
+            self.assertEqual(R("codex", n), "agent", n)
         for n in ("init", "review"):
             self.assertEqual(R("opencode", n), "run", n)
-        for n in ("sessions", "undo", "share"):
+        self.assertEqual(R("opencode", "sessions"), "agent")
+        for n in ("undo", "share"):
             self.assertEqual(R("opencode", n), "none", n)
         for kind, n in (("codex", "quit"), ("codex", "mention"), ("codex", "feedback"), ("opencode", "editor"),
                         ("opencode", "themes"), ("opencode", "connect")):

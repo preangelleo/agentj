@@ -553,7 +553,7 @@ def signed_cached_wheel(st, version):
     return st.root / 'upgrade-cache' / f'agentj-{version}-py3-none-any.whl'
 
 
-def installed_wheel(st, version):
+def installed_wheel_bytes(version):
     import base64, importlib.metadata, io, zipfile
     dist = importlib.metadata.distribution('agentj')
     if dist.version != version:
@@ -573,7 +573,11 @@ def installed_wheel(st, version):
         if 'agentj/__init__.py' not in z.namelist():
             raise ValueError('installed_record_missing')
         z.writestr(f'agentj-{version}.dist-info/RECORD', '')
-    data = buf.getvalue()
+    return buf.getvalue()
+
+
+def installed_wheel(st, version):
+    data = installed_wheel_bytes(version)
     p = st.root / 'upgrade-cache' / f'agentj-{version}-py3-none-any.whl'
     p.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     st.write_private(p, data)
@@ -602,6 +606,9 @@ def install_env(info):
 def run_env(cmd):
     """The environment a Command runs with (None: inherit this process's unchanged)."""
     extra = getattr(cmd, 'env', None)
+    if getattr(cmd, 'offline', False):
+        from .upgrade_wheels import clean_env
+        return {**clean_env(), **extra}
     return {**os.environ, **extra} if extra else None
 
 
@@ -1071,6 +1078,10 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
         require_compatible_version(st, job['to'] if diagnose else job['from'])
         def attempts(pinned):
             cmds = (recovery_commands(job['install'], pinned.path) if not diagnose else install_commands(job['install'], pinned.path))
+            if pinned.root is not None:
+                from . import upgrade_wheels
+                cmds = ([upgrade_wheels.prepare_update(c, pinned, job['from']) for c in cmds] if diagnose
+                        else [upgrade_wheels.for_rollback(c, pinned) for c in cmds])
             if diagnose:
                 save('installing')  # Validation/refusal above has not changed installed files.
             started, retries = clock(), 0

@@ -414,10 +414,10 @@ _REFUSALS = {
                       "Agent J's private state directory (login profiles, account logs, raw job output) cannot be read "
                       "directly (no card, not executed); use agentj's read-only commands or host.log."),
     "unresolved_execution": ("看不懂这条启动命令实际执行什么，未执行（不弹卡）。", "Cannot resolve what this launcher executes; not run (no card)."),
-    "write": ("这一轮来自「{label}」，不是主人本人；清单外的写操作不执行，也不发卡片（不是主人拒绝）。"
-              "需要的话请主人在遥控器或本机终端里直接说。",
-              "This turn comes from “{label_en}”, not the owner; an off-list write is not run and no card is sent (the owner "
-              "did not refuse). If it is needed, the owner can ask directly from a remote or the local terminal."),
+    "write": ("这一轮来自「{label}」。这项操作超出了该来源允许的范围。主机已拦下操作，没有弹出确认卡（不是主人拒绝）。"
+              "如需继续，请主人在遥控器或本机终端直接下达这项任务。",
+              "This turn comes from “{label_en}”. The operation is outside the permitted scope for this source. "
+              "The host blocked it without sending a confirmation card. The owner can request it directly from a remote or the local terminal."),
 }
 
 

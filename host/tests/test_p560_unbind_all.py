@@ -243,8 +243,10 @@ class UnbindAll(Security, unittest.IsolatedAsyncioTestCase):
             reply.assert_not_called()
         self.assertEqual(self.st.devices(),{})
 
-    def test_poll_advertises_capability(self):
+    def test_poll_keeps_unnegotiated_unbind_all_out_of_signed_body(self):
         with patch('agentj.cloud.post_json',return_value=(200,{})) as post:
             self.h.remote_pair.poll(self.link, [])
             payload=json.loads(wire.unb64u(post.call_args.args[1]['body']))
-            self.assertIs(payload['unbind_all'], True)
+            self.assertEqual(payload['t'], 'remote_pair')
+            self.assertEqual(payload['channel'], self.h.channel)
+            self.assertNotIn('unbind_all', payload)

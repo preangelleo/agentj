@@ -81,6 +81,7 @@ class LoginCards:
         self.host = elev.host
         self.st = elev.st
         self.cards: dict[str, dict] = {}
+        self.opening: dict[str, object] = {}
         self.tabs: dict[str, str] = {}          # site → the login tab this host opened (kept: it is the owner's page)
         self.qr_history: dict[str, dict] = {}  # bounded in-memory digests, never QR images or durable authority
         self.bg: set = set()                    # phone-initiated work running beside the receive loop
@@ -129,7 +130,11 @@ class LoginCards:
             return {"result": "no_browser", "hint": browser.HINTS["not_running"]}
         old = next((c for c in self.cards.values() if c["site"] == site), None)
         refresh = req.get("refresh") is True or (old is not None and old["deadline"] - time.monotonic() <= 10)
+        if site in self.opening:
+            return {"result": "busy"}
         if old is not None and not refresh:     # ordinary repeated good morning reuses the live card
+            if old.get("navigated") or old["runtime"] != self._runtime_id(rt):
+                return {"result": "failed", "why": "browser"}
             return {"result": "sent", "id": old["id"], "reused": True, "ttl": max(0, int(old["deadline"] - time.monotonic()))}
         if not t.get("qr"):
             return await self._host_login(site, t, rec, rt)
@@ -137,11 +142,31 @@ class LoginCards:
             return {"result": "no_device"}
         if len(self.cards) >= MAX_OPEN and old is None:
             return {"result": "busy"}
+        attempt = object()
+        self.opening[site] = attempt
+        if old is not None:
+            old["revision"] += 1
+            old["refreshing"] = True
         try:
-            got = await asyncio.to_thread(self._open_and_capture, rt, site, t, refresh)
+            def current():
+                return self.opening.get(site) is attempt and (old is None or self._live(old))
+            return await self._issue(site, t, rt, refresh, by, old, current)
+        finally:
+            if self.opening.get(site) is attempt:
+                del self.opening[site]
+            if old is not None:
+                old["refreshing"] = False
+
+    async def _issue(self, site, t, rt, refresh, by, old, current) -> dict:
+        try:
+            got = await asyncio.to_thread(self._open_and_capture, rt, site, t, refresh, old)
         except CDPError as e:
             self.st.log("login_qr_failed", site=site, reason=str(e)[:60])
             return {"result": "failed", "why": "browser"}
+        if not current():
+            if got.get("cdp"):
+                got["cdp"].close()
+            return {"result": "gone"}
         generation = (rt.get("pid"), rt.get("starttime"), got.get("target") or self.tabs.get(site))
         digest = hashlib.sha256(got["png"]).hexdigest() if got.get("state") == "qr" else None
         previous = self.qr_history.get(site)
@@ -152,22 +177,37 @@ class LoginCards:
             got["cdp"].close()
             return {"result": "failed", "why": "browser",
                     "hint": "未取得新的二维码，请稍后刷新或重新打开登录页。 / No new QR code; refresh later or reopen the sign-in page."}
-        if old is not None:
-            self._end(old, "refreshed")  # keep the previous QR until a replacement was captured
         if got["state"] == "in":
-            await asyncio.to_thread(bs.check, self.st, [site], False, "login")
+            runtime_id = self._runtime_id(rt)
+            same_card = old is not None and not old.get("navigated")
+            def check_landing():
+                try:
+                    if old is not None and (old["runtime"] != runtime_id or old["target"] != got["target"]):
+                        return "unavailable"
+                    source = old if same_card else {**got, "lock": threading.Lock()}
+                    return self._bound_probe(site, source, runtime_id, current)
+                finally:
+                    got["cdp"].close()
+            status = await asyncio.to_thread(check_landing)
+            if not current() or status != "logged_in":
+                return {"result": "failed", "why": "browser"}
+            if old is not None:
+                self._end(old, "done" if same_card else "refreshed")
             return {"result": "already", "site": site}
         if got["state"] != "qr":
             return {"result": "no_qr", "headless": bool(rt.get("headless")), "site": site,
                     "hint": "请在这台Agent J 主机上 Agent J 的专用浏览器里登录 / sign in on the Agent J host's Agent J browser"
                     if not rt.get("headless") else "这台Agent J 主机没有屏幕，也没找到二维码 / no screen and no QR code on this page"}
+        if old is not None:
+            self._end(old, "refreshed")
         ttl = min(TTL_MAX, int((t.get("qr") or {}).get("ttl") or TTL_MAX))
         cid, nonce = secrets.token_hex(16), secrets.token_hex(16)
         until = int(time.time()) + ttl
         lang = bs._lang(self.st)
         c = {"id": cid, "site": site, "title": t["title"][lang], "img": bytearray(got["png"]), "nonce": nonce,
              "deadline": time.monotonic() + ttl, "until": until, "by": by, "cdp": got["cdp"], "session": got["session"],
-             "bind": bind_digest(self.host.channel, site, cid, nonce, until), "lock": threading.Lock()}
+             "bind": bind_digest(self.host.channel, site, cid, nonce, until), "lock": threading.Lock(),
+             "runtime": self._runtime_id(rt), "target": got.get("target"), "revision": 0, "confirm_lock": asyncio.Lock()}
         if isinstance(generation[-1], str):
             self.qr_history[site] = {"generation": generation, "sha256": digest,
                                      "captured_at": c["deadline"] - ttl, "deadline": c["deadline"]}
@@ -194,7 +234,7 @@ class LoginCards:
                 "hint": "已在这台Agent J 主机的 Agent J 浏览器打开登录页：请主人在Agent J 主机前登录，然后运行 agentj browser check --site " + site
                         + " / opened the sign-in page on the Agent J host"}
 
-    def _open_and_capture(self, rt: dict, site: str, t: dict, refresh: bool = False) -> dict:
+    def _open_and_capture(self, rt: dict, site: str, t: dict, refresh=False, old=None) -> dict:
         """(thread) Reuse or open the login tab, wait up to 30 s for the QR element, crop it. The CDP connection stays with
         the card (its watcher); the tab is never closed by us."""
         cdp = CDP(rt["ws"])
@@ -212,6 +252,8 @@ class LoginCards:
                 signed_in = (bs.classify(href, t) == "in" and
                              not (t.get("out_dom") and present(cdp, session, t["out_dom"])))
                 if not signed_in:
+                    if old is not None and old["target"] == target:
+                        old["navigated"] = True
                     navigation = cdp.call("Page.navigate", {"url": t["login_url"]}, session=session)
                     loader = navigation.get("loaderId")
                     if navigation.get("errorText") or navigation.get("isDownload") or not isinstance(loader, str) or not loader:
@@ -220,7 +262,8 @@ class LoginCards:
             while time.monotonic() < end:
                 href, ready = cdp.location(session)
                 if bs.classify(href, t) == "in" and not (t.get("out_dom") and present(cdp, session, t["out_dom"])):
-                    return {"state": "in"}
+                    ok = True
+                    return {"state": "in", "cdp": cdp, "session": session, "target": target}
                 if loader:
                     current = cdp.call("Page.getFrameTree", session=session).get("frameTree", {}).get("frame", {}).get("loaderId")
                     if current != loader or ready != "complete":
@@ -269,19 +312,23 @@ class LoginCards:
         """(thread) The login tab: (bs.login_state — in / landing / out / none / offsite / error, its origin). A dead
         connection is ("gone", None). The origin is the only part of the URL ever shown (paths carry account ids)."""
         with c["lock"]:                         # the watcher and a phone's 「我扫好了」 share one connection
-            try:
-                href, _ = c["cdp"].location(c["session"])
-            except CDPError:
-                return "gone", None
-            t = bs.templates()[bs.load(self.st)["sites"][c["site"]]["template"]]
-            state = bs.login_state(href, t)
-            if state == "in" and t.get("out_dom"):
-                try:
-                    if present(c["cdp"], c["session"], t["out_dom"]):
-                        state = "out"
-                except CDPError:
-                    return "gone", None
+            rec = bs.load(self.st)["sites"].get(c["site"]) or {}
+            rule = bs.templates().get(rec.get("template"))
+            return self._tab_state(c["cdp"], c["session"], rule) if rule else ("gone", None)
+
+    @staticmethod
+    def _tab_state(cdp, session, rule: dict) -> tuple[str, str | None]:
+        try:
+            href, ready = cdp.location(session)
+            state = bs.login_state(href, rule)
+            if state in ("in", "landing"):
+                if ready != "complete":
+                    state = "none"
+                elif rule.get("out_dom") and present(cdp, session, rule["out_dom"]):
+                    state = "out"
             return state, bs._origin(href) if href else None
+        except (CDPError, ValueError):
+            return "gone", None
 
     async def _watch(self, c: dict) -> None:
         try:
@@ -306,20 +353,47 @@ class LoginCards:
         """The login tab looks signed in: the trusted check (fresh tab, stable URL, sign-in form cross-check) decides."""
         return await self._confirm(c) == "logged_in"
 
+    @staticmethod
+    def _runtime_id(rt: dict) -> tuple:
+        return (rt.get("ws"), rt.get("pid"), rt.get("starttime"), rt.get("adopted", False))
+
+    def _source_state(self, cdp, session, runtime_id, rule: dict) -> str:
+        if not browser.settings(self.st)["enabled"]:
+            return "gone"
+        rt = browser.runtime(self.st)
+        if not rt or self._runtime_id(rt) != runtime_id:
+            return "gone"
+        return self._tab_state(cdp, session, rule)[0]
+
+    def _live(self, c: dict) -> bool:
+        return self.cards.get(c["id"]) is c and time.monotonic() < c["deadline"]
+
+    def _confirmable(self, c: dict, revision: int) -> bool:
+        return self._live(c) and not c.get("refreshing") and c["revision"] == revision
+
+    def _bound_probe(self, site, source, runtime_id, current) -> str:
+        with source["lock"]:
+            def source_state(rule):
+                if not current():
+                    return "gone"
+                state = self._source_state(source["cdp"], source["session"], runtime_id, rule)
+                return state if current() else "gone"
+            return bs.check_login(self.st, site, source["cdp"], source_state)
+
     async def _confirm(self, c: dict) -> str | None:
-        """The trusted check's status for the card's site; a logged_in ends the card ("done"). None while another check of
-        this card is running."""
-        if c.get("confirming"):
-            return None
-        c["confirming"] = True
-        try:
-            res = await asyncio.to_thread(bs.check, self.st, [c["site"]], False, "login")
-        finally:
-            c["confirming"] = False
-        status = next((x["status"] for x in res.get("sites", []) if x["site"] == c["site"]), None)
-        c["last_status"] = status
-        if status != "logged_in" or c["id"] not in self.cards:
-            return status
+        """Serialize the watcher and phone checks. Only a live card can consume an observation."""
+        revision = c["revision"]
+        async with c["confirm_lock"]:
+            if not self._confirmable(c, revision):
+                return None
+            if c.get("navigated"):
+                return "unavailable"
+            status = await asyncio.to_thread(self._bound_probe, c["site"], c, c["runtime"],
+                                             lambda: self._confirmable(c, revision))
+            if not self._confirmable(c, revision):
+                return None
+            if status != "logged_in":
+                return status
         self._end(c, "done")
         lang = getattr(self.host, "lang", "zh")
         hm = time.strftime("%H:%M")
@@ -361,14 +435,11 @@ class LoginCards:
     async def _check_tap(self, s, c: dict) -> None:
         """#470: the owner's 「我扫好了，帮我确认」 — always the trusted check (whatever page the login tab shows); when it does
         not confirm, the card stays and one chat line says why (login_qr_state carries the same `why`)."""
-        end = time.monotonic() + 60
-        while c.get("confirming") and time.monotonic() < end:      # the watcher's check is running: wait for its word
-            await asyncio.sleep(0.2)
-        if c["id"] not in self.cards:
-            return                                                  # it confirmed meanwhile (login_qr_done is out)
+        if not self._live(c):
+            return
         state, origin = await asyncio.to_thread(self._tab, c)
         status = await self._confirm(c)
-        if status == "logged_in":
+        if status in (None, "logged_in") or not self._live(c):
             return
         if state == "gone" or status == "unavailable":
             why = "browser"
@@ -418,9 +489,14 @@ class LoginCards:
                 c[k].cancel()
         c["img"][:] = b"\0" * len(c["img"])
         c["img"] = bytearray()
-        with contextlib.suppress(Exception):
-            c["cdp"].detach(c["session"])
-            c["cdp"].close()
+        # A cancelled asyncio.to_thread may still be probing. Close only after its CDP calls finish.
+        def close_connection():
+            with c["lock"]:
+                try:
+                    c["cdp"].detach(c["session"])
+                finally:
+                    c["cdp"].close()
+        bg.spawn(asyncio.to_thread(close_connection), "login_cdp_close", bg.host_log(self.host))
         self._active(False)
         self._audit(c, result, device=device)
         self._remember(c["id"], {"site": c["site"], "result": result, "until": None})
@@ -430,6 +506,7 @@ class LoginCards:
             bg.spawn(self.host._send_ready(lambda s: done), "login_qr_done", bg.host_log(self.host))   # P192 (B13)
 
     def end_all(self, result: str) -> None:
+        self.opening.clear()
         for c in list(self.cards.values()):
             self._end(c, result)
 

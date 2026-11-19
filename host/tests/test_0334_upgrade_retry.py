@@ -420,6 +420,7 @@ class ManualAndPhone(_Env):
                 mock.patch.object(update, "writable", return_value=True), \
                 mock.patch.object(update, "verified_plan", return_value=[list(self.PLAN[0])]), \
                 mock.patch.object(update, "_pin_plan_wheel", side_effect=lambda c, t, st_: (c, None)), \
+                mock.patch("agentj.upgrade_wheels.prepare_update", side_effect=lambda c, p, v: c), \
                 mock.patch.object(update, "rollback_wheel", return_value=None), \
                 mock.patch.object(update, "_install_sleep", lambda s: t.__setitem__(0, t[0] + s)), \
                 mock.patch.object(update, "_install_clock", lambda: t[0]), \
@@ -816,6 +817,7 @@ class Round2(_Env):
                         mock.patch.object(update, "writable", return_value=True), \
                         mock.patch.object(update, "verified_plan", return_value=[["uv", "tool", "install", "/verified/new.whl"]]), \
                         mock.patch.object(update, "_pin_plan_wheel", side_effect=lambda c, t, s: (c, None)), \
+                        mock.patch("agentj.upgrade_wheels.prepare_update", side_effect=lambda c, p, v: c), \
                         mock.patch.object(update, "rollback_wheel", return_value=None), \
                         mock.patch.object(update, "_install_sleep", lambda s: None), \
                         mock.patch("agentj.doctor.run", return_value=[]):
@@ -1204,7 +1206,8 @@ def _digests():
     out = {}
     for f, name in (("auto_update.py", "download"), ("auto_update.py", "cached_wheel"), ("auto_update.py", "_cached_wheel"),
                     ("auto_update.py", "_store"), ("auto_update.py", "signed_cached_bytes"),
-                    ("auto_update.py", "signed_cached_wheel"), ("auto_update.py", "installed_wheel"),
+                    ("auto_update.py", "signed_cached_wheel"), ("auto_update.py", "installed_wheel_bytes"),
+                    ("auto_update.py", "installed_wheel"),
                     ("update.py", "verified_plan"), ("update.py", "verified_wheel")):
         out[f"{f}:{name}"] = hashlib.sha256(_segment(AJ / "agentj" / f, name).encode()).hexdigest()
     out["auto_update.py:run.install.verify"] = hashlib.sha256(
@@ -1221,7 +1224,8 @@ class VerificationUntouched(unittest.TestCase):
         "auto_update.py:_store": "abab52912bec5ae7109f537a08e7539fd5426447df3cfc0b23c1b8a6cd0a38dc",
         "auto_update.py:signed_cached_bytes": "4fbc86b2ceafd93e407aec8a76397a3a8254bbf64ca4779140590c4e47a9009c",
         "auto_update.py:signed_cached_wheel": "392f96af0f01a65c1c8fc2a9e616d73b006c76a606abfeadae9c85c68e067b5d",
-        "auto_update.py:installed_wheel": "499dd49f5940866dd80e9ce5e4aedb3c46da6fbf5609be83c1e862c9e1407168",
+        "auto_update.py:installed_wheel_bytes": "1e5935067d3c628f6184f3fb46a7ece75c3059f16bf891c6e438f587a68f4fb1",
+        "auto_update.py:installed_wheel": "08683eaad728e3621eddab31fe5ff842ede3dc580d44a944b76aabb080facfb2",
         "update.py:verified_plan": "ca3e5f49105be354adaf0336bd289978c3ec2adac3b17f0695bfb0c36238ae41",
         "update.py:verified_wheel": "99ef1e033df933dbe68d9b5a9a40a8ebdaba25ee9f1d12d788978c844e9bfeff",
         "auto_update.py:run.install.verify": "3e655ba102045942de8bbbee79f95b2026c0e838902c62c8d1be48fd038242d3",

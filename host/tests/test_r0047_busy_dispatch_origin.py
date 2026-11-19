@@ -156,6 +156,53 @@ class Repro(_Fixture):
         self.assertEqual(('busy_dispatch', None), seen[0]['background'])
 
 
+class HuaweiFileJourney(_Fixture):
+    async def test_file_change_writes_only_while_its_dispatch_is_live(self):
+        # A local app-server stand-in applies exactly the file change accepted by the real adapter.
+        dispatch = await self.dispatch(self.owner(), self.verified())
+        runner = self.runner(dispatch)
+        runner.call = mock.AsyncMock()  # acknowledge the model's policy notice on decline
+        payload = "# synthetic monitor\n"
+        for rid, live in enumerate((True, False), start=1):
+            with self.subTest(live=live):
+                path = self.cwd / f"monitor-{rid}.py"
+                item_id = f"create-{rid}"
+                params = {"threadId": runner.tid, "turnId": "t", "itemId": item_id}
+                item = {"id": item_id, "type": "fileChange", "changes": [
+                    {"path": str(path), "kind": {"type": "add"}, "diff": payload}]}
+                runner._on_note("item/started", {**params, "item": item})
+                reply = asyncio.get_running_loop().create_future()
+                def receive(response):
+                    if response.get("id") == rid and "result" in response:
+                        result = response["result"]["decision"]
+                        if result == "accept":
+                            path.write_text(payload)
+                        reply.set_result(result)
+                runner._send = receive
+                runner._on_request({"id": rid, "method": "item/fileChange/requestApproval", "params": params})
+                decision = await asyncio.wait_for(reply, 3)
+                self.assertEqual("accept" if live else "decline", decision)
+                self.assertEqual(live, path.exists())
+                if live:
+                    self.assertEqual(payload, path.read_text())
+                    row = self.last_done()
+                    self.assertEqual(("busy_dispatch", "host"), (row["source_type"], row["trust"]))
+                    self.holds[-1].set()
+                    await asyncio.wait_for(dispatch.task, 2)
+                    self.assertFalse(dispatch.live(self.h))
+
+    async def test_completion_directory_query_gets_an_accurate_refusal(self):
+        self.h.agent.cur_send = self.completion()
+        receipt = {}
+        result = await self.h.ask("Bash", {"command": "find . -type f"}, _receipt=receipt)
+        self.assertEqual("deny", result["behavior"])
+        self.assertEqual("off_list_write_host_read", result["reason"])
+        self.assertFalse(receipt["approval_card_shown"])
+        self.assertNotIn("清单外的写操作", result["message"])
+        self.assertNotIn("an off-list write", result["message"])
+        self.assertIn("不是主人拒绝", result["message"])
+
+
 class Origins(_Fixture):
     async def test_owner_dispatch_keeps_its_label_when_the_main_turn_changes(self):
         dispatch = await self.dispatch(self.owner(), self.verified())

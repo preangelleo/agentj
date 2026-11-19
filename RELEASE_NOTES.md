@@ -1,5 +1,5 @@
-# Agent J v0.30.46
+# Agent J v0.30.47
 
-The web terminal now recovers after a brief disconnect. Verify on the same paired device to resume your shell and see how much time remains.
+Updates prepare dependencies in advance and can roll back offline. Blocked background tasks explain why. Scan confirmation rechecks the original browser.
 
-网页终端回到前台后会同步连接状态。短暂断网后，可在同一台配对遥控器上重新验证，接回原终端并查看剩余时间。
+老版本升级前会先备好依赖，升级失败可在本机恢复。后台任务被拦时会说明原因；点「我扫好了」会回到原浏览器确认登录状态。

@@ -369,8 +369,11 @@ def install_step(run, cmd, say, out: dict, target: str | None = None, store=None
     if sealed:
         try:
             cmd, pin = _pin_plan_wheel(cmd, target, store)
-        except ValueError as e:
-            why = str(e) if str(e) == auto_update.ARTIFACT_UNAVAILABLE else auto_update.ARTIFACT_CHANGED
+            from . import upgrade_wheels
+            cmd = upgrade_wheels.prepare_update(cmd, pin, out.get('from', __version__))
+        except (OSError, ValueError, subprocess.SubprocessError) as e:
+            why = str(e) if str(e) in (auto_update.ARTIFACT_UNAVAILABLE, auto_update.ARTIFACT_CHANGED,
+                                        'dependency_download_failed') else 'dependency_download_failed'
             return 1, "", {"reason": why, "retry_count": 0, "_untouched": True}
     return _install_attempts(run, cmd, say, out, pin, lease_end)
 
@@ -803,7 +806,9 @@ def roll_back(st, info: dict, wheel, frm: str, run, *, signed_only=False) -> boo
         store = artifact_store(st)
         stored = _au.stored_artifact(store, frm, signed_only=signed_only) if store else None
         if stored:      # 0334 r2 (F5): the previous version's store copy, still matching its sidecar — no cache needed
+            from . import upgrade_wheels
             for cmd in _au.install_commands(info, stored.path):
+                cmd = upgrade_wheels.for_rollback(cmd, stored)
                 _au.check_artifact(stored)
                 if run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True).returncode:
                     return False
@@ -840,7 +845,9 @@ def roll_back(st, info: dict, wheel, frm: str, run, *, signed_only=False) -> boo
             except ValueError:
                 pin = None
         if pin:
+            from . import upgrade_wheels
             for cmd in auto_update.install_commands(info, pin.path):
+                cmd = upgrade_wheels.for_rollback(cmd, pin)
                 auto_update.check_artifact(pin)
                 if run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True).returncode:
                     return False

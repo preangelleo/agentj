@@ -295,6 +295,11 @@ with patch.object(browser,'installed',return_value={'version':'system-test','pat
         self.assertEqual(set(cards.cards),{first['id']});self.assertEqual(old['deadline'],deadline)
         self.assertEqual(bytes(old['img']),before)
         self.assertEqual(len([m for m in host.sent if m.get('t')=='login_qr']),1)
+        # The failed refresh replaced the original document. Its surviving card cannot attest the new page.
+        with patch.object(bs, 'probe') as probe:
+            status = await cards._confirm(old)
+            self.assertEqual(status, 'unavailable')
+            probe.assert_not_called()
 
 
     async def test_expired_card_cannot_remint_same_tab_material_from_retained_digest(self):

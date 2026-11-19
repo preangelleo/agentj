@@ -3,6 +3,7 @@
 Never use remote shell, customer files or model credentials as conversational input.
 """
 import base64
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -228,11 +229,15 @@ def formal_metadata(value):
 def consent(label):
     return input(label + ' [y/N]: ').strip().lower() == 'y'
 
-def command(args, *, allow_failure=False, timeout=240, **kwargs):
+def command(args, *, allow_failure=False, timeout=240, repair_doctor=False, **kwargs):
     # Do not print subprocess output: errors can contain secrets. Credentials are never in argv.
     try:
         r = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, **kwargs)
         if r.returncode and not allow_failure:
+            if repair_doctor:
+                if r.returncode == 1 and repair_doctor_starting(r.stdout):
+                    raise InstallError('repair_service_starting')
+                raise InstallError('repair_health_failed')
             if platform.system() == 'Darwin' and args[-1:] == ['--version']:
                 reason = 'macos_agent_dyld' if any(token in r.stderr for token in (b'dyld', b'_ubrk_clone')) else 'macos_agent_unusable'
                 raise InstallError(reason)
@@ -814,23 +819,54 @@ def repair_artifacts(lock, tag_order, marker, parse_name):
     return selected
 
 
+# The pre-0.30.37 signed host did not carry its own dependency manifest.
+# The released bootstrap authenticates these catalog and selector pins.
+HISTORICAL_REPAIR_SOURCES = {
+  "version": 1,
+  "host_lock_sha256": "f51839dc8d946dddff9c389d9f350c57a4a1b81a8b01c328c19e7ce69089a314",
+  "packaging": {
+    "url": "https://files.pythonhosted.org/packages/20/12/38679034af332785aac8774540895e234f4d07f7545804097de4b666afd8/packaging-25.0-py3-none-any.whl",
+    "size": 66469,
+    "sha256": "29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484"
+  }
+}
+
+
 def select_repair_artifacts(work, wheel):
     import tomllib
     import zipfile
-    # The caller has already verified the host wheel's release signature. The
-    # signed host itself pins both the external lock and the tag implementation.
+    # The caller verified the release signature. Current hosts pin both the
+    # external lock and the tag implementation; legacy repair uses the bootstrap pins.
     lock_bytes = Path(__file__).with_name('host.lock').read_bytes()
     with zipfile.ZipFile(wheel) as archive:
         try:
-            info = archive.getinfo('agentj/repair-sources.json')
-            if info.file_size > 4096:
-                raise InstallError('repair_manifest_invalid')
-            sources = json.loads(archive.read(info))
+            if 'agentj/repair-sources.json' in archive.namelist():
+                info = archive.getinfo('agentj/repair-sources.json')
+                if info.file_size > 4096:
+                    raise InstallError('repair_manifest_invalid')
+                sources = json.loads(archive.read(info))
+            elif (WHEEL_RE.fullmatch(wheel.name) and
+                  tuple(map(int, re.match(r'agentj-(\d+)\.(\d+)\.(\d+)', wheel.name).groups())) < (0, 30, 37)):
+                # The bootstrap pins this historical compatibility catalog and
+                # selector even though the old package predates both.
+                sources = HISTORICAL_REPAIR_SOURCES
+            else:
+                raise InstallError('repair_manifest_missing')
             if sources['version'] != 1 or sources['host_lock_sha256'] != hashlib.sha256(lock_bytes).hexdigest():
                 raise InstallError('repair_dependency_lock_mismatch')
             tag_pin = sources['packaging']
-            helper = work / 'packaging.whl'
-            repair_download(tag_pin['url'], tag_pin['sha256'], tag_pin['size'], helper)
+            digest = tag_pin['sha256']
+            if not re.fullmatch(r'[a-f0-9]{64}', digest):
+                raise InstallError('repair_dependency_lock_invalid')
+            helper = work / ('tags-' + digest + '.whl')
+            if not os.path.lexists(helper):
+                with tempfile.TemporaryDirectory(prefix='.tags-', dir=work) as temp:
+                    staged = Path(temp) / 'packaging.whl'
+                    repair_download(tag_pin['url'], digest, tag_pin['size'], staged)
+                    os.replace(staged, helper)
+            if (not private_owned(helper) or helper.stat().st_size != tag_pin['size']
+                    or hashlib.sha256(helper.read_bytes()).hexdigest() != digest):
+                raise InstallError('repair_dependency_integrity_failed:packaging')
         except KeyError:
             raise InstallError('repair_manifest_missing') from None
     sys.path.insert(0, str(helper))
@@ -870,7 +906,7 @@ def private_owned(path, *, directory=False):
 
 
 def repair_wheelhouse(directory, work, wheel, wheel_sha):
-    files = select_repair_artifacts(work, wheel)
+    files = select_repair_artifacts(directory, wheel)
     expected = {name: (spec[1], spec[2]) for name, spec in files.items()}
     expected[wheel.name] = (wheel_sha, wheel.stat().st_size)
     key = hashlib.sha256(json.dumps(expected, sort_keys=True).encode()).hexdigest()
@@ -897,6 +933,201 @@ def repair_wheelhouse(directory, work, wheel, wheel_sha):
         if not private_owned(local) or local.stat().st_size != size or hashlib.sha256(local.read_bytes()).hexdigest() != digest:
             raise InstallError('repair_wheelhouse_invalid')
     return target
+
+
+def version_key(text):
+    version_re = r'agentj (\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?'
+    match = re.fullmatch(version_re, text)
+    if not match: raise InstallError('upgrade_version_invalid')
+    major, minor, patch, pre, number = match.groups()
+    return (int(major), int(minor), int(patch), {'a':0, 'b':1, 'rc':2, None:3}[pre], int(number or 0))
+
+
+# Query the installed version's own control protocol. Return only liveness,
+# version, and reconnect state; status can also contain private session data.
+SERVICE_PROBE = """import json
+from agentj import names
+from agentj.state import State
+try:
+    reply = names.ctl_call(State(), {'cmd':'status'}, 3)
+except names.ServeBusy as exc:
+    if str(exc) != 'TimeoutError':
+        raise SystemExit(1)
+    reply = None
+if reply is not None and reply.get('ok') is not True:
+    raise SystemExit(1)
+reply = reply or {}
+print(json.dumps([reply.get('ok') is True, reply.get('version'),
+                  reply.get('relay_state', reply.get('relay')) == 'reconnecting']))
+"""
+
+
+def repair_doctor_starting(raw):
+    """Only the known, isolated control-socket timeout from a nonzero doctor may be retried."""
+    try:
+        rows = json.loads(raw)['checks']
+        if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+            return False
+        serve = [row for row in rows if row.get('id') == 'serve']
+        return (len(serve) == 1 and serve[0].get('status') == 'fail' and
+                serve[0].get('summary') == '在运行但不响应 / running but not answering' and
+                all(row.get('status') in ('ok', 'warn') for row in rows if row.get('id') != 'serve'))
+    except (TypeError, ValueError, KeyError):
+        return False
+
+
+def verify_repair_install(run, executable, version, env):
+    if run([str(executable), '--version'], env=env).decode().strip() != version:
+        raise InstallError('upgrade_version_mismatch')
+    run([str(executable), 'service', 'install'], env=env)
+    run([str(executable), 'service', 'restart'], env=env)
+    # Type=simple and launchd can return while the new process is still starting.
+    deadline = time.monotonic() + 90
+    def probe(remaining):
+        live, running, reconnecting = json.loads(run(
+            [str(executable.with_name('python')), '-I', '-c', SERVICE_PROBE], env=env, timeout=remaining))
+        if type(live) is not bool or type(reconnecting) is not bool:
+            raise ValueError()
+        # Status gained its running version field in 0.30.24.
+        if (live and running != version.removeprefix('agentj ') and
+                not (running is None and version_key(version) < (0, 30, 24, 3, 0))):
+            raise InstallError('repair_health_failed')
+        return live, reconnecting
+
+    for attempt in range(24):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            live, _ = probe(remaining)
+            if live:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                raw = run([str(executable), 'doctor', '--upgrade-only', '--json'], env=env,
+                          timeout=remaining, repair_doctor=True)
+                rows = json.loads(raw)['checks']
+                if (not isinstance(rows, list) or not rows or
+                        any(not isinstance(row, dict) or row.get('status') not in ('ok', 'warn') for row in rows)):
+                    raise ValueError()
+                serve = [row for row in rows if row.get('id') == 'serve']
+                if len(serve) != 1:
+                    raise ValueError()
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                live, reconnecting = probe(remaining)
+                relay_warn = (reconnecting is True and serve[0]['status'] == 'warn' and
+                              str(serve[0].get('summary', '')).split(' · ')[:2] ==
+                              ['在运行 / running', 'relay reconnecting'])
+                if live and (serve[0]['status'] == 'ok' or relay_warn):
+                    return
+                if live and serve[0].get('summary') != '没在运行 / not running':
+                    raise ValueError()
+        except InstallError as exc:
+            if exc.reason != 'repair_service_starting':
+                raise
+        except (ValueError, KeyError, TypeError):
+            raise InstallError('repair_health_failed') from None
+        if attempt < 23:
+            time.sleep(min(2, max(0, deadline - time.monotonic())))
+    raise InstallError('repair_health_failed')
+
+
+def repair_security_floor(home, version_key):
+    # A process can create a revocation journal while the new service is up.
+    # Re-check before restoring a host older than the security floor.
+    if version_key >= (0, 25, 5, 0, 1):
+        return
+    roots = {home / '.local/state/agentj', home / '.local/state/agentjarvis-alpha'}
+    for name in ('AGENTJ_STATE_DIR', 'AGENTJARVIS_STATE_DIR'):
+        if os.environ.get(name):
+            roots.add(Path(os.environ[name]))
+    if any(os.path.lexists(root / journal) for root in roots
+           for journal in ('credential_revocations.json', 'security_rotation.json')):
+        raise InstallError('revocation_downgrade_blocked')
+
+
+@contextmanager
+def repair_guard(home, directory):
+    """Serialize owner-terminal repairs and respect the existing service worker and phone lease."""
+    import fcntl
+    from contextlib import ExitStack
+    with ExitStack() as held:
+        def take(path):
+            lock = held.enter_context(open(path, 'a+b', opener=lambda p, f: os.open(p, f | os.O_NOFOLLOW, 0o600)))
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise InstallError('upgrade_in_progress') from None
+        take(directory / 'repair.lock')
+        override = os.environ.get('AGENTJ_STATE_DIR') or os.environ.get('AGENTJARVIS_STATE_DIR')
+        state = Path(override) if override else home / '.local/state/agentj'
+        if not state.exists():
+            yield
+            return
+        repair_trusted_path(state)
+        take(state / 'auto-update-worker.lock')
+        lease = state / 'phone-update-running.json'
+        if os.path.lexists(lease):
+            if not private_owned(lease):
+                raise InstallError('repair_requires_private_directory')
+            if time.time() - json.loads(lease.read_bytes())['at'] < 1800:
+                raise InstallError('upgrade_in_progress')
+            lease.unlink()
+        record = json.dumps({'at': time.time(), 'owner': uuid.uuid4().hex}).encode()
+        try:
+            with open(lease, 'xb', opener=lambda p, f: os.open(p, f | os.O_NOFOLLOW, 0o600)) as out:
+                out.write(record)
+        except FileExistsError:
+            raise InstallError('upgrade_in_progress') from None
+        try:
+            yield
+        finally:
+            if lease.is_file() and not lease.is_symlink() and lease.read_bytes() == record:
+                lease.unlink()
+
+
+def install_with_local_rollback(run, install_args, install_env, env, executable, entry,
+                                before, target, home, old_key):
+    # uv may replace the whole tool environment. Keep a separate copy on the
+    # same filesystem so restoring the old interpreter, dependencies and receipt
+    # requires only rename, even when both the package index and uv cache vanish.
+    prefix = executable.parent.parent
+    repair_trusted_path(entry.parent)
+    if not entry.is_symlink() or entry.resolve() != executable:
+        raise InstallError('repair_entrypoint_invalid')
+    link_target = os.readlink(entry)
+    tmp = Path(tempfile.mkdtemp(prefix='.agentj-repair-', dir=prefix.parent))
+    backup = tmp / 'previous'
+    keep_snapshot = False
+    try:
+        shutil.copytree(prefix, backup, symlinks=True)
+        try:
+            run(install_args, env=install_env)
+            verify_repair_install(run, executable, target, env)
+        except (InstallError, OSError, ValueError, subprocess.SubprocessError, KeyboardInterrupt) as failure:
+            keep_snapshot = True
+            repair_security_floor(home, old_key)
+            if prefix.is_symlink() or (os.path.lexists(entry)
+                    and (not entry.is_symlink() or os.readlink(entry) != link_target)):
+                raise InstallError('repair_entrypoint_changed') from None
+            if prefix.exists():
+                prefix.rename(tmp / 'unsuccessful')
+            backup.rename(prefix)
+            if not os.path.lexists(entry):
+                entry.symlink_to(link_target)
+            try:
+                verify_repair_install(run, executable, before, env)
+            except InstallError:
+                raise InstallError('repair_rollback_health_failed') from None
+            keep_snapshot = False
+            reason = failure.reason if isinstance(failure, InstallError) else 'local_step_failed'
+            raise InstallError('repair_rolled_back:' + reason) from None
+    finally:
+        if not keep_snapshot:
+            shutil.rmtree(tmp, ignore_errors=True)
+
 
 
 def upgrade_existing(uv, *, home=None, run=command, repair_index=False):
@@ -931,12 +1162,6 @@ def upgrade_existing(uv, *, home=None, run=command, repair_index=False):
         if os.path.realpath(prefix / 'bin/python') != os.path.realpath(getattr(sys, '_base_executable', sys.executable)):
             raise InstallError('repair_requires_existing_interpreter')
     before = run([str(executable), '--version']).decode().strip()
-    version_re = r'agentj (\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?'
-    def version_key(text):
-        match = re.fullmatch(version_re, text)
-        if not match: raise InstallError('upgrade_version_invalid')
-        major, minor, patch, pre, number = match.groups()
-        return (int(major), int(minor), int(patch), {'a':0, 'b':1, 'rc':2, None:3}[pre], int(number or 0))
     old_key = version_key(before)
     with tempfile.TemporaryDirectory(prefix='agentj-upgrade-') as td:
         work = Path(td); work.chmod(0o700)
@@ -976,23 +1201,25 @@ def upgrade_existing(uv, *, home=None, run=command, repair_index=False):
         if repair_index:
             wheelhouse = repair_wheelhouse(directory, work, wheel, sha)
             wheel = wheelhouse / name
-            # Only this explicitly requested repair uses the pinned offline source.
+            # Existing-tool repair uses the pinned offline source.
             # uv gets a fresh cache and retains its normal resolver and receipt writer.
             install_env = {k: v for k, v in env.items() if not k.startswith('UV_')}
             install_env.update(UV_TOOL_DIR=str(prefix.parent), UV_TOOL_BIN_DIR=str(entries[0].parent))
             install_args += ['--offline', '--no-index', '--no-config', '--no-cache', '--no-build',
                              '--no-python-downloads', '--find-links', str(wheelhouse)]
-        try:
-            run([*install_args, str(wheel), *host_install_args()], env=install_env)
-        except InstallError as exc:
-            if repair_index and exc.reason == 'local_step_failed':
-                raise InstallError('repair_offline_install_failed') from None
-            raise
-        if run([str(executable), '--version'], env=env).decode().strip() != target:
-            raise InstallError('upgrade_version_mismatch')
-        run([str(executable), 'service', 'install'], env=env)
-        run([str(executable), 'service', 'restart'], env=env)
-        run([str(executable), 'doctor', '--upgrade-only', '--json'], env=env)
+        install_args += [str(wheel), *host_install_args()]
+        if repair_index:
+            repair_security_floor(home, version_key(target))
+            # Serialize the package check, snapshot and possible restore across
+            # simultaneous owner-terminal repairs.
+            with repair_guard(home, directory):
+                if run([str(executable), '--version'], env=env).decode().strip() != before:
+                    raise InstallError('repair_installation_changed')
+                install_with_local_rollback(run, install_args, install_env, env, executable, entries[0],
+                                            before, target, home, old_key)
+        else:
+            run(install_args, env=install_env)
+            verify_repair_install(run, executable, target, env)
     print(before+' → '+target+'; 配置和绑定已保留。/ Configuration and pairing preserved.')
     return True
 

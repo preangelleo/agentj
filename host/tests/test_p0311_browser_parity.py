@@ -5,6 +5,7 @@ weaken existing assertions or claim that a real site/browser has been qualified.
 """
 import _hermetic  # noqa: F401 -- isolate state/config and disable real CDP detection
 import asyncio
+import threading
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -77,7 +78,7 @@ class QrRefresh(Base, unittest.IsolatedAsyncioTestCase):
         cards = bl.LoginCards(Mock(host=host, st=self.st))
         old = {'id': 'a' * 32, 'site': 'channels-weixin',
                'deadline': bl.time.monotonic() + 2, 'img': bytearray(b'old'),
-               'cdp': Mock(), 'session': 'old', 'timer': Mock(), 'watch': Mock()}
+               'cdp': Mock(), 'session': 'old', 'revision': 0, 'lock': threading.Lock(), 'timer': Mock(), 'watch': Mock()}
         cards.cards[old['id']] = old
         with patch.object(browser, 'settings', return_value={'enabled': True}), \
                 patch.object(browser, 'runtime', return_value={'ws': 'fake', 'headless': True}), \
