@@ -23,10 +23,10 @@ const OUT = process.env.P0269_W2_OUT || fileURLToPath(new URL('../../../reports/
 const W = {
   zh: { task: '把这周的周报整理好', s1: '第一步：读完了 12 份会议记录。', s2: '第二步：草稿写好了，在检查数字。', s3: '第三步：数字核对完，周报已经保存。',
     say: '顺便把上个月的也看一下', answer: '上个月的周报也看过了，没有问题。', cont: '继续见下方', contOf: '接着回复：把这周的周报整理好', steered: '已插入当前这一轮',
-    waited: '上一件还在做，已等不到 1 分钟', stop: '停止当前任务', other: '再查一下磁盘空间', otherReply: '磁盘还剩 120 GB。' },
+    waited: '上一件还在做，已等不到 1 分钟', stop: '关闭上一条任务', other: '再查一下磁盘空间', otherReply: '磁盘还剩 120 GB。' },
   en: { task: 'Put together this week\'s report', s1: 'Step 1: read all 12 meeting notes.', s2: 'Step 2: the draft is written, checking the numbers.', s3: 'Step 3: numbers checked, the report is saved.',
     say: 'Also look at last month\'s', answer: 'Last month\'s report looks fine too.', cont: 'Continued below', contOf: 'Continuing the reply: Put together this week\'s report', steered: 'Added to the current turn',
-    waited: 'Previous task still running · waiting under a minute', stop: 'Stop current task', other: 'Check the disk space again', otherReply: '120 GB free.' },
+    waited: 'Previous task still running · waiting under a minute', stop: 'Stop previous task', other: 'Check the disk space again', otherReply: '120 GB free.' },
 };
 
 const web = await startWebServer({ port: 0, relayCsp: 'ws://127.0.0.1:*', ...(process.env.AJ_P0269_PUBLIC ? { publicDir: process.env.AJ_P0269_PUBLIC } : {}) });
@@ -79,25 +79,26 @@ try {
       await fake.updateTurn(T.id, { reply: { text: X.s1 } });
       await waitFor(p, `document.getElementById('words').textContent.includes(${JSON.stringify(X.s1)})`);
       await say(X.say);
-      await waitFor(p, `document.body.dataset.pageQueued==='1'`, 8000);
+      await waitFor(p, before ? `document.body.dataset.pageQueued==='1'` : `!document.getElementById('ownerQueueBtn').hidden`, 8000);
       await sleep(900);
       const M = fake.st.turns.at(-1);
       check(M.src.text === X.say, 'the owner message is a page of its own ' + tag);
       if (!before) {
-        await waitFor(p, `!!document.querySelector('#cmdx [data-waited]')`, 6000);
-        check((await evaluate(p, `document.querySelector('#cmdx .sh-waited').textContent`)) === X.waited, 'merged notice 「上一件还在做，已等…」 ' + tag);
-        check((await evaluate(p, `document.querySelector('#cmdx [data-queue-stop]')?.textContent`)) === X.stop, '「停止当前任务」 under it ' + tag);
-        const g = await evaluate(p, `(()=>{const r=document.querySelector('#cmdx [data-queue-stop]').getBoundingClientRect();return {w:r.width,h:r.height,x:r.x,right:r.right}})()`);
+        await evaluate(p,`document.getElementById('ownerQueueBtn').click()`);
+        check((await evaluate(p,`document.querySelector('#ownerQueueList li p')?.textContent`)) === X.say,'queue retains source message '+tag);
+        check((await evaluate(p,`document.querySelector('#ownerQueueStop').textContent`)) === X.stop,'stop action in drawer '+tag);
+        const g=await evaluate(p,`(()=>{const r=document.querySelector('#ownerQueueStop').getBoundingClientRect();return {h:r.height,x:r.x,right:r.right}})()`);
         check(g.h >= 44 && g.x >= 0 && g.right <= w, 'button ≥ 44 px, on screen ' + tag + JSON.stringify(g));
       }
       await snap('1-queued');
+      if (!before) await evaluate(p,`document.getElementById('ownerQueueClose').click()`);
       // ---- T says more: a new card at the bottom, the page goes there
       await fake.updateTurn(T.id, { reply: { text: X.s1 + '\n\n' + X.s2 } });
       await sleep(700);
       if (!before) {
         await waitFor(p, `document.getElementById('words').textContent.includes(${JSON.stringify(X.s2)})`, 6000);
         check(!(await words()).includes(X.s1), 'the continuation has only the new output ' + tag);
-        check((await pg()) === '4 / 4', 'a new page at the bottom ' + tag + ' ' + await pg());
+        check((await pg()) === '3 / 3', 'a new page at the bottom ' + tag + ' ' + await pg());
         check((await om()) === X.contOf, 'its top line says what it continues ' + tag + ' ' + await om());
         check(await evaluate(p, `document.body.dataset.pageOpen==='1'`), 'the continuation is the live card ' + tag);
       }
@@ -106,12 +107,12 @@ try {
       await fake.updateTurn(T.id, { reply: { text: X.s1 + '\n\n' + X.s2 + '\n\n' + X.s3 } });
       await sleep(400);
       await evaluate(p, `document.getElementById('pgPrev').click()`); await sleep(250);
-      if (!before) await evaluate(p, `document.getElementById('pgPrev').click()`);
+
       await sleep(400);
       const head = await words();
       if (!before) {
         check(head.includes(X.s1) && !head.includes(X.s2) && !head.includes(X.s3), 'the old card keeps its words and gets nothing more ' + tag);
-        check((await pg()) === '2 / 4', 'the old card is page 2 ' + tag + ' ' + await pg());
+        check((await pg()) === '2 / 3', 'the old card is page 2 ' + tag + ' ' + await pg());
         check((await evaluate(p, `document.querySelector('#cmdx [data-cont]')?.textContent`)) === X.cont, '「继续见下方」 ' + tag);
         check(await evaluate(p, `document.body.dataset.pageOpen==='0' && getComputedStyle(document.querySelector('.thinking')||document.body).display!=='block' && (document.querySelector('.thinking')?.getClientRects().length||0)===0`), 'the old card is closed (no working dots) ' + tag);
         const g = await evaluate(p, `(()=>{const r=document.querySelector('#cmdx [data-cont]').getBoundingClientRect();return {w:r.width,h:r.height,x:r.x,right:r.right}})()`);
@@ -120,7 +121,7 @@ try {
       await snap('3-old-card');
       if (!before) {
         await evaluate(p, `document.querySelector('#cmdx [data-cont]').click()`); await sleep(400);
-        check((await pg()) === '4 / 4' && (await words()).includes(X.s3) && !(await words()).includes(X.s1), 'the tap goes to the continuation ' + tag);
+        check((await pg()) === '3 / 3' && (await words()).includes(X.s3) && !(await words()).includes(X.s1), 'the tap goes to the continuation ' + tag);
       }
       // ---- T ends, the queued message is answered: its answer is the newest page
       await fake.updateTurn(T.id, { end: 'done' });
@@ -136,7 +137,7 @@ try {
         const T2 = await fake.addTurn({ k: 'phone', text: X.other }, X.otherReply, 'open');
         await sleep(300);
         await say(X.say + ' (2)');
-        await waitFor(p, `document.body.dataset.pageQueued==='1'`, 8000);
+        await waitFor(p, before ? `document.body.dataset.pageQueued==='1'` : `!document.getElementById('ownerQueueBtn').hidden`, 8000);
         const M2 = fake.st.turns.at(-1), sid = [...fake.st.queued.keys()].at(-1);
         await fake.send({ t: 'msg_steered', mid: lang === 'en' ? sid : M2.id, turn: T2.id });
         await waitFor(p, `document.getElementById('words').textContent.includes(${JSON.stringify(X.steered)})`, 6000);
@@ -153,11 +154,11 @@ try {
           const T3 = await fake.addTurn({ k: 'phone', text: X.task }, X.s1, 'open');
           await fake.addTurn({ k: 'sys', text: '' }, 'Codex 正在回答，等它说完我就把您的消息递过去。', 'done', { queued: true, waited_s: 30 });
           await say(X.say + ' (3)');
-          await waitFor(p, `!!document.querySelector('#cmdx [data-queue-stop]')`, 8000);
-          await evaluate(p, `document.querySelector('#cmdx [data-queue-stop]').click()`);
+          await waitFor(p,`!document.getElementById('ownerQueueBtn').hidden`,8000);
+          await evaluate(p,`document.getElementById('ownerQueueBtn').click();document.getElementById('ownerQueueStop').click()`);
           await waitFor(p, `!document.getElementById('confirm').hidden`, 3000);
           await evaluate(p, `document.getElementById('confirm-yes').click()`);
-          await waitFor(p, `document.getElementById('sh-end-msg')?.classList.contains('rsok')`, 6000);
+          await waitFor(p, `document.getElementById('toast').textContent.includes('这一轮已经结束')`, 6000);
           check(msgs.length === 1 && msgs[0].ok && fake.st.slashes.filter((x) => x.cmd === 'stop').length === 0, 'signed end_turn, no /stop ' + JSON.stringify(msgs));
           await fake.updateTurn(T3.id, { end: 'done' });
         }

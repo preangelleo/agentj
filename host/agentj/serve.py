@@ -1294,6 +1294,20 @@ class Host:
         await self._op(wire.OP_DATA, s.cid, bytes([wire.HS_RESP]) + msg2)
         self.st.log("pair_handshake", cid=s.cid, device=s.device)
 
+    async def _finish_removed_hello(self, s: Session) -> None:
+        """End a denied Noise resume with its fixed removal notice, before relay CLOSE."""
+        async with self.send_lock:
+            if self.sessions.get(s.cid) is not s or s.state != "hello" or s.mode != "gone":
+                return
+            s.state = "closing"
+            if not self.st.is_allowed(s.pub):
+                # Only the authenticated handshake's host-selected tombstone crosses this lane.
+                notice = {"t": "removed", "why": s.gone, **({"moved": True} if s.gone_moved else {})}
+                ct = s.send.encrypt(b"", wire.pad_json(notice))
+                await self._op(wire.OP_DATA, s.cid, bytes([wire.DATA]) + ct)
+        if self.sessions.get(s.cid) is s:
+            await self.close_cid(s.cid, "unknown_device")
+
     async def _resume_init(self, s: Session, msg1: bytes) -> None:
         hs = Handshake(IK, False, self.kp, prologue=wire.resume_prologue(self.channel))
         payload = hs.read_message(msg1)
@@ -1344,8 +1358,7 @@ class Host:
             if t != "hello":
                 return await self.close_cid(s.cid, "expected_hello")
             if s.mode == "gone":
-                await self.send_app(s, {"t": "removed", "why": s.gone, **({"moved": True} if s.gone_moved else {})})
-                return await self.close_cid(s.cid, "unknown_device")
+                return await self._finish_removed_hello(s)
             caps = obj.get("caps")
             s.p33 = isinstance(caps, list) and wire.CAP_P33 in caps[:16]
             s.lt1 = isinstance(caps, list) and wire.CAP_LT1 in caps[:16]
@@ -2107,11 +2120,13 @@ class Host:
             "遥控器网页在一分钟内多次重新加载；已记录异常，请检查自动刷新或预览页。",
             "The remote page reloaded repeatedly within one minute; check automatic refresh or preview."))
 
-    async def _accept_resume(self, s: Session, since) -> None:
+    async def _accept_resume(self, s: Session, since, *, passkey_verified: bool = False) -> None:
 
         s.provenance = provenance.phone()
         s.state = "ready"
         self._set_timer(s, None)
+        if passkey_verified:
+            await self.send_app(s, {"t": "pk_ok"})
         await self.send_app(s, {"t": "ready", **self._caps(s)})
         await self._bulk(s)
         s.ready_at = time.monotonic()
@@ -2140,18 +2155,24 @@ class Host:
             await self._pk_fail(s, "expired")
 
     async def _pk_fail(self, s: Session, why: str) -> None:
-        s.state = "closing"                   # nothing more from it is acted on
-        await self.send_app(s, {"t": "pk_fail", "why": why})
-        await self.close_cid(s.cid, "pk_fail")
+        async with self.send_lock:
+            if self.sessions.get(s.cid) is not s or s.state != "pk" or s.mode != "pk":
+                return
+            s.state = "closing"
+            reason = why if why in ("unknown", "expired", "revoked", "bad") else "bad"
+            ct = s.send.encrypt(b"", wire.pad_json({"t": "pk_fail", "why": reason}))
+            await self._op(wire.OP_DATA, s.cid, bytes([wire.DATA]) + ct)
+        if self.sessions.get(s.cid) is s:
+            await self.close_cid(s.cid, "pk_fail")
 
     async def _pk_restore(self, s: Session, obj: dict) -> None:
 
-        if getattr(self, '_unbinding_all', False):
-            return await self._pk_fail(s, 'unknown')
-
         self._set_timer(s, None)
         if obj.get("t") == "rt_restore":
-            return await self._rt_restore(s, obj)
+            # A cookie cannot authorize a new key. Older clients offer pairing on this terminal refusal.
+            return await self._pk_fail(s, "unknown")
+        if getattr(self, '_unbinding_all', False):
+            return await self._pk_fail(s, 'unknown')
         old = None
         try:
             if obj.get("t") != "pk_restore":
@@ -2186,50 +2207,9 @@ class Host:
         s.name = self._dev_label(new)
         self.st.log("pk_restore", cid=s.cid, device=new, result="ok", id=old)
         self.emit("passkey", device=new, name=s.name)
-        await self.send_app(s, {"t": "pk_ok"})
-        await self._accept_resume(s, s.since)
+        await self._accept_resume(s, s.since, passkey_verified=True)
         await self._rt_issue(s, force=True)       # P122: the old context's ticket died with it (State.passkey_restore)
 
-
-    async def _rt_restore(self, s: Session, obj: dict) -> None:
-
-        if getattr(self, '_unbinding_all', False):
-            return await self._pk_fail(s, 'unknown')
-
-        old = None
-        try:
-            if not self.pk_guard.attempt():
-                raise passkey.PasskeyError("bad", "rate")
-            f = renewal.restore_fields(obj)
-            if not passkey.ts_ok(f["ts"]):
-                raise passkey.PasskeyError("expired", "ts")
-            if not self.pk_guard.fresh(f["nonce"]):
-                raise passkey.PasskeyError("bad", "replay")
-            hit = self.st.ticket_of(f["i"])
-            if not hit:
-                raise passkey.PasskeyError("unknown", "ticket")
-            old, rt = hit
-            if not passkey.handle_matches(f["uh"], self.channel, self.kp.pub):
-                raise passkey.PasskeyError("bad", "user_handle")
-            renewal.verify(rt, f, renewal.restore_challenge(s.pub, s.sign_pub, f["ts"], f["nonce"]))
-            new = self.st.ticket_restore(old, f["i"], s.pub, s.sign_pub, renewal.new_ticket(), _iid(obj) or None)
-            if not new:
-                raise passkey.PasskeyError("unknown", "gone")
-        except passkey.PasskeyError as e:
-            self.st.log("rt_restore", cid=s.cid, device=old or s.device, result="fail", reason=e.detail)
-            return await self._pk_fail(s, e.why)
-        if old != new:
-            self.st.log("auto_unbind", device=old, reason="ticket")
-            await self._drop_device(old, "replaced", moved=True)
-        s.device, s.mode = new, "resume"
-        s.name = self._dev_label(new)
-        self.st.log("rt_restore", cid=s.cid, device=new, result="ok", id=old)
-        self.emit("ticket", device=new, name=s.name)
-        await self.send_app(s, {"t": "pk_ok"})
-        await self._accept_resume(s, s.since)
-        await self._rt_send(s)                      # the rotated ticket, now that the page is ready
-        if not self.st.passkey_of_device(new):
-            await self._pk_offer(s)                 # no passkey yet: offer it once more (the old context's 「以后再说」 is gone)
 
     async def _rt_issue(self, s: Session, force: bool = False) -> None:
 

@@ -34,14 +34,10 @@ class RemovedMoved(unittest.TestCase):
         self.assertEqual(self.st.removed_why(old), "replaced")
         self.assertTrue(self.st.removed_moved(old))
 
-    def test_ticket_restore_marks_moved(self):
-        pub = os.urandom(32)
-        self.st.pair_device(pub, "iPhone Home Screen", os.urandom(32))
-        old = wire.device_id(pub)
-        self.assertTrue(self.st.set_ticket(pub, {"i": "tid-1"}))
-        new = self.st.ticket_restore(old, "tid-1", os.urandom(32), os.urandom(32), {"i": "tid-2"})
-        self.assertIsNotNone(new)
-        self.assertTrue(self.st.removed_moved(old))
+    def test_existing_ticket_moved_tombstone_survives_restart(self):
+        old = wire.device_id(os.urandom(32))
+        self.st.note_removed(old, "replaced", moved=True)
+        self.assertTrue(State(self.st.root).removed_moved(old))
 
     def test_eviction_and_same_browser_are_not_moved(self):
         for i in range(MAX_DEVICES):

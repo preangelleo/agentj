@@ -21,7 +21,7 @@ try{
   fake.reset();fake.st.prefs={appearance:{language:lang,theme}};fake.st.sayMode='queued';
   const p=await newPage(browser,width,900,theme,{touch:width===390,allow:[web.url,fake.relay+'/']});
   p.uiTouch=width===390;
-  const label=lang==='zh'?'停止当前任务':'Stop current task';
+  const label=lang==='zh'?'关闭上一条任务':'Stop previous task';
   const sentence=lang==='zh'?'Agent J 主机正忙，消息我先排上，忙完马上接。':'Got it — finishing the previous task';
   try{
    await navigate(p,fake.newPairing(web.url+'?lang='+lang));await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'ready');
@@ -66,13 +66,18 @@ try{
    // The phone's optimistic queue uses the same card and existing /stop fallback.
    await fake.send({t:'status',s:'working',agent:'codex',name:'Agent J'});
    await evaluate(p,`(()=>{const i=document.getElementById('input');i.value='Owner queued phone input';i.dispatchEvent(new Event('input'));document.getElementById('send').click();return true})()`);
-   await waitFor(p,`document.body.dataset.pageQueued==='1'`);
-   assert.equal(await evaluate(p,`document.querySelector('[data-queue-stop]')?.textContent`),label);
-   assert.match(await evaluate(p,`document.getElementById('words').textContent`),new RegExp(sentence));
+   await waitFor(p,`!!document.querySelector('#ownerQueueBtn:not([hidden])')`);
+   assert.equal(await evaluate(p,`document.querySelector('#ownerQueueDialog').open`),false);
+   assert.doesNotMatch(await evaluate(p,`document.getElementById('words').textContent`),new RegExp(sentence));
+   await click(p,'#ownerQueueBtn');
+   await waitFor(p,`document.querySelector('#ownerQueueDialog[open] li')?.textContent.includes('Owner queued phone input')`);
+   assert.equal(await evaluate(p,`document.querySelector('#ownerQueueStop').textContent`),label);
    writeFileSync(join(out,`${lang}-${theme}-${width}-queued.png`),await shoot(p));
-   const geo=await evaluate(p,`(()=>{const e=document.querySelector('[data-queue-stop]'),r=e.getBoundingClientRect();return {height:r.height,left:r.left,right:r.right,scroll:document.documentElement.scrollWidth,theme:document.documentElement.dataset.theme}})()`);
+   const geo=await evaluate(p,`(()=>{const e=document.querySelector('#ownerQueueStop'),r=e.getBoundingClientRect();return {height:r.height,left:r.left,right:r.right,scroll:document.documentElement.scrollWidth,theme:document.documentElement.dataset.theme}})()`);
    assert.ok(geo.height>=44 && geo.left>=0 && geo.right<=width && geo.scroll<=width+1);assert.equal(geo.theme,theme);
-   await evaluate(p,`document.querySelector('[data-queue-stop]').click()`);await waitFor(p,`true`);assert.equal(fake.st.slashes.filter(x=>x.cmd==='stop').length,1);
+   await click(p,'#ownerQueueStop');
+   for(let n=0;n<25 && !fake.st.slashes.length;n++)await sleep(40);
+   assert.equal(fake.st.slashes.filter(x=>x.cmd==='stop').length,1);
    await fake.deliverQueued(false);
    const local=fake.st.turns.find(x=>x.src.text==='Owner queued phone input');
    await fake.updateTurn(local.id,{end:'done',reply:{text:'Phone owner handled'},card:null});
@@ -80,15 +85,15 @@ try{
    // Cross-channel queued owner pages get exactly the same sentence, waited line, and stop action.
    for(const kind of ['phone','terminal','wechat','telegram','email']){
     const t=await fake.addTurn(src(kind),'','done',{queued:true,held:'pending',waited_s:20});
-    await sleep(150);
-    await evaluate(p,`(()=>{for(let i=0;i<40 && !document.getElementById('pgNext').disabled;i++)document.getElementById('pgNext').click();})()`);
-    try{await waitFor(p,`document.body.dataset.pageQueued==='1' && document.getElementById('omText').textContent.includes(${JSON.stringify('Fixture input '+kind)})`);}catch(e){console.log('QUEUE_DIAGNOSTIC',await evaluate(p,`import('./js/relay.js').then(r=>({q:document.body.dataset.pageQueued,om:document.getElementById('omText').textContent,pg:document.getElementById('pg').textContent,words:document.getElementById('words').textContent,turns:r.loadedTurns().slice(-3)}))`));throw e;}
-    assert.equal(await evaluate(p,`document.querySelector('[data-queue-stop]')?.textContent`),label,kind);
-    assert.match(await evaluate(p,`document.getElementById('words').textContent`),new RegExp(sentence),kind);
-    assert.equal(await evaluate(p,`document.querySelectorAll('[data-waited]').length`),1);
+    await waitFor(p,`!!document.querySelector('#ownerQueueBtn:not([hidden])')`);
+    await click(p,'#ownerQueueBtn');
+    await waitFor(p,`document.querySelector('#ownerQueueDialog[open] li')?.textContent.includes(${JSON.stringify('Fixture input '+kind)})`);
+    assert.equal(await evaluate(p,`document.querySelector('#ownerQueueStop').textContent`),label,kind);
+    assert.equal(await evaluate(p,`document.querySelectorAll('#ownerQueueList li').length`),1,kind);
+    assert.doesNotMatch(await evaluate(p,`document.getElementById('words').textContent`),new RegExp(sentence),kind);
     await fake.updateTurn(t.id,{end:'done',card:null,reply:{text:'Handled owner '+kind}});
     await waitFor(p,`document.getElementById('words').textContent.includes(${JSON.stringify('Handled owner '+kind)})`);
-    assert.equal(await evaluate(p,`document.body.dataset.pageQueued`),'0');assert.equal(await evaluate(p,`!!document.querySelector('[data-queue-stop]')`),false);
+    assert.equal(await evaluate(p,`document.querySelector("#ownerQueueDialog").open`),false);assert.equal(await evaluate(p,`document.querySelector("#ownerQueueBtn").hidden`),true);assert.equal(await evaluate(p,`!!document.querySelector('[data-queue-stop]')`),false);
     assert.doesNotMatch(await evaluate(p,`document.getElementById('words').textContent`),new RegExp(sentence));
    }
    writeFileSync(join(out,`${lang}-${theme}-${width}-delivered.png`),await shoot(p));

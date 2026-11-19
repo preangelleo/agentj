@@ -1,16 +1,7 @@
-"""P122 (0.17.4, PROTOCOL §12.1): the renewal ticket — "the same phone" after its browser deleted the page's storage.
-
-Pure functions only (no state, no I/O). Every allowlisted device's record may hold ONE ticket {"i": id (16 B), "k": secret
-(32 B), "at"} (b64url). The page never keeps it in script-readable storage: it hands it straight to the web origin, which
-stores `1.<user handle>.<i>.<k>` as a first-party HttpOnly + Secure + SameSite=Strict cookie scoped to `/.aj/rt` (worker.ts).
-Safari's 7-day eviction (ITP) deletes script-writable storage — the device key with it — but not such a cookie. A page that
-lost its keys makes new ones, computes the restore challenge below over them, and asks the origin for a proof; the origin
-answers HMAC-SHA256(k, PROOF_LABEL ‖ challenge) and the handle/id, never the secret. The host recomputes the proof from THIS
-session's IK-authenticated static key and msg1 `sk`, so a proof is worthless with any other key, after 5 min, or twice.
-
-What a ticket can do: exactly what §12's passkey restore does (the listed record takes the new key), nothing more. It lives
-inside the device record, so every way a record leaves the allowlist (revoke, eviction, iid replace, Dashboard unbind) kills it;
-each use rotates it (a copied cookie stops working once the phone used its own); a passkey restore replaces it."""
+"""Legacy renewal ticket format (PROTOCOL §12.1). Tickets carry no login authority.
+Older clients may still store a host-issued ticket. The host rejects ticket-only recovery;
+a saved paired device key or owner-verified pairing is required for access.
+"""
 from __future__ import annotations
 
 import hashlib

@@ -1571,8 +1571,8 @@ running in this origin could unwrap it as extractable (it can only *use* a direc
 
 **Renewal ticket** (Safari's 7-day eviction of script-writable storage; a browser that cleared site data but kept cookies).
 Every device record may hold one `"rt":{"i":<16 B>,"k":<32 B>,"at"}` (b64url). Host → device (ready session, inside Noise)
-`{"t":"rt","i","k"}`: after `approved` (every pairing), after a §12 passkey restore (which drops the old `rt`), after a ticket
-restore, and in answer to `{"t":"rt_req"}` (≤ 1 per minute per session; the page asks when its `host.rtAt` is missing or
+`{"t":"rt","i","k"}`: after `approved` (every pairing), after a §12 passkey restore (which drops the old `rt`),
+and in answer to `{"t":"rt_req"}` (≤ 1 per minute per session; the page asks when its `host.rtAt` is missing or
 > 30 days old, or the origin says its cookie is gone). The page never stores `k`: it POSTs
 `{"op":"set","v":"1.<user handle (§12, 50 B)>.<i>.<k>"}` to `/.aj/rt` on its own origin and records only `rtAt`. The web Worker
 (`web/worker.ts` `rtEndpoint`, stateless, no logging) answers `/.aj/rt` only to a same-origin JSON POST (`Origin` = the host
@@ -1581,29 +1581,7 @@ and sets `__Secure-aj_rt=<v>; Path=/.aj/rt; Max-Age=34560000; Secure; HttpOnly; 
 no other request carries it, and Safari's 7-day rule does not apply to a first-party server-set cookie. `{"op":"has"}` →
 `{"has":bool}`; `{"op":"clear"}` expires it (unpair, `removed`, a new pairing before its own ticket arrives).
 
-**Restore by ticket.** A page with no usable pairing (no `host` record, or `dk` ≠ its key) and no pairing link makes its new
-keys, computes `challenge = SHA-256("agentjarvis/rt/restore/v1\n" ‖ device_x25519_pub ‖ device_ed25519_pub ‖ ts u64 BE (ms) ‖
-nonce(16))` (§12's layout, own label) and POSTs `{"op":"prove","c":<challenge>}`. The Worker answers `{}` (no cookie) or
-`{"h":<handle>,"i":<id>,"p":HMAC-SHA256(k, "agentjarvis/rt/proof/v1\n" ‖ challenge)}` — never `k`. The page shows the chat
-screen ("connecting") and opens the §12 restore flow with msg1 `{"v":1,"sk":<approval key>,"rt":1}`, `hello`, then
-`{"t":"rt_restore","i","p","uh","ts","nonce"[,"iid"]}`. Host checks in order: the shared §12 rate limit · `|now − ts|` ≤ 5 min
-· nonce unseen · `i` is the `rt` of a listed record · `uh` = this host's handle · `p` = HMAC(stored `k`, label ‖ challenge
-recomputed from **this session's IK static key and msg1 `sk`**) (constant time). Then in ONE locked write (`State.ticket_restore`)
-the record takes the new keys exactly as in §12 (name / `paired_at` / `pk` kept, old id ends as `replaced`) **and** its `rt`
-is replaced by a new one; host → `pk_ok`, `ready`, then `rt` (the new ticket) and, when the record has no passkey, a
-`pk_offer`. Failures → `pk_fail` (`unknown` = no such ticket: revoked, evicted, unbound, or already rotated by another context;
-the page deletes its cookie and says 「这台手机的自动登录已经失效…请扫码重新配对」) — a transport drop or a host restart before
-the answer is retried like a resume with a fresh proof; `expired` (the host was offline > 5 min) is retried ≤ 3 times;
-`bad` keeps the cookie and tries the passkey. host.log: `rt_issue`, `rt_restore` (device id, result, reason) — never `i` or `k`.
-The terminal prints 「手机自动连回来了（浏览器清过数据；同一台，没有新增遥控器）」.
-
-**What a ticket is worth.** Exactly a §12 restore of that one record — never a new remote, never more rights. Dies with the record
-(revoke, eviction, `iid` replace, Dashboard unbind); single use (rotated in the restoring write); a proof is bound to one new
-key, one nonce, 5 min. Theft: needs the cookie (the phone's browser profile, or code running in our web origin, which can
-already drive the page's keys) — or **our web Worker at the moment of a restore**: it sees `k` in that request's Cookie header.
-A modified Worker could therefore take this phone's slot (the original phone is then told `replaced`; unpairing kills it). This is
-the web version's existing trust tier ("tampering would be detectable", §5 / `07-privacy`), stated on the privacy page; the
-relay sees nothing new (a RESUME and padded DATA frames). Old pages ignore `rt`; old hosts ignore `rt_req` and never issue.
+**Legacy ticket recovery.** An unlisted key sending `rt_restore` receives an encrypted `{"t":"pk_fail","why":"unknown"}` followed by the relay close. The same response applies to every ticket. The host preserves the existing device record, approval key, passkey and active sessions. The browser clears its legacy ticket cookie and presents pairing. A new pairing uses the standard owner approval procedure. The separate §12 passkey flow requires a fresh user-presence and user-verification assertion over the new keys. A previously listed device resumes with its saved device key as usual.
 
 **Automatic passkey.** A page that knows it was paired (its `aj.paired` marker survived but its pairing did not), or whose ticket
 restore ended `bad`, calls the §12 `get()` once without waiting for a tap (iOS may require a tap: then nothing is shown and the

@@ -158,46 +158,35 @@ try {
       const q = fake.st.turns.at(-1).id;
       // addTurn awaits the encrypted write, not the page's receipt; activate only after this exact turn arrived.
       await waitFor(p, `import('./js/relay.js').then(r=>r.loadedTurns().some(t=>t.id===${q} && t.card?.queued===true))`);
-      // An open empty-reply page stays behind the previous reply until explicitly selected.
-      // Use the existing newest-page keyboard activation, also exercised by the 0332 journey.
-      await evaluate(p, `document.getElementById('pgLatest').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))`); await sleep(500);
-      try {
-        await waitFor(p, `document.getElementById('omText').textContent==='Next owner request' && document.body.dataset.pageQueued==='1'`);
-      } catch (e) {
-        console.error('queue-selection-diagnostic', JSON.stringify(await evaluate(p, `import('./js/relay.js').then(r=>({q:${q},pg:document.getElementById('pg').textContent,input:document.getElementById('omText').textContent,queued:document.body.dataset.pageQueued,debug:r.debug(),turn:r.loadedTurns().find(t=>t.id===${q})}))`)));
-        throw e;
-      }
-      const queuePage = (await txt(p, '#pg')).match(/^(\d+) \/ (\d+)$/);
-      assert.ok(queuePage, 'queue page has a numbered main-page capsule');
-      assert.equal(queuePage[1], queuePage[2], 'selected newest main queue page');
       if (!before) {
-        await waitFor(p, `!!document.querySelector('#cmdx [data-waited]')`);
-        assert.equal(await evaluate(p, `document.querySelector('#cmdx [data-end-turn]')?.dataset.endTurn`), String(q), 'stop control belongs to the exact queued turn');
-        assert.equal(await txt(p, '#cmdx .sh-waited'), lang === 'zh' ? '上一件还在做，已等不到 1 分钟' : 'Previous task still running · waiting under a minute');
-        assert.equal(await evaluate(p, `!!document.querySelector('#cmdx [data-end-turn]')`), true, 'owner queue offers the existing stop control immediately');
-        await fake.updateTurn(q, { card: { queued: true, waited_s: 300 } });
-        await waitFor(p, `!!document.querySelector('#cmdx [data-end-turn]')`);
-        assert.equal(await txt(p, '#cmdx .sh-waited'), lang === 'zh' ? '上一件还在做，已等 5 分钟' : 'Previous task still running · waiting 5 min');
-        await fake.updateTurn(q, { card: { queued: true, waited_s: 40, stuck: true } });
-        await waitFor(p, `document.querySelector('#cmdx .sh-waited')?.textContent===${JSON.stringify(lang === 'zh' ? '上一件还在做，已等不到 1 分钟' : 'Previous task still running · waiting under a minute')}`);
-        assert.equal(await evaluate(p, `!!document.querySelector('#cmdx [data-end-turn]')`), true, 'stuck: button even under 120 s');
-        const g = await box(p, '#cmdx [data-end-turn]'); assert.ok(g.h >= 44 && g.right <= w, JSON.stringify(g));
-        assert.equal(await txt(p, '#cmdx [data-end-turn]'), lang === 'zh' ? '停止当前任务' : 'Stop current task', 'merged notice: 停止当前任务');
-      } else await fake.updateTurn(q, { card: { queued: true, waited_s: 300, stuck: true } });
-      await sleep(300);
-      await snap(p, `queued-stuck-${id}`);
-      if (!before) {
-        await evaluate(p, `document.querySelector('#cmdx [data-end-turn]').click()`);
-        await waitFor(p, `!document.getElementById('confirm').hidden`, 3000);
-        await evaluate(p, `document.getElementById('confirm-no').click()`); await sleep(200);
-        assert.equal(msgs.filter((x) => x.action === 'end_turn').length, 0, 'cancel sends nothing');
-        await evaluate(p, `document.querySelector('#cmdx [data-end-turn]').click()`);
-        await waitFor(p, `!document.getElementById('confirm').hidden`, 3000);
-        await evaluate(p, `document.getElementById('confirm-yes').click()`);
-        await waitFor(p, `document.getElementById('sh-end-msg')?.classList.contains('rsok')`, 6000);
-        assert.deepEqual(msgs.filter((x) => x.action === 'end_turn'), [{ t: 'rescue_do', action: 'end_turn', ok: true }]);
-        assert.equal(await txt(p, '#sh-end-msg'), lang === 'zh' ? '这一轮已经结束，可以接着说了。' : 'That turn has ended. You can carry on.');
-        await snap(p, `queued-ended-${id}`);
+        await waitFor(p,`!document.getElementById('ownerQueueBtn').hidden`);
+        assert.notEqual(await txt(p,'#omText'),'Next owner request','pending request stays out of the main page');
+        await evaluate(p,`document.getElementById('ownerQueueBtn').click()`);
+        const under = lang === 'zh' ? '上一件还在做，已等不到 1 分钟' : 'Previous task still running · waiting under a minute';
+        const five = lang === 'zh' ? '上一件还在做，已等 5 分钟' : 'Previous task still running · waiting 5 min';
+        await waitFor(p,`document.querySelector('#ownerQueueDialog[open] li p')?.textContent==='Next owner request'`);
+        assert.equal(await txt(p,'#ownerQueueWait'),under);
+        assert.equal(await evaluate(p,`document.getElementById('ownerQueueStop').disabled`),false);
+        await fake.updateTurn(q,{card:{queued:true,waited_s:300}});
+        await waitFor(p,`document.getElementById('ownerQueueWait').textContent===${JSON.stringify(five)}`);
+        await fake.updateTurn(q,{card:{queued:true,waited_s:40,stuck:true}});
+        await waitFor(p,`document.getElementById('ownerQueueWait').textContent===${JSON.stringify(under)}`);
+        const g=await box(p,'#ownerQueueStop');assert.ok(g.h>=44 && g.right<=w);
+        await snap(p,`queued-stuck-${id}`);
+        await evaluate(p,`document.getElementById('ownerQueueStop').click()`);
+        await waitFor(p,`!document.getElementById('confirm').hidden`);
+        await evaluate(p,`document.getElementById('confirm-no').click()`);await sleep(150);
+        assert.equal(msgs.filter(x=>x.action==='end_turn').length,0,'cancel sends nothing');
+        await evaluate(p,`document.getElementById('ownerQueueBtn').click();document.getElementById('ownerQueueStop').click()`);
+        await waitFor(p,`!document.getElementById('confirm').hidden`);
+        await evaluate(p,`document.getElementById('confirm-yes').click()`);
+        const ended=lang==='zh'?'这一轮已经结束，可以接着说了。':'That turn has ended. You can carry on.';
+        await waitFor(p,`document.getElementById('toast').textContent.includes(${JSON.stringify(ended)})`);
+        assert.deepEqual(msgs.filter(x=>x.action==='end_turn'),[{t:'rescue_do',action:'end_turn',ok:true}]);
+        await snap(p,`queued-ended-${id}`);
+      } else {
+        await fake.updateTurn(q,{card:{queued:true,waited_s:300,stuck:true}});
+        await goLast(p);await snap(p,`queued-stuck-${id}`);
       }
 
       // ---- 4. Settings → 紧急修复: 「接管卡住的会话」 first while stuck

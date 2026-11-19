@@ -28,3 +28,10 @@ test('P75 stale old epoch cannot repopulate a cleared session',async()=>{
  assert.equal(await run('loadOlderBatch()'),null);assert.equal(run('hist.turns.length'),1);
  run('resetHistory(2)');assert.equal(run('hist.count'),0);assert.equal(run('hist.turns.length'),0);
 });
+test('0340 previous crosses a whole batch of hidden background activity and preserves the rendered cursor',async()=>{
+ const activity={id:70,source:{k:'agent',via:'background_done'},reply:'completed'};
+ const run=fixture([{epoch:0,first_id:1,turns:[activity]},{epoch:0,first_id:1,turns:[{id:1,reply:'yesterday'}]}]);
+ await run('loadOlder()');
+ assert.equal(run('pages()[0].reply'),'yesterday');
+ assert.equal(run('pages()[pageAt].reply'),'last');
+});

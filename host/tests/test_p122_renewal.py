@@ -1,10 +1,6 @@
-"""P122 (0.17.4, PROTOCOL §12.1): the renewal ticket — "pair once, stay signed in". A phone whose browser deleted the page's
-storage (Safari's 7-day rule) proves "the same phone" with the HMAC proof the web origin computes from its HttpOnly cookie.
-
-Unit: the challenge / proof vectors shared with web/test/p122.test.mjs (page + worker.ts), the shape checks. Host level (the
-P57 harness): a pairing issues a ticket; a ticket restore replaces the SAME record, rotates the ticket in the same write and
-sends the new one after `ready`; the old ticket, a revoked record, a proof for another key, a replayed nonce, a stale ts are
-refused; a passkey restore replaces the ticket; rt_req is rate-limited; the secret is never logged or reported."""
+"""Legacy ticket compatibility. Tickets cannot authorize a new remote identity.
+Existing owners resume with their paired keys; new contexts are directed to ordinary pairing.
+"""
 import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import json
 import os
@@ -65,9 +61,17 @@ class HostLevel(P57HostLevel):
         ch = renewal.restore_challenge((chal_kp or kp).pub, sk, ts, nonce)
         p = renewal.proof(key or wire.unb64u(rt["k"]), ch)
         uh = uh if uh is not None else passkey.user_handle(0, self.host.channel, self.host.kp.pub)
-        self.run_(self.host._app(s, {"t": "rt_restore", "i": rt["i"], "p": wire.b64u(p), "uh": wire.b64u(uh), "ts": ts,
-                                     "nonce": wire.b64u(nonce)}))
-        return kp, sk, self.to(cid)
+        # Inspect the host's encrypted terminal response, including its ordering before relay CLOSE.
+        frame = {"t": "rt_restore", "i": rt["i"], "p": wire.b64u(p), "uh": wire.b64u(uh), "ts": ts, "nonce": wire.b64u(nonce)}
+        start = len(self.ops)
+        packet = self.peer_send.encrypt(b"", wire.pad_json(frame))
+        self.run_(self.host.on_data(s, bytes([wire.DATA]) + packet))
+        self.assertEqual([(op, channel) for op, channel, _ in self.ops[start:]],
+                         [(wire.OP_DATA, cid), (wire.OP_CLOSE, cid)])
+        self.assertNotIn(cid, self.host.sessions)
+        payload = self.ops[start][2]
+        self.assertEqual(payload[0], wire.DATA)
+        return kp, sk, [wire.unpad_json(self.peer_recv.decrypt(b"", payload[1:]))]
 
     # -------------------------------------------------------------- issue
     def test_pairing_issues_a_ticket_inside_the_record(self):
@@ -103,37 +107,28 @@ class HostLevel(P57HostLevel):
         self.assertEqual(self.st.devices()[did]["rt"], new)
 
     # -------------------------------------------------------------- restore
-    def test_restore_replaces_the_same_record_and_rotates(self):
-        a = Authenticator()
-        kpA, did, rt = self.ticketed()
-        self.assertTrue(self.st.set_passkey(kpA.pub, {"id": wire.b64u(a.id), "alg": -7, "spki": wire.b64u(a.spki()), "rp": "m.agentj.app", "at": 1}))
-        self.host.sessions[5] = serve.Session(cid=5, state="ready", device=did, pub=kpA.pub, p33=True)
-        kpB, skB, got = self.rt_restore(9, rt)
-        self.assertEqual([m["t"] for m in got], ["pk_ok", "ready", "rt"], "a passkey already exists: no new offer")
-        idB = wire.device_id(kpB.pub)
-        self.assertEqual(list(self.st.devices()), [idB], "still exactly one remote")
-        rec = self.st.devices()[idB]
-        self.assertEqual((rec["pub"], rec["sk"], rec["name"], rec["pk"]["id"]), (wire.b64u(kpB.pub), wire.b64u(skB), "网页 · iOS Safari", wire.b64u(a.id)))
-        self.assertNotEqual(rec["rt"]["i"], rt["i"], "rotated in the same write")
-        self.assertEqual((got[-1]["i"], got[-1]["k"]), (rec["rt"]["i"], rec["rt"]["k"]))
-        self.assertNotIn(5, self.host.sessions, "A's live session ended")
-        self.assertEqual(self.st.removed_why(did), "replaced")
-        log = self.st.log_path.read_text()
-        self.assertIn('"ev": "rt_restore"', log)
-        for secret in (rt["k"], rt["i"], rec["rt"]["k"], rec["rt"]["i"]):
-            self.assertNotIn(secret, log)
-        # the used ticket is dead (a copied cookie); nothing changes
-        self.sent.clear()
-        _, _, got = self.rt_restore(11, rt)
-        self.assertEqual(got, [{"t": "pk_fail", "why": "unknown"}])
-        self.assertEqual(list(self.st.devices()), [idB])
-        # B resumes normally afterwards (plain RESUME)
-        self.assertEqual(self.resume_plain(12, kpB)[0]["t"], "ready")
+    def test_valid_ticket_leaves_owner_and_passkey_intact(self):
+        owner, did, rt = self.ticketed()
+        self.assertTrue(self.st.set_passkey(owner.pub, {"id": "local-test-passkey"}))
+        live = serve.Session(cid=5, state="ready", device=did, pub=owner.pub, p33=True)
+        self.host.sessions[5] = live
+        original = self.st.devices_path.read_bytes()
+        for cid in (9, 10):
+            candidate, _, result = self.rt_restore(cid, rt)
+            self.assertEqual(result, [{"t": "pk_fail", "why": "unknown"}])
+            self.assertFalse(self.st.is_allowed(candidate.pub))
+            self.assertEqual(self.st.devices_path.read_bytes(), original)
+            self.assertIs(self.host.sessions[5], live)
+            self.assertIsNone(self.st.removed_why(did))
+        self.assertEqual(self.resume_plain(12, owner)[0]["t"], "ready")
+        for value in (rt["i"], rt["k"]):
+            self.assertNotIn(value, self.st.log_path.read_text())
 
-    def test_restore_without_passkey_offers_one(self):
-        _, _, rt = self.ticketed()
-        _, _, got = self.rt_restore(9, rt)
-        self.assertEqual([m["t"] for m in got], ["pk_ok", "ready", "rt", "pk_offer"])
+    def test_missing_passkey_still_requires_pairing(self):
+        owner, _, rt = self.ticketed()
+        _, _, result = self.rt_restore(9, rt)
+        self.assertEqual(result, [{"t": "pk_fail", "why": "unknown"}])
+        self.assertTrue(self.st.is_allowed(owner.pub))
 
     def test_revoked_record_kills_the_ticket(self):
         _, did, rt = self.ticketed()
@@ -152,18 +147,14 @@ class HostLevel(P57HostLevel):
     def test_refusals(self):
         kp, did, rt = self.ticketed()
         cases = [
-            ({"chal_kp": Keypair.generate()}, "bad"),                 # a proof made for another key (stolen / relayed)
-            ({"key": os.urandom(32)}, "bad"),                         # not this ticket's secret
-            ({"ts": int(time.time() * 1000) - 6 * 60 * 1000}, "expired"),
-            ({"uh": passkey.user_handle(0, wire.b64u(os.urandom(16)), self.host.kp.pub)}, "bad"),   # another computer's handle
+            {"chal_kp": Keypair.generate()}, {"key": os.urandom(32)},
+            {"ts": int(time.time() * 1000) - 6 * 60 * 1000},
+            {"uh": passkey.user_handle(0, wire.b64u(os.urandom(16)), self.host.kp.pub)},
         ]
-        for i, (kw, why) in enumerate(cases):
-            _, _, got = self.rt_restore(20 + i, rt, **kw)
-            self.assertEqual(got, [{"t": "pk_fail", "why": why}], kw)
         nonce = os.urandom(16)
-        self.rt_restore(30, rt, nonce=nonce, key=os.urandom(32))
-        _, _, got = self.rt_restore(31, rt, nonce=nonce)
-        self.assertEqual(got, [{"t": "pk_fail", "why": "bad"}], "a nonce is used once")
+        for i, kw in enumerate([*cases, {"nonce": nonce}, {"nonce": nonce}]):
+            _, _, got = self.rt_restore(20 + i, rt, **kw)
+            self.assertEqual(got, [{"t": "pk_fail", "why": "unknown"}])
         self.assertEqual(list(self.st.devices()), [did], "nothing changed")
         self.assertEqual(self.st.devices()[did]["rt"], rt)
 

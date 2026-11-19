@@ -21,19 +21,20 @@ try {
    await evaluate(p,`(()=>{document.getElementById('phone-env-dismiss')?.click();document.getElementById('a2hs-ok')?.click();return true})()`);
    await fake.send({t:'status',s:'working',agent:'codex',name:'Agent J'});
    await evaluate(p,`(()=>{const i=document.getElementById('input');i.value=${JSON.stringify(lang==='zh'?'继续下一件事':'Continue with the next task')};i.dispatchEvent(new Event('input'));document.getElementById('send').click();return true})()`);
-   await waitFor(p,`document.body.dataset.pageQueued==='1'`); await sleep(1600);
-   const stop = `document.querySelector('[data-queue-stop]')`;
+   await waitFor(p, before ? `document.body.dataset.pageQueued==='1'` : `!document.getElementById('ownerQueueBtn').hidden`); await sleep(1600);
+   if (!before) await evaluate(p,`document.getElementById('ownerQueueBtn').click()`);
+   const stop = before ? `document.querySelector('[data-queue-stop]')` : `document.querySelector('#ownerQueueDialog[open] #ownerQueueStop')`;
    assert.equal(await evaluate(p,`!!${stop}`),!before);
    writeFileSync(`${out}${lang}-${w}-${before?'before':'after'}.png`,await shoot(p,''));
    if(!before){
     const geo=await evaluate(p,`(()=>{const r=${stop}.getBoundingClientRect();return {w:r.width,h:r.height,x:r.x,right:r.right}})()`);
     assert.ok(geo.h>=44 && geo.w>=56 && geo.x>=0 && geo.right<=w,JSON.stringify(geo));
     await evaluate(p,`(()=>{const real=Date.now;Date.now=()=>real()+181000;return true})()`);
-    await waitFor(p,`document.getElementById('words').textContent.includes(${JSON.stringify(lang==='zh'?'3 分钟':'3 minutes')})`,12000);
+    await waitFor(p,`!document.getElementById('ownerQueueWarning').hidden && document.getElementById('ownerQueueWarning').innerText.includes(${JSON.stringify(lang==='zh'?'3 分钟':'3 minutes')})`,12000);
     writeFileSync(`${out}${lang}-${w}-stuck.png`,await shoot(p,''));
     // An earlier turn's real output resets the quiet window.
     await fake.updateTurn(prev.id,{reply:{text:'Working on it'}});
-    await waitFor(p,`!document.getElementById('words').textContent.includes(${JSON.stringify(lang==='zh'?'3 分钟':'3 minutes')})`);
+    await waitFor(p,`document.getElementById('ownerQueueWarning').hidden`);
     await evaluate(p,`${stop}.click()`); await sleep(200);
     assert.equal(fake.st.slashes.filter(m=>m.cmd==='stop').length,1);
    }

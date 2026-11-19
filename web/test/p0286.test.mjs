@@ -173,3 +173,23 @@ test('0286 a retained confirmed store resumes immediately without waiting for bo
  run('historyConfirmedStore=true;hist.epoch=1;hist.firstId=1;hist.lastId=500;hist.turns=[{id:500,reply:"tail",source:{k:"phone",text:"input"},end:"done"}]');
  run('beginHistorySync(true)');await next();assert.equal(calls,1);assert.equal(run('historyRetry'),null);assert.equal(run('historyAwaitingMeta'),false);
 });
+test('0340 cold live turn before the first history snapshot must not redefine the host history boundary',async()=>{
+ let respond;
+ const run=setup(()=>new Promise(resolve=>{respond=resolve;}));
+ const head=run('refreshNewest()');await next();
+ run('upsertTurn({id:501,source:{k:"phone",text:"latest input"},reply:"latest reply",end:"done"})');
+ respond({epoch:0,first_id:1,count:501,turns:[turn(500,'previous'),turn(501,'latest reply')]});await head;
+ assert.equal(run('hist.firstId'),1);
+ assert.equal(run('olderLeft()'),true);
+});
+test('0340 cold history head of background activity finds an owner card before declaring the page ready', async()=>{
+ const calls=[];
+ const run=setup(async q=>{
+   calls.push(q);
+   return {epoch:1,first_id:1,count:51,turns:q.before ? [turn(1,'yesterday')] :
+     Array.from({length:50},(_,i)=>({id:i+2,source:{k:'agent',via:'background_done'},reply:'finished',end:'done'}))};
+ });
+ await run('refreshNewest()');
+ assert.equal(run('pages().at(-1).reply'),'yesterday');
+ assert.equal(calls.length,2);
+});

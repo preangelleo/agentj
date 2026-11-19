@@ -73,11 +73,12 @@ try {
       await fake.updateTurn(T.id, { reply: { text: X.s1 } });
       await waitFor(p, `document.getElementById('words').textContent.includes(${JSON.stringify(X.s1)})`);
       await say(X.say);
-      await waitFor(p, `document.body.dataset.pageQueued==='1'`, 8000);
-      await waitFor(p, `!!document.querySelector('#cmdx [data-waited]')`, 6000);
-      check((await evaluate(p, `document.querySelector('#cmdx .sh-waited').textContent`)) === X.waited, 'D merged waited line ' + tag);
-      check((await evaluate(p, `document.querySelector('#cmdx [data-queue-stop]')?.textContent`)) === X.stop, 'D 停止当前任务 ' + tag);
+      await waitFor(p,`!document.getElementById('ownerQueueBtn').hidden`);
+      await evaluate(p,`document.getElementById('ownerQueueBtn').click()`);
+      check((await evaluate(p,`document.querySelector('#ownerQueueList li p')?.textContent`))===X.say,'D exact queued message '+tag);
+      check((await evaluate(p,`document.getElementById('ownerQueueStop').disabled`))===false,'D stop available '+tag);
       await snap('D-queued');
+      await evaluate(p,`document.getElementById('ownerQueueClose').click()`);
 
       // ---- B. uncertain steer, live: host updates the owner's page exactly like serve.msg_steered(uncertain=True)
       const M = fake.st.turns.at(-1), sid = [...fake.st.queued.keys()].at(-1);

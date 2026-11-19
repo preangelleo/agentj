@@ -376,6 +376,10 @@
             <button class="wrbtn" id="main-thread-interrupt" type="button" hidden aria-label="打断并先回我" title="打断并先回我" data-aj-owner="aj-reply-action">
               <svg viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="18" fill="var(--lotion)"/><rect x="12" y="12" width="12" height="12" fill="var(--noir)"/></svg>
             </button>
+            <button id="ownerQueueBtn" class="wrbtn" type="button" hidden aria-haspopup="dialog" aria-controls="ownerQueueDialog" aria-expanded="false" data-aj-owner="aj-reply-action">
+              <svg viewBox="0 0 36 36" aria-hidden="true"><circle class="disc" cx="18" cy="18" r="18"/><svg x="5" y="6" width="26" height="24" viewBox="0 0 26 24"><path class="queuePulse" d="M-26 12h7l3-7 4 14 3-7h9h7l3-7 4 14 3-7h9" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="2"/></svg></svg>
+              <span class="queueCount" aria-hidden="true"></span>
+            </button>
             <div class="rmicons" id="rmIcons">
             <button class="act" id="readBtn" type="button" data-i18n-attr="aria-label=r.bar.read,title=r.bar.read" aria-label="全屏阅读（f · 双击卡片）" title="全屏阅读（f · 双击卡片）" data-aj-owner="aj-reply-action">
               <svg class="g g0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10.2 5.2 7.6 4.7 3.5 4.9v13.2c4.1-.2 6.7.3 8.5 1.6 1.8-1.3 4.4-1.8 8.5-1.6V4.9c-4.1-.2-6.7.3-8.5 1.6z"/><path d="M12 6.5v13.2"/></svg>
@@ -807,12 +811,12 @@
       <h1 id="revoked-title" data-i18n="revoked.title" data-aj-owner="aj-recovery">这台手机已被Agent J 主机移除</h1>
       <p id="revoked-lead" class="lead" data-i18n="revoked.lead" data-aj-owner="aj-recovery" data-aj-page-copy>Agent J 主机不再认这台手机。要继续用，先在Agent J 主机上运行 agentj pair，再重新配对。</p>
       <!-- 0.30.7 (preview-frset): Safari and the Home Screen app are two remotes on iOS and push each other out; said once (js/twoid.js) -->
-      <div id="revoked-twoid" class="twoid" role="note" hidden data-aj-owner="aj-recovery"><p class="twoid__t" data-i18n="p0307.twoid.title" data-aj-owner="aj-recovery" data-aj-page-copy>同一台手机上有两个 Agent J</p>
-        <p class="small" data-i18n="p0307.twoid.text" data-aj-owner="aj-recovery" data-aj-page-copy>如果你在 Safari 里和从主屏幕图标都打开过 Agent J，手机会把它们当成两台设备，一边连上就会把另一边挤下线。以后只用其中一个就好，推荐从主屏幕图标打开。</p></div>
+      <div id="revoked-twoid" class="twoid" role="note" hidden data-aj-owner="aj-recovery"><p class="twoid__t" data-i18n="p0307.twoid.title" data-aj-owner="aj-recovery" data-aj-page-copy>检查配对记录</p>
+        <p class="small" data-i18n="p0307.twoid.text" data-aj-owner="aj-recovery" data-aj-page-copy>Safari 和主屏幕图标打开的 Agent J 可能使用不同的配对身份。如果你没有切换入口，请在 Agent J 主机上核对已配对的遥控器。</p></div>
       <p id="revoked-draft" class="small" data-i18n="revoked.draft" hidden data-aj-owner="aj-recovery" data-aj-page-copy>没发出去的草稿、输入记录和加密它们的密钥，都已从这台手机上删除。</p>
-      <div class="ajrow"><button type="button" id="repair" class="aj-action aj-action--primary aj-action--block" data-i18n="revoked.btn" data-aj-owner="aj-action">重新配对</button>
-        <!-- P198: the taken-over side takes the connection back here with the same Face ID (one button, no prompt) -->
-        <button type="button" id="takeover-pk" class="aj-action aj-action--primary aj-action--block" data-i18n="revoked.takeoverPk" hidden data-aj-owner="aj-action">用 Face ID 在这里继续</button></div>
+      <div class="ajrow">
+        <button type="button" id="takeover-pk" class="aj-action aj-action--primary aj-action--block" data-i18n="revoked.takeoverPk" hidden data-aj-owner="aj-action">用 Face ID 在这里继续</button>
+        <button type="button" id="repair" class="aj-action aj-action--block" data-i18n="revoked.btn" data-aj-owner="aj-action">重新配对</button></div>
       <p id="takeover-note" class="error" role="alert" hidden data-aj-owner="aj-recovery" data-aj-page-copy></p>
       <p class="small helpline" data-i18n="help.mail" data-aj-owner="aj-recovery" data-aj-page-copy>完全连不上时，写信到 feedback@agentj.app，附上账号 ID、发生了什么和截图。</p>
       <p class="helpmail" data-aj-owner="aj-recovery" data-aj-page-copy><a href="mailto:feedback@agentj.app" rel="noopener" data-aj-owner="aj-recovery">feedback@agentj.app</a></p>
@@ -1747,5 +1751,15 @@
   <i class="probe" id="chromeProbe" aria-hidden="true"></i>
   <i class="satband" id="satband" aria-hidden="true"></i>
   <i class="sabband" id="sabband" aria-hidden="true"></i>
+  <dialog id="ownerQueueDialog" aria-labelledby="ownerQueueTitle" data-aj-owner="aj-reply-action">
+    <h2 id="ownerQueueTitle" data-aj-owner="aj-reply-action" data-i18n="p0319.title">排队消息</h2>
+    <p id="ownerQueueWait" hidden></p>
+    <p id="ownerQueueWarning" hidden data-i18n="p481.queueStuck">上一件事已超过 3 分钟没有新输出，可以停下它再继续。</p>
+    <ol id="ownerQueueList"></ol>
+    <div class="queueActions">
+      <button type="button" id="ownerQueueStop" data-i18n="p0319.stop" data-aj-owner="aj-reply-action">关闭上一条任务</button>
+      <button type="button" id="ownerQueueClose" data-i18n="p0319.close" data-aj-owner="aj-reply-action">收起</button>
+    </div>
+  </dialog>
 </body>
 </html>

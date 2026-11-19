@@ -16,6 +16,7 @@ import * as selfheal from './selfheal.js';   // 0.26.9 (CONTRACT §C): 「重新
 import { open as openLogin } from './loginsheet.js';
 import { createSplit, pageKey, contIndex, contOfText } from './turnsplit.js';   // 0.26.9 #471 (§D): a long turn talked past → a new card below
 import { isAssistSrc } from './assistsrc.js';   // 0.26.9 #468 (§B3): 「官方远程协助」 on a task's turn
+import { paintOwnerQueue, initOwnerQueue, stopQueuedTurn } from './owner-queue.js';
 import { QueueWatch } from './queue-watch.js';
 import { paintIOSChrome } from './ios-chrome.js';
 import { createMicrophone, hiddenTooLong, microphoneErrorKey } from './microphone.js';
@@ -1283,6 +1284,7 @@ addEventListener('storage', e => {
 // the newest page whose turn has no visible reply yet (a pending input stays behind the reply he reads, P87) — the intent
 // survives, so that reply, when it lands, still takes him there.
 const hist = {activityRevision: 0, turns: [], count: 0, firstId: 0, lastId: 0, epoch: 0, route: true, busy: false, want: 0, older: false, trimmed: []};
+const queued = [];        // {sid, text, atts, rt, turn, at} accepted with state "queued", not yet delivered
 let histSettled = () => false;   // P398: settleQueued (the queue section sets it) — a page the host updated may end a queued send
 let pageAt = -1, follow = true, tailWait = false, pagesCache = null, shownKey = null, unreadReply = false;
 const noticeReads = new Set();
@@ -1320,6 +1322,10 @@ function visiblePage(p){
   // P127 (追加6): a withdrawn send never reached the Agent and its words are back in the field — as if never sent, so its
   // page leaves the history instead of standing there with 「（无文字回复）」 (and a second copy once it is sent again).
   if (p.card && p.card.withdrawn === true || pendingAutomation(p)) return false;
+  // Queue-only pages move to the drawer. A queued turn can also carry an actionable card.
+  if ((ownerQueue(p) || queued.some(q => q.turn === p.id)) && !visibleReply(p) &&
+      !p.login && !p.form && !p.media?.length && Object.keys(p.card || {}).every(k =>
+        ["queued", "held", "waited_s", "stuck", "wait", "notice", "detail"].includes(k))) return false;
   return !silentTurn(p) && (visibleReply(p) || !!src?.text?.trim() || !!src?.att?.length || !!p.card);
 }
 function toNewest(){ follow = true; tailWait = false; shownKey = null; stick = true; showPage(); }
@@ -1533,7 +1539,8 @@ async function refreshNewestRun(retry = false, hintAtStart = historyHintSequence
     hist.activityRevision++; hist.turns = [...byId.values()].sort((a,b) => a.id - b.id);
     hist.lastId = hist.turns.at(-1)?.id || 0;
     hist.count = Math.max(j.count || 0, hist.count, hist.turns.length);
-    hist.firstId = Math.max(hist.firstId, j.first_id || hist.turns[0]?.id || 0);
+    // A live tail can arrive before the first snapshot. The host owns the oldest available ID.
+    hist.firstId = j.first_id || hist.firstId || hist.turns[0]?.id || 0;
     historyConfirmedStore = true;
     acceptHistoryHead({epoch:hist.epoch,first:hist.firstId,last:hist.lastId,count:hist.count});
     if (Number.isSafeInteger(j.read)) {
@@ -1542,6 +1549,11 @@ async function refreshNewestRun(retry = false, hintAtStart = historyHintSequence
     }
     // No turn payload is buffered across stores. Confirm the fresh head first,
     // then one shared post-confirmation read covers pushes received in flight.
+    pagesCache = null;
+    if (olderLeft() && pages()[0].id === null) {
+      await loadOlder();
+      if (generation !== historyGeneration || hintAtStart !== historyHintSequence) return;
+    }
     historyFollowup = !!historyCandidate?.dirty;
     historyCandidate = null;
     pagesCache = null; historySync = historyFollowup; historyDelay = 0; paintHistorySync();
@@ -1602,11 +1614,13 @@ async function loadOlderBatch(){
     // Older pages of a session that has since been cleared are not this session's.
     if (generation === historyGeneration && epoch === hist.epoch && j && j.turns.length && (typeof j.epoch === "number" ? j.epoch : 0) === hist.epoch){
       const older = j.turns.filter(t => t && typeof t.id === "number" && t.id < hist.turns[0].id).map(displayTurn);
+      const previousPageCount = pages().filter(p => p.id !== null).length;
       hist.activityRevision++; hist.turns = older.concat(hist.turns); hist.firstId = j.first_id || hist.firstId;
       if (!older.length) hist.firstId = hist.turns[0].id;
       if (hist.turns.length) hist.trimmed = hist.trimmed.filter(b => b.lo < hist.turns[0].id);   // W11b: blocks loaded again
       pagesCache = null;
-      const shown = older.filter(visiblePage).length;
+      // Background rows, merged owner inputs and echo suppression use the same projection as the deck.
+      const shown = pages().filter(p => p.id !== null).length - previousPageCount;
       if (!follow) pageAt += shown;
       hist.older = false;
       return {all: older.length, shown};
@@ -1620,7 +1634,7 @@ async function loadOlder(){
   for (;;){
     const b = await loadOlderBatch();
     if (!b || !b.all) return false;
-    if (b.shown) return true;
+    if (b.shown > 0) return true;
   }
 }
 function hhmm(ts){
@@ -1634,10 +1648,12 @@ export function loadedTurns(){ return hist.turns; }
     message's page (turn id) or its send id. It is no longer queued; its page says 「已插入当前这一轮」. */
 export function onSteered(m){
   if (!m) return;
+  const atTail = onNewestPage() && !rdAt && !mediaViewerOpen();
   let id = Number.isInteger(m.mid) ? m.mid : null;
   const q = queued.find(x => (typeof m.mid === "string" && x.sid === m.mid) || (id !== null && x.turn === id));
   if (q){ if (id === null && Number.isInteger(q.turn)) id = q.turn; if (Number.isInteger(m.turn)) activeTurn = m.turn; sawDelivered(); queued.splice(queued.indexOf(q), 1); }
   if (!Number.isInteger(id)) return;
+  if (atTail) { shownKey = null; follow = true; }
   steered.add(id); if (steered.size > 64) steered.delete(steered.values().next().value);
   pagesCache = null;
   paintQueued();
@@ -1772,10 +1788,19 @@ function showPage(){
   el("localNote").hidden = !(src && src.local);
   const queueList = queuedWatchList();
   queueStuck = queueWatch.check(queueList, hist.turns);
+  paintOwnerQueue(queueList.map(q => {
+    const turn = hist.turns.find(x => x.id === q.turn);
+    const src = turn?.source;
+    const watchdog = selfheal.queueOf(turn);
+    const wait = watchdog ? t(...selfheal.prevText(selfheal.waitedNow(turn.id, watchdog, true))) : '';
+    return {wait, source: (src?.k === 'phone' && src.dev === C.myDev()) ? t('p414.e.flag.app') : sourceOf(src).label, time: hhmm(turn?.ts || q.at / 1000),
+      text: (src?.text || q.text || src?.att?.[0]?.name || t('p0319.attachment')).replace(/\s+/g, ' ').trim().slice(0, 160)};
+  }), HEAL.live(), queueStuck);
   const chan = chanCard(p);                              // P543 (#308): an owner-channel message shows its words
   el("words").dataset.chan = chan ? "1" : "0";
   if (chan && !ownerQueue(p)) { el("cmdx").replaceChildren(); el("cmdx").hidden = true; }
   else if (p.cont) paintCont(el("cmdx"), p, ps);         // 0.26.9 #471: 「继续见下方」 — this card gets nothing more
+  else if (ownerQueue(p)) paintCmdx(p);
   else if (!chatheal.paint(el("cmdx"), p, HEAL)){ paintCmdx(p); chatheal.tail(el("cmdx"), p, HEAL); }   // 0.26.9: 重新登录 / 已等 N 分钟 / 强制结束这一轮
   C.termCard?.(p);                                       // P414 (§37.12): a 「!」 page's terminal result card (js/bang.js)
   if (key !== shownKey){
@@ -1797,7 +1822,6 @@ function showPage(){
   // (e.g. the Agent's 「切换已完成」 report landed after the owner's queued message) does not look busy itself.
   document.body.dataset.workElsewhere = p.split === "head" && p.end !== "open" ? "1" : p.end !== "open" && Number.isInteger(activeTurn) && activeTurn !== p.id
     && hist.turns.some(x => x.id === activeTurn && x.end === "open") ? "1" : "0";
-  const ahead = qd ? queuedAhead(p.id) : 0;              // P152 (P149 plan B): 「前面还有 N 条」 when this device queued more than one
   // P281: what a running /switch-harness is doing (host card.progress on the open page) — the wait line itself while no
   // words came yet, else the robot line under them; the host's own wait lines (card.wait: 「正在等待 …」, card.queued: the
   // busy session's queue line) and the newest switch page (card.switch: 正在切换 / 已切回 …) start with the robot too
@@ -1807,7 +1831,7 @@ function showPage(){
   const absorbed = isSteered(p) && !visibleReply(p);   // 0.26.9 #471: steered into the running turn — its answer is that turn's
   if (absorbed) renderWords(t('p0269.queue.steered'), false, "", false, false, true);
   else renderWords((silentTurn(p) ? "" : p.reply?.trim()) || (noticeOnly ? t('p0269w4.notice') : qd || p.end === "open" || p.id === null ? "" : t('r.noReply')), open || qd,
-    qd ? t(queueStuck ? 'p481.queueStuck' : 'r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : progress, hostWait, sysPage(p), replyDataOnly(p) || noticeOnly);
+    qd ? "" : progress, hostWait, sysPage(p), replyDataOnly(p) || noticeOnly);
   { const lg = selfheal.loginOf(p); if (lg) selfheal.linkLogin(el("words"), t('p0269.login.btn'), () => openLogin(lg.agent, lg.why)); }   // 0.26.9: `/login` = 「重新登录」
   // 0.26.9 #433 #447 · security C-1: never on a friend's report or an owner-channel page (a stranger's words); a fill tap goes
   // after the owner's draft (appendText), never replacing it
@@ -2191,7 +2215,7 @@ function fitBar(){
   group.style.setProperty("--rm-count", count);
   const br = bar.getBoundingClientRect();
   if (!br.width) return;
-  const wr = el("pending541") && !el("pending541").hidden ? el("pending541") : el("webReportBtn"), cs = getComputedStyle(bar);
+  const wr = !el("ownerQueueBtn").hidden ? el("ownerQueueBtn") : el("pending541") && !el("pending541").hidden ? el("pending541") : el("webReportBtn"), cs = getComputedStyle(bar);
   // from the bar's own box, not wr's current place: an overflowing row (before this fit lands) pushes wr left in WebKit
   const wcs = wr && !wr.hidden && wr.getClientRects().length ? getComputedStyle(wr) : null;
   const from = br.left + parseFloat(cs.paddingLeft || "0") + (wcs ? wr.offsetWidth + parseFloat(wcs.marginLeft || "0") + parseFloat(wcs.marginRight || "0") : 0);
@@ -3456,7 +3480,6 @@ function launchLoop(){
 }
 // The send in flight (one at a time) and the ones accepted but still queued behind a running turn (withdrawable).
 let inflight = null;      // {phase, sid, cancelled, delivered, cancelling, wake, batch}
-const queued = [];        // {sid, text, atts, rt, turn, at} accepted with state "queued", not yet delivered
 let activeTurn = null;    // P282: the page of this device's say the Agent took last (say_state taken / delivered)
 // P127 (追加6): the host answers every say `queued` first; an idle Agent takes it within milliseconds (say_state delivered).
 // Only one still waiting after QUEUE_QUIET_MS (the shared session is busy) is shown as queued — its page says
@@ -3480,7 +3503,6 @@ const queuedShown = () => { const now = Date.now(); return queued.filter(q => no
 function queuedTurn(id){ return Number.isInteger(id) && !steered.has(id) && queuedWatchList().some(q => q.turn === id); }
 /** 0.26.9 #471: when this page started waiting behind the running turn (ms; the host's own count wins in chatheal.js). */
 function queuedSince(id){ const q = queuedWatchList().find(x => x.turn === id); return q ? q.at || null : null; }
-function queuedAhead(id){ const i = queued.findIndex(q => q.turn === id); return i > 0 ? i : 0; }
 // P328 (Leo, 0.22.0a1): the × is one control with three jobs — take back this phone's send in flight (send), take back a
 // message still queued behind a busy session (queued), and, while the Agent works (blue) with nothing of ours to take back,
 // stop the running turn (turn: §8 slash stop, the same /stop the menu sends). It used to follow only the send, so a shared
@@ -3548,6 +3570,7 @@ function stopTurn(){
 }
 function paintQueued(){
   paintSayCancel();
+  pagesCache = null;
   clearTimeout(queueTimer);
   const young = queued.filter(q => Date.now() - (q.at || 0) < QUEUE_QUIET_MS);
   if (young.length) queueTimer = setTimeout(paintQueued, Math.max(20, ...young.map(q => QUEUE_QUIET_MS - (Date.now() - q.at) + 20)));
@@ -4921,7 +4944,7 @@ async function moreSilent(){
 
 // P142 (A16): the sign-in QR / secret pickup / sudo-secret cards and the setup page also hold the keyboard (no shortcut leaks)
 const shownById = (id) => { const n = el(id); return !!n && !n.hidden; };
-const dialogOpen = () => search.isOpen() || !el("silent").hidden || !el("cam").hidden || !el("keys").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden
+const dialogOpen = () => el("ownerQueueDialog").open || search.isOpen() || !el("silent").hidden || !el("cam").hidden || !el("keys").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden
   || shownById("lqr") || shownById("sout") || shownById("elev") || shownById("setup-view") || fsed.isOpen();
 function openKeys(){ closeKeysFind(); paintKeys(); closeSug(); el("keys").hidden = false; el("keysClose").focus(); }   // P187: above the list / Settings
 // P207: the 「键盘快捷键」 page is drawn from interactions.json (interactions.gen.js ROWS + the ix* dictionary texts), never
@@ -5220,6 +5243,7 @@ export function forgetLocal(){
   cancelReply(); closeQuote();
   if (input){ input.value = ""; autosize(); }
   paintQueued();
+  paintOwnerQueue([], false, false);
 }
 const MOD_KEYS = new Set(["Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock", "Fn", "FnLock", "NumLock", "ScrollLock", "OS", "Super", "Hyper", "Symbol", "SymbolLock"]);
 const swallowed = new Set();
@@ -5382,6 +5406,10 @@ export function init(ctx){
   el("pgNext").addEventListener("click", () => goPage(1));   // @ix page.next
   el("copyReply").addEventListener("click", copyReply);   // @ix card.copy
   el("replyBtn").addEventListener("click", () => startReply(currentPage()));   // @ix card.reply
+  initOwnerQueue(showPage, () => {
+    if (!HEAL.live() || !queuedWatchList().length) return;
+    stopQueuedTurn(HEAL.signedEnd(), stopTurn);
+  }, text => executionToast(text, 3500));
   el("webReportBtn").addEventListener("click", () => hotTap(currentPage()));   // P216 / P285 @ix card.web_report
   longPress(el("webReportBtn"), openHot);   // P285 @ix card.hot_pick
   try{ const barSize = new ResizeObserver(() => fitBar());
@@ -6026,7 +6054,7 @@ export function init(ctx){
   }, true);
   document.addEventListener("keydown", e => {
     if (e.isComposing || (e.keyCode === 229 && !isM(e))) return;
-    if (document.body.dataset.view !== "chat") return;
+    if (document.body.dataset.view !== "chat" || el("ownerQueueDialog").open) return;
     if (fsed.isOpen()) return;   // P412: the full-screen editor has its own keys (js/fsedit.js); Esc = layers.js
     const tg = e.target;
     if (e.key === "Escape"){

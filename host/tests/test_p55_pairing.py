@@ -150,21 +150,53 @@ class Host(unittest.TestCase):
         self.st.touch_seen(did)
         self.assertEqual(self.st.devices()[did]["seen"], first)
 
-    def _resume(self, kp: Keypair) -> tuple:
-        """A device resuming with an IK msg1 (like the web client): → (its recv CipherState, the host's answer frames)."""
-        hs = Handshake(IK, True, kp, prologue=wire.resume_prologue(self.host.channel), rs=self.host.kp.pub)
-        msg1 = hs.write_message(b'{"v":1}')
-        s = serve.Session(cid=9)
-        self.host.sessions[9] = s
-
+    def _resume(self, kp: Keypair, replace_cid=False):
+        """Exercise encrypted ingress and decode actual response frames up to relay CLOSE."""
         async def go():
-            await self.host._resume_init(s, msg1)
-            hs_resp = self.ops[-1]
-            self.assertEqual(hs_resp[2][0], wire.HS_RESP)
-            hs.read_message(hs_resp[2][1:])
-            await self.host._app(s, {"t": "hello", "caps": ["p33"]})
-        asyncio.run(go())
-        return [o for c, o in self.sent if c == 9]
+            self.ops.clear()
+            host = self.host
+            host.send_app = serve.Host.send_app.__get__(host)
+            hs = Handshake(IK, True, kp, prologue=wire.resume_prologue(host.channel), rs=host.kp.pub)
+            s = serve.Session(cid=9)
+            host.sessions[9] = s
+            await host.on_data(s, bytes([wire.RESUME_INIT]) + hs.write_message(b'{"v":1}'))
+            self.assertEqual(self.ops[0][:2], (wire.OP_DATA, 9))
+            self.assertEqual(self.ops[0][2][0], wire.HS_RESP)
+            hs.read_message(self.ops[0][2][1:])
+            send, recv, _ = hs.split()
+            self.assertFalse(await host.send_app(s, {"t": "hist_meta", "count": 1}))
+            msg = send.encrypt(b"", wire.pad_json({"t": "hello", "caps": ["p33"]}))
+            if replace_cid:
+                async with host.send_lock:
+                    pending = asyncio.create_task(host.on_data(s, bytes([wire.DATA]) + msg))
+                    await asyncio.sleep(0)
+                    replacement = serve.Session(cid=9)
+                    host.sessions[9] = replacement
+                await pending
+                self.assertIs(host.sessions.get(9), replacement)
+                self.assertEqual(len(self.ops), 1)
+                return []
+            await host.on_data(s, bytes([wire.DATA]) + msg)
+            self.assertEqual([op for op, _, _ in self.ops[1:]], [wire.OP_DATA, wire.OP_CLOSE])
+            self.assertEqual(self.ops[1][2][0], wire.DATA)
+            self.assertNotIn(9, host.sessions)
+            return [wire.unpad_json(recv.decrypt(b"", self.ops[1][2][1:]))]
+        return asyncio.run(go())
+
+    def test_ticket_moved_identity_gets_only_terminal_hint_before_close(self):
+        kp = Keypair.generate()
+        did = self.st.add_device(kp.pub, "old iPhone")
+        # A host upgraded after ticket migration still explains its recorded tombstone.
+        self.st.remove_device(did)
+        self.st.note_removed(did, "replaced", moved=True)
+        new = Keypair.generate()
+        self.st.add_device(new.pub, "current remote")
+        self.assertEqual(self._resume(kp), [{"t": "removed", "why": "replaced", "moved": True}])
+        self.assertFalse(self.st.is_allowed(kp.pub))
+        self.assertTrue(self.st.is_allowed(new.pub))
+
+    def test_detached_hello_cannot_send_or_close_reused_cid(self):
+        self._resume(Keypair.generate(), replace_cid=True)
 
     def test_a_replaced_device_that_resumes_is_told_so_then_closed(self):
         kp = Keypair.generate()

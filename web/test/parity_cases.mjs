@@ -711,11 +711,10 @@ export async function runCases({ B, web, fake, only }) {
     const before = fake.st.turns.length, total0 = (await pg()).split('/ ')[1];
     await sendText('排队中的话');
     await wait(`!document.getElementById('sayCancel').hidden && document.getElementById('input').value === ''`);
-    // one look tells it is queued: the page says so (not the working line 「董事长，您的最新指示已经收到…」) and how to withdraw;
-    // P282 (追加): ONE place only — no second pending line above the field (it read as "sent" and "not sent" at once)
-    await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))})`, 3000);
-    ok(await ev(`document.body.dataset.pageQueued === '1' && getComputedStyle(document.querySelector('.thinking')).display === 'none'`), 'queued page: no working dots');
-    ok(T('r.queue.card').includes('取消') && await ev(`document.getElementById('outbox').hidden && !document.querySelector('#outbox .obi[data-queued="1"]')`), 'queued: shown once (the page), no pending line above the field');
+    const badge = count => `document.querySelector('#ownerQueueBtn:not([hidden]) .queueCount')?.textContent === '${count}'`;
+    await wait(badge(1),3000);
+    ok(await ev(`!document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))}) && !document.getElementById('ownerQueueDialog').open`), 'pending queue is collapsed outside the reply');
+    ok(await ev(`document.getElementById('outbox').hidden && !document.querySelector('#outbox .obi[data-queued="1"]')`), 'one queue entrance');
     await click('#sayCancel');
     await waitToast(T('r.say.withdrawn'));
     ok((await ev(`document.getElementById('input').value`)) === '排队中的话' && fake.st.cancels.length === 1, 'withdrawn: the words are back');
@@ -728,15 +727,18 @@ export async function runCases({ B, web, fake, only }) {
     await clearField();
     // the other path: queued, then the Agent J host takes it — only then the pending line and the × go; the field stays empty
     await sendText('被接手的话');
-    await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))})`, 3000);
+    await wait(badge(1), 3000);
     ok(await ev(`!document.getElementById('sayCancel').hidden && document.getElementById('outbox').hidden && document.getElementById('input').value === ''`), 'queued: × in the field, no pending line, field empty');
     // P152 (P149 plan B): a second queued message's page says how many wait ahead of it; withdrawn again (× takes the latest)
     await sendText('第二条排队的话');
-    await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card') + ' · ' + T('r.queue.ahead', { n: 1 }))})`, 3000);
+    await wait(badge(2),3000);
+    await click('#ownerQueueBtn');
+    ok(await ev(`JSON.stringify([...document.querySelectorAll('#ownerQueueList li p')].map(n=>n.textContent)) === JSON.stringify(['被接手的话','第二条排队的话'])`), 'drawer lists both messages in order');
+    await click('#ownerQueueClose');
     await click('#sayCancel');
     await waitToast(T('r.say.withdrawn'));
     await clearField();
-    await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))}) && !document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.ahead', { n: 1 }))})`, 3000);
+    await wait(badge(1),3000);
     // P282 (追加): the Agent takes it (a shared Codex still opens its session before the write) — no longer 「排队中」, the
     // × stops taking it back (P328: while blue it stays as 「stop this turn」), the page reads as worked on; `delivered`
     // follows later and changes nothing visible

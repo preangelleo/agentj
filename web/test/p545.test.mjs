@@ -144,7 +144,7 @@ test('the page: seatscope.js first in <head>; per-seat DB names; seat routes for
   assert.doesNotMatch(app, /location\.pathname ?=== ?'\/bots'|location\.pathname === FRIENDS_PATH/, 'routes go through seats.routeOf');
   assert.match(app, /passkey\.assert\(prep\.challenge, allow\)/);
   assert.match(app, /if \(other !== seats\.SEAT\) \{ pkRestoreOther\(other\); return renderPk\(\); \}/, 'another seat\'s passkey never restores on a seat page');
-  assert.match(app, /if \(seats\.SEAT && \(await seats\.seatId\(to\.channel\)\) !== seats\.SEAT\) throw new Error\('seat'\);/, '…nor its renewal ticket');
+  assert.doesNotMatch(app, /renew\.prove\(/, 'no seat implicitly restores a new identity from its renewal ticket');
   const fid = readFileSync(pub('js/faceid.js'), 'utf8');
   assert.match(fid, /export async function assert\(challenge, allow = \[\]\)/);
   assert.match(fid, /allowCredentials: allow\.map\(\(id\) => \(\{ type: 'public-key', id: unb64u\(id\), transports: TRANSPORTS\.unknown \}\)\)/);   // P555 d: + transports

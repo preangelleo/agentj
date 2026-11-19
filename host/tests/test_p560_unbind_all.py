@@ -145,8 +145,8 @@ class UnbindAll(Security, unittest.IsolatedAsyncioTestCase):
         s=serve.Session(cid=9,state='pk',pub=os.urandom(32))
         with patch.object(self.h, '_pk_fail', new=AsyncMock()) as fail:
             await self.h._pk_restore(s,{})
-            await self.h._rt_restore(s,{})
-            self.assertEqual(fail.await_count,2)
+            await self.h._pk_restore(s, {'t': 'rt_restore'})
+            self.assertEqual(fail.await_count, 2)
 
     def pending_seeds(self):
         pub=os.urandom(32)

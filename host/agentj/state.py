@@ -603,30 +603,6 @@ class State:
             _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
         return True
 
-    def ticket_restore(self, old: str, tid: str, pub: bytes, sign_pub: bytes, new_rt: dict, iid: str | None = None) -> str | None:
-        """A verified ticket restore, in ONE locked write — passkey_restore's rule (the record `old`, still listed and still
-        holding ticket `tid`, takes the new X25519 + approval keys and keeps name / paired_at / pk) plus the rotation: the used
-        ticket is replaced by `new_rt` in the same write, so it can never be used twice. → the new device id, or None."""
-        new = wire.device_id(pub)
-        with self.devices_lock():
-            d = self.devices()
-            rec = d.get(old)
-            rt = rec.get("rt") if isinstance(rec, dict) else None
-            if not isinstance(rt, dict) or rt.get("i") != tid or (new != old and new in d):
-                return None
-            rec = dict(rec, pair_origin=rec.get("pair_origin", old), pub=wire.b64u(pub), sk=wire.b64u(sign_pub), seen=int(time.time()), rt=dict(new_rt))
-            if iid:
-                rec["iid"] = iid
-            else:
-                rec.pop("iid", None)
-            d.pop(old)
-            d[new] = rec
-            _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
-        if new != old:
-            self.note_removed(old, "replaced", moved=True)
-        self.forget_removed(new)
-        return new
-
     # ------------------------------------------------------------ remote unbind switch (A3.1, PROTOCOL §7 sync)
     def remote_unbind(self) -> bool:
         """May the Dashboard's owner ask this host to remove a device? Default on; `agentj remote-unbind off` turns it off."""

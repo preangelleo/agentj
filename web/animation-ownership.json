@@ -379,6 +379,13 @@
       "previousName": "fdeep-in",
       "originalBodySha256": "fe7742c3baa4a402905192adb0fa500839030cab019dd9fd9051899650f49ff1",
       "evidence": "forms.js deep() full-screen schema view; metadata-only namespace rename preserves exact keyframe declaration body."
+    },
+    "aj-reply-action-queue-pulse": {
+      "owner": "aj-reply-action",
+      "file": "public/app.css",
+      "previousName": "queue-pulse",
+      "originalBodySha256": "fcf29417d5923f51aca313f019666e1e034fcdc9bf5bb87158cdcb839d2b6cd2",
+      "evidence": "0319 approved ECG translates one waveform period within the owner queue action."
     }
   },
   "consumers": [
@@ -1126,6 +1133,16 @@
       "previousName": "fdeep-in",
       "property": "animation",
       "originalValue": "fdeep-in .2s var(--re,ease) both",
+      "context": []
+    },
+    {
+      "file": "public/app.css",
+      "selector": "#ownerQueueBtn .queuePulse",
+      "owner": "aj-reply-action",
+      "name": "aj-reply-action-queue-pulse",
+      "previousName": "queue-pulse",
+      "property": "animation",
+      "originalValue": "queue-pulse 1.7s linear infinite",
       "context": []
     }
   ],

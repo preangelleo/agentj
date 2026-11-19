@@ -392,8 +392,8 @@ session.configure({
     // dk = this browser's device public key: a later page that finds the pairing but another device key knows the browser
     // lost the key (0.15.1) instead of failing the resume and calling it "removed"
     const host = { relay: ctx.relay, channel: ctx.channel, hostPub: ctx.hostPub, approved: true, dk: b64u((await deviceKey()).pub) };
-    if (restoreKind === 'pk') host.pk = true;         // P198: restored with a passkey, so the taken-over page can offer it again
-    if (restoreKind === 'pk' && pkCred) seats.setInstallHints({ pk: pkCred });   // P545: the installed seat app asks for this one
+    if (restoringPasskey) host.pk = true;         // P198: restored with a passkey, so the taken-over page can offer it again
+    if (restoringPasskey && pkCred) seats.setInstallHints({ pk: pkCred });   // P545: the installed seat app asks for this one
     await forgetLocal();                              // a new pairing starts empty: nothing of the previous computer goes to it
     await dbPut('host', host);
     markPaired(true);
@@ -411,7 +411,7 @@ session.configure({
   onReady() {
     backfillPairing().catch(() => { /* only a hint for later */ });
     learnHost().catch(() => { /* only a hint for later */ });
-    restoreKind = null; rtRetries = 0; pkTakeover = false;
+    restoringPasskey = false; pkTakeover = false; outageRestore = false; outageRecovery = null;
     if (movePending) { movePending = false; clearTimeout(moveTimer); toastAction(t('sxf.bound'), t('p574.aiLogin'), () => settings.openAuth(), 20000); }   // P547: followed the seat to the new host
     if (!ticketComing) ticketCheck().catch(() => {});
     ticketComing = false;
@@ -444,7 +444,7 @@ session.configure({
   onHostDown: onHostGone,
   onRevoked: revoked,
   onPairFailed: pairFailed,
-  onRestoreFailed: restoreFailed,
+  onRestoreFailed: pkFailed,
   onProtocolFail(wasPair, e) {
     if (e && e.name === 'NotSupportedError') return fatal('error.noCrypto');
     setStatus('error', 'st.error');
@@ -637,7 +637,6 @@ async function revoked(why = 'revoked', moved = false) {
   ticketQueue(renew.clear);                           // P122: a removed / replaced phone's ticket is dead on the host anyway
   if (seats.SEAT && why !== 'replaced') { seats.forgetSeat(seats.SEAT); dropRootPairing(seats.SEAT).catch(() => {}); }   // P545
   const replaced = why === 'replaced';
-  $('repair').hidden = replaced; // F36: continue in the other app; do not offer a takeover loop.
   setStatus('revoked', replaced ? 'st.replaced' : 'st.revoked');
   $('revoked-title').dataset.i18n = replaced ? 'revoked.replacedTitle' : 'revoked.title';
   $('revoked-lead').dataset.i18n = replaced ? 'revoked.replacedLead' : 'revoked.lead';
@@ -649,15 +648,12 @@ async function revoked(why = 'revoked', moved = false) {
   $('takeover-pk').hidden = true;
   if (replaced) renderTakeover(h && { ...h, approved: false, removed: why }).catch(() => { $('takeover-pk').hidden = true; });
 }
-// P198 (F20 over F36, Agent J's decision): Safari / the Home Screen app / a private tab share one Face ID record, and the side
-// that was taken over may take the connection back here — one button on this page, never a prompt. It shows only when this
-// pairing has (or may have) a passkey: `pk` true = saved or restored with one here; false = the computer offered to save
-// one, i.e. it has none (a record from before P198 never said: the button shows, and a refused tap says why).
-// A successful restore stores a new approved record (onApproved), so the next launch no longer opens this page.
+// An enrollment receipt can be lost after the host has saved the credential. Let the owner explicitly
+// ask the platform authenticator. The host verifies the assertion before approving the recovery.
 let takeoverWith = null;
 async function renderTakeover(h) {
   const b = $('takeover-pk'), lead = $('revoked-lead');
-  const ok = !!h && h.removed === 'replaced' && h.pk !== false && !!(await signKey()) && (await passkey.supported());
+  const ok = !!h && h.removed === 'replaced' && !!(await signKey()) && (await passkey.supported());
   if (view !== 'revoked' || state !== 'revoked') return;
   takeoverWith = ok ? h : null;
   if (ok) pkPrep = await passkey.prepareRestore((await deviceKey()).pub, (await signKey()).pub);
@@ -699,7 +695,8 @@ function fatal(key) {
 }
 async function resume() {
   const host = await dbGet('host');
-  if (!host || !host.approved) { if (!(await tryTicket())) showIdle(); return; }
+  if (!host || !host.approved) { showIdle(); return; }
+  prepareOutageRecovery(host).catch(() => {});
   setAgentName(host.name, false);                     // the cached name, shown before the connection is up
   show(controls.panel === 'chat' ? 'chat' : controls.panel);
   session.openSession('resume', { relay: host.relay, channel: host.channel, hostPub: new Uint8Array(host.hostPub) });
@@ -1041,6 +1038,16 @@ function moveFailed() {
 // Restore: on the empty pairing screen, one button when this browser has Face ID / a platform authenticator. The new
 // device key + approval key exist already (main() made them); the challenge binds the passkey's answer to them.
 let pkPrep = null;
+let outageRecovery = null, outagePrompt = false, outageRestore = false;
+async function prepareOutageRecovery(host) {
+  if (!session.repeatedRefusals()) { outageRecovery = null; return; }
+  if (outageRecovery && outageRecovery.host.channel === host.channel && Date.now() - outageRecovery.prep.ts < 180000) return;
+  const sk = await signKey();
+  if (!sk || !(await passkey.supported())) return;
+  const prep = await passkey.prepareRestore((await deviceKey()).pub, sk.pub);
+  outageRecovery = { host, prep };
+  conndlg.update();
+}
 let pkCred = null;
 let pkRegId = null;                                   // P545: the passkey just registered (pk_reg_res says whether it was saved)
 let pkAny = false;                                    // P545: this seat's own passkey was not on this device: the next tap asks for any
@@ -1053,37 +1060,48 @@ async function renderPk() {
   // the system for any passkey — each seat's page then asks for its own one
   b.hidden = view !== 'pair' || state !== 'idle' || (!seats.SEAT && seats.knownSeats().length >= 2);
 }
-async function pkRestore(auto = false, takeover = false) {
+async function pkRestore(takeover = false, outage = null) {
   pkTakeover = takeover;
-  let prep = pkPrep;
+  let prep = outage ? outage.prep : pkPrep;
   if (!prep || Date.now() - prep.ts > 4 * 60 * 1000) prep = await passkey.prepareRestore((await deviceKey()).pub, (await signKey()).pub);
   pkPrep = null;
   let a;
   const allow = pkAny ? [] : seats.passkeyHint();   // P545: a seat's page asks only for its own passkey when it knows it
   try { a = await passkey.assert(prep.challenge, allow); } catch (e) {          // cancelled / no passkey here / not focused
     document.body.dataset.pkErr = (e && e.name) || 'error';                       // diagnostics only (tests read it)
-    if (allow.length && !auto) pkAny = true;
+    if (allow.length) pkAny = true;
+    if (outage) { toast(t(pkassist.osKey('pk.none')), 5000); return; }
     if (takeover) {                                   // P198: stay on the taken-over page; the button stays for another tap
       if (e && e.name === 'NotAllowedError') takeoverNote('revoked.takeoverNone');
       return renderTakeover(takeoverWith);
     }
-    // P122: a tap that found nothing says why (no passkey saved — on iPhone usually iCloud Keychain off — or cancelled);
-    // an automatic try (iOS may refuse it without a tap) stays silent: the button is still there
-    if (!auto && e && e.name === 'NotAllowedError') pairNote(pkassist.osKey('pk.none'));   // P539: never iCloud words on Android
+    if (e && e.name === 'NotAllowedError') pairNote(pkassist.osKey('pk.none'));   // P539: never iCloud words on Android
     return renderPk();
   }
   let to;
   try {
     to = passkey.decodeHandle(a.uh, { testRelay: new URLSearchParams(location.search).get('relay') });
     if (!allowRelay(to.relay)) throw new Error('relay');
-  } catch { return pkFailed('bad'); }
+  } catch {
+    if (outage) { toast(t('pk.failed'), 5000); return; }
+    return pkFailed('bad');
+  }
+  if (outage && (session.isReady() || !PAIRED_VIEWS.includes(view))) return;
+  // Recovery from a paired page is bound to that pairing, including on the unscoped root URL.
+  const expected = outage ? outage.host : takeover ? takeoverWith : null;
+  if (expected && (to.channel !== expected.channel || b64u(to.hostPub) !== b64u(new Uint8Array(expected.hostPub)))) {
+    if (takeover) return pkFailed('bad');
+    toast(t('pk.failed'), 5000);
+    return;
+  }
   // P545: a seat's page signs in only as its own seat — another seat's passkey is refused here, with that seat's address
   if (seats.SEAT) {
     const other = await seats.seatId(to.channel);
     if (other !== seats.SEAT) { pkRestoreOther(other); return renderPk(); }
   }
   pkCred = a.id;
-  restoreKind = 'pk';
+  outageRestore = !!outage;
+  restoringPasskey = true;
   $('pk-restore').hidden = true;
   $('takeover-pk').hidden = true;
   $('takeover-note').hidden = true;
@@ -1204,7 +1222,7 @@ function renderSeatPick(extra = null) {
 }
 /** A seat's page got another seat's passkey: refused, with the right page to open. */
 function pkRestoreOther(id) {
-  restoreKind = null;
+  restoringPasskey = false;
   $('pair-error').hidden = true;
   renderSeatPick(id);
   $('seat-pick-note').hidden = false;
@@ -1219,12 +1237,10 @@ function initSeatUi() {
 
 // ---------------------------------------------------------------- P122 renewal ticket (PROTOCOL §12.1): stay signed in
 // The host issues one ticket per pairing / restore (and on rt_req); renew.save() turns it into the HttpOnly cookie at once.
-// A page with no pairing first asks the origin for a proof over its NEW keys and, when there is one, reconnects as the same
-// phone with no tap. Only the host's own answer ends that: unknown / revoked → the cookie goes and the screen says so.
+// An unpaired browser stays on the pairing page until the owner acts. A ticket never grants new keys access.
 const RT_REFRESH_MS = 30 * 86400 * 1000;              // a ready phone renews a ticket older than this (rt_req)
 let ticketComing = false;                             // a pairing / restore: the host sends the ticket by itself
-let restoreKind = null;                               // 'rt' | 'pk': which restore the session in flight is
-let rtRetries = 0;                                    // consecutive `expired` ticket restores (the host was offline > 5 min)
+let restoringPasskey = false;
 let rtChain = Promise.resolve();
 const ticketQueue = (fn) => { rtChain = rtChain.then(fn).catch(() => {}); return rtChain; };   // saves / clears in order
 async function ticketCheck() {
@@ -1244,54 +1260,10 @@ function gotTicket(m) {
     if (cur && cur.approved && cur.channel === ch) await dbPut('host', { ...cur, rtAt: Date.now() });
   });
 }
-/** → true when a ticket restore is under way (the chat screen shows "connecting"); false = no ticket here / unreachable. */
-async function tryTicket() {
-  const sk = await signKey();
-  if (!sk) return false;
-  let pr;
-  try { await rtChain; pr = await renew.prove((await deviceKey()).pub, sk.pub); } catch { return false; }
-  if (!pr) return false;
-  let to;
-  try {
-    to = passkey.decodeHandle(pr.uh, { testRelay: new URLSearchParams(location.search).get('relay') });
-    if (!allowRelay(to.relay)) throw new Error('relay');
-    if (seats.SEAT && (await seats.seatId(to.channel)) !== seats.SEAT) throw new Error('seat');   // P545: never another seat's
-  } catch { ticketQueue(renew.clear); return false; }
-  restoreKind = 'rt';
-  $('pair-wiped').hidden = true;
-  show('chat');
-  session.openSession('restore', { relay: to.relay, channel: to.channel, hostPub: to.hostPub,
-    rt: { i: pr.i, p: pr.p, uh: b64u(pr.uh), ts: pr.ts, nonce: pr.nonce } });
-  return true;
-}
-function restoreFailed(why) {
-  const kind = restoreKind; restoreKind = null;
-  if (kind !== 'rt') return pkFailed(why);
-  if (why === 'expired' && rtRetries++ < 3) {         // the proof aged while the computer was offline: a fresh one
-    tryTicket().then((ok) => { if (!ok) showIdle(); }, () => showIdle());
-    return;
-  }
-  rtRetries = 0;
-  showIdle();
-  if (why === 'unknown' || why === 'revoked') { ticketQueue(renew.clear); pairNote('rt.dead'); return; }
-  rtGaveUp = true;                                    // `bad`: keep the cookie, but no automatic retry on this page load
-  autoPasskey().catch(() => {});                      // a passkey may still get this phone back
-}
-let rtGaveUp = false;
-/** Back online / back in the foreground on the empty pairing screen (a ticket restore could not reach the origin). */
-function ticketWhenIdle() {
-  if (view !== 'pair' || state !== 'idle' || rtGaveUp || session.current()) return;
-  tryTicket().catch(() => {});
-}
-/** The phone was paired here before (the browser lost the pairing, or the ticket did not work): try its passkey once without
- *  waiting for a tap. Chromium allows it; iOS Safari may want a tap first — then nothing shows and the button stays. */
-async function autoPasskey() {
-  if (view !== 'pair' || state !== 'idle' || !(await signKey()) || !(await passkey.supported())) return;
-  await pkRestore(true);
-}
-
 let pkTakeover = false;                                // P198: the restore in flight started on the taken-over page
 function pkFailed(why) {
+  restoringPasskey = false;
+  if (outageRestore) { outageRestore = false; toast(t('pk.failed'), 5000); return resume().catch(() => {}); }
   const dead = why === 'unknown' || why === 'revoked';
   if (dead && pkCred) passkey.forgetDead(pkCred);
   if (pkTakeover) {
@@ -1608,7 +1580,7 @@ function wire() {
   $('scanBtn').addEventListener('click', () => { settings.close(); closeMenu(); scanIcon(); });
   $('rm-scan-icon').addEventListener('click', () => startScan('rv'));   // P207 §3: the scan icon right of 「添加遥控器」
   $('pk-restore').addEventListener('click', () => { stopScan(); pkRestore().catch(() => pkFailed('bad')); });
-  $('takeover-pk').addEventListener('click', () => { pkRestore(false, true).catch(() => pkFailed('bad')); });   // P198
+  $('takeover-pk').addEventListener('click', () => { pkRestore(true).catch(() => pkFailed('bad')); });   // P198
   $('scan-stop').addEventListener('click', () => stopScan());
   $('scan-back').addEventListener('click', () => stopScan());
   $('scan-trigger').addEventListener('click', () => { if (view !== 'scan') return; if (!scanStream) { startScan(scanMode); return; } scanActive = !scanActive; paintScanTrigger(); });
@@ -1634,6 +1606,12 @@ function wire() {
   conndlg.init({
     link: () => link.state(), elapsed: () => link.elapsed(), painted: () => painted, paired: () => PAIRED_VIEWS.includes(view),
     offer: offerVersion, yieldTo: versionYield, refresh: () => settings.refreshApp(),
+    passkey: () => !!outageRecovery && session.repeatedRefusals() && !restoringPasskey,
+    restore: () => {
+      if (outagePrompt || !outageRecovery || session.isReady()) return;
+      outagePrompt = true;
+      pkRestore(false, outageRecovery).catch(() => toast(t('pk.failed'), 5000)).finally(() => { outagePrompt = false; });
+    },
     retry: () => { if (session.retryInfo().nextAt) session.reconnectNow('manual'); else resume().catch(() => {}); },
   });
   mainThread.init();
@@ -1740,7 +1718,6 @@ function wire() {
   });
   // relay's revive: back online or back in the foreground → reconnect at once (no waiting out the backoff)
   addEventListener('online', () => { wakeLink(); session.reconnectNow(); });
-  addEventListener('online', ticketWhenIdle);         // P122: a ticket restore that could not reach the origin, again
   window.addEventListener('pageshow', (e) => { wakeLink(); if (e.persisted) session.reconnectNow(); });
   document.addEventListener('resume', () => { wakeLink(); session.reconnectNow(); });   // P393: a frozen page thawed
   navigator.connection?.addEventListener?.('change', () => { if (!document.hidden) { wakeLink(); session.reconnectNow(); } });   // P393: Wi-Fi ↔ mobile data
@@ -1751,7 +1728,6 @@ function wire() {
     if (fg) session.reconnectNow();
     if (fg && session.isReady()) cardsync.sync();   // P203: back in front on a live session — cards sent while frozen
     if (fg && view === 'pair' && state === 'idle') renderPk().catch(() => {});   // a fresh challenge timestamp
-    if (fg) ticketWhenIdle();
   });
   onLang(relang);
   onLang(() => paintScanTrigger());   // P207: the scan icon's words follow the language
@@ -1837,9 +1813,7 @@ async function main() {
   }
   if (host && host.approved && !lost) { askPersist(); show('chat'); resume(); openFriendsWanted(); return; }
   if (host && !host.approved && ['replaced', 'revoked'].includes(host.removed)) return revoked(host.removed, host.removedMoved === true);
-  if (await tryTicket()) { openFriendsWanted(); return; }   // P122: no pairing here, but this phone's ticket cookie is
   showIdle();
-  if (lost) autoPasskey().catch(() => {});
 }
 
 main();

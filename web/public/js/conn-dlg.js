@@ -21,7 +21,7 @@ export function connMode({ link = 'up', elapsed = 0, painted = '', paired = fals
   return painted === 'waiting-host' ? 'down' : 'reconnecting';
 }
 
-let H = { link: () => 'up', elapsed: () => 0, painted: () => '', paired: () => false, offer: () => null, retry() {}, refresh() {}, yieldTo() {} };
+let H = { link: () => 'up', elapsed: () => 0, painted: () => '', paired: () => false, offer: () => null, passkey: () => false, restore() {}, retry() {}, refresh() {}, yieldTo() {} };
 let mode = null, dismissed = false, tick = 0, upTimer = 0;
 const $ = (id) => document.getElementById(id);
 const COVER = '#settings:not([hidden]),.ajmodal:not([hidden]):not(.cp-docked),#confirm:not([hidden]),.sheet:not([hidden]),dialog[open],'
@@ -43,7 +43,15 @@ function paint() {
   $('connText').hidden = !text;
   $('connRow').hidden = mode === 'up';
   $('connRetry').hidden = mode === 'update';
+  paintRetry();
   $('connRefresh').hidden = mode !== 'update';
+}
+
+function paintRetry() {
+  const btn = $('connRetry');
+  const key = H.passkey() ? 'revoked.takeoverPk' : 'off.retry';
+  btn.dataset.i18n = key;
+  btn.textContent = t(key);
 }
 
 /** Called on every painted status / link change / view change, and once a second while the link is not up. */
@@ -63,13 +71,14 @@ export function update() {
   if (mode === 'up') mode = null;
   const next = dismissed ? null : connMode({ link, elapsed: H.elapsed(), painted: H.painted(), paired: H.paired(), covered: covered(), offer: H.offer() });
   if (next !== mode) { mode = next; paint(); }
+  else if (mode && mode !== 'update') paintRetry();
 }
 function later() { if (mode && mode !== 'up') dismissed = true; mode = null; paint(); }
 
 export function init(hooks) {
   H = { ...H, ...hooks };
   $('connLater').addEventListener('click', later);
-  $('connRetry').addEventListener('click', () => H.retry());
+  $('connRetry').addEventListener('click', () => { if ($('connRetry').dataset.i18n === 'revoked.takeoverPk') H.restore(); else H.retry(); });
   $('connRefresh').addEventListener('click', () => H.refresh());
   $('connDlg').addEventListener('click', (e) => { if (e.target === e.currentTarget) later(); });   // outside the square = later
   registerLayer({ element: () => $('connDlg'), open: () => !$('connDlg').hidden, close: later, fallback: () => $('setBtn'), trap: false, rank: -9, preserveOutsideFocus: true });

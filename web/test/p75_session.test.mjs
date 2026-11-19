@@ -30,9 +30,9 @@ test('P75 F36 hidden handshake refusals reconnect; authenticated removed confirm
   assert.deepEqual(calls.splice(0),['replaced'],'yield to the other browser');
  }finally{S.closeSession();globalThis.document=oldDoc;globalThis.WebSocket=oldWS;}
 });
-test('P75 F36 replaced copy does not invite re-pairing',()=>{
+test('0340 replaced remote offers manual host-approved pairing',()=>{
  for(const lang of ['en','zh.src']){
   const dict=JSON.parse(readFileSync(new URL('../i18n/web.'+lang+'.json',import.meta.url),'utf8'));
-  assert.doesNotMatch(dict.revoked.replacedLead,/agentj pair|重新配对/);
+  assert.match(dict.revoked.replacedLead,/agentj pair/);
  }
 });

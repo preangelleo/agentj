@@ -394,8 +394,8 @@
     "lead": "the Agent J host no longer trusts this phone. To keep using it, run `agentj pair` on the Agent J host and pair again.",
     "btn": "Pair again",
     "draft": "Your unsent draft, your input history and the key that encrypted them were deleted from this phone.",
-    "replacedTitle": "The other app took over",
-    "replacedLead": "Continue in the Home Screen app or browser you just connected. This side has disconnected; you do not need Face ID recovery again."
+    "replacedTitle": "This pairing has been replaced",
+    "replacedLead": "To use this remote again, run `agentj pair` on your Agent J host, then select Pair again."
   },
   "error": {
     "title": "Disconnected",
@@ -1919,7 +1919,7 @@
   "r.tg.failed": "Not forwarded; tap to retry",
   "r.tg.limited": "Too many forwards; try again in a few minutes",
   "r.tg.again": "This one was just forwarded",
-  "rt.dead": "Automatic sign-in no longer works on this phone: the Agent J host unpaired it, or it signed in from another browser or Home Screen icon. Scan the QR code to pair again.",
+  "rt.dead": "Pair this remote again using a new code from your Agent J host.",
   "pk.none": "Couldn't reconnect with Face ID. It may have been cancelled, or this phone has no saved Agent J Face ID record (on iPhone, iCloud Keychain must be on to save one). Scan the QR code to pair again.",
   "pk.notSaved": "The Face ID record wasn't saved; your pairing still works. On iPhone, turn on Settings → Apple Account → iCloud → Passwords (Keychain), then choose Set up Face ID in the menu to try again.",
   "r.speak.err.missing_key": "the Agent J host service has no speech key. Add the key to its service environment, then restart Agent J.",
@@ -2364,7 +2364,7 @@
   },
   "r.mail.idle": "Forward by e-mail",
   "revoked.takeoverPk": "Continue here with Face ID",
-  "revoked.takeoverLead": "Another copy of Agent J on this phone (the Home Screen app, Safari or a private tab) just took over the connection, so this one was disconnected. To use it here instead, tap the button below and confirm with Face ID; the other one will be disconnected.",
+  "revoked.takeoverLead": "If you registered Face ID, use it to restore access without scanning a code. This disconnects the other session using this pairing. If Face ID is unavailable, select Pair again.",
   "revoked.takeoverNone": "Face ID didn't confirm. It may have been cancelled, or this phone has no saved Agent J Face ID record. Tap again, or keep using the other one.",
   "r.ptt.intText": "The system interrupted the recording (screen lock or another app); the {d} recorded is being turned into text for the message field",
   "r.ptt.intNone": "The system interrupted the recording (screen lock or another app); no sound was recorded",
@@ -6047,8 +6047,8 @@
   "p0307.fix.failed": "Not changed; config.toml stays as it was.",
   "p0307.fix.unsupported": "This Agent J host's version does not have this button yet; update Agent J first.",
   "p361.cmd.codex_full_access": "Back to full access & restart: remove the top-level sandbox_mode from config.toml so Codex runs without its sandbox, then restart Agent J (Face ID)",
-  "p0307.twoid.title": "Two copies of Agent J on this phone",
-  "p0307.twoid.text": "If you've opened Agent J both in Safari and from the Home Screen icon, the phone treats them as two devices, and each one pushes the other out when it connects. Use just one of them. We recommend the Home Screen icon.",
+  "p0307.twoid.title": "Check your paired remotes",
+  "p0307.twoid.text": "Safari and the Home Screen icon can use separate pairing identities. If you did not switch between them, check the paired remotes on your host.",
   "p0307.secret.newTaskValidated": "It passed verification, but a new task started on the Agent J host during verification, so it was not saved. Please try again.",
   "p0307.secret.newTask": "A new task started on the Agent J host after you confirmed and before saving, so it was not saved. Please try again.",
   "p0306.conn.downTitle": "Agent J host is offline",
@@ -6169,5 +6169,10 @@
   "p0331.system": "System",
   "p0285.uv.ineligibleKey": "This remote has a verification key but cannot approve this setup. Use another remote with an independent key. Viewing this remote’s settings does not start another request.",
   "secretEditor.title": "Paste {name}",
-  "p0321.saveKey": "{key} to save"
+  "p0321.saveKey": "{key} to save",
+  "p0319.title": "Queued messages",
+  "p0319.count": "Queued messages ({n})",
+  "p0319.stop": "Stop previous task",
+  "p0319.close": "Collapse",
+  "p0319.attachment": "Attachment"
 }

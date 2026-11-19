@@ -140,8 +140,13 @@ class Rotation(Revoke):
                 if method=='passkey':
                     did=self.st.passkey_restore(old.device,self.st.passkey_of_device(old.device)['id'],pub,raw)
                 else:
-                    self.st.set_ticket(old.pub,{'i':'test-ticket'})
-                    did=self.st.ticket_restore(old.device,'test-ticket',pub,raw,{'i':'new-ticket'})
+                    # Restore the persisted record shape written by hosts before ticket admission retired.
+                    devices = self.st.devices()
+                    record = devices.pop(old.device)
+                    did = wire.device_id(pub)
+                    devices[did] = dict(record, pair_origin=record.get('pair_origin', old.device),
+                                        pub=wire.b64u(pub), sk=wire.b64u(raw), rt={'i': 'test-ticket'})
+                    self.st.write_private(self.st.devices_path, json.dumps(devices).encode())
                 # An attacker replaces the restored Passkey and reconnects (mode=resume).
                 initial=self.st.passkey_of_device(did)
                 self.st.set_passkey(pub,{'id':wire.b64u(os.urandom(32)),'rp':'m.agentj.app'})

@@ -394,8 +394,8 @@
     "lead": "Agent J 主机不再认这台手机。要继续用，先在Agent J 主机上运行 `agentj pair`，再重新配对。",
     "btn": "重新配对",
     "draft": "没发出去的草稿、输入记录和加密它们的密钥，都已从这台手机上删除。",
-    "replacedTitle": "另一边接管了",
-    "replacedLead": "请打开刚才连接的主屏幕 App 或浏览器继续使用。这边已断开，不需要再次用 Face ID 认回。"
+    "replacedTitle": "这个入口的配对已被替换",
+    "replacedLead": "要继续使用这个入口，请在 Agent J 主机上运行 `agentj pair`，然后点“重新配对”。"
   },
   "error": {
     "title": "连接断开了",
@@ -1919,7 +1919,7 @@
   "r.tg.failed": "没转发出去，点一下重试",
   "r.tg.limited": "转发得太频繁了，过几分钟再试",
   "r.tg.again": "这条刚转发过了",
-  "rt.dead": "这台手机的自动登录已经失效：Agent J 主机那边解绑了它，或者它已经在另一个浏览器或主屏幕图标里登录。请扫码重新配对。",
+  "rt.dead": "请在 Agent J 主机上获取新的配对码，重新配对这个遥控器。",
   "pk.none": "没能用 Face ID 连回Agent J 主机：可能是取消了，也可能这台手机没有保存 Agent J 的 Face ID 记录（iPhone 要在设置里打开 iCloud 钥匙串才能保存）。请扫码重新配对。",
   "pk.notSaved": "Face ID 记录没存上，现在的配对照常能用。iPhone 要在「设置 → Apple 账户 → iCloud → 密码（钥匙串）」里打开它才能保存；打开后可以在菜单里点「设置 Face ID」再试。",
   "r.speak.err.missing_key": "Agent J 主机服务还没有朗读密钥。请在Agent J 主机服务环境里添加 key，然后重启 Agent J。",
@@ -2364,7 +2364,7 @@
   },
   "r.mail.idle": "转发到邮箱",
   "revoked.takeoverPk": "用 Face ID 在这里继续",
-  "revoked.takeoverLead": "主屏幕 App、Safari 或无痕页里的另一边刚刚接管了连接，这边已断开。想回到这里用，点下面的按钮，用 Face ID 验证一下；另一边会随之断开。",
+  "revoked.takeoverLead": "如果已登记 Face ID，就能用它恢复，无需扫码。验证成功后，当前使用这条配对的入口会断开。如果用不了 Face ID，可以点“重新配对”。",
   "revoked.takeoverNone": "没能用 Face ID 验证：可能是取消了，也可能这台手机没有保存 Agent J 的 Face ID 记录。可以再点一次，或者回到另一边继续用。",
   "r.ptt.intText": "录音被系统打断（锁屏或切到别的 App），已录的 {d} 正在转成文字，会放进输入框",
   "r.ptt.intNone": "录音被系统打断（锁屏或切到别的 App），这次没有录到声音",
@@ -6046,8 +6046,8 @@
   "p0307.fix.failed": "没有改成，config.toml 保持原样。",
   "p0307.fix.unsupported": "这台 Agent J 主机的版本还没有这个按钮，先升级 Agent J。",
   "p361.cmd.codex_full_access": "改回全放行并重启：删掉 config.toml 顶层的 sandbox_mode，Codex 不再用沙箱，然后重启 Agent J（Face ID 确认）",
-  "p0307.twoid.title": "同一台手机上有两个 Agent J",
-  "p0307.twoid.text": "如果你在 Safari 里和从主屏幕图标都打开过 Agent J，手机会把它们当成两台设备，一边连上就会把另一边挤下线。以后只用其中一个就好，推荐从主屏幕图标打开。",
+  "p0307.twoid.title": "检查配对记录",
+  "p0307.twoid.text": "Safari 和主屏幕图标打开的 Agent J 可能使用不同的配对身份。如果你没有切换入口，请在 Agent J 主机上核对已配对的遥控器。",
   "p0307.secret.newTaskValidated": "验证通过了，但验证期间 Agent J 主机上开始了一个新任务，所以没有保存。请再试一次。",
   "p0307.secret.newTask": "你确认之后、保存之前，Agent J 主机上开始了一个新任务，所以没有保存。请再试一次。",
   "p0306.conn.downTitle": "Agent J 主机离线",
@@ -6168,5 +6168,10 @@
   "p0331.system": "系统",
   "p0285.uv.ineligibleKey": "这台遥控器已有验证密钥，但不能批准本次设置。请用另一台持有独立密钥的遥控器批准；查看本机设置不会发起新申请。",
   "secretEditor.title": "粘贴 {name}",
-  "p0321.saveKey": "{key} 保存"
+  "p0321.saveKey": "{key} 保存",
+  "p0319.title": "排队消息",
+  "p0319.count": "排队消息（{n} 条）",
+  "p0319.stop": "关闭上一条任务",
+  "p0319.close": "收起",
+  "p0319.attachment": "附件"
 }

@@ -4787,3 +4787,24 @@ body:has(#elev.secret:not([hidden])) #tools{visibility:hidden}
 .sheet .elev-hide{position:static}
 /* The sealed card's heading uses the existing dialog-title typography; lh keeps its fold centered as that font scales. */
 .approval-special541.ajmodal.dlgcard .special-fold541.elev-hide{font:600 var(--dlg-fs-title)/1.3 var(--font-title);top:calc(2 * var(--ui-space-section) + .5lh - 22px)}
+
+/* Owner queue uses the share slot. Active approvals and native interrupts retain their controls. */
+.rmbar:has(#ownerQueueBtn:not([hidden])) #webReportBtn{display:none}
+.rmbar:has(#ownerQueueBtn:not([hidden])) #main-thread-interrupt{margin-left:-4px}
+.rmbar #ownerQueueBtn{position:relative;visibility:visible;color:var(--sooty)}
+#ownerQueueBtn .disc{fill:var(--lotion)}
+#ownerQueueBtn svg svg{width:26px;height:24px;overflow:hidden}
+#ownerQueueBtn .queuePulse{animation:aj-reply-action-queue-pulse 1.7s linear infinite}
+@keyframes aj-reply-action-queue-pulse{to{transform:translateX(26px)}}
+@media(prefers-reduced-motion:reduce){#ownerQueueBtn .queuePulse{animation:none}}
+.queueCount{position:absolute;top:0;right:0;min-width:16px;padding:0 3px;border-radius:12px;background:var(--banana-republic);color:var(--sooty);font:600 11px/16px var(--font-body);text-align:center}
+#ownerQueueDialog{position:fixed;inset:0;margin:auto;box-sizing:border-box;width:min(416px,calc(100% - 32px));max-height:80dvh;overflow:auto;padding:24px 22px 20px;border:1px solid var(--black-mana);border-radius:26px;background-color:var(--noir);background-image:url("data:image/svg+xml,%3Csvg xmlns='http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg' width='96' height='96'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.84' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' opacity='.04' filter='url(%23grain)'/%3E%3C/svg%3E");color:var(--lotion);font-family:var(--font-body)}
+#ownerQueueDialog::backdrop{background:color-mix(in srgb,var(--sooty) 65%,transparent);backdrop-filter:blur(4px)}
+#ownerQueueDialog h2{margin:0 0 14px;font-size:1.25rem}
+#ownerQueueList{margin:0;padding:0;list-style:none}
+#ownerQueueList li{padding:12px 0;border-top:1px solid var(--black-mana)}
+#ownerQueueList header{display:flex;justify-content:space-between;gap:12px;color:var(--banana-republic);font-size:.8rem}
+#ownerQueueList p{margin:5px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.queueActions{display:flex;gap:8px;margin-top:16px}
+#ownerQueueStop,#ownerQueueClose{min-height:44px;flex:1;padding:5px 9px;border:1px solid var(--black-mana);border-radius:24px;background:transparent;color:var(--lotion);font:inherit;cursor:pointer}
+.queueActions #ownerQueueClose{background:var(--lotion);color:var(--sooty)}

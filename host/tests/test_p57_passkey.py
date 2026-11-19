@@ -273,9 +273,10 @@ class HostLevel(unittest.TestCase):
         self.host.sessions[cid] = s
         self.run_(self.host._resume_init(s, hs.write_message(json.dumps(payload).encode())))
         hs.read_message(self.ops[-1][2][1:])
+        self.peer_send, self.peer_recv, _ = hs.split()
         return s
 
-    def restore(self, cid, auth, kp=None, *, sk=None, chal_kp=None, chal_sk=None, ts=None, nonce=None, **kw):
+    def restore(self, cid, auth, kp=None, *, sk=None, chal_kp=None, chal_sk=None, ts=None, nonce=None, wire_reply=False, **kw):
         """A fresh context: a new key kp + approval key, `pk:1` RESUME, hello, then one pk_restore."""
         kp = kp or Keypair.generate()
         sk = sk or os.urandom(32)
@@ -287,13 +288,40 @@ class HostLevel(unittest.TestCase):
         nonce = nonce or os.urandom(16)
         ch = passkey.restore_challenge((chal_kp or kp).pub, chal_sk or sk, ts, nonce)
         uh = kw.pop("uh", passkey.user_handle(0, self.host.channel, self.host.kp.pub))
-        self.run_(self.host._app(s, auth.assert_(ch, uh, ts=ts, nonce=nonce, **kw)))
-        return kp, sk, self.to(cid)
+        start = len(self.ops)
+        assertion = auth.assert_(ch, uh, ts=ts, nonce=nonce, **kw)
+        if wire_reply:
+            from unittest.mock import patch
+            packet = self.peer_send.encrypt(b"", wire.pad_json(assertion))
+            with patch.object(self.host, "send_app", serve.Host.send_app.__get__(self.host)):
+                self.run_(self.host.on_data(s, bytes([wire.DATA]) + packet))
+        else:
+            self.run_(self.host._app(s, assertion))
+        return kp, sk, self.to(cid) + self.decode_data(cid, start)
+
+    def test_verified_passkey_still_recovers_and_missing_uv_ends_on_wire(self):
+        auth = Authenticator()
+        owner, _, _ = self.paired(auth)
+        _, _, denied = self.restore(20, auth, flags=0x01, wire_reply=True)
+        self.assertEqual(denied, [{"t": "pk_fail", "why": "bad"}])
+        self.assertTrue(self.st.is_allowed(owner.pub))
+        self.assertNotIn(20, self.host.sessions)
+        recovered, _, frames = self.restore(21, auth, wire_reply=True)
+        self.assertEqual([m["t"] for m in frames][:2], ["pk_ok", "ready"])
+        self.assertTrue(self.st.is_allowed(recovered.pub))
+
+    def decode_data(self, cid, start):
+        return [wire.unpad_json(self.peer_recv.decrypt(b"", payload[1:]), wire.MAX_JSON_P33)
+                for op, channel, payload in self.ops[start:] if op == wire.OP_DATA and channel == cid]
 
     def resume_plain(self, cid, kp):
+        from unittest.mock import patch
         s = self.handshake(cid, kp, {"v": 1})
-        self.run_(self.host._app(s, {"t": "hello", "caps": ["p33"]}))
-        return self.to(cid)
+        start = len(self.ops)
+        hello = self.peer_send.encrypt(b"", wire.pad_json({"t": "hello", "caps": ["p33"]}))
+        with patch.object(self.host, "send_app", serve.Host.send_app.__get__(self.host)):
+            self.run_(self.host.on_data(s, bytes([wire.DATA]) + hello))
+        return self.decode_data(cid, start)
 
     # -------------------------------------------------------------- registration
     def test_register_after_pairing_offer_then_pk_reg(self):
@@ -431,8 +459,9 @@ class HostLevel(unittest.TestCase):
         self.paired(a)
         s = self.handshake(9, Keypair.generate(), {"v": 1, "sk": wire.b64u(os.urandom(32)), "pk": 1})
         self.run_(self.host._app(s, {"t": "hello", "caps": ["p33"]}))
+        start = len(self.ops)
         self.run_(self.host._app(s, {"t": "msg", "text": "hi"}))
-        self.assertEqual(self.to(9), [{"t": "pk_fail", "why": "bad"}])
+        self.assertEqual(self.decode_data(9, start), [{"t": "pk_fail", "why": "bad"}])
         self.assertNotIn(9, self.host.sessions)
 
     def test_without_pk_flag_or_sk_an_unknown_key_is_removed_as_before(self):
@@ -464,11 +493,13 @@ class HostLevel(unittest.TestCase):
         with mock.patch.object(serve, "HS_TTL", 0.01):
             s = self.handshake(9, Keypair.generate(), {"v": 1, "sk": wire.b64u(os.urandom(32)), "pk": 1})
 
+            start = len(self.ops)
+
             async def go():
                 await self.host._app(s, {"t": "hello", "caps": ["p33"]})
                 await asyncio.sleep(0.1)
             self.run_(go())
-        self.assertEqual(self.to(9), [{"t": "pk_fail", "why": "expired"}])
+        self.assertEqual(self.decode_data(9, start), [{"t": "pk_fail", "why": "expired"}])
 
     def test_revoke_and_eviction_take_the_passkey(self):
         a = Authenticator()

@@ -6067,6 +6067,15 @@
     ],
     "owner-hosts__review": [
       "aj-settings"
+    ],
+    "queuePulse": [
+      "aj-reply-action"
+    ],
+    "queueCount": [
+      "aj-reply-action"
+    ],
+    "queueActions": [
+      "aj-reply-action"
     ]
   },
   "classOwnerRules": {
