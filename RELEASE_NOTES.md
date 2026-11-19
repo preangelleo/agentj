@@ -1,4 +1,4 @@
-# Agent J v0.30.47
+# Agent J v0.30.48
 
 Updates prepare dependencies in advance and can roll back offline. Blocked background tasks explain why. Scan confirmation rechecks the original browser.
 

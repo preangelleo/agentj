@@ -978,9 +978,14 @@ class Host:
         guarded_terminal = (obj.get("t") in ("term_ready", "term_out", "term_sudo", "term_confirm", "term_bang")
                             and terminal is not None and terminal.kind == "pty" and terminal.id == obj.get("id"))
         writer_epoch = terminal.writer_epoch if guarded_terminal else None
+        login_card = None
         def special_delivery_live():
             if guarded_terminal and (terminal.writer_epoch != writer_epoch or not desk.pty_writer_live(terminal, s)):
                 return False
+            if obj.get('t') == 'login_qr':
+                return bool(login_card and self.elevate.login._visible(login_card, s))
+            if obj.get('t') == 'login_qr_err' and obj.get('op') in ('request', 'refresh'):
+                return bool(s.sign_pub and self.st.sign_key(s.device) == s.sign_pub)
             if obj.get('t')!='secret_out_val':return True
             from . import approval_special
             out=getattr(getattr(self,'elevate',None),'out',None)
@@ -992,6 +997,10 @@ class Host:
             async def __aexit__(self, *args): return False
         lock = _HeldLock() if _already_locked else self.send_lock
         async with lock:  # nonce order == wire order
+            if obj.get("t") == "login_qr":
+                login_card = self.elevate.login.claim_delivery(s, obj)
+                if login_card and login_card.get("restricted"):
+                    obj = {**obj, "ttl": max(0, int(login_card["deadline"] - time.monotonic()))}
             if not await file_delivery_live():return False
             if not special_delivery_live():return False
             if (self.sessions.get(s.cid) is not s
@@ -1015,6 +1024,8 @@ class Host:
                     return False
                 ct = s.send.encrypt(b"", wire.pad_json(m, limit))
                 await self._op(wire.OP_DATA, s.cid, bytes([wire.DATA]) + ct)
+            if login_card and login_card.get("restricted") and special_delivery_live():
+                login_card["delivered"] = True
             return True
 
     async def relay_loop(self) -> None:
@@ -1747,6 +1758,7 @@ class Host:
             res = {"ev": "denied", "reason": "device_limit"}
             await self.close_cid(s.cid, "device_limit", res)
             return res
+        pair_revision = (self.st.devices().get(s.device) or {}).get("pair_revision")
         for kind in ("replaced", "evicted"):
             if got[kind]:
                 self.st.log("auto_unbind", device=got[kind]["id"], reason="same_browser" if kind == "replaced" else "full")
@@ -1754,6 +1766,9 @@ class Host:
         s.name = self._dev_label(s.device) or s.name   # P179: a remote the owner named before keeps that name
         s.provenance = provenance.phone()
         s.state, s.ready_at = "ready", time.monotonic()
+        from .browser_login import RequestPhone
+        bound = RequestPhone.from_session(self, s)
+        s.login_phone = bound if bound and bound.revision == pair_revision else None
         self.reporter.trigger("approve")
         await self.send_app(s, {"t": "approved", **self._caps(s)})
         await self._bulk(s)
@@ -2139,6 +2154,8 @@ class Host:
 
         s.provenance = provenance.phone()
         s.state = "ready"
+        from .browser_login import RequestPhone
+        s.login_phone = RequestPhone.from_session(self, s)
         self._set_timer(s, None)
         if passkey_verified:
             await self.send_app(s, {"t": "pk_ok"})
@@ -8456,6 +8473,8 @@ class Host:
         if not self.agent:
             return None
         send = compose.Send(s.device, sid or secrets.token_urlsafe(16), turn["id"], blobs=blobs, by=s.name or s.device)
+        if isinstance(s, Session):
+            send.phone_binding = getattr(s, "login_phone", None)  # pinned at the authenticated handshake
         event_guard = getattr(s, "event_delivery_allowed", None)
         if callable(event_guard):  # host-only fixed subscription binding; external JSON cannot supply this callable
             send.delivery_allowed = event_guard

@@ -2885,7 +2885,7 @@ class Elevator:
             elif isinstance(req, dict) and req.get("t") == "secret_out":
                 res = await self.out.send(req)
             elif isinstance(req, dict) and req.get("t") == "browser_login":
-                res = await self.login.request(req)
+                res = await self.login.request_from_agent(req, peer if uid == os.getuid() else None)
             elif isinstance(req, dict) and req.get("t") == "browser_login_result":
                 res = self.login.result(req)
             elif isinstance(req, dict) and req.get("t") == "help_push":

@@ -190,9 +190,11 @@ async function onFrame(s, data) {
     return;
   }
   if (kind === KIND.DATA) {
-    if (!s.recv) throw new ProtocolError('DATA before handshake');
-    const m = unpadJson(await s.recv.decrypt(EMPTY, body), P33_JSON);
-    const whole = s.frag.feed(m);
+    const receiver = s.recv;
+    if (!receiver) throw new ProtocolError('DATA before handshake');
+    const plaintext = await receiver.decrypt(EMPTY, body);
+    if (s !== sess || s.recv !== receiver) return;  // The owner switched sessions while decryption was pending.
+    const whole = s.frag.feed(unpadJson(plaintext, P33_JSON));
     if (whole) return onApp(s, whole);
     return;
   }

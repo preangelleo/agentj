@@ -1443,7 +1443,14 @@ LOGIN_MSG = {
     "host_login": "这个网站不支持扫码：已在这台Agent J 主机的 Agent J 浏览器打开登录页，请主人在Agent J 主机前登录，然后运行 agentj browser check --site {site}。"
                   "/ No QR for this site: the sign-in page is open on the Agent J host; the owner signs in there.",
     "host_login_unavailable": "这台Agent J 主机没有屏幕，这个网站又不支持扫码：请在有屏幕的Agent J 主机上登录，或换支持扫码的网站。/ No screen and no QR sign-in.",
-    "no_qr": "登录页上没找到二维码（页面可能改版或要求别的验证）：请主人在Agent J 主机前登录。/ No QR found on the sign-in page.",
+    "no_qr": "Agent J 未取得可显示的登录二维码。/ Agent J could not obtain a sign-in QR code to display.",
+    "browser_unavailable": "Agent J 未能连接专用浏览器。/ Agent J could not reach its browser.",
+    "page_not_ready": "Agent J 未能确认登录页已加载。/ Agent J could not confirm the sign-in page was ready.",
+    "qr_not_found": "登录页已加载，Agent J 未识别到可用的二维码。/ The sign-in page loaded, but Agent J could not identify a usable QR code.",
+    "capture_timeout": "等待取得稳定的二维码图像超时。/ Timed out waiting for a stable QR image.",
+    "capture_blank": "找到了二维码，但 Agent J 主机的浏览器窗口三次都没画出图像（窗口被遮住、最小化或屏幕休眠）。/ The QR was found but the host browser window painted nothing three times (covered, minimised or screen asleep).",
+    "not_delivered": "未能将登录卡发给原手机。/ The sign-in card could not be sent to the requesting phone.",
+    "owner_phone_required": "请在原已配对手机的主聊中发起视频号登录。/ Request WeChat Channels sign-in from the original paired phone chat.",
     "expired": "二维码已过期，没有扫码。主人可以在卡片上点「刷新」，或稍后再说「早上好」。不要反复发。/ The QR expired unscanned. Do not resend repeatedly.",
     "cancelled": "主人在手机上关掉了登录卡。不要追问。/ The owner closed the card.",
     "no_device": "没有已配对的手机。/ No paired phone.",
@@ -1475,7 +1482,8 @@ def cmd(a) -> int:
         if a.json:
             print(json.dumps(res, ensure_ascii=False))
         else:
-            msg = LOGIN_MSG.get(res.get("result"), res.get("detail") or res.get("why") or "")
+            msg = LOGIN_MSG.get(res.get("reason")) or LOGIN_MSG.get(res.get("why")) or LOGIN_MSG.get(
+                res.get("result"), res.get("detail") or res.get("why") or "")
             print(f"BROWSER_LOGIN: {res.get('result')} {res.get('id', '')} — " + msg.format(ttl=res.get("ttl", ""), site=a.site))
         return 0 if res.get("result") in ("sent", "done", "already", "host_login") else 75 if res.get("result") == "pending" else 125
     if act == "sites":

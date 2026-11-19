@@ -22,13 +22,28 @@ import re
 import secrets
 import threading
 import time
+import weakref
+from dataclasses import dataclass
 
 from . import bg, browser, browser_sites as bs
 from .browser_cdp import CDP, CDPError, capture_qr, present
+try:
+    from .browser_cdp import CDPTimeout, QRBlank, QRFrameLoading
+except ImportError:  # an updater ≤ 0.30.22 health-checks in-process with the previous browser_cdp still in memory
+    class CDPTimeout(CDPError):
+        pass
+
+    class QRBlank(CDPError):
+        pass
+
+    class QRFrameLoading(CDPError):
+        pass
 
 CTX = "agentj.login.v1"
 TTL_MAX = 120
 QR_WAIT = 30.0                  # some sign-in pages animate in for several seconds
+CAPTURE_TRIES = 3               # a located QR gets at most this many crops (timeout / blank / unstable) before the card says why
+CAPTURE_GRACE = 40.0            # those retries may run this long past QR_WAIT (each crop waits at most 10 s)
 SETTLE = 1.5                    # a crop counts only when two crops this far apart are identical (no fade / spinner)
 POLL = 2.0
 MAX_OPEN = 4
@@ -54,6 +69,50 @@ WHY_TEXT = {
                 "{title}: cannot reach the Agent J host's browser (the sign-in tab was closed or the browser is not running), "
                 "so nothing could be confirmed. Tap New QR code to start again."),
 }
+
+
+CHANNELS = "channels-weixin"
+ISSUE_REASONS = ("browser_unavailable", "page_not_ready", "qr_not_found", "capture_timeout", "capture_blank")
+ISSUE_RESULTS = ("no_qr", "no_browser", "no_device", "busy", "disabled", "stopped", "host_login",
+                 "host_login_unavailable", "already", "gone", "refused", "failed")
+
+
+@dataclass(frozen=True, eq=False)
+class RequestPhone:
+    session: weakref.ReferenceType
+    device: str
+    pub: bytes
+    sign: bytes
+    epoch: int
+    revision: str | None
+
+    @classmethod
+    def from_session(cls, host, s):
+        if not host._paired_live(s) or not s.sign_pub or host.st.sign_key(s.device) != s.sign_pub:
+            return None
+        rec = host.st.devices().get(s.device)
+        if not rec or getattr(host, "_unbinding_all", False):
+            return None
+        return cls(weakref.ref(s), s.device, s.pub, s.sign_pub, getattr(host, "_pairing_epoch", 0), rec.get("pair_revision"))
+
+    def matches(self, host, s):
+        if s is None or s is not self.session() or not host._paired_live(s):
+            return False
+        rec = host.st.devices().get(self.device)
+        return (bool(rec) and not getattr(host, "_unbinding_all", False) and self.epoch == getattr(host, "_pairing_epoch", 0)
+                and self.revision == rec.get("pair_revision") and (s.device, s.pub, s.sign_pub) == (self.device, self.pub, self.sign)
+                and host.st.sign_key(self.device) == self.sign)
+
+
+def _error_frame(site, op, result, cid=""):
+    why = result.get("result")
+    frame = {"t": "login_qr_err", "id": cid, "op": op,
+             "why": why if why in ISSUE_RESULTS else "failed"}
+    if site in bs.templates():
+        frame["site"] = site
+    if result.get("reason") in ISSUE_REASONS:
+        frame["reason"] = result["reason"]
+    return frame
 
 
 def bind_digest(channel: str, site: str, cid: str, nonce: str, until: int) -> str:
@@ -84,6 +143,7 @@ class LoginCards:
         self.opening: dict[str, object] = {}
         self.tabs: dict[str, str] = {}          # site → the login tab this host opened (kept: it is the owner's page)
         self.qr_history: dict[str, dict] = {}  # bounded in-memory digests, never QR images or durable authority
+        self.last_recipient: dict[str, tuple] = {}  # last restricted card per packaged site, for status-only replies
         self.bg: set = set()                    # phone-initiated work running beside the receive loop
 
     # ---------------------------------------------------------- records (never the image)
@@ -112,7 +172,62 @@ class LoginCards:
                 p.unlink()
 
     # ---------------------------------------------------------- the Agent (or the owner's refresh) asks
-    async def request(self, req: dict, by: str = "agent") -> dict:
+    def _session_matches(self, s, binding) -> bool:
+        return isinstance(binding, RequestPhone) and binding.matches(self.host, s)
+
+    def _binding_live(self, binding):
+        return isinstance(binding, RequestPhone) and binding.matches(self.host, binding.session())
+
+    def _visible(self, c, s):
+        if c["site"] != CHANNELS and not c.get("restricted"):
+            return True
+        source_live = c.get("issuing_source")
+        return (self._live(c) and self._session_matches(s, c.get("owner"))
+                and (source_live is None or source_live()))
+
+    def claim_delivery(self, s, msg):
+        """Called under the wire lock. An interrupted first attempt also consumes the disclosure."""
+        c = self.cards.get(msg.get("id"))
+        if c is None or not self._visible(c, s):
+            return False
+        if c.get("restricted") or c["site"] == CHANNELS:
+            if c.get("attempted"):
+                return False
+            c["attempted"] = True
+        return c
+
+    async def _send_error(self, s, frame, binding, source_live=None):
+        async with self.host.send_lock:
+            if self._session_matches(s, binding) and (source_live is None or source_live()):
+                try:
+                    await self.host.send_app(s, frame, _already_locked=True)
+                except OSError:
+                    pass  # Losing the phone does not erase the original command result.
+
+    async def request_from_agent(self, req, peer):
+        from . import approval_material
+        binding = None
+        source_live = None
+        if type(peer) is int and isinstance(req.get("site"), str) and req["site"] in bs.templates():
+            original = getattr(self.host.agent, "cur_send", None)
+            proof = await asyncio.to_thread(approval_material.verified_phone_chat, self.host, peer)
+            if proof:
+                agent, origin = proof
+                send = getattr(agent, "cur_send", None)
+                if (self.host.agent is agent and original is send and getattr(send, "turn", None) == origin["message_id"]
+                        and str(self.host.hist.epoch) == origin["session"]):
+                    binding = getattr(send, "phone_binding", None)
+                    def source_live():
+                        return (self.host.agent is agent and getattr(agent, "cur_send", None) is send
+                                and str(self.host.hist.epoch) == origin["session"])
+        res = await self.request(req, owner=binding, source_live=source_live)
+        if (res.get("result") in ISSUE_RESULTS and res["result"] not in ("already", "host_login")
+                and self._binding_live(binding) and source_live()):
+            frame = _error_frame(req["site"], "request", res)
+            await self._send_error(binding.session(), frame, binding, source_live)
+        return res
+
+    async def request(self, req: dict, by: str = "agent", *, owner=None, source_live=None) -> dict:
         site = req.get("site")
         tpl = bs.templates()
         if not isinstance(site, str) or site not in tpl and site not in bs.load(self.st)["sites"]:
@@ -125,14 +240,20 @@ class LoginCards:
             await asyncio.to_thread(bs.add, self.st, site)
         rec = bs.load(self.st)["sites"][site]
         t = tpl.get(rec.get("template")) or {}
+        old = next((c for c in self.cards.values() if c["site"] == site), None)
+        restricted = site == CHANNELS or rec.get("template") == CHANNELS
+        if restricted and (site != CHANNELS or rec.get("template") != CHANNELS or not self._binding_live(owner)
+                           or (old is not None and not self._session_matches(owner.session(), old.get("owner")))):
+            return {"result": "refused", "why": "owner_phone_required"}
         rt = await asyncio.to_thread(browser.runtime, self.st)
         if not rt:
-            return {"result": "no_browser", "hint": browser.HINTS["not_running"]}
-        old = next((c for c in self.cards.values() if c["site"] == site), None)
+            return {"result": "no_browser", "reason": "browser_unavailable"}
         refresh = req.get("refresh") is True or (old is not None and old["deadline"] - time.monotonic() <= 10)
         if site in self.opening:
             return {"result": "busy"}
         if old is not None and not refresh:     # ordinary repeated good morning reuses the live card
+            if restricted and not old.get("delivered"):
+                return {"result": "failed", "why": "not_delivered"}
             if old.get("navigated") or old["runtime"] != self._runtime_id(rt):
                 return {"result": "failed", "why": "browser"}
             return {"result": "sent", "id": old["id"], "reused": True, "ttl": max(0, int(old["deadline"] - time.monotonic()))}
@@ -149,21 +270,22 @@ class LoginCards:
             old["refreshing"] = True
         try:
             def current():
-                return self.opening.get(site) is attempt and (old is None or self._live(old))
-            return await self._issue(site, t, rt, refresh, by, old, current)
+                return (self.opening.get(site) is attempt and (old is None or self._live(old))
+                        and (source_live is None or source_live()))
+            return await self._issue(site, t, rt, refresh, by, old, current, restricted, owner, source_live)
         finally:
             if self.opening.get(site) is attempt:
                 del self.opening[site]
             if old is not None:
                 old["refreshing"] = False
 
-    async def _issue(self, site, t, rt, refresh, by, old, current) -> dict:
+    async def _issue(self, site, t, rt, refresh, by, old, current, restricted=False, owner=None, source_live=None) -> dict:
         try:
             got = await asyncio.to_thread(self._open_and_capture, rt, site, t, refresh, old)
-        except CDPError as e:
-            self.st.log("login_qr_failed", site=site, reason=str(e)[:60])
-            return {"result": "failed", "why": "browser"}
-        if not current():
+        except CDPError:
+            self.st.log("login_qr_failed", site=site, reason="browser_unavailable")
+            return {"result": "failed", "why": "browser", "reason": "browser_unavailable"}
+        if not current() or (restricted and not self._binding_live(owner)):
             if got.get("cdp"):
                 got["cdp"].close()
             return {"result": "gone"}
@@ -195,9 +317,11 @@ class LoginCards:
                 self._end(old, "done" if same_card else "refreshed")
             return {"result": "already", "site": site}
         if got["state"] != "qr":
-            return {"result": "no_qr", "headless": bool(rt.get("headless")), "site": site,
-                    "hint": "请在这台Agent J 主机上 Agent J 的专用浏览器里登录 / sign in on the Agent J host's Agent J browser"
-                    if not rt.get("headless") else "这台Agent J 主机没有屏幕，也没找到二维码 / no screen and no QR code on this page"}
+            result = {"result": "no_qr" if got.get("reason") == "qr_not_found" else "failed",
+                      "headless": bool(rt.get("headless")), "site": site}
+            if got.get("reason") in ISSUE_REASONS:
+                result["reason"] = got["reason"]
+            return result
         if old is not None:
             self._end(old, "refreshed")
         ttl = min(TTL_MAX, int((t.get("qr") or {}).get("ttl") or TTL_MAX))
@@ -208,20 +332,37 @@ class LoginCards:
              "deadline": time.monotonic() + ttl, "until": until, "by": by, "cdp": got["cdp"], "session": got["session"],
              "bind": bind_digest(self.host.channel, site, cid, nonce, until), "lock": threading.Lock(),
              "runtime": self._runtime_id(rt), "target": got.get("target"), "revision": 0, "confirm_lock": asyncio.Lock()}
+        if restricted:
+            c.update(restricted=True, owner=owner, issuing_source=source_live)
+            self.last_recipient[site] = (cid, owner)
         if isinstance(generation[-1], str):
             self.qr_history[site] = {"generation": generation, "sha256": digest,
                                      "captured_at": c["deadline"] - ttl, "deadline": c["deadline"]}
         c["timer"] = asyncio.get_running_loop().call_later(ttl, lambda: self._end(c, "expired"))
         self.cards[cid] = c
         self._active(True)
-        self._audit(c, "sent", by=by)
+        self._audit(c, "opened" if restricted else "sent", by=by)
         self._remember(cid, {"site": site, "result": "pending", "until": until})
         self.st.log("login_qr_card", id=cid, site=site, by=by)
         c["watch"] = asyncio.create_task(self._watch(c))
-        self.host.push_notify("ask")
-        await self.host._send_ready(lambda s: self.card_msg(c))
+        if not restricted:
+            self.host.push_notify("ask")
+        try:
+            await self.host._send_ready(lambda s: self.card_msg(c) if self._visible(c, s) and not c.get("attempted") else None)
+        except OSError:
+            if not restricted:
+                raise
+        finally:
+            c.pop("issuing_source", None)
+            if restricted and not c.get("delivered"):
+                self._end(c, "not_delivered")
+        if restricted and not c.get("delivered"):
+            return {"result": "failed", "why": "not_delivered"}
+        if restricted:
+            self._audit(c, "sent", by=by)
         tg = await self._telegram(c)
-        return {"result": "sent", "id": cid, "ttl": ttl, "site": site, "devices": len(self.host._approvers()), "telegram": tg}
+        return {"result": "sent", "id": cid, "ttl": ttl, "site": site,
+                "devices": 1 if restricted else len(self.host._approvers()), "telegram": tg}
 
     async def _host_login(self, site: str, t: dict, rec: dict, rt: dict) -> dict:
         url = t.get("login_url") or rec.get("check_url")
@@ -240,12 +381,14 @@ class LoginCards:
         cdp = CDP(rt["ws"])
         ok = False
         try:
+            failure = "browser_unavailable"
             target = self.tabs.get(site)
             reused = bool(target and cdp.tab_alive(target))
             if not reused:
                 target = cdp.new_tab(t["login_url"], background=bool(rt.get("headless")))
                 self.tabs[site] = target
             session = cdp.attach(target)
+            failure = "page_not_ready"
             loader = None
             if refresh and reused:
                 href, _ = cdp.location(session)
@@ -257,29 +400,64 @@ class LoginCards:
                     navigation = cdp.call("Page.navigate", {"url": t["login_url"]}, session=session)
                     loader = navigation.get("loaderId")
                     if navigation.get("errorText") or navigation.get("isDownload") or not isinstance(loader, str) or not loader:
-                        raise CDPError("login_refresh_failed")
+                        return {"state": "none", "reason": "page_not_ready"}
             end = time.monotonic() + QR_WAIT
-            while time.monotonic() < end:
-                href, ready = cdp.location(session)
-                if bs.classify(href, t) == "in" and not (t.get("out_dom") and present(cdp, session, t["out_dom"])):
-                    ok = True
-                    return {"state": "in", "cdp": cdp, "session": session, "target": target}
-                if loader:
-                    current = cdp.call("Page.getFrameTree", session=session).get("frameTree", {}).get("frame", {}).get("loaderId")
-                    if current != loader or ready != "complete":
-                        time.sleep(0.2)
+            reason = "page_not_ready"
+            misses, miss = 0, None      # crops of a located QR that failed, and why the last one did
+            sels = t["qr"]["selectors"]
+            origins = [o for o in [*(t.get("origins") or []), *((t.get("qr") or {}).get("frame_origins") or [])]
+                       if isinstance(o, str)]
+            while time.monotonic() < (end + CAPTURE_GRACE if misses else end):
+                failure = "page_not_ready"
+                try:
+                    href, ready = cdp.location(session)
+                    page_state = bs.classify(href, t)
+                    if page_state == "in" and not (t.get("out_dom") and present(cdp, session, t["out_dom"])):
+                        ok = True
+                        return {"state": "in", "cdp": cdp, "session": session, "target": target}
+                    if loader:
+                        current = cdp.call("Page.getFrameTree", session=session).get("frameTree", {}).get("frame", {}).get("loaderId")
+                        if current != loader or ready != "complete":
+                            time.sleep(0.2)
+                            continue
+                        loader = None
+                    expected = ready == "complete" and (page_state in ("in", "out") or href == t["login_url"])
+                    reason = "qr_not_found" if expected else "page_not_ready"
+                    failure = None
+                    try:
+                        png = capture_qr(cdp, session, sels, origins=origins)
+                    except QRFrameLoading:
+                        reason = "page_not_ready"     # the embedded sign-in window has not finished loading
+                        png = None
+                    if not png:
+                        if misses and time.monotonic() >= end:
+                            break                     # the QR went away during a retry past the wait
+                        time.sleep(1.0)
                         continue
-                    loader = None
-                png = capture_qr(cdp, session, t["qr"]["selectors"])
-                if png:
                     time.sleep(SETTLE)
-                    again = capture_qr(cdp, session, t["qr"]["selectors"])
+                    again = capture_qr(cdp, session, sels, origins=origins)
                     if again == png:
                         ok = True
                         return {"state": "qr", "png": png, "cdp": cdp, "session": session, "target": target}
-                    continue
+                    miss = "capture_timeout"          # still changing (fade-in, spinner): not a stable code yet
+                except QRBlank:
+                    miss = "capture_blank"
+                except QRFrameLoading:
+                    miss = "capture_timeout"
+                except CDPTimeout:
+                    miss = failure or "capture_timeout"
+                misses += 1
+                if misses >= CAPTURE_TRIES:
+                    return {"state": "none", "reason": miss}
+                with contextlib.suppress(CDPError):  # the next crop needs a painted, front tab
+                    cdp.call("Page.bringToFront", session=session, timeout=5)
                 time.sleep(1.0)
-            return {"state": "none"}
+            return {"state": "none", "reason": miss if misses else reason}
+        except CDPTimeout:
+            return {"state": "none", "reason": failure or "capture_timeout"}
+        except CDPError:
+            # An arbitrary protocol error during observation proves neither absence nor timeout.
+            return {"state": "none", "reason": failure}
         finally:
             if not ok:
                 cdp.close()
@@ -287,7 +465,8 @@ class LoginCards:
     def card_msg(self, c: dict) -> dict:
         return {"t": "login_qr", "id": c["id"], "n": c["nonce"], "site": c["site"], "title": c["title"],
                 "img": base64.b64encode(bytes(c["img"])).decode(), "ttl": max(0, int(c["deadline"] - time.monotonic())),
-                "bind": c["bind"], "tg": self._tg_state(), "channel": "Telegram"}
+                "bind": c["bind"], "tg": "none" if c.get("restricted") else self._tg_state(),
+                "channel": "" if c.get("restricted") else "Telegram"}
 
     def _tg_state(self) -> str:
         """none (no Telegram) | text (reminders only) | qr (the owner allowed QR codes there)."""
@@ -298,7 +477,8 @@ class LoginCards:
         return "qr" if bs.tg_consent(self.st) else "text"
 
     def open_msgs(self, s) -> list[dict]:
-        return [self.card_msg(c) for c in list(self.cards.values())]       # P203: the cards_get snapshot shares it
+        # The initial dispatch is the only disclosure for WeChat Channels, including after reconnect.
+        return [self.card_msg(c) for c in list(self.cards.values()) if c["site"] != CHANNELS and not c.get("restricted")]
 
     async def on_ready(self, s) -> None:
         for m in self.open_msgs(s):
@@ -411,20 +591,43 @@ class LoginCards:
             return
         if t == "login_qr_refresh":
             site = obj.get("site")
-            if isinstance(site, str) and site in bs.load(self.st)["sites"]:
-                res = await self.request({"site": site, "refresh": True}, by=s.device)
-                if res.get("result") != "sent":
-                    await self.host.send_app(s, {"t": "login_qr_err", "id": "", "site": site, "why": res.get("result", "failed")})
+            sites = bs.load(self.st)["sites"]
+            if not isinstance(site, str) or site not in sites:
+                return
+            cid = obj.get("id", "")
+            if cid != "" and not (isinstance(cid, str) and _ID.fullmatch(cid)
+                                  and self.result({"id": cid}).get("site") == site):
+                return await self.host.send_app(s, {"t": "login_qr_err", "id": "", "why": "gone"})
+            owner = None
+            if site == CHANNELS or sites[site].get("template") == CHANNELS:
+                c = self.cards.get(cid)
+                if not c or c["site"] != site or not self._visible(c, s):
+                    last = self.last_recipient.get(site)
+                    if cid and not (last and last[0] == cid and self._session_matches(s, last[1])):
+                        return await self.host.send_app(s, {"t": "login_qr_err", "id": "", "why": "gone"})
+                    frame = _error_frame(site, "refresh", {"result": "gone"}, cid)
+                    if last and cid == last[0]:
+                        return await self._send_error(s, frame, last[1])
+                    return await self.host.send_app(s, frame)
+                owner = c["owner"]
+            res = await self.request({"site": site, "refresh": True}, by=s.device, owner=owner)
+            if res.get("result") != "sent":
+                frame = _error_frame(site, "refresh", res, cid)
+                if owner is not None:
+                    return await self._send_error(s, frame, owner)
+                await self.host.send_app(s, frame)
             return
         cid = obj.get("id")
         c = self.cards.get(cid) if isinstance(cid, str) and _ID.fullmatch(cid) else None
-        if c is None or obj.get("n") != c["nonce"]:
-            return await self.host.send_app(s, {"t": "login_qr_err", "id": cid if isinstance(cid, str) else "", "why": "gone"})
+        if c is None or not self._visible(c, s) or obj.get("n") != c["nonce"]:
+            return await self.host.send_app(s, {"t": "login_qr_err", "id": cid if c is not None and self._visible(c, s) else "", "why": "gone"})
         if t == "login_qr_cancel":
             return self._end(c, "cancelled", device=s.device)
         if t == "login_qr_check":
             return await self._check_tap(s, c)
         if t == "login_qr_tg":
+            if c.get("restricted") or c["site"] == CHANNELS:
+                return
             on = obj.get("on") is True
             await asyncio.to_thread(bs.set_tg_consent, self.st, on, s.device)
             self._audit(c, "tg_consent_on" if on else "tg_consent_off", device=s.device)
@@ -457,6 +660,8 @@ class LoginCards:
 
     # ---------------------------------------------------------- Telegram (text by default; QR only with consent)
     async def _telegram(self, c: dict) -> str:
+        if c.get("restricted") or c["site"] == CHANNELS:
+            return "none"
         from . import telegram
         state = self._tg_state()
         if state == "none":
@@ -503,7 +708,8 @@ class LoginCards:
         self.st.log("login_qr_done", id=c["id"], site=c["site"], result=result)
         done = {"t": "login_qr_done", "id": c["id"], "site": c["site"], "result": result}
         with contextlib.suppress(RuntimeError):
-            bg.spawn(self.host._send_ready(lambda s: done), "login_qr_done", bg.host_log(self.host))   # P192 (B13)
+            bg.spawn(self.host._send_ready(lambda s: done if not (c.get("restricted") or c["site"] == CHANNELS)
+                                            or self._session_matches(s, c.get("owner")) else None), "login_qr_done", bg.host_log(self.host))   # P192 (B13)
 
     def end_all(self, result: str) -> None:
         self.opening.clear()

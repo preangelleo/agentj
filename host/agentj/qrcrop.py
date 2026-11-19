@@ -11,6 +11,8 @@ a fallback; Jev only gives axis-aligned boxes and is not used):
 Never raises: the worst outcome is "send the original". Content is compared by SHA-256 only and never returned or logged
 (a login QR is a credential for its validity). PNG in / PNG out with the stdlib (zlib); any other picture type is sent as is.
 Runs in the CALLER's process (the Agent or the owner's own script) — untrusted pixels are never parsed inside serve.
+One bounded exception: browser_cdp.painted() runs png_decode inside serve on Agent J's own Chromium screenshot of a sign-in
+QR crop (clip ≤ (640 + 16) × 2 px per side, ≤ 512 KB) and returns only whether it shows contrast — no content, nothing kept.
 """
 from __future__ import annotations
 

@@ -317,7 +317,8 @@ class State:
             # its credentials. The complete pub check also excludes a device-id collision.
             same_key = did in d and isinstance(earlier, dict) and earlier.get("pub") == wire.b64u(pub)
             rec = dict(earlier) if same_key else {"paired_at": int(time.time())}
-            rec.update(pub=wire.b64u(pub), name=name, self_name=name, source=source)
+            # A same-key repair also starts a new pairing generation for in-flight private delivery.
+            rec.update(pub=wire.b64u(pub), name=name, self_name=name, source=source, pair_revision=os.urandom(16).hex())
             kept = device_names(earlier) if isinstance(earlier, dict) else None
             if kept and kept["named_by"] == "owner":
                 rec["name"] = rec["owner_name"] = kept["owner_name"]

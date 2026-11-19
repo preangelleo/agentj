@@ -1776,6 +1776,7 @@
     }
   },
   "lqr": {
+    "unavailable": "Sign-in QR code unavailable",
     "kicker": "Sign in on the Agent J host's Agent J browser",
     "title": "Sign in to {site}",
     "alt": "{site} sign-in QR code",
@@ -1794,6 +1795,13 @@
     "tgTextNote": "{channel} gets text reminders only. Turn this on to also send the QR image to your {channel} private chat — {channel} can see it.",
     "tgOnNote": "QR images also go to your {channel} private chat ({channel} can see them). You can turn this off any time.",
     "err": {
+      "browser_unavailable": "The Agent J host couldn’t connect to its browser.",
+      "page_not_ready": "The sign-in page wasn’t ready.",
+      "qr_not_found": "No QR code was found on the sign-in page.",
+      "capture_timeout": "The host timed out waiting for the sign-in QR code.",
+      "capture_blank": "The Agent J host’s browser window didn’t show the QR code (it may be covered or minimised, or the screen is asleep).",
+      "no_reply": "No refresh result arrived. To sign in, ask again in the main chat on this phone.",
+      "gone": "This card is no longer valid. To sign in, ask again in the main chat on this phone.",
       "failed": "Couldn't make a new QR code. Try again shortly.",
       "no_qr": "No QR code on the sign-in page; sign in at the Agent J host.",
       "no_browser": "The Agent J browser on the Agent J host isn't running.",

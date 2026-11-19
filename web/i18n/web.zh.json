@@ -1776,6 +1776,7 @@
     }
   },
   "lqr": {
+    "unavailable": "暂时无法显示登录二维码",
     "kicker": "在Agent J 主机的 Agent J 浏览器里登录",
     "title": "登录{site}",
     "alt": "{site}登录二维码",
@@ -1794,6 +1795,13 @@
     "tgTextNote": "现在 {channel} 只收到文字提醒。打开后二维码图片也会发到你的 {channel} 私聊——{channel} 能看到这张图。",
     "tgOnNote": "二维码图片也会发到你的 {channel} 私聊（{channel} 能看到）。随时可以关掉。",
     "err": {
+      "browser_unavailable": "Agent J 主机无法连接浏览器。",
+      "page_not_ready": "登录页还没准备好。",
+      "qr_not_found": "登录页上没有找到二维码。",
+      "capture_timeout": "等待登录二维码超时。",
+      "capture_blank": "Agent J 主机的浏览器窗口没有显示出二维码（窗口可能被遮住、最小化，或屏幕已休眠）。",
+      "no_reply": "没有收到刷新结果。如需登录，请在这台手机的主对话里重新发起。",
+      "gone": "这张卡已失效。如需登录，请在这台手机的主对话里重新发起。",
       "failed": "没能生成新的二维码，请稍后再试。",
       "no_qr": "登录页上没找到二维码，请在Agent J 主机前登录。",
       "no_browser": "Agent J 主机上的 Agent J 浏览器没在运行。",

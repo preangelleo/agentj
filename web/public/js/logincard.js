@@ -9,8 +9,20 @@ import { mk, toast } from './ui.js';
 import { registerLayer, TOP_RANK } from './layers.js';
 
 const cards = new Map();            // id → card (arrival order)
-const ended = new Map();            // site → {title, result} of the last card that expired (offer 「刷新」)
+const ended = new Map();            // site → expired original card or a read-only request failure
+const unsafeLegacy = new Set();     // a retired refresh has no correlation id on older hosts
+const REASONS = ['browser_unavailable', 'page_not_ready', 'qr_not_found', 'capture_timeout', 'capture_blank'];
+const OLD_RESULTS = ['no_qr', 'no_browser', 'no_device', 'busy', 'disabled', 'stopped', 'host_login', 'host_login_unavailable', 'already'];
 let root = null, timer = 0, busy = false;
+
+function retire(site, replaced = false) {
+  const entry = ended.get(site);
+  if (entry?.pending) {
+    clearTimeout(entry.timer);
+    if (!replaced) unsafeLegacy.add(site);
+  }
+  ended.delete(site);
+}
 
 function build() {
   if (root) return root;
@@ -40,8 +52,13 @@ function build() {
   check.addEventListener('click', () => act('login_qr_check'));
   later.addEventListener('click', () => act('login_qr_cancel'));
   refresh.addEventListener('click', () => doRefresh());
-  close.addEventListener('click', () => { ended.clear(); render(); });
+  close.addEventListener('click', () => {
+    if (cards.size || !ended.size) return;
+    retire(ended.keys().next().value);
+    render();
+  });
   tg.addEventListener('click', () => toggleTg());
+  document.addEventListener?.('visibilitychange', () => { if (!document.hidden) render(); });
   onLang(() => render());
   return root;
 }
@@ -55,10 +72,11 @@ export function add(m) {
   if (typeof m.title !== 'string' || m.title.length > 60 || typeof m.img !== 'string' || m.img.length > 700000) return;
   if (!/^[A-Za-z0-9+/=]+$/.test(m.img)) return;
   const ttl = Number.isInteger(m.ttl) && m.ttl >= 0 && m.ttl <= 120 ? m.ttl : 120;
+  const deadline = Math.min(cards.get(m.id)?.deadline ?? Infinity, Date.now() + ttl * 1000);
   cards.set(m.id, { id: m.id, n: m.n, site: m.site, title: m.title, img: 'data:image/png;base64,' + m.img,
-    deadline: Date.now() + ttl * 1000, tg: ['none', 'text', 'qr'].includes(m.tg) ? m.tg : 'none',
+    deadline, tg: ['none', 'text', 'qr'].includes(m.tg) ? m.tg : 'none',
     channel: typeof m.channel === 'string' && /^[\w .-]{1,24}$/.test(m.channel) ? m.channel : '' });
-  ended.delete(m.site);
+  retire(m.site, true);
   busy = false;
   render();
 }
@@ -70,7 +88,10 @@ export function done(m) {
   cards.delete(m.id);
   busy = false;
   if (m.result === 'done') toast(t('lqr.signedIn', { site: c.title }), 3600);
-  else if (m.result === 'expired') ended.set(c.site, { title: c.title, result: 'expired' });
+  else if (m.result === 'expired') {
+    retire(c.site);
+    ended.set(c.site, { id: c.id, title: c.title });
+  }
   render();
 }
 
@@ -86,18 +107,41 @@ export function state(m) {
 
 /** `login_qr_err`: the card is gone at the computer, or a refresh could not make a new one. */
 export function failed(m) {
-  busy = false;
-  if (m.id && cards.has(m.id)) cards.delete(m.id);
-  if (m.site && m.why) {
-    ended.delete(m.site);
-    toast(t(`lqr.err.${['no_qr', 'no_browser', 'no_device', 'busy', 'disabled', 'stopped', 'host_login', 'host_login_unavailable', 'already'].includes(m.why) ? m.why : 'failed'}`), 4800);
+  if (!m.site && m.why === 'gone' && cards.has(m.id)) {
+    done({ id: m.id, result: 'gone' });
+    return;
+  }
+  const g = gen();
+  if (!g || typeof m.site !== 'string' || !SITE.test(m.site)) return;
+  const reason = REASONS.includes(m.reason) ? m.reason : '';
+  const entry = ended.get(m.site);
+  if (m.op === 'request') {
+    // Only the host's direct reply to the originating phone can open this read-only state.
+    if (m.id !== '' || !reason || entry?.pending || [...cards.values()].some(c => c.site === m.site)) return;
+    ended.set(m.site, { reason });
+  } else {
+    if (!entry?.id || entry.pending !== g) return;
+    const legacy = m.op === undefined && m.reason === undefined && m.id === '' && !unsafeLegacy.has(m.site);
+    if (!legacy && !(m.op === 'refresh' && m.id === entry.id)) return;
+    clearTimeout(entry.timer);
+    entry.pending = null;
+    if (!reason && m.why === 'already') {
+      retire(m.site);
+      toast(t('lqr.err.already'), 4800);
+    } else if (!legacy && m.why === 'gone') {
+      entry.closed = true;
+      entry.reason = 'gone';
+    } else {
+      entry.reason = reason || (OLD_RESULTS.includes(m.why) ? m.why : 'failed');
+    }
   }
   render();
 }
 
 /** A connection blip (the host re-sends open cards after ready) / unpair: forget everything. */
 export function clear() {
-  cards.clear(); ended.clear(); busy = false;
+  for (const entry of ended.values()) clearTimeout(entry.timer);
+  cards.clear(); ended.clear(); unsafeLegacy.clear(); busy = false;
   if (root) { root.hidden = true; const i = $('lqr-img'); if (i) i.removeAttribute('src'); }
   clearTimeout(timer);
 }
@@ -108,24 +152,32 @@ export function prune(gone) { const now = Date.now(); for (const c of [...cards.
 function render() {
   build();
   clearTimeout(timer);
+  const now = Date.now();
+  for (const card of cards.values()) {
+    if (card.deadline > now) continue;
+    cards.delete(card.id);
+    retire(card.site);
+    ended.set(card.site, { id: card.id, title: card.title });
+    busy = false;
+  }
   const c = cards.values().next().value;
-  const e = c ? null : ended.entries().next().value;
+  const e = c ? null : ended.values().next().value;
   if (!c && !e) { root.hidden = true; $('lqr-img').removeAttribute('src'); document.body.dataset.lqr = '0'; return; }
   document.body.dataset.lqr = '1';
   root.hidden = false;
-  const title = c ? c.title : e[1].title;
+  const title = c ? c.title : e.title;
   $('lqr-kicker').textContent = t('lqr.kicker');
-  $('lqr-title').textContent = t('lqr.title', { site: title });
+  $('lqr-title').textContent = c || e?.id ? t('lqr.title', { site: title }) : t('lqr.unavailable');
   $('lqr-frame').hidden = !c;
   if (c && $('lqr-img').getAttribute('src') !== c.img) { $('lqr-img').src = c.img; $('lqr-img').alt = t('lqr.alt', { site: title }); }
   if (!c) $('lqr-img').removeAttribute('src');
-  $('lqr-note').textContent = c ? t('lqr.note') : t('lqr.expiredNote');
+  $('lqr-note').textContent = c ? t('lqr.note') : e.reason ? t('lqr.err.' + e.reason) : t('lqr.expiredNote');
   $('lqr-check').textContent = t('lqr.check');
   $('lqr-check').hidden = !c;
   $('lqr-check').disabled = busy;
   $('lqr-refresh').textContent = t('lqr.refresh');
-  $('lqr-refresh').hidden = !!c;
-  $('lqr-refresh').disabled = busy;
+  $('lqr-refresh').hidden = !e?.id || !!e?.closed;
+  $('lqr-refresh').disabled = !!e?.pending;
   $('lqr-close').textContent = t('lqr.close');
   $('lqr-close').hidden = !!c;
   $('lqr-later').textContent = t('lqr.later');
@@ -137,18 +189,22 @@ function render() {
   const channel = c && c.channel ? c.channel : '';
   $('lqr-tg').textContent = t(tg === 'qr' ? 'lqr.tgOff' : 'lqr.tgOn', { channel });
   $('lqr-tgnote').textContent = t(tg === 'qr' ? 'lqr.tgOnNote' : 'lqr.tgTextNote', { channel });
-  paintLeft(c);
+  $('lqr-left').hidden = !c && !e?.id;
+  if ($('lqr-left').hidden) $('lqr-left').textContent = '';
+  else paintLeft(c);
 }
 function paintLeft(c) {
   if (!c) { $('lqr-left').textContent = t('lqr.expired'); return; }
   const left = Math.max(0, Math.ceil((c.deadline - Date.now()) / 1000));
   $('lqr-left').textContent = left > 0 ? t('lqr.left', { m: Math.floor(left / 60), s: String(left % 60).padStart(2, '0') }) : t('lqr.expired');
-  if (left > 0) timer = setTimeout(() => { if (cards.get(c.id) === c) paintLeft(c); }, 1000);
+  const nextExpiry = Math.min(...Array.from(cards.values(), card => card.deadline));
+  timer = setTimeout(render, Math.max(0, Math.min(1000, nextExpiry - Date.now())));
 }
 
 async function act(kind) {
   const c = cards.values().next().value;
   if (!c || busy) return;
+  if (c.deadline <= Date.now()) { render(); return; }
   const g = gen();
   if (!g) { toast(t('elev.net'), 3000); return; }
   busy = true; render();
@@ -157,16 +213,36 @@ async function act(kind) {
 async function toggleTg() {
   const c = cards.values().next().value;
   if (!c || busy) return;
+  if (c.deadline <= Date.now()) { render(); return; }
   const g = gen();
   if (!g) { toast(t('elev.net'), 3000); return; }
   busy = true; render();
   try { await sendApp({ t: 'login_qr_tg', id: c.id, n: c.n, on: c.tg !== 'qr' }, g); } catch { busy = false; render(); toast(t('elev.fail'), 3000); }
 }
 async function doRefresh() {
-  const e = ended.entries().next().value;
-  if (!e || busy) return;
+  if (cards.size || !ended.size) return;
+  const [site, entry] = ended.entries().next().value;
+  if (!entry.id || entry.pending || entry.closed) return;
   const g = gen();
   if (!g) { toast(t('elev.net'), 3000); return; }
-  busy = true; render();
-  try { await sendApp({ t: 'login_qr_refresh', site: e[0] }, g); } catch { busy = false; render(); toast(t('elev.fail'), 3000); }
+  entry.pending = g;
+  render();
+  const current = () => gen() === g && ended.get(site) === entry && entry.pending === g;
+  entry.timer = setTimeout(() => {
+    if (!current()) return;
+    unsafeLegacy.add(site);
+    entry.pending = null;
+    entry.closed = true;
+    entry.reason = 'no_reply';
+    render();
+  }, 60000);
+  try {
+    await sendApp({ t: 'login_qr_refresh', site, id: entry.id }, g);
+  } catch {
+    if (!current()) return;
+    clearTimeout(entry.timer);
+    entry.pending = null;
+    render();
+    toast(t('elev.fail'), 3000);
+  }
 }

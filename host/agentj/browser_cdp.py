@@ -7,6 +7,7 @@ import base64
 import contextlib
 import itertools
 import json
+import struct
 import time
 
 from websockets.sync.client import connect
@@ -15,6 +16,10 @@ MAX_FRAME = 32 * 1024 * 1024
 
 
 class CDPError(Exception):
+    pass
+
+
+class CDPTimeout(CDPError):
     pass
 
 
@@ -43,13 +48,15 @@ class CDP:
             while True:
                 left = end - time.monotonic()
                 if left <= 0:
-                    raise CDPError(f"{method}: timeout")
+                    raise CDPTimeout(f"{method}: timeout")
                 raw = self.ws.recv(timeout=left)
                 m = json.loads(raw)
                 if m.get("id") == i:
                     if "error" in m:
                         raise CDPError(f"{method}: {str(m['error'].get('message', ''))[:120]}")
                     return m.get("result") or {}
+        except TimeoutError:
+            raise CDPTimeout(f"{method}: timeout") from None
         except CDPError:
             raise
         except Exception as e:  # noqa: BLE001 — closed socket, timeout
@@ -121,37 +128,137 @@ _FIND_QR = """(function(sels){
   return null; })(%s)"""
 
 
-def find_qr(cdp: CDP, session: str, selectors: list[str]) -> tuple[float, float, float, float] | None:
-    """The QR rectangle in main-viewport CSS pixels; searches the main frame, then same-process child frames."""
+FRAME_DEPTH = 3
+MAX_SIDE = 640      # CSS px, same bound as _FIND_QR; the crop is at most (640 + 2 × 8) × 2 device px per side
+MIN_CONTRAST = 64   # a QR always has dark and light modules
+MIN_EDGES = 8       # ... and a scan line through its middle crosses many of them; an unpainted crop crosses none
+
+
+def painted(png: bytes) -> bool:
+    """Did the browser actually paint a code-like pattern into this crop? Reads only the luminance along five scan lines of
+    our own browser's screenshot (never decodes the code or keeps pixels). This is the one place serve reads screenshot
+    pixels: the PNG comes from Agent J's own Chromium encoder for a clip bounded by MAX_SIDE, capped at 512 KB, and only a
+    boolean comes out. An unpainted window gives a flat crop (at most a
+    solid band); a QR gives dozens of dark/light edges per line. An undecodable PNG is given the benefit of the doubt."""
+    from .qrcrop import png_decode
+    try:
+        w, h = struct.unpack(">II", png[16:24])
+    except struct.error:
+        return True
+    if w * h > ((MAX_SIDE + 16) * 2) ** 2:
+        return False      # larger than any crop we ask for: refuse rather than decode
+    img = png_decode(png)
+    if img is None:
+        return True
+    ch, w = img.ch, img.w
+
+    def luma(x, y):
+        i = (y * w + x) * ch
+        d = img.data
+        return d[i] if ch < 3 else (d[i] * 3 + d[i + 1] * 6 + d[i + 2]) // 10
+
+    lines = [[luma(x, img.h * k // 10) for x in range(w)] for k in (3, 4, 5, 6, 7)]
+    lo, hi = min(min(r) for r in lines), max(max(r) for r in lines)
+    if hi - lo < MIN_CONTRAST:
+        return False
+    mid = (lo + hi) // 2
+    best = 0
+    for r in lines:
+        bits = [v > mid for v in r]
+        best = max(best, sum(1 for i in range(1, w) if bits[i] != bits[i - 1]))
+    return best >= MIN_EDGES
+
+
+class QRBlank(CDPError):
+    """The QR element was located but the browser painted nothing there (window hidden / screen asleep)."""
+
+
+class QRFrameLoading(CDPError):
+    """An embedded sign-in window of the template's own origins is still loading."""
+
+
+def _frames(tree: dict, allowed: set, depth: int = 0):
+    """Embedded windows to search: children of the page, and children of windows that are themselves on the list.
+    A listed origin nested inside an unlisted window (an ad, a third-party widget) is never reached."""
+    for child in tree.get("childFrames", []) or []:
+        frame = child.get("frame", {})
+        if not _origin_ok(frame.get("securityOrigin"), allowed):
+            continue
+        yield frame
+        if depth + 1 < FRAME_DEPTH:
+            yield from _frames(child, allowed, depth + 1)
+
+
+def _origin_ok(origin, origins) -> bool:
+    return isinstance(origin, str) and origin in origins
+
+
+def locate_qr(cdp: CDP, session: str, selectors: list[str], origins=()) -> tuple[str, tuple | None]:
+    """("found", rect in main-viewport CSS px) · ("loading", None) when an allowed embedded window is still loading ·
+    ("absent", None). Searches the main frame, then embedded windows whose origin is one of the template's packaged
+    origins (never an arbitrary third-party frame). A frame in another process (no isolated world) counts as absent."""
     expr = _FIND_QR % json.dumps([s for s in selectors if isinstance(s, str)][:12])
     r = cdp.call("Runtime.evaluate", {"expression": expr, "returnByValue": True}, session=session, timeout=5)
     v = (r.get("result") or {}).get("value")
     if isinstance(v, list) and len(v) == 4:
-        return tuple(float(x) for x in v)
-    with contextlib.suppress(CDPError):
-        tree = cdp.call("Page.getFrameTree", session=session, timeout=5).get("frameTree", {})
-        for child in tree.get("childFrames", []) or []:
-            fid = child.get("frame", {}).get("id")
-            if not fid:
+        return "found", tuple(float(x) for x in v)
+    allowed = {o for o in origins if isinstance(o, str)}
+    loading = False
+    tree = cdp.call("Page.getFrameTree", session=session, timeout=5).get("frameTree", {})
+    framed = "(function(){return [location.origin, %s]})()" % expr     # L2: the origin is re-read in the same evaluation
+    for frame in _frames(tree, allowed):
+        fid = frame.get("id")
+        if not fid:
+            continue
+        try:
+            ctx = cdp.call("Page.createIsolatedWorld", {"frameId": fid, "worldName": "agentj-qr"}, session=session,
+                           timeout=5).get("executionContextId")
+            st = cdp.call("Runtime.evaluate", {"expression": "document.readyState", "returnByValue": True,
+                                               "contextId": ctx}, session=session, timeout=5)
+            if (st.get("result") or {}).get("value") != "complete":
+                loading = True
                 continue
-            ctx = cdp.call("Page.createIsolatedWorld", {"frameId": fid, "worldName": "agentj-qr"}, session=session).get("executionContextId")
-            rr = cdp.call("Runtime.evaluate", {"expression": expr, "returnByValue": True, "contextId": ctx}, session=session, timeout=5)
-            vv = (rr.get("result") or {}).get("value")
+            rr = cdp.call("Runtime.evaluate", {"expression": framed, "returnByValue": True, "contextId": ctx},
+                          session=session, timeout=5)
+            got = (rr.get("result") or {}).get("value")
+            if not (isinstance(got, list) and len(got) == 2 and _origin_ok(got[0], allowed)):
+                continue          # navigated away between the frame tree and this evaluation
+            vv = got[1]
             if not (isinstance(vv, list) and len(vv) == 4):
+                continue          # loaded, no usable QR element (yet): the caller keeps polling until its deadline
+            # relative to its own window; DOM.getBoxModel reports the window's owner element in main-viewport pixels
+            owner = cdp.call("DOM.getFrameOwner", {"frameId": fid}, session=session, timeout=5).get("backendNodeId")
+            quad = cdp.call("DOM.getBoxModel", {"backendNodeId": owner}, session=session,
+                            timeout=5).get("model", {}).get("content", [])
+            if len(quad) < 2:
                 continue
-            owner = cdp.call("DOM.getFrameOwner", {"frameId": fid}, session=session).get("backendNodeId")
-            quad = cdp.call("DOM.getBoxModel", {"backendNodeId": owner}, session=session).get("model", {}).get("content", [])
-            if len(quad) >= 2:
-                return (float(quad[0]) + float(vv[0]), float(quad[1]) + float(vv[1]), float(vv[2]), float(vv[3]))
-    return None
+            x, y = float(vv[0]) + float(quad[0]), float(vv[1]) + float(quad[1])
+            return "found", (x, y, float(vv[2]), float(vv[3]))
+        except CDPTimeout:
+            raise
+        except CDPError:
+            continue
+    return ("loading" if loading else "absent"), None
 
 
-def capture_qr(cdp: CDP, session: str, selectors: list[str], pad: float = 8.0) -> bytes | None:
-    """PNG bytes of the QR rectangle only (plus a small white margin) — never the rest of the page."""
-    rect = find_qr(cdp, session, selectors)
+def find_qr(cdp: CDP, session: str, selectors: list[str], origins=()) -> tuple[float, float, float, float] | None:
+    """The QR rectangle in main-viewport CSS pixels, or None."""
+    state, rect = locate_qr(cdp, session, selectors, origins)
+    return rect if state == "found" else None
+
+
+def capture_qr(cdp: CDP, session: str, selectors: list[str], pad: float = 8.0, origins=()) -> bytes | None:
+    """PNG bytes of the QR element's rectangle only (plus a small white margin) — never the rest of the page.
+    None: no QR element. Raises QRFrameLoading while an allowed embedded window is still loading, QRBlank when the element
+    is there but the crop came back unpainted."""
+    state, rect = locate_qr(cdp, session, selectors, origins)
+    if state == "loading":
+        raise QRFrameLoading("loading")
     if rect is None:
         return None
     x, y, w, h = rect
+    if not (80 <= w <= MAX_SIDE and 80 <= h <= MAX_SIDE):   # never trust the page's own rectangle for the clip size
+        return None
     with contextlib.suppress(CDPError):           # a background tab may never paint: bring it forward for the capture
         cdp.call("Page.bringToFront", session=session, timeout=5)
     scroll = cdp.call("Runtime.evaluate", {"expression": "[scrollX, scrollY]", "returnByValue": True}, session=session).get(
@@ -159,9 +266,13 @@ def capture_qr(cdp: CDP, session: str, selectors: list[str], pad: float = 8.0) -
     clip = {"x": max(0.0, x - pad + float(scroll[0])), "y": max(0.0, y - pad + float(scroll[1])),
             "width": w + 2 * pad, "height": h + 2 * pad, "scale": 2}
     r = cdp.call("Page.captureScreenshot", {"format": "png", "clip": clip, "captureBeyondViewport": False,
-                                            "fromSurface": True}, session=session, timeout=15)
+                                            "fromSurface": True}, session=session, timeout=10)
     data = r.get("data")
     if not isinstance(data, str):
         return None
     png = base64.b64decode(data)
-    return png if png.startswith(b"\x89PNG") and len(png) <= 512 * 1024 else None
+    if not png.startswith(b"\x89PNG") or len(png) > 512 * 1024:
+        return None
+    if not painted(png):
+        raise QRBlank("blank")
+    return png

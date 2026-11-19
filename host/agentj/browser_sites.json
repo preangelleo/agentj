@@ -218,11 +218,15 @@
       "login_method": "qr",
       "qr": {
         "selectors": [
+          "img.web_qrcode_img",
           ".qrcode img",
           "img.qrcode",
           "img[src*='qrcode']",
           "[class*='qrcode'] img",
           "canvas"
+        ],
+        "frame_origins": [
+          "https://open.weixin.qq.com"
         ],
         "ttl": 120
       },

@@ -74,10 +74,22 @@ class QrRefresh(Base, unittest.IsolatedAsyncioTestCase):
         host.channel = 'test-channel'
         host.stopped.return_value = False
         host._approvers.return_value = ['approved-device']
-        host._send_ready = AsyncMock()
+        pub, sign = b'p' * 32, b's' * 32
+        device = self.st.add_device(pub, "phone", sign)
+        phone = Mock(device=device, pub=pub, sign_pub=sign)
+        host._paired_live.return_value = True
+        host._unbinding_all = False
+        owner = bl.RequestPhone.from_session(host, phone)
+        async def deliver(make):
+            msg = make(phone)
+            if msg and msg['t'] == 'login_qr':
+                card = cards.claim_delivery(phone, msg)
+                self.assertTrue(card)
+                card['delivered'] = True
+        host._send_ready = deliver
         cards = bl.LoginCards(Mock(host=host, st=self.st))
         old = {'id': 'a' * 32, 'site': 'channels-weixin',
-               'deadline': bl.time.monotonic() + 2, 'img': bytearray(b'old'),
+               'restricted': True, 'owner': owner, 'deadline': bl.time.monotonic() + 2, 'img': bytearray(b'old'),
                'cdp': Mock(), 'session': 'old', 'revision': 0, 'lock': threading.Lock(), 'timer': Mock(), 'watch': Mock()}
         cards.cards[old['id']] = old
         with patch.object(browser, 'settings', return_value={'enabled': True}), \
@@ -86,7 +98,7 @@ class QrRefresh(Base, unittest.IsolatedAsyncioTestCase):
                     'state': 'qr', 'png': b'new', 'cdp': Mock(), 'session': 'new'}) as capture, \
                 patch.object(cards, '_telegram', new_callable=AsyncMock, return_value='none'), \
                 patch.object(cards, '_watch', new_callable=AsyncMock):
-            response = await cards.request({'site': 'channels-weixin'}, by='approved-device')
+            response = await cards.request({'site': 'channels-weixin'}, by=device, owner=owner)
             self.assertEqual(response['result'], 'sent')
             self.assertNotEqual(response['id'], old['id'])
             capture.assert_called_once()
