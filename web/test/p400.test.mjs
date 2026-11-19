@@ -35,7 +35,8 @@ test('P400 support link: Settings → 帮助和反馈 carries 在线客服 next 
 test('P400 support link: reconnect dialog has no direct external link; recovery page retains support', () => {
   const card = section('<aside id="connDlg"', '<aside id="session-help"');
   assert.ok(!card.includes('support.agentj.app') && !card.includes('https://') && !card.includes('doctor --reconnect'), 'the card itself stays without a site link or shell command (P375 guard)');
-  assert.match(card, /id="connLater"[\s\S]*id="connRetry"/);
+  const actions = card.match(/<div[^>]*id="connRow"[^>]*>([\s\S]*?)<\/div>/)?.[1] || '';
+  assert.deepEqual([...actions.matchAll(/<button\b[^>]*\bid="([^"]+)"/g)].map(m => m[1]), ['connRetry', 'connRefresh', 'connLater']);
   assert.match(read('../public/js/conn-dlg.js'), /registerLayer\(\{[^\n]*close: later/);
   assert.match(read('../public/js/rescue.js'), /el\('rescue-banner-go'\)\?\.addEventListener\('click', openBlock\)/);
 });

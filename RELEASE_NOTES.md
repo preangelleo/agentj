@@ -1,5 +1,5 @@
-# Agent J v0.30.40
+# Agent J v0.30.41
 
-Reopen your remote and browse older chats. Recover access with a registered passkey. The reply card now shows queued messages in order.
+When reconnecting on your phone, the Face ID or Touch ID button appears above Later. Long button labels wrap to fit the screen.
 
-手机重开后可继续翻看历史。已登记通行密钥的遥控器可自行恢复。连续发送时，回复卡的心跳按钮会显示排队条数和顺序。
+手机重连时，Face ID 或 Touch ID 按钮会在“稍后”上方完整显示，较长的文字会自动换行。

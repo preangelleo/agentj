@@ -8,7 +8,7 @@
 //   up            the card was showing and the link came back: 「已重新连上」, closes by itself after UP_MS
 // It never takes focus (aria-modal=false, like #version-notice); 稍后 / Esc / a tap outside hide it until the next outage.
 // It waits while Settings, a sheet or another dialog is in front (Emergency repair must stay usable).
-import { t, onLang } from './t.js';
+import { lang, t, onLang } from './t.js';
 import { registerLayer } from './layers.js';
 
 export const POP_AFTER_MS = 10000;
@@ -51,7 +51,10 @@ function paintRetry() {
   const btn = $('connRetry');
   const key = H.passkey() ? 'revoked.takeoverPk' : 'off.retry';
   btn.dataset.i18n = key;
-  btn.textContent = t(key);
+  const label = t(key);
+  // Platform-specific names are resolved by t() before we keep each English name together.
+  btn.textContent = key === 'revoked.takeoverPk' && lang() === 'en'
+    ? label.replace(/(Face|Touch) ID/g, '$1\u00a0ID') : label;
 }
 
 /** Called on every painted status / link change / view change, and once a second while the link is not up. */

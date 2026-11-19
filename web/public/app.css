@@ -4382,6 +4382,13 @@ details.fixcmd>summary{min-height:44px;display:flex;align-items:center;cursor:po
 .conndlg .conndlg-on,.conndlg[data-state="up"] .conndlg-off{display:none}
 .conndlg[data-state="up"] .conndlg-on{display:block}
 .conndlg .sq{min-height:0}   /* fix1: the square fits its words — no empty band above the buttons (reconnecting = 3 lines) */
+/* The passkey label can span several lines, including an unbroken translated word. */
+#connRow{flex-direction:column;flex:none;
+  --aj-dialog-action-flex:none;--aj-dialog-action-native-white-space:normal;
+  --aj-dialog-action-padding:var(--space-control);--aj-dialog-action-border:0;
+  --aj-dialog-action-background:var(--lotion);--aj-dialog-action-color:var(--noir);
+  --aj-dialog-action-primary-background:var(--lotion);--aj-dialog-action-primary-color:var(--noir)}
+#connRow>.aj-dialog-action{min-width:0;overflow-wrap:anywhere;line-height:1.25}
 .conndlg p[hidden],.conndlg .gdlg-row[hidden]{display:none}
 .session-help .sq{min-height:0}
 

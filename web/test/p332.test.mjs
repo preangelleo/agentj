@@ -71,7 +71,8 @@ test('≡ 重置连接 + /reset run ①; reconnect dialog retries while the resc
   assert.match(app, /resetConn: rescue\.resetFromCommand/);
   assert.match(app, /conndlg\.init\(\{[\s\S]*retry: \(\) =>/);
   assert.match(html, /<aside id="connDlg"[^>]*data-state="down" hidden/);
-  assert.match(html, /id="connLater"[\s\S]*id="connRetry"/);
+  const actions = html.match(/<div[^>]*id="connRow"[^>]*>([\s\S]*?)<\/div>/)?.[1] || '';
+  assert.deepEqual([...actions.matchAll(/<button\b[^>]*\bid="([^"]+)"/g)].map(m => m[1]), ['connRetry', 'connRefresh', 'connLater']);
   assert.match(rescue, /el\('rescue-banner-go'\)\?\.addEventListener\('click', openBlock\)/);
   assert.ok(!html.includes('id="offTip3"'), "P375: helper command moved to website, menu stays the first hop");
   assert.match(rescue, /rs-detail-help/);

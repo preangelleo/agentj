@@ -2,7 +2,7 @@
   "schema": 2,
   "authority": "component-ownership.json + current explicit HTML + verified dynamic constructors; no ID prefix inference",
   "sourceHashes": {
-    "public/index.html": "9b98fdc26dfd87924ce63b9890bd201d2da3aa6ad50ef8328af2e6c30d553dec",
+    "public/index.html": "83e3de00baaebdb1ad3603c4c55576dd15ffa504c35411b03cf7ff8e1c12b241",
     "component-ownership.json": "e424b73bc80db8f309e355b01420f7374072a3dc9845339c75c720415f04681a",
     "public/js/relay.js": "466d2e26f2fc19b8fdf543b93c16fbf25925f38788192eb758573660e3151c65"
   },
@@ -111,16 +111,6 @@
         "gdlg-row"
       ]
     },
-    "connLater": {
-      "owner": "aj-dialog-action",
-      "method": "direct-data-owner",
-      "source": "public/index.html",
-      "line": 126,
-      "tag": "button",
-      "classes": [
-        "aj-dialog-action"
-      ]
-    },
     "connRetry": {
       "owner": "aj-dialog-action",
       "method": "direct-data-owner",
@@ -143,6 +133,16 @@
         "go",
         "aj-dialog-action",
         "aj-dialog-action--primary"
+      ]
+    },
+    "connLater": {
+      "owner": "aj-dialog-action",
+      "method": "direct-data-owner",
+      "source": "public/index.html",
+      "line": 126,
+      "tag": "button",
+      "classes": [
+        "aj-dialog-action"
       ]
     },
     "session-help": {
