@@ -197,7 +197,7 @@ class Install(Base):
         self.assertIn(docsrule.block("en"), text)
         self.assertEqual(text.count(docsrule.BEGIN), 1)
         self.assertNotIn("AGENTS.md", self.manifest(), "the human's file stays theirs")
-        # v28 owns only its complete core-reference block; changing its language
+        # v29 owns only its complete core-reference block; changing its language
         # replaces that one block, preserving the human prefix and docs rule.
         expected = wizard.merge_core_reference(text.encode(), wizard.core_reference("zh").encode()).decode()
         for i in range(2):

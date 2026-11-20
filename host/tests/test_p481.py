@@ -124,6 +124,35 @@ class Upgrade(_Env):
         self.assertEqual(json.loads(out.getvalue())['checks'], after)
         repair.assert_called_once_with(self.st, before)
 
+    def test_upgrade_only_excludes_unregistered_user_notes_and_keeps_runtime_blockers(self):
+        import contextlib
+        import io
+        from agentj import wizard, main_identity
+        work = self.st.root.parent / "owner-project"
+        work.mkdir()
+        wizard.bootstrap_root(work)
+        note = work / "documentation" / "owner-note.md"
+        note.write_bytes(b"Unregistered owner content.\n")
+        registry = work / "documentation" / "STRUCTURE.json"
+        original_manifest = registry.read_bytes()
+        with mock.patch.object(main_identity, "working_root", return_value=work):
+            full = {r["id"]: r for r in doctor.check_main_identity(self.st)}
+        self.assertEqual(full["root-structure"]["status"], "fail")
+        self.assertIn(note.name, full["root-structure"]["summary"])
+        for row, expected in [({"id": "version", "status": "ok"}, 0),
+                              ({"id": "serve", "status": "fail"}, 1),
+                              ({"id": "main-core", "status": "fail"}, 1)]:
+            with self.subTest(row=row), mock.patch.object(doctor, "State", return_value=self.st), \
+                    mock.patch.object(doctor, "_fenced", return_value=False), \
+                    mock.patch.object(doctor, "run_upgrade", return_value=[row]), \
+                    mock.patch.object(update, "repair_upgrade", return_value=[]) as repair, \
+                    contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(doctor.main(as_json=True, post_upgrade=True, upgrade_only=True), expected)
+                self.assertEqual(json.loads(out.getvalue())["checks"], [row])
+                repair.assert_called_once_with(self.st, [row])
+        self.assertEqual(note.read_bytes(), b"Unregistered owner content.\n")
+        self.assertEqual(registry.read_bytes(), original_manifest)
+
     def test_failed_upgrade_never_prints_success_from_pending_issues(self):
         res = {'result':'failed','reason':'doctor_failed','from':'1.0','to':'2.0','service':'failed',
                'pending_checks':['serve'], 'existing_issues':['root-structure']}

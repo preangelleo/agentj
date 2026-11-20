@@ -4,14 +4,14 @@ import re
 
 from . import privacy
 from .opencode_binary import SYSTEM
+from .opencode_paths import NATIVE_NPM_PATH
 
 _NUMBER = r'[0-9]{1,6}'
 _TRIPLE = rf'{_NUMBER}\.{_NUMBER}\.{_NUMBER}'
 VERSION = re.compile(rf'v?{_NUMBER}(?:\.{_NUMBER}){{1,3}}(?:(?:a|b|rc){_NUMBER}|-(?:alpha|beta|rc)\.?{_NUMBER})?')
 _SYSTEM_PREFIXES = tuple(os.path.dirname(directory) + '/' for directory in SYSTEM)
-_PACKAGE = 'lib/node_modules/@opencode/cli/bin/opencode.exe'
 _CELLAR = rf'Cellar/opencode/{_TRIPLE}(?:_{_NUMBER})?/bin/opencode'
-_PUBLIC_INSTALL = re.compile(rf'(?:bin/opencode|{re.escape(_PACKAGE)}|{_CELLAR})')
+_PUBLIC_INSTALL = re.compile(rf'(?:bin/opencode|{re.escape(NATIVE_NPM_PATH)}|{_CELLAR})')
 _SOURCES = {'mise','asdf','native','npm','path','explicit','system','external'}
 
 # Home paths are private. Only known OpenCode installation layouts can be shown
@@ -19,7 +19,7 @@ _SOURCES = {'mise','asdf','native','npm','path','explicit','system','external'}
 _HOME_INSTALL = re.compile(
     r'(?:\.(?:opencode|local)/bin/opencode'
     rf'|(?:\.local/share/mise|\.asdf)/installs/opencode/v?{_TRIPLE}/(?:bin/)?opencode'
-    rf'|\.(?:local|npm-global)/(?:{re.escape(_PACKAGE)}|{_CELLAR}))'
+    rf'|\.(?:local|npm-global)/(?:{re.escape(NATIVE_NPM_PATH)}|{_CELLAR}))'
 )
 
 

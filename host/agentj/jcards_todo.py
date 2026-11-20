@@ -26,6 +26,7 @@ import datetime as dt
 import json
 import os
 import re
+from functools import lru_cache
 import stat
 import uuid
 
@@ -180,7 +181,7 @@ def assess(it: dict, by_id: dict, now: dt.datetime) -> dict:
         flags.append("ready" if t and t <= now else "waiting")
     elif s and "after" in s:
         dep = by_id.get(s["after"])
-        flags.append("ready" if not dep or dep["status"] in CLOSED else "waiting")
+        flags.append("ready" if dep and dep["status"] == "done" else "waiting")
     elif s:
         flags.append("check")
     if e and "at" in e:
@@ -215,7 +216,40 @@ def ordered(items: list, now: dt.datetime | None = None, references=()) -> list:
 def due(items: list, now: dt.datetime | None = None, who: str = "agent", references=()) -> list:
     """The open items of `who` to look at now: everything open except what still waits for a time or another item."""
     return [{**_brief(x), "state": a["state"], "flags": a["flags"]} for x, a in ordered(items, now, references)
-            if x["owner"] == who and a["state"] not in CLOSED and a["state"] != "waiting"]
+            if x["owner"] == who and a["state"] not in CLOSED and "waiting" not in a["flags"]]
+
+
+@lru_cache(maxsize=1)
+def _seed_agent_items():
+    from pathlib import Path
+    raw = Path(__file__).with_name('cardpacks').joinpath('todo', 'sample', 'todo.json').read_bytes()
+    return {x['id']: x for x in load(raw)[0] if x['owner'] == 'agent'}
+
+
+def heartbeat_candidates(root, now=None):
+    """Pending agent work in card order. Deadlines do not override an unmet start condition."""
+    items, problem, _ = read(root)
+    if problem:
+        return {}, {}
+    return _heartbeat_candidates(root, items, now)
+
+
+def _heartbeat_candidates(root, items, now):
+    refs = dependencies(root, items)
+    statuses = {x['id']: x['status'] for x in [*refs, *items]}
+    ready, review = {}, {}
+    now = now or now_utc()
+    for item, _ in ordered(items, now, refs):
+        start = item['start'] or {}
+        if item['owner'] != 'agent' or item['status'] != 'pending' or item == _seed_agent_items().get(item['id']):
+            continue
+        if 'after' in start and statuses.get(start['after']) != 'done':
+            continue
+        if 'at' in start and not (_when(start, False) and _when(start, False) <= now):
+            continue
+        target = review if 'when' in start else ready
+        target[item['id']] = item
+    return ready, review
 
 
 def _brief(x: dict) -> dict:
@@ -236,7 +270,7 @@ def _show_cond(c, by_id: dict, end: bool, lang: str):
                 "text": cards._clean(privacy.redact(c["at"]), 40)}
     if "after" in c:
         dep, aid = by_id.get(c["after"]), c["after"] if privacy.redact(c["after"]) == c["after"] else "?"
-        return {"kind": "after", "id": aid, "met": not dep or dep["status"] == "done",
+        return {"kind": "after", "id": aid, "met": bool(dep and dep["status"] == "done"),
                 "text": cards._clean(privacy.redact(dep["text"]), 60) if dep else aid}
     return {"kind": "when", "text": cards._clean(privacy.redact(c["when"]), COND_MAX)}
 
@@ -341,7 +375,7 @@ def fields(text=None, owner=None, start=None, end=None, source=None, note=None, 
     return f
 
 
-def change(root, op: str, entry=None, now: dt.datetime | None = None, revision=None, **kw) -> dict:
+def change(root, op: str, entry=None, now: dt.datetime | None = None, revision=None, heartbeat=None, **kw) -> dict:
     """One atomic change of the To-do file. The card may be off: the item is still kept (the owner sees it when the card is
     switched on) and the answer says `on: false`."""
     now = now or now_utc()
@@ -354,6 +388,8 @@ def change(root, op: str, entry=None, now: dt.datetime | None = None, revision=N
         f = fields(now=now, **kw)
     except ValueError as e:
         return _fail(str(e))
+    if heartbeat is not None and (op != 'start' or not re.fullmatch(r'[0-9a-f]{16}', str(heartbeat)) or f):
+        return _fail('bad_op')
     if op == "add" and "text" not in f:
         return _fail("bad_text")
     if op != "add" and not (isinstance(entry, str) and ID_RE.fullmatch(entry)):
@@ -392,6 +428,10 @@ def change(root, op: str, entry=None, now: dt.datetime | None = None, revision=N
                 if revision is not None and op == 'edit' and any(x['id'] == entry and privacy.redact(x['text']) != x['text'] for x in items):
                     return _fail('redacted')
                 removed = next((x.copy() for x in items if x["id"] == entry), None)
+                if heartbeat is not None:
+                    ready, review = _heartbeat_candidates(root, items, now)
+                    if entry not in ready and entry not in review:
+                        return _fail('not_ready')
                 iid, why = _apply(items, op, entry, f, now, reserved, known)
                 if why:
                     return _fail(why)
@@ -403,6 +443,8 @@ def change(root, op: str, entry=None, now: dt.datetime | None = None, revision=N
                     for (i, _), n in zip(at, items):
                         out[i] = {**(rows[i] if isinstance(rows[i], dict) else {}), **n}
                     out += items[len(at):]
+                if heartbeat is not None:
+                    next(r for r in out if isinstance(r, dict) and r.get('id') == iid)['heartbeatPickup'] = heartbeat
                 # Archive edits stay in the archive; reopening installs the row in the main file first.
                 item = removed if op == 'delete' else next(x for x in items if x['id'] == iid)
                 if archived_row is not None and op != 'delete':
@@ -522,7 +564,8 @@ def listing(root, op: str, who: str | None = None, now: dt.datetime | None = Non
     return {"ok": True, "id": CID, "on": on, "items": rows, 'capacity': capacity, **({"problem": problem} if problem else {})}
 
 
-WHY = {"not_found": ("没有这一条（agentj card todo list）", "no such item (agentj card todo list)"),
+WHY = {"not_ready": ("待办已变更或条件未到，请重读待办卡", "The item changed or is not ready. Read the card again."),
+       "not_found": ("没有这一条（agentj card todo list）", "no such item (agentj card todo list)"),
        "bad_op": ("不认识的操作", "unknown operation"),
        "bad_text": ("标题不能空，一行写完", "the title must not be empty"),
        "too_long": ("太长了：标题 300 字、条件 200 字、备注 500 字以内", "too long: title 300, condition 200, note 500 characters"),
@@ -547,7 +590,7 @@ def command(a, root) -> int:
         kw = {k: getattr(a, k) for k in ("text", "owner", "start", "end", "source", "note", "status", "by")}
         if a.op == "add" and kw["by"] is None:
             kw["by"] = "agent"
-        r = change(root, a.op, a.entry, **kw)
+        r = change(root, a.op, a.entry, heartbeat=getattr(a, 'heartbeat', None), **kw)
     if a.json:
         print(json.dumps(r, ensure_ascii=False))
     elif not r["ok"]:

@@ -12,6 +12,7 @@ import platform
 import re
 import shutil
 import shlex
+import signal
 import subprocess
 import sys
 import tarfile
@@ -229,11 +230,19 @@ def formal_metadata(value):
 def consent(label):
     return input(label + ' [y/N]: ').strip().lower() == 'y'
 
-def command(args, *, allow_failure=False, timeout=240, repair_doctor=False, **kwargs):
+def command(args, *, allow_failure=False, timeout=240, repair_doctor=False, native_update=False, repair_dispatch=False, **kwargs):
     # Do not print subprocess output: errors can contain secrets. Credentials are never in argv.
     try:
         r = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout, **kwargs)
         if r.returncode and not allow_failure:
+            if repair_dispatch and r.returncode == 1 and b'Could not launch upgrade recovery:' in r.stderr:
+                raise InstallError('repair_worker_launch_failed')
+            if native_update:
+                # Only the old CLI's fixed first reason field may leave its captured output.
+                match = re.search(rb'^UPGRADE_RESULT (?:refused|failed)\nreason: ([a-z_]+)$', r.stdout, re.M)
+                if match and match[1] in (b'confirm_on_phone', b'not_confirmed', b'friend_request',
+                                          b'busy', b'dependency_download_failed', b'not_owner'):
+                    raise InstallError('native_' + match[1].decode())
             if repair_doctor:
                 if r.returncode == 1 and repair_doctor_starting(r.stdout):
                     raise InstallError('repair_service_starting')
@@ -946,8 +955,12 @@ def version_key(text):
 # Query the installed version's own control protocol. Return only liveness,
 # version, and reconnect state; status can also contain private session data.
 SERVICE_PROBE = """import json
+import os
 from agentj import names
 from agentj.state import State
+if os.environ.get('AGENTJ_INSTANCE'):
+    from agentj.instance import apply
+    apply(None)
 try:
     reply = names.ctl_call(State(), {'cmd':'status'}, 3)
 except names.ServeBusy as exc:
@@ -976,11 +989,108 @@ def repair_doctor_starting(raw):
         return False
 
 
-def verify_repair_install(run, executable, version, env):
-    if run([str(executable), '--version'], env=env).decode().strip() != version:
-        raise InstallError('upgrade_version_mismatch')
-    run([str(executable), 'service', 'install'], env=env)
-    run([str(executable), 'service', 'restart'], env=env)
+# The native recovery worker may wait up to ten minutes for current work and
+# approvals. Only its own terminal receipt proves it has finished changing the host.
+RECOVERY_MODE = """from agentj import instance, service, service_recovery
+from agentj.state import State
+instance.apply(None)
+record = service_recovery.read(State()) or {}
+print('busy' if record.get('status') in ('pending', 'waiting', 'running') else int(service.needs_deferred_install()))
+"""
+RECOVERY_WAIT = """import sys, time
+from agentj import service_recovery
+from agentj.state import State
+from agentj.instance import apply
+apply(None)
+state = State()
+target, since, job = sys.argv[1], float(sys.argv[2]), sys.argv[3]
+end = time.monotonic() + 780
+while time.monotonic() < end:
+    if job:
+        from agentj.phone_update import read_outcome
+        outcome = read_outcome(state, job, target)
+        if outcome:
+            print('ok' if outcome == 'restarted' else 'failed')
+            break
+    else:
+        receipt = service_recovery.read(state) or {}
+        if receipt.get('target') == target and receipt.get('at', 0) >= since:
+            status = receipt.get('status')
+            if status in ('failed', 'rolled_back') or (status == 'ok' and
+                    (receipt.get('source') == 'upgrade_worker' or not hasattr(service_recovery, 'process_version'))):
+                print(status)
+                break
+    time.sleep(2)
+"""
+
+
+def wait_repair_handoff(run, executable, version, env, since, job):
+    try:
+        result = run([str(executable.with_name('python')), '-I', '-c', RECOVERY_WAIT,
+                      version.split()[1], str(since), job], env=env, timeout=800).strip()
+    except (InstallError, OSError, subprocess.SubprocessError, KeyboardInterrupt):
+        result = b''
+    if result in (b'failed', b'rolled_back'):
+        raise InstallError('repair_worker_failed')
+    if result != b'ok':
+        raise InstallError('repair_handoff_pending')
+    verify_repair_health(run, executable, version, env)
+
+
+def verify_repair_install(run, executable, version, env, on_handoff=None):
+    step = 'agentj --version'
+    try:
+        if run([str(executable), '--version'], env=env).decode().strip() != version:
+            raise InstallError('upgrade_version_mismatch')
+        step = 'agentj service install'
+        since = time.time()
+        job = ''
+        if on_handoff and platform.system() == 'Darwin' and version_key(version) >= (0, 30, 47, 3, 0):
+            # .47+ has native per-job receipts. Use the normal worker only when
+            # the native CLI itself would defer for an active LaunchAgent.
+            mode = run([str(executable.with_name('python')), '-I', '-c', RECOVERY_MODE], env=env).strip()
+            if mode == b'busy':
+                raise InstallError('repair_existing_worker')
+            if mode not in (b'0', b'1'):
+                raise InstallError('repair_handoff_invalid')
+            if mode == b'1':
+                job = uuid.uuid4().hex
+        if job:
+            # Reserve private disk space and bind the exact job before submitting
+            # it. Only this bounded launch request defers SIGINT; waiting is cancellable.
+            with finish_repair_file_change():
+                on_handoff(since, job)
+                try:
+                    run([str(executable), 'service', 'install', '--deferred', version.split()[1],
+                         '--peer-upgrade-job', job], env=env, timeout=30, repair_dispatch=True)
+                except InstallError as exc:
+                    if exc.reason == 'repair_worker_launch_failed':
+                        raise
+                    # Submission may have reached launchd before the CLI timed out.
+                    raise InstallError('repair_handoff_pending') from None
+            handed_off = True
+        else:
+            result = run([str(executable), 'service', 'install'], env=env)
+            handed_off = b'service re-install scheduled independently' in (result or b'')
+            if handed_off and on_handoff:
+                try:
+                    on_handoff(since, '')
+                except OSError:
+                    raise InstallError('repair_handoff_pending') from None
+        if handed_off:
+            step = 'agentj service install (deferred)'
+            wait_repair_handoff(run, executable, version, env, since, job)
+            return
+        step = 'agentj service restart'
+        run([str(executable), 'service', 'restart'], env=env)
+        step = 'agentj doctor --upgrade-only / serve'
+        verify_repair_health(run, executable, version, env)
+    except InstallError as exc:
+        exc.step = step
+        raise
+
+
+def verify_repair_health(run, executable, version, env, *, deferred=False):
     # Type=simple and launchd can return while the new process is still starting.
     deadline = time.monotonic() + 90
     def probe(remaining):
@@ -991,6 +1101,8 @@ def verify_repair_install(run, executable, version, env):
         # Status gained its running version field in 0.30.24.
         if (live and running != version.removeprefix('agentj ') and
                 not (running is None and version_key(version) < (0, 30, 24, 3, 0))):
+            if deferred:
+                return False, reconnecting  # A native deferred restart may still be serving the old version.
             raise InstallError('repair_health_failed')
         return live, reconnecting
 
@@ -1006,10 +1118,20 @@ def verify_repair_install(run, executable, version, env):
                     break
                 raw = run([str(executable), 'doctor', '--upgrade-only', '--json'], env=env,
                           timeout=remaining, repair_doctor=True)
-                rows = json.loads(raw)['checks']
-                if (not isinstance(rows, list) or not rows or
-                        any(not isinstance(row, dict) or row.get('status') not in ('ok', 'warn') for row in rows)):
+                report = json.loads(raw)
+                rows = report['checks']
+                if report.get('ok', True) is not True or not isinstance(rows, list) or not rows:
                     raise ValueError()
+                for row in rows:
+                    if not isinstance(row, dict):
+                        raise ValueError()
+                    if row.get('status') in ('ok', 'warn'):
+                        continue
+                    # The host can report a pre-existing work-root inventory issue
+                    # with zero exit and ok=true. It is outside package/service health.
+                    if (row.get('status') != 'fail' or row.get('id') != 'root-structure'
+                            or report.get('ok') is not True):
+                        raise ValueError()
                 serve = [row for row in rows if row.get('id') == 'serve']
                 if len(serve) != 1:
                     raise ValueError()
@@ -1031,7 +1153,41 @@ def verify_repair_install(run, executable, version, env):
             raise InstallError('repair_health_failed') from None
         if attempt < 23:
             time.sleep(min(2, max(0, deadline - time.monotonic())))
-    raise InstallError('repair_health_failed')
+    raise InstallError('native_service_unconfirmed' if deferred else 'repair_health_failed')
+
+
+NATIVE_SERVICE = """import json
+import os
+from agentj import names, service
+from agentj.state import State
+if os.environ.get('AGENTJ_INSTANCE'):
+    from agentj.instance import apply
+    apply(None)
+registered = service.status().get('installed') or service.legacy_status().get('installed')
+try:
+    live = names.ctl_call(State(), {'cmd': 'status'}, 3) if not registered else None
+except names.ServeBusy:
+    registered = True
+print(json.dumps(bool(registered or live)))
+"""
+
+
+def native_service_present(run, executable, env):
+    value = json.loads(run([str(executable.with_name('python')), '-I', '-c', NATIVE_SERVICE],
+                           env=env, timeout=40))
+    if type(value) is not bool:
+        raise InstallError('native_service_unconfirmed')
+    return value
+
+
+def verify_native_repair(run, executable, target, env, had_service):
+    if run([str(executable), '--version'], env=env).decode().strip() != target:
+        raise InstallError('upgrade_version_mismatch')
+    if had_service or native_service_present(run, executable, env):
+        verify_repair_health(run, executable, target, env, deferred=True)
+        print(target + ' · 已确认运行版本和自检 / Running service and health verified.')
+    else:
+        print(target + ' · 命令行版本已确认 / CLI version verified (no service).')
 
 
 def repair_security_floor(home, version_key):
@@ -1049,7 +1205,17 @@ def repair_security_floor(home, version_key):
 
 
 @contextmanager
-def repair_guard(home, directory):
+def finish_repair_file_change():
+    """Deliver terminal Ctrl+C after the short lease write or venv/entrypoint switch."""
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
+    try:
+        yield
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
+
+@contextmanager
+def repair_guard(home, directory, selected_state=None):
     """Serialize owner-terminal repairs and respect the existing service worker and phone lease."""
     import fcntl
     from contextlib import ExitStack
@@ -1062,7 +1228,7 @@ def repair_guard(home, directory):
                 raise InstallError('upgrade_in_progress') from None
         take(directory / 'repair.lock')
         override = os.environ.get('AGENTJ_STATE_DIR') or os.environ.get('AGENTJARVIS_STATE_DIR')
-        state = Path(override) if override else home / '.local/state/agentj'
+        state = selected_state or (Path(override) if override else home / '.local/state/agentj')
         if not state.exists():
             yield
             return
@@ -1072,20 +1238,34 @@ def repair_guard(home, directory):
         if os.path.lexists(lease):
             if not private_owned(lease):
                 raise InstallError('repair_requires_private_directory')
-            if time.time() - json.loads(lease.read_bytes())['at'] < 1800:
+            try:
+                current = json.loads(lease.read_bytes())
+                age = time.time() - current['at']
+                # Only this installer's record bears an owner nonce. Holding
+                # repair.lock proves the prior terminal repair no longer owns it.
+                ours = (set(current) == {'at', 'owner'} and isinstance(current['owner'], str)
+                        and re.fullmatch(r'[a-f0-9]{32}', current['owner']))
+            except (ValueError, KeyError, TypeError):
+                age = time.time() - lease.stat().st_mtime
+                ours = False
+            if age < 1800 and not ours:
                 raise InstallError('upgrade_in_progress')
             lease.unlink()
         record = json.dumps({'at': time.time(), 'owner': uuid.uuid4().hex}).encode()
+        # The finally must already be active when a pending Ctrl+C is delivered.
         try:
-            with open(lease, 'xb', opener=lambda p, f: os.open(p, f | os.O_NOFOLLOW, 0o600)) as out:
-                out.write(record)
-        except FileExistsError:
-            raise InstallError('upgrade_in_progress') from None
-        try:
+            with finish_repair_file_change():
+                try:
+                    with open(lease, 'xb', opener=lambda p, f: os.open(p, f | os.O_NOFOLLOW, 0o600)) as out:
+                        out.write(record)
+                except FileExistsError:
+                    raise InstallError('upgrade_in_progress') from None
             yield
         finally:
-            if lease.is_file() and not lease.is_symlink() and lease.read_bytes() == record:
-                lease.unlink()
+            with finish_repair_file_change():
+                if lease.is_file() and not lease.is_symlink() and lease.read_bytes() == record:
+                    lease.unlink()
+
 
 
 def install_with_local_rollback(run, install_args, install_env, env, executable, entry,
@@ -1098,39 +1278,119 @@ def install_with_local_rollback(run, install_args, install_env, env, executable,
     if not entry.is_symlink() or entry.resolve() != executable:
         raise InstallError('repair_entrypoint_invalid')
     link_target = os.readlink(entry)
-    tmp = Path(tempfile.mkdtemp(prefix='.agentj-repair-', dir=prefix.parent))
-    backup = tmp / 'previous'
-    keep_snapshot = False
-    try:
-        shutil.copytree(prefix, backup, symlinks=True)
+    marker = home / '.local/share/agentj/upgrade-bin/repair-handoff.json'
+    scope = [env.get(k, '') for k in ('AGENTJ_INSTANCE', 'AGENTJ_STATE_DIR', 'AGENTJARVIS_STATE_DIR',
+                                       'AGENTJ_SERVICE_NAME', 'AGENTJARVIS_SERVICE_NAME', 'XDG_STATE_HOME',
+                                       'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'HOME')]
+    resume = None
+    if os.path.lexists(marker):
+        if install_args is not None:
+            raise InstallError('repair_installation_changed')
+        if not private_owned(marker):
+            raise InstallError('repair_handoff_invalid')
         try:
-            run(install_args, env=install_env)
-            verify_repair_install(run, executable, target, env)
+            resume = json.loads(marker.read_bytes())
+            if (not isinstance(resume, dict) or not re.fullmatch(r'\.agentj-repair-[a-z0-9_]{8}', resume['snapshot'])
+                    or resume['phase'] not in ('upgrade', 'rollback') or type(resume['since']) not in (float, int)
+                    or resume['prefix'] != str(prefix) or resume['entry'] != str(entry)
+                    or resume['link'] != link_target
+                    or not re.fullmatch(r'(?:[0-9a-f]{32})?', resume['job'])):
+                raise ValueError()
+            if resume['scope'] != scope:
+                raise InstallError('repair_handoff_other_instance')
+            before, target = resume['before'], resume['target']
+            expected = before if resume['phase'] == 'rollback' else target
+            if run([str(executable), '--version'], env=env).decode().strip() != expected:
+                raise InstallError('repair_installation_changed')
+            old_key = version_key(before)
+            if version_key(target) < old_key:
+                raise ValueError()
+            tmp = prefix.parent / resume['snapshot']
+            if not private_owned(tmp, directory=True) or (resume['phase'] == 'upgrade'
+                    and not private_owned(tmp/'previous', directory=True)):
+                raise ValueError()
+        except (KeyError, TypeError, ValueError, OSError):
+            raise InstallError('repair_handoff_invalid') from None
+    else:
+        tmp = Path(tempfile.mkdtemp(prefix='.agentj-repair-', dir=prefix.parent))
+    backup = tmp / 'previous'
+    keep_snapshot = bool(resume)
+
+    def verify(version, phase):
+        def registered(since, job):
+            data = dict(prefix=str(prefix), entry=str(entry), link=link_target, snapshot=tmp.name,
+                        before=before, target=target, phase=phase, since=since, job=job, scope=scope)
+            with tempfile.NamedTemporaryFile(dir=marker.parent, delete=False) as out:
+                pending = Path(out.name)
+                try:
+                    out.write(json.dumps(data).encode())
+                    out.flush()
+                    os.replace(pending, marker)
+                finally:
+                    pending.unlink(missing_ok=True)
+        if resume and resume['phase'] == phase:
+            wait_repair_handoff(run, executable, version, env, resume['since'], resume['job'])
+        else:
+            verify_repair_install(run, executable, version, env, on_handoff=registered)
+
+    try:
+        if not resume:
+            shutil.copytree(prefix, backup, symlinks=True)
+        try:
+            if not resume:
+                run(install_args, env=install_env)
+            if resume and resume['phase'] == 'rollback':
+                raise InstallError('repair_worker_failed')
+            verify(target, 'upgrade')
         except (InstallError, OSError, ValueError, subprocess.SubprocessError, KeyboardInterrupt) as failure:
             keep_snapshot = True
+            if (isinstance(failure, InstallError) and failure.reason in ('repair_handoff_pending', 'repair_existing_worker')
+                    or isinstance(failure, KeyboardInterrupt) and marker.exists()):
+                if isinstance(failure, InstallError):
+                    raise
+                raise InstallError('repair_handoff_pending') from None
+            if marker.exists():
+                expected = before if resume and resume['phase'] == 'rollback' else target
+                if run([str(executable), '--version'], env=env).decode().strip() != expected:
+                    raise InstallError('repair_installation_changed')
             repair_security_floor(home, old_key)
             if prefix.is_symlink() or (os.path.lexists(entry)
                     and (not entry.is_symlink() or os.readlink(entry) != link_target)):
                 raise InstallError('repair_entrypoint_changed') from None
-            if prefix.exists():
-                prefix.rename(tmp / 'unsuccessful')
-            backup.rename(prefix)
-            if not os.path.lexists(entry):
-                entry.symlink_to(link_target)
             try:
-                verify_repair_install(run, executable, before, env)
-            except InstallError:
-                raise InstallError('repair_rollback_health_failed') from None
+                if not resume or resume['phase'] != 'rollback':
+                    # The native worker, if any, has now reached a terminal state.
+                    with finish_repair_file_change():
+                        if prefix.exists():
+                            prefix.rename(tmp / 'unsuccessful')
+                        backup.rename(prefix)
+                        if not os.path.lexists(entry):
+                            entry.symlink_to(link_target)
+                        marker.unlink(missing_ok=True)
+                verify(before, 'rollback')
+            except (InstallError, KeyboardInterrupt) as rollback_failure:
+                if (isinstance(rollback_failure, InstallError) and rollback_failure.reason == 'repair_handoff_pending'
+                        or isinstance(rollback_failure, KeyboardInterrupt) and marker.exists()):
+                    raise InstallError('repair_handoff_pending') from None
+                marker.unlink(missing_ok=True)
+                error = InstallError('repair_rollback_health_failed')
+                error.step = getattr(rollback_failure, 'step', 'interrupted' if isinstance(
+                    rollback_failure, KeyboardInterrupt) else 'agentj doctor --upgrade-only / serve')
+                raise error from None
+            marker.unlink(missing_ok=True)
             keep_snapshot = False
-            reason = failure.reason if isinstance(failure, InstallError) else 'local_step_failed'
+            reason = ('interrupted' if isinstance(failure, KeyboardInterrupt)
+                      else failure.reason if isinstance(failure, InstallError) else 'local_step_failed')
             raise InstallError('repair_rolled_back:' + reason) from None
+        marker.unlink(missing_ok=True)
+        keep_snapshot = False
     finally:
         if not keep_snapshot:
             shutil.rmtree(tmp, ignore_errors=True)
 
 
 
-def upgrade_existing(uv, *, home=None, run=command, repair_index=False):
+def upgrade_existing(uv, *, home=None, run=command, repair_index=False, repair_runtime=False):
     """P516: repair-forward via today's verified bootstrap, without the old worker or a seat code.
     Pin both uv destinations from the installed tool receipt; never create a parallel installation.
     """
@@ -1153,7 +1413,8 @@ def upgrade_existing(uv, *, home=None, run=command, repair_index=False):
             raise ValueError()
     except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError):
         raise InstallError('upgrade_requires_uv_install') from None
-    if repair_index:
+    guarded = repair_index or repair_runtime
+    if guarded:
         if os.environ.get('SUDO_USER') or os.getuid() != os.geteuid():
             raise InstallError('repair_requires_installation_owner')
         for entry in (home, prefix, executable, prefix / 'uv-receipt.toml'):
@@ -1161,6 +1422,25 @@ def upgrade_existing(uv, *, home=None, run=command, repair_index=False):
         repair_trusted_path(prefix / 'bin/python', require_owner=False)
         if os.path.realpath(prefix / 'bin/python') != os.path.realpath(getattr(sys, '_base_executable', sys.executable)):
             raise InstallError('repair_requires_existing_interpreter')
+    selected_state = None
+    if guarded and os.environ.get('AGENTJ_INSTANCE'):
+        code = "from agentj.instance import apply; from agentj.state import State; apply(None); print(State().root)"
+        selected_state = Path(run([str(prefix/'bin/python'), '-I', '-c', code]).decode().strip())
+        if not selected_state.is_absolute():
+            raise InstallError('repair_handoff_invalid')
+    directory = home/'.local/share/agentj/upgrade-bin'
+    if repair_index and os.path.lexists(directory / 'repair-handoff.json'):
+        if any(p.is_symlink() for p in (directory, *directory.parents)):
+            raise InstallError('upgrade_runtime_symlink')
+        repair_trusted_path(directory)
+        env = {**os.environ, 'PATH': os.pathsep.join((str(directory), str(entries[0].parent),
+                                                       os.environ.get('PATH', '')))}
+        with repair_guard(home, directory, selected_state):
+            if not os.path.lexists(directory / 'repair-handoff.json'):
+                raise InstallError('repair_installation_changed')
+            install_with_local_rollback(run, None, None, env, executable, entries[0], None, None, home, None)
+        print('已确认上次修复的后台服务与自检。 / Previous repair service and health verified.')
+        return True
     before = run([str(executable), '--version']).decode().strip()
     old_key = version_key(before)
     with tempfile.TemporaryDirectory(prefix='agentj-upgrade-') as td:
@@ -1169,20 +1449,26 @@ def upgrade_existing(uv, *, home=None, run=command, repair_index=False):
         target = 'agentj '+name[len('agentj-'):-len('-py3-none-any.whl')]
         if version_key(target) < old_key: raise InstallError('upgrade_downgrade_refused')
         wheel = work/name
-        download(base+'/dl/'+name, wheel, sha)
-        verify_wheel(wheel.read_bytes(), fetch(base+'/dl/'+name+'.minisig', MAX_SIG), name)
+        if repair_runtime:
+            if target == before:
+                verify_native_repair(run, executable, target, os.environ.copy(), False)
+                return True
+            if before != 'agentj 0.30.47':
+                raise InstallError('runtime_repair_requires_0.30.47')
+        else:
+            download(base+'/dl/'+name, wheel, sha)
+            verify_wheel(wheel.read_bytes(), fetch(base+'/dl/'+name+'.minisig', MAX_SIG), name)
         # The bootstrap uv lives in a temporary directory. Retain these already hash-verified bytes
         # so service install captures a PATH that remains valid after the bootstrap exits.
-        directory = home/'.local/share/agentj/upgrade-bin'
         if any(p.is_symlink() for p in (directory, *directory.parents)):
             raise InstallError('upgrade_runtime_symlink')
-        if repair_index:
+        if guarded:
             for existing in (directory, *directory.parents):
                 if existing.exists():
                     repair_trusted_path(existing, require_owner=existing.is_relative_to(home))
                     break
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if repair_index and not private_owned(directory, directory=True):
+        if guarded and not private_owned(directory, directory=True):
             raise InstallError('repair_requires_private_directory')
         persistent = directory/'uv'
         if persistent.is_symlink(): raise InstallError('upgrade_runtime_symlink')
@@ -1195,6 +1481,17 @@ def upgrade_existing(uv, *, home=None, run=command, repair_index=False):
                 staging.unlink(missing_ok=True)
         env = {**os.environ, 'UV_TOOL_DIR': str(prefix.parent), 'UV_TOOL_BIN_DIR': str(entries[0].parent),
                'PATH': os.pathsep.join((str(directory), str(entries[0].parent), os.environ.get('PATH', '')))}
+        if repair_runtime:
+            # The installed .47 verifies its target, prepares its rollback, and owns any restart.
+            # Never force through its impact check or run a second installer after refusal.
+            with repair_guard(home, directory, selected_state):
+                if run([str(executable), '--version'], env=env).decode().strip() != before:
+                    raise InstallError('repair_installation_changed')
+                had_service = native_service_present(run, executable, env)
+                run([str(executable), 'update', 'apply', '--version', target.split()[1]],
+                    env=env, timeout=None, native_update=True)
+            verify_native_repair(run, executable, target, env, had_service)
+            return True
         python = os.path.realpath(getattr(sys, '_base_executable', sys.executable))
         install_args = [str(persistent), 'tool', 'install', '--force', '--python', python]
         install_env = env
@@ -1212,9 +1509,15 @@ def upgrade_existing(uv, *, home=None, run=command, repair_index=False):
             repair_security_floor(home, version_key(target))
             # Serialize the package check, snapshot and possible restore across
             # simultaneous owner-terminal repairs.
-            with repair_guard(home, directory):
+            with repair_guard(home, directory, selected_state):
                 if run([str(executable), '--version'], env=env).decode().strip() != before:
                     raise InstallError('repair_installation_changed')
+                if platform.system() == 'Darwin' and old_key >= (0, 30, 47, 3, 0):
+                    mode = run([str(executable.with_name('python')), '-I', '-c', RECOVERY_MODE], env=env).strip()
+                    if mode == b'busy':
+                        raise InstallError('repair_existing_worker')
+                    if mode not in (b'0', b'1'):
+                        raise InstallError('repair_handoff_invalid')
                 install_with_local_rollback(run, install_args, install_env, env, executable, entries[0],
                                             before, target, home, old_key)
         else:
@@ -1228,7 +1531,9 @@ def main(argv=None):
     import argparse
     p=argparse.ArgumentParser(description='Local installation assistant; no remote shell')
     p.add_argument('--upgrade-only', action='store_true', help='Repair an existing uv installation; preserve its seat and pairing')
-    p.add_argument('--repair-index', action='store_true', help='Use release-pinned PyPI CDN wheels to repair an unreachable dependency index')
+    repair = p.add_mutually_exclusive_group()
+    repair.add_argument('--repair-runtime', action='store_true', help='Run the installed 0.30.47 updater with the verified bootstrap uv')
+    repair.add_argument('--repair-index', action='store_true', help='Use release-pinned PyPI CDN wheels to repair an unreachable dependency index')
     p.add_argument('code', nargs='?'); p.add_argument('--code-file', default=os.environ.get('AGENTJ_CODE_FILE'), help=argparse.SUPPRESS)
     p.add_argument('--one-command', action='store_true', help='Run by https://agentj.app/install.sh: no duplicate questions')
     p.add_argument('--ai-later', action='store_true', help='The owner chose to connect an AI later')
@@ -1237,10 +1542,14 @@ def main(argv=None):
     a=p.parse_args(argv)
     try:
         if not a.uv: raise InstallError('verified_uv_required')
+        if a.repair_runtime and not a.upgrade_only:
+            raise InstallError('repair_runtime_requires_upgrade_only')
         if a.repair_index and not a.upgrade_only:
             raise InstallError('repair_index_requires_upgrade_only')
         if a.upgrade_only:
-            if a.repair_index:
+            if a.repair_runtime:
+                upgrade_existing(a.uv, repair_runtime=True)
+            elif a.repair_index:
                 upgrade_existing(a.uv, repair_index=True)
             else:
                 upgrade_existing(a.uv)
@@ -1260,6 +1569,40 @@ def main(argv=None):
         if a.upgrade_only:
             reason = exc.reason if isinstance(exc, InstallError) else type(exc).__name__
             print('升级修复未完成 / Upgrade repair incomplete: '+reason, file=sys.stderr)
+            if reason == 'repair_rollback_health_failed':
+                print('旧版工具和入口已恢复，未确认后台服务正常。失败步骤 / Restored package, unverified service: '
+                      + getattr(exc, 'step', 'agentj doctor --upgrade-only / serve'), file=sys.stderr)
+                print('请在原账号的本机终端逐行执行，每行成功后再继续。自检仍失败时，保留报错步骤联系支持。'
+                      ' / In the original owner terminal, run each line after the previous succeeds. '
+                      'If health still fails, contact support with the failed step.', file=sys.stderr)
+                for argv in ('agentj --version', 'agentj service install', 'agentj service status',
+                             'agentj doctor --upgrade-only'):
+                    print(argv, file=sys.stderr)
+                print('自检通过后可重跑原修复命令。 / When healthy, rerun the same repair command.', file=sys.stderr)
+            elif reason == 'repair_existing_worker':
+                print('原后台服务仍有一项重启任务没有完成。请先让当前任务结束，再重跑修复。'
+                      '长时间没有结果时请带上 agentj service status 联系支持。'
+                      ' / Wait for the existing recovery job. If it stays pending, contact support with service status.',
+                      file=sys.stderr)
+            elif reason == 'repair_handoff_other_instance':
+                print('请在发起上次修复的主机账号与实例中续跑，以便核对原服务。'
+                      ' / Rerun in the original account and instance.', file=sys.stderr)
+            elif reason == 'repair_handoff_pending':
+                print('后台正在接手服务或结果尚未确认。请保留当前安装，待当前任务结束后在本机终端重跑同一条命令；'
+                      '会继续核对上次结果。 / Service recovery is unconfirmed. Rerun the same command '
+                      'when current work finishes to resume verification.', file=sys.stderr)
+            elif reason == 'upgrade_in_progress':
+                print('已有升级在进行。让当前操作结束后重试；如先前异常退出，请在 30 分钟后再试。'
+                      ' / Another upgrade holds the lease. Finish it or retry after 30 minutes.', file=sys.stderr)
+            elif reason in ('KeyboardInterrupt', 'repair_rolled_back:interrupted'):
+                print('修复已中断。回到原账号的本机终端，重跑刚才的修复命令即可。'
+                      ' / Repair interrupted. Rerun the same command from the owner terminal.', file=sys.stderr)
+            elif reason in ('native_confirm_on_phone', 'native_friend_request'):
+                print('请查看已配对手机上的升级确认卡。 / Check the upgrade confirmation on your paired phone.', file=sys.stderr)
+            elif reason in ('native_busy', 'native_not_confirmed'):
+                print('请在当前任务结束后重试。 / Retry when the current task has finished.', file=sys.stderr)
+            elif reason == 'native_service_unconfirmed':
+                print('程序版本已更新，后台服务尚未确认。稍后重跑同一命令核对。 / The package is current; run the same command later to check the service.', file=sys.stderr)
             print('请核对 agentj --version 和 agentj doctor；保留配置，不要解绑。 / Check agentj --version and agentj doctor; preserve configuration and pairing.', file=sys.stderr)
         else:
             print(failure_message(exc, (Path.home()/'.local/share/agentj/installation-progress.json').exists()), file=sys.stderr)

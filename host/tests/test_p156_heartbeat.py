@@ -28,7 +28,7 @@ from unittest.mock import AsyncMock, Mock, patch
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
-from agentj import busy, heartbeat as hb, preferences, privacy, provenance, serve, shared  # noqa: E402
+from agentj import busy, heartbeat as hb, jcards_todo, preferences, privacy, provenance, serve, shared  # noqa: E402
 from agentj.state import State  # noqa: E402
 from agentj.silent import MARKER  # noqa: E402
 from test_slash import _Chain  # noqa: E402
@@ -405,6 +405,10 @@ class _Beat(_Chain):
             await c["wait"](lambda: any(m["text"] == "ECHO: 你好" for m in c["msgs"]()))
             await c["idle"]()
             h = host.heartbeat
+            # The shipped example is not work. Review a real in-progress item on each beat.
+            job = jcards_todo.change(host.st.root, "add", text="Trace transport receipts", owner="agent")
+            self.assertTrue(job["ok"], job)
+            self.assertTrue(jcards_todo.change(host.st.root, "start", job["item"]["id"])["ok"])
             with patch.object(hb, "_night", return_value=False):
                 r1 = await h.tick(h.next_due() + 1)
             self.assertTrue(r1 and r1["ok"], r1)
@@ -462,6 +466,9 @@ class CodexBeat(_Beat):
                                 'if text.startswith("〔Agent J 心跳〕") else ""))')
         fake = self.work / ".fake-heartbeat-codex.py"
         fake.write_text(source)
+        # The relocated stand-in imports its native hook fixture beside its script.
+        hooks = "_native_hook_fixture.py"
+        (self.work / hooks).write_bytes((HERE / hooks).read_bytes())
         pathlib.Path(self.env["AGENTJ_CODEX_BIN"]).write_text(f'#!/bin/sh\nexec {sys.executable} {fake} "$@"\n')
 
 

@@ -16,13 +16,19 @@ def quiet(p, now):
     return start <= at < end if start < end else at >= start or at < end if start != end else False
 
 
-def collect(host, now):
+def collect(host, now, todo_offer=None):
     from . import jcards, jcards_todo, jcards_cal, avatar_log
     root = host.st.root
     clock = dt.datetime.fromtimestamp(now, dt.timezone.utc)
     reasons, unknown = [], []
     for cid, mod, field in [('todo', jcards_todo, 'items'), ('calendar', jcards_cal, 'events')]:
         try:
+            if cid == 'todo' and todo_offer is not None:
+                if todo_offer['problem'] not in (None, 'not_found'):
+                    unknown.append(cid)
+                elif todo_offer['ready'] or todo_offer['review'] or todo_offer['active']:
+                    reasons.append('todo_due')
+                continue
             if jcards.find(root, cid) is None:
                 continue  # an uninstalled card is not a failed read
             r = mod.listing(root, 'due', **({'now': clock, 'who': None} if cid == 'todo' else {'clock': clock}))

@@ -255,6 +255,21 @@ def _primary_present():
     return instance.exists(1)
 
 
+def schedules_installs(st):
+    """Only the responsible instance checks for automatic installs of the shared program."""
+    from .instance import current
+    return enabled(st) and (current() == 1 or not _primary_present())
+
+
+def uv_retry_scheduled(st, result):
+    """A failed download of the verified uv repair may be retried by a future automatic install."""
+    target = result.get('to')
+    return ('uv_repair_doctor' in result and result.get('reason') == 'dependency_download_failed'
+            and result.get('result') in ('failed', 'rolled_back') and result.get('from') == __version__
+            and isinstance(target, str) and len(target) <= 80 and update.compare(target, __version__) == 1
+            and schedules_installs(st))
+
+
 def due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow, newer=False):
     with st.config_lock():
         return _due(st, now=now, blocked=blocked, stopped=stopped, rand=rand, newer=newer)
@@ -265,11 +280,8 @@ def _due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow, 
     P203 「空闲时自动更新」: besides it, a newer version the daily check already saw (`newer`, no extra network) is installed
     the first time the host is idle — no turn, card or task, no phone input for IDLE s — at most once a day."""
     now = time.time() if now is None else now
-    if not enabled(st):
+    if not schedules_installs(st):
         return False
-    from .instance import current
-    if current() > 1 and _primary_present():
-        return False    # P180: one shared program — instance 1 upgrades it and restarts every instance (service_recovery)
     local = time.localtime(now)
     day = time.strftime('%Y-%m-%d', local)
     rec = read(st)
@@ -1016,7 +1028,8 @@ def _take_notice(st, lang='zh', prefs=None, harness=_UNSET_HARNESS):
         return None
     rec['notice_pending'] = False
     write(st, rec)
-    return notice(result, lang, prefs, release_notes.current(st) if harness is _UNSET_HARNESS else harness)
+    return notice({**result, 'uv_auto_retry': uv_retry_scheduled(st, result)}, lang, prefs,
+                  release_notes.current(st) if harness is _UNSET_HARNESS else harness)
 
 
 def quiet(argv, **kw):

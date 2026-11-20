@@ -145,6 +145,23 @@ class Cards(_Base):
     def host(self, box):
         return SimpleNamespace(st=self.st, elevate=SimpleNamespace(out=box), stopped=lambda: False, _approvers=lambda: ["dev1"])
 
+    def test_explicit_importable_yaml_uses_one_byte_exact_file_card(self):
+        import base64
+        import hashlib
+        public = base64.urlsafe_b64encode(hashlib.sha256(b"synthetic public test material").digest()).rstrip(b"=")
+        self.assertEqual(len(public), 43)
+        data = b"\xef\xbb\xbf" + "# 合成配置\r\n".encode() + b"proxies:\r\n  - reality-opts:\r\n      public-key: " + public
+        path = ".agentj/outbox/配置.yaml"
+        self.put(path, data)
+        box = Box()
+        items, skips, keys = self.m.scan_keys(f"[配置]({path})", 1)
+        self.assertEqual(items, [])
+        self.assertEqual(asyncio.run(owner_route.offer_files(self.host(box), keys, "zh")), 1)
+        [req] = box.reqs
+        self.assertEqual((req["kind"], req["filename"]), ("file", "配置.yaml"))
+        self.assertEqual(base64.b64decode(req["data"], validate=True), data)
+        self.assertEqual(skips[0]["why"], "key_card")
+
     def test_explicit_key_file_becomes_one_card_and_the_same_file_is_not_carded_twice(self):
         self.put(".env", b"A=" + KEY.encode() + b"\n")
         box = Box()

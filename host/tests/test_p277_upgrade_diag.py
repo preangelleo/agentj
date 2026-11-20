@@ -135,6 +135,30 @@ class ApplyResult(_Env):
         self.assertIn("Permission denied", rec["stderr_tail"])
         self.assertEqual(oct((self.st.root / upgrade_diag.LAST).stat().st_mode & 0o777), "0o600")
 
+    def test_phone_dependency_receipt_distinguishes_reporting_from_recovery(self):
+        from agentj import phone_update
+        thread = "st_" + "x" * 22
+        rec = {"result": "failed", "from": "0.30.47", "to": "0.30.50", "step": "install",
+               "reason": "dependency_download_failed", "phase": "prepared", "tell_owner": True,
+               "support": f"sent ({thread}) metadata only"}
+        for lang, metadata, misleading in (("zh", "不含日志", "不用做什么"),
+                                          ("en", "no logs", "nothing for you to do")):
+            with self.subTest(lang=lang):
+                text = phone_update.text(rec, lang=lang)
+                self.assertIn(metadata, text)
+                self.assertIn("/update", text)
+                self.assertIn(upgrade_diag.UPGRADE_REPAIR_GUIDE, text)
+                self.assertNotIn(misleading, text)
+                prefix = "After connectivity returns," if lang == "en" else "网络恢复后，"
+                received = f"Agent J support received the report ({thread})" if lang == "en" else f"故障报告已自动发给 Agent J 客服（{thread}）"
+                for report, metadata_only in ((rec["support"], True), (f"sent ({thread})", False)):
+                    status, step = phone_update.text({**rec, "support": report}, lang=lang).split("\n\n")
+                    self.assertTrue(status.endswith(f"({thread})." if lang == "en" else f"（{thread}）。"), status)
+                    self.assertTrue(step.startswith(prefix), step)
+                    self.assertEqual(metadata in status, metadata_only)
+                    if not metadata_only:
+                        self.assertIn(received, status)
+
     def test_failed_rollback_names_the_recover_command(self):
         old = self.st.root / "upgrade-cache" / f"agentj-{__version__}-py3-none-any.whl"
         old.parent.mkdir(parents=True, exist_ok=True)

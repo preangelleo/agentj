@@ -38,6 +38,7 @@ def safe_path(path):
 
 
 def _source(path,home,env,explicit):
+    from .opencode_paths import NATIVE_NPM_PATH
     for source,root in (('mise',Path(env.get('MISE_DATA_DIR',home/'.local/share/mise'))),
                         ('asdf',Path(env.get('ASDF_DATA_DIR',home/'.asdf')))):
         try:
@@ -49,7 +50,7 @@ def _source(path,home,env,explicit):
     # Official npm postinstall places a native executable here (bin/opencode is its symlink).
     prefixes = [*(Path(d).parent for d in SYSTEM), home/'.local',home/'.npm-global']
     for prefix in prefixes:
-        if path == prefix/'lib/node_modules/@opencode/cli/bin/opencode.exe':
+        if path == prefix/NATIVE_NPM_PATH:
             return 'npm'
     if path in (home/'.opencode/bin/opencode',home/'.local/bin/opencode'):
         return 'native'

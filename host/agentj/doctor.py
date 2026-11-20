@@ -1519,6 +1519,19 @@ def check_local_files(st):
               "agentj files prepare --at-computer (owner terminal; optional Full Disk Access)")
 
 
+def check_heartbeat_pickup(st):
+    from .heartbeat import _read_regular, STATE_FILE
+    from .heartbeat_todo import MISSED_LIMIT
+    try:
+        data = json.loads(_read_regular(st.root / STATE_FILE, 256 * 1024) or '{}')
+        count = data.get('todo_misses', 0) if isinstance(data, dict) else 0
+    except (ValueError, OSError):
+        count = 0
+    if type(count) is int and count >= MISSED_LIMIT:
+        return _c("heartbeat-todo", WARN, f"连续 {count} 次空闲心跳有待办未开工 / {count} idle beats missed ready work",
+                  "agentj card todo due --json")
+
+
 def check_heartbeat_prompt():
     from .heartbeat import prompt_view
     from .preferences import get, read, ConfigError
@@ -1549,6 +1562,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
         out.append(mig)
     out += list(filter(None, [check_local_files(st), check_wechat(st), check_mail_owner(st), check_install_dir()]))
     out += [check_agent(st), check_heartbeat_prompt()]
+    out += list(filter(None, [check_heartbeat_pickup(st)]))
     setup_row = check_harness_setup(st)
     if setup_row:
         out.append(setup_row)
@@ -1708,6 +1722,7 @@ def run_read_only(st=None):
     """
     st = st or State()
     rows = [check_version(), check_python(), check_platform(), check_state(st), check_heartbeat_prompt()]
+    rows += list(filter(None, [check_heartbeat_pickup(st)]))
     rows += list(filter(None, [check_session_mode(st), check_shared_inbound(st, read_only=True),
                               check_shared_hooks(st, read_only=True), check_shared_statusline(st), check_install_dir()]))
     rows += check_main_identity(st)
@@ -1725,13 +1740,11 @@ def main(as_json: bool = False, offline: bool = False, isolation_only: bool = Fa
     # ADR-0269-fenced-doctor: inside the fence the upgrade records are hidden (empty on Linux, EPERM on macOS): no repair there.
     upgrade_context = not read_only and not offline and not isolation_only and not _fenced() and (post_upgrade or update.upgrade_due(st))
     if upgrade_context:
-        findings = checks + (check_main_identity(st) if upgrade_only else [])
-        if ids := update.repair_upgrade(st, findings):
+        # Keep the repair input and receipt on the caller's diagnostic scope.
+        if ids := update.repair_upgrade(st, checks):
             checks = run_upgrade(st) if upgrade_only else run(offline=False)
         if "upgrade-handoff" in ids:    # #460: read by service_recovery.via_host through the host's `health` op
             checks.append(_c("upgrade-handoff", OK, "升级后的服务重启已安排 / the upgraded service's restart is scheduled"))
-        if upgrade_only:
-            checks += [r for r in check_main_identity(st) if r["id"].startswith(("root-", "work-root"))]
     failed = bool(update.upgrade_blockers(checks)[0]) if upgrade_context else any(c["status"] == FAIL for c in checks)
     if as_json:
         print(json.dumps({"tool": DIST, "version": __version__, "ok": not failed, "checks": checks}, ensure_ascii=False, indent=1))

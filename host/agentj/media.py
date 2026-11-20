@@ -606,7 +606,9 @@ class Media:
                 if not owner:
                     return None, "secret"
                 rec = self._rec(parts, mime, kind, s, sha, ref, rroot)
-                if mask and mime in TEXTY and s.st_size <= MASK_MAX:
+                # A redacted configuration still looks importable but its keys no longer work.
+                exact_config = ref.explicit and ext in {".yaml", ".yml", ".toml", ".json", ".xml"}
+                if mask and not exact_config and mime in TEXTY and s.st_size <= MASK_MAX:
                     masked = self._mask(fd, s.st_size, sha, rec, mime in ("text/html", "image/svg+xml"))
                     if masked is not None:
                         return masked, None

@@ -2483,7 +2483,8 @@ agentj card todo --help
 
 ```text
 usage: agentj card todo [-h] [--page PAGE] [--entry ID] [--text TEXT]
-                        [--owner {agent,owner}] [--start WHEN] [--end WHEN]
+                        [--owner {agent,owner}] [--heartbeat BEAT]
+                        [--start WHEN] [--end WHEN]
                         [--status {pending,active,done,cancelled}]
                         [--by {agent,owner}] [--source SOURCE] [--note NOTE]
                         [--json]
@@ -2498,6 +2499,7 @@ usage: agentj card todo [-h] [--page PAGE] [--entry ID] [--text TEXT]
 | `--entry` | `null` | false | — | `哪一条（t3）/ which item (t3)` |
 | `--text` | `null` | false | — | `the title, one line` |
 | `--owner` | `null` | false | `agent`, `owner` | `who is responsible` |
+| `--heartbeat` | `null` | false | — | `pickup receipt for heartbeat start` |
 | `--start` | `null` | false | — | `a time, after:<id> or a condition` |
 | `--end` | `null` | false | — | `deadline: the same three kinds` |
 | `--status` | `null` | false | `pending`, `active`, `done`, `cancelled` | `status` |
@@ -10897,7 +10899,8 @@ agentj card todo --help
 
 ```text
 usage: agentj card todo [-h] [--page PAGE] [--entry ID] [--text TEXT]
-                        [--owner {agent,owner}] [--start WHEN] [--end WHEN]
+                        [--owner {agent,owner}] [--heartbeat BEAT]
+                        [--start WHEN] [--end WHEN]
                         [--status {pending,active,done,cancelled}]
                         [--by {agent,owner}] [--source SOURCE] [--note NOTE]
                         [--json]
@@ -10912,6 +10915,7 @@ usage: agentj card todo [-h] [--page PAGE] [--entry ID] [--text TEXT]
 | `--entry` | `null` | false | — | `哪一条（t3）/ which item (t3)` |
 | `--text` | `null` | false | — | `标题，一行` |
 | `--owner` | `null` | false | `agent`, `owner` | `责任人：agent = Agent J，owner = 主人` |
+| `--heartbeat` | `null` | false | — | `心跳开工回执，只用于 start` |
 | `--start` | `null` | false | — | `开始：2026-10-20[T09:00] · +2h · after:t3 · 或一句话条件` |
 | `--end` | `null` | false | — | `截止：同上` |
 | `--status` | `null` | false | `pending`, `active`, `done`, `cancelled` | `状态` |

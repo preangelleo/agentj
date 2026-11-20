@@ -898,8 +898,8 @@ UPGRADE_REPAIR_GUIDE = "https://agentj.app/docs/install/#upgrade-failed"
 
 
 def dependency_repair(lang: str) -> str:
-    return ((" If this keeps happening, the host owner can choose a repair in the upgrade guide: " if lang == "en" else
-             " 若反复失败，主机主人可按升级修复说明选择处理方式。") + UPGRADE_REPAIR_GUIDE)
+    return (("\n\nAfter connectivity returns, try /update on your phone. If it fails again, follow the host repair guide: " if lang == "en" else
+             "\n\n网络恢复后，可在手机输入 /update 再试一次。若仍失败，请按主机修复说明操作：") + UPGRADE_REPAIR_GUIDE)
 
 
 def uv_repaired_sentence(version, lang):
@@ -929,6 +929,9 @@ def uv_repair_failure(res, lang, report=None):
             reported = " Automatic reporting is off." if en else "自动上报已关闭。"
         else:
             reported = " The report could not be sent automatically." if en else "未能自动发给客服。"
+    if res.get('reason') == 'dependency_download_failed' and res.get('uv_auto_retry') is True:
+        reported += (" Automatic updates are on. The host will retry at the next eligible idle check." if en else
+                     "自动升级已开启，主机下次空闲并检查更新时会自动再试。")
     frm = res.get('from') or __version__
     return (f"The installed uv is too old. Automatic repair failed ({reason}). Agent J remains on {frm}. {doctor}{reported} "
             if en else f"现有的 uv 版本太旧。自动修复失败（{reason}），Agent J 主机仍是 {frm}。{doctor}{reported}") + UPGRADE_REPAIR_GUIDE
@@ -969,12 +972,11 @@ def owner_sentence(res: dict, rep: dict, lang: str = "zh") -> str:
         where = "run `agentj doctor` to check the Agent J host" if en else "请让我运行 agentj doctor 检查一下"
     s = rep.get("status")
     if s in ("sent", "already"):
-        tail_ = (f"the details went to Agent J support automatically ({rep['thread']}); nothing for you to do" if en else
-                 f"失败原因和脱敏日志已自动发给 Agent J 客服（{rep['thread']}），你不用做什么")
+        tail_ = (f"Agent J support received the report ({rep['thread']})" if en else
+                 f"故障报告已自动发给 Agent J 客服（{rep['thread']}）")
         if rep.get("metadata_only"):
-            tail_ = (f"the version and error category (no logs) went to Agent J support automatically ({rep['thread']}); "
-                     "nothing for you to do" if en else
-                     f"版本和错误类别（不含日志）已自动发给 Agent J 客服（{rep['thread']}），你不用做什么")
+            tail_ = (f"the version and error category (no logs) went to Agent J support automatically ({rep['thread']})" if en else
+                     f"版本和错误类别（不含日志）已自动发给 Agent J 客服（{rep['thread']}）")
     elif s == "off":
         tail_ = ("automatic reporting is off, so support was not told" if en else "你关闭了自动上报，没有发给客服")
     elif rep.get("why") == "exit_3":     # #460
@@ -983,7 +985,9 @@ def owner_sentence(res: dict, rep: dict, lang: str = "zh") -> str:
     else:
         tail_ = ("it could not be sent to support automatically; I can send it with `agentj support ask --attach-doctor`" if en else
                  "没能自动发给客服，我可以用 agentj support ask --attach-doctor 再发")
-    own = dependency_repair(lang) if dependency or res.get("reason") == "installer_incompatible" else ""
+    own = dependency_repair(lang) if dependency else ""
+    if res.get("reason") == "installer_incompatible":
+        own = (" Follow the host repair guide: " if en else "请按主机修复说明操作：") + UPGRADE_REPAIR_GUIDE
     if res.get("owner_kind") and res.get("fix"):    # #475: the installer hit files another account owns
         from .upgrade_owner import sentence
         own = " " + sentence(res, lang)

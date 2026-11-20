@@ -339,7 +339,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.30.50#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.30.51#subdirectory=host"
 agentj doctor
 ```
 
@@ -552,6 +552,16 @@ On an ordinary host, first run `agentj update apply`, then check `agentj --versi
 If downloading, verification or installation preparation fails, Agent J reports that the previous version remains installed. Ask your Agent to run `agentj doctor` and check the cause. Keep your configuration, account binding and existing seat.
 
 After a rollback, a working old program counts as a successful rollback; any remaining service or health-check problem is reported separately and still needs attention. Older updaters gain these improvements only after installing the new version successfully. If an old uv updater cannot finish, use the repair command in the [old-updater FAQ](/docs/faq/) from the computer's terminal as the same system user. It needs no new installation code and preserves configuration and bindings. Update Olares Market apps through Market.
+
+### How can I upgrade a host that repeatedly reports a dependency download failure?
+
+For an existing uv installation, use the original OS account to run this command in a terminal on the host. It requires access to agentj.app and the PyPI file server, files.pythonhosted.org. If your organization uses a private package index, check that its policy permits downloads from PyPI.
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL https://agentj.app/install-assistant.sh | sh -s -- --upgrade-only --repair-index
+```
+
+The repair verifies the Agent J release signature, downloads the dependency wheels selected for your platform, checks their hashes against the release manifest, and restarts the host after installation. Your seat, pairing and settings are preserved. Run `agentj --version` and `agentj doctor` to check the result. If it still fails, send support the displayed error code and version. Update Olares Market installations through the Market.
 
 ## If the AI cannot start for the first time {#first-ai-start}
 

@@ -63,6 +63,9 @@ def take(st):
     if rec.get("reason") in ("upgraded", "doctor_failed") and rec.get("to") != __version__:
         return None
     p.unlink()
+    if 'uv_repair_doctor' in rec:
+        from . import auto_update
+        rec['uv_auto_retry'] = auto_update.uv_retry_scheduled(st, rec)
     return rec
 
 def text(rec, lang="zh", web="older", machine=None):
@@ -101,7 +104,7 @@ def _rep_of(rec):
     s = str(rec.get("support") or "")
     m = re.search(r"st_[A-Za-z0-9_-]{22}", s)
     if m:
-        return {"status": "sent", "thread": m.group(0)}
+        return {"status": "sent", "thread": m.group(0), "metadata_only": s.endswith(" metadata only")}
     return {"status": "off"} if s.startswith("off") else {"status": "not_sent"}
 
 

@@ -53,17 +53,19 @@ Report only what the owner needs to know or decide, in a sentence or two. When a
 
 # One canonical checklist; upgrades change only marked blocks, preserving custom text.
 CHECKLIST = {
-    "zh": """<!-- agentj:watchlist v2 -->
+    "zh": """<!-- agentj:watchlist v3 -->
 ## 常驻巡检清单
 忙时也顺手巡检，不必等心跳；从上次心跳以来的记录开始，未处理的旧事也要跟进。
+后台空闲时，从 Agent 待办挑一件开工；先核实前置、时间和文字条件，标 start，验收后标 done。有可办事项须报告结果或阻塞。
 A. 检查这台 Agent J 主机所有定时任务（Linux 的 systemd timer / cron、macOS 的 launchd / cron、Windows 计划任务）的日志与报告，有无报错、漏跑或报告未交；读实际结果，不只看退出码。
 B. 看看 Agent J 好友的往来，有无卡住的请求、异常或需要你介入的事。
 C. 邮件、微信、Telegram 主人通道由主线程直接处理；复核主线程的来信、回复与待办，有无漏回、失败或无人认领。`agentj inbox avatar-log --since 2h` 仅供只读复核旧分身历史，不代表当前通道；缺失的回复、送达或结论按未知处理。需要接手时仍遵守现行审批，不恢复旧分身路由。
 <!-- /agentj:watchlist -->
 """,
-    "en": """<!-- agentj:watchlist v2 -->
+    "en": """<!-- agentj:watchlist v3 -->
 ## Standing watchlist
 Check as you work too; do not wait for a heartbeat. Start with records since the last heartbeat and follow up older unresolved work.
+When idle, pick one actionable Agent to-do, check its prerequisites, mark start, verify the result and mark done. Report the outcome or blocker.
 A. Check logs and reports for all scheduled jobs on this Agent J host (Linux systemd timers / cron, macOS launchd / cron, Windows Task Scheduler): errors, missed runs or missing reports. Read actual results, not just exit codes.
 B. Review Agent J friend conversations for stuck requests, unusual events or anything needing your help.
 C. Owner mail, WeChat and Telegram are handled in the main thread. Review its incoming messages, replies and to-dos for missed replies, failures or unclaimed work. `agentj inbox avatar-log --since 2h` is read-only legacy avatar history, not current channel coverage. Missing replies, delivery or outcomes remain unknown. Follow up under current approvals; never restore legacy avatar routes.
@@ -431,9 +433,31 @@ class Heartbeat:
 
     def usage_start(self, send):
         self.usage.start(send)
+        self.todo_turn = getattr(send, 'todo_offer', None)
 
     def usage_end(self):
         self.usage.end()
+        plan = getattr(self, 'todo_turn', None)
+        self.todo_turn = None
+        if plan is not None:
+            self.record_pickup(plan)
+
+    def record_pickup(self, plan):
+        from . import heartbeat_todo
+        st = self.host.st
+        try:
+            taken = heartbeat_todo.picked(st.root, plan) if plan['ready'] or plan['review'] else None
+            from .jcards_todo import heartbeat_candidates
+            ready, _ = heartbeat_candidates(st.root)
+        except OSError:
+            st.log('heartbeat_todo_unknown')
+            return
+        d = self._load()
+        missed = not taken and bool(ready.keys() & set(plan['ready']))
+        streak = d.get('todo_misses', 0) + 1 if missed else 0
+        d['todo_misses'] = streak
+        self._save(d)
+        st.log('heartbeat_todo_pickup', result='started' if taken else 'missed' if missed else 'none', id=taken, count=streak)
 
     # ---- settings
     def prefs(self) -> tuple[bool, int]:
@@ -531,11 +555,12 @@ class Heartbeat:
             return "quota_wait"
         from . import preferences
         auto = preferences.get(getattr(h, "preferences", None) or {}, "updates.auto_install", True) is not False
-        if _night(now or time.time(), auto):
-            return "night_update"
+
         with contextlib.suppress(Exception):
             if not h.st.devices():
                 return "no_phone"
+        if _night(now or time.time(), auto):
+            return "night_update"
         return None
 
     def next_due(self, key: str | None = None) -> float:
@@ -569,8 +594,21 @@ class Heartbeat:
         if now < self.last_checked.get(check_key, 0) + TICK:
             return None
         self.last_checked = {check_key: now}
+        board = getattr(self.host, 'busy', None)
+        if board is not None and hasattr(board, 'items'):
+            await asyncio.to_thread(board.refresh_sources)
+            if board.items():
+                return {"ok": False, "why": "background_busy"}
+        from . import heartbeat_todo
+        plan = await asyncio.to_thread(heartbeat_todo.offer, self.host.st.root, now)
+        why = self.wait_reason(now)
+        if why:
+            return {"ok": False, "why": why}
         from .heartbeat_check import collect, quiet
-        reasons, unknown = await asyncio.to_thread(collect, self.host, now)
+        reasons, unknown = await asyncio.to_thread(collect, self.host, now, plan)
+        if plan['ready'] or plan['review']:
+            if 'todo_due' not in reasons:
+                reasons.append('todo_due')
         if daily:
             reasons.append("daily_schedule")
         got = await asyncio.to_thread(read_prompt)
@@ -587,16 +625,21 @@ class Heartbeat:
         self.last_precheck = {"at": now, "reasons": reasons, "unknown": unknown}
         urgent = [r for r in reasons if r not in ("prompt_changed", "daily_schedule", "trash_review")]   # held entries can wait for morning
         if not reasons or nighttime and not urgent:
+            if not plan['ready'] and d.get('todo_misses'):
+                d['todo_misses'] = 0
+                self._save(d)
             label = "quiet" if nighttime else "unknown" if unknown else "no_work"
             if self.last_wait != label:
-                self.host.st.log("heartbeat_skipped", reason=label, unknown=unknown)
+                self.host.st.log("heartbeat_skipped", reason=label, unknown=unknown, result="no_pickup")
                 self.last_wait = label
             return {"ok": False, "why": label, "unknown": unknown}
         # #449 final Nov 4 owner decision: context/model never stop beats.
         # The main model receives the existing private, one-shot compact invite.
         note = self.context_note(now, d)
         level = self.ctx_level
-        r = self.fire(now, by="daily" if daily and now < self.next_due() else "timer", reasons=reasons, note=note)
+        if self.wait_reason(now) or (board is not None and hasattr(board, 'items') and board.items()):
+            return {"ok": False, "why": "busy"}
+        r = self.fire(now, plan=plan, by="daily" if daily and now < self.next_due() else "timer", reasons=reasons, note=note)
         if note and r.get("ok"):
             d = await asyncio.to_thread(self._load)
             field = "ctx_must" if level == "must" else "ctx_notice"
@@ -646,7 +689,7 @@ class Heartbeat:
         return pick(self.lang(), "主机提示：上下文已用到一半。找空闲时自写交接再压缩。" + SELF_COMPACT[0],
                     "Host notice: at least half the context window is used. When idle, write your own handoff, then compact." + SELF_COMPACT[1])
 
-    def fire(self, now: float | None = None, by: str = "timer", reasons=None, note=None) -> dict:
+    def fire(self, now: float | None = None, by: str = "timer", reasons=None, note=None, plan=None) -> dict:
         """Queue one beat now (the caller checked wait_reason, or this is `agentj heartbeat now`)."""
         h = self.host
         now = time.time() if now is None else now
@@ -664,6 +707,11 @@ class Heartbeat:
         body = message(lang, text, digest, full, idle_min)
         if by in ("timer", "daily") and self.daily_is_due(now):
             body += "\n" + DAILY_REVIEW[lang]
+            from .heartbeat_todo import MISSED_LIMIT
+            misses = self._load().get('todo_misses', 0)
+            if misses >= MISSED_LIMIT:
+                body += "\n" + pick(lang, f"晨报：连续 {misses} 次空闲心跳有待办却未开工，请核查并报告。",
+                                   f"Morning brief: {misses} idle beats missed ready work. Investigate and report.")
         from . import capability_pause
         pause_note = capability_pause.reminder(h)
         if pause_note:
@@ -695,9 +743,17 @@ class Heartbeat:
             g = trash.heartbeat_line(lang)
             if g:
                 body += "\n" + g
+        from . import heartbeat_todo
+        if plan is None and by == 'command' and self.wait_reason(now) is None:
+            board = getattr(h, 'busy', None)
+            if board is not None and not board.items():
+                plan = heartbeat_todo.offer(h.st.root, now)
+        if plan and (plan["ready"] or plan["review"]):
+            body += "\n" + heartbeat_todo.instructions(plan, lang)
         from . import privacy
         page = h.hist_add({"k": "agent", "via": "heartbeat", "text": privacy.owner_text(body)}, "", "open")
         send = HeartbeatSend(page["id"], body, key, digest)
+        send.todo_offer = plan
         if note:                                      # #449: this beat asked for a self-compaction (host-made, one shot)
             send.compact_invite = secrets.token_urlsafe(16)
             self.compact_invite = {"token": send.compact_invite, "key": key, "at": now}

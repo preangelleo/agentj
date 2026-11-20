@@ -108,11 +108,11 @@ class HeartbeatWords(unittest.TestCase):
         custom = "我的额外要求\n" + old
         merged = heartbeat.merge_checklist(custom, "zh")
         self.assertTrue(merged.startswith("我的额外要求\n"))
-        self.assertEqual(merged.count("<!-- agentj:watchlist v2 -->"), 1)
+        self.assertEqual(merged.count("<!-- agentj:watchlist v3 -->"), 1)
         self.assertIn(heartbeat.CHECKLIST["zh"], merged)
         self.assertFalse(heartbeat.has_checklist(custom, "zh"), "old owned block needs the current canonical wording")
         self.assertTrue(heartbeat.has_checklist(merged, "zh"))
-        self.assertEqual(heartbeat.merge_checklist("自定义", "zh").count("<!-- agentj:watchlist v2 -->"), 1)
+        self.assertEqual(heartbeat.merge_checklist("自定义", "zh").count("<!-- agentj:watchlist v3 -->"), 1)
         self.assertNotIn("电脑", heartbeat.CHECKLIST["zh"])
 
 

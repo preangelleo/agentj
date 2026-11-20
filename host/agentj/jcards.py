@@ -940,6 +940,7 @@ def parser() -> argparse.ArgumentParser:
     x.add_argument("--entry", metavar="ID", help="哪一条（t3）/ which item (t3)")
     x.add_argument("--text", help="标题，一行 / the title, one line")
     x.add_argument("--owner", choices=["agent", "owner"], help="责任人：agent = Agent J，owner = 主人 / who is responsible")
+    x.add_argument("--heartbeat", metavar="BEAT", help="心跳开工回执，只用于 start / pickup receipt for heartbeat start")
     x.add_argument("--start", metavar="WHEN", help="开始：2026-10-20[T09:00] · +2h · after:t3 · 或一句话条件 / a time, after:<id> or a condition")
     x.add_argument("--end", metavar="WHEN", help="截止：同上 / deadline: the same three kinds")
     x.add_argument("--status", choices=["pending", "active", "done", "cancelled"], help="状态 / status")

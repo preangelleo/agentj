@@ -328,7 +328,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装Agent J 主机端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.30.50#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.30.51#subdirectory=host"
 agentj doctor
 ```
 
@@ -538,6 +538,16 @@ macOS「登录项与扩展」中的 Agent J 使用带名字、图标和开发者
 下载、校验或安装准备失败时，Agent J 会提示仍是原版本。先让你的 Agent 运行 `agentj doctor` 看原因，不要删除配置、解绑账号或重新建席位。
 
 如果升级后已经回滚，旧版程序能运行就会记为回滚成功；后台服务或自检仍有问题时会单独列出，继续处理这些问题即可。旧更新器只有成功安装新版后才能得到这些改进。旧版 uv 安装仍无法升级时，在 Agent J 主机的终端里按 [旧更新器自救步骤](/docs/faq/) 运行当前安装器的修复升级命令；不需要新安装码，保留配置和绑定。Olares Market 应用通过 Market 升级。
+
+### 旧主机反复提示「依赖下载失败」，怎样升级？
+
+如果 Agent J 是用 uv 安装的，而且这台主机可以访问 agentj.app 和 PyPI 文件服务器 files.pythonhosted.org，请用原安装账号打开主机终端，运行下面的命令。使用公司专用软件源的主机，请先确认公司允许从 PyPI 下载文件。
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL https://agentj.app/install-assistant.sh | sh -s -- --upgrade-only --repair-index
+```
+
+修复程序会核对 Agent J 的发行签名，按发行清单下载并校验适合这台主机的依赖文件，然后安装并重启。席位、配对和设置都会保留。完成后运行 `agentj --version` 和 `agentj doctor` 核对结果。若仍失败，请把显示的错误代码和版本号交给客服。通过 Olares 应用市场安装的主机请在市场内更新。
 
 ## 首次启动 AI 失败 {#first-ai-start}
 

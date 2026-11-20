@@ -491,7 +491,11 @@ class Wiring(unittest.TestCase):
         self.assertIn("〔额度提醒〕", text)
         self.assertIn("Claude Code 本周额度已用 10%", text)
         self.agent.got[-1].state = "delivered"
-        asyncio.run(self.h.tick(self.h.next_due() + 1))
+        # Another genuine reason must still deliver, without resending the consumed quota notice.
+        self.host.background_done.pending = {"finished": {"exit_code": 0}}
+        again = asyncio.run(self.h.tick(self.h.next_due() + 1))
+        self.assertTrue(again["ok"], again)
+        self.assertEqual(len(self.agent.got), 2)
         self.assertNotIn("〔额度提醒〕", self.agent.got[-1].text, "the same reminder only once a day")
 
     def test_sock_ops(self):
@@ -521,7 +525,12 @@ class Wiring(unittest.TestCase):
         self.assertIs(preferences.get(self.host.preferences, "quota.reminders", True), False)
         claude_fixture(self.st.root, 10, time.time() + 4 * DAY)
         self.h.touch()
-        asyncio.run(self.h.tick(self.h.next_due() + 1))
+        # Switching off quota leaves an independent heartbeat reason intact.
+        self.host.background_done.pending = {"finished": {"exit_code": 0}}
+        r = asyncio.run(self.h.tick(self.h.next_due() + 1))
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(len(self.agent.got), 1)
+        self.assertNotIn("quota_reminder", self.h.last_precheck["reasons"])
         self.assertNotIn("〔额度提醒〕", self.agent.got[-1].text)
         self.assertFalse(asyncio.run(self.h.handle({"op": "quota_remind"}))["due"])
 

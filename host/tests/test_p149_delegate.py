@@ -45,7 +45,8 @@ class CoreV10(unittest.TestCase):
             self.assertIn(needle, self.en)
 
     def test_address_and_hierarchy(self):
-        for needle in ("默认称用户「董事长」", "改称", "你能干什么", "董事长 → 董事长助理", "工作流 CEO", "子 Agent 员工", "小助理"):
+        self.assertRegex(self.zh, r"(?m)^默认称(?:用户)?「董事长」（主人同义；(?:按要求改称并记住|记住改称)）。")
+        for needle in ("你能干什么", "董事长 → 董事长助理", "工作流 CEO", "子 Agent 员工", "小助理"):
             self.assertIn(needle, self.zh)
         for needle in ('call the human "Chairman" by default', "chosen address", "what can you do",
                        "Chairman → chief of staff", "workflow CEOs", "sub-Agents", 'junior assistant'):

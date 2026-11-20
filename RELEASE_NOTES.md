@@ -1,5 +1,5 @@
-# Agent J v0.30.50
+# Agent J v0.30.51
 
-Upgrades retry downloads and explain dependency errors. Phones can retry language switches. Seat quotes include credit. Lifetime coupons await activation.
+Deferred work goes on your to-do card. An idle heartbeat starts one ready task and verifies the result. Downloaded configuration files keep their exact bytes.
 
-升级会重试临时下载故障，区分依赖不匹配。手机切语言失败可在原页重试。增购席位报价计入可用抵扣。终身券待商户配置激活。
+延后交代的事会当轮记入待办。前置完成后，空闲心跳会接手一项，核对结果后标记完成。手机领取的导入配置保留原文件内容。

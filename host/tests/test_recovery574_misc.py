@@ -71,7 +71,7 @@ class Files(unittest.TestCase):
             self.assertTrue(actual.startswith(custom))
             self.assertTrue(actual.endswith('\nTail  \r\n'))
             self.assertTrue(heartbeat.has_checklist(actual,lang))
-            self.assertEqual(actual.count('<!-- agentj:watchlist v2 -->'),1)
+            self.assertEqual(actual.count('<!-- agentj:watchlist v3 -->'),1)
             self.assertFalse(heartbeat.ensure_prompt(lang,path))
             self.assertEqual(path.read_bytes().decode(),actual)
 
