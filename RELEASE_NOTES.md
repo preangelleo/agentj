@@ -1,5 +1,5 @@
-# Agent J v0.30.54
+# Agent J v0.30.55
 
-Receipts show the prior version. Messages held before dispatch can resume on reconnect. Commands for other or unspecified devices are copy-only.
+Submit feedback from your paired phone in shared chat. After an upgrade, the original page can recover one verifiable finished reply.
 
-升级成功后，手机会显示可核实的原版本。升级窗口内收到、尚未交给 Agent 的普通消息可在原手机重连后继续。给其他设备或目标不明的命令只显示复制。
+配对手机在共享对话里可正常提交反馈。升级时能核对到原消息的最终答复，重连后会在原页显示一次。

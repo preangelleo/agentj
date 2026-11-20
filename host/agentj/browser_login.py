@@ -1,7 +1,6 @@
-"""P114 (ADR-A194 §5): the login QR card and the daily sign-in check, inside serve.
+"""P114 (ADR-A194 §5): browser sign-in checks and QR cards.
 
-A QR code is short-lived login material. It is made only when the owner is actively signing in (good morning, an explicit
-request, or 「刷新」 on the card) — never by the daily check, never at night by itself. Only a packaged template's QR element
+Create short-lived QR codes during owner sign-in (good morning, explicit request or 「刷新」). The daily check never creates them. Only a packaged template's QR element
 is cropped (nothing else of the page); the PNG lives in this process's memory and goes only to paired phones inside the
 end-to-end encrypted session, as a dedicated card that is not chat history and never reaches the Agent's context. TTL
 ≤ 120 s; success / expiry / cancel / Stop everything wipe it. The audit keeps the card id, site, result and time only.
@@ -95,13 +94,16 @@ class RequestPhone:
             return None
         return cls(weakref.ref(s), s.device, s.pub, s.sign_pub, getattr(host, "_pairing_epoch", 0), rec.get("pair_revision"))
 
-    def matches(self, host, s):
-        if s is None or s is not self.session() or not host._paired_live(s):
-            return False
+    def still_paired(self, host):
         rec = host.st.devices().get(self.device)
         return (bool(rec) and not getattr(host, "_unbinding_all", False) and self.epoch == getattr(host, "_pairing_epoch", 0)
-                and self.revision == rec.get("pair_revision") and (s.device, s.pub, s.sign_pub) == (self.device, self.pub, self.sign)
+                and self.revision == rec.get("pair_revision") and host.st.is_allowed(self.pub)
                 and host.st.sign_key(self.device) == self.sign)
+
+    def matches(self, host, s):
+        return (s is not None and s is self.session() and host._paired_live(s)
+                and (s.device, s.pub, s.sign_pub) == (self.device, self.pub, self.sign)
+                and self.still_paired(host))
 
 
 def _error_frame(site, op, result, cid=""):

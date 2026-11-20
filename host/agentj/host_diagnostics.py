@@ -119,6 +119,12 @@ def refused(why: str) -> dict:
         "这条只读查询只回答主人自己的 Agent 会话。 / This read-only query answers only the owner's own Agent session. ") + "\n"}
 
 
+def feedback_refused(why: str) -> dict:
+    from . import privacy, support
+    verdict = privacy.Verdict("unavailable", reason="privacy-check/" + why)
+    return {"exit": support.EXIT_UNAVAILABLE, "output": "NOT SENT. / 这次没有提交。" + privacy.source_hint(verdict) + "\n"}
+
+
 def task_row(r: dict) -> dict:
     out = {k: r[k] for k in TASK_FIELDS if k in r}
     last = r.get("last")
@@ -224,7 +230,7 @@ def execute(st, req, *, _support_binding=None):
         elif op == "feedback_send":
             rc = feedback.run_send(None, raw_text=req.get("raw"),
                                    owner_confirmed=req.get("owner_confirmed", False) and not support._full_access(st),
-                                   out=out, state=st)
+                                   out=out, state=st, host_review=True)
         else:
             rc = feedback.run_replies(as_json=req.get("as_json", False), out=out)
     except (support.SupportError, cloud.CloudError, feedback.FeedbackError) as exc:

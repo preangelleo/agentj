@@ -540,11 +540,11 @@ async def _rcpt_recv(host, device: str, sid: str) -> None:
         host.st.log("say_receipts", result="write_failed")
 
 
-def _rcpt(host, device, sid, state: str, turn: int | None = None) -> None:
+def _rcpt(host, device, sid, state: str, turn: int | None = None, *, reply_page=None) -> None:
 
     rc = getattr(host, "receipts", None)
     if rc is not None and isinstance(device, str) and isinstance(sid, str) and rc.used(device, sid):
-        rc.mark(device, sid, state, turn)
+        rc.mark(device, sid, state, turn, reply_page=reply_page)
 
 
 def say_sync_state(send, receipt: str | None) -> str | None:
@@ -785,7 +785,10 @@ class Host:
         self.media_streams: dict[tuple, asyncio.Task] = {}   # (cid, mid) → the window being sent
         self.media_jobs: set = set()
         self.sends = compose.Sends()
-        self.receipts = receipts_mod.Receipts(st.root, st.log)   # P313 (§14): the same (device, sid) keys, on disk
+        from . import upgrade_messages
+        self.receipts = receipts_mod.Receipts(
+            st.root, st.log, answered=lambda device, turn, coordinates:
+            upgrade_messages.answered_page(self.hist, device, turn, coordinates))
         for (device, sid), row in self.receipts.items.items():
             if row["s"] == "held" and type(row["n"]) is int:
                 self.sends.add(compose.Send(device, sid, row["n"]))
@@ -8507,6 +8510,9 @@ class Host:
             send.by = s.name or s.device
         if isinstance(s, Session):
             send.phone_binding = getattr(s, "login_phone", None)  # pinned at the authenticated handshake
+            if send.phone_binding is not None:
+                from . import upgrade_messages
+                upgrade_messages.bind_reply_page(self, send, turn)
         event_guard = getattr(s, "event_delivery_allowed", None)
         if callable(event_guard):  # host-only fixed subscription binding; external JSON cannot supply this callable
             send.delivery_allowed = event_guard
@@ -8920,7 +8926,9 @@ class Host:
             self.reporter.trigger("notice_delivered")
             return
         self.uploads.commit(send.blobs)
-        _rcpt(self, send.device, send.sid, "deliv", send.turn)
+        from . import upgrade_messages
+        _rcpt(self, send.device, send.sid, "deliv", send.turn,
+              reply_page=upgrade_messages.reply_page_coordinates(self, send))
         self.st.log("say_delivered", device=send.device, id=send.turn)
         self._post(self._send_device, send.device, {"t": "say_state", "sid": send.sid, "s": "delivered"})
 

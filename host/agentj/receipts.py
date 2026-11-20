@@ -6,12 +6,13 @@ and before the phone hears `say_res ok` — with its state:
 
   held   host-sealed upgrade handoff, never submitted; the original paired device may receive first delivery
   recv   ordinary acceptance; it may already have reached the harness before the later receipt was written
-  deliv  handed to the harness (or the write failed half-way: maybe handed)
+  deliv  handed to the harness (or the write failed half-way: maybe handed);
+         a confirmed ordinary phone dispatch can also bind its history epoch and page timestamp
   done   finished: the turn ended, the host answered it itself, it was withdrawn or refused by the harness
-  lost   an earlier serve died while it was `recv` / `deliv` (set at load, once)
+  lost   an earlier serve died while it was `recv` / `deliv` without a final page (set at load, once)
 
 After a restart every remembered sid still answers `dup` (no replay — the host never stores the words here, only the
-key), and the messages that were `recv` / `deliv` when the old process died are handed back once (`interrupted`) so
+key), and unresolved messages that were `recv` / `deliv` when the old process died are handed back once (`interrupted`) so
 serve can tell the phone in one line that they may need a manual resend. Bounded: entries older than KEEP_S go, and at
 most PER_DEVICE (= compose.SEEN_MAX) per device, TOTAL_MAX in all; the file is rewritten when it holds more than twice
 the live lines.
@@ -55,8 +56,15 @@ def _ok_key(x) -> bool:
     return isinstance(x, str) and 0 < len(x) <= 128
 
 
+def _reply_page(value):
+    if (isinstance(value, (list, tuple)) and len(value) == 2
+            and all(type(item) is int for item in value) and value[0] >= 0 and value[1] > 0):
+        return tuple(value)
+    return None
+
+
 class Receipts:
-    def __init__(self, root: pathlib.Path, log=None, now=time.time):
+    def __init__(self, root: pathlib.Path, log=None, now=time.time, *, answered=None):
         self.path = pathlib.Path(root) / FILE
         self.log = log or (lambda *a, **k: None)
         self.now = now
@@ -65,10 +73,10 @@ class Receipts:
         self.broken = False
         self.interrupted: list[dict] = []           # [{"d", "i", "s" (recv|deliv), "n" (turn id)}] — from the last process
         self._lk = threading.Lock()
-        self._load()
+        self._load(answered)
 
     # ---------------------------------------------------------------- load
-    def _load(self) -> None:
+    def _load(self, answered) -> None:
         try:
             raw = self.path.read_bytes()
         except FileNotFoundError:
@@ -92,20 +100,31 @@ class Receipts:
                    "n": n if type(n) is int else None}
             if rec["s"] == "held" and isinstance(r.get("seal"), str):
                 rec["seal"] = r["seal"]
+            if rec["s"] == "deliv":
+                rec["reply_page"] = _reply_page(r.get("page"))
             if old is None:
                 self.items[k] = rec
             elif RANK[rec["s"]] >= RANK[old["s"]]:
                 old["s"] = rec["s"]
                 if "seal" in rec:
                     old["seal"] = rec["seal"]
+                old["reply_page"] = rec.get("reply_page")
                 old["n"] = rec["n"] if rec["n"] is not None else old["n"]
         self._trim()
+        recovered = 0
         for (d, i), r in self.items.items():
+            page = r.get("reply_page")
+            if r["s"] == "deliv" and page is not None and answered is not None and answered(d, r["n"], page):
+                r["s"] = "done"
+                recovered += 1
+                continue
             if r["s"] in OPEN:
                 self.interrupted.append({"d": d, "i": i, "s": r["s"], "n": r["n"]})
                 r["s"] = "lost"
-        if self.interrupted or self.lines > 2 * len(self.items) + 64:
+        if recovered or self.interrupted or self.lines > 2 * len(self.items) + 64:
             self._rewrite()
+        if recovered:
+            self.log("say_receipts", result="completed_reply", count=recovered)
         if self.interrupted:
             self.log("say_receipts", result="interrupted", count=len(self.interrupted))
 
@@ -125,7 +144,9 @@ class Receipts:
     # ---------------------------------------------------------------- disk (one ordered writer thread)
     def _line(self, k: tuple, r: dict) -> str:
         return json.dumps({"d": k[0], "i": k[1], "s": r["s"], "t": int(r["t"]), "n": r["n"],
-                           **({"seal": r["seal"]} if r["s"] == "held" and "seal" in r else {})}, separators=(",", ":"))
+                           **({"seal": r["seal"]} if r["s"] == "held" and "seal" in r else {}),
+                           **({"page": r["reply_page"]} if r["s"] == "deliv" and r.get("reply_page") else {})},
+                          separators=(",", ":"))
 
     def _rewrite(self) -> None:
         snap = list(self.items.items())             # the loop may add one meanwhile (atomic copy under the GIL)
@@ -171,14 +192,18 @@ class Receipts:
         r = self.items.get((device, sid))
         return r["s"] if r else None
 
-    def mark(self, device: str, sid: str, state: str, turn: int | None = None, *, seal: str | None = None) -> concurrent.futures.Future | None:
+    def mark(self, device: str, sid: str, state: str, turn: int | None = None, *, seal: str | None = None,
+             reply_page: tuple[int, int] | None = None) -> concurrent.futures.Future | None:
         """Record now (memory, so a second `say` with this sid is `dup` at once) and queue the line for the disk. Returns
         the write's future (None when nothing changed). A state never goes back."""
         if state not in RANK or not _ok_key(device) or not _ok_key(sid):
             return None
         k = (device, sid)
         r = self.items.get(k)
-        if r is not None and (RANK[state] < RANK[r["s"]] or RANK[state] == RANK[r["s"]] and (turn is None or turn == r["n"])):
+        reply_page = _reply_page(reply_page) if state == "deliv" else None
+        if r is not None and (RANK[state] < RANK[r["s"]] or RANK[state] == RANK[r["s"]]
+                              and (turn is None or turn == r["n"])
+                              and (reply_page is None or reply_page == r.get("reply_page"))):
             return None                             # nothing new (the same state may only add its page id)
         if r is None:
             r = self.items[k] = {"s": state, "t": self.now(), "n": turn}
@@ -192,6 +217,10 @@ class Receipts:
             r["seal"] = seal
         else:
             r.pop("seal", None)
+        if reply_page is not None:
+            r["reply_page"] = reply_page
+        else:
+            r.pop("reply_page", None)
         return _executor().submit(self._append, self._line(k, r))
 
     async def persist(self, device: str, sid: str, state: str, turn: int | None = None) -> None:

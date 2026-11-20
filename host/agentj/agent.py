@@ -1207,6 +1207,8 @@ class ClaudeAgent(Agent):
         self.ctl: dict[str, asyncio.Future] = {}   # control request id → its control_response
         self.capture: list | None = None           # a local command (/compact, /cost): its text is the card, not a reply
         self.last_result: dict = {}
+        self._restart_result: dict | None = None
+        self._restart_had_tools = False
         self.boundary: dict | None = None          # compact_metadata of the last compact_boundary
         self.replay = False                        # after a compact_boundary: Claude Code re-sends a kept synthetic message
         self.native_goal_checked = False           # P198: this process's session checked once for Claude Code's own /goal
@@ -1383,6 +1385,7 @@ class ClaudeAgent(Agent):
                     continue
                 if isinstance(ev, dict):
                     try:
+                        self._observe_restart_result(proc, ev)
                         self._busy(ev)
                         self.on_event(ev)
                     except Exception as e:  # P1 audit H7: never leave a producer blocked on a dead reader
@@ -1412,6 +1415,18 @@ class ClaudeAgent(Agent):
                 self.fail_notice(claude_auth.failure_notice(self.cfg.get("language", "zh")) if claude_auth.login_failure(last) else
                                  f"Claude Code 退出了（{code}）" + (f"：{last}" if last else ""))
             self.turn_done.set()
+
+    def _observe_restart_result(self, proc, event):
+        if (proc is not self.proc or proc is not self.turn_proc or self.turn_done is None
+                or self.turn_done.is_set() or self.capture is not None):
+            return
+        if event.get("type") == "assistant":
+            message = event.get("message")
+            blocks = message.get("content") if isinstance(message, dict) else None
+            self._restart_had_tools |= isinstance(blocks, list) and any(
+                isinstance(block, dict) and block.get("type") in ("tool_use", "server_tool_use") for block in blocks)
+        if event.get("type") == "result" and not self._restart_had_tools and not event.get("parent_tool_use_id"):
+            self._restart_result = event
 
     async def refresh_busy(self):
         b = getattr(self.host, "busy", None)
@@ -1689,6 +1704,7 @@ class ClaudeAgent(Agent):
             if self.proc is None and not await self._spawn():
                 return
             self.turn_done, self.turn_proc = asyncio.Event(), self.proc
+            self._restart_result, self._restart_had_tools = None, False
             line = json.dumps({"type": "user", "message": {"role": "user", "content": text}}, ensure_ascii=False) + "\n"
             proc = self.proc
 
@@ -1702,6 +1718,9 @@ class ClaudeAgent(Agent):
                 continue
             await self.turn_done.wait()
             self.fresh = False
+            if self._restart_result is not None:
+                from . import upgrade_messages
+                upgrade_messages.checkpoint_reply(self, proc, self._restart_result)
             if self.fallback is not None and not self.fell_back:   # P219: the model is not served → once on the default
                 await self._fall_back()
                 continue

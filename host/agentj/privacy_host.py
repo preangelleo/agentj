@@ -10,6 +10,7 @@ MAX_DRAFT = 256 * 1024
 # Only the authenticated Host broker installs this in its operation context.
 # asyncio.to_thread copies it; no input field or socket request can select it.
 _BROKER_REVIEW = contextvars.ContextVar('host_outbound_privacy_review', default=None)
+_BROKER_SEND = contextvars.ContextVar('host_outbound_send_source', default=None)
 
 
 @contextlib.contextmanager
@@ -19,19 +20,18 @@ def broker_scope(host, peer_pid):
     This is transport adaptation only: handle still proves the original peer
     against the live owner task before and after the fixed Jev check.
     """
-    from . import approval_material
     loop=asyncio.get_running_loop()
     state,agent=host.st,getattr(host,'agent',None)
-    origin=_origin(host,peer_pid)
+    origin=_origin(host,peer_pid,'feedback')
     active=True
     def live():
         return (active and host.st is state and getattr(host,'agent',None) is agent
-                and _origin(host,peer_pid) == origin)
+                and _origin(host,peer_pid,'feedback') == origin)
+    def refusal():
+        return _refusal(host, origin) or (None if live() else 'session_changed')
     async def review(draft,gate):
         if gate != 'feedback':return failure('bad_request')
-        if origin is None:return failure('peer_unverified')
-        if not live():
-            return failure('session_changed')
+        if why := refusal():return failure(why)
         result=await handle(host,{'t':'privacy_check','gate':gate,'draft':draft},peer_pid=peer_pid)
         return result if live() else failure('session_changed')
     def request_bound(draft,gate):
@@ -47,14 +47,16 @@ def broker_scope(host, peer_pid):
             job.cancel()
             return failure('host_unavailable')
     token=_BROKER_REVIEW.set(request_bound)
-    try:yield
+    send_token=_BROKER_SEND.set(refusal)
+    try:yield refusal
     finally:
         active=False
+        _BROKER_SEND.reset(send_token)
         _BROKER_REVIEW.reset(token)
 
 
 
-def _origin(host, peer_pid):
+def _origin(host, peer_pid, gate=None):
     """Return only the live, request-bound caller proof for outbound feedback.
 
     Do not infer owner identity from process ancestry: background/system turns share
@@ -63,7 +65,40 @@ def _origin(host, peer_pid):
     from . import approval_material
     if peer_pid is None:
         return None
-    return approval_material.verified_caller_origin(host, peer_pid)
+    origin = approval_material.verified_caller_origin(host, peer_pid)
+    if gate != 'feedback':
+        return origin
+    if origin is None:
+        return approval_material.verified_phone_feedback(host, peer_pid)
+    send = getattr(getattr(host, 'agent', None), 'cur_send', None)
+    if (origin.get('channel') == 'phone' and origin.get('message_id') == getattr(send, 'turn', None)
+            and not approval_material.feedback_pairing_live(host, send)):
+        return None
+    return origin
+
+
+def _refusal(host, origin):
+    if origin is None:
+        return 'peer_unverified'
+    if host.stopped():
+        return 'stopped'
+    if not origin.get('verified') or origin.get('suspicious') or origin.get('material_unknown'):
+        return 'source_denied'
+    return None
+
+
+def send_refusal():
+    check = _BROKER_SEND.get()
+    return check() if check is not None else None
+
+
+def review_draft(draft, gate):
+    from . import privacy, report_privacy
+    if gate == 'feedback':
+        draft, _, residual = report_privacy.prepare(draft)
+        if residual:
+            return privacy.Verdict('blocked', kind='credential', reason='privacy-check/residual_credential')
+    return privacy.layer2(draft, gate=gate, _host=True)
 
 
 SUPPORT_FEEDBACK_RETRY_KIND = 'support_feedback_retry'
@@ -114,24 +149,22 @@ async def handle(host, req, *, peer_pid=None):
             why = 'bad_request'
     agent = getattr(host, 'agent', None)
     owner = session_key(agent)
-    origin = _origin(host, peer_pid)
+    gate = req.get('gate') if isinstance(req, dict) else None
     if why is None:
-        if origin is None:
-            why = 'peer_unverified'
-        elif host.stopped():
-            why = 'stopped'
-        elif not origin.get('verified') or origin.get('suspicious') or origin.get('material_unknown'):
-            why = 'source_denied'
+        if gate == 'feedback':
+            await approval_material.observe_phone_delivery(host, peer_pid)
+        origin = _origin(host, peer_pid, gate)
+        why = _refusal(host, origin)
     result = None
     if why is None:
         try:
             # Model failures are optional; source/session proofs never are.
-            v = await asyncio.to_thread(privacy.layer2, req['draft'], gate=req['gate'], _host=True)
+            v = await asyncio.to_thread(review_draft, req['draft'], req['gate'])
         except Exception:
             v = privacy.Verdict('unavailable', reason='privacy-check/backend_unavailable')
         try:
             same_authority = (not host.stopped() and host.agent is agent and session_key(agent) == owner
-                              and _origin(host, peer_pid) == origin)
+                              and _origin(host, peer_pid, gate) == origin)
         except Exception:
             same_authority = False
         if not same_authority:

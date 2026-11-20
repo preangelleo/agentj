@@ -281,7 +281,7 @@ class Binding:
             return None
 
     def live(self):
-        from . import provenance
+        from . import approval_material, provenance
         h = self.host
         return (not self.closed and time.monotonic() < self.expires and h.st is self.state and h.agent is self.agent
             and self.broker.xfer.execution is self.row['execution'] and self.row['execution'].live
@@ -293,6 +293,7 @@ class Binding:
             and self.send.state not in ('cancelled', 'failed') and self.send.approval_origin == self.origin
             and (self.body is None or isinstance(self.body, bytes) and hashlib.sha256(self.body).hexdigest() == self.body_sha256)
             and provenance.normalize(self.send.source) == self.source and h.st.sign_key(self.device) == self.key
+            and approval_material.feedback_pairing_live(h, self.send)
             and os.path.realpath((h.agent_cfg or {}).get('dir') or '') == self.root
             and (sys.platform != 'linux' or self.native_identity is not None and self.kernel_root() == self.native_identity))
 
@@ -331,7 +332,7 @@ class Binding:
                 result = privacy_host.failure('draft_limit')
             else:
                 try:
-                    result = await asyncio.to_thread(privacy.layer2, draft, gate='feedback', _host=True)
+                    result = await asyncio.to_thread(privacy_host.review_draft, draft, 'feedback')
                 except Exception:
                     result = privacy.Verdict('unavailable', reason='privacy-check/backend_unavailable')
                 if not self.live():

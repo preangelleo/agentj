@@ -701,6 +701,12 @@ LOCAL_REVIEW_NOTE = '本机规则脱敏，未经模型审核 / Local rule redact
 def source_hint(v) -> str:
     """#0302: an actionable tail for a broker/source refusal — never silent, always the reason code."""
     reason = (getattr(v, 'reason', None) or 'unknown').replace('privacy-check/', '')
+    if reason in ('peer_unverified', 'source_denied', 'session_changed'):
+        return (f" [{reason}] Keep the draft. Open the main chat on your originally paired remote and send a new message "
+                "asking Agent J to submit it. Friend and group messages cannot start this send. If the main chat still fails, "
+                "run `agentj doctor` on the host and include this reason code. / "
+                f"原因码 {reason}：请保留草稿，在原配对手机的主对话里新发一条消息，请 Agent J 提交这份草稿。"
+                "好友和群聊里的请求无法代发。主对话仍失败时，请在主机运行 agentj doctor，并记下这个原因码。")
     return (f" [{reason}] Only the owner's own session can send this (paired remote, owner terminal, same-owner device, "
             "or a background job the owner's Agent started); friend / visitor / group turns cannot. Retry from the owner's "
             "session; if it still fails run `agentj doctor` and tell the owner this reason code. / "

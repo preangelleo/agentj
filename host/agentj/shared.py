@@ -1503,11 +1503,45 @@ class SharedClaudeAgent(Agent):
         e = getattr(x, "execution", None)
         return bool(self.phone_turn and self.phone_seen and e and e.live and e.send is not None)
 
+    def _pending_phone_record(self):
+        att = getattr(self, "native_request", None)
+        if (self.phone_turn and not self.phone_seen and isinstance(att, shared_turn_origin.TranscriptAttestation)
+                and self.cur_send is att.send and att.source == provenance.phone()):
+            return att
+        return None
+
+    async def observe_phone_delivery(self, peer):
+        """A native command can reach the broker before Claude flushes the phone record."""
+        from . import approval_material
+        from .core.process_evidence import row, start_matches
+        session, att = self.session, self._pending_phone_record()
+        if not session or att is None or self.transcript is None:
+            return
+        anchor = session.get("pid")
+        current = row(anchor)
+        if peer == anchor or not start_matches(session.get("procStart"), current):
+            return
+        if sys.platform == "darwin":
+            if not approval_material._darwin_chain(self.host, self, peer, anchor, current, att.created_at):
+                return
+        elif not approval_material._descendant(peer, (anchor, current[2])):
+            return
+        deadline = asyncio.get_running_loop().time() + NATIVE_FLUSH_WAIT
+        while (self.host.agent is self and self.session is session and self.native_request is att
+                and self.cur_send is att.send and self.phone_turn and not self.phone_seen
+                and not self.host.stopped() and asyncio.get_running_loop().time() < deadline):
+            with contextlib.suppress(OSError, ValueError):
+                self.read_transcript()
+            if not self.phone_seen:
+                await asyncio.sleep(.05)
+
     async def _await_native_call(self, call, gone=None):
         # an owner turn's exact call may reach the hook before Claude flushes its transcript line; never a hook-supplied record
         calls = self.host.peers.xfer.broker.calls
+        send = self.cur_send
         deadline = asyncio.get_running_loop().time() + NATIVE_FLUSH_WAIT
-        while (isinstance(call, str) and call not in calls and self._owner_call_open() and not (gone is not None and gone.done())
+        while (isinstance(call, str) and call not in calls and send is self.cur_send
+               and (self._owner_call_open() or self._pending_phone_record() is not None) and not (gone is not None and gone.done())
                and asyncio.get_running_loop().time() < deadline):
             await asyncio.sleep(.05)
             with contextlib.suppress(OSError, ValueError):
@@ -3207,6 +3241,8 @@ class SharedClaudeAgent(Agent):
         self.pending_source, self.pending_text = source, provenance.body(text, source)
         self.native_source = source
         self.native_request = shared_turn_origin.mint(self, nxt, self.pending_text)
+        if self.native_request is not None and source == provenance.phone():
+            self.phone_seen = False   # the preceding input's receipt cannot attest this newly merged Send
         if not provenance.is_owner(source):
             self._mark_untrusted("pending")
         self.host.turn_queued_note(True)

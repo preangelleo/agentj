@@ -384,6 +384,11 @@ def _send_reviewed(kind, draft, hits, v, ch, out, *, thread=None, lang=None, wai
         fields["nonce"] = secrets.token_urlsafe(16)[:22]
         if thread and thread in _install_threads() and _install_id():
             fields["link"] = _install_id()   # continue the thread opened during the install (proves the install session)
+    from . import privacy_host
+    if source_failure := privacy_host.send_refusal():
+        print("NOT SENT. / 这次没有提交。" + privacy.source_hint(
+            privacy.Verdict("unavailable", reason="privacy-check/" + source_failure)), file=out)
+        return EXIT_UNAVAILABLE
     obj = _check(*ch.send(fields))
     tid = obj.get("thread") if isinstance(obj.get("thread"), str) and _THREAD.fullmatch(obj["thread"]) else None
     seq = obj.get("seq") if isinstance(obj.get("seq"), int) else 0

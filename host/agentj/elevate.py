@@ -2537,6 +2537,9 @@ class Elevator:
                 if peer is None and sys.platform == "darwin":
                     from .core.process_evidence import peer_pid
                     peer = peer_pid(w)
+                if req['t'] == 'secret_out' and uid == os.getuid():
+                    from . import approval_material
+                    await approval_material.observe_phone_delivery(self.host, peer)
                 if req['t'] == 'secret' and uid == os.getuid():
                     from . import approval_material
                     chat_source = await asyncio.to_thread(approval_material.verified_phone_chat, self.host, peer)
@@ -2586,7 +2589,7 @@ class Elevator:
                 return
             if isinstance(req, dict) and req.get("t") == "privacy_check":
                 from . import privacy_host
-                res = await privacy_host.handle(self.host, req, peer_pid=peer)
+                res = await privacy_host.handle(self.host, req, peer_pid=peer if uid == os.getuid() else None)
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
                 await w.drain()
                 w.close()
@@ -2611,18 +2614,27 @@ class Elevator:
                 return
             if isinstance(req, dict) and req.get("t") == "host_diagnostics":
                 from . import host_diagnostics, approval_level, provenance, approval_material, privacy_host
-                external_send = external_support(self.host, req.get("op"), req)
+                op = req.get("op")
+                sends_feedback = op in ("support", "feedback_send")
+                if sends_feedback and uid == os.getuid():
+                    await approval_material.observe_phone_delivery(self.host, peer)
+                external_send = external_support(self.host, op, req)
                 why = host_diagnostics.caller_refusal(req, sock, self.host)
                 broker = getattr(getattr(getattr(self.host, 'peers', None), 'xfer', None), 'broker', None)
-                if req.get('op') == 'support' and broker is not None and broker.feedback_applicable() and not external_send:
+                if op == 'support' and broker is not None and broker.feedback_applicable() and not external_send:
                     from . import feedback_native
                     res = await feedback_native.receive(broker, req, peer)
                 elif why:
                     res = host_diagnostics.refused(why)
                 else:
-                    with approval_material.capture(self.host, peer, req) as captured, privacy_host.broker_scope(self.host, peer):
-                        res = ({"exit": 1, "output": "External data cannot authorize support or feedback sending. " + provenance.outsider_detail() + "\n"} if external_send
-                               else await asyncio.to_thread(host_diagnostics.execute, self.st, req))
+                    with approval_material.capture(self.host, peer, req) as captured, privacy_host.broker_scope(
+                            self.host, peer if uid == os.getuid() else None) as source_refusal:
+                        if external_send:
+                            res = {"exit": 1, "output": "External data cannot authorize support or feedback sending. " + provenance.outsider_detail() + "\n"}
+                        elif sends_feedback and (reason := source_refusal()):
+                            res = host_diagnostics.feedback_refused(reason)
+                        else:
+                            res = await asyncio.to_thread(host_diagnostics.execute, self.st, req)
                     res = approval_material.finish_capture(self.host, captured, peer, req, res)
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
                 await w.drain()

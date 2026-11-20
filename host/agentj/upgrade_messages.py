@@ -1,4 +1,4 @@
-"""Keep the first dispatch of a paired phone message on the far side of an upgrade.
+"""Keep undelivered messages and already-completed replies across upgrades.
 
 Only a host-sealed, never-submitted receipt is eligible. The old recv/deliv
 states cannot prove that, even if the history page still looks queued.
@@ -6,13 +6,89 @@ states cannot prove that, even if the history page still looks queued.
 import asyncio
 import json
 import time
+import weakref
 
 from cryptography.exceptions import InvalidSignature
 
-from . import compose, diskq, humane, phone_update, provenance, service_recovery, wire
+from . import compose, diskq, history, humane, phone_update, provenance, service_recovery, silent, wire
+from .text import drop_replacement
 
 DOMAIN = b"agentj:upgrade-held-phone-say:v1\x00"
 MAX_AGE = phone_update.LEASE
+
+
+def ordinary_phone_page(page, device):
+    if not page or page.get("form") or page.get("silent"):
+        return False
+    source = page["src"]
+    text = source.get("text")
+    return (source.get("k") == "phone" and source.get("dev") == device
+            and source.get("source_kind") == "phone" and source.get("source_role") == "owner"
+            and isinstance(text, str) and text.strip() and not text.lstrip().startswith(("/", "／", "!"))
+            and not any(key in source for key in ("att", "quote", "term", "form"))
+            and not page["reply"].get("part"))
+
+
+def _page_coordinates(hist, page, device):
+    if hist.on and ordinary_phone_page(page, device):
+        stamp = page.get("ts")
+        if type(stamp) is int and stamp > 0:
+            return hist.epoch, stamp
+    return None
+
+
+def bind_reply_page(host, send, page):
+    """Pin the original store before queueing, so a live history reload cannot reuse its page number."""
+    proof = _page_coordinates(host.hist, page, send.device)
+    if proof is not None:
+        send.restart_page = (weakref.ref(host.hist), proof)
+
+
+def reply_page_coordinates(host, send):
+    bound = getattr(send, "restart_page", None)
+    if bound and bound[0]() is host.hist:
+        current = _page_coordinates(host.hist, host.hist.get(send.turn), send.device)
+        if current == bound[1]:
+            return current
+    return None
+
+
+def answered_page(hist, device, turn, coordinates):
+    """Reconcile a stale delivery receipt with its already-final history page."""
+    page = hist.get(turn)
+    if coordinates is None or _page_coordinates(hist, page, device) != coordinates or page.get("end") != "done":
+        return False
+    text = page["reply"].get("text")
+    return isinstance(text, str) and bool(text.strip()) and not silent.is_silent(text)
+
+
+def checkpoint_reply(agent, proc, result):
+    """Save an exact native terminal reply before the adapter's remaining async work."""
+    host, send = agent.host, agent.cur_send
+    if (result.get("subtype") != "success" or result.get("is_error") is not False or agent.halting
+            or proc is not agent.proc or proc is not agent.turn_proc or not agent.own_turns()
+            or type(send) is not compose.Send or send.state != "delivered" or send.source != provenance.phone()
+            or getattr(host, "cur_turn", None) != send.turn or host.cur_failed or not host.hist.on
+            or host.receipts.state(send.device, send.sid) != "deliv"):
+        return
+    session = result.get("session_id")
+    if not isinstance(session, str) or not session or agent.init.get("session_id") != session:
+        return
+    phone = getattr(send, "phone_binding", None)
+    page = host.hist.get(send.turn)
+    if (phone is None or not phone.revision or not phone.matches(host, phone.session())
+            or reply_page_coordinates(host, send) is None or page["end"] != "open"):
+        return
+    raw = result.get("result")
+    if not isinstance(raw, str) or silent.is_silent(raw):
+        return
+    text = wire.well_formed(silent.strip_markers(drop_replacement(raw)))
+    prior = page["reply"]["text"]
+    if not text.strip() or wire.units(text) > history.PART_MAX or (prior and prior != text):
+        return
+    if not prior:
+        host.agent_text(text)
+    host.hist_update(send.turn, end="done")
 
 
 def pending(st):

@@ -215,6 +215,18 @@ def _local_report(value):
         return {key: _local_report(item) for key, item in value.items()}
     return value
 
+
+def _review(draft, threshold, env, transport, *, host_review=False):
+    from . import host_diagnostics
+    if env is not None or transport is not None or not (host_review or host_diagnostics.agent_side()):
+        return privacy.layer2(draft, threshold=threshold, env=env, transport=transport)
+    verdict = privacy.outbound_check(draft, gate="feedback")
+    if verdict.status == "ok" and verdict.probability is not None and verdict.probability >= threshold:
+        from dataclasses import replace
+        return replace(verdict, status="blocked", reason=f"p={verdict.probability:.2f} ≥ {threshold}")
+    return verdict
+
+
 def run_check(draft: pathlib.Path, threshold: float = privacy.THRESHOLD, *, transport=None, env=None, identity=None,
               out=None) -> int:
     out = out or sys.stdout
@@ -234,7 +246,7 @@ def run_check(draft: pathlib.Path, threshold: float = privacy.THRESHOLD, *, tran
     if probs:    # before layer 2 (a paid call) and before writing anything: `send` would only get HTTP 400
         print(_shape_refusal(probs, "not checked, nothing written"), file=out)
         return EXIT_ERROR
-    v = privacy.layer2(redacted, threshold=threshold, env=env, transport=transport)
+    v = _review(redacted, threshold, env, transport)
     _write_private(dest, text.encode())
     _write_private(dest.with_name(dest.name + ".redactions.json"), json.dumps({"sha256": hashlib.sha256(text.encode()).hexdigest(), "count": sum(hits.values())}).encode())
     print(_layer1_summary(hits), file=out)
@@ -261,7 +273,7 @@ UNAVAILABLE_NEXT = (
 
 
 def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_file: str = SESSION_FILE,
-             transport=None, env=None, identity=None, http_fn=None, out=None, raw_text=None, state=None) -> int:
+             transport=None, env=None, identity=None, http_fn=None, out=None, raw_text=None, state=None, host_review=False) -> int:
     """Review SS-05: send always judges with the default threshold (privacy.THRESHOLD) — there is no knob here, so a draft
     layer 2 blocks goes out only with --owner-confirmed (the human read it and said yes), never by loosening the gate."""
     threshold = privacy.THRESHOLD
@@ -303,7 +315,7 @@ def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_fi
     if probs:
         print(_shape_refusal(probs, "not sent"), file=out)
         return EXIT_ERROR
-    v = privacy.layer2(obj, threshold=threshold, env=env, transport=transport)
+    v = _review(obj, threshold, env, transport, host_review=host_review)
     print(_verdict_line(v, threshold), file=out)
     # #520: the legacy feedback API requires owner_informed=true (human read it).
     # Do not fabricate that assertion: autonomous reports use the
@@ -343,6 +355,11 @@ def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_fi
         raise FeedbackError(f"no feedback session at {session_file} (install.md Step 2)")
     if not _BEARER.fullmatch(bearer):
         raise FeedbackError(f"{session_file} does not hold a feedback session id")
+    from . import privacy_host
+    if source_failure := privacy_host.send_refusal():
+        print("NOT SENT. / 这次没有提交。" + privacy.source_hint(
+            privacy.Verdict("unavailable", reason="privacy-check/" + source_failure)), file=out)
+        return EXIT_UNAVAILABLE
     status, body = http_fn("POST", api_base() + "/v1/feedback", {
         "Authorization": "Bearer " + bearer, "Content-Type": "application/json", "User-Agent": UA}, raw)
     try:

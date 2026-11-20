@@ -716,6 +716,13 @@ def verified_caller_origin(host, peer):
     return resolved if resolved is not None else source
 
 
+async def observe_phone_delivery(host, peer):
+    """Let the served adapter consume a pending original phone record before fixed CLI gates."""
+    observe = getattr(getattr(host, 'agent', None), 'observe_phone_delivery', None)
+    if peer is not None and callable(observe):
+        await observe(peer)
+
+
 def verified_phone_chat(host, peer):
     """Only a live chat descendant of the exact host-recorded phone Send can carry this proof."""
     scope = _direct_scope(host, peer, secret_input=True)
@@ -730,3 +737,30 @@ def verified_phone_chat(host, peer):
             or origin.get('message_id') != turn or str(origin.get('session')) != str(host.hist.epoch)):
         return None
     return scope['agent'], copy.deepcopy(origin)
+
+
+def verified_phone_feedback(host, peer):
+    """Use the existing exact phone proof for a Host-owned native process."""
+    from . import provenance
+    agent = getattr(host, 'agent', None)
+    send = getattr(agent, 'cur_send', None)
+    if (send is None or isinstance(getattr(agent, 'session', None), dict)
+            or provenance.normalize(getattr(send, 'source', None)) != provenance.phone()
+            or provenance.untrusted_turn(agent) or provenance.owner_grant_required(agent)
+            or getattr(send, 'state', None) in ('cancelled', 'failed')):
+        return None
+    proof = verified_phone_chat(host, peer)
+    if proof is None or proof[0] is not agent:
+        return None
+    if not feedback_pairing_live(host, send):
+        return None
+    return proof[1]
+
+
+def feedback_pairing_live(host, send):
+    """Recheck any identity pinned at Host's authenticated phone ingress."""
+    if not hasattr(send, 'phone_binding'):
+        return True
+    from .browser_login import RequestPhone
+    binding = send.phone_binding
+    return isinstance(binding, RequestPhone) and binding.device == send.device and binding.still_paired(host)
