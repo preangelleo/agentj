@@ -764,8 +764,8 @@ function followScroll() {          // the side navigation marks the section at t
   markSection(cur);
 }
 
-function pickLang(l) {
-  if (window.AJLang && window.AJLang.get() !== l) window.AJLang.set(l);   // the page follows at once
+async function pickLang(l) {
+  if (window.AJLang && await window.AJLang.set(l) !== l) return;
   render();
   setPref('appearance.language', l);
 }

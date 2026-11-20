@@ -1,5 +1,5 @@
 // Capability hints only: never infer private browsing from a denied persist grant.
-import DICT from '../i18n.js';
+import DICT from './locale-runtime.js';
 export const OSES = ['ios', 'android', 'mac', 'windows', 'linux', 'other'];
 /** P539 (#300): which system this browser runs on, for the passkey words (P559: Face ID on iPhone / iPad, Windows Hello,
  *  Touch ID everywhere else). An iPad that says "Macintosh" but has a touch screen stays ios. browserEnvironment keeps

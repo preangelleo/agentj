@@ -6197,5 +6197,6 @@
   "p0319.count": "Queued messages ({n})",
   "p0319.stop": "Stop previous task",
   "p0319.close": "Collapse",
-  "p0319.attachment": "Attachment"
+  "p0319.attachment": "Attachment",
+  "approval.rescueReason": "Agent J needs your approval to take this step."
 }

@@ -2,7 +2,7 @@ import { accountNodes } from '../brand/account-links.js';
 // Every user-visible string comes from i18n.js (built from web/i18n/web.{zh,en}.json); runtime = window.AJLang
 // (brand/lang.js: 中文 default, ?lang=en or the switch, saved as localStorage "aj.lang"). Dictionary text is ours, so
 // `code` spans in it become <code> elements (createElement + textContent; never HTML). Host / Agent text is plain text.
-import DICT from '../i18n.js';
+import DICT from './locale-runtime.js';
 import { copyable } from './copycode.js';   // P292: every `command` in our text can be copied (icon + one click)
 
 import { osOf, bioLabel } from './phone-env.js';

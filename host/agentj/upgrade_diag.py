@@ -719,7 +719,7 @@ def _known_reason(v):
 
 KNOWN_REASONS = frozenset({*CATEGORY.values(), *(r for r, _ in UV_STDERR), "uv_failed", "read_only_filesystem",
                            "permission_denied", "rollback_failed", "unknown", "install_artifact_changed",
-                           "install_artifact_unavailable"})
+                           "install_artifact_unavailable", "installer_incompatible"})
 
 
 def _metadata_check_ids(value: str) -> bool:
@@ -840,6 +840,7 @@ def report(st, res: dict, *, send=None, now: float | None = None, kind: str | No
 REASON_WORDS = {
     "download_failed": ("下载安装包失败，网络或 agentj.app 暂时连不上", "the release download failed: no network or agentj.app unreachable"),
     "signature_or_hash_mismatch": ("安装包的签名或校验值对不上，已拒绝安装", "the package's signature or checksum did not match, so it was refused"),
+    "installer_incompatible": ("现有的 uv 版本太旧", "the installed uv version does not support the command needed for this update"),
     "installer_missing": ("找不到安装工具，请先恢复 uv / pipx", "the installer is missing; restore uv / pipx first"),
     "permission_denied": ("安装目录权限不足", "the installation directory is not writable"),
     "read_only_filesystem": ("安装位置是只读文件系统", "the installation is on a read-only filesystem"),
@@ -901,6 +902,38 @@ def dependency_repair(lang: str) -> str:
              " 若反复失败，主机主人可按升级修复说明选择处理方式。") + UPGRADE_REPAIR_GUIDE)
 
 
+def uv_repaired_sentence(version, lang):
+    return f"Upgraded to {version} and updated uv." if lang == 'en' else f"已升级到 {version}（顺手更新了 uv）。"
+
+
+def uv_repair_failure(res, lang, report=None):
+    en = lang == 'en'
+    reason = REASON_WORDS.get(res.get('reason'), REASON_WORDS['installer_incompatible'])[en]
+    if res.get('reason') == 'dependency_download_failed':
+        reason = 'could not download the verified uv update' if en else '无法下载经过验证的 uv 更新包'
+    elif res.get('reason') == 'permission_denied':
+        reason = 'permission denied when saving the uv update' if en else '没有权限保存 uv 更新包'
+    counts = res.get('uv_repair_doctor')
+    if isinstance(counts, list) and len(counts) == 3 and all(type(n) is int and n >= 0 for n in counts):
+        ok, warn, fail = counts
+        doctor = (f"Host doctor: {ok} passed, {warn} warning{'s' if warn != 1 else ''}, {fail} failed." if en else
+                  f"主机自检：{ok} 项通过，{warn} 项提醒，{fail} 项失败。")
+    else:
+        doctor = "Host doctor could not complete." if en else "主机自检未能完成。"
+    reported = ''
+    if report:
+        status = report.get('status')
+        if status in ('sent', 'already'):
+            reported = " Support received the report." if en else "客服已收到上报。"
+        elif status == 'off':
+            reported = " Automatic reporting is off." if en else "自动上报已关闭。"
+        else:
+            reported = " The report could not be sent automatically." if en else "未能自动发给客服。"
+    frm = res.get('from') or __version__
+    return (f"The installed uv is too old. Automatic repair failed ({reason}). Agent J remains on {frm}. {doctor}{reported} "
+            if en else f"现有的 uv 版本太旧。自动修复失败（{reason}），Agent J 主机仍是 {frm}。{doctor}{reported}") + UPGRADE_REPAIR_GUIDE
+
+
 def install_unchanged(res: dict) -> bool:
     """Journal phase wins; recognise pre-P487 download records without trusting their spurious recover line."""
     if "phase" in res:
@@ -911,6 +944,8 @@ def install_unchanged(res: dict) -> bool:
 def owner_sentence(res: dict, rep: dict, lang: str = "zh") -> str:
     """One plain sentence for the owner: what failed, where the Agent J host is now, whether support already has it."""
     en = lang == "en"
+    if "uv_repair_doctor" in res:
+        return uv_repair_failure(res, lang, rep)
     if res.get("reason") == "not_owner":            # #475: a refusal, nothing to report — the one fix step
         from .upgrade_owner import sentence
         return sentence(res, lang)
@@ -948,7 +983,7 @@ def owner_sentence(res: dict, rep: dict, lang: str = "zh") -> str:
     else:
         tail_ = ("it could not be sent to support automatically; I can send it with `agentj support ask --attach-doctor`" if en else
                  "没能自动发给客服，我可以用 agentj support ask --attach-doctor 再发")
-    own = dependency_repair(lang) if dependency else ""
+    own = dependency_repair(lang) if dependency or res.get("reason") == "installer_incompatible" else ""
     if res.get("owner_kind") and res.get("fix"):    # #475: the installer hit files another account owns
         from .upgrade_owner import sentence
         own = " " + sentence(res, lang)

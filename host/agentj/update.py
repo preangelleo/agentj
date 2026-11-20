@@ -365,23 +365,27 @@ def install_step(run, cmd, say, out: dict, target: str | None = None, store=None
         rc, tl = upgrade_diag.run_step(run, cmd, say, keep=keep)
         return rc, tl, ({**upgrade_diag.dependency_evidence(keep.get("raw") or tl, auto_update.run_env(cmd) or os.environ),
                          "retry_count": 0} if rc else {})
+    from . import upgrade_wheels
+    preparation = upgrade_wheels.PreparationRetry(_install_clock, _install_sleep, lease_end)
     pin = None
     if sealed:
         try:
             cmd, pin = _pin_plan_wheel(cmd, target, store)
-            from . import upgrade_wheels
-            cmd = upgrade_wheels.prepare_update(cmd, pin, out.get('from', __version__))
-        except (OSError, ValueError, subprocess.SubprocessError) as e:
-            why = str(e) if str(e) in (auto_update.ARTIFACT_UNAVAILABLE, auto_update.ARTIFACT_CHANGED,
-                                        'dependency_download_failed') else 'dependency_download_failed'
-            return 1, "", {"reason": why, "retry_count": 0, "_untouched": True}
-    return _install_attempts(run, cmd, say, out, pin, lease_end)
+            cmd = upgrade_wheels.prepare_update(cmd, pin, out.get('from', __version__), retry=preparation)
+        except upgrade_wheels.PreparationFailure as error:
+            return 1, "", {"reason": str(error), "retry_count": preparation.count, "_untouched": True, **error.fields}
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            reason = upgrade_wheels.local_failure(error)
+            return 1, "", {"reason": reason, "retry_count": preparation.count, "_untouched": True}
+    if getattr(cmd, "uv_repaired", False):
+        out["uv_repaired"] = True
+    return _install_attempts(run, cmd, say, out, pin, preparation)
 
 
-def _install_attempts(run, cmd, say, out, pin, lease_end=None):
+def _install_attempts(run, cmd, say, out, pin, preparation):
     from . import auto_update, upgrade_diag
-    started, retries, keep = _install_clock(), 0, {}
-    limit = auto_update.retry_limit(started, lease_end)
+    retries, keep = preparation.count, {}
+    limit = preparation.deadline
 
     def step(r):
         if pin:
@@ -395,9 +399,15 @@ def _install_attempts(run, cmd, say, out, pin, lease_end=None):
             raise auto_update.RetryExpired()
         return run(c, timeout=int(left), **kw)
     try:
-        rc, tl = step(run)
+        rc, tl = step(launch if retries or preparation.used else run)
+    except auto_update.RetryExpired:
+        return 1, "", {"reason": "installer_timeout", "retry_count": retries, "_untouched": True}
+    except subprocess.TimeoutExpired:
+        if not (retries or preparation.used):
+            raise
+        return 124, "", {"reason": "installer_timeout", "retry_count": retries}
     except ValueError:
-        return 1, "", {"reason": auto_update.ARTIFACT_CHANGED, "retry_count": 0, "_untouched": True}
+        return 1, "", {"reason": auto_update.ARTIFACT_CHANGED, "retry_count": retries, "_untouched": True}
     while rc:
         fields = {**upgrade_diag.dependency_evidence(keep.get("raw") or tl, auto_update.run_env(cmd) or os.environ),
                   "retry_count": retries}
@@ -749,8 +759,11 @@ def no_manager(tail: str) -> dict:
     return {"service": "no_systemd", "rollback": "skipped", "detail": reason, "fix": service.MESSAGES[reason], "stderr_tail": tail}
 
 
-def write_marker(st, frm: str, to: str, now: float | None = None) -> None:
-    st.write_private(st.root / UPGRADED, json.dumps({"from": frm, "to": to, "at": int(time.time() if now is None else now)}).encode())
+def write_marker(st, frm: str, to: str, now: float | None = None, *, uv_repaired=False) -> None:
+    marker = {"from": frm, "to": to, "at": int(time.time() if now is None else now)}
+    if uv_repaired:
+        marker["uv_repaired"] = True
+    st.write_private(st.root / UPGRADED, json.dumps(marker).encode())
 
 
 PENDING = "upgrade-pending.json"   # P142 (A12/B15): apply → recovery worker: from/to + the cached old wheel for rollback
@@ -1096,6 +1109,9 @@ def health_text(counts, lang="zh", rows=None, *, verified_upgrade=False) -> str:
 def completion_text(rec, counts, lang="zh", rows=None, web: str | None = "older", machine: str | None = None) -> str:
     """P320: `machine` = the Agent J host's name (several computers each send their own receipt — the owner must tell which);
     `web` = web_state() before the sentence about the page."""
+    if rec.get("uv_repaired") is True and rec.get("result", "ok") == "ok" and counts and counts[2] == 0:
+        from .upgrade_diag import uv_repaired_sentence
+        return uv_repaired_sentence(rec["to"], lang)
     if lang == "en":
         where = f'Agent J on the Agent J host "{machine}"' if machine else "Agent J on the Agent J host"
         head = f"{where} has been upgraded to {rec['to']} (previously {rec.get('from', '—')})."
@@ -1427,7 +1443,7 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
         except Exception as e:  # noqa: BLE001 — an installed service whose manager cannot be read must fail closed
             return done("service_status_failed", service_error=type(e).__name__)
     if not svc_on:
-        write_marker(st, __version__, target)
+        write_marker(st, __version__, target, uv_repaired=out.get("uv_repaired", False))
         return {**out, "result": "ok", "reason": "upgraded", "service": "not_installed", "exit": 0}
     write_pending(st, __version__, target, info, old)    # P142: the recovery worker writes the marker right before restart
     #                                                       (P192: and has the old wheel to roll back to, as after `apply`)
@@ -1438,7 +1454,7 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
     rc, tl = run_step(run, argv + ["service", "install", "--deferred", target], say)
     if rc == NO_MANAGER_EXIT:      # P278: no systemd here — the new version stays (a rollback could not restart either)
         (st.root / PENDING).unlink(missing_ok=True)
-        write_marker(st, __version__, target)
+        write_marker(st, __version__, target, uv_repaired=out.get("uv_repaired", False))
         return done("service_restart_failed", **no_manager(tl))
     if rc != 0:
         return back("service_restart_failed", service="failed", stderr_tail=tl)
@@ -1590,7 +1606,7 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
             if kind == "pending":
                 write_pending(st, __version__, target, info, old)
             else:
-                write_marker(st, __version__, target)
+                write_marker(st, __version__, target, uv_repaired=out.get("uv_repaired", False))
     try:
         v = run(argv + ["--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
         if v.returncode or target not in ((v.stdout or "") + " " + (v.stderr or "")).split():

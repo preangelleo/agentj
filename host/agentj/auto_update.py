@@ -914,6 +914,8 @@ def launch(st):
 
 def finish(st, result, diag=None):
     from . import upgrade_diag
+    if 'uv_repair_doctor' in (diag or {}):
+        result['uv_repair_doctor'] = diag['uv_repair_doctor']
     result.update(upgrade_diag.artifact_fields(diag or {}))
     result.update(upgrade_diag.exception_fields(diag or {}))
     result.update(upgrade_diag.dependency_fields(diag or {}))     # 0334
@@ -971,6 +973,10 @@ def _finish(st, result):
 def notice(r, lang='zh', prefs=None, harness=None):
     from . import humane, upgrade_diag, upgrade_owner
     summary = release_notes.filter_text(r.get('summary_en') if lang == 'en' else r.get('summary'), harness)
+    if r.get('result') == 'ok' and r.get('uv_repaired') is True:
+        return upgrade_diag.uv_repaired_sentence(r['to'], lang)
+    if 'uv_repair_doctor' in r:
+        return upgrade_diag.uv_repair_failure(r, lang)
     if r.get('result') == 'ok' and r.get('when') == 'idle':
         return (f"Agent J host updated automatically while idle to {r['to']} ({summary or 'latest published fixes'})." if lang == 'en' else
                 f"Agent J 主机空闲时已自动升级到 {r['to']}（{summary or '安装最新正式发布的改进'}）。")
@@ -1078,14 +1084,23 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
         require_compatible_version(st, job['to'] if diagnose else job['from'])
         def attempts(pinned):
             cmds = (recovery_commands(job['install'], pinned.path) if not diagnose else install_commands(job['install'], pinned.path))
+            from . import upgrade_wheels
+            preparation = upgrade_wheels.PreparationRetry(clock, sleep, lease_end)
             if pinned.root is not None:
-                from . import upgrade_wheels
-                cmds = ([upgrade_wheels.prepare_update(c, pinned, job['from']) for c in cmds] if diagnose
-                        else [upgrade_wheels.for_rollback(c, pinned) for c in cmds])
+                try:
+                    cmds = ([upgrade_wheels.prepare_update(c, pinned, job['from'], retry=preparation) for c in cmds] if diagnose
+                            else [upgrade_wheels.for_rollback(c, pinned) for c in cmds])
+                except upgrade_wheels.PreparationFailure as error:
+                    d.update(error.fields, retry_count=preparation.count, step='install')
+                    raise
             if diagnose:
-                save('installing')  # Validation/refusal above has not changed installed files.
-            started, retries = clock(), 0
-            limit = retry_limit(started, lease_end)
+                if any(getattr(c, 'uv_repaired', False) for c in cmds):
+                    job['uv_repaired'] = True
+                if preparation.used and preparation.deadline - clock() < RETRY_FLOOR:
+                    d.update(retry_count=preparation.count, step='install')
+                    raise ValueError('installer_timeout')
+            retries = preparation.count
+            limit = preparation.deadline
             def again(raw, argv):
                 # 0334: the closed dependency evidence of this attempt; retry only a network-class failure of the upgrade
                 # itself (never the rollback), within the budget. The same argv = the same already-verified wheel path.
@@ -1113,16 +1128,20 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 except ValueError:
                     if diagnose:
                         clear_attempt()
-                        d['retry_count'] = retries
+                        d.update(retry_count=retries, step='install')
                     raise
-                if retries:     # 0334 r3: read after the wait and the re-hash; an exhausted deadline launches nothing
+                if retries or preparation.used:     # take the timeout after the wait and final re-hash
                     left = limit - clock()
                     if left < RETRY_FLOOR:
+                        if diagnose and job.get('phase') == 'prepared':
+                            d.update(retry_count=retries, step='install')
+                            raise ValueError('installer_timeout')  # no live command to roll back
                         raise RetryExpired()
-                    # A new installer is about to run. Its evidence must describe only this attempt.
                     clear_attempt()
-                    if runner is quiet:     # what is left before the rollback's reserved window
-                        return quiet(argv, timeout=int(left))
+                if diagnose and job.get('phase') == 'prepared':
+                    save('installing')  # journal immediately before the first mutating runner
+                if (retries or preparation.used) and runner is quiet:
+                    return quiet(argv, timeout=int(left))
                 return runner(argv)
             for argv in cmds:
                 from .upgrade_diag import tail
@@ -1289,7 +1308,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
         if job['phase'] == 'installed':
             verify(job['to'])
             prune_artifacts(st.root, (job['to'], job.get('from')))    # 0334: keep the current + the previous version
-            result = {**{k:job[k] for k in ('attempt','from','to','summary','summary_en','when','retry_count') if k in job}, 'result': 'ok', 'reason': 'upgraded'}
+            result = {**{k:job[k] for k in ('attempt','from','to','summary','summary_en','when','retry_count','uv_repaired') if k in job}, 'result': 'ok', 'reason': 'upgraded'}
             finish(st, result, {'step': 'health'})
             save('done')
             return result

@@ -299,17 +299,28 @@
     });
   }
 
+  var prepareLanguage = null, selection = 0;
+  function selectLanguage(l) {
+    var ok = storageSet(KEY, l);
+    syncUrl(l, ok);
+    apply(l, l !== current);
+    return l;
+  }
+
   var api = {
     langs: ["zh", "en"],
     get: function () { return current; },
     set: function (lang) {
       var l = norm(lang);
       if (!l) return current;
-      var ok = storageSet(KEY, l);
-      syncUrl(l, ok);
-      if (l !== current) apply(l, true); else apply(l, false);
-      return l;
+      var request = ++selection;
+      var pending = prepareLanguage && prepareLanguage(l);
+      if (!pending) return selectLanguage(l);
+      return pending.then(function () {
+        return request === selection ? selectLanguage(l) : current;
+      }, function () { return current; });
     },
+    prepareLanguage: function (load) { prepareLanguage = load; },
     // dict = { zh: { key: "…{n}…" }, en: { … } }  (en falls back to zh, then to the key)
     t: function (dict, key, vars) {
       var d = dict && dict[current];

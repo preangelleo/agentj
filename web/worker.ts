@@ -179,6 +179,29 @@ async function seatAsset(req: Request, env: WebEnv, seat: string, rest: string):
   return new Response(JSON.stringify(seatManifest(base, seat, url.searchParams)), { status: 200, headers: { "content-type": "application/manifest+json" } });
 }
 
+/** Only these generated assets have immutable URLs. Other routes keep their normal cache policy. */
+export function versionedAsset(path: string, search: URLSearchParams) {
+  const css = /^\/(app|brand\/base)\.css$/.exec(path);
+  const revision = search.get("rev");
+  if (css && revision && /^[0-9a-f]{64}$/.test(revision)) {
+    return {path: `/${css[1]}.${revision}.css.gz`, digest: revision, compressed: true};
+  }
+  const locale = /^\/js\/locale-(?:en|zh)\.([0-9a-f]{64})\.js$/.exec(path);
+  return locale ? {path, digest: locale[1], compressed: false} : null;
+}
+async function decodedStyle(body: ReadableStream<Uint8Array>) {
+  const reader = body.pipeThrough(new DecompressionStream("gzip")).getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const {value, done} = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > 24 * 1024 * 1024) { await reader.cancel(); throw Error("style exceeds asset limit"); }
+    chunks.push(value);
+  }
+  return new Blob(chunks as BlobPart[]).arrayBuffer();
+}
 export async function handle(req: Request, env: WebEnv): Promise<Response> {
   const host = new URL(req.url).hostname;
   if (!env.WEB_HOST || (host !== env.WEB_HOST && !(env.LEGACY_WEB_HOST && host === env.LEGACY_WEB_HOST))) return notFound();
@@ -195,10 +218,34 @@ export async function handle(req: Request, env: WebEnv): Promise<Response> {
   if (seat && seat.rest === null) {
     return new Response(null, { status: 308, headers: { location: `/${seat.seat}/${new URL(req.url).search}`, "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" } });
   }
-  const selected = seat && seat.rest ? await previewAsset(req, env, seat.seat, seat.rest) : null;
-  const res = selected || (seat ? await seatAsset(req, env, seat.seat, seat.rest as string) : await env.ASSETS.fetch(assetRequest(req)));
-  const out = new Response(res.body, res);
+  const url = new URL(req.url);
+  const versioned = versionedAsset(seat?.rest || path, url.searchParams);
+  let assetReq = req, rest = seat?.rest || path;
+  if (versioned) {
+    rest = versioned.path;
+    url.pathname = (seat ? "/" + seat.seat : "") + rest;
+    url.search = "";
+    const headers = new Headers(req.headers);
+    for (const h of ["range", "if-range", "if-none-match", "if-modified-since"]) headers.delete(h);
+    assetReq = new Request(url, {headers});
+  }
+  const selected = seat && seat.rest ? await previewAsset(assetReq, env, seat.seat, rest) : null;
+  const res = selected || (seat ? await seatAsset(assetReq, env, seat.seat, rest) : await env.ASSETS.fetch(assetRequest(assetReq)));
+  let out = new Response(res.body, res);
+  if (versioned && res.ok) {
+    try {
+      if (!res.body || res.status !== 200) return notFound();
+      const bytes = versioned.compressed ? await decodedStyle(res.body) : await res.arrayBuffer();
+      if (await previewDigest(bytes) !== versioned.digest) return notFound();
+      out = new Response(req.method === "HEAD" ? null : bytes, {headers: res.headers});
+      out.headers.delete("content-encoding");
+      out.headers.delete("etag");
+      out.headers.set("content-length", String(bytes.byteLength));
+      out.headers.set("content-type", versioned.compressed ? "text/css; charset=utf-8" : "text/javascript; charset=utf-8");
+    } catch { return notFound(); }
+  }
   for (const [k, v] of Object.entries(webHeaders(relays, connectSelf(req.url)))) out.headers.set(k, v);
+  if (versioned && res.ok && !selected) out.headers.set("cache-control", "private, max-age=31536000, immutable, no-transform");
   if (selected) {
     out.headers.set("vary", "Cookie");
     out.headers.set("content-security-policy", csp(relays, connectSelf(req.url) + " " + new URL(`/${seat!.seat}${PREVIEW_PATH}/auth`, req.url).href));

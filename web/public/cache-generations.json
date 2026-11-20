@@ -1,0 +1,20 @@
+{
+  "current": {
+    "version": "0.30.50",
+    "paths": [
+      "app.92cd6fed5fbc10102acb4fb4486db5d19364965aef8f9e189d6a5cec468c8ffc.css.gz",
+      "brand/base.ebfa46e0d35c2e332d54462652ca244d800d14a739ba29aec7411ea1912bf511.css.gz",
+      "js/locale-en.04d8872ce23a27aa386db539c9bef895baccb707f40384e52e229f477755ab7b.js",
+      "js/locale-zh.2a1ba280ccf39dec4c4313eb195e3a85ab723d85e2b1cd5342194ee56404306e.js"
+    ]
+  },
+  "previous": {
+    "version": "0.30.49",
+    "paths": [
+      "app.92cd6fed5fbc10102acb4fb4486db5d19364965aef8f9e189d6a5cec468c8ffc.css.gz",
+      "brand/base.ebfa46e0d35c2e332d54462652ca244d800d14a739ba29aec7411ea1912bf511.css.gz",
+      "js/locale-en.04d8872ce23a27aa386db539c9bef895baccb707f40384e52e229f477755ab7b.js",
+      "js/locale-zh.2a1ba280ccf39dec4c4313eb195e3a85ab723d85e2b1cd5342194ee56404306e.js"
+    ]
+  }
+}

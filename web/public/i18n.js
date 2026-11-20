@@ -5686,7 +5686,8 @@ export default {
   "p0319.count": "排队消息（{n} 条）",
   "p0319.stop": "关闭上一条任务",
   "p0319.close": "收起",
-  "p0319.attachment": "附件"
+  "p0319.attachment": "附件",
+  "approval.rescueReason": "只有你确认，Agent J 才会执行这一步。"
  },
  "en": {
   "p0287.hideDone": "Hide completed",
@@ -11374,6 +11375,7 @@ export default {
   "p0319.count": "Queued messages ({n})",
   "p0319.stop": "Stop previous task",
   "p0319.close": "Collapse",
-  "p0319.attachment": "Attachment"
+  "p0319.attachment": "Attachment",
+  "approval.rescueReason": "Agent J needs your approval to take this step."
  }
 };

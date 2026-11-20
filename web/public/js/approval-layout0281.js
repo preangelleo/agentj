@@ -36,8 +36,14 @@ Only this exact message, once. No commands or native sandbox changes.`:`好友�
  if(plazaRemoval(e,context))return lang()==='en'?'Move the installed folder to a recoverable backup. Keep publisher trust and installation history; reinstalling needs the normal signed confirmation.':'把已安装目录移到可恢复备份，保留发布方信任和安装历史；重新安装仍需正常签名确认。';
  const norm=v=>String(v||'').replace(/\s+/g,' ').trim(), title=norm(stepTitle(e)).replace(/…$/,''), fullTitle=norm(e?.title);
  const distinct=v=>v&&v!==fullTitle&&v!==title&&!(title&&v.startsWith(title));
- for(const value of [lang()==='en'?e?.reason_en:e?.reason,lang()==='en'?e?.action_en:e?.action]){const s=norm(value);if(distinct(s))return s;}
+ const reason=norm(lang()==='en'?e?.reason_en:e?.reason);
+ if(distinct(reason))return reason;
+ const hostRescue=context?.envelope_verified===true && context.host_tool===true &&
+  context.tool==='AuthRescue' && context.envelope===e && context.summary===e?.details && e?.action==='AuthRescue';
+ const action=norm(lang()==='en'?e?.action_en:e?.action);
+ if(distinct(action)&&!(hostRescue&&action==='AuthRescue'))return action;
  const effects=new Set(Array.isArray(e?.effects)?e.effects:[]),has=(...keys)=>keys.some(k=>effects.has(k));
  const kind=e?.special?.tool==='SecretPickup'||has('secret_display')?'secret':has('sensitive_delivery')?'delivery':has('sensitive_storage','credentials')?'credentials':has('money','spend')?'money':has('irreversible_destroy','irreversible_delete','delete')?'delete':has('approval_root','hooks')?'approval':has('send')?'send':'missing';
+ if(hostRescue&&kind==='missing')return t('approval.rescueReason');
  return t(kind==='missing'?(Object.hasOwn(e||{},'reason')||Object.hasOwn(e||{},'reason_en')?'p0287.reason.emptyOrRepeated':'p0287.reason.missingFields'):'p0284.reason.'+kind);
 }

@@ -1,14 +1,21 @@
 """Prepare an authenticated, interpreter-specific dependency directory before replacing a uv tool."""
+import errno
 import hashlib
+import http.client
 import json
 import os
 import platform
 import re
+import socket
+import ssl
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
+import urllib.error
+import urllib.request
 import zipfile
 from email.parser import BytesParser
 from pathlib import Path
@@ -59,7 +66,160 @@ def clean_env():
     return {k: v for k, v in os.environ.items() if not k.startswith(('UV_', 'PIP_'))}
 
 
-def selected_wheels(uv, wheel, entries, scratch):
+class PreparationFailure(ValueError):
+    """Only fixed, public diagnostic words cross the preparation boundary."""
+    def __init__(self, reason, phase, symptom='other', transient=False):
+        super().__init__(reason)
+        self.fields = {'dependency_phase': phase, 'uv_failure_class': symptom}
+        self.transient = transient
+
+
+def local_failure(exc):
+    from . import upgrade_diag
+    if isinstance(exc, ValueError) and str(exc) in ('install_artifact_changed', 'install_artifact_unavailable'):
+        return str(exc)
+    if getattr(exc, 'errno', None) in (errno.ENOSPC, errno.EDQUOT):
+        return 'disk_full'
+    if isinstance(exc, OSError) and not isinstance(exc, (FileNotFoundError, PermissionError)):
+        return 'read_only_filesystem' if exc.errno == errno.EROFS else 'os_error'
+    if isinstance(exc, (OSError, subprocess.SubprocessError)):
+        return upgrade_diag.installer_reason(exc)
+    return 'install_artifact_changed'
+
+
+def resolver_failure(text):
+    from . import upgrade_diag
+    failure = _resolver_failure(text)
+    fields = upgrade_diag.dependency_evidence(text, {**clean_env(), 'UV_NO_CONFIG': '1'})
+    failure.fields = {**fields, **failure.fields}
+    return failure
+
+
+def _resolver_failure(text):
+    from . import upgrade_diag
+    text = upgrade_diag.bound_evidence(text).lower()
+    symptom = upgrade_diag.uv_failure_class(text)
+    if 'hash mismatch' in text or 'hashes do not match' in text:
+        return PreparationFailure('install_artifact_changed', 'resolve')
+    status = re.search(
+        r'(?:status(?: code)?(?: (?:client|server) error)?[ :=(]+|http[/ ](?:[0-9.]+ )?)([45]\d\d)\b'
+        r'|\b([45]\d\d) (?:forbidden|not found|bad gateway|service unavailable|too many requests|gateway timeout)',
+        text)
+    if status:
+        code = int(status.group(1) or status.group(2))
+        return PreparationFailure('dependency_download_failed', 'resolve', 'http_status', code in (408, 429) or code >= 500)
+    if any(word in text for word in ('unexpected argument', 'unrecognized option', 'unrecognized arguments',
+                                     "invalid value 'pylock.toml'", 'unrecognized subcommand')):
+        return PreparationFailure('installer_incompatible', 'resolve')
+    if 'no matching distribution found' in text:
+        return PreparationFailure('dependency_conflict', 'resolve')
+    reason = upgrade_diag.installer_reason(stderr=text)
+    if symptom != 'other' or reason == 'dependency_download_failed':
+        transient = symptom in ('connect', 'timeout') or (symptom == 'dns' and 'nxdomain' not in text)
+        return PreparationFailure('dependency_download_failed', 'resolve', symptom, transient)
+    return PreparationFailure(reason, 'resolve')
+
+
+def download_failure(error):
+    if isinstance(error, urllib.error.HTTPError):
+        return PreparationFailure('dependency_download_failed', 'download', 'http_status',
+                                  error.code in (408, 429) or error.code >= 500)
+    cause = getattr(error, 'reason', error)
+    if isinstance(cause, socket.gaierror):
+        return PreparationFailure('dependency_download_failed', 'download', 'dns', cause.errno == socket.EAI_AGAIN)
+    if isinstance(cause, ssl.SSLError):
+        return PreparationFailure('dependency_download_failed', 'download', 'tls')
+    if isinstance(cause, TimeoutError):
+        return PreparationFailure('dependency_download_failed', 'download', 'timeout', True)
+    if (isinstance(cause, (ConnectionError, http.client.IncompleteRead))
+            or getattr(cause, 'errno', None) in (errno.ENETUNREACH, errno.EHOSTUNREACH)):
+        return PreparationFailure('dependency_download_failed', 'download', 'connect', True)
+    return PreparationFailure('dependency_download_failed', 'download')
+
+
+def download_dependency(row, timeout):
+    """One HTTPS attempt; the shared preparation budget decides whether to retry."""
+    from . import update
+    request = urllib.request.Request(row['url'], headers={'User-Agent': 'agentj-upgrade/1'})
+    try:
+        with update.open_download(request, timeout=timeout) as response:
+            body = response.read(row['size'] + 1)
+            declared = getattr(response, 'headers', {}).get('Content-Length')
+    except (OSError, http.client.HTTPException) as error:
+        failure = download_failure(error)
+        from . import upgrade_diag
+        name = row['url'].rsplit('/', 1)[-1].split('-', 1)[0]
+        failure.fields.update(upgrade_diag.dependency_fields({'dependency_package': name, 'dependency_source': 'pypi'}))
+        raise failure from None
+    except ValueError:  # secure redirect policy refused the destination
+        raise PreparationFailure('download_failed', 'download') from None
+    if declared and declared.isdecimal() and int(declared) == row['size'] and len(body) < row['size']:
+        raise PreparationFailure('dependency_download_failed', 'download', 'connect', True)
+    return body
+
+
+class PreparationRetry:
+    """Share the install retry allowance between both wheelhouses and the final install."""
+    def __init__(self, clock=time.monotonic, sleep=time.sleep, lease_end=None):
+        from . import auto_update
+        self.clock, self.sleep = clock, sleep
+        self.deadline = auto_update.retry_limit(clock(), lease_end)
+        self.count = 0
+        self.used = False
+
+    def call(self, operation, timeout, *, phase='resolve'):
+        from . import auto_update
+        self.used = True
+        attempts = 0
+        while True:
+            left = int(self.deadline - self.clock())
+            if left < 1:
+                raise PreparationFailure('installer_timeout', phase)
+            try:
+                attempts += 1
+                return operation(min(left, timeout))
+            except PreparationFailure as error:
+                if phase == 'download':
+                    error.fields['download_attempts'] = attempts
+                if not error.transient or self.count >= auto_update.INSTALL_RETRIES:
+                    raise
+                delay = auto_update.INSTALL_BACKOFF[self.count]
+                if self.clock() + delay + auto_update.INSTALL_MIN_ATTEMPT > self.deadline:
+                    raise
+                self.sleep(delay)
+                if self.deadline - self.clock() < auto_update.RETRY_FLOOR:
+                    raise
+                self.count += 1
+
+
+def run_resolver(args, scratch, timeout, *, offline=False):
+    from . import upgrade_diag
+    with tempfile.TemporaryFile(dir=scratch) as errors:
+        try:
+            proc = subprocess.run(args, cwd=scratch, env=clean_env(), stdin=subprocess.DEVNULL,
+                                  stdout=subprocess.DEVNULL, stderr=errors, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            errors.seek(max(0, errors.tell() - upgrade_diag.EVIDENCE_MAX))
+            failure = resolver_failure(errors.read())
+            if str(failure) == 'uv_failed':
+                failure = PreparationFailure('installer_timeout', 'resolve')
+            if offline:
+                failure.transient = False
+            raise failure from None
+        except OSError as error:
+            raise PreparationFailure(local_failure(error), 'resolve') from None
+        if proc.returncode:
+            errors.seek(max(0, errors.tell() - upgrade_diag.EVIDENCE_MAX))
+            failure = resolver_failure(errors.read())
+            if offline and str(failure) == 'dependency_conflict':
+                # An expected wheel is missing from an already prepared directory.
+                raise PreparationFailure('install_artifact_unavailable', 'resolve')
+            if offline:
+                failure.transient = False
+            raise failure
+
+
+def selected_wheels(uv, wheel, entries, scratch, *, timeout=150):
     """uv evaluates the real wheel's markers, requires-python, native tags and transitive requirements."""
     index = scratch / 'files.html'
     index.write_text('<html><body>' + '\n'.join(
@@ -71,10 +231,7 @@ def selected_wheels(uv, wheel, entries, scratch):
     py = os.path.realpath(getattr(sys, '_base_executable', sys.executable))
     args = [uv, 'pip', 'compile', '--no-config', '--no-index', '--no-build', '--no-python-downloads',
             '--no-cache', '--python', py, '--find-links', str(index), '--format', 'pylock.toml', '-o', str(result), str(requirement)]
-    proc = subprocess.run(args, cwd=scratch, env=clean_env(), stdin=subprocess.DEVNULL,
-                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=150)
-    if proc.returncode:
-        raise ValueError('dependency_download_failed')
+    run_resolver(args, scratch, timeout)
     names = set()
     for package in tomllib.loads(result.read_text())['packages']:
         if package['name'] == 'agentj':
@@ -102,7 +259,7 @@ def verify_local(folder, entries):
             raise ValueError('install_artifact_changed')
 
 
-def wheelhouse(pin, data, uv, *, prepare):
+def wheelhouse(pin, data, uv, *, prepare, retry=None):
     from . import auto_update
     auto_update.check_artifact(pin)
     entries = catalog(data)
@@ -124,9 +281,11 @@ def wheelhouse(pin, data, uv, *, prepare):
             scratch = Path(tmp)
             staged = scratch / 'wheels'
             staged.mkdir(mode=0o700)
-            for name in sorted(selected_wheels(uv, pin.path, entries, scratch)):
+            retry = retry or PreparationRetry()
+            names = retry.call(lambda timeout: selected_wheels(uv, pin.path, entries, scratch, timeout=timeout), 150)
+            for name in sorted(names):
                 row = entries[name]
-                body = auto_update.download(row['url'], row['size'])
+                body = retry.call(lambda timeout: download_dependency(row, timeout), auto_update.DOWNLOAD_TIMEOUT, phase='download')
                 if len(body) != row['size'] or hashlib.sha256(body).hexdigest() != row['hash'][7:]:
                     raise ValueError('install_artifact_changed')
                 (staged / name).write_bytes(body)
@@ -143,9 +302,11 @@ def wheelhouse(pin, data, uv, *, prepare):
         probe = [uv, 'pip', 'install', '--dry-run', '--no-cache', '--no-index', '--offline',
                  '--no-config', '--no-build', '--no-python-downloads', '--python', py,
                  '--find-links', str(target), '--target', str(Path(scratch) / 'probe'), str(pin.path)]
-        if subprocess.run(probe, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                          env=clean_env(), timeout=60).returncode:
-            raise ValueError('install_artifact_unavailable')
+        operation = lambda timeout: run_resolver(probe, scratch, timeout, offline=True)
+        if retry is None:
+            operation(60)  # rollback stays offline, without retries
+        else:
+            retry.call(operation, 60)
     return target
 
 
@@ -179,11 +340,61 @@ def for_rollback(cmd, pin):
     data = lock_for(pin.path)
     if data is None:
         return cmd
+    cmd = cached_runtime(cmd, pin)
     house = wheelhouse(pin, data, cmd[0], prepare=False)
     return offline_command(cmd, house)
 
 
-def prepare_update(cmd, pin, previous_version):
+def with_runtime(cmd, binary):
+    from .auto_update import Command
+    return Command([binary, *cmd[1:]], cmd.env)
+
+
+def cached_runtime(cmd, pin):
+    from . import upgrade_uv
+    if (pin.path.parent / 'upgrade-runtime').exists():
+        try:
+            return with_runtime(cmd, upgrade_uv.runtime(pin))
+        except FileNotFoundError:
+            pass  # an interrupted download did not replace the current runtime
+    return cmd
+
+
+def prepare_update(cmd, pin, previous_version, *, retry=None):
+    from . import upgrade_uv
+    retry = retry or PreparationRetry()
+    repairing = False
+    try:
+        if 'tool' not in cmd or 'install' not in cmd:
+            return cmd
+        cmd = cached_runtime(cmd, pin)
+        try:
+            return _prepare_update(cmd, pin, previous_version, retry=retry)
+        except PreparationFailure as error:
+            if str(error) != 'installer_incompatible':
+                raise
+        repairing = True
+        repaired = with_runtime(cmd, upgrade_uv.runtime(pin, retry))
+        repairing = False
+        result = _prepare_update(repaired, pin, previous_version, retry=retry)
+        result.uv_repaired = True
+        return result
+    except PreparationFailure as error:
+        failure = error
+    except (OSError, subprocess.SubprocessError, ValueError, zipfile.BadZipFile, KeyError, TypeError) as error:
+        failure = PreparationFailure(local_failure(error), 'resolve')
+    if repairing:
+        from . import doctor, update
+        from .state import State
+        try:
+            counts = update.doctor_counts(doctor.run_upgrade(State(pin.root)))
+        except Exception:  # read-only doctor is best effort; keep the actual repair failure
+            counts = None
+        failure.fields['uv_repair_doctor'] = list(counts) if counts else []
+    raise failure from None
+
+
+def _prepare_update(cmd, pin, previous_version, *, retry=None):
     """Both dependency sets must exist before the first change to the live tool."""
     if 'tool' not in cmd or 'install' not in cmd:
         return cmd
@@ -203,6 +414,7 @@ def prepare_update(cmd, pin, previous_version):
             previous = auto_update.pin_artifact(blob, previous_version, pin.root)
         else:
             previous = auto_update.pin_artifact(blob, previous_version, pin.root, signed=True)
-    wheelhouse(previous, lock_for(previous.path) or data, cmd[0], prepare=True)
-    house = wheelhouse(pin, data, cmd[0], prepare=True)
+    retry = retry or PreparationRetry()
+    wheelhouse(previous, lock_for(previous.path) or data, cmd[0], prepare=True, retry=retry)
+    house = wheelhouse(pin, data, cmd[0], prepare=True, retry=retry)
     return offline_command(cmd, house)

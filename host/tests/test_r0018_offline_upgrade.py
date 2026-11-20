@@ -52,7 +52,7 @@ class OfflineDependencies(unittest.TestCase):
         self.addCleanup(self.source.stop)
 
     def prepare(self):
-        with patch.object(au, 'download', return_value=self.dep):
+        with patch.object(uw, 'download_dependency', return_value=self.dep):
             return uw.prepare_update(self.cmd, self.pins[1], self.pins[0].version)
 
     def test_cold_stage_reused_for_rollback_without_index_or_default_cache(self):
@@ -62,7 +62,7 @@ class OfflineDependencies(unittest.TestCase):
             self.assertIn('--offline', cmd)
             self.assertNotIn('UV_INDEX', au.run_env(cmd))
             self.assertEqual(au.run_env(cmd)['UV_TOOL_BIN_DIR'], str(self.root/'launchers'))
-            with patch.object(au, 'download', side_effect=AssertionError('rollback downloaded')), \
+            with patch.object(uw, 'download_dependency', side_effect=AssertionError('rollback downloaded')), \
                     patch.object(uw, 'selected_wheels', side_effect=AssertionError('rollback used online resolver')):
                 cmd = uw.for_rollback(self.cmd, self.pins[0])
             self.assertIn('--no-cache', cmd)
@@ -80,7 +80,7 @@ class OfflineDependencies(unittest.TestCase):
         self.assertFalse((self.root/'tools').exists())
 
     def test_hash_failure_precedes_uv_and_writes_no_completed_dependency_set(self):
-        with patch.object(au, 'download', return_value=b'changed'):
+        with patch.object(uw, 'download_dependency', return_value=b'changed'):
             with self.assertRaisesRegex(ValueError, 'install_artifact_changed'):
                 uw.prepare_update(self.cmd, self.pins[1], self.pins[0].version)
         self.assertFalse((self.root/'tools').exists())

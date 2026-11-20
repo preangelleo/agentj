@@ -1,4 +1,4 @@
-import DICT from '../i18n.js';
+import DICT from './locale-runtime.js';
 // Render only the current Host's checked command catalogue. Clicks use the
 // existing phone slash channel; no terminal input or arbitrary shell strings.
 export function renderHarnessCommands(box, menu, invoke, lang = 'zh') {

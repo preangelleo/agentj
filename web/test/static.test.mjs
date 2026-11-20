@@ -99,6 +99,13 @@ const UPSTREAM_NEW_FUNCTION = { 'vendor/mammoth/mammoth.browser.min.js': 1 };
 test('no URLs to anywhere in shipped files except links to agentj.app pages', () => {
   for (const f of files) {
     const s = read(f);
+    let wordingFile = rel(f);
+    if (/^js\/locale-(en|zh)\.[a-f0-9]{64}\.js$/.test(wordingFile)) {
+      assert.equal(createHash('sha256').update(s).digest('hex'), wordingFile.split('.')[1]);
+      const literal = /^export default (\{[^\n]*\});\n$/.exec(s);
+      assert.ok(literal && Object.values(JSON.parse(literal[1])).every(v => typeof v === 'string'), 'locale module has only dictionary text');
+      wordingFile = 'i18n.js';
+    }
     const vendored = VENDORED;
     // License URLs in these immutable upstream bytes are attribution, not requests.
     // Any changed bytes must be reviewed again; the live browser gate checks zero off-site traffic.
@@ -132,13 +139,13 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         if (rel(f) === 'js/copycode.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P292: the copy icon
         if (['js/jcards.js', 'js/jcard-color.js'].includes(rel(f)) && m[0] === 'http://www.w3.org/2000/svg') continue;    // P360: the cards' line icons
         // P210: the pairing page says the link 「以 https:// 开头」 — a bare scheme in text, no address at all
-        if (/^https:\/\/[.)）]?$/.test(m[0]) && ['index.html', 'i18n.js'].includes(rel(f))) continue;
+        if (/^https:\/\/[.)）]?$/.test(m[0]) && ['index.html', 'i18n.js'].includes(wordingFile)) continue;
         if (rel(f) === 'brand/lang.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P236: the header's globe / tick icons
         if ((rel(f) === 'js/five-pages.js' || rel(f) === 'js/vendor-marks.js' || /^assets\/vendors\/[^/]+\.svg$/.test(rel(f))) && ['http://www.w3.org/2000/svg','http://www.w3.org/1999/xlink'].includes(m[0].replace(/\\$/, ''))) continue; // P244: XML namespace, never a request
         // P266: owner-clicked ChatGPT security settings; never fetched by this page.
         if (rel(f) === 'js/authrescue.js' && m[0] === 'https://chatgpt.com/#settings/Security') continue;
         // P332 (§33): the one line a helper at the Agent J host pastes (`curl -fsSL https://agentj.app/rescue | sh`) — command text, never fetched
-        if (['i18n.js', 'index.html', 'js/rescue.js'].includes(rel(f)) && m[0] === 'https://agentj.app/rescue') continue;
+        if (['i18n.js', 'index.html', 'js/rescue.js'].includes(wordingFile) && m[0] === 'https://agentj.app/rescue') continue;
         // P400 item 3 (Leo 10-20 named the subdomain): owner-clicked 「在线客服」 links to our own support chat (301 → agentj.app/support/); never fetched
         if (rel(f) === 'index.html' && m[0] === SUPPORT_LINK) continue;
         // P417 #207: owner-clicked official key consoles; no fetch or secret in either URL.
@@ -156,6 +163,11 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
     if (m[1] === 'a' && m[3] === SUPPORT_LINK) continue;   // P400: the support chat subdomain, exact address only
     if (m[1] === 'a' && m[3] === 'https://typesafe.ai') {
       assert.match(HTML, /<a href="https:\/\/typesafe\.ai" target="_blank" rel="noopener noreferrer" data-i18n="p409.signup"/);
+      continue;
+    }
+    const css = /^(brand\/base|app)\.css\?rev=([0-9a-f]{64})$/.exec(m[3]);
+    if (m[1] === 'link' && css) {
+      assert.equal(css[2], createHash('sha256').update(readFileSync(pub(css[1] + '.css'))).digest('hex'));
       continue;
     }
     if (m[1] === 'a') assert.match(m[3], MAIL_LINK.test(m[3]) ? MAIL_LINK : SITE_LINK, `index.html links to ${m[3]}`);

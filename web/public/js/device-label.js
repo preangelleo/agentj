@@ -1,4 +1,4 @@
-import DICT from '../i18n.js';
+import DICT from './locale-runtime.js';
 // Device names are local descriptive data, editable by the owner.
 export function describeDevice(ua, standalone = false, translate = (key, vars) => DICT.zh[key].replace(/\{(\w+)\}/g, (m, k) => vars?.[k] ?? m)) {
   const huawei = /HarmonyOS|OpenHarmony|HUAWEI/i.test(ua);

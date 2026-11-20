@@ -420,7 +420,7 @@ class ManualAndPhone(_Env):
                 mock.patch.object(update, "writable", return_value=True), \
                 mock.patch.object(update, "verified_plan", return_value=[list(self.PLAN[0])]), \
                 mock.patch.object(update, "_pin_plan_wheel", side_effect=lambda c, t, st_: (c, None)), \
-                mock.patch("agentj.upgrade_wheels.prepare_update", side_effect=lambda c, p, v: c), \
+                mock.patch("agentj.upgrade_wheels.prepare_update", side_effect=lambda c, p, v, **kw: c), \
                 mock.patch.object(update, "rollback_wheel", return_value=None), \
                 mock.patch.object(update, "_install_sleep", lambda s: t.__setitem__(0, t[0] + s)), \
                 mock.patch.object(update, "_install_clock", lambda: t[0]), \
@@ -817,7 +817,7 @@ class Round2(_Env):
                         mock.patch.object(update, "writable", return_value=True), \
                         mock.patch.object(update, "verified_plan", return_value=[["uv", "tool", "install", "/verified/new.whl"]]), \
                         mock.patch.object(update, "_pin_plan_wheel", side_effect=lambda c, t, s: (c, None)), \
-                        mock.patch("agentj.upgrade_wheels.prepare_update", side_effect=lambda c, p, v: c), \
+                        mock.patch("agentj.upgrade_wheels.prepare_update", side_effect=lambda c, p, v, **kw: c), \
                         mock.patch.object(update, "rollback_wheel", return_value=None), \
                         mock.patch.object(update, "_install_sleep", lambda s: None), \
                         mock.patch("agentj.doctor.run", return_value=[]):
