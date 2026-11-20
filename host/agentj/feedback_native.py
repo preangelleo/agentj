@@ -401,6 +401,13 @@ class Binding:
         binding = self
         class Guarded:
             signed, st = original.signed, original.st
+
+            def existing_incident(self, ticket):
+                from .support import SupportError, _THREAD
+                if not binding.live() or not _THREAD.fullmatch(ticket):
+                    raise SupportError('Original native feedback task expired.')
+                binding.ticket = ticket
+
             def send(self, fields):
                 from .support import SupportError, _THREAD
                 if not binding.live():

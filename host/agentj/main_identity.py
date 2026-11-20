@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 DATA = Path(__file__).with_name("identity")
-VERSION = 29  # 0.30.51: record deferred responsibilities in the same turn.
+VERSION = 30  # Repair within the current permission mode and report product faults to Father.
 # v24 (P571, 0.26.0): delegation rules after pstack + `agentj decide`; gap / Father detail moved to skills
 # v23 (P569): update check before support (#368); system-scheduler default (#369)
 # v22 (P510): verified source rules plus retained friend-report boundary
@@ -25,7 +25,7 @@ VERSION = 29  # 0.30.51: record deferred responsibilities in the same turn.
 # v9 (P113, ADR-A193): long tasks — preflight card, brief, CEO routing, report read-back
 # v8 (P82): owner-authorized customer-service bot management
 # v5 (P64): a workflow with a CEO is always dispatched — never run or edited by the main Agent; read-only reporting stays
-HASHES = {'en': '8e21a4b576f8c798f6d83510f23c32ec0662efe489eff97c5665d3685b8c78e9', 'zh': '6e328ae682546ab5bd139c88e2b7dd5bd814041903ac426cefbcb479f0ce29d4'}
+HASHES = {'en': '29c5110ca77986579bc7fbf90fa4f5ab19bef5faffc95fa1a1c384f9d6136d0f', 'zh': '9148b38840ee71197e91d0689b8e1c6dccae34d145175e86530c75aba46c2807'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system",
               "kimi": "acp.resource", "qwen": "acp.resource", "dsh": "acp.text"}   # P329: dsh takes no embedded resources (acp._block)   # P305: ACP has no system-prompt field — an embedded resource block (acp.prompt_blocks)
 

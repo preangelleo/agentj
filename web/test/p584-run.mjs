@@ -3,7 +3,7 @@
 // Checks (per combo zh/en × light/dark × 390/1440):
 //   1 own settled reply: ```sh blocks get `.term-command.runbtn` in the bar, LEFT of `.copy` (rects); a ```python block gets none;
 //     friend_report / channel (telegram) / quoted / blockquote-inside-reply / streaming pages → no run button, copy still there
-//   2 `agentj --version` → the plain-words `.fixbtn` (the command folded in details.fixcmd) → ONE signed cmd_run {cmd:'version'}
+//   2 `agentj --version` → a labeled toolbar action alongside the visible command and copy control → ONE signed cmd_run {cmd:'version'}
 //     even on a double tap → the black box: output, 「完成 · 退出码 0」 + time
 //   3 `ls -la` on a terminal-usable page (390 = a phone UA + host kind phone; 1440 = a computer) → intro → Face ID → exactly one term_line {bang, run:1, from:<page id>} →
 //     term_confirm card → 取消 → 「没有执行：你选了取消」, no second term_line → 再跑一次 → card → 运行 → signed resend carries
@@ -161,12 +161,12 @@ export async function runP584({ B, web, fake, out = OUT }) {
       const own = await fake.addTurn({ k: 'phone', dev: dev.id, name: '', text: lang === 'zh' ? '怎么看？' : 'How?' }, REPLY(lang), 'done');
       await waitFor(p, `[...document.querySelectorAll('#words .codeblock')].length >= 4`, 8000);
       await sleep(200);
-      const lay = await evaluate(p, `(()=>{const out=[];for(const w of document.querySelectorAll('#words .codeblock')){const code=w.querySelector('code').textContent.replace(/\\n$/,'');const bar=w.querySelector('.bar');const rb=bar.querySelector('.runbtn'),cp=bar.querySelector('.copy');const r=rb&&rb.getBoundingClientRect(),c=cp&&cp.getBoundingClientRect();out.push({code,run:!!rb,text:rb?.textContent||'',aria:rb?.getAttribute('aria-label')||'',copy:!!cp,leftOf:!!(r&&c&&r.right<=c.left+0.5&&Math.abs((r.top+r.height/2)-(c.top+c.height/2))<6),order:rb?[...bar.children].indexOf(rb)<[...bar.children].indexOf(cp):null,h:r?Math.round(r.height):0,gap:r&&c?c.left-r.right:null,inFix:!!w.closest('details.fixcmd')})}return {out,fix:[...document.querySelectorAll('#words .fixbtn')].map(b=>b.getAttribute('aria-label')),over:document.documentElement.scrollWidth>innerWidth+1}})()`);
+      const lay = await evaluate(p, `(()=>{const out=[];for(const w of document.querySelectorAll('#words .codeblock')){const code=w.querySelector('code').textContent.replace(/\\n$/,'');const bar=w.querySelector('.bar');const rb=bar.querySelector('.runbtn'),cp=bar.querySelector('.copy');const r=rb&&rb.getBoundingClientRect(),c=cp&&cp.getBoundingClientRect();out.push({code,run:!!rb,text:rb?.textContent||'',aria:rb?.getAttribute('aria-label')||'',copy:!!cp,leftOf:!!(r&&c&&r.right<=c.left+0.5&&Math.abs((r.top+r.height/2)-(c.top+c.height/2))<6),order:rb?[...bar.children].indexOf(rb)<[...bar.children].indexOf(cp):null,h:r?Math.round(r.height):0,gap:r&&c?c.left-r.right:null,visible:w.querySelector('code').checkVisibility()&&cp.checkVisibility()})}return {out,over:document.documentElement.scrollWidth>innerWidth+1}})()`);
       const byCode = Object.fromEntries(lay.out.map((x) => [x.code, x]));
       check(byCode['ls -la']?.run && byCode['ls -la'].leftOf && byCode['ls -la'].order && byCode['ls -la'].text === '' && !!byCode['ls -la'].aria && byCode['ls -la'].h >= 44 && byCode['ls -la'].gap >= 8, '1 ls -la: run button left of copy, ≥44 px ' + tag + JSON.stringify(byCode['ls -la']));
       check(byCode['sudo pacman -Syu']?.run && byCode['sudo pacman -Syu'].leftOf && byCode['sudo pacman -Syu'].text === '' && byCode['sudo pacman -Syu'].aria.includes(s.inTerm), '4 sudo: 「在终端里打开」 left of copy ' + tag + JSON.stringify(byCode['sudo pacman -Syu']));
       check(byCode['print(1)'] && !byCode['print(1)'].run && byCode['print(1)'].copy, '1 python block: copy only ' + tag);
-      check(byCode['agentj --version']?.inFix && lay.fix.some((t) => t.includes(s.version)), '2 agentj --version: plain-words fixbtn, command folded ' + tag + JSON.stringify(lay.fix));
+      check(byCode['agentj --version']?.visible && byCode['agentj --version'].leftOf && byCode['agentj --version'].aria.includes(s.version), '2 agentj --version: command and copy visible, named action in toolbar ' + tag);
       check(await evaluate(p, `[...document.querySelectorAll('#words .runbtn,#words .fixbtn')].every(b=>b.textContent===''&&b.querySelector('path')?.getAttribute('d')==='m8 5 11 7-11 7Z'&&getComputedStyle(b.querySelector('svg')).fill==='none')`), 'execution icons match Settings and have no visible text ' + tag);
       check(!lay.over, '1 no horizontal overflow ' + tag);
       await mark('ls -la'); await evaluate(p, `document.querySelector('[data-qa]').scrollIntoView({block:'center'})`);
@@ -175,11 +175,12 @@ export async function runP584({ B, web, fake, out = OUT }) {
 
       // ---- 2. agentj --version → one cmd_run on a double tap
       gate();
-      await clickSel('#words .fixbtn', 2);
+      await mark('agentj --version');
+      await clickSel('[data-qa] .runbtn', 2);
       await sleep(300);
-      const midBusy = await evaluate(p, `(()=>{const b=document.querySelector('#words .fixbtn');return {t:b.textContent,dis:b.disabled,box:!!document.querySelector('#words .runbox')}})()`);
+      const midBusy = await evaluate(p, `(()=>{const b=document.querySelector('[data-qa] .runbtn');return {t:b.textContent,dis:b.disabled,box:!!document.querySelector('#words .runbox')}})()`);
       for (let i = 0; i < 40 && !H.cmds.length; i++) await sleep(50);
-      await clickSel('#words .fixbtn', 1);    // a third tap while running
+      await clickSel('[data-qa] .runbtn', 1);    // a third tap while running
       await sleep(200);
       if (w === 390 && theme === 'light') await save('2a-version-running');
       release();

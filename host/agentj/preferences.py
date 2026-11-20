@@ -149,6 +149,15 @@ def validate(doc,raw=''):
         if k=='channels.items':
             for x in effective:
                 if x.get('type') not in ('phone','telegram'): raise ConfigError(k,'supported channels: phone, telegram')
+    zone = get(out, 'heartbeat.memory_tidy_timezone', '')
+    if zone:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        try:
+            ZoneInfo(zone)
+        except (ValueError, ZoneInfoNotFoundError):
+            raise ConfigError('heartbeat.memory_tidy_timezone', 'unknown IANA time zone')
+    if get(out, 'heartbeat.memory_tidy_start') == get(out, 'heartbeat.memory_tidy_end'):
+        raise ConfigError('heartbeat.memory_tidy_end', 'start and end must be different')
     groups = get(out, 'telegram.groups', [])
     ids = set()
     if len(groups) > 20: raise ConfigError('telegram.groups', 'maximum 20 groups')
@@ -244,6 +253,19 @@ def commit_files(st,newraw,candidate,*,signed_key=None):
     """All durable writes precede in-memory activation. Restore both files on any failure."""
     ensure(); old=path().read_bytes(); last=runtime(st)
     oldgood=last.read_bytes() if last.exists() else None
+    try:
+        previous_jev = get(validate(parse(old.decode())), "jev.mode")
+    except (ConfigError, UnicodeError):
+        # An approved repair can replace an invalid file. Preserve trust only if its prior mode is verifiable.
+        previous_jev = None
+        from . import approval_level
+        try:
+            last_mode = get(validate(json.loads(last.read_text())), 'jev.mode')
+            raw_mode = get(decode(old.decode()), 'jev.mode', SCHEMA['jev.mode']['default'])
+            if raw_mode == last_mode == approval_level.signed_value(st, 'jev.mode'):
+                previous_jev = last_mode
+        except (ValueError, OSError, TypeError):
+            pass
     snapshot=history(st,old.decode())  # failure here cannot expose a new candidate
     try:
         save_good(st,candidate)
@@ -257,7 +279,7 @@ def commit_files(st,newraw,candidate,*,signed_key=None):
     for previous in sorted(snapshot.parent.glob("*.json5"))[:-20]:
         try:previous.unlink()
         except OSError:st.log("config_history_cleanup_failed")
-    if signed_key != "jev.mode" and get(validate(parse(old.decode())), "jev.mode") != get(candidate, "jev.mode"):
+    if signed_key != "jev.mode" and previous_jev != get(candidate, "jev.mode"):
         from . import approval_level
         approval_level.drop_signer(st, "jev.mode")
     note_language(st,candidate)

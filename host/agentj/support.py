@@ -333,6 +333,14 @@ def run_send(kind: str, text: str, *, thread: str | None = None, attach_doctor=F
     if metadata_only and not metadata_ok(text, attach_doctor, thread):
         raise SupportError("不是固定格式的升级元数据 / not the fixed upgrade metadata form")
     ch = ch or channel_for()
+    from . import support_incident
+    if kind == "question" and text.startswith(support_incident.PREFIX):
+        if thread or attach_doctor or owner_confirmed or metadata_only:
+            raise SupportError("Product diagnostics accept only a fault and an optional repair code.")
+        def send_incident(body, parent, receipt_channel):
+            return run_send("bug", body, thread=parent, wait=0, lang=lang, ch=receipt_channel,
+                            env=env, transport=transport, identity=identity, out=out, clock=clock)
+        return support_incident.submit(text, ch, send_incident, out)
     attach = (doctor_fn or doctor_text)() if attach_doctor else None
     draft, hits = prepare(text, attach, identity=identity)
     if not draft["body"].strip():
@@ -340,6 +348,12 @@ def run_send(kind: str, text: str, *, thread: str | None = None, attach_doctor=F
     # #475: fixed-vocabulary upgrade metadata needs no Jev judgement (nothing free-form, no attachment); everything else does
     v = (privacy.Verdict("metadata_only", reason="fixed upgrade metadata") if metadata_only else
          privacy.outbound_check(draft, env=env, transport=transport, gate="feedback"))
+    return _send_reviewed(kind, draft, hits, v, ch, out, thread=thread, lang=lang, wait=wait,
+                          attach=attach, owner_confirmed=owner_confirmed, clock=clock)
+
+
+def _send_reviewed(kind, draft, hits, v, ch, out, *, thread=None, lang=None, wait=0,
+                   attach=None, owner_confirmed=False, clock=time.monotonic):
     if v.status == "blocked" and v.kind in ("credential", None):
         print(f"NOT SENT — layer 2 (Jev) flagged it: {v.reason}; most likely {v.kind or '?'} ({privacy.kind_text(v.kind)}). "
               "Remove that and run again. / 没发出：第 2 层判定仍含隐私，请删掉后重发。", file=out)

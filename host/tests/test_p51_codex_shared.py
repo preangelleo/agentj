@@ -135,13 +135,17 @@ class OwnerDefaults(Base):
         a.call.side_effect=call
         self.assertTrue(await a._thread());self.assertEqual(a.original,{})
 
-    async def test_missing_hook_degrades_with_notice(self):
+    async def test_missing_protected_hook_stops_both_resume_and_fallback(self):
         self.rollout(SID)
-        a=self.agent(SID);a.risk_channel=Mock(path=Path('/var/tmp/p51.sock'))
-        await a._thread()
-        self.assertEqual([m for m,_ in self.calls],['hooks/list','thread/resume'])
-        self.assertNotIn('config',self.calls[-1][1])
-        self.assertIn('高危提醒',self.notices())
+        agent = self.agent(SID)
+        agent.risk_channel = Mock(path=Path('/var/tmp/p51.sock'))
+        with self.assertRaisesRegex(RPCError, 'protected control-file PreToolUse hook unavailable'):
+            await agent._thread()
+        methods = [method for method, _ in self.calls]
+        self.assertIn('hooks/list', methods)
+        self.assertNotIn('thread/resume', methods)
+        self.assertNotIn('thread/start', methods)
+        self.assertIn('这条消息没有交给 Codex', self.notices())
 
 
 class DesktopTurn(Base):

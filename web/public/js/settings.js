@@ -201,6 +201,7 @@ PREF_KEYS.push('agent.main_thread_guard','agent.main_thread_work_calls','agent.m
 PREF_KEYS.push('updates.auto_install');                 // P203: half of the 升级方式 (自动 = install when idle) choice
 PREF_KEYS.push(...imsg.PREF_KEYS);       // P274: the iMessage card's parameters (host lists them only on a Mac)
 PREF_KEYS.push('heartbeat.quiet_enabled', 'heartbeat.quiet_start', 'heartbeat.quiet_end');
+PREF_KEYS.push('support.auto_report', 'heartbeat.memory_tidy_enabled', 'heartbeat.memory_tidy_start', 'heartbeat.memory_tidy_end', 'heartbeat.memory_tidy_timezone');
 PREF_KEYS.push('heartbeat.daily_at');   // P207 §3: 「每天固定时间唤醒」 "HH:MM" | "" (host ≥ 0.20.2 lists it in settable)
 PREF_KEYS.push('ui.card_hot_action');   // P285: the reply card's bottom-left hot key (hotkey.js writes it from its own sheet)
 PREF_KEYS.push(toolorder.TOOL_KEY);     // P340: the composer buttons' order (toolsort.js writes it; an older host: this device only)
@@ -508,6 +509,17 @@ export function render() {
   const hbOn = pget('heartbeat.enabled', true) !== false, hbN = Number(pget('heartbeat.interval_minutes', 60)) || 60;
   tgl('set-hb', hbOn);
   renderHb(hbOn, hbN);
+  el('set-fault-row').hidden = !prefSettable('support.auto_report');
+  tgl('set-fault', pget('support.auto_report', true));
+  const tidy = pget('heartbeat.memory_tidy_enabled', true);
+  el('set-tidy-row').hidden = !prefSettable('heartbeat.memory_tidy_enabled');
+  tgl('set-tidy', tidy);
+  el('set-tidy').disabled = !hbOn;
+  for (const [k, fallback] of [['start', '03:00'], ['end', '05:00'], ['timezone', '']]) {
+    const input = el('set-tidy-' + k);
+    input.disabled = !hbOn || !tidy;
+    if (document.activeElement !== input) input.value = pget('heartbeat.memory_tidy_' + k, fallback);
+  }
   el('set-owner-nav').hidden = !contacts.forwardAvailable();   // P194: slot 0 needs a host with the address book
   el('set-contacts-nav').hidden = !contacts.forwardAvailable(); // P207: the address book page, same host support
   el('set-imsg-nav').hidden = !imsg.available();               // P274: only when the computer is a Mac
@@ -843,6 +855,16 @@ export function configure(hooks) {
     const v = el('set-hb-quiet-' + k).value;
     if (HHMM.test(v)) setPref('heartbeat.quiet_' + k, v);
   });
+  for (const [id, key] of [['set-fault', 'support.auto_report'], ['set-tidy', 'heartbeat.memory_tidy_enabled']]) {
+    el(id).addEventListener('click', () => setPref(key, el(id).getAttribute('aria-checked') !== 'true'));
+  }
+  for (const k of ['start', 'end', 'timezone']) {
+    const input = el('set-tidy-' + k);
+    input.addEventListener('change', async () => {
+      if ((k === 'timezone' || HHMM.test(input.value)) && await setPref('heartbeat.memory_tidy_' + k, input.value.trim())) return;
+      input.value = pget('heartbeat.memory_tidy_' + k, {start:'03:00', end:'05:00', timezone:''}[k]);
+    });
+  }
   el('set-hb-time').addEventListener('change', () => { const v = el('set-hb-time').value; if (HHMM.test(v)) setPref('heartbeat.daily_at', v); });
   el('set-hostupg').addEventListener('click', () => { if (H.upgradeHost) H.upgradeHost(); });   // P203: impact → card → /update @ix app.upgrade_host
   for (const b of document.querySelectorAll('[data-set-level]')) b.addEventListener('click', () => { if (b.dataset.setLevel !== curLevel()) approvalSet('approval.level', b.dataset.setLevel); });

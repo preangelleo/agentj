@@ -22,21 +22,17 @@ On `SUPPORT_TASK_PENDING`, leave the original submission with the host. The host
 After success, answer “已提交 + 编号” / “Submitted + ticket ID”. Exit 5 with a thread ID means submitted, reply pending; read it later with `agentj support thread <id>`.
 Never claim submitted if sending failed or privacy checks blocked it; explain briefly and retain only the redacted draft for retry.
 
-## Agent 自发 / Agent-initiated report
+## 掌枢自身故障 / Product faults
 
-If you notice an Agent J problem or have an idea yourself, prepare the redacted draft and ask **on the phone before sending**:
-“我想把今天遇到的 X 汇报给 Agent J Father，稿子如下，确认就发。”
-“I want to report today’s X to Agent J Father. Here is the draft; confirm and I will send.”
-Send only after agreement. For troubleshooting use `agentj support ask "<redacted question>" --attach-doctor`; ask official support first rather than making the owner find a person. A refusal means do not send.
+遇到产品报错、卡死或坏配置，先在现有权限内自救。检查 `agentj doctor --json`、host.log 的相关事件和 `agentj update check`；落后时按现行权限运行 `agentj update apply`。修配置、重启或升级后重做刚失败的操作。需要改本机源码，必须先获主人当场指纹批准；业务审批照常。
 
-## 出故障先查版本 / A malfunction: check the version first
+In every permission mode, report Agent J faults through the existing support channel unless the owner disabled automatic fault reporting. Send unrelated ideas and other unsolicited feedback only after agreement. Never re-enable the owner's setting. A blocked source or privacy check returns an unsent result. Never repurpose a normal free-text report to get around it.
 
-Many problems are already fixed in a newer version. Before asking support or reporting, follow these steps:
-1. Run `agentj update check`. If the host is behind, tell the owner in one sentence and ask (“新版可能已经修好了，要我先升级再试吗？” / “A newer version may already fix this. Shall I upgrade first?”); once the owner agrees, run `agentj update apply`, then repeat the steps that failed. If a restart would interrupt other work, `update apply` puts a confirmation card on the phone: follow agentj-update and do not add `--yes`.
-2. Gone after the upgrade: tell the owner it is fixed. Nothing to report.
-3. Already current, or still there after the upgrade: ask support first with `agentj support ask "<redacted question>" --attach-doctor`.
-4. Still not solved: collect redacted evidence: the Agent J version (`agentj --version`), the failing checks from `agentj doctor --json` (check names and status only), the few relevant host.log lines if you can read them, and the steps to reproduce. Remove everything listed under Redaction below.
-5. Ask on the phone with the draft: “这个问题升级后还在，我想把证据汇报给 Agent J Father，稿子如下，确认就发。” / “This still happens after the upgrade. I want to report it to Agent J Father; here is the draft, confirm and I will send.” When the owner agrees, send at once: `agentj support feedback --kind bug --file <private local draft> --attach-doctor --wait 0`, then answer “已提交 + 编号” / “Submitted + ticket ID”.
+1. Initial report: `agentj support ask "product-fault config invalid-config at:heartbeat.interval_minutes" --wait 0`. Choose one component from `config service relay update agent other` and one symptom from `invalid-config unavailable timeout stalled unexpected-result startup-failed`. The optional `at:` identifies a public Agent J setting from `agentj config keys`, or a known product filename (`config.json5 browser.py service.py serve.py update.py`). Omit the target when unknown.
+2. After verifying recovery: repeat the same command with one repair code appended **inside the quoted argument**: `config-default config-restore service-restart update-install source-patch reconnect`. For example, `agentj support ask "product-fault config invalid-config at:heartbeat.interval_minutes config-default" --wait 0`. For an approved source patch add a known product file, cause and change (e.g. `at:serve.py source-patch cause:stale-state change:reset-state`). Causes: invalid-value, stale-state, missing-check, timeout, version-mismatch, unsupported-format. Changes: restore-default, reset-state, validate-input, retry-transient-error, adjust-timeout, update-format. Use verified facts only. The host appends the repair and changed setting/file to the original ticket. Do not mark an unverified repair successful.
+3. 无论是否修好都给主人工单号。每种故障、公开组件 24 小时只建一单，修好追加一次。议题正文由主机从固定项目、版本、系统和相关日志事件生成，不加自由文本、文件、路径、凭据、个人或客户数据。发送结果不明时先核对已有工单。An unsuccessful send has no confirmed ticket ID.
+
+心跳间隔故障由主机自己核验并上报。受限 Agent 看不到主机私有设置时，引导主人在已配对手机的设置把间隔恢复到 60 分钟。手机显示原工单号及核验后的修复回执。For an invalid heartbeat interval the host verifies the setting and reports directly. When private settings are isolated, ask the owner to save 60 minutes on the paired phone. Use its confirmed ticket number.
 
 ## 脱敏与边界 / Redaction and boundaries
 
@@ -47,7 +43,7 @@ If the channel is unreachable, the fallback is feedback@agentj.app; help draft a
 
 ## 给主人的大白话 / Read this explanation to the owner
 
-“这个命令就是帮你把问题或点子告诉 Agent J 的开发者，也叫客服平台。你可以说‘请把问题汇报给 Agent J 开发者’，也可以开玩笑说‘把这事告诉你爸爸’。命令后面写上内容，我会先去掉私人信息，直接提交，再把编号告诉你。只发命令，我会先问你想说什么。如果是我自己想到要反馈，我会先把稿子给你看，你同意才发。”
+“这个命令就是帮你把问题或点子告诉 Agent J 的开发者，也叫客服平台。你可以说‘请把问题汇报给 Agent J 开发者’，也可以开玩笑说‘把这事告诉你爸爸’。命令后面写上内容，我会先去掉私人信息，直接提交，再把编号告诉你。只发命令，我会先问你想说什么。掌枢自身故障默认自动上报；其他想法仍先问你。”
 
 “This command tells Agent J’s developers, our support platform, about a problem or an idea. You can say ‘Please report this to Agent J’s developers’, or jokingly ‘Tell your dad about this’. Add your message after the command: I remove private information, send it and give you the ticket ID. With no message, I ask what you want to report. If reporting is my own idea, I show you the draft and wait for your agreement.”
 

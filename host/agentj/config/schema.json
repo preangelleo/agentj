@@ -1579,6 +1579,81 @@
    "since": "0.20.2",
    "patternHint": "HH:MM (24-hour, local time) or empty"
   },
+  "support.auto_report": {
+   "type": "boolean",
+   "default": true,
+   "tier": "user",
+   "description": "Automatically send redacted Agent J fault reports / 自动向客服上报 Agent J 故障",
+   "aliases": [
+    "report-agent-j-faults",
+    "Agent J 故障"
+   ],
+   "needs": [],
+   "apply": "hot",
+   "verify": "agentj config get support.auto_report",
+   "since": "0.30.52"
+  },
+  "heartbeat.memory_tidy_enabled": {
+   "type": "boolean",
+   "default": true,
+   "tier": "user",
+   "description": "Organize memory during an idle night / 夜间空闲时整理记忆",
+   "aliases": [
+    "nightly-memory-tidy",
+    "夜间记忆整理"
+   ],
+   "needs": [],
+   "apply": "hot",
+   "verify": "agentj config get heartbeat.memory_tidy_enabled",
+   "since": "0.30.52"
+  },
+  "heartbeat.memory_tidy_start": {
+   "type": "string",
+   "default": "03:00",
+   "tier": "user",
+   "description": "Nightly memory window starts / 夜间记忆整理开始",
+   "aliases": [
+    "memory-tidy-start",
+    "夜间整理开始"
+   ],
+   "needs": [],
+   "apply": "hot",
+   "verify": "agentj config get heartbeat.memory_tidy_start",
+   "since": "0.30.52",
+   "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+   "maxLength": 5
+  },
+  "heartbeat.memory_tidy_end": {
+   "type": "string",
+   "default": "05:00",
+   "tier": "user",
+   "description": "Nightly memory window ends / 夜间记忆整理结束",
+   "aliases": [
+    "memory-tidy-end",
+    "夜间整理结束"
+   ],
+   "needs": [],
+   "apply": "hot",
+   "verify": "agentj config get heartbeat.memory_tidy_end",
+   "since": "0.30.52",
+   "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+   "maxLength": 5
+  },
+  "heartbeat.memory_tidy_timezone": {
+   "type": "string",
+   "default": "",
+   "tier": "user",
+   "description": "IANA time zone for nightly memory; empty uses host time / 夜间整理使用的时区，留空随主机",
+   "aliases": [
+    "memory-tidy-timezone",
+    "夜间整理时区"
+   ],
+   "needs": [],
+   "apply": "hot",
+   "verify": "agentj config get heartbeat.memory_tidy_timezone",
+   "since": "0.30.52",
+   "maxLength": 64
+  },
   "heartbeat.quiet_start": {
    "type": "string",
    "default": "23:00",

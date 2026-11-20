@@ -511,7 +511,7 @@ class Heartbeat:
             self.host.st.log("heartbeat_forget", why=why[:20])
 
     # ---- the decision
-    def wait_reason(self, now: float | None = None) -> str | None:
+    def wait_reason(self, now: float | None = None, *, include_night=True) -> str | None:
         """None = a beat may go now (apart from the interval)."""
         h = self.host
         a = getattr(h, "agent", None)
@@ -559,7 +559,7 @@ class Heartbeat:
         with contextlib.suppress(Exception):
             if not h.st.devices():
                 return "no_phone"
-        if _night(now or time.time(), auto):
+        if include_night and _night(now or time.time(), auto):
             return "night_update"
         return None
 
@@ -581,10 +581,12 @@ class Heartbeat:
         if not on:
             return None
         now = time.time() if now is None else now
+        from . import memory_nightly
+        await asyncio.to_thread(memory_nightly.observe, self.host, now, idle=False)
         daily = self.daily_is_due(now)                 # P207: the once-a-day beat at heartbeat.daily_at
         if now < self.next_due() and not daily:
             return None
-        why = self.wait_reason(now)
+        why = self.wait_reason(now, include_night=False)
         if why:
             if why != self.last_wait:
                 self.last_wait = why
@@ -602,6 +604,11 @@ class Heartbeat:
         from . import heartbeat_todo
         plan = await asyncio.to_thread(heartbeat_todo.offer, self.host.st.root, now)
         why = self.wait_reason(now)
+        if why in (None, 'night_update') and not (plan['ready'] or plan['review'] or plan['active']):
+            receipt = await asyncio.to_thread(memory_nightly.observe, self.host, now, idle=True)
+            if receipt is not None:
+                self.last_activity = now
+                return receipt
         if why:
             return {"ok": False, "why": why}
         from .heartbeat_check import collect, quiet
@@ -707,6 +714,9 @@ class Heartbeat:
         body = message(lang, text, digest, full, idle_min)
         if by in ("timer", "daily") and self.daily_is_due(now):
             body += "\n" + DAILY_REVIEW[lang]
+            from .memory_nightly import morning_line
+            if summary := morning_line(h.st, lang, now):
+                body += "\n" + summary
             from .heartbeat_todo import MISSED_LIMIT
             misses = self._load().get('todo_misses', 0)
             if misses >= MISSED_LIMIT:

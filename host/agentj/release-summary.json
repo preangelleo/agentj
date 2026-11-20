@@ -1,5 +1,5 @@
 {
-  "version": "0.30.51",
-  "zh": "延后交代的事会当轮记入待办。前置完成后，空闲心跳会接手一项，核对结果后标记完成。手机领取的导入配置保留原文件内容。",
-  "en": "Deferred work goes on your to-do card. An idle heartbeat starts one ready task and verifies the result. Downloaded configuration files keep their exact bytes."
+  "version": "0.30.52",
+  "zh": "手机上的单行命令现在可以直接看见和复制。主机能在夜间空闲时整理记忆，归档可恢复。你可以在设置里调整时段、时区和 Agent J 故障上报。",
+  "en": "Read and copy commands on your phone. Set when your host tidies memories overnight, restore archived entries, and choose whether Agent J reports faults."
 }

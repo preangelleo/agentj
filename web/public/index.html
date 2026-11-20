@@ -984,6 +984,11 @@
               <label class="sethb-f"><span data-i18n="p579.calls">连续工作次数（2–1000）</span><input id="set-main-thread-calls" class="aj-input" type="number" inputmode="numeric" min="2" max="1000" step="1" data-aj-owner="aj-settings"></label>
               <label class="sethb-f"><span data-i18n="p579.seconds">连续工作秒数（30–3600）</span><input id="set-main-thread-seconds" class="aj-input" type="number" inputmode="numeric" min="30" max="3600" step="1" data-aj-owner="aj-settings"></label>
             </div>
+            <div class="setrow" id="set-fault-row" hidden>
+              <span class="setlab" id="set-fault-label" data-i18n="fault.auto">自动向客服上报 Agent J 故障</span>
+              <button type="button" id="set-fault" class="tgl" role="switch" aria-checked="true" aria-labelledby="set-fault-label" data-pref="support.auto_report" data-aj-owner="aj-settings-control"><i></i></button>
+              <p class="setnote" data-i18n="fault.note">发送脱敏诊断和修复结果。</p>
+            </div>
             <div class="setrow" id="set-hb-row">
               <span class="setlab" data-i18n="set.heartbeat">心跳</span>
               <button type="button" id="set-hb" class="tgl" role="switch" aria-checked="false" data-pref="heartbeat.enabled" data-aj-owner="aj-settings-control"><i></i></button>
@@ -996,6 +1001,12 @@
                   <button type="button" id="set-hb-daily" class="tgl" role="switch" aria-checked="false" data-i18n-attr="aria-label=p207set.hb.daily" aria-label="每天固定时间唤醒" data-aj-owner="aj-settings-control"><i></i></button>
                   <input id="set-hb-time" class="aj-input" type="time" step="300" value="08:00" hidden data-i18n-attr="aria-label=p207set.hb.time" aria-label="每天几点" data-aj-owner="aj-settings">
                 </div>
+              </div>
+              <div class="sethb" id="set-tidy-row" hidden>
+                <div class="sethb-daily"><span class="setlab2" id="set-tidy-label" data-i18n="memory.nightly">夜间空闲时整理记忆</span><button type="button" id="set-tidy" class="tgl" role="switch" aria-checked="true" aria-labelledby="set-tidy-label" data-pref="heartbeat.memory_tidy_enabled" data-aj-owner="aj-settings-control"><i></i></button></div>
+                <label class="sethb-f"><span data-i18n="p589.start">开始</span><input id="set-tidy-start" class="aj-input" type="time" value="03:00" data-aj-owner="aj-settings"></label>
+                <label class="sethb-f"><span data-i18n="p589.end">结束</span><input id="set-tidy-end" class="aj-input" type="time" value="05:00" data-aj-owner="aj-settings"></label>
+                <label class="sethb-f"><span data-i18n="memory.zone">时区（留空随主机）</span><input id="set-tidy-timezone" class="aj-input" type="text" maxlength="64" data-i18n-attr="placeholder=memory.hostZone" placeholder="跟随主机" data-aj-owner="aj-settings"></label>
               </div>
               <div class="sethb" id="set-hb-quiet" hidden>
                 <div class="sethb-daily"><span class="setlab2" data-i18n="p589.quiet">夜间安静时段</span><button type="button" id="set-hb-quiet-enabled" class="tgl" role="switch" aria-checked="true" data-i18n-attr="aria-label=p589.quiet" aria-label="夜间安静时段" data-aj-owner="aj-settings-control"><i></i></button></div>

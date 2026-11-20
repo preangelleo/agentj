@@ -197,6 +197,7 @@ CARDS_HAVE_MAX = 256       # P203 (§29.1): ids a cards_get may list as already 
 CARDS_OPEN_MAX = 256       # … and the open ids one `cards` answer carries
 UPG_TTL = 600              # P203 (§29.2): the upgrade confirmation card waits ten minutes
 PREF_SET_KEYS += ("heartbeat.quiet_enabled", "heartbeat.quiet_start", "heartbeat.quiet_end", "heartbeat.context_max_tokens")
+PREF_SET_KEYS += ("support.auto_report", "heartbeat.memory_tidy_enabled", "heartbeat.memory_tidy_start", "heartbeat.memory_tidy_end", "heartbeat.memory_tidy_timezone")
 PREF_SET_KEYS += ("heartbeat.daily_at",)         # P207: the phone's "wake every day at HH:MM" ("" = off; schema pattern)
 PREF_SET_KEYS += ("ui.card_hot_action",)         # P285: the reply card's bottom-left hot key (command / skill name; schema pattern)
 PREF_SET_KEYS += ("ui.remote_servers",)     # #444: display-only machine aliases
@@ -3989,8 +3990,14 @@ class Host:
                 return res
             try:
                 preferences.ensure()
-                raw, _ = preferences.read()
-                newraw = preferences.edit(raw, key, value)
+                try:
+                    raw, _ = preferences.read()
+                    newraw = preferences.edit(raw, key, value)
+                except preferences.ConfigError:
+                    from . import support_config_fault
+                    newraw = support_config_fault.repair_default(self, key, value)
+                    if newraw is None:
+                        raise
             except (preferences.ConfigError, OSError, ValueError, AssertionError, IndexError, KeyError):
                 res = {"ok": False, "key": key, "error": "configuration unreadable"}
                 if ack:
@@ -4073,7 +4080,7 @@ class Host:
             return await res(False, "bad_value")
         if key == 'voice.asr.key_env' and value:
             return await res(False, 'not_allowed')  # Secret references never travel through unsigned phone prefs.
-        if preferences.get(self.preferences, key) == value:
+        if preferences.get(self.preferences, key) == value and (self.config_problem or {}).get("key") != key:
             return await res(True)
 
         async def ack(result: dict) -> None:
@@ -4144,6 +4151,15 @@ class Host:
                         self.config_stamp=None
                     finally:
                         os.close(fd)
+                    if self.config_stamp == stamp:
+                        from . import support_config_fault
+                        phase = await asyncio.to_thread(support_config_fault.observed, self)
+                        if phase:
+                            ticket = await asyncio.to_thread(support_config_fault.deliver, self, phase)
+                            if ticket:
+                                self.hist_add({'k': 'host', 'text': ''},
+                                              (f'Agent J 配置故障工单 {ticket}。' if self.lang != 'en' else
+                                               f'Agent J configuration incident: ticket {ticket}.'), 'done')
             except FileNotFoundError:
                 pass
             except OSError:

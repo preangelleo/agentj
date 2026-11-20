@@ -3,7 +3,7 @@
 // #584 (董事长 11-07 17:15 「在这个拷贝按钮的左边再放一个执行按钮……是不是需要扫码取决于这个 Command 本身安全性」): the same
 // gate now offers 「执行」 left of the code block's copy button. One tap = the owner asks; nothing new decides anything:
 //   named  the text IS a whitelisted `agentj …` command (cmdrun.js) → the signed cmd_run by NAME (phone too), result here;
-//          the common repairs get a plain-words button (「修复连接」…) with the command folded beside it
+//          the common repairs get a plain-words button (「修复连接」…) next to the code and its copy action
 //   term   this remote may use the web terminal (a phone too: #468/#375) → the 「!」 line path with `run` (terminal.js): the host: read-only →
 //          runs, or the signed confirm / Face ID card; the result comes back to this block, never a chat turn
 //   open   sudo / a password / a full-screen program → 「在终端里打开」: the terminal opens with the line filled in, never sent
@@ -70,7 +70,6 @@ const secs = (ms) => (Number.isInteger(ms) ? (ms < 10000 ? (ms / 1000).toFixed(1
 
 export function paint(root, page) {
   for (const n of root.querySelectorAll('.term-command,.runbox,.fixbtn')) n.remove();
-  for (const d of root.querySelectorAll('details.fixcmd')) d.replaceWith(...[...d.childNodes].filter((n) => n.tagName !== 'SUMMARY'));
   shown = { root, page };
   if (hostPage(page)) return fixBar(root, page);
   if (!ownReply(page)) return;
@@ -85,29 +84,18 @@ export function paint(root, page) {
     const route = routeOf(cmd, probes), r = runs.get(key), online = isReady(), busy = r && r.st === 'run';
     const name = route === 'named' ? named(cmd) : null;
     const label = !online ? t('p584.offlineShort') : busy ? t('p584.running')
+      : name && HUMAN[name] ? t(HUMAN[name])
       : route === 'open' ? t('p584.inTerm') : route === 'agent' ? t('p584.askAgent', { agent: H.agent() }) : t('p584.run');
     const aria = route === 'open' ? t('p584.inTerm') : route === 'agent' ? t('p584.askAgentAria', { agent: H.agent() }) : t('p584.runOn');
     const tap = () => go(key, cmd, route, name, page);
-    if (name && HUMAN[name]) {
-      // a repair the owner should not need to read: the big button, the command folded beside it (still copyable)
-      const big = mkBtn('fixbtn', busy ? t('p584.running') : t(HUMAN[name]), 'run');
-      big.setAttribute('aria-label', t(HUMAN[name]) + ' · ' + aria);
-      big.title = t(HUMAN[name]) + ' · ' + (online ? 'agentj ' + cmd.replace(/^agentj\s+/, '') : t('p584.offline'));
-      state(big, online, busy);
-      big.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (!online) return toast(t('p584.offline'), 4000); tap(); });
-      const d = document.createElement('details'); d.className = 'fixcmd';
-      const s = document.createElement('summary'); s.setAttribute('data-aj-owner', 'aj-terminal'); s.textContent = t('p584.showCmd');
-      wrap.before(big, d); d.append(s, wrap);
-    } else {
-      const b = mkBtn('term-command runbtn', label, 'run');
-      b.classList.toggle('term-command--danger', dangerous(cmd));
-      b.setAttribute('aria-label', label === t('p584.run') ? aria : label + ' · ' + aria);
-      b.title = !online ? t('p584.offline') : route === 'open' ? t('p584.inTermHint') : route === 'agent' ? t('p584.askAgentHint') : aria;
-      state(b, online, busy);
-      b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (!online) return toast(t('p584.offline'), 4000); tap(); });
-      bar.insertBefore(b, bar.querySelector('.copy'));
-    }
-    if (r) (wrap.closest('details.fixcmd') || wrap).after(box(key, r, cmd, route, name, page));
+    const b = mkBtn('term-command runbtn', label, 'run');
+    b.classList.toggle('term-command--danger', dangerous(cmd));
+    b.setAttribute('aria-label', label === t('p584.run') ? aria : label + ' · ' + aria);
+    b.title = !online ? t('p584.offline') : route === 'open' ? t('p584.inTermHint') : route === 'agent' ? t('p584.askAgentHint') : aria;
+    state(b, online, busy);
+    b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (!online) return toast(t('p584.offline'), 4000); tap(); });
+    bar.insertBefore(b, bar.querySelector('.copy'));
+    if (r) wrap.after(box(key, r, cmd, route, name, page));
   });
 }
 /** #584 ⑧: a host-written page (/update's result, a disconnect or upgrade notice: k sys / cmd) that tells the owner to run a

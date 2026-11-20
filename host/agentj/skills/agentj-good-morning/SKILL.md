@@ -26,6 +26,7 @@ Only you (the main Agent) speak; there is no button for this. Reply in the owner
    failed first; what is not run. Everything ready: 「截至现在，配置过的账号都确认登录着。今天可以放心交给我；状态有变化，
    你下次找我时我会提醒。」 / "As of now your configured accounts are confirmed signed in. You can hand today over to me; if that
    changes I will flag it next time you talk to me." Never promise they stay signed in all day.
+   夜间记忆：读 `agentj memory tidy --last --json`。有新结果时，用一行报日期、合并/归档/冲突数或错过窗口；不展开记忆原文。 Read the latest nightly result and report its date and counts, or the skipped window, in one line.
    To-dos: `agentj card todo due --json` — yours that are due go in the brief and get done (mark them done yourself);
    `agentj card todo list --owner owner --json` — remind the owner of theirs that are overdue or due today.
 5. **Quota (one line, only when it matters).** `agentj quota --remind --json`: its `due` list holds today's not-yet-given

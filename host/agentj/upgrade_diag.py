@@ -658,6 +658,9 @@ def recover_late(st, service_row) -> dict | None:
 
 # ------------------------------------------------------------------ automatic support report
 def enabled(st) -> bool:
+    from . import support_incident
+    if not support_incident.enabled(st):
+        return False
     if (os.environ.get(REPORT_ENV) or "").lower() == "off":
         return False
     try:

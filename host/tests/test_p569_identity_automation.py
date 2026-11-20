@@ -20,32 +20,25 @@ def core(lang):
     return (main_identity.DATA / f"core.{lang}.md").read_text()
 
 
-class IdentityV23(unittest.TestCase):   # 0.30.0: core v29; the v23 rules below must survive it
+class IdentityV23(unittest.TestCase):   # 0.30.0: core v30; the v23 rules below must survive it
     def test_manifest_version_and_hashes(self):
         man = json.loads((main_identity.DATA / "manifest.json").read_text())
-        self.assertEqual(man["version"], 29)
-        self.assertEqual(main_identity.VERSION, 29)
-        self.assertEqual(main_identity.verify_core()["version"], 29)
+        self.assertEqual(man["version"], 30)
+        self.assertEqual(main_identity.VERSION, 30)
+        self.assertEqual(main_identity.verify_core()["version"], 30)
         for lang in ("zh", "en"):
             digest = hashlib.sha256((main_identity.DATA / f"core.{lang}.md").read_bytes()).hexdigest()
             self.assertEqual(man["hashes"][lang], digest)
             self.assertEqual(main_identity.HASHES[lang], digest)
-            self.assertTrue(core(lang).splitlines()[0].endswith("v29"))
+            self.assertTrue(core(lang).splitlines()[0].endswith("v30"))
 
-    def test_update_check_comes_before_support_and_father(self):
-        for lang, persist in (("zh", "仍在"), ("en", "If it persists")):
-            text = core(lang)
-            for cmd in ("agentj update check", "agentj update apply", "agentj support ask", "--attach-doctor", "host.log"):
-                self.assertIn(cmd, text)
-            self.assertLess(text.index("agentj update check"), text.index("agentj update apply"))
-            self.assertLess(text.index("agentj update apply"), text.index(persist))
-            self.assertLess(text.index(persist), text.index("agentj support ask"))
-        # 0.30.7 self-help (a7bedaf6ba) compressed the zh line to the English wording to stay inside the identity hook
-        # budget (test_p376: 9699 of 9700 chars): "if behind, apply within the permission mode" — no separate tell-owner step.
-        self.assertIn("落后按权限档 `agentj update apply`", core("zh"))
-        self.assertIn("全放行档脱敏提交", core("zh"))
-        self.assertIn("run `agentj update apply` within the current permission mode", core("en"))
-        self.assertIn("full-access mode redacts and submits automatically", core("en"))
+    def test_self_repair_and_reporting_in_every_mode(self):
+        for lang, policy in (("zh", "所有档"), ("en", "every mode")):
+            body = core(lang)
+            for cmd in ("agentj update check", "agentj update apply", "agentj support ask", "host.log", policy):
+                self.assertIn(cmd, body)
+            self.assertLess(body.index("agentj update check"), body.index("agentj update apply"))
+            self.assertLess(body.index("agentj update apply"), body.index("agentj support ask"))
 
     def test_scheduler_default_is_in_the_core(self):
         zh, en = core("zh"), core("en")
@@ -63,15 +56,10 @@ class IdentityV23(unittest.TestCase):   # 0.30.0: core v29; the v23 rules below 
 
 
 class FeedbackSkill(unittest.TestCase):
-    def test_version_first_then_evidence_then_ask(self):
-        full = (SKILLS / "feedback-to-agentj-father" / "SKILL.md").read_text()
-        text = full[full.index("## 出故障先查版本 / A malfunction: check the version first"):]
-        steps = ("agentj update check", "agentj update apply", "agentj support ask", "agentj doctor --json",
-                 "agentj support feedback --kind bug")
-        idx = [text.index(s) for s in steps]
-        self.assertEqual(idx, sorted(idx))
-        for needle in ("agentj --version", "host.log", "--attach-doctor", "这个问题升级后还在", "This still happens after the upgrade",
-                       "新版可能已经修好了"):
+    def test_product_faults_use_the_bounded_support_path(self):
+        text = (SKILLS / "feedback-to-agentj-father" / "SKILL.md").read_text()
+        for needle in ("agentj update check", "agentj update apply", "agentj doctor --json", "host.log",
+                       "product-fault config invalid-config", "config-default", "24 小时", "--wait 0", "--attach-doctor"):
             self.assertIn(needle, text)
 
 

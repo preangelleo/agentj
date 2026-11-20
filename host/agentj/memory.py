@@ -23,6 +23,7 @@ phone's 「撤销」 puts it back. Never follows a symlink (any component below 
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -145,38 +146,74 @@ def _no_link(base: str, rel: str, missing_ok: bool = False) -> str:
     return cur
 
 
-def read_file(path: str) -> bytes:
+def check_data_path(path):
+    """Use the current host credential inventory and its symlink/hardlink identity check, before data access."""
+    from types import SimpleNamespace
+    from . import preferences, uv_list
     try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        _, prefs = preferences.read()
+        protected = uv_list.credential_reads("Read", {"file_path": os.fspath(path)},
+                                             host=SimpleNamespace(preferences=prefs))
+    except Exception:
+        raise MemoryError_("credential_inventory_unavailable") from None
+    if protected:
+        raise MemoryError_("credential_path")
+
+
+def _check_read_fd(path, fd, before, *, private=False):
+    opened = os.fstat(fd)
+    if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
+        raise MemoryError_("io")
+    if private and (opened.st_uid != os.geteuid() or stat.S_IMODE(opened.st_mode) != 0o600):
+        raise MemoryError_("unsafe_archive")
+    if not os.path.samestat(before, opened):
+        raise MemoryError_("changed")
+    # The two supported systems expose the open descriptor here. The inventory
+    # compares its device/inode as well as the logical source pathname.
+    check_data_path(f"/dev/fd/{fd}")
+    check_data_path(path)
+    try:
+        current = os.stat(path, follow_symlinks=False)
+    except OSError:
+        raise MemoryError_("changed") from None
+    if not os.path.samestat(opened, current):
+        raise MemoryError_("changed")
+    return opened
+
+
+def read_file(path: str, *, limit: int = MAX_FILE, private: bool = False) -> bytes:
+    check_data_path(path)
+    try:
+        before = os.stat(path, follow_symlinks=False)
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError:
         raise MemoryError_("not_found") from None
     except OSError as e:
         raise MemoryError_("symlink" if getattr(e, "errno", 0) in (40, 62) else "io") from None
     try:
-        s = os.fstat(fd)
-        if not stat.S_ISREG(s.st_mode):
-            raise MemoryError_("io")
-        if s.st_size > MAX_FILE:
+        s = _check_read_fd(path, fd, before, private=private)
+        if s.st_size > limit:
             raise MemoryError_("too_large")
         data = b""
-        while len(data) <= MAX_FILE:
-            chunk = os.read(fd, 65536)
+        while len(data) <= limit:
+            chunk = os.read(fd, min(65536, limit + 1 - len(data)))
             if not chunk:
                 break
             data += chunk
-        if len(data) > MAX_FILE:
+        if len(data) > limit:
             raise MemoryError_("too_large")
         return data
     finally:
         os.close(fd)
 
 
-def _write_atomic(path: str, data: bytes, expect_sha: str | None) -> None:
+def _write_atomic(path: str, data: bytes, expect_sha: str | None, *, create_mode=0o644) -> None:
     """Replace path with data, but only if it still has expect_sha (re-read right before the rename)."""
+    check_data_path(path)
     try:
         mode = stat.S_IMODE(os.lstat(path).st_mode)
     except FileNotFoundError:
-        mode = 0o644
+        mode = create_mode
     tmp = os.path.join(os.path.dirname(path), f".{os.path.basename(path)}.aj-{secrets.token_hex(4)}.tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
     try:
@@ -188,7 +225,12 @@ def _write_atomic(path: str, data: bytes, expect_sha: str | None) -> None:
     try:
         if expect_sha is not None and sha(read_file(path)) != expect_sha:
             raise MemoryError_("changed")
-        os.replace(tmp, path)
+        check_data_path(path)
+        if expect_sha is None:
+            os.link(tmp, path, follow_symlinks=False)
+            os.unlink(tmp)
+        else:
+            os.replace(tmp, path)
         diskq.settle(path)
     except BaseException:
         try:
@@ -367,47 +409,107 @@ def _trash_dir(st):
     return st.root / "memory_trash"
 
 
+@contextmanager
+def _archive_dir(st, create=False):
+    check_data_path(_trash_dir(st))
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    try:
+        parent = os.open(st.root, flags)
+        try:
+            owner = os.fstat(parent)
+            if owner.st_uid != os.geteuid() or owner.st_mode & 0o022:
+                raise MemoryError_("unsafe_archive")
+            if create:
+                try:
+                    os.mkdir("memory_trash", 0o700, dir_fd=parent)
+                except FileExistsError:
+                    pass
+            fd = os.open("memory_trash", flags, dir_fd=parent)
+        finally:
+            os.close(parent)
+    except FileNotFoundError:
+        raise MemoryError_("not_found") from None
+    except OSError:
+        raise MemoryError_("unsafe_archive") from None
+    try:
+        directory = os.fstat(fd)
+        if directory.st_uid != os.geteuid() or stat.S_IMODE(directory.st_mode) != 0o700:
+            raise MemoryError_("unsafe_archive")
+        yield fd
+    finally:
+        os.close(fd)
+
+
+def _archive_read(st, directory, name):
+    if not re.fullmatch(r"[0-9a-f]{16}\.json", name):
+        raise MemoryError_("not_found")
+    path = _trash_dir(st) / name
+    check_data_path(path)
+    before = os.stat(name, dir_fd=directory, follow_symlinks=False)
+    fd = os.open(name, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW, dir_fd=directory)
+    with os.fdopen(fd, "rb") as stream:
+        opened = _check_read_fd(path, stream.fileno(), before, private=True)
+        if opened.st_size > MAX_TOTAL * 4:
+            raise MemoryError_("too_large")
+        record = json.loads(stream.read(MAX_TOTAL * 4 + 1))
+    if not isinstance(record, dict) or record.get("id") != name[:-5] or not isinstance(record.get("path"), str):
+        raise MemoryError_("unknown_item")
+    check_data_path(record["path"])
+    return record, opened
+
+
+def _forget(directory, name, identity):
+    if os.path.samestat(identity, os.stat(name, dir_fd=directory, follow_symlinks=False)):
+        os.unlink(name, dir_fd=directory)
+
+
 def _put_trash(st, rec: dict) -> str:
-    d = _trash_dir(st)
-    d.mkdir(mode=0o700, exist_ok=True)
-    os.chmod(d, 0o700)
+    check_data_path(rec["path"])
+    if rec.get("index"):
+        check_data_path(os.path.join(os.path.dirname(rec["path"]), "MEMORY.md"))
     tid = secrets.token_hex(8)
-    rec = {"v": 1, "id": tid, "ts": int(time.time()), **rec}
-    st.write_private(d / f"{tid}.json", json.dumps(rec, ensure_ascii=False).encode())
+    record = {"v": 1, "id": tid, "ts": int(time.time()), **rec}
+    with _archive_dir(st, create=True) as directory:
+        temp = "." + secrets.token_hex(16)
+        fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(json.dumps(record, ensure_ascii=False).encode())
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.link(temp, tid + ".json", src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
+        finally:
+            os.unlink(temp, dir_fd=directory)
+        os.fsync(directory)
     return tid
 
 
+def _archive_list(st, now):
+    out = []
+    removed = 0
+    try:
+        with _archive_dir(st) as directory:
+            for name in os.listdir(directory):
+                try:
+                    r, identity = _archive_read(st, directory, name)
+                    if now is not None and not r.get("retained") and r.get("kind") != "tidy" and now - r["ts"] > TRASH_DAYS * 86400:
+                        _forget(directory, name, identity)
+                        removed += 1
+                    else:
+                        out.append(r)
+                except (OSError, ValueError, KeyError, TypeError, MemoryError_):
+                    continue
+    except MemoryError_:
+        pass
+    return sorted(out, key=lambda r: r.get("ts", 0), reverse=True), removed
+
+
 def purge_trash(st, now: float | None = None) -> int:
-    now = time.time() if now is None else now
-    n = 0
-    for r in trash(st, purge=False):
-        if now - r.get("ts", 0) > TRASH_DAYS * 86400:
-            try:
-                os.unlink(_trash_dir(st) / f"{r['id']}.json")
-                n += 1
-            except OSError:
-                pass
-    return n
+    return _archive_list(st, time.time() if now is None else now)[1]
 
 
 def trash(st, purge: bool = True) -> list[dict]:
-    if purge:
-        purge_trash(st)
-    out = []
-    try:
-        names = os.listdir(_trash_dir(st))
-    except OSError:
-        return out
-    for name in names:
-        if not re.fullmatch(r"[0-9a-f]{16}\.json", name):
-            continue
-        try:
-            r = json.loads((_trash_dir(st) / name).read_text())
-        except (OSError, ValueError):
-            continue
-        if isinstance(r, dict):
-            out.append(r)
-    return sorted(out, key=lambda r: r.get("ts", 0), reverse=True)
+    return _archive_list(st, time.time() if purge else None)[0]
 
 
 def preview(r: dict, n: int = 80) -> str:
@@ -416,7 +518,7 @@ def preview(r: dict, n: int = 80) -> str:
 
 
 # ------------------------------------------------------------------ remove / restore
-def remove(st, kind: str, workdir: str, src: str, file: str, fsha: str, iid: str) -> dict:
+def remove(st, kind: str, workdir: str, src: str, file: str, fsha: str, iid: str, *, retain: bool = False) -> dict:
     """Remove one item if the file still has `fsha`. Returns the trash record (with `id`). Raises MemoryError_."""
     s, path = _resolve(kind, workdir, src, file)
     data = read_file(path)
@@ -434,6 +536,10 @@ def remove(st, kind: str, workdir: str, src: str, file: str, fsha: str, iid: str
         idx_new = None
         try:
             idx = read_file(idx_path).decode("utf-8")
+            if retain:
+                from .privacy import owner_text
+                if owner_text(idx, mask_access_codes=True) != idx:
+                    raise MemoryError_("sensitive_index")
             lines = idx.split("\n")
             keep = []
             for i, ln in enumerate(lines):
@@ -443,13 +549,18 @@ def remove(st, kind: str, workdir: str, src: str, file: str, fsha: str, iid: str
                     keep.append(ln)
             if idx_lines:
                 idx_new = ("\n".join(keep), sha(idx.encode()))
-        except (MemoryError_, UnicodeDecodeError):
-            pass
+        except MemoryError_ as e:
+            if retain and e.reason != "not_found":
+                raise
+        except UnicodeDecodeError:
+            if retain:
+                raise MemoryError_("io") from None
         rec = {"harness": kind, "workdir": os.path.realpath(workdir), "src": src, "label": label, "path": path, "file": file,
-               "kind": "file", "text": text, "mode": stat.S_IMODE(os.lstat(path).st_mode), "index": idx_lines}
+               "kind": "file", "text": text, "mode": stat.S_IMODE(os.lstat(path).st_mode), "index": idx_lines, **({"retained": True} if retain else {})}
         if sha(read_file(path)) != fsha:
             raise MemoryError_("changed")
         tid = _put_trash(st, rec)
+        check_data_path(path)
         os.unlink(path)
         if idx_new:
             try:
@@ -476,8 +587,11 @@ def remove(st, kind: str, workdir: str, src: str, file: str, fsha: str, iid: str
         _write_atomic(path, "\n".join(new_lines).encode(), fsha)
     except BaseException:
         try:
-            os.unlink(_trash_dir(st) / f"{tid}.json")
-        except OSError:
+            with _archive_dir(st) as directory:
+                name = tid + ".json"
+                _, identity = _archive_read(st, directory, name)
+                _forget(directory, name, identity)
+        except (OSError, ValueError, MemoryError_):
             pass
         raise
     return {**rec, "id": tid}
@@ -487,11 +601,23 @@ def restore(st, tid: str) -> dict:
     """Put a trashed item back where it was (next to the lines that surrounded it), then forget the trash entry."""
     if not re.fullmatch(r"[0-9a-f]{16}", tid or ""):
         raise MemoryError_("not_found")
-    tp = _trash_dir(st) / f"{tid}.json"
-    try:
-        r = json.loads(tp.read_text())
-    except (OSError, ValueError):
-        raise MemoryError_("not_found") from None
+    with _archive_dir(st) as directory:
+        name = tid + ".json"
+        try:
+            r, identity = _archive_read(st, directory, name)
+        except (OSError, ValueError):
+            raise MemoryError_("not_found") from None
+        _restore_data(st, r)
+        _forget(directory, name, identity)
+        return r
+
+
+def _restore_data(st, r):
+    if r.get("index"):
+        check_data_path(os.path.join(os.path.dirname(r["path"]), "MEMORY.md"))
+    if r.get("kind") == "tidy":
+        from . import memory_tidy
+        return memory_tidy.restore(st, r)
     # the path is re-derived from the source list (never trusted from the file alone)
     s, path = _resolve(r["harness"], r["workdir"], r["src"], r.get("file", ""), missing_ok=True)
     if os.path.realpath(path) != os.path.realpath(r["path"]):
@@ -551,8 +677,4 @@ def restore(st, tid: str) -> dict:
                 os.close(fd)
         else:
             _write_atomic(path, "\n".join(lines).encode(), h)
-    try:
-        os.unlink(tp)
-    except OSError:
-        pass
     return r

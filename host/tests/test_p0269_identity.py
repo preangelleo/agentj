@@ -19,9 +19,9 @@ def core(lang):
 
 class CoreV25(unittest.TestCase):
     def test_version_and_manifest(self):
-        self.assertEqual((main_identity.VERSION, main_identity.verify_core()["version"]), (29, 29))
+        self.assertEqual((main_identity.VERSION, main_identity.verify_core()["version"]), (30, 30))
         for lang in ("zh", "en"):
-            self.assertTrue(core(lang).splitlines()[0].endswith("v29"))
+            self.assertTrue(core(lang).splitlines()[0].endswith("v30"))
 
     def test_owner_task_is_the_authorisation(self):
         rules = {

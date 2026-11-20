@@ -2378,9 +2378,34 @@ def _mem_items(src: dict) -> list[dict]:
 
 def cmd_memory(a) -> None:
     from . import memory
+    if (getattr(a, "dry_run", False) or getattr(a, "last", False)) and a.mode != "tidy":
+        sys.exit("--dry-run and --last are only valid for agentj memory tidy")
     st = State()
     _need_init(st)
     kind, d = _mem_target(st, a)
+    if a.mode == "tidy":
+        from . import memory_nightly, memory_tidy
+        if a.args or (a.last and a.dry_run):
+            sys.exit("Use agentj memory tidy [--dry-run | --last] [--json]")
+        if a.last:
+            result = memory_nightly.read(st)
+        elif not kind or not d:
+            sys.exit("Choose a configured Agent or use --harness and --dir.")
+        else:
+            result = memory_tidy.run(st, kind, d, dry_run=a.dry_run)
+        if a.json:
+            print(json.dumps(result, ensure_ascii=False))
+        elif a.last and not result.get("status"):
+            print("还没有夜间整理记录 / No nightly result yet")
+        elif result.get("status") == "skipped":
+            print("夜间没有空闲心跳，已跳过 / No idle heartbeat in the nightly window")
+        else:
+            prefix = "预览 / Preview · " if a.dry_run else ""
+            print(f"{prefix}合并 / merged {result.get('merged', 0)} · 归档 / archived {result.get('archived', 0)}"
+                  f" · 冲突 / conflicts {result.get('conflicts', 0)} · 索引 / index {result.get('index_fixed', 0)}")
+            for tid in result.get("archive_ids", []):
+                print("agentj memory restore " + tid)
+        return
     if a.mode == "restore":
         if not a.args:
             tr = memory.trash(st)
@@ -3902,11 +3927,13 @@ def main(argv=None) -> None:
     fi.add_argument("code", nargs="?", help="那台遥控器上显示的 6 位对照码 / the 6-digit code shown on that remote")
     fi.set_defaults(fn=cmd_faceid)
     me = sub.add_parser("memory", help="Agent 记住了什么：list · show <来源> · rm <来源> <条目> · restore [id] / what the Agent remembers")
-    me.add_argument("mode", choices=["list", "show", "rm", "restore"])
+    me.add_argument("mode", choices=["list", "show", "rm", "restore", "tidy"])
     me.add_argument("args", nargs="*")
     me.add_argument("--harness", choices=["claude", "codex", "opencode"], help="默认 = 接的 Agent / default: the configured Agent")
     me.add_argument("--dir", help="工作目录（默认 = Agent 的目录）")
     me.add_argument("--json", action="store_true")
+    me.add_argument("--dry-run", action="store_true", help="Preview memory tidy without editing memories")
+    me.add_argument("--last", action="store_true", help="Latest nightly memory tidy result")
     me.set_defaults(fn=cmd_memory)
     ac = sub.add_parser("activity", help="操作与审批记录（本机 activity.log，30 天）/ activity and approvals, newest last")
     ac.add_argument("--since", help="2h / 3d / 2026-10-01 / 2026-10-01T08:00")

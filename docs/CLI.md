@@ -5534,18 +5534,20 @@ agentj memory --help
 
 ```text
 usage: agentj memory [-h] [--harness {claude,codex,opencode}] [--dir DIR]
-                     [--json]
-                     {list,show,rm,restore} [args ...]
+                     [--json] [--dry-run] [--last]
+                     {list,show,rm,restore,tidy} [args ...]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `null` | true | `list`, `show`, `rm`, `restore` | `` |
+| `mode` | `null` | true | `list`, `show`, `rm`, `restore`, `tidy` | `` |
 | `args` | `null` | false | — | `` |
 | `--harness` | `null` | false | `claude`, `codex`, `opencode` | `default: the configured Agent` |
 | `--dir` | `null` | false | — | `工作目录（默认 = Agent 的目录）` |
 | `--json` | `false` | false | — | `` |
+| `--dry-run` | `false` | false | — | `Preview memory tidy without editing memories` |
+| `--last` | `false` | false | — | `Latest nightly memory tidy result` |
 
 ### agentj menu
 
@@ -13950,18 +13952,20 @@ agentj memory --help
 
 ```text
 usage: agentj memory [-h] [--harness {claude,codex,opencode}] [--dir DIR]
-                     [--json]
-                     {list,show,rm,restore} [args ...]
+                     [--json] [--dry-run] [--last]
+                     {list,show,rm,restore,tidy} [args ...]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `null` | true | `list`, `show`, `rm`, `restore` | `` |
+| `mode` | `null` | true | `list`, `show`, `rm`, `restore`, `tidy` | `` |
 | `args` | `null` | false | — | `` |
 | `--harness` | `null` | false | `claude`, `codex`, `opencode` | `默认 = 接的 Agent` |
 | `--dir` | `null` | false | — | `工作目录（默认 = Agent 的目录）` |
 | `--json` | `false` | false | — | `` |
+| `--dry-run` | `false` | false | — | `Preview memory tidy without editing memories` |
+| `--last` | `false` | false | — | `Latest nightly memory tidy result` |
 
 ### agentj menu
 

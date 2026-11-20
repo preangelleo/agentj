@@ -17,6 +17,15 @@ own memory files. Everything after `/agentj-add-memory` is what to remember. Not
 2. It is a key, password, card number or code → never store it; say so and suggest `agentj secret request`.
 3. Open `documentation/MEMORY.md` in the working root (create it with `# Memory` if missing). Already there, or it
    contradicts an item → update that item instead of adding a second one.
-4. Otherwise add one item: `- <YYYY-MM-DD> <the fact, in the owner's words>` at the end of the matching section (or the
+4. Otherwise add one item: `- <YYYY-MM-DD> <topic>: Owner said: <verbatim owner words>` (中文 `<主题>：主人原话：<逐字原文>`) at the end of the matching section (or the
    end of the file). Write `MEMORY.md.tmp`, then rename it over the file.
 5. Answer in one line: remembered, and `doc/MEMORY.md` (the phone links it).
+
+整理记忆 / Memory tidy (Claude, Codex and OpenCode)
+Use `agentj memory tidy --dry-run --json` to preview and `agentj memory tidy --json` to apply a requested tidy.
+Keep separately scoped facts separate. A dated owner-stated change supersedes an older statement on the same topic;
+keep the latest words verbatim and one timeline. Archive completed one-offs and copies already recorded in a verified
+project document. Keep the index short, one working reference per line. Credentials stay out. Conflicting
+statements without a dated owner decision remain for clarification. Previous text is available through
+`agentj memory restore <archive-id>`. The next idle heartbeat within the configured nightly window performs this
+maintenance once; the morning brief reads `agentj memory tidy --last --json`.
