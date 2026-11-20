@@ -16,6 +16,7 @@ import json
 import os
 import re
 import select
+import secrets
 import hashlib
 import signal
 import subprocess
@@ -23,10 +24,22 @@ import sys
 import tempfile
 import threading
 import time
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 _LOGIN_START = contextvars.ContextVar('auth_rescue_login_start', default=None)
+
+
+@dataclass
+class _ClaudeScreen:
+    flow: dict
+    action: str
+    wire_id: str = field(default_factory=lambda: secrets.token_hex(16))
+    claim: object | None = None
+    applied: bool = False
+    verification: dict | None = None
+    context: object | None = None
 
 
 class _LoginStart:
@@ -176,7 +189,7 @@ BLOCKERS = (
     ("claude", "bypass", ("bypasspermissionsmode", "yes,iaccept"), "confirm", DOWN + ENTER,
      "危险模式确认（Bypass Permissions，主人自己开的）", "Bypass Permissions confirmation (the owner's own setting)"),
     ("claude", "mcp", ("newmcpserverfoundin", "mcpserversfoundin.mcp.json", "usethisandallfuturemcpservers"), "confirm", ESC,
-     "项目 .mcp.json 里的 MCP 服务器（代按：这次不启用）", "MCP servers in the project's .mcp.json (press: not this time)"),
+     "Claude 启动时问要不要启用项目里的 MCP 服务器，我会替你选「这次不启用」。", "I’ll pick “Not this time” for this project’s MCP servers."),
     ("claude", "settings_error", ("settingserror", "invalidsettings"), "confirm", ENTER,
      "设置文件有错误（代按：忽略继续）", "settings file error (press: continue without it)"),
     ("claude", "update", ("updateavailable", "auto-updatefailed", "autoupdatefailed"), "info", "",
@@ -698,7 +711,7 @@ def live_claude(token: bytearray | None, cwd: str | None = None, timeout: float 
     return ok
 
 
-def screen_check(kind: str, workdir: str, press: tuple = (), secs: float = SCREEN_SECS) -> dict:
+def screen_check(kind: str, workdir: str, press: tuple = (), secs: float = SCREEN_SECS, *, guarded_send=None) -> dict:
     """Open the harness's own interactive screen in `workdir` for up to `secs`, answer the `auto` screens (and the `confirm`
     ids in `press`) by their fixed keys, never send a message. → {"ready": bool, "answered": [ids], "blocker": {..} | None,
     "info": [ids], "last": scrubbed last line}. OpenCode has no interactive first-run screen (serve) → ready."""
@@ -729,7 +742,11 @@ def screen_check(kind: str, workdir: str, press: tuple = (), secs: float = SCREE
                         out["blocker"] = {k: act[k] for k in ("id", "action", "zh", "en")}
                         break
                     p.mark = len(p.buf)
-                    p.send(act["keys"])
+                    if guarded_send is None:
+                        p.send(act["keys"])
+                    elif not guarded_send(p.send, act):
+                        out["blocker"] = {k: act[k] for k in ("id", "action", "zh", "en")}
+                        break
                     answered.append(act["id"])
                     presses += 1
                     continue
@@ -1087,6 +1104,7 @@ class Rescue:
         self.flow: dict | None = None          # {"kind", "route", "stage", "url"?, "code"?, "expires_at"?, "obj"}
         self.last: dict[str, dict] = {}        # kind → {"result", "why"?, "at", "screen"?}
         self.cancel = threading.Event()
+        self._claude_screen: _ClaudeScreen | None = None
         self.health_task = None
         self.checking = False
         self.health_pending = set()
@@ -1301,7 +1319,7 @@ class Rescue:
             return start()
         return await asyncio.to_thread(checked)
 
-    async def _confirm(self, kind: str, account: str | None = None, *, remote=None, failure=None) -> bool:
+    async def _confirm(self, kind: str, account: str | None = None, *, remote=None, failure=None, screen=None, request_id=None) -> bool:
         from .list_approval import SettingsContext
         failure = failure if isinstance(failure, dict) else {}
         failure['why'] = 'approval_unavailable'
@@ -1318,10 +1336,18 @@ class Rescue:
         try:
             summary = self._summary(kind, account)
             inp = {"summary": summary}
+            if screen is not None:
+                label = self.last["claude"]["screen"]["label"]
+                inp = {"summary": label, "operation": "press_screen", "harness": kind,
+                       "screen_id": screen.wire_id, "action": screen.action, "request_id": request_id}
             context = SettingsContext.capture(self.host, self, remote, inp) if scoped else None
             res = await ask("AuthRescue", inp, batch=False, always_ask=True, _host_card=True,
                             **({'_settings_context': context} if context else {}),
                             **({"_settings_session": remote, "only": remote.device, "require_passkey": True} if scoped else {}))   # P573: one button
+        except asyncio.CancelledError:
+            if context:
+                context.discard()
+            raise
         except Exception as exc:  # noqa: BLE001 — fixed classification; exception text may carry credentials
             failure['why'] = 'execution_error'
             self.host.st.log('auth_rescue_confirm_error', phase='approval', error=type(exc).__name__)
@@ -1663,20 +1689,40 @@ class Rescue:
     async def cancel_flow(self) -> dict:
         from . import auth_settings_uv
         auth_settings_uv.clear(self.host)
+        self._claude_screen = None
         self.cancel.set()
         if self.flow and self.flow.get("stage") not in ("done", "failed"):
             self._end(self.flow["kind"], "failed", "cancelled")
         return {"ok": True}
 
     # ---- restart + verify
-    async def recover(self, kind: str, route: str | None = None, press: tuple = ()) -> dict:
+    async def recover(self, kind: str, route: str | None = None, press: tuple = (), *, retry=None) -> dict:
         """Re-answer first-run screens → restart what Agent J owns → screen check → a real message. Reports to the phone."""
         from . import harness_setup, harness
-        self.flow = {**(self.flow or {}), "kind": kind, "stage": "verifying"}
+        record, claim = retry if retry else (None, None)
+        if retry and (record is not self._claude_screen or record.flow is not self.flow or record.claim is not claim):
+            return {"ok": False, "why": "session_changed"}
+        self.flow = verification = {**(self.flow or {}), "kind": kind, "stage": "verifying"}
+
+        if retry:
+            record.verification = verification
+
+        task = asyncio.current_task()
+
+        def replaced():
+            if kind == "claude" and self.flow is not verification:
+                return True
+            return bool(retry and (self._claude_screen is not record or record.claim is not claim or task.cancelling()
+                                   or record.context is not None and not record.context.live(self.host)))
+
+        if replaced():
+            return {"ok": False, "why": "session_changed"}
         self.broadcast()
         wd = self.workdir()
         if harness_setup.enabled():
             await asyncio.to_thread(harness_setup.prepare, kind, wd)
+            if replaced():
+                return {"ok": False, "why": "session_changed"}
         if kind == "claude" and route != "login":
             bad = conflicts()
             if bad:
@@ -1689,12 +1735,52 @@ class Rescue:
             live = await claude_live.deliver(self.host, "auth_rescue", wait=True)
         else:
             note = self._restart(kind)
-        screen = await asyncio.to_thread(screen_check, kind, wd, tuple(press))
+        if replaced():
+            return {"ok": False, "why": "session_changed"}
+        if retry:
+            loop = asyncio.get_running_loop()
+
+            async def send_if_current(send, action):
+                # Cancellation, session replacement and the actual write are all ordered on this loop.
+                if replaced():
+                    return False
+                if action["action"] == "confirm":
+                    if record.applied or action["id"] != record.action:
+                        return False
+                    record.applied = True
+                send(action["keys"])
+                return True
+
+            def guarded_send(send, action):
+                return asyncio.run_coroutine_threadsafe(send_if_current(send, action), loop).result()
+
+            worker = asyncio.create_task(asyncio.to_thread(screen_check, kind, wd, tuple(press), guarded_send=guarded_send))
+            try:
+                screen = await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                # The thread owns the screen until it exits. Keep the claim held while it unwinds.
+                while not worker.done():
+                    try:
+                        await asyncio.shield(worker)
+                    except asyncio.CancelledError:
+                        continue
+                raise
+        else:
+            screen = await asyncio.to_thread(screen_check, kind, wd, tuple(press))
+        if replaced():
+            return {"ok": False, "why": "session_changed"}
         if screen.get("blocker"):
             b = screen["blocker"]
             extra = {"screen": {"id": b["id"], "action": b["action"], "label": b[self.lang()],
                                 **({"last": screen["last"]} if screen.get("last") else {})}}
+            next_screen = None
+            if kind == "claude" and b["action"] == "confirm" and not self.flow.get("account"):
+                next_screen = _ClaudeScreen(self.flow, b["id"])
+                extra["screen"]["id"] = next_screen.wire_id
             self._end(kind, "blocked", None, **extra)
+            if next_screen is not None:
+                next_screen.flow = self.flow
+                self._claude_screen = next_screen
             self.flow["why"] = b[self.lang()]
             self.broadcast()
             self.host.agent_notice(self.t("partial", h=LABEL[kind], why=b[self.lang()] +
@@ -1702,6 +1788,8 @@ class Rescue:
                                            else " (Settings → Emergency repair → AI login rescue → Press it for me)" if b["action"] == "confirm" else "")))
             return {"ok": False, "why": "blocked", "screen": b["id"]}
         d = await asyncio.to_thread(harness.probe, (kind,))
+        if replaced():
+            return {"ok": False, "why": "session_changed"}
         row = next((h for h in d.get("harnesses", []) if h.get("name") == kind), {})
         if not row.get("callable"):
             self._end(kind, "partial", "probe", screen={"answered": screen.get("answered", [])})
@@ -1755,8 +1843,14 @@ class Rescue:
             return None
         return "owner_session"
 
-    async def press(self, kind: str, bid: str) -> dict:
+    async def press(self, kind: str, bid: str, *, remote=None, request_id=None) -> dict:
         """「代按确认」: re-run the restart check allowing exactly this catalogued confirm screen's fixed keys."""
+        if kind == "claude":
+            screen = self._claude_screen
+            if (screen is None or screen.wire_id != bid or screen.flow is not self.flow or
+                    screen.claim is not None or screen.applied or confirm_keys(kind, screen.action) is None):
+                return {"ok": False, "why": "unsupported"}
+            return await self._press_claude(screen, remote, request_id)
         if confirm_keys(kind, bid) is None:
             return {"ok": False, "why": "unsupported"}
         failure = {}
@@ -1765,6 +1859,45 @@ class Rescue:
         bg = getattr(self.host, "_bg", None)
         coro = self.recover(kind, press=(bid,))
         (bg(coro, "auth_rescue") if bg else asyncio.ensure_future(coro))
+        return {"ok": True}
+
+    async def _press_claude(self, screen: _ClaudeScreen, remote, request_id) -> dict:
+        claim = screen.claim = object()
+        dispatched = False
+        try:
+            failure = {}
+            if not await self._confirm("claude", failure=failure, remote=remote, screen=screen, request_id=request_id):
+                return {"ok": False, "why": failure.get("why", "approval_unavailable")}
+            screen.context = failure.get("_context")
+            if remote is not None and (screen.context is None or not screen.context.live(self.host)):
+                return {"ok": False, "why": "session_changed"}
+            if self._claude_screen is not screen or self.flow is not screen.flow:
+                return {"ok": False, "why": "session_changed"}
+
+            def release(_task):
+                if screen.context is not None:
+                    screen.context.discard()
+                    screen.context = None
+                screen.claim = None
+                verification, screen.verification = screen.verification, None
+                if verification is not None and self.flow is verification and self._claude_screen is screen:
+                    if screen.applied:
+                        self._end("claude", "partial", "probe")
+                    else:
+                        self.flow = screen.flow
+                        self.broadcast()
+
+            bg = getattr(self.host, "_bg", None)
+            work = self.recover("claude", press=(screen.action,), retry=(screen, claim))
+            task = bg(work, "auth_rescue") if bg else asyncio.create_task(work)
+            task.add_done_callback(release)
+            dispatched = True
+        finally:
+            if not dispatched:
+                if screen.context is not None:
+                    screen.context.discard()
+                    screen.context = None
+                screen.claim = None
         return {"ok": True}
 
     # ---- daily (P288: 7 / 3 / 1 reminders + the health check)

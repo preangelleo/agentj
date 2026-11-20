@@ -2843,7 +2843,8 @@ AI 登录救援). The whole chain is serve's deterministic code — the logged-o
 
 **Messages** (p33 sessions of a paired, ready device; listed in `P33_ONLY`; answered to the asking session only):
 `{"t":"auth_get","r"}` · `{"t":"auth_start","r","kind":"claude|codex|opencode","route":"setup_token|paste|login|device|provider_key"}` ·
-`{"t":"auth_press","r","kind","id":<catalogued confirm screen id>}` · `{"t":"auth_cancel","r"}` → `{"t":"auth_res","r","ok"[,"why"],"view"}`.
+`{"t":"auth_press","r","kind","id":<id from last.screen>}` · `{"t":"auth_cancel","r"}` → `{"t":"auth_res","r","ok"[,"why"],"view"}`.
+For Claude, echo the opaque `last.screen.id` unchanged so the paired device’s approval applies once to that screen and its displayed action.
 Push to every ready p33 phone (and on ready while the dot is on): `{"t":"auth_rescue","view"}`.
 `view = {"dot": bool, "harnesses": [{kind, label, installed, current, state: ok|login|balance|rate_limit, routes,
 [token: {minted, expires, days_left}], [warn], [login], [conflicts: [names]], [last: {result: recovered|failed|partial|blocked,

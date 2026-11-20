@@ -278,6 +278,7 @@ class _Host:
         self.st, self.lang, self.agent_cfg = st, "zh", {"dir": str(work)}
         self.agent = None
         self.notices, self.asks, self.allow = [], [], allow
+        self.denial = {"behavior": "deny"}
         self.elevate = _Elev(value)
         self.tasks = []
 
@@ -286,7 +287,7 @@ class _Host:
 
     async def ask(self, tool, tool_input, batch=True, require_passkey=False, **kw):
         self.asks.append((tool, batch, require_passkey, tool_input.get("summary", "")))
-        return {"behavior": "allow" if self.allow else "deny"}
+        return {"behavior": "allow"} if self.allow else self.denial
 
     def _bg(self, coro, what="bg"):
         t = asyncio.ensure_future(coro)
@@ -351,8 +352,12 @@ class Manager(Base, unittest.IsolatedAsyncioTestCase):
 
     async def test_passkey_required(self):
         self.host.allow = False
-        res = await self.r.start("codex", "device")
-        self.assertEqual(res, {"ok": False, "why": "passkey"})
+        for denial, why in (({"behavior": "deny", "reason": "passkey_required"}, "passkey"),
+                            ({"behavior": "deny"}, "approval_unavailable")):
+            self.host.denial = denial
+            res = await self.r.start("codex", "device")
+            self.assertEqual(res, {"ok": False, "why": why})
+            self.assertIsNone(self.r.flow)
         tool, batch, pk, summary = self.host.asks[0]
         # P573 (#386 ⑤): login rescue shows a link / code, never a password — one button that 全放行 still asks
         self.assertEqual((tool, batch, pk), ("AuthRescue", False, False))
@@ -418,7 +423,8 @@ class Manager(Base, unittest.IsolatedAsyncioTestCase):
             self.assertEqual(res, {"ok": False, "why": "blocked", "screen": "mcp"})
             self.assertIn("代按确认", self.host.notices[-1])
             self.assertEqual(self.r.view()["harnesses"][0]["last"]["screen"]["action"], "confirm")
-            self.assertEqual(await self.r.press("claude", "mcp"), {"ok": True})
+            shown = self.r.view()["harnesses"][0]["last"]["screen"]["id"]
+            self.assertEqual(await self.r.press("claude", shown), {"ok": True})
             await self.drain()
         self.assertEqual(self.r.last["claude"]["result"], "recovered")
         self.assertEqual((await self.r.press("claude", "trust"))["why"], "unsupported")   # auto screens are never phone-pressed

@@ -85,3 +85,103 @@ class Window(unittest.IsolatedAsyncioTestCase):
                     await self.ar._confirmed_start(work(),context,'codex')
             spawn.assert_not_called();pty.assert_not_called()
             self.assertFalse(self.h.__dict__.get('_auth_settings_requests'))
+
+
+class ClaudeScreenPress(unittest.IsolatedAsyncioTestCase):
+    """Real paired on_auth + signed UV. The screen and its final write are stand-ins."""
+    asyncSetUp = Settings.asyncSetUp
+
+    async def exercise(self, change):
+        import threading
+        from agentj import approvals
+        entered, resume = threading.Event(), threading.Event()
+        writes = []
+        self.h.ask_ttl = 10
+        blocker = {"id": "mcp", "action": "confirm", "zh": "本次不启用 MCP", "en": "Skip this MCP server"}
+        loop_thread = threading.get_ident()
+
+        def write(key):
+            self.assertEqual(threading.get_ident(), loop_thread)
+            writes.append(key)
+
+        def check(*args, guarded_send=None):
+            if guarded_send is None:
+                return {"blocker": blocker}
+            entered.set()
+            if not resume.wait(5):
+                raise AssertionError("fixture not released")
+            act = {"id": "mcp", "action": "confirm", "keys": "fixed key"}
+            guarded_send(write, act)
+            guarded_send(write, act)
+            return {"answered": []}
+
+        with patch("agentj.harness_setup.enabled", return_value=False), patch.object(auth_rescue, "conflicts", return_value=[]), \
+                patch("agentj.claude_live.deliver", return_value={"verified": True}), \
+                patch.object(auth_rescue, "screen_check", side_effect=check), \
+                patch("agentj.harness.probe", return_value={"harnesses": [{"name": "claude", "callable": True}]}), \
+                patch.object(self.h, "agent_notice"), patch.object(self.ar, "view", return_value={}):
+            await self.ar.recover("claude", route="login")
+            screen = self.ar.last["claude"]["screen"]
+            frame = {"r": "b302press", "kind": "claude", "id": screen["id"]}
+            await self.h.on_auth(self.session, "auth_press", frame)
+            try:
+                async with asyncio.timeout(3):
+                    while not self.h.asks:
+                        await asyncio.sleep(.005)
+                ask = next(iter(self.h.asks.values()))
+                self.assertTrue(ask.require_passkey)
+                self.assertEqual(ask.only, self.session.device)
+                self.assertEqual(ask.input_sha, approvals.input_digest({
+                    "summary": screen["label"], "operation": "press_screen", "harness": "claude",
+                    "screen_id": screen["id"], "action": "mcp", "request_id": frame["r"]}))
+                answer = self.phone.answer(self.h._ask_msg(ask, self.session), True)
+                if change == "unsigned":
+                    answer.pop("fa")
+                    await self.h._answer(self.session, answer)
+                    self.assertFalse(ask.fut.done())
+                    answer = self.phone.answer(self.h._ask_msg(ask, self.session), False)
+                await self.h._answer(self.session, answer)
+                if change != "unsigned":
+                    self.assertTrue(await asyncio.to_thread(entered.wait, 3))
+                    if change == "disconnect":
+                        self.h.sessions.pop(self.session.cid)
+                    elif change == "replace":
+                        self.h.sessions[self.session.cid] = copy.copy(self.session)
+                    elif change == "revoke":
+                        self.h.st.remove_device(self.session.device)
+                    elif change == "cancel":
+                        await self.h.on_auth(self.session, "auth_cancel", {"r": "b302cancel"})
+                        writes.append("cancel receipt")
+                    elif change == "cancel_task":
+                        active = next(t for t in self.h._bg_tasks if t.get_coro().__name__ == "recover")
+                        active.cancel()
+                        await asyncio.sleep(0)
+                        self.assertFalse(active.done())
+                        self.assertIsNotNone(self.ar._claude_screen.claim)
+            finally:
+                resume.set()
+                if self.h.__dict__.get("_bg_tasks"):
+                    await asyncio.gather(*self.h._bg_tasks, return_exceptions=True)
+            self.assertEqual(writes, ["fixed key"] if change is None else ["cancel receipt"] if change == "cancel" else [])
+            self.assertFalse(self.h.__dict__.get("_auth_settings_requests"))
+
+    async def test_valid_bound_confirmation_writes_once(self):
+        await self.exercise(None)
+
+    async def test_unsigned_approval_never_reaches_worker(self):
+        await self.exercise("unsigned")
+
+    async def test_replaced_session_cannot_write(self):
+        await self.exercise("replace")
+
+    async def test_disconnected_session_cannot_write(self):
+        await self.exercise("disconnect")
+
+    async def test_revoked_paired_device_cannot_write(self):
+        await self.exercise("revoke")
+
+    async def test_worker_cannot_write_after_cancel_receipt(self):
+        await self.exercise("cancel")
+
+    async def test_task_cancellation_holds_claim_until_worker_exits(self):
+        await self.exercise("cancel_task")

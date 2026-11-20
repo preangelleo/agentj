@@ -16,6 +16,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -439,6 +440,108 @@ class Rescue(Base, unittest.IsolatedAsyncioTestCase):
     async def drain(self):
         while self.host.tasks:
             await self.host.tasks.pop(0)
+
+    async def show_confirm_screen(self):
+        blocker = {"id": "mcp", "action": "confirm", "zh": "fixture", "en": "fixture"}
+        with mock.patch("agentj.claude_live.deliver", return_value={"verified": True}), \
+                mock.patch.object(ar, "screen_check", return_value={"blocker": blocker}):
+            await self.r.recover("claude", route="login")
+        return self.r.view()["harnesses"][0]["last"]["screen"]["id"]
+
+    async def test_retry_claim_lifetime_until_verified_or_interrupted(self):
+        for outcome in ("cancel", "interrupted", "success"):
+            with self.subTest(outcome=outcome):
+                shown = await self.show_confirm_screen()
+                entered, resume = asyncio.Event(), asyncio.Event()
+                calls = []
+                async def deliver(*args, **kwargs):
+                    entered.set()
+                    await resume.wait()
+                    return {"verified": True}
+                def check(*args, guarded_send):
+                    for _ in range(2):
+                        guarded_send(calls.append, {"action":"confirm", "id":"mcp", "keys":"confirmed"})
+                    return {"answered": calls[:]}
+                with mock.patch("agentj.claude_live.deliver", side_effect=deliver), \
+                        mock.patch.object(ar, "screen_check", side_effect=check), \
+                        mock.patch("agentj.harness.probe", return_value={"harnesses": [{"name": "claude", "callable": True}]}):
+                    self.assertTrue((await self.r.press("claude", shown))["ok"])
+                    await asyncio.wait_for(entered.wait(), 2)
+                    self.assertFalse((await self.r.press("claude", shown))["ok"])
+                    if outcome == "interrupted":
+                        self.host.tasks[-1].cancel()
+                        with self.assertRaises(asyncio.CancelledError):
+                            await self.drain()
+                        self.assertTrue((await self.r.press("claude", shown))["ok"])
+                    elif outcome == "cancel":
+                        await self.r.cancel_flow()
+                    resume.set()
+                    await self.drain()
+                self.assertEqual(calls, [] if outcome == "cancel" else ["confirmed"])
+                self.assertFalse((await self.r.press("claude", shown))["ok"])
+
+    async def test_cancel_while_screen_worker_is_waiting_prevents_key(self):
+        shown = await self.show_confirm_screen()
+        entered, resume = threading.Event(), threading.Event()
+        calls = []
+        def check(*args, guarded_send):
+            entered.set()
+            if not resume.wait(3):
+                raise TimeoutError("fixture release")
+            guarded_send(calls.append, {"action":"confirm", "id":"mcp", "keys":"confirmed"})
+            return {"answered": calls[:]}
+        with mock.patch("agentj.claude_live.deliver", return_value={"verified": True}), \
+                mock.patch.object(ar, "screen_check", side_effect=check):
+            self.assertTrue((await self.r.press("claude", shown))["ok"])
+            try:
+                self.assertTrue(await asyncio.to_thread(entered.wait, 2))
+                await self.r.cancel_flow()
+            finally:
+                resume.set()
+            await self.drain()
+        self.assertEqual(calls, [])
+        self.assertFalse((await self.r.press("claude", shown))["ok"])
+
+    async def test_cancel_while_owner_is_confirming_does_not_schedule_recovery(self):
+        shown = await self.show_confirm_screen()
+        entered, allow = asyncio.Event(), asyncio.Event()
+        async def confirm(*args, **kwargs):
+            entered.set()
+            await allow.wait()
+            return True
+        with mock.patch.object(self.r, "_confirm", side_effect=confirm), mock.patch.object(self.r, "recover") as recover:
+            first = asyncio.create_task(self.r.press("claude", shown))
+            await asyncio.wait_for(entered.wait(), 2)
+            self.assertFalse((await self.r.press("claude", shown))["ok"])
+            await self.r.cancel_flow()
+            allow.set()
+            self.assertFalse((await first)["ok"])
+            await self.drain()
+            recover.assert_not_called()
+
+    async def test_already_applied_confirmation_is_not_replayed_after_replacement(self):
+        shown = await self.show_confirm_screen()
+        calls = []
+        def check(*args, guarded_send):
+            guarded_send(calls.append, {"action":"confirm", "id":"mcp", "keys":"confirmed"})
+            return {"answered": calls[:]}
+        loop = asyncio.get_running_loop()
+        def replace():
+            self.r.flow = {"kind": "kimi", "route": "device", "stage": "verifying"}
+            self.r._end("kimi", "recovered")
+        def probe(*args):
+            loop.call_soon_threadsafe(replace)
+            return {"harnesses": [{"name": "claude", "callable": True}]}
+        with mock.patch("agentj.claude_live.deliver", return_value={"verified": True}), \
+                mock.patch.object(ar, "screen_check", side_effect=check), mock.patch("agentj.harness.probe", side_effect=probe):
+            self.assertTrue((await self.r.press("claude", shown))["ok"])
+            await self.drain()
+        self.assertEqual(calls, ["confirmed"])
+        self.assertEqual(self.r.flow["kind"], "kimi")
+        self.assertFalse((await self.r.press("claude", shown))["ok"])
+        new = await self.show_confirm_screen()
+        self.assertNotEqual(shown, new)
+        self.assertFalse((await self.r.press("claude", shown))["ok"])
 
     async def test_codex_new_account_into_its_own_slot(self):
         (self.tmp / "cx" / "auth.json").write_bytes(codex_auth("alice"))

@@ -4655,7 +4655,9 @@ body[data-sheet="1"]:has(#sheet.auth-approval[data-popup-system="center"]) .scri
 #toast[data-pk-test="1"] .nt-acts{margin:12px 0 0;justify-content:center;flex-wrap:wrap}
 #toast[data-pk-test="1"] .nt-text{align-items:center}
 
-#sheet.auth-approval .buttons541c #apprGo:not([hidden]){grid-column:1/-1;flex:1 0 100%;width:100%;white-space:normal}
+/* The local passkey setup label needs its own row in both chat and Settings. */
+#apprBtns.buttons541c:has(#apprGo:not([hidden])){grid-template-columns:repeat(2,minmax(0,1fr))}
+#apprBtns.buttons541c #apprGo:not([hidden]){grid-column:1/-1;width:100%;white-space:normal;overflow-wrap:anywhere}
 /* Only verified v2 approvals use the three-icon row; legacy controls retain their visible labels. */
 #sheet:not([data-approval-v="2"]) #apprBtns .appr-icon0312{display:none}
 #sheet:not([data-approval-v="2"]) #apprBtns.buttons541c #apprAllow .lbl,#sheet:not([data-approval-v="2"]) #apprBtns.buttons541c #apprDeny span{display:inline}

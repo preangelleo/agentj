@@ -7845,7 +7845,13 @@ class Host:
             return
         if t == "auth_press":
             async def go2():
-                await answer(await ar.press(kind, bid if isinstance(bid, str) else ""))
+                screen_id = bid if isinstance(bid, str) else ""
+                if kind == "claude":
+                    with provenance.paired_request(lambda: self._paired_live(s)):
+                        result = await ar.press(kind, screen_id, remote=s, request_id=r)
+                else:
+                    result = await ar.press(kind, screen_id)
+                await answer(result)
             self._bg(go2(), "auth_press")
             return
 

@@ -1,10 +1,10 @@
 {
   "v": 1,
-  "version": "0.30.48",
+  "version": "0.30.49",
   "algo": "sha256",
-  "combined": "ac3962d1a4e78d843b92563d75bc8ab4e66d35e2c10079860822bda3366a93d1",
+  "combined": "b195975f2c1c22d4b021a5aafb045bba82a46395035fc9c50686915ef744a349",
   "files": {
-    "app.css": "8a9d692c09d92497a3558b52de5cd0efa6cef7af14dcca710b83381e5978f2c3",
+    "app.css": "92cd6fed5fbc10102acb4fb4486db5d19364965aef8f9e189d6a5cec468c8ffc",
     "app.js": "f99269eda9d2c049e34e74cea637740c722f60b4c4936208f7a8b5d5d7dabafd",
     "apple-touch-icon.png": "43300e13be845263b55a17c3e9c453bddb285ab9503e9f15bc5064528e40aba3",
     "assets/CUE-LICENSE.md": "c5598dd64a777ee5ecd1063fc3e1a3be865fe935f5a61b96d36bb3309eee24f2",

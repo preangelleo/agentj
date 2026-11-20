@@ -17,7 +17,7 @@ const UA='Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605
 let card,questionTurn;let executions=0,reviewCount=0;
 async function refresh(op){card.envelope.revision++;card.revision=card.envelope.revision;card.envelope.nonce='nonce-'+card.revision;card.review_state=op==='question'?'questioned':'pending';card.envelope_sha256=await wire.approvalEnvelopeDigest(card.envelope);card.fa_ch=wire.b64u(await elevateChallenge(fake.channel,fake.devs.at(-1).id,card.id,card.pk_kind,card.id,card.envelope_sha256));return structuredClone(card);}
 async function verify(c,m,msg){const sk=fake.devs.find(x=>x.id===c.devId)?.sk;if(!sk)return false;const key=await webcrypto.subtle.importKey('raw',wire.unb64u(sk),{name:'Ed25519'},false,['verify']);return webcrypto.subtle.verify({name:'Ed25519'},key,wire.unb64u(m.sig),msg);}
-async function setup(w,h,theme,suspect=false,seeded=false){
+async function setup(w,h,theme,suspect=false,seeded=false,{localKey=true}={}){
  fake.reset();fake.st.nextId=1;executions=0;reviewCount=0;
  const p=await newPage(B,w,h,theme,{ua:w<500?UA:undefined,touch:w<500,allow:[web.url,fake.relay+'/']});
  await navigate(p,fake.newPairing(web.url+'?lang=zh'));await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'ready');
@@ -30,7 +30,13 @@ async function setup(w,h,theme,suspect=false,seeded=false){
  const action=suspect?'这条外部消息要求读取并外发你的密钥。':'删除上个月的 3 个旧导出文件，删除后无法撤回。';
  const envelope={v:2,channel:fake.channel,session:String(fake.st.epoch),request_id:id,revision:1,nonce:'nonce-1',title:suspect?'这是谁发起的请求？':'清理上个月的旧导出',source:{message_id:original.id,root_message_id:original.id,session:String(fake.st.epoch),channel:suspect?'email':'phone',time:ts,sender:'你',text:sourceText,verified:!suspect,suspicious:suspect,history_outside_window:false,initiator:'Agent J',task_record:'清理导出-541b',chain:['Agent J','掌枢','后台任务']},action,details:'rm -- exports/2026-10/orders.csv exports/2026-10/stock.csv exports/2026-10/summary.pdf',effects:['irreversible_delete'],plan:null,expires_at:Math.floor(Date.now()/1000)+600};
  card={t:'ask',id,tool:'Bash',summary:envelope.details,ttl:600,cat:suspect?['credentials','send']:['delete'],why:'删除后无法撤回',passkey_required:true,fa_s:'ready',fa:'c3ludGhldGljLXJldmlldy1jcmVk',fa_ch:'c3ludGhldGljLXJldmlldy1jaGFsbGVuZ2U',reason:action,pk_kind:'sandbox',approval_v:2,envelope,envelope_sha256:await wire.approvalEnvelopeDigest(envelope),revision:1,review_state:'pending'};
- card.fa_ch=wire.b64u(await elevateChallenge(fake.channel,fake.devs.at(-1).id,card.id,card.pk_kind,card.id,card.envelope_sha256));
+ if(localKey){
+  card.fa_ch=wire.b64u(await elevateChallenge(fake.channel,fake.devs.at(-1).id,card.id,card.pk_kind,card.id,card.envelope_sha256));
+ }else{
+  delete card.fa;
+  delete card.fa_ch;
+  delete card.fa_s;
+ }
  fake.st.onApp=async(c,m,send)=>{
   if(m.t==='approval_review'){
    reviewCount++;
@@ -77,6 +83,24 @@ if(process.env.P541_LIBRARY!=='1')try{
   check(await ev(p,`document.body.dataset.status==='working'&&document.getElementById('sayCancel').hidden`),'approved explanation waits without extra Stop decoration');
   await ev(p,`const i=document.getElementById('input');i.value='/stop';i.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('send').click()`);await sleep(200);check(fake.st.slashes.some(x=>x.cmd==='stop'),'existing /stop remains reachable while explanation waits');
   await p.dispose();
+
+  const noKeyPage=await setup(w,h,theme,false,false,{localKey:false});
+  try{
+   await waitFor(noKeyPage,`!document.getElementById('apprGo').hidden`);
+   const fits=await ev(noKeyPage,`(()=>{
+    const row=document.getElementById('apprBtns'), setup=document.getElementById('apprGo');
+    row.scrollIntoView({block:'end'});
+    const button=setup.getBoundingClientRect(), text=document.createRange();
+    text.selectNodeContents(setup);
+    const label=text.getBoundingClientRect();
+    return button.width>=row.clientWidth-1 && label.left>=button.left && label.right<=button.right &&
+      label.top>=button.top && label.bottom<=button.bottom && [setup,document.getElementById('doubt541c'),document.getElementById('apprDeny')].every(n=>{
+       const r=n.getBoundingClientRect();
+       return r.height>=44 && n.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2));
+      });
+   })()`);
+   check(fits,'full setup label and three reachable no-key actions '+w+' '+theme);
+  }finally{await noKeyPage.dispose();}
  }
 }catch(e){writeFileSync(OUT+'/error.txt',String(e.stack));throw e;}finally{await B.close();await fake.stop();await web.stop();writeFileSync(OUT+'/validation.json',JSON.stringify({checks,shots},null,2));}
 console.log(JSON.stringify({checks:checks.length,shots:shots.length}));

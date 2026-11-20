@@ -1,5 +1,5 @@
-# Agent J v0.30.48
+# Agent J v0.30.49
 
-Updates prepare dependencies in advance and can roll back offline. Blocked background tasks explain why. Scan confirmation rechecks the original browser.
+Claude login rescue now applies each phone confirmation once. Canceling or switching screens invalidates the previous button.
 
-老版本升级前会先备好依赖，升级失败可在本机恢复。后台任务被拦时会说明原因；点「我扫好了」会回到原浏览器确认登录状态。
+用手机帮 Claude 完成登录救援时，每次确认只对当前屏幕生效。重复点击只会按一次，取消或换了屏幕，旧按钮就失效。
