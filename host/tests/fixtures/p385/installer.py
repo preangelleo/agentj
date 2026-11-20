@@ -1392,7 +1392,7 @@ def install_with_local_rollback(run, install_args, install_env, env, executable,
 
 def upgrade_existing(uv, *, home=None, run=command, repair_index=False, repair_runtime=False):
     """P516: repair-forward via today's verified bootstrap, without the old worker or a seat code.
-    Pin both uv destinations from the installed tool receipt; never create a parallel installation.
+    Pin both uv destinations from the receipt or an existing, verified launcher.
     """
     import tomllib
     if os.environ.get('AGENTJ_FENCED'):
@@ -1402,22 +1402,37 @@ def upgrade_existing(uv, *, home=None, run=command, repair_index=False, repair_r
     found = shutil.which('agentj') or str(home/'.local/bin/agentj')
     executable = Path(found).resolve()
     prefix = executable.parent.parent
+    receipt_path = prefix/'uv-receipt.toml'
     try:
-        receipt = tomllib.loads((prefix/'uv-receipt.toml').read_text())['tool']
-        requirements = receipt['requirements']
-        entries = [Path(e['install-path']) for e in receipt['entrypoints'] if e.get('name') == 'agentj']
-        if (executable != prefix/'bin/agentj' or prefix.name != 'agentj'
-                or not requirements or requirements[0].get('name') != 'agentj'
-                or len(entries) != 1 or not entries[0].is_absolute()
-                or entries[0].resolve() != executable):
+        if executable != prefix/'bin/agentj' or prefix.name != 'agentj':
             raise ValueError()
+        try:
+            receipt = tomllib.loads(receipt_path.read_text())['tool']
+        except (tomllib.TOMLDecodeError, UnicodeDecodeError):
+            entry = Path(found)
+            if (not repair_index or not entry.is_absolute() or entry.name != 'agentj'
+                    or not entry.is_symlink() or entry.lstat().st_uid != os.getuid()
+                    or not private_owned(receipt_path) or not private_owned(executable)):
+                raise ValueError() from None
+            repair_trusted_path(entry.parent)
+            entry = entry.parent.resolve(strict=True) / 'agentj'
+            if entry.resolve(strict=True) != executable:
+                raise ValueError() from None
+            entries = [entry]
+        else:
+            requirements = receipt['requirements']
+            entries = [Path(e['install-path']) for e in receipt['entrypoints'] if e.get('name') == 'agentj']
+            if (not requirements or requirements[0].get('name') != 'agentj'
+                    or len(entries) != 1 or not entries[0].is_absolute()
+                    or entries[0].resolve() != executable):
+                raise ValueError()
     except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError):
         raise InstallError('upgrade_requires_uv_install') from None
     guarded = repair_index or repair_runtime
     if guarded:
         if os.environ.get('SUDO_USER') or os.getuid() != os.geteuid():
             raise InstallError('repair_requires_installation_owner')
-        for entry in (home, prefix, executable, prefix / 'uv-receipt.toml'):
+        for entry in (home, prefix, executable, receipt_path):
             repair_trusted_path(entry)
         repair_trusted_path(prefix / 'bin/python', require_owner=False)
         if os.path.realpath(prefix / 'bin/python') != os.path.realpath(getattr(sys, '_base_executable', sys.executable)):

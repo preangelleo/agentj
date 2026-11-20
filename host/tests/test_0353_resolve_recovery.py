@@ -93,6 +93,87 @@ class ResolveRecovery(unittest.TestCase):
         self.assertEqual((str(result), count, stage.call_count, repair.call_count), ('uv_failed', 0, 1, 0))
 
     @unittest.skipUnless(shutil.which('uv'), 'requires uv')
+    def test_invalid_resolver_output_uses_verified_lock_but_wrong_digest_stops(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            url = 'https://files.pythonhosted.org/packages/00/00/' + '0'*60 + '/dep-1-py3-none-any.whl'
+            lock = (f'[[package]]\nname="dep"\nwheels=[{{url="{url}", hash="sha256:{"0"*64}", size=1}}]\n').encode()
+            pins = [auto_update.pin_artifact(cli_wheel(v, lock), v, root, signed=True)
+                    for v in ('1.0.0', '2.0.0')]
+            uv = shutil.which('uv')
+            cmd = auto_update.Command([uv, 'tool', 'install', '--force', str(pins[1].path)],
+                                      {'UV_TOOL_DIR': str(root/'tools')})
+            original = wheels.run_resolver
+            invalid = 'private/path = ['
+            mismatch = f'[[packages]]\nname="dep"\n[[packages.wheels]]\nurl="{url}"\nhashes={{sha256="{"f"*64}"}}\n'
+
+            def resolver(args, scratch, timeout, **kwargs):
+                if args[2] == 'compile':
+                    (Path(scratch)/'pylock.toml').write_text(invalid)
+                else:
+                    original(args, scratch, timeout, **kwargs)
+
+            with patch.object(wheels, 'run_resolver', side_effect=resolver), \
+                 patch.object(upgrade_uv, 'runtime', return_value=uv) as repair:
+                retry = wheels.PreparationRetry()
+                prepared = wheels.prepare_update(cmd, pins[1], pins[0].version, retry=retry)
+                self.assertIn('--offline', prepared)
+                self.assertEqual((retry.count, repair.call_count), (1, 1))
+                invalid = mismatch
+                with self.assertRaisesRegex(wheels.PreparationFailure, 'install_artifact_changed'):
+                    wheels.prepare_update(cmd, pins[1], pins[0].version)
+                self.assertEqual(repair.call_count, 1)
+
+    @unittest.skipUnless(shutil.which('uv'), 'requires uv')
+    def test_malformed_receipt_reuses_verified_custom_launcher(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            pins = [auto_update.pin_artifact(cli_wheel(v, b'package=[]\n'), v, root, signed=True)
+                    for v in ('1.0.0', '2.0.0')]
+            uv = shutil.which('uv')
+            env = {'HOME': str(root), 'UV_TOOL_DIR': str(root/'tools'), 'UV_TOOL_BIN_DIR': str(root/'custom-bin')}
+            prefix = root/'tools/agentj'
+            entry = root/'custom-bin/agentj'
+            subprocess.run([uv, 'tool', 'install', '--no-cache', '--no-index', '--no-config',
+                            '--python', wheels.base_python(), str(pins[0].path)],
+                           env={**wheels.clean_env(), **env}, check=True, capture_output=True)
+            receipt = prefix/'uv-receipt.toml'
+            receipt.write_text('[tool\n')
+            alias = root/'tools-alias'
+            alias.symlink_to(prefix.parent, target_is_directory=True)
+            cmd = auto_update.Command([uv, 'tool', 'install', '--force', str(pins[1].path)],
+                                      {'UV_TOOL_DIR': str(alias)})
+            other = root/'other-bin'
+            other.mkdir()
+            (other/'agentj').symlink_to(prefix/'bin/agentj')
+            with patch.dict(os.environ, {'HOME': str(root), 'PATH': os.pathsep.join((str(other), str(entry.parent)))}):
+                os.environ.pop('UV_TOOL_BIN_DIR', None)
+                with self.assertRaises(wheels.PreparationFailure) as caught:
+                    wheels.prepare_update(cmd, pins[1], pins[0].version)
+                failure = caught.exception
+                report = upgrade_diag.metadata_body(dict(failure.fields, reason=str(failure), result='failed',
+                                                         step='install', **{'from':'1.0.0', 'to':'2.0.0'}))
+                self.assertIn('uv_resolve_detail: tool_receipt_invalid', report)
+                self.assertIn('reason: dependency_preparation_failed', report)
+                self.assertTrue(support.metadata_ok(report))
+                self.assertNotIn(str(root), report)
+                (other/'agentj').unlink()
+                entry.parent.chmod(0o777)
+                with self.assertRaisesRegex(wheels.PreparationFailure, 'dependency_preparation_failed'):
+                    wheels.prepare_update(cmd, pins[1], pins[0].version)
+                entry.parent.chmod(0o700)
+                fixed = wheels.prepare_update(cmd, pins[1], pins[0].version)
+                self.assertEqual(fixed.env['UV_TOOL_DIR'], str(prefix.parent.resolve()))
+                self.assertEqual(fixed.env['UV_TOOL_BIN_DIR'], str(entry.parent))
+                alias.unlink()
+                alias.symlink_to(root/'elsewhere', target_is_directory=True)
+                subprocess.run(fixed, env=auto_update.run_env(fixed), check=True, capture_output=True)
+            self.assertEqual(entry.resolve(), prefix/'bin/agentj')
+            actual = subprocess.check_output([str(prefix/'bin/python'), '-I', '-c',
+                                              'import importlib.metadata as m; print(m.version("agentj"))'])
+            self.assertEqual(actual.strip(), b'2.0.0')
+
+    @unittest.skipUnless(shutil.which('uv'), 'requires uv')
     def test_repaired_python_is_used_for_offline_install_and_rollback(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

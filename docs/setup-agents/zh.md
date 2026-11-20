@@ -48,7 +48,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `5525225195f769d656f1c4ddbb9b6b89c88f8be4862b7c4ea3963a6ed63c0030`
+SHA256 sh: `555b73d81d20a3f9e1ebcb4a2f70dfdd650ac1f1ec5c389821c143be84d70661`
 
 
 ```bash

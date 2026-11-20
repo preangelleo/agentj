@@ -96,7 +96,9 @@ _RESOLVE_HINTS = (
     ("cache", ("cache entry", "cache directory", "failed to initialize cache", "failed to read cache")),
     ("version_conflict", ("no solution found", "unsatisfiable", "no matching distribution", "resolutionimpossible")),
 )
-RESOLVE_DETAILS = frozenset(name for name, _ in _RESOLVE_HINTS) | {"unrecognized", "wheelhouse_incomplete"}
+RESOLVE_DETAILS = frozenset(name for name, _ in _RESOLVE_HINTS) | {
+    "unrecognized", "wheelhouse_incomplete", "resolver_output_invalid", "tool_receipt_invalid", "local_prepare_error",
+}
 
 def resolve_detail(text):
     low = bound_evidence(text).lower()
@@ -756,7 +758,7 @@ def _known_reason(v):
 
 KNOWN_REASONS = frozenset({*CATEGORY.values(), *(r for r, _ in UV_STDERR), "uv_failed", "read_only_filesystem",
                            "permission_denied", "rollback_failed", "unknown", "install_artifact_changed",
-                           "install_artifact_unavailable", "installer_incompatible"})
+                           "install_artifact_unavailable", "installer_incompatible", "dependency_preparation_failed"})
 
 
 def _metadata_check_ids(value: str) -> bool:
@@ -888,6 +890,7 @@ REASON_WORDS = {
     "python_incompatible": ("这台 Agent J 主机上的 Python 版本不符合新版要求", "this computer's Python version does not meet the new version's requirement"),
     "python_missing": ("安装工具找不到可用的 Python", "the installer could not find a usable Python"),
     "dependency_conflict": ("新版的依赖包在这台 Agent J 主机上装不到一起", "the new version's dependencies could not be resolved on this computer"),
+    "dependency_preparation_failed": ("更换程序前未能准备安装所需文件", "preparing the files for installation failed before replacing the program"),
     "dependency_download_failed": ("下载依赖包失败，网络或软件源暂时连不上", "downloading the dependencies failed: no network or the package index is unreachable"),
     "upgrade_cache_unreadable": ("本地升级缓存读不出来", "the local upgrade cache could not be read"),
     "install_artifact_changed": ("已校验的安装包在安装前被改动或替换，已停止安装", "the verified package changed or was replaced before installing, so installation stopped"),

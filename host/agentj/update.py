@@ -392,8 +392,8 @@ def install_step(run, cmd, say, out: dict, target: str | None = None, store=None
         except upgrade_wheels.PreparationFailure as error:
             return 1, "", {"reason": str(error), "retry_count": preparation.count, "_untouched": True, **error.fields}
         except (OSError, ValueError, subprocess.SubprocessError) as error:
-            reason = upgrade_wheels.local_failure(error)
-            return 1, "", {"reason": reason, "retry_count": preparation.count, "_untouched": True}
+            failure = upgrade_wheels.local_preparation_failure(error)
+            return 1, "", {"reason": str(failure), "retry_count": preparation.count, "_untouched": True, **failure.fields}
     if getattr(cmd, "uv_repaired", False):
         out["uv_repaired"] = True
     return _install_attempts(run, cmd, say, out, pin, preparation)

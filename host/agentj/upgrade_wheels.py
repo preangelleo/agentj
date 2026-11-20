@@ -74,10 +74,16 @@ def temp_env(scratch):
 
 class PreparationFailure(ValueError):
     """Only fixed, public diagnostic words cross the preparation boundary."""
-    def __init__(self, reason, phase, symptom='other', transient=False):
+    def __init__(self, reason, phase, symptom='other', transient=False, *, detail=None):
         super().__init__(reason)
         self.fields = {'dependency_phase': phase, 'uv_failure_class': symptom}
+        if detail:
+            self.fields['uv_resolve_detail'] = detail
         self.transient = transient
+
+
+def invalid_preparation(detail):
+    return PreparationFailure('dependency_preparation_failed', 'resolve', detail=detail)
 
 
 def local_failure(exc):
@@ -90,7 +96,13 @@ def local_failure(exc):
         return 'read_only_filesystem' if exc.errno == errno.EROFS else 'os_error'
     if isinstance(exc, (OSError, subprocess.SubprocessError)):
         return upgrade_diag.installer_reason(exc)
-    return 'install_artifact_changed'
+    return 'dependency_preparation_failed'
+
+
+def local_preparation_failure(error):
+    reason = local_failure(error)
+    detail = 'local_prepare_error' if reason == 'dependency_preparation_failed' else None
+    return PreparationFailure(reason, 'resolve', detail=detail)
 
 
 def resolver_failure(text):
@@ -218,7 +230,7 @@ def run_resolver(args, scratch, timeout, *, offline=False, isolated_temp=False, 
                 failure.transient = False
             raise failure from None
         except OSError as error:
-            raise PreparationFailure(local_failure(error), 'resolve') from None
+            raise local_preparation_failure(error) from None
         if proc.returncode:
             errors.seek(max(0, errors.tell() - upgrade_diag.EVIDENCE_MAX))
             failure = resolver_failure(errors.read())
@@ -249,20 +261,24 @@ def selected_wheels(uv, wheel, entries, scratch, *, timeout=150, python=None, is
     args = [uv, 'pip', 'compile', '--no-config', '--no-index', '--no-build', '--no-python-downloads',
             '--no-cache', '--python', py, '--find-links', str(index), '--format', 'pylock.toml', '-o', str(result), str(requirement)]
     run_resolver(args, scratch, timeout, isolated_temp=isolated_temp)
-    names = set()
-    for package in tomllib.loads(result.read_text())['packages']:
-        if package['name'] == 'agentj':
-            continue
-        wheels = package.get('wheels', [])
-        if not wheels:
-            raise ValueError('install_artifact_changed')
-        for w in wheels:
-            match = CDN.fullmatch(w.get('url', ''))
-            if not match or match[1] not in entries or w['hashes'].get('sha256') != entries[match[1]]['hash'][7:]:
-                raise ValueError('install_artifact_changed')
-            # The platform resolver may retain multiple compatible glibc/ABI
-            # tags in pylock. Leave their final ranking to the installer itself.
-            names.add(match[1])
+    try:
+        packages = tomllib.loads(result.read_text())['packages']
+        if not isinstance(packages, list):
+            raise TypeError
+        names = set()
+        for package in packages:
+            if package['name'] == 'agentj':
+                continue
+            for item in package['wheels']:
+                match = CDN.fullmatch(item['url'])
+                if not match or match[1] not in entries or item['hashes']['sha256'] != entries[match[1]]['hash'][7:]:
+                    raise PreparationFailure('install_artifact_changed', 'resolve')
+                # The platform resolver can retain multiple compatible tags.
+                names.add(match[1])
+            if not package['wheels']:
+                raise TypeError
+    except (FileNotFoundError, tomllib.TOMLDecodeError, UnicodeDecodeError, KeyError, TypeError):
+        raise invalid_preparation('resolver_output_invalid') from None
     return names
 
 
@@ -400,6 +416,50 @@ def wheelhouse(pin, data, uv, *, prepare, retry=None, python=None, repair_index=
     return target
 
 
+def verified_tool_destinations(receipt, configured=None):
+    """Pin canonical destinations for this exact existing uv environment."""
+    uid = os.getuid()
+    try:
+        if os.geteuid() != uid:
+            return None
+        prefix = receipt.parent.resolve(strict=True)
+        if prefix.name != 'agentj':
+            return None
+        receipt_info = (prefix / receipt.name).lstat()
+        if not stat.S_ISREG(receipt_info.st_mode) or receipt_info.st_uid != uid or receipt_info.st_mode & 0o022:
+            return None
+        expected = prefix / 'bin/agentj'
+        meta = expected.lstat()
+        if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != uid or meta.st_mode & 0o022
+                or not os.access(expected, os.X_OK)):
+            return None
+        candidates = (configured,) if configured else (*os.get_exec_path(), Path.home()/'.local/bin')
+        verified = set()
+        for value in candidates:
+            candidate = Path(value)
+            if not candidate.is_absolute():
+                continue
+            try:
+                parent = candidate.resolve(strict=True)
+                entry = parent / 'agentj'
+                if entry.is_symlink() and entry.lstat().st_uid == uid and entry.resolve(strict=True) == expected:
+                    for path in (parent, *parent.parents, *expected.parents):
+                        info = path.stat()
+                        sticky = path not in (parent, expected.parent) and info.st_uid == 0 and info.st_mode & stat.S_ISVTX
+                        if info.st_uid not in (0, uid) or info.st_mode & 0o022 and not sticky:
+                            break
+                    else:
+                        if parent.stat().st_uid == uid:
+                            verified.add(parent)
+            except (OSError, ValueError, RuntimeError):
+                continue
+        if len(verified) == 1:
+            return str(prefix.parent), str(verified.pop())
+    except (OSError, ValueError, RuntimeError):
+        pass
+    return None
+
+
 def offline_command(cmd, house, python=None):
     from .auto_update import Command
     args = list(cmd)
@@ -413,11 +473,21 @@ def offline_command(cmd, house, python=None):
     # entrypoint and the interpreter even in a service with a different PATH.
     tool = Path(env['UV_TOOL_DIR']) / 'agentj' / 'uv-receipt.toml'
     if tool.is_file():
-        receipt = tomllib.loads(tool.read_text())['tool']
-        for item in receipt.get('entrypoints', []):
-            if item.get('name') == 'agentj' and Path(item['install-path']).is_absolute():
-                env['UV_TOOL_BIN_DIR'] = str(Path(item['install-path']).parent)
-                break
+        try:
+            receipt = tomllib.loads(tool.read_text())
+        except (tomllib.TOMLDecodeError, UnicodeDecodeError):
+            destinations = verified_tool_destinations(tool, env.get('UV_TOOL_BIN_DIR') or os.environ.get('UV_TOOL_BIN_DIR'))
+            if not destinations:
+                raise invalid_preparation('tool_receipt_invalid') from None
+            env['UV_TOOL_DIR'], env['UV_TOOL_BIN_DIR'] = destinations
+        else:
+            try:
+                for item in receipt['tool'].get('entrypoints', []):
+                    if item.get('name') == 'agentj' and Path(item['install-path']).is_absolute():
+                        env['UV_TOOL_BIN_DIR'] = str(Path(item['install-path']).parent)
+                        break
+            except (KeyError, TypeError, AttributeError):
+                raise invalid_preparation('tool_receipt_invalid') from None
     if 'UV_TOOL_BIN_DIR' not in env and os.environ.get('UV_TOOL_BIN_DIR'):
         env['UV_TOOL_BIN_DIR'] = os.environ['UV_TOOL_BIN_DIR']
     arg = Command([*args, '--offline', '--no-index', '--no-config', '--no-cache', '--no-build',
@@ -482,6 +552,7 @@ def prepare_update(cmd, pin, previous_version, *, retry=None):
             old_uv = str(error) == 'installer_incompatible'
             repairable = (str(error) in ('installer_incompatible', 'installer_missing', 'uv_failed',
                                           'python_incompatible', 'python_missing', 'dependency_conflict')
+                          or detail == 'resolver_output_invalid'
                           or (str(error) == 'install_artifact_unavailable' and detail == 'wheelhouse_incomplete')
                           or (str(error) == 'permission_denied' and detail == 'temp_directory'))
             if (error.fields['dependency_phase'] != 'resolve' or not repairable
@@ -504,8 +575,9 @@ def prepare_update(cmd, pin, previous_version, *, retry=None):
         return result
     except PreparationFailure as error:
         failure = error
-    except (OSError, subprocess.SubprocessError, ValueError, zipfile.BadZipFile, KeyError, TypeError) as error:
-        failure = PreparationFailure(local_failure(error), 'resolve')
+    except (OSError, subprocess.SubprocessError, ValueError, zipfile.BadZipFile, KeyError, TypeError,
+            AttributeError, IndexError) as error:
+        failure = local_preparation_failure(error)
     if original_detail and (original_detail != 'unrecognized' or not failure.fields.get('uv_resolve_detail')):
         failure.fields['uv_resolve_detail'] = original_detail
     if repairing:
