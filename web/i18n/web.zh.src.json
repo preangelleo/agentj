@@ -5824,6 +5824,7 @@
   "p0284.refusal.compacting": "Agent 正在整理上下文。请等它整理完成后，让 Agent 重新发一张卡。",
   "p0284.refusal.context": "操作上下文已变化。请让 Agent 重新发一张卡，再确认。",
   "p0284.refusal.stale": "卡片已更新。请让 Agent 重新发一张卡，再确认。",
+  "p0353.repair.guide": "查看主机升级修复步骤",
   "p0284.repair.button": "修复连接",
   "p0284.repair.offline": "Agent J 主机离线，请先唤醒 Agent J 主机。",
   "p0284.repair.unsupported": "这台 Agent J 主机暂不支持网页修复，请在设置中查看紧急修复。",

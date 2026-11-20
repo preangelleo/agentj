@@ -641,7 +641,7 @@ def install_commands(info, wheel):
         return [[update.installer_binary('pipx'), 'install', '--force', str(wheel)]]
     # Plain venvs made by uv need not contain pip. Install into this exact
     # interpreter; manual/nightly updates and rollback share this planner.
-    uv = shutil.which('uv')
+    uv = update.discover_installer('uv')
     if uv:
         return [[uv, 'pip', 'install', '--python', str(Path(info['where'])/'bin/python'),
                  '--no-deps', '--reinstall', str(wheel)]]
@@ -940,7 +940,13 @@ def finish(st, result, diag=None):
         result['install_failure'] = diag['failure']
     with st.config_lock():
         _finish(st, result)
-    _diagnose(st, result, diag or {})
+    support = _diagnose(st, result, diag or {})
+    if support and upgrade_diag.resolution_failed(result):
+        with st.config_lock():
+            rec = read(st)
+            if rec.get('result') == result:
+                rec['result'] = {**result, 'support': support}
+                write(st, rec)
 
 
 def _diagnose(st, result, diag):
@@ -967,13 +973,16 @@ def _diagnose(st, result, diag):
             except Exception:  # noqa: BLE001
                 pass
             upgrade_diag.after_failure(st, res, lang=lang)
+            return res.get("support")
     except Exception:  # noqa: BLE001
         pass
 
 
 def _finish(st, result):
     rec = read(st)
-    if rec.get('result') == result:
+    previous = rec.get('result')
+    if previous == result or (isinstance(previous, dict) and 'support' in previous
+                              and {k: v for k, v in previous.items() if k != 'support'} == result):
         return  # Manager retried after result persistence but before marking the job done.
     rec.update(result=result, result_at=int(time.time()), notice_pending=True)
     write(st, rec)
@@ -995,6 +1004,9 @@ def notice(r, lang='zh', prefs=None, harness=None):
     if r.get('result') == 'ok':
         summary = summary or humane.say('update.auto_ok_default', lang)
         return humane.say('update.auto_ok', lang, prefs, to=r['to'], summary=str(summary).rstrip('。.'))
+    if upgrade_diag.resolution_failed(r):
+        from .phone_update import _rep_of
+        return upgrade_diag.owner_sentence(r, _rep_of(r), lang)
     dependency = upgrade_diag.dependency_message(r, lang)
     guide = upgrade_diag.dependency_repair(lang) if dependency else ''
     reason = dependency or r['reason']
@@ -1025,6 +1037,12 @@ def _take_notice(st, lang='zh', prefs=None, harness=_UNSET_HARNESS):
     result = rec['result']
     expected = result.get('to') if result['result'] == 'ok' else result.get('from')
     if expected and expected != __version__:
+        return None
+    # Reporting runs outside the lock. An interrupted report still leaves a
+    # deliverable failure receipt with an explicitly unconfirmed delivery.
+    from . import upgrade_diag
+    if (upgrade_diag.resolution_failed(result) and 'support' not in result
+            and 0 <= time.time() - rec.get('result_at', 0) < 60):
         return None
     rec['notice_pending'] = False
     write(st, rec)

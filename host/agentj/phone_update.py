@@ -78,7 +78,7 @@ def text(rec, lang="zh", web="older", machine=None):
         return humane.say("update.current", lang, to=rec["to"])
     from . import upgrade_diag
     reason = rec.get("reason")
-    if rec.get("tell_owner"):          # P277: the plain sentence (what failed, where the Agent J host is, whether support has it)
+    if rec.get("tell_owner") or upgrade_diag.resolution_failed(rec):          # P277: the plain sentence (what failed, where the Agent J host is, whether support has it)
         return upgrade_diag.owner_sentence(rec, _rep_of(rec), lang)
     en = lang == "en"
     # Receipt fields may come from an older updater. Only fixed vocabulary crosses into owner-visible text.
@@ -104,8 +104,9 @@ def _rep_of(rec):
     s = str(rec.get("support") or "")
     m = re.search(r"st_[A-Za-z0-9_-]{22}", s)
     if m:
-        return {"status": "sent", "thread": m.group(0), "metadata_only": s.endswith(" metadata only")}
-    return {"status": "off"} if s.startswith("off") else {"status": "not_sent"}
+        return {"status": "already" if s.startswith("already sent") else "sent",
+                "thread": m.group(0), "metadata_only": s.endswith(" metadata only")}
+    return {"status": "off" if s.startswith("off") else "not_sent" if s else "unknown"}
 
 
 def _lang(st):

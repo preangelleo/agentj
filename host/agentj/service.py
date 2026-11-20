@@ -130,7 +130,7 @@ def service_env(environ: dict | None = None) -> tuple[dict, list[str]]:
     """(variables written into the unit, notes for the human). Values are paths only; proxies only without credentials."""
     from . import service_path
     e = dict(os.environ if environ is None else environ)
-    e["PATH"] = service_path.build(e)
+    e["PATH"] = service_path.build(e, install=True)
     out = {"PATH": e["PATH"]}
     if isset("AGENTJ_STATE_DIR", e):
         sd = getenv("AGENTJ_STATE_DIR", "", e)

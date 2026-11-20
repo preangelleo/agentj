@@ -72,7 +72,10 @@ class OfflineDependencies(unittest.TestCase):
         cmd = self.prepare()
         staged = Path(cmd[cmd.index('--find-links') + 1]) / self.name
         staged.unlink()
-        with self.assertRaisesRegex(ValueError, 'install_artifact_unavailable'):
+        # Missing wheels can now start the one repair-index retry. Refusing the
+        # transport keeps this incomplete set from reaching the live installer.
+        with patch('agentj.upgrade_uv.runtime', side_effect=uw.PreparationFailure('install_artifact_unavailable','resolve')), \
+             self.assertRaisesRegex(ValueError, 'install_artifact_unavailable'):
             self.prepare()
         staged.write_bytes(b'bad')
         with self.assertRaisesRegex(ValueError, 'install_artifact_changed'):

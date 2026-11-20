@@ -92,12 +92,18 @@ os.execv({self.real_uv!r}, [{self.real_uv!r}, *sys.argv[1:]])
         self.assertEqual(self.sleeps, [au.INSTALL_BACKOFF[0]])
         self.assertIn("--offline", self.launched.call_args.args[0])
 
-    def test_manual_solver_conflict_is_not_a_download_failure(self):
+    def test_manual_solver_conflict_needs_valid_offline_solution_before_live_install(self):
+        # The real target requires a package the signed closure does not supply.
+        # A known uv and the retry's offline solve must still refuse the install.
+        self.put_wheel(NEW, wheel('agentj', NEW, 'missing==1', b'package = []\n'))
         self.resolver([CONFLICT_ERR])
-        rc, fields = self.manual()
+        with patch('agentj.upgrade_uv.runtime', return_value=self.real_uv), \
+             patch.object(upgrade_wheels, 'repair_names', return_value=[]):
+            rc, fields = self.manual()
         self.assertNotEqual(rc, 0)
         self.assertEqual(fields["reason"], "dependency_conflict")
-        self.assertEqual(fields["retry_count"], 0)
+        self.assertEqual(fields["retry_count"], 1)
+        self.assertEqual(fields["uv_resolve_detail"], "version_conflict")
         self.assertEqual(int(self.calls.read_text()), 1)
         self.launched.assert_not_called()
 

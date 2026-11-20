@@ -8,8 +8,19 @@ export function repairOf(page) {
  return s.k==='sys'&&s.repair==='reconnect'||s.k==='cmd'&&c?.cmd==='update'&&['ok','error'].includes(c.kind)&&c.repair==='reconnect';
 }
 export const replyName=(page,normal)=>repairOf(page)?'AgentJ':normal;
+const upgradeGuide = 'https://agentj.app/docs/install/#upgrade-failed';
+function repairGuide(page) {
+ const s=page.source;
+ if(s.via||s.forward||page.reply?.includes(upgradeGuide))return null;
+ if(s.k!=='sys'&&page.card?.kind!=='error')return null;
+ const link=mk('a','',t('p0353.repair.guide'),'aj-reply');
+ link.href=upgradeGuide;link.target='_blank';link.rel='noopener noreferrer';
+ return link;
+}
 export function paintRepair(box,page,ctx) {
  if(!repairOf(page))return false;
+ const guide=repairGuide(page);
+ if(guide&&page.source.k==='cmd')box.append(guide);
  const b=mk('button','cmdundo',t('p0284.repair.button'),'aj-reply');b.type='button';b.dataset.repair='reconnect';
  const blocked=!ctx.ready()?t('p0284.repair.offline'):!ctx.supported()?t('p0284.repair.unsupported'):'';
  b.disabled=!!blocked;
@@ -17,7 +28,9 @@ export function paintRepair(box,page,ctx) {
  box.append(b);
  if(blocked)box.append(mk('p','small',blocked));
  const more=mk('details','cmdresume'),label=mk('summary','',t('p339.details'),'aj-reply');
- more.append(label,copyable(mk('code','','agentj doctor --reconnect')));box.append(more);return true;
+ more.append(label);
+ if(guide&&page.source.k==='sys')more.append(guide);
+ more.append(copyable(mk('code','','agentj doctor --reconnect')));box.append(more);return true;
 }
 // 0.30.7: a Codex sandbox refusal caused by the owner's own config.toml carries the host's typed card.fix — never inferred
 // from the page's text (the notice also shows the terminal commands). One button: the signed cmd_run by NAME + Face ID.

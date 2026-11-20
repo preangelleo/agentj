@@ -38,7 +38,8 @@ def login_path(environ: dict) -> str:
         return ''
 
 
-def build(environ: dict) -> str:
+def build(environ: dict, *, install=False) -> str:
+    from . import service_uv
     home = Path(environ.get('HOME') or str(Path.home()))
     common = [home / p for p in ('.local/bin', 'bin', '.local/share/mise/shims', '.asdf/shims',
                                  '.npm-global/bin', '.npm/bin', '.local/share/npm/bin', '.opencode/bin')]
@@ -48,9 +49,10 @@ def build(environ: dict) -> str:
     # The invoking App's PATH is intentionally never a source.
     candidates = login_path(environ).split(':') + [str(p) for p in common] + ['/opt/homebrew/bin', '/opt/homebrew/sbin']
     candidates += BASE.split(':')
-    out = []
+    uv = service_uv.executable(home, provision=install)
+    out = [str(Path(uv).parent)] if uv else []
     for entry in candidates:
         entry = os.path.normpath(entry) if entry.startswith('/') else entry
-        if stable_entry(entry) and entry not in out:
+        if stable_entry(entry) and entry not in out and not service_uv.reserved(entry, home):
             out.append(entry)
     return ':'.join(out)

@@ -5825,6 +5825,7 @@
   "p0284.refusal.compacting": "The Agent is compacting its context. Once it finishes, ask it to send a new card.",
   "p0284.refusal.context": "The action context changed. Ask the Agent to send a new card before confirming.",
   "p0284.refusal.stale": "The card changed. Ask the Agent to send a new card before confirming.",
+  "p0353.repair.guide": "How to repair a host update",
   "p0284.repair.button": "Repair connection",
   "p0284.repair.offline": "Your Agent J host is offline. Wake your Agent J host first.",
   "p0284.repair.unsupported": "This host does not support repair from this page yet. Open Emergency repair in Settings.",

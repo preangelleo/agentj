@@ -122,7 +122,11 @@ class Worker(_Env):
         self.assertNotIn(FAKE_GH, rec['stderr_tail'])
         self.assertNotIn('winuser', rec['stderr_tail'])
         self.assertIn('old.whl', result['recover'])
-        self.assertIn(result['recover'], auto_update.notice(result))
+        notice = auto_update.notice(result)
+        self.assertIn('修复连接', notice)
+        self.assertIn('联系 AgentJ 支持', notice)
+        self.assertNotIn(result['recover'], notice)
+        self.assertNotIn(str(self.st.root), notice)
         self.assertNotIn('recover', upgrade_diag.body(self.sent[0]))
         self.assertNotIn(str(self.st.root), upgrade_diag.body(self.sent[0]))
 

@@ -78,6 +78,37 @@ UV_STDERR = (
 DEP_PHASES = ("resolve", "download", "build", "install")
 DEP_SOURCES = ("pypi", "mirror", "proxy", "unknown")
 UV_CLASSES = ("dns", "connect", "timeout", "tls", "http_status", "other")
+# More specific than a transport symptom. Only these words may leave the host.
+_RESOLVE_HINTS = (
+    ("uv_option", ("unexpected argument", "unrecognized option", "unrecognized arguments", "unrecognized subcommand",
+                   "invalid value 'pylock.toml'", "invalid value for --format", "wasn't expected", "unknown option")),
+    ("installer_shim", ("uv is not a valid shim", "no version is set for command uv",
+                        "no version set for command uv", "pyenv: uv: command not found",
+                        "pyenv: uv: no such command")),
+    ("requires_python", ("requires-python", "requires python", "does not satisfy python", "python version is not supported")),
+    ("interpreter_missing", ("no interpreter found", "no python installation", "failed to find a python",
+                             "failed to inspect python interpreter", "python downloads are not allowed")),
+    ("wheel_tags", ("matching platform tag", "matching python implementation tag", "matching python abi tag",
+                    "compatible wheel", "unsupported wheel", "not compatible with the current platform")),
+    ("yanked", ("yanked",)),
+    ("temp_directory", ("failed to create a temporary directory", "failed to create temporary directory",
+                        "failed to create temp directory")),
+    ("cache", ("cache entry", "cache directory", "failed to initialize cache", "failed to read cache")),
+    ("version_conflict", ("no solution found", "unsatisfiable", "no matching distribution", "resolutionimpossible")),
+)
+RESOLVE_DETAILS = frozenset(name for name, _ in _RESOLVE_HINTS) | {"unrecognized", "wheelhouse_incomplete"}
+
+def resolve_detail(text):
+    low = bound_evidence(text).lower()
+    # uv also reports only ENOTDIR + its randomized temporary path. Compare locally;
+    # neither the configured directory nor the path from stderr becomes metadata.
+    if "not a directory" in low or "permission denied" in low or "no such file or directory" in low:
+        for key in ("TMPDIR", "TMP", "TEMP"):
+            parent = os.environ.get(key)
+            if parent and (os.path.join(parent, ".tmp").lower() in low):
+                return "temp_directory"
+    return next((name for name, phrases in _RESOLVE_HINTS if any(p in low for p in phrases)), "unrecognized")
+
 RETRY_MAX = 9
 _PKG = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 # agentj's dependency closure (pyproject + their install-time requirements on every supported platform): the only names the
@@ -272,13 +303,16 @@ def dependency_evidence(raw, env=None) -> dict:
     """The installer's raw output (stdout + stderr, never stored) → the closed dependency fields."""
     raw = bound_evidence(raw)
     try:
-        return dependency_fields({"dependency_package": dependency_package(raw), "dependency_phase": dependency_phase(raw),
-                                  "dependency_source": source_category(env), "uv_failure_class": uv_failure_class(raw)})
+        phase, symptom = dependency_phase(raw), uv_failure_class(raw)
+        detail = resolve_detail(raw) if phase == "resolve" and symptom == "other" else None
+        return dependency_fields({"dependency_package": dependency_package(raw), "dependency_phase": phase,
+                                  "dependency_source": source_category(env), "uv_failure_class": symptom,
+                                  "uv_resolve_detail": detail})
     except Exception:  # noqa: BLE001 — evidence never changes the upgrade's own outcome
         return {}
 
 
-DEPENDENCY_KEYS = ("dependency_package", "dependency_phase", "dependency_source", "uv_failure_class", "retry_count")
+DEPENDENCY_KEYS = ("dependency_package", "dependency_phase", "dependency_source", "uv_failure_class", "uv_resolve_detail", "retry_count")
 
 
 def dependency_fields(res) -> dict:
@@ -292,7 +326,7 @@ def dependency_fields(res) -> dict:
     if isinstance(pkg, str) and pkg:
         out["dependency_package"] = pkg if pkg in DEPENDENCY_NAMES else "other"
     for key, allowed in (("dependency_phase", DEP_PHASES), ("dependency_source", DEP_SOURCES),
-                         ("uv_failure_class", UV_CLASSES)):
+                         ("uv_failure_class", UV_CLASSES), ("uv_resolve_detail", RESOLVE_DETAILS)):
         if isinstance(res.get(key), str) and res[key] in allowed:
             out[key] = res[key]
     value = res.get("retry_count")
@@ -757,7 +791,7 @@ META_FIELDS = {
     # name only when it is one of agentj's own dependencies (DEPENDENCY_NAMES), never a URL, host, path or stderr.
     "dependency_package": lambda v: v in DEPENDENCY_NAMES or v == "other",
     "dependency_phase": lambda v: v in DEP_PHASES, "dependency_source": lambda v: v in DEP_SOURCES,
-    "uv_failure_class": lambda v: v in UV_CLASSES,
+    "uv_failure_class": lambda v: v in UV_CLASSES, "uv_resolve_detail": lambda v: v in RESOLVE_DETAILS,
     "retry_count": lambda v: len(v) == 1 and v in "0123456789",      # ASCII digits only (0334 r2)
 }
 META_MAX_LINES = 20                                # = support.META_MAX_LINES (header included)
@@ -947,11 +981,51 @@ def install_unchanged(res: dict) -> bool:
     return category(res.get("reason")) in ("download_failed", "signature_or_hash_mismatch", "unsupported_install")
 
 
+def resolution_failed(res):
+    return res.get("dependency_phase") == "resolve" and res.get("reason") in (
+        "uv_failed", "dependency_conflict", "python_incompatible", "python_missing", "installer_incompatible",
+    )
+
+
+def resolve_receipt(res, rep, lang):
+    en = lang == "en"
+    frm = _clean_version(res.get("from")) or "?"
+    to = _clean_version(res.get("to")) or "?"
+    text = (f"During the update from {frm} to {to}, the installer could not resolve the required packages."
+            if en else f"从 {frm} 升级到 {to} 时，安装工具没能确定可用的依赖包。")
+    if res.get("result") == "rolled_back" or res.get("rollback") == "ok":
+        text += f" The host returned to {frm}." if en else f"主机已恢复到 {frm}。"
+    elif install_unchanged(res):
+        text += f" The host is still on {frm}." if en else f"主机仍是 {frm}。"
+    else:
+        text += " The running version is unconfirmed." if en else "尚未确认主机当前运行的版本。"
+    status = rep.get("status")
+    thread = rep.get("thread")
+    if status in ("sent", "already") and isinstance(thread, str) and re.fullmatch(r"st_[A-Za-z0-9_-]{22}", thread):
+        if rep.get("metadata_only"):
+            text += (f" Agent J support received the version and error category (no logs) ({thread})." if en else
+                     f"版本和错误类别（不含日志）已发给 Agent J 客服（{thread}）。")
+        elif status == "already":
+            text += f" Support already has a report ({thread})." if en else f"客服已有这次故障的报告（{thread}）。"
+        else:
+            text += f" Support received the redacted failure report ({thread})." if en else f"脱敏故障报告已发给客服（{thread}）。"
+    elif status == "off":
+        text += " Automatic reporting is off. No report was sent." if en else "自动上报已关闭，未发给客服。"
+    elif status == "not_sent":
+        text += " The report could not be sent to support." if en else "故障报告未能发给客服。"
+    else:
+        text += " Delivery to support is unconfirmed." if en else "尚未确认客服是否收到报告。"
+    return text + ("\n\nAfter the host is idle, enter /update on your phone. If it fails again, follow the host repair guide: "
+                   if en else "\n\n主机空闲后，在手机输入 /update 重试。若仍失败，请按主机修复说明操作：") + UPGRADE_REPAIR_GUIDE
+
+
 def owner_sentence(res: dict, rep: dict, lang: str = "zh") -> str:
     """One plain sentence for the owner: what failed, where the Agent J host is now, whether support already has it."""
     en = lang == "en"
     if "uv_repair_doctor" in res:
         return uv_repair_failure(res, lang, rep)
+    if resolution_failed(res):
+        return resolve_receipt(res, rep, lang)
     if res.get("reason") == "not_owner":            # #475: a refusal, nothing to report — the one fix step
         from .upgrade_owner import sentence
         return sentence(res, lang)
@@ -972,7 +1046,8 @@ def owner_sentence(res: dict, rep: dict, lang: str = "zh") -> str:
         where = ("the rollback failed too; I will run the recover command in the result to put the previous version back" if en else
                  "回滚也没成功，我会运行结果里的 recover 命令装回原版本")
     else:
-        where = "run `agentj doctor` to check the Agent J host" if en else "请让我运行 agentj doctor 检查一下"
+        where = ("the running version is unconfirmed; check Service status in Settings → Emergency repair" if en else
+                 "尚未确认主机当前运行的版本，请在设置的紧急修复里查看服务状态")
     s = rep.get("status")
     if s in ("sent", "already"):
         tail_ = (f"Agent J support received the report ({rep['thread']})" if en else

@@ -170,11 +170,24 @@ def install_kind(prefix: str | None = None) -> dict:
     return {"kind": "pip", "where": prefix, "legacy": False}
 
 
+def discover_installer(name: str) -> str | None:
+    if name == 'uv':
+        from . import service_uv
+        home = Path.home()
+        private = service_uv.executable(home)
+        if private:
+            return private
+        # A long-running daemon can retain a formerly valid directory in PATH.
+        entries = os.get_exec_path()
+        clean = [entry for entry in entries if not service_uv.reserved(entry, home)]
+        if clean != entries:
+            return shutil.which(name, path=os.pathsep.join(clean)) if clean else None
+    return shutil.which(name)
+
+
 def installer_binary(name: str) -> str:
-    """Service PATH can omit uv/pipx's user install directory. Keep PATH precedence;
-    fall back only to their standard per-user locations, never a shell or arbitrary search.
-    """
-    found = shutil.which(name)
+    """Prefer the authenticated repair runtime, then standard executable discovery."""
+    found = discover_installer(name)
     if found:
         return found
     locations = ('.local/bin', '.cargo/bin') if name == 'uv' else ('.local/bin',)
@@ -182,6 +195,10 @@ def installer_binary(name: str) -> str:
         candidate = Path.home() / directory / name
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
+    if name == 'uv':
+        from . import service_uv
+        if any(service_uv.reserved(entry, Path.home()) for entry in os.get_exec_path()):
+            raise FileNotFoundError('verified uv unavailable')
     return name
 
 
@@ -1420,7 +1437,7 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
         if rc != 0:
             st.log("upgrade_failed", status=str(rc))
             if dep.pop("_untouched", False):          # nothing ran: no rollback needed
-                return done(dep.pop("reason"), **dep)
+                return done(dep.pop("reason"), phase="prepared", **dep)
             return back(dep.pop("reason", "uv_failed"), **({"stderr_tail": tl} if tl else {}), **dep)
     argv = new_argv(info)
     out["step"] = "verify"
@@ -1591,7 +1608,7 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
             if not fenced and st.exists():
                 st.log("upgrade_failed", status=str(rc))
             if dep.pop("_untouched", False):          # nothing ran: no rollback needed
-                return done(dep.pop("reason"), **dep)
+                return done(dep.pop("reason"), phase="prepared", **dep)
             return back(dep.pop("reason", "uv_failed"), **({"stderr_tail": tl} if tl else {}), **dep)
     out["step"] = "verify"
     argv = new_argv(info)
@@ -1684,7 +1701,7 @@ def repair_install(st, *, target=None, runner=None, service_installed=None, plan
 
     The service is rebuilt only if previously installed; the state directory is untouched.
     """
-    from . import auto_update, service
+    from . import auto_update, service, upgrade_wheels
     runner = runner or subprocess.run
     target = target or __version__
     result = {"from": __version__, "to": target, "service": "unchanged"}
@@ -1709,6 +1726,7 @@ def repair_install(st, *, target=None, runner=None, service_installed=None, plan
         from .state import State
         with contextlib.ExitStack() as stack:
             pinned = None
+            preparation = None
             if plan_fn is not None:  # injected isolated tests; production always seals the published bytes
                 plan = plan_fn(st, info, target)
             else:
@@ -1724,16 +1742,19 @@ def repair_install(st, *, target=None, runner=None, service_installed=None, plan
                     pinned = auto_update.pin_artifact(sealed_bytes, target, store, signed=True) if store else None
                 except ValueError:
                     pinned = None
-                if pinned:
-                    wheel_copy = pinned.path
-                else:
+                if pinned is None:
                     scratch = Path(stack.enter_context(tempfile.TemporaryDirectory(prefix="agentj-reinstall-")))
-                    scratch.chmod(0o700)
-                    wheel_copy = scratch / f"agentj-{target}-py3-none-any.whl"
-                    with open(wheel_copy, "xb") as dst:
-                        dst.write(sealed_bytes)
-                    wheel_copy.chmod(0o400)
-                plan = auto_update.install_commands(info, wheel_copy)
+                    pinned = auto_update.pin_artifact(sealed_bytes, target, scratch, signed=True)
+                plan = auto_update.install_commands(info, pinned.path)
+                if info['kind'] == 'uv':
+                    # Use the normal signed lock, resolver and independent base interpreter. Preparation
+                    # and installation share the same 300 s allowance as this explicit repair's installer.
+                    preparation = upgrade_wheels.PreparationRetry()
+                    preparation.deadline = min(preparation.deadline, preparation.clock() + 300)
+                    try:
+                        plan = [upgrade_wheels.prepare_update(plan[0], pinned, target, retry=preparation)]
+                    except upgrade_wheels.PreparationFailure as err:
+                        return finish(str(err), retry_count=preparation.count, **err.fields)
             _pre_snapshot(st)
             for cmd in plan:
                 if pinned:
@@ -1741,7 +1762,10 @@ def repair_install(st, *, target=None, runner=None, service_installed=None, plan
                         auto_update.check_artifact(pinned)
                     except ValueError:
                         return finish(auto_update.ARTIFACT_CHANGED)
-                if runner(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=300).returncode:
+                remaining = 300 if preparation is None else int(preparation.deadline - preparation.clock())
+                if remaining <= 0:
+                    return finish("installer_timeout")
+                if _pinned(runner)(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=remaining).returncode:
                     return finish("uv_failed")
         v = runner(new_argv(info) + ["--version"], stdin=subprocess.DEVNULL,
                    capture_output=True, text=True, timeout=30)

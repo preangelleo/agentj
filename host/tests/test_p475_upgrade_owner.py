@@ -361,7 +361,7 @@ class MetadataReport(_Mac):
                         "service_reason",
                         # 0334 (hotfix brief HOTFIX-upgrade-0.30.25, 贾维斯): closed dependency-failure words, a bounded
                         # retry count and only agentj's own dependency names (upgrade_diag.DEPENDENCY_NAMES; test_0334)
-                        "dependency_package", "dependency_phase", "dependency_source", "uv_failure_class", "retry_count"})
+                        "dependency_package", "dependency_phase", "dependency_source", "uv_failure_class", "uv_resolve_detail", "retry_count"})
 
     def test_ruling_locks_the_exact_field_whitelist(self):
         self.assertEqual(frozenset(upgrade_diag.META_FIELDS), self.LOCKED)
