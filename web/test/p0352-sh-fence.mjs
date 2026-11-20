@@ -28,7 +28,7 @@ test('named shell commands stay visible and copyable on a paired 390px phone', a
         await host.approve();
         await waitState(page, 'ready');
         await evaluate(page, "document.querySelector('#phone-env-dismiss')?.click()");
-        await host.addTurn({k: 'phone', dev: host.devs[0].id, text: 'Check version and status'}, reply);
+        await host.addTurn({k: 'phone', dev: host.devs[0].id, text: 'Check version and status'}, (lang === 'zh' ? '在 Agent J 主机上运行：' : 'On the Agent J host:') + '\n\n' + reply);
         await waitFor(page, "document.querySelectorAll('#words .codeblock').length === 2");
         for (const [index, command] of commands.entries()) {
           const bounds = await evaluate(page, `(() => {

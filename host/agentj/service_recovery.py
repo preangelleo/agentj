@@ -274,7 +274,10 @@ def run(st, target, *, timeout=45, install=None, status=None, ready=None, runner
         # The marker is the last claim before the restart (P142). The old fenced apply may have written its marker only in a
         # private mount namespace: write the normal marker from this manager-owned job.
         if not (st.root / update.UPGRADED).exists() and not (st.root / 'phone-update-result.json').exists() and not auto_active:
-            update.write_marker(st, pending['from'] if pending else target, target)
+            # A repair, sibling or package-drift restart has no apply record. The old
+            # running service is still available here; the installed CLI is already the target.
+            previous = pending.get('from') if pending else process_version(st)
+            update.write_marker(st, previous if isinstance(previous, str) and update.parse(previous) else None, target)
         try:
             (install or service.install)(st)
             stays_up(status or service.status, timeout)

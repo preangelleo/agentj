@@ -776,8 +776,10 @@ def no_manager(tail: str) -> dict:
     return {"service": "no_systemd", "rollback": "skipped", "detail": reason, "fix": service.MESSAGES[reason], "stderr_tail": tail}
 
 
-def write_marker(st, frm: str, to: str, now: float | None = None, *, uv_repaired=False) -> None:
-    marker = {"from": frm, "to": to, "at": int(time.time() if now is None else now)}
+def write_marker(st, frm: str | None, to: str, now: float | None = None, *, uv_repaired=False) -> None:
+    marker = {"to": to, "at": int(time.time() if now is None else now)}
+    if frm is not None:
+        marker["from"] = frm
     if uv_repaired:
         marker["uv_repaired"] = True
     st.write_private(st.root / UPGRADED, json.dumps(marker).encode())
@@ -943,7 +945,8 @@ def take_marker(st, now: float | None = None) -> dict | None:
     except OSError:
         return None                                  # cannot remove it: stay quiet rather than repeat on every start
     now = time.time() if now is None else now
-    if not (isinstance(d, dict) and all(isinstance(d.get(k), str) and parse(d[k]) for k in ("from", "to"))
+    if not (isinstance(d, dict) and isinstance(d.get("to"), str) and parse(d["to"])
+            and ("from" not in d or isinstance(d["from"], str) and parse(d["from"]))
             and isinstance(d.get("at"), int) and now - d["at"] <= MARKER_TTL):
         return None
     return d
@@ -1126,15 +1129,16 @@ def health_text(counts, lang="zh", rows=None, *, verified_upgrade=False) -> str:
 def completion_text(rec, counts, lang="zh", rows=None, web: str | None = "older", machine: str | None = None) -> str:
     """P320: `machine` = the Agent J host's name (several computers each send their own receipt — the owner must tell which);
     `web` = web_state() before the sentence about the page."""
+    from .upgrade_diag import previous_version_text, uv_repaired_sentence
+    previous = previous_version_text(rec.get("from"), rec["to"], lang)
     if rec.get("uv_repaired") is True and rec.get("result", "ok") == "ok" and counts and counts[2] == 0:
-        from .upgrade_diag import uv_repaired_sentence
-        return uv_repaired_sentence(rec["to"], lang)
+        return uv_repaired_sentence(rec["to"], lang, rec.get("from"))
     if lang == "en":
         where = f'Agent J on the Agent J host "{machine}"' if machine else "Agent J on the Agent J host"
-        head = f"{where} has been upgraded to {rec['to']} (previously {rec.get('from', '—')})."
+        head = f"{where} has been upgraded to {rec['to']}{previous}."
     else:
         where = f"Agent J 主机「{machine}」上的 Agent J 程序" if machine else "Agent J 主机上的 Agent J 程序"
-        head = f"{where}已升级到 {rec['to']}（原 {rec.get('from', '—')}）。"
+        head = f"{where}已升级到 {rec['to']}{previous}。"
     return head + " " + health_text(counts, lang, rows, verified_upgrade=True) + "\n\n" + web_refresh_text(lang, web)
 
 

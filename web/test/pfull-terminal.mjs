@@ -208,7 +208,7 @@ export async function runP0269Term({ B, web, fake, out = OUT }) {
       } else {
       const commandChecks=await evaluate(p, `(async()=>{const M=await import('./js/md.js'),C=await import('./js/termcommands.js'),F=await import('./js/five-pages.js');
         const root=document.createElement('blockquote'); document.body.append(root);
-        const md='~~~bash\\nrm -rf ./example\\n~~~';
+        const md='On the Agent J host:\\n\\n~~~bash\\nrm -rf ./example\\n~~~';
         const pages=[{id:1,end:'done',source:{k:'phone'}},{id:1,end:'open',source:{k:'phone'}},{id:1,end:'done',source:{k:'friend_report'}},{id:1,end:'done',source:{k:'phone',quote:{id:2}}},{id:1,end:'done',source:{k:'phone',external:true}}];
         const counts=[];for(const page of pages){root.replaceChildren(M.RelayMD.toDOM(M.RelayMD.parse(md)));C.paint(root,page);counts.push(root.querySelectorAll('.term-command').length);}
         root.replaceChildren(M.RelayMD.toDOM(M.RelayMD.parse('> '+md.replace(/\\n/g,'\\n> '))));C.paint(root,pages[0]);counts.push(root.querySelectorAll('.term-command').length);

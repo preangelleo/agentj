@@ -107,6 +107,26 @@ class RecoveryWorker(Base):
         self.assertEqual(order, [('ready', False), ('install', '0.0.1')])
         self.assertFalse((self.st.root / update.PENDING).exists())
 
+    def test_missing_pending_uses_version_of_old_service_before_restart(self):
+        for previous in ('0.0.1', None, __version__):
+            with self.subTest(previous=previous):
+                installed = []
+                with patch.object(service_recovery, 'stays_up'), patch.object(service_recovery, 'restart_siblings'), \
+                        patch.object(service_recovery, 'process_version', side_effect=lambda st: __version__ if installed else previous):
+                    self.assertEqual(service_recovery.run(self.st, __version__, install=lambda st: installed.append(1),
+                                                         ready=lambda st: 'idle'), 0)
+                marker = update.take_marker(self.st)
+                self.assertEqual(marker.get('from'), previous)
+                self.assertIsNone(update.take_marker(self.st))
+                for lang, source in [('zh', '（原 0.0.1）'), ('en', '(previously 0.0.1)')]:
+                    reply = update.upgraded_text(marker, (1, 0, 0), lang)
+                    self.assertIn(__version__, reply)
+                    if previous == '0.0.1':
+                        self.assertIn(source, reply)
+                    else:
+                        self.assertNotIn('（原 ', reply)
+                        self.assertNotIn('previously', reply)
+
     def test_only_worker_with_verified_live_version_marks_recovery(self):
         for live, sibling, verified in ((__version__, '', True), (None, '', False), (__version__, '1', False)):
             with patch.dict(os.environ, {service_recovery.SIBLING_ENV: sibling}), \

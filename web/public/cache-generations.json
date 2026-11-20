@@ -1,20 +1,20 @@
 {
   "current": {
+    "version": "0.30.54",
+    "paths": [
+      "app.92cd6fed5fbc10102acb4fb4486db5d19364965aef8f9e189d6a5cec468c8ffc.css.gz",
+      "brand/base.ebfa46e0d35c2e332d54462652ca244d800d14a739ba29aec7411ea1912bf511.css.gz",
+      "js/locale-en.4a490a8f4f0e8ab18fc8708fd70b3bf3beccaa77c72453a1853b3fee1633f45b.js",
+      "js/locale-zh.c8ebce8d834614ccb137675d9d0a1f72f3592a64289871f8e702beef332bc030.js"
+    ]
+  },
+  "previous": {
     "version": "0.30.53",
     "paths": [
       "app.92cd6fed5fbc10102acb4fb4486db5d19364965aef8f9e189d6a5cec468c8ffc.css.gz",
       "brand/base.ebfa46e0d35c2e332d54462652ca244d800d14a739ba29aec7411ea1912bf511.css.gz",
       "js/locale-en.4a490a8f4f0e8ab18fc8708fd70b3bf3beccaa77c72453a1853b3fee1633f45b.js",
-      "js/locale-zh.482c4d6e190b038c80546ed25b06099a7f1d44eca79100bd29d88a32bdbd4016.js"
-    ]
-  },
-  "previous": {
-    "version": "0.30.52",
-    "paths": [
-      "app.92cd6fed5fbc10102acb4fb4486db5d19364965aef8f9e189d6a5cec468c8ffc.css.gz",
-      "brand/base.ebfa46e0d35c2e332d54462652ca244d800d14a739ba29aec7411ea1912bf511.css.gz",
-      "js/locale-en.4a490a8f4f0e8ab18fc8708fd70b3bf3beccaa77c72453a1853b3fee1633f45b.js",
-      "js/locale-zh.482c4d6e190b038c80546ed25b06099a7f1d44eca79100bd29d88a32bdbd4016.js"
+      "js/locale-zh.c8ebce8d834614ccb137675d9d0a1f72f3592a64289871f8e702beef332bc030.js"
     ]
   }
 }

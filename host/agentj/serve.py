@@ -552,7 +552,7 @@ def say_sync_state(send, receipt: str | None) -> str | None:
     if send is not None:
         return {"delivered": "delivered", "uncertain": "delivered", "cancelled": "cancelled",
                 "failed": "failed"}.get(send.state)
-    if receipt in ("recv",):
+    if receipt in ("recv", "held"):
         return None
     return {"deliv": "delivered", "lost": "failed"}.get(receipt, "done")   # done / unknown: nothing left to withdraw
 
@@ -786,6 +786,9 @@ class Host:
         self.media_jobs: set = set()
         self.sends = compose.Sends()
         self.receipts = receipts_mod.Receipts(st.root, st.log)   # P313 (§14): the same (device, sid) keys, on disk
+        for (device, sid), row in self.receipts.items.items():
+            if row["s"] == "held" and type(row["n"]) is int:
+                self.sends.add(compose.Send(device, sid, row["n"]))
         self.questions: dict[str, Question] = {}
         self.cur_turn: int | None = None        # the history page the running Agent turn answers
         self.cur_failed = False
@@ -8454,7 +8457,8 @@ class Host:
 
     # ------------------------------------------------------------ say (§10.2)
     async def _accept(self, s: Session, text: str, sid: str | None, blobs: list | None = None, quote: dict | None = None,
-                      quote_text: str | None = None, agent_text: str | None = None, extra_src: dict | None = None) -> compose.Send | None:
+                      quote_text: str | None = None, agent_text: str | None = None, extra_src: dict | None = None,
+                      held_page: dict | None = None, held_guard=None) -> compose.Send | None:
 
         blobs = blobs or []
         _hb_touch(self)                     # P156: a phone conversation pushes the heartbeat back
@@ -8486,7 +8490,7 @@ class Host:
             src.update(extra_src)
         origin = provenance.normalize(getattr(s, "provenance", None))
         src.update(source_kind=origin["kind"], source_role=origin["role"])
-        turn = self.hist_add(src, "", "open" if self.agent else "done", card={"queued": True} if self.agent else None)
+        turn = held_page or self.hist_add(src, "", "open" if self.agent else "done", card={"queued": True} if self.agent else None)
         from .report_actions import phone_source
         if phone_source(self, s) is not None:
             note = await asyncio.to_thread(self.background_done.recovery.notice)
@@ -8494,7 +8498,13 @@ class Host:
                 self.agent_notice(note)
         if not self.agent:
             return None
-        send = compose.Send(s.device, sid or secrets.token_urlsafe(16), turn["id"], blobs=blobs, by=s.name or s.device)
+        if held_page is None:
+            send = compose.Send(s.device, sid or secrets.token_urlsafe(16), turn["id"], blobs=blobs, by=s.name or s.device)
+        else:
+            send = self.sends.get(s.device, sid)
+            if send is None or not held_guard():
+                return None
+            send.by = s.name or s.device
         if isinstance(s, Session):
             send.phone_binding = getattr(s, "login_phone", None)  # pinned at the authenticated handshake
         event_guard = getattr(s, "event_delivery_allowed", None)
@@ -8520,10 +8530,14 @@ class Host:
         elif gc and gc[0] == "learn":                    # P204: `/learn [note]` → the Agent distils a skill
             from . import learn as learn_mod
             text = learn_mod.agent_words(gc[1], card_lang(self.lang))
+        if held_guard is not None and not held_guard():
+            return None
         send.approval_origin = approval_review.remember(self, turn, getattr(s, "provenance", None))
         send.source = getattr(s, "provenance", None)      # B1: set only by host code (telegram.incoming), never from text
         if self.peers is not None:
             await asyncio.to_thread(self.peers.xfer.admit, send, text, quote)
+            if held_guard is not None and not held_guard():
+                return None
         files = [{"path": b.path, "mime": b.mime, "bytes": b.size, "origin": b.origin, "secs": b.secs,
                   "voice": getattr(b, "voice", "")} for b in blobs]
         voice = [f for f in files if f["voice"] or (f["origin"] == "recording" and f["mime"].startswith("audio/"))]
@@ -8538,13 +8552,19 @@ class Host:
             send.prep = asyncio.create_task(self._prep_say(send, text, files, voice, quote_text))
         else:
             send.text = compose.render(text, files, self.lang, quote_text, native=self.native_text) + send.onboarding_note
-        self.sends.add(send)
+        if held_page is None:
+            self.sends.add(send)
         self.turn_by = s.name or s.device
         self.quota_resume.owner_spoke("main")   # P314: the owner moved on by hand; no automatic continue on top
         await self._model_set_flush()        # P240: a pill switch still held by the 2 s backstop goes ahead of this message
         if callable(event_guard) and not event_guard():
             send.state = "cancelled"
             return None
+        if held_guard is not None:
+            if not held_guard():
+                send.state = "cancelled"
+                return None
+            send.delivery_allowed = held_guard
         self.agent.submit(send)
         return send
 
@@ -8567,6 +8587,13 @@ class Host:
             return text
 
     async def on_say(self, s: Session, obj: dict) -> None:
+        self._phone_say_admissions = getattr(self, "_phone_say_admissions", 0) + 1
+        try:
+            return await self._admit_say(s, obj)
+        finally:
+            self._phone_say_admissions -= 1
+
+    async def _admit_say(self, s: Session, obj: dict) -> None:
         sid = obj.get("sid")
         if not wire.is_id22(sid):
             return
@@ -8650,6 +8677,11 @@ class Host:
             if len(items) > 1:              # src.quote stays the first (older phones draw it); src.quotes = all, in order
                 quote = dict(quote, more=[compose.quote_info(qt, ex, self.lang) for qt, ex in items[1:]])
             quote_text = compose.quotes_block(items, self.lang)
+        if not att and reply_to is None and form is None and not text.lstrip().startswith(("/", "／", "!")):
+            from . import upgrade_messages
+            held = await upgrade_messages.hold(self, s, sid, text)
+            if held is not None:
+                return await res(**held)
         await _rcpt_recv(self, s.device, sid)
         from . import main_thread
         main_thread.owner_queued(self)
@@ -9470,6 +9502,8 @@ class Host:
                                 reason=",".join(r["skipped"]) or None)
             self.agent = agents.make(self, self.agent_cfg)
             self.agent.start()
+            from . import upgrade_messages
+            upgrade_messages.kick(self)
             self.status_changed()
             self.st.log("agent_on", agent=self.agent.kind, isolation_requested=self.agent_cfg.get("fence", True), session_mode=self.agent_cfg.get("session_mode", "independent"), phase="configured")
         await self.bots.start()

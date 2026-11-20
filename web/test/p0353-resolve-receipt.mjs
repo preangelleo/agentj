@@ -69,7 +69,7 @@ for (const row of cases) {
   const text = row.paragraphs.join('\n');
   assert.equal(row.repair, row.lang === 'en' ? 'Repair connection' : '修复连接');
   if (legacy) {
-    assert.deepEqual(row.link, {label: row.lang === 'en' ? 'How to repair a host update' : '查看主机升级修复步骤',
+    assert.deepEqual(row.link, {label: row.lang === 'en' ? 'How to repair a host update' : '查看升级修复步骤',
       visible: true, rel: 'noopener noreferrer', target: '_blank'});
     continue;
   }

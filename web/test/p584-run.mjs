@@ -34,7 +34,8 @@ const PHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWe
 const BLOCK = (x = {}) => ({ mobile: true, resume: true, prefill: true, kind: 'desktop', on: true, os: true, me: true, web_ok: true, sudo: 'local', minutes: 15, idle_s: 300, open: false, modes: ['line', 'pty'], ...x });
 const VERSION_OUT = 'agentj 0.28.5\n';
 const LS_OUT = 'total 8\ndrwxr-xr-x 2 owner owner 4096 Nov  7 18:00 .\n-rw------- 1 owner owner   42 Nov  7 18:00 .env  OPENAI_API_KEY=[已隐藏]\n';
-const REPLY = (lang) => (lang === 'zh' ? '可以这样看：\n\n' : 'Here is how:\n\n') +
+const hostLabel = (lang) => (lang === 'zh' ? '在 Agent J 主机上运行：' : 'On the Agent J host:') + '\n\n';
+const REPLY = (lang) => hostLabel(lang) +
   '```sh\nls -la\n```\n\n' + '```sh\nagentj --version\n```\n\n' + '```sh\nsudo pacman -Syu\n```\n\n' + '```python\nprint(1)\n```\n';
 const L = {
   zh: { run: '执行', inTerm: '在终端里打开', ok: '完成 · 退出码 0', took: '用时', refused: '没有执行：你选了取消', hidden: '已隐藏', offline: 'Agent J 主机离线', version: '查看版本', ask: '问 ' },
@@ -287,7 +288,7 @@ export async function runP584({ B, web, fake, out = OUT }) {
         ['streaming', { k: 'phone', dev: dev.id, name: '', text: 's' }, 'open', '```sh\nls -la\n```\n'],
       ];
       for (const [name, src, end, reply] of variants) {
-        const tr = await fake.addTurn(src, reply, end);
+        const tr = await fake.addTurn(src, hostLabel(lang) + reply, end);
         await sleep(700);
         const v = await evaluate(p, `({blocks:document.querySelectorAll('#words .codeblock').length,copy:document.querySelectorAll('#words .codeblock .copy').length,run:document.querySelectorAll('#words .runbtn,#words .fixbtn,#words .term-command').length,txt:document.getElementById('words').textContent.slice(0,120)})`);
         check(v.run === 0 && (name === 'friend' ? true : v.blocks >= 1 && v.copy >= 1), `1 ${name} page (turn ${tr.id}): copy only, no run button ` + tag + JSON.stringify(v));

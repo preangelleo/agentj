@@ -1,5 +1,5 @@
 {
-  "version": "0.30.53",
-  "zh": "主机升级遇到依赖解析问题时，会尝试自动修复一次。若升级仍失败，手机会显示起始版本、目标版本、客服上报状态和恢复步骤。",
-  "en": "The host can retry a dependency resolution failure once. Your phone shows the upgrade versions, support report status and recovery steps."
+  "version": "0.30.54",
+  "zh": "升级成功后，手机会显示可核实的原版本。升级窗口内收到、尚未交给 Agent 的普通消息可在原手机重连后继续。给其他设备或目标不明的命令只显示复制。",
+  "en": "Receipts show the prior version. Messages held before dispatch can resume on reconnect. Commands for other or unspecified devices are copy-only."
 }

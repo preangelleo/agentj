@@ -121,6 +121,15 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         if (rel(f) === 'proto/wire.js' && m[0] === 'wss://relay.agentj.app') continue;
         // P190 (§27): a reverse pairing code is text a new page shows as a QR; the page never requests it
         if (rel(f) === 'proto/wire.js' && m[0] === 'https://m.agentj.app/#j=') continue;
+        // The recovery guide is an owner-clicked link on legacy host receipts.
+        if (rel(f) === 'js/repair-actions.js' && m[0] === 'https://agentj.app/docs/install/#upgrade-failed') {
+          assert.match(s, /const link=mk\('a',/);
+          assert.match(s, /link\.href=upgradeGuide;link\.target='_blank';link\.rel='noopener noreferrer'/);
+          // Account for every reference: declaration, duplicate check, and anchor destination.
+          assert.match(s, /page\.reply\?\.includes\(upgradeGuide\)/);
+          assert.equal(s.match(/\bupgradeGuide\b/g)?.length, 3);
+          continue;
+        }
         // P407: copied one-line embed text; the owner phone never fetches this script.
         if (rel(f) === 'js/bots.js' && m[0] === 'https://agentj.app/bots/embed.js') continue;
         // P409: exact owner-clicked TypeSafe registration link; never a browser API request.

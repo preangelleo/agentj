@@ -15,7 +15,7 @@ try{for(const {width,lang,theme} of combos)for(const phase of ['before','after']
  try{
  await navigate(p,fake.newPairing(web.url+'?lang='+lang));await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'ready');
  await evaluate(p,`document.getElementById('phone-env-dismiss')?.click();document.getElementById('a2hs-ok')?.click();import('./js/settings.js').then(m=>m.applyThemeLocal('${theme}'))`);
- await fake.addTurn({k:'phone',dev:fake.devs[0].id,text:'查看工作目录'},'可以查看当前目录：\n\n```sh\npwd\n```','done');
+ await fake.addTurn({k:'phone',dev:fake.devs[0].id,text:'查看工作目录'},'在 Agent J 主机上运行：\n\n```sh\npwd\n```','done');
  await fake.send({t:'busy',tasks:[{id:'synthetic-worker',who:'前端工程师',label:'界面检查',c:1}],task_count:1});await fake.send({t:'status',s:'working',main_thread:initial});await sleep(600);
  await waitFor(p,`document.querySelector('#words .codeblock')`);
  const layout=await evaluate(p,`(()=>{const r=id=>{const e=document.getElementById(id),q=e?.getBoundingClientRect();return q?{x:q.x,y:q.y,w:q.width,h:q.height,visible:getComputedStyle(e).visibility!=='hidden'&&q.width>0}:null};return{report:r('webReportBtn'),stop:r('main-thread-interrupt'),header:r('meta'),plus:r('cardPlus'),label:!!document.getElementById('main-thread-label'),banner:!!document.getElementById('main-thread-status'),runs:[...document.querySelectorAll('#words .runbtn')].map(e=>({text:e.textContent,aria:e.getAttribute('aria-label'),path:e.querySelector('path')?.getAttribute('d'),fill:e.querySelector('svg')&&getComputedStyle(e.querySelector('svg')).fill,rect:{w:e.offsetWidth,h:e.offsetHeight}})),overflow:document.documentElement.scrollWidth>innerWidth}})()`);

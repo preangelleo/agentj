@@ -68,11 +68,31 @@ function mkBtn(cls, text, icon) {
 function remember(key, r) { runs.delete(key); runs.set(key, r); while (runs.size > KEEP) runs.delete(runs.keys().next().value); }
 const secs = (ms) => (Number.isInteger(ms) ? (ms < 10000 ? (ms / 1000).toFixed(1) : String(Math.round(ms / 1000))) : null);
 
+// A shell fence names a language, not a destination. Bind the positive host label to
+// its immediately following sibling blocks. A new paragraph, heading or list ends the group.
+function commandTargets(root) {
+  const targets = new Map();
+  for (const block of root.querySelectorAll('.codeblock')) {
+    const previous = block.previousElementSibling;
+    let target = targets.get(previous) || 'unknown';
+    if (previous?.matches('p,h1,h2,h3,h4,h5,h6')) {
+      const label = previous.textContent.trim();
+      if (/^(?:在\s*Agent J\s*主机上运行|On the Agent J host)\s*[:：]$/i.test(label)) target = 'host';
+      else if (/(?:另(?:外)?一台|那台|对方的?|目标|远程的?)(?:电脑|计算机|机器|主机|设备|服务器)|\b(?:another|other|different|remote|target)\s+(?:computer|machine|host|device|server|laptop|pc)\b/i.test(label)) target = 'other';
+    }
+    // A text/code example cannot pass a host label to the next shell command.
+    if (target === 'host' && !command(block.querySelector('pre code')?.textContent, block.querySelector('pre')?.dataset.lang)) target = 'unknown';
+    targets.set(block, target);
+  }
+  return targets;
+}
+
 export function paint(root, page) {
   for (const n of root.querySelectorAll('.term-command,.runbox,.fixbtn')) n.remove();
   shown = { root, page };
-  if (hostPage(page)) return fixBar(root, page);
-  if (!ownReply(page)) return;
+  if (!hostPage(page) && !ownReply(page)) return;
+  const targets = commandTargets(root);
+  if (hostPage(page)) return fixBar(root, page, targets);
   const blocks = [...root.querySelectorAll('.codeblock pre[data-lang]')];
   blocks.forEach((pre, i) => {
     // The reply root is itself a blockquote. Only descendants count as quoted material.
@@ -81,6 +101,7 @@ export function paint(root, page) {
     const cmd = command(pre.querySelector('code')?.textContent, pre.dataset.lang);
     if (!cmd) return;
     const wrap = pre.closest('.codeblock'), bar = wrap.querySelector('.bar'), key = page.id + ':' + i;
+    if (targets.get(wrap) !== 'host') return;
     const route = routeOf(cmd, probes), r = runs.get(key), online = isReady(), busy = r && r.st === 'run';
     const name = route === 'named' ? named(cmd) : null;
     const label = !online ? t('p584.offlineShort') : busy ? t('p584.running')
@@ -101,9 +122,10 @@ export function paint(root, page) {
 /** #584 ⑧: a host-written page (/update's result, a disconnect or upgrade notice: k sys / cmd) that tells the owner to run a
  *  whitelisted repair gets its plain-words button at the end — by NAME only, so no text on the page can choose what runs. */
 export const hostPage = (p) => !!p && Number.isInteger(p.id) && p.end !== 'open' && ['sys', 'cmd'].includes(p.source?.k);
-function fixBar(root, page) {
+function fixBar(root, page, targets) {
   const seen = new Set();
   for (const c of root.querySelectorAll('code')) {
+    if (targets.get(c.closest('.codeblock')) === 'other') continue;
     const n = named(c.textContent || '');
     if (n && HUMAN[n]) seen.add(n);
   }

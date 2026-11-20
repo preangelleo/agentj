@@ -13,7 +13,7 @@ try{for(const width of [390,1440])for(const theme of ['light','dark'])for(const 
  const p=await newPage(B,width,900,theme,{allow:[web.url,fake.relay+'/']});
  try{
   await navigate(p,fake.newPairing(web.url+'?lang='+lang));await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'ready');await evaluate(p,`document.getElementById('phone-env-dismiss')?.click()`);
-  await fake.addTurn({k:'phone',text:'Synthetic owner question'},'```sh\nls -la\n```');
+  await fake.addTurn({k:'phone',text:'Synthetic owner question'},'On the Agent J host:\n\n```sh\nls -la\n```');
   await waitFor(p,`document.querySelector('#words .runbtn')`);
   const run=await evaluate(p,`(()=>{const b=document.querySelector('#words .runbtn'),r=b.getBoundingClientRect();return {text:b.textContent,path:b.querySelector('path')?.getAttribute('d'),w:r.width,h:r.height,gap:b.nextElementSibling.getBoundingClientRect().left-r.right,aria:b.getAttribute('aria-label')}})()`);
   assert.equal(run.text,'');assert.equal(run.path,'m8 5 11 7-11 7Z');assert.ok(run.w>=44&&run.h>=44&&run.aria);assert.ok(run.gap>=8);

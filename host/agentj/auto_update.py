@@ -132,6 +132,9 @@ def restart_ready(host):
     and for every owner message not yet delivered (queued, or waiting behind the turn): behind a stuck turn → 'stuck_queued'
     — serve runs `deliver_before_restart` (the watchdog's own heal), so the message reaches the harness before the restart
     (security #484 note 3: a restart never drops it)."""
+    # A phone say may still be fsyncing its receipt before it appears in the harness queue.
+    if getattr(host, "_phone_say_admissions", 0):
+        return False, "busy"
     if not busy(host):
         return True, None
     if _others_busy(host):
@@ -995,7 +998,7 @@ def notice(r, lang='zh', prefs=None, harness=None):
     from . import humane, upgrade_diag, upgrade_owner
     summary = release_notes.filter_text(r.get('summary_en') if lang == 'en' else r.get('summary'), harness)
     if r.get('result') == 'ok' and r.get('uv_repaired') is True:
-        return upgrade_diag.uv_repaired_sentence(r['to'], lang)
+        return upgrade_diag.uv_repaired_sentence(r['to'], lang, r.get('from'))
     if 'uv_repair_doctor' in r:
         return upgrade_diag.uv_repair_failure(r, lang)
     if r.get('result') == 'ok' and r.get('when') == 'idle':

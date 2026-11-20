@@ -939,8 +939,16 @@ def dependency_repair(lang: str) -> str:
              "\n\n网络恢复后，可在手机输入 /update 再试一次。若仍失败，请按主机修复说明操作：") + UPGRADE_REPAIR_GUIDE)
 
 
-def uv_repaired_sentence(version, lang):
-    return f"Upgraded to {version} and updated uv." if lang == 'en' else f"已升级到 {version}（顺手更新了 uv）。"
+def previous_version_text(previous, target, lang):
+    if not _clean_version(previous) or previous == target:
+        return ""
+    return f" (previously {previous})" if lang == "en" else f"（原 {previous}）"
+
+
+def uv_repaired_sentence(version, lang, previous=None):
+    source = previous_version_text(previous, version, lang)
+    return (f"Upgraded to {version}{source} and updated uv." if lang == "en" else
+            f"已升级到 {version}{source}，同时更新了 uv。")
 
 
 def uv_repair_failure(res, lang, report=None):

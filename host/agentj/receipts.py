@@ -4,7 +4,8 @@ compose.Sends remembers every sid a device used, but only for the life of the pr
 (device, sid) in `<state>/say_receipts.jsonl` (0600), written the moment a `say` is accepted — before the Agent gets it
 and before the phone hears `say_res ok` — with its state:
 
-  recv   accepted, not yet handed to the Agent
+  held   host-sealed upgrade handoff, never submitted; the original paired device may receive first delivery
+  recv   ordinary acceptance; it may already have reached the harness before the later receipt was written
   deliv  handed to the harness (or the write failed half-way: maybe handed)
   done   finished: the turn ended, the host answered it itself, it was withdrawn or refused by the harness
   lost   an earlier serve died while it was `recv` / `deliv` (set at load, once)
@@ -34,7 +35,7 @@ FILE = "say_receipts.jsonl"
 KEEP_S = 7 * 86400
 PER_DEVICE = SEEN_MAX
 TOTAL_MAX = 8192
-STATES = ("recv", "deliv", "done", "lost")
+STATES = ("held", "recv", "deliv", "done", "lost")
 RANK = {s: i for i, s in enumerate(STATES)}   # a state never goes back (replay is order-insensitive)
 OPEN = ("recv", "deliv")
 
@@ -89,10 +90,14 @@ class Receipts:
             old = self.items.get(k)
             rec = {"s": r["s"], "t": t if isinstance(t, (int, float)) and not isinstance(t, bool) else 0,
                    "n": n if type(n) is int else None}
+            if rec["s"] == "held" and isinstance(r.get("seal"), str):
+                rec["seal"] = r["seal"]
             if old is None:
                 self.items[k] = rec
             elif RANK[rec["s"]] >= RANK[old["s"]]:
                 old["s"] = rec["s"]
+                if "seal" in rec:
+                    old["seal"] = rec["seal"]
                 old["n"] = rec["n"] if rec["n"] is not None else old["n"]
         self._trim()
         for (d, i), r in self.items.items():
@@ -119,7 +124,8 @@ class Receipts:
 
     # ---------------------------------------------------------------- disk (one ordered writer thread)
     def _line(self, k: tuple, r: dict) -> str:
-        return json.dumps({"d": k[0], "i": k[1], "s": r["s"], "t": int(r["t"]), "n": r["n"]}, separators=(",", ":"))
+        return json.dumps({"d": k[0], "i": k[1], "s": r["s"], "t": int(r["t"]), "n": r["n"],
+                           **({"seal": r["seal"]} if r["s"] == "held" and "seal" in r else {})}, separators=(",", ":"))
 
     def _rewrite(self) -> None:
         snap = list(self.items.items())             # the loop may add one meanwhile (atomic copy under the GIL)
@@ -138,7 +144,7 @@ class Receipts:
             self.broken = True
             self.log("say_receipts", result="write_failed")
 
-    def _append(self, line: str) -> None:
+    def _append(self, line: str) -> bool:
         with self._lk:
             try:
                 fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
@@ -152,9 +158,10 @@ class Receipts:
             except OSError:
                 self.broken = True
                 self.log("say_receipts", result="write_failed")
-                return
+                return False
             if self.lines > 2 * len(self.items) + 64:
                 self._rewrite()
+            return not self.broken
 
     # ---------------------------------------------------------------- API
     def used(self, device: str, sid: str) -> bool:
@@ -164,7 +171,7 @@ class Receipts:
         r = self.items.get((device, sid))
         return r["s"] if r else None
 
-    def mark(self, device: str, sid: str, state: str, turn: int | None = None) -> concurrent.futures.Future | None:
+    def mark(self, device: str, sid: str, state: str, turn: int | None = None, *, seal: str | None = None) -> concurrent.futures.Future | None:
         """Record now (memory, so a second `say` with this sid is `dup` at once) and queue the line for the disk. Returns
         the write's future (None when nothing changed). A state never goes back."""
         if state not in RANK or not _ok_key(device) or not _ok_key(sid):
@@ -181,6 +188,10 @@ class Receipts:
             r["s"] = state
             if turn is not None:
                 r["n"] = turn
+        if state == "held":
+            r["seal"] = seal
+        else:
+            r.pop("seal", None)
         return _executor().submit(self._append, self._line(k, r))
 
     async def persist(self, device: str, sid: str, state: str, turn: int | None = None) -> None:
