@@ -7,7 +7,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
   <img src="https://img.shields.io/badge/python-%E2%89%A53.11-3776AB.svg" alt="Python 3.11 or newer">
-  <a href="https://github.com/preangelleo/agentj/releases/tag/v0.30.57"><img src="https://img.shields.io/badge/release-v0.30.57-orange.svg" alt="Latest release: v0.30.57"></a>
+  <a href="https://github.com/preangelleo/agentj/releases/tag/v0.30.58"><img src="https://img.shields.io/badge/release-v0.30.58-orange.svg" alt="Latest release: v0.30.58"></a>
   <img src="https://img.shields.io/badge/status-beta-yellow.svg" alt="Status: beta">
 </p>
 
@@ -87,7 +87,7 @@ repository is the same file, byte for byte; the site publishes its SHA-256 at <h
 To install only the host, pinned to the release tag (Python 3.11 or newer; if yours is older, uv fetches one):
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.30.57#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.30.58#subdirectory=host"
 agentj --version
 ```
 

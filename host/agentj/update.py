@@ -423,8 +423,9 @@ def _install_attempts(run, cmd, say, out, pin, preparation):
         if not (retries or preparation.used):
             raise
         return 124, "", {"reason": "installer_timeout", "retry_count": retries}
-    except ValueError:
-        return 1, "", {"reason": auto_update.ARTIFACT_CHANGED, "retry_count": retries, "_untouched": True}
+    except ValueError as error:
+        return 1, "", {"reason": auto_update.ARTIFACT_CHANGED, "retry_count": retries, "_untouched": True,
+                       **upgrade_diag.artifact_exception_fields(error)}
     while rc:
         fields = {**upgrade_diag.dependency_evidence(keep.get("raw") or tl, auto_update.run_env(cmd) or os.environ),
                   "retry_count": retries}
@@ -443,8 +444,9 @@ def _install_attempts(run, cmd, say, out, pin, preparation):
             rc, tl = step(launch)
         except auto_update.RetryExpired:
             return prev                               # the previous failure stands; nothing more was launched
-        except ValueError:
-            return 1, "", {"reason": auto_update.ARTIFACT_CHANGED, "retry_count": retries}
+        except ValueError as error:
+            return 1, "", {"reason": auto_update.ARTIFACT_CHANGED, "retry_count": retries,
+                           **upgrade_diag.artifact_exception_fields(error)}
         except subprocess.TimeoutExpired as e:      # the retry's own share of the budget ran out: a failure, no further retry
             tl = (upgrade_diag.tail(getattr(e, "stderr", None) or "") or "TimeoutExpired: installer could not complete")
             return 124, tl, {**upgrade_diag.dependency_evidence(tl, auto_update.run_env(cmd) or os.environ),

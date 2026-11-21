@@ -5,6 +5,7 @@ The manager owns a restartable worker independently of the serve cgroup.
 """
 from __future__ import annotations
 import contextlib
+import errno
 import fcntl
 import hashlib
 import json
@@ -711,10 +712,54 @@ def artifact_name(version) -> str:
     return f'agentj-{version}-py3-none-any.whl'
 
 
-def _private_dir(fd) -> bool:
+def _private_dir(fd, *, harden_under=None) -> bool:
     import stat
     m = os.fstat(fd)
-    return stat.S_ISDIR(m.st_mode) and m.st_uid == os.geteuid() and not m.st_mode & 0o077
+    if not stat.S_ISDIR(m.st_mode) or m.st_uid != os.geteuid():
+        return False
+    mode = stat.S_IMODE(m.st_mode)
+    if not mode & 0o077:
+        return True
+    if (harden_under is not None and mode & 0o7722 == 0o700
+            and _private_dir(harden_under) and _no_extended_store_acl(harden_under)
+            and _no_extended_store_acl(fd) and not os.listdir(fd)):
+        # Only empty generated directories qualify. Existing entries would
+        # need their own ACL and preexisting write-access guarantees.
+        os.fchmod(fd, 0o700)
+        return _private_dir(fd)
+    return False
+
+
+def _no_extended_store_acl(fd) -> bool:
+    """Never change a generated directory's mode if its ACL is present or unknown."""
+    if sys.platform == 'linux':
+        try:
+            return not any(name.startswith('system.') for name in os.listxattr(fd))
+        except OSError:
+            return False
+    if sys.platform == 'darwin':
+        # Darwin extended ACL grants are independent of the POSIX group mode.
+        import ctypes
+        try:
+            libc = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
+            get_acl, free_acl = libc.acl_get_fd, libc.acl_free
+        except (AttributeError, OSError):
+            return False
+        get_acl.argtypes, get_acl.restype = [ctypes.c_int], ctypes.c_void_p
+        free_acl.argtypes, free_acl.restype = [ctypes.c_void_p], ctypes.c_int
+        ctypes.set_errno(0)
+        acl = get_acl(fd)
+        if acl:
+            free_acl(acl)
+            return False
+        return ctypes.get_errno() == errno.ENOENT
+    return False
+
+
+def _artifact_failure(stage, subreason, reason=ARTIFACT_CHANGED):
+    error = ValueError(reason)
+    error.artifact_diagnostic = {'artifact_stage': stage, 'subreason': subreason}
+    return error
 
 
 def _store_fd(root, *, create=True) -> int:
@@ -724,15 +769,15 @@ def _store_fd(root, *, create=True) -> int:
     import stat
     try:
         if stat.S_ISLNK(os.lstat(root).st_mode):
-            raise ValueError(ARTIFACT_CHANGED)
+            raise _artifact_failure('install_store', 'unsafe_store')
         rootfd = os.open(root, _NOFOLLOW_DIR)
     except FileNotFoundError:
         raise ValueError(ARTIFACT_UNAVAILABLE) from None
     except OSError:
-        raise ValueError(ARTIFACT_CHANGED) from None
+        raise _artifact_failure('install_store', 'unsafe_store') from None
     try:
         if not _private_dir(rootfd):
-            raise ValueError(ARTIFACT_CHANGED)
+            raise _artifact_failure('install_store', 'unsafe_store')
         if create:
             try:
                 os.mkdir(ARTIFACTS, 0o700, dir_fd=rootfd)
@@ -745,13 +790,19 @@ def _store_fd(root, *, create=True) -> int:
         except FileNotFoundError:
             raise ValueError(ARTIFACT_UNAVAILABLE) from None
         except OSError:
-            raise ValueError(ARTIFACT_CHANGED) from None
+            raise _artifact_failure('install_store', 'unsafe_store') from None
+        try:
+            if not _private_dir(fd, harden_under=rootfd if create else None):
+                raise _artifact_failure('install_store', 'unsafe_store')
+        except OSError:
+            os.close(fd)
+            raise ValueError(ARTIFACT_UNAVAILABLE) from None
+        except BaseException:
+            os.close(fd)
+            raise
+        return fd
     finally:
         os.close(rootfd)
-    if not _private_dir(fd):
-        os.close(fd)
-        raise ValueError(ARTIFACT_CHANGED)
-    return fd
 
 
 def _read_at(dfd, name, limit) -> bytes:
@@ -834,11 +885,17 @@ def check_artifact(pin) -> None:
     root, version, digest, _ = pin
     try:
         fd = _store_fd(root, create=False)
-    except ValueError:
-        raise ValueError(ARTIFACT_CHANGED) from None
+    except ValueError as error:
+        if str(error) == ARTIFACT_CHANGED:
+            raise
+        raise _artifact_failure('install_store', 'cache_entry_missing') from None
     try:
-        if hashlib.sha256(_read_at(fd, artifact_name(version), MAX_WHEEL)).hexdigest() != digest:
-            raise ValueError(ARTIFACT_CHANGED)
+        try:
+            data = _read_at(fd, artifact_name(version), MAX_WHEEL)
+        except ValueError:
+            raise _artifact_failure('install_store', 'cache_entry_invalid') from None
+        if hashlib.sha256(data).hexdigest() != digest:
+            raise _artifact_failure('install_store', 'hash_mismatch')
     finally:
         os.close(fd)
 
@@ -936,6 +993,8 @@ def finish(st, result, diag=None):
     result.update(upgrade_diag.dependency_fields(diag or {}))     # 0334
     if (diag or {}).get('step') == 'download':
         result.update(step='download', detail=diag.get('detail', 'Exception'))
+    elif result.get('phase') == 'prepared' and (diag or {}).get('step') == 'install':
+        result['step'] = 'install'
     if result.get('result') != 'ok' and (diag or {}).get('failure') in ('permission_denied', 'not_owner'):
         own = update.owner_check({'reason': (diag or {})['failure']})
         result.update({k: own[k] for k in ('owner_kind', 'fix') if k in own})
@@ -1354,6 +1413,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
         installer_failure = isinstance(e, ValueError) and str(e) == 'install_failed'
         if not installer_failure and job.get('phase') != 'rollback':
             diag.update(upgrade_diag.exception_evidence(e, stage))
+            diag.update(upgrade_diag.artifact_exception_fields(e))
         reason = str(e) if isinstance(e, ValueError) and str(e) in fixed_reasons() else upgrade_diag.category(e)
         result = {'attempt': job.get('attempt'), 'from': job.get('from', __version__), 'to': job.get('to'), 'result': 'failed', 'reason': reason,
                   'phase': job.get('phase')}
@@ -1372,8 +1432,11 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 diag['detail'] = upgrade_diag.plan_detail(e)
         result['reason'] = reason
         diag['failure'] = reason
+        # During preparation the failing operation may already be install.
+        # Keep established reporting for the other journal phases.
         diag.setdefault('step', 'service' if reason in ('restart_failed', 'service_restart_failed') else {
-            None: 'download', 'prepared': 'download', 'installing': 'install', 'installed': 'verify'}.get(job.get('phase'), 'install'))
+            None: 'download', 'prepared': stage, 'installing': 'install',
+            'installed': 'verify'}.get(job.get('phase'), 'install'))
         if job.get('phase') in ('installing','installed','rollback'):
             # Owner-local fallback only after installation was attempted; never imply a rollback before it.
             if job.get('old') and not any((st.root/n).exists() for n in ('credential_revocations.json','security_rotation.json')):

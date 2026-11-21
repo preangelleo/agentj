@@ -423,8 +423,11 @@ def plan_reason(e: BaseException) -> str:
 
 # P586: immutable metadata vocabulary, never arbitrary exception messages or receipt content.
 SUBREASONS = frozenset(('truncated', 'hash_mismatch', 'signature_invalid', 'untrusted_key', 'comment_mismatch',
-                       'identity_mismatch', 'bad_zip', 'cache_receipt_invalid', 'internal_error'))
-ARTIFACT_STAGES = frozenset(('wheel', 'sha256', 'signature', 'identity', 'cache'))
+                       'identity_mismatch', 'bad_zip', 'cache_receipt_invalid', 'internal_error',
+                       'unsafe_store', 'cache_entry_invalid', 'cache_entry_missing', 'size_mismatch',
+                       'invalid_manifest', 'selection_mismatch'))
+ARTIFACT_STAGES = frozenset(('wheel', 'sha256', 'signature', 'identity', 'cache', 'install_store',
+                            'dependency_cache', 'dependency_lock', 'dependency_wheel', 'dependency_resolver'))
 PLAN_CODES = frozenset(('artifact_hash_mismatch', 'artifact_signature_mismatch', 'artifact_identity_mismatch',
                         'artifact_too_large', 'insecure_update_redirect', 'unsupported_install',
                         'upgrade_cache_unreadable', 'bad_version'))
@@ -454,6 +457,10 @@ def artifact_fields(res):
         if isinstance(res.get(key), str) and res[key] in allowed:
             out[key] = res[key]
     return out
+
+
+def artifact_exception_fields(error):
+    return artifact_fields(getattr(error, 'artifact_diagnostic', {}))
 
 
 CACHE_FIELDS = {'cache_path': ('xdg', 'home'), 'cache_level': ('cache_dir', 'upgrade_root', 'cache_base', 'file'),

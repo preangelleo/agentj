@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.28.78
+version: 0.28.79
 released: 2026-11-21
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.30.57
-source_tag: v0.30.57
-host_wheel: agentj-0.30.57-py3-none-any.whl
-host_wheel_sha256: 2e75a13eed7e70af4ad8dfa48e9b40706b1c2f2c8aa6be1b8a4812d45a594fa9
-host_sdist: agentj-0.30.57.tar.gz
-host_sdist_sha256: 3bfc9357fd7a90f2896002b60722256f82dc639e8b3ae330ea3f610f9722b5e8
+host_version: 0.30.58
+source_tag: v0.30.58
+host_wheel: agentj-0.30.58-py3-none-any.whl
+host_wheel_sha256: fa33278a5582290ea2ce1fc8968021f108fba201804ef4f7603c55f58cb37ce6
+host_sdist: agentj-0.30.58.tar.gz
+host_sdist_sha256: 08c458df8d0dac4369bbe68f3b57c1e14695532a49ca1ef812de046f5b233dac
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 docs_index: https://agentj.app/llms.txt (also https://agentj.app/docs/index.json; every page as raw Markdown at https://agentj.app/docs/<slug>/en.md and /zh.md)
@@ -734,7 +734,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.30.57` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.30.58` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -776,13 +776,13 @@ uv tool install "./$W"          # the wheel; its dependencies come from PyPI or 
 `https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.9`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.57#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.58#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.57#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.58#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.57`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.58`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1787,7 +1787,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.57#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.58#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install

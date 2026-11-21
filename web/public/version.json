@@ -1,8 +1,8 @@
 {
   "v": 1,
-  "version": "0.30.57",
+  "version": "0.30.58",
   "algo": "sha256",
-  "combined": "a72e2b24b39e8fbf97a6593e6b9b8215376474738a0e9690c9e1dc833b33e7f2",
+  "combined": "7f76632563f4dc3064b0e7846da9f70e848dd97d03ff7bb55212bfb9fc6d09db",
   "files": {
     "app.92cd6fed5fbc10102acb4fb4486db5d19364965aef8f9e189d6a5cec468c8ffc.css.gz": "f41d6cc7bb2ced705e67544ecb16cf252516f7924d79eb7809a7bc13073f9ae0",
     "app.css": "92cd6fed5fbc10102acb4fb4486db5d19364965aef8f9e189d6a5cec468c8ffc",
@@ -66,7 +66,7 @@
     "brand/lang.js": "f25ac1572b70f5f29870742e213d6d66e8b5f8676b4c948ba42fd9a6cc8c8ef0",
     "brand/palette.css": "dab22995bb74f89c6dcd98c734ebbb94be7d18953a43cb8ed4c7760954afeb0a",
     "brand/ui.js": "edb644931d5289f43fb587eedabc1663ba692c7adf4a5a3465a60b903809691e",
-    "cache-generations.json": "9d647834760819fe69066e21b3fb4269b8c7859e26352e7e6c51a875da24b8f5",
+    "cache-generations.json": "28ca117003862d63407dbdb4c175dcca8229c4f5a6bc9345cfac2b5ceace4f15",
     "cards.css": "abb745df7ee8b0731e74e4b923be25d3f48c9fe3e4c20111383815044e5cc3ff",
     "controls.css": "8b3bf57a7656c6c04249bbcf86f067511d6a1e3ad355d54fc25c984f1031b192",
     "favicon.ico": "61e0069c22d36a03da62adcbf79e6961abf7ac86ef373600fc7a32150a9a13ee",

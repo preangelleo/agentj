@@ -1,5 +1,5 @@
-# Agent J v0.30.57
+# Agent J v0.30.58
 
-After restart, an old message receipt can no longer mark a newer chat page as interrupted. Repeated delivery of the same message stays blocked.
+Upgrade reports now record the step that failed. If an older version gets stuck, use the official repair to keep your existing pairing.
 
-主机重启后，旧消息的回执不会再把碰巧使用同一页号的新消息标成中断。同一条消息重复发送仍会被拦住。
+升级回执现在记录实际失败步骤。旧版升级卡住时，可运行官网修复并保留原有配对。

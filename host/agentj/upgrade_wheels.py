@@ -32,10 +32,14 @@ def lock_for(path):
         if LOCK in z.namelist():
             item = z.getinfo(LOCK)
             if item.file_size > 2_000_000:
-                raise ValueError('install_artifact_changed')
+                raise integrity_failure('dependency_lock', 'size_mismatch')
             data = z.read(item)
-            if hashlib.sha256(data).hexdigest() != json.loads(z.read('agentj/repair-sources.json'))['host_lock_sha256']:
-                raise ValueError('install_artifact_changed')
+            try:
+                expected = json.loads(z.read('agentj/repair-sources.json'))['host_lock_sha256']
+            except (KeyError, TypeError, ValueError):
+                raise integrity_failure('dependency_lock', 'invalid_manifest') from None
+            if hashlib.sha256(data).hexdigest() != expected:
+                raise integrity_failure('dependency_lock', 'hash_mismatch')
             return data
         if not any(member.endswith('.dist-info/METADATA') for member in z.namelist()):
             return None
@@ -53,12 +57,16 @@ def private_dir(path):
 
 def catalog(data):
     result = {}
-    for package in tomllib.loads(data.decode())['package']:
-        for whl in package.get('wheels', []):
-            match = CDN.fullmatch(whl['url'])
-            if not match or not re.fullmatch(r'sha256:[0-9a-f]{64}', whl['hash']) or not 0 < whl['size'] <= 100_000_000:
-                raise ValueError('install_artifact_changed')
-            result[match[1]] = whl
+    try:
+        for package in tomllib.loads(data.decode())['package']:
+            for whl in package.get('wheels', []):
+                match = CDN.fullmatch(whl['url'])
+                if (not match or not re.fullmatch(r'sha256:[0-9a-f]{64}', whl['hash'])
+                        or not 0 < whl['size'] <= 100_000_000):
+                    raise integrity_failure('dependency_lock', 'invalid_manifest')
+                result[match[1]] = whl
+    except (KeyError, TypeError, AttributeError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        raise integrity_failure('dependency_lock', 'invalid_manifest') from None
     return result
 
 
@@ -82,6 +90,12 @@ class PreparationFailure(ValueError):
         self.transient = transient
 
 
+def integrity_failure(stage, subreason, phase='resolve'):
+    failure = PreparationFailure('install_artifact_changed', phase)
+    failure.fields.update(artifact_stage=stage, subreason=subreason)
+    return failure
+
+
 def invalid_preparation(detail):
     return PreparationFailure('dependency_preparation_failed', 'resolve', detail=detail)
 
@@ -100,9 +114,12 @@ def local_failure(exc):
 
 
 def local_preparation_failure(error):
+    from . import upgrade_diag
     reason = local_failure(error)
     detail = 'local_prepare_error' if reason == 'dependency_preparation_failed' else None
-    return PreparationFailure(reason, 'resolve', detail=detail)
+    failure = PreparationFailure(reason, 'resolve', detail=detail)
+    failure.fields.update(upgrade_diag.artifact_exception_fields(error))
+    return failure
 
 
 def resolver_failure(text):
@@ -172,8 +189,12 @@ def download_dependency(row, timeout):
         raise failure from None
     except ValueError:  # secure redirect policy refused the destination
         raise PreparationFailure('download_failed', 'download') from None
-    if declared and declared.isdecimal() and int(declared) == row['size'] and len(body) < row['size']:
-        raise PreparationFailure('dependency_download_failed', 'download', 'connect', True)
+    # HTTP permits ASCII digits and an equivalent value can have leading zeros.
+    expected_length = declared and declared.lstrip('0') == str(row['size'])
+    if len(body) < row['size'] and (declared is None or expected_length):
+        failure = PreparationFailure('dependency_download_failed', 'download', 'connect', True)
+        failure.fields.update(artifact_stage='dependency_wheel', subreason='truncated')
+        raise failure
     return body
 
 
@@ -272,7 +293,7 @@ def selected_wheels(uv, wheel, entries, scratch, *, timeout=150, python=None, is
             for item in package['wheels']:
                 match = CDN.fullmatch(item['url'])
                 if not match or match[1] not in entries or item['hashes']['sha256'] != entries[match[1]]['hash'][7:]:
-                    raise PreparationFailure('install_artifact_changed', 'resolve')
+                    raise integrity_failure('dependency_resolver', 'selection_mismatch')
                 # The platform resolver can retain multiple compatible tags.
                 names.add(match[1])
             if not package['wheels']:
@@ -322,13 +343,39 @@ def repair_names(pin, data, entries, scratch, python, retry):
 
 
 def verify_local(folder, entries):
-    private_dir(folder)
+    check_cache_dir(folder)
     for wheel in folder.iterdir():
         row = entries.get(wheel.name)
         s = wheel.lstat()
-        if (not row or not stat.S_ISREG(s.st_mode) or s.st_uid != os.getuid() or s.st_mode & 0o022
-                or s.st_size != row['size'] or hashlib.sha256(wheel.read_bytes()).hexdigest() != row['hash'][7:]):
-            raise ValueError('install_artifact_changed')
+        if not row or not stat.S_ISREG(s.st_mode) or s.st_uid != os.getuid() or s.st_mode & 0o022:
+            raise integrity_failure('dependency_cache', 'cache_entry_invalid')
+        if s.st_size != row['size']:
+            raise integrity_failure('dependency_cache', 'size_mismatch')
+        if hashlib.sha256(wheel.read_bytes()).hexdigest() != row['hash'][7:]:
+            raise integrity_failure('dependency_cache', 'hash_mismatch')
+
+
+def check_cache_dir(path, *, harden=False):
+    from . import auto_update
+    if os.getuid() != os.geteuid():
+        raise integrity_failure('dependency_cache', 'unsafe_store')
+    parent = None
+    try:
+        if harden:
+            parent = os.open(path.parent, auto_update._NOFOLLOW_DIR)
+        fd = os.open(path.name if parent is not None else path, auto_update._NOFOLLOW_DIR, dir_fd=parent)
+        try:
+            if not auto_update._private_dir(fd, harden_under=parent):
+                raise integrity_failure('dependency_cache', 'unsafe_store')
+        finally:
+            os.close(fd)
+    except OSError as error:
+        if error.errno in (errno.ENOTDIR, errno.ELOOP):
+            raise integrity_failure('dependency_cache', 'unsafe_store') from None
+        raise
+    finally:
+        if parent is not None:
+            os.close(parent)
 
 
 def wheelhouse(pin, data, uv, *, prepare, retry=None, python=None, repair_index=False):
@@ -351,7 +398,7 @@ def wheelhouse(pin, data, uv, *, prepare, retry=None, python=None, repair_index=
     key = hashlib.sha256(json.dumps(context).encode() + data).hexdigest()
     store = pin.path.parent / 'dependencies'
     store.mkdir(mode=0o700, exist_ok=True)
-    private_dir(store)
+    check_cache_dir(store, harden=prepare)
     ordinary = store / ordinary_key
     if repair_index and os.path.lexists(ordinary):
         verify_local(ordinary, entries)
@@ -381,8 +428,10 @@ def wheelhouse(pin, data, uv, *, prepare, retry=None, python=None, repair_index=
                 else:
                     body = retry.call(lambda timeout: download_dependency(row, timeout), auto_update.DOWNLOAD_TIMEOUT,
                                       phase='download')
-                if len(body) != row['size'] or hashlib.sha256(body).hexdigest() != row['hash'][7:]:
-                    raise ValueError('install_artifact_changed')
+                if len(body) != row['size']:
+                    raise integrity_failure('dependency_wheel', 'size_mismatch', 'download')
+                if hashlib.sha256(body).hexdigest() != row['hash'][7:]:
+                    raise integrity_failure('dependency_wheel', 'hash_mismatch', 'download')
                 (staged / name).write_bytes(body)
             try:
                 staged.rename(target)
