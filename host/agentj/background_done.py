@@ -361,6 +361,9 @@ class Notifier:
                      "the actual reports and evidence, then report the result to the owner in one or two sentences; never "
                      "infer success from an exit code. Say when a report is missing; never automatically replay unknown outcomes, "
                      "and ask the original worker to reconcile delivery evidence first.")
+        lines.append("用中文转述核对结论或要主人处理的事，不照抄助手原话。还在核对或尝试下一步时，过程留在内部。" if zh else
+                     "Summarize the verified result or what the owner needs to do in English, in your own words. "
+                     "Keep checks and attempts in progress internal.")
         # Presentation-only: use Board receipts, never label/report prose. Unknown outcomes need inspection too.
         attention = any(v.get("kind") == "stall" or relay_failure(v) or v.get("delivery") == "unfinished"
                         or (v.get("exit_code") not in (None, 0))

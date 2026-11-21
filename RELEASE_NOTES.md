@@ -1,5 +1,5 @@
-# Agent J v0.30.62
+# Agent J v0.30.63
 
-Fix the restart prompt after shared Claude sign-in on Mac and verify which terminal session the phone follows.
+Agent J suggests commands for common restart and update typos and names internal files without links. Background reports focus on results and actions.
 
-修复 Mac 上共享 Claude 重新登录后的无效重启提示，并让重连确认手机实际连接的终端会话。
+输错常见重启或升级命令时，Agent J 会给出可直接使用的命令。提到内部技能和文件时用纯文本。后台汇报只推结论和需要你处理的事。

@@ -1208,6 +1208,7 @@ class ClaudeAgent(Agent):
         self.ctl: dict[str, asyncio.Future] = {}   # control request id → its control_response
         self.capture: list | None = None           # a local command (/compact, /cost): its text is the card, not a reply
         self.last_result: dict = {}
+        self._report_candidate: tuple[str | None, str | None] | None = None
         self._restart_result: dict | None = None
         self._restart_had_tools = False
         self.boundary: dict | None = None          # compact_metadata of the last compact_boundary
@@ -1450,9 +1451,14 @@ class ClaudeAgent(Agent):
 
     def on_event(self, ev: dict) -> None:
         t = ev.get("type")
+        child = bool(ev.get("parent_tool_use_id"))
+        report = bool(getattr(getattr(self, "cur_send", None), "background_done_ids", None))
+        report_open = report and self.turn_done is not None and not self.turn_done.is_set()
         if t in ("assistant", "user", "result", "stream_event"):
             self.touch()                           # P219: progress (the stall watch stays quiet)
-        if getattr(self, "capture", None) is None and not getattr(self, "replay", False) and claude_output(ev):
+        if child and t == "result":
+            return  # The busy board has seen it; only the main result can finish the owner turn.
+        if not child and getattr(self, "capture", None) is None and not getattr(self, "replay", False) and claude_output(ev):
             self.first_output()
         if t == "system" and ev.get("subtype") == "api_retry":
             self._api_retry(ev)
@@ -1518,6 +1524,8 @@ class ClaudeAgent(Agent):
                 self.replay = False
             if not synthetic and isinstance(msg.get("model"), str):
                 self.turn_model = msg["model"]
+            if report_open and not child and not synthetic and self.capture is None:
+                self._remember_report_candidate(msg)
             if not synthetic:
                 self._note_tools(msg.get("content"), ev.get("parent_tool_use_id"))
                 from . import trust_taint             # S2/S3: this session's own tool call (its result follows at once)
@@ -1532,18 +1540,21 @@ class ClaudeAgent(Agent):
                 if isinstance(block, dict) and block.get("type") == "tool_use" and self.capture is None \
                         and isinstance(block.get("name"), str):
                     self.use_phase("tool", block["name"])
-                elif isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+                elif not child and isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
                     if self.capture is not None:
                         self.capture.append(block["text"])
                     else:
                         self.use_phase("gen")
-                        self.host.agent_text(block["text"])
+                        if not report:
+                            self.host.agent_text(block["text"])
         elif t == "user":
             if self.capture is None and not ev.get("isReplay"):
                 self.use_phase("gen")
             message = ev.get("message") if isinstance(ev.get("message"), dict) else {}
             for block in message.get("content") or []:
                 if isinstance(block, dict) and block.get("type") == "tool_result":
+                    if report_open and not child:
+                        self._report_candidate = None
                     if getattr(self.host, "peers", None) is not None:
                         self.host.peers.xfer.broker.complete(block.get("tool_use_id"), not block.get("is_error", False), block.get("content"), child=bool(ev.get("parent_tool_use_id")))
         elif t == "result":
@@ -1580,8 +1591,34 @@ class ClaudeAgent(Agent):
                 if quota_resume.claude_limit(r):
                     with contextlib.suppress(Exception):
                         quota_resume.main_hit(self, "claude", r, self.turn_rate)
+            if (report_open and self.capture is None and not self.halting and not ev.get("is_error")
+                    and ev.get("subtype") in ("success", None)):
+                result = ev.get("result")
+                candidate = self._report_candidate[1] if self._report_candidate else None
+                self.host.agent_text(result if isinstance(result, str) and result.strip() else candidate or "[silent]")
+            self._report_candidate = None
             if self.turn_done:
                 self.turn_done.set()
+
+    def _remember_report_candidate(self, message: dict) -> None:
+        """Keep the last standalone main-Agent message until native success commits it."""
+        message_id = message.get("id")
+        message_id = message_id if isinstance(message_id, str) and message_id else None
+        blocks = [block for block in message.get("content") or [] if isinstance(block, dict)]
+        if any(block.get("type") in ("tool_use", "server_tool_use") for block in blocks):
+            self._report_candidate = (message_id, None)
+            return
+        text = "\n\n".join(block["text"] for block in blocks if block.get("type") == "text"
+                           and isinstance(block.get("text"), str) and block["text"].strip())
+        if not text:
+            return
+        if self._report_candidate and message_id == self._report_candidate[0]:
+            previous = self._report_candidate[1]
+            if previous is None:  # text and tool calls can arrive as separate records of one native message
+                return
+            if message_id:
+                text = previous + "\n\n" + text
+        self._report_candidate = (message_id, text)
 
     def _refusal_notice(self, ev: dict) -> None:
 
@@ -1710,6 +1747,7 @@ class ClaudeAgent(Agent):
             if self.proc is None and not await self._spawn():
                 return
             self.turn_done, self.turn_proc = asyncio.Event(), self.proc
+            self._report_candidate = None
             self._restart_result, self._restart_had_tools = None, False
             line = json.dumps({"type": "user", "message": {"role": "user", "content": text}}, ensure_ascii=False) + "\n"
             proc = self.proc

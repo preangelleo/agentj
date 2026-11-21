@@ -3567,6 +3567,18 @@ def cmd_owner_hosts(argv):
         raise SystemExit(1)
 
 
+def _invalid_command(suggestion: str | None = None) -> None:
+    st = State()
+    lang = _lang(st) if st.exists() else _route_lang()
+    if suggestion:
+        message = pick(lang, f"你是不是想用：{suggestion}", f"Did you mean: {suggestion}")
+    else:
+        message = pick(lang, "没有这个命令。运行 agentj --help 查看可用命令。",
+                       "Unknown command. Run agentj --help to see the available commands.")
+    print(message, file=sys.stderr)
+    raise SystemExit(2)
+
+
 def main(argv=None) -> None:
     from . import instance
     try:   # P180: `--instance N` / AGENTJ_INSTANCE first — everything below reads the state dir / preferences / unit name
@@ -3611,6 +3623,14 @@ def main(argv=None) -> None:
             args = [x for x in args if x != flag]
     if legacy:
         argv = args
+    restart_words = ("restart", "reboot", "重启")
+    update_words = ("upgrade", "更新", "升级")
+    command = args[0].lower() if args else ""
+    action = args[1].lower() if len(args) > 1 else ""
+    if command in restart_words or (command == "serve" and action in restart_words):
+        _invalid_command("agentj service restart")
+    if command in update_words or (command == "update" and action in (*update_words, "install", "")):
+        _invalid_command("agentj update apply")
     if args and args[0] in ("config", "provider", "installer", "voice", "theme", "menu", "key", "channel", "skill"):
         from . import migrate        # these answer before argparse: settle an old identity first, never adopt it silently
         try:
@@ -4094,6 +4114,8 @@ def main(argv=None) -> None:
     usage.add_parser(sub)
     learn.add_parser(sub)
     forms.add_parser(sub, include_ask=bool(form_ask))
+    if args and not args[0].startswith("-") and args[0] not in sub.choices:
+        _invalid_command()
     a = p.parse_args(argv)
     from . import host_diagnostics
     host_owned = a.cmd in ("diag", "status", "support", "feedback", "devices") or (a.cmd == "doctor" and a.reconnect) or (a.cmd == 'asr' and list(a.args or []) in (['status'], ['status','--json']))

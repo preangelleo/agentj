@@ -149,6 +149,31 @@ class SharedReport(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page["reply"]["text"], "release report")
         self.assertEqual(self.pushes, ["reply"])
 
+    async def test_system_report_does_not_recover_a_tool_preamble(self):
+        page = self.owner_turn(via="background_done")
+        self.rows({"type": "assistant", "message": {"id": "tool-message", "content": [
+            {"type": "text", "text": "Trying another source."}]}},
+            {"type": "assistant", "message": {"id": "tool-message", "content": [
+                {"type": "tool_use", "name": "WebSearch", "id": "search", "input": {}}]}})
+        self.text("[silent]")
+        await self.native_stop("[silent]")
+        self.host.agent_turn_end()
+        self.assertTrue(page.get("silent"))
+        self.assertEqual(self.pushes, [])
+
+    async def test_native_proactive_stop_drops_tool_preamble_and_keeps_distinct_result(self):
+        self.rows({"type": "user", "turnOrigin": "scheduled", "message": {"content": "scheduled tick"}},
+                  {"type": "assistant", "message": {"content": [
+                      {"type": "text", "text": "Trying another source."},
+                      {"type": "tool_use", "name": "WebSearch", "id": "search", "input": {}}]}})
+        self.a._finish_stop("Trying another source.")
+        self.assertEqual(self.pushes, [])
+        self.rows({"type": "user", "turnOrigin": "scheduled", "message": {"content": "second tick"}})
+        self.text("核对完成。")
+        self.a._finish_stop("核对完成。")
+        self.assertEqual(self.pushes, ["reply"])
+        self.assertEqual(list(self.host.hist.turns.values())[-1]["reply"]["text"], "核对完成。")
+
     async def test_native_loop_stop_keeps_report(self):
         self.rows({"type":"user","turnOrigin":"scheduled","message":{"content":"scheduled tick"}})
         self.text("loop report")

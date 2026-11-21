@@ -413,6 +413,8 @@ class SharedClaudeAgent(Agent):
         # P151: a turn that ends on a tool call (ScheduleWakeup, Monitor, …) gets no native Stop; the transcript still
         # records its end (system/turn_duration). Its reply = the last assistant text since the turn (or phone input) began.
         self.turn_texts = []
+        self.turn_text_messages = []
+        self.turn_tool_messages = set()
         self.turn_thinking = None       # (message id, text) of the last non-empty thinking block
         self.turn_last_msg = None       # message id of the last assistant record
         self.stop_since_end = False     # a committed native Stop arrived since the last recorded turn end
@@ -2668,6 +2670,8 @@ class SharedClaudeAgent(Agent):
         self.turn_wakeup = False
         self.endturn_ids.clear()
         self.turn_texts, self.turn_thinking, self.flushed = [], None, 0
+        self.turn_text_messages.clear()
+        self.turn_tool_messages.clear()
 
     def _system_report_turn(self):
         send = self.cur_send
@@ -2711,15 +2715,20 @@ class SharedClaudeAgent(Agent):
         if self.turn_closed:
             self.turn_closed = False    # P151b: the session wrote on after its end-turn tool: that end is not the last
         self.turn_last_msg = msg.get("id")
+        # Native logs can split one assistant message over several transcript records.
+        message = self.turn_last_msg if isinstance(self.turn_last_msg, str) and self.turn_last_msg else object()
         for b in blocks:
             if not isinstance(b, dict):
                 continue
             if b.get("type") == "text" and str(b.get("text") or "").strip():
                 self.turn_texts.append(b["text"])
+                self.turn_text_messages.append(message)
                 self.last_tool = None
             elif b.get("type") == "thinking" and str(b.get("thinking") or "").strip():
                 self.turn_thinking = (msg.get("id"), b["thinking"])
             elif b.get("type") == "tool_use" and isinstance(b.get("name"), str):
+                if b["name"] not in (*END_TURN_TOOLS, "AskUserQuestion"):
+                    self.turn_tool_messages.add(message)
                 if self.wakeup_end:
                     self.wakeup_end.cancel()
                     self.wakeup_end = None
@@ -2836,11 +2845,25 @@ class SharedClaudeAgent(Agent):
     def _display_reply(self, reply):
         from .silent import is_silent, strip_markers
         system_report = self._system_report_turn()
+        texts = self.turn_texts
+        if self.turn_tool_messages and (system_report or
+                (not self.phone_turn and getattr(self.host, "desktop_turn", None) is None)):
+            # A tool preamble is intermediate output, even if a later marker-only
+            # Stop would otherwise recover it as a standalone report.
+            texts, preambles = [], set()
+            for message, body in zip(self.turn_text_messages, self.turn_texts):
+                if message in self.turn_tool_messages:
+                    preambles.add(public_text(body).strip())
+                else:
+                    texts.append(body)
+            final = public_text(reply).strip()
+            if final in preambles and not any(public_text(body).strip() == final for body in texts):
+                reply = "[silent]"
         if system_report and is_silent(reply):
             if self.turn_wakeup or not strip_markers(reply).strip():
                 # Preserve a separate public report on a later marker-only or scheduled end.
                 # No explanation attached to a marker belongs in the main stream.
-                report = [b for b in self.turn_texts if b.strip() and not is_silent(b)]
+                report = [b for b in texts if b.strip() and not is_silent(b)]
                 if report:
                     return "\n\n".join(report)
             return reply
@@ -2850,7 +2873,7 @@ class SharedClaudeAgent(Agent):
             return reply
         if not self.turn_wakeup and not is_silent(reply):
             return reply
-        blocks = list(self.turn_texts)
+        blocks = list(texts)
         if not blocks or blocks[-1].strip() != reply.strip():
             blocks.append(reply)
         streamed = self.streamed if self.phone_turn else ()
