@@ -72,19 +72,28 @@ def note(agent, method, params):
     if agent.__dict__.get('_child_source_proc') is not agent.proc:
         agent._child_sources, agent._child_spawns, agent._child_inputs = {}, {}, {}
         agent._native_children, agent._native_inputs, agent._native_turns = set(), {}, set()
+        agent._phone_child_turns, agent._phone_child_unknown = set(), False
         agent._child_source_proc = agent.proc
     pins = agent.__dict__.setdefault('_child_sources', {})
     pending = agent.__dict__.setdefault('_child_spawns', {})
     item = params.get('item') if isinstance(params.get('item'), dict) else {}
-    if method == 'turn/started':
+    if method in ('turn/started', 'turn/completed'):
         child = params.get('threadId')
         value = params.get('turn')
         turn = value.get('id') if isinstance(value, dict) else None
+        if not isinstance(child, str) or not child or child == agent.tid or not isinstance(turn, str) or not turn:
+            return
+        active = agent.__dict__.setdefault('_phone_child_turns', set())
+        if method == 'turn/completed':
+            active.discard((child, turn))
+            return
         turns = agent.__dict__.setdefault('_native_turns', set())
-        if isinstance(child, str) and child != agent.tid and isinstance(turn, str) and turn and (child, turn) not in turns:
+        if (child, turn) not in turns:
             if len(turns) >= MAX:
+                agent._phone_child_unknown = True
                 return
             turns.add((child, turn))
+            active.add((child, turn))
             record = agent.__dict__.setdefault('_native_inputs', {}).get(child)
             if record:
                 record['child_turn'] = turn
@@ -154,6 +163,20 @@ def note(agent, method, params):
         candidates = [pin for (sender, _), pin in pending.items() if sender == parent]
         if isinstance(child, str) and child != agent.tid and child not in pins and len(pins) < MAX and len(candidates) == 1:
             pins[child] = dict(candidates[0]) if candidates[0] else None
+
+
+def phone_caller_ambiguous(agent):
+    """Live native threads share the app-server's kernel process identity."""
+    if agent.__dict__.get('_child_source_proc') is getattr(agent, 'proc', None):
+        if (agent.__dict__.get('_phone_child_turns') or agent.__dict__.get('_phone_child_unknown')
+                or agent.__dict__.get('_child_spawns') or agent.__dict__.get('_native_inputs')):
+            return True
+    scope = getattr(agent, 'busy_scope', None)
+    board = getattr(getattr(getattr(agent, 'host', None), 'busy', None), 'mem', None)
+    if not callable(scope) or not isinstance(board, dict):
+        return True
+    prefixes = (f'{scope()}:th:', f'{scope()}:spawn:')
+    return any(key.startswith(prefixes) for key in list(board))
 
 
 def _input(agent, parent, turn, ident, children, *, replace, bind=True):

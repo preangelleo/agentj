@@ -212,16 +212,26 @@ class LoginCards:
         source_live = None
         if type(peer) is int and isinstance(req.get("site"), str) and req["site"] in bs.templates():
             original = getattr(self.host.agent, "cur_send", None)
+            if req["site"] == CHANNELS:
+                await approval_material.observe_phone_delivery(self.host, peer)
             proof = await asyncio.to_thread(approval_material.verified_phone_chat, self.host, peer)
             if proof:
                 agent, origin = proof
                 send = getattr(agent, "cur_send", None)
                 if (self.host.agent is agent and original is send and getattr(send, "turn", None) == origin["message_id"]
                         and str(self.host.hist.epoch) == origin["session"]):
+                    native_live = None
+                    if req["site"] == CHANNELS and getattr(agent, "kind", None) == "codex":
+                        from . import browser_login_native
+                        native_live = await browser_login_native.claim(agent, req, peer)
+                        if native_live is None:
+                            return await self.request(req, owner=None)
                     binding = getattr(send, "phone_binding", None)
                     def source_live():
                         return (self.host.agent is agent and getattr(agent, "cur_send", None) is send
-                                and str(self.host.hist.epoch) == origin["session"])
+                                and str(self.host.hist.epoch) == origin["session"]
+                                and (native_live is None or (native_live() and send.approval_origin == origin))
+                                and approval_material.phone_main_live(agent))
         res = await self.request(req, owner=binding, source_live=source_live)
         if (res.get("result") in ISSUE_RESULTS and res["result"] not in ("already", "host_login")
                 and self._binding_live(binding) and source_live()):
@@ -246,8 +256,10 @@ class LoginCards:
         restricted = site == CHANNELS or rec.get("template") == CHANNELS
         if restricted and (site != CHANNELS or rec.get("template") != CHANNELS or not self._binding_live(owner)
                            or (old is not None and not self._session_matches(owner.session(), old.get("owner")))):
-            return {"result": "refused", "why": "owner_phone_required"}
+            return {"result": "refused", "why": "owner_phone_required", "detail": browser.CHANNELS_OWNER_HINT}
         rt = await asyncio.to_thread(browser.runtime, self.st)
+        if restricted and (not self._binding_live(owner) or (source_live is not None and not source_live())):
+            return {"result": "gone"}
         if not rt:
             return {"result": "no_browser", "reason": "browser_unavailable"}
         refresh = req.get("refresh") is True or (old is not None and old["deadline"] - time.monotonic() <= 10)

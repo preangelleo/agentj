@@ -1,5 +1,5 @@
-# Agent J v0.30.60
+# Agent J v0.30.61
 
-Restore file attachments in independent Claude Code sessions, including standalone retries after a compound command fails.
+Fix an incorrect refusal when a paired phone starts WeChat Channels sign-in in the main Codex chat.
 
-修复独立模式下 Claude Code 附文件被拒的问题，复合命令失败后可在当前页用单句重试。
+修复在已配对手机的 Codex 主对话中发起视频号登录被拒的问题。

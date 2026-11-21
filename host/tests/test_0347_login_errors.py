@@ -89,7 +89,8 @@ class Errors(Base, unittest.IsolatedAsyncioTestCase):
             self.host.send_app.reset_mock()
             verify.return_value = None
             self.assertEqual(await self.cards.request_from_agent(injected, 41),
-                             {"result": "refused", "why": "owner_phone_required"})
+                             {"result": "refused", "why": "owner_phone_required",
+                              "detail": browser.CHANNELS_OWNER_HINT})
             self.host.send_app.assert_not_awaited()
         self.assertEqual(bl._error_frame(bl.CHANNELS, "request", {"result": "arbitrary", "reason": "arbitrary"}),
                          {"t": "login_qr_err", "id": "", "op": "request", "site": bl.CHANNELS, "why": "failed"})

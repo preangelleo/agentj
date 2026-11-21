@@ -105,6 +105,13 @@ class Origin:
                 and provider_setup.scope_stamp(host) == self.route_stamp)
 
 
+async def capture_after_delivery(host, req, pid):
+    if req.get('kind') == 'switch' and not req.get('dry_run') and not switch_harness.check_spec(req)[1]:
+        from . import approval_material
+        await approval_material.observe_phone_delivery(host, pid)
+    return capture(host, req, pid)
+
+
 def capture(host, req, pid):
     if switch_harness.check_spec(req)[1] or req.get('kind') != 'switch' or req.get('dry_run'):
         return None

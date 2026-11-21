@@ -2921,7 +2921,7 @@ class Host:
                 elif cmd == "harness_job":          # P339: `agentj agent switch` → serve launches the job (semantic fields only)
                     from . import switch_harness
                     from . import opencode_switch_key
-                    origin = opencode_switch_key.capture(self, req, pid)
+                    origin = await opencode_switch_key.capture_after_delivery(self, req, pid)
                     res = await asyncio.to_thread(switch_harness.host_job, self.st, req, **({"origin":origin} if origin else {}))
                     opencode_switch_key.admitted(self, req, res, origin)
                     await self._ctl_send(w, res)

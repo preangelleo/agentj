@@ -242,7 +242,10 @@ async def phone_offer(host, version, peer):
                 and proof[1] == send.approval_origin and not host.stopped()
                 and not provenance.untrusted_turn(agent) and not provenance.owner_grant_required(agent)
                 and send.device and host.st.sign_key(send.device))
-    if not isinstance(version, str) or not re.fullmatch(VERSION, version) or update.market_managed() or not live():
+    if not isinstance(version, str) or not re.fullmatch(VERSION, version) or update.market_managed():
+        return {'ok': False, 'why': 'unavailable'}
+    await approval_material.observe_phone_delivery(host, peer)
+    if not live():
         return {'ok': False, 'why': 'unavailable'}
     check = await asyncio.to_thread(update.check, timeout=3)
     if check.get('status') != 'newer' or check.get('latest') != version or not live():

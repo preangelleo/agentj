@@ -736,7 +736,19 @@ def verified_phone_chat(host, peer):
     if (origin.get('channel') != 'phone' or origin.get('verified') is not True or origin.get('suspicious')
             or origin.get('message_id') != turn or str(origin.get('session')) != str(host.hist.epoch)):
         return None
-    return scope['agent'], copy.deepcopy(origin)
+    agent = scope['agent']
+    if (not phone_main_live(agent) or not feedback_pairing_live(host, scope['send'])
+            or getattr(scope['send'], 'state', None) in ('cancelled', 'failed')):
+        return None
+    return agent, copy.deepcopy(origin)
+
+
+def phone_main_live(agent):
+    from . import codex_children
+    if getattr(agent, 'kind', None) != 'codex':
+        return True
+    done = getattr(agent, 'turn_done', None)
+    return not (done is not None and done.is_set()) and not codex_children.phone_caller_ambiguous(agent)
 
 
 def verified_phone_feedback(host, peer):

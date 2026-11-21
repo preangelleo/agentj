@@ -620,7 +620,12 @@ class CodexAgent(Agent):
                              guidance("codex", "launch", getattr(self.host, "lang", "zh")))
             return False
         await self._prepare_control_paths()
-        argv = await self.authorized_launch_argv(self.argv())
+        command = self.argv()
+        from . import codex_npm
+        managed = await asyncio.to_thread(codex_npm.launch, command[0]) if self.kind == "codex" else None
+        if managed is not None:
+            command[0] = managed[0]
+        argv = await self.authorized_launch_argv(command)
         if argv is None:
             self.failed_start = True
             return False
@@ -633,6 +638,11 @@ class CodexAgent(Agent):
             env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"), host_state=self.host.st, native_model_key=model_key)
         if self.cfg.get("fence", True):
             env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind, native_model_key=model_key)
+        if managed is not None:
+            # The npm launcher strips previous package-manager markers before it starts Codex.
+            for marker in ("NPM", "BUN", "PNPM", "VITE_PLUS"):
+                env.pop("CODEX_MANAGED_BY_" + marker, None)
+            env.update(managed[1])
         from .static_shell import interpreter_env
         self.approval_env = interpreter_env(env)
         try:
@@ -944,6 +954,9 @@ class CodexAgent(Agent):
         self.last_note = time.monotonic()
         if method == "item/started" or method == "item/completed":
             it = p.get("item") if isinstance(p.get("item"), dict) else {}
+            if th == self.tid and it.get("type") == "commandExecution":
+                from . import browser_login_native
+                browser_login_native.note(self, method, p, it)
             if method == "item/completed":
                 from . import trust_taint             # S2/S3: the served thread's and its child threads' completed items
                 trust_taint.observe_codex(self, it)

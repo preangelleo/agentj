@@ -2537,7 +2537,7 @@ class Elevator:
                 if peer is None and sys.platform == "darwin":
                     from .core.process_evidence import peer_pid
                     peer = peer_pid(w)
-                if req['t'] == 'secret_out' and uid == os.getuid():
+                if req['t'] in ('secret', 'secret_out') and uid == os.getuid():
                     from . import approval_material
                     await approval_material.observe_phone_delivery(self.host, peer)
                 if req['t'] == 'secret' and uid == os.getuid():
@@ -2715,7 +2715,7 @@ class Elevator:
                 else:
                     from . import switch_harness
                     from . import opencode_switch_key
-                    origin = opencode_switch_key.capture(self.host, req, peer)
+                    origin = await opencode_switch_key.capture_after_delivery(self.host, req, peer)
                     res = await asyncio.to_thread(switch_harness.host_job, self.st, req, **({"origin":origin} if origin else {}))
                     opencode_switch_key.admitted(self.host, req, res, origin)
                 w.write((json.dumps(res) + "\n").encode())

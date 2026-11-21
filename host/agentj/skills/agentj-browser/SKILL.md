@@ -51,6 +51,8 @@ installs Agent J's own browser anyway (the owner said no to the existing one).
   opens on this computer's screen; the owner signs in there, then `check`. `expired` → do not resend in a loop; the card has
   a refresh button. Never ask for passwords, codes or QR screenshots in chat; never claim success from "I scanned it" — only
   `check` / `done` count.
+- 视频号登录请在原已配对手机发起的主对话里单独运行 `agentj browser login channels-weixin --wait --json`。
+  Run this standalone command in the main chat turn started by the paired phone for WeChat Channels sign-in.
 - Telegram: by default only a text reminder goes there. The QR image goes to Telegram only if the owner turned that on with a
   tap on the phone card. You may run `agentj browser telegram-qr status|off`; you can never turn it on.
 

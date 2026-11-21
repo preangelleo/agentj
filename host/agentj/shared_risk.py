@@ -176,6 +176,11 @@ class RiskGuard:
                 self.grants.update({cat:grant for cat in keys if cat not in danger.ALWAYS_CARD})
             return True
 
+    def authentic(self, event):
+        proc = getattr(self.adapter, 'proc', None)
+        event['_agentj_path_authenticated'] = proc is not None and proc.pid in (event.get('_agentj_chain') or [])
+        return True  # keep the existing shared policy decision for every hook
+
     async def hook_event(self, event):
         if isinstance(event,dict):
             event.pop('_agentj_gone',None)
@@ -203,6 +208,8 @@ class RiskGuard:
         tool=event.get('tool_name','?');inp=event.get('tool_input') or {}
         if getattr(a,'kind',None) == 'codex':
             tool=policy_registry.codex_hook_tool(tool)   # P559: namespace+tool names from Codex's own hook
+            from . import browser_login_native
+            browser_login_native.prehook(a, event, tool, inp)
         from . import main_thread
         dispatch=main_thread.of(a).check(tool,inp,event)
         dispatch_output=dispatch.get('hookSpecificOutput',{})
@@ -250,7 +257,8 @@ class NativePathGuard:
         tool, inp = event.get('tool_name', '?'), event.get('tool_input') or {}
         if a.kind == 'codex':
             tool = policy_registry.codex_hook_tool(tool)
-            from . import feedback_native
+            from . import browser_login_native, feedback_native
+            browser_login_native.prehook(a, event, tool, inp)
             feedback_native.codex_prehook(a, event, tool, inp)
         if (refusal := credential_read_refusal(a.host, tool, inp, a.cfg.get('dir'))) is not None:
             return refusal

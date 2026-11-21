@@ -1435,6 +1435,9 @@ def _ask(req: dict, local_ok: bool = True) -> dict:
     return res
 
 
+CHANNELS_OWNER_HINT = "请在原已配对手机的主对话里重新发「恢复视频号登录」，让主 Agent 在这一轮单独运行 agentj browser login channels-weixin --wait --json。"
+
+
 LOGIN_MSG = {
     "sent": "已发登录二维码卡到主人的已配对手机（{ttl} 秒内有效）。请主人在手机上扫码；成功由浏览器自己确认，不要相信「扫好了」这句话。"
             "/ A sign-in QR card is on the owner's paired phone ({ttl} s). Success is confirmed by the browser itself.",
@@ -1450,7 +1453,7 @@ LOGIN_MSG = {
     "capture_timeout": "等待取得稳定的二维码图像超时。/ Timed out waiting for a stable QR image.",
     "capture_blank": "找到了二维码，但 Agent J 主机的浏览器窗口三次都没画出图像（窗口被遮住、最小化或屏幕休眠）。/ The QR was found but the host browser window painted nothing three times (covered, minimised or screen asleep).",
     "not_delivered": "未能将登录卡发给原手机。/ The sign-in card could not be sent to the requesting phone.",
-    "owner_phone_required": "请在原已配对手机的主聊中发起视频号登录。/ Request WeChat Channels sign-in from the original paired phone chat.",
+    "owner_phone_required": CHANNELS_OWNER_HINT,
     "expired": "二维码已过期，没有扫码。主人可以在卡片上点「刷新」，或稍后再说「早上好」。不要反复发。/ The QR expired unscanned. Do not resend repeatedly.",
     "cancelled": "主人在手机上关掉了登录卡。不要追问。/ The owner closed the card.",
     "no_device": "没有已配对的手机。/ No paired phone.",
