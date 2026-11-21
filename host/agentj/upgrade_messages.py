@@ -39,6 +39,8 @@ def _page_coordinates(hist, page, device):
 
 def bind_reply_page(host, send, page):
     """Pin the original store before queueing, so a live history reload cannot reuse its page number."""
+    if host.hist.get(send.turn) is not page:
+        return
     proof = _page_coordinates(host.hist, page, send.device)
     if proof is not None:
         send.restart_page = (weakref.ref(host.hist), proof)
@@ -140,30 +142,35 @@ async def hold(host, session, sid, text):
         return {"ok": False, "why": "other"}
     send = compose.Send(session.device, sid, page["id"])
     host.sends.add(send)
-    write = host.receipts.mark(session.device, sid, "held", page["id"], seal=seal)
+    coordinates = _page_coordinates(host.hist, page, session.device)
+    write = host.receipts.mark(session.device, sid, "held", page["id"], seal=seal, reply_page=coordinates)
     if write is None or not await asyncio.wrap_future(write) or not host.hist.last_write_ok or not await diskq.aflush():
-        send.state = "failed"
-        host.receipts.mark(session.device, sid, "done", page["id"])
-        host.hist_update(page["id"], end="failed", text=humane.of(host, "say.restart_lost"))
+        fail(host, session.device, sid, page, coordinates)
         return {"ok": False, "why": "other"}
     kick(host)
     return {"ok": True, "state": "queued", "turn": page["id"]}
 
 
-def fail(host, device, sid, page):
+def fail(host, device, sid, page, coordinates):
     if placeholder := host.sends.get(device, sid):
         placeholder.state = "failed"
     host.receipts.mark(device, sid, "done")
-    if page and page["end"] == "open":
-        host.hist_update(page["id"], text=humane.of(host, "say.restart_lost"), end="failed", card={})
+    text = humane.of(host, "say.restart_lost")
+    if (page and host.hist.get(page["id"]) is page
+            and matches_reply_page(host.hist, page, device, coordinates)):
+        if page["end"] == "open":
+            host.hist_update(page["id"], text=text, end="failed", card={})
+    else:
+        host.hist_add({"k": "sys", "text": ""}, text, "done")
 
 
 async def resume(host):
     """Use the remaining authenticated session; never create a substitute owner."""
     if not host.agent or pending(host.st):
         return
-    for (device, sid), row in list(host.receipts.items.items()):
-        if row["s"] != "held":
+    for device, sid in list(host.receipts.items):
+        row = host.receipts.items.get((device, sid))
+        if row is None or row["s"] != "held":
             continue
         page = host.hist.get(row["n"])
         session = next((s for s in host.sessions.values() if s.device == device and host._paired_live(s)), None)
@@ -180,16 +187,18 @@ async def resume(host):
                 verified = True
             except (OSError, ValueError, TypeError, InvalidSignature):
                 pass
+        # Legacy rows can acquire page coordinates only from the verified sealed handoff.
+        coordinates = _page_coordinates(host.hist, page, device) if verified else row.get("reply_page")
         if not verified or host.stopped() or host.seat_refusal():
-            fail(host, device, sid, page)
+            fail(host, device, sid, page, coordinates)
             continue
         # Acquire synchronously before awaiting IO: concurrent reconnects can never submit twice.
-        write = host.receipts.mark(device, sid, "recv", page["id"])
+        write = host.receipts.mark(device, sid, "recv", page["id"], reply_page=coordinates)
         if write is None or not await asyncio.wrap_future(write):
-            fail(host, device, sid, page)
+            fail(host, device, sid, page, coordinates)
             continue
         if binding(host, session, sid, page) != proof or host.stopped() or host.seat_refusal():
-            fail(host, device, sid, page)
+            fail(host, device, sid, page, coordinates)
             continue
         # The platform holds the original authenticated words, never an approval.
         placeholder = host.sends.get(device, sid)
@@ -202,7 +211,7 @@ async def resume(host):
         from . import main_thread
         main_thread.owner_queued(host)
         if await host._accept(session, page["src"]["text"], sid, held_page=page, held_guard=allowed) is None:
-            fail(host, device, sid, page)
+            fail(host, device, sid, page, coordinates)
 
 
 def kick(host):

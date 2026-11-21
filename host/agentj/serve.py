@@ -540,11 +540,11 @@ async def _rcpt_recv(host, device: str, sid: str) -> None:
         host.st.log("say_receipts", result="write_failed")
 
 
-def _rcpt(host, device, sid, state: str, turn: int | None = None, *, reply_page=None) -> None:
+def _rcpt(host, device, sid, state: str, turn: int | None = None, *, reply_page=None, notice_only=False) -> None:
 
     rc = getattr(host, "receipts", None)
     if rc is not None and isinstance(device, str) and isinstance(sid, str) and rc.used(device, sid):
-        rc.mark(device, sid, state, turn, reply_page=reply_page)
+        rc.mark(device, sid, state, turn, reply_page=reply_page, notice_only=notice_only)
 
 
 def say_sync_state(send, receipt: str | None) -> str | None:
@@ -8586,6 +8586,10 @@ class Host:
                 send.state = "cancelled"
                 return None
             send.delivery_allowed = held_guard
+        elif sid is not None and agent_text is None:  # ordinary say, excluding terminal bang with an independent sid
+            from . import upgrade_messages
+            _rcpt(self, s.device, sid, "recv", send.turn,
+                  reply_page=upgrade_messages.reply_page_coordinates(self, send))
         self.agent.submit(send)
         return send
 
@@ -8723,7 +8727,6 @@ class Host:
                                   extra_src={"form": {"id": frec["id"], "title": frec["spec"]["title"][:80]}} if frec else None)
         if frec is not None and send is not None:
             send.form_id = frec["id"]
-        _rcpt(self, s.device, sid, "recv", send.turn)
         self._post(self.send_app, s, {"t": "say_res", "sid": sid, "ok": True, "state": "queued", "turn": send.turn})
         if send.prep is not None:
             self._post(self._send_device, s.device, {"t": "say_state", "sid": sid, "s": "transcribing"})
@@ -8891,17 +8894,13 @@ class Host:
         left = 0
         for r in self.receipts.interrupted:
             page = self.hist.get(r["n"]) if r["n"] is not None else None
-            if page is None:
-                left += 1
+            if page is not None and page["end"] != "open":
                 continue
-            if page["end"] != "open":
-                continue
-            if r["s"] == "deliv" and not upgrade_messages.matches_reply_page(self.hist, page, r["d"], r["page"]):
+            if not upgrade_messages.matches_reply_page(self.hist, page, r["d"], r["page"]):
                 # A page number can be reused when history is switched off and on.
                 left += 1
                 continue
-            key = "say.restart_lost" if r["s"] == "recv" else "say.restart_unsure"
-            self.hist_update(r["n"], append=humane.of(self, key), end="failed")
+            self.hist_update(r["n"], append=humane.of(self, "say.restart_unsure"), end="failed")
         if left:
             self.hist_add({"k": "sys", "text": ""}, humane.of(self, "say.restart_some", n=left), "done")
         if self.receipts.interrupted:
@@ -8996,7 +8995,9 @@ class Host:
             self.st.log("notice_delivery_uncertain", id=send.official_notice_id)
             return
         self.uploads.commit(send.blobs)
-        _rcpt(self, send.device, send.sid, "deliv", send.turn)
+        from . import upgrade_messages
+        _rcpt(self, send.device, send.sid, "deliv", send.turn,
+              reply_page=upgrade_messages.reply_page_coordinates(self, send), notice_only=True)
         self.st.log("say_uncertain", device=send.device, id=send.turn)
 
     # ------------------------------------------------------------ voice (§10.9)

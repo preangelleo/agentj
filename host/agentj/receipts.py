@@ -4,10 +4,11 @@ compose.Sends remembers every sid a device used, but only for the life of the pr
 (device, sid) in `<state>/say_receipts.jsonl` (0600), written the moment a `say` is accepted — before the Agent gets it
 and before the phone hears `say_res ok` — with its state:
 
-  held   host-sealed upgrade handoff, never submitted; the original paired device may receive first delivery
-  recv   ordinary acceptance; it may already have reached the harness before the later receipt was written
+  held   host-sealed upgrade handoff, never submitted; page coordinates are for failure notices
+  recv   ordinary acceptance, optionally bound to its history page; it may already have reached the harness
   deliv  handed to the harness (or the write failed half-way: maybe handed);
-         a confirmed ordinary phone dispatch can also bind its history epoch and page timestamp
+         a confirmed ordinary phone dispatch can bind its history epoch and page timestamp for completion;
+         a maybe-handed dispatch can bind only its interruption notice
   done   finished: the turn ended, the host answered it itself, it was withdrawn or refused by the harness
   lost   an earlier serve died while it was `recv` / `deliv` without a final page (set at load, once)
 
@@ -39,6 +40,7 @@ TOTAL_MAX = 8192
 STATES = ("held", "recv", "deliv", "done", "lost")
 RANK = {s: i for i, s in enumerate(STATES)}   # a state never goes back (replay is order-insensitive)
 OPEN = ("recv", "deliv")
+PAGE_STATES = ("held", *OPEN)
 
 _ex: concurrent.futures.ThreadPoolExecutor | None = None
 _ex_lk = threading.Lock()
@@ -100,21 +102,28 @@ class Receipts:
                    "n": n if type(n) is int else None}
             if rec["s"] == "held" and isinstance(r.get("seal"), str):
                 rec["seal"] = r["seal"]
-            if rec["s"] == "deliv":
-                rec["reply_page"] = _reply_page(r.get("page"))
+            if rec["s"] in PAGE_STATES and rec["n"] is not None:
+                rec["notice_only"] = rec["s"] == "deliv" and "notice_page" in r
+                rec["reply_page"] = _reply_page(r.get("notice_page" if rec["notice_only"] else "page"))
             if old is None:
                 self.items[k] = rec
             elif RANK[rec["s"]] >= RANK[old["s"]]:
-                old["s"] = rec["s"]
                 if "seal" in rec:
                     old["seal"] = rec["seal"]
-                old["reply_page"] = rec.get("reply_page")
+                # A snapshot may precede an older unbound line. Keep matching stronger evidence.
+                if (rec["s"] != old["s"] or rec["n"] not in (None, old["n"])
+                        or (rec.get("reply_page") is not None
+                            and (rec["reply_page"] != old.get("reply_page") or not rec["notice_only"]))):
+                    old["reply_page"] = rec.get("reply_page")
+                    old["notice_only"] = rec.get("notice_only", False)
+                old["s"] = rec["s"]
                 old["n"] = rec["n"] if rec["n"] is not None else old["n"]
         self._trim()
         recovered = 0
         for (d, i), r in self.items.items():
             page = r.get("reply_page")
-            if r["s"] == "deliv" and page is not None and answered is not None and answered(d, r["n"], page):
+            if (r["s"] == "deliv" and page is not None and not r.get("notice_only")
+                    and answered is not None and answered(d, r["n"], page)):
                 r["s"] = "done"
                 recovered += 1
                 continue
@@ -143,9 +152,10 @@ class Receipts:
 
     # ---------------------------------------------------------------- disk (one ordered writer thread)
     def _line(self, k: tuple, r: dict) -> str:
+        page_key = "notice_page" if r["s"] == "deliv" and r.get("notice_only") else "page"
         return json.dumps({"d": k[0], "i": k[1], "s": r["s"], "t": int(r["t"]), "n": r["n"],
                            **({"seal": r["seal"]} if r["s"] == "held" and "seal" in r else {}),
-                           **({"page": r["reply_page"]} if r["s"] == "deliv" and r.get("reply_page") else {})},
+                           **({page_key: r["reply_page"]} if r["s"] in PAGE_STATES and r.get("reply_page") else {})},
                           separators=(",", ":"))
 
     def _rewrite(self) -> None:
@@ -193,35 +203,33 @@ class Receipts:
         return r["s"] if r else None
 
     def mark(self, device: str, sid: str, state: str, turn: int | None = None, *, seal: str | None = None,
-             reply_page: tuple[int, int] | None = None) -> concurrent.futures.Future | None:
+             reply_page: tuple[int, int] | None = None, notice_only: bool = False) -> concurrent.futures.Future | None:
         """Record now (memory, so a second `say` with this sid is `dup` at once) and queue the line for the disk. Returns
         the write's future (None when nothing changed). A state never goes back."""
         if state not in RANK or not _ok_key(device) or not _ok_key(sid):
             return None
         k = (device, sid)
         r = self.items.get(k)
-        reply_page = _reply_page(reply_page) if state == "deliv" else None
+        reply_page = _reply_page(reply_page) if state in PAGE_STATES and type(turn) is int else None
         if r is not None and (RANK[state] < RANK[r["s"]] or RANK[state] == RANK[r["s"]]
                               and (turn is None or turn == r["n"])
-                              and (reply_page is None or reply_page == r.get("reply_page"))):
-            return None                             # nothing new (the same state may only add its page id)
-        if r is None:
-            r = self.items[k] = {"s": state, "t": self.now(), "n": turn}
-            if len(self.items) > TOTAL_MAX + 256 or sum(1 for d, _ in self.items if d == device) > PER_DEVICE + 64:
-                self._trim()
-        else:
-            r["s"] = state
-            if turn is not None:
-                r["n"] = turn
+                              and (reply_page is None or (reply_page == r.get("reply_page")
+                                   and (notice_only or not r.get("notice_only"))))):
+            return None                             # no new page or stronger confirmation
+        new = {"s": state, "t": r["t"] if r else self.now(),
+               "n": r["n"] if r and turn is None else turn}
         if state == "held":
-            r["seal"] = seal
-        else:
-            r.pop("seal", None)
+            new["seal"] = seal
         if reply_page is not None:
-            r["reply_page"] = reply_page
-        else:
-            r.pop("reply_page", None)
-        return _executor().submit(self._append, self._line(k, r))
+            new["reply_page"] = reply_page
+            new["notice_only"] = notice_only
+        # Publish the complete row in one operation. Compaction runs off-loop and must
+        # never combine a new delivery state with an older, more permissive page field.
+        self.items[k] = new
+        if r is None and (len(self.items) > TOTAL_MAX + 256
+                          or sum(1 for d, _ in self.items if d == device) > PER_DEVICE + 64):
+            self._trim()
+        return _executor().submit(self._append, self._line(k, new))
 
     async def persist(self, device: str, sid: str, state: str, turn: int | None = None) -> None:
         """mark() and wait until the line is on disk (fsync'ed) — off the loop."""

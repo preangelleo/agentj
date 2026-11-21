@@ -1723,9 +1723,13 @@ No wire change: this section states the `say` / `dup` contract (§10.2) that the
   a resend of any remembered `sid` is `dup`. **No replay:** a message the old process had not finished is never run again
   by the host. On startup, a delivered ordinary request can settle against its final reply only with its original
   history epoch, page timestamp, device and page ID. The same binding is required before attaching an interruption
-  notice to an open page for a delivered request. For a missing page, or a legacy unbound delivery whose page is still
-  open, one `sys` page counts the uncertain deliveries. A page that already ended keeps its contents. The `recv`
-  interruption path keeps its existing page notice. A manual resend has a new `sid`. No wire change.
+  notice to an open page for an accepted or delivered request. The host records that binding for an ordinary
+  paired phone message before submitting it and when a verified upgrade hold is claimed. An interrupted `recv`
+  may have reached the harness. A dispatch without a trustworthy acknowledgement records coordinates in a
+  separate notice-only field, which cannot supply completion evidence. A held message that fails before dispatch
+  can update its original page only with a matching binding. A missing page or an open page without a matching
+  binding goes to one `sys` page counting uncertain deliveries. An ended page keeps its contents without another
+  notice. A manual resend has a new `sid`. No wire change.
   Not covered: a device that used more than 1 024 other `sid`s in between (impossible from one
   phone's queue of ≤ 50, but another tab of the same pairing shares the device id), and a store the disk refuses (logged
   `say_receipts write_failed`; memory dedupe as before, the message is never refused for it). An older host without `p33`

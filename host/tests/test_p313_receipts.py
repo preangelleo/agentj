@@ -3,7 +3,7 @@
 Unit: receipts.Receipts (states only go forward, torn lines, bounds, compaction, 0600, interrupted at load).
 Serve: a `say` is on disk before the Agent gets it; after a restart a resend of the same sid is `dup` (never a second
 delivery) whatever state it was in; a message the old serve had not finished ends its page `failed` with one line that
-tells the owner whether the Agent had it and that it can be resent by hand; one that finished says nothing more."""
+explains the uncertain outcome. A missing page binding gets one aggregate notice; a finished page is left alone."""
 import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import asyncio
 import json
@@ -74,6 +74,58 @@ class Store(unittest.TestCase):
         self.assertEqual(r2.state("D", s), "done")
         self.assertEqual(r2.interrupted, [])
         self.assertFalse(r2.used("D", "y"))
+
+    def test_unbound_acceptance_does_not_erase_same_state_page_proof(self):
+        r = self.reopen()
+        s = sid()
+        r.mark("D", s, "recv", 7, reply_page=(4, 1234))
+        r.flush()
+        with open(self.root / receipts.FILE, "a") as f:
+            f.write(json.dumps({"d": "D", "i": s, "s": "recv", "t": 1, "n": None}) + "\n")
+        self.assertEqual(self.reopen().interrupted[0]["page"], (4, 1234))
+
+    def test_acceptance_cannot_prove_confirmed_delivery(self):
+        r = self.reopen()
+        accepted, uncertain, notice = sid(), sid(), sid()
+        r.mark("D", accepted, "recv", 7, reply_page=(4, 1234))
+        r.mark("D", uncertain, "recv", 8, reply_page=(4, 1235))
+        r.mark("D", uncertain, "deliv", 8)
+        r.mark("D", notice, "deliv", 9, reply_page=(4, 1236), notice_only=True)
+        r.flush()
+        notice_row = json.loads((self.root / receipts.FILE).read_text().splitlines()[-1])
+        self.assertEqual(notice_row["notice_page"], [4, 1236])
+        self.assertNotIn("page", notice_row)
+        answered = mock.Mock(return_value=True)
+        restored = self.reopen(answered=answered)
+        answered.assert_not_called()
+        self.assertEqual([(row["s"], row["page"]) for row in restored.interrupted],
+                         [("recv", (4, 1234)), ("deliv", None), ("deliv", (4, 1236))])
+
+    def test_compaction_snapshot_does_not_mix_new_delivery_and_old_page_fields(self):
+        r = self.reopen()
+        mid, coordinates = sid(), (4, 1234)
+        r.mark("D", mid, "recv", 7, reply_page=coordinates)
+        r.flush()
+        serialize = r._line
+        pending_lines = []
+
+        def advance_after_snapshot(key, snap):
+            with mock.patch.object(r, "_line", side_effect=serialize), \
+                    mock.patch.object(r, "_append", side_effect=pending_lines.append):
+                r.mark("D", mid, "deliv", 7, reply_page=coordinates, notice_only=True).result()
+            return serialize(key, snap)
+
+        with mock.patch.object(r, "_line", side_effect=advance_after_snapshot):
+            r._rewrite()
+        snapshot = json.loads((self.root / receipts.FILE).read_text())
+        self.assertEqual((snapshot["s"], snapshot["page"]), ("recv", list(coordinates)))
+        r._append(pending_lines[0])
+        r._append(json.dumps({"d": "D", "i": mid, "s": "recv", "t": 1, "n": None}))
+        answered = mock.Mock(return_value=True)
+        restored = self.reopen(answered=answered)
+        answered.assert_not_called()
+        self.assertEqual((restored.interrupted[0]["s"], restored.interrupted[0]["page"]),
+                         ("deliv", coordinates))
 
     def test_bounded_by_age_and_count_and_compacted(self):
         now = [1_000_000.0]
@@ -158,6 +210,8 @@ class ServeRestart(unittest.TestCase):
             def submit(send):
                 rows = (self.st.root / receipts.FILE).read_text()
                 self.assertIn(send.sid, rows, "fsync'ed before the hand-over")
+                self.assertEqual(host.receipts.items[(s.device, send.sid)]["reply_page"],
+                                 (host.hist.epoch, host.hist.get(send.turn)["ts"]))
                 orig(send)
             host.agent.submit = submit
             for x in (a, b, c):
@@ -180,7 +234,7 @@ class ServeRestart(unittest.TestCase):
             self.assertEqual(host.agent.got, [], "nothing replayed to the Agent")
             pa, pb, pc = host.hist.get(ta), host.hist.get(tb), host.hist.get(tc)
             self.assertEqual(pa["end"], "failed")
-            self.assertIn(humane.of(host, "say.restart_lost"), pa["reply"]["text"])
+            self.assertIn(humane.of(host, "say.restart_unsure"), pa["reply"]["text"])
             self.assertEqual(pb["end"], "failed")
             self.assertIn(humane.of(host, "say.restart_unsure"), pb["reply"]["text"])
             self.assertEqual(pc["end"], "done", "a finished message says nothing more")
@@ -209,10 +263,132 @@ class ServeRestart(unittest.TestCase):
         texts = [p["reply"]["text"] for p in host.hist.page()[0]]
         self.assertIn(humane.of(host, "say.restart_some", n=2), texts)
 
+    def test_terminal_send_does_not_rebind_an_existing_phone_receipt(self):
+        async def run():
+            host, session, _ = self.boot()
+            self.pair_origin(host, session)
+            host.agent.cur_send = compose.Send(session.device, sid(), 0)
+            host.agent.cur_send.source = provenance.phone()
+            mid = sid()
+            await host.receipts.persist(session.device, mid, "recv")
+            with mock.patch.object(host, "_setup_round_trip", new=mock.AsyncMock()), \
+                    mock.patch.object(host, "_model_set_flush", new=mock.AsyncMock()):
+                page = await host.bang_turn(session, mid, "pwd", "synthetic output", False, 0, "ok", sid())
+            self.assertEqual(host.agent.got[-1].turn, page)
+            self.assertIsNone(host.receipts.items[(session.device, mid)]["n"])
+            host.receipts.flush()
+            await diskq.aflush()
+
+        asyncio.run(run())
+
     def pair_origin(self, host, session):
         session.provenance = provenance.phone()
         session.sign_pub = self.st.sign_key(session.device)
         session.login_phone = browser_login.RequestPhone.from_session(host, session)
+
+    def test_claimed_held_receipt_keeps_bound_page_without_replay(self):
+        mid = sid()
+
+        async def submit_once():
+            host, session, sent = self.boot()
+            self.pair_origin(host, session)
+            with mock.patch.object(upgrade_messages, "pending", return_value=True), \
+                    mock.patch.object(upgrade_messages, "kick"):
+                await host._app(session, {"t": "say", "sid": mid, "text": "本次升级遇到了什么问题？", "ts": 0})
+            page_id = next(obj["turn"] for _, obj in sent if obj.get("t") == "say_res")
+            self.assertEqual(host.receipts.state(session.device, mid), "held")
+            held = json.loads((self.st.root / receipts.FILE).read_text().splitlines()[-1])
+            self.assertEqual(held["page"], [host.hist.epoch, host.hist.get(page_id)["ts"]])
+            self.assertFalse(host.agent.got)
+
+            with mock.patch.object(host, "_setup_round_trip", new=mock.AsyncMock()), \
+                    mock.patch.object(host, "_model_set_flush", new=mock.AsyncMock()):
+                await asyncio.gather(upgrade_messages.resume(host), upgrade_messages.resume(host))
+            self.assertEqual(len(host.agent.got), 1)
+            self.assertEqual(host.receipts.state(session.device, mid), "recv")
+            host.receipts.flush()
+            await diskq.aflush()
+            return page_id
+
+        page_id = asyncio.run(submit_once())
+
+        async def after_restart():
+            host, session, frames = self.boot()
+            await upgrade_messages.resume(host)
+            self.assertEqual((await self.say(host, session, frames, mid))["why"], "dup")
+            self.assertFalse(host.agent.got)
+            page = host.hist.get(page_id)
+            self.assertEqual(page["end"], "failed")
+            self.assertEqual(page["reply"]["text"], humane.of(host, "say.restart_unsure"))
+            await diskq.aflush()
+
+        for _ in range(2):
+            asyncio.run(after_restart())
+
+    def test_uncertain_delivery_has_a_bound_notice_and_never_replays(self):
+        mid = sid()
+
+        async def first():
+            host, session, frames = self.boot()
+            self.pair_origin(host, session)
+            accepted = await self.say(host, session, frames, mid, text="请解释这次变动")
+            send = host.agent.got[0]
+            claude = agent.ClaudeAgent(host, {"kind": "claude", "dir": str(self.st.root)})
+            claude.cur_send = send
+            submit = mock.AsyncMock(return_value=agent.UNCERTAIN)
+            self.assertIs(await claude.deliver(submit), agent.UNCERTAIN)
+            submit.assert_awaited_once()
+            host.receipts.flush()
+            await diskq.aflush()
+            return accepted["turn"]
+
+        page_id = asyncio.run(first())
+
+        async def after_restart():
+            host, session, frames = self.boot()
+            self.assertEqual((await self.say(host, session, frames, mid))["why"], "dup")
+            self.assertFalse(host.agent.got)
+            page = host.hist.get(page_id)
+            self.assertEqual((page["end"], page["reply"]["text"]),
+                             ("failed", humane.of(host, "say.restart_unsure")))
+            self.assertFalse(any(row["src"]["k"] == "sys" for row in host.hist.page()[0]))
+            await diskq.aflush()
+
+        for _ in range(2):
+            asyncio.run(after_restart())
+
+    def test_unbound_held_failure_does_not_touch_reused_page(self):
+        mid = sid()
+
+        async def first():
+            host, session, frames = self.boot()
+            self.pair_origin(host, session)
+            with mock.patch.object(upgrade_messages, "pending", return_value=True), \
+                    mock.patch.object(upgrade_messages, "kick"):
+                await host._app(session, {"t": "say", "sid": mid, "text": "升级期间尚未投递的问题", "ts": 0})
+            self.assertEqual(host.receipts.state(session.device, mid), "held")
+            await diskq.aflush()
+            return next(row["turn"] for _, row in frames if row.get("t") == "say_res")
+
+        page_id = asyncio.run(first())
+        history.set_enabled(self.st, False)
+
+        async def after_restart():
+            host, session, frames = self.boot()
+            self.pair_origin(host, session)
+            page = host.hist_add({"k": "phone", "dev": session.device, "source_kind": "phone",
+                                  "source_role": "owner", "text": "不相干的新页"}, "", "open")
+            self.assertEqual(page["id"], page_id)
+            await upgrade_messages.resume(host)
+            self.assertEqual((await self.say(host, session, frames, mid))["why"], "dup")
+            self.assertFalse(host.agent.got)
+            self.assertEqual((page["end"], page["reply"]["text"]), ("open", ""))
+            self.assertTrue(any(row["src"]["k"] == "sys" and row["reply"]["text"] == humane.of(host, "say.restart_lost")
+                                for row in host.hist.page()[0]))
+            host.receipts.flush()
+            await diskq.aflush()
+
+        asyncio.run(after_restart())
 
     def test_history_disabled_send_cannot_finish_against_older_page_after_reenable(self):
         older, recent = sid(), sid()
@@ -248,11 +424,19 @@ class ServeRestart(unittest.TestCase):
             self.assertEqual((await self.say(host, s, sent, recent))["why"], "dup")
             self.assertEqual(host.agent.got, [])
             self.assertEqual(host.hist.get(prior_page)["reply"]["text"], "旧的完成答复")
+            replies = [row["reply"]["text"] for row in host.hist.page()[0]]
+            self.assertNotIn(humane.of(host, "say.restart_some", n=1), replies)
 
         for _ in range(2):
             asyncio.run(after_restart())
 
     def test_legacy_delivered_receipt_cannot_fail_an_unrelated_open_history_page(self):
+        self.check_receipt_collision("deliv")
+
+    def test_legacy_accepted_receipt_cannot_fail_an_unrelated_open_history_page(self):
+        self.check_receipt_collision("recv")
+
+    def check_receipt_collision(self, state):
         mid = sid()
 
         async def create_collision():
@@ -265,9 +449,11 @@ class ServeRestart(unittest.TestCase):
             self.pair_origin(off, session)
             received = await self.say(off, session, frames, mid, text="关闭历史后已经交给执行器的问题")
             send = off.agent.got[0]
-            off.say_delivered(send)
+            if state == "deliv":
+                off.say_delivered(send)
             off.receipts.flush()
             self.assertEqual(received["turn"], open_page["id"])
+            self.assertEqual(off.receipts.state(session.device, mid), state)
             self.assertIsNone(upgrade_messages.reply_page_coordinates(off, send))
             history.set_enabled(self.st, True)
             return open_page
