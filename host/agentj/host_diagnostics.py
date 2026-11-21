@@ -1,6 +1,7 @@
 """Fixed Agent-facing diagnostics/support operations; identity keys stay in serve."""
 from __future__ import annotations
 
+import asyncio
 import io
 import os
 
@@ -80,7 +81,7 @@ def feedback_snapshot():
 
 ALLOWED = {  # P569: each op is signature-tested
     'asr_status': {'as_json','selected_instance'},
-    "devices": {"as_json", "selected_instance"}, "diag": set(), "layout_last": set(), "status": set(), "reconnect": {"session", "caller_session", "as_json"},
+    "devices": {"as_json", "selected_instance"}, "diag": set(), "layout_last": set(), "status": set(), "reconnect": {"session", "caller_session", "from_claude", "as_json"},
     "support": {"kind", "text", "thread", "attach_doctor", "wait", "lang", "owner_confirmed"},
     "thread": {"thread", "wait"}, "list": set(),
     "feedback_send": {"raw", "owner_confirmed"}, "feedback_replies": {"as_json"},
@@ -132,7 +133,25 @@ def task_row(r: dict) -> dict:
     return out
 
 
-def execute(st, req, *, _support_binding=None):
+def reconnect_ctl(host, peer):
+    """Use the original broker peer, never the control socket back to serve or a caller-supplied PID."""
+    from . import names
+    loop = asyncio.get_running_loop()
+
+    def call(st, req, timeout):
+        if req.get("cmd") != "agent_reconnect":
+            return names.ctl_call(st, req, timeout)
+        pending = asyncio.run_coroutine_threadsafe(host.reconnect_request(req, peer), loop)
+        try:
+            return pending.result(timeout)
+        finally:
+            if not pending.done():
+                pending.cancel()
+
+    return call
+
+
+def execute(st, req, *, _support_binding=None, _reconnect_ctl=None):
     """No paths, URLs, credentials, subprocesses or caller-selected function names accepted."""
     if _support_binding is not None:
         from .feedback_native import Binding, canonical
@@ -143,7 +162,7 @@ def execute(st, req, *, _support_binding=None):
     fields = set(req) - {"t", "op"}
     if not isinstance(op, str) or op not in allowed or fields - allowed[op]:
         return {"exit": 1, "output": "Request refused: shape\n"}
-    for key in ("as_json", "attach_doctor", "owner_confirmed"):
+    for key in ("as_json", "attach_doctor", "owner_confirmed", "from_claude"):
         if key in req and type(req[key]) is not bool:
             return {"exit": 1, "output": "Request refused: boolean\n"}
     for key, limit in (("session", 256), ("caller_session", 256), ("text", 65536), ("thread", 64), ("raw", feedback.MAX_BODY)):
@@ -212,8 +231,10 @@ def execute(st, req, *, _support_binding=None):
         elif op == "reconnect":
             from . import preferences
             lang = preferences.get(preferences.effective(st), "appearance.language", "zh")
-            rc = reconnect.run(st, lang, session=req.get("session"),
-                               env={"CLAUDE_CODE_SESSION_ID": req.get("caller_session")},
+            env = {"CLAUDE_CODE_SESSION_ID": req.get("caller_session")}
+            if req.get("from_claude"):
+                env["CLAUDECODE"] = "1"
+            rc = reconnect.run(st, lang, session=req.get("session"), env=env, ctl=_reconnect_ctl,
                                ask=False, as_json=req.get("as_json", False), out=out)
         elif op == "support":
             rc = support.run_send(req.get("kind"), req.get("text"), thread=req.get("thread"),

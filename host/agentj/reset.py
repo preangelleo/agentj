@@ -932,6 +932,12 @@ class Desk(_Rescue585):
                     un = {"ran": True, "ok": True, "how": "stopped"}      # the reopen ends that process: a /stop and more
                 await emit(1, "run", pick(lang, "正在重启 Agent…", "Reopening the AI session…"))
                 res = await phone_restart.run(h, release=release)
+                if res.get("why") == "terminal_restart":
+                    from . import claude_live
+                    text = claude_live.terminal_step(lang, relogin=bool(h.__dict__.get("_claude_live_pending")))
+                    await emit(1, "fail", text, res["why"])
+                    await finish({**res, "step": 1, "text": text})
+                    return
                 if not res.get("ok") and un.get("ran") and un.get("ok"):
                     un = {"ran": False}
                 text = pick(lang, "Agent 已重启，可以继续聊天，不需要到 Agent J 主机前。", "The Agent has restarted. Continue chatting without going to the computer.") if res.get("ok") else pick(lang, "没能重启 Agent，请试「请 Agent J Father 远程帮忙」。", "Could not restart the Agent. Try Ask Agent J Father for remote help.")

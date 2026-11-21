@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import sys
 from . import agent, shared_pin
 
 
@@ -46,16 +47,36 @@ def native_flags(argv):
     return out
 
 
+def terminal_restart_required(a, selected=None) -> bool:
+    """macOS cannot preserve an external shared process's restart profile."""
+    if sys.platform != "darwin" or getattr(a, "kind", None) != "claude":
+        return False
+    if (getattr(a, "cfg", None) or {}).get("session_mode") != "shared":
+        return False
+    selected = selected or getattr(a, "session", None)
+    native = getattr(a, "native", None)
+    return bool(selected and (native is None or native.pid != selected.get("pid")))
+
+
+class TerminalRestartRequired(ValueError):
+    pass
+
+
 def profile(a, sid=None):
-    selected = getattr(a, 'session', None)
+    attached = getattr(a, 'session', None)
+    selected = attached
     if not selected and sid:
         from .shared import claude_sessions
         rows = claude_sessions(a.cfg['dir'], sid)
         if len(rows) != 1:
             raise ValueError('native restriction profile unavailable')
-        selected = a.session = rows[0]
+        selected = rows[0]
     if not selected:
         return []
+    if terminal_restart_required(a, selected):
+        raise TerminalRestartRequired
+    if not attached:
+        a.session = selected
     native = getattr(a, 'native', None)
     if native is not None and native.pid == selected.get('pid'):
         return list(getattr(a, '_phone_restart_flags', []))
@@ -157,7 +178,10 @@ async def run(host, release=False):
         or cfg.get('shared_session_id') or host.st.agent_session(old.kind)
     flags = []
     if old.kind == 'claude' and cfg.get('session_mode') == 'shared':
-        flags = profile(old, sid)
+        try:
+            flags = profile(old, sid)
+        except TerminalRestartRequired:
+            return {'ok': False, 'why': 'terminal_restart'}
         await end_selected(old)
     dead = None
     if release:

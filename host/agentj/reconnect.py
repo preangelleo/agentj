@@ -115,11 +115,24 @@ def run(st, lang="zh", session=None, ask=None, out=None, ctl=None, service=None,
     if status in (None, "none"):
         return finish(False, "还没选主 Agent：运行 agentj agent claude（或 codex / opencode）。",
                       "No main Agent chosen yet: run agentj agent claude (or codex / opencode).", broken="agent")
-    here = session or (env.get("CLAUDE_CODE_SESSION_ID") if res.get("agent") == "claude" else None)
-    if status not in OK_AGENT or session:
-        r = ctl(st, {"cmd": "agent_reconnect", "session": here}, 45) or {}
-        if not r.get("ok") and r.get("why") == "not_found" and here and not session:
-            r = ctl(st, {"cmd": "agent_reconnect"}, 45) or {}      # Session cwd mismatch.
+    claude = res.get("agent") == "claude"
+    shared = res.get("claude_shared") if claude else None
+    caller = env.get("CLAUDE_CODE_SESSION_ID") if claude else None
+    from_claude = claude and bool(caller or env.get("CLAUDECODE"))
+    if shared is False and (session or from_claude):
+        return finish(False, "后台服务和中继正常。手机当前连的是 Agent J 的 Claude 独立会话。要接这个终端，请先在手机设置中切到共享会话模式。",
+                      "The service and relay are up. Your phone is on Agent J's independent Claude conversation. Switch to Shared session in phone Settings to connect this terminal.",
+                      broken="agent", why="independent")
+    if status not in OK_AGENT or session or shared or from_claude:
+        if shared and not session:
+            request = {"cmd": "agent_reconnect", "match_caller": True}
+            if from_claude:
+                request["require_caller"] = True
+        else:
+            request = {"cmd": "agent_reconnect", "session": session or caller}
+        r = ctl(st, request, 45) or {}
+        if (shared or session or caller) and r.get("ok") and not r.get("session"):
+            r = {"ok": False, "why": "target_unavailable"}
         if not r.get("ok") and r.get("why") == "ambiguous":
             choices = r.get("choices") or []
             ask = (sys.stdin.isatty() and sys.stdout.isatty()) if ask is None else ask
@@ -135,23 +148,45 @@ def run(st, lang="zh", session=None, ask=None, out=None, ctl=None, service=None,
                                      "或运行 agentj doctor --reconnect --session <会话 ID>。",
                               f"Several sessions are open in the folder ({ids}): run agentj doctor --reconnect inside the one "
                               "you want, or agentj doctor --reconnect --session <session ID>.", broken="agent", choices=choices)
-        if not r.get("ok") and r.get("why") == "unsupported" and not restarted:
+        if not r.get("ok") and r.get("why") == "unsupported" and not (session or from_claude or restarted):
             service.restart()
             steps.append(_say(lang, "Agent J 没起来 → 已重启后台服务", "Agent J down → background service restarted"))
             res2 = _wait(st, ctl, sleep, 30, lambda x: up(x) and x.get("agent_status") in OK_AGENT)
             r = {"ok": up(res2) and res2.get("agent_status") in OK_AGENT}
+        why = r.get("why")
+        if not r.get("ok") and (session or from_claude or why in ("caller_unverified", "busy", "target_unavailable")):
+            sid = r.get("session")
+            current_zh = f"手机当前连的是 Claude 会话 {sid}。" if sid else "尚未确认手机当前接到哪个会话。"
+            current_en = f"Your phone is currently on Claude session {sid}." if sid else "The phone's current session could not be verified."
+            if why == "busy":
+                fix_zh, fix_en = "等当前手机消息处理完再重试。", "Retry after the current phone turn finishes."
+            else:
+                fix_zh = "请在所需 Claude 会话的工作目录里重试，或指定 agentj doctor --reconnect --session <会话 ID>。"
+                fix_en = "Retry in the intended Claude session's working folder or run agentj doctor --reconnect --session <session ID>."
+            return finish(False, f"没有接到指定的终端会话。{current_zh}{fix_zh}",
+                          f"The requested terminal session was not attached. {current_en} {fix_en}", broken="agent", why=why, session=sid)
         if not r.get("ok"):
             return finish(False, "Agent J 还是接不上：Agent J 主机上这个目录里没有开着的会话。在工作目录里打开 Claude Code（或 Codex / OpenCode），"
                                  "它会自动接上；不行就运行 agentj doctor 并按 agentj-manual 的求助步骤。",
                           "Agent J still is not attached: no session is open in its folder. Open Claude Code (or Codex / "
                           "OpenCode) in the working folder and it attaches by itself; otherwise run agentj doctor and follow "
                           "the agentj-manual support steps.", broken="agent", why=r.get("why"))
+        if shared and r.get("session"):
+            sid = r["session"]
+            if r.get("current_terminal"):
+                return finish(True, f"手机已接到这个终端里的 Claude 会话 {sid}。", f"Your phone is attached to Claude session {sid} in this terminal.", session=sid)
+            if session:
+                return finish(True, f"手机已接到指定的 Claude 会话 {sid}。", f"Your phone is attached to the selected Claude session {sid}.", session=sid)
+            return finish(True, f"后台服务和中继正常。手机当前连的是 Claude 会话 {sid}。", f"The service and relay are up. Your phone is currently on Claude session {sid}.", session=sid)
         if r.get("session"):
             steps.append(_say(lang, ("已接上会话 " if r.get("changed") else "会话正常 ") + r["session"],
                               ("attached session " if r.get("changed") else "session fine ") + r["session"]))
     else:
         with contextlib.suppress(Exception):   # Refresh stale phone status.
             ctl(st, {"cmd": "status_push"}, 5)
+    if shared is False:
+        return finish(True, "后台服务和中继正常。手机当前连的是 Agent J 的 Claude 独立会话。",
+                      "The service and relay are up. Your phone is on Agent J's independent Claude conversation.")
     return finish(True, "三段都通：后台服务在跑、中继已连上、Agent J 已接上。手机上下拉刷新或等几秒就会变回正常颜色。",
                   "All three links are up: the service runs, the relay is connected and Agent J is attached. The phone "
                   "turns back to its normal colour within seconds (or pull to refresh).")

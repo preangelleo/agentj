@@ -432,6 +432,34 @@ class Base(unittest.IsolatedAsyncioTestCase):
 
 # ------------------------------------------------------------------ ② Claude: `claude auth login` lands where the main session reads
 class ClaudeLogin(Base):
+    async def test_mac_owner_terminal_relogin_gives_local_step_without_restart_card(self):
+        native = self.tmp / ".local/bin/claude"
+        npm = self.tmp / ".nvm/versions/node/v22.22.2/bin/claude"
+        for exe in (native, npm):
+            exe.parent.mkdir(parents=True)
+            shutil.copy2(self.tmp / "bin/claude", exe)
+        os.environ["AGENTJ_CLAUDE_BIN"] = str(native)
+        term = subprocess.Popen([str(npm)], env={**os.environ, claude_live.TOKEN: OLD},
+                                stdout=subprocess.PIPE, text=True)
+        self.kids.append(term)
+        self.host.agent = _Shared(term.pid, self.tmp / "work")
+        env = [f"HOME={self.tmp}", f"CLAUDE_CONFIG_DIR={self.tmp / 'cc'}", f"{claude_live.TOKEN}={OLD}"]
+        mac = types.SimpleNamespace(platform="darwin")
+        with mock.patch.object(claude_live, "sys", mac), mock.patch("agentj.phone_restart.sys", mac), \
+                mock.patch("agentj.term_mac.LIB.args", return_value=(["node", str(npm)], env)), \
+                mock.patch.object(ar, "service_env_path", return_value=str(self.tmp / "service.env")):
+            await self.phone("phoneA", {"action": "login", "agent": "claude"})
+            self.assertEqual((await self.until("url"))["route"], "setup_token")
+            await self.phone("phoneA", {"action": "code", "code": CODE})
+            done = await self.until("done")
+            await self.drain()
+        self.assertEqual((done["ok"], done["why"], done["live"]), (False, "main_session", "stale"), done)
+        self.assertEqual(self.host.recovery, [])
+        self.assertIn("env -u CLAUDE_CODE_OAUTH_TOKEN claude --resume", done["text"])
+        self.assertIn("/login", done["text"])
+        self.assertIsNone(term.poll())
+        self.assert_code_nowhere()
+
     @unittest.skipUnless(sys.platform.startswith("linux"), "procStart is read from /proc")
     async def test_owner_terminal_login_lands_in_its_config_and_is_proven_there(self):
         """Merge ruling 2 (provable case): the owner's terminal uses its own config dir; the attached session row is that

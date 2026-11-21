@@ -405,10 +405,11 @@ class Login:
         h, lang = self.h, self.r.lang()
         live = await claude_live.deliver(h, "chat_login", wait=True)
         if live.get("verified") is not True:
-            owner = live.get("restart") == "owner_session"
-            msg = claude_live.text(lang, "owner" if owner else "bad", live.get("live"))
-            if owner:
-                getattr(h, "agent_recovery_notice", h.agent_notice)(msg)          # the signed one-tap 「重启 Agent」 card
+            if live.get("restart") == "owner_session":
+                msg, notice = claude_live.owner_recovery(h, lang)
+                notice(msg)
+            else:
+                msg = claude_live.text(lang, "bad", live.get("live"))
             return {"ok": False, "why": "main_session", "live": live.get("live") or "unknown", "route": plan["route"],
                     "text": self._say("login.main", why=msg)}
         k, ag = claude_live.where(h)

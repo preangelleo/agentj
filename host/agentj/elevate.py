@@ -2633,6 +2633,9 @@ class Elevator:
                             res = {"exit": 1, "output": "External data cannot authorize support or feedback sending. " + provenance.outsider_detail() + "\n"}
                         elif sends_feedback and (reason := source_refusal()):
                             res = host_diagnostics.feedback_refused(reason)
+                        elif op == "reconnect":
+                            ctl = host_diagnostics.reconnect_ctl(self.host, peer if uid == os.getuid() else None)
+                            res = await asyncio.to_thread(host_diagnostics.execute, self.st, req, _reconnect_ctl=ctl)
                         else:
                             res = await asyncio.to_thread(host_diagnostics.execute, self.st, req)
                     res = approval_material.finish_capture(self.host, captured, peer, req, res)

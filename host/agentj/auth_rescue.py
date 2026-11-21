@@ -1797,13 +1797,14 @@ class Rescue:
             return {"ok": False, "why": "probe"}
         if live is not None and live["verified"] is False:
             from . import claude_live
-            owner = live["restart"] == "owner_session"
-            msg = claude_live.text(self.lang(), "owner" if owner else "bad", live.get("live"))
+            if live["restart"] == "owner_session":
+                msg, notice = claude_live.owner_recovery(self.host, self.lang())
+            else:
+                msg, notice = claude_live.text(self.lang(), "bad", live.get("live")), self.host.agent_notice
             self._end(kind, "partial", "main_session", main=live.get("live"))
             self.flow["why"] = msg
             self.broadcast()
-            say = getattr(self.host, "agent_recovery_notice", None) if owner else None   # owner: the one-tap P435 card
-            (say or self.host.agent_notice)(self.t("partial", h=LABEL[kind], why=msg))
+            notice(self.t("partial", h=LABEL[kind], why=msg))
             return {"ok": False, "why": "main_session"}
         self.health_generation += 1  # invalidate any daily/foreground call that began before this real reply
         self._health_mark(kind, {"ok": True})

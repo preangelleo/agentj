@@ -2952,7 +2952,8 @@ def cmd_doctor(a) -> None:
     if getattr(a, "reconnect", False):         # P147: repair whichever of serve / relay / agent is broken
         from . import reconnect
         from . import host_diagnostics
-        rc = host_diagnostics.request("reconnect", session=a.session, caller_session=os.environ.get("CLAUDE_CODE_SESSION_ID"), as_json=a.json)
+        rc = host_diagnostics.request("reconnect", session=a.session, caller_session=os.environ.get("CLAUDE_CODE_SESSION_ID"),
+                                      from_claude=bool(os.environ.get("CLAUDECODE")), as_json=a.json)
         if rc is not None:
             sys.exit(rc)
         st = State()

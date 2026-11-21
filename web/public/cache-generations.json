@@ -1,6 +1,6 @@
 {
   "current": {
-    "version": "0.30.61",
+    "version": "0.30.62",
     "paths": [
       "app.92cd6fed5fbc10102acb4fb4486db5d19364965aef8f9e189d6a5cec468c8ffc.css.gz",
       "brand/base.ebfa46e0d35c2e332d54462652ca244d800d14a739ba29aec7411ea1912bf511.css.gz",
@@ -9,7 +9,7 @@
     ]
   },
   "previous": {
-    "version": "0.30.60",
+    "version": "0.30.61",
     "paths": [
       "app.92cd6fed5fbc10102acb4fb4486db5d19364965aef8f9e189d6a5cec468c8ffc.css.gz",
       "brand/base.ebfa46e0d35c2e332d54462652ca244d800d14a739ba29aec7411ea1912bf511.css.gz",

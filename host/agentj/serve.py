@@ -2843,6 +2843,7 @@ class Host:
                                              "relay_last": None if self.relay_up else self.relay_last,   # P317: the host leg's stuck point
                                              "identity_ok": self.identity_ok,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
+                                             "claude_shared": isinstance(self.agent, SharedClaudeAgent),
                                              "agent_model": self.agent.cur_model() if self.agent else None,
                                              "agent_binary": getattr(self.agent,"_live_binary",None) if getattr(getattr(self.agent,"proc",None),"returncode",-1) is None else None,
                                              "agent_hello_deferred": isinstance(self.agent, SharedClaudeAgent) and self.agent.hello_deferred(),
@@ -2898,7 +2899,7 @@ class Host:
                         await self._ctl_send(w,{'ok':True,'applicable':applicable,'model':previous,
                                                'restart':restart})
                 elif cmd == "agent_reconnect":      # P147 `agentj doctor --reconnect`: re-attach the shared session now
-                    await self._ctl_send(w, await self.agent_reconnect(req.get("session")))
+                    await self._ctl_send(w, await self.reconnect_request(req, pid if puid == os.getuid() else None))
                 elif cmd == "assist_operator":
                     try:
                         res = await self.assist.operator.ctl(req)
@@ -3824,19 +3825,33 @@ class Host:
         except (OSError, claude_inbound.SettingsError):
             return True
 
-    async def agent_reconnect(self, session=None) -> dict:
+    async def reconnect_request(self, req, peer=None):
+        return await self.agent_reconnect(req.get("session"), peer=peer,
+                                          match_caller=req.get("match_caller") is True,
+                                          require_caller=req.get("require_caller") is True)
+
+    async def agent_reconnect(self, session=None, *, peer=None, match_caller=False, require_caller=False) -> dict:
 
         a = self.agent
         if a is None:
             return {"ok": False, "why": "no_agent", "agent_status": self.eff_status()}
+        if self.stopped():
+            return {"ok": False, "why": "estop", "agent_status": "stopped"}
         fn = getattr(a, "reconnect", None)
+        sid = session if isinstance(session, str) and re.fullmatch(r"[0-9A-Fa-f-]{8,64}", session) else None
+        shared = isinstance(a, SharedClaudeAgent)
+        if session is not None and (sid is None or not shared):
+            return {"ok": False, "why": "not_found" if shared else "unsupported",
+                    **(a._reconnect_binding() if shared else {})}
         if fn is None:
             return {"ok": a.status != "down", "why": "unsupported", "agent": a.kind, "agent_status": self.eff_status()}
-        sid = session if isinstance(session, str) and re.fullmatch(r"[0-9A-Fa-f-]{8,64}", session) else None
         try:
-            res = await asyncio.wait_for(fn(sid), 40)
+            args = {"peer": peer, "match_caller": True, "require_caller": require_caller} if shared and match_caller else {}
+            res = await asyncio.wait_for(fn(sid, **args), 40)
         except asyncio.TimeoutError:
-            res = {"ok": False, "why": "timeout"}
+            res = {"ok": False, "why": "timeout", **(a._reconnect_binding() if shared else {})}
+        if self.agent is not a or self.stopped():
+            res = {"ok": False, "why": "estop" if self.stopped() else "target_unavailable"}
         res.update(agent=a.kind, agent_status=self.eff_status())
         self.push_status()                  # P306: the phones see the answer at once, not at the next turn
         self.st.log("agent_reconnect", result="ok" if res.get("ok") else str(res.get("why"))[:16])

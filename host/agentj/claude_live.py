@@ -21,6 +21,11 @@ STATUS_WAIT = 20.0
 TEXT = {"zh": {"ok": "已在主对话自己的环境里核对：Claude Code 用的就是新登录。",
                "owner": "新登录已存好，但主对话是你在终端里开的 Claude Code，它启动时没有这个登录，还在用旧的。点下面「重启 Agent」："
                         "Agent J 用新登录接着同一段对话重开（你终端里那个窗口会退出）。",
+               "terminal_login": "请在 Mac 原来的 Claude Code 对话窗口输入 `/login`，登录完成后再从手机发一条新消息。",
+               "terminal_token": "请在 Mac 原来的 Claude Code 输入 `/exit`，在同一终端运行 `env -u CLAUDE_CODE_OAUTH_TOKEN claude --resume` 选回这段对话，"
+                                 "再输入 `/login`；原来用的完整路径和启动参数请沿用。",
+               "terminal_restart": "请在 Mac 原来的 Claude Code 输入 `/exit`，在同一终端沿用原启动命令和参数，用 `--resume` 选回这段对话（例如 `claude --resume`）；"
+                                   "如果仍提示登录过期，请输入 `/login`。",
                "bad": "主对话没有用上新登录（{why}）：请在 设置 → 紧急修复 → AI 登录救援 里重新检查。",
                "stale": "主对话进程里的登录不是新的", "outranked": "主对话里有优先级更高的凭据", "not_logged_in": "主对话里未登录",
                "unreadable": "读不到主对话进程的环境", "status": "claude auth status 没有结果",
@@ -30,6 +35,11 @@ TEXT = {"zh": {"ok": "已在主对话自己的环境里核对：Claude Code 用�
                "owner": "The new login is stored, but the main conversation is a Claude Code you started in a terminal and it still "
                         "runs on the old login. Tap Restart Agent below: Agent J reopens the same conversation with the new login "
                         "(the window in your terminal exits).",
+               "terminal_login": "Type `/login` in the original Claude Code window on your Mac, then send a new message from your phone.",
+               "terminal_token": "Type `/exit` in Claude Code on your Mac, then run `env -u CLAUDE_CODE_OAUTH_TOKEN claude --resume` in the same terminal, "
+                                 "select this conversation, and type `/login`. Keep any executable path and launch options you originally used.",
+               "terminal_restart": "Type `/exit` in Claude Code on your Mac, then use your original launch command with `--resume` in the same terminal "
+                                    "and select this conversation (for example, `claude --resume`). If sign-in still shows as expired, type `/login`.",
                "bad": "The main conversation is not on the new login ({why}): check again in Settings → Emergency repair → AI login rescue.",
                "stale": "its process holds another login", "outranked": "a higher-priority credential is set there",
                "not_logged_in": "it is not logged in", "unreadable": "its process environment is unreadable",
@@ -41,6 +51,19 @@ TEXT = {"zh": {"ok": "已在主对话自己的环境里核对：Claude Code 用�
 def text(lang: str, key: str, why: str | None = None) -> str:
     t = TEXT["en" if lang == "en" else "zh"]
     return t[key].format(why=t.get(why or "", why or ""))
+
+
+def terminal_step(lang: str, *, relogin: bool = False) -> str:
+    if not relogin:
+        return text(lang, "terminal_restart")
+    return text(lang, "terminal_token" if expected()["method"] == "token" else "terminal_login")
+
+
+def owner_recovery(host, lang):
+    from .phone_restart import terminal_restart_required
+    if terminal_restart_required(host.agent):
+        return terminal_step(lang, relogin=True), host.agent_notice
+    return text(lang, "owner"), getattr(host, "agent_recovery_notice", host.agent_notice)
 
 
 def _h(v) -> bytes:
@@ -83,7 +106,9 @@ def where(host):
         if a.owns_harness():
             return "owned", a
     n = getattr(a, "native", None)
-    if n is not None and getattr(a, "master", None) is not None and getattr(n, "returncode", None) is None:
+    s = getattr(a, "session", None)
+    if (n is not None and getattr(a, "master", None) is not None and getattr(n, "returncode", None) is None
+            and (not s or s.get("pid") == n.pid)):
         return "native", a
     return "owner", a
 
@@ -247,7 +272,8 @@ def tell(host, res: dict) -> None:
     if res["verified"]:
         host.agent_notice(text(lang, "ok"))
     elif res.get("restart") == "owner_session":
-        getattr(host, "agent_recovery_notice", host.agent_notice)(text(lang, "owner"))
+        msg, notice = owner_recovery(host, lang)
+        notice(msg)
     else:
         host.agent_notice(text(lang, "bad", res.get("live")))
 

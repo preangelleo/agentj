@@ -642,6 +642,20 @@ def check_codex_daemon(st: State, svc: dict) -> dict | None:
     return _c("codex_daemon", WARN, f"{zh} / {en}", f"{zh_fix} / {en_fix}")
 
 
+def _claude_mac_dual_install(env: dict) -> bool:
+    """Native and NVM Claude launchers may differ even with only one on launchd's PATH."""
+    home = pathlib.Path(env.get("HOME") or pathlib.Path.home())
+    native = home / ".local/bin/claude"
+    if not native.is_file() or not os.access(native, os.X_OK):
+        return False
+    nvm = pathlib.Path(env.get("NVM_DIR") or (home / ".nvm"))
+    for candidate in nvm.glob("versions/node/*/bin/claude"):
+        with contextlib.suppress(OSError):
+            if candidate.is_file() and os.access(candidate, os.X_OK) and not candidate.samefile(native):
+                return True
+    return False
+
+
 def check_agent_cli(st: State, svc: dict) -> dict:
     c = st.agent_config() if st.exists() else None
     kinds = [c["kind"]] if c else ["claude", "codex", "opencode"]
@@ -680,7 +694,12 @@ def check_agent_cli(st: State, svc: dict) -> dict:
     s = f"{AGENT_LABEL[k]} {ver} · {tilde(os.path.abspath(exe))} · {where}"
     s += " · selection: " + resolve(k, binary_env)["reason"]
     if k == "claude" and c and c.get("session_mode") == "shared":
-        return _c("agent_cli", OK, s + " · 共享模式沿用Agent J 主机活会话的登录；服务无需另登录 / Shared mode uses the desktop session login; no separate service login needed")
+        s += " · 共享模式沿用Agent J 主机活会话的登录；服务无需另登录 / Shared mode uses the desktop session login; no separate service login needed"
+        if service.platform() == "macos" and _claude_mac_dual_install(binary_env):
+            return _c("agent_cli", WARN, s + " · 同时安装了原生版和 npm/NVM 版 Claude Code / Native and npm/NVM Claude Code are both installed",
+                      "回原终端运行 `command -v claude` 查看终端用的版本，继续旧对话时沿用原启动命令 / "
+                      "Run `command -v claude` in your original terminal and use the original launch command to resume")
+        return _c("agent_cli", OK, s)
     if k == "claude":
         from . import claude_auth
         try:

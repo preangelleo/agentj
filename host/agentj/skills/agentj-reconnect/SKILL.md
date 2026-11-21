@@ -49,14 +49,15 @@ After a reset, restore the requested earlier conversation with `agentj rescue un
 1. `agentj status --json`
    - `running: false`, `relay_state: reconnecting`, or `agent_status` outside `idle` / `working` / `waiting` / `compacting` (including `down`) → step 2. Quote `relay_stuck` phase/reason/close code for relay failures.
    - Check `harness_readiness.ready`: false/missing means AI unverified even with relay connected. OpenCode startup failure → phone Restart Agent, then send once. Never auto-resend. Adapter-ready is not a model reply test.
-2. `agentj doctor --reconnect` — run it **in this session**: it attaches the session that runs it.
-   In order, repair only the broken link: **service** (`agentj serve`) unresponsive → start/restart; **relay** (host ↔ relay) disconnected → wait, then one restart; **Agent** (Agent J ↔ AI session) → reattach, listing concurrent sessions in the folder.
-   Exit 0 = all three up. Repeat its last line (✓ / ✗ sentence) to the owner word for word.
-3. Several sessions (`choices`) → `agentj doctor --reconnect --session <ID>` for the owner's session; inside it, omit `--session`.
+2. To attach the phone to a shared Claude Code conversation, run `agentj doctor --reconnect` **inside the intended Claude terminal session**, even when the phone is already online. Success names the verified terminal session ID. The check repairs the service, relay and AI attachment in that order as needed.
+   Repeat its last line (✓ / ✗ sentence) to the owner word for word. A line naming the phone's current session or independent mode is a status report. Claim this terminal is attached only when the command confirms that binding.
+3. If the caller cannot be verified or several sessions are listed, select the intended one with `agentj doctor --reconnect --session <ID>` in the work folder. If a phone turn is active, wait for it to finish and try again.
 4. Still ✗ → `agentj doctor`, then the agentj-manual support steps. Never edit config files by hand, never restart
    other people's processes, never ask the owner for keys.
 
-Shared mode follows one Claude Code session. Reboot/new window/`/clear`/upgrade can replace it. Since 0.18.4 Agent J follows the sole live owner session in the folder or the newly started one, saying 「又接上了，新会话 <id>」; it asks only if two are equally likely.
+On macOS, an owner-opened shared Claude terminal may still need its own sign-in after phone login rescue. Quote the terminal step shown by the host.
+
+Shared mode follows one Claude Code session. Reboot/new window/`/clear`/upgrade can replace it. Since 0.18.4 Agent J follows the sole live owner session in the folder or the newly started one, saying 「又接上了，新会话 <id>」; Use the command above to deliberately choose another window while the existing connection is live.
 A grey phone does not mean the relay is broken: service, relay and Agent are separate links (see step 2).
 
 Docs: https://agentj.app/docs/reconnect/#phone-only

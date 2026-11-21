@@ -1,5 +1,5 @@
-# Agent J v0.30.61
+# Agent J v0.30.62
 
-Fix an incorrect refusal when a paired phone starts WeChat Channels sign-in in the main Codex chat.
+Fix the restart prompt after shared Claude sign-in on Mac and verify which terminal session the phone follows.
 
-修复在已配对手机的 Codex 主对话中发起视频号登录被拒的问题。
+修复 Mac 上共享 Claude 重新登录后的无效重启提示，并让重连确认手机实际连接的终端会话。

@@ -50,9 +50,9 @@ class Fixture(unittest.IsolatedAsyncioTestCase):
         self.cfg = {"kind": "claude", "dir": str(self.work), "_workflow_ceo": True, "session_mode": "shared",
                     "high_risk_warnings": False}
 
-    def session(self, tag, started, **extra):
+    def session(self, tag, started, *, process=None, **extra):
         """A live registry entry: a real child process (pid alive) + a real listening socket + an empty transcript."""
-        p = subprocess.Popen(["sleep", "300"])
+        p = process or subprocess.Popen(["sleep", "300"])
         self.addCleanup(p.wait); self.addCleanup(p.kill)
         sock = socket.socket(socket.AF_UNIX); path = self.root / f"{tag}.sock"; sock.bind(str(path)); sock.listen()
         self.addCleanup(sock.close)
@@ -176,6 +176,67 @@ class Heal(Fixture):
         self.assertEqual((r["ok"], r["changed"]), (True, False))
 
 
+    async def test_reconnect_uses_real_ancestor_without_session_environment(self):
+        from agentj.core.process_evidence import row
+        served = self.session("a", 100)
+        parent = subprocess.Popen([sys.executable, "-c", "import subprocess; p = subprocess.Popen(['sleep', '60']); "
+                                   "print(p.pid, flush=True); p.wait()"], stdout=subprocess.PIPE, text=True)
+        target = self.session("b", 200, process=parent, procStart=row(parent.pid)[2])
+        self.assertIsNotNone(parent.stdout)
+        child = int(parent.stdout.readline())
+        self.addCleanup(parent.stdout.close)
+        self.addCleanup(os.kill, child, 15)
+        a = shared.SharedClaudeAgent(self.host, {**self.cfg, "shared_session_id": served})
+        self.assertTrue(await a.attach())
+        refused = await a.reconnect(peer=os.getpid(), match_caller=True, require_caller=True)
+        self.assertEqual(refused, {"ok": False, "why": "caller_unverified", "session": served[:8]})
+        # This fixture's runner launches the faux desktop process. A real serve is a separate process.
+        with patch.object(shared, "os", wraps=os) as serve_os:
+            serve_os.getpid.return_value = -1
+            a.phone_turn = True
+            busy = await a.reconnect(peer=child, match_caller=True, require_caller=True)
+            self.assertEqual(busy, {"ok": False, "why": "busy", "session": served[:8]})
+            a.phone_turn = False
+            res = await a.reconnect(peer=child, match_caller=True, require_caller=True)
+        self.assertEqual(res, {"ok": True, "changed": True, "session": target[:8], "current_terminal": True})
+        self.assertEqual(a.session["pid"], parent.pid)
+        self.host.st.set_agent_session.assert_any_call("claude.pin", target)
+        self.assertEqual(self.procs[served][0].poll(), None)
+
+    async def test_reconnect_without_start_metadata_requires_the_registered_listener_process(self):
+        from agentj.core.process_evidence import row
+        sid = self.session("c", 100)
+        process, selected = self.procs[sid]
+        check = shared.SharedClaudeAgent._reconnect_process
+        self.assertFalse(check(selected, row(process.pid)))
+        real_listener = {**selected, "pid": os.getpid()}
+        self.assertTrue(check(real_listener, row(os.getpid())))
+        self.assertFalse(check({**real_listener, "procStart": "stale"}, row(os.getpid())))
+
+    async def test_exact_reattach_requires_the_original_process_generation(self):
+        from agentj.core.process_evidence import row
+        served, target = self.session("a", 100), self.session("b", 200)
+        a = shared.SharedClaudeAgent(self.host, {**self.cfg, "shared_session_id": served})
+        self.assertTrue(await a.attach())
+        process, registered = self.procs[target]
+        parent, started, token = row(process.pid)
+        with patch.object(a, "_reconnect_process", return_value=True) as corroborate:
+            result = await a._reconnect_choice(registered, caller_identity=(parent, started - 1, token))
+        self.assertEqual(result, {"ok": False, "why": "target_unavailable", "session": served[:8]})
+        self.assertEqual(a.session["sessionId"], served)
+        corroborate.assert_not_called()
+
+    async def test_target_disappearing_does_not_move_existing_pin(self):
+        served, target = self.session("a", 100), self.session("b", 200)
+        a = shared.SharedClaudeAgent(self.host, {**self.cfg, "shared_session_id": served})
+        self.assertTrue(await a.attach())
+        with patch.object(a, "prepare_channel", side_effect=lambda: self.close(target)):
+            r = await a.reconnect(target)
+        self.assertEqual(r, {"ok": False, "why": "target_unavailable", "session": served[:8]})
+        self.assertEqual(a.session["sessionId"], served)
+        self.assertEqual(a.cfg["shared_session_id"], served)
+
+
 class Regressions(Fixture):
     async def test_observer_survives_the_served_session_going_away(self):
         """Before P147 the observer read the transcript of a session already dropped → TypeError → the loop died and
@@ -278,6 +339,29 @@ class Doctor(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(sent[1], {"cmd": "agent_reconnect", "session": sid})
         self.assertIn(sid[:8], res["steps"][-1])
+
+    def test_healthy_phone_can_move_to_the_calling_terminal(self):
+        shared_up = {**self.UP, "claude_shared": True}
+        code, res, sent = self.run_it([shared_up, {"ok": True, "changed": True, "session": "abcdefab",
+                                                   "current_terminal": True}])
+        self.assertEqual(code, 0)
+        self.assertEqual(sent[1], {"cmd": "agent_reconnect", "match_caller": True})
+        self.assertIn("abcdefab", res["result"])
+        self.assertIn("这个终端", res["result"])
+
+    def test_missing_calling_terminal_reports_the_actual_binding(self):
+        shared_up = {**self.UP, "claude_shared": True}
+        code, res, sent = self.run_it([shared_up, {"ok": False, "why": "caller_unverified", "session": "aaaaaaaa"}],
+                                      env={"CLAUDECODE": "1"})
+        self.assertEqual(code, 1)
+        self.assertIn("aaaaaaaa", res["result"])
+        self.assertNotIn("三段都通", res["result"])
+        self.assertEqual(len(sent), 2)
+
+    def test_an_explicit_session_never_reports_independent_as_shared(self):
+        code, res, _ = self.run_it([{**self.UP, "claude_shared": False}], session="abcdefab")
+        self.assertEqual(code, 1)
+        self.assertIn("独立会话", res["result"])
 
     def test_ambiguous_without_terminal_names_the_choices(self):
         down = {**self.UP, "agent_status": "down"}

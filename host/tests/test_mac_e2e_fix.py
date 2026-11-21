@@ -18,6 +18,7 @@ import os
 import pathlib
 import re
 import secrets
+import shutil
 import stat
 import subprocess
 import sys
@@ -565,6 +566,25 @@ class DoctorEnvLogin(unittest.TestCase):
         self.assertEqual(self.check({"installed": True, "name": "aj-de-test"})["status"], "warn")
         f.write_text("CLAUDE_CODE_OAUTH_TOKEN=" + SECRET + "\n")
         self.assertEqual(self.check({"installed": True, "name": "aj-de-test"})["status"], "ok")
+
+    def test_shared_mac_doctor_warns_about_distinct_native_and_nvm_installs(self):
+        home = pathlib.Path(self.home)
+        native = home / ".local/bin/claude"
+        npm = home / ".nvm/versions/node/v22.22.2/bin/claude"
+        for exe in (native, npm):
+            exe.parent.mkdir(parents=True)
+            shutil.copy2(home / "bin/claude", exe)
+        env = {**self.env, "PATH": f"{native.parent}:/usr/bin:/bin"}
+        cfg = {"kind": "claude", "session_mode": "shared"}
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(service, "platform", return_value="macos"), \
+                mock.patch.object(self.st, "agent_config", return_value=cfg), mock.patch.object(doctor, "_claude_login", return_value=("env", "env")):
+            result = doctor.check_agent_cli(self.st, {})
+            self.assertEqual(result["status"], "warn", result)
+            self.assertIn("npm/NVM", result["summary"])
+            self.assertIn("command -v claude", result["hint"])
+            npm.unlink()
+            npm.symlink_to(native)
+            self.assertEqual(doctor.check_agent_cli(self.st, {})["status"], "ok")
 
     def test_service_install_says_run_doctor_next(self):
         self.assertIn("agentj doctor", cli.SERVICE_NEXT)

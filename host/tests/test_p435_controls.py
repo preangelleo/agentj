@@ -148,6 +148,29 @@ class Restart(unittest.IsolatedAsyncioTestCase):
         with mock.patch('agentj.shared.claude_sessions',side_effect=AssertionError('must not inspect unrelated processes')):
             await phone_restart.end_selected(a)
 
+    async def test_mac_managed_shared_restart_can_start_without_an_external_session(self):
+        h, old = self.host("claude", "shared")
+        h.st.set_agent_session("claude", None)
+        old.session = old.native = None
+        new = NS(kind="claude", cfg=old.cfg, stop=mock.AsyncMock(), start=mock.Mock(), set_status=mock.Mock())
+        with mock.patch.object(phone_restart, "sys", NS(platform="darwin")), \
+                mock.patch.object(phone_restart.agent, "make", return_value=new), \
+                mock.patch.object(phone_restart, "prepare", new_callable=mock.AsyncMock) as prepare:
+            self.assertEqual(await phone_restart.run(h), {"ok": True, "new": False})
+        old.stop.assert_awaited_once()
+        prepare.assert_awaited_once_with(new, None)
+
+    async def test_mac_unattached_shared_restart_checks_the_stored_pin_before_starting(self):
+        h, old = self.host("claude", "shared")
+        old.session = old.native = None
+        external = {"pid": 999999, "sessionId": "old-session"}
+        with mock.patch.object(phone_restart, "sys", NS(platform="darwin")), \
+                mock.patch("agentj.shared.claude_sessions", return_value=[external]) as sessions:
+            self.assertEqual(await phone_restart.run(h), {"ok": False, "why": "terminal_restart"})
+        sessions.assert_called_once_with(old.cfg["dir"], "old-session")
+        self.assertIsNone(old.session)
+        old.stop.assert_not_awaited()
+
 
 class Signed(unittest.TestCase):
     def setUp(self):
@@ -164,6 +187,30 @@ class Signed(unittest.TestCase):
                 await self.h._app(self.s,m); self.assertEqual(start.call_count,1)
         asyncio.run(go())
         self.assertEqual(self.sent[-1][1]['why'],'replay')
+
+    def test_mac_external_shared_restart_explains_terminal_step(self):
+        async def go():
+            actor = NS(kind="claude", cfg={"dir": self.tmp.name, "session_mode": "shared"},
+                       session={"pid": 999999, "sessionId": "selected", "procStart": "42"},
+                       native=None, stop=mock.AsyncMock())
+            self.h.agent = actor
+            with mock.patch.object(phone_restart, "sys", NS(platform="darwin")), \
+                    mock.patch.object(phone_restart, "end_selected", new_callable=mock.AsyncMock) as end, \
+                    mock.patch.object(phone_restart.agent, "make") as make:
+                m = sign(self.ph, "rescue_do", {"action": "restart_session"},
+                         {"t": "rescue_do", "r": "ab" * 8, "action": "restart_session"})
+                await self.h._app(self.s, m)
+                await self.h.reset_desk.task
+            actor.stop.assert_not_awaited()
+            end.assert_not_awaited()
+            make.assert_not_called()
+        asyncio.run(go())
+        done = [msg for _, msg in self.sent if msg["t"] == "reset_done"][-1]
+        self.assertEqual((done["ok"], done["why"]), (False, "terminal_restart"), done)
+        self.assertIn("`/exit`", done["text"])
+        self.assertIn("`claude --resume`", done["text"])
+        self.assertIn("`/login`", done["text"])
+        self.assertNotIn("next", done)
 
     def test_signed_resume_restarts_dormant_actor_once(self):
         async def go():

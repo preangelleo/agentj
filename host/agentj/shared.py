@@ -1993,7 +1993,7 @@ class SharedClaudeAgent(Agent):
         self.host.st.log("shared_reconnect", agent="claude", old=(old or "")[:8], new=sid[:8], how=how)
         # P330: the pin follows in Claude's own `claude.pin` (status, doctor, the next serve start) — never the global
         # agent.shared_session_id, which is the owner's choice and must not leak a Claude id to Codex / OpenCode.
-        if old:
+        if old or how == "choice":
             from . import shared_pin
             with contextlib.suppress(OSError):
                 shared_pin.write(self.host.st, self.kind, sid)
@@ -2037,25 +2037,80 @@ class SharedClaudeAgent(Agent):
                "`agentj doctor --reconnect` here (it attaches the session that runs it) and tell the owner its one-line result.")
         return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx}}
 
-    async def reconnect(self, choice=None) -> dict:
+    @staticmethod
+    def _reconnect_process(selected, evidence):
+        from .core.process_evidence import start_matches
+        if not evidence:
+            return False
+        if selected.get("procStart"):
+            return start_matches(selected["procStart"], evidence)
+        # Claude can omit procStart. Verify the registered messaging listener's kernel PID and UID instead.
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.settimeout(.25)
+                client.connect(selected["messagingSocketPath"])
+                return shared_hook.peer_pid(client) == (selected["pid"], os.getuid())
+        except (OSError, TypeError, ValueError):
+            return False
 
+    def _calling_session(self, peer):
+        """Same-user socket peer to exactly one live registered Claude ancestor, with no argv/env inspection."""
+        from .core.process_evidence import row
+        chain, pid = {}, peer
+        while type(pid) is int and pid > 1 and pid not in chain and len(chain) < 32:
+            current = row(pid)
+            if not current:
+                break
+            chain[pid] = current
+            pid = current[0]
+        matches = [d for d in claude_sessions(self.cfg["dir"]) if d["pid"] in chain]
+        if len(matches) != 1:
+            return None
+        selected = matches[0]
+        anchor = selected["pid"]
+        if (anchor == peer or not owner_session(selected) or not self._reconnect_process(selected, chain[anchor])
+                or not all(row(p) == evidence for p, evidence in chain.items())):
+            return None
+        if anchor != (self.session or {}).get("pid") and os.getpid() in chain:
+            return None                           # a child started by Agent J cannot take over the phone
+        return selected, chain[anchor]
+
+    def _reconnect_binding(self):
+        sid = (self.session or {}).get("sessionId")
+        if isinstance(sid, str) and CLAUDE_SID.fullmatch(sid) and self.readiness()["ready"]:
+            if any(d.get("pid") == self.session.get("pid") for d in claude_sessions(self.cfg["dir"], sid)):
+                return {"session": sid[:8]}
+        return {}
+
+    def _reconnect_busy(self):
+        return (self.phone_turn or self.native_turn or self.native_lock.locked() or not self.q.empty()
+                or self.state.status in ("working", "waiting", "compacting")
+                or (getattr(self.host, "turn_lock", None) is not None and self.host.turn_lock.locked()))
+
+    async def reconnect(self, choice=None, *, peer=None, match_caller=False, require_caller=False) -> dict:
         async with self.attach_lock:
+            if match_caller and not choice:
+                caller = self._calling_session(peer)
+                if caller is not None:
+                    target, identity = caller
+                    res = await self._reconnect_choice(target, caller_identity=identity)
+                    return {**res, **({"current_terminal": True} if res.get("ok") else {})}
+                if require_caller:
+                    return {"ok": False, "why": "caller_unverified", **self._reconnect_binding()}
             if choice:
-                rows = [d for d in claude_sessions(self.cfg["dir"])
+                rows = [d for d in claude_sessions(self.cfg["dir"], owner_only=True)
                         if isinstance(d.get("sessionId"), str) and len(choice) >= 8 and d["sessionId"].startswith(choice)]
                 if len(rows) != 1:
-                    return {"ok": False, "why": "not_found"}
-                if self.session is not None and self.session.get("sessionId") == rows[0]["sessionId"]:
-                    return {"ok": True, "changed": False, "session": rows[0]["sessionId"][:8]}
-                if self.session is not None:
-                    self._lost()
-                self._repin(self.cfg.get("shared_session_id", ""), rows[0], "choice")
-            elif self.session is not None:
-                if self._alive(self.session):
+                    return {"ok": False, "why": "not_found", **self._reconnect_binding()}
+                return await self._reconnect_choice(rows[0])
+            if self.session is not None:
+                binding = self._reconnect_binding()
+                if binding:
                     if self.status == "down":
                         self.set_status("idle")
-                    return {"ok": True, "changed": False, "session": self.session["sessionId"][:8]}
-                self._lost()
+                    return {"ok": True, "changed": False, **binding}
+                if not self._alive(self.session):
+                    self._lost()
             self.heal_told = None
             self._managed_attempted = False
             # The paired owner's repair can resume a known conversation or create a managed one.
@@ -2073,6 +2128,18 @@ class SharedClaudeAgent(Agent):
                 self.heal_choices = [d["sessionId"] for d in claude_sessions(self.cfg["dir"], "", True)]
             return {"ok": False, "why": "ambiguous" if len(self.heal_choices) > 1 else "none",
                     "choices": [c[:8] for c in self.heal_choices]}
+
+    async def _reconnect_choice(self, target, *, caller_identity=None):
+        sid, pid = target["sessionId"], target["pid"]
+        old = self.session or {}
+        same = (old.get("sessionId"), old.get("pid")) == (sid, pid)
+        if same and self._reconnect_binding():
+            return {"ok": True, "changed": False, "session": sid[:8]}
+        if not same and self._reconnect_busy():
+            return {"ok": False, "why": "busy", **self._reconnect_binding()}
+        if not await self._bind_session(target, exact=True, caller_identity=caller_identity):
+            return {"ok": False, "why": "target_unavailable", **self._reconnect_binding()}
+        return {"ok": True, "changed": not same, "session": sid[:8]}
 
     # ------------------------------------------------------------ P418 (#183 ①): the pinned session after a reboot
     def _reboot_plan(self, pinned, last_served):
@@ -2208,24 +2275,62 @@ class SharedClaudeAgent(Agent):
                 self.local_fail(pick(getattr(self.host, "lang", "zh"), "Claude 会话没接上。请点「一键修复」；若仍未接上，点「请客服帮忙」。", "The Claude session is disconnected. Tap Repair; if it remains disconnected, tap Ask support."))
             self.failed_start = True
             return False
-        self.session = sessions[0]
-        if self.session.get("pid") != self.hook_token_pid:
-            self.issue_hook_token()
+        return await self._bind_session(sessions[0])
+
+    def _loss_for_choice(self, old, sid, pid):
+        if (old.get("sessionId"), old.get("pid")) == (sid, pid):
+            return
+        self._lost()
+        self._risk_reset()
+        self.discard_line = False
+        self.seen.clear()
+        self.ended_at = self.last_phone_prompt = self.native_request = None
+        self._observe_down = False
+        self.meter(ctx=None, source_at=None)
+
+    async def _bind_session(self, selected, *, exact=False, caller_identity=None):
+        sid, pid = selected.get("sessionId"), selected.get("pid")
+        if not isinstance(sid, str) or not CLAUDE_SID.fullmatch(sid):
+            return False
         await self.prepare_channel()
-        sid = self.session.get("sessionId")
-        if not isinstance(sid, str) or not re.fullmatch(r"[0-9a-fA-F-]{8,64}", sid):
+        if exact:
+            from .core.process_evidence import row
+            current = [d for d in claude_sessions(self.cfg["dir"], sid, True)
+                       if d["pid"] == pid and d.get("procStart") == selected.get("procStart")]
+            if len(current) != 1 or self._reconnect_busy():
+                return False
+            live = current[0]
+            if caller_identity is not None:
+                if row(pid) != caller_identity or live.get("messagingSocketPath") != selected.get("messagingSocketPath"):
+                    return False
+                if not self._reconnect_process(live, caller_identity) or row(pid) != caller_identity:
+                    return False
+            elif selected.get("procStart") and not self._reconnect_process(live, row(pid)):
+                return False
+            if getattr(self.host, "agent", self) is not self or getattr(self.host, "stopped", lambda: False)():
+                return False
+            selected = live
+        transcript = claude_transcript(self.cfg["dir"], sid)
+        # A fresh terminal may not write its first transcript line until the first prompt.
+        try:
+            offset = transcript.stat().st_size if transcript.is_file() else None
+        except OSError:
             return False
-        root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
-        slug = re.sub(r"[^A-Za-z0-9]", "-", self.cfg["dir"])
-        self.transcript = root / "projects" / slug / (sid + ".jsonl")
-        # P147: a window opened a moment ago has no transcript until its first message — that is not "unreadable".
-        fresh = not self.transcript.exists() and __import__("time").time() * 1000 - int(self.session.get("startedAt") or 0) < FRESH_MS
-        if not self.transcript.is_file() and not fresh and not (self.native and self.native.pid == self.session["pid"]):
-            if not self.failed_start:
+        fresh = offset is None and time.time() * 1000 - int(selected.get("startedAt") or 0) < FRESH_MS
+        if offset is None and not fresh and not (self.native and self.native.pid == pid):
+            if not exact and not self.failed_start:
                 self.local_fail(pick(getattr(self.host, "lang", "zh"), "Claude 会话的 transcript 不可读，未投递。", "Claude transcript unavailable."))
-            self.failed_start = True
+                self.failed_start = True
             return False
-        self.offset = self.transcript.stat().st_size if self.transcript.exists() else 0
+        if exact:
+            old = self.session or {}
+            self._loss_for_choice(old, sid, pid)
+            self._repin(self.cfg.get("shared_session_id", ""), selected, "choice")
+        self.session = selected
+        if pid != self.hook_token_pid:
+            self.issue_hook_token()
+        self.transcript = transcript
+        self.offset = offset or 0
         from . import shared_report_history
         shared_report_history.attach(self)
         busy = getattr(self.host, "busy", None)
