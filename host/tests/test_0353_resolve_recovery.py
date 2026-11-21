@@ -159,8 +159,10 @@ class ResolveRecovery(unittest.TestCase):
                 self.assertNotIn(str(root), report)
                 (other/'agentj').unlink()
                 entry.parent.chmod(0o777)
-                with self.assertRaisesRegex(wheels.PreparationFailure, 'dependency_preparation_failed'):
+                with self.assertRaisesRegex(wheels.PreparationFailure, 'install_artifact_changed') as caught:
                     wheels.prepare_update(cmd, pins[1], pins[0].version)
+                self.assertEqual(caught.exception.fields['permission_paths'], [str(entry.parent)])
+                self.assertIn('chmod go-w --', caught.exception.fields['fix'])
                 entry.parent.chmod(0o700)
                 fixed = wheels.prepare_update(cmd, pins[1], pins[0].version)
                 self.assertEqual(fixed.env['UV_TOOL_DIR'], str(prefix.parent.resolve()))

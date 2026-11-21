@@ -342,14 +342,36 @@ def repair_names(pin, data, entries, scratch, python, retry):
     return retry.call(select, 60)
 
 
-def verify_local(folder, entries):
+def permission_log(root):
+    from .state import State
+    st = State(root)
+    def note(line):
+        if st.exists():
+            match = re.match(r"Removed group write from (\d+) entries under ", line)
+            st.log('upgrade_permissions_hardened', count=int(match[1]) if match else 1)
+    return note
+
+
+def permission_failure(error, stage):
+    failure = integrity_failure(stage, 'unsafe_store')
+    failure.fields.update(permission_paths=error.paths, fix=error.fix)
+    return failure
+
+
+def verify_local(folder, entries, *, note=None):
+    from .install_permissions import UnsafeInstallation, secure_paths
     check_cache_dir(folder)
     for wheel in folder.iterdir():
         row = entries.get(wheel.name)
-        s = wheel.lstat()
-        if not row or not stat.S_ISREG(s.st_mode) or s.st_uid != os.getuid() or s.st_mode & 0o022:
+        info = wheel.lstat()
+        if not row or not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
             raise integrity_failure('dependency_cache', 'cache_entry_invalid')
-        if s.st_size != row['size']:
+        if info.st_mode & 0o022:
+            try:
+                secure_paths([(wheel, True)], note=note)
+            except UnsafeInstallation as error:
+                raise permission_failure(error, 'dependency_cache') from None
+        if info.st_size != row['size']:
             raise integrity_failure('dependency_cache', 'size_mismatch')
         if hashlib.sha256(wheel.read_bytes()).hexdigest() != row['hash'][7:]:
             raise integrity_failure('dependency_cache', 'hash_mismatch')
@@ -399,16 +421,17 @@ def wheelhouse(pin, data, uv, *, prepare, retry=None, python=None, repair_index=
     store = pin.path.parent / 'dependencies'
     store.mkdir(mode=0o700, exist_ok=True)
     check_cache_dir(store, harden=prepare)
+    note = permission_log(pin.root)
     ordinary = store / ordinary_key
     if repair_index and os.path.lexists(ordinary):
-        verify_local(ordinary, entries)
+        verify_local(ordinary, entries, note=note)
     target = store / key
     exists = os.path.lexists(target)
     if not exists and not prepare:
         raise ValueError('install_artifact_unavailable')
     if not exists or (repair_index and prepare):
         if exists:
-            verify_local(target, entries)
+            verify_local(target, entries, note=note)
         with tempfile.TemporaryDirectory(prefix='.prepare-', dir=store) as tmp:
             scratch = Path(tmp)
             staged = scratch / 'wheels'
@@ -432,7 +455,9 @@ def wheelhouse(pin, data, uv, *, prepare, retry=None, python=None, repair_index=
                     raise integrity_failure('dependency_wheel', 'size_mismatch', 'download')
                 if hashlib.sha256(body).hexdigest() != row['hash'][7:]:
                     raise integrity_failure('dependency_wheel', 'hash_mismatch', 'download')
-                (staged / name).write_bytes(body)
+                fd = os.open(staged / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                with os.fdopen(fd, 'wb') as file:
+                    file.write(body)
             try:
                 staged.rename(target)
             except OSError:
@@ -447,7 +472,7 @@ def wheelhouse(pin, data, uv, *, prepare, retry=None, python=None, repair_index=
                             os.link(item, target / item.name)
                         except FileExistsError:
                             pass
-    verify_local(target, entries)
+    verify_local(target, entries, note=note)
     # A missing file has no hash to recheck. Resolve again from these exact
     # local bytes before installation, including a reused rollback directory.
     with tempfile.TemporaryDirectory(prefix='.check-', dir=store) as scratch:
@@ -463,6 +488,50 @@ def wheelhouse(pin, data, uv, *, prepare, retry=None, python=None, repair_index=
         else:
             retry.call(operation, 60)
     return target
+
+
+def secure_uv_installation(cmd, pin):
+    from .install_permissions import UnsafeInstallation, resolve_trusted, secure_paths, secure_tree, upgrade_paths
+    env = getattr(cmd, 'env', {})
+    if 'UV_TOOL_DIR' not in env:
+        return
+    prefix = Path(env['UV_TOOL_DIR']) / 'agentj'
+    receipt = prefix / 'uv-receipt.toml'
+    if not receipt.is_file():
+        return
+    # Check the receipt before trusting a path from it, and pin the original
+    # launcher even if the service's PATH differs from the owner's shell.
+    note = permission_log(pin.root)
+    try:
+        prefix = resolve_trusted(prefix, note=note)
+        secure_paths([(prefix / receipt.name, True),
+                      (resolve_trusted(pin.root, note=note), True)], note=note)
+        try:
+            entries = tomllib.loads((prefix / receipt.name).read_text())['tool'].get('entrypoints', [])
+        except (tomllib.TOMLDecodeError, UnicodeDecodeError, KeyError, AttributeError):
+            entries = []
+        home = Path.home()
+        configured = env.get('UV_TOOL_BIN_DIR') or os.environ.get('UV_TOOL_BIN_DIR')
+        candidates = [Path(item['install-path']) for item in entries
+                      if isinstance(item, dict) and item.get('name') == 'agentj'
+                      and isinstance(item.get('install-path'), str)
+                      and Path(item['install-path']).is_absolute()]
+        if not candidates:
+            directories = [configured] if configured else [*os.get_exec_path(), home / '.local/bin']
+            for directory in directories:
+                entry = Path(directory) / 'agentj'
+                if entry.is_absolute() and entry.resolve() == prefix / 'bin/agentj':
+                    candidates.append(entry)
+        python = getattr(sys, "_base_executable", sys.executable)
+        if candidates:
+            for entry in dict.fromkeys(candidates):
+                secure_paths(upgrade_paths(home, entry, prefix, python, note=note), note=note)
+        else:
+            secure_paths([(prefix / 'bin/agentj', True)], note=note)
+        secure_tree(prefix, python, note=note)
+        env['UV_TOOL_DIR'] = str(prefix.parent)
+    except UnsafeInstallation as error:
+        raise permission_failure(error, 'install_store') from None
 
 
 def verified_tool_destinations(receipt, configured=None):
@@ -591,6 +660,7 @@ def prepare_update(cmd, pin, previous_version, *, retry=None):
     try:
         if 'tool' not in cmd or 'install' not in cmd:
             return cmd
+        secure_uv_installation(cmd, pin)
         cmd = cached_runtime(cmd, pin)
         try:
             return _prepare_update(cmd, pin, previous_version, retry=retry)

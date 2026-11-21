@@ -285,9 +285,10 @@ def new_argv(info: dict) -> list[str]:
 def _pinned(run):
     """P423 (#193): `run` that starts an installer Command with the variables it carries (auto_update.install_env: the uv
     tool directory of the running venv); a plain argv runs as before."""
-    from .auto_update import run_env
+    from .auto_update import run_env, uv_install_umask
 
     def go(cmd, **kw):
+        uv_install_umask(cmd, kw)
         env = run_env(cmd)
         return run(cmd, **kw, **({"env": env} if env is not None and "env" not in kw else {}))
     return go
@@ -1924,6 +1925,8 @@ def result_block(res: dict) -> str:
         zh, en = NO_MANAGER_WHY
     if zh:
         lines.append(f"why: {zh} / {en}")
+    for path in res.get("permission_paths", ()):
+        lines.append(f"Unsafe installation path: {path!r}")
     if res.get("fix"):
         lines.append(f"fix: {res['fix']}")
     if res.get("recovery_blocked") == "revocation_downgrade_blocked":

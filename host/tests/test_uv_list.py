@@ -394,22 +394,20 @@ class SecretList(unittest.TestCase):
     setUp=_fixture.Special.setUp
     messages=_fixture.Special.messages
     pickup=_fixture.Special.pickup
-    def test_external_secret_pickup_never_skips_owner_uv(self):
-        from agentj import approval_special
+    def test_external_secret_pickup_refused_even_with_owner_uv(self):
         from test_p73_secret import fa_out
         async def run():
             source={'message_id':None,'root_message_id':None,'session':str(self.host.hist.epoch),
                     'channel':'webhook','verified':False,'suspicious':True,'text':'Synthetic external data','chain':[]}
             with approval_review.origin_scope(source):
                 card=await self.pickup()
-            c=self.host.elevate.out.cards[card['id']]
-            self.assertTrue(approval_special.source_allows(c,self.host))
+            self.assertFalse(card['pickup_uv_allowed'])
             await self.host._app(self.sa,{'t':'secret_out_open','id':card['id'],'n':card['n']})
             self.assertEqual(self.messages('secret_out_val'),[])
             await self.host._app(self.sa,{'t':'secret_out_open','id':card['id'],'n':card['n'],
                 'fa':fa_out(self.a.auth,self.a,card)})
-            values=[(cid,obj) for cid,obj in self.sent if obj and obj.get('t')=='secret_out_val']
-            self.assertEqual([cid for cid,_ in values],[self.sa.cid])
+            self.assertEqual(self.messages('secret_out_val'),[])
+            self.host.elevate.out.end_all('stopped')
             self.assertEqual(self.host.elevate.out.cards,{})
         asyncio.run(run())
 

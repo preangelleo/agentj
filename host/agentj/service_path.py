@@ -38,14 +38,41 @@ def login_path(environ: dict) -> str:
         return ''
 
 
+def npm_prefix_bin(environ, home, *, read_config=False):
+    prefix = environ.get('NPM_CONFIG_PREFIX') or environ.get('npm_config_prefix')
+    if not prefix and read_config:
+        config = Path(environ.get('NPM_CONFIG_USERCONFIG') or environ.get('npm_config_userconfig')
+                      or home / '.npmrc')
+        if not config.is_file():
+            return None
+        try:
+            with config.open() as file:
+                for line in file.read(64 * 1024).splitlines():
+                    key, sep, value = line.strip().partition('=')
+                    if sep and key.strip() == 'prefix':
+                        prefix = value.strip().strip('"').strip("'")
+        except (OSError, UnicodeError):
+            return None
+    if prefix:
+        prefix = prefix.replace('${HOME}', str(home))
+        if prefix.startswith('~/'):
+            prefix = str(home / prefix[2:])
+        if stable_entry(prefix):
+            return Path(prefix) / 'bin'
+    return None
+
+
+NPM_BIN_DIRS = ('.npm-global/bin', '.npm/bin', '.local/share/npm/bin')
+
+
 def build(environ: dict, *, install=False) -> str:
     from . import service_uv
     home = Path(environ.get('HOME') or str(Path.home()))
     common = [home / p for p in ('.local/bin', 'bin', '.local/share/mise/shims', '.asdf/shims',
-                                 '.npm-global/bin', '.npm/bin', '.local/share/npm/bin', '.opencode/bin')]
-    prefix = environ.get('NPM_CONFIG_PREFIX') or environ.get('npm_config_prefix')
+                                 *NPM_BIN_DIRS, '.opencode/bin')]
+    prefix = npm_prefix_bin(environ, home)
     if prefix:
-        common.append(Path(prefix).expanduser() / 'bin')
+        common.append(prefix)
     # The invoking App's PATH is intentionally never a source.
     candidates = login_path(environ).split(':') + [str(p) for p in common] + ['/opt/homebrew/bin', '/opt/homebrew/sbin']
     candidates += BASE.split(':')

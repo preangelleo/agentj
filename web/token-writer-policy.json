@@ -79,6 +79,44 @@
     },
     {
       "path": "js/popup-layout.js",
+      "line": 31,
+      "sourceSha256": "dfeb292b30cf1b350283624fdabddbe7ed241ee1f13f717b83842bf7afd27ae5",
+      "kind": "finite-layout-vars",
+      "purpose": "The 0.30.65 popup copies only --pg and --ink from the page into the native dialog.",
+      "tokenNames": [
+        "--ink",
+        "--pg"
+      ]
+    },
+    {
+      "path": "js/popup-layout.js",
+      "line": 32,
+      "sourceSha256": "dfeb292b30cf1b350283624fdabddbe7ed241ee1f13f717b83842bf7afd27ae5",
+      "kind": "finite-layout-vars",
+      "purpose": "The 0.30.65 popup restores the saved --pg and --ink values after leaving the native dialog.",
+      "tokenNames": [
+        "--ink",
+        "--pg"
+      ]
+    },
+    {
+      "path": "js/popup-layout.js",
+      "line": 38,
+      "sourceSha256": "dfeb292b30cf1b350283624fdabddbe7ed241ee1f13f717b83842bf7afd27ae5",
+      "kind": "finite-layout-vars",
+      "purpose": "The 0.30.65 popup computes its viewport geometry from this fixed set of keys.",
+      "tokenNames": [
+        "--popup-card-left",
+        "--popup-card-width",
+        "--popup-center",
+        "--popup-height",
+        "--popup-left",
+        "--popup-top",
+        "--popup-width"
+      ]
+    },
+    {
+      "path": "js/popup-layout.js",
       "line": 32,
       "sourceSha256": "28695947209e281e30fb1a693271203451986f900f9e1655abc48e0048632a31",
       "kind": "finite-layout-vars",

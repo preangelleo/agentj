@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.28.86
-released: 2026-11-21
+version: 0.28.87
+released: 2026-11-22
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.30.65
-source_tag: v0.30.65
-host_wheel: agentj-0.30.65-py3-none-any.whl
-host_wheel_sha256: 7b620b0c16b7d71350734d99ea19df4669805d3385d0bdf00e015b40840bf0ce
-host_sdist: agentj-0.30.65.tar.gz
-host_sdist_sha256: 245dec0e5e1b99fd5a4cf41302bf6c284da02d5c7f50eda0ed84bbf0a2251363
+host_version: 0.30.66
+source_tag: v0.30.66
+host_wheel: agentj-0.30.66-py3-none-any.whl
+host_wheel_sha256: 5734681686f63958fb5e7f5167c12dfe1708bece579db21027b2fe72202114e9
+host_sdist: agentj-0.30.66.tar.gz
+host_sdist_sha256: 8d52570879319e82dc534a429f740cc613be3683595c36b4dbe38aca48db2e5d
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 docs_index: https://agentj.app/llms.txt (also https://agentj.app/docs/index.json; every page as raw Markdown at https://agentj.app/docs/<slug>/en.md and /zh.md)
@@ -734,7 +734,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.30.65` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.30.66` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -776,13 +776,13 @@ uv tool install "./$W"          # the wheel; its dependencies come from PyPI or 
 `https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.9`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.65#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.66#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.65#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.66#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.65`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.66`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1787,7 +1787,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.65#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.66#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install

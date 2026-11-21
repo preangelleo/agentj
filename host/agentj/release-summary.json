@@ -1,5 +1,5 @@
 {
-  "version": "0.30.65",
-  "zh": "iPhone 主屏幕上的底部确认卡恢复实底。广场安装卡写明理由与来源，文件发送失败会在原处提示。",
-  "en": "Bottom cards on the iPhone Home Screen are opaque again. Plaza cards show the install reason and source. File refusals appear in place."
+  "version": "0.30.66",
+  "zh": "Linux 升级自动收紧私有组写权限。客服重启后跳过已处理的旧工单。",
+  "en": "Repairs private-group permissions during Linux upgrades and keeps support notifications from replaying resolved tickets."
 }

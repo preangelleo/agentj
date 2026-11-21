@@ -68,6 +68,23 @@ class OfflineDependencies(unittest.TestCase):
             self.assertIn('--no-cache', cmd)
             self.assertEqual(self.selector.call_count, 1)
 
+    def test_umask_0002_stages_private_dependencies_and_repairs_old_private_group_cache(self):
+        mode = os.umask(0o002)
+        try:
+            cmd = self.prepare()
+        finally:
+            os.umask(mode)
+        cache = Path(cmd[cmd.index('--find-links') + 1]) / self.name
+        self.assertEqual(cache.stat().st_mode & 0o777, 0o600)
+        cache.chmod(0o664)
+        with patch('agentj.install_permissions._private_group', return_value=True):
+            self.prepare()
+        self.assertEqual(cache.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(cache.read_bytes(), self.dep)
+        options = {}
+        au.uv_install_umask(cmd, options)
+        self.assertEqual(options, {'umask': 0o022})
+
     def test_missing_or_tampered_dependency_rejected_before_live_install(self):
         cmd = self.prepare()
         staged = Path(cmd[cmd.index('--find-links') + 1]) / self.name

@@ -586,6 +586,21 @@ class DoctorEnvLogin(unittest.TestCase):
             npm.symlink_to(native)
             self.assertEqual(doctor.check_agent_cli(self.st, {})["status"], "ok")
 
+    def test_dual_claude_install_checks_custom_npm_prefix_outside_path(self):
+        home = pathlib.Path(self.home)
+        native = home / ".local/bin/claude"
+        npm = home / "my-npm/bin/claude"
+        for exe in (native, npm):
+            exe.parent.mkdir(parents=True)
+            shutil.copy2(home / "bin/claude", exe)
+        (home / ".npmrc").write_text("prefix=${HOME}/my-npm\n")
+        env = {"HOME": str(home), "PATH": str(native.parent)}
+        self.assertTrue(doctor._claude_mac_dual_install(env))
+        self.assertFalse(doctor._claude_mac_dual_install(dict(env, NPM_CONFIG_PREFIX=str(home / "other"))))
+        npm.unlink()
+        npm.symlink_to(native)
+        self.assertFalse(doctor._claude_mac_dual_install(env))
+
     def test_service_install_says_run_doctor_next(self):
         self.assertIn("agentj doctor", cli.SERVICE_NEXT)
         self.assertIn("!", cli.SERVICE_NEXT)

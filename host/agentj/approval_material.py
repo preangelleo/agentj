@@ -716,6 +716,56 @@ def verified_caller_origin(host, peer):
     return resolved if resolved is not None else source
 
 
+def pickup_caller_origin(host, peer):
+    """Preserve known external provenance when the caller cannot prove the current turn."""
+    origin = verified_caller_origin(host, peer)
+    if origin is not None or type(peer) is not int:
+        return origin
+
+    from . import approval_special
+    from .core import process_evidence
+
+    agent = host.agent
+    send, session = getattr(agent, 'cur_send', None), getattr(agent, 'session', None)
+    if isinstance(session, dict):
+        anchor = session.get('pid')
+        pin = process_evidence.row(anchor)
+        if not process_evidence.start_matches(session.get('procStart'), pin):
+            return None
+    else:
+        process = getattr(agent, 'proc', None)
+        anchor = getattr(process, 'pid', None)
+        pin = process_evidence.row(anchor)
+        if not pin or pin[0] != os.getpid() or getattr(process, 'returncode', None) is not None:
+            return None
+
+    # Parentage alone can deny a pickup, but does not prove the owner's current turn.
+    chain = {}
+    pid = peer
+    while pid != anchor and pid > 1 and pid not in chain and len(chain) < 64:
+        row = process_evidence.row(pid)
+        if not row:
+            return None
+        chain[pid] = row
+        pid = row[0]
+    if (pid != anchor or process_evidence.row(anchor) != pin
+            or any(process_evidence.row(child) != row for child, row in chain.items())
+            or host.agent is not agent or getattr(agent, 'session', None) is not session
+            or getattr(agent, 'cur_send', None) is not send):
+        return None
+    if isinstance(session, dict):
+        if getattr(agent, 'phone_turn', False):
+            source = getattr(send, 'approval_origin', None) if getattr(agent, 'phone_seen', False) else None
+        else:
+            source = host.__dict__.get('_approval_origins', {}).get(getattr(host, 'desktop_turn', None))
+    else:
+        source = getattr(send, 'approval_origin', None)
+    if (source and str(source.get('session')) == str(host.hist.epoch)
+            and not approval_special.pickup_source_allowed(source)):
+        return _unknown({'session': str(host.hist.epoch)}, 'pickup_lineage_unverified')
+    return None
+
+
 async def observe_phone_delivery(host, peer):
     """Let the served adapter consume a pending original phone record before fixed CLI gates."""
     observe = getattr(getattr(host, 'agent', None), 'observe_phone_delivery', None)

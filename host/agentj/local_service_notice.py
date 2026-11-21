@@ -16,7 +16,7 @@ import sys
 import time
 from pathlib import Path
 
-SUPPORT_SHA256 = '173577d3d0761f898197d679123cc2c45d4819ab922c86a82f760195dbdb69b3'
+SUPPORT_SHA256 = '2167d5376d716678e239b09d7c76402f37ec3b3a0b34badfcee7a3614f121dc0'
 UNIT = 'support-desk.service'
 MAIL_SHA256 = '7a8e523fabd12a0c406edbe27e838deab08fd9c4b6c9ed13fa93de18bbda9cdc'
 PROFILES = {UNIT: ('support_desk.py', ('active',)),

@@ -104,8 +104,11 @@ class ApiAdmin:
             raise BotError('owner_uv_required')
         return await self._write(req)
     async def card(self,name,purpose,value):
+        from .. import approval_review
         session=self.owner()
-        card=await self.host.elevate.out.send({'t':'secret_out','name':name,'purpose':purpose,'kind':'text','value':value,'only':session.device})
+        # This signed phone operation is independent of the agent's current turn.
+        with approval_review.origin_scope({}):
+            card=await self.host.elevate.out.send({'t':'secret_out','name':name,'purpose':purpose,'kind':'text','value':value,'only':session.device})
         self.owner()
         if card.get('result')!='sent':raise BotError('key_card_unavailable')
         return card['id']

@@ -643,13 +643,19 @@ def check_codex_daemon(st: State, svc: dict) -> dict | None:
 
 
 def _claude_mac_dual_install(env: dict) -> bool:
-    """Native and NVM Claude launchers may differ even with only one on launchd's PATH."""
+    """Native and npm Claude launchers may differ even with only one on launchd's PATH."""
     home = pathlib.Path(env.get("HOME") or pathlib.Path.home())
     native = home / ".local/bin/claude"
     if not native.is_file() or not os.access(native, os.X_OK):
         return False
+    from .service_path import NPM_BIN_DIRS, npm_prefix_bin
     nvm = pathlib.Path(env.get("NVM_DIR") or (home / ".nvm"))
-    for candidate in nvm.glob("versions/node/*/bin/claude"):
+    candidates = [*(home / directory / "claude" for directory in NPM_BIN_DIRS),
+                  *nvm.glob("versions/node/*/bin/claude")]
+    custom = npm_prefix_bin(env, home, read_config=True)
+    if custom:
+        candidates.append(custom / "claude")
+    for candidate in candidates:
         with contextlib.suppress(OSError):
             if candidate.is_file() and os.access(candidate, os.X_OK) and not candidate.samefile(native):
                 return True

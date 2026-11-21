@@ -26,10 +26,10 @@ import time
 _LOG = logging.getLogger(__name__)
 _WARNED_PRICE_MODELS: set[str] = set()
 
-PRICES_CHECKED = "2026-10-13"
+PRICES_CHECKED = "2026-11-22"
 # Anthropic first-party list prices (claude-api reference, 2026-10). cw = 5-minute cache write (1.25 × input).
 PRICES = {
-    # Anthropic Fable 5.2 pricing, verified 2026-11-19. Cache writes in this table use the 5-minute TTL.
+    # Anthropic Fable 5.2 pricing, verified 2026-11-22. Cache writes in this table use the 5-minute TTL.
     "claude-fable-5-2": {"in": 8.0, "out": 40.0, "cr": 0.2, "cw": 10.0},
     "claude-fable-5-2-fast": {"in": 16.0, "out": 80.0, "cr": 0.4, "cw": 20.0},
     "claude-mythos-5-2": {"in": 8.0, "out": 40.0, "cr": 0.2, "cw": 10.0},

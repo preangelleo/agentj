@@ -10,7 +10,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from agentj import usage
 from agentj.serve import Host
@@ -42,6 +42,18 @@ class Prices(unittest.TestCase):
                 self.assertEqual(usage.price_of(model)["cr"], 0.2)
         p = usage.price_of("claude-sonnet-5-5")
         self.assertEqual((p["in"], p["out"]), (2.0, 10.0))
+
+    def test_reviewed_fable_rows_are_reported_by_the_prices_cli(self):
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, patch("agentj.state.State", return_value=St(tmp)), redirect_stdout(out):
+            usage.cmd_usage(SimpleNamespace(action="prices", json=True, lang="en"))
+        prices = json.loads(out.getvalue())
+        self.assertGreaterEqual(prices["checked_on"], "2026-11-22")
+        for model, row in (
+            ("claude-fable-5-2", {"in": 8.0, "out": 40.0, "cr": 0.2, "cw": 10.0}),
+            ("claude-fable-5-2-fast", {"in": 16.0, "out": 80.0, "cr": 0.4, "cw": 20.0}),
+        ):
+            self.assertEqual(prices["prices"][model], dict(row, src="built-in"))
 
     def test_fable_fast_mode_rates(self):
         tokens = dict.fromkeys(usage.TOKEN_KEYS, 1_000_000)

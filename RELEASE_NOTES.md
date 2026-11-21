@@ -1,5 +1,5 @@
-# Agent J v0.30.65
+# Agent J v0.30.66
 
-Bottom cards on the iPhone Home Screen are opaque again. Plaza cards show the install reason and source. File refusals appear in place.
+Repairs private-group permissions during Linux upgrades and keeps support notifications from replaying resolved tickets.
 
-iPhone 主屏幕上的底部确认卡恢复实底。广场安装卡写明理由与来源，文件发送失败会在原处提示。
+Linux 升级自动收紧私有组写权限。客服重启后跳过已处理的旧工单。

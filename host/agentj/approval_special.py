@@ -318,9 +318,16 @@ def secret_input_context_allows(card, host, *, expired=False):
 
 
 def pickup_source_allowed(source):
-    """Source is displayed, never a substitute for request-bound owner UV.
-
-    External content cannot authorize a pickup. Outbox still requires the exact
-    paired recipient's fresh assertion, signing key, controller, nonce and TTL.
-    """
-    return True
+    """Allow verified owner origins and genuinely unknown provenance to reach the UV check."""
+    if source.get('role') in ('unknown_external', 'external_advice') or any(source.get(key) for key in (
+            'material_unknown', 'material_ref', 'trigger_record', 'external_message_id', 'authorization_origin')):
+        return False
+    if source.get('verified') is True and source.get('suspicious') is not True:
+        return True
+    root = source.get('root') or {}
+    return (source.get('channel') == 'unknown'
+            and source.get('message_id') is None
+            and source.get('root_message_id') is None
+            and source.get('trigger_message_id') is None
+            and root.get('channel') in (None, 'unknown')
+            and root.get('message_id') is None)

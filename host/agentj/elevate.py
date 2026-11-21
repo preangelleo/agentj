@@ -2543,8 +2543,11 @@ class Elevator:
                 if req['t'] == 'secret' and uid == os.getuid():
                     from . import approval_material
                     chat_source = await asyncio.to_thread(approval_material.verified_phone_chat, self.host, peer)
-                incoming_origin = (chat_source[1] if chat_source else
-                                   await asyncio.to_thread(bounded_plan.caller_origin, self.host, peer))
+                if req['t'] == 'secret_out' and uid == os.getuid():
+                    incoming_origin = await asyncio.to_thread(approval_material.pickup_caller_origin, self.host, peer)
+                else:
+                    incoming_origin = (chat_source[1] if chat_source else
+                                       await asyncio.to_thread(bounded_plan.caller_origin, self.host, peer))
                 if incoming_origin is None and ctl_auth.refusal(peer, os.getpid(), self.host._agent_pids()) is None and ctl_auth.has_tty(peer):
                     turn = self.host.hist_add({"k": "host", "name": "Agent J 主机", "text": "本人在本机终端发起这项受控操作。"}, "", "done")
                     incoming_origin = approval_review.remember(self.host, turn, provenance.terminal())

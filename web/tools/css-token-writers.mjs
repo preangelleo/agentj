@@ -17,6 +17,8 @@ export function finiteLayoutWriter(path,source,index){
  const call=source.slice(index),prefix=source.slice(Math.max(0,index-250),index);
  if(path==='js/cardplace.js' && /^\.setProperty\('--host-stage-'\+key,value\+'px'\)/.test(call) && prefix.includes("Object.entries({top:r.top,left:r.left,width:r.width,height:r.height})"))return ['--host-stage-top','--host-stage-left','--host-stage-width','--host-stage-height'].sort();
  if(path==='js/popup-layout.js'){
+  const bodyTokens="const page=getComputedStyle(document.body);for(const[k,value]of [['--pg',page.getPropertyValue('--pg').trim()],['--ink',page.color]])if(root.style.getPropertyValue(k)!==value)root.style";
+  if(call.startsWith('.setProperty(k,value)')&&prefix.endsWith(bodyTokens))return ['--ink','--pg'];
   if(/^\.setProperty\(k,(?:value|value\))/ .test(call)&&prefix.includes("[['--pg',page.backgroundColor],['--ink',page.color]]"))return ['--ink','--pg'];
   if(/^\.setProperty\(k,value\)/.test(call)&&prefix.includes('nativeGrowTokens.get(root)')&&source.includes("['--pg','--ink'].map(k=>[k,root.style.getPropertyValue(k)])"))return ['--ink','--pg'];
   if(/^\.setProperty\(prop,value\)/.test(call)&&prefix.includes("Object.entries(geometry)")&&source.includes("const prop='--popup-'+k.replace(/[A-Z]/g,m=>'-'+m.toLowerCase()),value=v+'px'")){

@@ -619,6 +619,12 @@ def install_env(info):
     return {'UV_TOOL_DIR': os.path.dirname(os.path.normpath(os.path.abspath(info['where'])))}
 
 
+def uv_install_umask(cmd, options):
+    """Set permissions for the replacement uv tree without changing the host process's umask."""
+    if os.name == 'posix' and getattr(cmd, 'env', {}).get('UV_TOOL_DIR') and list(cmd[1:3]) == ['tool', 'install']:
+        options.setdefault('umask', 0o022)
+
+
 def run_env(cmd):
     """The environment a Command runs with (None: inherit this process's unchanged)."""
     extra = getattr(cmd, 'env', None)
@@ -1117,6 +1123,7 @@ def quiet(argv, **kw):
     if env is not None and 'env' not in kw:     # P423 (#193): the pinned uv tool directory
         kw['env'] = env
     timeout = kw.pop('timeout', INSTALL_TIMEOUT)
+    uv_install_umask(argv, kw)
     return subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout, **kw)
 
 

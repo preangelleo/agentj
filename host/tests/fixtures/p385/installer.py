@@ -25,6 +25,21 @@ import urllib.request
 from urllib.parse import urlparse
 from datetime import datetime, timezone
 
+def installation_permissions():
+    import runpy
+    from types import SimpleNamespace
+    here = Path(__file__).resolve()
+    module = here.with_name('permissions.py')
+    if not module.is_file():
+        # Source tree and public test fixture layouts. The bootstrap writes
+        # the same module into its private, verified scratch directory.
+        if here.parent.name == 'p385':
+            module = here.parents[3] / 'agentj/install_permissions.py'
+        else:
+            module = here.parents[2] / 'host/agentj/install_permissions.py'
+    return SimpleNamespace(**runpy.run_path(str(module)))
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise InstallError('redirect_refused')
@@ -897,6 +912,18 @@ def repair_trusted_path(path, *, require_owner=True):
     import stat
     uid = os.getuid()
     target = path.resolve(strict=True)
+    if sys.platform.startswith('linux'):
+        permissions = installation_permissions()
+        try:
+            def note(line):
+                print(line, file=sys.stderr)
+            canonical = permissions.resolve_trusted(path, note=note)
+            permissions.secure_paths([(canonical, require_owner)], note=note)
+        except permissions.UnsafeInstallation as exc:
+            error = InstallError('repair_requires_private_directory')
+            error.permission_lines = exc.lines()
+            raise error from None
+        return
     for current in (target, *target.parents):
         meta = current.stat()
         sticky_parent = (current != target and meta.st_uid == 0
@@ -1543,6 +1570,10 @@ def upgrade_existing(uv, *, home=None, run=command, repair_index=False, repair_r
 
 
 def main(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] == '--permissions-preflight':
+        return installation_permissions().bootstrap_permissions(argv[1:])
     import argparse
     p=argparse.ArgumentParser(description='Local installation assistant; no remote shell')
     p.add_argument('--upgrade-only', action='store_true', help='Repair an existing uv installation; preserve its seat and pairing')
@@ -1584,6 +1615,8 @@ def main(argv=None):
         if a.upgrade_only:
             reason = exc.reason if isinstance(exc, InstallError) else type(exc).__name__
             print('升级修复未完成 / Upgrade repair incomplete: '+reason, file=sys.stderr)
+            for line in getattr(exc, 'permission_lines', ()):
+                print(line, file=sys.stderr)
             if reason == 'repair_rollback_health_failed':
                 print('旧版工具和入口已恢复，未确认后台服务正常。失败步骤 / Restored package, unverified service: '
                       + getattr(exc, 'step', 'agentj doctor --upgrade-only / serve'), file=sys.stderr)
