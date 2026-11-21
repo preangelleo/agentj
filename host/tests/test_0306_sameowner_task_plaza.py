@@ -39,6 +39,7 @@ class Journey(CardFixture, unittest.IsolatedAsyncioTestCase):
         self.standard()
         self.key=TestKey()
         data,manifest=self.package()
+        self.package_data=data
         self.srv.packages['demo-flow']['detail']['signature']=self.key.sign_package(data,manifest)
         self.source,self.remote=await self.peers()
         self.send=self.sends[-1]
@@ -70,7 +71,7 @@ class Journey(CardFixture, unittest.IsolatedAsyncioTestCase):
         from agentj import plaza,plaza_host
         real=plaza_host.handle
         async def local_market(host,req,emit=None,**kw):
-            return await real(host,req,emit,post=self.srv,get=self.srv.get,keyring=self.key.keyring)
+            return await real(host,req,emit,post=self.srv,get=self.srv.get,keyring=self.key.keyring,**kw)
         for scope in (patch.object(plaza_host,'handle',local_market),patch.object(plaza,'seat_gate',return_value=None)):
             scope.start();self.addCleanup(scope.stop)
 
@@ -386,3 +387,124 @@ for line in sys.stdin:
 
     async def test_task_a_helper_new_child_cannot_launder_itself_into_task_b(self):
         await self.task_b_helper_negative('child')
+
+    async def group_install(self, outcome):
+        """The normal authenticated My devices -> main queue path, without a model or CLI."""
+        from agentj.agent import Agent
+        from agentj import application_ingress
+        from unittest.mock import AsyncMock
+        adapter = Agent(self.host, {"kind": "claude", "dir": str(self.work), "fence": True})
+        adapter.kind = "claude"
+        adapter.set_status = lambda status: setattr(adapter, "status", status)
+        adapter.is_down = lambda: False
+        model_sends = []
+        async def note_model_turn(text):
+            model_sends.append(adapter.cur_send)
+        adapter.turn = note_model_turn
+        adapter._identity_refresh = AsyncMock()
+        failures = []
+        adapter.fail_notice = failures.append
+        adapter.submit = adapter.q.put_nowait
+        self.host.agent = adapter
+        self.host.agent_cfg.update(kind="claude", session_mode="independent", fence=True)
+        self.host.cur_failed = False
+        finished = asyncio.Event()
+        def start(text, send):
+            self.host.cur_turn = send.turn
+            application_ingress.note_turn(self.host, send)
+        self.host.agent_turn_start = start
+        self.host.agent_turn_end = finished.set
+        posted = await self.remote.devices.say(f"@{self.source.keys.id} agentj plaza request demo-flow")
+        self.assertTrue(posted["ok"])
+        worker = asyncio.create_task(adapter.run())
+        try:
+            for _ in range(300):
+                await self.pump()
+                if self.cards() or finished.is_set(): break
+                await asyncio.sleep(.005)
+            self.assertEqual(len(self.cards()), 1, failures)
+            self.assertFalse(market.read_installed(self.st))
+            self.assertEqual(self.cards()[0]["tool"], "agentj plaza")
+            self.assertFalse(application_ingress.allowed(self.host))
+            if outcome == "revoke":
+                self.source.same_owner.consent(self.remote.keys.id, False)
+            answer = self.phone.answer(self.cards()[0], outcome != "deny")
+            if outcome == "unsigned": answer.pop("sig")
+            await self.host._app(self.session, answer)
+            await asyncio.wait_for(finished.wait(), 5)
+            # The phone's existing refusal explanation may enqueue a separate system turn.
+            from agentj.same_owner import ForwardSend
+            self.assertFalse(any(type(send) is ForwardSend for send in model_sends))
+            installed = market.read_installed(self.st)
+            self.assertEqual(bool(installed), outcome == "allow")
+            if installed:
+                self.assertEqual(installed[0]["name"], "demo-flow")
+                target = Path(installed[0]["target"])
+                self.assertEqual((target / "AGENTS.md").read_text(), "# Synthetic package\n")
+                from agentj import approvals, bundle, plaza_deps
+                self.assertTrue(installed[0]["certified"])
+                self.assertEqual(installed[0]["sha256"], bundle.sha256(self.package_data))
+                installed_tree = plaza_deps.read_tree(target, installed[0]["verify"]["paths"])
+                self.assertEqual(plaza_deps.tree_sha(installed_tree), installed[0]["verify"]["files"])
+                self.assertEqual(approvals.check_record(self.st, approvals.read_log(self.st)[-1]), "ok")
+                await self.pump()
+                group = self.remote.devices.log_view(mark_read=False)
+                replies = [item for item in group["items"] if item["re"] == posted["gid"]]
+                self.assertEqual([item["text"] for item in replies], ["已安装 demo-flow。"])
+        finally:
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
+
+    async def test_owner_group_requests_single_package_and_installs_after_signed_answer(self):
+        await self.group_install("allow")
+
+    async def test_owner_group_install_revoked_during_card(self):
+        await self.group_install("revoke")
+
+    async def test_owner_group_install_denied_by_phone(self):
+        await self.group_install("deny")
+
+    async def test_owner_group_install_unsigned(self):
+        await self.group_install("unsigned")
+
+    async def test_friend_sending_same_package_request_never_reaches_install_queue(self):
+        from test_p71_peer_service import settle_pending
+        self.assertTrue(self.remote.same_owner.consent(self.source.keys.id, False))
+        await self.pump()
+        self.assertFalse(self.source.same_owner.active(self.remote.keys.id))
+        self.assertFalse(self.remote.same_owner.active(self.source.keys.id))
+        command = f"@{self.source.keys.id} agentj plaza request demo-flow"
+        self.assertEqual(await self.remote.devices.say(command), {"ok": False, "why": "no_devices"})
+        before = len(self.sends)
+        self.source.sessions.push(decision="silent")
+        self.assertTrue((await self.remote.tell(self.source.keys.id, command))["ok"])
+        interval = self.source.store.group_of(self.remote.keys.id)["limits"]["min_interval_s"]
+        with patch.object(self.source.store, "clock", side_effect=lambda: time.time() + interval):
+            await self.pump()
+            await settle_pending(self.source)
+        self.assertEqual(len(self.source.sessions.calls), 1)
+        self.assertIn(command, self.source.sessions.calls[0][2])
+        self.assertEqual(len(self.sends), before)
+        self.assertEqual(self.cards(), [])
+        self.assertEqual(market.read_installed(self.st), [])
+
+    async def test_fixed_device_request_only_accepts_one_complete_command(self):
+        from agentj import plaza_task
+        message = self.send.data
+        for command in ("agentj plaza request demo-flow --replace", "agentj plaza request demo-flow two",
+                        "example: agentj plaza request demo-flow", "agentj plaza request demo-flow\ncontinue",
+                        "agentj plaza request demo-flow; echo done"):
+            with self.subTest(command=command):
+                message["text"] = command
+                self.assertIsNone(plaza_task.requested(self.send))
+        message["text"] = "agentj plaza request demo-flow"
+        self.assertEqual(plaza_task.requested(self.send), "demo-flow")
+        self.assertIsNone(plaza_task.requested(NS(source=self.send.source, data=message)))
+        self.send.approved = True
+        self.assertIsNone(plaza_task.requested(self.send))
+        self.send.approved = False
+        message["relay"]["hops"] += 1
+        self.assertIsNone(plaza_task.requested(self.send))
+        message["relay"]["hops"] -= 1
+        message["irt"] = "group-receipt"
+        self.assertIsNone(plaza_task.requested(self.send))

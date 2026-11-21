@@ -18,7 +18,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from agentj import approval_offlist, compose, peer_guard, provenance, uv_list
+from agentj import approval_offlist, approval_review, compose, peer_guard, provenance, uv_list
 from agentj.same_owner import ForwardSend, SameOwner
 import test_heartbeat_readonly_cards_0306 as hb
 
@@ -110,6 +110,63 @@ JOURNAL_SHELL = (
 
 
 class Matrix(_Fixture):
+    async def plaza_source(self, send):
+        # The forwarded task has its own turn and no local owner-message record.
+        send.turn = self.h.cur_turn = 2
+        self.h.agent.cur_send = send
+        task = asyncio.create_task(self.h.ask('agentj plaza', {'package': 'demo-flow'}, batch=False))
+        try:
+            for _ in range(400):
+                if self.h.asks or task.done():
+                    break
+                await asyncio.sleep(.005)
+            self.assertEqual(len(self.h.asks), 1, 'Plaza still needs a card')
+            ask = next(iter(self.h.asks.values()))
+            message = self.h._ask_msg(ask, self.s)
+            self.assertEqual(message['envelope_sha256'], approval_review.digest(message['envelope']))
+            self.assertFalse(ask.fut.done(), 'device decision remains pending')
+            self.assertNotIn('verified_same_owner', ask.review_origin)
+            self.assertNotIn('verified_same_owner', ask.review_record)
+            return message['envelope']['source']
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def test_plaza_marks_verified_forwarded_device_without_owner_authority(self):
+        source = await self.plaza_source(self.same_owner())
+        self.assertIs(source['verified_same_owner'], True)
+        self.assertEqual((source['source_type'], source['source_trust']), ('same_owner', 'external'))
+        self.assertEqual(source['source_label'], '同主人设备 ' + FID[:12])
+        self.assertFalse(source['verified'])
+        self.assertTrue(source['suspicious'])
+        self.assertIsNone(source['message_id'])
+
+    async def test_plaza_never_marks_unverified_or_conflicting_source_as_same_owner(self):
+        for name in ('friend_task', 'irt_reply', 'end_message', 'same_host', 'plain_dict', 'forged_class'):
+            with self.subTest(source=name):
+                source = await self.plaza_source(self.sources()[name][0])
+                self.assertNotIn('verified_same_owner', source)
+        src_fn = approval_offlist.source
+        def revoked_after_capture(host, **kwargs):
+            typed = src_fn(host, **kwargs)
+            self.assertIs(typed['verified_same_owner'], True)
+            self.relation['on'] = False
+            return typed
+        with mock.patch.object(approval_offlist, 'source', side_effect=revoked_after_capture):
+            source = await self.plaza_source(self.same_owner())
+        self.assertNotIn('verified_same_owner', source)
+        self.relation['on'] = True
+        origin = {'session': str(self.h.hist.epoch), 'channel': 'unknown', 'suspicious': True,
+                  'source_type': 'same_owner', 'source_trust': 'external', 'verified_same_owner': True}
+        with approval_review.origin_scope(origin):
+            source = await self.plaza_source(self.same_owner())
+        self.assertNotIn('verified_same_owner', source)
+        with approval_review.origin_scope({**origin, 'material_unknown': 'synthetic_external_receipt'}):
+            source = await self.plaza_source(self.same_owner())
+        self.assertTrue(source['suspicious'])
+        self.assertNotIn('verified_same_owner', source)
+        self.assertTrue(origin['verified_same_owner'], 'the original record was not mutated')
+
     async def test_diag_list_only_for_verified_same_owner(self):
         commands = DIAG_SHELL + (JOURNAL_SHELL if HAS_JOURNAL else ())
         for name, (send, tier) in self.sources().items():

@@ -132,12 +132,19 @@ def _short(r: dict, en: bool) -> str:
     return w[1 if en else 0]
 
 
-async def handle(host, req: dict, emit=None, **run_kw) -> dict:
+async def handle(host, req: dict, emit=None, *, _device_task=None, **run_kw) -> dict:
     """→ {ok, rc, why?, out, results? (a group)}. `emit(event)` gets {"stage": "card", "online", "ttl"} when the card is out
     and {"stage": "queued", "position"} / {"stage": "checking", "done", "total"} meanwhile. run_kw: tests only (post / get /
     keyring for the synthetic plaza)."""
     from . import market, plaza, plaza_perms, application_ingress
     request = application_ingress.current(host)
+    live = request._transport_live if request else lambda: False
+    if _device_task is not None:
+        from .plaza_task import PackageRequest
+        if (type(_device_task) is not PackageRequest or _device_task.host is not host
+                or req != {"name": _device_task.name}):
+            return _refuse(host, "", "application_ingress_unverified", market)
+        live = _device_task.live
     try:
         spec = check(req)
     except ValueError:
@@ -145,11 +152,16 @@ async def handle(host, req: dict, emit=None, **run_kw) -> dict:
     names = spec.pop("names")
     group, first = len(names) > 1, names[0]
     gate = plaza_perms.turn_gate(host)            # round 2 (L4): the asker's source when the request arrives
+    if _device_task is not None:
+        gate["device_task"] = _device_task
     if gate["gated"]:                             # round 1 (M1): refused now — no fetch, no queue slot, no card later
         plaza_perms.gate_refused(host, first, {"names": names}, gate["why"])
         return _refuse(host, first, gate["why"], market)
+    def ingress_live():
+        return application_ingress.allowed(host) if _device_task is None else live()
+
     early = ("estop" if host.stopped() else "serve_stop" if host.stopping.is_set() else
-             "application_ingress_unverified" if not application_ingress.allowed(host) else None)
+             "application_ingress_unverified" if not ingress_live() else None)
     flight = host.__dict__.setdefault("_plaza_installing", set())
     todo = [n for n in names if n not in flight]
     if early is None and not todo:
@@ -226,7 +238,7 @@ async def handle(host, req: dict, emit=None, **run_kw) -> dict:
             return market.run_install(n, version=spec["version"], harness=spec["harness"], workspace=spec["workspace"],
                                       params=spec["params"] or [], params_file=spec["params_obj"], sign_as=spec["sign_as"],
                                       replace=bool(spec["replace"]), st=host.st, out=bufs[n], host_ask=asker(n),
-                                      _host_live=request._transport_live if request else lambda:False,
+                                      _host_live=live,
                                       _target_private=lambda target: classify_target(n, target), **run_kw)
         except plaza.PlazaError as e:
             print("没有安装 / NOT installed" if private[n] else f"agentj plaza: {e}", file=bufs[n])
@@ -446,7 +458,7 @@ async def _card(host, infos: list, group: bool, before: list, gate: dict, index,
     needs_uv = any(x.get("kind") == "secret" for i in infos for x in i.get("extra") or [])
     # The reference is not an authority. The Host owns the pending request and
     # consumes it before releasing worker threads, even on denial or exception.
-    from . import approvals, market_guard, application_ingress
+    from . import approvals, market_guard
     pending = host.__dict__.setdefault("_plaza_private_pending", {})
     token = secrets.token_urlsafe(32)
     if refs:
@@ -484,7 +496,7 @@ async def _card(host, infos: list, group: bool, before: list, gate: dict, index,
                      and time.monotonic() <= bound["deadline"]
                      and bound["agent"] is host.agent and bound["session"] == str(host.hist.epoch)
                      and bound["authority"] == host._approval_live_authority()
-                     and application_ingress.allowed(host) and len(records) == 1
+                     and plaza_perms.install_request_live(host, tool_input, gate) and len(records) == 1
                      and records[0].get("device") == device and records[0].get("tool") == "agentj plaza"
                      and records[0].get("input_sha256") == bound["input"]
                      and records[0].get("reason") == "device" and records[0].get("decision") == "allow"

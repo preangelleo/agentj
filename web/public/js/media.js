@@ -28,7 +28,7 @@ import { renderDoc } from './preview.js';
 import { glyph } from './icons.js';
 import { unb64u } from '../proto/wire.js';
 
-import { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, FRAME_NOBAR, normRef, matchSlot, placeSlots, blobType, autoLoad, previewKind, codeLang, PREVIEW } from './mediawire.js';
+import { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, FRAME_NOBAR, normRef, internalMediaRef, matchSlot, placeSlots, blobType, autoLoad, previewKind, codeLang, PREVIEW } from './mediawire.js';
 export { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, normRef, matchSlot, placeSlots, blobType };
 const STALL_MS = 20000;
 const PARALLEL = 2;                          // fetches at once (the computer allows 3 per session)
@@ -197,12 +197,36 @@ function strip(words) {
   return s;
 }
 const pageKey = (p, items, skips) => (p && p.id !== null && (items.length || skips.length)
-  ? p.id + '|' + items.map((m) => m.mid).join(',') + '|' + skips.length : null);
+  ? JSON.stringify([p.id, p.end, items.map((m) => m.mid),
+      skips.map(({name, why, bytes, line, hint, download}) => [name, why, bytes, line, hint, download?.id, download?.expires])]) : null);
+
+const plainRefs = new WeakMap();
+const refName = (ref) => normRef(ref).split(/[/\\]/).filter(Boolean).pop() || '';
+const slotLabel = (slot) => (slot.dataset.label || '').trim() || refName(slot.dataset.ref);
+function presentMedia(words, p) {
+  for (const slot of words.querySelectorAll('.mslot')) {
+    if (!internalMediaRef(slot.dataset.ref)) continue;
+    const label = (slot.dataset.label || '').trim();
+    const text = mk('span', 'minternal', label && !internalMediaRef(label) ? label : t('media.internalReference'));
+    plainRefs.set(text, normRef(slot.dataset.ref));
+    slot.replaceWith(text);
+  }
+  const slots = [...words.querySelectorAll('.mslot')];
+  const refs = new Set([...words.querySelectorAll('.minternal')].map((node) => plainRefs.get(node)));
+  const internal = new Set([...refs].map(refName));
+  const visible = new Set(slots.map((slot) => refName(slot.dataset.ref)));
+  const items = (p?.media || []).filter((item) => !internalMediaRef(item.ref));
+  let unnamed = refs.size;
+  const skips = (p?.mediaSkip || []).filter((skip) => {
+    if (skip.why === 'private' && unnamed > 0) { unnamed--; return false; }
+    return !internal.has(skip.name) || visible.has(skip.name);
+  });
+  return {items, skips, slots};
+}
 
 /** Fill a words element's slots: the item's card (image inline, audio / video players, pdf / html / file cards), a
  *  refusal's one-line note, or nothing (the source text stays). → what no slot showed: {rest, restSkips}. */
-function fillSlots(words, items, skips, sc) {
-  const slots = [...words.querySelectorAll('.mslot')];
+function fillSlots(slots, items, skips, sc, p) {
   const { at, rest, restSkips } = placeSlots(slots.map((s) => s.dataset.ref), items, skips);
   slots.forEach((s, i) => {
     const a = at[i];
@@ -222,7 +246,14 @@ function fillSlots(words, items, skips, sc) {
       if (cut) next.nodeValue = next.nodeValue.slice(cut);
     }
   });
-  return { rest, restSkips };
+  // Older hosts send private refusals without names. Resolve a lone pending slot when that is all
+  // the host scanned, or settle after completion without guessing which path a refusal named.
+  const unresolvedCount = at.filter((where) => !where).length;
+  const ended = p.end !== 'open';
+  const single = unresolvedCount === 1 && restSkips.length === 1 && restSkips[0].why === 'private';
+  unsent(slots, p, single || (ended && restSkips.some((skip) => skip.why === 'private')));
+  let unresolved = ended || single ? unresolvedCount : 0;
+  return { rest, restSkips: restSkips.filter((skip) => skip.why !== 'private' || unresolved-- <= 0) };
 }
 const observer = (sc) => (typeof IntersectionObserver === 'function' ? new IntersectionObserver((es) => {
   for (const e of es) if (e.isIntersecting) { sc.io.unobserve(e.target); e.target._load?.(); }
@@ -231,40 +262,41 @@ const observer = (sc) => (typeof IntersectionObserver === 'function' ? new Inter
 // Complete local references wait for opaque media metadata, including on active pages. Never turn a local path
 // into an href. A delay is not a rejection: later media / media_skip replaces this note through fillSlots.
 export const UNSENT_MS = 6000;
-function unsent(words, p) {
+function unsent(slots, p, refused) {
   if (!p) return;
-  const late = p.end !== 'open' && p.ts && Date.now() / 1000 - p.ts > 600 ? 0 : UNSENT_MS;
-  for (const s of words.querySelectorAll('.mslot')) {
-    if (s.dataset.mid || s.dataset.skip || s.dataset.unsent) continue;
-    s.dataset.unsent = 'wait';
-    const label = () => mk('span', 'mlabel', (s.dataset.label || '').trim() || String(s.dataset.ref || '').split(/[/\\]/).filter(Boolean).pop() || '');
-    s.replaceChildren(label(), mk('span', 'mskip mpending', t('media.preparing')));
-    const show = () => {
-      if (!s.isConnected || s.dataset.mid || s.dataset.skip) return;
-      s.dataset.unsent = '1';
-      s.replaceChildren(label(), mk('span', 'mskip mpending', t(p.end === 'open' ? 'media.pending' : 'media.unsent')));
-    };
-    if (late) setTimeout(show, late); else show();
+  const ended = p.end !== 'open';
+  const immediate = refused || (ended && p.ts && Date.now() / 1000 - p.ts > 600);
+  for (const s of slots) {
+    if (s.dataset.mid || s.dataset.skip) continue;
+    s.dataset.mediumMessage = refused ? 'media.unavailable' : ended ? 'media.unsent' : 'media.pending';
+    const paint = (key) => s.replaceChildren(mk('span', 'mlabel', slotLabel(s)),
+      mk('span', key === 'media.preparing' || key === 'media.pending' ? 'mskip mpending' : 'mskip', t(key)));
+    const show = () => { s.dataset.unsent = '1'; paint(s.dataset.mediumMessage); };
+    if (immediate || s.dataset.unsent === '1') { show(); continue; }
+    if (s.dataset.unsent) continue;
+    s.dataset.unsent = 'wait'; paint('media.preparing');
+    setTimeout(() => {
+      if (s.isConnected && !s.dataset.mid && !s.dataset.skip && s.dataset.unsent === 'wait') show();
+    }, UNSENT_MS);
   }
 }
 
 /** After the page's words are on screen: fill its inline slots, the strip under the words and the skip notes.
  *  p = the page (snap.toPage: {id, media, mediaSkip}). Idempotent while the same page and list are shown. */
 export function renderPage(words, p) {
-  unsent(words, p);
   const box = strip(words);
-  const items = (p && p.media) || [], skips = (p && p.mediaSkip) || [];
+  const {items, skips, slots} = presentMedia(words, p);
   const key = pageKey(p, items, skips);
-  const fresh = [...words.querySelectorAll('.mslot')].some((s) => !s.dataset.mid && !s.dataset.skip);
-  if (key === shown.key && (!key || !fresh)) return;
+  const fresh = slots.some((s) => !s.dataset.mid && !s.dataset.skip);
+  if (key === shown.key && (!key || !fresh)) { unsent(slots, p, false); return; }
   clearShown();
   shown.key = key; shown.page = p && p.id !== undefined ? p.id : null;
   box.replaceChildren();
   box.hidden = !key;
-  if (!key) return;
+  if (!key) { unsent(slots, p, false); return; }
   shown.io = observer(shown);
   shown.cards = () => [...words.querySelectorAll('.mcard'), ...box.querySelectorAll('.mcard')];
-  const { rest, restSkips } = fillSlots(words, items, skips, shown);
+  const { rest, restSkips } = fillSlots(slots, items, skips, shown, p);
   for (const m of rest) box.appendChild(card(m, false, shown));
   for (const sk of restSkips) box.appendChild(skipCard(sk));
   box.hidden = !box.childElementCount;
@@ -273,19 +305,18 @@ export function renderPage(words, p) {
 /** P59: the full-screen reader's words (relay.js fills them with md.js like the page's): the same slots filled the same way,
  *  from the same verified Blobs. P273: the slots, then what the reply did not place (.rdstrip at the end of the words). */
 export function renderReader(words, p) {
-  unsent(words, p);
-  const items = (p && p.media) || [], skips = (p && p.mediaSkip) || [];
+  const {items, skips, slots} = presentMedia(words, p);
   const key = pageKey(p, items, skips);
-  const fresh = [...words.querySelectorAll('.mslot')].some((s) => !s.dataset.mid && !s.dataset.skip);
-  if (key === reading.key && (!key || !fresh)) return;
+  const fresh = slots.some((s) => !s.dataset.mid && !s.dataset.skip);
+  if (key === reading.key && (!key || !fresh)) { unsent(slots, p, false); return; }
   clearReader();
   reading.key = key; reading.page = p && p.id !== undefined ? p.id : null;
-  if (!key) return;
+  words.querySelector(':scope>.rdstrip')?.remove();
+  if (!key) { unsent(slots, p, false); return; }
   reading.io = observer(reading);
   // P273 (long reading): what the reply did not place follows its words here too, in the reader's own strip (never #mstrip)
   reading.cards = () => [...words.querySelectorAll('.mcard')];   // the slots + .rdstrip: every file of this reply, once
-  const { rest, restSkips } = fillSlots(words, items, skips, reading);
-  words.querySelector(':scope>.rdstrip')?.remove();
+  const { rest, restSkips } = fillSlots(slots, items, skips, reading, p);
   if (!rest.length && !restSkips.length) return;
   const box = mk('div', 'mstrip rdstrip');
   for (const m of rest) box.appendChild(card(m, false, reading));

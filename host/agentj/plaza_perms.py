@@ -451,20 +451,35 @@ async def signed_card(host, name: str, tool_input: dict, emit=None, gate: dict |
         return gate_refused(host, name, tool_input, "owner_grant_scope")    # 0304 A2-②: a UV card (secret) keeps the grant
     try:
         async with card_turn(host, emit):
-            return await _signed_card(host, name, tool_input, emit, require_passkey=require_passkey, receipt=receipt)
+            return await _signed_card(host, name, tool_input, emit, require_passkey=require_passkey, receipt=receipt, gate=gate)
     except CardQueueFull:
         host.st.log("plaza_perm_card_done", name=name, result="deny", why="queue_full")
         return {"ok": False, "why": "queue_full"}
 
 
-async def _signed_card(host, name: str, tool_input: dict, emit, *, require_passkey=False, receipt=None) -> dict:
+def install_request_live(host, inp, gate):
+    task = (gate or {}).get("device_task")
+    if task is not None:
+        from .plaza_task import PackageRequest
+        return type(task) is PackageRequest and task.card_live(host, inp)
+    from . import application_ingress
+    return application_ingress.allowed(host)
+
+
+async def _signed_card(host, name: str, tool_input: dict, emit, *, require_passkey=False, receipt=None, gate=None) -> dict:
     # Package manifest environment access is a permissions review, not an
     # operation that inputs/replaces a credential. Actual secret entry retains
     # its existing secret-controller UV; manifest names cannot create UV.
-    from . import application_ingress
+    device_task = (gate or {}).get("device_task") is not None
+    if device_task:
+        if not install_request_live(host, tool_input, gate):
+            return {"ok": False, "why": "authority_changed"}
+        if receipt is None:
+            receipt = {}
     answer = await host.ask(CARD_TOOL, tool_input, batch=False, grant_info=True, _receipt=receipt)
     proof = answer.get('grant_info') or {}
-    ok = (answer.get('behavior') == 'allow' and application_ingress.allowed(host)
+    ok = (answer.get('behavior') == 'allow' and install_request_live(host, tool_input, gate)
+          and (not device_task or (receipt.get('reason') == 'device' and receipt.get('id') == proof.get('rid')))
           and bool(proof.get('rid') and proof.get('device') and proof.get('sign_pub'))
           and host.st.sign_key(proof['device']) == proof['sign_pub'])
     return {'ok': ok, **({'rid': proof['rid'], 'device': proof['device'], 'proof': proof} if ok else

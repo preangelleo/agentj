@@ -6,20 +6,16 @@ import { webcrypto } from 'node:crypto';
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 globalThis.window ??= {};
-const M = await import('../public/js/media.js');
-import vm from 'node:vm';
-import {retainedUiSource} from './release-ui-source.mjs';
-const orphanSource=retainedUiSource('public/js/media.js').match(/export function orphanPunct\([\s\S]*?\n\}/)[0].replace('export ','');
-const orphanPunct=vm.runInNewContext(orphanSource+';orphanPunct');
+const { orphanPunct, skipText } = await import('../public/js/media.js');
 
 test('the host-neutral name reads as a plain sentence in both languages', () => {
-  const zh = M.skipText({ name: '这份资料', why: 'private' });
+  const zh = skipText({ name: '这份资料', why: 'private' });
   assert.ok(!/release-summary|\.json/.test(zh), zh);
   assert.match(zh, /^这份资料/);
 });
 
 test('the reply punctuation right after a slot note is dropped, other text is kept', () => {
-  const note = M.skipText({ name: '这份资料', why: 'private' });
+  const note = skipText({ name: '这份资料', why: 'private' });
   assert.equal(orphanPunct(note, '。'), 1);
   assert.equal(orphanPunct(note, '。后面还有话'), 1);
   assert.equal(orphanPunct(note, ' ，然后'), 2);

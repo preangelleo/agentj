@@ -18,7 +18,6 @@ export function layoutPopups(roots) {
   // QR (.lqr), secret-out (.sout), passkey, confirm — is a centred popup; a card grown from the quota line exists only in chat.
   const settingPasskey=settings&&root.matches('.ajmodal,#confirm,#sheet.auth-approval');
   const system=settingPasskey?'center':root.matches('#sheet,.approval-special541,.ajmodal.pkp,#elev,.ajmodal.sout:not(.sout-full),.ajmodal.lqr')||root.dataset.popupKind==='grow'?'grow':'center';
-  if(system==='grow'){const wet='color-mix(in srgb,var(--sooty) 13%,'+getComputedStyle(document.body).backgroundColor+')';if(root.style.getPropertyValue('--popup-water')!==wet)root.style.setProperty('--popup-water',wet);}
   if(root.dataset.popupSystem!==system)root.dataset.popupSystem=system;
   // Centered cards repaint their own --pg to Noir; their full-screen veil must
   // retain the *page* state colour, just like the microphone veil does.
@@ -29,7 +28,7 @@ export function layoutPopups(roots) {
   // A moved into a Noir native B dialog still belongs to the current page state.
   if(system==='grow'&&root.closest('dialog:modal')){
    if(!nativeGrowTokens.has(root))nativeGrowTokens.set(root,['--pg','--ink'].map(k=>[k,root.style.getPropertyValue(k)]));
-   const page=getComputedStyle(document.body);for(const[k,value]of [['--pg',page.backgroundColor],['--ink',page.color]])if(root.style.getPropertyValue(k)!==value)root.style.setProperty(k,value);
+   const page=getComputedStyle(document.body);for(const[k,value]of [['--pg',page.getPropertyValue('--pg').trim()],['--ink',page.color]])if(root.style.getPropertyValue(k)!==value)root.style.setProperty(k,value);
   }else if(nativeGrowTokens.has(root)){for(const[k,value]of nativeGrowTokens.get(root))value?root.style.setProperty(k,value):root.style.removeProperty(k);nativeGrowTokens.delete(root);}
   const quota=$('m5h')?.getBoundingClientRect(),growBottom=quota?.height>0?Math.min(edgeBottom,quota.top):bottom,cardHeight=system==='grow'?Math.max(44,growBottom-top):height;
   // Settings covers the viewport, independently of the chat stage's reading floor.

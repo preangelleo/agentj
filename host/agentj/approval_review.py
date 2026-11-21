@@ -287,6 +287,9 @@ def bind(host, ask, origin=None, typed=None):
     material_source = approval_material.snapshot(host, source)
     if material_source is not None:
         source = material_source
+    if source:
+        # Presentation from an earlier envelope is never proof for a new bind.
+        source.pop('verified_same_owner', None)
     raw_record = copy.deepcopy(source) if source else None
     if not source:
         source = {'message_id': None, 'root_message_id': None, 'session': str(host.hist.epoch), 'channel': 'unknown',
@@ -353,6 +356,14 @@ def bind(host, ask, origin=None, typed=None):
                         'goal_add': safe_text(ask.goal_add['text'], 24000) if getattr(ask, 'goal_add', None) else None},
            'plan': json.loads(ask.task_scope) if ask.task_scope else None,
            'expires_at': ask.review_expires_at}
+    # A live forwarded Plaza task can identify its device without claiming a local owner message.
+    # Only the signed display gets this marker. Review events and recovered origin records do not.
+    if (getattr(ask, 'list_model', False) and ask.tool == 'agentj plaza'
+            and raw_record is None and material_source is None and isinstance(typed, dict)
+            and typed.get('type') == 'same_owner' and typed.get('trust') == 'external'):
+        from .approval_offlist import _same_owner_live
+        if _same_owner_live(typed):
+            env['source'] = {**source, 'verified_same_owner': True}
     front = getattr(ask, 'front', None)
     if isinstance(front, dict):          # 0304 QA scene 3: host-built card front (list_approval host_summary tools only)
         for key in ('title', 'title_en'):

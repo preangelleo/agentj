@@ -1,5 +1,5 @@
-# Agent J v0.30.64
+# Agent J v0.30.65
 
-Support now provides a pairing-preserving website repair when an older updater reports an installation integrity error.
+Bottom cards on the iPhone Home Screen are opaque again. Plaza cards show the install reason and source. File refusals appear in place.
 
-旧版升级遇到安装校验失败时，客服直接给出保留手机配对的官网修复步骤。
+iPhone 主屏幕上的底部确认卡恢复实底。广场安装卡写明理由与来源，文件发送失败会在原处提示。

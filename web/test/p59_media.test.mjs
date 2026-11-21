@@ -98,6 +98,16 @@ test('placeSlots: a refused file shows its note where it was written (and not ag
   assert.deepEqual(W.placeSlots(['', '   '], [], skips).at, [null, null]);
 });
 
+test('internal references identify built-ins and default state, with public and delivery paths intact', () => {
+  for (const ref of ['~/.claude/skills/feedback-to-agentj-father/SKILL.md', '/fixture/macos/test/.agents/skills/agentj-update/SKILL.md',
+    'file://localhost/home/test/.local/state/agentj/history.jsonl', './host/agentj/skills/agentj-update/SKILL.md',
+    '/home/test/.local/share/uv/tools/agentj/lib/python3.13/site-packages/agentj/skills/agentj-update/SKILL.md',
+    '~/.local/state/agentjarvis-alpha/history.jsonl', '~/shared/../.local/state/agentj/status.json']) assert.ok(W.internalMediaRef(ref), ref);
+  for (const ref of ['~/coding/.agentj/outbox/note.md', '/home/test/.local/state/agentj-sandbox/note.json',
+    '~/.local/state/agentj/codex/generated_images/session/image.png', '~/.local/state/agentj/../../note.txt',
+    '~/.claude/skills/my-workflow/SKILL.md', '/tmp/workflow/SKILL.md', 'https://example.org/skills/agentj-update']) assert.ok(!W.internalMediaRef(ref), ref);
+});
+
 test('media.js: the reader shares the LRU and owns its own object URLs; no markup APIs', () => {
   assert.match(MEDIA_SRC, /export function renderReader\(words, p\)/);
   assert.match(MEDIA_SRC, /export function clearReader\(\)/);

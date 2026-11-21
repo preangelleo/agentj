@@ -5693,7 +5693,16 @@ export default {
   "p0319.stop": "关闭上一条任务",
   "p0319.close": "收起",
   "p0319.attachment": "附件",
-  "approval.rescueReason": "只有你确认，Agent J 才会执行这一步。"
+  "approval.rescueReason": "只有你确认，Agent J 才会执行这一步。",
+  "approval.plazaInstall": "请确认安装广场包 {packages}。摘要 SHA-256 {sha}…",
+  "approval.plazaOwnerInstall": "你刚才请求从广场安装 {packages}。摘要 SHA-256 {sha}…",
+  "approval.plazaPackage": "{name} {version}（{signature}）",
+  "approval.plazaSigned": "Agent J 官方签名已校验",
+  "approval.plazaCommunity": "无官方签名",
+  "approval.plazaTwoPackages": "{first}、{second}",
+  "approval.plazaMore": "{names}，另有 {n} 个见详情",
+  "media.internalReference": "Agent J 内部资料",
+  "media.unavailable": "这份文件无法发送。"
  },
  "en": {
   "p0287.hideDone": "Hide completed",
@@ -11388,6 +11397,15 @@ export default {
   "p0319.stop": "Stop previous task",
   "p0319.close": "Collapse",
   "p0319.attachment": "Attachment",
-  "approval.rescueReason": "Agent J needs your approval to take this step."
+  "approval.rescueReason": "Agent J needs your approval to take this step.",
+  "approval.plazaInstall": "Confirm the Plaza installation of {packages}. SHA-256 {sha}…",
+  "approval.plazaOwnerInstall": "You just asked to install {packages} from Plaza. SHA-256 {sha}…",
+  "approval.plazaPackage": "{name} {version} ({signature})",
+  "approval.plazaSigned": "Agent J signature verified",
+  "approval.plazaCommunity": "no official signature",
+  "approval.plazaTwoPackages": "{first}, {second}",
+  "approval.plazaMore": "{names} and {n} more in the details",
+  "media.internalReference": "Agent J internal reference",
+  "media.unavailable": "This file couldn't be shared."
  }
 };

@@ -1,6 +1,13 @@
 // #572 / #541: display the host-owned source in the ordinary approval sheet.
 // Text is quoted data. No source field changes admission or creates an action.
 import { t, lang } from './t.js';
+export function verifiedPlazaForward(p) {
+  const e = p?.envelope, s = e?.source;
+  return p?.approval_v === 2 && p.envelope_verified === true && p.tool === 'agentj plaza' && e?.action === 'agentj plaza' &&
+    s?.source_type === 'same_owner' && s.source_trust === 'external' && s.verified_same_owner === true &&
+    s.verified === false && !s.message_id && !s.root?.verified && !s.material_unknown && !s.material_verified &&
+    typeof s.source_label === 'string' && Boolean(s.source_label);
+}
 export function sourceLines(e) {
   const s = e?.source || {}, root = s.root || {};
   const chain = Array.isArray(s.chain) ? s.chain.map(x => typeof x === 'string' ? x : [x?.kind,x?.agent || x?.unit || x?.task || x?.id].filter(Boolean).join(' ')).filter(Boolean).join(' → ') : '';
@@ -27,7 +34,7 @@ export function paint(p) {
     if(lines.chain) row(t('p572source.chain'),lines.chain);
     // #0304 A2①: an owner turn quoting material is named by #541's warning line (channel + 「发起人是你」), not 「来源未经确认」
     const quoted = s.suspicious === true && s.root?.verified === true;
-    if (!quoted && (s.verified !== true || s.suspicious === true)) row('',t('p572source.external'));
+    if (!quoted && !verifiedPlazaForward(p) && (s.verified !== true || s.suspicious === true)) row('',t('p572source.external'));
     if (!p.envelope_verified) row('',t('p572source.invalid'));
   }
   box.hidden = !box.childNodes.length;

@@ -4555,15 +4555,16 @@ details.fixcmd>summary{min-height:44px;display:flex;align-items:center;cursor:po
 :is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="grow"]:not([hidden]){
   display:flex;align-items:flex-end;justify-content:stretch;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;
 }
+/* Grow cards use the quota color token. The iOS Home Screen body paints it separately from background-color. */
 :is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="grow"]>:is(.sq,.box){
-  width:100%;max-width:none;margin:0;border:0;border-radius:28px 28px 0 0;background:var(--pg);color:var(--ink);box-shadow:none;outline:0;
+  width:100%;max-width:none;margin:0;border:0;border-radius:28px 28px 0 0;background:var(--water-color);color:var(--ink);box-shadow:none;outline:0;
 }
 #sheet.aj-shared-popup[data-popup-system="grow"]{
   /* 0304 r2: the stage cap (menu.css #stage>.sheet) has no definite height here — a tall card (Same owner, details open)
      grew under the top bar at 390. Never taller than the stage between the top bar and the quota line; it scrolls inside. */
   max-height:var(--popup-height);
   top:auto;left:0;right:auto;bottom:calc(100dvh - var(--popup-top) - var(--popup-height));
-  width:100vw;max-width:100vw;transform:none;border-radius:28px 28px 0 0;background:var(--pg);color:var(--ink);box-shadow:none;
+  width:100vw;max-width:100vw;transform:none;border-radius:28px 28px 0 0;background:var(--water-color);color:var(--ink);box-shadow:none;
   /* 0.30.6 (#0304 QA): the grown sheet is position:fixed, so menu.css's `#stage>.sheet{max-height:calc(100% - …)}` resolved
      against the whole viewport while the bottom sits on the reading area's floor — a tall card (five friend actions) rose past
      the screen top and 收起 went under the header. Cap = from its bottom edge up to the sheet ceiling (fit.js --ui-sheet-ceil),
@@ -4624,8 +4625,6 @@ body:has(#sheet.aj-layer-covered) .scrim{visibility:hidden;pointer-events:none}
 /* …and Settings covers the chat completely: the waves do not drift behind it (two infinite 200%-wide layers kept
    repainting under every Settings scroll on a phone). */
 body:has(#settings:not([hidden])) .water .wave{animation-play-state:paused}
-:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="grow"]>:is(.sq,.box){background:var(--popup-water,var(--water-color))}
-#sheet.aj-shared-popup[data-popup-system="grow"]{background:var(--popup-water,var(--water-color))}
 
 /* Settings uses the standard Noir B shell through every passkey setup step. */
 .ajmodal.pkp.aj-shared-popup[data-popup-context="settings"]>.box{outline:0}

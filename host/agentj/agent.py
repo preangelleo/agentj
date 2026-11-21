@@ -651,11 +651,12 @@ class Agent:
                     if hasattr(self.host, "agent_turn_start"):
                         self.host.agent_turn_start(send.text, send)
                     try:
+                        from . import plaza_task
                         await self._identity_refresh()
                         if not (send.text or "").strip():   # F27: never an empty prompt (compose.render always names the files)
                             send.state = "failed"
                             self.fail_notice("这条消息是空的（没有文字，附件也没整理出来），没有发给 Agent J。")
-                        else:
+                        elif not await plaza_task.dispatch(self.host, send):
                             await self.watched(self.turn(compactprep.decorate(self, send)))   # F24 handover; P219 stall watch
                     except asyncio.CancelledError:
                         raise

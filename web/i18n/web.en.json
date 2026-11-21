@@ -6204,5 +6204,14 @@
   "p0319.stop": "Stop previous task",
   "p0319.close": "Collapse",
   "p0319.attachment": "Attachment",
-  "approval.rescueReason": "Agent J needs your approval to take this step."
+  "approval.rescueReason": "Agent J needs your approval to take this step.",
+  "approval.plazaInstall": "Confirm the Plaza installation of {packages}. SHA-256 {sha}…",
+  "approval.plazaOwnerInstall": "You just asked to install {packages} from Plaza. SHA-256 {sha}…",
+  "approval.plazaPackage": "{name} {version} ({signature})",
+  "approval.plazaSigned": "Agent J signature verified",
+  "approval.plazaCommunity": "no official signature",
+  "approval.plazaTwoPackages": "{first}, {second}",
+  "approval.plazaMore": "{names} and {n} more in the details",
+  "media.internalReference": "Agent J internal reference",
+  "media.unavailable": "This file couldn't be shared."
 }

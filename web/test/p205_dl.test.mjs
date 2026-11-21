@@ -50,13 +50,17 @@ test('dictionaries: started / failed / again (zh = src = override, en)', () => {
 test('local references: preparing in both views, delay during active turns, unsent after end', () => {
   const u = fn('unsent');
   assert.match(u, /if \(!p\) return;/);
-  assert.match(u, /querySelectorAll\('.mslot'\)/);
-  assert.match(u, /if \(s\.dataset\.mid \|\| s\.dataset\.skip \|\| s\.dataset\.unsent\) continue;/);
-  assert.match(u, /t\('media\.preparing'\)/);
-  assert.match(u, /p\.end === 'open' \? 'media\.pending' : 'media\.unsent'/);
+  assert.match(u, /for \(const s of slots\)/);
+  assert.match(u, /if \(s\.dataset\.mid \|\| s\.dataset\.skip\) continue;/);
+  assert.match(u, /paint\('media\.preparing'\)/);
+  assert.match(u, /refused \? 'media\.unavailable' : ended \? 'media\.unsent' : 'media\.pending'/);
+  assert.match(u, /s\.isConnected && !s\.dataset\.mid && !s\.dataset\.skip && s\.dataset\.unsent === 'wait'/);
   assert.match(src, /export const UNSENT_MS = 6000;/);
-  assert.match(fn('renderPage'), /^function renderPage\(words, p\) \{\n  unsent\(words, p\);/);
-  assert.match(fn('renderReader'), /^function renderReader\(words, p\) \{\n  unsent\(words, p\);/);
+  for (const name of ['renderPage','renderReader']) {
+    assert.match(fn(name), /presentMedia\(words, p\)/);
+    assert.match(fn(name), /fillSlots\(slots, items, skips, [^,]+, p\)/);
+  }
+  assert.match(fn('fillSlots'), /unsent\(slots, p, single \|\| \(ended && restSkips.some\(/);
   const k = 'media.unsent';
   assert.ok(zh[k] && en[k]); assert.equal(zhSrc[k], zh[k]); assert.equal(ov[k], zh[k]);
 });

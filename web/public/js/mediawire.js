@@ -56,6 +56,20 @@ export function normRef(r) {
   if (/^file:\/\//i.test(s)) { try { s = decodeURIComponent(new URL(s).pathname); } catch { /* as it is */ } }
   return s.replace(/^\.\//, '');
 }
+/** Recognize published built-in locations. The host still decides what can be shared. */
+export function internalMediaRef(ref) {
+  const parts = [];
+  for (const part of normRef(ref).replaceAll('\\', '/').toLowerCase().split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..' && parts.length && parts.at(-1) !== '..') parts.pop();
+    else parts.push(part);
+  }
+  const path = parts.join('/');
+  if (/(?:^|\/)(?:agentjarvis\/host|site-packages|dist-packages)\/agentj(?:\/|$)/.test(path)) return true;
+  if (/(?:^|\/)(?:\.(?:claude|codex|agents)|\.config\/opencode)\/skills\/(?:agentj-[a-z0-9-]+|feedback-to-agentj-father)(?:\/|$)/.test(path)) return true;
+  return /(?:^|\/)\.local\/state\/(?:agentj|agentjarvis-alpha)(?:\/|$)/.test(path)
+    && !/\/generated_images\/[^/]+\/[^/]+\.(?:png|jpe?g|gif|webp|svg)$/.test(path);
+}
 /** Which item an inline slot (md.js `![](ref)`) shows: the same reference, else the only item with that file name. */
 export function matchSlot(ref, items, used = new Set()) {
   const r = normRef(ref);
