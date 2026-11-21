@@ -55,6 +55,15 @@ class RequestBinding(unittest.TestCase):
                 file_show.cli(SimpleNamespace(path='/tmp/a.png', label='', json=as_json))
             self.assertIn(file_show.HINT, out.getvalue())
 
+    def test_send_refusal_does_not_suggest_attaching_to_current_page(self):
+        import io
+        out = io.StringIO()
+        with patch('agentj.elevate.client_request',
+                   return_value=file_show.failure('native_admission_request_mismatch')), \
+                patch('sys.stdout', out), self.assertRaises(SystemExit):
+            file_show.cli(SimpleNamespace(path='/tmp/a.png', label='', json=True, delivery='wechat'))
+        self.assertIn('微信文件发送命令', json.loads(out.getvalue())['hint'])
+
     def test_receipt_reasons_and_replay(self):
         req = file_show.request('/tmp/a.png', cwd='/tmp')
         x = SimpleNamespace(execution=None)
@@ -68,6 +77,57 @@ class RequestBinding(unittest.TestCase):
         row['check'] = lambda: True
         broker.calls['ambiguous'] = dict(row)
         self.assertEqual(broker.receipt(req)['why'], 'native_admission_ambiguous')
+
+
+class IndependentClaudeBroker(unittest.IsolatedAsyncioTestCase):
+    async def test_ownerless_call_has_actionable_refusal(self):
+        agent = SimpleNamespace(kind='claude', cur_send=None)
+        host = SimpleNamespace(agent=agent, agent_cfg={'dir': '/tmp', 'session_mode': 'independent'})
+        broker = owner_broker.Broker(SimpleNamespace(svc=SimpleNamespace(host=host), execution=None))
+        inp = {'command': 'agentj file show a.png --json'}
+        broker.register('toolu_test', 'Bash', inp, '/tmp')
+        answer = await broker.execute('Bash', inp, 'toolu_test')
+        self.assertEqual(answer, {'behavior': 'deny', 'message': file_show.OWNER_HINT})
+        self.assertEqual(broker.receipt(file_show.request('a.png', cwd='/tmp'))['why'], 'no_owner_session')
+
+
+class IndependentClaudeHook(unittest.TestCase):
+    def decision(self, command, *, child=False, research=False, main=True):
+        import io
+        from agentj import agent, danger
+        cfg = {'dir': '/tmp', 'fence': True}
+        host = SimpleNamespace(agent=None)
+        adapter = SimpleNamespace(cfg=cfg, host=host)
+        if main:
+            host.agent = adapter
+        argv = agent.ClaudeAgent.argv(adapter, None, research=research)
+        hook = json.loads(argv[argv.index('--settings') + 1])['hooks']['PreToolUse'][0]['hooks'][0]['command']
+        words = shlex.split(hook.split(' || exit 2')[0])
+        event = {'hook_event_name': 'PreToolUse', 'tool_name': 'Bash',
+                 'tool_input': {'command': command}, 'cwd': '/tmp'}
+        if child:
+            event['agent_id'] = 'child-agent'
+        stdout = io.StringIO()
+        with patch('sys.stdin', io.StringIO(json.dumps(event))), patch('sys.stdout', stdout):
+            self.assertEqual(danger.hook_main(words[words.index('hook') + 1:]), 0)
+        return json.loads(stdout.getvalue() or '{}').get('hookSpecificOutput', {}).get('permissionDecision')
+
+    def test_native_auto_allow_requests_admission_for_each_standalone_show(self):
+        self.assertIsNone(self.decision('true && agentj file show a.png --json'))
+        self.assertEqual(self.decision('agentj file show 图片.png --json'), 'ask')
+        self.assertEqual(self.decision('agentj file show a.png --label "image"'), 'ask')
+
+    def test_other_commands_do_not_receive_file_admission(self):
+        for command in (
+            'agentj file show a.png --to wechat', 'agentj file show a.png | cat',
+            'agentj file send a.png --to wechat', 'agentj screen ask a.png --reply done',
+            'agentj notify --from probe hello',
+        ):
+            self.assertIsNone(self.decision(command), command)
+        command = 'agentj file show a.png --json'
+        self.assertIsNone(self.decision(command, child=True))
+        self.assertIsNone(self.decision(command, main=False))
+        self.assertEqual(self.decision(command, research=True), 'deny')
 
 
 class NativeFlows(unittest.IsolatedAsyncioTestCase):

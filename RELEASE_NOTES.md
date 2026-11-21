@@ -1,5 +1,5 @@
-# Agent J v0.30.59
+# Agent J v0.30.60
 
-Choose Windows, Linux, or macOS on your account page, then copy the install command for that seat.
+Restore file attachments in independent Claude Code sessions, including standalone retries after a compound command fails.
 
-在账号页选 Windows、Linux 或 macOS，再复制对应席位的安装命令。
+修复独立模式下 Claude Code 附文件被拒的问题，复合命令失败后可在当前页用单句重试。

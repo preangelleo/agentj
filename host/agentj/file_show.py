@@ -27,24 +27,9 @@ def cli(args):
         result = failure('broker_unavailable')
     if result.get('result') == 'unavailable':
         result = failure('broker_unavailable')
-    hint = SEND_HINT if getattr(args, 'delivery', None) == 'wechat' else HINT
-    why = result.get('why')
-    if why == 'native_admission_missing':
-        result['hint'] = ('No matching admitted tool call was recorded for this owner turn; if already run as instructed, '
-                          'check the shared hook/transcript registration. '
-                          '本轮未记录到对应工具调用；若已按提示执行，请检查共享 hook/转录登记。 ' + hint)
-    elif why == 'no_owner_session':
-        result['hint'] = ('No verified paired-phone owner turn is active in this session, or this command came from another session. '
-                          '本会话没有已核实的配对手机主人轮次，或命令来自另一会话。')
-    elif why == 'native_admission_expired':
-        result['hint'] = ('The registered command belongs to an expired or different session; send a fresh phone message there. '
-                          '已登记命令所属轮次已失效或会话不符，请在目标会话重新从手机发消息。')
-    elif why == 'native_admission_cwd_mismatch':
-        result['hint'] = ('Native tool and CLI used different working directories; run from the served session folder. '
-                          '工具与 CLI 的工作目录不同，请从当前会话目录执行。')
-    elif why == 'native_admission_request_mismatch':
-        result['hint'] = ('An admitted file-show call exists, but its path or label differs from this CLI request. '
-                          '已有准入的附图调用，但路径或标签与本次 CLI 请求不同。')
+    hints = SEND_FAILURE_HINTS if getattr(args, 'delivery', None) == 'wechat' else FAILURE_HINTS
+    if hint := hints.get(result.get('why')):
+        result['hint'] = hint
     print(json.dumps(result, ensure_ascii=False) if args.json else result.get('result', 'failure') + ': ' + result.get('why', ''))
     if not args.json and (result.get('result') == 'queued' or 'hint' in result):
         print(result.get('hint') or json.dumps(result, ensure_ascii=False))
@@ -68,13 +53,32 @@ def add_parser(sub):
     send.set_defaults(fn=cli, label='', delivery='wechat')
 
 
-HINT = ('Run `agentj file show PATH --label L --json` as the whole Bash command: no cd, &&, pipes or redirects. '
-        '整条 Bash 命令只写这一句：不加 cd、&&、管道或重定向。')
+HINT = '请在当前主人回合让 Agent 单独运行 `agentj file show PATH --json`，不要加 cd、&&、管道或重定向。'
+
+OWNER_HINT = '请用已配对的遥控器在这个会话重新发消息，让 Agent 附上文件。'
+
+FAILURE_HINTS = {
+    'native_admission_missing': HINT,
+    'no_owner_session': OWNER_HINT,
+    'native_admission_expired': OWNER_HINT,
+    'native_admission_ambiguous': '请用已配对的遥控器重新发消息，让 Agent 一次只附一个文件。',
+    'native_admission_cwd_mismatch': '请让 Agent 在当前会话的工作目录单独运行附文件命令。',
+    'native_admission_request_mismatch': HINT,
+}
 
 
 SEND_HINT = ('Run `agentj file send PATH --to wechat --json` as the whole Bash command. '
              'queued is pending; wait for FILE_SEND_RESULT; do not retry uncertain delivery. '
              '整条 Bash 命令只写发送命令；queued 只是排队，等 FILE_SEND_RESULT，不自动重试未知结果。')
+
+SEND_FAILURE_HINTS = {
+    'native_admission_missing': SEND_HINT,
+    'no_owner_session': '请从已配对的遥控器发起微信文件发送请求。',
+    'native_admission_expired': '本轮微信文件发送请求已失效，请从已配对的遥控器重新发起。',
+    'native_admission_cwd_mismatch': '请让 Agent 在当前会话的工作目录单独运行微信文件发送命令。',
+    'native_admission_request_mismatch': '请核对这次微信文件发送命令里的路径与获准命令是否一致。',
+}
+
 
 def failure(why):
     return {'result': 'failure', 'why': why, 'client_downloaded': False}

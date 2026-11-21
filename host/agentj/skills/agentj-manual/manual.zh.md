@@ -139,9 +139,9 @@ Agent 回复里的内容会自动排好版：
 
 把本地图片放进回复时，写完整的 `[说明](绝对路径)` 本地引用，也支持在开头加感叹号的图片写法；两种写法都支持绝对路径和 `~/`。主机收到完整引用后就准备文件，不必等整轮工作结束。文件卡片出现前会显示准备中，失败会给出说明；文件仍须通过路径、类型和秘密检查。
 
-需要明确附到当前页时，让 Agent 在当前获准的主人手机回合运行 `agentj file show PATH --label 说明 --json`。没有有效主人回合会失败；桌面独立回合不能借这个命令新建外发消息。`queued` 只表示排队，后续 `FILE_SHOW_RESULT` 的 `attached_to_page` 表示已附到页，`failure` 表示失败；它们都不表示您已看到或下载文件。 本修复已用 Linux 隔离进程和真实 Chromium 合成图片页面验证。实体手机、macOS、WSL 和 Claude Code/Codex/OpenCode 真实模型回合端到端尚未验证；Kimi/Qwen ACP 尚无已验收的 file-show 接入。Windows 须在 WSL 中使用。
+需要明确附到当前页时，让 Agent 在当前获准的主人手机回合单独运行 `agentj file show PATH --label 说明 --json`。没有有效主人回合会失败；桌面独立回合不能借这个命令新建外发消息。`queued` 只表示排队，后续 `FILE_SHOW_RESULT` 的 `attached_to_page` 表示已附到页，`failure` 表示失败；它们都不表示您已看到或下载文件。 本修复已用 Linux 隔离进程和真实 Chromium 合成图片页面验证。实体手机、macOS、WSL 和 Claude Code/Codex/OpenCode 真实模型回合端到端尚未验证；Kimi/Qwen ACP 尚无已验收的 file-show 接入。Windows 须在 WSL 中使用。
 
-`PATH` 支持绝对路径和 `~/`，文件仍须位于本轮获准的工作目录内。失败说明：`broker_unavailable` 表示无法连接本机附图服务；`no_owner_session` 表示无法确认当前主人回合或其上下文；`native_admission_missing` 表示 AI 工具尚未准入这条具体请求；`native_admission_expired` 表示准入已失效；`native_admission_ambiguous` 表示匹配到多条有效准入。这些失败都没有附上文件。保留当前主人回合并说明原因，不换目标页、不绕过检查。
+`PATH` 支持绝对路径和 `~/`，文件仍须位于本轮获准的工作目录内。失败说明：`broker_unavailable` 表示无法连接本机附图服务；`no_owner_session` 表示无法确认当前主人回合或其上下文；`native_admission_missing` 表示 AI 工具尚未准入这条具体请求；`native_admission_expired` 表示准入已失效；`native_admission_ambiguous` 表示匹配到多条有效准入。这些失败都没有附上文件。当前回合有效时，让 Agent 单独运行这条命令；回合已失效或无法确认时，请用已配对的遥控器在同一会话重新发消息。
 
 在当前获准的主人手机回合里，要把单个本机图片或文件主动发到自己已绑定的微信，让 Agent 整条 Bash 命令只运行 `agentj file send PATH --to wechat --json`。不能指定群、好友、收件人、账号或 URL。文件须在本轮工作目录里，通过原有类型、无软链接、摘要和秘密检查。微信单件上限 25 MiB，原有媒体类型上限可能更低；每条命令只发一件，不是一次发 24 件的接口。现有页面附件仍受 24 件、合计 100 MiB 上限限制。`queued` 只是等原生工具完成；等 `FILE_SEND_RESULT`：`sent_to_wechat` 且 `platform_accepted:true` 表示平台接受，不表示手机已看到或下载。`failure` 可能意味着送达状态未知，明确重试前先查看微信。绑定、上下文或主人回合变动就停止发送；不能借此绕过 `file show` 失败、审批或文件检查。
 

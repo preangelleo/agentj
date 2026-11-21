@@ -151,6 +151,15 @@ class Broker:
                 from . import feedback_native
                 missing = feedback_native.command(tool, inp, self.xfer.svc.host.agent_cfg.get('dir') or os.getcwd())
             if missing:
+                host = self.xfer.svc.host
+                if (missing['t'] == 'file_show' and 'delivery' not in missing
+                        and getattr(host.agent, 'kind', None) == 'claude'
+                        and (host.agent_cfg or {}).get('session_mode') != 'shared'):
+                    from .file_show import HINT, OWNER_HINT
+                    execution = getattr(x, 'execution', None)
+                    owner = (execution and execution.live and execution.send is not None
+                             and provenance.is_owner(provenance.turn_source(host.agent)))
+                    return {'behavior': 'deny', 'message': HINT if owner else OWNER_HINT}
                 return {'behavior':'deny', 'message':'No live native feedback admission' if missing['t'] == 'support_native' else 'No live native secret-call admission'}
             return None
         if len(matches) != 1:
@@ -196,7 +205,8 @@ class Broker:
             if (os.path.realpath((host.agent_cfg or {}).get('dir') or '') != row['project_root']
                     or not provenance.is_owner(row['source']) or not page or page.get('end') != 'open'
                     or execution.send.turn not in ids):
-                return {'behavior': 'deny', 'message': 'No active owner page'}
+                from .file_show import OWNER_HINT
+                return {'behavior': 'deny', 'message': OWNER_HINT if 'delivery' not in req else 'No active owner page'}
             if req.get('delivery') == 'wechat':
                 from . import wechat_forward
                 binding = wechat_forward.file_binding(host)

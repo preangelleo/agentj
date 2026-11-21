@@ -1130,13 +1130,14 @@ def source_root() -> str | None:
 
 
 def hook_settings(extra: list | None = None, research: bool = False, warnings: bool = True, harness: bool = False,
-                  real_delete: bool = False) -> dict:
+                  real_delete: bool = False, *, file_show_admission: bool = False) -> dict:
 
     cmd = (f"{shlex.quote(sys.executable)} -P -m agentj.danger hook {danger.encode_extra(extra or [])}"
            + (" research" if research else "")
            + ("" if warnings else " policy-only")
            + (" harness" if harness and not research else "")
            + (" real-delete" if real_delete else "")     # ADR-0308 C: a host-launched user automation keeps native rm
+           + (" file-show-admission" if file_show_admission and not research else "")
            + " || exit 2")          # the hook cannot start → a blocking error: the call does not run (fail closed)
     out = {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": cmd, "timeout": 30}]}]},
            "disableAllHooks": False}
@@ -1229,10 +1230,15 @@ class ClaudeAgent(Agent):
         mcp = {"mcpServers": {"agentj": {"type": "stdio", "command": sys.executable,
                                               "args": ["-P", "-m", "agentj.permtool"]}}}
         from . import delete_redirect
+        settings = hook_settings(
+            self.cfg.get("danger_extra"), research, warnings=self.cfg.get("high_risk_warnings", False),
+            harness=self.cfg.get("follow_harness", False), real_delete=delete_redirect.mode(self.cfg) == delete_redirect.REAL,
+            file_show_admission=(getattr(self.host, "agent", None) is self and not self.cfg.get("_workflow_ceo")),
+        )
         a = [_bin("AGENTJ_CLAUDE_BIN", "claude") or "claude", "-p", "--input-format", "stream-json",
              "--output-format", "stream-json", "--verbose", "--permission-prompt-tool", PERM_TOOL,
              "--disallowedTools", PERM_TOOL, "--mcp-config", json.dumps(mcp),
-             "--settings", json.dumps(with_reminder(hook_settings(self.cfg.get("danger_extra"), research, warnings=self.cfg.get("high_risk_warnings", False), harness=self.cfg.get("follow_harness", False), real_delete=delete_redirect.mode(self.cfg) == delete_redirect.REAL), self.cfg), separators=(",", ":"))]
+             "--settings", json.dumps(with_reminder(settings, self.cfg), separators=(",", ":"))]
         if not self.cfg.get("_workflow_ceo"):
             a += ["--append-system-prompt", main_identity.prompt(self.cfg)]
         if self.cfg.get("model"):
