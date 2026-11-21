@@ -119,7 +119,7 @@ class Receipts:
                 recovered += 1
                 continue
             if r["s"] in OPEN:
-                self.interrupted.append({"d": d, "i": i, "s": r["s"], "n": r["n"]})
+                self.interrupted.append({"d": d, "i": i, "s": r["s"], "n": r["n"], "page": page})
                 r["s"] = "lost"
         if recovered or self.interrupted or self.lines > 2 * len(self.items) + 64:
             self._rewrite()

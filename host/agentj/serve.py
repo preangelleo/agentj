@@ -8871,6 +8871,8 @@ class Host:
 
         if getattr(self, "receipts", None) is None:
             return
+        from . import upgrade_messages
+
         left = 0
         for r in self.receipts.interrupted:
             page = self.hist.get(r["n"]) if r["n"] is not None else None
@@ -8878,6 +8880,10 @@ class Host:
                 left += 1
                 continue
             if page["end"] != "open":
+                continue
+            if r["s"] == "deliv" and not upgrade_messages.matches_reply_page(self.hist, page, r["d"], r["page"]):
+                # A page number can be reused when history is switched off and on.
+                left += 1
                 continue
             key = "say.restart_lost" if r["s"] == "recv" else "say.restart_unsure"
             self.hist_update(r["n"], append=humane.of(self, key), end="failed")

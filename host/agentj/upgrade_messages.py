@@ -53,10 +53,14 @@ def reply_page_coordinates(host, send):
     return None
 
 
+def matches_reply_page(hist, page, device, coordinates):
+    return coordinates is not None and _page_coordinates(hist, page, device) == coordinates
+
+
 def answered_page(hist, device, turn, coordinates):
     """Reconcile a stale delivery receipt with its already-final history page."""
     page = hist.get(turn)
-    if coordinates is None or _page_coordinates(hist, page, device) != coordinates or page.get("end") != "done":
+    if not matches_reply_page(hist, page, device, coordinates) or page.get("end") != "done":
         return False
     text = page["reply"].get("text")
     return isinstance(text, str) and bool(text.strip()) and not silent.is_silent(text)

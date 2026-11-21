@@ -17,7 +17,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from agentj import agent, browser_login, compose, history, humane, provenance, receipts, serve, upgrade_messages, wire  # noqa: E402
+from agentj import agent, browser_login, compose, diskq, history, humane, provenance, receipts, serve, upgrade_messages, wire  # noqa: E402
 
 from test_l1 import Phone, _host, _state  # noqa: E402
 
@@ -151,6 +151,7 @@ class ServeRestart(unittest.TestCase):
 
         async def first():
             host, s, sent = self.boot()
+            self.pair_origin(host, s)
             # the receipt is on disk before the Agent has the message
             orig = host.agent.submit
 
@@ -247,6 +248,41 @@ class ServeRestart(unittest.TestCase):
             self.assertEqual((await self.say(host, s, sent, recent))["why"], "dup")
             self.assertEqual(host.agent.got, [])
             self.assertEqual(host.hist.get(prior_page)["reply"]["text"], "旧的完成答复")
+
+        for _ in range(2):
+            asyncio.run(after_restart())
+
+    def test_legacy_delivered_receipt_cannot_fail_an_unrelated_open_history_page(self):
+        mid = sid()
+
+        async def create_collision():
+            old, session, _ = self.boot()
+            open_page = old.hist_add({"k": "phone", "dev": session.device, "source_kind": "phone",
+                                      "source_role": "owner", "text": "磁盘历史中未完成的另一条消息"}, "", "open")
+            await diskq.aflush()
+            history.set_enabled(self.st, False)
+            off, session, frames = self.boot()
+            self.pair_origin(off, session)
+            received = await self.say(off, session, frames, mid, text="关闭历史后已经交给执行器的问题")
+            send = off.agent.got[0]
+            off.say_delivered(send)
+            off.receipts.flush()
+            self.assertEqual(received["turn"], open_page["id"])
+            self.assertIsNone(upgrade_messages.reply_page_coordinates(off, send))
+            history.set_enabled(self.st, True)
+            return open_page
+
+        old = asyncio.run(create_collision())
+
+        async def after_restart():
+            host, session, frames = self.boot()
+            self.assertEqual(host.hist.get(old["id"]), old)
+            self.assertEqual(host.receipts.state(session.device, mid), "lost")
+            self.assertEqual((await self.say(host, session, frames, mid))["why"], "dup")
+            self.assertEqual(host.agent.got, [])
+            replies = [row["reply"]["text"] for row in host.hist.page()[0]]
+            self.assertEqual(replies.count(humane.of(host, "say.restart_some", n=1)), 1)
+            await diskq.aflush()
 
         for _ in range(2):
             asyncio.run(after_restart())

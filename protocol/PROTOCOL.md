@@ -1721,10 +1721,12 @@ No wire change: this section states the `say` / `dup` contract (§10.2) that the
   → `done` (the turn ended, the host answered it itself, withdrawn, dropped by the stop switch). Bounded: 7 days, the newest
   1 024 per device, 8 192 in all; rewritten when it holds more than twice the live lines. So a host restart forgets nothing:
   a resend of any remembered `sid` is `dup`. **No replay:** a message the old process had not finished is never run again
-  by the host. Once, at start, each one's page (still `open`) ends `failed` with one line in the owner's language — 「还没交给
-  Agent，没有执行」 for `recv`, 「已交给 Agent，不确定做完没有，不会自动重发」 for `deliv` — both ending 「需要的话请再发一次」
-  (a manual resend is a new `sid`); a page that already ended gets no line; without the page (history off) one `sys` page
-  counts them. No wire change. Not covered: a device that used more than 1 024 other `sid`s in between (impossible from one
+  by the host. On startup, a delivered ordinary request can settle against its final reply only with its original
+  history epoch, page timestamp, device and page ID. The same binding is required before attaching an interruption
+  notice to an open page for a delivered request. For a missing page, or a legacy unbound delivery whose page is still
+  open, one `sys` page counts the uncertain deliveries. A page that already ended keeps its contents. The `recv`
+  interruption path keeps its existing page notice. A manual resend has a new `sid`. No wire change.
+  Not covered: a device that used more than 1 024 other `sid`s in between (impossible from one
   phone's queue of ≤ 50, but another tab of the same pairing shares the device id), and a store the disk refuses (logged
   `say_receipts write_failed`; memory dedupe as before, the message is never refused for it). An older host without `p33`
   gets §8 `msg`, which has no `sid`: no dedupe there.
