@@ -1,8 +1,8 @@
 {
   "v": 1,
-  "version": "0.30.69",
+  "version": "0.30.70",
   "algo": "sha256",
-  "combined": "5ebf3c93a96a57198c6fc632d6f838d198494e95fab48dc77d029606dfbcbed6",
+  "combined": "3fcbe9bb013a001964fd851565182661fa5ab8cd1a6b21c27986dfd1ca846a3d",
   "files": {
     "app.8f52862308dd55687465f33d39ca4660da0ca758083e56f8c22eaf55ffacba08.css.gz": "f3f7a8169deddb649bdab59f2a3959c4f0e8dfa0401c3520f7fd68910e2b99e9",
     "app.css": "8f52862308dd55687465f33d39ca4660da0ca758083e56f8c22eaf55ffacba08",
@@ -66,7 +66,7 @@
     "brand/lang.js": "f25ac1572b70f5f29870742e213d6d66e8b5f8676b4c948ba42fd9a6cc8c8ef0",
     "brand/palette.css": "dab22995bb74f89c6dcd98c734ebbb94be7d18953a43cb8ed4c7760954afeb0a",
     "brand/ui.js": "edb644931d5289f43fb587eedabc1663ba692c7adf4a5a3465a60b903809691e",
-    "cache-generations.json": "7ef47ae4608acfb237f4f267f018748f262abe0567183f5533ae17207d741540",
+    "cache-generations.json": "1edb64f9b1822608a321ee52c438fcf95ef569b4b7e28795a87636bf185b980f",
     "cards.css": "abb745df7ee8b0731e74e4b923be25d3f48c9fe3e4c20111383815044e5cc3ff",
     "controls.css": "8b3bf57a7656c6c04249bbcf86f067511d6a1e3ad355d54fc25c984f1031b192",
     "favicon.ico": "61e0069c22d36a03da62adcbf79e6961abf7ac86ef373600fc7a32150a9a13ee",

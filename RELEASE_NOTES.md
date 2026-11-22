@@ -1,5 +1,5 @@
-# Agent J v0.30.69
+# Agent J v0.30.70
 
-Steadier phone links: phones no longer block each other; stop and approvals skip the queue. Upgrades repair a bad dependency cache. Storage errors stop safely.
+Host and phone app are unchanged in function. Cloud account service only: lifetime codes cover one seat; removed bots stop rewriting their registration.
 
-手机连接更稳：多台手机互不阻塞，急停和审批不再排队。升级时依赖缓存出问题会自动修复。网页存储异常时安全停下，不再误显示未配对。
+本版主机和手机网页功能不变，只更新云端账户服务：终身码订阅固定 1 席，已移除的机器人不再重复写登记记录。
