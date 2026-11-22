@@ -219,6 +219,8 @@ def cmd_serve(a) -> None:
         # Preserve Host's existing last-good recovery for a manually broken JSON5 file.
         # Migration rollback already restored disk; doctor reports the pending step.
         st.log("config_migration_failed")
+    from . import todo_provenance
+    todo_provenance.grandfather(st)   # audit 11-22 N-S1 / chairman: once per state, before the Host (and any heartbeat) exists
     try:
         _serve_main(a, st, Host)
     except BaseException as e:  # noqa: BLE001 — logged once, then re-raised: launchd / systemd still see the exit code

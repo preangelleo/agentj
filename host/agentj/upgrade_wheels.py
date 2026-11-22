@@ -6,6 +6,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import socket
 import ssl
 import stat
@@ -358,23 +359,80 @@ def permission_failure(error, stage):
     return failure
 
 
+def _own_file(info):
+    return stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid()
+
+
+def cache_failure(folder, subreason, paths, fix=None):
+    """A wheelhouse is a rebuildable cache: the one repair is to remove that directory."""
+    failure = integrity_failure('dependency_cache', subreason)
+    failure.fields.update(permission_paths=[str(path) for path in paths],
+                          fix=fix or 'rm -rf -- ' + shlex.quote(str(folder)))
+    return failure
+
+
 def verify_local(folder, entries, *, note=None):
     from .install_permissions import UnsafeInstallation, secure_paths
     check_cache_dir(folder)
     for wheel in folder.iterdir():
         row = entries.get(wheel.name)
         info = wheel.lstat()
-        if not row or not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
-            raise integrity_failure('dependency_cache', 'cache_entry_invalid')
+        if not row or not _own_file(info):
+            raise cache_failure(folder, 'cache_entry_invalid', [wheel])
         if info.st_mode & 0o022:
             try:
                 secure_paths([(wheel, True)], note=note)
             except UnsafeInstallation as error:
-                raise permission_failure(error, 'dependency_cache') from None
+                own = error.paths == [str(wheel)]
+                failure = cache_failure(folder, 'unsafe_store', error.paths, None if own else error.fix)
+                # Group write alone, without an ACL, on this account's own file: an old
+                # updater's umask. Nothing else about the entry is in doubt.
+                failure.stale_mode = (own and not info.st_mode & 0o002
+                                      and error.fix.startswith('chmod go-w -- '))
+                raise failure from None
         if info.st_size != row['size']:
             raise integrity_failure('dependency_cache', 'size_mismatch')
         if hashlib.sha256(wheel.read_bytes()).hexdigest() != row['hash'][7:]:
             raise integrity_failure('dependency_cache', 'hash_mismatch')
+
+
+def discard_entry(store, name):
+    """Remove one generated wheelhouse so preparation rebuilds it from verified bytes.
+
+    Only this account's regular files inside a private directory of the private store,
+    reached by no-follow descriptors. Anything else is left exactly as found.
+    """
+    from . import auto_update
+    parent = os.open(store, auto_update._NOFOLLOW_DIR)
+    try:
+        fd = os.open(name, auto_update._NOFOLLOW_DIR, dir_fd=parent)
+        try:
+            if not auto_update._private_dir(parent) or not auto_update._private_dir(fd):
+                raise integrity_failure('dependency_cache', 'unsafe_store')
+            names = os.listdir(fd)
+            for item in names:
+                if not _own_file(os.stat(item, dir_fd=fd, follow_symlinks=False)):
+                    raise cache_failure(Path(store) / name, 'cache_entry_invalid', [Path(store) / name / item])
+            for item in names:
+                os.unlink(item, dir_fd=fd)
+        finally:
+            os.close(fd)
+        os.rmdir(name, dir_fd=parent)
+    finally:
+        os.close(parent)
+
+
+def usable_entry(folder, entries, *, note, rebuild):
+    """Verify an existing wheelhouse; during preparation drop one that only an old umask spoiled."""
+    try:
+        verify_local(folder, entries, note=note)
+    except PreparationFailure as failure:
+        if not rebuild or not getattr(failure, 'stale_mode', False):
+            raise
+        discard_entry(folder.parent, folder.name)
+        note(f"Rebuilding dependency cache entry {str(folder)!r}")
+        return False
+    return True
 
 
 def check_cache_dir(path, *, harden=False):
@@ -424,14 +482,15 @@ def wheelhouse(pin, data, uv, *, prepare, retry=None, python=None, repair_index=
     note = permission_log(pin.root)
     ordinary = store / ordinary_key
     if repair_index and os.path.lexists(ordinary):
-        verify_local(ordinary, entries, note=note)
+        usable_entry(ordinary, entries, note=note, rebuild=prepare)
     target = store / key
     exists = os.path.lexists(target)
+    if exists and prepare:
+        # An entry left group-writable by an old updater's umask is rebuilt, never trusted or fatal.
+        exists = usable_entry(target, entries, note=note, rebuild=True)
     if not exists and not prepare:
         raise ValueError('install_artifact_unavailable')
     if not exists or (repair_index and prepare):
-        if exists:
-            verify_local(target, entries, note=note)
         with tempfile.TemporaryDirectory(prefix='.prepare-', dir=store) as tmp:
             scratch = Path(tmp)
             staged = scratch / 'wheels'

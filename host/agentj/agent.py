@@ -1383,6 +1383,7 @@ class ClaudeAgent(Agent):
                         self.host.agent_notice(note)
 
     async def _read(self, proc, resumed: bool) -> None:
+        broken = False     # the READER (or the one event a turn cannot go on without) failed: stop safely, say so
         try:
             while line := await proc.stdout.readline():
                 try:
@@ -1396,12 +1397,26 @@ class ClaudeAgent(Agent):
                         self._observe_restart_result(proc, ev)
                         self._busy(ev)
                         self.on_event(ev)
-                    except Exception as e:  # P1 audit H7: never leave a producer blocked on a dead reader
-                        bg.swallowed(bg.host_log(self.host), "agent_read_failed", e, why=self.kind)
-                        await self._kill(proc)
-                        break
+                    except Exception as e:  # noqa: BLE001
+                        # Audit 11-22 N-H5: a bug in OUR handling of one event no longer ends the owner's session (the
+                        # H7 fix killed here). The event is skipped and stdout keeps being drained — H7's rule (never
+                        # leave the producer blocked on a dead reader) holds because the reader lives. Two things make
+                        # the skip safe: the turn takes the external-read mark (the skipped event may have been a tool
+                        # call trust_taint would have seen: more cards, never fewer), and the main `result` — without
+                        # which the turn would never end — is not skipped: the turn stops below, reported as failed.
+                        bg.swallowed(bg.host_log(self.host), "agent_event_failed", e, why=self.kind)
+                        from . import trust_taint
+                        unmarked = not trust_taint.mark_skipped(self)   # security r1: no mark → the skip is not safe
+                        if unmarked or (ev.get("type") == "result" and not ev.get("parent_tool_use_id") and self.turn_proc is proc
+                                        and self.turn_done is not None and not self.turn_done.is_set()):
+                            broken = True
+                            await self._kill(proc)
+                            break
         except Exception as e:  # noqa: BLE001 — P192 (B18): the harness link ends here; say so in host.log
+            # the reader itself failed (stream error, a line over LINE_LIMIT): H7 — end the process tree, never leave it
+            # writing into a pipe nobody reads
             bg.swallowed(bg.host_log(self.host), "agent_read_failed", e, why=self.kind)
+            broken = True
             await self._kill(proc)
         code = await proc.wait()
         self._busy(None)
@@ -1417,7 +1432,12 @@ class ClaudeAgent(Agent):
             self.host.st.set_agent_session(self.kind, None)
         if self.turn_proc is proc and self.turn_done and not self.turn_done.is_set():
             last = clean(self.err_tail.strip().splitlines()[-1], 200) if self.err_tail.strip() else ""
-            if not quiet and not self.halting:
+            if broken and not self.halting:        # N-H5: we ended it ourselves (`quiet`), but this turn did fail — say so
+                self.fail_notice(pick(self.cfg.get("language", "zh"),
+                                      "Agent J 读不下去 Claude Code 的输出，这一轮已安全停下，没有继续执行。可以重新发一次。",
+                                      "Agent J could not read Claude Code's output, so this turn was stopped safely and "
+                                      "nothing further ran. You can send it again."))
+            elif not quiet and not self.halting:
                 from . import claude_auth
                 self._auth_signal(last)
                 self.fail_notice(claude_auth.failure_notice(self.cfg.get("language", "zh")) if claude_auth.login_failure(last) else

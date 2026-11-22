@@ -931,6 +931,7 @@ class Board:
         self.outside: list[dict] = []
         self.units: list[dict] = []
         self.finished = deque()              # P262: terminal events, drained by serve on its event loop
+        self.started_n = 0                   # N-S1: how many items ever appeared (todo_provenance: was there background work?)
         self.pending: list[dict] = []          # shared hooks: [{session, type, desc, at}]
         self.colors: dict[str, int] = {}
         self.colors_dirty = False
@@ -1019,6 +1020,8 @@ class Board:
                 it.update(native_status="running", checked_at=it["activity_at"])
             if ":th:" in str(key) or ":s:" in str(key):
                 it["native_id"] = str(key).split(":")[-1]
+        if not old:
+            self.started_n = self.__dict__.get("started_n", 0) + 1     # N-S1: todo_provenance — background work ran in this turn
         if old != it:
             self.mem[key] = it
             self.on_change()
@@ -1417,15 +1420,39 @@ class Board:
             self.note(k, tool_desc(p.get("tool") or p.get("name"), p.get("input")))
 
 
-    @_board_locked
-    def refresh_outside(self, units: bool = True, run=subprocess.run) -> bool:
+    def _unlocked(self):
+        """The Board lock for a short apply step. Audit 11-22 N-H1: refresh_outside / refresh_sources / sample_load /
+        reconcile_claude run in worker threads and used to hold the lock across systemctl, /proc walks and vm_stat (3–5 s
+        timeouts each) while the event loop needs the same lock on every harness event. They now gather with no Board lock
+        held and take it only to read a snapshot or to apply one. `_scan` serialises the worker-side gathers among
+        themselves; the event loop never takes it."""
+        lock = self.__dict__.get("_lock")
+        if lock is None:
+            lock = self.__dict__.setdefault("_lock", threading.RLock())
+        return lock
 
+    def _scanning(self):
+        scan = self.__dict__.get("_scan")
+        if scan is None:
+            scan = self.__dict__.setdefault("_scan", threading.Lock())
+        return scan
+
+    def refresh_outside(self, units: bool = True, run=subprocess.run) -> bool:
+        with self._scanning():       # worker threads / the CLI only — never the event loop
+            return self._refresh_outside(units, run)
+
+    def _refresh_outside(self, units, run) -> bool:
+        lock = self._unlocked()
+        with lock:                                   # snapshot
+            context = dict(getattr(self, "context", None) or {})
+            known_units = list(getattr(self, "units", []))
+        # ---- gather: files, /proc, systemctl — no Board lock held
         files = read_items(self.root) if self.root is not None else []
         L = getattr(self, "launch", None)
         if L is not None:
-            table, sids = L.scan(self.context)
+            table, sids = L.scan(context)
             for it in files:
-                L.judge(it, self.context, table, sids)
+                L.judge(it, context, table, sids)
         for it in files:
             it.pop("_ctime", None)
         def known(it):
@@ -1433,25 +1460,24 @@ class Board:
                 base = {k: v for k, v in it.items() if k not in ("restart_label", "unit", "started")}
                 return {**base, **L.fields(it["key"]), "foreign": False}
             return {**it, "foreign": True}
-        if self.root is not None:
-            for receipt in finished_items(self.root):
-                self.finish(known(receipt), receipt.get("exit_code"), receipt.get("ended"))
+        receipts = finished_items(self.root) if self.root is not None else []
+        ended, new_units = [], known_units           # only this method (serialised by _scan) replaces self.units
         if units:
             try:
                 scanned = scan_units(run, strict=True)
             except (OSError, subprocess.SubprocessError):
                 scanned = None                  # an unavailable bus is not a completion
             if scanned is not None:
-                old = {it["key"]: it for it in self.units}
+                old = {it["key"]: it for it in known_units}
                 current = {it["key"] for it in scanned}
                 retained = []
-                for it in self.units:
+                for it in known_units:
                     if it["key"] not in current:
                         result = unit_end(it["key"][5:], run)
                         if result is None:
                             retained.append(it)  # still running, or lookup failed: try next scan
                         elif not it.get("covered"):  # hotfix #455: a unit wrapping a `busy run` ends through that job's receipt
-                            self.finish({**it, "foreign": True, **restart_meta(result)}, result.get("exit_code"), result.get("ended"))
+                            ended.append(({**it, "foreign": True, **restart_meta(result)}, result.get("exit_code"), result.get("ended")))
                 for it in scanned:
                     if it["key"] in old:
                         it.update(since=old[it["key"]]["since"], report=old[it["key"]].get("report"),
@@ -1459,20 +1485,29 @@ class Board:
                     else:
                         it["report"] = unit_report(it["key"][5:], run)
                         it["since"] = unit_since(it["key"][5:], run) or it["since"]
-                self.units = scanned + retained
-
-        for u in getattr(self, "units", []):
-            if any(in_cgroup(f.get("pid"), u.get("cg")) for f in files):   # kernel match only (a report name can be forged)
+                new_units = scanned + retained
+        covered = [u for u in new_units
+                   if any(in_cgroup(f.get("pid"), u.get("cg")) for f in files)]   # kernel match only (a report name can be forged)
+        same = {id(u) for u in new_units if any(same_job(f, u) for f in files)}
+        # ---- apply: memory only
+        with lock:
+            for receipt in receipts:
+                self.finish(known(receipt), receipt.get("exit_code"), receipt.get("ended"))
+            for it, code, at in ended:
+                self.finish(it, code, at)
+            self.units = new_units
+            for u in covered:
                 u["covered"] = True
-        got = files + [u for u in getattr(self, "units", []) if not u.get("covered") and not any(same_job(f, u) for f in files)]
-        live = {it["key"] for it in got}
-        receipted = {v["key"] for v in self.finished}
-        for it in self.outside:
-            if not it["key"].startswith("unit:") and it["key"] not in live and it["key"] not in receipted:
-                self.finish(known(it))   # unwrapped pid/stop: exit code is unknowable
-
-        changed = got != self.outside
-        self.outside = got
+            got = files + [u for u in new_units if not u.get("covered") and id(u) not in same]
+            live = {it["key"] for it in got}
+            receipted = {v["key"] for v in self.finished}
+            for it in self.outside:
+                if not it["key"].startswith("unit:") and it["key"] not in live and it["key"] not in receipted:
+                    self.finish(known(it))   # unwrapped pid/stop: exit code is unknowable
+            changed = got != self.outside
+            if live - {it["key"] for it in self.outside}:
+                self.started_n = self.__dict__.get("started_n", 0) + 1     # N-S1: an outside job appeared (todo_provenance)
+            self.outside = got
         if L is not None:
             L.save()
         return changed
@@ -1491,17 +1526,18 @@ class Board:
                 v["checked_at"] = time.time() if now is None else now
                 v["activity_at"] = v["checked_at"]
 
-    @_board_locked
     def reconcile_claude(self, scope, transcript=None):
-
-
-
-        paths = {scope: transcript} if transcript else dict(self.claude_transcripts)
-        seen = self.__dict__.setdefault("_reconciled", {})
+        # Audit 11-22 N-H1: the stat + 256 KB tail read happen with no Board lock held; the lock is taken per transcript
+        # to decide (snapshot) and to apply. Runs in a worker thread (serve busy_loop) or on the loop (shared Stop hook).
+        lock = self._unlocked()
+        with lock:
+            paths = {scope: transcript} if transcript else dict(self.claude_transcripts)
+            seen = self.__dict__.setdefault("_reconciled", {})
         for owner, path in paths.items():
-            if not path or not (any(v.get("session") == owner for v in list(self.mem.values()))
-                                or any(k.startswith(owner + ":") for k in self.native_starts)):
-                continue
+            with lock:
+                if not path or not (any(v.get("session") == owner for v in list(self.mem.values()))
+                                    or any(k.startswith(owner + ":") for k in self.native_starts)):
+                    continue
             # R-0049 H10: every effect below depends only on the transcript's tail and on which keys mem / alias /
             # launched / native_starts hold. When neither changed since a pass that left nothing waiting on the clock,
             # this pass would do nothing — skip the 256 KB read and reparse.
@@ -1509,12 +1545,12 @@ class Board:
                 stt = os.stat(path)
             except OSError:
                 stt = None
-            mark = None if stt is None else (str(path), stt.st_ino, stt.st_size, stt.st_mtime_ns, stt.st_ctime_ns,
-                                             self._reconcile_state())
-            if mark is not None and seen.get(owner) == mark:
-                continue
-            seen.pop(owner, None)
-            clock_bound = False
+            with lock:
+                mark = None if stt is None else (str(path), stt.st_ino, stt.st_size, stt.st_mtime_ns, stt.st_ctime_ns,
+                                                 self._reconcile_state())
+                if mark is not None and seen.get(owner) == mark:
+                    continue
+                seen.pop(owner, None)
             try:
                 with open(path, 'rb') as f:
                     f.seek(0, 2)
@@ -1525,6 +1561,14 @@ class Board:
                     lines = f.read(262144).splitlines()
             except OSError:
                 continue
+            with lock:
+                if mark is not None and mark[-1] != self._reconcile_state():
+                    mark = None              # the board moved while the file was read: apply, but never remember this pass
+                self._reconcile_apply(owner, lines, mark, seen)
+
+    def _reconcile_apply(self, owner, lines, mark, seen):       # caller holds the Board lock
+        if True:    # (kept at the old loop-body indent: the lines below are unchanged)
+            clock_bound = False
             # Same native evidence contract as the shared tailer/recovery reader:
             # an enqueue alone is not completion; consume only its exact removal.
             from .completion_recovery import native_ids
@@ -1597,22 +1641,38 @@ class Board:
         return (frozenset(self.mem), frozenset(self.alias.items()), frozenset(self.launched.items()),
                 frozenset((k, v.get("since"), v.get("generation"), v.get("label")) for k, v in self.native_starts.items()))
 
-    @_board_locked
     def refresh_sources(self, processes=None):
         from .busy_probe import Processes, fields
+        lock = self._unlocked()
+        with lock:                                   # snapshot (N-H1: the /proc pass below runs with no Board lock held)
+            rows = [dict(v) for v in list(self.mem.values()) + self.outside]
         processes = processes or Processes()
-        evidence = {}
-        for v in list(self.mem.values()) + self.outside:
-            if v.get("cg") and not v.get("pid"):
+        found = {}
+        for v in rows:
+            had = v.get("pid")
+            if v.get("cg") and not had:
                 pids = cg_pids(v["cg"])
                 if pids:
                     v["pid"] = pids[0]
             f = fields(v, processes)
-            if f:
-                if not v.get("proc_start"):
-                    v["proc_start"] = f["source"]["start"]
-                evidence[v["key"]] = f
-        self.evidence = evidence
+            if f or v.get("pid") != had:
+                found[v["key"]] = (had, v.get("pid"), f)
+        with lock:                                   # apply, by key: the loop may have replaced an item's dict meanwhile
+            now = {v["key"]: v for v in list(self.mem.values()) + self.outside}
+            evidence = {}
+            for key, (had, pid, f) in found.items():
+                v = now.get(key)
+                if v is None or v.get("pid") not in (had, pid):      # gone, or it is another process now: next pass
+                    continue
+                if pid and not v.get("pid"):
+                    v["pid"] = pid
+                if f:
+                    if v.get("proc_start") and v["proc_start"] != f["source"]["start"]:
+                        continue
+                    if not v.get("proc_start"):
+                        v["proc_start"] = f["source"]["start"]
+                    evidence[key] = f
+            self.evidence = evidence
 
 
     @_board_locked
@@ -1681,26 +1741,28 @@ class Board:
         self.colors_dirty = False
         return dict(list(self.colors.items())[-64:])
 
-    @_board_locked
     def sample_load(self, now: float | None = None, read=None, cap_read=None) -> bool:
 
 
         now = time.monotonic() if now is None else now
-        if self.load_at and now - self.load_at < LOAD_EVERY:
-            return False
-        self.load_at = now
-        v = (read or sys_load)()
-        if v is None or self.load is None:
-            changed = (v is None) != (self.load is None)
-        else:
-            changed = abs(v - self.load) > LOAD_STEP
-        if changed:
-            self.load = v
+        lock = self._unlocked()
+        with lock:
+            if self.load_at and now - self.load_at < LOAD_EVERY:
+                return False
+            self.load_at = now
+        v = (read or sys_load)()                 # N-H1: getloadavg / vm_stat / capacity run with no Board lock held
         c = (cap_read or self.sample_cap)()
-        if c != self.cap:
-            self.cap = c
-            changed = True
-        return changed
+        with lock:
+            if v is None or self.load is None:
+                changed = (v is None) != (self.load is None)
+            else:
+                changed = abs(v - self.load) > LOAD_STEP
+            if changed:
+                self.load = v
+            if c != self.cap:
+                self.cap = c
+                changed = True
+            return changed
 
     def sample_cap(self) -> int | None:
 

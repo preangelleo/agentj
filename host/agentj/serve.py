@@ -601,7 +601,17 @@ AUTONOMOUS_CHOICE = ("全放行：按主人已有目标自主选择合理默认�
                      "Full access: choose a reasonable default consistent with the owner's goal and continue without a reply. "
                      "Use the existing permission channel for actions requiring UV.")
 
-RELAY_FRAME_BACKLOG = 256      # H1: frames still running across all phones before the relay read loop waits
+# Audit 11-22 N-H3 「帧队列按手机分」: the backlog is bounded per phone connection. A phone whose own lane is full is refused
+# (its connection is closed, see _refuse_relay_backlog); the read loop no longer waits for it. RELAY_FRAME_BACKLOG stays as
+# the bound on the whole link: one phone can never reach it (PHONE_FRAME_BACKLOG × 4), a misbehaving relay can.
+PHONE_FRAME_BACKLOG = 256      # frames of ONE phone connection queued or running
+PHONE_URGENT_ROOM = 16         # …plus this many stop / approval-decision frames, so its own flood never shuts those out
+# Scheduled on the phone's urgent lane; handled by the very same _app path. Chairman 11-22: stop everything, an approval
+# decision, the main-thread interrupt, and the answer to a sudo / secret card (both are `elev_answer`, PROTOCOL §11).
+# Follow-up answers (`q_answer`, `lt_answer`) stay on the ordinary lane.
+PHONE_URGENT_TYPES = ("estop", "answer", "main_thread_interrupt", "elev_answer")
+RELAY_FRAME_BACKLOG = 1024     # H1: frames still running across all phones before the relay read loop waits
+RELAY_SETTLE = 5               # N-H2: after the relay link ended, reconnect waits at most this long for frames still running (s)
 
 
 async def claim_control_sock(sock, log=None) -> None:
@@ -1078,10 +1088,12 @@ class Host:
                 if phase != "up":
                     self.relay_last = {**d, "at": int(time.time()), "attempts": attempts}
             finally:
-                await Host._settle_relay_frames(self)
-                if self.relay_up:
+                # N-H2: the link is gone first — status, `relay_up` and every sender stop pointing at the dead socket
+                # before the (bounded) wait for the frames that are still running.
+                was_up, self.ws, self.relay_up = self.relay_up, None, False
+                if was_up:
                     self.emit("relay", up=False)
-                self.ws, self.relay_up = None, False
+                await Host._settle_relay_frames(self)
                 await self._drop_all("relay_down")
             if self.stopping.is_set():
                 break
@@ -1222,37 +1234,172 @@ class Host:
 
     async def _queue_relay_frame(self, f: bytes) -> None:
         """H1: hand one relay frame to its connection's lane without waiting for it. Unbound-callable (tests drive
-        relay_loop with a stand-in host). The read loop only waits when RELAY_FRAME_BACKLOG frames are still running."""
+        relay_loop with a stand-in host). N-H3: the backlog is bounded per phone connection — the excess of ONE phone is
+        refused (_refuse_relay_backlog) and nobody else waits; the read loop itself only waits at RELAY_FRAME_BACKLOG,
+        which no single phone can reach."""
         running = self.__dict__.setdefault("_relay_frames_running", set())
-        task = Host._bg(self, Host._dispatch_relay_frame(self, f), "relay_frame")
+        if len(f) < 5:
+            return
+        cid = int.from_bytes(f[1:5], "big")
+        lanes = self.__dict__.setdefault("_relay_lanes", {})
+        lane = lanes.get(cid)
+        if lane is None:
+            lane = lanes[cid] = {"n": 0, "seq": 0, "raw": 0, "waiting": {}, "stop": -1}
+        if lane.get("refused"):
+            return                               # N-H3: this connection was refused for its backlog and is being closed
+        entry = Host._relay_entry(self, lane, cid, f)
+        urgent = entry[0] == "app" and entry[2]["t"] in PHONE_URGENT_TYPES
+        if urgent and entry[2]["t"] in ("answer", "elev_answer"):
+            # A decision is keyed by `id` (serve asks, wechat / external-channel held cards, friend cards and sudo / secret
+            # cards all read obj["id"]). Security r2 HR-3: without a plain card id it takes the ordinary lane; and it never
+            # overtakes an earlier unfinished frame of the same phone that names the same card (at the top level or one
+            # level inside a dict / list) — that frame may stop, withdraw or change the card.
+            ref = entry[2].get("id")
+            urgent = (isinstance(ref, str) and 0 < len(ref) <= 64
+                      and not any(Host._names(o, ref) for o in lane.setdefault("open", {}).values()))
+        # security r1 H-6: the bound is per DEVICE, not per connection — one paired device with several connections has
+        # one budget, so it cannot fill the link-wide backlog and make the read loop wait (another phone's stop included).
+        known = self.__dict__.get("sessions", {}).get(cid)
+        dev = bytes(known.pub) if known is not None and known.pub else None
+        devs = self.__dict__.setdefault("_relay_devs", {})
+        room = PHONE_FRAME_BACKLOG + (PHONE_URGENT_ROOM if urgent else 0)
+        if lane["n"] >= room or (dev is not None and devs.get(dev, 0) >= room):
+            return Host._refuse_relay_backlog(self, lane, cid)
+        if dev is not None:
+            devs[dev] = devs.get(dev, 0) + 1
+        lane["seq"] += 1
+        seq = lane["seq"]
+        if entry[0] == "raw":
+            lane["raw"] += 1
+        elif urgent and entry[2]["t"] == "estop":
+            lane["stop"] = seq                 # a `resume` of this phone that arrived earlier and has not started is void
+        lane["n"] += 1
+        task = Host._bg(self, Host._dispatch_relay_frame(self, f, lane, entry, "u" if urgent else "q", seq), "relay_frame")
+        if not urgent:
+            lane["waiting"][task] = seq        # refused on a backlog: never-started ordinary frames are dropped, not run late
+            if entry[0] == "app":
+                lane.setdefault("open", {})[task] = entry[2]    # ordinary frames of this phone not finished yet
         running.add(task)
-        task.add_done_callback(running.discard)
+
+        def done(t, lane=lane, cid=cid, raw=entry[0] == "raw", dev=dev):
+            running.discard(t)
+            lane["waiting"].pop(t, None)
+            lane.get("open", {}).pop(t, None)
+            lane["n"] -= 1
+            lane["raw"] -= raw
+            if dev is not None:
+                devs[dev] = devs.get(dev, 1) - 1
+                if devs[dev] <= 0:
+                    devs.pop(dev, None)
+            if lane["n"] <= 0 and lanes.get(cid) is lane:
+                lanes.pop(cid, None)
+        task.add_done_callback(done)
         if len(running) >= RELAY_FRAME_BACKLOG:
             await asyncio.wait(running, return_when=asyncio.FIRST_COMPLETED)
 
-    async def _dispatch_relay_frame(self, f: bytes) -> None:
+    @staticmethod
+    def _names(obj: dict, ref: str) -> bool:
+        for v in obj.values():
+            if v == ref:
+                return True
+            inner = v.values() if isinstance(v, dict) else v if isinstance(v, list) else ()
+            if any(x == ref for x in inner):
+                return True
+        return False
+
+    def _relay_entry(self, lane: dict, cid: int, f: bytes) -> tuple:
+        """What the lane runs for this frame. ("raw", f): the unchanged on_frame path, decrypted when its turn comes.
+        ("app", s, obj): an application frame of a READY session, decrypted now — in arrival order, which is all the
+        Noise counter needs — so that its type is known before it is scheduled. Only when no undecrypted frame of this
+        connection is ahead of it (the handshake and `hello` always go the raw way). _app re-checks the allowlist and
+        every handler its own signature, exactly as for a frame decrypted in on_data. ("bad", reason): it
+        failed to decrypt / parse; that connection is closed when its earlier frames are done, as on_frame does."""
+        s = self.__dict__.get("sessions", {}).get(cid)
+        control = getattr(self, "control", None)
+        if (lane["raw"] or s is None or s.state != "ready" or s.recv is None or len(f) < 7 or f[0] != wire.OP_DATA
+                or f[5] != wire.DATA or (control is not None and not control.safety_ready())):
+            return ("raw", f)
+        try:
+            return ("app", s, wire.unpad_json(s.recv.decrypt(b"", f[6:]), wire.MAX_JSON_P33 if s.p33 else wire.MAX_JSON))
+        except Exception as e:  # noqa: BLE001 — same rule as on_frame: a bad frame costs its own session only
+            return ("bad", f"bad_frame:{type(e).__name__}")
+
+    def _refuse_relay_backlog(self, lane: dict, cid: int) -> None:
+        """N-H3: this phone connection already has PHONE_FRAME_BACKLOG frames queued or running. The excess frame cannot
+        be skipped (the next one would not decrypt), so the refusal is the connection: frames that have not started are
+        dropped — never run late, behind the owner's back — the frame that is running and any stop / approval decision
+        already accepted finish, and the cid is closed; the page reconnects and resends. Nothing is half-applied."""
+        lane["refused"] = True                   # until its running frame is done, whatever this cid still sends is dropped
+        s = self.__dict__.get("sessions", {}).get(cid)
+        self.st.log("relay_frame_backlog", cid=cid, device=s.device if s else None, count=lane["n"])
+        for task in list(lane["waiting"]):
+            task.cancel()
+        Host._bg(self, self.close_cid(cid, "frame_backlog"), "relay_backlog_close")
+
+    async def _dispatch_relay_frame(self, f: bytes, lane: dict | None = None, entry: tuple | None = None,
+                                    kind: str = "q", seq: int = 0) -> None:
         """Frames of one relay connection run strictly in arrival order; different phones run concurrently.
-        Each frame's task becomes its lane's tail before its first await, so any number of queued frames keep their order."""
+        Each frame's task becomes its lane's tail before its first await, so any number of queued frames keep their order.
+        N-H3: a phone's stop / approval decisions have their own ordered lane (kind "u"), so they are not queued behind
+        that phone's slow handler. Scheduling only — they run through _app like every other frame."""
         if len(f) < 5:
             return
         cid = int.from_bytes(f[1:5], "big")
         tails = self.__dict__.setdefault("_relay_frame_tasks", {})
-        me, previous = asyncio.current_task(), tails.get(cid)
-        tails[cid] = me
+        key = cid if kind == "q" else (cid, kind)
+        me, previous = asyncio.current_task(), tails.get(key)
+        tails[key] = me
         try:
             if previous is not None and not previous.done():
                 await asyncio.wait({previous})      # a failed or cancelled earlier frame never stops the later ones
-            await self.on_frame(f)
+            if lane is not None:
+                lane["waiting"].pop(me, None)       # started: from here on it is never dropped by a backlog refusal
+            if entry is None or entry[0] == "raw":
+                await self.on_frame(f)
+            elif entry[0] == "bad":
+                await self.close_cid(cid, entry[1])
+            elif kind == "q" and entry[2]["t"] == "resume" and seq < lane["stop"]:
+                # the same phone sent a stop AFTER this resume and the stop was handled first: the stop wins
+                s, r = entry[1], entry[2].get("r")
+                self.st.log("relay_frame_superseded", cid=cid, device=s.device, action="resume")
+                if isinstance(r, str) and _RID.fullmatch(r):
+                    await self.send_app(s, {"t": "ctl_res", "r": r, "action": "resume", "ok": False, "why": "superseded"})
+            else:
+                await Host._app_entry(self, entry[1], entry[2])
         finally:
-            if tails.get(cid) is me:
-                tails.pop(cid, None)
+            if tails.get(key) is me:
+                tails.pop(key, None)
+
+    async def _app_entry(self, s: Session, obj: dict) -> None:
+        """One already-decrypted application frame: exactly what on_frame → on_data do after the decrypt."""
+        control = getattr(self, 'control', None)
+        if control is not None and not control.safety_ready(): return       # as on_frame
+        ended = self.sessions.get(s.cid) is not s
+        if ended and (obj["t"] != "estop" or not self.st.is_allowed(s.pub)):
+            return     # its connection ended while it waited: nothing of it is acted on (a signed stop of a still
+                       # allowlisted device still stops — and never reaches _app_frame's `revoked` close)
+        try:
+            with provenance.paired_request(lambda: self._paired_live(s)):
+                await self._app(s, obj)
+        except Exception as e:  # anything a peer sends can cost at most its own session, never the relay link
+            if self.sessions.get(s.cid) is s:   # security r1 H-7: never a newer session that came to hold this cid
+                await self.close_cid(s.cid, f"bad_frame:{type(e).__name__}")
+            else:
+                self.st.log("relay_frame_stale_failed", cid=s.cid, device=s.device, exception_type=type(e).__name__)
 
     async def _settle_relay_frames(self) -> None:
-        """The relay connection ended: frames already running finish before their sessions are dropped, exactly as
-        before H1 (the read loop always finished its frame first). Nothing is cancelled half-way."""
+        """The relay connection ended: frames already running get RELAY_SETTLE seconds to finish before their sessions
+        are dropped (before H1 the read loop always finished its frame first). N-H2: the wait is bounded — one hung
+        frame used to hold the reconnect (up to 256 frames, each up to its own timeout) while status still pointed at the
+        dead socket. A frame that is still running after the bound is NOT cancelled: no handler is ever cut between two
+        of its steps (nothing half-applied). It finishes on its own; its session is gone by then, so whatever it still
+        sends goes nowhere (`_ws_send` raises while the link is down, send_app refuses a session that is not the live one)."""
         tasks = list(self.__dict__.get("_relay_frames_running", ()))
-        if tasks:
-            await asyncio.wait(tasks)
+        if not tasks:
+            return
+        _, late = await asyncio.wait(tasks, timeout=RELAY_SETTLE)
+        if late:
+            self.st.log("relay_settle_timeout", count=len(late), ms=int(RELAY_SETTLE * 1000))
 
     async def on_frame(self, f: bytes) -> None:
         control = getattr(self, 'control', None)
@@ -4201,7 +4348,22 @@ class Host:
         return msg
 
     def busy_changed(self) -> None:
+        """Audit 11-22 H2b / N-H7: Board.on_change also fires in worker threads (reconcile_claude, refresh_*). Host state
+        (`wf.last`, `busy_sent`) and the post queue belong to the event loop: from any other thread the change is handed
+        to the loop, never applied there. A loop that is gone drops it — the next busy_loop tick sends the same list."""
+        loop = self.__dict__.get("loop")
+        if loop is None:                                 # not inside run() (unit tests): as before
+            return self._busy_changed_now()
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if running is loop:
+            return self._busy_changed_now()
+        with contextlib.suppress(RuntimeError):          # loop closed (serve stopping)
+            loop.call_soon_threadsafe(self._busy_changed_now)
 
+    def _busy_changed_now(self) -> None:
         msg = self.busy_msg()
         key = json.dumps([msg["tasks"], msg["by"], msg.get("load"), msg.get("cap"), msg.get("live_process_count"), msg.get("task_count"), msg.get("unknown_count")], ensure_ascii=False, sort_keys=True)
         if key == self.busy_sent:
@@ -5344,6 +5506,8 @@ class Host:
 
     def agent_turn_end(self) -> None:
         from . import application_ingress, main_thread
+        from . import todo_provenance, trust_taint
+        todo_provenance.end_window(self, trust_taint.tainted(getattr(self, "agent", None)))   # N-S1 / security r1 H-3
         application_ingress.close_span(self)          # #0302 r2: a non-owner turn's span ends with the turn
         main_thread.completed(self)
         if getattr(self, "voice_stream", None) is not None and self.voice_stream.wants_reply(getattr(self.agent, "cur_send", None)):
@@ -6767,6 +6931,8 @@ class Host:
         self.activity("resume", by=name)
         if self.peers is not None:
             await self.peers.estop(False)
+            if self.stopped():      # N-H3: a stop handled while this resume was waiting above wins — nothing is restarted
+                return
         actor = self.agent
         actor_task = getattr(actor, "task", None)
         if actor is not None and callable(getattr(actor, "start", None)) and (actor_task is None or actor_task.done()):
@@ -7164,11 +7330,14 @@ class Host:
                 res = {"t": t, **await jcards_cal_remote.phone(self, obj)}
                 self.st.log("jcard_cal", device=s.device, status="ok" if res.get("ok") else "refused")
             elif t == "jcard_note":
-                from . import jcards_data
+                from . import jcards_data, todo_provenance
+                wrote = []
                 res = {"t": t, **await asyncio.to_thread(jcards_data.phone_change, self.st.root, cid,
                        obj.get("op"), obj.get("entry"), obj.get("revision"), obj.get("text"),
-                       obj.get("title"), obj.get("date"))}
+                       obj.get("title"), obj.get("date"), wrote)}
                 self.st.log("jcard_note", device=s.device, status="ok" if res.get("ok") else "refused")
+                if res.get("ok") and wrote:        # the owner's own to-do from the paired phone (Jarvis / chairman 11-22)
+                    todo_provenance.phone_wrote(self, s, *wrote[0])
             elif t == "jpalette":
                 from . import jpalettes
                 res = {"t": t, **await asyncio.to_thread(jpalettes.request, self.st.root, obj)}
@@ -9465,6 +9634,7 @@ class Host:
         if swept := await asyncio.to_thread(relay_full.sweep_homes, self.st):
             self.st.log("relay_homes_swept", result=swept)
         self._scratch_task = asyncio.create_task(self._scratch_sweep())   # P542: crash leftovers, off the start path
+        self.loop = asyncio.get_running_loop()       # busy_changed: worker threads hand changes to this loop
         self.post_q = asyncio.Queue()
         self.configure_claude_inbound(await asyncio.to_thread(self._claude_inbound_files))   # P142: owner files, off the loop
         jobs = [asyncio.create_task(self.control.run()), asyncio.create_task(self.relay_loop()), asyncio.create_task(self.loop_watch()), asyncio.create_task(self.reporter.run()),

@@ -25,7 +25,7 @@ import { attachSpecial, canSpecialApprove, decorateSpecial, forgetSpecial, refre
 // `term_resize`, `term_out.d` → xterm. Face ID, the login card, limits, 结束, the confirm / sudo sheets stay this page's.
 // A host without "pty", a 「!」 line or a module that did not load → the line mode above.
 import { register, termInfo } from './termhook.js';
-import { request, done, sendApp, gen, channel, hostId, disconnectGeneration } from './session.js';
+import { request, done, sendApp, gen, channel, hostId, disconnectGeneration, newWriter, endWriter } from './session.js';
 import { controlMessage, controlObject, sealValue, elevateFields, elevateDigest, elevateMessage, sha256hex, b64u, unb64u } from '../proto/wire.js';
 import { signKey } from './store.js';
 import { myDeviceId } from './api.js';
@@ -58,7 +58,7 @@ const BANG_MS = 130000;   // P414: the host answers a 「!」 line within 120 s 
 const RUN_MS = 310000;    // #584: a reply code block's 「执行」 — the host waits up to 300 s
 let S = fresh();
 function fresh() {
-  return { phase: 'idle', minutes: 15, G: null, ch: null, r1: null, r2: null, id: null, expires: 0, deadline: null, fa: null, seq: 0, atPrompt: true,
+  return { phase: 'idle', minutes: 15, G: null, W: null, ch: null, r1: null, r2: null, id: null, expires: 0, deadline: null, fa: null, seq: 0, atPrompt: true,
     hist: [], hi: -1, draft: '', prefill: '', login: null, hiddenAt: 0,
     view: 'full', origin: 'settings', bang: null, pendBang: null, go: null, reCollapse: false,   // P414
     enable: false, recoveryHost: null, recovery: null, resumeUntil: null, resume: null, prefillSeq: 0, prefillBusy: null, prefillPending: false, prefillCap: false, resumeCap: false,   // P417 #185
@@ -560,6 +560,8 @@ function ready(m) {
   S.phase = 'ready'; S.resume = null; S.id = m.id; S.expires = Number.isSafeInteger(m.remaining_s) && m.remaining_s >= 0 ? Date.now() / 1000 + m.remaining_s : m.expires_at; S.seq = 0; S.atPrompt = true; S.login = null;
   // Only an explicit relative duration from the host can stop input locally. Older hosts enforce their own expiry.
   S.deadline = Number.isSafeInteger(m.remaining_s) && m.remaining_s >= 0 ? performance.now() + m.remaining_s * 1000 : null;
+  // N-W4: this terminal's own writer on the chat session — every term_* frame rides it; the deadline ends it and nothing else.
+  S.W = newWriter();
   status('');
   paintChrome();
   // 0.30.3 (董事长 14:5x): the first switch-on asks the host password in the shared popup over the chat (root hidden,
@@ -630,7 +632,7 @@ function loginAnswer(c, ok) {
       if (ok) { const s = await sealValue(c.epk, value, ch, dev, c.id, 'login', c.n, c.digest); msg.epk = b64u(s.epk); msg.ct = b64u(s.ct); ctSha = s.ctSha; }
       msg.sig = b64u(new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, elevateMessage(ch, dev, c.id, 'login', ok ? 'allow' : 'deny', c.n, ts, c.digest, ctSha))));
       if (fa) msg.fa = fa;
-      await sendApp(msg, S.G);
+      await sendApp(msg, S.G, S.W);
       if (sheet?.kind === 'login') closeSheet();
       if (ok) status(t('p408.checking'));
     } finally { value?.fill(0); }
@@ -669,7 +671,7 @@ function badLine(key) {
 function sendKey(key) { if (S.phase === 'ready' && Object.hasOwn(KEYS, key)) send({ t: 'term_keys', id: S.id, key }); }
 function send(obj) {
   const writer = S;
-  sendApp(obj, writer.G).catch(() => {
+  sendApp(obj, writer.G, writer.W).catch(() => {
     if (writer === S && S.phase === 'ready' && !disconnectGeneration(writer.G)) dropped();
   });
 }
@@ -1030,9 +1032,11 @@ function onTick() {
   if (S.phase !== 'ready') return;
   if (gen() !== S.G) return dropped();
   if (S.deadline !== null && performance.now() >= S.deadline) {
-    const writer = S.G;
+    // N-W4 (audit 2026-11-22): only this terminal's unsent frames stop here. It used to end the whole chat session —
+    // pending approvals / asks answered "offline" and uploads in flight failed along with the terminal.
+    const writer = S.W;
     closed('timeout');
-    disconnectGeneration(writer);
+    endWriter(writer);
     return;
   }
   paintLeft(); paintChip();

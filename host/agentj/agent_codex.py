@@ -844,7 +844,16 @@ class CodexAgent(Agent):
                 self.err_tail = (self.err_tail + line.decode("utf-8", "replace"))[-2000:]
 
     async def _read(self, p) -> None:
+        """Audit 11-22 N-H5 (chairman C), the rule of ClaudeAgent._read. Before, ANY exception — our handler's for one
+        message, or the stream's — left this loop and then waited for an app-server that was still alive with nobody
+        reading its stdout: the turn (the main one or a dispatched job's) hung.
+        - our handler fails on one message: logged (rate-limited), the message is skipped, the turn takes the
+          external-read mark, the loop keeps draining. The turn it happened in is never reported `completed`;
+        - what cannot be skipped — a request the app-server waits on us for, this thread's `turn/completed`, a mark
+          that cannot be set — and a failure of the reader itself: the process tree is ended and the turn reported
+          failed (turn_status is not `completed`: a dispatched job is not a success)."""
         waits, pending = self.waits, self.pending
+        broken = False
         try:
             while line := await p.stdout.readline():
                 try:
@@ -853,17 +862,39 @@ class CodexAgent(Agent):
                     continue
                 if not isinstance(m, dict):
                     continue
-                if "method" in m and "id" in m:
-                    self._on_request(m)
-                elif "id" in m:
-                    f = self.waits.get(m.get("id"))
-                    if f and not f.done():
-                        f.set_result(m)
-                elif isinstance(m.get("method"), str):
-                    self._busy(m["method"], m.get("params") if isinstance(m.get("params"), dict) else {})
-                    self._on_note(m["method"], m.get("params") if isinstance(m.get("params"), dict) else {})
+                try:
+                    if "method" in m and "id" in m:
+                        self._on_request(m)
+                    elif "id" in m:
+                        f = self.waits.get(m.get("id"))
+                        if f and not f.done():
+                            f.set_result(m)
+                    elif isinstance(m.get("method"), str):
+                        self._busy(m["method"], m.get("params") if isinstance(m.get("params"), dict) else {})
+                        self._on_note(m["method"], m.get("params") if isinstance(m.get("params"), dict) else {})
+                except Exception as e:  # noqa: BLE001
+                    bg.swallowed(bg.host_log(self.host), "agent_event_failed", e, why="codex")
+                    from . import trust_taint
+                    td = self.turn_done
+                    in_turn = self.turn_proc is p and td is not None and not td.is_set()
+                    if in_turn:
+                        self._skipped_turn = td
+                    params = m.get("params") if isinstance(m.get("params"), dict) else {}
+                    ends = in_turn and m.get("method") == "turn/completed" and params.get("threadId") == self.tid
+                    if not trust_taint.mark_skipped(self) or ("method" in m and "id" in m) or ends:
+                        broken = True
+                        await self._kill(p)
+                        break
+                td = self.turn_done
+                if (td is not None and td.is_set() and self.__dict__.get("_skipped_turn") is td
+                        and self.turn_status.get("status") == "completed"):
+                    self.turn_status = {**self.turn_status, "status": "incomplete"}    # an event of it was skipped
+                    self._skipped_turn = None
+                    self.host.st.log("agent_turn_incomplete", agent=self.kind, reason="skipped_event")
         except Exception as e:  # noqa: BLE001 — P192 (B18): the app-server link ends here; say so in host.log
             bg.swallowed(bg.host_log(self.host), "agent_read_failed", e, why="codex")
+            broken = True
+            await self._kill(p)       # H7: never leave it writing into a pipe nobody reads
         code = await p.wait()
         if self.proc is p or self.proc is None:           # P160: its sub-agents ended with it (not a newer app-server's)
             self._busy(None, None)
@@ -881,7 +912,13 @@ class CodexAgent(Agent):
             if not f.done():
                 f.set_result(True)
         if self.turn_proc is p and self.turn_done and not self.turn_done.is_set():
-            if not quiet and not self.halting:
+            if broken and not self.halting:        # we ended it ourselves (`quiet`), but this turn did fail — say so
+                self.turn_status = {}
+                self.fail_notice(pick(getattr(self.host, "lang", "zh"),
+                                      "Agent J 读不下去 Codex 的输出，这一轮已安全停下，没有继续执行。可以重新发一次。",
+                                      "Agent J could not read Codex's output, so this turn was stopped safely and "
+                                      "nothing further ran. You can send it again."))
+            elif not quiet and not self.halting:
                 last = self._last_err()
                 self.fail_notice(f"Codex 退出了（{code}）" + (f"：{last}" if last else ""))
             self.turn_done.set()
@@ -1518,7 +1555,7 @@ class CodexAgent(Agent):
                 self.tail_cut = self.turn_id
                 with contextlib.suppress(RPCError, ConnectionError, OSError, asyncio.TimeoutError):
                     await self.call("turn/interrupt", {"threadId": self.tid, "turnId": self.turn_id}, 3)
-            self.turn_status = {"id": self.turn_id, "status": "completed"}
+            self.turn_status = {"id": self.turn_id, "status": "incomplete" if self.__dict__.get("_skipped_turn") is td else "completed"}
             td.set()
 
     async def interrupt_request(self, p, expected_target=None):

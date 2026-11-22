@@ -8,6 +8,15 @@
 import { generateKeypair, sha256, concat } from '../proto/noise.js';
 import { generateSigningKeypair, b64u } from '../proto/wire.js';
 
+// Audit 2026-11-22 (N-W1 / N-W2 / N-W3): a storage failure is an outcome of its own — never "no record". Every read / write
+// either completes on the real store or rejects with a StorageError (`why`: open | open-timeout | blocked | tx | timeout |
+// read-timeout | device-unusable); the caller stops this attempt and tries again, and the next attempt opens the store afresh.
+export class StorageError extends Error {
+  constructor(why, cause) { super('storage: ' + why); this.name = 'StorageError'; this.why = why; if (cause) this.cause = cause; }
+}
+export const isStorageError = (e) => !!e && e.name === 'StorageError';
+// N-W3: an open that never answers (or waits behind another tab) is given up after OPEN_MS, a transaction after OP_MS.
+const OPEN_MS = 4000, OP_MS = 6000;
 // P545: a seat's page (m.agentj.app/<seat id>/) keeps its own database "agentjarvis@<seat id>" (js/seatscope.js); the root
 // page keeps "agentjarvis".
 export const ROOT_DB = 'agentjarvis';
@@ -15,21 +24,42 @@ export const DB_NAME = globalThis.AJSeat ? globalThis.AJSeat.db(ROOT_DB) : ROOT_
 function idb(name = DB_NAME) {
   return new Promise((res, rej) => {
     const r = indexedDB.open(name, 1);
+    let over = false;
+    const fail = (why, cause) => { if (over) return; over = true; clearTimeout(timer); rej(new StorageError(why, cause)); };
+    const timer = setTimeout(() => fail('open-timeout'), OPEN_MS);
     r.onupgradeneeded = () => r.result.createObjectStore('kv');
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
+    // an answer after the bound: that connection is closed again (it would block a later upgrade and nobody holds it)
+    r.onsuccess = () => { if (over) { try { r.result.close(); } catch { /* closed */ } return; } over = true; clearTimeout(timer); res(r.result); };
+    r.onerror = () => fail('open', r.error);
+    r.onblocked = () => fail('blocked');
   });
 }
-// Some private modes and embedded browsers expose IndexedDB but reject every open. Keep the
-// session usable (and able to reconnect) with an in-memory store; persistence is best effort.
+// Some private modes and embedded browsers expose IndexedDB but reject every open. Keep the session usable (and able to
+// reconnect) with an in-memory store — ONLY there (N-W1): the open was refused outright (not a timeout, not blocked), IndexedDB
+// never worked on this page, and this browser provably holds no paired marker and no install id (W-1: usedHereBefore()). That page's only data is this map, so it stays for the
+// page's lifetime and leaves no paired marker behind. Everywhere else a failure is a StorageError and nothing touches the map.
 const memory = new Map();
 let storageFailed = false;
+let everOpened = false;
+// Security review r1, W-1: "never paired here" needs proof, not a missing marker. This browser counts as never used here only
+// when localStorage could be READ and holds neither the paired marker nor an install id. If it cannot be read (refused,
+// absent) the answer is unknown = "may have been paired": a StorageError and the retry path, never the memory store.
+// The two reads below are the page's only reads of these two keys (static.test.mjs enumerates every localStorage call);
+// both throw when storage is refused or absent, and each caller decides what "unreadable" means for it.
+const readPaired = () => localStorage.getItem(PAIRED_KEY);
+const readIid = () => localStorage.getItem(IID_KEY);
+function usedHereBefore() {                           // true | false | null (unknown)
+  try { return !!(readPaired() || readIid()); }
+  catch { return null; }
+}
+const memoryOnly = (e) => !everOpened && usedHereBefore() === false && !(isStorageError(e) && (e.why === 'open-timeout' || e.why === 'blocked'));
 // R-0051 W12: one connection for the page's key-value reads and writes instead of an open + close per operation. The browser
 // may close it under us (iOS: "connection to IndexedDB server lost"; another tab upgrading): such a lost connection is dropped
-// and the operation tried once more on a fresh one. Any other failure falls back to memory at once, as before (W1).
+// and the operation tried once more on a fresh one. Any other failure rejects with a StorageError (N-W1; it used to fall back
+// to memory, which made a paired phone read as unpaired) and drops the connection, so the next operation opens a new one.
 // r1b F3: a forced loss aborts the running transactions BEFORE onclose fires, so the error itself must say "connection":
 // an abort with no error / AbortError / UnknownError, or InvalidStateError / TransactionInactiveError, retries once on a fresh
-// connection; a store error (ConstraintError, DataError, DataCloneError, a thrown Error …) still goes to memory at once.
+// connection; a store error (ConstraintError, DataError, DataCloneError, a thrown Error …) is not retried.
 let conn = null;
 const gone = new WeakSet();
 const CONN_ERRORS = new Set(['AbortError', 'UnknownError', 'InvalidStateError', 'TransactionInactiveError']);
@@ -37,6 +67,7 @@ const connLost = (db, e) => gone.has(db) || e == null || CONN_ERRORS.has(e.name)
 function shared() {
   if (conn) return conn;
   const p = conn = idb().then((db) => {
+    everOpened = true;
     const lost = () => { gone.add(db); if (conn === p) conn = null; };
     db.onclose = lost;
     db.onversionchange = () => { lost(); db.close(); };
@@ -57,28 +88,37 @@ async function kv(mode, fn, again = true) {
     return key?.result;
   }
   let db;
-  try { db = await shared(); } catch { storageFailed = true; return kv(mode, fn); }
+  try { db = await shared(); } catch (e) {
+    if (!memoryOnly(e)) throw isStorageError(e) ? e : new StorageError('open', e);   // shared() dropped `conn`: the next call opens again
+    storageFailed = true; return kv(mode, fn);
+  }
   let tx;
   try { tx = db.transaction('kv', mode); } catch (e) {
     // InvalidStateError: the connection is closing / closed — a lost connection, not a broken store
     const lost = connLost(db, e);                     // before release(): release marks the db gone
     release(db);
     if (again && lost) return kv(mode, fn, false);
-    storageFailed = true; return kv(mode, fn);
+    throw new StorageError('tx', e);
   }
+  let timer;
   try {
     return await new Promise((res, rej) => {
+      timer = setTimeout(() => rej(new StorageError('timeout')), OP_MS);
       const req = fn(tx.objectStore('kv'));
       tx.oncomplete = () => res(req.result);
       tx.onerror = tx.onabort = () => rej(tx.error);
     });
   } catch (e) {
+    if (isStorageError(e)) {                          // it never completed: unknown. Not tried again here (a write may still land)
+      try { tx.abort(); } catch { /* finished or gone */ }
+      release(db);
+      throw e;
+    }
     const lost = connLost(db, e);
     release(db);
     if (again && lost) return kv(mode, fn, false);   // lost while this transaction ran (abort may precede onclose)
-    storageFailed = true;
-    return kv(mode, fn);
-  }
+    throw new StorageError('tx', e);
+  } finally { clearTimeout(timer); }
 }
 export const dbGet = (k) => kv('readonly', (s) => s.get(k));
 export const dbPut = (k, v) => kv('readwrite', (s) => s.put(v, k));
@@ -88,9 +128,16 @@ export const dbDel = (k) => kv('readwrite', (s) => s.delete(k));
 function rootIdb() {
   return new Promise((res, rej) => {
     const r = indexedDB.open(ROOT_DB);
+    let over = false;                                 // N-W3: bounded like idb(); a late answer is closed again
+    const timer = setTimeout(() => { over = true; rej(new StorageError('open-timeout')); }, OPEN_MS);
     r.onupgradeneeded = () => r.transaction.abort();
-    r.onsuccess = () => { if (r.result.objectStoreNames.contains('kv')) res(r.result); else { r.result.close(); res(null); } };
-    r.onerror = (e) => { e.preventDefault(); r.error && r.error.name === 'AbortError' ? res(null) : rej(r.error); };
+    r.onsuccess = () => {
+      clearTimeout(timer);
+      if (over) { try { r.result.close(); } catch { /* closed */ } return; }
+      if (r.result.objectStoreNames.contains('kv')) res(r.result); else { r.result.close(); res(null); }
+    };
+    r.onerror = (e) => { clearTimeout(timer); e.preventDefault(); if (over) return; r.error && r.error.name === 'AbortError' ? res(null) : rej(r.error); };
+    r.onblocked = () => { clearTimeout(timer); if (!over) { over = true; rej(new StorageError('blocked')); } };
   });
 }
 /** P545: every record of the root page's database → this seat's own one, as structured clones (the non-extractable keys stay
@@ -238,13 +285,28 @@ export async function deviceKey() {
   try { return await flight; }
   finally { if (devKeyFlight === flight) devKeyFlight = null; }
 }
+// N-W2: one key record, three outcomes. → the value, or undefined = the read COMPLETED and there is no record; a read that
+// timed out or failed is unknown and rejects (StorageError) — it used to count as "no record", and the new key written next
+// replaced the real one (the phone had to be paired again).
+async function readKey(k) {
+  let timer;
+  try { return await Promise.race([dbGet(k), new Promise((_, rej) => { timer = setTimeout(() => rej(new StorageError('read-timeout')), READ_MS); })]); }
+  finally { clearTimeout(timer); }
+}
 async function loadDeviceKey() {
-  const w = await within(dbGet('device2'), READ_MS).catch(() => undefined);
-  if (w && w.v === 2 && w.kek && w.ct && w.iv && w.pub) {
-    try { return (devKey = { priv: await unwrapDevice(w), pub: new Uint8Array(w.pub) }); } catch { /* unusable: a new key below */ }
+  const w = await readKey('device2');
+  let unusable = null;
+  if (w !== undefined) {
+    try {
+      if (!(w && w.v === 2 && w.kek && w.ct && w.iv && w.pub)) throw new Error('shape');
+      return (devKey = { priv: await unwrapDevice(w), pub: new Uint8Array(w.pub) });
+    } catch (e) { unusable = e; }                      // there, but it does not unwrap: kept as it is, never replaced
   }
-  const d = await within(dbGet('device'), READ_MS).catch(() => undefined);
+  const d = await readKey('device');
   if (d && d.priv && d.pub) return (devKey = { priv: d.priv, pub: new Uint8Array(d.pub) });
+  // A new key only when BOTH reads completed and found nothing. A record that is present but unusable stays (this attempt
+  // fails; nothing is written): whether to give such a browser a new identity is the owner's call, not a silent overwrite.
+  if (w !== undefined || d !== undefined) throw new StorageError('device-unusable', unusable);
   if (await x25519Persists()) {
     const kp = await generateKeypair(false);          // extractable: false — the private key never leaves WebCrypto
     await dbPut('device', { priv: kp.priv, pub: kp.pub });
@@ -265,10 +327,12 @@ let iidRaw = null;
 async function installRaw() {
   if (iidRaw) return iidRaw;
   let v = null;
-  try { v = localStorage.getItem(IID_KEY); } catch { /* blocked storage */ }
-  if (!/^[A-Za-z0-9_-]{22}$/.test(v || '')) { try { v = await dbGet('iid'); } catch { v = null; } }
+  try { v = readIid(); } catch { /* blocked storage */ }
+  if (!/^[A-Za-z0-9_-]{22}$/.test(v || '')) v = await dbGet('iid');   // N-W1: an unknown read rejects — no new id over the stored one
   if (!/^[A-Za-z0-9_-]{22}$/.test(v || '')) v = b64u(crypto.getRandomValues(new Uint8Array(16)));
-  try { localStorage.setItem(IID_KEY, v); } catch { /* blocked storage */ }
+  // W-1: the memory-only page persists nothing — its install id lives with the page, so it can never match (and make a
+  // computer replace) the record of an earlier pairing, and a reload is a first visit again
+  if (!storageFailed) { try { localStorage.setItem(IID_KEY, v); } catch { /* blocked storage */ } }
   try { await dbPut('iid', v); } catch { /* the other copy still holds it */ }
   return (iidRaw = v);
 }
@@ -281,9 +345,10 @@ export async function installId(channel) {
 // without its pairing in IndexedDB, the browser deleted the site's data — the page says exactly that, not "removed".
 const PAIRED_KEY = 'aj.paired';
 export function markPaired(on) {
+  if (on && storageFailed) return;                    // N-W1: a pairing held only in memory is gone with the page — no marker for it
   try { if (on) localStorage.setItem(PAIRED_KEY, String(Math.floor(Date.now() / 1000))); else localStorage.removeItem(PAIRED_KEY); } catch { /* blocked */ }
 }
-export function wasPaired() { try { return !!localStorage.getItem(PAIRED_KEY); } catch { return false; } }
+export function wasPaired() { try { return !!readPaired(); } catch { return false; } }
 /** Ask the browser not to evict this origin's storage (no prompt in Safari / Chrome; a refusal changes nothing). */
 export async function askPersist() { try { return await navigator.storage?.persist?.(); } catch { return false; } }
 
@@ -292,8 +357,9 @@ let signKp;
 export async function signKey() {
   if (signKp !== undefined) return signKp;
   try {
-    const d = await dbGet('sign');
+    const d = await dbGet('sign');                    // N-W2: an unknown read rejects → null below, nothing minted, not cached
     if (d && d.priv && d.pub) return (signKp = { priv: d.priv, pub: new Uint8Array(d.pub) });
+    if (d !== undefined) return null;                 // a record is there but unusable: never replaced
     const kp = await generateSigningKeypair();       // private key not extractable
     await dbPut('sign', { priv: kp.priv, pub: kp.pub });
     return (signKp = kp);
@@ -346,7 +412,15 @@ export async function putSealed(name, obj) {
   const rec = await seal(obj);
   if (w === wipes) await dbPut(name, rec);
 }
-export async function getSealed(name) { try { return await unseal(await dbGet(name)); } catch { return null; } }
+/** N-W1: like getSealed, but "could not read" rejects (StorageError) instead of reading as "nothing stored" — for a caller
+ *  that writes the record back (the offline queue): an unknown read must never be followed by a write over the real record. */
+export async function readSealed(name) {
+  const rec = await dbGet(name);
+  if (!rec) return null;
+  await sealKey();
+  return unseal(rec);
+}
+export async function getSealed(name) { try { return await readSealed(name); } catch { return null; } }
 /** Unpair / revoke: the drafts, the input history, the offline queue (0.15.2, outbox.js), the search pages (P188, search.js) and the key that sealed them go. */
 export async function wipeLocal() {
   localKey = null; wipes++;

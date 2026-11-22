@@ -3888,7 +3888,7 @@ function paintOut(){
   paintOutbox(el("outbox"), outbox.items, {line: t(peer.rescue ? 'p424.queueRescue' : 'offline.line'), lostNote: t('offline.attLost'),
     isLost: e => !!(e.att && e.att.length && !held.has(e.sid)), showLine: !C.connected() && (outbox.items.length > 0 || navigator.onLine === false)});
 }
-function drainOut(){ if (outbox.items.length) outbox.drain(); }
+function drainOut(){ if (outbox.items.length || outbox.unread) outbox.drain(); }   // N-W1: unread = a stored queue not read yet
 function sayLater(text){
   // 全部停下 / 清空 / 换模型 … are "now or not at all": a stop that lands minutes later would cut whatever runs then.
   // P424 (#145 security): no built-in command queues — the words stay in the field, a line says to try again later.

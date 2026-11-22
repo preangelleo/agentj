@@ -9,7 +9,7 @@
 import { hostKind } from './offhint.js';
 import { IK, IKPSK2, Handshake } from '../proto/noise.js';
 import { KIND, MAX_JSON, MAX_JSON_P33, MAX_TEXT_P33, padJson, unpadJson, Defrag, pairPrologue, resumePrologue, safetyCode, frame, b64u } from '../proto/wire.js';
-import { deviceKey, signKey, installId } from './store.js';
+import { deviceKey, signKey, installId, isStorageError } from './store.js';
 
 const enc = new TextEncoder();
 const EMPTY = new Uint8Array(0);
@@ -102,6 +102,12 @@ export function closeSession() {
   const s = sess; sess = null;
   if (s) { endGen(s); s.closedByUs = true; try { s.ws.close(1000); } catch { /* already closed */ } }
 }
+
+/** N-W4 (audit 2026-11-22): a writer of its own for one feature riding the chat session (the web terminal). Frames sent with
+ *  it stop — also the ones still waiting in the pacer — the moment `live` turns false; the Noise session, its pending asks
+ *  and every other sender (uploads, chat) are not touched. sendApp(obj, g, w). */
+export const newWriter = () => ({ live: true });
+export function endWriter(w) { if (w) w.live = false; }
 
 /** Invalidate unsent frames on a disconnected writer before retrying the existing pairing. */
 export function disconnectGeneration(g) {
@@ -298,7 +304,18 @@ function enterReady(s) {
 
 async function hostUp(s) {
   if (s.phase !== 'wait-host') return;                // duplicate "up"
-  const dev = await deviceKey();
+  let dev;
+  try { dev = await deviceKey(); } catch (e) {
+    // N-W2: the device key could not be read just now (unknown — never a new key). A resume is tried again on the ladder;
+    // nothing about the pairing changes. A pairing or a restore in progress ends as a protocol failure, as before.
+    if (!isStorageError(e) || s.mode !== 'resume') throw e;
+    if (s !== sess) return;
+    dropped('error');
+    closeSession();
+    H.onHostDown();
+    scheduleReconnect();
+    return;
+  }
   let msg1;
   if (s.mode === 'pair') {
     const p = s.ctx;
@@ -446,13 +463,14 @@ export function reconnectNow(why = 'visibility') {
 
 /** Send one app message on the ready session; resolves when it is on the socket. `g` pins a generation (gen()): when the
  *  session was reset or replaced since, the send is refused — it is never re-sent on its own (the caller re-offers it). */
-export function sendApp(obj, g = gen()) {
+export function sendApp(obj, g = gen(), w = null) {
   const s = sess;
   if (!s || !g || s.gen !== g || s.phase !== 'ready') return Promise.reject(new StaleSend('no session'));
-  return sendOn(s, g, obj, jsonMax());
+  if (w && !w.live) return Promise.reject(new StaleSend('writer closed'));
+  return sendOn(s, g, obj, jsonMax(), w);
 }
-function sendOn(s, g, obj, max) {
-  const alive = () => g.live && s.gen === g && sess === s;
+function sendOn(s, g, obj, max, w = null) {
+  const alive = () => g.live && s.gen === g && sess === s && (!w || w.live);
   const p = g.chain.then(async () => {
     if (!alive()) throw new StaleSend('session reset');
     const pt = padJson(obj, max);

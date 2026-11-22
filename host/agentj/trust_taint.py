@@ -11,7 +11,7 @@ The value is {"state": "external_read", "kind": <fixed category>} — no body, U
 from __future__ import annotations
 
 _ATTR = "_agentj_external_taint"
-KINDS = frozenset({"web", "mcp", "mail", "friend", "webhook", "channel", "external"})
+KINDS = frozenset({"web", "mcp", "mail", "friend", "webhook", "channel", "external", "todo"})
 
 # Programs whose output is remote content (approval_material._external's list, plus other clients and remote shells).
 _NET_READERS = frozenset({"curl", "wget", "http", "https", "xh", "xhs", "httpie", "lynx", "w3m", "links", "elinks", "aria2c",
@@ -64,6 +64,22 @@ def mark(agent, kind: str) -> dict | None:
                 pass
             return None
     return current
+
+
+def mark_skipped(agent) -> bool:
+    """An adapter's read loop skipped one event because OUR handler failed on it (audit 11-22 N-H5). The event may have
+    been a tool call observe_* would have seen, so the turn takes the mark. → False when the mark could not be set
+    (logged): the caller must then stop the turn instead of going on unmarked (security r1)."""
+    try:
+        if mark(agent, "external") is not None and tainted(agent) is not None:
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        agent.host.st.log("trust_taint_unheld", agent=str(getattr(agent, "kind", "?"))[:16], reason="skipped_event")
+    except Exception:  # noqa: BLE001
+        pass
+    return False
 
 
 def clear(agent) -> None:
@@ -234,8 +250,15 @@ def turn_start(host, send=None) -> dict | None:
     ONLY place a mark ends. The end of a turn does not end it: in a shared session the turn's end is a Stop hook event,
     which the session's own shell can emit while the model keeps working (security review r3-3)."""
     agent = getattr(host, "agent", None)
+    from . import todo_provenance
+    # N-S1 (audit 11-22): what a turn wrote into the to-do list is recorded clean at its end (Host.agent_turn_end →
+    # todo_provenance.end_window) only if it never took the mark. A heartbeat that finds an open to-do item without
+    # such a record starts with the mark: what an unclean turn wrote is external content for the turn that reads it.
+    todo_provenance.close_window(host, tainted(agent))
     clear(agent)
     kind = ingress_kind(send)
+    if todo_provenance.open_window(host, send, kind) and kind is None:
+        kind = "todo"
     return mark(agent, kind) if kind else None
 
 

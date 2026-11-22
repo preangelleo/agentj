@@ -38,8 +38,18 @@ MIN_CEILING = 4096          # smaller numbers in that test are counts, not byte 
 # P0306_BUDGET_WAIVER (贾维斯 2026-11-10 追认，0.30.6 集成单): P170 mail row carries the 0.30.5 A4 signed mail-settings fix,
 # Gmail auto-pin and servid_status (a6ff2dfaaa, 92503677f9): measured 43,151 B on release/0306-integrate 448637c8f4 (+17.05 %
 # over 36,864); cap = measured + 1 KiB = 44,175 B. Remove in the slimming ticket.
+# P0369_BUDGET_WAIVER (董事长经贾维斯 2026-11-22 批示，0.30.69 集成单转达):「P114/P155/core 三项豁免放行，今晚照常上线；另开减体积单排
+# 下一版，core 本轮多出的约 1.4 万字节在那张单里减回去」。All three rows were already over the 10 % band on the 0.30.68 release
+# source 065646d3d3 (same l0-budgets run, clean worktree): P114 60,300 / 49,152 (+22.7 %), P155 41,328 / 36,864 (+12.1 %),
+# core 4,785,338 / 4,229,529 (+13.1 %). Measured on the 0.30.69 candidate 418d3a3c52: P114 and P155 unchanged, core 4,799,823 B
+# (+14,485 B from the audit fix round). No ceiling is raised. Exact caps: P114 and P155 = measured + 1 KiB; core = measured +
+# 8 KiB (version files and the release summary are rewritten at build). Remove these three rows in the slimming ticket.
 WIDER = {'combined bounded allocations': 4595969,   # P0269_BUDGET_WAIVER
-         'P170 e-mail channel allocation (+ P206 A mail expect) is bounded': 44175}   # P0306_BUDGET_WAIVER
+         'P170 e-mail channel allocation (+ P206 A mail expect) is bounded': 44175,   # P0306_BUDGET_WAIVER
+         'P114 browser package allocation is bounded': 61324,                          # P0369_BUDGET_WAIVER
+         'P155 harness-switch allocation (+ P282 + P312) is bounded': 42352,           # P0369_BUDGET_WAIVER
+         # the label is the first 120 characters of the test message
+         'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0) + P198 (0.20.1) + 0.20.2 increments (P201 P203 P2': 4808015}   # P0369_BUDGET_WAIVER
 
 
 def judge(measured: int, ceiling: int, strict: bool, label: str = '') -> str:

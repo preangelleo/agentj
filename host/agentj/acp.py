@@ -452,7 +452,12 @@ class AcpAgent(Agent):
                 self.err_tail = (self.err_tail + line.decode("utf-8", "replace"))[-2000:]
 
     async def _read(self, p) -> None:
+        # Audit 11-22 N-H5 (chairman C), the rule of ClaudeAgent._read: a handler failure on one message is logged, the
+        # message skipped and the turn marked; a request that waits on our answer, a mark that cannot be set, or a
+        # failure of the reader itself ends the process tree (before: the loop was left with the agent alive and its
+        # stdout unread — the turn hung). The turn's own end is the answer to `session/prompt` (a plain future).
         waits, pending = self.waits, self.pending
+        broken = False
         try:
             while line := await p.stdout.readline():
                 try:
@@ -461,16 +466,26 @@ class AcpAgent(Agent):
                     continue
                 if not isinstance(m, dict):
                     continue
-                if "method" in m and "id" in m:
-                    self._on_request(m)
-                elif "id" in m:
-                    f = self.waits.get(m.get("id"))
-                    if f and not f.done():
-                        f.set_result(m)
-                elif isinstance(m.get("method"), str):
-                    self._on_note(m["method"], m.get("params") if isinstance(m.get("params"), dict) else {})
+                try:
+                    if "method" in m and "id" in m:
+                        self._on_request(m)
+                    elif "id" in m:
+                        f = self.waits.get(m.get("id"))
+                        if f and not f.done():
+                            f.set_result(m)
+                    elif isinstance(m.get("method"), str):
+                        self._on_note(m["method"], m.get("params") if isinstance(m.get("params"), dict) else {})
+                except Exception as e:  # noqa: BLE001
+                    bg.swallowed(bg.host_log(self.host), "agent_event_failed", e, why=self.kind)
+                    from . import trust_taint
+                    if not trust_taint.mark_skipped(self) or ("method" in m and "id" in m):
+                        broken = True
+                        await self._kill(p)
+                        break
         except Exception as e:  # noqa: BLE001 — the link ends here; say so in host.log
             bg.swallowed(bg.host_log(self.host), "agent_read_failed", e, why=self.kind)
+            broken = True
+            await self._kill(p)       # H7: never leave it writing into a pipe nobody reads
         code = await p.wait()
         self.host.st.log("agent_exit", agent=self.kind, status=code)
         if self.proc is p:
@@ -483,7 +498,9 @@ class AcpAgent(Agent):
         for f in list(pending.values()):                 # every open card is withdrawn (agent_gone)
             if not f.done():
                 f.set_result(True)
-        if self.turn_proc is p and not quiet and not self.halting and self.prompt_fut is not None:
+        if self.turn_proc is p and broken and not self.halting and self.prompt_fut is not None:
+            self.fail_notice(f"Agent J 读不下去 {self.LABEL} 的输出，这一轮已安全停下，没有继续执行。可以重新发一次。")
+        elif self.turn_proc is p and not quiet and not self.halting and self.prompt_fut is not None:
             last = self._last_err()
             self.fail_notice(f"{self.LABEL} 退出了（{code}）" + (f"：{last}" if last else ""))
 

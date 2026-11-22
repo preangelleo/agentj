@@ -123,7 +123,7 @@ def note_change(root, cid, op, entry=None, revision=None, text=None, title=None,
         return fail('refused')
 
 
-def phone_change(root, cid, op, entry=None, revision=None, text=None, title=None, date=None):
+def phone_change(root, cid, op, entry=None, revision=None, text=None, title=None, date=None, receipt=None):
     """Paired card mutations only; never dispatch a prompt or accept a storage path."""
     fail = lambda why: {'ok': False, 'id': cid, 'why': why}
     if op not in ('add', 'edit', 'delete'):
@@ -145,7 +145,7 @@ def phone_change(root, cid, op, entry=None, revision=None, text=None, title=None
     if cid != 'todo' or not c['official']:
         return fail('bad_op')
     from . import jcards_todo
-    return jcards_todo.change(root, op, entry, revision=revision,
+    return jcards_todo.change(root, op, entry, revision=revision, receipt=receipt,
                              **({'text': text, 'by': 'owner'} if op != 'delete' else {}))
 
 

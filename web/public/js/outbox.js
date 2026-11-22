@@ -9,7 +9,7 @@
 // Bound to one computer: the sealed record carries the paired computer (channel + host key); a record for another
 // computer is deleted unread, a drain never runs on a session to another computer, and unpair / re-pair / revoke delete
 // the record with the drafts (store.wipeLocal) and empty the memory copy (wipe()).
-import { getSealed, putSealed, dbGet, dbDel } from './store.js';
+import { readSealed, putSealed, dbGet, dbDel, isStorageError } from './store.js';
 import { b64u } from '../proto/wire.js';
 
 export const MAX = 50;              // queued messages; the 51st send is refused with one line
@@ -49,7 +49,7 @@ export class Outbox {
    *  h: {say(e) → say_res-like, live() → may send now, hostNow() → the computer of the ready session, done(e, r, kind),
    *  changed()} — relay.js fills it in; the unit tests pass fakes. */
   constructor(io = {}, h = {}) {
-    this.io = { load: () => getSealed('outbox'), save: (v) => putSealed("outbox", v), del: () => dbDel('outbox'), hostKey: pairedHost, ...io };
+    this.io = { load: () => readSealed('outbox'), save: (v) => putSealed("outbox", v), del: () => dbDel('outbox'), hostKey: pairedHost, ...io };
     this.h = { say: async () => ({ ok: false, why: 'offline' }), live: () => false, hostNow: () => null, done: () => {}, changed: () => {}, ...h };
     this.items = [];                // {sid, text, ts, rt: {id, excerpt} | null, att: [{name, kind}] | null}, oldest first
     this.host = undefined;          // undefined = not known yet; null = not paired (nothing is ever sent)
@@ -57,15 +57,19 @@ export class Outbox {
     this.ready = Promise.resolve();
     this.wq = Promise.resolve();    // writes in call order, each one the state at its turn (the last write wins)
     this.busy = null; this.cut = null; this.timer = 0;
+    // N-W1 (audit 2026-11-22): the stored queue could not be read (a storage failure, not "nothing stored"). Until it has
+    // been, nothing is written or deleted over it and nothing is sent; reread() merges it with what was typed meanwhile.
+    this.unread = false;
   }
   /** Load the sealed queue (a page reload / an app kill comes back to the same pending messages). */
   open() {
     const ep = this.epoch;
     return (this.ready = (async () => {
-      let host = null, rec = null;
-      try { host = await this.io.hostKey(); } catch { /* no storage: not paired */ }
-      try { rec = await this.io.load(); } catch { /* unreadable = nothing queued */ }
+      let host = null, rec = null, unknown = false;
+      try { host = await this.io.hostKey(); } catch (e) { unknown = isStorageError(e); /* else no storage: not paired */ }
+      try { rec = await this.io.load(); } catch (e) { unknown ||= isStorageError(e); /* else unreadable = nothing queued */ }
       if (ep !== this.epoch) return;
+      if (unknown) { this.unread = true; this.h.changed(); return; }   // this.host stays undefined: nothing is sent
       const kept = rec && rec.v === 1 && host && rec.host === host && Array.isArray(rec.items) ? rec.items.filter(valid) : [];
       const early = this.items;     // sent in the moment before the record was read: they come after it
       this.host = host;
@@ -87,6 +91,8 @@ export class Outbox {
     const p = this.wq.then(async () => {
       await this.bind();
       if (ep !== this.epoch) return;
+      if (this.unread) await this.reread(ep);         // rejects while the store is still unknown: nothing is written
+      if (ep !== this.epoch) return;
       if (!this.items.length || !this.host) await this.io.del();
       else await this.io.save({ v: 1, host: this.host, items: this.items.slice() });
     });
@@ -96,10 +102,21 @@ export class Outbox {
   /** After a wipe (a new pairing) the computer is read again lazily, from the host record written after it. */
   async bind() {
     await this.ready;
-    if (this.host === undefined) {
-      const ep = this.epoch, h = await this.io.hostKey().catch(() => null);
+    if (this.host === undefined && !this.unread) {
+      const ep = this.epoch, h = await this.io.hostKey().catch((e) => { if (isStorageError(e)) throw e; return null; });
       if (ep === this.epoch && this.host === undefined) this.host = h;
     }
+  }
+  /** N-W1: read the stored queue that open() could not; what it holds comes first, what was queued meanwhile after it. */
+  async reread(ep = this.epoch) {
+    const host = await this.io.hostKey(), rec = await this.io.load();
+    if (ep !== this.epoch || !this.unread) return;
+    const kept = rec && rec.v === 1 && host && rec.host === host && Array.isArray(rec.items) ? rec.items.filter(valid) : [];
+    const have = new Set(this.items.map((e) => e.sid));
+    this.host = host;
+    this.items = kept.filter((e) => !have.has(e.sid)).concat(this.items).slice(0, MAX);
+    this.unread = false;
+    this.h.changed();
   }
   /** Send what waits, oldest first, one say at a time. Single-flight; safe to call on every `ready`. */
   drain() {
@@ -108,7 +125,8 @@ export class Outbox {
   }
   async run() {
     const ep = this.epoch;
-    await this.bind();
+    try { await this.bind(); if (this.unread) { await this.reread(ep); this.persist(); } }
+    catch { this.later(); return 'later'; }           // N-W1: the store did not answer — the same retry as a busy computer
     clearTimeout(this.timer);
     while (this.items.length) {
       if (ep !== this.epoch) return 'wiped';
@@ -142,7 +160,7 @@ export class Outbox {
     this.lost();
     clearTimeout(this.timer);
     this.items = [];
-    this.host = undefined;
+    this.host = undefined; this.unread = false;
     this.ready = Promise.resolve();
     this.h.changed();
   }

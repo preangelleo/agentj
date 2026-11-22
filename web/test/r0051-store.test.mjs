@@ -1,5 +1,6 @@
 // R-0051 W12: js/store.js keeps one IndexedDB connection for its key-value operations; a connection the browser closed is
-// replaced once; a store that cannot be opened at all still falls back to memory (W1). A small stand-in IndexedDB counts opens.
+// replaced once; a store that cannot be opened at all (and was never paired here) still falls back to memory (W1). A small
+// stand-in IndexedDB counts opens.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -97,17 +98,24 @@ test('W12: another tab upgrading closes this connection; the next operation open
   assert.equal(F.stats.opens, 2);
 }));
 
+// Security review r1 (W-1): the memory store needs a READABLE localStorage with no marker / install id in it (a browser
+// always has one; node does not) — this test now supplies an empty one.
 test('W1 regression: a store that never opens falls back to memory and keeps working', () => withStore('w12e', {failOpen: true}, async (S, F) => {
+  const had = Object.getOwnPropertyDescriptor(globalThis, 'localStorage'), m = new Map();
+  Object.defineProperty(globalThis, 'localStorage', {configurable: true, value: {getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); }, removeItem: (k) => { m.delete(k); }}});
+  try {
   await S.dbPut('host', {approved: true});
   assert.deepEqual(await S.dbGet('host'), {approved: true});
   assert.equal(F.data.size, 0);
   const opens = F.stats.opens;
   await S.dbPut('x', 1);
   assert.equal(F.stats.opens, opens, 'no further opens once in memory mode');
+  } finally { if (had) Object.defineProperty(globalThis, 'localStorage', had); else delete globalThis.localStorage; }
 }));
 
 const tick = () => new Promise((r) => setImmediate(r));
-async function pendingOn(F, n) { for (let i = 0; i < 200; i++) { const [db] = F.stats.live; if (db && db.pending.size >= n) return db; await tick(); } throw new Error('no pending transactions'); }
+// by wall clock, not by a count of ticks: a re-open answers on a 0 ms timer, which 200 immediates can outrun on a busy machine
+async function pendingOn(F, n) { for (const end = Date.now() + 2000; Date.now() < end;) { const [db] = F.stats.live; if (db && db.pending.size >= n) return db; await tick(); } throw new Error('no pending transactions'); }
 
 for (const [name, closeAfter] of [['AbortError', 30], ['UnknownError', 30], [null, null]]) {
   test(`r1b F3: abort (${name ?? 'no error'}) before close — pending read and write finish on a fresh connection`, () =>
@@ -137,21 +145,27 @@ test('r1b F3: InvalidStateError / TransactionInactiveError from a dying connecti
   assert.equal(F.stats.opens, 3);
 }));
 
-test('r1b F3 control: a store error (ConstraintError) is not retried and falls back to memory as before', () =>
+// Audit 2026-11-22 (N-W1): these two controls used to assert the memory fallback. Once IndexedDB worked on the page a failure
+// is a StorageError — nothing is served from, or written to, the memory map — and the next operation opens the store again.
+test('r1b F3 control: a store error (ConstraintError) is not retried and is surfaced (N-W1: no memory fallback)', () =>
   withStore('f3-store', {failPut: 'bad'}, async (S, F) => {
     await S.dbPut('host', 1);
-    await S.dbPut('bad', 2);
+    await assert.rejects(S.dbPut('bad', 2), {name: 'StorageError'});
     assert.equal(F.stats.opens, 1, 'no reconnect for a store error');
     assert.equal(F.data.has('bad'), false);
-    assert.equal(await S.dbGet('bad'), 2, 'memory fallback (W1)');
+    assert.equal(await S.dbGet('bad'), undefined, 'read from the database: nothing was kept in memory');
+    assert.equal(await S.dbGet('host'), 1, 'the real records are still there');
+    assert.equal(F.stats.opens, 2, 'the failed connection was dropped; the next operation opened a new one');
   }));
 
-test('r1b F3 control: a fresh connection that fails again falls back to memory — only one retry', () => withStore('f3-twice', {reqDelay: 15}, async (S, F) => {
+test('r1b F3 control: a fresh connection that fails again is surfaced — only one retry (N-W1: no memory fallback)', () => withStore('f3-twice', {reqDelay: 15}, async (S, F) => {
   await S.dbPut('host', 1);
   const read = S.dbGet('host');
   (await pendingOn(F, 1)).forceLoss('AbortError', null);
   const second = await pendingOn(F, 1);                       // the retry's transaction on connection 2
   second.forceLoss('AbortError', null);
-  assert.equal(await read, undefined, 'memory after the second loss');
+  await assert.rejects(read, {name: 'StorageError'});
   assert.equal(F.stats.opens, 2, 'exactly one retry');
+  assert.equal(await S.dbGet('host'), 1, 'the next attempt reads the real record');
+  assert.equal(F.stats.opens, 3);
 }));

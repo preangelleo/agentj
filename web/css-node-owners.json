@@ -2,9 +2,9 @@
   "schema": 2,
   "authority": "component-ownership.json + current explicit HTML + verified dynamic constructors; no ID prefix inference",
   "sourceHashes": {
-    "public/index.html": "e0027428e227e07e433e355464ca9a11581dce9f4ffe45c543fae4390676391a",
+    "public/index.html": "4b5e256e0864520df1402f8aecc38a86c5c4949399b665a3bd6841bc22dd6530",
     "component-ownership.json": "e424b73bc80db8f309e355b01420f7374072a3dc9845339c75c720415f04681a",
-    "public/js/relay.js": "7e0845ea8bed47397ba2e7940e78b0c9966d068acec6184d5d501d0bca5ed690"
+    "public/js/relay.js": "54e15cf0039ab5f34f1bf35675cfbe1d0eb41535080e2b8bffb9a0e4a95f9dca"
   },
   "idOwners": {
     "version-notice": {

@@ -31,7 +31,7 @@ import VERSION from './version.js';
 import {probeEnvironment, publicPhoneLink} from './js/phone-env.js';
 import { t, lang, fillText, plain, applyStatic, onLang } from './js/t.js';
 import { el, toast, toastOff, toastAction, executionToast, notify, noticeSheet, confirmSheet, closeConfirm, reloadStoppedNotice } from './js/ui.js';
-import { dbGet, dbPut, dbDel, deviceKey, signKey, wipeLocal, installId, markPaired, wasPaired, askPersist, adoptRootStore, rootHost, markRootMoved, dropRootPairing, copyToSeat } from './js/store.js';
+import { dbGet, dbPut, dbDel, deviceKey, signKey, wipeLocal, installId, markPaired, wasPaired, askPersist, adoptRootStore, rootHost, markRootMoved, dropRootPairing, copyToSeat, isStorageError } from './js/store.js';
 import * as seats from './js/seats.js';         // P545 (§40): m.agentj.app/<seat id> — this seat's own page
 import { b64u, unb64u } from './proto/wire.js';
 import * as session from './js/session.js';
@@ -350,7 +350,7 @@ const WEB_ORIGIN = 'https://m.agentj.app';
 async function leaveLegacyHost() {
   if (location.hostname !== LEGACY_WEB_HOST) return false;
   let paired = false;
-  try { const h = await dbGet('host'); paired = !!(h && h.approved); } catch { /* no storage → nothing to keep here */ }
+  try { const h = await dbGet('host'); paired = !!(h && h.approved); } catch (e) { if (isStorageError(e)) return false; /* unknown: stay (N-W1); no storage at all → nothing to keep here */ }
   if (paired) return false;
   reloadGuard('seat.origin', {mode:'replace', url:WEB_ORIGIN + location.pathname + location.search + (pendingLink ?? location.hash)});
   return true;
@@ -425,6 +425,7 @@ session.configure({
     if (pendingRv) { const c = pendingRv; pendingRv = null; rvpair.approve(c).catch(() => {}); }
     passkey.setChannel(session.channel());            // P566 (#350): own-key get() asks only for this computer's keys
     readyCh = session.channel();                      // P566 review N1: the computer the cards on screen came from
+    if (!api.canSign()) api.initSign().catch(() => {});   // N-W2: the approval key could not be read at load — read it now
     pkhandin.again();                                 // P565 追加 A: a passkey result whose answer the last drop swallowed
     api.myDeviceId().then((id) => { pkpeer.onReady(id); rerender(); });   // P561 追加 11: a replaced remote id drops its old request
     relay.onReady();
@@ -693,8 +694,16 @@ function fatal(key) {
   setStatus('error', 'st.unusable');
   showError(key, 'error.retry', 'reload');
 }
+// N-W1 (audit 2026-11-22): the pairing screen only when the read COMPLETED and found no approved pairing. A read that failed
+// or timed out (StorageError) says nothing about the pairing: the page stays where it is and the reconnect ladder tries
+// again — each rung reads the store afresh (store.js opens a new connection after a failure).
 async function resume() {
-  const host = await dbGet('host');
+  let host;
+  try { host = await dbGet('host'); } catch (e) {
+    if (!isStorageError(e)) throw e;
+    if (!session.current() && !session.retryInfo().nextAt) session.scheduleReconnect();
+    return;
+  }
   if (!host || !host.approved) { showIdle(); return; }
   prepareOutageRecovery(host).catch(() => {});
   setAgentName(host.name, false);                     // the cached name, shown before the connection is up
@@ -1732,6 +1741,17 @@ function wire() {
   onLang(() => paintScanTrigger());   // P207: the scan icon's words follow the language
 }
 
+// N-W1: a boot-time read the store could not answer is tried again (a new connection each time) before the page gives up
+// with its reload button. Never "no record": nothing is cleared, no key is made, the pairing screen is not shown.
+const BOOT_WAITS = [300, 1000, 2500];
+async function bootRead(fn) {
+  for (let i = 0; ; i++) {
+    try { return await fn(); } catch (e) {
+      if (!isStorageError(e) || e.why === 'device-unusable' || i >= BOOT_WAITS.length) throw e;
+      await new Promise((r) => setTimeout(r, BOOT_WAITS[i]));
+    }
+  }
+}
 async function main() {
   if (await leaveLegacyHost()) return;
   if (await seatRoute()) return;                      // P545: this pairing / this record belongs on a seat's own page
@@ -1744,7 +1764,7 @@ async function main() {
   checkPhoneEnvironment().catch(() => {});
   if (!globalThis.crypto?.subtle || !globalThis.WebSocket) return fatal('error.missing');
   if ('serviceWorker' in navigator && window.isSecureContext) push.registration().catch(() => {});
-  try { await deviceKey(); } catch (e) {
+  try { await bootRead(deviceKey); } catch (e) {
     return fatal(e && e.name === 'NotSupportedError' ? 'error.noCrypto' : 'error.noStore');
   }
   await api.initSign();
@@ -1788,7 +1808,8 @@ async function main() {
     termCard: bang.paintCard,
   });
   fivePages.init({ chat: () => controls.openPanel('chat'), memory: () => controls.openPanel('mem'), insert: relay.insertText, send: () => $('send').click() });
-  const host = await dbGet('host');
+  let host;
+  try { host = await bootRead(() => dbGet('host')); } catch { return fatal('error.noStore'); }   // N-W1: unknown is not "deleted"
   // 0.15.1: the browser deleted this phone's pairing (Safari private tab closed, site data cleared, …) — say so, not "removed"
   let lost = !host && wasPaired();
   if (host && host.approved && typeof host.dk === 'string' && host.dk !== b64u((await deviceKey()).pub)) {

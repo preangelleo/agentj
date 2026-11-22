@@ -18,7 +18,7 @@ from . import bg, humane, provenance, slash
 from .agent import LINE_LIMIT, UNCERTAIN, Agent, _bin, _signal_tree
 from .slash import Result
 from .envcompat import getenv
-from .text import clean, clean_line, strip_reasoning
+from .text import clean, clean_line, pick, strip_reasoning
 from .policy_registry import harness_tool
 
 START_WAIT = 60          # seconds with no startup output before failing
@@ -1282,8 +1282,35 @@ class OpenCodeAgent(Agent):
                         if not self._sync_current(owner):
                             continue  # discard this old event, keep the live stream for the new turn
                     delay = 0.5
-                    self._busy(ev)
-                    self.on_event(ev)
+                    try:
+                        self._busy(ev)
+                        self.on_event(ev)
+                    except Exception as e:  # noqa: BLE001
+                        # Audit 11-22 N-H5 (chairman C). Before: a handler exception that happened to be OSError /
+                        # ValueError / a timeout was taken for a lost stream (dropped silently, no mark); any other type
+                        # ended this task for good and the turn never ended. Now it is logged, the event is skipped, the
+                        # turn takes the external-read mark, and the adapter's own catch-up asks the server what the
+                        # skipped event may have said (open requests, missed text, whether the turn has ended). If the
+                        # mark or the catch-up fails, the turn is stopped safely.
+                        bg.swallowed(bg.host_log(self.host), "agent_event_failed", e, why=self.kind)
+                        from . import trust_taint
+                        safe = trust_taint.mark_skipped(self)
+                        if safe:
+                            try:
+                                await self._resync()
+                            except Exception as e2:  # noqa: BLE001
+                                bg.swallowed(bg.host_log(self.host), "agent_event_failed", e2, why=self.kind + ":resync")
+                                safe = False
+                        if not safe:
+                            if self.turn_done and not self.turn_done.is_set() and not getattr(self, "halting", False):
+                                self.fail_notice(pick(getattr(self.host, "lang", "zh"),
+                                                      "Agent J 读不下去 OpenCode 的输出，这一轮已安全停下，没有继续执行。可以重新发一次。",
+                                                      "Agent J could not read OpenCode's output, so this turn was stopped "
+                                                      "safely and nothing further ran. You can send it again."))
+                            await self._kill(proc)     # its exit watcher (_watch) ends the turn and every open card
+                            return
+                        if self.proc is not proc or self.client is not client:
+                            return
             except HTTPError as e:
                 self.host.st.log("agent_events", agent=self.kind, status="refused", reason=str(e)[:40])
             except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError, ValueError):

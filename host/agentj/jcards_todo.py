@@ -375,7 +375,7 @@ def fields(text=None, owner=None, start=None, end=None, source=None, note=None, 
     return f
 
 
-def change(root, op: str, entry=None, now: dt.datetime | None = None, revision=None, heartbeat=None, **kw) -> dict:
+def change(root, op: str, entry=None, now: dt.datetime | None = None, revision=None, heartbeat=None, receipt=None, **kw) -> dict:
     """One atomic change of the To-do file. The card may be off: the item is still kept (the owner sees it when the card is
     switched on) and the answer says `on: false`."""
     now = now or now_utc()
@@ -500,6 +500,8 @@ def change(root, op: str, entry=None, now: dt.datetime | None = None, revision=N
     except OSError:
         return _fail("refused")
     item = removed if op == "delete" else next(x for x in items if x["id"] == iid)
+    if isinstance(receipt, list) and op != "delete":
+        receipt.append((removed, dict(item)))      # todo_provenance.phone_wrote: the item as it was / exactly as written
     return {"ok": True, "revision": _revision(body), "id": CID, "item": _brief(item), "on": c["on"], "address": cards.address(CID, iid),
             "capacity": archive.capacity(root, c, body)}
 
