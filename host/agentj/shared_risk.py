@@ -95,7 +95,7 @@ class RiskGuard:
         # #537② (Round 2 R2) + ADR-0308: a listed money-moving / irreversible call in a shared session goes to Host.ask
         # too — the main-thread fingerprint card there, every other source's refusal (list_approval.ask decides).
         cwd = getattr(a, 'cfg', {}).get('dir')
-        if (uv_list.protected_targets(tool, inp, cwd=cwd, env=uv_list.host_environment(a.host))
+        if (uv_list.native_verification_required(tool, inp, cwd=cwd, env=uv_list.host_environment(a.host))
                 or uv_list.fingerprint_command(tool, inp, cwd=cwd, env=uv_list.host_environment(a.host), host=a.host)):
             from .list_approval import NativeContext
             answer = await a.host.ask(tool, inp, batch=False, _harness_permission=True, _native_context=NativeContext.capture(a))
@@ -272,7 +272,7 @@ class NativePathGuard:
         # money-moving / irreversible call (uv_list.fingerprint_command) is sent to Host.ask here so list_approval can
         # show the main thread's fingerprint card (or refuse it for a scheduled task / background job, no card).
         cwd = event.get('cwd') or a.cfg.get('dir')
-        if (not uv_list.protected_targets(tool, inp, cwd=cwd, env=uv_list.host_environment(a.host))
+        if (not uv_list.native_verification_required(tool, inp, cwd=cwd, env=uv_list.host_environment(a.host))
                 and not uv_list.fingerprint_command(tool, inp, cwd=cwd, env=uv_list.host_environment(a.host), host=a.host)):
             from . import delete_redirect
             if (text := delete_redirect.denial(a.cfg, tool, inp)) is not None:

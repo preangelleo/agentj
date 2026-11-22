@@ -222,6 +222,25 @@ STRIPE_POST_CREATE = frozenset({'charges', 'payment_intents', 'subscriptions', '
 STRIPE_POST_ACTION = frozenset({('charges', 'capture'), ('payment_intents', 'confirm'), ('payment_intents', 'capture'),
                                 ('invoices', 'pay')})
 _SHELL_OPS = ('bash', 'exec_command', 'shell_command', 'execute_command', 'shell')
+GIT_CONFIG_READ_UV = 'Git configuration values require fresh owner verification.'
+
+
+def git_config_read(tool, inp):
+    """Find Git config value-list operations in native shell parameters."""
+    import shlex
+    from . import danger, policy_registry
+    if not isinstance(tool, str) or not isinstance(inp, dict):
+        return False
+    operation = policy_registry.harness_tool(tool).rsplit('__', 1)[-1].rsplit('.', 1)[-1].lower()
+    if operation not in _SHELL_OPS + ('monitor',):
+        return False
+    text = inp.get('command', inp.get('cmd', ''))
+    if isinstance(text, list):
+        text = shlex.join(str(word) for word in text)
+    if not isinstance(text, str):
+        return False
+    return any(call.name == 'git' and 'remote' not in call.flags and danger.git_config_value_list(call.args)
+               for command in danger.lex(text) for call in danger.unwrap(command))
 
 
 def _stripe_post(words):
@@ -510,8 +529,8 @@ FINGERPRINT_SOURCES = frozenset({'owner_remote', 'owner_terminal', 'owner_channe
 
 
 def required(tool, tool_input=None, *, cwd=None, env=None):
-    """Semantic names only. Model text, command shape and origin never grant UV."""
-    if protected_targets(tool, tool_input, cwd=cwd, env=env):
+    """Explicit operations and protected native operands require UV."""
+    if native_verification_required(tool, tool_input, cwd=cwd, env=env):
         return True
     if tool == 'agentj tasks create' and isinstance(tool_input, dict):
         return tool_input.get('purpose') == 'declared_large_transfer_creation'
@@ -688,6 +707,10 @@ def write_targets(tool, inp, *, cwd=None, agentj_only=False):
 def protected_targets(tool, inp=None, *, cwd=None, env=None):
     """Resolved identity, ancestor replacement and hardlink aliases count equally."""
     return protected_match(write_targets(tool, inp, cwd=cwd), cwd=cwd, env=env)
+
+
+def native_verification_required(tool, inp, *, cwd=None, env=None):
+    return git_config_read(tool, inp) or bool(protected_targets(tool, inp, cwd=cwd, env=env))
 
 
 def protected_match(actuals, *, cwd=None, env=None):

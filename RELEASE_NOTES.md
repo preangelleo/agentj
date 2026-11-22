@@ -1,5 +1,5 @@
-# Agent J v0.30.67
+# Agent J v0.30.68
 
-After restart, interruption notices attach only to the verified original message. Duplicate deliveries stay blocked.
+Listing Git configuration values requires verification. Releases check signed packages at both download URLs.
 
-重启后，中断提示只会标记能核对到的原消息。同一条消息仍会防止重复投递。
+Git 配置清单读取恢复安全验证。官网发布会核对两个下载地址上的签名包。

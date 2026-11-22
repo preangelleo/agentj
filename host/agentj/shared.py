@@ -620,6 +620,9 @@ class SharedClaudeAgent(Agent):
         from .shared_risk import credential_read_refusal
         if (refusal := credential_read_refusal(self.host, tool, inp, self.cfg.get('dir'))) is not None:
             return refusal
+        if uv_list.git_config_read(tool, inp):
+            return {'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
+                    'permissionDecisionReason': uv_list.GIT_CONFIG_READ_UV}}
         if not uv_list.protected_targets(tool, inp, cwd=self.cfg.get('dir'), env=uv_list.host_environment(self.host)):
             return {}
         answer = await self.host.ask(tool, inp, gone, batch=False, _harness_permission=True)
@@ -1315,11 +1318,14 @@ class SharedClaudeAgent(Agent):
         if name == "PreToolUse":
             from . import uv_list
             from .shared_risk import credential_read_refusal
-            if (refusal := credential_read_refusal(self.host, event.get('tool_name'), event.get('tool_input') or {}, self.cfg.get('dir'))) is not None:
+            tool, inp = event.get('tool_name'), event.get('tool_input') or {}
+            if (refusal := credential_read_refusal(self.host, tool, inp, self.cfg.get('dir'))) is not None:
                 return refusal
-            if uv_list.protected_targets(event.get('tool_name'), event.get('tool_input'), cwd=self.cfg.get('dir'), env=uv_list.host_environment(self.host)):
-                answer = await self.host.ask(event.get('tool_name'), event.get('tool_input') or {}, gone,
-                                             _harness_permission=True, batch=False)
+            if (event.get('agent_id') or event.get('parent_tool_use_id')) and uv_list.git_config_read(tool, inp):
+                return {'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
+                        'permissionDecisionReason': uv_list.GIT_CONFIG_READ_UV}}
+            if uv_list.native_verification_required(tool, inp, cwd=self.cfg.get('dir'), env=uv_list.host_environment(self.host)):
+                answer = await self.host.ask(tool, inp, gone, _harness_permission=True, batch=False)
                 if answer.get('behavior') != 'allow':
                     return {'hookSpecificOutput': {'hookEventName':'PreToolUse', 'permissionDecision':'deny',
                         'permissionDecisionReason':answer.get('message') or 'Owner verification required for protected control files.'}}

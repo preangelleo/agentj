@@ -412,6 +412,8 @@ def fallback(name, family, event, valid_execution):
         if uv_list.credential_reads(event.get('tool_name'), event.get('tool_input'), cwd=event.get('cwd')):
             return {'permissionDecision': 'deny', 'permissionDecisionReason':
                     uv_list.CREDENTIAL_READ_REASON + ': ' + uv_list.CREDENTIAL_READ_HINT}
+        if uv_list.git_config_read(event.get('tool_name'), event.get('tool_input')):
+            return {'permissionDecision': 'deny', 'permissionDecisionReason': uv_list.GIT_CONFIG_READ_UV}
         if uv_list.protected_targets(event.get('tool_name'), event.get('tool_input'), cwd=event.get('cwd')):
             return {'permissionDecision': 'deny', 'permissionDecisionReason': 'Agent J is unavailable; protected control files require owner verification.'}
     # F14: no Agent J decision. Native hooks/rules and dialogs remain authoritative.

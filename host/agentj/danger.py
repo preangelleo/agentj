@@ -874,10 +874,7 @@ def _http_write(name: str, args: list) -> tuple[bool, str | None]:
 
 
 def _git(args: list, hits: _Hits) -> None:
-    k = 0
-    while k < len(args) and args[k].startswith("-"):
-        k += 2 if args[k] in ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path") else 1
-    rest = args[k:]
+    rest = _git_arguments(args)
     if not rest:
         return
     sub, a = rest[0], rest[1:]
@@ -924,6 +921,37 @@ def _git(args: list, hits: _Hits) -> None:
         hits.add("credentials", "cred.git_credential", "改 git 保存的凭据")
     elif sub == "remote" and a[:1] in (["remove"], ["rm"]):
         hits.add("delete", "delete.git_remote", "删除 remote")
+
+
+def _git_arguments(args):
+    k = 0
+    while k < len(args) and args[k].startswith("-"):
+        k += 2 if args[k] in ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path") else 1
+    return args[k:]
+
+
+def git_config_value_list(args):
+    """Recognize Git's value-list operations from argv, without inspecting any config."""
+    rest = _git_arguments(args)
+    if rest[:1] != ["config"]:
+        return False
+    modern = rest[1:2] == ["list"]
+    listing, names_only = modern, False
+    flags = iter(rest[2:] if modern else rest[1:])
+    for flag in flags:
+        if flag == "--":
+            break
+        if flag in ("-f", "--file", "--blob", "-t", "--type", "--default"):
+            next(flags, None)
+        elif flag in ("-h", "--help"):
+            return False
+        elif flag in ("--name-only", "--no-name-only"):
+            names_only = flag == "--name-only"
+        elif not modern and (flag == "--list" or re.fullmatch(r"-[lz]*l[lz]*", flag)):
+            listing = True
+        elif not modern and flag == "--no-list":
+            listing = False
+    return listing and not names_only
 
 
 def _gh(args: list, hits: _Hits) -> None:
@@ -2137,6 +2165,11 @@ def hook_main(argv: list[str]) -> int:
             emit({'hookSpecificOutput': {
                 'hookEventName': 'PreToolUse', 'permissionDecision': 'deny',
                 'permissionDecisionReason': text}})
+        elif uv_list.git_config_read(ev.get('tool_name'), ev.get('tool_input')):
+            decision = 'deny' if ev.get('agent_id') or ev.get('parent_tool_use_id') else 'ask'
+            emit({'hookSpecificOutput': {
+                'hookEventName': 'PreToolUse', 'permissionDecision': decision,
+                'permissionDecisionReason': uv_list.GIT_CONFIG_READ_UV}})
         elif uv_list.protected_targets(ev.get('tool_name'), ev.get('tool_input'), cwd=ev.get('cwd')):
             emit({'hookSpecificOutput': {
                 'hookEventName': 'PreToolUse', 'permissionDecision': 'ask',
@@ -2784,6 +2817,8 @@ def _shared_cred_read(command: str, cwd: str | None = None) -> tuple[str, str] |
                     if _glob_cred(w) or cred_path(w):
                         return ("shared.credential_show", f"读取{cred_path(w) or w}")
             for sc in unwrap(c):
+                if sc.name == "git" and "remote" not in sc.flags and git_config_value_list(sc.args):
+                    return ("shared.credential_show", "列出 Git 配置值")
                 if sc.name in ("cd", "pushd"):           # every folder the line may be in afterwards (`sh -c 'cd x && …'`)
                     t = next((w for w in sc.args if not w.startswith("-")), "~")
                     cwds = list(dict.fromkeys(cwds + [None if t == "-" else _place(t, x) for x in cwds]))[:8]

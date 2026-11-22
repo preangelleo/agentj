@@ -280,6 +280,23 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
         return refused('serve_stop', 'Agent J serve has stopped; no operation executed.')
     if host.stopped():
         return refused('estop', '已急停，未执行 / Stop everything is on; no operation executed.')
+    if uv_list.git_config_read(tool, inp):
+        # Keep existing credential-file, private-state and source refusals.
+        # Git value listings never take the headless fingerprint exemption.
+        from . import approval_offlist
+        src = approval_offlist.source(host, background=background, order_owner=order_owner)
+        authority = host._approval_live_authority()
+        decision, reason, key = await asyncio.to_thread(approval_offlist.decide, host, tool, inp, _seam_cwd(host, cwd), src)
+        if decision != 'allow':
+            zh, en = approval_offlist._REFUSALS[key]
+            return refused(reason, zh.format(**src) + ' / ' + en.format(**src))
+        if host.stopping.is_set() or host.stopped():
+            return refused('estop', '已急停，未执行 / Stop everything is on; no operation executed.')
+        if native_context is not None and not native_context.live(host):
+            return refused('native_context_changed', 'Native session context changed; no operation executed.')
+        if (src.get('trust') != 'owner' or src.get('type') not in ('owner_remote', 'owner_terminal', 'owner_channel')
+                or background is not None or authority != host._approval_live_authority() or (gone is not None and gone.done())):
+            return refused('git_config_read_source', uv_list.GIT_CONFIG_READ_UV)
     resume_context = approval_review.digest({'only':only,'host_card':bool(host_card),
         'harness_permission':bool(harness_permission),'task_actions':task_actions,'task_target':task_target,
         'cwd':os.path.realpath(cwd) if cwd else None,
