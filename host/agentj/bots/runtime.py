@@ -66,6 +66,11 @@ class Runtime:
                 if seated and cloud.read_cloud(self.host.st):
                     for b in bots:
                         bid=b['id'];epoch=self.manager.state().lifecycle(bid)['epoch']
+                        # A removal the cloud has accepted (durable, per epoch) is final there: no minute re-registration.
+                        # Unreadable / unsaved acceptance = not settled = keep registering.
+                        try:
+                            if self.manager.state().removal_settled(bid):continue
+                        except Exception:pass
                         if self.synced.get(bid,(0,0))[0]!=epoch or time.monotonic()-self.synced.get(bid,(0,0))[1]>=60:
                             try:await self.register(bid);self.synced[bid]=(epoch,time.monotonic())
                             except Exception:self.host.st.log('bots',outcome='registration_unavailable')
@@ -140,6 +145,10 @@ class Runtime:
         if code!=200 or not isinstance(value.get('host_ticket'),dict):
             backoff.failed(cloud.status_class(code),response_delay(code,value))
             raise BotError('registration_unavailable')
+        if manifest['status']=='removed':
+            # Exactly the manifest the cloud just accepted. A failed write only costs another registration next minute.
+            try:store.removal_reported(bid,epoch)
+            except Exception:self.host.st.log('bots',outcome='removal_report_unsaved')
         return value['host_ticket'],epoch
     async def serve_bot(self,bid):
         while not self.stopping:

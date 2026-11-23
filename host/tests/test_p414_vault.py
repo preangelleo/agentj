@@ -174,8 +174,22 @@ class Vault(unittest.TestCase):
         x.seen[5], x.recent = 1, "sudo: a terminal is required"
 
         async def go():
+            # 13a1ded21b (2026-11-20, SudoDesk._sudo_authority): askpass acts only for the desk's live terminal, at
+            # every stage. A terminal the desk does not hold (or one that is closing) is answered with nothing — sudo's
+            # own wrong-password words there neither count the ask nor forget the remembered password.
+            x.seen[6], x.recent = 1, "对不起，请重试。\n"
+            with mock.patch.object(asyncio, "sleep", new=mock.AsyncMock()):
+                self.assertIsNone(await desk._sudo_pw(x, 6))
+                desk.term, x.closing = x, True
+                self.assertIsNone(await desk._sudo_pw(x, 6))
+            self.assertEqual(x.seen[6], 1)
+            self.assertIsNotNone(vault.wrap_meta(st, ph.did))
+            self.assertIsNotNone(vault.wrap_meta(st, "zz"))
+            x.closing, x.recent = False, "sudo: a terminal is required"
+            del x.seen[6]
             with mock.patch.object(asyncio, "sleep", new=mock.AsyncMock()):
                 self.assertIsNone(await desk._sudo_pw(x, 5))
+            self.assertEqual(x.seen[5], 2)
             self.assertIsNotNone(vault.wrap_meta(st, ph.did))
             x.seen[6], x.recent = 1, "对不起，请重试。\n"
             self.assertIsNone(await desk._sudo_pw(x, 6))
@@ -200,6 +214,7 @@ class Vault(unittest.TestCase):
         s = types.SimpleNamespace(device=ph.did)
         x = Term(s, R, "prf", None, 15, time.monotonic, time.time)
         x.recent = "Sorry, try again.\nsudo: 3 incorrect password attempts\n"    # printed by an earlier command
+        desk.term = x      # 13a1ded21b (2026-11-20): askpass serves only the desk's live terminal (_sudo_authority)
 
         async def go():
             with mock.patch.object(term_askpass, "proc_info", return_value={"argv": ["sudo", "-A", "true"]}), \
@@ -649,7 +664,13 @@ class Vshare(CardRig):
             return card
         card = asyncio.run(go())
         self.assertEqual(card["flags"], ["web", "account"])
-        self.assertEqual(elevate.shown_fields(card), [self.b.did, FA2["id"], str(card["paired"]), "web,account"])
+        # 7aa5df0687 (2026-11-07, P541 lifecycle): the signed fields end with the card's approval-envelope digest, so
+        # a signature also binds the reviewed source / context envelope, not only the four displayed vshare fields.
+        self.assertRegex(card["envelope_sha256"], r"\A[0-9a-f]{64}\Z")
+        shown = [self.b.did, FA2["id"], str(card["paired"]), "web,account", card["envelope_sha256"]]
+        self.assertEqual(elevate.shown_fields(card), shown)
+        other = {**card, "envelope_sha256": "0" * 64}
+        self.assertNotEqual(elevate.shown_digest("vshare", elevate.shown_fields(other)), elevate.shown_digest("vshare", shown))
 
 
 class JsParity(unittest.TestCase):

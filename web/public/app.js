@@ -65,6 +65,7 @@ import * as loginsheet from './js/loginsheet.js';   // 0.26.9 (#464): 「重新�
 import * as webhooks from './js/webhooks.js';   // P366: Settings → Webhook re-reads on hook_changed
 import * as qresume from './js/qresume.js';         // P314 (§32): 「额度用完，预计 HH:MM 自动继续」 banner
 import * as rescue from './js/rescue.js';           // P332 (§33): Settings → 紧急修复 + the rescue-mode banner
+import { setCacheBytes } from './js/layout-diag.js';   // render counters: rescue.js already loaded it (module order unchanged)
 import { registerMailForward } from './js/mailfwd.js';   // P189: file card → the dialog below
 import * as forms from './js/forms.js';         // P212 (§29): Quick Pick / Deep Dive
 import * as contacts from './js/contacts.js';   // P184 (§25): contact cards + 「转发到邮箱」
@@ -474,6 +475,7 @@ qresume.configure();                                           // P314: ✕ on t
 assist.configure({ turns: () => relay.loadedTurns() });          // 0.26.9 #468 (§B3): the feed reads a task's reply from the loaded history
 ownerHosts.init();
 budget.init();                                                      // 0.26.9 §E3: Settings → 安全 → 预算
+setCacheBytes(media.cacheSize);                                // layout diagnostic: the media cache's size, a number, nothing else
 rescue.configure({                                             // P332: 紧急修复 — the block, ≡ 重置连接, /reset, the banner
   openSettings: () => settings.openRescue(),
   linkState: () => (session.isReady() ? 'up' : link.state() === 'quiet' ? 'quiet' : 'down'),   // P393: wait out a blink
@@ -887,7 +889,7 @@ secretout.configure({ setupFaceId });
 keys.configure({ setupFaceId });   // P352: 拷贝 / 删除 on a phone without a passkey offer the same F20 setup
 sessionHelp.configure({ repair: () => { settings.openRescue(); cmdrun.run('reconnect'); }, supported: () => cmdrun.supports('reconnect') });
 cmdrun.configure({ setupFaceId, openTerminal: (cmd) => termhook.open(cmd), showChat: () => { settings.close(); controls.openPanel('chat'); } }); // P361: 「执行」 on a phone without a passkey — the same F20 offer · P408: 「在终端里打开」
-termhook.configure({ setupFaceId, openSettings: () => { if (!settings.isOpen()) settings.open(); }, openRescue: () => settings.openRescue(), changed: () => cmdrun.paint(),
+termhook.configure({ setupFaceId, openSettings: () => { if (!settings.isOpen()) settings.open(); }, openRescue: () => settings.openRescue(), changed: () => { cmdrun.paint(); relay.repairChanged(); },
   attach: (f) => relay.attachShot(f, true), insert: (s) => relay.insertText(s), goChat: () => { if (settings.isOpen()) settings.close(); } });   // P408 · P414: 截屏发到聊天 / 放回输入框
 vaultrow.configure({ setupFaceId });   // P414
 pkassist.configure({ setupFaceId, openSettings: () => { if (!settings.isOpen()) settings.open(); } });   // P539: 「在本机设置」 — the same F20 offer · P561 追加 14/17: scrollToPkRow

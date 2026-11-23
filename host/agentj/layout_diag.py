@@ -10,6 +10,14 @@ import time
 
 MAX_BYTES = 12_288
 FIELDS = {'v','at','ios','standalone','ua','theme','status','conn','kb','known','compacting','level','bottom','innerHeight','clientHeight','vv','layers','meter','look','build'}
+# Optional render-health counters (web js/render-diag.js): fixed words, buckets and small counts only.
+RENDER_ENUMS = {'reason':('manual','context_lost','long_hidden'),
+                'agent':('android-chrome','android-webview','android-firefox','android-other','ios-safari','ios-other','desktop-chrome','desktop-safari','desktop-firefox','desktop-other','other'),
+                'alive':('lt1m','lt10m','lt1h','lt6h','lt1d','lt3d','ge3d'), 'hiddenMax':('none','lt1m','lt10m','lt1h','lt6h','ge6h'),
+                'gl':('pending','ok','lost','unavailable'), 'cache':('none','lt1mb','lt8mb','lt32mb','lt64mb','ge64mb','unknown'),
+                'cards':('none','lt10','lt50','lt200','lt500','lt1000','ge1000','unknown'), 'nodes':('lt500','lt1500','lt5000','lt15000','ge15000','unknown')}
+RENDER_COUNTS = {'hidden':9999,'glLost':99,'glRestored':99}
+RENDER_MEMORY = (0.25,0.5,1,2,4,8,16,32)
 COLOR = re.compile(r'(?:#[0-9a-fA-F]{6}|rgba?\([0-9.,% /+\-]+\)|color\((?:srgb|display-p3) [0-9.eE% /+\-]+\))')
 
 def number(v):
@@ -21,8 +29,15 @@ def shape(obj, keys):
 def colour(v):
     return v is None or isinstance(v,str) and len(v)<=128 and COLOR.fullmatch(v) is not None
 
+def render_ok(r):
+    if not isinstance(r,dict) or set(r)!=set(RENDER_ENUMS)|set(RENDER_COUNTS)|{'mem'}: return False
+    if any(not isinstance(r[k],str) or r[k] not in values for k,values in RENDER_ENUMS.items()): return False
+    if any(type(r[k]) is not int or not 0<=r[k]<=top for k,top in RENDER_COUNTS.items()): return False
+    return r['mem'] is None or type(r['mem']) in (int,float) and r['mem'] in RENDER_MEMORY
+
 def valid(s):
-    if not isinstance(s,dict) or set(s)!=FIELDS or type(s['v']) is not int or s['v']!=1: return False
+    if isinstance(s,dict) and 'render' in s and not render_ok(s['render']): return False
+    if not isinstance(s,dict) or set(s)-{'render'}!=FIELDS or type(s['v']) is not int or s['v']!=1: return False
     if type(s['at']) not in (int,float) or not math.isfinite(s['at']) or not 0<=s['at']<1e15: return False
     if any(type(s[k]) is not bool for k in ('ios','standalone','kb','known','compacting')): return False
     for key,values in {'ua':['chrome','safari','firefox','edge','other'], 'theme':['light','dark','system','unknown'],

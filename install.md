@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.28.91
+version: 0.28.92
 released: 2026-11-23
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.30.70
-source_tag: v0.30.70
-host_wheel: agentj-0.30.70-py3-none-any.whl
-host_wheel_sha256: 5422356dfb283c7c850e752d470b414d0211f3fd2330b3dbf244eb0a63c9897e
-host_sdist: agentj-0.30.70.tar.gz
-host_sdist_sha256: e31170c1dfb9ff84718c1d7b88c79f2317dee7e983d1af62ef1580289f0b480a
+host_version: 0.30.71
+source_tag: v0.30.71
+host_wheel: agentj-0.30.71-py3-none-any.whl
+host_wheel_sha256: 548ec3db96cbdfe3a9e9ddf8643199daf484dc052ef9eaec61ab638dc8bf2f2a
+host_sdist: agentj-0.30.71.tar.gz
+host_sdist_sha256: 05f125534bde20c7489d31c9a22098a133947d8bb5a06e309f772719e757522d
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 docs_index: https://agentj.app/llms.txt (also https://agentj.app/docs/index.json; every page as raw Markdown at https://agentj.app/docs/<slug>/en.md and /zh.md)
@@ -403,7 +403,7 @@ account, key or payment: Step 3c).
   move to a model of their own any time.
 - **Claude Code and Codex are not offered where the Agent J host is** (Hong Kong, Macau, mainland China and the other places
   Anthropic / OpenAI do not serve) → **mainland China, starting from zero:** a **Volcano Ark (火山方舟) Agent Plan** —
-  buy **Medium** first (Kimi K3 from Medium up; Step 3h). An existing Ark Coding Plan (Lite / Pro) keeps working. **Hong Kong / overseas:** a
+  buy **Medium** first (Kimi K3.1 Pro included; Step 3h). An existing Ark Coding Plan (Lite / Pro) keeps working. **Hong Kong / overseas:** a
   **Kimi membership**, Plus or higher, billed in USD outside the mainland, in OpenCode (Step 3d) or Kimi Code CLI (Step 3e).
   **Already paying for one of them** (Ark, Kimi, or an Alibaba Cloud Bailian Token Plan — Steps 3f / 3g): keep it, never
   sell a second plan. The human decides. After Step 4, `agentj agent route` checks what really answers here, not a guess.
@@ -567,7 +567,7 @@ and the provider's region error; the time zone / language of the Agent J host on
 `"route": "kimi"` (both refused or unreachable, Kimi reachable) → tell your human, in their language, the rule it prints
 (`"primary"` in `--json`: `"ark"` for a mainland time zone, `"kimi"` for Hong Kong / Macau, `null` when unknown — then ask
 where they are):
-- **mainland China, starting from zero:** a **Volcano Ark Agent Plan, Medium first** — Kimi K3 from Medium up (Step 3h;
+- **mainland China, starting from zero:** a **Volcano Ark Agent Plan, Medium first** — Kimi K3.1 Pro included (Step 3h;
   the command prints the prices and sign-up steps).
 - **Hong Kong / overseas:** a **Kimi membership, Plus or higher** (billed in USD outside the mainland). **Go has no coding
   quota** — it does not work here.
@@ -653,7 +653,7 @@ Code up (`~/.qwen/settings.json`, e.g. with `bl config agent --agent qwen-code`)
 ### 3h. Mainland China: a Volcano Ark (火山方舟) Agent Plan or Coding Plan in OpenCode or Claude Code
 
 **Agent Plan — what Ark sells now, and the default** (2026-10-19): Small / Medium / Large / Max a month (`agentj agent
-route` prints the list prices; the order page is authoritative); Kimi K3 from Medium up, so tell the human to buy **Medium** first. It has its own
+route` prints the list prices; the order page is authoritative); the current plan decides which models are available (Kimi K3.1 Pro is in every size), and the human buys **Medium** first. It has its own
 addresses — OpenAI-compatible `https://ark.cn-beijing.volces.com/api/plan/v3`, Anthropic-compatible
 `https://ark.cn-beijing.volces.com/api/plan` — and its own key: ✋ the human copies the plan's own API key from the Ark
 console under 订阅 → Agent Plan → 使用配置 (Subscription → Agent Plan → Usage configuration) — **not** a key from API Key
@@ -667,14 +667,14 @@ The host retries the selected model before switching. For Claude Code, use `agen
 to configure the `ark-agent-claude` profile with the `ark-agent` preset. Everything below about image input and
 terms holds for both plans.
 
-**Coding Plan — a human who already has one** keeps it (`agentj provider ark --plan coding`, below): Lite and Pro have the same models (ByteDance Doubao, Kimi K3, GLM, DeepSeek, MiniMax)
+**Coding Plan — a human who already has one** keeps it (`agentj provider ark --plan coding`, below): Lite and Pro have the same models (ByteDance Doubao, Kimi K3.1 Pro, GLM, DeepSeek, MiniMax)
 and tools; Pro only gives 5x the quota, so they upgrade only if it runs short. `agentj agent route` prints the list prices
 read on 2026-10-16 and the sign-up page; the order page is authoritative — never quote prices from memory. What the owner
 measured (2026-10-15): **reads images**
-`doubao-seed-2.1-pro` (the default), `kimi-k3` (uses quota fast — Ark suggests it for Pro; Lite can pick it too),
+`doubao-seed-2.1-pro` (the default),
 `kimi-k2.7-code`, `glm-5-3-flash`, `minimax-m3`,
 `deepseek-v4-1-flash`; **text only** `glm-5.3`, `deepseek-v4-pro`, `deepseek-v4-flash` — pick an image model for
-screenshots and browser work. The Coding Plan has no image-generation model. Tell the human: it is a plan for interactive
+screenshots and browser work. Ark retires `kimi-k3` from the personal Agent Plan and the personal Coding Plan on 2026-11-25 at 14:00 (UTC+8); its replacement is `kimi-k3.1-pro` (every Agent Plan size; Ark's official configuration marks it as reading images, not yet measured by us). A saved `kimi-k3` choice fails on every turn after that time: the owner picks `kimi-k3.1-pro` under Models & API keys on the phone, or the host is upgraded to 0.30.71, which moves the choice once and tells the owner. The Coding Plan has no image-generation model. Tell the human: it is a plan for interactive
 use in coding tools (Ark's console terms are authoritative); unattended work needs a pay-as-you-go key — Agent J never
 gives this key to tasks or bots.
 
@@ -734,7 +734,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.30.70` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.30.71` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -776,13 +776,13 @@ uv tool install "./$W"          # the wheel; its dependencies come from PyPI or 
 `https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.9`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.70#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.71#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.70#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.71#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.70`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.71`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1787,7 +1787,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.70#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.71#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -3439,6 +3439,18 @@ curl --proto '=https' --tlsv1.2 -fsSL https://agentj.app/install-assistant.sh | 
 
 The installer verifies the release signature and dependency hashes, then restarts the service and checks its health after installation. Run `agentj --version` and `agentj doctor` to confirm the result. Your seat, pairing and settings are preserved.
 
+0.30.47–0.30.65 的 Linux 主机升级时提示「已校验的安装包在安装前被改动或替换」（`install_artifact_changed`），多半是这些旧版本升级程序的已知问题；主机仍在原版本照常可用，配对和设置不变，macOS 不受影响。失败卡片上会给出下面这一行，可复制；由主人在主机终端粘贴（连括号）。这条命令会把 Agent J 自己的依赖缓存目录改成仅本人可写、立即升级并重启，会打断进行中的任务。SSH 下最后会看到 `UPGRADE_RESULT ok`，随后空闲时自动重启一次；Agent J 网页终端会在最后断开，重新打开后 `agentj --version` 显示新版本即成功。开头的 `No such file or directory` 可忽略；找不到 `agentj` 就换成 `~/.local/bin/agentj`。只做一次；仍失败不要重复，把屏幕结果交给客服，SSH 下可改用上面的 `--repair-index` 修复命令（它会顺带去掉 `~/.local` 等目录的同组写权限）。失败提示让主人按主机修复说明运行修复命令时：0.30.47–0.30.65 的 Linux 主机用这一行（已在 Ubuntu 24.04 上验证）；其它版本，或这一行无效时，SSH 下运行上面的 `--repair-index` 修复命令。
+
+On Linux hosts running 0.30.47–0.30.65, an upgrade that reports "the verified package changed or was replaced before installing" (`install_artifact_changed`) is most likely a known fault in those older updaters. The host keeps working on its current version with pairing and settings unchanged; macOS is not affected. The failure card shows this line for copying; the owner pastes it, brackets included, into a terminal on the host. It makes Agent J's own dependency cache folder writable only by the owner, then upgrades and restarts at once, interrupting any task in progress. Over SSH it ends with `UPGRADE_RESULT ok` and Agent J restarts once when idle; the Agent J web terminal disconnects at the end, and `agentj --version` showing the new version after reopening means success. Ignore `No such file or directory` at the start; if `agentj` is not found, use `~/.local/bin/agentj`. Run it once; if it still fails, do not repeat it: send the screen output to support, or over SSH use the `--repair-index` repair command above (it also removes group write permission from `~/.local` and similar folders). When a failure message points the owner to the repair command in the host repair guide: Linux hosts on 0.30.47–0.30.65 use this line (verified on Ubuntu 24.04); any other version, or when this line does not help, runs the `--repair-index` repair command above over SSH.
+
+```bash
+( umask 077; chmod -R go-w ~/.local/state/agentj/install-artifacts/dependencies; agentj update apply --yes )
+```
+
+准备依赖包超时：网络太慢或中途卡住时 0.30.71 起会自动重试几次，仍没完成就停在原版本，照常可用。提示网络原因的，网络恢复后在手机输入 `/update`；提示主机太忙、磁盘太慢或规定时间内没完成的，主机空闲后再输入 `/update`。自动升级开着时，主机之后空闲时或夜间会自动再试。官网说明：https://agentj.app/docs/install/#upgrade-timeout（旧版本那一行修复命令在 https://agentj.app/docs/install/#old-updater-fix）。
+
+Dependency preparation timeout: when the network is too slow or stalls, 0.30.71 and later retry a few times by themselves; if that still does not finish, the host stays on its current version and keeps working. For a network cause, enter `/update` on the phone once the connection is back; for a busy host, slow disk or time running out, enter `/update` when the host is idle. With automatic updates on, the host tries again by itself when next idle or overnight. Guide: https://agentj.app/docs/install/#upgrade-timeout (the one-line repair for older versions: https://agentj.app/docs/install/#old-updater-fix).
+
 ### Exposed passkeys and secure setup
 
 In account Login & security → Secure setup, create a new passkey and sign in with it to verify independent access before selecting exposed or unrecognised old keys to revoke. Store the new key in an unaffected system password manager or hardware key. Check independent access from another device and through your email first. Revocation ends other account sessions, transfer codes and pending authorisations.
@@ -3453,9 +3465,21 @@ For each computer, preview and revoke remotes by public credential ID. Offline m
 每台 Agent J 主机可按公开 credential ID 预览和吊销对应遥控器。离线显示待处理，只有 Agent J 主机回连并确认才算完成；云端无法立即阻断离线 Agent J 主机的本地连接。旧版必须升级。手机「设置」→「遥控器管理」→「安全重配」逐台完成：开始 → 新配对并创建新通行密钥 → 重新连接并验证 → 撤旧。恢复旧遥控器不算重配；已验证的新设备全部保留。满额时先保留终端救援入口，再手动腾出已核实的旧位置。不要默认重装主机、重置批准口令或执行 init --force。
 ### P489 layout diagnostic / 画面诊断
 
-画面有色带或错位时，打开 **设置 → 紧急修复 → 发送画面诊断**。只发送尺寸、颜色、视口、用量、状态、主题和网页 build，不含网址、聊天正文、票据或会话 ID。旧主机收到后暂存 30 分钟，请立即让 Agent 在工作目录 `.agentj/inbox/` 查看最新的 `*layout-diagnostic.json`。支持专用诊断的主机会保留最近一次，在主机运行 `agentj diag layout --last` 只读查看；旧主机升级到包含该命令的版本后才支持永久留存。按钮不会自动联系第三方客服。
+画面有色带或错位时，打开 **设置 → 紧急修复 → 发送画面诊断**。发送的内容有尺寸、颜色、视口、用量、状态、主题和网页 build，另有一组不含内容的统计：页面运行时长、切到后台的次数和最长一次的时长、图形状态和出错次数、设备内存、媒体缓存大小、对话页数、页面元素规模、浏览器家族。这些统计只记档位、次数或固定用词。
 
-For a colour band or misplaced elements, open **Settings → Emergency repair → Send layout diagnostic**. Only dimensions, colours, viewport, usage, status, theme and web build are sent; no URL, chat text, ticket or session ID. Older hosts stage the file for 30 minutes: ask your Agent to read the latest `*layout-diagnostic.json` under its working folder’s `.agentj/inbox/` immediately. Hosts with dedicated diagnostic support keep the latest sample; run `agentj diag layout --last` on the host to read it. Persistent storage requires a host version that includes this command. The button does not contact third-party support.
+除了你点按钮，还有两种时候会自动发一次：页面图形出错时，以及在后台停留 10 分钟以上再回到前台时。自动发送每个页面每小时最多 3 条，页面在后台时不发。
+
+诊断只发到你自己的 Agent J 主机，主机只保留最近一条，我们收不到。里面不含网址、聊天正文、文件名、主机名、票据或会话 ID，也不含浏览器的 UA 原串。
+
+旧主机收到你点按钮发来的诊断后暂存 30 分钟，暂存文件里也有上面这组统计，请立即让 Agent 在工作目录 `.agentj/inbox/` 查看最新的 `*layout-diagnostic.json`；自动发送的诊断旧主机不保留。支持专用诊断的主机会保留最近一次，在主机运行 `agentj diag layout --last` 只读查看，它只回答你自己的 Agent 会话；其中还不认识这组统计的主机，会在你点按钮约 5 秒后收到去掉统计的诊断。旧主机升级到包含该命令的版本后才支持永久留存。按钮不会自动联系第三方客服。
+
+For a colour band or misplaced elements, open **Settings → Emergency repair → Send layout diagnostic**. It sends dimensions, colours, viewport, usage, status, theme and web build, plus a set of counters that carry no content: how long the page has been running, how many times it went to the background and the longest such stay, the graphics state and how many times it failed, device memory, media-cache size, the number of conversation pages, the page's element count and the browser family. These counters are recorded only as ranges, counts or fixed words.
+
+Besides the button, the page sends one diagnostic by itself in two cases: when the page's graphics fail, and when it returns to the front after 10 minutes or more in the background. Automatic sends are limited to 3 per page per hour, and nothing is sent while the page is in the background.
+
+The diagnostic goes only to your own Agent J host, which keeps just the latest one; we never receive it. It contains no URL, chat text, file name, host name, ticket or session ID, and not the browser's raw user-agent string.
+
+Older hosts stage a diagnostic you sent with the button for 30 minutes, and the staged file includes the counters above: ask your Agent to read the latest `*layout-diagnostic.json` under its working folder’s `.agentj/inbox/` immediately. Older hosts do not keep automatic diagnostics. Hosts with dedicated diagnostic support keep the latest sample; run `agentj diag layout --last` on the host to read it. It answers only your own Agent session. Such a host that does not yet know the counters receives the diagnostic without them about 5 seconds after you tap the button. Persistent storage requires a host version that includes this command. The button does not contact third-party support.
 
 ### macOS startup and phone terminal controls
 

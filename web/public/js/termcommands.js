@@ -19,6 +19,7 @@ import {newSid} from './api.js';
 import {copyable} from './copycode.js';
 import {glyph} from './icons.js';
 import {toast} from './ui.js';
+import {OLD_UPDATER_FIX, OLD_FIX_RUN} from './old-updater-line.js';
 
 export function ownReply(p) {
   const s = p?.source;
@@ -143,8 +144,31 @@ function fixBar(root, page, targets) {
 function state(b, online, busy) {
   b.disabled = busy; b.setAttribute('aria-disabled', String(!online || busy)); b.classList.toggle('off', !online);
 }
-function repaint(page) { if (shown && shown.page && shown.page.id === page.id && shown.root.isConnected) paint(shown.root, shown.page); }
-
+function repaint(page) {
+  if (shown && shown.page && shown.page.id === page.id && shown.root.isConnected) paint(shown.root, shown.page);
+  if (fixed && fixed.id === page.id) fixed.redraw();
+}
+/** 0371: the one line of old-updater-line.js on a host-written card. No command parameter: what runs is that module's
+ *  constant, whoever calls. Behind its switch, only the terminal route, and only while this remote may use the web terminal:
+ *  the 「!」 path with `run`, so the host's own signed confirm decides. Otherwise false and no button: the caller shows copy
+ *  only (the 「agent」 route would hand the line to an Agent in the fence, which cannot see the host's own state folder). */
+let fixed = null;                // {id, redraw}: the card that drew the fixed line last
+export function fixedLine(wrap, page, { redraw = () => {} } = {}) {
+  if (fixed && fixed.id === page?.id) fixed = null;
+  const bar = wrap?.querySelector('.bar');
+  if (!OLD_FIX_RUN || !bar || !Number.isInteger(page?.id) || !termUsable()) return false;
+  const key = page.id + ':fixed', r = runs.get(key), online = isReady(), busy = r && r.st === 'run';
+  const label = !online ? t('p584.offlineShort') : busy ? t('p584.running') : t('p0371.oldfix.run');
+  const b = mkBtn('term-command runbtn', label, 'run');
+  b.setAttribute('aria-label', label === t('p0371.oldfix.run') ? label + ' · ' + t('p584.runOn') : label + ' · ' + t('p0371.oldfix.run'));
+  b.title = online ? t('p0371.oldfix.run') : t('p584.offline');
+  state(b, online, busy);
+  b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (!isReady()) return toast(t('p584.offline'), 4000); go(key, OLD_UPDATER_FIX, 'term', null, page); });
+  bar.insertBefore(b, bar.querySelector('.copy'));
+  fixed = { id: page.id, redraw };
+  if (r) wrap.after(box(key, r, OLD_UPDATER_FIX, 'term', null, page, t('p0371.oldfix.cut')));
+  return true;
+}
 /** One tap = one run: a block already running ignores taps (the button is disabled too); 「再跑一次」 is a new tap. */
 async function go(key, cmd, route, name, page) {
   if (runs.get(key)?.st === 'run') return;
@@ -168,7 +192,7 @@ async function go(key, cmd, route, name, page) {
     if (m && m.run === 1) Object.assign(r, { st: m.state === 'done' ? 'done' : 'fail', out: typeof m.out === 'string' ? m.out.slice(0, 32768) : '',
       ms: m.ms, hidden: Number.isInteger(m.hidden) ? m.hidden : 0, cut: m.cut === true, why: m.state === 'done' ? '' : m.state });
     else if (m && ['cancel', 'refused', 'expired', 'open'].includes(m.why)) Object.assign(r, { st: 'fail', why: m.why === 'open' ? 'openFail' : m.why });
-    else Object.assign(r, { st: 'fail', why: (m && m.why) || 'failed' });
+    else Object.assign(r, { st: 'fail', why: (m && m.why) || 'failed', sent: !!m && m.sent === true });
     repaint(page);
   } });
   if (how === 'sent' || how === 'open') return;
@@ -179,10 +203,12 @@ async function go(key, cmd, route, name, page) {
 }
 
 /** The black box under the block. */
-function box(key, r, cmd, route, name, page) {
+function box(key, r, cmd, route, name, page, cut = '') {
   const sec = document.createElement('section'); sec.className = 'runbox bangcard'; sec.setAttribute('data-aj-owner', 'aj-terminal');
   sec.setAttribute('aria-label', t('p584.boxAria')); sec.setAttribute('aria-live', 'polite');
-  const head = document.createElement('p'); head.className = 'runhead'; head.textContent = headText(r, route); sec.append(head);
+  // 0371: 「expected at the last step」 only for a line the owner confirmed (the signed resend went out) and the terminal then lost
+  const gone = cut && r.sent === true && r.st === 'fail' && !r.out && ['closed', 'offline'].includes(r.why);
+  const head = document.createElement('p'); head.className = 'runhead'; head.textContent = gone ? cut : headText(r, route); sec.append(head);
   if (r.st !== 'run' && r.out) {
     const lines = r.out.replace(/\n$/, '').split('\n'), long = lines.length > OUT_LINES;
     const pre = document.createElement('pre'); pre.className = 'bangout'; pre.setAttribute('data-aj-owner', 'aj-terminal'); pre.textContent = r.out;
@@ -236,4 +262,4 @@ export function askText(cmd, r) {
 }
 // tests
 export const _debug = () => ({ runs: [...runs.entries()].map(([k, v]) => [k, { ...v }]) });
-export function _reset() { runs.clear(); shown = null; }
+export function _reset() { runs.clear(); shown = null; fixed = null; }

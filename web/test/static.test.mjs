@@ -32,7 +32,8 @@ const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'ses
   'toolorder', 'toolsort',   // P340: the composer buttons' order (aj.toolOrder, four ids) + its Settings row   // P240: the version check (its one metadata GET had a branch below but the file was never in this list)
   'jcards',   // P360: Agent J Cards (deck cards 6+, one card's template page, Settings → Cards)
   'termhook', 'terminal', 'termpty',   // 0.26.9 #463: + the full terminal (xterm) · P408: the web terminal's Settings row + its lazily loaded page (same rules: no storage, no import())
-  'bang', 'vault', 'vaultrow'];   // P414: 「!」 lines + their result card, the PRF vault helpers, Settings → 电脑密码
+  'bang', 'vault', 'vaultrow',
+  'layout-diag', 'layout-sample', 'render-diag'];   // 11-22: the layout diagnostic and its render counters are under the same storage / network rules   // P414: 「!」 lines + their result card, the PRF vault helpers, Settings → 电脑密码
 const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
 const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
 const HTML = read(pub('index.html'));

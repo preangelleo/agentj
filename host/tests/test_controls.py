@@ -468,12 +468,46 @@ class Tasks(unittest.TestCase):
 
 # ------------------------------------------------------------------ the terminal side (serve not running)
 class Cli(unittest.TestCase):
+    def test_a_never_paired_host_without_a_stored_root_still_takes_its_first_folder(self):
+        """The bookkeeping exception (no stored root, no pairing history) holds with the root recorded before the entry
+        is written; a failure of the record leaves config.json without the entry."""
+        with tempfile.TemporaryDirectory() as d:
+            d = pathlib.Path(d)
+            work, other = d / "work", d / "other"
+            work.mkdir(); other.mkdir()
+            with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": str(d / "xdg-config")}):
+                from agentj import preferences, working_root
+                st = State(d / "state")
+                st.init(relay="ws://127.0.0.1:1")
+                preferences.ensure()
+                before = st.config_path.read_bytes()
+                with mock.patch.object(working_root, "record", side_effect=preferences.ConfigError("agent.working_root", "refused", code=3)):
+                    with self.assertRaises(preferences.ConfigError):
+                        st.set_agent_config("claude", str(work), fence=False, docker=True)
+                self.assertEqual(st.config_path.read_bytes(), before)
+                self.assertIsNone(st._pending_agent_dir)
+                st.set_agent_config("claude", str(work))
+                self.assertEqual(st.config()["agent"]["dir"], os.path.realpath(work))
+                self.assertEqual(preferences.get(preferences.effective(st), "agent.working_root"), os.path.realpath(work))
+                # a root is stored now: another folder is a security change, refused with nothing written
+                before = st.config_path.read_bytes()
+                with self.assertRaises(preferences.ConfigError):
+                    st.set_agent_config("codex", str(other))
+                self.assertEqual(st.config_path.read_bytes(), before)
+                self.assertEqual(st.agent_config()["dir"], os.path.realpath(work))
+                # the pending mark is not an authority of its own: a record for some other folder is still refused
+                st._pending_agent_dir = str(other)
+                with self.assertRaises(preferences.ConfigError):
+                    working_root.record(st, other)
+
     def test_memory_tasks_stop_resume_activity_at_the_terminal(self):
         with tempfile.TemporaryDirectory() as d:
             d = pathlib.Path(d)
             work = d / "work"
             work.mkdir()
-            env = {**os.environ, "AGENTJ_STATE_DIR": str(d / "state"), "CLAUDE_CONFIG_DIR": str(d / "cfg")}
+            # own preferences file: see ServeControls.setUp (the first working root of a fresh host is bookkeeping)
+            env = {**os.environ, "AGENTJ_STATE_DIR": str(d / "state"), "CLAUDE_CONFIG_DIR": str(d / "cfg"),
+                   "XDG_CONFIG_HOME": str(d / "xdg-config")}
             agentj = str(HERE.parent / "bin" / "agentj")
 
             def run(*a, inp=None, ok=True):
@@ -484,9 +518,27 @@ class Cli(unittest.TestCase):
             # P174: the default independent session needs a Claude login the service can use (placeholder, presence only)
             (d / "cfg").mkdir()
             (d / "cfg/.credentials.json").write_text("{}")
-            run("init", "--relay", "ws://127.0.0.1:1")
+            # 230e3d150f (0.30.0 UV list): agent.working_root is a listed security setting. A fresh host names its root
+            # once, at init; with serve not running a later change to another folder is refused and nothing is written.
+            run("init", "--relay", "ws://127.0.0.1:1", "--working-root", str(work))
             run("passphrase", "set", inp="pass-phrase-1\npass-phrase-1\n")
             run("agent", "claude", "--dir", str(work))
+            elsewhere = d / "elsewhere"
+            elsewhere.mkdir()
+            config_json = d / "state" / "config.json"
+            before = config_json.read_bytes()
+            self.assertEqual(json.loads(before)["agent"]["dir"], os.path.realpath(work))
+            for extra in ((), ("--unfenced",), ("--allow-docker",), ("--model", "other-model")):
+                moved = run("agent", "claude", "--dir", str(elsewhere), *extra, ok=False)
+                self.assertNotEqual(moved.returncode, 0)
+                self.assertIn("security settings require a running host and fresh paired-device UV", moved.stderr)
+                self.assertIn("no offline change was written", moved.stderr)
+                # refused before any write: the raw fallback field agent.dir (what agent_config() returns when no root
+                # is stored), the fence / docker flags and every other byte of config.json are as they were
+                self.assertEqual(config_json.read_bytes(), before, extra)
+            with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": env["XDG_CONFIG_HOME"]}):
+                self.assertEqual(State(d / "state").agent_config()["dir"], os.path.realpath(work))
+                self.assertIs(State(d / "state").agent_config()["fence"], True)
             (work / "CLAUDE.md").write_text("- a\n- b 第二条\n\n段落\n")
             task_dir(work, "daily", "SAY: VERDICT: ok — 好")
             self.assertIn("3 条", run("memory", "list").stdout)
@@ -525,7 +577,12 @@ class ServeControls(unittest.TestCase):
         self.work.mkdir()
         self.cfg = pathlib.Path(self.tmp.name) / "claudecfg"
         self.cfg.mkdir()
-        self.env = mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(self.cfg)})
+        # Fixture isolation for the working-root rule (230e3d150f, 0.30.0 UV list): the first root of a never-paired host is bookkeeping, any
+        # later change of agent.working_root is a listed security setting (running host + fresh Face ID). Preferences
+        # live under XDG_CONFIG_HOME, so each case gets its own - otherwise the previous case's root makes this one a
+        # "change".
+        self.env = mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(self.cfg),
+                                                "XDG_CONFIG_HOME": str(pathlib.Path(self.tmp.name) / "xdg-config")})
         self.env.start()
         self.st.set_agent_config("claude", str(self.work))
         self.sent = []
@@ -639,10 +696,18 @@ class ServeControls(unittest.TestCase):
         host.agent.native_source = {"kind": "terminal", "role": "owner"}
         host.ask_ttl = 30
 
+        # 0.30.7 ADR-0307-offlist: an off-list native Bash step opens no card. The subject here is e-stop closing an
+        # open card, so Bash is put on the (test-only) card list as the vehicle - see _listed_cards.
+        from _listed_cards import listed
+        listed(self, "Bash")
+
         async def go():
             t = asyncio.create_task(host.ask("Bash", {"command": "touch x"}))
-            while not self.got("ask"):
+            for _ in range(1000):                    # bounded: a missing card fails here instead of hanging the suite
+                if self.got("ask") or t.done():
+                    break
                 await asyncio.sleep(0.01)
+            self.assertTrue(self.got("ask"), "the listed step is on the phone as a card")
             host.grants["g" * 32] = serve.Grant("g" * 32, "Bash", ("bash", ("ls",)), "Bash：ls", ph.did, 5, time.monotonic() + 60)
             await host._app(s, sign(ph, "estop", {}, {"t": "estop", "r": "s1"}))
             ans = await asyncio.wait_for(t, 5)
@@ -696,7 +761,12 @@ class SchedulerChain(unittest.TestCase):
         wrapper = pathlib.Path(self.tmp.name) / "claude"
         wrapper.write_text(f"#!/bin/sh\nexec {sys.executable} {HERE / 'fakeclaude.py'} \"$@\"\n")
         wrapper.chmod(0o700)
-        self.env = mock.patch.dict(os.environ, {"AGENTJ_CLAUDE_BIN": str(wrapper), "FAKE_CLAUDE_LOG": str(self.argv_log)})
+        # Fixture isolation for the working-root rule (230e3d150f, 0.30.0 UV list): the first root of a never-paired host is bookkeeping, any
+        # later change of agent.working_root is a listed security setting (running host + fresh Face ID). Preferences
+        # live under XDG_CONFIG_HOME, so each case gets its own - otherwise the previous case's root makes this one a
+        # "change".
+        self.env = mock.patch.dict(os.environ, {"AGENTJ_CLAUDE_BIN": str(wrapper), "FAKE_CLAUDE_LOG": str(self.argv_log),
+                                                "XDG_CONFIG_HOME": str(pathlib.Path(self.tmp.name) / "xdg-config")})
         self.env.start()
         self.st.set_agent_config("claude", str(self.work))
 
@@ -752,17 +822,19 @@ class SchedulerChain(unittest.TestCase):
                 # once per minute only
                 await asyncio.sleep(1.2)
                 self.assertEqual(sum(r["id"] == "research-one" for r in tasks.load(self.st)["runs"].values()), 1)
-                # 2. a normal task run by hand: the write asks the phone, with the task's name on the card
+                # 2. a normal task run by hand. ADR-0311-automation-hands-off (chairman 2026-11-11 19:14, .jarvis/INCOMING-
+                # 0311-automation-hands-off-20261111.md lines 5-6: 「CLI 启用的定时任务、手动 tasks run …零卡、零拒绝」,
+                # 「后台不管…不拦截、不弹卡、不拒绝，跟 harness 走」) + ADR-0307-offlist: its ordinary write is off the
+                # list and follows the harness - no card on the phone, audited as the host-held scheduled-task source.
+                # (Before 0.30.7 this step asked the phone with the task's name on the card.)
                 os.environ["FAKE_CLAUDE_LOG"] = str(self.work / "workflows" / "normal-one" / ".argv.jsonl")
                 host.scheduler.request("normal-one")
-                await wait(lambda: any(o["t"] == "ask" for _, o in sent))
-                card = [o for _, o in sent if o["t"] == "ask"][-1]
-                self.assertEqual(card["task"], "任务normal-one")
-                await host._app(s, ph.answer(card, True))
                 await wait(lambda: tasks.load(self.st)["last"].get("normal-one", {}).get("verdict") == "ok")
-                self.assertEqual(len([o for _, o in sent if o["t"] == "ask"]), 1, "delegated run needs its own signed approval")
-                self.assertTrue(any(r.get("decision") == "allow" and r.get("reason") == "device" for r in approvals.read_log(self.st)))
-                self.assertFalse(any(r.get("reason") == "group_source" for r in approvals.read_log(self.st)))
+                self.assertEqual([o for _, o in sent if o["t"] == "ask"], [], "no card for a task's off-list step")
+                done = [json.loads(line) for line in self.st.log_path.read_text().splitlines() if '"ev": "ask_done"' in line]
+                self.assertEqual([(r["decision"], r["reason"], r["source_type"], r["trust"], r["card"]) for r in done],
+                                 [("allow", "off_list", "scheduled_task", "host", False)])
+                self.assertFalse(any(r.get("reason") in ("device", "group_source") for r in approvals.read_log(self.st)))
                 self.assertFalse((self.work / "normal-wrote.txt").exists(), "CEO writes stay in its own folder")
                 self.assertTrue((self.work / "workflows" / "normal-one" / "normal-wrote.txt").exists())
                 self.assertEqual((tasks.load(self.st)["last"]["normal-one"]["verdict"], tasks.load(self.st)["last"]["normal-one"]["line"]), ("ok", "一切正常"))
@@ -800,7 +872,8 @@ class SchedulerChain(unittest.TestCase):
         last = tasks.load(self.st)["last"]
         self.assertEqual((last["research-one"]["verdict"], last["normal-one"]["verdict"]), ("attention", "ok"))
         kinds = [r["k"] for r in activity.all_since(self.st)]
-        for k in ("task_run", "task_done", "decision", "estop", "resume", "turn_start", "turn_end"):
+        self.assertNotIn("decision", kinds)       # no card was shown, so the activity log has no phone decision
+        for k in ("task_run", "task_done", "estop", "resume", "turn_start", "turn_end"):
             if k == "task_done":
                 self.assertIn(k, [json.loads(line)["ev"] for line in self.st.log_path.read_text().splitlines()])
             else:

@@ -8,7 +8,10 @@ from test_p336_approval_level import Base
 from test_p194_owner_direct import _Svc, ALLOW_ME
 from agentj import provenance, approval_jev, goal, heartbeat, imessage
 
-SOURCE = {'kind':'same_owner', 'role':'task'}
+# Host-held provenance tokens (c2da9e292b / 294644a5e9, 2026-11-14): a same-owner task source exists only as the host's
+# own provenance.HostDelegated (minted by same_owner.ForwardSend); the wire-shaped dict is `unknown`.
+PLAIN = {'kind':'same_owner', 'role':'task'}
+SOURCE = provenance.HostDelegated(PLAIN)
 def delegated(agent):
     agent.cur_send = SimpleNamespace(source=SOURCE)
 

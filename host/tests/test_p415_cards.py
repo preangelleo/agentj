@@ -69,7 +69,14 @@ class Direct(unittest.TestCase):
         snap = jcards.phone_get(self.root, 'todo')
         self.assertTrue(jcards_data.phone_change(self.root, 'todo', 'delete', 't1', snap['revision'])['ok'])
         saved = json.loads(p.read_text())
-        self.assertEqual(saved, {'custom':'keep','schema':2,'items':[{'strange':42}, {'id':'t2','text':'keep','extra':7}]})
+        # 0.30.0 (230e3d150f, jcards_todo `_nextTodoId`): the file also keeps the next id, so a deleted item's id (t1) is
+        # never handed out again; unknown rows and metadata are still preserved byte-for-meaning.
+        self.assertEqual(saved, {'custom':'keep','schema':2,'_nextTodoId':3,
+                                 'items':[{'strange':42}, {'id':'t2','text':'keep','extra':7}]})
+        snap = jcards.phone_get(self.root, 'todo')
+        self.assertTrue(jcards_data.phone_change(self.root, 'todo', 'delete', 't2', snap['revision'])['ok'])
+        saved = json.loads(p.read_text())
+        self.assertEqual((saved['items'], saved['custom'], saved['_nextTodoId']), ([{'strange':42}], 'keep', 3))
 
     def test_custom_notebook_existing_edit_delete_remain_available(self):
         import json

@@ -51,9 +51,29 @@ class Prompt(unittest.TestCase):
         for lang in ('zh','en'):
             for h in ('claude','codex','opencode'):
                 text=main_identity.prompt({'language':lang},h)
-                self.assertIn('agentj heartbeat prompt show',text)
+                # 36c3a6fac8 (2026-11-12): the zh pointer was compacted to fit the identity-hook budget (test_p376:
+                # HOOK_MAX headroom) — it names the same command without the `agentj ` prefix; en keeps the full form.
+                self.assertIn('heartbeat prompt show',text)
+                if lang=='en':self.assertIn('agentj heartbeat prompt show',text)
+                self.assertIn(main_identity.HEARTBEAT_LINE[lang].strip().splitlines()[-1],text)
+                core=(Path(main_identity.__file__).parent/'identity'/('core.%s.md'%lang)).read_text()
+                self.assertNotIn('heartbeat prompt show',core)
                 self.assertNotIn('<!-- agentj:watchlist v1 -->',text)
-        self.assertEqual(main_identity.verify_core()['version'],28)
+        # the pointer lives outside the hashed core, so core bumps (v28 at P537 → v30, 55eaf7c478) never touch it
+        # Checked against the shipped files themselves, not the module's own constants: the manifest on disk names this
+        # version and the real digests of both core files, each core's title carries the version, and one changed core
+        # byte is refused.
+        import hashlib,json
+        from unittest.mock import patch
+        identity=Path(main_identity.__file__).parent/'identity'
+        digests={lang:hashlib.sha256((identity/('core.%s.md'%lang)).read_bytes()).hexdigest() for lang in ('zh','en')}
+        self.assertEqual(json.loads((identity/'manifest.json').read_text()),{'version':main_identity.VERSION,'hashes':digests})
+        self.assertEqual(main_identity.verify_core(),{'version':main_identity.VERSION,'hashes':digests})
+        self.assertGreaterEqual(main_identity.VERSION,30)
+        for lang in ('zh','en'):
+            self.assertRegex((identity/('core.%s.md'%lang)).read_text().splitlines()[0],r'v%d\b'%main_identity.VERSION)
+        with patch.dict(main_identity.HASHES,{'zh':'0'*64}):
+            with self.assertRaises(main_identity.IdentityError):main_identity.verify_core()
 
     def test_doctor_read_only_notice(self):
         from agentj.doctor import check_heartbeat_prompt

@@ -87,7 +87,7 @@ ALLOWED = {  # P569: each op is signature-tested
     "feedback_send": {"raw", "owner_confirmed"}, "feedback_replies": {"as_json"},
     "tasks_list": {"as_json"},   # #467 (ADR-0269-w4-fence): read-only; serve's own state, fixed projection
 }
-READ_ONLY = frozenset({"tasks_list"})
+READ_ONLY = frozenset({"tasks_list", "layout_last"})   # layout_last: the phone's last layout sample is the owner's alone
 # #467: what a fenced `agentj tasks list` may learn — the same rows the owner's terminal shows, last run reduced to its verdict
 TASK_FIELDS = ("id", "title", "schedule", "tz", "mode", "suggested", "enabled", "stale", "uncertain", "problems", "next",
                "migrated", "last")

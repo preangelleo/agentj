@@ -419,7 +419,8 @@ def _install_attempts(run, cmd, say, out, pin, preparation):
     try:
         rc, tl = step(launch if retries or preparation.used else run)
     except auto_update.RetryExpired:
-        return 1, "", {"reason": "installer_timeout", "retry_count": retries, "_untouched": True}
+        return 1, "", {"reason": "installer_timeout", "retry_count": retries, "_untouched": True,
+                       "prepare_seconds": int(_install_clock() - preparation.started)}
     except subprocess.TimeoutExpired:
         if not (retries or preparation.used):
             raise
@@ -1762,6 +1763,10 @@ def repair_install(st, *, target=None, runner=None, service_installed=None, plan
                         plan = [upgrade_wheels.prepare_update(plan[0], pinned, target, retry=preparation)]
                     except upgrade_wheels.PreparationFailure as err:
                         return finish(str(err), retry_count=preparation.count, **err.fields)
+            if preparation is not None and preparation.deadline - preparation.clock() < auto_update.INSTALL_MIN_ATTEMPT:
+                # No rollback exists for this repair: an installer with only seconds left is never started.
+                return finish("installer_timeout", phase="prepared", retry_count=preparation.count,
+                              prepare_seconds=int(preparation.clock() - preparation.started))
             _pre_snapshot(st)
             for cmd in plan:
                 if pinned:

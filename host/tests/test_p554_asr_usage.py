@@ -147,7 +147,13 @@ class IsolatedMainAgent(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory(dir=TEST_TMP) as tmp:
             st=State(Path(tmp)/'s');st.init(relay='ws://127.0.0.1:1')
             asr_usage.record({'ok':True,'engine':'custom'},state_dir=st.root,model='Qwen/Qwen3-ASR-1.7B',elapsed_ms=77,fallback=False)
-            server=elevate.Elevator(SimpleNamespace(st=st))
+            # Fixture follows 4676679f3a (0.30.0 native ingress): every request on the host socket is framed against the
+            # live host (agent, host key, channel, history epoch, stop state) before its handler runs, so the stand-in
+            # carries those. The caller here is a bare child of the test process: no live native session, no terminal.
+            host=SimpleNamespace(st=st,agent=SimpleNamespace(session=None,cur_send=None,proc=None,kind='claude'),agent_cfg={},
+                                 _agent_pids=lambda:set(),kp=SimpleNamespace(pub=b'h'*32),channel='synthetic-channel',
+                                 hist=SimpleNamespace(epoch='synthetic'),stopped=lambda:False,stopping=asyncio.Event())
+            server=elevate.Elevator(host)
             await server.start()
             try:
                 child='''

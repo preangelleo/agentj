@@ -721,37 +721,44 @@ class State:
 
     def set_agent_config(self, kind: str | None, directory: str | None = None, model: str | None = None,
                          fence: bool = True, docker: bool = False, effort: str | None = None, record_root: bool = True, opencode_binary=None) -> None:
+        entry = None
+        if kind is not None:
+            if kind not in self.AGENT_KINDS:
+                raise ValueError("bad_agent")
+            d = os.path.realpath(os.path.expanduser(directory or os.getcwd()))
+            if not os.path.isdir(d):
+                raise ValueError("bad_dir")
+            from .fence import protected_paths
+            for p in protected_paths(self):    # the agent's folder must not be (inside) what the fence hides
+                if d == p or d.startswith(p.rstrip(os.sep) + os.sep):
+                    raise ValueError("protected_dir")
+            entry = {"kind": kind, "dir": d, "model": model or None, "fence": bool(fence)}
+            if kind == "opencode" and opencode_binary is not None:
+                from .opencode_binary import valid
+                if not valid(opencode_binary):
+                    raise ValueError("binary_changed")
+                entry["opencode_binary"] = opencode_binary
+            if effort:                         # P219: the default (or the owner's earlier) effort survives `agentj agent`
+                entry["effort"] = effort
+            if docker:
+                entry["docker"] = True
+            # An explicit folder is a human/API root selection, not a legacy fallback. Record it in the one JSON5 owner
+            # first: agent.working_root is a listed security setting, and a refused (or failed) record must leave
+            # config.json byte-for-byte as it was — agent.dir is what agent_config() falls back to without a stored root.
+            if record_root and directory is not None:
+                from . import working_root
+                self._pending_agent_dir = d    # process-private: the entry this same call writes right below
+                try:
+                    working_root.record(self, pathlib.Path(d))
+                finally:
+                    self._pending_agent_dir = None
         with self.config_lock():
             cfg = self.config()
-            if kind is None:
+            if entry is None:
                 cfg.pop("agent", None)
             else:
-                if kind not in self.AGENT_KINDS:
-                    raise ValueError("bad_agent")
-                d = os.path.realpath(os.path.expanduser(directory or os.getcwd()))
-                if not os.path.isdir(d):
-                    raise ValueError("bad_dir")
-                from .fence import protected_paths
-                for p in protected_paths(self):    # the agent's folder must not be (inside) what the fence hides
-                    if d == p or d.startswith(p.rstrip(os.sep) + os.sep):
-                        raise ValueError("protected_dir")
-                cfg["agent"] = {"kind": kind, "dir": d, "model": model or None, "fence": bool(fence)}
-                if kind == "opencode" and opencode_binary is not None:
-                    from .opencode_binary import valid
-                    if not valid(opencode_binary):
-                        raise ValueError("binary_changed")
-                    cfg["agent"]["opencode_binary"] = opencode_binary
-                if effort:                         # P219: the default (or the owner's earlier) effort survives `agentj agent`
-                    cfg["agent"]["effort"] = effort
-                if docker:
-                    cfg["agent"]["docker"] = True
+                cfg["agent"] = entry
             _write_private(self.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
-        # An explicit folder is a human/API root selection, not a legacy fallback.
-        # Record it in the one JSON5 owner so older saved preferences cannot silently
-        # send the next session to a different (possibly deleted) directory.
-        if record_root and kind is not None and directory is not None:
-            from . import working_root
-            working_root.record(self, pathlib.Path(d))
 
     def set_agent_region(self, region: str | None) -> None:
         """P305: `agentj agent kimi --region mainland-cn|global` (Kimi's two sites; a kimi.com key works on both endpoints)."""

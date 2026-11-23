@@ -6,12 +6,14 @@
   "verify_url": null,
   "anthropic_base": "https://ark.cn-beijing.volces.com/api/coding/v1",
   "model": "doubao-seed-2.1-pro",
-  "model_strong": "kimi-k3",
+  "model_strong": "kimi-k3.1-pro",
   "model_text": "glm-5.3",
-  "pro_suggested": [
-    "kimi-k3"
-  ],
-  "_comment_tiers": "P328: list prices read from Ark's official pages on 2026-10-16 (cn-coding-plans 1.0.1). Lite and Pro have the same models and tools; Pro only gives 5x the quota. Kimi K3 is merely suggested for Pro (it uses quota fast) — Lite can pick it too. Time-limited offers are left to the order page.",
+  "pro_suggested": [],
+  "_comment_retired": "Ark stops serving these plan model ids (Agent Plan and Coding Plan, personal): old id -> the replacement Ark names. kimi-k3: service ends 2026-11-25 14:00 UTC+8, https://ark.volcengine.com/docs/agent-plan-personal-model-deprecation-announcement.md and https://ark.volcengine.com/docs/coding-plan-personal-model-deprecation.md (read 2026-11-23). Not in newly written presets; a saved selection moves once (ark.migrate), the owner is told. Pay-as-you-go is not covered by these notices.",
+  "retired": {
+    "kimi-k3": "kimi-k3.1-pro"
+  },
+  "_comment_tiers": "P328: list prices read from Ark's official pages on 2026-10-16 (cn-coding-plans 1.0.1). Lite and Pro have the same models and tools; Pro only gives 5x the quota. Time-limited offers are left to the order page.",
   "tiers": [
     [
       "Lite",
@@ -90,19 +92,6 @@
       },
       "doubao-seed-2.0-mini": {
         "name": "Doubao Seed 2.0 Mini",
-        "attachment": true,
-        "modalities": {
-          "input": [
-            "text",
-            "image"
-          ],
-          "output": [
-            "text"
-          ]
-        }
-      },
-      "kimi-k3": {
-        "name": "Kimi K3（扣额度快）",
         "attachment": true,
         "modalities": {
           "input": [
@@ -256,7 +245,7 @@
       "kimi-k2.7-code",
       "minimax-m3"
     ],
-    "models_checked": "2026-11-11",
+    "models_checked": "2026-11-23",
     "tiers": [
       [
         "Small",
@@ -276,9 +265,7 @@
       ]
     ],
     "start_tier": "Medium",
-    "medium_up": [
-      "kimi-k3"
-    ],
+    "medium_up": [],
     "prices_checked": "2026-10-19"
   },
   "_comment_payg": "P371: the pay-as-you-go preset (standard /api/v3, billed per token, any program may call it — unlike the plan address). Model ids, image input and limits read from GET /api/v3/models on 2026-10-17 (that endpoint is also the read-only key check). OpenCode's built-in `volcengine` provider reads the same ARK_API_KEY but its list lacks the newest ids (no doubao-seed-2-1-pro-260915 in 1.18.34), so this is our own `ark-api` block. Agent Plan, Coding Plan and pay-as-you-go use their matching keys and endpoints; the Agent Plan key is not interchangeable with the other routes.",

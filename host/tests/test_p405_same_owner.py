@@ -831,7 +831,12 @@ class SameOwnerTests(Base):
 class AdminApprovalTests(__import__('unittest').TestCase):
     def test_same_owner_source_covers_shared_session_continuation(self):
         from agentj import provenance
-        so = {'kind':'same_owner','role':'task'}
+        # Host-held provenance tokens (c2da9e292b / 294644a5e9, 2026-11-14): only the host-minted HostDelegated source
+        # is same-owner; the same words in a plain dict (wire / transcript shaped) are not, in either position.
+        plain = {'kind':'same_owner','role':'task'}
+        self.assertFalse(provenance.same_owner_source(SimpleNamespace(cur_send=SimpleNamespace(source=plain))))
+        self.assertFalse(provenance.same_owner_source(SimpleNamespace(cur_send=None, pending_source=plain, untrusted=lambda: False)))
+        so = provenance.HostDelegated(plain)
         self.assertTrue(provenance.same_owner_source(SimpleNamespace(cur_send=SimpleNamespace(source=so))))
         cont = SimpleNamespace(cur_send=None, pending_source=so, untrusted=lambda: False)
         self.assertTrue(provenance.same_owner_source(cont))   # cur_send cleared, native turn still running

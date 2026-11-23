@@ -1,5 +1,5 @@
-# Agent J v0.30.70
+# Agent J v0.30.71
 
-Host and phone app are unchanged in function. Cloud account service only: lifetime codes cover one seat; removed bots stop rewriting their registration.
+Upgrade retries a timed-out dependency step; failed old-host upgrades show one repair line; Ark kimi-k3 moves to kimi-k3.1-pro; removed bots report once.
 
-本版主机和手机网页功能不变，只更新云端账户服务：终身码订阅固定 1 席，已移除的机器人不再重复写登记记录。
+升级时依赖准备超时会自动重试；旧版本升级失败时给出一行修复命令；方舟 kimi-k3 停用后自动改用 kimi-k3.1-pro；已删除的机器人不再反复上报。

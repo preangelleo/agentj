@@ -177,8 +177,11 @@ class RiskGuard:
             return True
 
     def authentic(self, event):
-        proc = getattr(self.adapter, 'proc', None)
-        event['_agentj_path_authenticated'] = proc is not None and proc.pid in (event.get('_agentj_chain') or [])
+        # An owner's own server (shared._ExternalServer) or a stopped one has no process Agent J started: nothing to
+        # compare with the peer's kernel ancestry, so the path stays unauthenticated (only shared Codex's
+        # browser_login_native reads the mark). Session id, folder and the list still decide every call below.
+        pid = getattr(getattr(self.adapter, 'proc', None), 'pid', None)
+        event['_agentj_path_authenticated'] = type(pid) is int and pid in (event.get('_agentj_chain') or [])
         return True  # keep the existing shared policy decision for every hook
 
     async def hook_event(self, event):

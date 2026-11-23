@@ -1,4 +1,5 @@
 """Prepare an authenticated, interpreter-specific dependency directory before replacing a uv tool."""
+import contextlib
 import errno
 import hashlib
 import http.client
@@ -13,6 +14,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import tomllib
 import urllib.error
@@ -204,27 +206,46 @@ class PreparationRetry:
     def __init__(self, clock=time.monotonic, sleep=time.sleep, lease_end=None):
         from . import auto_update
         self.clock, self.sleep = clock, sleep
-        self.deadline = auto_update.retry_limit(clock(), lease_end)
+        self.started = clock()
+        self.deadline = auto_update.retry_limit(self.started, lease_end)
         self.count = 0
         self.used = False
         self.isolated_temp = False
+        self.progress = None    # (dependency files fetched, files needed) while a wheelhouse is being filled
 
-    def call(self, operation, timeout, *, phase='resolve'):
+    def stamp(self, failure, step=None, began=None):
+        """Where the time went: closed words and whole seconds only (upgrade_diag.dependency_fields re-checks them)."""
+        now = self.clock()
+        if step:
+            failure.fields.setdefault('prepare_step', step)
+            failure.fields.setdefault('step_seconds', int(now - (now if began is None else began)))
+        failure.fields.setdefault('prepare_seconds', int(now - self.started))
+        if self.progress:
+            failure.fields.setdefault('wheels_fetched', self.progress[0])
+            failure.fields.setdefault('wheels_needed', self.progress[1])
+        return failure
+
+    def call(self, operation, timeout, *, phase='resolve', step=None):
         from . import auto_update
         self.used = True
         attempts = 0
         while True:
             left = int(self.deadline - self.clock())
             if left < 1:
-                raise PreparationFailure('installer_timeout', phase)
+                raise self.stamp(PreparationFailure('installer_timeout', phase), step)
+            began = self.clock()
             try:
                 attempts += 1
                 return operation(min(left, timeout))
             except PreparationFailure as error:
+                self.stamp(error, step, began)
                 if phase == 'download':
                     error.fields['download_attempts'] = attempts
                 if not error.transient or self.count >= auto_update.INSTALL_RETRIES:
                     raise
+                if getattr(error, 'timed_out', False):
+                    # A slow link gets longer next time, never more than what is left of the one shared budget.
+                    timeout *= 2
                 delay = auto_update.INSTALL_BACKOFF[self.count]
                 if self.clock() + delay + auto_update.INSTALL_MIN_ATTEMPT > self.deadline:
                     raise
@@ -247,7 +268,13 @@ def run_resolver(args, scratch, timeout, *, offline=False, isolated_temp=False, 
             errors.seek(max(0, errors.tell() - upgrade_diag.EVIDENCE_MAX))
             failure = resolver_failure(errors.read())
             if str(failure) == 'uv_failed':
-                failure = PreparationFailure('installer_timeout', 'resolve')
+                # The installer was still working, silently, when its time ran out: a slow or stalling
+                # link while it reads the dependency files. Nothing has been installed; it can be run again.
+                source = failure.fields.get('dependency_source')
+                failure = PreparationFailure('installer_timeout', 'resolve', transient=True)
+                if source:
+                    failure.fields['dependency_source'] = source
+            failure.timed_out = True
             if offline:
                 failure.transient = False
             raise failure from None
@@ -312,7 +339,7 @@ def repair_names(pin, data, entries, scratch, python, retry):
     private_dir(helper.parent)
     if not os.path.lexists(helper):
         row = {**manifest, 'hash': 'sha256:' + digest}
-        body = retry.call(lambda timeout: download_dependency(row, timeout), 60, phase='download')
+        body = retry.call(lambda timeout: download_dependency(row, timeout), 60, phase='download', step='fetch')
         if len(body) != row['size'] or hashlib.sha256(body).hexdigest() != digest:
             raise ValueError('install_artifact_changed')
         staged = scratch / 'helper.whl'
@@ -327,9 +354,12 @@ def repair_names(pin, data, entries, scratch, python, retry):
     lock.write_bytes(data)
 
     def select(timeout):
-        proc = subprocess.run([python, '-IS', str(Path(__file__).with_name('upgrade_select.py')), str(helper), str(lock)],
-                              cwd=scratch, env={**clean_env(), **temp_env(scratch)}, stdin=subprocess.DEVNULL,
-                              stderr=subprocess.DEVNULL, stdout=subprocess.PIPE, timeout=timeout)
+        try:
+            proc = subprocess.run([python, '-IS', str(Path(__file__).with_name('upgrade_select.py')), str(helper), str(lock)],
+                                  cwd=scratch, env={**clean_env(), **temp_env(scratch)}, stdin=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL, stdout=subprocess.PIPE, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise PreparationFailure('installer_timeout', 'resolve') from None     # local work: nothing to wait out
         if proc.returncode == 3:
             error = PreparationFailure('dependency_conflict', 'resolve')
             error.fields['uv_resolve_detail'] = 'wheel_tags'
@@ -340,14 +370,17 @@ def repair_names(pin, data, entries, scratch, python, retry):
         if not isinstance(names, list) or any(name not in entries for name in names):
             raise ValueError('install_artifact_changed')
         return names
-    return retry.call(select, 60)
+    return retry.call(select, 60, step='local')
 
 
 def permission_log(root):
     from .state import State
     st = State(root)
     def note(line):
-        if st.exists():
+        rebuilt = re.match(r"Rebuilding dependency cache entry .* \(([a-z_]{1,40})\)$", line)
+        if st.exists() and rebuilt:
+            st.log('upgrade_cache_rebuilt', status=rebuilt[1])
+        elif st.exists():
             match = re.match(r"Removed group write from (\d+) entries under ", line)
             st.log('upgrade_permissions_hardened', count=int(match[1]) if match else 1)
     return note
@@ -387,13 +420,13 @@ def verify_local(folder, entries, *, note=None):
                 failure = cache_failure(folder, 'unsafe_store', error.paths, None if own else error.fix)
                 # Group write alone, without an ACL, on this account's own file: an old
                 # updater's umask. Nothing else about the entry is in doubt.
-                failure.stale_mode = (own and not info.st_mode & 0o002
-                                      and error.fix.startswith('chmod go-w -- '))
+                failure.stale = (own and not info.st_mode & 0o002
+                                 and error.fix.startswith('chmod go-w -- '))
                 raise failure from None
         if info.st_size != row['size']:
-            raise integrity_failure('dependency_cache', 'size_mismatch')
+            raise cache_failure(folder, 'size_mismatch', [wheel])       # changed bytes stop the upgrade (test_r0018);
         if hashlib.sha256(wheel.read_bytes()).hexdigest() != row['hash'][7:]:
-            raise integrity_failure('dependency_cache', 'hash_mismatch')
+            raise cache_failure(folder, 'hash_mismatch', [wheel])       # the owner gets the one repair line
 
 
 def discard_entry(store, name):
@@ -423,14 +456,14 @@ def discard_entry(store, name):
 
 
 def usable_entry(folder, entries, *, note, rebuild):
-    """Verify an existing wheelhouse; during preparation drop one that only an old umask spoiled."""
+    """Verify an existing wheelhouse; during preparation drop one that only an old umask spoiled and rebuild it once."""
     try:
         verify_local(folder, entries, note=note)
     except PreparationFailure as failure:
-        if not rebuild or not getattr(failure, 'stale_mode', False):
+        if not rebuild or not getattr(failure, 'stale', False):
             raise
         discard_entry(folder.parent, folder.name)
-        note(f"Rebuilding dependency cache entry {str(folder)!r}")
+        note(f"Rebuilding dependency cache entry {str(folder)!r} ({failure.fields.get('subreason')})")
         return False
     return True
 
@@ -496,41 +529,47 @@ def wheelhouse(pin, data, uv, *, prepare, retry=None, python=None, repair_index=
             staged = scratch / 'wheels'
             staged.mkdir(mode=0o700)
             retry = retry or PreparationRetry()
-            if repair_index:
-                names = repair_names(pin, data, entries, scratch, python or base_python(), retry) if requirements else []
-            else:
-                names = retry.call(lambda timeout: selected_wheels(uv, pin.path, entries, scratch, timeout=timeout,
-                                                                    python=python, isolated_temp=retry.isolated_temp), 150)
-            for name in sorted(names):
-                row = entries[name]
-                if exists and (target / name).is_file():
-                    continue
-                if repair_index and (ordinary / name).is_file():
-                    body = (ordinary / name).read_bytes()
-                else:
-                    body = retry.call(lambda timeout: download_dependency(row, timeout), auto_update.DOWNLOAD_TIMEOUT,
-                                      phase='download')
-                if len(body) != row['size']:
-                    raise integrity_failure('dependency_wheel', 'size_mismatch', 'download')
-                if hashlib.sha256(body).hexdigest() != row['hash'][7:]:
-                    raise integrity_failure('dependency_wheel', 'hash_mismatch', 'download')
-                fd = os.open(staged / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-                with os.fdopen(fd, 'wb') as file:
-                    file.write(body)
             try:
-                staged.rename(target)
-            except OSError:
-                if not target.is_dir():
-                    raise
                 if repair_index:
-                    # Never replace bytes a concurrent install may be reading. Publish only
-                    # absent, fully verified files, then revalidate the entire directory.
-                    private_dir(target)
-                    for item in staged.iterdir():
-                        try:
-                            os.link(item, target / item.name)
-                        except FileExistsError:
-                            pass
+                    names = repair_names(pin, data, entries, scratch, python or base_python(), retry) if requirements else []
+                else:
+                    names = retry.call(lambda timeout: selected_wheels(uv, pin.path, entries, scratch, timeout=timeout,
+                                                                        python=python, isolated_temp=retry.isolated_temp), 150,
+                                       step='select')
+                retry.progress = (0, len(names))
+                for name in sorted(names):
+                    row = entries[name]
+                    retry.progress = (len(list(staged.iterdir())), len(names))
+                    if exists and (target / name).is_file():
+                        continue
+                    if repair_index and (ordinary / name).is_file():
+                        body = (ordinary / name).read_bytes()
+                    else:
+                        body = retry.call(lambda timeout: download_dependency(row, timeout), auto_update.DOWNLOAD_TIMEOUT,
+                                          phase='download', step='fetch')
+                    if len(body) != row['size']:
+                        raise integrity_failure('dependency_wheel', 'size_mismatch', 'download')
+                    if hashlib.sha256(body).hexdigest() != row['hash'][7:]:
+                        raise integrity_failure('dependency_wheel', 'hash_mismatch', 'download')
+                    fd = os.open(staged / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                    with os.fdopen(fd, 'wb') as file:
+                        file.write(body)
+                try:
+                    staged.rename(target)
+                except OSError:
+                    if not target.is_dir():
+                        raise
+                    if repair_index:
+                        # Never replace bytes a concurrent install may be reading. Publish only
+                        # absent, fully verified files, then revalidate the entire directory.
+                        private_dir(target)
+                        for item in staged.iterdir():
+                            try:
+                                os.link(item, target / item.name)
+                            except FileExistsError:
+                                pass
+            finally:
+                retry.progress = None
     verify_local(target, entries, note=note)
     # A missing file has no hash to recheck. Resolve again from these exact
     # local bytes before installation, including a reused rollback directory.
@@ -545,7 +584,7 @@ def wheelhouse(pin, data, uv, *, prepare, retry=None, python=None, repair_index=
         if retry is None:
             operation(60)  # rollback stays offline, without retries
         else:
-            retry.call(operation, 60)
+            retry.call(operation, 60, step='probe')
     return target
 
 
@@ -711,7 +750,38 @@ def cached_runtime(cmd, pin):
     return cmd
 
 
+_UMASK_LOCK = threading.Lock()
+_umask_holders, _umask_before = 0, None
+
+
+@contextlib.contextmanager
+def private_umask():
+    """umask 077 for the whole process while any preparation runs. The umask is per process, and the rescue watchdog
+    prepares on worker threads (asyncio.to_thread → update.repair_install): holders are counted, so overlapping
+    preparations cannot restore each other's 077 and leave the process there — the value from before the first holder
+    returns when the last one leaves. Other threads create more private files meanwhile, never looser ones."""
+    global _umask_holders, _umask_before
+    with _UMASK_LOCK:
+        if not _umask_holders:
+            _umask_before = os.umask(0o077)
+        _umask_holders += 1
+    try:
+        yield
+    finally:
+        with _UMASK_LOCK:
+            _umask_holders -= 1
+            if not _umask_holders:
+                os.umask(_umask_before)
+
+
 def prepare_update(cmd, pin, previous_version, *, retry=None):
+    # 0.30.47-0.30.65 wrote the cache with the caller's umask (0002 on Ubuntu) and then refused its own files.
+    # Every mode below is explicit; this keeps a future plain write from depending on the caller again.
+    with private_umask():
+        return _prepare_checked(cmd, pin, previous_version, retry=retry)
+
+
+def _prepare_checked(cmd, pin, previous_version, *, retry=None):
     from . import upgrade_uv
     retry = retry or PreparationRetry()
     repairing = False
@@ -745,7 +815,7 @@ def prepare_update(cmd, pin, previous_version, *, retry=None):
         repairing = False
         if (retry.count >= auto_update.INSTALL_RETRIES
                 or retry.deadline - retry.clock() < auto_update.RETRY_FLOOR):
-            raise PreparationFailure('installer_timeout', 'resolve')
+            raise retry.stamp(PreparationFailure('installer_timeout', 'resolve'))
         retry.count += 1
         result = _prepare_update(repaired, pin, previous_version, retry=retry, python=py)
         if old_uv:

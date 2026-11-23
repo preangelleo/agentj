@@ -159,25 +159,26 @@ class ArkPreset(Home):
                                         "apiKey": "{env:ARK_CODING_PLAN_API_KEY}"})
         self.assertEqual(b["npm"], "@ai-sdk/openai-compatible")
         ms = b["models"]
-        for m in ("kimi-k3", "doubao-seed-2.1-pro"):            # measured: 32/32 and 31/32
+        for m in ("kimi-k3.1-pro", "doubao-seed-2.1-pro"):      # Ark's own OpenCode JSON (kimi-k3 retired 11-25); measured 31/32
             self.assertEqual((ms[m]["attachment"], ms[m]["modalities"]), (True, IMG), m)
         for m in ("glm-5.3", "deepseek-v4-pro"):                # measured: refuses / never receives images
             self.assertEqual(ms[m]["modalities"]["input"], ["text"], m)
             self.assertNotEqual(ms[m].get("attachment"), True, m)
         self.assertGreater(ms["glm-5.3"]["limit"]["output"], 32000)   # thinking used up the 32k default
-        self.assertEqual(len(ms), 15)  # current official OpenCode preset, 2026-11-11
+        self.assertEqual(len(ms), 14)  # current official OpenCode preset, 2026-11-11, less kimi-k3 (retired 2026-11-25)
         self.assertNotIn("model", cfg)
         self.assertEqual((r["model"], r["vision"], r["kept"], r["written"]), ("ark-coding-plan/doubao-seed-2.1-pro", True, False, True))
         self.assertIn("--dest env:/svc/agentj.env#ARK_CODING_PLAN_API_KEY", r["next"][0])
         self.assertNotIn("--verify-url", r["next"][0])
         self.assertEqual(r["next"][2], "agentj agent switch opencode --model ark-coding-plan/doubao-seed-2.1-pro")
-        self.assertIn("ark-coding-plan/kimi-k3", r["vision_models"])
+        self.assertIn("ark-coding-plan/kimi-k3.1-pro", r["vision_models"])
+        self.assertNotIn("ark-coding-plan/kimi-k3", r["models"])
 
     def test_owner_config_kept_and_unknown_model(self):
         self.file.parent.mkdir(parents=True)
         mine = {"provider": {"ark-coding-plan": {"npm": "mine"}}, "model": "x/y"}
         self.file.write_text(json.dumps(mine))
-        r = self.install("kimi-k3")
+        r = self.install("kimi-k3.1-pro")
         self.assertEqual((r["kept"], r["written"]), (True, False))
         self.assertEqual(json.loads(self.file.read_text()), mine)
         with self.assertRaises(op.ProviderError):
@@ -188,16 +189,16 @@ class ArkPreset(Home):
         self.assertIsNone(ark.verify_for("other"))
         self.assertIsNone(ark.model_note("zhipuai/glm-5.3"))
         self.assertIn("不能看图", ark.model_note("ark-coding-plan/glm-5.3"))
-        self.assertNotIn("cannot read images", ark.model_note("ark-coding-plan/kimi-k3", "en"))
-        self.assertIn("Pro", ark.model_note("ark-coding-plan/kimi-k3", "en"))
+        self.assertNotIn("cannot read images", ark.model_note("ark-coding-plan/kimi-k3.1-pro", "en"))
+        self.assertIn("ark-coding-plan/kimi-k3.1-pro", ark.model_note("ark-coding-plan/glm-5.3", "en"))   # the strong image model
         s = ark.claude_steps()
         self.assertEqual(s[0], "agentj provider profile save ark-claude --harness claude --preset ark-coding --model doubao-seed-2.1-pro")
         self.assertEqual(s[2], "agentj provider profile use ark-claude")
-        a = SimpleNamespace(model=["kimi-k3"], harness="claude", dry_run=False, json=True, lang="en")
+        a = SimpleNamespace(model=["kimi-k3.1-pro"], harness="claude", dry_run=False, json=True, lang="en")
         out = io.StringIO()
         with redirect_stdout(out):
             self.assertEqual(ark.cmd(a), 0)
-        self.assertIn("--model kimi-k3", json.loads(out.getvalue())["next"][0])
+        self.assertIn("--model kimi-k3.1-pro", json.loads(out.getvalue())["next"][0])
         self.assertIn("ARK_CODING_PLAN_API_KEY", harness.OPENCODE_KEY_ENV)
         # P335: Ark is a main recommendation now (ai_route.ark_steps), no longer one of the alternatives
         self.assertFalse(any(x["how"] == "agentj provider ark" for x in ai_route.alternatives("CN")))
@@ -207,7 +208,7 @@ class ArkPreset(Home):
         r = self.install(dry_run=True)
         self.assertFalse(self.file.exists())
         zh, en = ark.render(r, "zh"), ark.render(r, "en")
-        self.assertIn("kimi-k3", zh); self.assertIn("预演", zh); self.assertIn("dry run", en)
+        self.assertIn("kimi-k3.1-pro", zh); self.assertIn("预演", zh); self.assertIn("dry run", en)
         self.assertIn("Claude Code", ark.render({"harness": "claude", "next": ark.claude_steps()}, "en"))
 
 

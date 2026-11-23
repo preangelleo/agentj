@@ -137,27 +137,72 @@ class Onboarding(unittest.IsolatedAsyncioTestCase):
         self.assertIn('推荐 Codex',channel.h.agent_notice.call_args.args[0])
 
     async def test_signed_selection_changes_only_avatar_and_denial_preserves_it(self):
+        # 4676679f3a (0.30.0 signed channel approvals): select() applies the plan only after consuming the held receipt of
+        # the exact card it opened - a bare "approved" boolean is no longer enough. So this runs the real Host approval
+        # path: paired phone, Noise wire, production verifier, durable signing key (same fixture as test_p501_wechat).
+        import asyncio, tempfile
+        from pathlib import Path
         from types import SimpleNamespace as NS
         from unittest.mock import AsyncMock,MagicMock
+        from _testtmp import TEST_TMP
+        from _p541_device import _owner_host
+        import test_l1 as l1
+        import test_p513b_summary as actual_wire
+        from agentj.state import State
         from agentj.external_channels import ExternalChannels
-        channel=object.__new__(ExternalChannels)
-        main={'kind':'claude','model':'sonnet'}
-        channel.h=NS(agent_cfg=main,agent=NS(cur_send=NS(source={'kind':'phone','role':'owner'})))
-        channel.store=NS(data={'avatar':{},'sessions':{'old':'session'}},save=MagicMock())
+        tmp=tempfile.TemporaryDirectory(dir=TEST_TMP);self.addCleanup(tmp.cleanup)
+        st=State(Path(tmp.name)/'state');st.init(relay='ws://127.0.0.1:1');st.log=MagicMock()
+        work=Path(tmp.name)/'work';work.mkdir()
+        sent=[];jobs=[]
+        host=_owner_host(st,sent)
+        main={'kind':'claude','model':'sonnet','dir':str(work)}
+        host.lang='zh';host.agent_cfg=main;host.preferences={}
+        host.status_changed=MagicMock();host.push_notify=MagicMock();host.agent_notice=MagicMock()
+        def bg(coro,*_):
+            t=asyncio.create_task(coro);jobs.append(t);return t
+        host._bg=bg
+        phone=l1.Phone(st,with_passkey=True);session=l1._ready(host,phone)
+        actual_wire.real_outbound(host,session,sent)
+        channel=ExternalChannels(host);host.external_channels=channel
+        async def cleanup():
+            await channel.stop()
+            for t in jobs:t.cancel()
+            await asyncio.gather(*jobs,return_exceptions=True)
+        self.addAsyncCleanup(cleanup)
+        channel.store.data['avatar']={};channel.store.data['sessions']={'old':'session'}
         channel.sessions=NS(stop_all=AsyncMock())
-        channel.approval=AsyncMock(return_value=False)
+        host.agent.cur_send=NS(source={'kind':'phone','role':'owner'})
         plans=[{'id':'profile:route','kind':'codex','config':{'kind':'codex','model':'fixture','channel_profile':'route'}}]
+
+        async def answered(ok):
+            before={obj['id'] for _,obj in sent if obj.get('t')=='ask'}
+            task=asyncio.create_task(channel.select({'id':'profile:route'}))
+            for _ in range(400):
+                cards=[obj for _,obj in sent if obj.get('t')=='ask' and obj['id'] not in before]
+                if cards or task.done():break
+                await asyncio.sleep(.005)
+            self.assertTrue(cards,'the plan change must reach the paired remote as a signed card')
+            self.assertIn('profile:route',cards[-1]['summary'])
+            await host._app(session,phone.answer(cards[-1],ok))
+            return await asyncio.wait_for(task,10)
+
         with patch('agentj.channel_plans.inventory',return_value=plans),patch('agentj.external_channels.openrouter_bound',return_value=False):
-            self.assertFalse((await channel.select({'id':'profile:route'}))['ok'])
+            self.assertEqual(await answered(False),{'ok':False,'why':'denied'})
             self.assertEqual(channel.store.data['avatar'],{})
             channel.sessions.stop_all.assert_not_awaited()
-            channel.approval.return_value=True
-            self.assertTrue((await channel.select({'id':'profile:route'}))['ok'])
+            # An approval that says yes but holds no receipt for this target changes nothing (the pre-0.30.0 shape).
+            real=channel.approval
+            channel.approval=AsyncMock(return_value=True)
+            self.assertEqual(await channel.select({'id':'profile:route'}),{'ok':False,'why':'approval_changed'})
+            self.assertEqual(channel.store.data['avatar'],{})
+            self.assertEqual(channel.store.data['sessions'],{'old':'session'})
+            channel.approval=real;channel.sessions.stop_all.reset_mock()
+            self.assertTrue((await answered(True))['ok'])
         self.assertEqual(channel.store.data['avatar']['config']['channel_profile'],'route')
-        self.assertEqual(main,{'kind':'claude','model':'sonnet'})
+        self.assertEqual(main,{'kind':'claude','model':'sonnet','dir':str(work)})
         self.assertEqual(channel.store.data['sessions'],{})
         channel.sessions.stop_all.assert_awaited_once()
-        channel.h.agent.cur_send.source={'kind':'telegram','role':'owner'}
+        host.agent.cur_send.source={'kind':'telegram','role':'owner'}
         self.assertEqual((await channel.select({'id':'profile:route'}))['why'],'owner_phone_required')
 
 class FreeExecution(unittest.IsolatedAsyncioTestCase):

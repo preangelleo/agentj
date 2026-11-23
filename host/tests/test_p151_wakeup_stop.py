@@ -105,14 +105,31 @@ class WakeupStop(unittest.IsolatedAsyncioTestCase):
     async def phone_turn(self, body, source=None):
         """Starts a phone turn the way Agent J does; returns the task. The native session is played by the test."""
         from types import SimpleNamespace
-        self.a.cur_send = SimpleNamespace(source=provenance.phone() if source is None else source, lock=asyncio.Lock(), state="pending")
+        self.a.cur_send = SimpleNamespace(source=provenance.phone() if source is None else source, lock=asyncio.Lock(), state="pending",
+                                          sid=os.urandom(8).hex())   # the host frame id the attestation is minted for
         with patch.object(shared, "claude_send"):
             task = asyncio.create_task(self.a.turn(body))
             await asyncio.sleep(0.02)
         return task
 
     async def submit(self, body):
+        """The native session takes the phone message. db0c4e9556 (2026-11-14, exact shared phone transcript echoes) +
+        a2d12ce175 / fae0c85c0f (host-held TranscriptAttestation): a prompt hook that merely contains the words, under a
+        phone-looking label, accepts nothing; the delivery is attested only by the transcript record that carries this
+        session id, the minted record nonce as origin.msg_id and exactly the host envelope."""
         await self.a.hook_event({"hook_event_name": "UserPromptSubmit", "session_id": SID, "prompt": phone_msg(body)})
+        self.assertFalse(self.a.input_seen.is_set(), "a label plus the same words is not a delivery")
+        att = self.a.native_request
+        self.assertIsNotNone(att)
+        echo = provenance.envelope("fixture", att.body, att.source)
+        self.write(rec("user", isMeta=True, sessionId=SID, origin={"kind": "peer", "msg_id": "0" * 32},
+                       message={"role": "user", "content": echo}))
+        self.a.read_transcript()
+        self.assertFalse(self.a.input_seen.is_set(), "the right envelope under another record id is not this delivery")
+        self.write(rec("user", isMeta=True, sessionId=SID, origin={"kind": "peer", "msg_id": att.record_id},
+                       message={"role": "user", "content": echo}))
+        self.a.read_transcript()
+        self.assertTrue(self.a.input_seen.is_set())
 
     async def settle(self, task=None):
         for _ in range(40):

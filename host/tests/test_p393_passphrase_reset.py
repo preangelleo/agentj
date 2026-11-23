@@ -1,5 +1,5 @@
 """#118: forgot the remote pairing password, keep every remote. `agentj passphrase reset --phone`: a paired remote's signed
-allow (+ its passkey when it has one) gives the owner's terminal a one-use ticket; the new password is typed there and only
+allow + its Face ID (0.30.0 UV list: always; a remote without a verification key cannot approve) gives the owner's terminal a one-use ticket; the new password is typed there and only
 its hash is stored; every remote stays paired; approvals.log + host.log keep the record; the phones get a notice.
 Deny / timeout / forged or unpaired answers change nothing. Without a paired remote `agentj passphrase reset` is unchanged.
 An Agent (no terminal, Agent harness environment, a process under serve) can neither ask nor type the new value."""
@@ -68,6 +68,13 @@ class Flow(unittest.TestCase):
         self.keys = {}
         self.A = self._remote(10, "网页 · Linux Chrome")
         self.B = self._remote(11, "网页 · iOS Safari")
+        # 0.30.0 explicit UV list (230e3d150f, 2026-11-08; uv_list.COMMANDS['passphrase_reset'], Ask(require_passkey=
+        # True)): replacing the pairing password needs the confirming remote's Face ID. The P393 rule "passkey when it
+        # has one" is gone — a remote without a verification key cannot approve this card at all. B has a real key
+        # (WebAuthn stand-in, test_p57_passkey); A deliberately has none.
+        from test_p57_passkey import Authenticator, pk_record
+        self.auth = {self.B: Authenticator()}
+        self.assertTrue(st.set_passkey(self.host.sessions[11].pub, pk_record(self.auth[self.B])))
         self.before = set(st.devices())
 
     def tearDown(self):
@@ -83,10 +90,16 @@ class Flow(unittest.TestCase):
     def to(self, cid, t=None):
         return [o for c, o in self.sent if c == cid and (t is None or o.get("t") == t)]
 
-    def _answer(self, did, card, ok=True, key=None):
-        msg = approvals.signed_message(self.host.channel, did, card["id"], "allow" if ok else "deny",
-                                       approvals.shown_digest(card["tool"], card["summary"]))
-        return {"t": "answer", "id": card["id"], "ok": ok, "sig": wire.b64u((key or self.keys[did]).sign(msg))}
+    def _answer(self, did, card, ok=True, key=None, face=True):
+        digest = approvals.shown_digest(card["tool"], card["summary"])
+        msg = approvals.signed_message(self.host.channel, did, card["id"], "allow" if ok else "deny", digest)
+        out = {"t": "answer", "id": card["id"], "ok": ok, "sig": wire.b64u((key or self.keys[did]).sign(msg))}
+        auth = self.auth.get(did)
+        if ok and face and auth is not None:
+            fa = auth.assert_(passkey.elevate_challenge(self.host.channel, did, card["id"], pass_reset.PK_KIND, card["id"], digest),
+                              b"", nonce=b"")
+            out["fa"] = {k: fa[k] for k in ("id", "cd", "ad", "sig")}
+        return out
 
     async def _settle(self):
         for _ in range(20):
@@ -144,7 +157,7 @@ class Flow(unittest.TestCase):
     def test_ticket_belongs_to_the_asking_process(self):
         async def go():
             task, card = await self._card()
-            await self.host._app(self.host.sessions[10], self._answer(self.A, card))
+            await self.host._app(self.host.sessions[11], self._answer(self.B, card))
             res = await asyncio.wait_for(task, 5)
             other = await self.host._pass_replace({"ticket": res["ticket"], "new": NEW}, PID + 1)
             self.assertEqual(other["error"], "ticket")
@@ -212,10 +225,6 @@ class Flow(unittest.TestCase):
                         "an unpaired session is cut off (or its answer refused), never counted")
 
     def test_a_remote_with_a_passkey_must_use_it(self):
-        self.st.set_passkey(self.host.sessions[11].pub,
-                            {"id": wire.b64u(b"\x07" * 16), "pub": wire.b64u(os.urandom(77)), "alg": -7, "count": 0,
-                             "rp": "m.agentj.app", "at": int(time.time())})
-
         async def go():
             with patch.object(pass_reset, "CARD_TTL", 0.6):
                 task, card = await self._card()
@@ -223,12 +232,30 @@ class Flow(unittest.TestCase):
                 want = passkey.elevate_challenge(self.host.channel, self.B, card["id"], pass_reset.PK_KIND, card["id"],
                                                  approvals.shown_digest(card["tool"], card["summary"]))
                 self.assertEqual(card["fa_ch"], wire.b64u(want))
-                self.assertFalse(self.to(10, "ask")[0].get("passkey_required"), "a remote without a passkey signs only")
-                await self.host._app(self.host.sessions[11], self._answer(self.B, card))     # no Face ID
+                self.assertEqual(card["fa"], wire.b64u(self.auth[self.B].id))
+                # UV list: the remote WITHOUT a key is told the same (Face ID required) and has no challenge to sign —
+                # it is not a signature-only approver any more.
+                bare = self.to(10, "ask")[0]
+                self.assertTrue(bare.get("passkey_required"), "listed UV command: every remote needs Face ID")
+                self.assertNotIn("fa_ch", bare)
+                self.assertNotIn("fa", bare)
+                await self.host._app(self.host.sessions[10], self._answer(self.A, bare))     # signature only, no key
+                await self._settle()
+                self.assertFalse(task.done(), "a remote without a verification key decided nothing")
+                await self.host._app(self.host.sessions[11], self._answer(self.B, card, face=False))     # no Face ID
+                await self._settle()
+                self.assertFalse(task.done(), "a signature without the Face ID assertion decided nothing")
+                stolen = self._answer(self.B, card)                 # B's assertion replayed from the key-less remote
+                stolen["sig"] = self._answer(self.A, bare)["sig"]
+                await self.host._app(self.host.sessions[10], stolen)
+                await self._settle()
+                self.assertFalse(task.done(), "another remote's assertion is not this remote's Face ID")
                 return await asyncio.wait_for(task, 5)
         self.assertEqual(asyncio.run(go())["error"], "timeout")
         self.assert_unchanged()
-        self.assertIn('"reason": "passkey_required"', self.st.log_path.read_text())
+        log = [json.loads(x) for x in self.st.log_path.read_text().splitlines() if '"passkey_required"' in x]
+        self.assertGreaterEqual(len(log), 3)
+        self.assertEqual({r.get("device") for r in log if r.get("device")} - {self.A, self.B}, set())
 
     def test_no_paired_remote_no_card(self):
         for did in list(self.st.devices()):

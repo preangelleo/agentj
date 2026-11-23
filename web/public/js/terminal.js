@@ -712,7 +712,7 @@ function bangEnd(sid) { if (S.bang && S.bang.sid === sid) { clearTimeout(S.bang.
 // #584: a reply code block's 「执行」 rides the 「!」 path with `run` = {from, cb}: the host's result (term_bang {run: 1}) goes to
 // cb, never a chat page; a line that did not run says why to cb instead of offering it back to the message box.
 const runFields = (run) => ({ run: 1, ...(Number.isInteger(run.from) && run.from >= 0 ? { from: run.from } : {}) });
-function unrun(b, why) { if (b && b.run) { try { b.run.cb({ ok: false, why }); } catch { /* the block is gone */ } } else if (b) restore(b.line); }
+function unrun(b, why) { if (b && b.run) { try { b.run.cb({ ok: false, why, ...(b.sent ? { sent: true } : {}) }); } catch { /* the block is gone */ } } else if (b) restore(b.line); }
 function bangLost(sid) { const b = S.bang && S.bang.sid === sid ? S.bang : null; bangEnd(sid); if (b && b.run) unrun(b, 'lost'); }
 /** termhook.run(): like bang() for a code block's 「执行」 → 'sent' | 'open' (the open flow started) | 'pty' (a PTY terminal is
  *  open: the caller fills the line in instead) | 'busy' | 'program' | false. */
@@ -912,6 +912,7 @@ function confirmLine(m) {
         send({ t: 'term_line', id: S.id, seq: m.seq, line, ...signed, ...(fa ? { fa } : {}), ...(bangSid ? { bang: bangSid } : {}), ...(bangSid && bangRun ? runFields(bangRun) : {}) });
         // §37.12: the host's 120 s for a 「!」 line start when it runs (now), not when it was first sent
         if (bangSid && S.bang && S.bang.sid === bangSid) { clearTimeout(S.bang.timer); S.bang.timer = setTimeout(() => bangLost(bangSid), bangRun ? RUN_MS : BANG_MS); }
+        if (bangSid && S.bang && S.bang.sid === bangSid) S.bang.sent = true;   // 0371: the owner confirmed and the signed line went out
         closeSheet();
       }).catch((e) => { sheetBusy(false); if (e?.name === 'Error' || !sheetPkFail(sheet?.kind === 'confirm' || sheet?.kind === 'agent' ? sheet : null, e)) toast(t('p408.faCancel'), 3600); });   // P539
     } });

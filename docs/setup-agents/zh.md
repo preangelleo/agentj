@@ -48,7 +48,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `432e6b0af68f85b8a73360ef6772ca5a24af373a466701fdeb67154cdf66da60`
+SHA256 sh: `926b5b05e98ca9e5f53e9966beb4e96e8e5383c48a80c06aad220eae50655314`
 
 
 ```bash
@@ -1409,7 +1409,7 @@ Qwen Code（`qwen`，阿里，Apache-2.0 开源）是阿里自己的编程 Agent
 
 适合谁：在中国大陆、还没有任何套餐的人，我们首推它；已经开通的人也直接用它。一个套餐就能用字节豆包、Kimi、智谱 GLM、DeepSeek 和 MiniMax 的模型。先买 Lite：Lite 和 Pro 的模型、工具一样，Pro 只是 5 倍用量，Lite 不够用再升级。`agentj agent route` 会显示标价，以下单页为准。
 
-哪些模型能看图（2026-10-15 实测）：`doubao-seed-2.1-pro`（默认）、`kimi-k3`（扣额度快，方舟建议 Pro 用，Lite 也能选）、`kimi-k2.7-code`、`glm-5-3-flash`、`minimax-m3`、`deepseek-v4-1-flash` 能看截图；`glm-5.3`、`deepseek-v4-pro`、`deepseek-v4-flash` 是纯文本。Agent J 会把这些写进 OpenCode 的设置，同时调高输出上限（GLM-5.3 的思考会用光 OpenCode 默认的 32k）。Coding Plan 不含生图模型。
+哪些模型能看图（2026-10-15 实测）：`doubao-seed-2.1-pro`（默认）、`kimi-k2.7-code`、`glm-5-3-flash`、`minimax-m3`、`deepseek-v4-1-flash` 能看截图；`glm-5.3`、`deepseek-v4-pro`、`deepseek-v4-flash` 是纯文本。`kimi-k3` 当时也实测能看图，方舟于 2026-11-25 14:00（UTC+8）下线它；替代型号 `kimi-k3.1-pro` 方舟官方配置写支持看图，我们还没实测。Agent J 会把这些写进 OpenCode 的设置，同时调高输出上限（GLM-5.3 的思考会用光 OpenCode 默认的 32k）。Coding Plan 不含生图模型。
 
 这是包月套餐，条款以方舟控制台为准。你自己的定时任务和后台 Agent 可以用 Coding Plan 的 key。长时间连续跑的后台任务，服务商可能限流，遇到了就把这些任务改用按量付费的方舟 key。客服 bot 是在服务别人，Agent J 不会把 Coding Plan 的 key 交给 bot，要给 bot 另填一把按量付费的 key（bot 设置页里会告诉你填在哪）。
 

@@ -59,7 +59,7 @@ def fetch_archive(filename, archive, retry):
         if len(data) > 32_000_000:
             raise PreparationFailure('install_artifact_changed', 'download')
         archive.write_bytes(data)
-    retry.call(fetch, 90, phase='download')
+    retry.call(fetch, 90, phase='download', step='runtime')
 
 
 def runtime(pin, retry=None):
@@ -150,7 +150,10 @@ def repair_python(pin, uv, retry=None):
                                       env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                       stderr=stderr, timeout=timeout)
             except subprocess.TimeoutExpired:
-                raise PreparationFailure('installer_timeout', 'resolve') from None
+                # Only the download of the interpreter can be slow; the lookup that follows is local.
+                failure = PreparationFailure('installer_timeout', 'resolve', transient=args[0] == 'install')
+                failure.timed_out = True
+                raise failure from None
             if proc.returncode:
                 stderr.seek(max(0, stderr.tell() - 65536))
                 raise resolver_failure(stderr.read())
@@ -158,9 +161,9 @@ def repair_python(pin, uv, retry=None):
 
     if retry is not None:
         # This known uv embeds the distribution URL and SHA-256 for its supported Python builds.
-        retry.call(lambda t: run(['install', '--no-bin'], t), 150)
+        retry.call(lambda t: run(['install', '--no-bin'], t), 150, step='python')
     discover = lambda t: run(['find', '--system', '--no-project', '--offline', '--managed-python'], t)
-    data = retry.call(discover, 15) if retry is not None else discover(15)
+    data = retry.call(discover, 15, step='local') if retry is not None else discover(15)
     py = Path(os.fsdecode(data.rstrip(b'\r\n'))).resolve()
     if not py.is_relative_to(managed) or not py.is_file() or not os.access(py, os.X_OK):
         raise PreparationFailure('python_missing', 'resolve')

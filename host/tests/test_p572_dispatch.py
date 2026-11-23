@@ -97,12 +97,24 @@ class HostDispatch572(unittest.TestCase):
         await host._app(session,{'t':'msg','text':text})
         send=actor.cur_send
         self.assertIsNotNone(send)
+        # R-0052 (5d038f40dc / 97bb6078e5, 2026-11-17): a caller-origin proof starts at the host-stamped turn start
+        # (serve.agent_turn_start → approval_material.turn_start), not at Send.created. This fixture's submit() stand-in
+        # skips the real adapter, so it makes the Host's own call; without the stamp the caller is `unknown_agent`.
+        host.agent_turn_start(send.text,send)
         actor.phone_turn=True;actor.phone_seen=False
         actor.pending_source=actor.native_source=provenance.phone()
         actor.pending_text=provenance.body(send.text,send.source)
-        actor.native_request=(actor.session['sessionId'],send,actor.pending_text)
-        echo=provenance.envelope('fixture',send.text,send.source)
-        self.assertTrue(shared_turn_origin.delivered(actor,{'isMeta':True,'origin':{'kind':'peer'}},echo))
+        # a2d12ce175 (2026-11-14) + fae0c85c0f (11-16, P03025): an owner turn of the shared session is attested only by
+        # the host-held TranscriptAttestation — the transcript record must carry this session id and the minted record
+        # nonce as origin.msg_id. The (session, send, text) tuple and a bare peer record this fixture used attest nothing.
+        actor.native_request=att=shared_turn_origin.mint(actor,send,actor.pending_text)
+        self.assertIsNotNone(att)
+        echo=provenance.envelope('fixture',att.body,att.source)
+        self.assertFalse(shared_turn_origin.delivered(actor,{'isMeta':True,'origin':{'kind':'peer'}},echo))
+        self.assertFalse(shared_turn_origin.delivered(actor,{'isMeta':True,'sessionId':att.session_id,'origin':{'kind':'peer','msg_id':'0'*32}},echo))
+        self.assertFalse(actor.phone_seen or att.consumed)
+        self.assertTrue(shared_turn_origin.delivered(actor,{'type':'user','isMeta':True,'sessionId':att.session_id,
+                                                           'origin':{'kind':'peer','msg_id':att.record_id}},echo))
         actor.phone_seen=True
         self.assertEqual(approval_review.snapshot(host)['text'],text)
         return host,actor,phone,session,sent
@@ -226,7 +238,16 @@ class HostDispatch572(unittest.TestCase):
             original=actor.cur_send
             host.agent=NS(kind='codex',cfg={**host.agent_cfg,'kind':'codex'},cur_send=original,
                           session=actor.session,phone_turn=True,phone_seen=True,research=False,
-                          thread={'sandbox':{'type':'dangerFullAccess'},'approvalPolicy':'never','approvalsReviewer':'user'})
+                          thread={'sandbox':{'type':'dangerFullAccess'},'approvalPolicy':'never','approvalsReviewer':'user'},
+                          # R-0052 r1 F1 (97bb6078e5, 2026-11-17): a caller under this session anchor is the owner's
+                          # only once the harness reported this very session generation's background inventory, and
+                          # it is empty; an unknown inventory taints the anchor (caller = unknown_agent, no origin).
+                          bg_known=(actor.session['pid'],actor.session['procStart']),bg_live={},sub_pending=None,bg_nested=None)
+            from agentj import approval_material
+            anchor_born=int(busy_launch.procs()[os.getpid()][2])/busy_launch.HZ
+            self.assertFalse(approval_material._anchor_tainted(host,host.agent,anchor_born))
+            unknown_inventory=NS(**{**vars(host.agent),'bg_known':None})
+            self.assertTrue(approval_material._anchor_tainted(host,unknown_inventory,anchor_born),'unknown inventory stays tainted')
             host.busy.context={'own':{'pid':os.getpid(),'proc_start':busy_launch.procs()[os.getpid()][2]}}
             server=await asyncio.start_unix_server(host.on_ctl,path=str(self.st.sock_path))
             key='run:572572572572';seen=[]

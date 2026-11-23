@@ -44,12 +44,15 @@ MIN_CEILING = 4096          # smaller numbers in that test are counts, not byte 
 # core 4,785,338 / 4,229,529 (+13.1 %). Measured on the 0.30.69 candidate 418d3a3c52: P114 and P155 unchanged, core 4,799,823 B
 # (+14,485 B from the audit fix round). No ceiling is raised. Exact caps: P114 and P155 = measured + 1 KiB; core = measured +
 # 8 KiB (version files and the release summary are rewritten at build). Remove these three rows in the slimming ticket.
+# slim-1122 (2026-11-22 减体积单，第一轮): core measured 4,792,144 B on fix/slim-1122 (−7,767 B: serve.py S6 follow-up helpers,
+# en.phone.xz re-encoded); core cap lowered to measured + 4 KiB = 4,796,240 B. P114 60,300 B and P155 41,328 B are unchanged,
+# so their caps stay. No row is back inside its ceiling yet, so all three rows remain (ARCHITECTURE「slim-1122」lists what is left).
 WIDER = {'combined bounded allocations': 4595969,   # P0269_BUDGET_WAIVER
          'P170 e-mail channel allocation (+ P206 A mail expect) is bounded': 44175,   # P0306_BUDGET_WAIVER
          'P114 browser package allocation is bounded': 61324,                          # P0369_BUDGET_WAIVER
          'P155 harness-switch allocation (+ P282 + P312) is bounded': 42352,           # P0369_BUDGET_WAIVER
          # the label is the first 120 characters of the test message
-         'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0) + P198 (0.20.1) + 0.20.2 increments (P201 P203 P2': 4808015}   # P0369_BUDGET_WAIVER
+         'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0) + P198 (0.20.1) + 0.20.2 increments (P201 P203 P2': 4796240}   # P0369_BUDGET_WAIVER, lowered by slim-1122
 
 
 def judge(measured: int, ceiling: int, strict: bool, label: str = '') -> str:

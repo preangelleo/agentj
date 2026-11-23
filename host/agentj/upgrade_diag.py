@@ -34,7 +34,17 @@ TAIL_LINES = 20
 LINE_MAX = 240
 TAIL_MAX = 3000
 REPORT_ENV = "AGENTJ_UPGRADE_REPORT"       # "off": never report (tests; CI)
-REPORT_EVERY = 24 * 3600                   # the same (target, reason) is reported at most once a day
+REPORT_EVERY = 24 * 3600                   # the same failure (REPORT_KEY) of this host is reported at most once a day
+REPORT_KEY = ("from", "to", "reason", "subreason")
+# The updater refusing its own store (modes it wrote itself): the nightly retry of a stuck host must not open a ticket a
+# day. Integrity findings (hash / size / signature mismatch) are never in this set and keep the daily report.
+SELF_INFLICTED = frozenset(("cache_entry_invalid", "unsafe_store"))
+SELF_INFLICTED_EVERY = 7 * 24 * 3600
+
+
+def report_every(rec) -> int:
+    own = rec.get("reason") == "install_artifact_changed" and rec.get("subreason") in SELF_INFLICTED
+    return SELF_INFLICTED_EVERY if own else REPORT_EVERY
 RESULTS = ("ok", "failed", "rolled_back")
 REASON_RE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 STEPS = ("check", "download", "install", "verify", "service", "health")
@@ -76,6 +86,12 @@ UV_STDERR = (
 # A failed dependency install is described by five closed fields, parsed here from the installer's raw output and the
 # installer's environment — never the URL, host name, credential, path or any stderr text itself.
 DEP_PHASES = ("resolve", "download", "build", "install")
+# 0370: which part of the dependency preparation the time went to — choosing the files (network), fetching one, the
+# offline check of the finished set, the verified uv / interpreter of a repair (downloads), or a repair's local helper
+# (tag selection, interpreter lookup). With whole seconds and file counts these tell a slow link from a local stall;
+# nothing here names a host, a path or an account.
+PREPARE_STEPS = ("select", "fetch", "probe", "runtime", "python", "local")
+PREPARE_COUNTS = {"step_seconds": 9999, "prepare_seconds": 9999, "wheels_fetched": 999, "wheels_needed": 999}
 DEP_SOURCES = ("pypi", "mirror", "proxy", "unknown")
 UV_CLASSES = ("dns", "connect", "timeout", "tls", "http_status", "other")
 # More specific than a transport symptom. Only these words may leave the host.
@@ -314,7 +330,8 @@ def dependency_evidence(raw, env=None) -> dict:
         return {}
 
 
-DEPENDENCY_KEYS = ("dependency_package", "dependency_phase", "dependency_source", "uv_failure_class", "uv_resolve_detail", "retry_count")
+DEPENDENCY_KEYS = ("dependency_package", "dependency_phase", "dependency_source", "uv_failure_class", "uv_resolve_detail", "retry_count",
+                   "prepare_step", *PREPARE_COUNTS)
 
 
 def dependency_fields(res) -> dict:
@@ -334,6 +351,11 @@ def dependency_fields(res) -> dict:
     value = res.get("retry_count")
     if type(value) is int and 0 <= value <= RETRY_MAX:
         out["retry_count"] = value
+    if res.get("prepare_step") in PREPARE_STEPS:
+        out["prepare_step"] = res["prepare_step"]
+    for key, most in PREPARE_COUNTS.items():
+        if type(res.get(key)) is int and 0 <= res[key] <= most:
+            out[key] = res[key]
     return out
 
 
@@ -640,7 +662,7 @@ def write(st, rec: dict) -> bool:
         if not st.exists():
             return False
         old = read(st) or {}
-        if old.get("to") == rec["to"] and old.get("reason") == rec["reason"] and old.get("reported"):
+        if old.get("reported") and all(old.get(k) == rec.get(k) for k in REPORT_KEY):
             rec = {**rec, "reported": old["reported"], "reported_at": old.get("reported_at")}
         st.write_private(st.root / LAST, json.dumps(rec, ensure_ascii=False).encode())
         return True
@@ -802,6 +824,10 @@ META_FIELDS = {
     "dependency_phase": lambda v: v in DEP_PHASES, "dependency_source": lambda v: v in DEP_SOURCES,
     "uv_failure_class": lambda v: v in UV_CLASSES, "uv_resolve_detail": lambda v: v in RESOLVE_DETAILS,
     "retry_count": lambda v: len(v) == 1 and v in "0123456789",      # ASCII digits only (0334 r2)
+    # 0370 (support ticket: a preparation timeout said only "resolve / other"): the step and how long, bounded ASCII digits.
+    "prepare_step": lambda v: v in PREPARE_STEPS,
+    **{k: (lambda most: lambda v: bool(re.fullmatch(r"[0-9]{1,4}", v)) and int(v) <= most)(most)
+       for k, most in PREPARE_COUNTS.items()},
 }
 META_MAX_LINES = 20                                # = support.META_MAX_LINES (header included)
 
@@ -847,8 +873,9 @@ def report(st, res: dict, *, send=None, now: float | None = None, kind: str | No
         last = read(st) if st.exists() else None
     except Exception:  # noqa: BLE001
         last = None
-    if (last and last.get("to") == res.get("to") and last.get("reason") == category(res.get("reason"))
-            and last.get("reported") and now - float(last.get("reported_at") or 0) < REPORT_EVERY):
+    this = entry(res, int(now)) or {}
+    if (last and last.get("reported") and all(last.get(k) == this.get(k) for k in REPORT_KEY)
+            and 0 <= now - float(last.get("reported_at") or 0) < report_every(this)):
         return {"status": "already", "thread": last["reported"]}
     text = body(res, kind)
     meta = False
@@ -922,9 +949,42 @@ _DOWNLOAD_SYMPTOM = {
 }
 
 
+def preparation_timeout(res: dict):
+    """Which kind of preparation ran out of time, before any change to the program — or None (the installer itself).
+    network: a step that reads the package host was cut off. local: the offline check or a local helper was cut off.
+    budget: the shared time was used up, by whatever (also older records, which do not say where)."""
+    if not isinstance(res, dict) or res.get("reason") != "installer_timeout":
+        return None
+    fields = dependency_fields(res)
+    if fields.get("dependency_phase") not in ("resolve", "download") and not (
+            "prepare_seconds" in fields and install_unchanged(res)):
+        return None
+    step = fields.get("prepare_step")
+    if step in ("probe", "local"):
+        return "local"
+    if step and fields.get("step_seconds"):
+        return "network"
+    return "budget"
+
+
+def preparation_timed_out(res: dict) -> bool:
+    return preparation_timeout(res) is not None
+
+
+_PREPARATION_TIMEOUT = {
+    "network": ("准备依赖包超时，网络太慢或中途卡住", "preparing the dependencies timed out: the network was too slow or stalled"),
+    "local": ("核对安装所需文件超时，这台主机当时太忙或磁盘太慢",
+              "checking the files for installation timed out: this computer was too busy or its disk too slow"),
+    "budget": ("准备安装所需文件超时，规定时间内没能完成", "preparing the files for installation ran out of time"),
+}
+
+
 def dependency_message(res: dict, lang: str) -> str:
     """Explain a dependency fetch with closed fields only, including older records with no symptom."""
     reason = res.get("reason")
+    kind = preparation_timeout(res)
+    if kind:
+        return _PREPARATION_TIMEOUT[kind][lang == "en"]
     if reason == "rollback_failed":
         reason = res.get("install_failure")
     if reason != "dependency_download_failed" and not (
@@ -944,9 +1004,23 @@ def dependency_message(res: dict, lang: str) -> str:
 UPGRADE_REPAIR_GUIDE = "https://agentj.app/docs/install/#upgrade-failed"
 
 
-def dependency_repair(lang: str) -> str:
+def dependency_repair(lang: str, res: dict | None = None) -> str:
+    if preparation_timeout(res) in ("local", "budget"):     # not a network failure: do not tell the owner to wait for one
+        return (("\n\nAfter the host is idle, enter /update on your phone. If it fails again, follow the host repair guide: "
+                 if lang == "en" else "\n\n主机空闲后，在手机输入 /update 重试。若仍失败，请按主机修复说明操作：") + UPGRADE_REPAIR_GUIDE)
     return (("\n\nAfter connectivity returns, try /update on your phone. If it fails again, follow the host repair guide: " if lang == "en" else
              "\n\n网络恢复后，可在手机输入 /update 再试一次。若仍失败，请按主机修复说明操作：") + UPGRADE_REPAIR_GUIDE)
+
+
+def cache_failed(res) -> bool:
+    """The updater refused its own dependency cache or install store before touching the installed version."""
+    return (res.get("reason") == "install_artifact_changed" and res.get("artifact_stage") in ("dependency_cache", "install_store")
+            and install_unchanged(res))
+
+
+def cache_repair(lang: str) -> str:
+    return ((" Send /update again; if it fails the same way, run the one repair command in the host repair guide: " if lang == "en" else
+             "可以再发一次 /update；若仍是同样的结果，按主机修复说明运行那一条修复命令：") + UPGRADE_REPAIR_GUIDE)
 
 
 def previous_version_text(previous, target, lang):
@@ -1081,7 +1155,9 @@ def owner_sentence(res: dict, rep: dict, lang: str = "zh") -> str:
     else:
         tail_ = ("it could not be sent to support automatically; I can send it with `agentj support ask --attach-doctor`" if en else
                  "没能自动发给客服，我可以用 agentj support ask --attach-doctor 再发")
-    own = dependency_repair(lang) if dependency else ""
+    own = dependency_repair(lang, res) if dependency else ""
+    if cache_failed(res):
+        own = cache_repair(lang)
     if res.get("reason") == "installer_incompatible":
         own = (" Follow the host repair guide: " if en else "请按主机修复说明操作：") + UPGRADE_REPAIR_GUIDE
     if res.get("owner_kind") and res.get("fix"):    # #475: the installer hit files another account owns

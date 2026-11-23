@@ -3825,6 +3825,10 @@ A ready, allowlisted p33 device sends `{t:"layout_diag",r,sample}` through the e
 
 Old host compatibility: after 8 seconds without the new reply, the same ready session uploads the captured sample as `layout-diagnostic.json` using ordinary `blob_*` att frames. Existing inbox staging/30-minute expiry applies; no say/claim, no automatic Agent turn, no new host log or permanent file. UI labels temporary staging separately from dedicated persistence. No fallback across a changed Noise generation or host. Host-specific persistence/log/CLI ships with a later host release; B-only deploy includes only web assets.
 
+### Render-health counters (optional `sample.render`, same v1 sample)
+
+A page that has them adds one closed object `render` to the same sample: `reason` (`manual`|`context_lost`|`long_hidden`), `agent` (browser family word, never the UA string), `alive` / `hiddenMax` / `cache` / `cards` / `nodes` (bucket words), `gl` (`pending`|`ok`|`lost`|`unavailable`), integer counts `hidden` ≤ 9999, `glLost` / `glRestored` ≤ 99, and `mem` (`navigator.deviceMemory` step or null). Exact key set and words in host `layout_diag.py` (`RENDER_ENUMS`, `RENDER_COUNTS`, `RENDER_MEMORY`); anything else is refused before disk. No text, name, URL, identifier, timestamp beyond `at`. Besides the owner's own tap the page sends this sample by itself when its 1×1 never-drawn WebGL canary loses its context and when it returns to the front after ≥ 10 minutes hidden: at most 3 per page per hour, never from the background, no upload fallback, nothing on screen. Storage, log line, 5-second limit and reader are unchanged (one file, last sample wins). A host without `render` support answers `save_failed`; the owner's tap then resends once without `render` after the 5-second slot, an unattended sample is dropped.
+
 ## P498 additions — peer reports and exact-run workflow resume
 
 READY p33 hosts announce `friendreport1` and `wfresume1`. Only the current registered READY Noise session, still on the allowlist, supplies phone/owner provenance. Request `source`, `yes`, remote card labels and peer text never authorize anything.

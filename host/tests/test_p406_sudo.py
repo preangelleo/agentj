@@ -46,7 +46,7 @@ def everything_written(root: pathlib.Path) -> bytes:
 
 
 class Running(unittest.TestCase):
-    def run_case(self, script: str, steps):
+    def run_case(self, script: str, steps, secret_output=False):
         async def go(root):
             st, sent = _state(str(root)), []
             host = _host(st, sent)
@@ -58,7 +58,18 @@ class Running(unittest.TestCase):
             self.nokey = Phone(st, name="旧手机", with_key=False)  # paired without an approval key
             self.nokey_s = _ready(host, self.nokey, cid=13)
             host.elevate.sudo = str(fake_sudo(root, PW))
-            req = elevate.norm_sudo({"argv": [sys.executable, "-c", script], "why": "Restore the nightly backup archive",
+            argv = [sys.executable, "-c", script]
+            if secret_output:
+                # 7aa5df0687 (2026-11-07): a literal secret in the command line itself is refused before any card
+                # (the card would show it). The secret-shaped text this case needs in the command's OUTPUT therefore
+                # comes from a script file, as a real restore job's would.
+                with self.assertRaises(elevate.Refused) as refused:
+                    elevate.norm_sudo({"argv": argv, "why": "Restore the nightly backup archive", "timeout": 120, "cwd": str(root)})
+                self.assertEqual(refused.exception.args[0], "inline_credentials")
+                job = root / "restore_job.py"
+                job.write_text(script)
+                argv = [sys.executable, str(job)]
+            req = elevate.norm_sudo({"argv": argv, "why": "Restore the nightly backup archive",
                                      "timeout": 120, "cwd": str(root)})
             task = asyncio.create_task(host.elevate.request(req))
             self.assertTrue(await until(lambda: frames(sent, "elev")))
@@ -127,7 +138,7 @@ class Running(unittest.TestCase):
                 self.assertNotIn(leak, phone_text)
             self.assertIn("<redacted>", phone_text)
             self.assertNotIn("tail", host.elevate.completed[card["id"]], "the replayed receipt stays output-free")
-        self.run_case(script, steps)
+        self.run_case(script, steps, secret_output=True)
 
     def test_wrong_password_keeps_the_card(self):
         async def steps(host, session, ph, card, sent, task, root):

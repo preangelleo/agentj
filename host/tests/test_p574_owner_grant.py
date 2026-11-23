@@ -677,6 +677,19 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
         self.assertIn('otg_resume',source)
         self.h.agent.cur_send=ReadBackSend('Generic notice')
         self.assertIsNone(self.svc.xfer.task_scope())
+        # Host-held provenance tokens (c2da9e292b / 294644a5e9, 2026-11-14; agentjarvis/ARCHITECTURE.md "Plain or forged
+        # task-shaped dicts remain fail-closed"): recovery_source() returns a wire-shaped dict, which by itself is
+        # `unknown` and resumes nothing. Only the host's own recovery turn (shared.py: owner_grant.resume_source of
+        # that candidate → provenance.HostSystem) carries the resume handle.
+        from agentj import owner_grant as grant_source, provenance
+        self.assertIsNot(type(source),provenance.HostSystem)
+        self.h.agent.cur_send.source=source
+        self.assertIsNone(self.svc.xfer.task_scope(),'a plain dict cannot claim the recovery handle')
+        forged=type('Forged',(provenance.HostSystem,),{})(source)
+        self.h.agent.cur_send.source=forged
+        self.assertIsNone(self.svc.xfer.task_scope(),'a subclass is not the host token')
+        source=grant_source.resume_source(source)
+        self.assertIs(type(source),provenance.HostSystem)
         self.h.agent.cur_send.source=source
         self.assertEqual(self.svc.xfer.task_scope(),'goal:stable-goal')
         reboot=sx.Xfer(self.svc)
@@ -684,8 +697,12 @@ class HostFlows(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await reboot._sign(plan()))['why'],'owner_source')
         self.h.agent.session='other-session';self.assertIsNone(reboot.task_scope())
         self.h.agent.session='fixed-session';goal['id']='other-goal';self.assertIsNone(reboot.task_scope())
-        goal['id']='stable-goal';self.h.agent.cur_send.source={'kind':'scheduled_task','role':'task','otg_resume':source['otg_resume']}
-        self.assertIsNone(reboot.task_scope())
+        goal['id']='stable-goal'
+        # an unrelated system source — a real (host-typed) scheduled task — never inherits the handle, nor does its plain twin
+        for unrelated in (provenance.HostDelegated({'kind':'scheduled_task','role':'task','otg_resume':source['otg_resume']}),
+                          {'kind':'scheduled_task','role':'task','otg_resume':source['otg_resume']}):
+            self.h.agent.cur_send.source=unrelated
+            self.assertIsNone(reboot.task_scope())
 
     def bound_entry(self, phone):
         e=entry(phone.auth,phone.did)

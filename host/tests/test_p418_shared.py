@@ -308,12 +308,20 @@ class OwnerDown(unittest.IsolatedAsyncioTestCase):
         for s in self.servers:
             s.close()
             await s.wait_closed()
+        for a in getattr(self, "agents", []):
+            if a.risk_channel:
+                await a.risk_channel.stop()
 
     def agent(self, host):
         host.st.root = self.work
+        # Fixture follows 230e3d150f (0.30.0): the fixed-control-path guard hook is armed for an owner's server in every
+        # permission mode (no warning opt-in), so prepare_risk needs the real fence-visible directory for its channel.
+        host.st.perm_dir = self.work / "agentperm"
+        self.agents = getattr(self, "agents", [])
         cfg = {"kind": "opencode", "dir": str(self.work), "_workflow_ceo": True, "session_mode": "shared",
                "shared_opencode_port": self.port, "shared_session_id": "ses_p418owner", "high_risk_warnings": False}
-        return shared.SharedOpenCodeAgent(host, cfg)
+        self.agents.append(shared.SharedOpenCodeAgent(host, cfg))
+        return self.agents[-1]
 
     async def serve(self, status):
         """A loopback stand-in for an OpenCode server: every request answers `status` with an empty body."""
@@ -338,10 +346,36 @@ class OwnerDown(unittest.IsolatedAsyncioTestCase):
             def terminate(self): pass
         return Proc()
 
-    def attach_ok(self):
+    def attach_ok(self, busy=None):
+        """The owner's v1 server accepts the pinned session. Since 230e3d150f (0.30.0) the guard hook is armed in every
+        permission mode, so attaching also runs the guard reload on that server: every session idle → native instance
+        dispose → attach again → wait for the plugin's ready frame. The stand-in answers those two native calls and, like
+        OpenCode reloading the plugin, sends the real SharedGuardReady frame over the real guard channel socket."""
+        test = self
+        self.attaches, self.native = [], []
         async def events(agent_self, proc):
             agent_self.connected.set()
-        return [patch.object(shared.SharedOpenCodeAgent, "_attach", new=AsyncMock()),
+        async def attach(agent_self):
+            test.attaches.append(agent_self)
+            if getattr(agent_self.client, "p418_native", False):
+                return
+            real = agent_self.client
+            class Native:
+                p418_native = True
+                async def request(self, method, path, *a, **kw):
+                    test.native.append((method, path))
+                    if (method, path) == ("GET", "/session/status"):
+                        return 200, dict(busy or {})
+                    if (method, path) == ("POST", "/instance/dispose"):
+                        r, w = await asyncio.open_unix_connection(str(agent_self.risk_channel.path))
+                        w.write((json.dumps({"hook_event_name": "SharedGuardReady", "cwd": agent_self.cfg["dir"]}) + "\n").encode())
+                        await w.drain()
+                        test.assertEqual(json.loads(await asyncio.wait_for(r.readline(), 5)), {})
+                        w.close()
+                        return 200, True
+                    return await real.request(method, path, *a, **kw)
+            agent_self.client = Native()
+        return [patch.object(shared.SharedOpenCodeAgent, "_attach", new=attach),
                 patch.object(shared.SharedOpenCodeAgent, "_prime", new=AsyncMock()),
                 patch.object(shared.SharedOpenCodeAgent, "_resync", new=AsyncMock()),
                 patch.object(shared.SharedOpenCodeAgent, "_events", new=events)]
@@ -365,10 +399,27 @@ class OwnerDown(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kw["stdout"], asyncio.subprocess.DEVNULL)
         self.assertIn(f"已在端口 {self.port} 重新启动你的 OpenCode，并接回了会话", host.notices[-1])
         self.assertFalse(a.failed_start)
+        self.assertFalse(a.cfg["high_risk_warnings"])        # warnings off: the guard channel is armed all the same
+        self.assertTrue((self.work / "agentperm" / shared.shared_hook.CHANNELS["opencode"]).is_socket())
+        self.assertEqual(self.native, [("GET", "/session/status"), ("POST", "/instance/dispose")])
+        self.assertEqual(len(self.attaches), 2)              # attached again after the native plugin reload
+        self.assertTrue(a.risk.ready.is_set())
         for text in host.notices:
             for word in ("relay", "harness"):
                 self.assertNotIn(word, text.lower())
         self.assertEqual(host.events("owner_opencode_started")[0]["result"], "listening")
+
+    async def test_a_busy_owner_server_is_never_reloaded_for_the_guard(self):
+        await self.serve(404)                                # reachable v1 server
+        host = OCHost()
+        a = self.agent(host)
+        for p in self.attach_ok(busy={"ses_other": {"type": "busy"}}):
+            p.start(); self.addCleanup(p.stop)
+        self.assertFalse(await a._spawn())
+        self.assertEqual(self.native, [("GET", "/session/status")])   # another turn is running: no instance dispose
+        self.assertFalse(a.risk.ready.is_set())
+        self.assertTrue(a.failed_start)
+        self.assertIn("连不上它或它里面没有指定的会话", host.notices[-1])
 
     async def test_i_will_handle_it_gives_the_text_and_never_asks_again(self):
         host = OCHost(answer=("answer", [[2]]))
@@ -521,3 +572,84 @@ class OwnerDownPassword(OwnerDown):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OwnerServerGuardChannel(unittest.IsolatedAsyncioTestCase):
+    """An owner's own OpenCode server has no process Agent J started (`shared._ExternalServer`, no pid). Every frame its
+    guard plugin sends over the real channel socket is still answered; the path is marked unauthenticated."""
+    async def asyncSetUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="p418gc-", dir=TEST_TMP)
+        self.addCleanup(self.tmp.cleanup)
+        self.work = Path(self.tmp.name)
+        (self.work / "agentperm").mkdir()
+        self.channels = []
+
+    async def asyncTearDown(self):
+        for c in self.channels:
+            await c.stop()
+
+    def owner_agent(self, cls):
+        host = Mock()
+        host.st.root, host.st.perm_dir = self.work, self.work / "agentperm"
+        host.stopped.return_value = False
+        a = shared.SharedOpenCodeAgent(host, {
+            "kind": "opencode", "dir": str(self.work), "_workflow_ceo": True, "session_mode": "shared",
+            "shared_opencode_port": 1, "shared_session_id": "ses_p418owner", "high_risk_warnings": False})
+        a.cfg.pop("_workflow_ceo")                    # the ordinary main session, not a workflow CEO
+        a.__class__ = cls                             # v2 is reached the way shared.SharedOpenCodeAgent._spawn does it
+        a.proc, a.owned_server = shared._ExternalServer(), False
+        host.agent = a
+        return a
+
+    async def frame(self, a, event):
+        r, w = await asyncio.open_unix_connection(str(a.risk_channel.path))
+        w.write((json.dumps(event) + "\n").encode())
+        await w.drain()
+        line = await asyncio.wait_for(r.readline(), 5)
+        w.close()
+        return line
+
+    def test_mark_is_false_without_a_comparable_pid_and_true_only_for_our_own_process(self):
+        from agentj.shared_risk import RiskGuard
+        me = os.getpid()
+        for proc, chain, want in [(shared._ExternalServer(), [me], False), (None, [me], False),
+                                  (Mock(pid=None), [None, me], False), (Mock(pid=True), [1, me], False),
+                                  (Mock(pid=me), [], False), (Mock(pid=me), None, False),
+                                  (Mock(pid=me), [me + 1], False), (Mock(pid=me), [7, me], True)]:
+            with self.subTest(proc=type(proc).__name__, chain=chain):
+                event = {"_agentj_chain": chain}
+                self.assertIs(RiskGuard(Mock(proc=proc)).authentic(event), True)   # never an empty decision by itself
+                self.assertIs(event["_agentj_path_authenticated"], want)
+
+    async def test_owner_v1_and_v2_server_frames_are_answered_and_ready_arrives(self):
+        from agentj import main_opencode_hook, shared_risk
+        from agentj.shared_opencode2 import OwnerOpenCodeV2Agent
+        for cls in (shared.SharedOpenCodeAgent, OwnerOpenCodeV2Agent):
+            with self.subTest(cls=cls.__name__):
+                a = self.owner_agent(cls)
+                seen = []
+                real = shared_risk.RiskGuard.hook_event
+                async def spy(guard, event, real=real, seen=seen):
+                    seen.append(event.get("_agentj_path_authenticated"))
+                    return await real(guard, event)
+                with patch.object(shared_risk.RiskGuard, "hook_event", new=spy):
+                    if cls is OwnerOpenCodeV2Agent:
+                        await main_opencode_hook.prepare(a)      # the non-CEO v2 path arms the same guard channel
+                    else:
+                        await a.prepare_risk(owner=True)
+                    self.channels.append(a.risk_channel)
+                    self.assertFalse(a.risk.ready.is_set())
+                    # a ready frame from another folder never arms the guard
+                    self.assertEqual(json.loads(await self.frame(a, {"hook_event_name": "SharedGuardReady", "cwd": "/"})), {})
+                    self.assertFalse(a.risk.ready.is_set())
+                    self.assertEqual(json.loads(await self.frame(a, {"hook_event_name": "SharedGuardReady", "cwd": str(self.work)})), {})
+                    self.assertTrue(a.risk.ready.is_set())
+                    # the wire cannot claim the mark; the owner's turn start and a foreign session's call are answered
+                    self.assertEqual(json.loads(await self.frame(a, {
+                        "hook_event_name": "UserPromptSubmit", "session_id": "ses_p418owner", "cwd": str(self.work),
+                        "_agentj_path_authenticated": True, "_agentj_chain": [os.getpid()]})), {})
+                    self.assertEqual(json.loads(await self.frame(a, {
+                        "hook_event_name": "PreToolUse", "session_id": "ses_other", "cwd": str(self.work),
+                        "tool_name": "Bash", "tool_input": {"command": "true"}})), {})
+                self.assertEqual(seen, [False, False, False, False])
+                await a.risk_channel.stop()

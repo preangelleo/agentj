@@ -1,5 +1,5 @@
 import { backgroundReport, activityKind, activityFailed, activitySummary, mergeOwnerInputs, ownerInput, ownerQueue, pendingAutomation } from './phone-activity.js';
-import {paintRepair,repairOf,replyName,paintFix} from './repair-actions.js';
+import {paintRepair,repairOf,replyName,paintFix,oldUpdaterWords} from './repair-actions.js';
 import {fullAccess, supports as cmdSupports} from './cmdrun.js';
 import {waitsForNewRequest,rememberRefusal,waitingText,forgetRefusal,forgetRefusals} from './approval-notice.js';
 import { useShort, phaseText } from './use.js';
@@ -8,7 +8,7 @@ import { refreshSpecialVisibility } from './approval-special541.js';
 import * as approval541 from './approval541.js';
 import { approvalById, acceptHistoryHead } from './snap.js';
 import { paint as paintApprovalSource572 } from './approval-source572.js';
-import {paint as terminalCommands, configure as configureRun} from './termcommands.js';
+import {paint as terminalCommands, configure as configureRun, fixedLine} from './termcommands.js';
 import { paintReportActions } from './report-actions.js';
 import {reopenSession, setStuck} from './rescue.js';
 import * as chatheal from './chatheal.js';
@@ -1836,7 +1836,9 @@ function showPage(){
   const progress = open && typeof c.progress === "string" ? c.progress.trim().slice(0, 300) : "";
   const hostWait = open && (c.wait === true || c.queued === true) || (typeof c.switch === "string" && p === ps[ps.length - 1]);
   const absorbed = isSteered(p) && !visibleReply(p);   // 0.26.9 #471: steered into the running turn — its answer is that turn's
+  const oldFix = oldUpdaterWords(p, liveHostVer);   // 0371: plain words for the 0.30.47-0.30.65 updater fault; the host's own text is folded in the card below
   if (absorbed) renderWords(t('p0269.queue.steered'), false, "", false, false, true);
+  else if (oldFix) renderWords(oldFix, false, "", false, true, true);
   else renderWords((silentTurn(p) ? "" : p.reply?.trim()) || (noticeOnly ? t('p0269w4.notice') : qd || p.end === "open" || p.id === null ? "" : t('r.noReply')), open || qd,
     qd ? "" : progress, hostWait, sysPage(p), replyDataOnly(p) || noticeOnly);
   { const lg = selfheal.loginOf(p); if (lg) selfheal.linkLogin(el("words"), t('p0269.login.btn'), () => openLogin(lg.agent, lg.why)); }   // 0.26.9: `/login` = 「重新登录」
@@ -1907,7 +1909,8 @@ function paintCmdx(p){
   const box = el("cmdx"), c = p.card;
   if (paintReportActions(box, p)) return;
   box.replaceChildren();
-  if(paintRepair(box,p,{ready:()=>isReady()&&C.paired(),supported:()=>C.repairSupported?.()===true,run:()=>C.repairConnection?.()})){box.hidden=false;return;}
+  if(paintRepair(box,p,{ready:()=>isReady()&&C.paired(),supported:()=>C.repairSupported?.()===true,run:()=>C.repairConnection?.(),hostVersion:()=>liveHostVer,
+    runLine:(block,page)=>fixedLine(block,page,{redraw:()=>{const q=currentPage();if(q&&q.id===page.id)paintCmdx(q);}})})){box.hidden=false;return;}
   if(paintFix(box,p,{ready:()=>isReady()&&C.paired(),supported:()=>cmdSupports('codex_full_access'),run:()=>fullAccess(),say:(x)=>toast(x,8000)})){box.hidden=false;return;}
   if (p.source?.k === 'sys' && c?.recovery === 'restart_session') {
     box.hidden = false;
@@ -2516,10 +2519,16 @@ function paintSpeak(){
   b.dataset.state = st;
   b.setAttribute("aria-label", t('r.speak.' + st)); b.title = t('r.speak.' + st) + (st === "idle" ? t('p208.holdHint') : "");
 }
+// 0371: what the page shows is what is read aloud and what the reader opens: the card's own words on an old-host update
+// failure (repair-actions.oldUpdaterWords), else the reply. Copy stays the host's own text.
+function shownReply(p){
+  const w = p ? oldUpdaterWords(p, liveHostVer) : null;
+  return w || (p && p.reply || "").trim();
+}
 function speakTap(){
   const p = currentPage();
   if (p.id === null) return;
-  speaker.tap(p.id, p.reply || "");
+  speaker.tap(p.id, shownReply(p));
 }
 
 // ---- 分享 / 转发: with the host's `tgfwd` one tap → the owner's own Telegram (relay /forward, P118 B10); else the phone's
@@ -2616,7 +2625,7 @@ function rdStep(dir){
 }
 function openReader(){
   if (rdOpen()) return;
-  const p = currentPage(), tx = (p && p.reply || "").trim();
+  const p = currentPage(), tx = shownReply(p);
   if (!tx) return;
   rdGuard = performance.now(); rdMuteUntil = rdGuard + 600;
   try{ const s = getSelection(); if (s && !s.isCollapsed) s.removeAllRanges(); }catch(_){}
@@ -2696,7 +2705,7 @@ function rdSync(){
   if (rdAt.key === shownKey || rdAt.file) return;   // P573: a file on screen stays whatever arrives
   const p = currentPage();
   if (!rdHasText(p)) return;                    // an empty page on the way: the jump that brought us here moves on
-  const tx = p.reply.trim();
+  const tx = shownReply(p);
   rdAt = {key: shownKey, scroll: 0, text: tx};
   fill(el("rdWords"), tx, replyDataOnly(p), sysPage(p)); enhanceReplySurface(el("rdWords"),p,true);
   el("rdScroll").scrollTop = 0;
@@ -3983,6 +3992,8 @@ function kindSeen(k){
 // P238 (Leo 10-13 23:31): the version of the serve this connection talks to (every `preferences` message carries it). The
 // ⬆ row trusts it over a menu answer cached from before an upgrade's restart — the host log showed the phone back on the
 // new 0.20.2a1 serve at 23:29:07 and the row still saying 「0.20.1a1 → 0.20.2a1 · 点击即授权升级」 at 23:31.
+/** 0371: what this remote may do with the web terminal changed (termhook) → the repair card on screen follows at once. */
+export function repairChanged(){ const p = C ? currentPage() : null; if (repairOf(p)) paintCmdx(p); }
 let liveHostVer = null;
 export function hostVersionIs(v){
   const nv = typeof v === "string" && v ? v.slice(0, 40) : null;
@@ -6211,7 +6222,8 @@ export function applyPreferences(value){
 }
 export function announceTurn(turn,old){
   if(!visibleReply({silent:turn.silent,reply:typeof turn.reply === 'string' ? turn.reply : turn.reply?.text}) || !old || turn.end!=='done' || new URLSearchParams(location.search).has('watcher'))return;
-  if(userPreferences.voice?.speak_replies)speaker?.tap(turn.id,cleanSilentMarkers(typeof turn.reply==='string'?turn.reply:(turn.reply?.text||'')));
+  const said=typeof turn.reply==='string'?turn.reply:(turn.reply?.text||'');
+  if(userPreferences.voice?.speak_replies)speaker?.tap(turn.id,oldUpdaterWords({...turn,reply:said},liveHostVer)||cleanSilentMarkers(said));
   else if(userPreferences.voice?.speak_notifications && userPreferences.voice?.tts?.mode==='phone')speaker?.tap('notification-'+turn.id,t('preferences.notification'));
 }
 document.addEventListener('keydown',e=>{

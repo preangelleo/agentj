@@ -409,7 +409,8 @@ def transact(st,newraw, *, _working_root_record=False):
         bootstrap_root = (_working_root_record and set(security) == {'agent.working_root'}
             and not get(current,'agent.working_root','') and not st.devices() and not st.removed_ledger()
             and not st.removed_path.exists()
-            and get(candidate,'agent.working_root','') == (st.config().get('agent') or {}).get('dir'))
+            and get(candidate,'agent.working_root','') in ((st.config().get('agent') or {}).get('dir'),
+                getattr(st,'_pending_agent_dir',None) or object()))   # set_agent_config records the root before it writes the entry
         if security and not (bootstrap_root or initial_setup):
             raise ConfigError(security[0], 'security settings require a running host and fresh paired-device UV; no offline change was written', code=3)
     # The running host owns provider/channel dependencies in its service environment.

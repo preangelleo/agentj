@@ -46,7 +46,7 @@
         "doubao-seed-2.1-pro": {"tier": "large", "context": 1048576, "edit_mode": "str_replace"},
         "glm-5.3": {"tier": "large", "context": 204800, "edit_mode": "str_replace"},
         "deepseek-v4-pro": {"tier": "large", "context": 393216, "edit_mode": "str_replace", "replay_reasoning": true},
-        "kimi-k3": {"tier": "large", "context": 262144, "edit_mode": "str_replace"}
+        "kimi-k3.1-pro": {"tier": "large", "context": 1024000, "edit_mode": "str_replace"}
       },
       "roles": {"main": "doubao-seed-2.1-pro", "ceo": "doubao-seed-2.1-pro", "sub": "ark-code-latest", "tiny": "ark-code-latest"},
       "fallback": ["ark-code-latest", "glm-5.3"]

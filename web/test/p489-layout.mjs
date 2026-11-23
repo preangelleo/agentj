@@ -21,15 +21,20 @@ try{
  await p.evaluate(()=>document.getElementById('layout-diag-send').click());await p.waitForTimeout(2000);console.log('new host receipt',await p.locator('#layout-diag-result').textContent());
  await p.waitForFunction(()=>document.getElementById('layout-diag-result').textContent.includes('已保存'),{},{timeout:10000});
  const saved=JSON.parse(readFileSync(join(tmp,'state/layout-diagnostic-last.json')));
- assert.equal(saved.sample.ua,'chrome');assert.equal(saved.sample.innerHeight,844);assert.ok(saved.sample.layers.water);assert.match(saved.sample.build.iosCode,/^[a-f0-9]{64}$/);
+ assert.equal(saved.sample.ua,'chrome');
+ // render counters: the real host accepted and kept the closed object (words and small counts only)
+ assert.deepEqual(Object.keys(saved.sample.render).sort(),['agent','alive','cache','cards','gl','glLost','glRestored','hidden','hiddenMax','mem','nodes','reason']);assert.equal(saved.sample.render.reason,'manual');assert.equal(saved.sample.render.agent,'ios-other');assert.equal(saved.sample.render.alive,'lt1m');assert.ok(['pending','ok','unavailable'].includes(saved.sample.render.gl));assert.equal(saved.sample.render.glLost,0);
+assert.equal(saved.sample.innerHeight,844);assert.ok(saved.sample.layers.water);assert.match(saved.sample.build.iosCode,/^[a-f0-9]{64}$/);
  const last=host.run(['diag','layout','--last']);assert.deepEqual(JSON.parse(last),saved);
  await new Promise(r=>setTimeout(r,1100));const logs=readFileSync(join(tmp,'state/host.log'),'utf8').split('\n').filter(Boolean).map(JSON.parse).filter(r=>r.ev==='layout_diag');assert.equal(logs.length,1);assert.equal(logs[0].status,'saved');assert.ok(!JSON.stringify(logs).includes(saved.sample.build.combined));
  writeFileSync(out+'/sample.json',JSON.stringify(saved,null,2));await p.locator('#layout-diag-send').evaluate(e=>e.scrollIntoView({block:'center',behavior:'instant'}));await p.screenshot({path:out+'/new-host-zh.png'});checks.push('WebKit CriOS → actual Noise → real Python Host → private file → metadata log → CLI');
  await c.close();
  }
+ // --new-host-only / --old-host-only: the two halves as separate gate processes (run in one process, the first old-host
+ // page after the real-host half intermittently crashed WebKit or never paired on a loaded machine; each half alone is steady).
  fake=await startFakeHost();
  const states=JSON.parse(readFileSync('reports/qa/p489/hosts.json'));
- for(const [lang,h] of [['zh',states[0]],['en',states[0]],['zh',states[1]],['zh',states[2]]]){
+ for(const [lang,h] of process.argv.includes('--new-host-only')?[]:[['zh',states[0]],['en',states[0]],['zh',states[1]],['zh',states[2]]]){
   fake.reset();const c=await browser.newContext({...pw.devices['iPhone 15'],viewport:{width:390,height:844},deviceScaleFactor:1,serviceWorkers:'block'});const p=await c.newPage();
   await p.goto(fake.newPairing(web.url+'?lang='+lang));await p.waitForFunction(()=>window.__ajState==='awaiting-approval');await fake.approve();await p.waitForFunction(()=>window.__ajState==='ready');
   await fake.send(h.theme);await fake.send({t:'preferences',value:{appearance:{theme:h.appearance,language:lang}}});await fake.send({t:'status',s:'idle',agent:h.agent,name:h.name});await fake.send({t:'meter',...h.meter});await p.waitForTimeout(1600);

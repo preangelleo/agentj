@@ -547,7 +547,12 @@ class Serve(Base):
         """control.sock is hidden inside the Agent fence: `agentj card open` asks on elevate.sock, serve answers there."""
         from agentj import elevate
         e = elevate.Elevator.__new__(elevate.Elevator)
+        # Fixture follows 4676679f3a (0.30.0 native ingress): every request on the host socket is framed against the
+        # live host (agent, host key, channel, history epoch, stop state) before its handler runs.
         e.host, e.st = SimpleNamespace(jcard_open=AsyncMock(return_value={"ok": True, "delivered": 1})), SimpleNamespace(root=self.root)
+        e.host.__dict__.update(st=e.st, agent=SimpleNamespace(session=None, cur_send=None, proc=None, kind="claude"), agent_cfg={},
+                               _agent_pids=lambda: set(), kp=SimpleNamespace(pub=b"h" * 32), channel="synthetic-channel",
+                               hist=SimpleNamespace(epoch="synthetic"), stopped=lambda: False, stopping=asyncio.Event())
         out = []
 
         async def go():

@@ -61,11 +61,10 @@ class Order(unittest.TestCase):
 
 class Facts(unittest.TestCase):
     def test_kimi_k3_is_suggested_for_pro_not_limited(self):
-        self.assertEqual(ark.data()["pro_suggested"], ["kimi-k3"])
+        self.assertEqual(ark.data()["pro_suggested"], [])      # kimi-k3 was retired on 2026-11-25; no model is tied to Pro
         self.assertNotIn("pro_only", ark.data())
         for lang in ("zh", "en"):
-            note = ark.model_note("ark-coding-plan/kimi-k3", lang)
-            self.assertIn("Pro", note)
+            note = ark.model_note("ark-coding-plan/kimi-k3.1-pro", lang)
             self.assertNotRegex(note, r"只在 Pro|Pro (plan )?only")
 
     def test_no_not_interchangeable_claims_left(self):

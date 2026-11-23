@@ -13,11 +13,14 @@ import sys
 
 
 class UnsafeInstallation(ValueError):
-    def __init__(self, blocked):
+    def __init__(self, blocked, *, tree=None):
         super().__init__("unsafe_installation_permissions")
         self.paths = [str(path) for path in blocked]
         args = shlex.join(self.paths)
-        if all(reason in ("mode", "acl") for reason in blocked.values()):
+        if tree is not None and len(blocked) > 1 and all(reason == "mode" for reason in blocked.values()):
+            # A whole venv under one umask: one recursive line, not thousands of arguments.
+            self.fix = "chmod -R go-w -- " + shlex.quote(str(tree))
+        elif all(reason in ("mode", "acl") for reason in blocked.values()):
             commands = [f"chmod go-w -- {args}"]
             acl = [str(path) for path, reason in blocked.items() if reason == "acl"]
             if acl:
@@ -30,7 +33,9 @@ class UnsafeInstallation(ValueError):
             self.fix = "namei -l -- " + args
 
     def lines(self):
-        return [*(f"Unsafe installation path: {path!r}" for path in self.paths), f"fix: {self.fix}"]
+        shown = self.paths if len(self.paths) <= 11 else self.paths[:10]
+        more = [f"... and {len(self.paths) - 10} more"] if len(shown) < len(self.paths) else []
+        return [*(f"Unsafe installation path: {path!r}" for path in shown), *more, f"fix: {self.fix}"]
 
 
 def _private_group(gid):
@@ -120,6 +125,10 @@ def secure_paths(targets, *, note=None):
                             continue
                         if problem := _write_problem(info, mode, fd, groups):
                             blocked[path] = problem
+                            if problem == "mode" and info.st_uid == uid and not mode & 0o002 and stat.S_ISDIR(info.st_mode):
+                                # Refused all the same. Only the report goes on, so that one fix line names
+                                # every directory of this chain instead of one per run.
+                                continue
                             break
                         if mode & 0o020:
                             saved = os.dup(fd)
@@ -213,7 +222,55 @@ def secure_tree(prefix, python, *, note=None):
     if changed and note:
         note(f"Removed group write from {changed} entries under {str(prefix)!r}")
     if blocked:
-        raise UnsafeInstallation(blocked)
+        raise UnsafeInstallation(blocked, tree=prefix)
+
+
+def repair_line(targets, tree):
+    """Advice only, never a verdict: one command that removes every group/other write bit this account holds on the
+    directories leading to `targets` and inside `tree`, after the ACL removal for each of them that carries one.
+    Nothing is changed or trusted here; the checks run again."""
+    uid, chain, acl = os.getuid(), {}, {}
+    tree = Path(os.path.realpath(tree))
+
+    def has_acl(path):
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        except OSError:
+            return False
+        try:
+            return sys.platform.startswith("linux") and _linux_acl(fd)
+        except OSError:
+            return False
+        finally:
+            os.close(fd)
+
+    for target in targets:
+        real = Path(os.path.realpath(target))
+        for path in (*reversed(real.parents), real):
+            try:
+                info = path.lstat()
+            except OSError:
+                break
+            if not stat.S_ISDIR(info.st_mode) or info.st_uid != uid or path.is_relative_to(tree):
+                continue
+            if has_acl(path):
+                acl[path] = "acl"
+            elif info.st_mode & 0o022:
+                chain[path] = None
+    loose = False
+    for root, dirs, files in os.walk(tree):
+        for name in (".", *dirs, *files):
+            path = Path(os.path.normpath(os.path.join(root, name)))
+            info = path.lstat()
+            if stat.S_ISLNK(info.st_mode) or info.st_uid != uid:
+                continue
+            loose = loose or bool(info.st_mode & 0o022)
+            if len(acl) < 200 and has_acl(path):
+                acl[path] = "acl"
+    parts = ([UnsafeInstallation(acl).fix] if acl else []) + \
+        (["chmod go-w -- " + shlex.join(str(path) for path in chain)] if chain else []) + \
+        (["chmod -R go-w -- " + shlex.quote(str(tree))] if loose else [])
+    return " && ".join(parts)
 
 
 def upgrade_paths(home, entry, prefix, python, *, note=None):
@@ -237,7 +294,17 @@ def bootstrap_permissions(argv):
         secure_paths(upgrade_paths(home, entry, prefix, python, note=show), note=show)
         secure_tree(Path(prefix), python, note=show)
     except UnsafeInstallation as exc:
-        print(*exc.lines(), sep="\n", file=sys.stderr)
+        lines = exc.lines()
+        if exc.fix.startswith(("chmod ", "setfacl ")):
+            try:
+                state = os.environ.get("AGENTJ_STATE_DIR") or Path(home) / ".local/state/agentj"
+                whole = repair_line([home, Path(entry).parent, prefix, state, Path(home) / ".local/share/agentj"], prefix)
+            except (OSError, RuntimeError, ValueError):
+                whole = ""
+            if whole:
+                lines[-1:] = ["fix (everything this repair checks, in one line; then run the same repair command again): "
+                              + whole]
+        print(*lines, sep="\n", file=sys.stderr)
         return 1
     except (OSError, RuntimeError, ValueError):
         print("Unable to verify the existing installation paths.", file=sys.stderr)

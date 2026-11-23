@@ -339,7 +339,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.30.70#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.30.71#subdirectory=host"
 agentj doctor
 ```
 
@@ -553,6 +553,32 @@ If downloading, verification or installation preparation fails, Agent J reports 
 
 After a rollback, a working old program counts as a successful rollback; any remaining service or health-check problem is reported separately and still needs attention. Older updaters gain these improvements only after installing the new version successfully. If an old uv updater cannot finish, use the repair command in the [old-updater FAQ](/docs/faq/) from the computer's terminal as the same system user. It needs no new installation code and preserves configuration and bindings. Update Olares Market apps through Market.
 
+When a failed upgrade tells you to run the repair command in the host repair guide, pick one by host version:
+
+- Linux hosts on 0.30.47 to 0.30.65: run [the line below](/docs/install/#old-updater-fix). It has been verified on Ubuntu 24.04.
+- Any other version, or when that line does not help: sign in to the host over SSH and run the website repair command. It also removes group write permission from `~/.local` and similar folders.
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL https://agentj.app/install-assistant.sh | sh -s -- --upgrade-only --repair-index
+```
+
+### How do I upgrade when it says the verified package changed or was replaced before installing? {#old-updater-fix}
+
+This applies to Linux hosts on versions 0.30.47 to 0.30.65; macOS hosts are not affected. It is most likely a known fault in the updater of those older versions, not a problem with your package or network. Your Agent J host keeps working on its current version, and pairing and settings are unchanged.
+
+The upgrade-failure card shows this line for you to copy. Paste it, brackets included, into a terminal on the host. It makes Agent J's own dependency cache folder writable only by you, then upgrades and restarts at once, which interrupts any task in progress:
+
+```bash
+( umask 077; chmod -R go-w ~/.local/state/agentj/install-artifacts/dependencies; agentj update apply --yes )
+```
+
+- Over SSH: it ends with `UPGRADE_RESULT ok`, and Agent J restarts once when idle.
+- In the Agent J web terminal: the terminal disconnects at the end, which is expected. Reopen it and run `agentj --version`; the new version means it worked.
+- Ignore a `No such file or directory` message at the start; the line carries on.
+- If `agentj` is not found, replace `agentj` in the line with `~/.local/bin/agentj`.
+- You only need to do this once.
+- If it still fails, do not run it again; send what the screen shows to support. Over SSH you can instead use the website repair command in the next question, which also removes group write permission from `~/.local` and similar folders.
+
 ### How can I upgrade a host that repeatedly reports a dependency download failure?
 
 For an existing uv installation, use the original OS account to run this command in a terminal on the host. It requires access to agentj.app and the PyPI file server, files.pythonhosted.org. If your organization uses a private package index, check that its policy permits downloads from PyPI.
@@ -562,6 +588,15 @@ curl --proto '=https' --tlsv1.2 -fsSL https://agentj.app/install-assistant.sh | 
 ```
 
 The repair verifies the Agent J release signature, downloads the dependency wheels selected for your platform, checks their hashes against the release manifest, and restarts the host after installation. Your seat, pairing and settings are preserved. Run `agentj --version` and `agentj doctor` to check the result. If it still fails, send support the displayed error code and version. Update Olares Market installations through the Market.
+
+### What if preparing the dependencies timed out? {#upgrade-timeout}
+
+Before an upgrade, Agent J first gathers the dependencies it needs. When the network is too slow or stalls, version 0.30.71 and later retry a few times by themselves. If that still does not finish, the host stays on its current version and keeps working; nothing needs reinstalling.
+
+- The message says the network was too slow or stalled: once the connection is back, enter `/update` on your phone to try again.
+- The message says the host was too busy, its disk too slow, or the time ran out: wait until the host is idle, then enter `/update` on your phone.
+- With automatic updates on, the host also tries again by itself when it is next idle or overnight.
+- If it keeps failing, send support the reason shown and the version number.
 
 ## If the AI cannot start for the first time {#first-ai-start}
 

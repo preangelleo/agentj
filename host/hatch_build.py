@@ -56,8 +56,9 @@ class _DenseDeflater:
 class _DenseZipFile(zipfile.ZipFile):
     def _open_to_write(self, zinfo, force_zip64=False):
         writer = super()._open_to_write(zinfo, force_zip64=force_zip64)
-        if zinfo.compress_type == zipfile.ZIP_DEFLATED and zinfo.filename.endswith(
-                ('.py', '.md', '.json', '.json5', '.js', '.html', '.css', '.txt')):
+        if zinfo.compress_type == zipfile.ZIP_DEFLATED and (zinfo.filename.endswith(
+                ('.py', '.md', '.json', '.json5', '.js', '.html', '.css', '.txt', '.lock'))
+                or zinfo.filename.split('/', 1)[0].endswith('.dist-info')):
             # zipfile still owns headers, flags, CRC, size accounting and central directory.
             writer._compressor = _DenseDeflater()
         return writer

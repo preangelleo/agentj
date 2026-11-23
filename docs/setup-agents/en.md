@@ -48,7 +48,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `432e6b0af68f85b8a73360ef6772ca5a24af373a466701fdeb67154cdf66da60`
+SHA256 sh: `926b5b05e98ca9e5f53e9966beb4e96e8e5383c48a80c06aad220eae50655314`
 
 
 ```bash
@@ -1409,7 +1409,7 @@ Isolation and approvals: Agent J runs Qwen Code inside the same isolation as the
 
 Who it is for: our first recommendation in mainland China if you have no plan yet, and anyone who already has one. One subscription covers ByteDance Doubao, Kimi, Zhipu GLM, DeepSeek and MiniMax models. Buy Lite first: Lite and Pro have the same models and tools, and Pro only gives 5x the quota, so upgrade only if Lite runs short. `agentj agent route` shows the list prices; the order page is authoritative.
 
-Which models read images (measured on 2026-10-15): `doubao-seed-2.1-pro` (the default), `kimi-k3` (uses quota fast; Ark suggests it for Pro, but Lite can pick it too), `kimi-k2.7-code`, `glm-5-3-flash`, `minimax-m3` and `deepseek-v4-1-flash` can look at screenshots; `glm-5.3`, `deepseek-v4-pro` and `deepseek-v4-flash` are text only. Agent J writes this into OpenCode's settings for you, together with higher output limits (GLM-5.3's thinking can use up OpenCode's 32k default). The Coding Plan has no image-generation model.
+Which models read images (measured on 2026-10-15): `doubao-seed-2.1-pro` (the default), `kimi-k2.7-code`, `glm-5-3-flash`, `minimax-m3` and `deepseek-v4-1-flash` can look at screenshots; `glm-5.3`, `deepseek-v4-pro` and `deepseek-v4-flash` are text only. `kimi-k3` also read images in that test, and Ark retires it on 2026-11-25 at 14:00 (UTC+8); Ark's official configuration says its replacement `kimi-k3.1-pro` reads images, which we have not tested yet. Agent J writes this into OpenCode's settings for you, together with higher output limits (GLM-5.3's thinking can use up OpenCode's 32k default). The Coding Plan has no image-generation model.
 
 It is a monthly plan; Ark's console terms are authoritative. Your own scheduled tasks and background Agents may use the Coding Plan key. The provider may rate-limit long, continuous background work; if that happens, switch those tasks to a pay-as-you-go Ark key. A support bot serves other people, so Agent J never gives it the Coding Plan key: add a pay-as-you-go key for the bot (the bot's settings say where).
 

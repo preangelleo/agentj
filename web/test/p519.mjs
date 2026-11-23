@@ -17,7 +17,11 @@ let cards;
 try{
 for(const lang of ['zh','en']){
  const dict=JSON.parse(readFileSync(root+'web/i18n/web.'+lang+'.json'));
- check(fx.list.system.map(c=>[c.id,c.name[lang]]),[['chat',dict['p244.fivepages1']],['workflows',dict['p244.fivepages2']],['skills',dict['p244.fivepages3']],['memory',dict['p244.fivepages4']],['agentj','Agent J']],'system-display-names-'+lang);
+ // The system cards are the host's own shipped list (agentj/cardpacks/system-cards.json, ids = jcards.SYSTEM): the fixture is
+ // that list as the real host answers it (seven since friends and bots joined). The five pages keep the web dictionary's names.
+ const shipped=JSON.parse(readFileSync(root+'host/agentj/cardpacks/system-cards.json')).map(c=>[c.id,c.name[lang]]);
+ assert.deepEqual(shipped.slice(0,5),[['chat',dict['p244.fivepages1']],['workflows',dict['p244.fivepages2']],['skills',dict['p244.fivepages3']],['memory',dict['p244.fivepages4']],['agentj','Agent J']],'five-page names follow the web dictionary ('+lang+')');
+ check(fx.list.system.map(c=>[c.id,c.name[lang]]),shipped,'system-display-names-'+lang);
 }
 
 for(const [name,lang,theme,negative] of [['zh-light','zh','light',false],['zh-dark','zh','dark',false],['en-light','en','light',false],['code-excluded','zh','light',true]]){

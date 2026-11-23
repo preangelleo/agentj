@@ -4,7 +4,7 @@ const choice = (v, values) => values.includes(v) ? v : 'unknown';
 const color = v => typeof v === 'string' && /^(?:#[0-9a-f]{6}|rgba?\([0-9.,% /+-]+\)|color\((?:srgb|display-p3) [0-9.e% /+-]+\))$/i.test(v) && v.length <= 128 ? v : null;
 const transform = v => v === 'none' || /^matrix(?:3d)?\([0-9., e+-]+\)$/i.test(v || '') ? v : null;
 const flag = v => v === '1' || v === 'true';
-export function capture({build, meter, look} = {}) {
+export function capture({build, meter, look, render} = {}) {
  const h = document.documentElement, b = document.body, w = document.getElementById('water');
  const layer = e => { if (!e) return null; const r=e.getBoundingClientRect(),s=getComputedStyle(e);return {
   rect:Object.fromEntries(['x','y','width','height'].map(k=>[k,num(r[k])])),background:color(s.backgroundColor),
@@ -23,5 +23,7 @@ export function capture({build, meter, look} = {}) {
   level:num(parseFloat(w?.style.getPropertyValue('--lvl'))),bottom:color(getComputedStyle(h).getPropertyValue('--ios-bottom').trim()),
   innerHeight:num(window.innerHeight),clientHeight:num(h.clientHeight),vv:vv?{height:num(vv.height),offsetTop:num(vv.offsetTop),scale:num(vv.scale)}:null,
   layers:Object.fromEntries([['water',w],['body',b],['root',h],['band',document.getElementById('sabband')],['probe',document.getElementById('chromeProbe')]].map(([k,e])=>[k,layer(e)])),
-  meter:{ctx:pct('ctx'),h5:pct('h5'),week:pct('week')},look:{factory:choice(look?.factory,['robots','dots']),custom:!!look?.id&&!['robots','dots'].includes(look.id)},build};
+  meter:{ctx:pct('ctx'),h5:pct('h5'),week:pct('week')},look:{factory:choice(look?.factory,['robots','dots']),custom:!!look?.id&&!['robots','dots'].includes(look.id)},build,
+  // Render-health counters (js/render-diag.js snapshot): enums, buckets and small counts only; absent on a caller without them.
+  ...(render&&typeof render==='object'?{render}:{})};
 }

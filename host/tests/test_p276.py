@@ -76,7 +76,15 @@ class Roster(unittest.TestCase):
         self.assertTrue(all(c[w]["reg"] for w in ("music-studio", "old-shop", "video-studio")))
         self.assertNotIn("reg", c["notes"])
         self.assertEqual(pic["tail"]["org"], {"registry": True, "ready": True, "unreg": 0, "nostaff": 3})
-        self.assertNotIn("ceo", c["video-studio"], "a folder-only roster row must not guess a CEO name from prose")
+        # The card's CEO name is read from the structured `- **Name**` line of IDENTITY.md (P250, workflows.identity).
+        # 2488b142bd (11-06) dropped it for scanned folders, 6c4779a209 (11-07, audited identity repairs) put it back and
+        # 6f27b215d2 (11-07) removed the one real guess: the document heading. So: the Name field is shown, prose is not.
+        self.assertEqual(c["video-studio"]["ceo"], "导演阿影")
+        _w(self.root / "prose-only/documentation/CONSTITUTION.md", "# CONSTITUTION — prose-only\n")
+        _w(self.root / "prose-only/documentation/ROLES.md", "# ROLES\n")
+        _w(self.root / "prose-only/AGENTS.md", "# entry\n")
+        _w(self.root / "prose-only/documentation/IDENTITY.md", "# IDENTITY — 标题里的名字\n\n这家公司的负责人叫路人甲，Name: 路人乙。\n")
+        self.assertNotIn("ceo", wf.identity(str(self.root / "prose-only")), "a heading or a sentence is not a CEO name")
         self.assertEqual(sorted(self.sc.added), ["music-studio", "video-studio"])
 
     def test_idempotent_and_deleted_row_stays_deleted(self):

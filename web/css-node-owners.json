@@ -2,9 +2,9 @@
   "schema": 2,
   "authority": "component-ownership.json + current explicit HTML + verified dynamic constructors; no ID prefix inference",
   "sourceHashes": {
-    "public/index.html": "4b5e256e0864520df1402f8aecc38a86c5c4949399b665a3bd6841bc22dd6530",
+    "public/index.html": "6fbf9aff4506d33b674dc29fbb3f286c6f011e9d7e0f42355fb2a6b91eca34b4",
     "component-ownership.json": "e424b73bc80db8f309e355b01420f7374072a3dc9845339c75c720415f04681a",
-    "public/js/relay.js": "54e15cf0039ab5f34f1bf35675cfbe1d0eb41535080e2b8bffb9a0e4a95f9dca"
+    "public/js/relay.js": "2795bd3665df7df29271c4e712f37e5476da827d42c17da758bfed40e2a440ef"
   },
   "idOwners": {
     "version-notice": {
@@ -11123,7 +11123,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2711,
+      "line": 2720,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."
@@ -11132,7 +11132,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2711,
+      "line": 2720,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."
@@ -11141,7 +11141,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2711,
+      "line": 2720,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."
@@ -11150,7 +11150,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2711,
+      "line": 2720,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."
@@ -11159,7 +11159,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2711,
+      "line": 2720,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."
@@ -11168,7 +11168,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2711,
+      "line": 2720,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."

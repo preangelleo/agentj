@@ -1,15 +1,15 @@
 {
   "current": {
-    "version": "0.30.70",
+    "version": "0.30.71",
     "paths": [
       "app.8f52862308dd55687465f33d39ca4660da0ca758083e56f8c22eaf55ffacba08.css.gz",
       "brand/base.ebfa46e0d35c2e332d54462652ca244d800d14a739ba29aec7411ea1912bf511.css.gz",
-      "js/locale-en.c7e3c3c61ec2438b1b588ed4bfa70e6bd3916b1d072f318995aa8465cd5a72dc.js",
-      "js/locale-zh.820516214f61ba849eef9bd204d03a967c95582e5cc3f2b2477991fc0884ea50.js"
+      "js/locale-en.0dea2c69f38cfbed1c72032fbff12b9e6bbbca807fd55dd0617e25ea47077f90.js",
+      "js/locale-zh.c252883cd2f6175ad064c0cc396b2bfe2ae51a639c9fc9e037b9a6a1a77dc8e8.js"
     ]
   },
   "previous": {
-    "version": "0.30.69",
+    "version": "0.30.70",
     "paths": [
       "app.8f52862308dd55687465f33d39ca4660da0ca758083e56f8c22eaf55ffacba08.css.gz",
       "brand/base.ebfa46e0d35c2e332d54462652ca244d800d14a739ba29aec7411ea1912bf511.css.gz",

@@ -328,7 +328,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装Agent J 主机端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.30.70#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.30.71#subdirectory=host"
 agentj doctor
 ```
 
@@ -539,6 +539,32 @@ macOS「登录项与扩展」中的 Agent J 使用带名字、图标和开发者
 
 如果升级后已经回滚，旧版程序能运行就会记为回滚成功；后台服务或自检仍有问题时会单独列出，继续处理这些问题即可。旧更新器只有成功安装新版后才能得到这些改进。旧版 uv 安装仍无法升级时，在 Agent J 主机的终端里按 [旧更新器自救步骤](/docs/faq/) 运行当前安装器的修复升级命令；不需要新安装码，保留配置和绑定。Olares Market 应用通过 Market 升级。
 
+升级失败的提示让你按主机修复说明运行修复命令时，按主机版本选一条：
+
+- 0.30.47 到 0.30.65 的 Linux 主机：运行[下面这一行](/docs/install/#old-updater-fix)。它已在 Ubuntu 24.04 上验证。
+- 其它版本，或上面那一行无效时：用 SSH 登录主机，运行官网修复命令。它会顺带去掉 `~/.local` 等目录的同组写权限。
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL https://agentj.app/install-assistant.sh | sh -s -- --upgrade-only --repair-index
+```
+
+### 提示「已校验的安装包在安装前被改动或替换」，怎样升级？ {#old-updater-fix}
+
+适用于 0.30.47 到 0.30.65 的 Linux 主机，macOS 主机不受影响。这多半是这些旧版本升级程序的已知问题，不是你的安装包或网络有问题。Agent J 主机仍在原来的版本上照常可用，配对和设置都不变。
+
+升级失败的卡片上会给出这一行，可以复制。在这台 Agent J 主机的终端里粘贴它，连括号一起。这条命令会把 Agent J 自己的依赖缓存目录改成只有你本人可写，然后立即升级并重启，会打断进行中的任务：
+
+```bash
+( umask 077; chmod -R go-w ~/.local/state/agentj/install-artifacts/dependencies; agentj update apply --yes )
+```
+
+- 用 SSH 运行：最后会看到 `UPGRADE_RESULT ok`，随后 Agent J 在空闲时自动重启一次。
+- 用 Agent J 的网页终端运行：终端会在最后断开，这是正常的。重新打开后运行 `agentj --version`，显示新版本就是成功。
+- 开头提示 `No such file or directory` 可以忽略，后面会继续。
+- 提示找不到 `agentj`：把这一行里的 `agentj` 换成 `~/.local/bin/agentj`。
+- 只需要做这一次。
+- 运行后仍然失败：不要重复运行，把屏幕上的结果发给客服。用 SSH 时也可以改用下一个问题里的官网修复命令，它会顺带去掉 `~/.local` 等目录的同组写权限。
+
 ### 旧主机反复提示「依赖下载失败」，怎样升级？
 
 如果 Agent J 是用 uv 安装的，而且这台主机可以访问 agentj.app 和 PyPI 文件服务器 files.pythonhosted.org，请用原安装账号打开主机终端，运行下面的命令。使用公司专用软件源的主机，请先确认公司允许从 PyPI 下载文件。
@@ -548,6 +574,15 @@ curl --proto '=https' --tlsv1.2 -fsSL https://agentj.app/install-assistant.sh | 
 ```
 
 修复程序会核对 Agent J 的发行签名，按发行清单下载并校验适合这台主机的依赖文件，然后安装并重启。席位、配对和设置都会保留。完成后运行 `agentj --version` 和 `agentj doctor` 核对结果。若仍失败，请把显示的错误代码和版本号交给客服。通过 Olares 应用市场安装的主机请在市场内更新。
+
+### 提示准备依赖包超时，怎么办？ {#upgrade-timeout}
+
+升级前，Agent J 要先备齐依赖包。网络太慢或中途卡住时，0.30.71 起会自动重试几次。仍没完成就停在原来的版本，主机照常可用，不需要重装。
+
+- 提示网络太慢或中途卡住：网络恢复后，在手机输入 `/update` 再试一次。
+- 提示主机当时太忙、磁盘太慢，或规定时间内没能完成：等主机空闲后，在手机输入 `/update` 重试。
+- 开着自动升级时，主机之后空闲时或夜间会自动再试。
+- 多次重试仍失败：把提示里的原因和版本号交给客服。
 
 ## 首次启动 AI 失败 {#first-ai-start}
 

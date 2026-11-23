@@ -43,7 +43,10 @@ for(const [lang,theme,width] of combos){
   // 1. asking: the down-arrow collapses — nothing is sent, the strip says it is waiting; tapping the strip brings it back
   await fake.send(card(A,hex('1')));
   await waitFor(p,shown);
-  assert.equal(await evaluate(p,`getComputedStyle(document.getElementById('elev-hide')).display!=='none' && document.getElementById('elev-hide').getAttribute('aria-label')`),zh?'收起（不会拒绝）':'Collapse (nothing is declined)');
+  // a38d5c48cb (2026-11-15, U10 shared circular collapse icon): the button's accessible name is the shared sheet-fold label;
+  // the "collapsing declines nothing" reassurance stays on the same button as its title.
+  assert.equal(await evaluate(p,`getComputedStyle(document.getElementById('elev-hide')).display!=='none' && document.getElementById('elev-hide').getAttribute('aria-label')`),zh?'收起':'Hide');
+  assert.equal(await evaluate(p,`document.getElementById('elev-hide').title`),zh?'收起（不会拒绝）':'Collapse (nothing is declined)');
   writeFileSync(`${out}/web-${lang}-${theme}-${width}-card.png`,await shoot(p,''));
   await evaluate(p,`document.getElementById('elev-hide').click(); true`);
   await waitFor(p,`!${shown} && ${strip('ask')}`);

@@ -26,9 +26,9 @@ TERMS = {   # P348 (2026-10-16): the owner's own tasks may use the plan; support
           "to a pay-as-you-go Ark key. A support bot serves other people, so Agent J never gives it the Coding Plan key — add a "
           "pay-as-you-go key for the bot. The Coding Plan has no image-generation models.",
 }
-# P328: Lite and Pro have the same models (Kimi K3 included); Ark only *suggests* Pro for K3 because it uses quota fast
-PRO_NOTE = {"zh": "（kimi-k3 扣额度快，方舟建议 Pro 套餐用；Lite 也能选）",
-            "en": " (kimi-k3 uses quota fast: Ark suggests it for Pro, but Lite can pick it too)"}
+# Ark ends kimi-k3 on both plans on 2026-11-25 (ark.json `retired`); which models a tier has is the plan page's to say
+PRO_NOTE = {"zh": "（kimi-k3 已于 2026-11-25 下线，改用 kimi-k3.1-pro；可用模型以当前套餐为准）",
+            "en": " (kimi-k3 was retired on 2026-11-25: use kimi-k3.1-pro; your current plan decides which models you have)"}
 
 
 PLANS = ("agent", "coding", "payg")
@@ -44,7 +44,7 @@ KEY_HINT = {   # P395: where the Agent Plan key is — it is NOT one from API Ke
     "zh": "方舟控制台 订阅 → Agent Plan → 使用配置 → 专属 API Key（不是「API Key 管理」里的那种）",
     "en": "Ark console: Subscription → Agent Plan → Usage configuration → the plan's own API key (not one from API Key management)",
 }
-MEDIUM_NOTE = {"zh": "（kimi-k3 从 Medium 套餐起才有）", "en": " (kimi-k3 needs Medium or above)"}
+MEDIUM_NOTE = PRO_NOTE
 PAYG_TERMS = {   # P371
     "zh": "按量付费走方舟标准地址 …/api/v3：按 token 从账户余额扣费，任何程序都能调用（不占套餐额度）。Agent Plan、Coding Plan 和按量付费请分别使用对应的 key 和地址。",
     "en": "Pay-as-you-go uses Ark's standard address …/api/v3: billed per token from the account balance, any program may call "
@@ -84,6 +84,73 @@ def plan_of(pid: str | None) -> str | None:
     return {d["provider"]: "coding", d["agent"]["provider"]: "agent", d["payg"]["provider"]: "payg"}.get(pid or "")
 
 
+def moved(model) -> str | None:
+    """`<plan provider>/<id Ark retired>` → the same provider with Ark's replacement; None = nothing to move."""
+    d = data()
+    pid, _, m = (model if isinstance(model, str) else "").partition("/")
+    return f"{pid}/{d['retired'][m]}" if pid in (d["provider"], d["agent"]["provider"]) and m in d["retired"] else None
+
+
+def _stale_profiles():
+    """Claude Code profiles in use on a plan address that still name a retired model and were not told about: (mark, line)."""
+    from . import provider_profiles as pp
+    d = data()
+    bases = {d["anthropic_base"]: " --plan coding", d["agent"]["anthropic_base"]: ""}
+    for c in pp.listing():
+        used = sorted({c.get("model"), *(c.get("tiers") or {}).values()} & set(d["retired"]))
+        mark = pp.profile(c["id"]) / "retired-told"
+        if used and c.get("base_url") in bases and any(mark.parent.glob("backups/*/record.json")) and not mark.exists():
+            how = f"`agentj provider ark --harness claude{bases[c['base_url']]} --model {d['retired'][used[0]]}`"
+            yield mark, (f"Claude Code 的方舟配置 {c['id']} 还在用已下线的 {used[0]}：运行 {how} 换过去（会重新填一次 key）。 / "
+                         f"Claude Code profile {c['id']} still uses {used[0]}, which Ark retired: run {how} (the key is asked once more).")
+
+
+def migrate(st) -> list[str]:
+    """When serve starts: a saved selection of a retired plan model moves to its replacement, and a Claude Code profile
+    still on one is named (its native settings are the owner's: never rewritten here). → lines for the owner; they are
+    kept in <state>/model-moved.json until told() says they went out. Never raises: serve starts whatever happens here."""
+    out = []
+    try:
+        kept = st.root / "model-moved.json"
+        try:
+            out = [x for x in json.loads(kept.read_text(encoding="utf-8")) if isinstance(x, str)][:4]
+        except (OSError, ValueError, TypeError):
+            pass
+        a = st.config().get("agent")
+        old = a.get("model") if isinstance(a, dict) else None
+        new = moved(old)
+        if new and st.set_agent_model(new, expected=a):
+            st.log("model_retired", agent=a.get("kind"))
+            out.append(f"方舟已下线 {old}，已替你换成 {new}（方舟官方建议的替代型号）；想用别的，在手机「模型和 API Key」里选。 / "
+                       f"Ark retired {old}. Agent J switched you to {new}, the replacement Ark names; pick another in Models & API keys.")
+            try:
+                from .state import _write_private
+                _write_private(kept, json.dumps(out, ensure_ascii=False).encode())
+            except OSError:
+                pass                   # still said in this run
+    except Exception as e:  # noqa: BLE001 — an odd or unwritable config is as it was before this existed
+        try:
+            st.log("model_retired", result="failed", exception_type=type(e).__name__)
+        except Exception:  # noqa: BLE001
+            pass
+        return []
+    try:
+        out += [line for _, line in _stale_profiles() if line not in out]
+    except Exception:  # noqa: BLE001 — a profile folder that cannot be read never keeps serve from starting
+        pass
+    return out
+
+
+def told(st) -> None:
+    """The lines of migrate() reached the owner: nothing is kept for the next start, the named profiles are marked."""
+    try:
+        (st.root / "model-moved.json").unlink(missing_ok=True)
+        for mark, _ in list(_stale_profiles()):
+            mark.touch(0o600)
+    except Exception:  # noqa: BLE001 — at worst the owner reads the line once more
+        pass
+
+
 def vision(model: str) -> bool:
     m = data()["block"]["models"].get(model) or {}
     return "image" in (m.get("modalities") or {}).get("input", [])
@@ -108,6 +175,8 @@ def _model(model: str | None, plan: str = "coding") -> str:
     model = model or d["model"]
     if model in d["block"]["models"]:
         return model
+    if plan != "payg" and model in d["retired"]:
+        raise op.ProviderError(f"方舟已下线 {model}，请改用 {d['retired'][model]} / Ark retired {model}: use {d['retired'][model]}")
     if plan == "payg" and _PAYG_ID.fullmatch(model):   # P371: any model id the account has opened (text-only unless listed)
         return model
     if plan == "payg":
@@ -441,7 +510,14 @@ def cmd(a) -> int:
             if not a.dry_run:
                 from . import provider_profiles
                 pid = PROFILE_AGENT if plan == "agent" else PROFILE
-                declared = provider_profiles.define(pid, "claude", plan_data(plan)["anthropic_base"], r["model"])
+                try:
+                    declared = provider_profiles.define(pid, "claude", plan_data(plan)["anthropic_base"], r["model"])
+                except op.ProviderError as e:      # the fixed id holds another model (a retired one): this model gets its own profile
+                    if str(e) != "profile_exists_use_a_new_id":
+                        raise
+                    new = (pid + "-" + re.sub(r"[^a-z0-9]+", "-", r["model"].lower()))[:40].rstrip("-")
+                    declared = provider_profiles.define(new, "claude", plan_data(plan)["anthropic_base"], r["model"])
+                    r["next"] = [re.sub(rf"(?<= ){pid}(?= |$)", new, step) for step in r["next"]]
                 r["next"] = [step.replace("<上一步打印的 key_destination>", shlex.quote(declared["key_destination"])) for step in r["next"]]
         else:
             r = install(model, a.dry_run, plan=plan)

@@ -55,16 +55,16 @@ class Preset(Home):
         self.assertEqual(b["options"], {"baseURL": PLAN_V3, "apiKey": "{env:ARK_AGENT_PLAN_API_KEY}"})
         self.assertNotIn("/api/v3", b["options"]["baseURL"].replace("/api/plan/v3", ""))
         ms = b["models"]
-        for m in ("ark-code-latest", "doubao-seed-2.1-pro", "kimi-k3", "glm-5.3", "deepseek-v4-pro"):
+        for m in ("ark-code-latest", "doubao-seed-2.1-pro", "kimi-k3.1-pro", "glm-5.3", "deepseek-v4-pro"):
             self.assertIn(m, ms)
-        for retired in ("doubao-seed-2.0-lite", "doubao-seed-2.1-turbo", "kimi-k2.7-code", "minimax-m3"):
-            self.assertNotIn(retired, ms)  # official Agent Plan retirement notice, checked 2026-11-11
+        for retired in ("doubao-seed-2.0-lite", "doubao-seed-2.1-turbo", "kimi-k2.7-code", "minimax-m3", "kimi-k3"):
+            self.assertNotIn(retired, ms)  # official Agent Plan retirement notice, checked 2026-11-23 (kimi-k3: 11-25)
         self.assertEqual(set(ms), {"ark-code-latest", "doubao-seed-2.1-pro", "doubao-seed-evolving",
                                   "glm-5.3", "glm-5.3-flash", "glm-latest", "deepseek-v4.1-flash",
                                   "deepseek-v4.1-flash-economy", "deepseek-v4-flash", "deepseek-v4-pro",
-                                  "doubao-seed-2.1-lite", "doubao-seed-2.0-mini", "kimi-k3",
+                                  "doubao-seed-2.1-lite", "doubao-seed-2.0-mini",
                                   "kimi-k2.8-preview", "kimi-k3.1-pro"})
-        self.assertEqual(ms["kimi-k3"]["modalities"]["input"], ["text", "image"])
+        self.assertEqual(ms["kimi-k3.1-pro"]["modalities"]["input"], ["text", "image"])
         self.assertEqual(ms["glm-5.3"]["modalities"]["input"], ["text"])
         self.assertEqual((r["model"], r["plan"], r["key_env"], r["vision"]),
                          ("ark-agent-plan/doubao-seed-2.1-pro", "agent", "ARK_AGENT_PLAN_API_KEY", True))
@@ -132,7 +132,7 @@ class Preset(Home):
 
     def test_model_note_and_verify(self):
         self.assertIn("Agent Plan", ark.model_note("ark-agent-plan/doubao-seed-2.1-pro"))
-        self.assertIn("Medium", ark.model_note("ark-agent-plan/kimi-k3", "en"))
+        self.assertNotIn("Medium", ark.model_note("ark-agent-plan/kimi-k3.1-pro", "en"))   # in every tier (Ark's plan table, 11-23)
         self.assertIn("不能看图", ark.model_note("ark-agent-plan/glm-5.3"))
         self.assertEqual(ark.verify_for("ark-agent-plan"), ("", ""))
         self.assertEqual(ark.plan_of("ark-agent-plan"), "agent")
@@ -156,7 +156,7 @@ class Elsewhere(unittest.TestCase):
             self.assertTrue(bp.coding_plan(u), u)
         self.assertFalse(bp.coding_plan("https://ark.cn-beijing.volces.com/api/planx"))
         self.assertFalse(bp.coding_plan("https://ark.cn-beijing.volces.com/api/v3"))
-        self.assertTrue(bp.coding_plan(model="ark-agent-plan/kimi-k3"))
+        self.assertTrue(bp.coding_plan(model="ark-agent-plan/kimi-k3.1-pro"))
 
     def test_switch_defaults_to_agent_plan(self):
         seen = {}

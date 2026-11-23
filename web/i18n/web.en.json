@@ -4402,7 +4402,7 @@
   },
   "p489": {
     "send": "Send layout diagnostic",
-    "note": "Tap when the screen has a colour band or misplaced elements. Sends only dimensions, colours and usage to your Agent J host, without chat content.",
+    "note": "Tap when the screen has a colour band or misplaced elements. Only dimensions, colours, usage and a few counters (how long the page has been open, how often it went to the background, graphics state, device memory tier) go to your Agent J host, never chat content. One is also sent automatically when page graphics fail or the page returns after a long time in the background, at most 3 an hour.",
     "sending": "Sending…",
     "saved": "Layout diagnostic saved on your Agent J host.",
     "offline": "Your Agent J host is offline. Try again when connected.",
@@ -6213,5 +6213,9 @@
   "approval.plazaTwoPackages": "{first}, {second}",
   "approval.plazaMore": "{names} and {n} more in the details",
   "media.internalReference": "Agent J internal reference",
-  "media.unavailable": "This file couldn't be shared."
+  "media.unavailable": "This file couldn't be shared.",
+  "p0371.oldfix.why": "The update did not finish, most likely a known fault in this older updater; this Agent J host still runs {v} as before, pairing and settings unchanged. The line below makes Agent J's own dependency cache writable only by you, then updates and restarts Agent J at once, interrupting any task in progress. Running it in the host's terminal usually updates it; a web terminal disconnects at the end (reopen it, check agentj --version). If it still fails, do not run it again: contact support via the repair guide.",
+  "p0371.oldfix.raw": "Show the original message",
+  "p0371.oldfix.cut": "The terminal disconnected. At the last step of an update this is expected: reopen it and check agentj --version.",
+  "p0371.oldfix.run": "Run and update"
 }

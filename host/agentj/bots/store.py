@@ -131,6 +131,7 @@ class Store:
         CREATE TABLE IF NOT EXISTS bots(id TEXT PRIMARY KEY, config TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS telegram_cursors(bot TEXT PRIMARY KEY, token_hash TEXT, offset INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS bot_lifecycle(bot TEXT PRIMARY KEY, epoch INTEGER NOT NULL, removed INTEGER NOT NULL DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS bot_removal_reports(bot TEXT PRIMARY KEY, epoch INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS visitors(bot TEXT, id TEXT, capability TEXT NOT NULL, identity TEXT NOT NULL DEFAULT '{}', PRIMARY KEY(bot,id));
         CREATE TABLE IF NOT EXISTS visitor_seen(bot TEXT, visitor TEXT, seen INTEGER, PRIMARY KEY(bot,visitor));
         CREATE TABLE IF NOT EXISTS visitor_bindings(bot TEXT, public_hash TEXT, visitor TEXT, seen INTEGER, PRIMARY KEY(bot,public_hash));
@@ -175,6 +176,14 @@ class Store:
         c=self.get(bid);c['enabled']=False;self.save(bid,c)
         self.db.execute('UPDATE bot_lifecycle SET removed=1 WHERE bot=?',(bid,));self.event(bid,'','config','removed')
         return {'id':bid,'removed':True}
+    def removal_reported(self,bid,epoch):
+        # The cloud accepted `status: removed` for this epoch (page down, name frozen): bots.runtime stops registering it.
+        self.db.execute('INSERT INTO bot_removal_reports VALUES(?,?) ON CONFLICT(bot) DO UPDATE SET epoch=excluded.epoch',(ident(bid),epoch))
+    def removal_settled(self,bid):
+        # Only a bot that is removed now, at the very epoch the cloud accepted. Anything else keeps being registered.
+        life=self.lifecycle(bid)
+        row=self.db.execute('SELECT epoch FROM bot_removal_reports WHERE bot=?',(bid,)).fetchone()
+        return bool(life['removed'] and row and row[0]==life['epoch'])
     def save(self,bid,raw):
         bid=ident(bid);c=config(raw)
         with self.transaction():

@@ -30,9 +30,29 @@ class Offline(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(audit.called)
 
     async def test_offline_sudo_reminds_and_replays_then_signed_deny(self):
-        task=asyncio.create_task(self.host.elevate.request(self.card));c=await self.wait_card()
+        # 5d3af65600 (2026-11-14, persisted card delivery retries): a queued delivery asks for the offline reminder as
+        # well as the card itself, so the call count of the entry point is 2; "the owner is reminded ONCE" is the real
+        # Host._remind_offline's own gap (approval_level.OFFLINE_GAP). Assert that — one reminder sent, for one card.
+        from agentj import approval_level
+        del self.host._remind_offline                      # the real method, not asyncSetUp's stand-in
+        real=self.host._remind_offline;entries=[]
+        def counted():
+            entries.append(1);return real()                # the real method runs; only its entries are counted
+        self.host._remind_offline=counted
+        sent=AsyncMock(return_value=['push'])
+        with patch.object(approval_level,'remind_offline',new=sent):
+            task=asyncio.create_task(self.host.elevate.request(self.card));c=await self.wait_card()
+            # Deterministic: wait until BOTH entry calls (the card and its queued delivery) have happened and the
+            # reminder went out, then let every task they could have started run - a late second reminder is seen.
+            for _ in range(2000):
+                if len(entries)>=2 and sent.await_count: break
+                await asyncio.sleep(.005)
+            for _ in range(20):await asyncio.sleep(0)
+            self.assertEqual(len(entries),2)
         try:
-            self.host._remind_offline.assert_called_once()
+            sent.assert_awaited_once()
+            self.assertEqual(sent.await_args.args[1],1)
+            self.assertTrue(c.get('offline_reminded'))
             s=_ready(self.host,self.phone)
             await self.host.elevate.on_ready(s)
             m=next(o for _,o in self.sent if o['t']=='elev')

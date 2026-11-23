@@ -390,7 +390,12 @@ class TaskGrant(unittest.IsolatedAsyncioTestCase):
     async def test_same_owner_receiver_does_not_ask_again(self):
         from agentj import provenance
         for kind in ('same_owner','friend_task'):
-            self.h.agent.cur_send=SimpleNamespace(source={'kind':kind,'role':'task'})
+            # Host-held provenance tokens (c2da9e292b / 294644a5e9, 2026-11-14): a delegated source is the host-minted
+            # HostDelegated; the same words in a plain dict name no source at all.
+            plain={'kind':kind,'role':'task'}
+            self.h.agent.cur_send=SimpleNamespace(source=plain)
+            self.assertFalse(provenance.delegated_turn(self.h.agent))
+            self.h.agent.cur_send=SimpleNamespace(source=provenance.HostDelegated(plain))
             if kind=='same_owner':self.assertTrue(provenance.delegated_turn(self.h.agent))
             # 0.30.7 ADR-0307-offlist: a native request naming the action is off the native card list; a delegated
             # (external) turn's off-list write is refused at once, no card, and no same-owner auto path either.

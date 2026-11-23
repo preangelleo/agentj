@@ -112,13 +112,10 @@ class ArkLiteWording(unittest.TestCase):
     def test_k3_is_suggested_for_pro_not_pro_only(self):
         d = ark.data()
         self.assertNotIn("pro_only", d)
-        self.assertIn("kimi-k3", d["pro_suggested"])
-        for lang in ("zh", "en"):
-            note = ark.model_note("ark-coding-plan/kimi-k3", lang)
-            self.assertIn("Lite", note)
-        self.assertNotIn("Pro 套餐里", ark.model_note("ark-coding-plan/kimi-k3", "zh"))
-        self.assertNotIn("Pro only", ark.model_note("ark-coding-plan/kimi-k3", "en"))
-        self.assertNotIn("Pro 套餐", d["block"]["models"]["kimi-k3"]["name"])
+        self.assertEqual(d["pro_suggested"], [])       # kimi-k3 (the one Ark suggested for Pro) was retired on 2026-11-25
+        self.assertNotIn("Pro 套餐里", ark.model_note("ark-coding-plan/kimi-k3.1-pro", "zh"))
+        self.assertNotIn("Pro only", ark.model_note("ark-coding-plan/kimi-k3.1-pro", "en"))
+        self.assertNotIn("Pro 套餐", d["block"]["models"]["kimi-k3.1-pro"]["name"])
 
 
 class Docs(unittest.TestCase):

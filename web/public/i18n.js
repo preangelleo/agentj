@@ -3929,7 +3929,7 @@ export default {
   "p481.queueStuck": "上一件事已超过 3 分钟没有新输出，可以停下它再继续。",
   "p481.stopPrevious": "停止当前任务",
   "p489.send": "发送画面诊断",
-  "p489.note": "画面有色带或错位时点一下。只把尺寸、颜色和用量发到你的 Agent J 主机，不含聊天内容。",
+  "p489.note": "画面有色带或错位时点一下。发到你的 Agent J 主机的只有尺寸、颜色、用量，以及页面运行时长、切到后台的次数、图形状态、设备内存档位这类统计，不含聊天内容。页面图形出错，或在后台停留很久后回来时，会自动发一次，每小时最多 3 条。",
   "p489.sending": "正在发送…",
   "p489.saved": "画面诊断已保存到你的 Agent J 主机。",
   "p489.offline": "现在连不上你的 Agent J 主机。连接恢复后再试。",
@@ -5702,7 +5702,11 @@ export default {
   "approval.plazaTwoPackages": "{first}、{second}",
   "approval.plazaMore": "{names}，另有 {n} 个见详情",
   "media.internalReference": "Agent J 内部资料",
-  "media.unavailable": "这份文件无法发送。"
+  "media.unavailable": "这份文件无法发送。",
+  "p0371.oldfix.why": "升级没有完成，多半是这个旧版本升级程序的一个已知问题；这台 Agent J 主机仍是 {v}，照常可用，配对和设置都不变。下面这一行会把 Agent J 自己的依赖缓存目录改成仅本人可写，然后立即升级并重启 Agent J，正在进行的任务会被打断。在这台 Agent J 主机的终端里运行它，通常就能升级；网页终端会在最后断开，重新打开后看 agentj --version。仍失败就不要重复，请按修复说明联系客服。",
+  "p0371.oldfix.raw": "查看原始信息",
+  "p0371.oldfix.cut": "终端已断开。如果升级正好到了最后一步，这是正常的：重新打开后看 agentj --version。",
+  "p0371.oldfix.run": "执行并升级"
  },
  "en": {
   "p0287.hideDone": "Hide completed",
@@ -9633,7 +9637,7 @@ export default {
   "p481.queueStuck": "The previous task has had no output for over 3 minutes. You can stop it to continue.",
   "p481.stopPrevious": "Stop current task",
   "p489.send": "Send layout diagnostic",
-  "p489.note": "Tap when the screen has a colour band or misplaced elements. Sends only dimensions, colours and usage to your Agent J host, without chat content.",
+  "p489.note": "Tap when the screen has a colour band or misplaced elements. Only dimensions, colours, usage and a few counters (how long the page has been open, how often it went to the background, graphics state, device memory tier) go to your Agent J host, never chat content. One is also sent automatically when page graphics fail or the page returns after a long time in the background, at most 3 an hour.",
   "p489.sending": "Sending…",
   "p489.saved": "Layout diagnostic saved on your Agent J host.",
   "p489.offline": "Your Agent J host is offline. Try again when connected.",
@@ -11406,6 +11410,10 @@ export default {
   "approval.plazaTwoPackages": "{first}, {second}",
   "approval.plazaMore": "{names} and {n} more in the details",
   "media.internalReference": "Agent J internal reference",
-  "media.unavailable": "This file couldn't be shared."
+  "media.unavailable": "This file couldn't be shared.",
+  "p0371.oldfix.why": "The update did not finish, most likely a known fault in this older updater; this Agent J host still runs {v} as before, pairing and settings unchanged. The line below makes Agent J's own dependency cache writable only by you, then updates and restarts Agent J at once, interrupting any task in progress. Running it in the host's terminal usually updates it; a web terminal disconnects at the end (reopen it, check agentj --version). If it still fails, do not run it again: contact support via the repair guide.",
+  "p0371.oldfix.raw": "Show the original message",
+  "p0371.oldfix.cut": "The terminal disconnected. At the last step of an update this is expected: reopen it and check agentj --version.",
+  "p0371.oldfix.run": "Run and update"
  }
 };

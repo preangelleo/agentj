@@ -73,7 +73,17 @@ class Repairs(HostFlows):
             {'host':'B','cat':'delete','what':'Clean','paths':['/tmp/p574-more'],'max':1}]})
         await asyncio.sleep(.03)
         ids = peer.svc.xfer.live_for('A', [original['grant']], 'delegated-task')
-        peer.send.source = {'kind':'same_owner','role':'task','fid':'A','otg':ids}
+        # Host-held provenance tokens (c2da9e292b / 294644a5e9, 2026-11-14): task authority is minted only by the host's
+        # verified forwarding constructor (same_owner.ForwardSend → provenance.HostDelegated); the plain dict this
+        # fixture used is `unknown` now and is refused before any card.
+        from agentj import provenance
+        plain = {'kind':'same_owner','role':'task','fid':'A','otg':ids}
+        peer.send.source = plain
+        self.assertEqual(provenance.normalize(peer.send.source), {'kind':'unknown','role':'group'})
+        self.assertEqual((await peer.svc.xfer.cli({'op':'ask','peer':'A','name':'NEW_KEY', 'why':'Deploy needs this key',
+            'dest':'file:'+str(__import__('pathlib').Path(peer.tmp.name)/'forged.key')}, peer.tmp.name)).get('result'), 'refused')
+        self.assertFalse(self.h.asks or peer.h.asks, 'a wire-shaped task source opens no card anywhere')
+        peer.send.source = provenance.HostDelegated(plain)
         source = __import__('pathlib').Path(self.tmp.name) / 'source.key'
         source.write_bytes(b'isolated-test-value')
         remember(self.st, 'c'*32, {'kind':'secret','name':'NEW_KEY','result':'saved',

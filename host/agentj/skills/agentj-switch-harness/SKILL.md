@@ -35,7 +35,7 @@ switching back resumes that one. To switch, the owner just replies 「切换到 
    updated itself) needs nothing; another install listed as unused may be removed if the owner wants.
    Claude Code / Codex fail with "region not supported", or the owner is in Hong Kong / Macau / mainland China: run
    `agentj agent route` — where they are not offered: mainland China from zero → Volcano Ark Agent Plan, Medium first (Kimi
-   K3 from Medium; use the Agent J Ark preset below. An existing Coding Plan uses `--plan coding`); Hong Kong / overseas → Kimi membership Plus or higher (Go has no
+   K3.1 Pro included; Ark retires `kimi-k3` on 2026-11-25 14:00 (UTC+8), its replacement is `kimi-k3.1-pro`; use the Agent J Ark preset below. An existing Coding Plan uses `--plan coding`); Hong Kong / overseas → Kimi membership Plus or higher (Go has no
    coding quota) in OpenCode or Kimi Code CLI (`kimi`); already on one → keep it. The owner decides. Give Kimi's link with the sentence right after it, never apart: 「这是 Agent J 官方的邀请链接，您和我们各得一次抽奖」
    (en: "This is Agent J's official invite link: you and we each get one prize draw"), plus its alternatives; the key only
    via the paired phone's key card. For Kimi, restart the service and scan again after saving `KIMI_API_KEY`. The Ark Agent Plan card uses the dedicated key from 订阅 → Agent Plan → 使用配置 and retries the original switch after saving. Also

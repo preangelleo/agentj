@@ -120,6 +120,33 @@ class WheelCompression(unittest.TestCase):
         self.assertEqual(p.read_bytes(), original)
         self.assertFalse(list(self.root.glob('*.compression-*')))
 
+    def test_dense_path_covers_lock_and_top_level_dist_info_members_only(self):
+        # Selection scope of the reviewed hook (0.30.71): text sources, *.lock and everything under the wheel's
+        # top-level *.dist-info/ take the dense encoder; binaries and a nested look-alike directory do not.
+        p = self.root / 'scope.whl'
+        members = ['agentj/cli.py', 'agentj/upgrade.lock', 'agentj-1.dist-info/METADATA', 'agentj-1.dist-info/RECORD',
+                   'agentj-1.dist-info/licenses/LICENSE', 'agentj-1.dist-info/WHEEL', 'agentj/admin/font.woff2',
+                   'agentj/config/en.phone.xz', 'agentj/data.dist-info/blob.bin', 'agentj/lockfile.bin']
+        with zipfile.ZipFile(p, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as z:
+            for name in members:
+                z.writestr(zipfile.ZipInfo(name, (2020, 2, 3, 4, 5, 6)), b'fixture line\n' * 300,
+                           compress_type=zipfile.ZIP_DEFLATED, compresslevel=6)
+        original = self.root / 'scope-original.whl'
+        original.write_bytes(p.read_bytes())
+        dense = []
+        opened = self.hook._DenseZipFile._open_to_write
+        def spy(archive, zinfo, force_zip64=False):
+            writer = opened(archive, zinfo, force_zip64=force_zip64)
+            if isinstance(writer._compressor, self.hook._DenseDeflater):
+                dense.append(zinfo.filename)
+            return writer
+        with mock.patch.object(self.hook._DenseZipFile, '_open_to_write', spy):
+            self.hook.CustomBuildHook().finalize('standard', {}, str(p))
+        self.assertEqual(dense, ['agentj/cli.py', 'agentj/upgrade.lock', 'agentj-1.dist-info/METADATA',
+                                 'agentj-1.dist-info/RECORD', 'agentj-1.dist-info/licenses/LICENSE',
+                                 'agentj-1.dist-info/WHEEL'])
+        self.hook._verify_equivalent(original, p)
+
     def test_official_recipe_uses_wheel_hook_and_ships_it_in_sdist(self):
         data = tomllib.loads((HOST / 'pyproject.toml').read_text())
         targets = data['tool']['hatch']['build']['targets']

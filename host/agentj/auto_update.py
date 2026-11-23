@@ -274,6 +274,15 @@ def uv_retry_scheduled(st, result):
             and schedules_installs(st))
 
 
+def retry_scheduled(st, result):
+    """A preparation that ran out of time changed nothing; the ordinary once-a-day schedule tries the same update again."""
+    from . import upgrade_diag
+    target = result.get('to')
+    return (upgrade_diag.preparation_timed_out(result) and result.get('result') == 'failed'
+            and upgrade_diag.install_unchanged(result) and result.get('from') == __version__ and isinstance(target, str) and len(target) <= 80
+            and update.compare(target, __version__) == 1 and schedules_installs(st))
+
+
 def due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow, newer=False):
     with st.config_lock():
         return _due(st, now=now, blocked=blocked, stopped=stopped, rand=rand, newer=newer)
@@ -1076,7 +1085,10 @@ def notice(r, lang='zh', prefs=None, harness=None):
         from .phone_update import _rep_of
         return upgrade_diag.owner_sentence(r, _rep_of(r), lang)
     dependency = upgrade_diag.dependency_message(r, lang)
-    guide = upgrade_diag.dependency_repair(lang) if dependency else ''
+    guide = upgrade_diag.dependency_repair(lang, r) if dependency else upgrade_diag.cache_repair(lang) if upgrade_diag.cache_failed(r) else ''
+    if r.get('auto_retry') is True and upgrade_diag.preparation_timed_out(r):
+        guide = ((" Automatic updates are on, so the host will try again by itself when it is next idle or overnight."
+                  if lang == 'en' else "自动升级已开启，主机之后空闲时或夜间会自动再试。") + guide)
     reason = dependency or r['reason']
     if r.get('result') == 'rolled_back':
         own = (' ' + upgrade_owner.sentence(r, lang)) if r.get('owner_kind') and r.get('fix') else ''   # #475
@@ -1114,7 +1126,7 @@ def _take_notice(st, lang='zh', prefs=None, harness=_UNSET_HARNESS):
         return None
     rec['notice_pending'] = False
     write(st, rec)
-    return notice({**result, 'uv_auto_retry': uv_retry_scheduled(st, result)}, lang, prefs,
+    return notice({**result, 'uv_auto_retry': uv_retry_scheduled(st, result), 'auto_retry': retry_scheduled(st, result)}, lang, prefs,
                   release_notes.current(st) if harness is _UNSET_HARNESS else harness)
 
 
@@ -1197,7 +1209,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 if any(getattr(c, 'uv_repaired', False) for c in cmds):
                     job['uv_repaired'] = True
                 if preparation.used and preparation.deadline - clock() < RETRY_FLOOR:
-                    d.update(retry_count=preparation.count, step='install')
+                    d.update(retry_count=preparation.count, step='install', prepare_seconds=int(clock() - preparation.started))
                     raise ValueError('installer_timeout')
             retries = preparation.count
             limit = preparation.deadline
@@ -1234,7 +1246,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                     left = limit - clock()
                     if left < RETRY_FLOOR:
                         if diagnose and job.get('phase') == 'prepared':
-                            d.update(retry_count=retries, step='install')
+                            d.update(retry_count=retries, step='install', prepare_seconds=int(clock() - preparation.started))
                             raise ValueError('installer_timeout')  # no live command to roll back
                         raise RetryExpired()
                     clear_attempt()

@@ -129,15 +129,11 @@ PREFS_SETTLED_S = 2.0   # R-0049 H12: a preferences file this old when hashed ma
 ASK_TTL = _ttl("AGENTJ_TEST_ASK_TTL", 120)   # a permission request the phone does not answer in time is denied (s)
 BACKLOG = 100          # recent chat kept in memory (never on disk) and replayed to a device after it (re)connects
 MAX_ASKS = 16          # outstanding permission requests at once; more are denied at once
-LEARN_TOOL = "agentj learn"   # P204: the /learn proposal card (learn.TOOL)
 PHASE_GAP = 0.4    # P204 (§29): at most one tool / writing switch per this many seconds to the phones (the last one always)
 PUSH_GAP = {"reply": 20, "ask": 2, "security": 2}   # minimum seconds between two pushes of a kind to one device
 BATCH_MAX = 20         # automatic approvals one batch grant may give (ADR-A48) …
 BATCH_SECS = 600       # … within this many seconds, and never past the end of the Agent's turn
 MAX_GRANTS = 8         # batch grants open at once
-TASK_GRANT_MAX = 12    # P573 (#389): steps one task grant may still allow without a card …
-TASK_GRANT_SECS = 600  # … within this many seconds, and only inside the turn (history page) it was signed in
-MAX_TASK_GRANTS = 16   # task grants kept at once (the oldest goes)
 CHUNK = 11 * 1024      # phone-control answers are split into app messages of about this many JSON bytes (MAX_JSON = 16 KiB)
 ITEM_SHOW = 6000       # a memory item longer than this is shown cut on the phone (its id still covers the whole text)
 _RID = re.compile(r"[A-Za-z0-9_-]{1,32}")
@@ -212,10 +208,6 @@ PREF_SET_KEYS += ("inbox.voice_retention_hours",)   # #0304: how long voice orig
 METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week", "quota_windows", "shared_status", "shared_writer", "source_at", "reset_credits")
 Q_CANCEL = "用户在手机上取消了这个问题，没有选择任何选项。请不要替他做选择，停下来等他直接输入文字。"
 Q_TIMEOUT = "没有人作答，请改用文字列出选项"
-UNKNOWN_ACTION = ("Agent J 的规则里没有这种动作，所以没有给主人弹确认卡，直接拒绝了（不是主人拒绝的）。请换一种常见做法（普通的读文件、"
-                  "改文件或命令）再试；还不行就用一句话告诉主人你想做什么，请他在手机上确认。 / This action type is not in Agent J's "
-                  "policy, so no card was shown and it was denied automatically (the owner did not deny it). Try a common way (a "
-                  "plain file read, edit or command); otherwise tell the owner in one sentence what you want to do and ask on the phone.")
 ASR_WHY = {"not_installed": "not_installed", "bad_audio": "bad_audio", "timeout": "timeout", "busy": "busy",
            "engine_failed": "broken", "off": "off", "broken": "broken", "no_speech": "no_speech"}
 
@@ -478,22 +470,6 @@ def card_lang(lang) -> str:
     return "en" if str(lang or "").lower().startswith("en") else "zh"
 
 
-def policy_registry_bound(tool, bind):
-
-    if bind is None:
-        return None
-    from . import policy_registry
-    return policy_registry.bound_action(tool, bind)
-
-
-CU_SCRIPT_HEAD = {"zh": "Computer Use：在这台 Agent J 主机上点击、输入并运行操控脚本",
-                  "en": "Computer Use: click, type and run a control script on this computer"}
-CU_SCRIPT_GRANT_NOTE = {
-    "zh": "勾选免问后，这台遥控器批准过的 Computer Use 操作（包括它运行的操控脚本）以后不再弹卡，相当于这台 Agent J 主机上的 Computer Use "
-          "完全放开；随时可在 设置 → 安全 → 免问的动作 取消。",
-    "en": "If you tick don't-ask-again, Computer Use actions approved from this remote (including the control scripts it "
-          "runs) no longer show a card — Computer Use on this computer is fully open; undo it any time in Settings → "
-          "Safety → Actions that skip approval."}
 
 
 TASK_GRANT_NOTE = {"zh": "（批准后，这个任务里仅上述具体动作不再询问。）",
@@ -505,18 +481,6 @@ def _same_owner_turn(agent) -> bool:
         return False
     o = provenance._REQUEST.get()
     return provenance.turn_source(agent)["kind"] == "same_owner" and (o is provenance._UNSET or o.get("kind") == "same_owner")
-
-
-def computer_use_script_summary(tool_input, lang="zh") -> str:
-
-    lg = card_lang(lang)
-    inp = tool_input if isinstance(tool_input, dict) else {}
-    code = inp.get("code") if isinstance(inp.get("code"), str) else None      # cua-repl's `js` takes {code}
-    rest = {k: v for k, v in inp.items() if k != "code"} if code is not None else inp
-    body = (code or "") + (("\n" if code else "") + json.dumps(rest, ensure_ascii=False, indent=1) if rest else "")
-    if not body.strip():
-        body = "（重置操控脚本的运行环境）" if lg == "zh" else "(reset the control script's runtime)"
-    return CU_SCRIPT_HEAD[lg] + "\n" + body
 
 
 def approval_summary(tool, tool_input, verdict, lang="zh", *, workdir=None):
@@ -563,38 +527,6 @@ def _rcpt_turn(host, tid) -> None:
         rc.done_turn(tid)
 
 
-def _peer_floor(host, tool, tool_input, v, requirement, opaque, host_card, asks, bound, ttl, lv, dispatch=False) -> bool:   # #455 ADR: True = card
-    from . import peer_origin, policy_registry
-    if host_card or asks or bound or ttl is not None:
-        return True
-    if dispatch:                            # the CEO-dispatch whitelist shape, judged before (ADR-#455)
-        return False
-    if (v.danger or opaque or requirement != "allow"
-            or tool in approval_level.HARNESS_KEEPS or tool in approval_level.HOST_CARDS or tool in policy_registry.HOST_TOOLS):
-        return True
-    try:
-        return bool(confirm_tier.harness_keeps(tool, tool_input, env=getattr(host.agent, "approval_env", None))
-                    or approval_level.harness_floor(tool, tool_input, v)
-                    or approval_level.redline(tool, tool_input, v, host.danger_extra, (host.agent_cfg or {}).get("dir")))
-    except Exception:  # noqa: BLE001 — cannot tell → the card
-        return True
-
-
-SAME_MACHINE_CARD = frozenset({"send", "spend", "price", "delete", "credentials"})
-
-
-def _same_machine_card(host, tool, tool_input, v, requirement, dispatch, env, known_recipients) -> bool:
-    """hotfix #455: the five dangerous kinds (pay, delete, send out, change credentials, change prices) in a same-computer
-    turn always ask the owner on the phone — whatever the approval level frees in the owner's own turn. True = the card."""
-    if set(getattr(v, "cats", None) or ()) & SAME_MACHINE_CARD:
-        return True
-    try:
-        tier, _ = approval_policy.decide(tool, tool_input, v, requirement=requirement, dispatch=dispatch,
-                                          workdir=(host.agent_cfg or {}).get("dir"), env=env, classify=host._classify,
-                                          budget=budget_mod.state(host.st), known_recipients=known_recipients, chain=True)
-    except Exception:  # noqa: BLE001 — cannot tell → the card
-        return True
-    return tier is not None and tier != approval_policy.NONE
 
 
 AUTONOMOUS_CHOICE = ("全放行：按主人已有目标自主选择合理默认并继续，不等待主人回复；真正需要 UV 的动作走原权限通道。 / "
@@ -744,6 +676,8 @@ class Host:
         self.boot_preferences = self.preferences   # P320: what serve started with — restart:serve keys compare against it
         self.reload_pending: set = set()           # P320: reload-tier keys changed since the last reload
         self.ask_ttl = min(ASK_TTL, preferences.get(self.preferences, "approval.timeout", ASK_TTL))
+        from . import ark
+        self.model_moved = ark.migrate(st)          # a plan model Ark retired → its replacement; told once the agent is up
         self.agent_cfg = st.agent_config()
         self.perm_token: str | None = None          # one-time: issued per agent start, spent by the first claim (L2)
         self.perm_w: asyncio.StreamWriter | None = None   # the claimed connection of the agent's permission tool
@@ -5846,34 +5780,6 @@ class Host:
                 else approval_level.nobody_text(card_lang(self.lang))}
 
     # ------------------------------------------------------------ P539 (#300): 「这台遥控器上 Computer Use 免问」 (preauth.py)
-    def _preauth_use(self, g: dict, base: dict, tool: str, tool_input: dict, summary: str, v) -> dict:
-
-        rid = base["rid"]
-        approvals.record(self.st, **base, decision="allow", reason="preauth", device=g["device"],
-                         grant=g.get("rid") or "preauth", auto="preauth")
-        self.st.log("preauth_use", id=rid, action=g["action"], device=g["device"], tool=tool,
-                    via=(g.get("bind") or {}).get("kind"), **({"plugin": g["bind"]["id"]} if (g.get("bind") or {}).get("id") else {}))
-        self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="preauth", device=g["device"])
-        from . import preauth
-        name = self._dname(g["device"])
-        line = preauth.phone_line(tool, tool_input, self.lang)   # L2: no typed text on the phones, only its length
-        self.activity("auto", id=rid, tool=tool, summary=line, by=name, cats=v.cats, task=self.task_label)
-        self.emit("auto", id=rid, tool=tool, grant=None)
-        return {"behavior": "allow", "updatedInput": tool_input}
-
-    async def _preauth_add(self, a: Ask, action: str, did: str, sk: bytes, picks: list, bind: dict | None = None) -> None:
-
-        from . import preauth
-        if self.stopped() or not await asyncio.to_thread(preauth.add, self.st, action, did, sk, a.rid, bind):
-            return
-        approvals.record(self.st, rid=secrets.token_hex(16), agent=self.agent.kind if self.agent else "?", tool="preauth",
-                         input_sha256=approvals.input_digest({"action": action}), shown_sha256=a.digest, decision="allow",
-                         reason="preauth_add", device=did, sign_pub=sk, grant=a.rid, auto="preauth",
-                         scope_sha256=approvals.allow_add_line(picks))
-        self.st.log("preauth_add", id=a.rid, action=action, device=did, via=(bind or preauth.MCP_OPS)["kind"],
-                    **({"plugin": bind["id"]} if bind and bind.get("id") else {}))
-        self.activity("preauth_add", id=a.rid, action=action, by=self._dname(did))
-        await self._preauth_push()
 
     async def _preauth_push(self, s=None) -> None:
 
@@ -6159,66 +6065,6 @@ class Host:
             front=_front, background=("avatar", str(avatar)[:40]) if avatar is not None else background,
             order_owner=_order_owner is True)
 
-    async def _restart_request(self, tool, original, pinned, verdict, base, summary, gone, lv, *, full):
-        """#510: paired tap or signed full; execute only the fixed host action, never the original shell."""
-        from subprocess import SubprocessError
-        rid = base["rid"]
-        reason, did, sk, sig = "level_harness", None, None, None
-        decision = "allow" if full and lv in ("harness", "full") and self._approvers() else "deny"
-        if decision != "allow":
-            if not self._approvers():
-                approvals.record(self.st, **base, decision="deny", reason="no_device")
-                return {"behavior": "deny", "message": "没有能批准的已配对手机 / No paired approver"}
-            a = Ask(rid, tool, summary, base["shown_sha256"], original, base["input_sha256"],
-                    time.monotonic() + self.ask_ttl, asyncio.get_running_loop().create_future(),
-                    cats=verdict.cats, why=verdict.why, why_en=verdict.why_en, require_passkey=False,
-                    reason=action_policy.reason(summary))
-            a.prow = "service_restart"
-            self._bind_native_ask(a, 'restart')
-            self.asks[rid] = a
-            self.st.log("ask", id=rid, tool=tool, agent=base["agent"], kind="danger", tier="hold")
-            self.emit("ask", id=rid, tool=tool, summary=approval_review.safe_text(summary, 24000))
-            self._post(lambda fn: self._send_ready(fn), lambda session: self._ask_msg(a, session))
-            self.status_changed()
-            self.push_notify("ask")
-            self._interrupt("cards", face=False)
-            try:
-                done, _ = await asyncio.wait({a.fut} | ({gone} if gone else set()), timeout=self.ask_ttl,
-                                             return_when=asyncio.FIRST_COMPLETED)
-                if a.fut in done:
-                    decision, did, sk, sig = a.fut.result()
-                    reason = "device" if did else "serve_stop"
-                else:
-                    decision, reason = "deny", "agent_gone" if gone in done else "timeout"
-            finally:
-                self.asks.pop(rid, None)
-            self.status_changed()
-        if decision == "allow":
-            current = await asyncio.to_thread(restart_guard.prove, tool, original)
-            if current != pinned or self.stopped() or self.stopping.is_set() or (gone is not None and gone.done()) or (did and (not self._native_ask_live(a, pending=False) or self.st.sign_key(did) != sk)):
-                decision, reason = "deny", "restart_proof_changed"
-            else:
-                try:
-                    await asyncio.to_thread(restart_guard.schedule, tool, original, self.st)
-                except RuntimeError as exc:
-                    decision, reason = "deny", ("restart_schedule_unknown_do_not_retry" if
-                        str(exc) == "restart_schedule_unknown_do_not_retry" else "restart_schedule_failed")
-                except (OSError, ValueError, SubprocessError):
-                    decision, reason = "deny", "restart_schedule_failed"
-        approvals.record(self.st, **base, decision=decision, reason=reason, device=did, sign_pub=sk, sig=sig,
-                         **({"grant": approval_level.level_grant(self.st)} if reason == "level_harness" else {}))
-        self.st.log("ask_done", id=rid, tool=tool, decision=decision, reason=reason, device=did)
-        self.emit("ask_done", id=rid, result=decision, reason=reason, device=did)
-        self._post(self._send_ready, lambda session: {"t": "ask_done", "id": rid, "result": decision, "reason": reason})
-        if decision == "allow":
-            line = pick(self.lang, "已安排重启 Agent J，连接会短暂断开。", "Agent J restart scheduled; this remote will briefly disconnect.")
-            return {"behavior": "deny", "message": line + pick(self.lang,
-                    "主机已处理此请求，不要执行或重试原命令。", " The host handled this request; do not run or retry the original command."),
-                    "host_handled": "service_restart"}
-        if reason == "restart_schedule_unknown_do_not_retry":
-            return {"behavior": "deny", "message": pick(self.lang, "重启安排结果不确定，请勿重复执行。", "Restart scheduling is uncertain; do not retry."), "reason": reason}
-        return {"behavior": "deny", "message": pick(self.lang, "重启未执行：", "Restart was not scheduled: ") + reason}
-
     def _interrupt(self, what: str, face: bool = False, chain=None) -> None:
         """E4 (ADR-0269-w3-policy): one card / question shown to the owner, counted per task — counts only."""
         try:
@@ -6301,44 +6147,7 @@ class Host:
         else:
             self.local_notice(text)
 
-    def _open_grant(self, a: Ask, did: str) -> None:
-        if a.scope is None:
-            return
-        while len(self.grants) >= MAX_GRANTS:
-            self.end_grant(next(iter(self.grants)), "limit")
-        g = Grant(a.rid, a.tool, a.scope, a.scope_text or "", did, BATCH_MAX, time.monotonic() + BATCH_SECS)
-        self.grants[g.rid] = g
-        self.st.log("grant", id=g.rid, tool=g.tool, device=did)
-        self.activity("grant", id=g.rid, tool=g.tool, scope=g.text, by=self._dname(did))
-        self.emit("grant", id=g.rid, scope=g.text)
-        self._post(self._send_ready, lambda s: self._grant_msg(g))
-
     # ------------------------------------------------------------ P573 (#389): one signature per task and action class
-    def _task_grant_key(self, tool: str, v, *, delegated: bool, same_owner: bool, avatar, ttl, own_pk: bool,
-                        lv: str) -> tuple | None:
-        if lv == "safe" or ttl is not None or own_pk or avatar is not None or (delegated and not same_owner):
-            return None
-        if self.task_label is not None or self.cur_turn is None:
-            return None
-        from . import policy_registry
-        if tool in approval_level.HARNESS_KEEPS or tool in goal_mod.SOFT_EXEMPT or (
-                policy_registry.HOST_TOOLS.get(tool) in ("device.pair", "payment")):
-            return None
-        if provenance.untrusted_turn(self.agent) and not same_owner:
-            return None
-        cls = self._task_class(tool, v)
-        return (self._task_id(), self.agent.kind if self.agent else "?", (self.agent_cfg or {}).get("dir"),
-                tuple([cls[0], tuple(cls[1]), tuple(cls[2])]))
-
-    @staticmethod
-    def _task_uv(tool, inp, verdict, env=None):
-        from . import policy_registry
-        try:
-            req = policy_registry.main_requirement(tool, inp, env=env) if env else policy_registry.main_requirement(tool, inp)
-            keep = confirm_tier.harness_keeps(tool, inp, env=env) or approval_level.harness_floor(tool, inp, verdict)
-            return req == "uv" or keep in confirm_tier.HARNESS_KINDS + approval_level.FLOOR_FACE
-        except Exception:  # noqa: BLE001 — an unknown floor cannot lower a signed plan's required tier
-            return True
 
     def _approval_live_authority(self):
         """Host-owned live task identity, independent of request/socket ContextVars."""
@@ -6361,10 +6170,6 @@ class Host:
         from . import policy_registry
         return [policy_registry.tool_action(tool) or str(tool)[:64], sorted(v.cats),
                 sorted(set(getattr(v, "rules", None) or []))]
-
-    @staticmethod
-    def _task_action(tool, isha, key):
-        return {"tool": tool, "input_sha256": isha, "class": [key[3][0], list(key[3][1]), list(key[3][2])]}
 
     # Signed concrete plans never widen tool/input/class; roots, turn and expiration remain live checks.
     def _task_grant_use(self, key, tool, isha, face, inp=None):
@@ -6393,48 +6198,6 @@ class Host:
         rec["used"].add(step)
         rec["left"] -= 1
         return rec
-
-    async def _task_operation_reserve(self, rec, tool, isha):
-        from .bounded_plan import OperationOnce
-        ledger = self.__dict__.get("_approval_operation_once")
-        if ledger is None:
-            ledger = self._approval_operation_once = OperationOnce(self.st.root / "approval-operation-once.sqlite3")
-        source = approval_review.snapshot(self) or {}
-        task = self._task_id()
-        operation = approval_review.digest({'channel':self.channel, 'session':source.get('session'),
-                                          'root':source.get('root_message_id'), 'tool':tool, 'input':isha})
-        try:
-            reserved = await asyncio.to_thread(ledger.reserve, operation, rec["rid"])
-        except (ValueError, OSError):
-            return False
-        return bool(reserved and not self.stopped() and time.monotonic() <= rec["until"]
-                    and self.st.sign_key(rec["device"]) == rec["sk"] and self._task_id() == task
-                    and approval_review.snapshot(self) == source)
-
-    async def _task_grant_open(self, a, did, sk):
-        if a.tg_key is None or not a.task_scope or not did or not sk:
-            return
-        tg = self.__dict__.setdefault("task_grants", {})
-        scope = json.loads(a.task_scope)
-        if scope["target"] is not None:
-            return
-        used = set() if getattr(a, "tg_plan_only", False) else {(a.tool, a.input_sha)}
-        for action in scope["actions"]:
-            cls = action["class"]
-            key = a.tg_key[:3] + ((cls[0], tuple(cls[1]), tuple(cls[2])),)
-            if len(tg) >= MAX_TASK_GRANTS and key not in tg:
-                tg.pop(next(iter(tg)))
-            listed = {(x["tool"], x["input_sha256"]) for x in scope["actions"] if x["class"] == cls}
-            tg[key] = {"rid": a.rid, "device": did, "sk": sk, "face": bool(a.require_passkey and a.uv_ok),
-                       "listed": listed, "used": used, "scope": a.task_scope, "left": max(0, len(listed) - len(listed & used)),
-                       "until": min(a.deadline, time.monotonic() + max(0, scope["expires"] - time.time()))}
-        for x in list(self.asks.values()):
-            if x is a or x.fut.done() or x.parked or x.tg_key is None:
-                continue
-            rec = self._task_grant_use(x.tg_key, x.tool, x.input_sha, x.require_passkey, x.tool_input)
-            if rec is not None and await self._task_operation_reserve(rec, x.tool, x.input_sha) and not x.fut.done():
-                x.tg_by, x.tg_dev, x.task_scope = a.rid, did, a.task_scope
-                x.fut.set_result(("allow", None, None, None))
 
     async def _answer_refused(self, s: Session, a: Ask, reason: str) -> None:
         self.st.log("answer_refused", id=a.rid, device=s.device, reason=reason)
@@ -7592,6 +7355,15 @@ class Host:
                 self.model_set_done(item, "stopped")
             else:
                 self.hist_update(item.turn, end="stopped")
+
+    def tell_model_moved(self) -> None:
+        """What ark.migrate changed (or found) when serve started; kept for the next start until it went out here."""
+        lines, self.model_moved = getattr(self, "model_moved", ()), []
+        for line in lines:
+            self.agent_notice(line)
+        if lines:
+            from . import ark
+            ark.told(self.st)
 
     def set_model(self, model: str | None) -> bool:
 
@@ -9702,6 +9474,7 @@ class Host:
                                 reason=",".join(r["skipped"]) or None)
             self.agent = agents.make(self, self.agent_cfg)
             self.agent.start()
+            self.tell_model_moved()
             from . import upgrade_messages
             upgrade_messages.kick(self)
             self.status_changed()

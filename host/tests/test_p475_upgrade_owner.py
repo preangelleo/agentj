@@ -361,7 +361,12 @@ class MetadataReport(_Mac):
                         "service_reason",
                         # 0334 (hotfix brief HOTFIX-upgrade-0.30.25, 贾维斯): closed dependency-failure words, a bounded
                         # retry count and only agentj's own dependency names (upgrade_diag.DEPENDENCY_NAMES; test_0334)
-                        "dependency_package", "dependency_phase", "dependency_source", "uv_failure_class", "uv_resolve_detail", "retry_count"})
+                        "dependency_package", "dependency_phase", "dependency_source", "uv_failure_class", "uv_resolve_detail", "retry_count",
+                        # 0370 (support ticket on a preparation timeout; scope relayed by the CEO 2026-11-22; security
+                        # review PASS 2026-11-22, ~/.local/state/vibe-remote/audit-fix-1122/SECURITY-review-upgrade-timeout.md):
+                        # which preparation step, whole seconds and file counts — one closed word and bounded ASCII
+                        # digits (test_0370 ClosedFields)
+                        "prepare_step", "step_seconds", "prepare_seconds", "wheels_fetched", "wheels_needed"})
 
     def test_ruling_locks_the_exact_field_whitelist(self):
         self.assertEqual(frozenset(upgrade_diag.META_FIELDS), self.LOCKED)

@@ -247,6 +247,14 @@ class SettingsUVLifecycle(unittest.IsolatedAsyncioTestCase):
         uv.mint(host,sess,self.verified(sess))
         host.bots=N(detach=Mock());host.reporter=N(trigger=Mock());host.pairing=None
         sess.timer=None;sess.card=None
+        # Fixture follows f7745c60f0 (per-device approval-card delivery queue): unbinding a remote also drops the cards
+        # still queued for it, so the stand-in state needs the real state root the queue file lives under.
+        import json, pathlib, tempfile
+        from agentj import approval_delivery
+        tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup);host.st.root=tmp.name
+        queue=pathlib.Path(tmp.name)/approval_delivery._FILENAME
+        queue.write_text(json.dumps([{'id':'card-1','device':'phone'},{'id':'card-2','device':'other-remote'}]))
         self.assertIs(serve.Host._detach(host,1),sess)
+        self.assertEqual(json.loads(queue.read_text()),[{'id':'card-2','device':'other-remote'}])
         host.sessions[1]=sess  # reconnecting even with the same object cannot revive a removed grant
         self.assertFalse(uv.reuse(host,sess,'login'))
