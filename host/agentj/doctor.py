@@ -852,7 +852,8 @@ def _fence_row(status: str, summary: str, hint: str = "") -> dict:
 def check_fence(st: State, *, required: bool = False) -> dict:
     c = st.agent_config() if st.exists() else None
     if c and not c.get("fence", True) and not required:
-        return _fence_row(WARN, "你选了不隔离运行 / you chose --unfenced", "agentj agent " + c["kind"] + " --dir <folder>  (fenced again)")
+        return _fence_row(WARN, "你选了不隔离运行 / you chose --unfenced", ("agentj agent " + c["kind"] + " --dir <folder>" if (st.config().get("agent") or {}).get("fence") is False
+                           else "agentj config set agent.isolation true") + "  (fenced again)")
     mac = sys.platform == "darwin"
     if not mac and not sys.platform.startswith("linux"):
         return _fence_row(FAIL if required or c else WARN, "不支持 / unsupported", "Linux / macOS / WSL2")

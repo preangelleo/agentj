@@ -398,8 +398,7 @@ class Issuance(Base):                                      # F13
         self.assertTrue(kw["always_ask"] and kw["require_passkey"] and kw["grant_info"])
         for k in ("allow_offer", "task_actions", "_bounded_context", "risk_scope"):
             self.assertNotIn(k, kw)
-        from agentj import preauth, uv_list
-        self.assertIsNone(preauth.offer(AG.TOOL))                         # Computer-Use preauth can never cover it
+        from agentj import uv_list
         self.assertTrue(uv_list.required(AG.TOOL, {"summary": "x"}))
         n = len(self.cards)
         req = {"kind": "hook", "ref": "orders", "to": [ALLY, OTHER]}

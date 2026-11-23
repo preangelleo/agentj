@@ -1356,15 +1356,6 @@ def new_id() -> str:
 POLL_S = float(os.environ.get("AGENTJ_TEST_GOAL_POLL") or 5)
 
 
-def auto_secs() -> float:
-    """Tests may only shorten the countdown."""
-    try:
-        v = float(os.environ.get("AGENTJ_TEST_GOAL_AUTO") or AUTO_S)
-    except ValueError:
-        v = AUTO_S
-    return max(0.05, min(AUTO_S, v))
-
-
 def refusal_result(ans: dict, gid: str, stopped: bool = False) -> dict:
     """Keep policy failures distinct from a signed owner's decision."""
     raw = ans.get("reason") or "unverified_grant"

@@ -120,9 +120,10 @@ class Table(unittest.TestCase):
         self.assertIn("pk=False", src[i:i + 200])
 
     def test_terminal_line_face_only_for_three_classes(self):
-        self.assertFalse(terminal.line_needs_face("rm -rf ~/Documents/x"))
-        self.assertFalse(terminal.line_needs_face("echo x > ~/.claude/settings.json"))
-        self.assertFalse(terminal.line_needs_face("stripe charges create --amount 1"))
+        # P573's own assertions again (0.30.0 had switched the judgement off; restored 0.30.72, DECISION-0300 item 4)
+        self.assertTrue(terminal.line_needs_face("rm -rf ~/Documents/x"))
+        self.assertTrue(terminal.line_needs_face("echo x > ~/.claude/settings.json"))
+        self.assertTrue(terminal.line_needs_face("stripe charges create --amount 1"))
         self.assertFalse(terminal.line_needs_face("git push origin main"))
         self.assertFalse(terminal.line_needs_face("sudo systemctl restart nginx"))
 

@@ -50,8 +50,21 @@ def _readonly(line: str) -> bool:
 
 
 def line_needs_face(line: str) -> bool:
-    """Terminal text is never classified for UV; listed Agent J executors own it."""
-    return False
+    """P573 (#386 ⑤; 0.29.x body restored 0.30.72, DECISION-0300 item 4): a confirmed terminal line needs Face ID only
+    for the three classes — money, the owner's data deleted for good, a key going out (or unbinding a remote) — or a rewrite of an
+    Agent's hook / approval files; any other confirmed line is the owner's signed tap. Cannot tell → Face ID."""
+    from . import confirm_tier, policy_registry
+    try:
+        return bool(confirm_tier.harness_keeps("Bash", {"command": line})) or \
+            policy_registry._legacy_main_requirement("Bash", {"command": line}) == "uv"
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _pk_key(pk):
+    """(id, alg, spki, rp) of a stored passkey record, or None when any part is missing (never equal to anything)."""
+    k = tuple((pk or {}).get(f) for f in ("id", "alg", "spki", "rp"))
+    return k if type(k[1]) is int and all(isinstance(v, str) and v for v in (k[0], k[2], k[3])) else None
 
 
 class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
@@ -163,11 +176,10 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
 
     def _owner_binding(self, device):
         rec = self.st.devices().get(device) or {}
-        pk = self.st.passkey_of_device(device) or {}
-        if not rec.get("pub") or not rec.get("sk") or not pk.get("id") or not pk.get("pub"):
+        key, epoch = _pk_key(self.st.passkey_of_device(device)), getattr(self.h.hist, "epoch", None)
+        if not rec.get("pub") or not rec.get("sk") or key is None or epoch is None:
             return None
-        return (rec["pub"], rec["sk"], rec.get("paired_at"), pk["id"], pk["pub"],
-                getattr(self.h.hist, "epoch", None))
+        return (rec["pub"], rec["sk"], rec.get("paired_at") or 0, *key, epoch)
 
     def _same_owner(self, x, device):
         return bool(x.device == device and x.owner_binding and x.owner_binding == self._owner_binding(device))
@@ -500,7 +512,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
                 if (not self.h._paired_live(s) or not current["on"] or not entry
                         or entry.get("until", self.wall() + 1) <= self.wall()
                         or (store.is_web(self.st, s.device) and not entry["web"])
-                        or (self.st.passkey_of_device(s.device) or {}).get("pub") != pk["pub"]):
+                        or _pk_key(pk) is None or _pk_key(self.st.passkey_of_device(s.device)) != _pk_key(pk)):
                     why = "device_not_allowed"
             if not why:
                 try:

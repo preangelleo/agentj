@@ -597,8 +597,9 @@ class FullAccessPathsUntouched(_Settled):
                 self.assertEqual('deny', results[1][1]['hookSpecificOutput']['permissionDecision'])
 
     async def test_guard_raised_fingerprint_calls_skip_the_seam(self):
-        # review r3-4: the guards send fingerprint-list calls to Host.ask themselves (NativeContext). In a marked
-        # heartbeat turn main answers them card-free (fingerprint_headless); the seam must not raise them.
+        # review r3-4: the guards send fingerprint-list calls to Host.ask themselves (NativeContext); the seam must not
+        # raise them. 0.30.72 (chairman 11-23, DECISION-0300 item 1): a heartbeat turn answers them with the ordinary
+        # fingerprint card, marked or not — never card-free (fingerprint_headless).
         from agentj.shared_risk import NativePathGuard, RiskGuard
         commands = ('git push --force origin main', 'stripe charges create --amount 100 --currency usd; ssh synthetic-host true')
         for kind in ('native', 'risk'):
@@ -632,8 +633,8 @@ class FullAccessPathsUntouched(_Settled):
                     a.cur_send = None; self.h.agent_turn_end()
                 with self.subTest(guard=kind, command=command):
                     self.assertEqual(results[0], results[1])       # marked == unmarked == main
-                    self.assertFalse(results[1][0])                # no card
-                    self.assertIn(results[1][1], ({}, True))       # runs, as on main
+                    self.assertTrue(results[1][0])                 # the fingerprint card, from list_approval itself
+                    self.assertNotIn(results[1][1], ({}, True))    # nobody answered it: not run
 
 
 class CodexSeam(_Settled):

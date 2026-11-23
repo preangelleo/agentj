@@ -180,7 +180,6 @@ P33_ONLY = ("web_preview_attest", "say", "say_cancel", "say_sync", "cmd_cancel",
             "keys_get", "keys_op", "keys_set",   # P352: 「模型和 API Key」 key manager (keys.py)
             "notify_get", "notify_set", "hook_list", "hook_set", "news_get", "news_set",
             "news_email", "news_verify",          # P365: the settings list of automations allowed to post (notify.py)
-            "preauth_list", "preauth_revoke",     # P539: 「Computer Use 免问」 list / revoke (narrowing only)
             "automation_grants", "automation_grant_revoke")   # 0304 A3: 「自动化外发授权」 list / revoke (narrowing only)
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
@@ -2533,6 +2532,14 @@ class Host:
         if cmd == "config_apply":
             await self._ctl_config_from_agent(w, req.get("raw"))
             return False
+        if cmd == "agent_scope":              # 0372: an Agent's `agentj agent … --unfenced` / `--allow-docker`
+            key, val = ctl_auth.SCOPE.get(ctl_auth.scope_word(req), (None, None))
+            if key is None or preferences.get(self.preferences, key) is val:
+                await self._ctl_send(w, {"ok": False, "code": "in_effect" if key else "bad_request"})
+            else:                             # the same card and replay as `agentj config set <key>`; nothing written yet
+                text = await asyncio.to_thread(lambda: preferences.read()[0])
+                await self._ctl_config_from_agent(w, preferences.edit(text, key, val))
+            return False
         if cmd == "mail_cfg":                 # P170: widening mail changes from an Agent → the owner's card
             await self._ctl_mail(w, req, claimed=False)
             return False
@@ -3014,6 +3021,11 @@ class Host:
                     await self._ctl_send(w, self.restart_harness("cli"))
                 elif cmd == "config_apply":
                     await self._ctl_send(w, await self.apply_preferences(req.get("raw")))
+                elif cmd == "agent_scope":          # 0372: claimed = the owner's terminal; the CLI writes its own entry
+                    word = ctl_auth.scope_word(req)
+                    if word:
+                        self.st.log("agent_scope", by="claim", change=word)
+                    await self._ctl_send(w, {"ok": True, "owner": True} if word else {"ok": False, "code": "bad_request"})
                 elif cmd in ("voice_keys", "voice_list", "voice_test"):     # P208 `agentj voice`
                     await self._ctl_send(w, await self.voice_ctl(req))
                 elif cmd == "mail_cfg":             # P170: the owner's terminal (claimed) — applies at once
@@ -3241,8 +3253,6 @@ class Host:
             self.elevate.grants.drop_device(did, "unpaired")   # #116: its 10-minute admin approval ends with it
         if getattr(self, "term_desk", None) is not None:
             self.term_desk.device_gone(did)                    # P408: its terminal entry and cached password go too
-        with contextlib.suppress(Exception):
-            await self._preauth_revoke("unpaired", device=did)   # P539: its 「Computer Use 免问」 grant ends with it
         if removed and not self.st.devices():
             from .core import enabled as core_enabled
             if core_enabled():
@@ -5779,42 +5789,6 @@ class Host:
         return {"behavior": "deny", "message": approval_level.waiting_text(card_lang(self.lang)) if why == "unanswered"
                 else approval_level.nobody_text(card_lang(self.lang))}
 
-    # ------------------------------------------------------------ P539 (#300): 「这台遥控器上 Computer Use 免问」 (preauth.py)
-
-    async def _preauth_push(self, s=None) -> None:
-
-        from . import preauth
-        items = await asyncio.to_thread(preauth.items, self.st, self._dname)
-        msg = {"t": "preauth", "items": items}
-        if s is not None:
-            await self.send_app(s, msg)
-        else:
-            self._post(self._send_p33, lambda x: msg)
-
-    async def _preauth_revoke(self, why: str, *, action: str | None = None, device: str | None = None,
-                              by: str | None = None) -> int:
-        from . import preauth
-        n = await asyncio.to_thread(preauth.revoke, self.st, action=action, device=device)
-        if n:
-            self.st.log("preauth_revoke", action=action, device=by or device, reason=why, count=n)
-            self.activity("preauth_revoke", action=action, why=why, by=self._dname(by) if by else None)
-            await self._preauth_push()
-        return n
-
-    async def on_preauth(self, s: Session, t: str, obj: dict) -> None:
-
-        from . import preauth
-        if t == "preauth_revoke":
-            action, dev = obj.get("action"), obj.get("device")
-            if action is not None and action not in preauth.GRANTABLE:
-                return
-            if dev is not None and not (isinstance(dev, str) and 1 <= len(dev) <= 64):
-                return
-            if not await self._preauth_revoke("phone", action=action, device=dev, by=s.device):
-                await self._preauth_push(s)
-            return
-        await self._preauth_push(s)
-
     def _goal_grant_tap(self, a: Ask, did: str | None, picks: list) -> None:
 
         if not a.goal_add or not did or picks != [a.goal_add["text"]] or self.stopped():
@@ -6353,7 +6327,7 @@ class Host:
                 return
             if a.settings_session is s:
                 a.settings_uv_at = time.monotonic()
-            a.uv_ok = True                 # P539: this allow passed the passkey (a preauth pick needs it)
+            a.uv_ok = True                 # P539: this allow passed the passkey
             if getattr(a, "list_model", False) or a.task_scope or getattr(a, "bounded_plan", None) is not None or a.tool in (owner_grant.TOOL, "agentj mail workflow-grant"):  # P574 + narrow workflow mail: the assertion itself travels to the other same-owner hosts
                 a.fa = {k: obj["fa"][k] for k in ("id", "cd", "ad", "sig")}
         from . import auth_settings_uv
@@ -6631,8 +6605,6 @@ class Host:
         self.activity("estop", by=name)
         self.__dict__.pop("_parked_ok", None)          # P336: an allow given to a parked card dies with 「全部停下」
         self.__dict__.pop("_uv_list_resumes", None)    # Exact question continuations also die with emergency stop.
-        with contextlib.suppress(Exception):           # P539: every 「免问」 pre-authorization ends too (re-grant after resume)
-            await self._preauth_revoke("estop")
         for a in list(self.asks.values()):
             if not a.fut.done():
                 a.fut.set_result(("deny", None, None, None))
@@ -8130,9 +8102,7 @@ class Host:
             if not self._paired_live(s):
                 return
             return await self.forms.on_phone(s, obj)
-        if t in ("preauth_list", "preauth_revoke"):   # P539
-            return await self.on_preauth(s, t, obj)
-        if t in ("automation_grants", "automation_grant_revoke"):   # 0304 A3: same narrowing-only control as preauth
+        if t in ("automation_grants", "automation_grant_revoke"):   # 0304 A3: a narrowing-only control
             from . import automation_grant
             return await automation_grant.on_phone(self, s, t, obj)
         if t == "ark_plan_get":

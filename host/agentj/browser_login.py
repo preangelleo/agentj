@@ -499,9 +499,6 @@ class LoginCards:
             await self.host.send_app(s, m)
 
     # ---------------------------------------------------------- watching the login tab
-    def _signed_in(self, c: dict) -> bool:
-        return self._tab(c)[0] == "in"
-
     def _tab(self, c: dict) -> tuple[str, str | None]:
         """(thread) The login tab: (bs.login_state — in / landing / out / none / offsite / error, its origin). A dead
         connection is ("gone", None). The origin is the only part of the URL ever shown (paths carry account ids)."""

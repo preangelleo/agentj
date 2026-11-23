@@ -21,61 +21,6 @@ class RestartProof(Base):
         if restart_guard.shape(tool, inp):
             return {**inp, 'command': inp['command'].replace('agentj service', '/installed/bin/agentj service')}
 
-    def test_proven_restart_signed_full_executes_with_one_audit(self):
-        self.harness()
-        self.host.agent_cfg['session_mode'] = 'shared'
-        for tool, key in (('Bash', 'command'), ('exec_command', 'cmd'), ('shell_command', 'command')):
-            for cmd in ('agentj service restart', 'systemd-run --user --on-active=45 agentj service restart'):
-                with self.subTest(tool=tool,cmd=cmd), mock.patch.object(restart_guard, 'prove', side_effect=lambda t,i: dict(i)), mock.patch.object(restart_guard, 'schedule') as schedule:
-                    ans = self.ask({key:cmd}, tool=tool)
-                self.assertEqual(ans['behavior'], 'deny')
-                self.assertEqual(ans['host_handled'], 'service_restart')
-                schedule.assert_called_once()
-                self.assertFalse(self.cards())
-                self.assertEqual(self.last()['reason'], 'level_harness')
-
-    def test_other_levels_are_buttons_not_uv_and_timeout_does_not_execute(self):
-        for lv in ('safe', 'standard'):
-            self.host.preferences['approval'] = {'level': lv}
-            with self.subTest(lv=lv), mock.patch.object(restart_guard, 'prove', side_effect=lambda t,i: dict(i)), mock.patch.object(restart_guard, 'schedule') as schedule:
-                ans = self.ask('agentj service restart')
-            self.assertEqual(ans['behavior'], 'deny')
-            schedule.assert_not_called()
-            card = self.cards()[-1]
-            self.assertNotIn('passkey_required', card)
-            self.assertIn('短暂断开连接', card['why_scope'])
-
-    def test_real_paired_tap_schedules_once_and_rechecks(self):
-        async def go(change=False, allow=True):
-            self.host.ask_ttl = 1
-            cmd = {'command':'agentj service restart'}
-            calls = [dict(cmd), None] if change else [dict(cmd), dict(cmd)]
-            with mock.patch.object(restart_guard, 'prove', side_effect=calls), mock.patch.object(restart_guard, 'schedule') as schedule:
-                task = asyncio.create_task(self.host.ask('Bash', cmd))
-                for _ in range(100):
-                    if self.host.asks: break
-                    await asyncio.sleep(.001)
-                a = next(iter(self.host.asks.values()))
-                card = self.host._ask_msg(a, self.s)
-                self.assertNotIn('passkey_required', card)
-                await self.host._answer(self.s, self.phone.answer(card, allow))
-                ans = await task
-                self.assertEqual(schedule.call_count, int(allow and not change))
-                self.assertEqual('host_handled' in ans, allow and not change)
-        asyncio.run(go())
-        asyncio.run(go(change=True))
-        asyncio.run(go(allow=False))
-
-    def test_unproven_or_dangerous_remains_uv(self):
-        self.harness()
-        for cmd in ('agentj service restart', 'agentj service restart; cat /tmp/.env',
-                    'systemd-run --user -p ExecStartPre=/tmp/code agentj service restart',
-                    'agentj service restart; printf x > ~/.claude/settings.json'):
-            with self.subTest(cmd=cmd), mock.patch.object(restart_guard, 'prove', return_value=None):
-                ans = self.ask(cmd)
-            self.assertEqual(ans['behavior'], 'deny')
-            self.assertTrue(self.cards()[-1]['passkey_required'])
-
     def test_exact_shape_rejects_overrides_companions_and_unbounded_timer(self):
         for cmd in ('agentj service restart', 'systemd-run --user --on-active=45 agentj service restart',
                     'systemd-run --user --collect --unit=agentj-restart-test --on-active 45s agentj service restart'):
@@ -88,34 +33,6 @@ class RestartProof(Base):
             self.assertIsNone(restart_guard.shape('Bash', {'command':cmd}), cmd)
 
 
-    def test_finished_permission_or_scheduler_failure_never_retries(self):
-        import subprocess
-        self.harness()
-        async def go():
-            gone = asyncio.get_running_loop().create_future()
-            gone.set_result(True)
-            with mock.patch.object(restart_guard, 'prove', side_effect=lambda t,i: dict(i)), mock.patch.object(restart_guard, 'schedule') as schedule:
-                ans = await self.host.ask('Bash', {'command':'agentj service restart'}, gone=gone)
-                schedule.assert_not_called()
-                self.assertNotIn('host_handled', ans)
-        asyncio.run(go())
-        for exc in (subprocess.TimeoutExpired('read-only manager', 3), RuntimeError('restart_schedule_unknown_do_not_retry')):
-            with mock.patch.object(restart_guard, 'prove', side_effect=lambda t,i: dict(i)), mock.patch.object(restart_guard, 'schedule', side_effect=exc):
-                ans = self.ask('agentj service restart')
-                self.assertEqual(ans['behavior'], 'deny')
-                self.assertIn('restart_schedule_', self.last()['reason'])
-                if isinstance(exc, RuntimeError):
-                    self.assertIn('请勿重复执行', ans['message'])
-
-    def test_test_process_and_isolated_state_can_never_schedule_real_service(self):
-        import os
-        with mock.patch('subprocess.run') as run, mock.patch.object(restart_guard, 'prove', return_value={}):
-            with self.assertRaisesRegex(RuntimeError, 'restart_disabled_in_tests'):
-                restart_guard.schedule('Bash', {'command':'agentj service restart'}, self.st)
-            with mock.patch.dict(os.environ, {'AGENTJ_TEST':'0'}):
-                with self.assertRaisesRegex(RuntimeError, 'restart_not_live_state'):
-                    restart_guard.schedule('Bash', {'command':'agentj service restart'}, self.st)
-            run.assert_not_called()
 
 class ProofFiles(unittest.TestCase):
     def setUp(self):

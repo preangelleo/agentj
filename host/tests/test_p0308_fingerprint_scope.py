@@ -1,8 +1,9 @@
 """0.30.8 ADR-0308-fingerprint-scope (chairman 2026-11-11).
 
-A. The fingerprint card is for owner turns only: CHARGE_COMMANDS and the closed
+A. The fingerprint card is for owner turns and the host heartbeat (the main thread; heartbeat restored 0.30.72,
+   chairman 11-23 DECISION-0300 item 1): CHARGE_COMMANDS and the closed
    IRREVERSIBLE list. B. 董事长 11-11 定: all host-held scheduled tasks / background jobs, regardless of origin,
-   and heartbeat run with NO runtime fingerprint card or refusal (they follow their harness; logged as
+   run with NO runtime fingerprint card or refusal (they follow their harness; logged as
    fingerprint_headless); host_read / external / unknown turns keep the
    ordinary off-list refusal of any write (nothing fingerprint-specific). C. Main-thread / dispatched native rm / rmdir / unlink → deny with
    the `agentj delete` hint (no card); a host-launched user automation (scheduled task) keeps real deletion.
@@ -119,7 +120,7 @@ class Irreversible(FakeHome):
         self.assertEqual([k for k in uv_list.IRREVERSIBLE if k.startswith("rm")], ["rm -r <home|/|/home>"])
         # R-0047 item 3 (chairman 11-18): an owner-made busy dispatch's money / irreversible call takes this card too.
         self.assertEqual(uv_list.FINGERPRINT_SOURCES,
-                         frozenset({"owner_remote", "owner_terminal", "owner_channel", "busy_dispatch"}))
+                         frozenset({"owner_remote", "owner_terminal", "owner_channel", "busy_dispatch", "host_heartbeat"}))
 
 
 class NativeDelete(unittest.TestCase):
@@ -199,7 +200,7 @@ class OffList(FakeHome, p552.Fixture):
     def test_main_thread_gets_the_card(self):
         p552.passkey_on(self.st, self.s.pub)
         for c in ("stripe charges create --amount 500", "git push --force origin main", "dd if=x of=/dev/sdb"):
-            for src in (OWNER, TERMINAL):
+            for src in (OWNER, TERMINAL, HEARTBEAT):                  # heartbeat: 0.30.72, DECISION-0300 item 1
                 res, cards = self.asked(src, c)
                 self.assertEqual(len(cards), 1, (src["type"], c))
                 self.assertTrue(cards[0].get("passkey_required"), c)
@@ -213,7 +214,7 @@ class OffList(FakeHome, p552.Fixture):
             res, cards = self.asked(OWNER, c)
             self.assertEqual(len(cards), 1, c)
             self.assertTrue(cards[0].get("passkey_required"), c)
-            for src in (TASK, ORDER, SETTINGS, TASK_UNOWNED, ORDER_UNOWNED, HEARTBEAT):
+            for src in (TASK, ORDER, SETTINGS, TASK_UNOWNED, ORDER_UNOWNED):
                 res, cards = self.asked(src, c)
                 self.assertEqual((res["behavior"], cards), ("allow", []), (src["type"], c))
                 self.assertEqual(res.get("updatedInput"), {"command": c})
@@ -232,7 +233,7 @@ class OffList(FakeHome, p552.Fixture):
 
     def test_existing_cli_tasks_manual_dispatch_resume_and_workflows_never_get_fingerprint_cards(self):
         # Existing jobs have no owner_started / owner_dispatch fact. The host must not retroactively review them.
-        for src in (TASK_UNOWNED, ORDER_UNOWNED, HEARTBEAT):
+        for src in (TASK_UNOWNED, ORDER_UNOWNED):
             for command in ("stripe charges create --amount 500", "git push --force origin main",
                             "mkfs.ext4 /dev/sdb1"):
                 with self.subTest(source=src['type'], command=command):

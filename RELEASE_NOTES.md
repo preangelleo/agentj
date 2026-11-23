@@ -1,5 +1,5 @@
-# Agent J v0.30.71
+# Agent J v0.30.72
 
-Upgrade retries a timed-out dependency step; failed old-host upgrades show one repair line; Ark kimi-k3 moves to kimi-k3.1-pro; removed bots report once.
+Turning Agent isolation off or Docker on needs phone confirmation; heartbeat spending and risky phone-terminal lines need fingerprint again; terminal open fix.
 
-升级时依赖准备超时会自动重试；旧版本升级失败时给出一行修复命令；方舟 kimi-k3 停用后自动改用 kimi-k3.1-pro；已删除的机器人不再反复上报。
+关掉 Agent 隔离或打开 Docker 访问需在已配对手机上确认；心跳回合的扣款和不可逆操作、手机终端的花钱、密钥、删除命令重新要求指纹；修复手机网页终端登录后打不开。

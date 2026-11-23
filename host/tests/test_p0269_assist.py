@@ -688,20 +688,29 @@ class Cards(_KeyEnv, unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(o["t"] == "ask" for _, o in self.sent))
         self.h.agent.cur_send = self.send
 
-    async def test_preauth_mian_wen_is_never_consulted_on_an_assist_turn(self):
-        from agentj import preauth
+    async def test_computer_use_on_an_assist_turn_is_denied_without_a_card(self):
+        """The property itself, whatever the refusal is labelled (the labelled twin below is red and tracked: the assist
+        source reaches provenance as a plain dict and types as `unknown`, ADR-0372-dropped-confirmations)."""
+        for tool, inp in (("mcp__computer-use__click", {"x": 1, "y": 2}), ("mcp__computer-use__type_text", {"text": "x"}),
+                          ("Bash", {"command": "agentj service restart"})):
+            res, receipt = await self.offlist(tool, inp)
+            self.assertEqual(res["behavior"], "deny", tool)
+            self.assertIn(res["reason"], ("off_list_write_external", "off_list_write_unknown"), tool)
+            self.assertFalse(receipt["approval_card_shown"], tool)
+            self.assertFalse(any(not a.fut.done() for a in self.h.asks.values()), tool)
+        self.assertFalse(any(o["t"] == "ask" for _, o in self.sent))
+
+    async def test_computer_use_on_an_assist_turn_is_refused(self):
+        """0372 (decision 0300 item 2 option A): the 「免问」 grant store is gone; what stays is the source rule."""
         cu = "mcp__computer-use__click"
-        with mock.patch.object(preauth, "live", return_value=None) as live:
-            # 0.30.7 ADR-0307-offlist: off-list on an assist turn → refused at once, no card
-            res, _ = await self.offlist(cu, {"x": 1, "y": 2})
-            self.assertEqual((res["behavior"], res["reason"]), ("deny", "off_list_write_external"))
-            self.assertFalse(live.called, "免问 looked up for an official-assist turn")
-            self.h.agent.cur_send = None                         # the owner's own turn: the grant IS consulted
-            t, a = await self.open_card(cu, {"x": 1, "y": 2})
-            if a is not None:
-                await self.h._answer(self.s, __import__("_p541_device").Phone.answer(self.ph, self.h._ask_msg(a,self.s), False))
-            await t
-            live.assert_not_called()  # native requests never consume old preauth, regardless of source label
+        # 0.30.7 ADR-0307-offlist: off-list on an assist turn → refused at once, no card
+        res, _ = await self.offlist(cu, {"x": 1, "y": 2})
+        self.assertEqual((res["behavior"], res["reason"]), ("deny", "off_list_write_external"))
+        self.h.agent.cur_send = None                             # the owner's own turn
+        t, a = await self.open_card(cu, {"x": 1, "y": 2})
+        if a is not None:
+            await self.h._answer(self.s, __import__("_p541_device").Phone.answer(self.ph, self.h._ask_msg(a,self.s), False))
+        await t
         self.h.agent.cur_send = self.send
 
     async def test_no_same_owner_auto_path(self):

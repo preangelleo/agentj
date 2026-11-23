@@ -192,6 +192,9 @@ def entries():
     return ([{'command': command, 'reason': reason} for command, reason in COMMANDS.items()]
         + [{'command':'agentj tasks create --contract FILE','reason':'Only an explicitly declared large bank/crypto transfer; informational limit, no runtime enforcement.'}]
         + [{'command':'agentj config set approval.*','reason':'Change approval policy, expiry or preauthorization.'}]
+        + [{'command':'agentj agent <harness> '+flag,'reason':reason} for flag,reason in (   # 0372: display rows; the gate is cli._scope_gate
+            ('--unfenced','Turn Agent isolation off (as agent.isolation false; a never-paired host is exempt). / 关掉 Agent 隔离（同 agent.isolation false；从未配对的主机除外）。'),
+            ('--allow-docker','Turn Docker access on (as agent.allow_docker true; a never-paired host is exempt). / 打开 Docker 访问（同 agent.allow_docker true；从未配对的主机除外）。'))]
         + [{'command':'agentj config set '+key,'reason':reason} for key,reason in CONFIG_KEYS.items()])
 
 
@@ -521,11 +524,12 @@ def fingerprint_command(tool, tool_input, *, cwd=None, env=None, host=None):
 
 
 # ADR-0308-fingerprint-scope: the fingerprint card for a fingerprint_command() hit is for the MAIN thread only — the
-# owner's own turns (approval_offlist.source types). Host heartbeat and all host-held background work run without
+# owner's own turns and the host heartbeat (approval_offlist.source types; heartbeat back in 0.30.72, DECISION-0300
+# item 1). Host-held background work runs without
 # runtime fingerprint cards or refusals, regardless of dispatch provenance; other off-list safety rules still apply.
 # R-0047 item 3 (chairman 11-18 「不免卡花钱」): a busy dispatch an owner turn made (approval_offlist type busy_dispatch,
 # trust host) takes this card too, never fingerprint_headless; a non-owner dispatch's trust keeps it refused off-list.
-FINGERPRINT_SOURCES = frozenset({'owner_remote', 'owner_terminal', 'owner_channel', 'busy_dispatch'})
+FINGERPRINT_SOURCES = frozenset({'owner_remote', 'owner_terminal', 'owner_channel', 'busy_dispatch', 'host_heartbeat'})
 
 
 def required(tool, tool_input=None, *, cwd=None, env=None):

@@ -271,47 +271,6 @@ class AgentState:
             self._warn(f"state mismatch: hook={self.status} session_json={session_status} "
                        f"(hook wins)")
 
-    def set_ask(self, public: dict | None):
-        """The ask broker's phone-facing view (bridge/bridge/ask.py, ADR-023)."""
-        with self._lock:
-            self.ask = public
-            self._bump()
-
-    def question_from_ask(self, event: dict):
-        """A blocking ask hook registered. The signal tap's datagram normally built
-        the card already; if it did not (tap not configured), build it now."""
-        with self._lock:
-            if self.card is None or self.card.get("tool_name") != "AskUserQuestion":
-                self._on_permission_request(event)
-
-    def set_approval(self, public: dict | None):
-        """The approval broker's phone-facing view (bridge/bridge/approve.py, ADR-045)."""
-        with self._lock:
-            self.approval = public
-            self._bump()
-
-    def permission_from_approval(self, event: dict):
-        """A blocking approve hook registered. The signal tap's datagram normally
-        built the card already; if it did not (tap not configured), build it now."""
-        with self._lock:
-            if self.card is None or self.card.get("tool_name") != event.get("tool_name"):
-                self._on_permission_request(event)
-
-    def turn_interrupted(self, tool_name: str):
-        """The terminal answered a permission dialog with "No" / Esc (the blocking
-        approve hook was killed before any decision, ADR-045). Claude Code ends
-        the turn without a Stop, so nothing else would bring the phone back to
-        idle — the session json cannot either (hook wins, validate_against)."""
-        with self._lock:
-            if self.card and self.card.get("tool_name") == tool_name:
-                self.card = None
-                if self.status == WAITING:
-                    self._cancel_idle()
-                    self._deferred_stop = None
-                    self._cancel_stale()
-                    self._main_active = False
-                    self._set(IDLE)
-
     def clear_card(self, tool_name: str):
         """The question ended without a PostToolUse (the hook's timeout deny):
         drop its card; the turn goes on, so the agent is working again."""
@@ -331,13 +290,6 @@ class AgentState:
             self._deferred_stop = None
             self._cancel_stale()
             self._schedule_idle()
-
-    def note_assistant_message(self, text: str | None):
-        if not text:
-            return
-        with self._lock:
-            self.last_message = redact.scrub_message(text)
-            self._bump()
 
     # ------------------------------------------------------------- sub-agents
 

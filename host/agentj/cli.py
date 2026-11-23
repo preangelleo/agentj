@@ -1983,6 +1983,39 @@ def _agent_line(st: State, lang: str | None = None) -> str:
             + fz + extra)
 
 
+def _scope_gate(st: State, a) -> None:
+    """0372 (chairman 11-23): `agentj agent <kind> --unfenced` / `--allow-docker` write the same choice as `agentj config
+    set agent.isolation false` / `agent.allow_docker true`, so a widening (fence on → off, docker off → on, read from the
+    stored entry — never from this command line) passes the same gate: serve decides who is calling (ctl_auth claim: peer
+    pid + process ancestry). The owner's terminal goes on; an Agent's call becomes the config card and writes nothing
+    here. With pairing history and no answer from serve nothing is written. A host that was never paired has no phone to
+    ask (containers, Olares before pairing) and goes on. Narrowing never comes here."""
+    raw = st.config().get("agent")
+    raw = raw if isinstance(raw, dict) else {}
+    widen = (["isolation"] if a.unfenced and raw.get("fence") is not False else
+             ["docker"] if a.allow_docker and not a.unfenced and raw.get("docker") is not True else [])
+    if not widen:
+        return
+    if not st.paired_ever():      # F2: the files themselves, never State.devices(); doubt = paired
+        return
+    try:
+        res = names.ctl_call(st, {"cmd": "agent_scope", "widen": widen}, 10) or {}
+    except names.ServeBusy:
+        res = {}
+    if res.get("owner") is True:
+        return
+    key = "agent.isolation false" if widen == ["isolation"] else "agent.allow_docker true"
+    if res.get("code") == "owner_approval":
+        sys.exit(f"✗ 没有改动：这一项要主人在手机上批准，卡片已发；批准后按 {key} 生效（改回：agentj config set）。"
+                 " / nothing changed: the owner's approval card was sent; it takes effect as that setting once allowed")
+    if res.get("code") == "in_effect":
+        sys.exit(f"✗ 没有改动：{key} 已在设置里生效，去掉这个参数再运行 / nothing changed: already in effect by the "
+                 "setting; run again without the flag")
+    sys.exit("✗ 没有改动：关掉隔离 / 打开 docker 要由运行中的 Agent J 确认是主人在Agent J 主机终端操作（agentj service start "
+             "后重试；刚升级就 agentj service restart）。 / nothing changed: turning the fence off or docker on needs the "
+             "running Agent J to confirm the owner's terminal (agentj service start, then run it again)")
+
+
 def cmd_agent(a) -> None:
     if a.mode == "detect":   # works before `agentj init`: only looks at PATH and whether login files exist
         from . import harness
@@ -2007,6 +2040,7 @@ def cmd_agent(a) -> None:
             sys.exit(f"✗ {AGENT_LABEL[a.mode]} 只支持独立会话（--independent）/ {AGENT_LABEL[a.mode]} runs independent sessions only")
         if a.mode in ("kimi", "qwen", "dsh"):
             a.session_mode = "independent"
+        _scope_gate(st, a)   # 0372: fence on→off / docker off→on: the owner's terminal, or the owner's card
         if a.mode == "dsh" and getattr(a, "base_url", None):    # P329: an OpenAI-compatible route (Olares Router …)
             from . import agent_dsh
             if not a.model:
@@ -2031,7 +2065,7 @@ def cmd_agent(a) -> None:
                       f"  {agent_dsh.key_card(a.base_url)}", flush=True)
         if a.mode == "opencode" and a.model and not re.fullmatch(r"[A-Za-z0-9._-]+/[^\s/][^\s]*", a.model):
             sys.exit("✗ OpenCode 的模型写成「服务商/模型」，例如 zhipuai/glm-5.3 或 deepseek/deepseek-flash（`opencode models` 列出可用的）")
-        if a.unfenced:   # F14: the owner's (or, at the owner's request, the Agent's) switch — no passphrase
+        if a.unfenced:   # F14: the owner's switch — no passphrase
             print("⚠ 不隔离运行：Agent 按底层 harness 自己的权限运行，能看到 Agent J 的状态目录。随时可以去掉 --unfenced 改回来。", flush=True)
         elif a.allow_docker:
             print("⚠ 允许 Agent 用 docker / podman：容器能挂载这台Agent J 主机上的任何文件（包括 Agent J 的状态目录）。", flush=True)
@@ -3907,9 +3941,11 @@ def main(argv=None) -> None:
                          "· payg = 按量付费（…/api/v3） / agent = the Agent Plan (default) · coding = the Coding Plan address (coding agents"
                          " only) · payg = pay-as-you-go /api/v3")
     ag.add_argument("--unfenced", action="store_true",
-                    help="不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态")
+                    help="不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态。"
+                         "从隔离改成不隔离：主人在Agent J 主机终端运行直接生效；Agent 运行不会改动，改由主人在手机上确认")
     ag.add_argument("--allow-docker", action="store_true",
-                    help="隔离里也让 Agent 用 docker / podman（默认不开；主人要求时可直接打开）。默认容器引擎的 socket 对 Agent 隐藏")
+                    help="隔离里也让 Agent 用 docker、podman（默认不开）。默认容器引擎的 socket 对 Agent 隐藏。"
+                         "从不开改成打开：主人在Agent J 主机终端运行直接生效；Agent 运行不会改动，改由主人在手机上确认")
     smx = ag.add_mutually_exclusive_group()
     smx.add_argument("--shared", dest="session_mode", action="store_const", const="shared",
                      help="共享会话（高级）：手机接你Agent J 主机上正开着的会话 / shared session (advanced): attach to your own open session")

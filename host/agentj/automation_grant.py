@@ -950,9 +950,8 @@ def owner_turn(host, peer, facts=None) -> bool:
 
 def context_refusal(host) -> str | None:
     """F13: a grant is never issued inside a context that approves on the owner's behalf — a live goal grant, a live
-    batch approval, a bounded-plan continuation / approval-explanation turn. (Computer-Use preauthorization cannot
-    reach this card: preauth.GRANTABLE is the closed {'computer.control'} and the card is always_ask + passkey on the
-    list path.) Event loop (reads host dicts; goal.json is one small read). → reason or None."""
+    batch approval, a bounded-plan continuation / approval-explanation turn. (The card is always_ask + passkey on the list
+    path; the Computer-Use 「免问」 pre-authorization that could not reach it either is gone since 0372.) Event loop (reads host dicts; goal.json is one small read). → reason or None."""
     send = getattr(getattr(host, 'agent', None), 'cur_send', None)
     if getattr(send, 'bounded_plan_resume', None) is not None or getattr(send, 'approval_review', None):
         return 'bounded_plan'

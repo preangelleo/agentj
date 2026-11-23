@@ -364,8 +364,8 @@ usage: agentj agent [-h] [--probe] [--dry-run] [--wait WAIT] [--result]
 | `--model` | `null` | false | — | `模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3` |
 | `--preset` | `null` | false | `ark` | `arkcli、缺 key 给密钥卡命令、写方舟服务商、实测一次才切 / ark = OpenCode on Volcano Ark: detect, key card if missing, write the provider, one real call before switching` |
 | `--plan` | `null` | false | `agent`, `coding`, `payg` | `agent = the Agent Plan (default) · coding = the Coding Plan address (coding agents only) · payg = pay-as-you-go /api/v3` |
-| `--unfenced` | `false` | false | — | `不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态` |
-| `--allow-docker` | `false` | false | — | `podman（默认不开；主人要求时可直接打开）。默认容器引擎的 socket 对 Agent 隐藏` |
+| `--unfenced` | `false` | false | — | `不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态。从隔离改成不隔离：主人在Agent J 主机终端运行直接生效；Agent 运行不会改动，改由主人在手机上确认` |
+| `--allow-docker` | `false` | false | — | `隔离里也让 Agent 用 docker、podman（默认不开）。默认容器引擎的 socket 对 Agent 隐藏。从不开改成打开：主人在Agent J 主机终端运行直接生效；Agent 运行不会改动，改由主人在手机上确认` |
 | `--shared` | `null` | false | — | `shared session (advanced): attach to your own open session` |
 | `--independent` | `null` | false | — | `independent session (the default): Agent J's own, fenced` |
 
@@ -8782,8 +8782,8 @@ usage: agentj agent [-h] [--probe] [--dry-run] [--wait WAIT] [--result]
 | `--model` | `null` | false | — | `模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3` |
 | `--preset` | `null` | false | `ark` | `switch opencode：ark =「OpenCode · 火山方舟」——探测 OpenCode` |
 | `--plan` | `null` | false | `agent`, `coding`, `payg` | `--preset ark：agent = Agent Plan 套餐（默认，…/api/plan/v3）· coding = Coding Plan 套餐（…/api/coding/v3，只给编程 Agent 用）· payg = 按量付费（…/api/v3）` |
-| `--unfenced` | `false` | false | — | `不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态` |
-| `--allow-docker` | `false` | false | — | `隔离里也让 Agent 用 docker` |
+| `--unfenced` | `false` | false | — | `不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态。从隔离改成不隔离：主人在Agent J 主机终端运行直接生效；Agent 运行不会改动，改由主人在手机上确认` |
+| `--allow-docker` | `false` | false | — | `隔离里也让 Agent 用 docker、podman（默认不开）。默认容器引擎的 socket 对 Agent 隐藏。从不开改成打开：主人在Agent J 主机终端运行直接生效；Agent 运行不会改动，改由主人在手机上确认` |
 | `--shared` | `null` | false | — | `共享会话（高级）：手机接你Agent J 主机上正开着的会话` |
 | `--independent` | `null` | false | — | `独立会话（默认）：Agent J 自己开一个、在隔离里运行` |
 

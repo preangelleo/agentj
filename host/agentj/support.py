@@ -274,11 +274,6 @@ def render(view: dict, *, mine_too: bool = False) -> str:
     return "\n".join(out)
 
 
-def _cursor(view: dict, default: int) -> int:
-    c = view.get("cursor")
-    return c if isinstance(c, int) and not isinstance(c, bool) and c >= 0 else default
-
-
 def _has_answer(view: dict) -> bool:
     return any(isinstance(m, dict) and m.get("author") in ("support", "system") for m in view.get("messages", []) or [])
 

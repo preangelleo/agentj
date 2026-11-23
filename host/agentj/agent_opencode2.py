@@ -746,13 +746,6 @@ class OpenCodeV2Agent(OpenCodeAgent):
         return Result("\n".join(lines))
 
 
-def describe_error(err) -> str:
-    """For logs / tests: the class of a v2 error, never its text."""
-    name, data = v2_error(err)
-    return provider_error_reason(name, data)
-
-
-
 # ------------------------------------------------ P395 (#144): the switch gate's probe on 2.x
 # Before: every OpenCode probe ran the bots' v1 one-shot `opencode run --pure --agent agentj-bot`; 2.x refuses `--pure`
 # ("Unrecognized flag") and never sees an agent defined in OPENCODE_CONFIG_CONTENT, so no 2.x owner could switch to OpenCode.

@@ -27,13 +27,23 @@ SENSITIVE = frozenset({"files_prepare", "wechat_terminal", "resume", "config_app
                        "notify",     # P365: the owner's own automations only — never an Agent (notify.py)
                        "passphrase_consent", "passphrase_replace",    # #118: owner's terminal + a paired remote (pass_reset)
                        "terminal_cfg",    # P408: widening the web terminal (enable / allow) — narrowing passes without a claim
-                       "pk_peer_host"})   # P555: a remote's Face ID set-up approved at the Agent J host's terminal (+ password)
+                       "pk_peer_host",
+                       "agent_scope"})    # 0372: `agentj agent … --unfenced` / `--allow-docker` widening (cli._scope_gate)   # P555: a remote's Face ID set-up approved at the Agent J host's terminal (+ password)
 CLAIM_TTL = 30
 AGENT_ENV = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED",
              "OPENCODE", "AGENTJ_PERM_TOKEN", "AGENTJ_PERM_SOCK", "AGENTJ_FENCED")
 SECURITY_PREFIXES = ("agent.allow_docker", "agent.approvals", "agent.high_risk_warnings", "agent.isolation",
                      "agent.session_mode", "agent.working_root", "agent.private_instructions_file", "approval.", "human.",
                      "jev.", "security.", "telegram.", "channels.", "updates.", "proxy.", "notify.")   # P365: who may post to the phone
+
+
+SCOPE = {"isolation": ("agent.isolation", False), "docker": ("agent.allow_docker", True)}   # 0372 `agent_scope` words
+
+
+def scope_word(req) -> str | None:
+    w = req.get("widen")
+    w = w[0] if isinstance(w, list) and len(w) == 1 else None
+    return w if isinstance(w, str) and w in SCOPE else None
 
 
 def ancestors(pid: int) -> list:

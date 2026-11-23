@@ -720,7 +720,8 @@ class State:
                 "region": a.get("region") if a.get("region") in ("mainland-cn", "global") else None}
 
     def set_agent_config(self, kind: str | None, directory: str | None = None, model: str | None = None,
-                         fence: bool = True, docker: bool = False, effort: str | None = None, record_root: bool = True, opencode_binary=None) -> None:
+                         fence: bool = True, docker: bool = False, effort: str | None = None, record_root: bool = True, opencode_binary=None,
+                         narrow: bool = False) -> None:
         entry = None
         if kind is not None:
             if kind not in self.AGENT_KINDS:
@@ -757,8 +758,30 @@ class State:
             if entry is None:
                 cfg.pop("agent", None)
             else:
-                cfg["agent"] = entry
+                cfg["agent"] = self.narrowed(cfg.get("agent"), entry) if narrow else entry
             _write_private(self.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
+
+    @staticmethod
+    def narrowed(cur, entry: dict) -> dict:
+        """0372: `entry` never wider than the stored `cur` (read under config_lock) — isolation stays on and docker stays
+        off unless they are off / on there already. A harness switch, its rollback and `--undo` write through this."""
+        cur, entry = cur if isinstance(cur, dict) else {}, dict(entry)
+        if cur.get("fence") is not False:
+            entry["fence"] = True
+        if cur.get("docker") is not True:
+            entry.pop("docker", None)
+        return entry
+
+    def paired_ever(self) -> bool:
+        """0372: pairing history, read from the files themselves (devices() is {} whenever the revocation journal is
+        unreadable). devices.json missing or `{}`, no removal ledger → False; anything unreadable or unexpected → True."""
+        try:
+            seen = json.loads(self.devices_path.read_text())
+        except FileNotFoundError:
+            seen = {}
+        except (OSError, ValueError):
+            return True
+        return seen != {} or bool(self.removed_ledger()) or self.removed_path.exists()
 
     def set_agent_region(self, region: str | None) -> None:
         """P305: `agentj agent kimi --region mainland-cn|global` (Kimi's two sites; a kimi.com key works on both endpoints)."""

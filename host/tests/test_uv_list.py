@@ -148,11 +148,13 @@ class ListApproval(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await RiskGuard(adapter).check('Bash',{'command':'mv /synthetic /synthetic.old'}))
             # ADR-0308 C: a native rm is denied with the trashbin hint (no card, no classifier)
             self.assertFalse(await RiskGuard(adapter).check('Bash',{'command':'rm -rf /synthetic'}))
-    def test_terminal_does_not_classify_line_for_uv(self):
+    def test_terminal_line_face_id_is_p573_three_classes_only(self):
+        # 0.30.72 (chairman 11-23, DECISION-0300 item 4): the phone terminal's own confirmation asks Face ID for P573's
+        # three classes again; the shared pre-tool guard above still never calls the effect classifier.
         from agentj.terminal import line_needs_face
-        with mock.patch('agentj.confirm_tier.harness_keeps',side_effect=AssertionError('old classifier')):
-            self.assertFalse(line_needs_face('rm -rf /synthetic'))
-            self.assertFalse(line_needs_face('agentj fn run synthetic'))
+        self.assertTrue(line_needs_face('rm -rf /synthetic'))
+        self.assertFalse(line_needs_face('agentj fn run synthetic'))
+        self.assertFalse(line_needs_face('git push origin main'))
     def test_codex_policy_preserves_native_config(self):
         from agentj.agent_codex import CodexAgent
         agent=SimpleNamespace(human={'approval_policy':'never','sandbox_mode':'read-only','approvals_reviewer':'user'},

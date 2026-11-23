@@ -85,19 +85,6 @@ def _entry_point(environ, home):
     return os.path.join(os.path.expanduser(d), "agentj")
 
 
-def _uv_cache(environ, home):
-    if environ.get("UV_CACHE_DIR"):
-        return os.path.expanduser(environ["UV_CACHE_DIR"])
-    base = environ.get("XDG_CACHE_HOME") if os.path.isabs(environ.get("XDG_CACHE_HOME") or "") else os.path.join(home, ".cache")
-    return os.path.join(base, "uv")
-
-
-def _upgrade_cache(environ, home):
-    """#0307: where `agentj update` keeps the verified wheel (update.upgrade_cache_root) — a root-owned one refuses with EACCES."""
-    xdg = environ.get("XDG_CACHE_HOME") or ""
-    return os.path.join(os.path.expanduser(xdg) if xdg else os.path.join(home, ".cache"), "agentj-upgrade")
-
-
 def _user(uid):
     try:
         import pwd

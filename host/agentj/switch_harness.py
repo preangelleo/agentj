@@ -1023,11 +1023,12 @@ def _raw_agent(st) -> dict | None:
 
 
 def _restore(st, raw: dict) -> None:
-    """The previous `agent` entry back exactly as it was (model, effort, isolation, docker of that harness)."""
+    """The previous `agent` entry back (model, effort of that harness). 0372 F1: never wider than the entry stored now —
+    an `--undo` or a rollback keeps isolation on and docker off unless they are already off / on."""
     from .state import _write_private
     with st.config_lock():
         cfg = st.config()
-        cfg["agent"] = raw
+        cfg["agent"] = st.narrowed(cfg.get("agent"), raw)
         _write_private(st.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
 
 
@@ -1056,9 +1057,10 @@ def _lang_of(st) -> str:
 
 
 def _apply(st, target: str, directory: str, model, effort, raw: dict, opencode_binary=None) -> None:
-    """The new agent entry: same folder / isolation / docker; that harness's own model and effort."""
+    """The new agent entry: same folder / isolation / docker; that harness's own model and effort. 0372: `raw` was read
+    when the job started — `narrow` re-reads the entry at the write, so a narrowing made meanwhile is kept."""
     st.set_agent_config(target, directory, model, fence=raw.get("fence") is not False,
-                        docker=raw.get("docker") is True, effort=effort, record_root=False,
+                        docker=raw.get("docker") is True, effort=effort, record_root=False, narrow=True,
                         **({"opencode_binary":opencode_binary} if opencode_binary is not None else {}))
 
 

@@ -5,8 +5,8 @@ owner can pre-authorize 「这台遥控器上 Computer Use 免问」 — narrow,
   `pk_state` to the remote and `pk` on every devs row; `fa_s` beside every `fa`.
 - ask_done `why`; the Agent's timeout line says what to do next.
 - computer.control: the computer-use servers' every operation + exact pointer / keyboard names; unknown stays denied.
-- preauth: offered only for grantable actions, granted only by a signed + passkey-verified allow with the exact pick,
-  used without a card (logged), ended by revoke / unpair / a new approval key / estop / the safe level; mail picks unchanged.
+- 「免问」 pre-authorization (preauth.py) is gone (0372, decision 0300 item 2 option A): the grant could no longer be
+  created since 0.30.0; its list / revoke handlers, the module and their tests were removed. Mail picks unchanged.
 - Codex: an MCP tool-call approval elicitation (empty form) becomes a normal card; real forms are still declined."""
 import _hermetic  # noqa: F401,I001
 import asyncio
@@ -22,7 +22,7 @@ from unittest import mock
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
-from agentj import approvals, passkey, policy_registry as P, preauth, serve, wire  # noqa: E402
+from agentj import approvals, passkey, policy_registry as P, serve, wire  # noqa: E402
 from _testtmp import TEST_TMP  # noqa: E402
 import test_p57_passkey as P57  # noqa: E402
 
@@ -81,34 +81,6 @@ class Units(unittest.TestCase):
         self.assertEqual(P.decision("channel", "computer.control"), "handoff")
         self.assertEqual(P.decision("friend", "computer.control"), "handoff")
         self.assertEqual(P.decision("support", "computer.control"), "deny")
-
-    def test_grantable_is_closed(self):
-        self.assertEqual(preauth.GRANTABLE, frozenset({"computer.control"}))
-        for red in ("secrets.read", "secrets.write", "payment", "admin", "device.pair", "device.revoke", "file.delete",
-                    "mail.send", "publish", "calendar.write"):
-            self.assertIsNone(preauth.offer(red))
-        self.assertEqual(preauth.picked(["preauth:secrets.read", "a@x", "preauth:computer.control"]), ["computer.control"])
-        self.assertEqual(preauth.strip(["a@x", "preauth:computer.control"]), ["a@x"])
-        self.assertTrue(preauth.covers("computer.control", CU))
-        self.assertFalse(preauth.covers("computer.control", "mcp__other__left_click"), "look-alike op on another server")
-        # M1: a known op AND an allowlisted server; unknown ops on those servers and the bare canonical name never covered
-        for t in ("mcp__computer-use__type_text", "mcp__computer_use__screenshot", "mcp__unified-computer-use__scroll",
-                  "mcp__computer-use__get_app_state", "mcp__computer-use__left_click_drag"):
-            self.assertTrue(preauth.covers("computer.control", t), t)
-        for t in ("computer.control", "mcp__computer-use__run_script", "mcp__computer-use__js", "mcp__computer-use__exec",
-                  "mcp__computer-use__", "mcp__x__type_text", "mcp__computer-use__click__x", "mcp__Computer-Use__click"):
-            self.assertFalse(preauth.covers("computer.control", t), t)
-        self.assertEqual(P.tool_action("mcp__computer-use__run_script"), "computer.control", "still a passkey card")
-
-    def test_phone_line_hides_typed_text(self):
-        z = preauth.phone_line("mcp__computer-use__type_text", {"text": "my secret pin 1234"}, "zh")
-        self.assertNotIn("secret", z); self.assertNotIn("1234", z)
-        self.assertIn("输入了 18 个字", z)
-        self.assertIn("typed 3 characters", preauth.phone_line("mcp__computer-use__press_key", {"key": "Tab"}, "en"))
-        c = preauth.phone_line("mcp__computer-use__left_click", {"coordinate": [120, 340]}, "en")
-        self.assertIn("left_click coordinate=(120,340)", c)
-        c = preauth.phone_line("mcp__computer-use__click", {"x": 5, "y": 6.5, "note": "hello"}, "en")
-        self.assertIn("x=5 y=6.5", c); self.assertNotIn("hello", c)
 
     ELI = {"threadId": "t", "turnId": "u", "serverName": "computer-use", "mode": "form",
            "message": 'Allow the computer-use MCP server to run tool "click"?',
@@ -220,25 +192,14 @@ class Units(unittest.TestCase):
         # by name alone the plugin's tools are unknown (deny), as before
         self.assertEqual(P.main_requirement(JS, {"code": "x"}), "hold")   # P573: a name is no proof of the three classes
 
-    def test_grant_kinds_never_cross(self):
-        self.assertEqual(preauth.binding("computer.control", JS, BIND), BIND)
-        self.assertEqual(preauth.binding("computer.control", CU), {"kind": "mcp_ops"})
-        self.assertIsNone(preauth.binding("computer.control", JS), "no binding: the plugin's script is not an MCP op")
-        self.assertIsNone(preauth.binding("computer.control", CU, BIND), "a plugin binding never covers an MCP-name op")
-        self.assertIsNone(preauth.binding("computer.control", "mcp__cua_repl__turn_ended", BIND))
-        self.assertIsNone(preauth.binding("secrets.read", JS, BIND))
-
     def test_claude_code_computer_use_ops(self):
-        """Claude Code's own server is `computer-use` (`mcp__computer-use__*`, from the installed claude binary): its
-        pointer / keyboard / screen / app ops are grantable; access changes, clipboard reads and batches keep a card."""
+        """Claude Code's own server is `computer-use` (`mcp__computer-use__*`, from the installed claude binary): every
+        operation of it maps to the one registered action."""
         for op in ("left_click", "double_click", "type", "key", "scroll", "screenshot", "zoom", "open_application",
-                   "app_click", "app_type", "list_apps", "write_clipboard", "release_full_control"):
-            self.assertTrue(preauth.covers("computer.control", "mcp__computer-use__" + op), op)
-        for op in ("request_access", "request_full_control", "request_teach_access", "teach_step", "teach_batch",
+                   "app_click", "app_type", "list_apps", "write_clipboard", "release_full_control",
+                   "request_access", "request_full_control", "request_teach_access", "teach_step", "teach_batch",
                    "read_clipboard", "computer_batch", "app_batch"):
-            t = "mcp__computer-use__" + op
-            self.assertFalse(preauth.covers("computer.control", t), op)
-            self.assertEqual(P.tool_action(t), "computer.control", "still a passkey card: " + op)
+            self.assertEqual(P.tool_action("mcp__computer-use__" + op), "computer.control", op)
 
     def plugin_started(self, cx, iid="p1", tool="js", plugin=PLUGIN, server="cua_repl", args=None):
         cx._on_note("item/started", {"threadId": "t", "turnId": "u", "item": {
@@ -415,7 +376,7 @@ class Flow(unittest.TestCase):
                 if obj is not None:
                     await host._app(s, obj)
             res = await t
-            await asyncio.sleep(0.05)              # the post queue (ask_done, auto, preauth) drains
+            await asyncio.sleep(0.05)              # the post queue (ask_done, auto) drains
             return res
         return go()
 
@@ -427,118 +388,6 @@ class Flow(unittest.TestCase):
         self.assertEqual(res["behavior"], "allow")
         self.assertEqual(len(self.cards()), 0)
         self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "off_list")
-
-    def test_offer_grant_use_and_revoke(self):
-        host, ph, s = self.host_phone()
-
-        async def go():
-            # 1. the card offers the pick; a signed + passkey-verified allow with exactly that pick grants it
-            res = await self.run_card(host, s, CU, {"x": 1},
-                                      lambda ask: self.signed(ph, host, ask, ["preauth:computer.control"]))
-            ask = self.cards()[-1]
-            self.assertEqual(ask["allow_offer"], ["preauth:computer.control"])
-            self.assertTrue(ask["passkey_required"])
-            self.assertEqual(res["behavior"], "allow")
-            self.assertNotIn("allow_add", res, "the preauth pick is not handed to the caller")
-            self.assertEqual([g["action"] for g in preauth.load(self.st)], ["computer.control"])
-            self.assertEqual(self.cards("preauth")[-1]["items"][0]["device"], ph.did)
-            # 2. the next Computer Use step runs without a card, logged
-            n = len(self.cards())
-            res = await host.ask("mcp__computer-use__type_text", {"text": "I agree"}, batch=False)
-            await asyncio.sleep(0.05)
-            self.assertEqual(res["behavior"], "allow")
-            self.assertEqual(len(self.cards()), n, "no card")
-            self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "preauth")
-            self.assertIn('"ev": "preauth_use"', self.st.log_path.read_text())
-            self.assertEqual(self.cards("auto")[-1]["by"], "preauth")
-            # L2: the phone line names the operation and how many characters — never the typed text
-            self.assertNotIn("I agree", json.dumps(self.cards("auto")[-1], ensure_ascii=False))
-            self.assertIn("7", self.cards("auto")[-1]["summary"])
-            # M1: an unknown operation on the allowlisted server is computer.control (a card) but never covered
-            n = len(self.cards())
-            res = await self.run_card(host, s, "mcp__computer-use__run_script", {})
-            self.assertEqual(res["behavior"], "deny")
-            self.assertEqual(len(self.cards()), n + 1, "a card, not a silent allow")
-            # a look-alike op name on another server is not covered: a card again (times out)
-            res = await self.run_card(host, s, "mcp__other__left_click", {})
-            self.assertEqual(res["behavior"], "deny")
-            # 3. the safe level: a card again
-            with mock.patch.object(serve.approval_level, "level", return_value="safe"):
-                res = await self.run_card(host, s, CU, {"x": 2})
-                self.assertEqual(res["behavior"], "deny")
-                self.assertNotIn("allow_offer", self.cards()[-1], "no offer under the safe level")
-            # 4. revoke from any paired remote (no passkey needed)
-            await host._app(s, {"t": "preauth_revoke", "action": "computer.control"})
-            await asyncio.sleep(0.05)
-            self.assertEqual(preauth.load(self.st), [])
-            self.assertEqual(self.cards("preauth")[-1]["items"], [])
-            self.assertIn('"ev": "preauth_revoke"', self.st.log_path.read_text())
-            await host._app(s, {"t": "preauth_list"})
-            await asyncio.sleep(0.05)
-            self.assertEqual(self.cards("preauth")[-1], {"t": "preauth", "items": []})
-        asyncio.run(go())
-        self.assertNotIn(wire.b64u(ph.auth.id), self.st.log_path.read_text())
-
-    def grant(self, host, ph, s):
-        res = asyncio.run(self.run_card(host, s, CU, {}, lambda ask: self.signed(ph, host, ask, ["preauth:computer.control"])))
-        self.assertEqual(res["behavior"], "allow")
-        self.assertEqual(len(preauth.load(self.st)), 1)
-
-    def auto(self, host):
-        async def go():
-            n = len(self.cards())
-            res = await host.ask(CU, {}, batch=False)
-            return res["behavior"] == "allow" and len(self.cards()) == n
-        return asyncio.run(go())
-
-    def test_ends_on_unpair_new_key_and_estop(self):
-        host, ph, s = self.host_phone()
-        self.grant(host, ph, s)
-        self.assertTrue(self.auto(host))
-        # a new approval key for the same device id: dead at once
-        with self.st.devices_lock():
-            d = self.st.devices(); old = d[ph.did]["sk"]; d[ph.did]["sk"] = wire.b64u(os.urandom(32))
-            self.st.write_private(self.st.devices_path, json.dumps(d).encode())
-        self.assertFalse(self.auto(host))
-        self.assertEqual(preauth.load(self.st), [], "a dead grant is dropped")
-        with self.st.devices_lock():
-            d = self.st.devices(); d[ph.did]["sk"] = old
-            self.st.write_private(self.st.devices_path, json.dumps(d).encode())
-        # estop revokes every grant
-        self.grant(host, ph, s)
-        asyncio.run(host.do_estop("phone:" + ph.did, "手机"))
-        self.assertEqual(preauth.load(self.st), [])
-        asyncio.run(host.do_resume("phone:" + ph.did, "手机"))
-        self.assertFalse(host.stopped())
-        # unpair: _drop_device revokes; an offline `agentj revoke` (file only) is caught by the liveness check
-        self.grant(host, ph, s)
-        asyncio.run(host._drop_device(ph.did, "revoked"))
-        self.assertEqual(preauth.load(self.st), [])
-        self.assertTrue(preauth.add(self.st, "computer.control", ph.did, ph.sk.public_key().public_bytes_raw()))
-        self.st.remove_device(ph.did)
-        self.assertIsNone(preauth.live(self.st, "computer.control"))
-
-    def test_no_grant_without_exact_signed_pick_or_passkey(self):
-        host, ph, s = self.host_phone()
-        # a plain allow: no grant
-        res = asyncio.run(self.run_card(host, s, CU, {}, lambda ask: self.signed(ph, host, ask)))
-        self.assertEqual(res["behavior"], "allow")
-        self.assertEqual(preauth.load(self.st), [])
-        # the pick but signed without it → refused (the card times out)
-        res = asyncio.run(self.run_card(host, s, CU, {}, lambda ask: self.signed(
-            ph, host, ask, ["preauth:computer.control"], sign_picks=["other"])))
-        self.assertEqual(res["behavior"], "deny")
-        # a red-line pick the card never offered → refused
-        res = asyncio.run(self.run_card(host, s, CU, {}, lambda ask: self.signed(ph, host, ask, ["preauth:secrets.read"])))
-        self.assertEqual(res["behavior"], "deny")
-        # the pick without the passkey assertion → refused, ask_done why = passkey, the Agent told what next
-        res = asyncio.run(self.run_card(host, s, CU, {}, lambda ask: self.signed(
-            ph, host, ask, ["preauth:computer.control"], fa=False)))
-        self.assertEqual(res["behavior"], "deny")
-        self.assertIn("通行密钥", res["message"])
-        self.assertEqual(self.cards("ask_done")[-1]["why"], "passkey")
-        self.assertEqual(preauth.load(self.st), [])
-        self.assertFalse(preauth.add(self.st, "secrets.read", ph.did, os.urandom(32)), "never a red line")
 
     def test_ask_done_why_timeout_and_denied(self):
         host, ph, s = self.host_phone()
@@ -554,81 +403,9 @@ class Flow(unittest.TestCase):
         res = asyncio.run(self.run_card(host, s, "agentj mail send", {"summary": "发邮件给：a@x.example\n标题：s"},
                                         lambda ask: self.signed(ph, host, ask, ["a@x.example"]),
                                         allow_offer=["a@x.example"]))
-        self.assertEqual(self.cards()[-1]["allow_offer"], ["a@x.example"], "no preauth offer on a red-line card")
+        self.assertEqual(self.cards()[-1]["allow_offer"], ["a@x.example"], "nothing added to a red-line card's offer")
         self.assertEqual((res["behavior"], res["allow_add"]), ("allow", ["a@x.example"]))
-        self.assertEqual(preauth.load(self.st), [])
 
-    def test_delegated_turn_never_uses_a_grant(self):
-        host, ph, s = self.host_phone()
-        self.grant(host, ph, s)
-        with mock.patch.object(serve.provenance, "delegated_turn", return_value=True):
-            self.assertFalse(self.auto(host))
-
-    def test_codex_plugin_card_grant_bound_to_the_plugin(self):
-        host, ph, s = self.host_phone()
-        code = {"code": "await sky.click({x: 10, y: 20}); await sky.type('I agree')"}
-
-        async def go():
-            # without the binding the plugin's script is unknown: denied without a card (as before)
-            res = await self.run_card(host, s, JS, code, lambda ask: self.signed(ph, host, ask, ok=False))
-            self.assertEqual(res["behavior"], "deny")
-            self.assertEqual(len(self.cards()), 1)
-            # with it: a computer.control passkey card that shows the script whole and says what 免问 would free
-            res = await self.run_card(host, s, JS, code, lambda ask: self.signed(ph, host, ask, ["preauth:computer.control"]),
-                                      bind=BIND)
-            ask = self.cards()[-1]
-            self.assertTrue(ask["summary"].startswith("Computer Use：在这台 Agent J 主机上点击、输入并运行操控脚本\n"))
-            self.assertIn(code["code"], ask["summary"])
-            self.assertIn("包括它运行的操控脚本", ask["summary"])
-            self.assertIn("设置 → 安全 → 免问的动作", ask["summary"])
-            self.assertTrue(ask["passkey_required"])
-            self.assertEqual(ask["allow_offer"], ["preauth:computer.control"])
-            self.assertEqual(res["behavior"], "allow")
-            self.assertEqual([g["bind"] for g in preauth.load(self.st)], [BIND])
-            self.assertEqual(self.cards("preauth")[-1]["items"][0]["via"], "codex_plugin")
-            self.assertIn(PLUGIN, self.st.log_path.read_text())
-            # the next script from the same plugin: no card, logged, the phone line never shows the script
-            n = len(self.cards())
-            res = await host.ask(JS, code, batch=False, bind=BIND)
-            await asyncio.sleep(0.05)
-            self.assertEqual(res["behavior"], "allow")
-            self.assertEqual(len(self.cards()), n)
-            self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "preauth")
-            self.assertNotIn("I agree", json.dumps(self.cards("auto")[-1], ensure_ascii=False))
-            res = await host.ask("mcp__cua_repl__js_reset", {}, batch=False, bind=BIND)
-            self.assertEqual(res["behavior"], "allow")
-            # NOT covered: a Claude-style MCP op, the other bundled plugin id, the plugin's tool without its binding
-            for tool, inp, b in ((CU, {}, None), (JS, code, {**BIND, "id": "computer-use@openai-bundled"})):
-                n = len(self.cards())
-                res = await self.run_card(host, s, tool, inp, bind=b)
-                self.assertEqual(res["behavior"], "deny", tool)
-                self.assertEqual(len(self.cards()), n + 1, "a card (timed out), not a silent allow")
-            # a Claude grant (mcp_ops) does not cover the plugin either
-            await self.run_card(host, s, CU, {}, lambda ask: self.signed(ph, host, ask, ["preauth:computer.control"]))
-            self.assertNotIn("包括它运行的操控脚本", self.cards()[-1]["summary"], "the note is only on script cards")
-            self.assertEqual(sorted(g["bind"]["kind"] for g in preauth.load(self.st)), ["codex_plugin", "mcp_ops"])
-            await self.run_card(host, s, CU, {})
-            self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "preauth")
-            await host._app(s, {"t": "preauth_revoke", "action": "computer.control", "device": ph.did})
-            await asyncio.sleep(0.05)
-            self.assertEqual(preauth.load(self.st), [], "revoke drops both kinds")
-            n = len(self.cards())
-            res = await self.run_card(host, s, JS, code, bind=BIND)
-            self.assertEqual((res["behavior"], len(self.cards())), ("deny", n + 1))
-        asyncio.run(go())
-
-    def test_preauth_file_bindings_fail_closed(self):
-        ph_sk = os.urandom(32)
-        self.assertFalse(preauth.add(self.st, "computer.control", "d1", ph_sk, bind={**BIND, "id": "x@evil"}))
-        self.assertFalse(preauth.add(self.st, "computer.control", "d1", ph_sk, bind={"kind": "other"}))
-        self.assertTrue(preauth.add(self.st, "computer.control", "d1", ph_sk, bind=BIND))
-        self.assertTrue(preauth.add(self.st, "computer.control", "d1", ph_sk))
-        self.assertEqual(len(preauth.load(self.st)), 2, "one grant per remote per binding")
-        d = json.loads((self.st.root / preauth.FILE).read_text())
-        d["items"][0]["bind"] = {**BIND, "id": "unified-computer-use@evilmkt"}      # a hand-edited file
-        del d["items"][1]["bind"]                                                    # pre-binding grant → mcp_ops
-        self.st.write_private(self.st.root / preauth.FILE, json.dumps(d).encode())
-        self.assertEqual([g["bind"] for g in preauth.load(self.st)], [{"kind": "mcp_ops"}])
 
 
 if __name__ == "__main__":

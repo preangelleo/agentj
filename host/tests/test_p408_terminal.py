@@ -108,6 +108,18 @@ def tmpdir():
     return tempfile.TemporaryDirectory(prefix="p408-", dir=os.environ.get("TEST_TMP") or None)
 
 
+def registered_passkey(cred_id=None):
+    """→ (record, authenticator). The record is what the real registration ceremony stores
+    (passkey.verify_registration: id, alg, spki, rp, at, sc) — never a hand-made dict (0.30.72: the terminal read a
+    `pub` field only the old hand-made rig records had). `cred_id` pins the credential id the rigs' placeholder FA names."""
+    from test_p57_passkey import Authenticator
+    auth = Authenticator()
+    if cred_id is not None:
+        auth.id = cred_id
+    nonce = os.urandom(32)
+    return passkey.verify_registration(auth.register(nonce), nonce), auth
+
+
 def signed(ph, action, target, n, ts=None, key=None):
     ts = int(time.time() * 1000) if ts is None else ts
     msg = controls.signed_message(ph.channel, ph.did, action, n, ts, controls.object_digest(action, target))
@@ -152,8 +164,7 @@ class Rig(unittest.TestCase):
     # -------------------------------------------------------- helpers
     def passkey(self, ph=None):
         ph = ph or self.phone
-        self.st.set_passkey(ph.pub, {"id": FA["id"], "pub": wire.b64u(os.urandom(77)), "alg": -7, "count": 0,
-                                     "rp": "m.agentj.app", "at": int(time.time())})
+        self.st.set_passkey(ph.pub, registered_passkey(wire.unb64u(FA["id"]))[0])
 
     def enable(self, *phones, until=None, web=False, minutes=15):
         ents = [{"device": p.did, "sudo": True, "web": web, **({"until": until} if until else {})} for p in phones or [self.phone]]

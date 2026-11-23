@@ -179,37 +179,3 @@ def prove(tool, inp):
     except (OSError, ValueError, KeyError, subprocess.SubprocessError, importlib.metadata.PackageNotFoundError, service.ServiceError):
         return None
 
-
-def schedule(tool, inp, st):
-    """Detached manager timer survives serve exit; no caller-controlled command or environment."""
-    import secrets
-    import subprocess
-    if os.environ.get('AGENTJ_TEST') == '1':
-        raise RuntimeError('restart_disabled_in_tests')
-    from .state import state_dir
-    root = Path(st.root).resolve()
-    if root != state_dir().resolve() or not root.is_relative_to(Path.home().resolve()):
-        raise RuntimeError('restart_not_live_state')
-    live = _manager('show', service.name() + '.service', '--property=MainPID', '--value', timeout=3)
-    if live.returncode or live.stdout.strip() != str(os.getpid()):
-        raise RuntimeError('restart_not_service_process')
-    if prove(tool, inp) is None:
-        raise RuntimeError('restart_proof_changed')
-    args = shape(tool, inp)
-    if not args:
-        raise ValueError('shape')
-    delay = 2
-    for i, word in enumerate(args):
-        if word == '--on-active':
-            delay = int(args[i + 1].rstrip('s'))
-        elif word.startswith('--on-active='):
-            delay = int(word.split('=', 1)[1].rstrip('s'))
-    try:
-        r = subprocess.run(['/usr/bin/systemd-run', '--user', '--collect',
-                        '--unit=agentj-restart-' + secrets.token_hex(6), '--on-active=' + str(delay) + 's',
-                        '/usr/bin/systemctl', '--user', 'restart', service.name() + '.service'],
-                       capture_output=True, timeout=5, env=_manager_env())
-    except subprocess.SubprocessError as exc:
-        raise RuntimeError('restart_schedule_unknown_do_not_retry') from exc
-    if r.returncode:
-        raise RuntimeError('restart_schedule_failed')

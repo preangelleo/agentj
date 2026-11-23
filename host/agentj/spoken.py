@@ -281,19 +281,5 @@ def script(st, text: str, prefs, kind: str | None, run=None) -> dict:
             "o": r.get("o") or 0, "usd": usd, "est": est}
 
 
-def estimate_usd(st, model, i: int, o: int, total_only=False):
-    """Dollar estimate from P204's price table when that release is present; a model with no row → (None, False)."""
-    if total_only or not model:
-        return None, False
-    try:
-        from . import usage          # P204 (0.21): the shared price table, owner rows included
-    except ImportError:
-        return None, False
-    pr = usage.price_of(model, st)
-    if not pr:
-        return None, False
-    return round((i * pr["in"] + o * pr["out"]) / 1e6, 6), True
-
-
 def available() -> bool:
     return any(shutil.which(x) for x in ("claude", "codex", "opencode"))

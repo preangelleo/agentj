@@ -221,9 +221,9 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
     if fingerprint:
         # #537② + ADR-0308-fingerprint-scope (chairman 2026-11-11): an off-list call that moves money
         # (uv_list.CHARGE_COMMANDS) or cannot be undone (uv_list.IRREVERSIBLE) gets the fingerprint card — on the MAIN
-        # thread only (owner turns: uv_list.FINGERPRINT_SOURCES) and only where the off-list decision
+        # thread only (owner turns, host heartbeat: uv_list.FINGERPRINT_SOURCES) and only where the off-list decision
         # itself would allow it (credential / private-state reads and unresolved launchers stay refused).
-        # 0.30.11: host-held background jobs, scheduled runs and heartbeat have no runtime fingerprint gate,
+        # 0.30.11: host-held background jobs and scheduled runs have no runtime fingerprint gate,
         # irrespective of how they were enabled or resumed. Existing automations must not be re-approved.
         # host_read / external / unknown retain the ordinary off-list write refusal.
         from . import approval_offlist

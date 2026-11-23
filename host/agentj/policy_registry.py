@@ -163,8 +163,8 @@ MCP_TOOLS = MappingProxyType({
 # P539 (#300): Computer Use. Server names are normally no authority (anyone can name a server anything), but for this one
 # effect class the bundled servers are known: the Codex app's computer-use plugin and its unified variant. Every operation
 # of these servers — clicks, typing, keys, and screen reads too (a screenshot can show anything on screen) — is
-# computer.control. Elsewhere only the exact pointer / keyboard operation names below get that floor; a pre-authorization
-# (preauth.py) covers only the allowlisted servers, never a look-alike operation name on another server.
+# computer.control. Elsewhere only the exact pointer / keyboard operation names below get that floor (the 「免问」 pre-authorization
+# that was limited to the allowlisted servers, preauth.py, was removed in 0372).
 COMPUTER_USE_SERVERS = frozenset({"computer-use", "computer_use", "unified-computer-use"})
 COMPUTER_USE_OPS = frozenset({
     "left_click", "right_click", "middle_click", "double_click", "triple_click", "left_click_drag",
@@ -243,7 +243,7 @@ def codex_cu_lifecycle(tool, bind) -> bool:
 
 
 def computer_use_grant_op(tool) -> bool:
-    """mcp__<allowlisted server>__<known Computer Use operation> — what a preauth grant can cover (P539 M1)."""
+    """mcp__<allowlisted server>__<known Computer Use operation> — what a 「免问」 grant could cover (P539 M1; no caller since preauth.py went in 0372)."""
     return computer_use_server(tool) and tool.split("__")[2] in COMPUTER_USE_GRANT_OPS
 
 

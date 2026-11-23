@@ -474,11 +474,11 @@ interfaces only:
   the shell start-up / autostart / systemd-user / `authorized_keys` files read-only, session-bus / display / tmux variables
   unset, `no_new_privs`; other programs' control sockets (G-A56): the herdr / screen / wezterm / emacs / Jupyter folders are
   an empty tmpfs, every listening socket this user owns at start (from `/proc/net/unix`), systemd's local sshd socket and —
-  unless the human chose `agentj agent … --allow-docker` (passphrase) — the docker / podman / containerd / lxd / libvirt sockets
+  unless the human chose `agentj agent … --allow-docker` (0372: the owner's terminal, or the owner's config card for an Agent's call) — the docker / podman / containerd / lxd / libvirt sockets
   are a read-only `/dev/null`, and `HERDR_*` / `ZELLIJ*` / `WEZTERM_*` / `KITTY_*` / `NVIM*` / VS Code IPC / `DOCKER_HOST`
   variables are unset (macOS: the same folders are denied read, write and unix-socket connect). Same user, same login, same settings — nothing the agent may do is widened, only agentj is out of its
   reach. If bubblewrap cannot start, the agent is not started (notice on the phone) unless the human chose
-  `agentj agent … --unfenced` at the terminal (asks for the approval passphrase). Codex runs in the same fence. **Never** passed: `--dangerously-skip-permissions`, `--permission-mode`, `--allowedTools`, a permission rule in `--settings` or anything that
+  `agentj agent … --unfenced` at the terminal (0372: no passphrase; an Agent's call becomes the owner's `agent.isolation` config card and writes nothing). Codex runs in the same fence. **Never** passed: `--dangerously-skip-permissions`, `--permission-mode`, `--allowedTools`, a permission rule in `--settings` or anything that
   widens what the session may do — the phone only answers questions Claude Code itself would have asked, and an approval
   returns the tool input unchanged (`updatedInput` = input).
 - **Danger list (PROMPT-26 item 2)**: `--settings` = `{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command",
@@ -3950,7 +3950,7 @@ config server) is exactly `unified-computer-use@openai-bundled` or `computer-use
 Stop / Interrupt hook) is accepted without a card (host.log `mcp_lifecycle_allow`). Any other marketplace, server or a
 null `pluginId`: the name decides (`mcp__cua_repl__*` is unknown → denied without a card).
 
-**Pre-authorization 「免问」**. Grantable actions: `computer.control` only (a host constant; red lines never). A card for it adds
+**Pre-authorization 「免问」** — REMOVED on the host in 0.30.72 (chairman 2026-11-23, decision 0300 item 2, option A): since 0.30.0 an owner turn's Computer Use needs no card and the grant could no longer be created; the host no longer answers `preauth_list` / `preauth_revoke` (ignored like any unknown type, as on a host older than P539) and never sends `preauth`. A leftover `<state>/preauth.json` is not read. Historical text: Grantable actions: `computer.control` only (a host constant; red lines never). A card for it adds
 `"allow_offer":["preauth:computer.control"]`; an allow whose §8 signature covers `allow_add:["preauth:computer.control"]`
 (P296 line) AND passed the card's passkey stores `{action, device, sk, at, rid, bind}` in `<state>/preauth.json` (0600, ≤ 16;
 `bind` = `{"kind":"mcp_ops"}` for an MCP-name card, `{"kind":"codex_plugin","id":<pluginId>,"server":"cua_repl"}` for a Codex

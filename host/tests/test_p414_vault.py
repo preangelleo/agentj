@@ -40,8 +40,8 @@ def tmpdir():
 
 
 def set_pk(st, ph, fa=FA):
-    st.set_passkey(ph.pub, {"id": fa["id"], "pub": wire.b64u(os.urandom(77)), "alg": -7, "count": 0, "rp": "m.agentj.app",
-                            "at": int(time.time())})
+    from test_p408_terminal import registered_passkey
+    st.set_passkey(ph.pub, registered_passkey(wire.unb64u(fa["id"]))[0])
 
 
 # ------------------------------------------------------------ storage
