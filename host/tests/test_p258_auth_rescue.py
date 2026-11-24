@@ -282,7 +282,7 @@ class _Host:
         self.elevate = _Elev(value)
         self.tasks = []
 
-    def agent_notice(self, t):
+    def agent_notice(self, t, **_):
         self.notices.append(t)
 
     async def ask(self, tool, tool_input, batch=True, require_passkey=False, **kw):

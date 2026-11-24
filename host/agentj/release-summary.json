@@ -1,5 +1,5 @@
 {
-  "version": "0.30.73",
-  "zh": "修复 Agent J Harness 裁剪或压缩上下文后带着失效的思考内容重发、被模型服务拒绝的问题；从本版起，升级装好后只是暂时连不上转发服务器时不再报失败；价目表新增 GPT-6.1 Sol。",
-  "en": "Agent J Harness drops stale thinking after trimming or compacting; an upgrade that only can't reach the relay server yet no longer fails; GPT-6.1 Sol price row."
+  "version": "0.30.74",
+  "zh": "修复手机键盘遮住输入框的问题。每日体检可重新登录失效的 AI 账号。设置里的删除图标统一为桃色。",
+  "en": "Keeps inputs visible above the phone keyboard, restores AI sign-in from the daily health check, and uses peach for settings trash icons."
 }

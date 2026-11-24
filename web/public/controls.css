@@ -154,9 +154,9 @@
 .lgs .lgs-why{color:var(--dlg-muted)}
 .lgs .lgs-step{font-weight:600}
 .lgs .lgs-ok{font-weight:600;color:var(--dlg-fg)}
-.lgs .lgs-fail{font-weight:600;color:var(--c-strawberry-field,#f7827e)}
+.lgs .lgs-fail{font-weight:600;color:var(--peachy-feeling)}
 .lgs .lgs-note:empty,.lgs .lgs-host:empty{display:none}
-.lgs .lgs-note{color:var(--c-strawberry-field,#f7827e)}
+.lgs .lgs-note{color:var(--peachy-feeling)}
 .lgs .lgs-acts{display:flex;flex-wrap:wrap;gap:var(--ui-space-btn)}
 .lgs .lgs-acts .aj-action{margin-top:0;min-height:44px;box-sizing:border-box}
 .lgs a.aj-action{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}

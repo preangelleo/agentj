@@ -67,7 +67,9 @@ def _consume_login_start():
         scope.consume()
 
 
-KINDS = ("claude", "codex", "opencode", "kimi")
+ROUTES = {"claude": ("setup_token", "paste", "login"), "codex": ("device",),
+          "opencode": ("provider_key",), "kimi": ("device",)}
+KINDS = tuple(ROUTES)
 META = "auth-rescue.json"           # state dir, 0600: dates and outcomes only — never a code or token
 TOKEN_DAYS = 365                     # `claude setup-token`: "long-lived (1-year) auth token" (2.1.296 banner, official docs)
 WARN_DAYS = 7                        # P288: the phone shows 「还有 N 天」 + 现在续期 from this many days before the expiry
@@ -1020,7 +1022,7 @@ TEXT = {
         "alert_balance": "{h} 的余额 / 额度不足：到服务商网站充值即可，不需要重新登录。",
         "warn_token": "Claude Code 登录还有 {d} 天到期（{e}）。打开 设置 → 紧急修复 → AI 登录救援 → 现在续期：在手机上授权一次就换上新的，不用回Agent J 主机。",
         "warn_today": "Claude Code 登录今天到期（{e}）。打开 设置 → 紧急修复 → AI 登录救援 → 现在续期：在手机上授权一次就换上新的，不用回Agent J 主机。",
-        "health_login": "每日体检：{h} 的登录已失效（可能在网页上退出了全部设备，或被官方撤销）。打开 设置 → 紧急修复 → AI 登录救援，在手机上重新登录。",
+        "health_login": "每日体检：{h} 的登录已失效。点「重新登录」，也可打开 设置 → 紧急修复 → AI 登录救援 处理。",
         "recovered": "{h} 已重新登录并恢复：重启后没有待确认的界面，测试消息已拿到回复。",
         "partial": "{h} 新登录已写入，但自检没有通过：{why}",
         "confirm_title": "AI 登录救援：重新登录 {h}",
@@ -1034,8 +1036,7 @@ TEXT = {
                       "the phone and the new one is in place — no need to go back to the Agent J host.",
         "warn_today": "The Claude Code login expires today ({e}). Settings → Emergency repair → AI login rescue → Renew now: approve once on the "
                       "phone and the new one is in place — no need to go back to the Agent J host.",
-        "health_login": "Daily check: {h}'s login no longer works (signed out of all devices on the web, or revoked). Open "
-                        "Settings → Emergency repair → AI login rescue to sign in again from the phone.",
+        "health_login": "Daily check: {h}'s login no longer works. Tap Sign in again, or open Settings → Emergency repair → AI login rescue.",
         "recovered": "{h} is signed in again: no prompt waiting after the restart, and a test message got a reply.",
         "partial": "{h}'s new login is written, but the self-check failed: {why}",
         "confirm_title": "AI login rescue: sign in to {h} again",
@@ -1142,7 +1143,8 @@ class Rescue:
         """A harness failure was classified. login → dot + one alert (≤ 1 per ALERT_GAP); balance → a top-up hint, no dot."""
         if kind not in KINDS or cls not in ("login", "balance", "rate_limit"):
             return
-        if cls == "login" and kind != "kimi":
+        daily = text_key == "health_login"
+        if cls == "login" and kind != "kimi" and not daily:
             self.pending_login = (getattr(self, "_hit", None) or {"agent": kind, "why": "expired"}, time.monotonic())
         self.state[kind] = {"cls": cls, "at": int(time.time())}
         try:
@@ -1152,7 +1154,8 @@ class Rescue:
         now = time.monotonic()
         if cls == "login" and now - self.alerted.get(kind, -1e9) > ALERT_GAP:
             self.alerted[kind] = now
-            self.host.agent_notice(self.t(text_key, h=LABEL[kind]))
+            self.host.agent_notice(self.t(text_key, h=LABEL[kind]),
+                                   **({"login": {"agent": kind, "why": "expired", "health": secrets.token_hex(8)}} if daily else {}))
             self.broadcast()
             push = getattr(self.host, "push_notify", None)
             if push:
@@ -1177,33 +1180,40 @@ class Rescue:
     def clear(self, kind):
         self.state.pop(kind, None)
 
+    def notice_route(self, kind):
+        health = read_meta(self.host.st).get("health")
+        row = health.get(kind) if isinstance(health, dict) else None
+        if isinstance(row, dict) and not row.get("ok") and row.get("cls") == "login":
+            return ROUTES.get(kind, (None,))[0]
+
 
     # ---- phone view
     def view(self) -> dict:
         from . import harness
         meta = read_meta(self.host.st)
         health = meta.get("health") if isinstance(meta.get("health"), dict) else {}
+        f = self.flow
         rows = []
         for k in KINDS:
             exe = binary(k)
             st = self.state.get(k, {})
             checking = self.checking and k in self.health_pending
             invalid = self.invalid_health and (not self.checking or k in self.health_pending)
+            running = f and f.get("kind") == k and not f.get("account") and f.get("stage") not in ("done", "failed")
             r = {"kind": k, "label": LABEL[k], "installed": bool(exe), "current": self.current() == k,
-                 "state": "checking" if checking else "unknown" if invalid else st.get("cls") or "ok", "routes": {"claude": ["setup_token", "paste", "login"],
-                                                             "codex": ["device"], "opencode": ["provider_key"],
-                                                             "kimi": ["device"]}[k]}
+                 "state": "checking" if checking else "unknown" if invalid else st.get("cls") or "ok", "routes": list(ROUTES[k])}
             r["expiry"] = expiry_kind(k, meta)                   # P288: known / unknown / auto / none
             hc = health.get(k)
             if not checking and isinstance(hc, dict) and not hc.get("ok") and not st.get("cls"):
                 r["state"] = "unknown"
-            if isinstance(hc, dict) and not (checking or invalid):
+            expired = r["state"] == "login"
+            if isinstance(hc, dict) and not (checking or invalid or running or (expired and hc.get("ok"))):
                 r["health"] = {x: hc[x] for x in ("at", "ok", "cls", "why") if x in hc}
                 if hc.get("why") in HEALTH_WHY:          # #458: CLI / config, never shown as "not logged in"
                     r["health"]["detail"] = self.why(hc["why"], h=LABEL[k])
             if k == "claude":
                 due = token_due(meta)
-                if due:
+                if due and not (running or expired or r["state"] in ("checking", "unknown")):
                     r["token"] = due
                     r["warn"] = due["days_left"] <= WARN_DAYS
                 try:
@@ -1214,7 +1224,6 @@ class Rescue:
             if k in self.last and not (checking or invalid):
                 r["last"] = self.last[k]
             rows.append(r)
-        f = self.flow
         flow = None
         if f:
             flow = {k: f[k] for k in ("kind", "route", "stage", "url", "code", "expires_at", "why", "round", "rounds",
@@ -1222,7 +1231,7 @@ class Rescue:
                     if f.get(k) is not None}
         dot = any(r["state"] == "login" or r.get("warn") for r in rows)
         out = {"harnesses": rows, "flow": flow, "dot": dot}
-        due = token_due(meta)
+        due = rows[0].get("token")
         if due and 0 <= due["days_left"] <= WARN_DAYS and rows[0]["installed"]:
             rem = meta["claude"].get("reminded") if isinstance(meta["claude"].get("reminded"), dict) else {}
             marks = rem.get("marks") if rem.get("expires") == due["expires"] and isinstance(rem.get("marks"), list) else []
@@ -1255,15 +1264,14 @@ class Rescue:
         (bg(go(), "auth_view") if bg else asyncio.ensure_future(go()))
 
     # ---- start (passkey) and the flows
-    async def start(self, kind: str, route: str, *, remote=None, account=None) -> dict:
+    def _busy(self):
+        return self.login.active or (self.flow and self.flow.get("stage") not in ("done", "failed"))
+
+    async def start(self, kind: str, route: str, *, remote=None, account=None, notice=False) -> dict:
         """account: #427 {"name"} = sign a NEW account in (its own slot); the login in use is never overwritten."""
-        if kind not in KINDS:
+        if route not in ROUTES.get(kind, ()):
             return {"ok": False, "why": "unsupported"}
-        allowed = {"claude": ("setup_token", "paste", "login"), "codex": ("device",), "opencode": ("provider_key",),
-                   "kimi": ("device",)}[kind]
-        if route not in allowed:
-            return {"ok": False, "why": "unsupported"}
-        if self.flow and self.flow.get("stage") not in ("done", "failed"):
+        if self._busy():
             return {"ok": False, "why": "busy"}
         name = None
         if account is not None:
@@ -1275,11 +1283,25 @@ class Rescue:
             except accounts.AccountError as e:
                 return {"ok": False, "why": e.args[0]}
         if kind == "opencode":
-            return await self._opencode(remote=remote)
+            from . import provider_runtime
+            provider = next((k for k in provider_runtime.configured() if provider_runtime.key_name(k)), None)
+            if provider is None:
+                return {"ok": False, "why": "unsupported"}
         failure = {}
         ok = await self._confirm(kind, name, remote=remote, failure=failure)
         if not ok:
             return {"ok": False, "why": failure.get('why', 'approval_unavailable')}
+        context = failure.get('_context')
+        stale = notice and not await asyncio.to_thread(self.notice_route, kind)
+        if stale or self._busy():
+            if context is not None:
+                context.discard()
+            return {"ok": False, "why": "unsupported" if stale else "busy"}
+        bg = getattr(self.host, "_bg", None)
+        if kind == "opencode":
+            work = self._confirmed_start(provider_runtime.request_key(self.host, provider, session=remote), context, kind)
+            (bg(work, "auth_rescue") if bg else asyncio.ensure_future(work))
+            return {"ok": True, "provider": provider}
         self.cancel.clear()
         self.flow = {"kind": kind, "route": route, "stage": "starting", "_remote": remote, **({"account": name} if name else {})}
         self.broadcast()
@@ -1289,8 +1311,7 @@ class Rescue:
             pass
         coro = {"device": self._kimi if kind == "kimi" else self._codex, "setup_token": self._claude_pty,
                 "login": self._claude_pty, "paste": self._claude_paste}[route]
-        bg = getattr(self.host, "_bg", None)
-        work = self._confirmed_start(coro(), failure.get('_context'), kind)
+        work = self._confirmed_start(coro(), context, kind)
         (bg(work, "auth_rescue") if bg else asyncio.ensure_future(work))
         return {"ok": True}
 
@@ -1300,7 +1321,9 @@ class Rescue:
             if not live:
                 context.discard()
                 work.close()
-                return self._end(kind, 'failed', 'session_changed')
+                if kind != "opencode":  # the provider-key path does not own a rescue flow
+                    return self._end(kind, 'failed', 'session_changed')
+                return None
         token = _LOGIN_START.set(_LoginStart(self, context) if context else None)
         try:
             return await work
@@ -1669,22 +1692,6 @@ class Rescue:
             for i in range(len(tok)):
                 tok[i] = 0
 
-
-    async def _opencode(self, *, remote=None) -> dict:
-        """OpenCode logs in per provider: the existing provider key card (P33 provider_key) is the rescue."""
-        from . import provider_runtime
-        ps = [k for k in provider_runtime.configured() if provider_runtime.key_name(k)]
-        if not ps:
-            return {"ok": False, "why": "unsupported"}
-        failure = {}
-        ok = await self._confirm("opencode", remote=remote, failure=failure)
-        if not ok:
-            return {"ok": False, "why": failure.get('why', 'approval_unavailable')}
-        bg = getattr(self.host, "_bg", None)
-        coro = provider_runtime.request_key(self.host, ps[0], session=remote)
-        work = self._confirmed_start(coro, failure.get('_context'), 'opencode')
-        (bg(work, "auth_rescue") if bg else asyncio.ensure_future(work))
-        return {"ok": True, "provider": ps[0]}
 
     async def cancel_flow(self) -> dict:
         from . import auth_settings_uv

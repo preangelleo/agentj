@@ -2860,6 +2860,11 @@ AI 登录救援). The whole chain is serve's deterministic code — the logged-o
 `{"t":"auth_get","r"}` · `{"t":"auth_start","r","kind":"claude|codex|opencode","route":"setup_token|paste|login|device|provider_key"}` ·
 `{"t":"auth_press","r","kind","id":<id from last.screen>}` · `{"t":"auth_cancel","r"}` → `{"t":"auth_res","r","ok"[,"why"],"view"}`.
 For Claude, echo the opaque `last.screen.id` unchanged so the paired device’s approval applies once to that screen and its displayed action.
+A daily health notice can carry `login: {agent, why:"expired", health:<opaque tag>}`. Its button sends
+`auth_start` with `kind`, `notice` (the history turn ID), and `health` (the exact tag), omitting `route` and `account`.
+The host resolves the matching system notice in current history, confirms the failed health check still applies, and
+selects the provider's Settings route. The existing device-bound confirmation applies. Section 31.1 continues to own
+sign-in requests from a live main-conversation reply.
 Push to every ready p33 phone (and on ready while the dot is on): `{"t":"auth_rescue","view"}`.
 `view = {"dot": bool, "harnesses": [{kind, label, installed, current, state: ok|login|balance|rate_limit, routes,
 [token: {minted, expires, days_left}], [warn], [login], [conflicts: [names]], [last: {result: recovered|failed|partial|blocked,

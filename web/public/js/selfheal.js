@@ -11,14 +11,16 @@ export const WHYS = ['not_logged_in', 'org_disabled', 'expired', 'device'];
 export const END_AFTER_S = 120;
 export const AGENT_NAME = { claude: 'Claude Code', codex: 'Codex', opencode: 'OpenCode' };
 
+const healthTag = l => typeof l?.health === 'string' && /^[0-9a-f]{16}$/.test(l.health);
+const loginAgent = l => l && (AGENTS.includes(l.agent) || (healthTag(l) && l.agent === 'kimi'));
 const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : null);
 
 /** {agent, why} or null — the agent must be one we know; an unknown reason reads as 「not logged in」. */
 export function loginOf(p) {
   if (!p) return null;
   const l = obj(p.card && p.card.login) || obj(p.login);
-  if (!l || !AGENTS.includes(l.agent)) return null;
-  return { agent: l.agent, why: WHYS.includes(l.why) ? l.why : 'not_logged_in' };
+  if (!loginAgent(l)) return null;
+  return { agent: l.agent, why: WHYS.includes(l.why) ? l.why : 'not_logged_in', ...(healthTag(l) && { health: l.health }) };
 }
 
 /** {waited, stuck} or null. `waited` = whole seconds ≥ 0 as the host counted them. */
@@ -35,7 +37,7 @@ export function queueOf(p) {
 export function carry(t) {
   const out = {};
   const l = obj(t && t.login) || obj(t && t.reply && t.reply.login);
-  if (l && AGENTS.includes(l.agent)) out.login = { agent: l.agent, why: typeof l.why === 'string' ? l.why.slice(0, 24) : '' };
+  if (loginAgent(l)) out.login = { agent: l.agent, why: typeof l.why === 'string' ? l.why.slice(0, 24) : '', ...(healthTag(l) && { health: l.health }) };
   const w = t && t.waited_s, s = t && t.stuck === true;
   if ((Number.isFinite(w) && w >= 0) || s) out.queue = { ...(Number.isFinite(w) && w >= 0 ? { waited_s: Math.floor(w) } : {}), ...(s ? { stuck: true } : {}) };
   return out;

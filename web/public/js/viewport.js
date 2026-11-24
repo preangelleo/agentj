@@ -25,13 +25,43 @@ export function applyViewport() {
   if (kb || safari) { st.setProperty('--vvh', vv.height + 'px'); st.setProperty('--vvtop', vv.offsetTop + 'px'); }
   else { st.removeProperty('--vvh'); st.removeProperty('--vvtop'); }
   if (document.body) document.body.dataset.kb = kb ? '1' : '0';
+  if (kb) queueReveal();
   return kb;
+}
+
+// The viewport shrinks after focus. Reveal the field without moving the document.
+let revealFrame = 0;
+function queueReveal() {
+  if (revealFrame) return;
+  revealFrame = requestAnimationFrame(() => {
+    revealFrame = 0;
+    const el = document.activeElement, vv = window.visualViewport;
+    if (document.body?.dataset.kb !== '1' || !vv || !editing() || el.readOnly || el.closest('.xterm')) return;
+    const viewBottom = vv.offsetTop + vv.height;
+    for (let box = el.parentElement; box && box !== document.body; box = box.parentElement) {
+      const css = getComputedStyle(box);
+      if (/auto|scroll/.test(css.overflowY) && box.scrollHeight > box.clientHeight) {
+        const rect = el.getBoundingClientRect(), edge = box.getBoundingClientRect().top + box.clientTop;
+        let top = Math.max(vv.offsetTop, edge), bottom = Math.min(viewBottom, edge + box.clientHeight);
+        // If this scrollport is below the keyboard, an outer one will bring it back.
+        if (bottom - top < rect.height) {
+          top = edge;
+          bottom = edge + box.clientHeight;
+        }
+        const gap = Math.min(8, Math.max(0, (bottom - top - rect.height) / 2));
+        const dy = rect.top < top + gap ? rect.top - top - gap : Math.max(0, rect.bottom - bottom + gap);
+        if (rect.height && Math.abs(dy) >= 1) box.scrollTop += dy;
+      }
+      if (css.position === 'fixed') break;
+    }
+  });
 }
 
 /** Wire `fit` (which calls applyViewport) to every resume / resize signal. Idempotent per function. */
 const wired = new Set();
 export function watchViewport(fit) {
   if (wired.has(fit)) return;
+  if (!wired.size) document.addEventListener('focusin', queueReveal);
   wired.add(fit);
   const once = (resume) => { resuming = resume; try { fit(); } finally { resuming = false; } };
   const again = (resume) => { once(resume); requestAnimationFrame(() => once(resume)); setTimeout(() => once(resume), 300); };

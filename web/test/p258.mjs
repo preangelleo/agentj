@@ -57,7 +57,7 @@ export async function runP258({B, web, fake, out = process.env.P258_OUT || 'repo
         assert.ok(labels.includes(s.a), 'Claude rescue button');
         assert.ok(await evaluate(p, `!!document.querySelector('#ar-list [data-kind=codex] button.aj-action--primary')`), 'Codex device button');
         assert.ok(!(await evaluate(p, `!!document.querySelector('#ar-list [data-kind=opencode]')`)), 'not installed and not current → hidden');
-        assert.match(await evaluate(p, `document.querySelector('#ar-list [data-kind=claude] .ardanger')?.textContent||''`), /2026-11-01/);
+        assert.equal(await evaluate(p, `!!document.querySelector('#ar-list [data-kind=claude] .artoken')`), false, 'expired login cannot show a future expiry');
         assert.equal(seen[0].t, 'auth_get');
         await sleep(150); await save('rows');
       });

@@ -1502,12 +1502,12 @@
     }
   ],
   "source6ProducerBindings": {
-    "public/index.html": "21b4459b2f77b291fb54480ea4fed24333cfa36330ff970e722863706f8eddd4",
-    "public/app.js": "6f984e5db96e5223120795061c3efd6802de6151c87d9c718058b017b57b8f6c",
+    "public/index.html": "4b870c701b6b2a34712b93c3d7c42dbd3531da1cf4ab6fc1d9e406400c6e4bed",
+    "public/app.js": "96c74ecec245a0020f8d31697ba82f2e863fa1a9b981345a2038918fa4b779c4",
     "public/js/sendvol.js": "af0e1b739e9bb027cfa3be86ad04ba002c0768c443cdb2b60c7c6536e573b229",
-    "public/app.css": "8f52862308dd55687465f33d39ca4660da0ca758083e56f8c22eaf55ffacba08",
-    "public/js/relay.js": "466d2e26f2fc19b8fdf543b93c16fbf25925f38788192eb758573660e3151c65",
-    "public/menu.css": "26183adccda14da9a3ddb68d1b99cebf485181da1be2459a18b063aa1ec0466c",
+    "public/app.css": "52af39fc6503c835a92daee01a8d09a54a2705887b4d05b4ed8b8a7ee516a737",
+    "public/js/relay.js": "86b0221b8bef09d7a2a3d31c4c944c5c68367e9f4dd50be2589e8617a98b4026",
+    "public/menu.css": "f88baea3269046a91fb1d29532e176d6ef6da5eae825bee46dfc709b76c8d6c0",
     "public/js/md.js": "1a1f0eea6053c9a783d1da26907761f7038d4229e543c4b6f514951815727409",
     "public/js/render.js": "7ad1676b626ce53c0cef3d4b3f4a33317d8dd5857f59aceea3bb2ffccec921fe",
     "public/js/longtask.js": "6bef8993727fd0ccea003553980609f7d70af5d73cdbe87f42240dc82d335f36",

@@ -111,6 +111,7 @@ select.fin option{color:#141414;background:#faf9f5}
   --dsoft:var(--c-salt,#f0eee6);--dmute:var(--c-argent,#858585);background:var(--dbg);color:var(--dfg);font:400 16px/1.6 var(--font-body);
   animation:aj-inline-component-fdeep-in .2s var(--re,ease) both}
 .fdeep[hidden]{display:none}
+body[data-kb="1"] .fdeep{top:var(--vvtop);height:var(--vvh)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .fdeep{--dbg:var(--c-noir,#2c2b26);--dfg:#faf9f5;--dline:rgba(250,249,245,.18);--dsoft:rgba(250,249,245,.07);--dmute:rgba(250,249,245,.62)}}
 :root[data-theme="dark"] .fdeep{--dbg:var(--c-noir,#2c2b26);--dfg:#faf9f5;--dline:rgba(250,249,245,.18);--dsoft:rgba(250,249,245,.07);--dmute:rgba(250,249,245,.62)}
 @keyframes aj-inline-component-fdeep-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}

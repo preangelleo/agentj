@@ -1635,6 +1635,7 @@ body[data-agent="stopped"]{--state:var(--c-offline)}
 .atag{display:inline-flex;align-items:center;padding:2px 10px;border-radius:var(--r-pill);font:600 calc(12px*var(--fz))/1.5 var(--font-body);
   background:var(--surface);color:var(--ink)}
 .atag.danger{background:var(--lotion);color:var(--c-danger)}
+.atag.danger.arconfirm{background:var(--sooty);color:var(--peachy-feeling)}
 .atag.danger::before{content:"!";margin-right:5px;font-weight:700}
 .atag.low{background:var(--surface)}
 .atag.task{background:var(--surface);font-weight:500}
@@ -1992,6 +1993,7 @@ main{padding:6px 20px 24px}
   border-bottom:1px dashed var(--border-soft)}
 .setrow[hidden]{display:none}
 .setrow>.setnote,.setrow>.setcmd,.setrow>.setlinks,.setrow>.setver,.setrow>.setsample{grid-column:1 / -1}
+body[data-kb="1"] #set-main-thread-row>.sethb-f{grid-column:1 / -1}
 .setlab{font-weight:600;color:var(--text);font-size:var(--fs-md)}
 .setval{color:var(--text);text-align:right}
 .setval.setwide{grid-column:1 / -1;text-align:left}
@@ -3145,6 +3147,7 @@ button.aj-dialog-action:disabled{opacity:var(--aj-dialog-action-disabled-opacity
 .rmtop{position:sticky;top:-6px;z-index:3;flex:none;display:flex;flex-direction:column;
   margin:-6px -20px 0;padding:6px 20px 0;background:var(--rm-bg)}
 @media (orientation: landscape){.rmtop{margin:-6px -24px 0;padding:6px 24px 0}}
+body[data-kb="1"] #main:has(:is(input,textarea,[contenteditable=true]):focus) .rmtop{position:static}
 /* only while words sit under it: a 14 px fade below the pinned header, the twin of the 28 px fade above the icon bar.
    P205: on and off at once — no opacity transition. A send resets the scroll of a read-down reply, so the fade used to
    animate 1 → 0 on its own compositor layer exactly while the state colour changed; Chromium kept drawing that layer's
@@ -3215,6 +3218,7 @@ button.aj-dialog-action:disabled{opacity:var(--aj-dialog-action-disabled-opacity
 .ct-res li{padding:2px 0}
 .ct-res-note{text-align:center;margin:6px 0 0!important}
 .ct-form{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:auto;padding:2px}
+body[data-kb="1"] .ct-form{flex-shrink:0;overflow:visible}
 .ct-field{display:flex;flex-direction:column;gap:4px}
 .ct-field>span{font:500 calc(12.5px*var(--fz))/1.2 var(--font-body);opacity:.66}
 .ct-field.fresh input,.ct-field.fresh textarea{border-color:var(--c-idle);border-left-width:4.5px;padding-left:11px}
@@ -3442,19 +3446,19 @@ body[data-scan-paused="1"] .scan-finder .sf-sweep{animation-play-state:paused;op
 .rmbar .act svg{align-self:end;margin-bottom:11.5px}
 .rscmdbar .rscmdact svg{align-self:end;margin-bottom:11.5px}
 /* P258 · Settings → AI 登录救援 */
-.ardot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--danger);vertical-align:middle;margin-left:4px}
+.ardot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--peachy-feeling);vertical-align:middle;margin-left:4px}
 .ardot[hidden]{display:none}
 .arrow{display:block}
 .arhead{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-2)}
 .archip{font-size:var(--fs-sm);padding:2px 8px;border-radius:999px;border:1px solid var(--border,currentColor);color:var(--text-muted)}
-.archip--login{color:var(--danger);border-color:var(--danger)}
+.archip--login{color:var(--peachy-feeling);border-color:currentColor}
 .archip--balance,.archip--rate_limit{color:var(--text);border-color:var(--text)}
-.ardanger{color:var(--danger)}
+.ardanger{color:var(--peachy-feeling)}
 .arlast{font-family:var(--font-mono,monospace);font-size:var(--fs-sm);overflow-wrap:anywhere}
 .arflow{border:1px solid var(--border,currentColor);border-radius:12px;padding:var(--sp-3);margin:var(--sp-2) 0}
 .arflow[hidden]{display:none}
 .arcode{font:700 1.6rem/1.2 var(--font-mono,monospace);letter-spacing:.12em;text-align:center;margin:var(--sp-2) 0}   /* P290: no user-select:all — a tap copies (P292); a forced selection would stop that tap */
-.arrenew .setup-banner__open{color:var(--danger,#d33)}
+.arrenew .setup-banner__open{color:var(--peachy-feeling)}
 .arrenew .setup-banner__open::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor;margin-right:8px;vertical-align:middle}
 .arreopen{color:var(--warn,#b7791f)}
 /* P314: 「额度用完，预计 HH:MM 自动继续」 — a status line, not a button; ✕ cancels */
@@ -4666,6 +4670,8 @@ body[data-sheet="1"]:has(#sheet.auth-approval[data-popup-system="center"]) .scri
 #ctFwd .sq.ct-picker-page .ct-other{flex:1;overflow:hidden}
 #ctFwd .sq.ct-picker-page .ct-list{flex:1;min-height:0;max-height:none;overflow-y:auto;-webkit-overflow-scrolling:touch}
 #ctFwd .sq.ct-picker-page .ct-add{flex:none}
+body[data-kb="1"] #ctFwd .sq.ct-picker-page{overflow-y:auto}
+body[data-kb="1"] #ctFwd .sq.ct-picker-page :is(.ct-body,.ct-other){flex:none;overflow:visible}
 #ctFwd .sq.ct-picker-page .gdlg-row{flex:none;padding-top:8px}
 #ctFwd .sq.ct-picker-page .ct-note{flex:none}
 #ctFwd .sq.ct-picker-page #ctFwd-what[hidden],#ctFwd .sq.ct-picker-page .gdlg-icon[hidden]{display:none}

@@ -1215,12 +1215,12 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .ctm-allow[data-on="1"]{color:var(--menu-accent);opacity:1;cursor:default}
 .ctm-main:focus-visible,.ctm-allow:focus-visible,.ctm-bar :is(input,button):focus-visible{outline:var(--ui-focus-w) solid var(--menu-accent);outline-offset:2px}
 .ctmpage .setcard>.setnote:last-child{margin-top:var(--ui-space-content)}
-/* the edit dialog = the global centred dialog (wide); labels left, the danger button in Strawberry Field */
+/* the edit dialog = the global centred dialog (wide); labels left, the delete icon in Peachy Feeling */
 .ctm-f{display:flex;flex-direction:column;gap:4px;margin-top:var(--space-control);font-size:var(--dlg-fs-sub);text-align:left}
 .ctm-f>span{opacity:.72}
 .ctm-f .ren-input{margin-top:0}
 .ctm-err:empty{display:none}
-#ctmEdit .gdlg-row .ctm-del{color:var(--strawberry-field);border-color:var(--strawberry-field)}
+#ctmEdit .gdlg-row .ctm-del{color:var(--peachy-feeling);border-color:var(--peachy-feeling)}
 #ctmEdit .gdlg-row .ctm-del[hidden]{display:none}
 /* P592 (chairman 0320): 取消 and 保存 the same size side by side; 保存 is the 「修复连接」 primary — Lotion ground, Sooty text */
 #ctmEdit .gdlg-row #ctm-e-save{flex:1 1 0;background:var(--c-lotion);color:var(--c-sooty);border-color:var(--c-lotion)}
@@ -1387,6 +1387,7 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #settings .rsnow{font-weight:600}
 #settings .rsok{font:600 var(--ui-fs-title-2)/1.3 var(--font-body)}
 #settings .rsfail{color:var(--menu-danger);font-weight:600}
+#settings #rs-auth .rsfail{color:var(--peachy-feeling)}
 #settings .rshelper code,#settings .rsold code,#settings .rsticket code{overflow-wrap:anywhere}
 #settings .rssteps{list-style:none;padding:0;display:flex;flex-direction:column;gap:var(--sp-2)}
 #settings .rssteps li{display:flex;align-items:baseline;gap:var(--ui-space-control);line-height:var(--ui-leading)}
@@ -1534,7 +1535,7 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
   padding:0;margin:0;border:0;border-radius:var(--ui-radius-control);background:var(--menu-chip);color:var(--menu-text);cursor:pointer}
 :is(#models-view,.relay-keys-mount) .kbtn:hover{background:var(--menu-press)}
 :is(#models-view,.relay-keys-mount) .kbtn:active{background:var(--menu-press)}
-:is(#models-view,.relay-keys-mount) .kbtn--delete{color:var(--menu-danger)}
+:is(#models-view,.relay-keys-mount) .kbtn--delete{color:var(--peachy-feeling)}
 :is(#models-view,.relay-keys-mount) .kbtn--add{background:transparent;border:1px dashed color-mix(in srgb,var(--menu-text) 42%,transparent)}
 :is(#models-view,.relay-keys-mount) .kico{width:var(--ui-icon);height:var(--ui-icon)}
 :is(#models-view,.relay-keys-mount) .kempty{margin:0;color:var(--menu-muted);font-size:var(--ui-fs-small)}

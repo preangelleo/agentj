@@ -206,7 +206,7 @@ class History:
 
     # ------------------------------------------------------------ turns
     def add(self, src: dict, reply: str = "", end: str = "open", card: dict | None = None, ts: int | None = None,
-            form: dict | None = None) -> dict:
+            form: dict | None = None, login: dict | None = None) -> dict:
         t = {"id": self.next_id, "ts": int(ts if ts is not None else time.time() * 1000), "src": src,
              "reply": {"text": reply}, "end": end}
         from .silent import is_silent
@@ -216,6 +216,8 @@ class History:
             t["card"] = card
         if form:                               # P212 (§29): the form this page carries (forms.view)
             t["form"] = form
+        if login:
+            t["login"] = login
         self.next_id += 1
         self.turns[t["id"]] = t
         self._save_meta()

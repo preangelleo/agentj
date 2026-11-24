@@ -234,9 +234,11 @@ class Entrypoints(Phone):
         self.h.send_app=AsyncMock(); self.h.receipts=None
         self.h.sends=N(used=lambda *a:False, full=lambda *a:False,add=Mock())
         self.h.stopped=lambda:False; self.h.seat_refusal=lambda:None
-        fn=self.method('serve.py','on_say',wire=N(is_id22=lambda _:True,text_problem=lambda *a:None,
+        admit=self.method('serve.py','_admit_say',wire=N(is_id22=lambda _:True,text_problem=lambda *a:None,
             units=len,MAX_TEXT_P33=10000),compose=N(EXCERPT_MAX=1000,Send=lambda *a,**k:N()),
             meeting=N(parse=lambda _:None),slash=N(parse=lambda _:None),_rcpt_recv=AsyncMock(),_rcpt=Mock())
+        self.h._admit_say=types.MethodType(admit,self.h)
+        fn=self.method('serve.py','on_say')
         # The real method's relative import resolves to the real recovery module.
         sys.modules['recovery_fixture.quota_refresh']=self.q
         setattr(sys.modules['recovery_fixture'],'quota_refresh',self.q)

@@ -38,7 +38,10 @@ const FLOW_BOXES = ['ar-flow', 'acct-flow'];
 const stopTimers = () => { for (const x of timers) clearInterval(x); timers = []; };
 const LONG = 11 * 60 * 1000;   // auth_start answers after the passkey card (up to its 10 minutes)
 
-function say(s) { const m = el('ar-msg'); if (m) m.textContent = s || ''; }
+function say(s, warn = false) {
+  const m = el('ar-msg');
+  if (m) { m.textContent = s || ''; m.classList.toggle('ardanger', warn); }
+}
 const tw = (k, fb) => { const s = t(k); return s === k ? (fb || '') : s; };
 
 async function call(obj, ms = 20000) {
@@ -48,7 +51,7 @@ async function call(obj, ms = 20000) {
   if (owner !== loadId) return null;   // closing/reopening invalidates an older page response
   if (m.t !== 'auth_res') { say(m.t === 'timeout' ? t('ar.timeout') : t('set.offline')); return null; }
   if (m.view && typeof m.view === 'object') setView(m.view);
-  if (!m.ok && m.why) say(tw('ar.why.' + m.why, m.why));
+  if (!m.ok && m.why) say(tw('ar.why.' + m.why, m.why), true);
   return m;
 }
 
@@ -60,7 +63,7 @@ export function onPush(m) {
 }
 export async function load() {
   close(); relayKeys.loadRelay(el('ar-relay-keys')).catch(() => {}); const id = ++loadId; view = null; el('ar-list')?.replaceChildren(); el('ar-flow')?.replaceChildren(); say(t('ar.checking'));
-  const m = await call({ t: 'auth_get' }); if (m) say('');
+  const m = await call({ t: 'auth_get' }); if (m?.ok && el('ar-msg')?.textContent === t('ar.checking')) say('');
   if (id !== loadId) return;
   poll = setInterval(() => { if (!document.hidden) call({ t:'auth_get', check:false }); }, 5000);
 }
@@ -70,6 +73,7 @@ function setView(v) {
   const before = view?.flow, flow = v.flow;
   const moved = flow && (!before || ['kind','stage','round','route'].some(k => before[k] !== flow[k]));
   view = v; checkDeadline(); dot(); render(); banner();
+  if ((flow?.stage === 'verifying' || ended(flow)) && el('ar-msg')?.textContent === t('ar.started')) say('');
   endNotice(before, flow);
   // Long multi-harness pages preserve their scroll anchor. Bring a new device/code card into view once; health polling
   // never pulls the owner away from what they are reading, and a hidden Settings page is never opened here.
@@ -129,10 +133,15 @@ function btn(label, cls, fn) {
 }
 function line(text, cls) { const p = document.createElement('p'); p.className = 'setnote' + (cls ? ' ' + cls : ''); fillText(p, text); return p; }   // P292: `commands` → code + ⧉
 
+export function openNotice(kind, notice, health) {
+  hooks.openAuth?.();
+  start(kind, { notice, health });
+}
+
 async function start(kind, route) {
   say(t('ar.confirm'));
-  const m = await call({ t: 'auth_start', kind, route }, LONG);
-  if (m && m.ok) say(route === 'quota_recheck' ? t('p0280.quotaQueued') : t('ar.started'));
+  const m = await call({ t: 'auth_start', kind, ...(typeof route === 'string' ? { route } : route) }, LONG);
+  if (m?.ok) say(route === 'quota_recheck' ? t('p0280.quotaQueued') : (m.view?.flow?.stage === 'verifying' || ended(m.view?.flow)) ? '' : t('ar.started'));
 }
 
 function harnessCard(h) {
@@ -157,20 +166,20 @@ function harnessCard(h) {
     box.append(line(t('p0280.quotaNote')));
     box.append(btn(t('p0280.quotaRecheck'), '', () => start('codex', 'quota_recheck')));
   }
-  if (h.token) {
+  if (h.state !== 'login' && h.token) {
     const d = h.token.days_left;
     const k = d > 0 ? 'ar.token' : d === 0 ? 'ar.tokenToday' : 'ar.tokenPast';
     box.append(line(t(k).replace('{e}', h.token.expires).replace('{d}', String(d)), h.warn ? 'ardanger artoken' : 'artoken'));
-  } else if (h.installed && h.expiry) {
+  } else if (h.state !== 'login' && h.installed && h.expiry) {
     const k = { unknown: 'ar.expUnknown', auto: h.kind === 'codex' ? 'ar.expAutoCodex' : h.kind === 'kimi' ? 'ar.expAutoKimi' : 'ar.expAuto', none: 'ar.expNone' }[h.expiry];
     if (k) box.append(line(t(k), 'arexp'));
   }
   if (h.installed) box.append(btn(t('ar.checkNow'), '', () => { checkingSince.delete(h.kind); call({t:'auth_get'}); }));
-  if (h.health && h.health.at) {
+  if (h.health?.at && !(h.state === 'login' && h.health.ok)) {
     const when = new Date(h.health.at * 1000).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     box.append(line(t(h.health.ok ? 'ar.healthOk' : 'ar.healthFail').replace('{t}', when), h.health.ok ? 'arhealth' : 'arhealth ardanger'));
   }
-  if (h.kind === 'claude' && h.installed && (h.warn || h.expiry === 'unknown')) {
+  if (h.kind === 'claude' && h.installed && h.state !== 'login' && (h.warn || h.expiry === 'unknown')) {
     const p = document.createElement('p'); p.className = 'mailbtns';
     p.append(btn(t('ar.renewNow'), 'aj-action--primary arrenewbtn', () => start('claude', 'setup_token')));
     box.append(p, line(t('ar.renewNote')));
@@ -294,8 +303,10 @@ function flowInto(box, f) {
 function render() {
   const list = el('ar-list');
   if (!list || !view) return;
-  list.replaceChildren(...(view.harnesses || []).filter((h) => h.installed || h.current).map(harnessCard));
-  flowCard(view.flow);
+  const flow = view.flow;
+  const active = flow && !flow.account && !ended(flow) ? flow.kind : null;
+  list.replaceChildren(...(view.harnesses || []).filter(h => h.kind !== active && (h.installed || h.current)).map(harnessCard));
+  flowCard(flow);
 }
 
 export function configure(h = {}) {

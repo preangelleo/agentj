@@ -16,7 +16,13 @@ import { ownerInput } from './phone-activity.js';
 import * as termhook from './termhook.js';   // 0.30.3: 「进入终端」 under the opened notice
 import { loginOf, queueOf, waitedNow, prevText, canEnd, keepTicking } from './selfheal.js';
 import { open as openLogin } from './loginsheet.js';
+import { openNotice } from './authrescue.js';
 import { endTurn, flowState, clearEndTurn, onChange, openBlock, whyLine } from './rescue.js';
+
+export function relogin(p, login) {
+  if (login.health) openNotice(login.agent, p.id, login.health);
+  else openLogin(login.agent, login.why);
+}
 
 let endPage = null;                 // the page whose 「强制结束这一轮」 was tapped: its result belongs to it alone
 let repaint = null;
@@ -56,7 +62,7 @@ export function paint(box, p, H) {
   const login = loginOf(p);
   if (login) {
     box.replaceChildren(); box.hidden = false;
-    const b = button('sh-login', t('p0269.login.btn'), () => openLogin(login.agent, login.why)); b.dataset.loginBtn = login.agent;
+    const b = button('sh-login', t('p0269.login.btn'), () => relogin(p, login)); b.dataset.loginBtn = login.agent;
     box.append(b);
     return true;
   }

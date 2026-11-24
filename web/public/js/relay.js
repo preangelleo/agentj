@@ -13,7 +13,6 @@ import { paintReportActions } from './report-actions.js';
 import {reopenSession, setStuck} from './rescue.js';
 import * as chatheal from './chatheal.js';
 import * as selfheal from './selfheal.js';   // 0.26.9 (CONTRACT §C): 「重新登录」 under a signed-out reply, waited time + 强制结束这一轮
-import { open as openLogin } from './loginsheet.js';
 import { createSplit, pageKey, contIndex, contOfText } from './turnsplit.js';   // 0.26.9 #471 (§D): a long turn talked past → a new card below
 import { isAssistSrc } from './assistsrc.js';   // 0.26.9 #468 (§B3): 「官方远程协助」 on a task's turn
 import { paintOwnerQueue, initOwnerQueue, stopQueuedTurn } from './owner-queue.js';
@@ -451,7 +450,7 @@ function paintTags(item){
     if (item.tool === "pair_device") { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t(item.passkey_required ? "pair.card.tagFace" : "pair.card.tag"); box.appendChild(s); }   // P153
     else if (item.tool === "passphrase_reset") { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t(item.passkey_required ? "ppReset.tagFace" : "ppReset.tag"); box.appendChild(s); }   // #118
     else if (item.tool === "wechat_confirm") { const s = document.createElement("span"); s.className = "atag"; s.textContent = t("wc.confirmTag"); box.appendChild(s); }
-    else if (item.tool === "AuthRescue" && item.host_tool === true) { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t("ar.confirmTag"); box.appendChild(s); }
+    else if (item.tool === "AuthRescue" && item.host_tool === true) { const s = document.createElement("span"); s.className = "atag danger arconfirm"; s.textContent = t("ar.confirmTag"); box.appendChild(s); }
     else if (item.passkey_required && (item.tool === "SandboxOnce" || !cardNoKey(item))) { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t(item.tool === "SandboxOnce" ? "ask.sandboxOnce" : "p336.faTitle"); box.appendChild(s); }   // P561 追加 17: a remote without its own key gets no 「用 Face ID 确认」 tag (its category chips below instead, never the low-risk tag)
     else if (item.cats && item.cats.length) for (const c of item.cats){ const s = document.createElement("span"); s.className = "atag danger"; s.dataset.cat = c; s.textContent = t('ask.cat.' + catKey(c, item)); box.appendChild(s); }
     else if (item.passkey_required) {}
@@ -1841,7 +1840,7 @@ function showPage(){
   else if (oldFix) renderWords(oldFix, false, "", false, true, true);
   else renderWords((silentTurn(p) ? "" : p.reply?.trim()) || (noticeOnly ? t('p0269w4.notice') : qd || p.end === "open" || p.id === null ? "" : t('r.noReply')), open || qd,
     qd ? "" : progress, hostWait, sysPage(p), replyDataOnly(p) || noticeOnly);
-  { const lg = selfheal.loginOf(p); if (lg) selfheal.linkLogin(el("words"), t('p0269.login.btn'), () => openLogin(lg.agent, lg.why)); }   // 0.26.9: `/login` = 「重新登录」
+  { const lg = selfheal.loginOf(p); if (lg) selfheal.linkLogin(el("words"), t('p0269.login.btn'), () => chatheal.relogin(p, lg)); }   // 0.26.9: `/login` = 「重新登录」
   // 0.26.9 #433 #447 · security C-1: never on a friend's report or an owner-channel page (a stranger's words); a fill tap goes
   // after the owner's draft (appendText), never replacing it
   setStuck(hist.turns.slice(-6).filter(ownerInput).some(x => { const q = selfheal.queueOf(x); return !!q && (x.end === "open" || x === hist.turns[hist.turns.length - 1]) && selfheal.canEnd(q, selfheal.waitedNow(x.id, q, true)); }));

@@ -25,7 +25,7 @@
   "retained_manifest": "deferred/0.30.22/manifest.json",
   "active": {
     "web/public/app.css": {
-      "sha256": "79b917c37994f1791dbda8034ab8875faee1249358b18e9b25491c8df5356131",
+      "sha256": "52af39fc6503c835a92daee01a8d09a54a2705887b4d05b4ed8b8a7ee516a737",
       "approved": [
         "r3_final_decision",
         "0.30.24_owner_ruling",
@@ -39,7 +39,7 @@
       }
     },
     "web/public/i18n.js": {
-      "sha256": "4bd1a6060d606b1819b6d92dc768cb3a0f4f2f2217c61569daa29102556189d0",
+      "sha256": "81f6c637adf0b996a2012e10602e30cf794384726d3cf16ef2c7b12d4f6239f9",
       "approved": [
         "r3_final_decision"
       ],
@@ -49,7 +49,7 @@
       }
     },
     "web/public/index.html": {
-      "sha256": "325219f1b4059f541bdac50fde1ddbf934ab2640a7c8a39646ae82eb0ac6ae73",
+      "sha256": "4b870c701b6b2a34712b93c3d7c42dbd3531da1cf4ab6fc1d9e406400c6e4bed",
       "approved": [
         "r3_final_decision",
         "0.30.24_owner_ruling"
@@ -66,19 +66,19 @@
       ]
     },
     "web/public/js/approval-layout0281.js": {
-      "sha256": "f62ccd74e054031c109787a7be75063894bf362e564690cc45b9cc2a81052bf0",
+      "sha256": "2440e4b364f51a5dcbecfb16e6459909110fc24577128bdc8dadfa9903ceb4f3",
       "approved": [
         "r3_final_decision"
       ]
     },
     "web/public/js/approval541.js": {
-      "sha256": "0d77401dad56f1b3f2b4cb20bb539e0bbbb7adc923222d8529c17b9b63233a2b",
+      "sha256": "ccc6b4eae93aaa2dfc73db047912281e7addf6c15e96cb0244a44498022509d7",
       "approved": [
         "r3_final_decision"
       ]
     },
     "web/public/js/authrescue.js": {
-      "sha256": "8174ab1e19fe7cf3693d034ce5f75c747f478aa23957780b766320d6a3b07662",
+      "sha256": "c1b3289c37600e9850e4fbbb46cc5a061d3687b3aaaba20eb69149e7e0a1f288",
       "approved": [
         "r3_final_decision"
       ],
@@ -100,17 +100,17 @@
       ]
     },
     "web/public/menu.css": {
-      "sha256": "26183adccda14da9a3ddb68d1b99cebf485181da1be2459a18b063aa1ec0466c",
+      "sha256": "f88baea3269046a91fb1d29532e176d6ef6da5eae825bee46dfc709b76c8d6c0",
       "approved": [
         "r3_final_decision"
       ],
       "propagation": {
         "baseline_sha256": "ac0f38d6cfb4f1a521d7c3c152bd6e524c253fa6dd41cac5be1f7437ff4a3794",
-        "reason": "0.30.33 MQ-0320 (chairman INCOMING-0320/0321/0323 \u2465, fix/0333-mq): contact edit dialog \u4fdd\u5b58 becomes a worded Lotion/Sooty button the size of \u53d6\u6d88; shared \u2318/Ctrl+Enter save helper (card-form.js) with the p0321.saveKey hint on calendar, notes/to-do and contact forms; a host-voided approval / admin card is put away at once (web view only, nothing sent). Before/after images ~/.local/state/next-0.30.33/preview/MQ-0320/ \u2014 pending chairman image approval; do not ship before it."
+        "reason": "0.30.33 MQ-0320 (chairman INCOMING-0320/0321/0323 ⑥, fix/0333-mq): contact edit dialog 保存 becomes a worded Lotion/Sooty button the size of 取消; shared ⌘/Ctrl+Enter save helper (card-form.js) with the p0321.saveKey hint on calendar, notes/to-do and contact forms; a host-voided approval / admin card is put away at once (web view only, nothing sent). Before/after images ~/.local/state/next-0.30.33/preview/MQ-0320/ — pending chairman image approval; do not ship before it."
       }
     },
     "web/i18n/web.zh.json": {
-      "sha256": "f1b06d72303b7b66934b766781f625afcc98305da6b574792edd2741a7bf5ab8",
+      "sha256": "8a7b1f347351dcff01447950c5ddfbfe4dcf5e7027baf08d0e8c0c16bba8c970",
       "approved": [
         "r3_final_decision"
       ],
@@ -120,7 +120,7 @@
       }
     },
     "web/i18n/web.en.json": {
-      "sha256": "c9d104bcff6c588cfaadef766a6a85a8484fcbe1d5cbd48ccf9214d31016d3d3",
+      "sha256": "4505ea4769e100b188358a56e92474fe489ead39ca1f89609abf531784268374",
       "approved": [
         "r3_final_decision"
       ],
@@ -130,7 +130,7 @@
       }
     },
     "web/i18n/web.zh.src.json": {
-      "sha256": "f4cfc10877972da38afa5259d653ed5d0aa2396cb1ed0e79da34ffc9f4468d19",
+      "sha256": "7348cc44d880fb1c0f54b3439e769d4c2c28c250472366536cd5fb3343a94d85",
       "approved": [
         "r3_final_decision"
       ],
@@ -140,7 +140,7 @@
       }
     },
     "web/i18n/web.zh.override.json": {
-      "sha256": "45acf2f5f28ec48d6d3327885be0a4f7c51bb0afab5127efc3e1eee941adbba4",
+      "sha256": "1fcc24fa350b8d7ba12d9be979a842bedbc3eea5b298628e99388a2bb62520c5",
       "approved": [
         "r3_final_decision"
       ],
@@ -206,13 +206,13 @@
       ]
     },
     "web/public/js/media.js": {
-      "sha256": "4286c2ad3ca8de4dae6cefaf4e521c60279363a3b48095b619698724994f12ca",
+      "sha256": "34bd53bfdcc0a9f1fb6cafe532dd486fbb6aaab28de2b5e1cc14a3b3f677e7f7",
       "approved": [
         "r3_final_decision"
       ]
     },
     "web/public/js/popup-layout.js": {
-      "sha256": "28695947209e281e30fb1a693271203451986f900f9e1655abc48e0048632a31",
+      "sha256": "dfeb292b30cf1b350283624fdabddbe7ed241ee1f13f717b83842bf7afd27ae5",
       "approved": [
         "r3_final_decision"
       ]
@@ -230,13 +230,13 @@
       ]
     },
     "web/public/js/settings.js": {
-      "sha256": "4520cb6fd9379024abcf86d16eca156ca290081ec970ccccd4750725292e2f4e",
+      "sha256": "783e1bdd7015defca1cb87e7cc5e749a1e996357555a7c5a263c35d7872c03f9",
       "approved": [
         "r3_final_decision"
       ]
     },
     "web/public/js/t.js": {
-      "sha256": "fa877c4b292d143d1a9f19ef2c368364919858fc6b9c6b981fdebaf8d5d560ed",
+      "sha256": "cd531baf23e338c8b822bed210d0163de5e7e18b29f38add5ca5c74e404a933a",
       "approved": [
         "r3_final_decision"
       ]
@@ -254,7 +254,7 @@
       ]
     },
     "web/build.mjs": {
-      "sha256": "ef915f8c751e95000086fb3027e960b684fdd384c2d1c86bae47006e72b1a158",
+      "sha256": "091d4f643f49d45ad6213126c8b36617b0f1cd36cda63e231d2d2151cdcd1719",
       "approved": [
         "r3_final_decision"
       ]

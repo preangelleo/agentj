@@ -4717,13 +4717,14 @@ class Host:
         from .history_delivery import for_host
         for_host(self).enqueue(meta=True)
 
-    def hist_add(self, src: dict, reply: str = "", end: str = "done", card: dict | None = None, form: dict | None = None) -> dict:
+    def hist_add(self, src: dict, reply: str = "", end: str = "done", card: dict | None = None,
+                 form: dict | None = None, login: dict | None = None) -> dict:
         if src.get("k") == "sys":
             src = {**src,"name":"AgentJ"}  # presentation only; never rename the configured owner/Agent
         if src.get("k") in ("sys", "cmd"):
             from .system_text import remote
             reply = remote(reply)
-        t = self.hist.add(src, wire.well_formed(reply), end, card, form=form)
+        t = self.hist.add(src, wire.well_formed(reply), end, card, form=form, login=login)
         self.hist_emit([t])
         return t
 
@@ -5099,7 +5100,8 @@ class Host:
     def agent_recovery_notice(self, text: str) -> None:
         self.agent_notice(text, recovery=True)
 
-    def agent_notice(self, text: str, *, recovery=False, card: dict | None = None, repair: str | None = None) -> int | None:
+    def agent_notice(self, text: str, *, recovery=False, card: dict | None = None,
+                     repair: str | None = None, login: dict | None = None) -> int | None:
         from .system_text import remote
         text = remote(one(self.lang, text))       # P128: a legacy "中文 / English" notice reaches the phone in one language
         local, self.notice_local = getattr(self, "notice_local", False), False
@@ -5109,8 +5111,10 @@ class Host:
         self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
         t = self.hist_add({"k": "sys", "text": "", **({"local": True} if local else {}),
                            **({"repair":"reconnect"} if repair=="reconnect" else {})}, text, "done",
-                          card={"recovery": "restart_session"} if recovery else card)
-        login_flow.mark(self, t["id"], login_flow.take_pending(self))   # 0269-login: an adapter's login failure notice
+                          card={"recovery": "restart_session"} if recovery else card,
+                          **({"login": login} if login else {}))
+        if login is None:
+            login_flow.mark(self, t["id"], login_flow.take_pending(self))  # an adapter's login failure notice
         return t["id"]
 
     def channel_notice(self, text: str, card: dict, files=()) -> dict:
@@ -7782,15 +7786,28 @@ class Host:
         self.st.log("auth_rescue_req", device=s.device, agent=kind, status=t)
         if t == "auth_start":
             acct = obj.get("account")              # #427: {"name"} = a new account's own slot, never over the one in use
+            notice = "notice" in obj
+            if notice:
+                epoch = self.hist.epoch
+                turn = self.hist.get(obj["notice"]) or {}
+                hint = turn.get("login") or {}
+                tag = obj.get("health")
+                if (not isinstance(hint, dict) or not isinstance(tag, str) or hint.get("health") != tag or hint.get("agent") != kind
+                        or turn["src"].get("k") != "sys" or "route" in obj or "account" in obj):
+                    return await answer({"ok": False, "why": "unsupported"})
+                kind = hint["agent"]
 
             async def go():
+                chosen = await asyncio.to_thread(ar.notice_route, kind) if notice else route
+                if notice and (chosen is None or self.hist.epoch != epoch or self.hist.get(obj["notice"]) is not turn):
+                    return await answer({"ok": False, "why": "unsupported"})
                 with provenance.paired_request(lambda: self._paired_live(s)):
-                    if kind == "codex" and route == "quota_recheck" and acct is None:
+                    if kind == "codex" and chosen == "quota_recheck" and acct is None:
                         from .quota_refresh import recheck
                         await answer(await recheck(self, s, r))
                     else:
-                        await answer(await ar.start(kind, route if isinstance(route, str) else "", remote=s,
-                                                    account=acct if acct is not None else None))
+                        await answer(await ar.start(kind, chosen if isinstance(chosen, str) else "", remote=s,
+                                                    account=acct, notice=notice))
             self._bg(go(), "auth_start")     # the passkey card waits for the owner; never hold the relay reader
             return
         if t == "auth_press":
