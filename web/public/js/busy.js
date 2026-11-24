@@ -272,7 +272,7 @@ function paintDots() {
   // #557: the name/time have already claimed their flex space. Measure this remainder,
   // including the actual +K font width, rather than guessing from the viewport.
   const style = getComputedStyle(b), gap = parseFloat(style.columnGap) || 0;
-  const width = Math.max(0, b.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
+  const width = Math.max(0, b.parentElement.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight));
   const probe = document.createElement('b');
   probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none';
   b.append(probe);
@@ -300,7 +300,7 @@ function paintDots() {
     // A hidden/finished robot may bow only when its slot fits. Resizing must free
     // obsolete slots immediately; otherwise the bow itself could cover the time.
     const activeWidth = shown.length * unit + Math.max(0, shown.length - 1) * gap;
-    if (shown.length < tasks.length || b.scrollWidth > b.clientWidth || activeWidth >= width)
+    if (shown.length < tasks.length || b.scrollWidth > b.parentElement.clientWidth || activeWidth >= width)
       for (const i of b.querySelectorAll('i.bye')) i.remove();
     settle(b);
   }
@@ -694,7 +694,30 @@ export function init(fns = {}) {
   if (typeof fns.detail === 'function') fetchDetail = fns.detail;
   if (typeof fns.mention === 'function') mentionHook = fns.mention;
   if ($('busyBack')) $('busyBack').addEventListener('click', (e) => { e.stopPropagation(); backToList(); });
-  $('busyDots').addEventListener('click', (e) => { e.stopPropagation(); open(); });   // @ix app.busy_list
+  const trigger = $('busyDots');
+  const inside = (e) => trigger.contains(document.elementFromPoint(e.clientX, e.clientY));
+  // The browser can deliver a near miss to the button and then move the synthesized click inside it.
+  // Use the original touch coordinates for both the short tap and the hold shortcut.
+  let touch = null;
+  document.addEventListener('pointerdown', (e) => {
+    touch = e.pointerType === 'touch'
+      ? { id: e.pointerId, inside: e.isPrimary && trigger.contains(e.target) && inside(e) }
+      : null;
+  }, true);
+  document.addEventListener('pointerup', (e) => {
+    if (touch?.id === e.pointerId) touch.inside = touch.inside && inside(e);
+  }, true);
+  document.addEventListener('pointercancel', (e) => {
+    if (touch?.id === e.pointerId) touch.inside = false;
+  }, true);
+  trigger.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch' && !touch?.inside) e.stopImmediatePropagation();
+  }, true);
+  trigger.addEventListener('click', (e) => {   // @ix app.busy_list
+    e.stopPropagation();
+    if (e.pointerType === 'touch' ? !touch?.inside : e.detail && touch?.inside === false) return;
+    open();
+  });
   $('busyClose').addEventListener('click', close);
   for (const [id,v] of [['busyTasksTab','tasks'],['busyWorkflowTab','workflow']]) if ($(id)) {
     $(id).onclick=()=>switchView(v);
@@ -704,7 +727,8 @@ export function init(fns = {}) {
   if (fns.prompt) prompt = fns.prompt;
   // P181: 「换个样子」 under the robots, and a long press on the robots themselves (a tap still opens this card)
   if ($('busyTheme')) $('busyTheme').addEventListener('click', () => { close(); prompt('theme'); });
-  longPress($('busyDots'), () => { close(); prompt('theme'); });   // @ix app.robots_theme
+  // CSS already disables selection here. Keep WebKit's short-touch click even with the hold listener installed.
+  longPress(trigger, () => { close(); prompt('theme'); }, { nativeTouchClick: true });   // @ix app.robots_theme
   $('busyDlg').addEventListener('click', (e) => { if (e.target === e.currentTarget) close(); });   // outside the square
   registerLayer({ element: () => $('busyDlg'), open: () => !$('busyDlg').hidden, close, fallback: () => $('busyDots'), rank: 5 });
   if ($('loadHit')) {
@@ -728,7 +752,7 @@ export function init(fns = {}) {
   const refit = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; paintDots(); }); };
   try {
     const ro = new ResizeObserver(refit);
-    for (const el of [$('busyDots'), $('busyDots')?.parentElement, $('agent'), $('rmTime'), $('rmPart')]) if (el) ro.observe(el);
+    for (const el of [$('busyDots')?.parentElement, $('busyDots')?.closest('.rmhd'), $('agent'), $('rmTime'), $('rmPart')]) if (el) ro.observe(el);
   } catch (_) { addEventListener('resize', refit); }
   document.fonts?.ready.then(refit);
   document.fonts?.addEventListener('loadingdone', refit);

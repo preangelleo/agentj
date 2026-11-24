@@ -190,6 +190,10 @@
       },
       "gestures": [
         {
+          "type": "tap",
+          "pointer": "touch"
+        },
+        {
           "type": "double-tap",
           "pointer": "any"
         },
@@ -211,8 +215,8 @@
       ],
       "zh": "跳到最新一条",
       "en": "Jump to the newest page",
-      "gesture_zh": "双击页眉右边 1/3（页码）；页码闪烁时单击也行",
-      "gesture_en": "Double-tap the right third of the header (page number); a single tap while it flashes",
+      "gesture_zh": "触屏点页码。鼠标双击页码，页码闪烁时可单击。",
+      "gesture_en": "Tap the page number on a touchscreen. With a mouse, double-click it or single-click while it flashes.",
       "common": true
     },
     {

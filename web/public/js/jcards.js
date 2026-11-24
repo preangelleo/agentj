@@ -600,6 +600,14 @@ export async function directAdd(id, hooks) {
 function editNote(value, save, label = t('p386.edit'), fields = null, importText = false) {
   return new Promise(resolve=>{
     const opener=document.activeElement, dialog=node('dialog',undefined,'jc-dialog'), title=node('h2',label), input=node('textarea'); input.value=value; input.setAttribute('aria-label',label); input.maxLength=16000;
+    const actionClass = importText ? 'aj-dialog-action' : 'fp-action';
+    if (importText) {
+      dialog.dataset.noteSheet = '1';
+      dialog.setAttribute('aria-label', label);
+      input.autofocus = true;
+      input.rows = 6;
+    }
+    const focusInput = () => input.focus({ preventScroll: importText });
     let titleInput=null;
     if(fields) {
       dialog.dataset.noteFields='1';
@@ -611,8 +619,10 @@ function editNote(value, save, label = t('p386.edit'), fields = null, importText
     let busy=false, closed=false, reading=false;
     const done=v=>{if(closed)return;closed=true;dialog.close();dialog.remove();if(opener?.isConnected)opener.focus({preventScroll:true});resolve(v);};
     const submit=async()=>{if(busy||reading||!input.value.trim())return;busy=true;ok.disabled=true;try{if(!save||await save(result()))done(result());}finally{busy=false;ok.disabled=false;}};
-    const ok=button(t('p386.save'),submit), clip=button(t('p415.paste'),async()=>{try{const text=await navigator.clipboard.readText();if(dialog.isConnected&&text)input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');input.focus();}catch{toast(t('p415.pasteHelp'));}});
-    dialog.append(title,...(titleInput?[titleInput]:[]),input,clip,button(t('p386.cancel'),()=>{done(null);}),ok);
+    const ok = button(t('p386.save'), submit, importText ? 'aj-dialog-action aj-dialog-action--primary' : actionClass);
+    const cancel = button(t('p386.cancel'), () => { done(null); }, importText ? 'aj-dialog-action jc-note-cancel' : actionClass);
+    const clip=button(t('p415.paste'),async()=>{try{const text=await navigator.clipboard.readText();if(dialog.isConnected&&text)input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');focusInput();}catch{toast(t('p415.pasteHelp'));}},actionClass);
+    dialog.append(title,...(titleInput?[titleInput]:[]),input,clip,cancel,ok);
     if (importText) {
       const picker=node('input'); picker.type='file'; picker.accept='.txt,text/plain'; picker.hidden=true;
       const load=async files=>{
@@ -623,17 +633,17 @@ function editNote(value, save, label = t('p386.edit'), fields = null, importText
           const text=await readNoteTextFile(files[0]);
           const merged=input.value.slice(0,input.selectionStart)+text+input.value.slice(input.selectionEnd);
           if(new TextEncoder().encode(merged).length>NOTE_FILE_MAX || merged.length>input.maxLength)throw new Error('size');
-          if(!closed){input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');input.focus();}
+          if(!closed){input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');focusInput();}
         } catch(e){if(!closed)toast(t('p167.'+(['type','size','utf8','secret'].includes(e.message)?e.message:'read')));}
         finally{reading=false;ok.disabled=false;picker.value='';}
       };
       picker.onchange=()=>load([...picker.files]);
-      clip.after(button(t('p167.choose'),()=>picker.click()));dialog.append(picker);
+      clip.after(button(t('p167.choose'),()=>picker.click(),actionClass));dialog.append(picker);
       dialog.addEventListener('paste',e=>{const files=[...(e.clipboardData?.files||[])];if(files.length){e.preventDefault();e.stopPropagation();load(files);}});
     }
 
     dialog.addEventListener('cancel',e=>{e.preventDefault();done(null);});
     const saveKey=attachCardSaveShortcut(dialog,submit,ok,'aj-wallet');if(saveKey)dialog.append(saveKey);   // P415 ⌘/Ctrl+Enter, now the shared P592 helper (+ the hint)
-    document.body.append(dialog);dialog.showModal();input.focus();
+    document.body.append(dialog);dialog.showModal();focusInput();
   });
 }

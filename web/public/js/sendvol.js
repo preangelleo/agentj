@@ -7,8 +7,8 @@ import {focusDraft} from './composer-focus.js';
 //   A hold released without sliding leaves it open: tap / drag the slider, then a tap outside or Esc closes it.
 // - The slider is focused when it opens: ↑ / ↓ set it from the keyboard (native range input), Esc closes.
 // - One preview whoosh once the level settles (not one per pixel); none at 0 %.
-// Send stays disabled (a click never sends): the press is read on the document (capture), against Send's box, because
-// browsers do not all deliver pointer events to a disabled button.
+// Send stays disabled (a click never sends): the press falls through to the composer row, where its coordinates
+// are checked against Send's box. A popup covering the same point keeps its own tap.
 import * as sfx from './sfx.js';
 import { t } from './t.js';
 
@@ -19,7 +19,11 @@ let send = null, input = null, pop = null, range = null, val = null;
 let press = null, drag = null, previewT = 0;
 
 const isOpen = () => !!pop && !pop.hidden;
-const inside = (r, x, y) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+function onSend({ target, clientX, clientY }) {
+  if (!send?.parentElement?.contains(target)) return false;
+  const { left, right, top, bottom } = send.getBoundingClientRect();
+  return clientX >= left && clientX <= right && clientY >= top && clientY <= bottom;
+}
 const armed = () => !!send && send.disabled && !(input && input.value.trim()) && !isOpen();
 
 function paint() {
@@ -93,10 +97,10 @@ function levelAt(y) {
 
 function down(e) {
   if (isOpen()) {
-    if (!pop.contains(e.target)) { close(); if (send && inside(send.getBoundingClientRect(), e.clientX, e.clientY)) e.preventDefault(); }
+    if (!pop.contains(e.target)) { close(); if (onSend(e)) e.preventDefault(); }
     return;
   }
-  if (e.button > 0 || !armed() || !inside(send.getBoundingClientRect(), e.clientX, e.clientY)) return;
+  if (e.button > 0 || !armed() || !onSend(e)) return;
   e.preventDefault();                             // no text selection / iOS callout / focus loss on a hold
   press = { id: e.pointerId, x: e.clientX, y: e.clientY, t: setTimeout(() => {
     if (!press) return;

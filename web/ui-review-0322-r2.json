@@ -25,38 +25,59 @@
   "retained_manifest": "deferred/0.30.22/manifest.json",
   "active": {
     "web/public/app.css": {
-      "sha256": "52af39fc6503c835a92daee01a8d09a54a2705887b4d05b4ed8b8a7ee516a737",
+      "sha256": "91307bc589bcd073393f2caaf9d00ddfe311ab549ba17fbc4f0700c9f6aff4a2",
       "approved": [
         "r3_final_decision",
         "0.30.24_owner_ruling",
         "0.30.25_P593_R-0001",
         "0.30.25_provenance_noir_solid_no_border",
-        "0.30.26_P593_R-0001_r4"
+        "0.30.26_P593_R-0001_r4",
+        "0.30.75_night_review"
       ],
       "propagation": {
         "baseline_sha256": "ef95e81977d25f7c13aa49c0a99175d2a1735bcc8edbeb452e7fb3ed11b7006c",
         "reason": "0.30.35 chairman UI review (2026-11-18): legible secret-input kicker in light and dark mode; hide the underlying composer tools while this form is open."
+      },
+      "release_reviews": {
+        "0.30.75": {
+          "baseline_sha256": "52af39fc6503c835a92daee01a8d09a54a2705887b4d05b4ed8b8a7ee516a737",
+          "evidence": "0.30.75 paired-browser before and after review"
+        }
       }
     },
     "web/public/i18n.js": {
-      "sha256": "81f6c637adf0b996a2012e10602e30cf794384726d3cf16ef2c7b12d4f6239f9",
+      "sha256": "cf3045a0e5349ae341029903c51e7e3ebaac2a74a50ff011f5e906028b7bbfdd",
       "approved": [
-        "r3_final_decision"
+        "r3_final_decision",
+        "0.30.75_night_review"
       ],
       "propagation": {
         "baseline_sha256": "503475a6eec8a3c249de33706b6491b4a60642c8a052f7b2fa9212c722bfd2af",
         "reason": "0.30.39 adds the localized manual-retry message for a system feedback privacy-check failure. Reviewed under the 0.30.39 night order. The 0.30.22 decision and 0319 approval remain separate."
+      },
+      "release_reviews": {
+        "0.30.75": {
+          "baseline_sha256": "81f6c637adf0b996a2012e10602e30cf794384726d3cf16ef2c7b12d4f6239f9",
+          "evidence": "0.30.75 paired-browser before and after review"
+        }
       }
     },
     "web/public/index.html": {
-      "sha256": "4b870c701b6b2a34712b93c3d7c42dbd3531da1cf4ab6fc1d9e406400c6e4bed",
+      "sha256": "e43acc08669836573e7d15765cd15d7048ecd9eab7e1164984994c18ac69b38c",
       "approved": [
         "r3_final_decision",
-        "0.30.24_owner_ruling"
+        "0.30.24_owner_ruling",
+        "0.30.75_night_review"
       ],
       "propagation": {
         "baseline_sha256": "cffad83d1d8fe46bb1908ecb53446667877d47ea8029e46e8eae0b09a6b3803c",
         "reason": "0.30.39 removes the eager QR decoder script from the pairing page. Reviewed under the 0.30.39 night order. The 0.30.22 decision and 0319 approval remain separate."
+      },
+      "release_reviews": {
+        "0.30.75": {
+          "baseline_sha256": "4b870c701b6b2a34712b93c3d7c42dbd3531da1cf4ab6fc1d9e406400c6e4bed",
+          "evidence": "0.30.75 paired-browser before and after review"
+        }
       }
     },
     "web/public/js/accounts.js": {
@@ -110,43 +131,71 @@
       }
     },
     "web/i18n/web.zh.json": {
-      "sha256": "8a7b1f347351dcff01447950c5ddfbfe4dcf5e7027baf08d0e8c0c16bba8c970",
+      "sha256": "e68991302025998c84956c9275f47934425db6e992e69b6e98e698770f3f297b",
       "approved": [
-        "r3_final_decision"
+        "r3_final_decision",
+        "0.30.75_night_review"
       ],
       "propagation": {
         "baseline_sha256": "a28f8bb29f6e82495383698d35a9e7cb5e2bd07c296fe9e9ad0004c193e5567c",
         "reason": "0.30.39 adds the localized manual-retry message for a system feedback privacy-check failure. Reviewed under the 0.30.39 night order. The 0.30.22 decision and 0319 approval remain separate."
+      },
+      "release_reviews": {
+        "0.30.75": {
+          "baseline_sha256": "8a7b1f347351dcff01447950c5ddfbfe4dcf5e7027baf08d0e8c0c16bba8c970",
+          "evidence": "0.30.75 paired-browser before and after review"
+        }
       }
     },
     "web/i18n/web.en.json": {
-      "sha256": "4505ea4769e100b188358a56e92474fe489ead39ca1f89609abf531784268374",
+      "sha256": "114242a5ac284a8cc57415e7d5409ed8c27ef5266ead0c43f61d0a35173c309e",
       "approved": [
-        "r3_final_decision"
+        "r3_final_decision",
+        "0.30.75_night_review"
       ],
       "propagation": {
         "baseline_sha256": "953d85766bdaa826519410dfd28d282c5baae6ca710946dc7317f8c2509fc3f8",
         "reason": "0.30.39 adds the localized manual-retry message for a system feedback privacy-check failure. Reviewed under the 0.30.39 night order. The 0.30.22 decision and 0319 approval remain separate."
+      },
+      "release_reviews": {
+        "0.30.75": {
+          "baseline_sha256": "4505ea4769e100b188358a56e92474fe489ead39ca1f89609abf531784268374",
+          "evidence": "0.30.75 paired-browser before and after review"
+        }
       }
     },
     "web/i18n/web.zh.src.json": {
-      "sha256": "7348cc44d880fb1c0f54b3439e769d4c2c28c250472366536cd5fb3343a94d85",
+      "sha256": "f43e02e5dcd0bbac96ef341d163bf00a7f4e54b4f41475485d9e5117d9dd5973",
       "approved": [
-        "r3_final_decision"
+        "r3_final_decision",
+        "0.30.75_night_review"
       ],
       "propagation": {
         "baseline_sha256": "0080c4978b32723b8ebe75318314ff6880e81a502024340e30d296f8b3d2dbdf",
         "reason": "0.30.39 adds the localized manual-retry message for a system feedback privacy-check failure. Reviewed under the 0.30.39 night order. The 0.30.22 decision and 0319 approval remain separate."
+      },
+      "release_reviews": {
+        "0.30.75": {
+          "baseline_sha256": "7348cc44d880fb1c0f54b3439e769d4c2c28c250472366536cd5fb3343a94d85",
+          "evidence": "0.30.75 paired-browser before and after review"
+        }
       }
     },
     "web/i18n/web.zh.override.json": {
-      "sha256": "1fcc24fa350b8d7ba12d9be979a842bedbc3eea5b298628e99388a2bb62520c5",
+      "sha256": "956cca5c86d8c8d94df87eddfb12ddc4f7caf7c46c3d44972a6e17f57ed89c9c",
       "approved": [
-        "r3_final_decision"
+        "r3_final_decision",
+        "0.30.75_night_review"
       ],
       "propagation": {
         "baseline_sha256": "ba7d8a209b6838fcc123e176ef3d260f2504cf64b89a896fed83d587bd966e0d",
         "reason": "0.30.39 adds the localized manual-retry message for a system feedback privacy-check failure. Reviewed under the 0.30.39 night order. The 0.30.22 decision and 0319 approval remain separate."
+      },
+      "release_reviews": {
+        "0.30.75": {
+          "baseline_sha256": "1fcc24fa350b8d7ba12d9be979a842bedbc3eea5b298628e99388a2bb62520c5",
+          "evidence": "0.30.75 paired-browser before and after review"
+        }
       }
     },
     "web/public/brand/account-links.js": {
@@ -248,10 +297,17 @@
       ]
     },
     "web/interactions.json": {
-      "sha256": "e43bb933a29252a8ec6de74bd871fe9e1006ddcf46dc97cdbd3872aa8787fdc0",
+      "sha256": "cef609bf173d3f22d13d5d241b9dc0bdb7fa19264ceb2dd714ffd38e0b3baff6",
       "approved": [
-        "r3_final_decision"
-      ]
+        "r3_final_decision",
+        "0.30.75_night_review"
+      ],
+      "release_reviews": {
+        "0.30.75": {
+          "baseline_sha256": "e43bb933a29252a8ec6de74bd871fe9e1006ddcf46dc97cdbd3872aa8787fdc0",
+          "evidence": "0.30.75 paired-browser before and after review"
+        }
+      }
     },
     "web/build.mjs": {
       "sha256": "091d4f643f49d45ad6213126c8b36617b0f1cd36cda63e231d2d2151cdcd1719",

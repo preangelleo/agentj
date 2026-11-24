@@ -69,11 +69,12 @@ class StaleDependencyCache(TestCase):
 
     def test_unproven_group_leftover_is_discarded_and_rebuilt(self):
         self.old_updater_leftover()
-        inode = self.entry.stat().st_ino
-        with mock.patch(PRIVATE, return_value=False):
+        # Keep the old inode live while rebuilding so the filesystem cannot
+        # immediately recycle it for the new directory entry.
+        with self.entry.open('rb') as old_entry, mock.patch(PRIVATE, return_value=False):
             self.assertEqual(self.build(), self.house)
+            self.assertNotEqual(self.entry.stat().st_ino, os.fstat(old_entry.fileno()).st_ino)
         self.assertEqual((self.mode(), self.downloads), (0o600, 1))
-        self.assertNotEqual(self.entry.stat().st_ino, inode)
         self.assertEqual(self.entry.read_bytes(), self.dep)
         self.assertEqual(sorted(p.name for p in self.house.parent.iterdir()), [self.house.name])
 

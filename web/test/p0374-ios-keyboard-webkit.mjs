@@ -35,6 +35,7 @@ mkdirSync(OUT, { recursive: true });
 
 // iPhone 13 / 14 (390 × 844) with the keyboard + its bar (380 px) · iPhone Air (420 × 912; the owner's shot: 444 px gone)
 const PHONE = { w: 390, h: 844, kb: 380 }, AIR = { w: 420, h: 912, kb: 444 }, DESKTOP = { w: 1440, h: 960, kb: 0 };
+const NARROW = { w: 320, h: 568, kb: 290 };
 const FIELD = 'input:not([type=button]):not([type=submit]):not([type=reset]):not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]):not([type=hidden]),textarea,[contenteditable="true"]';
 
 function initScript() {
@@ -65,8 +66,8 @@ const rows = [];
 class PairingSetupError extends Error {}
 
 /** One fresh paired phone. */
-async function phone({ geo = PHONE, theme = 'light', path = '', pair = true, friends = false, contacts = false, caps = [], onApp = null } = {}) {
-  fake.reset(); fake.setUp(true); fake.st.prefs = { appearance: { language: 'zh', theme } }; fake.st.terminal = null; fake.st.onApp = onApp;
+async function phone({ geo = PHONE, theme = 'light', language = 'zh', path = '', pair = true, friends = false, contacts = false, caps = [], onApp = null } = {}) {
+  fake.reset(); fake.setUp(true); fake.st.prefs = { appearance: { language, theme } }; fake.st.terminal = null; fake.st.onApp = onApp;
   fake.st.extraCaps = caps;
   if (friends) {
     const fixtures = sampleFriends();
@@ -87,9 +88,9 @@ async function phone({ geo = PHONE, theme = 'light', path = '', pair = true, fri
       ? route.continue() : route.abort());
     await ctx.addInitScript(initScript);
     const p = await ctx.newPage();
-    p.geo = geo; p.theme = theme;
-    if (!pair) { await p.goto(PAGE + path + '?lang=zh'); return p; }
-    await p.goto(fake.newPairing(PAGE + path + '?lang=zh'));
+    p.geo = geo; p.theme = theme; p.language = language;
+    if (!pair) { await p.goto(PAGE + path + '?lang=' + language); return p; }
+    await p.goto(fake.newPairing(PAGE + path + '?lang=' + language));
     try {
       await p.waitForFunction(() => window.__ajState === 'awaiting-approval', null, { polling: 100, timeout: 15000 });
     } catch (error) {
@@ -218,6 +219,171 @@ async function sweep(p, name, root, { min = 1, shotFirst = false } = {}) {
     n++;
   }
   return n;
+}
+
+async function noteShot(p, state) {
+  if (!SHOTS) return;
+  if (state === 'keyboard') await p.evaluate(() => {
+    // A popover in the modal belongs to the browser's top layer, above the native dialog.
+    // It is present only for the screenshot, after hit testing the unmodified document.
+    const mask = document.createElement('div');
+    mask.id = 'note-keyboard-stand-in';
+    mask.popover = 'manual';
+    mask.textContent = '键盘（模拟）';
+    mask.style.cssText = 'position:fixed;inset:auto 0 0;margin:0;width:auto;box-sizing:border-box;display:grid;place-items:center;background:#2b2a27;color:#faf9f5;border:0;border-top:1px solid #6f6e68;font:600 16px sans-serif;pointer-events:none';
+    mask.style.height = innerHeight - visualViewport.height + 'px';
+    document.querySelector('.jc-dialog[open]').append(mask);
+    mask.showPopover();
+  });
+  try {
+    await p.screenshot({ path: resolve(OUT, `${TAG}-note-sheet-${p.geo.w}-${p.theme}-${state}.png`) });
+  } finally {
+    if (state === 'keyboard') await p.evaluate(() => document.getElementById('note-keyboard-stand-in')?.remove());
+  }
+}
+
+function rgbLuminance(color) {
+  const channels = color.match(/^rgb\((\d+), (\d+), (\d+)\)$/)?.slice(1);
+  if (!channels) return null;
+  const [red, green, blue] = channels.map(channel => {
+    const value = Number(channel) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+async function noteSheetLayout(p, dialog, field, state) {
+  const m = await measure(p, field);
+  const layout = await dialog.evaluate(el => {
+    const rect = node => {
+      const { left, top, right, bottom, width, height } = node.getBoundingClientRect();
+      return { left, top, right, bottom, width, height };
+    };
+    const actions = Array.from(el.querySelectorAll('button'), button => {
+      const bounds = rect(button), { left, top, width, height } = bounds, style = getComputedStyle(button);
+      const text = document.createRange();
+      text.selectNodeContents(button);
+      const labelBounds = rect(text);
+      return { ...bounds, label: button.textContent.trim(), background: style.backgroundColor, color: style.color,
+        opacity: Number(style.opacity), bordered: ['Top', 'Right', 'Bottom', 'Left'].some(side => parseFloat(style[`border${side}Width`]) > 0),
+        shadow: style.boxShadow,
+        enabled: !button.disabled,
+        labelFits: text.getClientRects().length === 1 && labelBounds.left >= left && labelBounds.right <= bounds.right,
+        hit: document.elementFromPoint(left + width / 2, top + height / 2) === button };
+    });
+    const top = visualViewport.offsetTop, bottom = top + visualViewport.height;
+    const dialog = rect(el), css = getComputedStyle(el);
+    const send = document.getElementById('send'), sendBox = rect(send), save = actions.at(-1);
+    const saveX = save.left + save.width / 2, saveY = save.top + save.height / 2;
+    const safeBottom = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ios-safe-bottom')) || 0;
+    return { actions, dialog, gapBelow: Math.round(bottom - dialog.bottom),
+      actionGap: Math.round(bottom - Math.max(...actions.map(b => b.bottom))), top, bottom,
+      theme: document.documentElement.dataset.theme, dialogBackground: css.backgroundColor, safeBottom,
+      coversDisabledSend: send.disabled && saveX >= sendBox.left && saveX <= sendBox.right && saveY >= sendBox.top && saveY <= sendBox.bottom,
+      positioning: { top: css.top, bottom: css.bottom, height: css.height, maxHeight: css.maxHeight, transform: css.transform } };
+  });
+  const labels = p.language === 'zh' ? ['粘贴', '导入文本', '取消', '保存'] : ['Paste', 'Import text', 'Cancel', 'Save'];
+  const { actions, top, bottom, gapBelow, actionGap } = layout;
+  const sameRow = actions.every((b, i) => !i || (Math.abs(b.top - actions[0].top) < 1 && b.left - actions[i - 1].right >= 7.5));
+  const hitTargets = actions.every(b => b.enabled && b.width >= 44 && b.height >= 44 && b.left >= layout.dialog.left && b.right <= layout.dialog.right
+    && b.top >= top && b.bottom <= bottom && b.labelFits && b.hit);
+  const argent = 'rgb(136, 136, 136)', lotion = 'rgb(250, 249, 245)', noir = 'rgb(44, 43, 38)';
+  const solidColors = actions.every((b, i) => b.background === (i === 3 ? lotion : noir) && b.color === (i === 3 ? noir : lotion));
+  const copy = actions.map(b => b.label).join('|') === labels.join('|');
+  const keyboard = state.startsWith('keyboard') && state !== 'keyboard-dismissed';
+  const panelLuminance = rgbLuminance(layout.dialogBackground), noirLuminance = rgbLuminance(noir);
+  const fillContrast = panelLuminance === null ? 0 : (Math.max(panelLuminance, noirLuminance) + .05) / (Math.min(panelLuminance, noirLuminance) + .05);
+  const solidSecondary = fillContrast >= 3 && actions.slice(0, 3).every(action => action.opacity === 1 && !action.bordered && action.shadow === 'none');
+  const viewportPlacement = p.geo.kb
+    ? gapBelow <= 1 && actionGap >= layout.safeBottom
+    : Math.abs(layout.dialog.top + layout.dialog.bottom - top - bottom) <= 2;
+  const ok = layout.theme === p.theme && m.inside && m.focused && !m.cover.length && actions.length === 4 && sameRow && hitTargets && solidColors && copy
+    && layout.dialogBackground === argent && solidSecondary
+    && actions[0].top >= m.rect[1] + 7.5
+    && layout.dialog.top >= top - 0.5 && gapBelow >= 0
+    && (keyboard ? gapBelow <= 32 && actionGap <= 56 : viewportPlacement);
+  const name = `notebook-add-${p.geo.w}-${p.language}-${p.theme}-${state}`;
+  rows.push({ case: name, field: m.id, ok, ...m, ...layout, sameRow, hitTargets, solidColors, copy, solidSecondary, fillContrast, ...(keyboard ? {} : { viewportPlacement }) });
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name} · field ${m.rect} in ${m.view}; actions ${actions.map(b => Math.round(b.top)).join('/')}; action gap ${actionGap}px; ${hitTargets ? 'hit targets visible' : 'hit target failed'}; panel gap ${gapBelow}px; Noir contrast ${fillContrast.toFixed(2)}`);
+  return ok;
+}
+
+async function notebookAdd(p) {
+  await p.evaluate(async () => {
+    const cards = await (await import('./js/jcards.js')).refresh();
+    if (!cards.some(card => card.id === 'notes' && card.official)) throw new Error('Official notebook fixture was not received');
+    (await import('./js/five-pages.js')).openTarget('notes');
+  });
+  const zh = p.language === 'zh', trigger = '.jc-body[data-card=notes] [data-act=add]';
+  const dialog = p.locator('.jc-dialog[open]'), title = dialog.locator('input[type=text]'), content = dialog.locator('textarea');
+  const save = dialog.getByRole('button', { name: zh ? '保存' : 'Save', exact: true });
+  const paste = dialog.getByRole('button', { name: zh ? '粘贴' : 'Paste', exact: true });
+  const cancel = dialog.getByRole('button', { name: zh ? '取消' : 'Cancel', exact: true });
+  const activate = target => p.geo.kb ? target.tap() : target.click();
+  const open = async (selector = trigger) => {
+    await activate(p.locator(selector));
+    await title.waitFor();
+    await content.waitFor();
+    await layoutFrames(p, 120);
+  };
+  await open();
+  let healthy = await noteSheetLayout(p, dialog, content, 'no-keyboard');
+  await noteShot(p, 'no-keyboard');
+  if (p.geo.kb) {
+    await kbd(p, true);
+    healthy = await noteSheetLayout(p, dialog, content, 'keyboard') && healthy;
+    await noteShot(p, 'keyboard');
+    await kbd(p, true, 72);
+    healthy = await noteSheetLayout(p, dialog, content, 'keyboard-panned') && healthy;
+    // Do not let Playwright scroll the card to make the field reachable.
+    const { x, y, width, height } = await title.boundingBox();
+    if (healthy) await p.touchscreen.tap(x + width / 2, y + height / 2);
+    else await title.evaluate(el => el.focus({ preventScroll: true }));
+    await layoutFrames(p, 120);
+    healthy = await noteSheetLayout(p, dialog, title, 'keyboard-title') && healthy;
+    await kbd(p, false);
+    healthy = await noteSheetLayout(p, dialog, title, 'keyboard-dismissed') && healthy;
+  }
+  // The negative control still measures every state and captures comparison images.
+  if (!healthy) return;
+  await title.fill('WebKit journey');
+  const text = 'Typed note';
+  await content.fill(text);
+  if (p.geo.kb) {
+    await kbd(p, true, 72);
+    assert.ok(await noteSheetLayout(p, dialog, content, 'keyboard-before-save'));
+  }
+  // Direct touch coordinates preserve the measured position while the keyboard is up.
+  const { x, y, width, height } = await save.boundingBox();
+  if (p.geo.kb) await p.touchscreen.tap(x + width / 2, y + height / 2);
+  else await p.mouse.click(x + width / 2, y + height / 2);
+  await dialog.waitFor({ state: 'detached', timeout: 6000 }).catch(error => {
+    throw new Error(`Save at ${x + width / 2},${y + height / 2} left the dialog open with ${notebookWrites.length} fixture writes`, { cause: error });
+  });
+  assert.deepEqual(notebookWrites.map(({ id, op, title, text }) => ({ id, op, title, text })), [
+    { id: 'notes', op: 'add', title: 'WebKit journey', text },
+  ]);
+  await p.locator('.jc-entry[data-item=journey-note]').waitFor({ timeout: 6000 });
+  await kbd(p, false);
+  await open('#cardPlus');
+  await p.evaluate(() => Object.defineProperty(navigator, 'clipboard', {
+    configurable: true, value: { readText: async () => 'Clipboard text' },
+  }));
+  await activate(paste);
+  await p.waitForFunction(() => document.querySelector('.jc-dialog textarea').value === 'Clipboard text');
+  const [picker] = await Promise.all([
+    p.waitForEvent('filechooser'),
+    activate(dialog.getByRole('button', { name: zh ? '导入文本' : 'Import text', exact: true })),
+  ]);
+  await picker.setFiles({ name: 'memo.txt', mimeType: 'text/plain', buffer: Buffer.from('\n导入样文') });
+  await p.waitForFunction(() => document.querySelector('.jc-dialog textarea').value === 'Clipboard text\n导入样文');
+  await activate(cancel);
+  await dialog.waitFor({ state: 'detached', timeout: 6000 }).catch(error => {
+    throw new Error('Cancel left the dialog open', { cause: error });
+  });
+  assert.equal(notebookWrites.length, 1, 'cancel sends no note mutation');
+  assert.equal(fake.st.says.length + fake.st.slashes.length, 0, 'notes send no agent message');
+  rows.push({ case: `notebook-add-${p.geo.w}-${p.language}-${p.theme}-journey`, ok: true, field: 'save/cancel' });
 }
 
 // ------------------------------------------------------------------------------------------------ the host side of the terminal
@@ -593,6 +759,7 @@ const CASES = {
     await waitField(p, '.jc-dialog[open][data-note-fields="1"] textarea');
     await sweep(p, 'notebook-editor', '.jc-dialog[open]', { min: 2 });
   },
+  'notebook-add': notebookAdd,
   'settings-owner-hosts': async (p) => {
     await openSettings(p);
     await p.evaluate(async () => {
@@ -700,13 +867,20 @@ const CASES = {
     await sweep(p, 'pair-link', '#pair-view', { min: 1, shotFirst: true });
   },
 };
+const notebookWrites = [];
 const notebookHost = async (c, m, send) => {
   if (m.t === 'jcard_list') {
     await send({ t: 'jcard_items', r: m.r, cards: [{ id: 'notes', name: { zh: '示例记事本', en: 'Notebook' }, on: true, official: true }] });
     return true;
   }
+  if (m.t === 'jcard_note') {
+    notebookWrites.push(m);
+    await send({ t: 'jcard_note', r: m.r, id: m.id, ok: true, item: { id: 'journey-note' } });
+    return true;
+  }
   if (m.t !== 'jcard_get') return false;
   await send({ t: 'jcard_get', r: m.r, id: m.id, ok: true, noteFields: true, template: 'notes', entries: [
+    ...notebookWrites.map(({ title, text }) => ({ id: 'journey-note', title, text, date: '2026-11-24', editable: true })),
     { id: 'sample-note', title: '示例', text: '示例正文', date: '2026-10-22', editable: true },
   ], revision: 'example' });
   return true;
@@ -717,6 +891,7 @@ const SETUP = {
   'settings-hooks': { caps: ['hooks1', 'externalmcp1'] }, 'card-colors': { caps: ['jpalette1'] },
   'settings-backup-account': { caps: ['accts1'] }, 'friend-report-reply': { caps: ['friendreport1'] },
   'notebook-editor': { caps: ['jcards1'], onApp: notebookHost },
+  'notebook-add': { caps: ['jcards1'], onApp: notebookHost },
 };
 // screenshots for the review: the reported card and the riskiest neighbours
 const SHOT_CASES = ['terminal-password', 'sudo-card', 'question-free-text', 'contact-card'];
@@ -724,6 +899,7 @@ const SHOT_CASES = ['terminal-password', 'sudo-card', 'question-free-text', 'con
 async function runCase(name, opts) {
   let p = null;
   try {
+    notebookWrites.length = 0;
     const phoneOptions = { ...opts, ...(SETUP[name] || {}) };
     try {
       p = await phone(phoneOptions);
@@ -743,14 +919,20 @@ try {
   assert.ok(ONLY.every(name => Object.hasOwn(CASES, name)), `unknown case in P0374_ONLY: ${ONLY.join(', ')}`);
   const names = Object.keys(CASES).filter((n) => !ONLY.length || ONLY.includes(n));
   if (SHOTS) {
-    for (const geo of [PHONE, AIR, DESKTOP]) for (const theme of ['light', 'dark']) {
-      const selected = geo === DESKTOP ? ['terminal-password'] : SHOT_CASES;
+    for (const geo of [PHONE, AIR, NARROW, DESKTOP]) for (const theme of ['light', 'dark']) {
+      const selected = geo === NARROW ? ['notebook-add'] : geo === DESKTOP ? ['terminal-password', 'notebook-add']
+        : geo === AIR ? [...SHOT_CASES, 'notebook-add'] : SHOT_CASES;
       for (const n of names.filter(x => selected.includes(x))) await runCase(n, { geo, theme });
     }
   }
   else {
     for (const n of names) await runCase(n, { geo: PHONE });
     if (names.includes('terminal-password')) await runCase('terminal-password', { geo: AIR });   // the owner's phone
+    if (names.includes('notebook-add')) {
+      await runCase('notebook-add', { geo: AIR, theme: 'dark' });
+      await runCase('notebook-add', { geo: NARROW, theme: 'dark' });
+      await runCase('notebook-add', { geo: NARROW, language: 'en' });
+    }
   }
 } finally { await B.close(); await fake.stop(); await web.stop(); }
 
@@ -758,11 +940,11 @@ assert.ok(rows.length, 'at least one field was measured');
 const bad = rows.filter((r) => !r.ok), red = [...new Set(bad.map((r) => r.case))].sort();
 writeFileSync(resolve(OUT, `${TAG}.json`), JSON.stringify({ engine: 'WebKit (Playwright)', physical: false, keyboard: 'visualViewport stand-in (see the file header)', public: process.env.P0374_PUBLIC || 'tree',
   cases: Object.keys(CASES).length, fields: rows.length, failed: bad.length, red, rows }, null, 1) + '\n');
-console.log(`P0374 ${TAG}: ${rows.length - bad.length}/${rows.length} fields in view; red cases: ${red.join(', ') || 'none'} → ${OUT}/${TAG}.json`);
+console.log(`P0374 ${TAG}: ${rows.length - bad.length}/${rows.length} checks passed; red cases: ${red.join(', ') || 'none'} → ${OUT}/${TAG}.json`);
 if (!SHOTS && !ONLY.length && !process.env.P0374_PUBLIC) {
   const parity = parityRecorder('web/test/p0374-ios-keyboard-webkit.mjs');
   parity.record('Focused phone inputs stay visible when the visual viewport shrinks', bad.length === 0);
   parity.write();
 }
-if (SHOTS) assert.equal(rows.filter(row => row.field === '(setup)').length, 0, 'all screenshot surfaces opened');
-else assert.equal(bad.length, 0, `${bad.length} focused field(s) not fully visible with the keyboard up: ${bad.map((r) => r.case + ' ' + r.field).join('; ')}`);
+if (SHOTS && !ONLY.includes('notebook-add')) assert.equal(rows.filter(row => row.field === '(setup)').length, 0, 'all screenshot surfaces opened');
+else assert.equal(bad.length, 0, `${bad.length} mobile layout or interaction checks failed: ${bad.map((r) => r.case + ' ' + r.field).join('; ')}`);

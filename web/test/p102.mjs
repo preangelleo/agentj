@@ -78,13 +78,12 @@ export async function runP102Screens({B,web,fake,preview=false,out='reports/qa/p
    assert.equal(await evaluate(p,`getComputedStyle(${$('pgLatest')}).visibility`),'visible');
    assert.equal(await evaluate(p,`getComputedStyle(${$('pg')}).animationName`),'none');
    assert.equal(await evaluate(p,`getComputedStyle(${$('pg')}).backgroundColor`),'rgba(0, 0, 0, 0)');
-   // Single mouse click / single phone tap do nothing on either shortcut.
-   for(const id of ['pgLatest','omFirst']){
-    const before=await state(p);await mouse(p,id);await sleep(400);assert.deepEqual(await state(p),before);
-    await touch(p,id);await sleep(450);assert.deepEqual(await state(p),before);
-   }
+   // Earliest still takes two taps. Latest takes one phone tap even after every reply was read.
+   const beforeFirst=await state(p);await mouse(p,'omFirst');await sleep(400);assert.deepEqual(await state(p),beforeFirst);
+   await touch(p,'omFirst');await sleep(450);assert.deepEqual(await state(p),beforeFirst);
    await touch(p,'omFirst',2);await waitFor(p,`${$('pg')}.textContent==='1 / 7'`);await save('touch-first');
-   await touch(p,'pgLatest',2);await waitFor(p,`${$('pg')}.textContent==='7 / 7'`);await save('touch-latest');
+   const beforeLatest=await state(p);await mouse(p,'pgLatest');await sleep(400);assert.deepEqual(await state(p),beforeLatest);
+   await touch(p,'pgLatest');await waitFor(p,`${$('pg')}.textContent==='7 / 7'`);await save('touch-latest');
    await sleep(750);await mouse(p,'omFirst',2);await waitFor(p,`${$('pg')}.textContent==='1 / 7'`);await save('mouse-first');
    await sleep(750);await mouse(p,'pgLatest',2);await waitFor(p,`${$('pg')}.textContent==='7 / 7'`);await save('mouse-latest');
    await evaluate(p,`${$('omMore')}.click()`);

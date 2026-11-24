@@ -71,6 +71,8 @@ const secs = (ms) => (Number.isInteger(ms) ? (ms < 10000 ? (ms / 1000).toFixed(1
 
 // A shell fence names a language, not a destination. Bind the positive host label to
 // its immediately following sibling blocks. A new paragraph, heading or list ends the group.
+const HOST_LABEL_ZH = /^请?在\s*Agent J\s*主机(?:上|的网页终端中?)运行\s*[:：]$/i;
+const HOST_LABEL_EN = /^(?:On the Agent J host|Run in the Agent J host['’]s web terminal)\s*[:：]$/i;
 function commandTargets(root) {
   const targets = new Map();
   for (const block of root.querySelectorAll('.codeblock')) {
@@ -78,7 +80,7 @@ function commandTargets(root) {
     let target = targets.get(previous) || 'unknown';
     if (previous?.matches('p,h1,h2,h3,h4,h5,h6')) {
       const label = previous.textContent.trim();
-      if (/^(?:在\s*Agent J\s*主机上运行|On the Agent J host)\s*[:：]$/i.test(label)) target = 'host';
+      if (HOST_LABEL_ZH.test(label) || HOST_LABEL_EN.test(label)) target = 'host';
       else if (/(?:另(?:外)?一台|那台|对方的?|目标|远程的?)(?:电脑|计算机|机器|主机|设备|服务器)|\b(?:another|other|different|remote|target)\s+(?:computer|machine|host|device|server|laptop|pc)\b/i.test(label)) target = 'other';
     }
     // A text/code example cannot pass a host label to the next shell command.

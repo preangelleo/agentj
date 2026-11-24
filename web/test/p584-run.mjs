@@ -16,6 +16,7 @@
 //   6 问 Agent → one say with reply_to = the page id, the text holds the command and the output
 //   7 no console errors, nothing in storage, no off-site requests
 // Shots → reports/qa/p584 (P584_OUT). P584_FIRST_ONLY=1 runs one combo.
+// P584_COMPOUND_ONLY=1 runs the 11-24 regression in isolation; P584_PUBLIC points to a baseline public/.
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -35,6 +36,9 @@ const BLOCK = (x = {}) => ({ mobile: true, resume: true, prefill: true, kind: 'd
 const VERSION_OUT = 'agentj 0.28.5\n';
 const LS_OUT = 'total 8\ndrwxr-xr-x 2 owner owner 4096 Nov  7 18:00 .\n-rw------- 1 owner owner   42 Nov  7 18:00 .env  OPENAI_API_KEY=[已隐藏]\n';
 const hostLabel = (lang) => (lang === 'zh' ? '在 Agent J 主机上运行：' : 'On the Agent J host:') + '\n\n';
+const fence = (lang, cmd) => `\`\`\`${lang}\n${cmd}\n\`\`\``;
+const homeCompound = 'cd ~/coding/agentj-demo && agentj fn run demo-status';
+const absCompound = 'cd /tmp/agentj-demo && agentj --version';
 const REPLY = (lang) => hostLabel(lang) +
   '```sh\nls -la\n```\n\n' + '```sh\nagentj --version\n```\n\n' + '```sh\nsudo pacman -Syu\n```\n\n' + '```python\nprint(1)\n```\n';
 const L = {
@@ -157,6 +161,67 @@ export async function runP584({ B, web, fake, out = OUT }) {
       if (w === 390) check(await evaluate(p, `import('./js/termhook.js').then(m=>!m.computerBrowser())`), '0 the 390 page is judged a phone ' + tag);
       const dev = fake.devs[0];
       const says0 = fake.st.says.length;
+
+      const compoundRegression = async () => {
+        // 11-24: replay both screenshot shapes, then offer the same command under explicit host wording.
+        const owner = { k: 'phone', dev: dev.id, text: lang === 'zh' ? '请给我命令' : 'Please give me the command' };
+        const runCounts = () => [H.lines.length, H.cmds.length, fake.st.says.length];
+        const beforeFences = runCounts();
+        const compoundTurn = async (intro, blocks, expected, src = owner, shot = '') => {
+          const turn = await fake.addTurn(src, [intro, ...blocks.map(([l, c]) => fence(l, c))].join('\n\n'));
+          await waitFor(p, `document.getElementById('words').textContent.includes(${JSON.stringify(intro)}) && document.querySelectorAll('#words .codeblock').length === ${blocks.length}`);
+          const rows = await evaluate(p, `[...document.querySelectorAll('#words .codeblock')].map(b=>{
+            const code=b.querySelector('pre code'), bar=b.querySelector('.bar');
+            const copy=bar.querySelector('.copy'), run=bar.querySelector('.runbtn');
+            return {lang:code.closest('pre').dataset.lang, command:code.textContent.replace(/\\n$/,''), copy:!!copy,
+              run:!!run, left:!!(run && run.getBoundingClientRect().right <= copy.getBoundingClientRect().left + 0.5)};
+          })`);
+          check(rows.every((r, i) => r.lang === blocks[i][0] && r.command === blocks[i][1] && r.copy && r.run === expected[i] && r.left === expected[i]),
+            '11-24 target and fence controls ' + tag + ' ' + intro + ' ' + JSON.stringify(rows));
+          if (shot) {
+            await evaluate(p, `document.querySelector('#words .codeblock').scrollIntoView({block:'center'})`);
+            await save(shot);
+          }
+          return {turn, rows};
+        };
+        const unlabeled = lang === 'zh' ? '在手机上打开 Agent J 的网页终端，自己运行下面这行。' : 'Open the Agent J web terminal on your phone and run this line.';
+        const original = await compoundTurn(unlabeled, [['sh', homeCompound]], [false], owner, '11-24-sh-copy-only');
+        const quoted = { ...owner, quote: { id: original.turn.id, who: 'Agent', ts: Date.now(), text: 'Earlier reply' } };
+        const resent = lang === 'zh' ? '这次重发，点「执行」后手机会弹指纹卡：' : 'Here it is again. Tap Run to open the confirmation:';
+        await compoundTurn(resent, [['bash', homeCompound]], [false], quoted, '11-24-bash-quoted-copy-only');
+        await compoundTurn(hostLabel(lang).trim(), [['bash', homeCompound]], [false], quoted);
+        await compoundTurn(lang === 'zh' ? '在另一台电脑上运行：' : 'On the other computer:', [['zsh', absCompound]], [false]);
+        await compoundTurn(hostLabel(lang).trim(), [['sh', 'pwd\nagentj --version'], ['bash', absCompound]], [false, false]);
+        await compoundTurn(hostLabel(lang).trim(), [['bash', absCompound]], [true]);
+        const naturalHost = lang === 'zh' ? '请在 Agent J 主机的网页终端运行：' : "Run in the Agent J host's web terminal:";
+        const compounds = [['sh', homeCompound], ['bash', absCompound], ['shell', homeCompound], ['zsh', absCompound]];
+        const {turn: compound, rows: compoundsShown} = await compoundTurn(naturalHost, compounds, [true, true, true, true], owner, '11-24-explicit-host');
+        check(JSON.stringify(runCounts()) === JSON.stringify(beforeFences), '11-24 rendering never sends a run ' + tag);
+        if (compoundsShown[0].run) {
+          H.confirmNext = true;
+          const n = H.lines.length;
+          await clickSel('#words .codeblock .runbtn');
+          await waitFor(p, `(() => {const w = document.getElementById('term-sheetwrap'); return !!w && !w.hidden && (w.dataset.kind === 'agent' || (w.dataset.kind === 'intro' && !document.getElementById('term-sh-yes').disabled));})()`);
+          if (await evaluate(p, `document.getElementById('term-sheetwrap').dataset.kind === 'intro'`)) await clickSel('#term-sh-yes');
+          await waitFor(p, `document.getElementById('term-sheetwrap')?.dataset.kind === 'agent' && !document.getElementById('term-sheetwrap').hidden`);
+          const line = H.lines[n];
+          check(H.lines.length === n + 1 && line.line === homeCompound && line.run === 1 && line.from === compound.id && !!line.bang && !line.signed,
+            '11-24 compound line arrives unchanged at existing confirmation ' + tag + ' ' + JSON.stringify(line));
+          await save('11-24-compound-confirm');
+          await clickSel('#term-sh-no');
+          await waitFor(p, `document.querySelector('#words .runhead')?.textContent.startsWith(${JSON.stringify(s.refused)})`);
+          check(H.lines.length === n + 1 && H.cmds.length === beforeFences[1] && fake.st.says.length === beforeFences[2],
+            '11-24 cancellation sends no second line or fallback request ' + tag);
+          H.confirmNext = false;
+          if (await evaluate(p, `document.getElementById('term')?.hidden === false`)) await evaluate(p, `document.getElementById('term-exit')?.click()`);
+        }
+      };
+      if (process.env.P584_COMPOUND_ONLY) {
+        await compoundRegression();
+        check(!H.errors.length, '11-24 fake host saw no malformed message ' + tag + H.errors.join(' | '));
+        console.log((fails.length ? 'DONE-WITH-FAILS ' : 'PASS ') + 'p584 compounds ' + tag);
+        continue;
+      }
 
       // ---- 1. own reply
       const own = await fake.addTurn({ k: 'phone', dev: dev.id, name: '', text: lang === 'zh' ? '怎么看？' : 'How?' }, REPLY(lang), 'done');
@@ -302,6 +367,8 @@ export async function runP584({ B, web, fake, out = OUT }) {
       check(hp.length === 1 && /修复连接|connection/i.test(hp[0]), '8 host page: 「修复连接」 fixbtn ' + tag + JSON.stringify(hp));
       await save('6-host-fix');
 
+      await compoundRegression();
+
       // ---- 5. offline: back to the own reply (newest turn again), host down
       const off = await fake.addTurn({ k: 'phone', dev: dev.id, name: '', text: 'again' }, REPLY(lang), 'done');
       await waitFor(p, `document.querySelectorAll('#words .runbtn').length >= 2`, 8000).catch(() => {});
@@ -342,6 +409,7 @@ export async function runP584({ B, web, fake, out = OUT }) {
   return checks;
 }
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split('/').pop())) {
-  const web = await startWebServer({ port: 0, relayCsp: 'ws://127.0.0.1:*' }), fake = await startFakeHost(), B = await launch();
+  const publicDir = process.env.P584_PUBLIC ? resolve(process.env.P584_PUBLIC) : undefined;
+  const web = await startWebServer({ port: 0, relayCsp: 'ws://127.0.0.1:*', publicDir }), fake = await startFakeHost(), B = await launch();
   try { await runP584({ B, web, fake }); } finally { await B.close(); await fake.stop(); await web.stop(); }
 }

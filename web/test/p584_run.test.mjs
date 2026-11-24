@@ -8,12 +8,43 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const src = read('../public/js/termcommands.js');
 const box = {t: (k, v) => k + (v ? JSON.stringify(v) : '')};
 vm.runInNewContext(src.replace(/^import .*;$/gm, '').replace(/export /g, '')
-  + '\nglobalThis.api={ownReply,command,dangerous,needsOwner,routeOf,hostPage,headText,askText,HUMAN}', box);
+  + '\nglobalThis.api={ownReply,command,commandTargets,dangerous,needsOwner,routeOf,hostPage,headText,askText,HUMAN}', box);
 const A = box.api;
 
 test('only shell-like fences become commands (powershell / console included)', () => {
   for (const l of ['sh', 'bash', 'zsh', 'shell', 'console', 'powershell', 'pwsh']) assert.equal(A.command('agentj --version', l), 'agentj --version', l);
   for (const l of ['python', 'text', 'js', '', null]) assert.equal(A.command('ls', l), null, String(l));
+});
+test('single-line cwd and compound syntax preserve the command in every POSIX shell fence', () => {
+  for (const lang of ['sh', 'bash', 'shell', 'zsh']) {
+    for (const dir of ['/tmp/agentj-demo', '~/coding/agentj-demo']) {
+      const line = `cd ${dir} && agentj fn run demo-status`;
+      assert.equal(A.command(line + '\n', lang), line, lang);
+    }
+  }
+});
+test('only a standalone positive Agent J host label applies to the adjacent shell fences', () => {
+  const block = (previousElementSibling, lang = 'sh', textContent = 'cd /tmp/agentj-demo && agentj --version') => ({
+    previousElementSibling,
+    matches: () => false,
+    querySelector: (selector) => selector === 'pre' ? {dataset: {lang}} : {textContent},
+  });
+  const targetFor = (label, lang) => {
+    const first = block({textContent: label, matches: () => true}, lang);
+    const next = block(first, 'zsh');
+    const targets = A.commandTargets({querySelectorAll: () => [first, next]});
+    return [targets.get(first), targets.get(next)];
+  };
+  for (const label of ['在 Agent J 主机上运行：', '请在 Agent J 主机的网页终端运行：', '在 Agent J 主机的网页终端中运行:',
+    'On the Agent J host:', "Run in the Agent J host's web terminal:", 'Run in the Agent J host’s web terminal:']) {
+    assert.deepEqual(targetFor(label), ['host', 'host'], label);
+    assert.deepEqual(targetFor(label, 'text'), ['unknown', 'unknown'], label);
+  }
+  for (const label of ['不要在 Agent J 主机上运行：', 'Do not run in the Agent J host’s web terminal:',
+    'Open the Agent J web terminal on your phone and run this line.', 'Quote: On the Agent J host:']) {
+    assert.deepEqual(targetFor(label), ['unknown', 'unknown'], label);
+  }
+  assert.deepEqual(targetFor('On another computer:'), ['other', 'other']);
 });
 test('provenance: own settled replies only — friend, channel, quote, streaming and host pages get no 「执行」', () => {
   const p = {id: 3, end: 'done', source: {k: 'phone'}};

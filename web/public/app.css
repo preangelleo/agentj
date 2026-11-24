@@ -3436,7 +3436,7 @@ body[data-scan-paused="1"] .scan-finder .sf-sweep{animation-play-state:paused;op
 .om[data-unread="1"] .om-unread .unb{display:inline-block;animation:aj-source-new-message-pulse 1.2s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){.om[data-unread="1"] .om-unread .unb{animation:none}}
 .omhd>.pg-corner{grid-column:3;margin-left:0;justify-self:stretch;min-width:0;width:100%}
-.omhd .pg-latest{width:100%;padding:0;justify-items:end}
+.omhd .pg-latest{position:relative;z-index:1;width:calc(100% + 4px);padding:0 4px 0 0;justify-items:end}
 /* the 「…」 pill sits 12 px from the card's edge, the header's content 16 px: the capsule moves the 4 px, the zones stay thirds */
 .omhd .pg-latest .pg{position:relative;left:4px}
 
@@ -4396,12 +4396,14 @@ details.fixcmd>summary{min-height:44px;display:flex;align-items:center;cursor:po
 .conndlg p[hidden],.conndlg .gdlg-row[hidden]{display:none}
 .session-help .sq{min-height:0}
 
-/* #557: reserve text first; robots own only the measured remainder. */
+/* #557: the empty part of the measured remainder is layout space; only the robots' button takes taps. */
 .rmtop>.rmhd{min-width:0}
 .rmtop>.rmhd .speaker{flex:0 1 auto;min-width:0;max-width:none}
 .rmtop>.rmhd .t{flex:none}
 .rmtop>.rmhd .rmpart:empty{display:none}
-.rmtop>.rmhd .busy-dots{flex:var(--aj-busy-trigger-flex,1 0 44px);min-width:var(--aj-busy-trigger-min-width,44px);max-width:var(--aj-busy-trigger-max-width,none);overflow:var(--aj-busy-trigger-overflow,hidden)}
+.busy-dots-slot{display:flex;justify-content:flex-end;flex:1 0 44px;min-width:44px}
+.busy-dots-slot:has(>.busy-dots[hidden]),body[data-conn=off] .busy-dots-slot{display:none}
+.rmtop>.rmhd .busy-dots{position:relative;z-index:1;flex:var(--aj-busy-trigger-flex,0 0 auto);max-width:var(--aj-busy-trigger-max-width,100%);overflow:var(--aj-busy-trigger-overflow,hidden);touch-action:manipulation}
 .busy-dots b{display:var(--aj-busy-trigger-display,flex);align-items:var(--aj-busy-trigger-align-items,center);justify-content:var(--aj-busy-trigger-justify-content,center);flex:var(--aj-busy-trigger-flex,none);min-width:var(--aj-busy-trigger-min-width,18px);height:var(--aj-busy-trigger-height,18px);white-space:var(--aj-busy-trigger-white-space,nowrap)}
 /* #553: the load card follows Input message, with its content free to use the extra room. */
 #loadDlg{padding:var(--rg)}
@@ -4530,7 +4532,7 @@ details.fixcmd>summary{min-height:44px;display:flex;align-items:center;cursor:po
 /* 0284 shared popup geometry: center inside the reading area; preserve the composer. */
 :is(.gdlg,.ajmodal,#confirm).aj-shared-popup:not([hidden]){position:fixed;inset:auto;top:var(--popup-top);left:var(--popup-left);width:var(--popup-width);height:var(--popup-height);max-height:var(--popup-height);display:grid;place-items:center;align-items:center;padding:0;box-sizing:border-box;overflow:hidden}
 :is(.gdlg,.ajmodal,#confirm).aj-shared-popup>:is(.sq,.box){box-sizing:border-box;width:var(--popup-card-width);max-width:var(--popup-card-width);height:auto;min-height:0;max-height:var(--popup-height);aspect-ratio:auto;overflow-y:auto;border:0;border-radius:28px;transform:none;animation:none}
-#sheet.aj-shared-popup,:is(dialog,#full541).aj-shared-popup{position:fixed;inset:auto;top:var(--popup-center);left:var(--popup-card-left);right:auto;bottom:auto;box-sizing:border-box;width:var(--popup-card-width);max-width:var(--popup-card-width);height:auto;min-height:0;max-height:var(--popup-height);margin:0;transform:translateY(-50%);transition:none;animation:none;overflow-y:auto;border:0;border-radius:28px;box-shadow:none}
+#sheet.aj-shared-popup,:is(dialog,#full541).aj-shared-popup:not(:where([data-note-sheet])){position:fixed;inset:auto;top:var(--popup-center);left:var(--popup-card-left);right:auto;bottom:auto;box-sizing:border-box;width:var(--popup-card-width);max-width:var(--popup-card-width);height:auto;min-height:0;max-height:var(--popup-height);margin:0;transform:translateY(-50%);transition:none;animation:none;overflow-y:auto;border:0;border-radius:28px;box-shadow:none}
 :is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-context="settings"]>:is(.sq,.box){border:1px solid var(--line)}
 #sheet.aj-shared-popup[data-popup-context="settings"]{border:1px solid var(--line)}
 :is(dialog,#full541).aj-shared-popup[data-popup-context="settings"]{border:1px solid var(--line)}
@@ -4555,7 +4557,7 @@ details.fixcmd>summary{min-height:44px;display:flex;align-items:center;cursor:po
   background:var(--dlg-scrim);backdrop-filter:blur(var(--dlg-blur));-webkit-backdrop-filter:blur(var(--dlg-blur));
 }
 :is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="center"]>:is(.sq,.box),
-:is(dialog,#full541).aj-shared-popup[data-popup-system="center"]{background:var(--noir);color:var(--lotion)}
+:is(dialog,#full541).aj-shared-popup[data-popup-system="center"]:not(:where([data-note-sheet])){background:var(--noir);color:var(--lotion)}
 :is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="grow"]:not([hidden]){
   display:flex;align-items:flex-end;justify-content:stretch;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;
 }
@@ -4619,7 +4621,8 @@ body[data-sheet="1"] .scrim{background:transparent;backdrop-filter:none;-webkit-
 body:has(#sheet.aj-layer-covered) .scrim{visibility:hidden;pointer-events:none}
 
 /* Preserve the native parent's center while its existing ontop child uses the viewport. */
-:is(dialog,#full541).aj-shared-popup:modal:has(>.ontop-float){transform:none;top:calc(var(--popup-center) - var(--popup-native-height,0px)/2);overflow:visible}
+:is(dialog,#full541).aj-shared-popup:modal:has(>.ontop-float){overflow:visible}
+:is(dialog,#full541).aj-shared-popup:modal:has(>.ontop-float):not(:where(body:not([data-kb="1"]) [data-note-sheet])){transform:none;top:calc(var(--popup-center) - var(--popup-native-height,0px)/2)}
 
 /* 0287: the quota boundary is the permanent wet floor, including unknown history and compact. */
 .water{min-height:var(--water-floor,0px);background:var(--water-color)}

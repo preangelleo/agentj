@@ -1,5 +1,5 @@
 {
-  "version": "0.30.74",
-  "zh": "修复手机键盘遮住输入框的问题。每日体检可重新登录失效的 AI 账号。设置里的删除图标统一为桃色。",
-  "en": "Keeps inputs visible above the phone keyboard, restores AI sign-in from the daily health check, and uses peach for settings trash icons."
+  "version": "0.30.75",
+  "zh": "点击手机页码可回到最新回复。改进记事本弹层和键盘避让。明确标注 Agent J 主机的单行命令可显示执行按钮。",
+  "en": "Tap the phone page count to jump to the latest reply. Notebook stays above the keyboard. Run is available for single-line commands naming the Agent J host."
 }

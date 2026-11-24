@@ -76,10 +76,22 @@ class OfflineDependencies(unittest.TestCase):
             os.umask(mode)
         cache = Path(cmd[cmd.index('--find-links') + 1]) / self.name
         self.assertEqual(cache.stat().st_mode & 0o777, 0o600)
-        cache.chmod(0o664)
-        with patch('agentj.install_permissions._private_group', return_value=True):
-            self.prepare()
+        # ship/v0.30.51 wrote a fresh file with Path.write_bytes under the
+        # caller's umask, then rejected the published cache entry's 0664 mode.
+        mode = os.umask(0o002)
+        try:
+            cache.unlink()
+            cache.write_bytes(self.dep)
+            legacy = cache.stat()
+            self.assertEqual(legacy.st_mode & 0o777, 0o664)
+            with patch('agentj.install_permissions._private_group', return_value=True), \
+                    patch.object(uw, 'download_dependency', side_effect=AssertionError('verified cache re-downloaded')):
+                repaired = uw.prepare_update(self.cmd, self.pins[1], self.pins[0].version)
+        finally:
+            os.umask(mode)
+        self.assertIn('--offline', repaired)
         self.assertEqual(cache.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(cache.stat().st_ino, legacy.st_ino)
         self.assertEqual(cache.read_bytes(), self.dep)
         options = {}
         au.uv_install_umask(cmd, options)

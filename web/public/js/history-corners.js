@@ -1,6 +1,6 @@
 // History corner shortcuts: a click is inert; keyboard/assistive activation is explicit.
 // Touch/pen use Pointer Events because native dblclick is not consistent on phones.
-export function historyDoubleTap(node, jump, now = () => performance.now()) {
+export function historyDoubleTap(node, jump, now = () => performance.now(), { singleTouch = false } = {}) {
   let down = null, last = null, touchAt = -Infinity;
   const clear = () => { down = null; last = null; };
   node.addEventListener('pointerdown', e => {
@@ -15,7 +15,7 @@ export function historyDoubleTap(node, jump, now = () => performance.now()) {
     if (e.pointerType === 'mouse' || !down || e.pointerId !== down.id) return;
     const d = down, t = now(); down = null; touchAt = t;
     if (t - d.t > 300 || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 12) { last = null; return; }
-    if (last && t - last.t <= 350 && Math.hypot(e.clientX - last.x, e.clientY - last.y) <= 24) {
+    if ((singleTouch && e.pointerType === 'touch') || (last && t - last.t <= 350 && Math.hypot(e.clientX - last.x, e.clientY - last.y) <= 24)) {
       last = null; e.preventDefault(); jump();
     } else last = {t, x: e.clientX, y: e.clientY};
   });

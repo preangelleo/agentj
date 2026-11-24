@@ -14,7 +14,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | Key | Mouse / touch | What it does |
 |---|---|---|
 | `Alt+Shift+J` | Swipe the cards right; in landscape tap ‹ on the left | Previous page (older) |
-| `Alt+Shift+G` | Double-tap the right third of the header (page number); a single tap while it flashes | Jump to the newest page |
+| `Alt+Shift+G` | Tap the page number on a touchscreen. With a mouse, double-click it or single-click while it flashes. | Jump to the newest page |
 | `Alt+Shift+Q` | Tap the quote above the message | Jump to the message this one quotes |
 | `Alt+Shift+Y` | Tap the copy icon | Copy the whole reply |
 | `Alt+Shift+A` | Tap the curved-arrow icon | Reply to this one (the quote shows above the message box, focus stays in it; Esc cancels); Alt+Shift+A also works while typing |
@@ -42,7 +42,7 @@ Function keys also work while a text field is focused. System or input-method sh
 |---|---|---|
 | `j` · `←` | Swipe the cards right; in landscape tap ‹ on the left | Previous page (older) |
 | `k` · `→` | Swipe the cards left; in landscape tap › on the right | Next page (newer) |
-| `g` | Double-tap the right third of the header (page number); a single tap while it flashes | Jump to the newest page |
+| `g` | Tap the page number on a touchscreen. With a mouse, double-click it or single-click while it flashes. | Jump to the newest page |
 | `G` | Double-tap the left third of the header | Jump to the earliest page (older ones are fetched from the computer) |
 | `u` | Tap the unread badge in the middle third of the header | Jump to the first unread reply (read status syncs across your remotes), then page forward |
 | `q` | Tap the quote above the message | Jump to the message this one quotes |
@@ -134,7 +134,7 @@ Function keys also work while a text field is focused. System or input-method sh
 |---|---|---|
 | `Alt+Shift+J` · `j` · `←` | Swipe the cards right; in landscape tap ‹ on the left | Previous page (older) |
 | `k` · `→` | Swipe the cards left; in landscape tap › on the right | Next page (newer) |
-| `Alt+Shift+G` · `g` | Double-tap the right third of the header (page number); a single tap while it flashes | Jump to the newest page |
+| `Alt+Shift+G` · `g` | Tap the page number on a touchscreen. With a mouse, double-click it or single-click while it flashes. | Jump to the newest page |
 | `G` | Double-tap the left third of the header | Jump to the earliest page (older ones are fetched from the computer) |
 | `u` | Tap the unread badge in the middle third of the header | Jump to the first unread reply (read status syncs across your remotes), then page forward |
 | `Alt+Shift+Q` · `q` | Tap the quote above the message | Jump to the message this one quotes |

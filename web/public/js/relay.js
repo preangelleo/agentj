@@ -5419,7 +5419,7 @@ export function init(ctx){
   el("pgPrev").addEventListener("click", () => goPage(-1));   // @ix page.prev
   const latestCorner = () => { if (pageAt !== pages().length - 1 || unreadReply) toNewest(); };
   el("pgLatest").addEventListener("click", () => { if (unreadReply) latestCorner(); });
-  historyDoubleTap(el("pgLatest"), latestCorner);   // @ix page.newest
+  historyDoubleTap(el("pgLatest"), latestCorner, undefined, { singleTouch: true });   // @ix page.newest
   historyDoubleTap(el("omFirst"), () => goEdge(false));   // @ix page.earliest
   // P207: the middle third — one tap = the first unread; nothing to do (no badge) = no reaction
   el("omUnread").addEventListener("click", () => { if (+el("omUnread").dataset.n) goFirstUnread(false); });   // @ix page.first_unread

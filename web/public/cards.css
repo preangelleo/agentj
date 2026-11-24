@@ -164,6 +164,91 @@
 .jc-body[data-card="notes"] .jc-note-date{display:block;font-size:.8rem;color:var(--c-lotion);opacity:.72;margin-top:12px}
 .jc-dialog[data-note-fields="1"]>input{box-sizing:border-box;width:100%;min-height:44px;margin-bottom:16px;border-radius:12px;padding:12px 14px;font:inherit;color:var(--c-lotion);background:var(--c-sooty);border:1px solid var(--c-black-mana)}
 
+/* The Notebook uses the shared dialog action, with import controls on the left and decisions on the right. */
+.jc-dialog[data-note-sheet][open]{
+  display:grid;
+  grid-template-columns:max-content max-content minmax(0,1fr) max-content max-content;
+  grid-template-rows:auto auto minmax(calc(var(--ui-tap) + var(--ui-space-content) + var(--ui-space-control)),1fr) auto auto;
+  column-gap:clamp(var(--sp-2),2.6vw,var(--ui-space-btn));
+  padding:clamp(var(--ui-space-content),4.5vw,var(--ui-space-section));
+  background:var(--c-argent);
+  color:var(--c-sooty);
+  border-color:transparent;
+  color-scheme:dark;
+  --aj-dialog-action-background:var(--c-noir);
+  --aj-dialog-action-color:var(--c-lotion);
+  --aj-dialog-action-border:0;
+  --aj-dialog-action-disabled-opacity:.7;
+  --aj-dialog-action-primary-background:var(--c-lotion);
+  --aj-dialog-action-primary-color:var(--c-noir);
+  --aj-dialog-action-primary-border-color:var(--c-lotion);
+  --aj-dialog-action-focus-outline:2px solid var(--c-lotion);
+}
+.jc-dialog[data-note-sheet]>:is(h2,input[type="text"],textarea,.aj-save-key){grid-column:1/-1}
+.jc-dialog[data-note-sheet]>h2{grid-row:1;margin:0 0 var(--ui-space-content)}
+.jc-dialog[data-note-sheet]>input[type="text"]{grid-row:2;margin:0 0 var(--ui-space-control)}
+.jc-dialog[data-note-sheet]>textarea{grid-row:3;min-height:0;margin:0 0 var(--ui-space-content)}
+.jc-dialog[data-note-sheet]>:is(input[type="text"],textarea){font-size:max(16px,1em)}
+.jc-dialog[data-note-sheet]>.aj-dialog-action{
+  grid-row:4;
+  min-width:var(--ui-tap);
+  min-height:var(--ui-tap);
+  margin:0;
+  padding:0 clamp(var(--sp-1),calc(6vw - var(--sp-4)),var(--ui-space-line));
+  font:500 14px/1.2 var(--font-body);
+  white-space:nowrap;
+}
+.jc-dialog[data-note-sheet]>.jc-note-cancel{grid-column:4}
+.jc-dialog[data-note-sheet]>.aj-dialog-action--primary{grid-column:5;font-weight:600}
+.jc-dialog[data-note-sheet]>.aj-save-key{grid-row:5;justify-self:end;margin:var(--ui-space-control) 0 0;color:var(--c-sooty)}
+
+/* Keep the keyboard-free editor in the visual viewport instead of the chat stage. */
+body:not([data-kb="1"]) .jc-dialog[data-note-sheet]{
+  --note-view-top:var(--vvtop,0px);
+  --note-view-height:var(--vvh,100dvh);
+  --note-safe-top:max(var(--note-view-top),var(--ios-safe-top,env(safe-area-inset-top,0px)));
+  --note-safe-bottom:var(--ios-safe-bottom,env(safe-area-inset-bottom,0px));
+  --note-view-bottom:calc(100% - var(--note-view-top) - var(--note-view-height));
+  position:fixed;
+  inset:var(--note-safe-top) 0 calc(var(--note-view-bottom) + var(--note-safe-bottom));
+  box-sizing:border-box;
+  width:min(calc(100% - 2 * var(--ui-space-content)),var(--popup-card-width,480px));
+  max-width:none;
+  height:clamp(390px,48dvh,440px);
+  max-height:calc(var(--note-view-top) + var(--note-view-height) - var(--note-safe-top) - var(--note-safe-bottom) - 2 * var(--sp-2));
+  margin:auto;
+  overflow-y:auto;
+  border:0;
+  border-radius:28px;
+}
+body:not([data-kb="1"]) .jc-dialog[data-note-sheet]>textarea{--aj-wallet-native-textarea-max-height:none}
+@media(max-width:600px){
+  /* Dock to the visible phone edge and keep controls inside the safe area. */
+  body:not([data-kb="1"]) .jc-dialog[data-note-sheet]{
+    --note-gutter:clamp(var(--ui-space-content),4.5vw,var(--ui-space-section));
+    inset-block:auto var(--note-view-bottom);
+    width:100%;
+    max-height:calc(var(--note-view-top) + var(--note-view-height) - var(--note-safe-top) - var(--sp-2));
+    margin:0;
+    padding-left:max(var(--note-gutter),env(safe-area-inset-left,0px));
+    padding-right:max(var(--note-gutter),env(safe-area-inset-right,0px));
+    padding-bottom:calc(var(--note-gutter) + var(--note-safe-bottom));
+    border-radius:28px 28px 0 0;
+  }
+}
+
+/* The native top-layer dialog must fit the same visual viewport as the 0.30.74 keyboard-aware forms. */
+body[data-kb="1"] .jc-dialog[data-note-sheet]{
+  --note-top-gap:max(var(--sp-2),calc(env(safe-area-inset-top) - var(--vvtop)));
+  --note-keyboard-height:min(350px,calc(var(--vvh) - var(--note-top-gap) - var(--sp-2)));
+  inset-block:calc(var(--vvtop) + var(--vvh) - var(--sp-2) - var(--note-keyboard-height)) auto;
+  margin-block:0;
+  height:var(--note-keyboard-height);
+  max-height:none;
+  padding-block:var(--ui-space-line);
+}
+body[data-kb="1"] .jc-dialog[data-note-sheet]>textarea{resize:none}
+
 /* #369 late navigation/action instances: exact 447 declarations, private Wallet role. */
 .jc-auto-control{border:0;border-radius:24px;background:var(--c-shield);color:var(--c-lotion);min-height:44px;padding:12px 20px;font:600 15px var(--font-body);cursor:pointer;margin:12px 0}
 .jc-auto-nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}

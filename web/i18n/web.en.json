@@ -2579,7 +2579,7 @@
     "page": {
       "prev": "Swipe the cards right; in landscape tap ‹ on the left",
       "next": "Swipe the cards left; in landscape tap › on the right",
-      "newest": "Double-tap the right third of the header (page number); a single tap while it flashes",
+      "newest": "Tap the page number on a touchscreen. With a mouse, double-click it or single-click while it flashes.",
       "earliest": "Double-tap the left third of the header",
       "first_unread": "Tap the unread badge in the middle third of the header",
       "quoted": "Tap the quote above the message",
@@ -5597,7 +5597,7 @@
     "peer": "Authenticated same-owner device ID (optional)",
     "expires": "Expiry (Unix seconds, up to 90 days)"
   },
-  "p167.choose": "Choose a .txt file",
+  "p167.choose": "Import text",
   "p167.type": "Choose one plain text .txt file.",
   "p167.size": "Text must be nonempty and at most 16 KB in total.",
   "p167.utf8": "Save the file as UTF-8 plain text and try again.",
