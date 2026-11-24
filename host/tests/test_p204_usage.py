@@ -43,6 +43,13 @@ class Prices(unittest.TestCase):
         p = usage.price_of("claude-sonnet-5-5")
         self.assertEqual((p["in"], p["out"]), (2.0, 10.0))
 
+    def test_gpt_6_1_sol_standard_rates(self):
+        price = usage.price_of("openai/gpt-6.1-sol")
+        self.assertEqual(price, {"in": 2.0, "out": 10.0, "cr": 0.10, "cw": 2.50, "src": "built-in"})
+        tokens = usage.tokens_codex({"inputTokens": 2_000_000, "cachedInputTokens": 1_000_000,
+                                     "outputTokens": 900_000, "reasoningOutputTokens": 100_000})
+        self.assertEqual(usage.estimate(tokens, price), 12.10)
+
     def test_reviewed_fable_rows_are_reported_by_the_prices_cli(self):
         out = io.StringIO()
         with tempfile.TemporaryDirectory() as tmp, patch("agentj.state.State", return_value=St(tmp)), redirect_stdout(out):

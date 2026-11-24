@@ -1168,8 +1168,13 @@ class Scheduler:
         if not isinstance(use, dict):
             return
         q = getattr(self.host, "_quota_pct", None)
-        if callable(q) and q() is not None:
+        sub = callable(q) and q() is not None
+        if sub:
             use["b"] = "sub"
+        # §29: a subscription login never shows a dollar figure, and a run is known to be API-billed only when the main
+        # Agent's own harness ran it and the host has no subscription reading; anything else loses the estimate.
+        if sub or not callable(q) or use.get("h") != (getattr(self.host, "agent_cfg", None) or {}).get("kind"):
+            use.pop("usd_est", None)
         res["use"] = use
 
     def last_of(self, tid: str) -> dict | None:

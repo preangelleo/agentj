@@ -618,6 +618,7 @@ def rollback_fields(res) -> dict:
 SERVICE_STATES = ("inactive", "failed", "activating", "deactivating", "not_loaded", "unknown")
 SERVICE_REASONS = frozenset({*(f"not_active:{s}" for s in SERVICE_STATES), "env_mismatch", "inspect_failed", "legacy_name",
                              "no_manager", "not_installed", "path_missing"})
+RELAY_REASONS = ("unreachable", "probe_failed", "host_leg")     # 0373: a failed `relay` row's relay_reason
 
 
 def service_reason(value) -> str | None:

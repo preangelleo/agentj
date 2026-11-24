@@ -1,5 +1,5 @@
-# Agent J v0.30.72
+# Agent J v0.30.73
 
-Turning Agent isolation off or Docker on needs phone confirmation; heartbeat spending and risky phone-terminal lines need fingerprint again; terminal open fix.
+Agent J Harness drops stale thinking after trimming or compacting; an upgrade that only can't reach the relay server yet no longer fails; GPT-6.1 Sol price row.
 
-关掉 Agent 隔离或打开 Docker 访问需在已配对手机上确认；心跳回合的扣款和不可逆操作、手机终端的花钱、密钥、删除命令重新要求指纹；修复手机网页终端登录后打不开。
+修复 Agent J Harness 裁剪或压缩上下文后带着失效的思考内容重发、被模型服务拒绝的问题；从本版起，升级装好后只是暂时连不上转发服务器时不再报失败；价目表新增 GPT-6.1 Sol。

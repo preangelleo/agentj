@@ -4,7 +4,8 @@ What one turn cost and how fast it went, from the numbers the harness itself rep
 cache read / cache write), the harness's own dollar figure when it gives one (Claude Code `total_cost_usd`, OpenCode
 `cost`) or unknown, and — on a subscription login, where dollars are not what the owner
 pays — the share of the 5-hour quota the turn used (the harness's own utilisation number before and after). Nothing here
-is guessed: a number the harness did not give stays out (the phone shows "—"); an estimate is marked `est`.
+is guessed: a number the harness did not give stays out (the phone shows "—"). A turn with tokens but no reported dollars
+may carry a price-table estimate in its own field `usd_est` (API billing only; never `usd`, never part of a total).
 
 The phone gets each turn's figures on its history page (`use`, inside the end-to-end session); `agentj usage` sums them by
 day / week. Everything stays on this computer: `<state>/usage/YYYY-MM-DD.jsonl` (dir 0700, files 0600), kept 400 days, no
@@ -26,9 +27,9 @@ import time
 _LOG = logging.getLogger(__name__)
 _WARNED_PRICE_MODELS: set[str] = set()
 
-PRICES_CHECKED = "2026-11-22"
-# Anthropic first-party list prices (claude-api reference, 2026-10). cw = 5-minute cache write (1.25 × input).
+PRICES_CHECKED = "2026-11-24"
 PRICES = {
+    # Anthropic first-party list prices. cw = 5-minute cache write (1.25 × input).
     # Anthropic Fable 5.2 pricing, verified 2026-11-22. Cache writes in this table use the 5-minute TTL.
     "claude-fable-5-2": {"in": 8.0, "out": 40.0, "cr": 0.2, "cw": 10.0},
     "claude-fable-5-2-fast": {"in": 16.0, "out": 80.0, "cr": 0.4, "cw": 20.0},
@@ -45,6 +46,9 @@ PRICES = {
     "claude-sonnet-4-6": {"in": 3.0, "out": 15.0, "cr": 0.3, "cw": 3.75},
     "claude-haiku-5-5": {"in": 0.1, "out": 0.5, "cr": 0.01, "cw": 0.125},
     "claude-haiku-4-5": {"in": 1.0, "out": 5.0, "cr": 0.1, "cw": 1.25},
+    # OpenAI Standard tier, short context, 30-minute cache write; read 2026-11-24 from
+    # https://developers.openai.com/api/docs/pricing
+    "gpt-6.1-sol": {"in": 2.0, "out": 10.0, "cr": 0.10, "cw": 2.50},
 }
 PRICE_KEYS = ("in", "out", "cr", "cw")
 TOKEN_KEYS = ("i", "o", "cr", "cw")
@@ -244,6 +248,14 @@ class Turn:
         use.update(toks)
         if reported and len(reported) == len(self.parts):
             use["usd"] = round(sum(reported), 6)
+        elif not reported and use["b"] == "api" and "i" in toks and "o" in toks:
+            # §29 `usd_est`: for display only. Never `usd`, never summed, never read by a budget, quota or grant.
+            try:
+                est = usd_of(estimate(toks, price_of(self.model, st)))
+            except (AttributeError, OSError, TypeError, ValueError):
+                est = None
+            if est is not None:
+                use["usd_est"] = est
         if self.tool_s >= 0.1:
             use["tool_s"] = round(self.tool_s, 1)
         gen = secs - self.tool_s

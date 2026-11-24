@@ -8,12 +8,15 @@ the API probe posts an empty body and expects `400 bad_request` (no ledger is wr
 from __future__ import annotations
 
 import contextlib
+import errno
 import json
 import os
 import re
 import pathlib
 import platform as _pf
 import shutil
+import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -246,16 +249,23 @@ def _relay_url(st: State) -> str:
         return DEFAULT_RELAY
 
 
-def probe_relay(relay: str, timeout: float = NET_TIMEOUT) -> tuple[bool, str]:
+def probe_relay(relay: str, timeout: float = NET_TIMEOUT, net: list | None = None) -> tuple[bool, str]:
     """A device socket on a random channel nobody owns: the relay answers with {"t":"host","up":false}. Nothing is paired,
     nothing is stored, no host is involved."""
     from websockets.sync.client import connect
     ch = wire.b64u(os.urandom(16))
     url = f"{relay.rstrip('/')}/v1/dev/{ch}"
+    up = 0
     try:
         with connect(url, open_timeout=timeout, close_timeout=2, max_size=2**12) as ws:
+            up = 1
             first = ws.recv(timeout=timeout)
     except Exception as e:  # noqa: BLE001 — any failure is "not reachable"; the kind is enough
+        # 0373 N1: net (→ unreachable) = allow-list, before the handshake completed; TLS / any other error: no
+        if net is not None and not up and not isinstance(e, ssl.SSLError) and (
+                isinstance(e, (TimeoutError, ConnectionError, socket.gaierror))
+                or isinstance(e, OSError) and e.errno in (errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ENETDOWN, errno.EHOSTDOWN)):
+            net.append(1)
         return False, proxy.relay_failure(e, url)
     try:
         m = json.loads(first)
@@ -331,17 +341,20 @@ def _host_leg(st: State, relay: str) -> tuple[str, str, str]:
 
 def check_relay(st: State) -> dict:
     relay = _relay_url(st)
-    ok, why = probe_relay(relay)
+    net = []
+    ok, why = probe_relay(relay, net=net)
     if ok:
         selected = proxy.relay_summary(relay)
         try:                                       # P317: the device probe alone was green while the host leg never came up
             status, leg, hint = _host_leg(st, relay)
         except Exception as e:  # noqa: BLE001 — a doctor row, never a crash
             status, leg, hint = WARN, f"主机腿：检查失败 / host leg: check failed ({_why(e)})", ""
-        return _c("relay", status, f"{relay} (TLS + WebSocket)" + (f" · proxy / 代理 {selected}" if selected else "")
-                  + (f" · {leg}" if leg else ""), hint)
-    return _c("relay", FAIL, f"{relay} 连不上 / unreachable ({why})",
-              "检查网络和代理（HTTPS_PROXY）；有防火墙的话要放行 wss:// / check network, proxy, firewall (wss://)")
+        row = _c("relay", status, f"{relay} (TLS + WebSocket)" + (f" · proxy / 代理 {selected}" if selected else "")
+                 + (f" · {leg}" if leg else ""), hint)
+        return {**row, "relay_reason": "host_leg"} if status == FAIL else row
+    return {**_c("relay", FAIL, f"{relay} 连不上 / unreachable ({why})",     # 0373: RELAY_REASONS
+                 "检查网络和代理（HTTPS_PROXY）；有防火墙的话要放行 wss:// / check network, proxy, firewall (wss://)"),
+            "relay_reason": "unreachable" if net else "probe_failed"}
 
 
 def _http(url: str, data: bytes | None, timeout: float) -> int:

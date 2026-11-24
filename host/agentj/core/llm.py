@@ -173,8 +173,30 @@ def _offered(result: dict, tools, status) -> dict:
     return result
 
 
+BOUND = "bound to a different conversation"       # the prefix-check refusal (the rest of its wording may change)
+
+
 def _once(preset: Preset, messages, tools, key: str, transport, timeout, max_tokens, on_delta=None,
-          drop_thinking: bool = False) -> dict:
+          no_tools: bool = False) -> dict:
+    """One request, repeated once after a refused thinking replay. The prefix-check refusal (BOUND + invalid_request_error,
+    as a 400 or as the error event of a 200 stream) drops the stored thinking in place; loop._call keeps that in the
+    session file. Another 400 about thinking: only the repeat goes without it, nothing stored changes."""
+    a = (tools, key, transport, timeout, max_tokens, on_delta, no_tools)
+    try:
+        return _send(preset, messages, *a)
+    except LLMError as e:
+        text = e.detail
+        if preset.protocol != "anthropic-messages" or e.status not in (200, 400):
+            raise
+        if BOUND not in text or "invalid_request_error" not in text:
+            messages = e.status == 400 and "thinking" in text.lower() and [dict(m) for m in messages]
+        from . import anthropic
+        if not (messages and anthropic.unthink(messages)):
+            raise
+    return _send(preset, messages, *a)
+
+
+def _send(preset: Preset, messages, tools, key: str, transport, timeout, max_tokens, on_delta, no_tools) -> dict:
     headers = {"Authorization": "Bearer " + key, "Content-Type": "application/json", "User-Agent": UA}
     stream = preset.stream
     if preset.protocol == "openai-responses":
@@ -193,7 +215,7 @@ def _once(preset: Preset, messages, tools, key: str, transport, timeout, max_tok
         route = "/chat/completions"
     elif preset.protocol == "anthropic-messages":
         from . import anthropic
-        body = anthropic.request(preset, messages, tools, max_tokens, stream, drop_thinking=drop_thinking)
+        body = anthropic.request(preset, messages, tools, max_tokens, stream, no_tools)
         route = "/messages"
         headers = anthropic.headers(preset, key, UA)
     else:
@@ -206,11 +228,9 @@ def _once(preset: Preset, messages, tools, key: str, transport, timeout, max_tok
         raise LLMError("network", None, type(e).__name__) from None
     if status != 200:
         text = raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
-        if (preset.protocol == "anthropic-messages" and status == 400 and not drop_thinking and "thinking" in text.lower()
-                and any(m.get("_anthropic_blocks") for m in messages)):
-            # Replayed thinking refused (an earlier turn was trimmed or compacted): once more without it.
-            return _once(preset, messages, tools, key, transport, timeout, max_tokens, on_delta, drop_thinking=True)
         raise LLMError(_kind(status, text), status, text)
+    if no_tools:
+        tools = None                    # a tool call in a tool-less round is still refused
     try:
         if stream:
             whole, rest = _peek_json(raw)
@@ -303,9 +323,11 @@ def _chat_reply(text: str, preset: Preset, status: int) -> dict:
 
 
 def chat(preset: Preset, messages: list[dict], tools: list[dict] | None = None, *, environ=None, transport=None,
-         timeout: float = TIMEOUT, max_tokens: int | None = None, sleep=time.sleep, on_retry=None, on_delta=None) -> dict:
+         timeout: float = TIMEOUT, max_tokens: int | None = None, sleep=time.sleep, on_retry=None, on_delta=None,
+         tool_choice: str | None = None) -> dict:
     """One model step → {text, tool_calls[{id,name,arguments}], finish, reasoning, model, usage{input,output}}.
-    Raises LLMError after retries and the fallback chain; auth / bad_request / context are not retried."""
+    Raises LLMError after retries and the fallback chain; auth / bad_request / context are not retried.
+    tool_choice="none" (Messages only): `tools` stay in the request, a tool call is refused."""
     key = preset.key(environ)
     if not key:
         raise LLMError("auth", None, "no key")
@@ -315,7 +337,7 @@ def chat(preset: Preset, messages: list[dict], tools: list[dict] | None = None, 
     for p in chain:
         for i in range(len(BACKOFF) + 1):
             try:
-                return _once(p, messages, tools, key, transport, timeout, max_tokens, on_delta)
+                return _once(p, messages, tools, key, transport, timeout, max_tokens, on_delta, tool_choice == "none")
             except LLMError as e:
                 last = e
                 if e.kind in ("auth", "bad_request", "context", "bad_reply"):

@@ -8,6 +8,8 @@ Replay: the assistant's content blocks — thinking with its signature, redacted
 session as `_anthropic_blocks`, bound to the exact provider/model in `_anthropic_model`, and sent back unchanged only to that
 model (thinking must accompany its tool_use; another model gets ordinary text + tool_use). Hosted / server tools are never
 offered; any block type we did not ask for fails the reply closed, like a truncated stream or a tool_use cut by max_tokens.
+
+0.30.73: thinking is tied to system, tools and every earlier message; what follows a change is removed (session.py).
 """
 from __future__ import annotations
 
@@ -34,6 +36,18 @@ def _args(text) -> dict:
     except (ValueError, RecursionError):
         return {}
     return v if isinstance(v, dict) else {}
+
+
+def unthink(msgs: list[dict], start: int = 0) -> int:
+    """Remove the stored thinking of msgs[start:] in place, whichever model's → how many blocks."""
+    n = 0
+    for m in msgs[max(0, start):]:
+        b = m.get("_anthropic_blocks")
+        if isinstance(b, list):                 # anything else is a damaged session file: left as it is
+            keep = [x for x in b if not (isinstance(x, dict) and x.get("type") in ("thinking", "redacted_thinking"))]
+            n += len(b) - len(keep)
+            m["_anthropic_blocks"] = keep
+    return n
 
 
 def _strict_thinking_model(preset) -> bool:
@@ -85,8 +99,8 @@ def messages(msgs: list[dict], preset, drop_thinking: bool = False) -> tuple[str
     return "\n\n".join(system), out
 
 
-def request(preset, msgs, tools, max_tokens, stream: bool, drop_thinking: bool = False) -> dict:
-    system, wire = messages(msgs, preset, drop_thinking)
+def request(preset, msgs, tools, max_tokens, stream: bool, no_tools: bool = False) -> dict:
+    system, wire = messages(msgs, preset)
     body = {"model": preset.model, "max_tokens": int(max_tokens or preset.max_output or MAX_OUTPUT), "messages": wire}
     if system:
         body["system"] = [{"type": "text", "text": system, **({"cache_control": {"type": "ephemeral"}} if preset.cache else {})}]
@@ -96,6 +110,8 @@ def request(preset, msgs, tools, max_tokens, stream: bool, drop_thinking: bool =
                          for t in tools]
         if preset.cache:
             body["tools"][-1]["cache_control"] = {"type": "ephemeral"}
+        if no_tools:                    # `tools` is in the prefix of every thinking block: kept, switched off
+            body["tool_choice"] = {"type": "none"}
     if stream:
         body["stream"] = True
     return body

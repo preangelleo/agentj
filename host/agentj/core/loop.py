@@ -20,7 +20,7 @@ import re
 import time
 from pathlib import Path
 
-from . import compact as compaction, llm, prompt
+from . import compact as compaction, llm, prompt, session as sessions
 from .tools import READ_ONLY
 
 SUB_MAX = 2000
@@ -103,11 +103,21 @@ class Loop:
         size = lambda: compaction.size(self.system, self.msgs)
         if size() <= limit:
             return
-        for m in self.msgs[:-TRIM_KEEP]:
-            if m.get("role") == "tool" and m.get("content") != "[older output trimmed]":
-                m["content"] = "[older output trimmed]"
+        n, cut = len(self.msgs), []
+        for i, m in enumerate(self.msgs[:-TRIM_KEEP]):
+            if m.get("role") == "tool" and m.get("content") != sessions.TRIMMED:
+                m["content"] = sessions.TRIMMED
+                cut.append(n - i)
                 if size() <= limit:
-                    return
+                    break
+        if cut:
+            self._stale(cut[0], cut)
+
+    def _stale(self, think: int, trim=()) -> None:
+        """The last `think` messages follow a change: their thinking goes, in the session file too."""
+        sessions.stale(self.msgs, think, trim)
+        if self.session:
+            self.session.stale(think, trim)
 
     async def compact(self, instructions: str = "") -> dict | None:
         """Summarize all but the recent tail (compact.py). → {before, after, kept, files, text} | None (nothing to cut)."""
@@ -129,6 +139,7 @@ class Loop:
         where = str(self.session.path) if self.session else "the session log"
         summary = compaction.summary_message(text, files, where)
         self.msgs = [summary] + tail
+        sessions.unthink(self.msgs)         # the tail followed messages that are gone (Session.load does the same)
         if self.session:
             self.session.compact(summary, len(tail))
         self.on_event("compacted", who=self.who, kept=len(tail))
@@ -152,8 +163,16 @@ class Loop:
 
     async def _call(self, tools: bool) -> dict:
         kw = {"on_delta": self.on_delta} if self.on_delta and getattr(self.preset, "stream", False) else {}
-        r = await asyncio.to_thread(self.call, self.preset, self._wire(), self.specs if tools else None, environ=self.environ,
-                                    **kw)
+        if not tools and getattr(self.preset, "protocol", "") == "anthropic-messages":
+            tools, kw["tool_choice"] = True, "none"     # the report round keeps `tools`, switched off
+        size = lambda: sum(len(m.get("_anthropic_blocks") or ()) for m in self.msgs)
+        had = size()
+        try:
+            r = await asyncio.to_thread(self.call, self.preset, self._wire(), self.specs if tools else None,
+                                        environ=self.environ, **kw)
+        finally:                                # llm dropped a refused thinking replay from the messages themselves
+            if size() != had:
+                self._stale(len(self.msgs))
         self._count(r)
         return r
 

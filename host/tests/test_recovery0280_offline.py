@@ -11,8 +11,12 @@ class MeasuredUsage(unittest.TestCase):
     def test_missing_cost_never_uses_price_table(self):
         t = usage.Turn('claude')
         t.put('a', {'i': 100, 'o': 50}, model='claude-sonnet-4-6')
+        r = t.finish()                  # 0.30.73: a price-table figure travels only as `usd_est`, never as a reported cost
+        self.assertNotIn('usd', r)
+        self.assertNotIn('est', r)
+        t.put('a', {'i': 100, 'o': 50}, .02)
         with mock.patch.object(usage, 'estimate', side_effect=AssertionError('estimated')):
-            self.assertNotIn('usd', t.finish())
+            self.assertEqual(t.finish()['usd'], .02)
 
     def test_zero_is_reported_and_partial_is_unknown(self):
         t = usage.Turn('claude')

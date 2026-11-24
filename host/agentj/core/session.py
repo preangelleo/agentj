@@ -2,13 +2,28 @@
 message per line, 0600. Loading it again IS resume — the next turn continues the same conversation (O3: a CEO that was
 killed resumes with its context). Tool outputs are stored as the model saw them (already truncated and redacted).
 P431 C5: a `compact` record replaces everything before the last `keep` messages with the summary message (compact.py);
-`usage` records add up the tokens of the conversation since its last /clear (/cost, /usage)."""
+`usage` records add up the tokens of the conversation since its last /clear (/cost, /usage).
+0.30.73: a `stale` record changes what was already sent — tool outputs trimmed, the thinking after the change removed (its
+prefix changed); `compact` removes the kept tail's thinking. Counted from the end like `keep`, applied on load."""
 from __future__ import annotations
 
 import json
 import os
 import time
 from pathlib import Path
+
+from .anthropic import unthink
+
+TRIMMED = "[older output trimmed]"
+
+
+def stale(msgs: list[dict], think: int, trim=()) -> None:
+    """In place: tool outputs `trim` are cut, the last `think` messages lose their thinking (counted from the end)."""
+    n = len(msgs)
+    for k in trim:
+        if type(k) is int and 0 < k <= n and msgs[n - k].get("role") == "tool":
+            msgs[n - k]["content"] = TRIMMED
+    unthink(msgs, n - think)
 
 
 class Session:
@@ -32,6 +47,10 @@ class Session:
                     elif isinstance(r, dict) and r.get("t") == "compact" and isinstance(r.get("m"), dict) \
                             and type(r.get("keep")) is int and r["keep"] >= 0:
                         out = [r["m"]] + (out[len(out) - r["keep"]:] if r["keep"] else [])
+                        unthink(out)
+                    elif isinstance(r, dict) and r.get("t") == "stale" and type(r.get("think")) is int \
+                            and isinstance(r.get("trim"), list):
+                        stale(out, r["think"], r["trim"])
         except FileNotFoundError:
             pass
         # a step cut between the assistant's tool calls and their results cannot be replayed: drop the dangling tail
@@ -57,6 +76,9 @@ class Session:
 
     def compact(self, summary: dict, keep: int) -> None:
         self._record({"t": "compact", "m": summary, "keep": int(keep)})
+
+    def stale(self, think: int, trim=()) -> None:
+        self._record({"t": "stale", "think": int(think), "trim": list(trim)})
 
     def add_usage(self, model: str, inp: int, out: int) -> None:
         if inp or out:

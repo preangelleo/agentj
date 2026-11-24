@@ -2599,9 +2599,18 @@ the figure, never shown where nothing was reported (「—」). Process folded, 
 - **Billing.** A login whose harness reports the 5-hour window (`meter` `h5`) is a subscription: the page shows the share of
   that window the turn used (`q`, percentage points = `h5.pct` after − before; nothing if the window reset), never dollars.
   Otherwise dollars are shown only when reported by the harness. Missing or partially reported spend stays unknown;
-  no automatic price-table estimate is recorded. Historical `est` fields remain readable for backward compatibility.
+  no automatic price-table estimate is recorded as `usd`. Historical `est` fields remain readable for backward compatibility.
+- **Estimate (`usd_est`, host 0.30.73, additive).** When no part of the turn carried a harness figure, billing is `api`,
+  the turn has both `i` and `o`, and the price table has a row for `m` (the owner's row first, then the built-in one;
+  `agentj usage prices`), the host adds `"usd_est"`: tokens × that row, USD, 6 decimals. It is for display only and is
+  never written to `usd`, never together with `usd`, never with `est`, never on a subscription turn, not in today's
+  totals or `agentj usage` sums (such a turn still counts in `no_usd`), and no budget, quota, grant or billing decision
+  reads it. No row, no model name or an incomplete token report → the field is absent. Remotes that do not know the field
+  ignore it (the page copies named `use` fields only) and keep showing 「—」.
+  A scheduled task's run carries it only when API billing is certain (the run used the main Agent's own harness and the
+  host has no subscription reading); otherwise the field is absent.
 - **Page.** A finished history page may carry `"use": {"s": seconds, "h": harness, "b"?: "api"|"sub", "m"?: model, "i"?, "o"?,
-  "cr"?, "cw"?: tokens, "usd"?, "est"?, "q"?, "tps"?: output tokens per second of writing time, "tool_s"?: seconds a tool ran}`
+  "cr"?, "cw"?: tokens, "usd"?, "est"?, "usd_est"?, "q"?, "tps"?: output tokens per second of writing time, "tool_s"?: seconds a tool ran}`
   (§10.5 `hist_turn`; a scheduled run's page too). A turn the harness reported no numbers for (e.g. a shared session) carries
   `{"s", "h"}` only and shows its time alone; it is not logged. The phone shows `「12 s · ≈$0.04」` / `「48 s · 额度 0.4%」` next to the time and
   the details on a tap; an open page shows nothing.

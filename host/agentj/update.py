@@ -1691,6 +1691,10 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
         out["pending_checks"] = check_ids([r.get("id") for r in rows or [] if isinstance(r, dict) and r.get("status") != "ok"])
         if blockers:
             from .upgrade_diag import service_reason_of
+            # 0373: installed, verified, service active, API reachable; only relay_reason `unreachable` is forgiven
+            if svc_on and blockers == ["relay"] and [r.get("relay_reason") for r in rows if r.get("id") == "relay"] == ["unreachable"] \
+                    and any(r.get("id") == "service" and r.get("status") == "ok" and not r.get("unverifiable") for r in rows):
+                return {**out, "result": "ok", "reason": "upgraded_relay_pending", "exit": 0}
             why = service_reason_of(rows) if "service" in blockers else None     # R-0045: a closed word, never the summary
             return {**out, "result": "failed", "reason": "doctor_failed", "failed_checks": check_ids(blockers),
                     **({"service_reason": why} if why else {}), "exit": 1}
@@ -1929,7 +1933,7 @@ def result_block(res: dict) -> str:
     if res.get("service") == "no_systemd":        # P278: installed, no systemd to restart it — no rollback was tried
         zh, en = NO_MANAGER_WHY
     if zh:
-        lines.append(f"why: {zh} / {en}")
+        lines.append(f"why: {zh} / {en}".replace("{to}", str(res.get("to") or "?")))
     for path in res.get("permission_paths", ()):
         lines.append(f"Unsafe installation path: {path!r}")
     if res.get("fix"):
@@ -1945,7 +1949,7 @@ def result_block(res: dict) -> str:
         lines.append(f"support: {res['support']}")
     if res.get("tell_owner"):
         lines.append(f"tell_owner: {res['tell_owner']}")
-    lines.append("next: " + (UNVERIFIABLE_NEXT if res["reason"] == "unverifiable_in_fence" else (FRIEND_RECENT_NEXT if res.get("card") == "rate_limited" else FRIEND_NEXT) if res["reason"] == "friend_request" else
+    lines.append("next: " + (RELAY_NEXT if res["reason"] == "upgraded_relay_pending" else UNVERIFIABLE_NEXT if res["reason"] == "unverifiable_in_fence" else (FRIEND_RECENT_NEXT if res.get("card") == "rate_limited" else FRIEND_NEXT) if res["reason"] == "friend_request" else
                              UNVERIFIED_NEXT if res["reason"] == "host_unverified" else OWNER_NEXT if res.get("owner_kind") and res.get("fix") else "none" if res["result"] == "ok" else
                              "agentj doctor; tell your human this block" if res["result"] == "failed" else "tell your human this block"))
     return "\n".join(lines)
@@ -1960,6 +1964,7 @@ FRIEND_RECENT_WHY = ("这次升级是好友（含同主人的其他设备）请�
                      "a friend (a Same owner device too) asked for this upgrade; a friend never authorises it, nothing was "
                      "installed. Your human was asked recently (within 10 minutes), so no new card was sent; they can send "
                      "/update in the remote at any time. Do not run this command again or add --yes")
+RELAY_NEXT = "tell your human the why line; do not install again; phone still offline in a few minutes: agentj doctor"
 UNVERIFIED_NEXT = "tell your human the why line: /update in the remote, or `agentj update apply` in a terminal"
 OWNER_NEXT = ("run the fix line now (agentj sudo: one administrator card on the phone, no terminal for your human), then "
               "agentj update apply again; tell your human the tell_owner line")
@@ -1969,6 +1974,9 @@ REASON_EXTRA = {
     "unverifiable_in_fence": ("程序已升级并通过版本核对；但在 Agent 的隔离环境里看不到主机状态，后台服务和本机数据这两项无法在这里核对，"
                               "也没有失败项", "upgraded and the version verified; inside the Agent fence the host's state is hidden, "
                               "so the service connection and local data could not be checked here — nothing failed"),
+    "upgraded_relay_pending": ("新版本 {to} 已装好并核对，后台服务在运行；只有中继服务器当时没应答，会自动重连。运行 agentj --version 确认",     # 0373
+                               "{to} is installed, verified and running; only the relay server did not answer then; "
+                               "it reconnects by itself. Confirm: agentj --version"),
     "artifact_refused": ("发布包签名或哈希校验失败，未安装；请检查正式发布工件", "published artifact signature/hash verification failed; nothing installed; check the official release artifacts"),
     "upgraded": ("已升级", "upgraded"),
     "service_status_failed": ("读不出后台服务的状态，没有动安装：运行 `agentj service status` 和 `agentj doctor` 查看",
