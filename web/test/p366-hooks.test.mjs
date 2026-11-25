@@ -297,7 +297,7 @@ test('every p366 string the page uses exists in zh and en with the same placehol
   for (const bad of ['localStorage', 'sessionStorage', 'indexedDB', 'console.', 'innerHTML', 'insertAdjacentHTML', 'hook_secret', '.secret']) assert.ok(!SRC.includes(bad), bad);
 });
 
-test('技能 page: every bundled skill has its p299.sk / p299.su blurb in both languages (agentj-hooks included)', () => {
+test('技能 page: bundled skills have localized preview copy (agentj-hooks included)', () => {
   assert.match(DICT.zh['p299.sk.agentj-hooks'], /^Webhook：外部服务/);
   assert.equal(DICT.zh['p299.su.agentj-hooks'], '说「做完了回调我」或「接 Stripe 收款」。');
   assert.ok(DICT.en['p299.sk.agentj-hooks'] && DICT.en['p299.su.agentj-hooks']);
@@ -305,5 +305,17 @@ test('技能 page: every bundled skill has its p299.sk / p299.su blurb in both l
   if (!existsSync(dir)) return;                       // the public export of web/ alone
   const names = readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory() && existsSync(new URL(d.name + '/SKILL.md', dir))).map((d) => d.name);
   assert.ok(names.includes('agentj-hooks'));
-  for (const n of names) for (const L of ['zh', 'en']) for (const k of ['sk', 'su']) assert.ok(DICT[L][`p299.${k}.${n}`], `${L} p299.${k}.${n}`);
+  for (const n of names) {
+    if (n === 'agentj-ego-lite') {
+      // This host-supplied skill uses the localized metadata consumed by five-pages.js.
+      const metadata = readFileSync(new URL(n + '/SKILL.md', dir), 'utf8').split('---', 3)[1];
+      assert.match(metadata, /^description: .*Ego Lite/m);
+      assert.match(metadata, /^description_zh: .*\p{Script=Han}/mu);
+      assert.match(metadata, /^usage_zh: .*\p{Script=Han}/mu);
+      continue;
+    }
+    for (const L of ['zh', 'en']) for (const k of ['sk', 'su']) {
+      assert.ok(DICT[L][`p299.${k}.${n}`], `${L} p299.${k}.${n}`);
+    }
+  }
 });

@@ -100,31 +100,27 @@ class Field(unittest.TestCase):
             self.assertFalse(ft.preflight()['wsl'])
         net.assert_not_called()
 
-    def test_wsl_missing_libraries_offline_modern_ubuntu_repair(self):
+    def test_wsl_missing_windows_runtime_offline_does_not_probe_network(self):
         with patch('agentj.doctor._is_wsl', return_value=True), \
-             patch.object(ft.ctypes.util, 'find_library', return_value=None), \
-             patch.object(Path, 'read_text', return_value='ID=ubuntu\nVERSION_ID="24.04"'), \
-             patch('agentj.browser.manifest', return_value={'builds': {'linux-x64': {'url': 'https://example.org/browser'}}}), \
-             patch.object(ft.platform, 'machine', return_value='x86_64'), patch.object(ft, 'download_probe') as net:
+             patch('agentj.browser_ego._executable', return_value=None) as resolve, patch.object(ft, 'download_probe') as net:
             result = ft.preflight(offline=True)
+        resolve.assert_called_once_with('wsl2')
         net.assert_not_called()
-        self.assertEqual(result['checks'][0]['status'], 'fail')
-        self.assertIn('libasound2t64', result['repair'])
-        self.assertIn('libatk1.0-0t64', result['repair'])
-        self.assertIn('sudo apt-get update &&', result['repair'])
+        self.assertEqual(result['checks'][0], {'id': 'ego_browser_cli', 'status': 'fail'})
+        self.assertEqual(result['checks'][1]['status'], 'skipped')
+        self.assertIn('Windows', result['repair'])
         self.assertEqual(result['next'], 'agentj browser setup')
 
-    def test_wsl_old_ubuntu_no_t64_and_failed_download(self):
+    def test_wsl_online_uses_vendor_download_page_and_ollama_architecture(self):
         with patch('agentj.doctor._is_wsl', return_value=True), \
-             patch.object(ft.ctypes.util, 'find_library', return_value='found'), \
-             patch.object(Path, 'read_text', return_value='ID=ubuntu\nVERSION_ID="22.04"'), \
-             patch('agentj.browser.manifest', return_value={'builds': {'linux-arm64': {'url': 'https://example.org/browser'}}}), \
+             patch('agentj.browser_ego._executable', return_value='/mnt/c/ego-browser.exe'), \
              patch.object(ft.platform, 'machine', return_value='aarch64'), \
              patch.object(ft, 'download_probe', side_effect=['ok', 'unreachable']) as net:
             result = ft.preflight()
-        self.assertNotIn('t64', result['repair'])
-        self.assertEqual(result['checks'][0]['status'], 'ok')
+        self.assertEqual(result['checks'][0], {'id': 'ego_browser_cli', 'status': 'ok'})
+        self.assertEqual(result['checks'][1], {'id': 'ego_download_page', 'status': 'ok'})
         self.assertEqual(result['checks'][2]['status'], 'unreachable')
+        self.assertEqual(net.call_args_list[0].args, ('https://lite.ego.app/',))
         self.assertIn('arm64', net.call_args.args[0])
 
     def test_probe_head_timeout_and_sanitized_error(self):

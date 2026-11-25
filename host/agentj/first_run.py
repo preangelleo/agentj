@@ -415,7 +415,10 @@ def run_checks(st, rec: dict, only: list[str] | None = None, serve: dict | None 
         else:
             rec.pop("ai_route", None)
     if isinstance(ctx.get("browser_source"), dict):
-        rec["browser_source"] = {k: ctx["browser_source"][k] for k in ("kind", "port", "running") if k in ctx["browser_source"]}
+        source = ctx["browser_source"]
+        if (rec.get("browser_source") or {}).get("ego_offer") != source.get("ego_offer"):
+            rec["revision"] += 1
+        rec["browser_source"] = {k: source[k] for k in ("kind", "port", "running", "backend", "ego_offer") if k in source}
     return rec
 
 
@@ -482,6 +485,8 @@ FACT = {
     "existing_browser_found": ("你Agent J 主机上已经有一个浏览器在运行（端口 {port}）。可以直接用它——你在里面的登录都能用，不用再装一个。",
                                "A browser is already running on the Agent J host (port {port}). You can use it — your sign-ins there "
                                "work and nothing else gets installed."),
+    "ego_profile_offer": ("同意后，Agent J 会使用 Ego Lite 里名为 Agent J 的浏览器资料，其中可能已有网站登录。",
+                          "If you agree, Agent J will use the profile named Agent J in Ego Lite and any website sign-ins it contains."),
     "adopted_not_running": ("没通过：你登记的浏览器（端口 {port}）现在没在运行。请在Agent J 主机上把它打开，再点「检查」；Agent J 不会替你启动或关闭它。",
                             "Not passed: the browser you registered (port {port}) is not running. Start it on the Agent J host, "
                             "then tap Check; Agent J never starts or stops it."),
@@ -525,6 +530,7 @@ FACT = {
 }
 # reason → the next steps the card offers (besides "I won't use this" / "Later", which the card adds by itself)
 NEXT = {"browser_not_installed": ["install_browser"], "existing_browser_found": ["adopt_browser", "install_browser"],
+        "ego_profile_offer": ["adopt_browser"], "ego_profile_required": ["check"],
         "browser_not_running": ["install_browser"], "adopted_not_running": ["check"],
         "site_not_added": ["check", "open_login"], "site_signin_required": ["open_login", "check"],
         "site_check_stale": ["check"], "site_check_needed": ["check", "open_login"]}
@@ -553,7 +559,10 @@ def explain(rec: dict, iid: str) -> dict | None:
         link = (ai_route.journal_entry(rec.get("ai_route")) or {}).get("link") or ai_route.invite(use_platform=False)
         for lang in ("zh", "en"):
             fill[lang]["kimi"] = ai_route.link_line(link, lang)
-    if reason in FACT:
+    if reason == "ego_profile_required":
+        fact = {"zh": "Agent J 需要 Ego Lite 才能使用专用浏览器（Windows 版为测试版）。",
+                "en": "Agent J needs Ego Lite for its dedicated browser (Windows beta)."}
+    elif reason in FACT:
         fact = {lang: FACT[reason][k].format(**fill[lang]) for k, lang in enumerate(("zh", "en"))}
     elif row["state"] == "waiting_local":
         fact = {"zh": "等你在Agent J 主机上完成这一步。", "en": "Waiting for you to do this on the Agent J host."}
@@ -576,6 +585,12 @@ def explain(rec: dict, iid: str) -> dict | None:
                    "en": "On hold until then: " + ", ".join(d[6] for d in deps) + ". Everything else works."} if deps else
                   {"zh": "不影响其他项。", "en": "Nothing else depends on it."})
     nxt = list(NEXT.get(reason, []))
+    if iid == "browser" and reason in ("browser_not_installed", "browser_not_running"):
+        from . import browser
+        backend = browser.backend()
+        if backend == "system-cdp" and reason == "browser_not_installed":
+            fact = {"zh": "请先确认 Agent J 主机已安装 Chrome 或 Chromium，再在这里准备专用浏览器。",
+                    "en": "Make sure Chrome or Chromium is installed on the Agent J host, then set up the dedicated browser here."}
     if reason == "existing_browser_found" and not port:
         nxt = ["install_browser"]
     return {"fact": fact, "effect": effect, "next": nxt}
@@ -601,13 +616,14 @@ def snapshot(rec: dict) -> dict:
                       "required": need == "required", "guide": iid in GUIDE})
     gi = GROUPS.index(BY_ID[cur][1]) + 1 if cur else len(GROUPS)
     src = rec.get("browser_source")
+    action = rec.get("action")
     return {"revision": rec["revision"], "items": items, "current": cur, "counts": counts(rec), "group": gi,
             "groups": [{"id": g, "title": {"zh": GROUP_TITLE[g][0], "en": GROUP_TITLE[g][1]}} for g in GROUPS],
             "remote_ready": ready, "blocking": block, "exit_armed": bool(rec["exit"].get("armed_at")) and
             _now() - int(rec["exit"]["armed_at"]) <= EXIT_WINDOW, "updated_at": rec["updated_at"],
             "closed": rec.get("closed", False), "progress": progress(rec),
-            "browser_source": {k: src[k] for k in ("kind", "port", "running") if k in src} if isinstance(src, dict) else None,
-            "action": rec.get("action")}
+            "browser_source": {k: src[k] for k in ("kind", "port", "running", "backend") if k in src} if isinstance(src, dict) else None,
+            "action": {k: v for k, v in action.items() if k != "ego_offer"} if isinstance(action, dict) else None}
 
 
 def owner_guide(rec: dict | None) -> dict:
@@ -721,10 +737,19 @@ def mark(st, item: str, choice: str, revision: int, decision_ref: str, serve: di
             if (choice in ("install_browser", "adopt_browser") and item != "browser") or \
                     (choice == "open_login" and item not in SITE_ITEMS):
                 raise SetupError("invalid")
+            ego_offer = None
+            if choice == "adopt_browser":
+                from . import browser
+                if browser.backend() == "ego-lite":
+                    ego_offer = (rec.get("browser_source") or {}).get("ego_offer")
+                    if row.get("reason") != "ego_profile_offer" or not ego_offer:
+                        raise SetupError("invalid")
             row["choice"] = "selected"
             if row["state"] == "deferred":
                 row["state"] = "pending"
             rec["action"] = {"item": item, "choice": choice, "state": "running", "at": _now()}
+            if ego_offer:
+                rec["action"]["ego_offer"] = ego_offer
         row["owner_decision_ref"] = decision_ref[:64]
         if choice not in ("later",) + ACTIONS:
             run_checks(st, rec, [item], serve=serve)
@@ -766,6 +791,11 @@ def act(st, item: str, choice: str, decision_ref: str = "", serve: dict | None =
         rec = read(st)
         if rec is None:
             raise SetupError("not_found")
+        if choice == "adopt_browser" and browser.backend() == "ego-lite":
+            current_action = rec.get("action") or {}
+            owner_ref = rec["items"]["browser"].get("owner_decision_ref")
+            if owner_ref != decision_ref[:64] or current_action.get("choice") != choice:
+                return {"ok": True, **snapshot(rec)}
         rec["action"] = {k: v for k, v in out.items() if v is not None}
         run_checks(st, rec, [i for i in _order() if BY_ID[i][1] == "browser"], serve=serve)
         rec["revision"] += 1

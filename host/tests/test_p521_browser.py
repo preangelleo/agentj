@@ -44,7 +44,7 @@ class SingleBrowser(Base):
                 self.assertEqual(len(children), 1)
                 self.assertEqual(len({rec['pid'] for _, rec in results}), 1)
                 self.assertEqual(len({rec['port'] for _, rec in results}), 1)
-                port_file = browser.profile_dir(self.st) / 'DevToolsActivePort'
+                port_file = browser.runtime_path(self.st)
                 before = port_file.read_bytes()
                 proc, rec = browser.start_browser(self.st)
                 if proc is not None:
@@ -67,7 +67,7 @@ class SingleBrowser(Base):
 
 class MultiSeat(Base):
     def test_four_seats_default_to_at_most_one_visible_browser(self):
-        for platform in ('linux', 'macos', 'wsl2'):
+        for platform in ('linux',):
             modes = []
             for n in range(1, 5):
                 st = __import__('agentj.state', fromlist=['State']).State(self.st.root / str(n))
@@ -77,9 +77,10 @@ class MultiSeat(Base):
                         patch.object(browser, 'system', return_value=platform), \
                         patch.object(browser, 'display_env', return_value=True), \
                         patch.object(browser, 'installed', return_value={'path': '/fake/chrome', 'version': 'test'}), \
-                        patch.object(browser, 'choose_executable', return_value=('/fake/chrome', 'bundled')), \
                         patch.object(browser.subprocess, 'Popen', return_value=proc) as launch, \
-                        patch.object(browser, '_wait_port', return_value=(12345, '/test')), \
+                        patch.object(browser, '_launch_port', return_value=12345), \
+                        patch.object(browser, '_wait_port', return_value='/test'), \
+                        patch.object(browser, 'proc_start_time', return_value='1'), \
                         patch.object(browser, 'listen_addresses', return_value={'127.0.0.1'}):
                     _, rec = browser._start_browser(st)
                     modes.append(rec['headless'])
@@ -257,22 +258,48 @@ class Supervisor(Base):
             self.assertFalse(path.exists())
             self.assertEqual(ctl.call_args_list[0].args, ('disable', '--now', 'test-old-browser.service'))
 
-    def test_macos_upgrade_does_not_open_now_and_keeps_next_login_start(self):
-        home = self.st.root / 'home'
-        seen = []
-        def bootstrap(name, path):
-            seen.append(plistlib.loads(pathlib.Path(path).read_bytes())['RunAtLoad'])
-            return __import__('subprocess').CompletedProcess([], 0, '', '')
-        with patch.dict(os.environ, {'HOME': str(home)}), \
-                patch.object(service, 'platform', return_value='macos'), \
-                patch.object(browser, 'svc_name', return_value='test.p521.browser'), \
-                patch.object(browser, 'cleanup_legacy_services', return_value=[]), \
-                patch.object(service.macapp, 'wrap', side_effect=lambda argv: (argv, {})), \
-                patch.object(service, '_bootstrap', side_effect=bootstrap):
-            out = browser.service_install(self.st, start=False)
-            self.assertEqual(seen, [False], 'upgrade bootstrap must not open a window')
-            self.assertTrue(plistlib.loads(pathlib.Path(out['path']).read_bytes())['RunAtLoad'],
-                            'normal start at next login must be kept')
+    def test_ego_upgrade_retires_only_matching_legacy_supervisor_and_keeps_data(self):
+        profile = browser.profile_dir(self.st)
+        profile.mkdir(parents=True)
+        legacy = profile / 'Last Version'
+        legacy.write_text('156.0.8078.4')
+        for os_kind, service_kind in (('macos', 'macos'), ('wsl2', 'linux')):
+            home = self.st.root / 'home'
+            agents = home / 'Library' / 'LaunchAgents'
+            agents.mkdir(parents=True, exist_ok=True)
+            with self.subTest(platform=os_kind), patch.object(browser, 'system', return_value=os_kind), \
+                    patch.object(pathlib.Path, 'home', return_value=home), \
+                    patch.object(service, 'platform', return_value=service_kind), \
+                    patch.object(service, 'legacy_name', return_value=None), \
+                    patch.object(service, 'unit_dir', return_value=str(self.st.root)), \
+                    patch.object(service, '_bootout_wait', return_value=True) as bootout, \
+                    patch.object(service, '_systemctl') as ctl, \
+                    patch.object(browser, 'service_install') as install, patch.object(browser.os, 'killpg') as kill:
+                name = browser.svc_name()
+                path = agents / (name + '.plist') if service_kind == 'macos' else self.st.root / (name + '.service')
+
+                def write(state):
+                    env = {'AGENTJ_STATE_DIR': state, 'AGENTJ_INSTANCE': '1'}
+                    if service_kind == 'macos':
+                        path.write_bytes(browser.plist_bytes(name, ['/agentj'], '/log', env))
+                    else:
+                        path.write_text(browser.unit_text(['/agentj'], env))
+
+                write('/other')
+                browser.refresh_service(self.st)
+                self.assertTrue(path.exists())
+                bootout.assert_not_called()
+                ctl.assert_not_called()
+                write(str(self.st.root))
+                browser.refresh_service(self.st)
+                self.assertFalse(path.exists())
+                if service_kind == 'macos':
+                    bootout.assert_called_once_with(name)
+                else:
+                    self.assertEqual(ctl.call_args_list[0].args, ('disable', '--now', name + '.service'))
+                kill.assert_not_called()
+                install.assert_not_called()
+                self.assertEqual(legacy.read_text(), '156.0.8078.4')
 
     def test_macos_legacy_cleanup_preserves_other_state(self):
         home = self.st.root / 'home'

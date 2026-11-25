@@ -167,7 +167,7 @@ class Adopt(unittest.TestCase):
     def test_setup_asks_first_when_a_browser_already_runs_here(self):
         with mock.patch.dict(os.environ, {"AGENTJ_BROWSER_DETECT": "on"}), \
                 mock.patch.object(browser, "ADOPT_PORTS", (free_port(), self.fake.port)), \
-                mock.patch.object(browser, "install", side_effect=browser.BrowserError("download_failed")) as inst:
+                mock.patch.object(browser, "install", side_effect=browser.BrowserError("system_browser_required")) as inst:
             self.assertEqual(browser.source(self.st), {"kind": "offer", "port": self.fake.port})
             res = browser.setup(self.st)
             self.assertEqual((res["ok"], res["result"], res["port"]), (False, "existing_found", self.fake.port))
@@ -176,7 +176,7 @@ class Adopt(unittest.TestCase):
             self.assertEqual(browser.offer(self.st)["port"], self.fake.port)
             res = browser.setup(self.st, own=True)                # the owner said "install a separate one"
             inst.assert_called_once()
-            self.assertEqual(res["reason"], "download_failed")
+            self.assertEqual(res["reason"], "system_browser_required")
             self.assertTrue(browser.offer(self.st)["declined"])
             self.assertEqual(browser.source(self.st), {"kind": "none"}, "declined: not asked again")
             browser.setup(self.st)
@@ -196,7 +196,7 @@ class Adopt(unittest.TestCase):
 
 class Window(unittest.TestCase):
     def test_own_browser_is_recognisable(self):
-        args = browser._launch_args("/x/chrome", pathlib.Path("/p"), False, "file:///s/start.html")
+        args = browser._launch_args("/x/chrome", pathlib.Path("/p"), False, 9222, "file:///s/start.html")
         self.assertIn(f"--window-name={browser.WINDOW_NAME}", args)
         self.assertIn(f"--class={browser.WINDOW_CLASS}", args)
         self.assertEqual(args[-1], "file:///s/start.html")
@@ -309,10 +309,11 @@ class Checklist(unittest.TestCase):
         self.assertFalse(first_run.reopen(self.st)["closed"], "only the owner's own ask reopens it")
 
     def test_explain_names_the_browser_the_effect_and_the_next_step(self):
-        with fake_probes({"browser": ("waiting_local", "browser_not_installed"), "gmail": ("pending", "needs_browser")}):
+        with mock.patch.object(browser, "backend", return_value="system-cdp"), \
+                fake_probes({"browser": ("waiting_local", "browser_not_installed"), "gmail": ("pending", "needs_browser")}):
             snap = first_run.resume(self.st)
         ex = self.row(snap, "browser")["explain"]
-        self.assertEqual(ex["fact"]["zh"], "没通过：Agent J 的专用浏览器还没安装。")
+        self.assertIn("已安装 Chrome 或 Chromium", ex["fact"]["zh"])
         self.assertIn("只影响要用网站的事", ex["effect"]["zh"])
         self.assertEqual(ex["next"], ["install_browser"])
         self.assertIn("要先准备好浏览器", self.row(snap, "gmail")["explain"]["fact"]["zh"])
@@ -341,6 +342,18 @@ class Checklist(unittest.TestCase):
         for text in json.dumps(first_run.snapshot(rec), ensure_ascii=False).split('"'):
             self.assertNotIn("如果这项没通过", text)
         self.assertEqual(first_run.snapshot(rec)["progress"]["total"], 11)
+
+    def test_ego_browser_checklist_explains_requirement_and_keeps_legacy_check(self):
+        with mock.patch.object(browser, "backend", return_value="ego-lite"), \
+                mock.patch.object(browser, "setup") as setup, \
+                fake_probes({"browser": ("waiting_local", "ego_profile_required")}):
+            snap = first_run.resume(self.st)
+        explain = self.row(snap, "browser")["explain"]
+        for language in ("zh", "en"):
+            self.assertIn("Ego Lite", explain["fact"][language])
+            self.assertNotIn("agentj browser", explain["fact"][language])
+        self.assertEqual(explain["next"], ["check"])
+        setup.assert_not_called()
 
     def test_action_marks_are_recorded_then_carried_out(self):
         with fake_probes({"gmail": ("waiting_local", "site_signin_required"), "browser": ("verified", None)}):

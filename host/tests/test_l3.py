@@ -448,7 +448,7 @@ class WheelInstall(unittest.TestCase):
                   "agentj/admin/i18n/admin.zh.json", "agentj/admin/i18n/admin.en.json", "agentj/admin/favicon.ico",
                   "agentj/admin/brand/lang.js", "agentj/admin/brand/palette.css", "agentj/admin/brand/base.css",
                   "agentj/admin/brand/fonts/ubuntu-400.woff2", "agentj/admin/brand/fonts/UFL-1.0-ubuntu.txt",
-                  "agentj/admin/brand/img/shield-64.png"):
+                  "agentj/admin/brand/img/shield-64.png", "agentj/skills/agentj-ego-lite/SKILL.md"):
             self.assertIn(f, names_)
         self.assertFalse([n for n in names_ if n.endswith(".src.json") or "shield-source" in n], "no copy source, no big logo source")
         # Preserve bounded allocations: P118 core ceiling 2.26 MB approved by Jarvis; bot allocation 76 KiB (贾维斯 11-11 批).
@@ -465,9 +465,11 @@ class WheelInstall(unittest.TestCase):
                     or i.filename.startswith(('agentj/longtask_schemas/','agentj/skills/agentj-capability/'))]
         lt_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in lt_entries)
         self.assertLessEqual(lt_bytes,49152,'P113 long-task allocation is bounded; no models, data or templates ship')
-        # P114: Agent J's own browser (runtime, sign-in checks, login card, two skills) gets its own bounded 48 KiB, like the bots.
-        # The browser itself is downloaded at setup against the signed manifest; nothing of it ships in the wheel.
-        browser_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename.startswith(('agentj/browser','agentj/skills/agentj-browser/','agentj/skills/agentj-good-morning/'))]
+        # P114: browser runtime, sign-in checks, login card and bundled skills share the existing allocation.
+        browser_prefixes = ('agentj/browser', 'agentj/skills/agentj-browser/',
+                            'agentj/skills/agentj-ego-lite/', 'agentj/skills/agentj-good-morning/')
+        browser_entries = [i for i in zipfile.ZipFile(self.wheel).infolist()
+                           if i.filename.startswith(browser_prefixes)]
         browser_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in browser_entries)
         self.assertLessEqual(browser_bytes,49152,'P114 browser package allocation is bounded; no browser binary ships')
         # P115 (0.18.0): an explicit bounded 32 KiB allocation for the first-run checklist and the Google tools module + their
@@ -802,6 +804,37 @@ class WheelInstall(unittest.TestCase):
         self.assertEqual([os.path.realpath(x) for x in p["exec"]], [os.path.realpath(self.venv + "/bin/agentj")])  # /tmp → /private/tmp on macOS
         self.assertEqual(p["mcp"], {"type": "stdio", "command": p["py"], "args": ["-P", "-m", "agentj.permtool"]})
         self.assertEqual(p["ver"], [3, int(self.py.split(".")[1])], "the venv runs the Python we claim as the floor")
+
+    def test_installed_ego_lite_skill_is_listed_for_each_harness(self):
+        home = pathlib.Path(self.tmp, "ego-home")
+        home.mkdir()
+        env = dict(self.env, HOME=str(home), XDG_CONFIG_HOME=str(home / ".config"),
+                   CLAUDE_CONFIG_DIR=str(home / ".claude"), CODEX_HOME=str(home / ".codex"),
+                   AGENTJ_SKILL_LINK="on")
+        result = subprocess.run(
+            [self.venv + "/bin/python", "-I", "-c", """
+import json
+from pathlib import Path
+from agentj import personalize, workflows
+
+assert personalize.ensure()['conflicts'] == 0
+result = {}
+for harness in ('claude', 'codex', 'opencode'):
+    result[harness] = []
+    for directory in workflows.global_dirs(harness):
+        entry = Path(directory) / 'agentj-ego-lite' / 'SKILL.md'
+        assert not entry.is_symlink()
+        assert entry.read_bytes() == (personalize.SKILLS / 'agentj-ego-lite' / 'SKILL.md').read_bytes()
+        skills, _ = workflows.skill_dir(directory, 'installed', None, None)
+        result[harness].extend(s['name'] for s in skills if s['name'] == 'agentj-ego-lite')
+print(json.dumps(result))
+"""],
+            cwd=self.tmp, env=env, capture_output=True, text=True, check=True, timeout=15,
+        )
+        self.assertEqual(json.loads(result.stdout), {
+            "claude": ["agentj-ego-lite"], "codex": ["agentj-ego-lite", "agentj-ego-lite"],
+            "opencode": ["agentj-ego-lite"],
+        })
 
     def test_lossless_wake_dictionary_from_the_installed_wheel(self):
         probe = (

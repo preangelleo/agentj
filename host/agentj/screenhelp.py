@@ -191,7 +191,7 @@ class HelpCards:
         if sel is not None and (not isinstance(sel, str) or not 0 < len(sel) <= 300):
             return {"result": "bad", "detail": "selector: one CSS selector (≤ 300)"}
         rt = browser.runtime(self.st)
-        if not rt:
+        if not rt or not rt.get("ws"):
             return {"result": "no_browser"}
         try:
             with CDP(rt["ws"]) as cdp:
@@ -234,7 +234,7 @@ class HelpCards:
         if not isinstance(tid, str) or not re.fullmatch(r"[0-9A-Za-z]{8,64}", tid):
             return {"result": "bad"}
         rt = browser.runtime(self.st)
-        if not rt:
+        if not rt or not rt.get("ws"):
             return {"result": "gone"}
         try:
             with CDP(rt["ws"]) as cdp:

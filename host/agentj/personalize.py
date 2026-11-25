@@ -131,7 +131,7 @@ def skill(a):
                 else:
                     for rel in skill_links.logic_files(source):
                         path=target/rel
-                        if skill_links.points_to(path,source/rel):path.unlink()
+                        if skill_links.installed_logic(path,source/rel):path.unlink()
                     try:target.rmdir()
                     except OSError:pass
         except (OSError,ValueError,RuntimeError):errors+=1

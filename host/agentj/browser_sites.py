@@ -62,10 +62,25 @@ def sites_path(st: State) -> pathlib.Path:
     return browser.bdir(st) / "sites.json"
 
 
+def _ego_profile_ref(profile: str | None) -> str:
+    return "ego:" + (hashlib.sha256(profile.encode()).hexdigest() if profile else "unbound")
+
+
+def _profile_ref(st: State) -> str:
+    if browser.backend() == "ego-lite":
+        from .browser_ego import binding_id
+        return _ego_profile_ref(binding_id(st))
+    return "default"
+
+
 def load(st: State) -> dict:
     d = browser._read_json(sites_path(st))
     if not isinstance(d, dict) or d.get("schema_version") != 1 or not isinstance(d.get("sites"), dict):
         return {"schema_version": 1, "revision": 0, "sites": {}}
+    version, profile = adapter_version(), _profile_ref(st)
+    for rec in d["sites"].values():
+        if isinstance(rec, dict) and (rec.get("adapter_version") != version or rec.get("profile_ref", "default") != profile):
+            rec.update(status="unknown", reason="not_checked", checked_at=None)
     return d
 
 
@@ -117,7 +132,7 @@ def add(st: State, site, origin=None, url=None, title=None) -> dict:
         else:
             return {"ok": False, "reason": "unknown_site", "detail": "templates: " + ", ".join(tpl) + ", custom"}
         old = d["sites"].get(site) or {}
-        rec.update(profile_ref="default", adapter_version=adapter_version(), automation_refs=old.get("automation_refs", []),
+        rec.update(profile_ref=_profile_ref(st), adapter_version=adapter_version(), automation_refs=old.get("automation_refs", []),
                    status=old.get("status", "unknown"), reason=old.get("reason", "not_checked"),
                    checked_at=old.get("checked_at"), added_at=old.get("added_at") or int(time.time()))
         d["sites"][site] = rec
@@ -256,7 +271,7 @@ def _audit(st: State, **kw) -> None:
     st.append_private(browser.bdir(st) / "checks.jsonl", json.dumps({"ts": int(time.time()), **kw}, ensure_ascii=False))
 
 
-def _record(st: State, data: dict, results: dict, reason: str) -> list:
+def _record(st: State, data: dict, results: dict, reason: str, profile: str) -> list:
     """Write observations while holding sites.lock."""
     changed = []
     at = int(time.time())
@@ -266,7 +281,7 @@ def _record(st: State, data: dict, results: dict, reason: str) -> list:
             continue
         if rec.get("status") != status:
             changed.append({"site": site, "from": rec.get("status"), "to": status})
-        rec.update(status=status, reason=why, checked_at=at, adapter_version=adapter_version())
+        rec.update(status=status, reason=why, checked_at=at, adapter_version=adapter_version(), profile_ref=profile)
         _audit(st, site=site, status=status, reason=why, by=reason)
     if results:
         _save(st, data)
@@ -276,6 +291,8 @@ def _record(st: State, data: dict, results: dict, reason: str) -> list:
 def check_login(st: State, site: str, cdp: CDP, source_state) -> str:
     """Confirm directly from a fresh probe of the browser that owns the original login tab."""
     try:
+        ego_profile = getattr(cdp, "profile_id", None)
+        profile = _ego_profile_ref(ego_profile) if isinstance(ego_profile, str) else _profile_ref(st)
         with _lock(st, "profile.lock", wait=False):
             rec = load(st)["sites"].get(site)
             rule = _rule(rec) if rec else None
@@ -287,14 +304,14 @@ def check_login(st: State, site: str, cdp: CDP, source_state) -> str:
             status, why = probe(cdp, rule, rule["check_url"], fresh=True)
             with _lock(st, wait=False):
                 data = load(st)
-                if data["sites"].get(site) != rec:
+                if data["sites"].get(site) != rec or _profile_ref(st) != profile:
                     return "unknown"
                 after = source_state(rule)
                 if after == "gone":
                     return "unavailable"
                 if status == "logged_in" and (before not in ("in", "landing") or after not in ("in", "landing")):
                     return "unknown"
-                _record(st, data, {site: (status, why)}, "login")
+                _record(st, data, {site: (status, why)}, "login", profile)
             return status
     except BlockingIOError:
         return "unknown"
@@ -315,13 +332,14 @@ def check(st: State, sites=None, if_stale: bool = False, reason: str = "manual",
     if if_stale:
         ids = [s for s in ids if _stale(d["sites"][s], now) or d["sites"][s].get("status") != "logged_in"]
     rt = browser.runtime(st) if _cdp is None else {"ws": "fake"}
+    profile = _ego_profile_ref(rt.get("profile_id")) if rt and rt.get("backend") == "ego-lite" else _profile_ref(st)
     results = {}
     if not rt:
         for s in ids:
             results[s] = ("unavailable", "no_browser")
     else:
         with _lock(st, "profile.lock"):
-            cdp = _cdp or CDP(rt["ws"])
+            cdp = _cdp or _connect(rt)
             try:
                 for s in ids:
                     rule = _rule(d["sites"][s])
@@ -342,9 +360,27 @@ def check(st: State, sites=None, if_stale: bool = False, reason: str = "manual",
                 if _cdp is None:
                     cdp.close()
     with _lock(st):
-        changed = _record(st, load(st), results, reason)
+        if _profile_ref(st) != profile:
+            return {"ok": False, "reason": "browser_profile_changed"}
+        changed = _record(st, load(st), results, reason, profile)
     st.log("browser_check", n=len(results), by=reason)
     return {"ok": True, "checked": len(results), "changed": changed, "sites": summary(st)}
+
+
+def _connect(rt: dict):
+    if rt.get("backend") == "ego-lite":
+        from .browser_ego import EgoCDP
+        return EgoCDP(rt)
+    return CDP(rt["ws"])
+
+
+def _open_ego(rt: dict, url: str) -> bool:
+    from .browser_ego import host_open
+    try:
+        host_open(rt, url)
+    except (CDPError, OSError):
+        return False
+    return True
 
 
 def open_url(st: State, url) -> dict:
@@ -354,8 +390,12 @@ def open_url(st: State, url) -> dict:
     rt = browser.visible_runtime(st)
     if not rt:
         return {"ok": False, "reason": "not_running", "hint": browser.HINTS["not_running"]}
-    with CDP(rt["ws"]) as cdp:
-        cdp.new_tab(url, background=False)
+    if rt.get("backend") == "ego-lite":
+        if not _open_ego(rt, url):
+            return {"ok": False, "reason": "open_failed"}
+    else:
+        with CDP(rt["ws"]) as cdp:
+            cdp.new_tab(url, background=False)
     return {"ok": True, "headless": bool(rt.get("headless")),
             "note": "opened on the Agent J host's screen" if not rt.get("headless") else
                     "no screen here (headless): use a QR sign-in from the phone, or a computer with a screen"}
@@ -413,6 +453,12 @@ def open_login(st: State, item: str, _cdp=None) -> dict:
     d = load(st)["sites"]
     sid = next((s for s in ids if d.get(s, {}).get("status") != "logged_in"), ids[0])
     url = templates()[sid]["login_url"]
+    if _cdp is None and rt.get("backend") == "ego-lite":
+        if not _open_ego(rt, url):
+            return {"ok": False, "reason": "open_failed"}
+        raised = {"ok": False, "method": "ego-lite"}
+        st.log("browser_open_login", site=sid, raised=False, method="ego-lite")
+        return {"ok": True, "result": "opened", "site": sid, "raised": raised, "adopted": False}
     cdp = _cdp or CDP(rt["ws"])
     try:
         target = cdp.new_tab(url, background=False)
@@ -500,8 +546,10 @@ def first_run_probe(st: State, item: str, ctx: dict) -> tuple[str, str | None]:
         if src["kind"] == "adopted":
             return "attention", "adopted_not_running"
         if src["kind"] == "offer":
-            return "waiting_local", "existing_browser_found"
-        if src["kind"] == "none":
+            return "waiting_local", "ego_profile_offer" if src.get("backend") == "ego-lite" else "existing_browser_found"
+        if src.get("backend") == "ego-lite":
+            return "waiting_local", "ego_profile_required"
+        if src["kind"] == "none" and not browser.installed(st):
             return "waiting_local", "browser_not_installed"
         return "attention", "browser_not_running"
     if item == "browser":return "verified", None
@@ -551,12 +599,9 @@ def set_tg_consent(st: State, on: bool, device: str | None) -> None:
 
 
 def telegram_qr(st: State, value) -> dict:
-    """status | off. Turning it ON is only the owner's tap on a paired phone's login card — never the Agent."""
-    if value in (None, "status"):
-        return {"ok": True, "telegram_qr": tg_consent(st),
-                "note": "on = login QR codes also go to the owner's Telegram private chat (Telegram can read them)"}
+    """Legacy status/off clients can keep checking. Sign-in images now go only to the login card."""
     if value == "off":
         set_tg_consent(st, False, None)
-        return {"ok": True, "telegram_qr": False}
-    return {"ok": False, "reason": "owner_only",
-            "detail": "only the owner can turn this on, from a login card on a paired phone / 只能由主人在手机登录卡上打开"}
+    if value in (None, "status", "off"):
+        return {"ok": True, "telegram_qr": False, "note": "Telegram 只发文字提醒 / Telegram sends text reminders only"}
+    return {"ok": False, "reason": "owner_only", "detail": "login card only / 二维码仅在登录卡显示"}

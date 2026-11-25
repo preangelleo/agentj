@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.28.96
+version: 0.28.97
 released: 2026-11-25
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.30.75
-source_tag: v0.30.75
-host_wheel: agentj-0.30.75-py3-none-any.whl
-host_wheel_sha256: d2c8fcf4adbf585230b984a512578f2a3baf23125268454954f3c519a32cb6bd
-host_sdist: agentj-0.30.75.tar.gz
-host_sdist_sha256: d10d33fbf313a29e491ee73579dd858e98b841f5735dbeed9a324c29555a250e
+host_version: 0.30.76
+source_tag: v0.30.76
+host_wheel: agentj-0.30.76-py3-none-any.whl
+host_wheel_sha256: 9ad9ce34006c1ade712bc0fe2ad97d887becccd97dc09aa518a4f3d2a47f787d
+host_sdist: agentj-0.30.76.tar.gz
+host_sdist_sha256: 69269ea789a47dfc47a08696c4ed18b4a4d7f310b6dc72c875f978e47eea7d41
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 docs_index: https://agentj.app/llms.txt (also https://agentj.app/docs/index.json; every page as raw Markdown at https://agentj.app/docs/<slug>/en.md and /zh.md)
@@ -734,7 +734,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.30.75` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.30.76` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -776,13 +776,13 @@ uv tool install "./$W"          # the wheel; its dependencies come from PyPI or 
 `https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.9`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.75#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.30.76#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.75#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.30.76#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.75`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.30.76`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1290,32 +1290,30 @@ phone keyboard's own dictation. **Offer it; never install it on your own.**
 
 ---
 
-### 10b. Agent J's own browser (host 0.18+, on by default) — stage `6-host`
+### 10b. Agent J's browser — stage `6-host`
 
-Agent J reuses its open browser when started again or when its service restarts. Closing the window leaves it closed, including during background checks. Run `agentj browser open <url>` or `agentj browser setup` when you need it again. Your sign-ins are kept.
+On Mac and Windows (beta), the owner installs [Ego Lite](https://lite.ego.app/) and prepares a dedicated profile named
+`Agent J`. If the owner explicitly asks, download the official installer for them. They can create it fresh or rename an imported Chrome work profile. Before connecting, ask the owner to
+turn off Ego Lite’s product improvement data setting as described in the browser guide. On Windows, open Ego Lite
+on the desktop and run Agent J inside WSL2. After pairing in Step 11, run `agentj browser connect` and ask the owner
+to confirm **Use Ego Lite** in the first-run checklist on their paired phone. This grants Agent J access to that profile.
 
-专用浏览器只开一个实例；重复启动和服务重启会复用已打开的浏览器。关窗后不会自动弹回，后台体检也不会重新打开；需要使用时再运行 `agentj browser open <网址>` 或 `agentj browser setup`。登录资料会保留。
+Mac 和 Windows（测试版）由主人在本机安装 [Ego Lite](https://lite.ego.app/)。主人主动提出时，可以帮他从官网下载。
+请主人新建一份名为 `Agent J` 的专用资料，也可以选定一份 Chrome 工作资料导入后改名。连接前，请主人按浏览器指南关掉 Ego Lite 的产品改进数据收集。
+Windows 版浏览器在桌面运行，Agent J 在 WSL2 中运行。第 11 步配对完成后，运行 `agentj browser connect`，
+请主人用已配对的手机在首次准备清单上点**使用 Ego Lite**。确认后 Agent J 才能使用这份资料。
 
-Agent J ships its own browser for sign-ins and web work: a private profile, its debugging port on 127.0.0.1 only, never
-your human's everyday browser. It is part of the install, **but it never blocks it**: if it fails, finish every other
-step and report it as an open item. The download comes from Playwright's CDN (`cdn.playwright.dev`, which republishes
-Google's Chrome for Testing builds; `browser.download_source official` means this CDN), and every file must match the size
-and SHA-256 in the manifest inside the signed program.
-```bash
-agentj browser setup --json      # idempotent: downloads ~200 MB once (Chrome for Testing), checks it against the signed manifest, starts the service
-agentj browser status --json     # → "state": "ready" (or "attention" with hints, or "disabled" = your human turned it off)
-```
-- `missing_libs` (Linux) → install the listed packages through the phone password card
-  (`agentj sudo --why 'browser libraries' -- apt-get install -y <packages>` or the system's package manager), then setup again.
-- `download_failed` in mainland China → `agentj config set browser.mirror https://<a mirror serving the same bytes>`, then
-  setup; a file that does not match the manifest is discarded. Never disable TLS checks.
-- `no_service_manager` on a server → the `loginctl enable-linger $USER` from Step 10, then setup again.
-- `sandbox_blocked` (Ubuntu 23.10+ with no usable system Chrome) → `agentj browser sandbox-fix --json` (phone password card;
-  10-minute shell timeout). Never `--no-sandbox`.
-- `disabled` → your human turned it off; leave it off unless they ask (`agentj browser enable`).
-Do not add sites or sign in now: after pairing (Step 11) the main Agent offers that by itself, and your human can always
-say 「早上好」 / "good morning". Guide: https://agentj.app/docs/browser-automation/en.md (中文 /zh.md).
+On Linux, install system Chrome or Chromium and run `agentj browser setup --json`. Agent J uses a private profile and
+binds the control port to 127.0.0.1. For a Linux package installation that needs administrator permission, use `agentj sudo`
+with the phone password card. Keep the sandbox enabled.
 
+Linux 用系统安装的 Chrome 或 Chromium，运行 `agentj browser setup --json`。登录资料单独保存，调试端口只
+监听 127.0.0.1。安装软件包需要管理员权限时，通过 `agentj sudo` 在手机密码卡上请主人批准。保持浏览器沙箱开启。
+
+Run `agentj browser status --json` and follow the hints. Leave browser use disabled if the owner turned it off, and
+complete the other setup steps if the browser needs attention. Add sites and offer sign-in after pairing. The owner
+can ask for a sign-in check by saying 「早上好」 or “good morning”. See the
+[English browser guide](https://agentj.app/docs/browser-automation/en.md) or [中文浏览器指南](https://agentj.app/docs/browser-automation/zh.md).
 
 ### 10c. Optional: tasks by e-mail (host 0.20+) — stage `6-host`
 
@@ -1797,7 +1795,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.75#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.30.76#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -2931,11 +2929,11 @@ Host 0.18 installs Agent J's own browser by default (`agentj browser` with setup
 Step 10b). It never blocks the install. The main Agent's built-in skills `agentj-browser` and `agentj-good-morning` handle
 sign-ins: a read-only check every day at 08:00 local time (status only, never a QR code), a phone sign-in card with only the
 cropped QR code (end-to-end encrypted, ≤ 120 s, not kept in chat), or the sign-in page on the Agent J host for sites without QR.
-Telegram gets a text reminder; the QR image goes there only after the owner taps that on the phone card. Cookies and
-passwords never leave the Agent J host; the endpoint stays on 127.0.0.1. Guide: https://agentj.app/docs/browser-automation/en.md.
+Current QR sign-ins use the paired-phone card. Telegram receives text reminders only. See the
+[browser guide](https://agentj.app/docs/browser-automation/en.md) for the connection steps.
 
 0.18.0：主机默认安装 Agent J 专用浏览器，安装失败不影响其他步骤。说「早上好」检查自动化账号登录并带你扫码；每天 08:00 只读体检、从不推送二维码；
-二维码只走端到端加密的手机登录卡；Telegram 默认只收文字提醒。
+现在二维码只走端到端加密的手机登录卡，Telegram 只收文字提醒。设置方法见[浏览器指南](https://agentj.app/docs/browser-automation/zh.md)。
 
 
 Native shared Claude CLI (>=2.1.211): local settings use an owned repository root, or main checkout for a worktree, ahead of a legacy local file in the starting directory. Shared project settings stay in the session’s primary working directory. Agent J resolves these local paths for ingress repair and status-line chaining. See https://code.claude.com/docs/en/settings#where-claude-code-keeps-the-local-file-in-a-git-repository . Managed/session overrides still need native /status and an actual message receipt.

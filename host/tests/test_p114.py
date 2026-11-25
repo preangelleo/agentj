@@ -3,21 +3,16 @@ import _hermetic  # noqa: F401
 import asyncio
 import base64
 import datetime as dt
-import hashlib
 import http.server
-import io
 import json
 import os
 import pathlib
-import shutil
 import socket
-import stat
 import sys
 import tempfile
 import threading
 import time
 import unittest
-import zipfile
 from unittest.mock import patch
 
 from agentj import browser, browser_sites as bs, browser_login as bl, browser_cdp, elevate, doctor, main_identity, preferences
@@ -41,116 +36,112 @@ class Base(unittest.TestCase):
 
 
 # ---------------------------------------------------------------- manifest + download
-def _zip(files: dict, links: dict | None = None) -> bytes:
-    b = io.BytesIO()
-    with zipfile.ZipFile(b, "w") as z:
-        for name, (data, mode) in files.items():
-            i = zipfile.ZipInfo(name); i.external_attr = (stat.S_IFREG | mode) << 16
-            z.writestr(i, data)
-        for name, target in (links or {}).items():
-            i = zipfile.ZipInfo(name); i.external_attr = (stat.S_IFLNK | 0o777) << 16
-            z.writestr(i, target)
-    return b.getvalue()
+class Backend(Base):
+    def test_resolver_chooses_the_desktop_backend(self):
+        cases = {"linux": "system-cdp", "macos": "ego-lite", "windows": "ego-lite", "wsl2": "ego-lite",
+                 "wsl1": None, "unsupported": None}
+        for platform, expected in cases.items():
+            with self.subTest(platform=platform), patch.object(browser, "system", return_value=platform):
+                self.assertEqual(browser.backend(), expected)
 
+    def test_linux_setup_detects_os_browser_without_download_or_service(self):
+        bin_path = pathlib.Path(self.tmp.name) / "chromium"
+        bin_path.write_text("#!/bin/sh\nprintf 'Chromium 152.0.7977.82 OS build\\n'\n")
+        bin_path.chmod(0o755)
+        with patch.object(browser, "SYSTEM_BROWSERS", (str(bin_path),)), \
+                patch("agentj.elevate_grant.root_safe", return_value=True), \
+                patch.object(browser._LOCAL, "open", side_effect=AssertionError("network")), \
+                patch.object(browser, "service_install", side_effect=AssertionError("service")):
+            first = browser.setup(self.st, start_service=False, own=True)
+            second = browser.setup(self.st, start_service=False, own=True)
+        self.assertEqual(first, second)
+        self.assertEqual((first["result"], first["source"], first["install"]["version"]), ("installed", "system", "152.0.7977.82"))
+        self.assertFalse(browser.install_path(self.st).exists())
 
-class FakeOpener:
-    def __init__(self, routes):
-        self.routes, self.seen = routes, []
+    def test_system_browser_lookup_does_not_select_a_bundled_or_testing_executable(self):
+        testing = browser.bdir(self.st) / "bin" / "chrome-linux64"
+        testing.mkdir(parents=True)
+        exe = testing / "chrome"
+        exe.write_text("#!/bin/sh\nexit 0\n")
+        exe.chmod(0o755)
+        shim = pathlib.Path(self.tmp.name) / "chromium"
+        shim.symlink_to(exe)
+        with patch.object(browser, "SYSTEM_BROWSERS", (str(shim),)), \
+                patch("agentj.elevate_grant.root_safe", return_value=True), \
+                patch.object(browser, "_system_browser_version", return_value="156.0.8078.4") as version:
+            self.assertEqual(browser.setup(self.st, start_service=False, own=True)["reason"], "system_browser_required")
+            version.assert_not_called()
+        with patch.object(browser.subprocess, "run", return_value=__import__("subprocess").CompletedProcess(
+                [], 0, "Google Chrome for Testing 156.0.8078.4\n", "")):
+            self.assertIsNone(browser._system_browser_version(str(shim), self.st))
 
-    def open(self, req, timeout=None):
-        url = req.full_url if hasattr(req, "full_url") else req
-        self.seen.append(url)
-        body = self.routes.get(url)
-        if isinstance(body, Exception):
-            raise body
-        if body is None:
-            raise OSError("404")
-        return io.BytesIO(body)
+    def test_system_browser_requires_a_trusted_package_path_before_probing_version(self):
+        with (patch.object(browser, "SYSTEM_BROWSERS", (__file__,)),
+              patch.object(browser.os, "access", return_value=True),
+              patch("agentj.elevate_grant.root_safe", return_value=False) as trusted,
+              patch.object(browser, "_system_browser_version") as version):
+            self.assertIsNone(browser.installed(self.st))
+        trusted.assert_called_once_with(__file__)
+        version.assert_not_called()
 
+    def test_browser_subprocess_keeps_the_graphical_session_type(self):
+        with patch.dict(os.environ, {"XDG_SESSION_TYPE": "wayland", "OPENAI_API_KEY": "fixture"}, clear=True):
+            env = browser._system_browser_env(self.st)
+        self.assertEqual(env["XDG_SESSION_TYPE"], "wayland")
+        self.assertNotIn("OPENAI_API_KEY", env)
 
-class Manifest(Base):
-    def test_signed_manifest_covers_four_platforms_with_real_hashes(self):
-        m = browser.manifest()
-        self.assertEqual(set(m["builds"]), {"linux-x64", "linux-arm64", "mac-arm64", "mac-x64"})
-        for k, b in m["builds"].items():
-            self.assertTrue(b["url"].startswith("https://cdn.playwright.dev/builds/cft/" + m["version"] + "/"), k)
-            self.assertTrue(b["url"].endswith("/" + b["path"]))
-            self.assertRegex(b["sha256"], r"^[0-9a-f]{64}$")
-            self.assertGreater(b["size"], 100_000_000)
-        self.assertEqual(m["approved_mirrors"], [])          # the mainland mirror is Jarvis's decision (design item 2)
-        self.assertGreaterEqual(m["min_free_bytes"], 1_500_000_000)
+    def test_ego_setup_delegates_without_starting_a_service_or_adopting(self):
+        from agentj import browser_ego
+        receipt = {"ok": False, "result": "attention", "reason": "ego_install"}
+        for platform in ("macos", "wsl2", "windows"):
+            with self.subTest(platform=platform), patch.object(browser, "system", return_value=platform), \
+                    patch.object(browser_ego, "setup", return_value=receipt) as setup, \
+                    patch.object(browser, "service_install") as start, patch.object(browser, "detect_existing") as detect:
+                self.assertEqual(browser.setup(self.st), receipt)
+                setup.assert_called_once_with(self.st)
+                start.assert_not_called()
+                detect.assert_not_called()
+                self.assertEqual(browser.adopt(self.st, "127.0.0.1:9222")["reason"], "adopt_unsupported")
+                self.assertEqual(browser.endpoint(self.st)["reason"], "ego_browser_cli")
 
-    def _fake_manifest(self, data, url="https://cdn.example/b.zip", mirrors=()):
-        m = browser.manifest()
-        key = browser.platform_key()
-        m["builds"][key] = {"url": url, "path": "p/b.zip", "size": len(data), "sha256": hashlib.sha256(data).hexdigest(),
-                            "executable": ["pkg", "chrome"]}
-        m["approved_mirrors"] = list(mirrors)
-        return m
+    def _legacy(self):
+        profile = browser.bdir(self.st) / "profile"
+        profile.mkdir(parents=True)
+        browser._write_json(self.st, browser.install_path(self.st), {"version": "156.0.8078.4"})
+        (profile / "Last Version").write_text("156.0.8078.4")
+        return profile
 
-    def test_install_verifies_unpacks_keeps_exec_bits_and_symlinks_idempotent(self):
-        data = _zip({"pkg/chrome": (b"#!/bin/sh\n", 0o755), "pkg/lib/a.so": (b"x", 0o644)}, {"pkg/lib/b.so": "a.so"})
-        op = FakeOpener({"https://cdn.example/b.zip": data})
-        with patch.object(browser, "manifest", return_value=self._fake_manifest(data)):
-            r = browser.install(self.st, opener=op)
-            self.assertEqual(r["result"], "installed")
-            have = browser.installed(self.st)
-            self.assertTrue(os.access(have["path"], os.X_OK))
-            self.assertTrue(os.path.islink(pathlib.Path(have["path"]).parent / "lib" / "b.so"))
-            self.assertEqual(oct(os.stat(browser.install_path(self.st)).st_mode & 0o777), "0o600")
-            self.assertEqual(browser.install(self.st, opener=op)["result"], "present")
-            self.assertEqual(len(op.seen), 1)
+    def test_older_system_browser_chooses_an_isolated_profile_without_editing_legacy(self):
+        legacy = self._legacy()
+        original = legacy / "Last Version"
+        replacement = browser._launch_profile(self.st, {"version": "152.0.7977.82"})
+        self.assertEqual(replacement, legacy.with_name("profile-system"))
+        self.assertFalse(replacement.exists())
+        self.assertEqual(original.read_text(), "156.0.8078.4")
+        replacement.mkdir()
+        self.assertEqual(browser._launch_profile(self.st, {"version": "157.0.8000.0"}), replacement)
 
-    def test_corrupt_download_is_discarded_and_nothing_installed(self):
-        data = _zip({"pkg/chrome": (b"#!/bin/sh\n", 0o755)})
-        m = self._fake_manifest(data)
-        bad = FakeOpener({"https://cdn.example/b.zip": data[:-1] + b"X"})
-        with patch.object(browser, "manifest", return_value=m):
-            with self.assertRaises(browser.BrowserError) as e:
-                browser.install(self.st, opener=bad)
-            self.assertEqual(e.exception.reason, "download_corrupt")
-        self.assertIsNone(browser.installed(self.st))
-        self.assertEqual([p.name for p in browser.bdir(self.st).iterdir() if p.name.startswith(".")], [])
+    def test_system_browser_can_reuse_compatible_private_profile(self):
+        legacy = self._legacy()
+        self.assertEqual(browser._launch_profile(self.st, {"version": "156.0.8078.4"}), legacy)
+        self.assertEqual(browser._launch_profile(self.st, {"version": "157.0.8000.0"}), legacy)
 
-    def test_mirror_serves_same_bytes_only_after_official_fails(self):
-        data = _zip({"pkg/chrome": (b"#!/bin/sh\n", 0o755)})
-        m = self._fake_manifest(data, mirrors=["https://mirror.example/base"])
-        op = FakeOpener({"https://cdn.example/b.zip": OSError("blocked"), "https://mirror.example/base/p/b.zip": data})
-        with patch.object(browser, "manifest", return_value=m):
-            self.assertEqual(browser.install(self.st, opener=op)["result"], "installed")
-        self.assertEqual(op.seen, ["https://cdn.example/b.zip", "https://mirror.example/base/p/b.zip"])
+    def test_check_emits_migration_notice_once_and_stale_checks_do_not_consume_it(self):
+        self._legacy()
+        with patch.object(browser, "wake", return_value=None), patch.object(bs, "check", return_value={"ok": True}):
+            self.assertNotIn("migration_note", browser.execute({"action": "check", "if_stale": True}, self.st))
+            self.assertIn("migration_note", browser.execute({"action": "check"}, self.st))
+            self.assertNotIn("migration_note", browser.execute({"action": "check"}, self.st))
 
-    def test_approved_mirror_without_any_mirror_is_refused(self):
-        data = _zip({"pkg/chrome": (b"#!/bin/sh\n", 0o755)})
-        with patch.object(browser, "manifest", return_value=self._fake_manifest(data)), \
-                patch.object(browser, "settings", return_value={"enabled": True, "download_source": "approved-mirror", "mirror": "", "check_time": "08:00"}):
-            with self.assertRaises(browser.BrowserError) as e:
-                browser.install(self.st, opener=FakeOpener({}))
-            self.assertEqual(e.exception.reason, "no_source")
-
-    def test_path_traversal_and_escaping_symlinks_are_rejected(self):
-        for files, links in (({"../evil": (b"x", 0o644)}, None), ({"pkg/chrome": (b"x", 0o755)}, {"pkg/l": "/etc/passwd"})):
-            data = _zip(files, links)
-            with patch.object(browser, "manifest", return_value=self._fake_manifest(data)):
-                with self.assertRaises(browser.BrowserError) as e:
-                    browser.install(self.st, opener=FakeOpener({"https://cdn.example/b.zip": data}))
-                self.assertEqual(e.exception.reason, "extract_failed")
-            self.assertFalse((pathlib.Path(self.tmp.name) / "evil").exists())
-
-    def test_no_space_and_disabled_never_download(self):
-        data = _zip({"pkg/chrome": (b"x", 0o755)})
-        op = FakeOpener({"https://cdn.example/b.zip": data})
-        with patch.object(browser, "manifest", return_value=self._fake_manifest(data)), \
-                patch.object(browser.shutil, "disk_usage", return_value=shutil._ntuple_diskusage(10, 9, 1)):
-            r = browser.setup(self.st, opener=op)
-            self.assertEqual((r["ok"], r["reason"]), (False, "no_space"))
-        with patch.object(browser, "settings", return_value={"enabled": False, "download_source": "auto", "mirror": "", "check_time": "08:00"}):
-            self.assertEqual(browser.setup(self.st, opener=op)["result"], "disabled")
-        self.assertEqual(op.seen, [])
+    def test_disabled_setup_skips_vendor_and_system_operations(self):
+        with patch.object(browser, "settings", return_value={"enabled": False}), patch.object(browser, "install") as inst:
+            self.assertEqual(browser.setup(self.st)["result"], "disabled")
+        inst.assert_not_called()
 
     def test_unsupported_platforms(self):
         with patch.object(browser, "system", return_value="wsl1"):
             self.assertIsNone(browser.platform_key())
+            self.assertEqual(browser.setup(self.st)["reason"], "unsupported")
         with patch.object(browser._platform, "machine", return_value="riscv64"):
             self.assertIsNone(browser.platform_key())
 
@@ -159,23 +150,24 @@ class Manifest(Base):
 FAKE_CHROME = r'''#!{py}
 import http.server, json, os, sys, socketserver
 prof = [a.split("=", 1)[1] for a in sys.argv if a.startswith("--user-data-dir=")][0]
-addr = "0.0.0.0" if os.environ.get("FAKE_BIND_ALL") else [a.split("=", 1)[1] for a in sys.argv if a.startswith("--remote-debugging-address=")][0]
+addr = {bind_all!r} or [a.split("=", 1)[1] for a in sys.argv if a.startswith("--remote-debugging-address=")][0]
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         port = self.server.server_address[1]
         b = json.dumps({{"Browser": "Fake/1", "webSocketDebuggerUrl": "ws://127.0.0.1:%d/devtools/browser/x" % port}}).encode()
         self.send_response(200); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
     def log_message(self, *a): pass
-s = http.server.HTTPServer((addr, 0), H)
+port = int([a.split("=", 1)[1] for a in sys.argv if a.startswith("--remote-debugging-port=")][0])
+s = http.server.HTTPServer((addr, port), H)
 open(os.path.join(prof, "DevToolsActivePort"), "w").write("%d\n/devtools/browser/x\n" % s.server_address[1])
 s.serve_forever()
 '''
 
 
 class Runtime(Base):
-    def _fake(self):
+    def _fake(self, bind_all=""):
         exe = pathlib.Path(self.tmp.name) / "chrome"
-        exe.write_text(FAKE_CHROME.format(py=sys.executable)); exe.chmod(0o755)
+        exe.write_text(FAKE_CHROME.format(py=sys.executable, bind_all=bind_all)); exe.chmod(0o755)
         return {"version": "t", "platform": "linux-x64", "path": str(exe)}
 
     @unittest.skipUnless(sys.platform.startswith("linux"), "uses /proc/net/tcp")
@@ -198,48 +190,98 @@ class Runtime(Base):
     @unittest.skipUnless(sys.platform.startswith("linux"), "uses /proc/net/tcp")
     def test_a_debugging_port_on_all_addresses_is_stopped(self):
         browser.ensure_dir(self.st)
-        with patch.object(browser, "installed", return_value=self._fake()), patch.dict(os.environ, {"FAKE_BIND_ALL": "1"}):
+        with patch.object(browser, "installed", return_value=self._fake(bind_all="0.0.0.0")):
             with self.assertRaises(browser.BrowserError) as e:
                 browser.start_browser(self.st, headless=True)
         self.assertEqual(e.exception.reason, "not_loopback")
         self.assertFalse(browser.runtime_path(self.st).exists())
 
     def test_launch_args_never_weaken_the_browser(self):
-        args = browser._launch_args("/x/chrome", pathlib.Path("/p"), True)
-        for bad in ("--no-sandbox", "--password-store=basic", "--remote-allow-origins", "0.0.0.0"):
+        args = browser._launch_args("/x/chrome", pathlib.Path("/p"), True, 9222)
+        for bad in ("--no-sandbox", "--password-store=basic", "--remote-allow-origins", "--enable-automation", "0.0.0.0"):
             self.assertFalse(any(bad in a for a in args), bad)
-        self.assertIn("--remote-debugging-port=0", args)
+        self.assertIn("--remote-debugging-port=9222", args)
         self.assertIn("--remote-debugging-address=127.0.0.1", args)
         self.assertIn("--headless=new", args)
-        self.assertNotIn("--headless=new", browser._launch_args("/x/chrome", pathlib.Path("/p"), False))
+        self.assertNotIn("--headless=new", browser._launch_args("/x/chrome", pathlib.Path("/p"), False, 9222))
 
-    def test_restricted_userns_uses_an_apparmor_allowed_system_browser_or_asks_for_the_phone_fix(self):
-        aa = pathlib.Path(self.tmp.name) / "apparmor.d"; aa.mkdir()
-        sysbin = pathlib.Path(self.tmp.name) / "opt-chrome"; sysbin.write_text("#!/bin/sh\n"); sysbin.chmod(0o755)
-        have = {"path": str(pathlib.Path(self.tmp.name) / "state/browser/bin/1/chrome-linux64/chrome")}
-        with patch.object(browser, "system", return_value="linux"), patch.object(browser, "userns_restricted", return_value=True), \
-                patch.object(browser, "APPARMOR_DIR", aa), patch.object(browser, "SYSTEM_BROWSERS", (str(sysbin),)):
-            with self.assertRaises(browser.BrowserError) as e:                 # nothing allowed → never --no-sandbox
-                browser.choose_executable(self.st, have)
-            self.assertEqual(e.exception.reason, "sandbox_blocked")
-            (aa / "chrome").write_text(f"profile chrome {sysbin} flags=(unconfined) {{\n  userns,\n}}\n")
-            self.assertEqual(browser.choose_executable(self.st, have), (str(sysbin), "system"))
-            path, text = browser.apparmor_profile(self.st)
-            self.assertTrue(path.startswith(str(aa)))
-            (aa / "mine").write_text(text)
-            self.assertEqual(browser.choose_executable(self.st, {"path": str(self.st.root.resolve() / "browser/bin/9/chrome-linux64/chrome")})[1], "bundled")
-        with patch.object(browser, "userns_restricted", return_value=False):
-            self.assertEqual(browser.choose_executable(self.st, have), (have["path"], "bundled"))
+    def test_old_sandbox_fix_cannot_create_an_apparmor_exception(self):
+        with patch.object(elevate, "client_request") as ask:
+            result = browser.sandbox_fix(self.st)
+        self.assertEqual(result["reason"], "sandbox_fix_retired")
+        ask.assert_not_called()
 
-    def test_sandbox_fix_goes_through_the_phone_password_card(self):
-        sent = []
-        with patch.object(browser, "system", return_value="linux"), patch.object(browser, "userns_restricted", return_value=True), \
-                patch.object(browser, "apparmor_allows", return_value=False), \
-                patch.object(elevate, "client_request", side_effect=lambda st, req, *a, **k: sent.append(req) or {"result": "denied"}):
-            r = browser.sandbox_fix(self.st)
-        self.assertFalse(r["ok"]); self.assertEqual(r["result"], "denied")
-        self.assertEqual(sent[0]["t"], "sudo"); self.assertIn("apparmor_parser -r", sent[0]["argv"][2])
-        self.assertIn("userns,", sent[0]["argv"][4]); self.assertNotIn("no-sandbox", json.dumps(sent))
+    def test_complete_cdp_url_must_remain_loopback(self):
+        for url in ("ws://127.0.0.1:9222@remote.example/path", "ws://127.0.0.1:99999/path", "wss://127.0.0.1:9222/path"):
+            with self.subTest(url=url), patch.object(browser_cdp, "connect") as connect:
+                with self.assertRaises(browser_cdp.CDPError):
+                    browser_cdp.CDP(url)
+                connect.assert_not_called()
+
+    def test_cdp_websocket_handshake_does_not_follow_a_redirect(self):
+        other_hit = threading.Event()
+
+        class Other(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                other_hit.set()
+                self.send_error(404)
+
+            def log_message(self, *_):
+                pass
+
+        with http.server.ThreadingHTTPServer(("127.0.0.1", 0), Other) as other:
+            class Redirect(http.server.BaseHTTPRequestHandler):
+                protocol_version = "HTTP/1.1"
+
+                def do_GET(self):
+                    self.send_response(302)
+                    self.send_header("Location", f"ws://127.0.0.1:{other.server_port}/redirect")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+
+                def log_message(self, *_):
+                    pass
+
+            with http.server.ThreadingHTTPServer(("127.0.0.1", 0), Redirect) as entry:
+                threads = [threading.Thread(target=server.serve_forever, daemon=True) for server in (entry, other)]
+                for thread in threads:
+                    thread.start()
+                try:
+                    with self.assertRaises(browser_cdp.CDPError):
+                        browser_cdp.CDP(f"ws://127.0.0.1:{entry.server_port}/devtools/browser/test", timeout=2)
+                    self.assertFalse(other_hit.is_set(), "CDP must never dial the destination in a redirect")
+                finally:
+                    for server, thread in zip((entry, other), threads):
+                        server.shutdown()
+                        thread.join()
+
+    def test_owned_listener_must_be_ipv4_loopback(self):
+        from unittest.mock import Mock
+
+        port = 41500
+        proc = Mock(pid=4242)
+        proc.poll.return_value = None
+        with patch.object(browser, "listen_addresses", return_value={"::1"}), \
+                patch.object(browser, "_endpoint_version") as version:
+            with self.assertRaises(browser.BrowserError) as error:
+                browser._wait_port(port, proc, 2)
+        self.assertEqual(error.exception.reason, "not_loopback")
+        version.assert_not_called()
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "uses /proc/net/tcp")
+    def test_runtime_publication_failure_stops_the_launched_child(self):
+        def fail(st, path, obj):
+            self.assertEqual(path, browser.runtime_path(st))
+            raise OSError("local publication failed")
+
+        with patch.object(browser, "installed", return_value=self._fake()), \
+                patch.object(browser, "_write_json", side_effect=fail), \
+                patch.object(browser, "stop_proc", wraps=browser.stop_proc) as stop:
+            with self.assertRaises(browser.BrowserError):
+                browser.start_browser(self.st, headless=True)
+        self.assertEqual(stop.call_count, 1)
+        self.assertIsNotNone(stop.call_args.args[0].poll())
+        self.assertFalse(browser.runtime_path(self.st).exists())
 
     def test_units_are_loopback_observers_without_respawn(self):
         u = browser.unit_text(["/venv/bin/agentj"], {"PATH": "/usr/bin", "AGENTJ_STATE_DIR": "/s"})
@@ -465,7 +507,7 @@ class Surfaces(Base):
     def test_skills_ship_and_say_the_right_commands(self):
         b = (ROOT / "skills/agentj-browser/SKILL.md").read_text()
         g = (ROOT / "skills/agentj-good-morning/SKILL.md").read_text()
-        for n in ("name: agentj-browser", "agentj browser login", "--if-stale", "connect_over_cdp", "telegram-qr status|off",
+        for n in ("name: agentj-browser", "agentj browser login", "--if-stale", "connect_over_cdp", "agentj browser connect",
                   "never claim success"):
             self.assertIn(n, b)
         for n in ("name: agentj-good-morning", "早上好", "good morning", "agentj browser check", "never permission to publish",
@@ -654,30 +696,37 @@ class RealBrowser(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0)
         self.assertEqual([m["result"] for m in host.sent if m.get("t") == "login_qr_done"], ["cancelled"])
 
-    async def test_telegram_gets_text_by_default_and_the_qr_only_after_consent(self):
+    async def test_telegram_gets_only_text_even_with_legacy_qr_consent(self):
         bs.add(self.st, "fixture")
         host = FakeHost(self.st)
 
         class TG:
             def enabled(self):
                 return True
+
         host.telegram = TG()
         from agentj import telegram
+        legacy = browser.bdir(self.st) / "consent.json"
+        browser._write_json(self.st, legacy, {"telegram_qr": True, "at": 10, "device": "dev1"})
+        old_bytes = legacy.read_bytes()
         calls = []
-        with patch.object(telegram, "configuration", return_value={"owner_id": 7, "key_env": "X"}), \
-                patch.object(telegram, "api", side_effect=lambda c, m, v, **k: calls.append((m, v))), \
-                patch.object(telegram, "upload", side_effect=lambda c, m, f, fld, n, mime, data, **k: calls.append((m, len(data)))), \
-                patch.object(State, "sign_key", return_value=b"k" * 32):
+        with (patch.object(telegram, "configuration", return_value={"owner_id": 7, "key_env": "X"}),
+              patch.object(telegram, "api", side_effect=lambda c, m, v, **k: calls.append((m, v))),
+              patch.object(telegram, "upload") as upload,
+              patch.object(State, "sign_key", return_value=b"k" * 32)):
             lc = bl.LoginCards(FakeElev(host))
+            self.addCleanup(lc.end_all, "stopped")
             res = await lc.request({"site": "fixture"})
             self.assertEqual(res["telegram"], "text")
             self.assertEqual([c[0] for c in calls], ["sendMessage"])
             self.assertNotIn("http", calls[0][1]["text"])
             card = next(m for m in host.sent if m.get("t") == "login_qr")
-            self.assertEqual((card["tg"], card["channel"]), ("text", "Telegram"))
-            await lc.on_phone(Sess("dev1"), {"t": "login_qr_tg", "id": res["id"], "n": card["n"], "on": True})
-            self.assertEqual(calls[-1][0], "sendPhoto")
-            self.assertTrue(bs.tg_consent(self.st))
+            self.assertEqual((card["tg"], card["channel"]), ("none", ""))
+            for on in (True, False):
+                await lc.on_phone(Sess("dev1"), {"t": "login_qr_tg", "id": res["id"], "n": card["n"], "on": on})
+            self.assertEqual([c[0] for c in calls], ["sendMessage"])
+            self.assertEqual(legacy.read_bytes(), old_bytes)
+            upload.assert_not_called()
             lc.end_all("stopped")
 
 

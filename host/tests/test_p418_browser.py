@@ -142,7 +142,10 @@ class Wake(unittest.TestCase):
                 self.enabled, self.have = (False, self.have) if what == "disabled" else (True, None)
                 res = browser.execute({"action": "endpoint"}, self.st)
                 self.assertFalse(res["ok"])
-                self.assertNotIn("next", res)
+                if what == "not_installed":
+                    self.assertEqual(res["next"], browser.HINTS["system_browser_required"])
+                else:
+                    self.assertNotIn("next", res)
                 self.assertEqual(self.calls, [])
 
     def test_actions_without_the_browser_never_start_it(self):
@@ -154,15 +157,12 @@ class Wake(unittest.TestCase):
                     browser.execute({"action": a}, self.st)
         self.assertEqual(self.calls, [])
 
-    def test_macos_kickstarts_the_launch_agent(self):
-        home = pathlib.Path(self.tmp.name) / "home"
-        la = home / "Library" / "LaunchAgents"
-        la.mkdir(parents=True)
-        with patch.object(service, "platform", lambda: "macos"), patch.dict(os.environ, {"HOME": str(home)}):
-            (la / f"{browser.svc_name()}.plist").write_text("<plist/>")
+    def test_macos_reports_vendor_cli_without_kickstarting_the_old_launch_agent(self):
+        from agentj import browser_ego
+        with patch.object(browser, "system", return_value="macos"), patch.object(browser_ego, "wake", return_value=None):
             res = browser.execute({"action": "endpoint"}, self.st)
-        self.assertTrue(res["restarted"], res)
-        self.assertEqual([c[:2] for c in self.calls], [("launchctl", "kickstart")])
+        self.assertEqual(res["reason"], "ego_browser_cli")
+        self.assertEqual(self.calls, [])
 
     # ---------------------------------------------------------------- the owner's own Chrome (adopted)
     def test_adopted_browser_is_never_started(self):

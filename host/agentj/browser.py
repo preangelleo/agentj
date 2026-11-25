@@ -1,5 +1,5 @@
-"""Private-profile Chrome for Testing supervisor and explicitly adopted loopback browsers (ADR-A194).
-Signed manifest pins downloads; ownership and loopback listening are verified before runtime publication. CDP is
+"""Private-profile Linux CDP supervisor, local Ego Lite adapter, and explicitly adopted Linux browsers.
+Ownership and loopback listening are verified before publishing a Linux runtime. CDP is
 unauthenticated: profile separation is not a same-user sandbox. No endpoint forwarding or cookie/credential logging.
 Adopted browsers are never installed, restarted, killed or modified; only owned tabs may close. A per-profile start lock
 serializes owned launches. Only explicit actions wake the owned service; background checks never wake it. Seats remain isolated.
@@ -9,7 +9,6 @@ Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / brows
 from __future__ import annotations
 
 import contextlib
-import errno
 import fcntl
 import hashlib
 import json
@@ -18,26 +17,29 @@ import pathlib
 import platform as _platform
 import plistlib
 import re
+import secrets
 import shutil
 import signal
 import socket
-import stat
 import subprocess
 import sys
 import time
 import urllib.request
-import zipfile
 
 from .state import State
 from .instance import current as current_instance
 
-MANIFEST_PATH = pathlib.Path(__file__).with_name("browser_manifest.json")
-DOWNLOAD_BUDGET = 300          # seconds for the whole first download (design: 5 minutes, 2 retries)
-RETRIES = 2
-START_WAIT = 25                # seconds for DevToolsActivePort after a start
+START_WAIT = 25                # seconds for a verified browser CDP endpoint
 HEADLESS_SIZE = "1920,1080"
 LOOPBACK = "127.0.0.1"
-_LOCAL = urllib.request.build_opener(urllib.request.ProxyHandler({}))   # loopback never goes through a proxy
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_LOCAL = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
 
 
 class BrowserError(Exception):
@@ -59,7 +61,9 @@ def ensure_dir(st: State) -> pathlib.Path:
 
 
 def profile_dir(st: State) -> pathlib.Path:
-    return bdir(st) / "profile"
+    """The persistent Linux profile. Once created, the replacement stays active across updates."""
+    replacement = bdir(st) / "profile-system"
+    return replacement if replacement.is_dir() else bdir(st) / "profile"
 
 
 def runtime_path(st: State) -> pathlib.Path:
@@ -82,12 +86,9 @@ def _write_json(st: State, path: pathlib.Path, obj) -> None:
     st.write_private(path, (json.dumps(obj, ensure_ascii=False, sort_keys=True) + "\n").encode())
 
 
-def manifest() -> dict:
-    return json.loads(MANIFEST_PATH.read_text())
-
-
 def manifest_digest() -> str:
-    return hashlib.sha256(MANIFEST_PATH.read_bytes()).hexdigest()
+    """Fingerprint the packaged platform dispatcher for the capability registry."""
+    return hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest()
 
 
 # ---------------------------------------------------------------- configuration (preferences, user tier)
@@ -105,9 +106,11 @@ def settings(st: State | None = None) -> dict:
 
 # ---------------------------------------------------------------- the platform
 def system() -> str:
-    """macos | linux | wsl2 | wsl1 | unsupported."""
+    """macos | windows | linux | wsl2 | wsl1 | unsupported."""
     if sys.platform == "darwin":
         return "macos"
+    if sys.platform == "win32":
+        return "windows"
     if sys.platform.startswith("linux"):
         try:
             rel = pathlib.Path("/proc/sys/kernel/osrelease").read_text().lower()
@@ -125,7 +128,14 @@ def platform_key() -> str | None:
     s = system()
     if arch is None or s in ("unsupported", "wsl1"):
         return None
-    return ("mac-" if s == "macos" else "linux-") + arch
+    return {"macos": "mac-", "windows": "win-"}.get(s, "linux-") + arch
+
+
+def backend() -> str | None:
+    target = system()
+    if target in ("macos", "windows", "wsl2"):
+        return "ego-lite"
+    return "system-cdp" if target == "linux" else None
 
 
 def display_env(environ: dict | None = None) -> bool:
@@ -136,251 +146,100 @@ def display_env(environ: dict | None = None) -> bool:
     return bool(e.get("DISPLAY") or e.get("WAYLAND_DISPLAY"))
 
 
-# ---------------------------------------------------------------- the Linux sandbox (Ubuntu 23.10+ AppArmor userns restriction)
-SYSTEM_BROWSERS = ("/opt/google/chrome/chrome", "/opt/google/chrome-beta/chrome", "/usr/lib/chromium/chromium",
-                   "/usr/lib/chromium-browser/chromium-browser")
-APPARMOR_DIR = pathlib.Path("/etc/apparmor.d")
+# ---------------------------------------------------------------- Linux system browser and profile migration
+SYSTEM_BROWSERS = (
+    "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome", "/usr/bin/chromium",
+    "/usr/bin/chromium-browser", "/opt/google/chrome/chrome", "/snap/bin/chromium",
+)
+SYSTEM_BROWSER_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 
 
-def userns_restricted() -> bool:
-    """Ubuntu 23.10+: unprivileged user namespaces need an AppArmor profile, otherwise Chrome has "No usable sandbox"."""
+def _version(value) -> tuple[int, ...]:
+    if not isinstance(value, str):
+        return ()
+    match = re.fullmatch(r"\d{1,5}(?:\.\d{1,8}){3}", value.strip())
+    return tuple(map(int, match[0].split("."))) if match else ()
+
+
+def _system_browser_env(st: State) -> dict:
+    keep = {"HOME", "USER", "LOGNAME", "LANG", "DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY",
+            "XDG_RUNTIME_DIR", "XDG_DATA_HOME", "XDG_SESSION_TYPE", "DBUS_SESSION_BUS_ADDRESS"}
+    env = {k: v for k, v in os.environ.items() if k in keep or k.startswith("LC_")}
+    env.update(PATH=SYSTEM_BROWSER_PATH, XDG_CONFIG_HOME=str(bdir(st) / "system-config"))
+    return env
+
+
+def _system_browser_version(exe: str, st: State) -> str | None:
     try:
-        return pathlib.Path("/proc/sys/kernel/apparmor_restrict_unprivileged_userns").read_text().strip() == "1"
-    except OSError:
-        return False
+        r = subprocess.run([exe, "--version"], capture_output=True, text=True, check=True, timeout=4,
+                           env=_system_browser_env(st))
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.match(r"^(?:Google Chrome|Chromium) (\d+(?:\.\d+){3})(?:\s|$)", r.stdout)
+    return m[1] if m and _version(m[1]) else None
 
 
-def apparmor_allows(exe: str) -> bool:
-    """Is there an AppArmor profile that gives this executable (or a glob covering it) `userns`? Read-only scan."""
-    import fnmatch
-    try:
-        files = [f for f in APPARMOR_DIR.iterdir() if f.is_file()]
-    except OSError:
-        return False
-    for f in files:
-        try:
-            text = f.read_text(errors="replace")
-        except OSError:
+def installed(st: State) -> dict | None:
+    """Find an OS Chrome/Chromium executable without installing or launching a browser window."""
+    if backend() != "system-cdp":
+        return None
+    from .elevate_grant import root_safe
+    for exe in SYSTEM_BROWSERS:
+        if not os.path.isfile(exe) or not os.access(exe, os.X_OK):
             continue
-        if "userns" not in text:
+        real = pathlib.Path(exe).resolve()
+        if (not root_safe(exe) or not root_safe(str(real))
+                or _testing_binary(str(real)) or bdir(st).resolve() in real.parents):
             continue
-        for m in re.finditer(r"^\s*profile\s+\S+\s+(\S+)", text, re.M):
-            if fnmatch.fnmatch(exe, m.group(1)):
-                return True
-    return False
+        version = _system_browser_version(exe, st)
+        if version:
+            return {"path": exe, "version": version, "platform": platform_key()}
+    return None
 
 
-def apparmor_profile(st: State) -> tuple[str, str]:
-    """(path, text) of the profile `agentj browser sandbox-fix` installs — only for this user's bundled browser."""
-    import pwd
-    user = pwd.getpwuid(os.getuid()).pw_name
-    glob = str((bdir(st) / "bin").resolve()) + "/*/chrome-linux*/chrome"
-    name = "agentj-browser-" + re.sub(r"[^A-Za-z0-9_.-]", "_", user)
-    text = ("# Agent J browser: lets this user's Chrome for Testing use its own sandbox (unprivileged user namespaces).\n"
-            "# Written by `agentj browser sandbox-fix` after the owner's phone approval. Remove this file to undo.\n"
-            "abi <abi/4.0>,\ninclude <tunables/global>\n\n"
-            f"profile {name} {glob} flags=(unconfined) {{\n  userns,\n\n  include if exists <local/{name}>\n}}\n")
-    return str(APPARMOR_DIR / name), text
-
-
-def choose_executable(st: State, have: dict) -> tuple[str, str]:
-    """(path, source). The verified download, unless this Linux blocks its sandbox: then an OS-packaged Chrome / Chromium
-    whose AppArmor profile allows it (with Agent J's own private profile — never the owner's everyday browser data).
-    Never `--no-sandbox`."""
-    exe = have["path"]
-    if system() in ("linux", "wsl2") and userns_restricted() and not apparmor_allows(exe):
-        for alt in SYSTEM_BROWSERS:
-            if os.path.isfile(alt) and os.access(alt, os.X_OK) and apparmor_allows(alt):
-                return alt, "system"
-        raise BrowserError("sandbox_blocked", "this Linux restricts user namespaces; run `agentj browser sandbox-fix`")
-    return exe, "bundled"
+def install(st: State) -> dict:
+    have = installed(st)
+    if have is None:
+        raise BrowserError("system_browser_required")
+    return {"result": "present", "version": have["version"], "platform": have["platform"]}
 
 
 def sandbox_fix(st: State) -> dict:
-    """Install the AppArmor profile through the paired-phone password card (`agentj sudo`), then restart the browser."""
-    if system() not in ("linux", "wsl2") or not userns_restricted():
-        return {"ok": True, "result": "not_needed"}
-    path, text = apparmor_profile(st)
-    if apparmor_allows(str(bdir(st) / "bin" / "x" / "chrome-linux64" / "chrome")):
-        return {"ok": True, "result": "present", "profile": path}
-    from . import elevate
-    script = f"umask 022; printf '%s' \"$1\" > {path} && apparmor_parser -r {path}"
-    res = elevate.client_request(st, {"t": "sudo", "argv": ["/bin/sh", "-c", script, "agentj-sandbox-fix", text], "cwd": "/",
-                                      "timeout": 60, "why": "Agent J browser sandbox / 让 Agent J 浏览器能使用系统沙箱",
-                                      "effect": f"writes {path} (AppArmor userns for this user's Agent J browser only) / 只为本用户的 Agent J 浏览器开启 userns"})
-    if res.get("result") != "done" or res.get("code") != 0:
-        return {"ok": False, "result": res.get("result"), "detail": res.get("why") or res.get("detail") or "", "profile": path}
-    with contextlib.suppress(FileNotFoundError):
-        (bdir(st) / "last-error.json").unlink()
-    return {**setup(st), "profile": path}
+    # The AppArmor exception only applied to the retired downloaded build.
+    return {"ok": False, "reason": "sandbox_fix_retired", "hint": HINTS["sandbox_fix_retired"]}
 
 
-# ---------------------------------------------------------------- install (download, verify, unpack)
-def installed(st: State) -> dict | None:
+def _legacy_install(st: State) -> dict | None:
     rec = _read_json(install_path(st))
-    if not isinstance(rec, dict):
-        return None
-    exe = bdir(st) / rec.get("executable", "")
-    if not rec.get("executable") or not exe.is_file() or not os.access(exe, os.X_OK):
-        return None
-    return {**rec, "path": str(exe)}
+    return rec if isinstance(rec, dict) and _version(rec.get("version")) else None
 
 
-def _sources(build: dict, cfg: dict, man: dict) -> list[str]:
-    official = [build["url"]]
-    mirrors = [m.rstrip("/") + "/" + build["path"] for m in man.get("approved_mirrors") or [] if isinstance(m, str) and m.startswith("https://")]
-    own = cfg.get("mirror") or ""
-    if own.startswith("https://"):
-        mirrors.append(own.rstrip("/") + "/" + build["path"])
-    src = cfg.get("download_source", "auto")
-    if src == "official":
-        return official
-    if src == "approved-mirror":
-        return mirrors
-    return official + mirrors
+def _last_profile_version(profile: pathlib.Path) -> tuple[int, ...]:
+    with contextlib.suppress(OSError, UnicodeError):
+        return _version((profile / "Last Version").read_text())
+    return ()
 
 
-def _download(url: str, dest: pathlib.Path, size: int, digest: str, deadline: float, opener=None) -> None:
-    """Stream to dest; raises BrowserError. TLS verification stays on; no redirect to http."""
-    class _HttpsOnly(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, req, fp, code, msg, headers, newurl):
-            if not newurl.startswith("https://"):
-                return None
-            return super().redirect_request(req, fp, code, msg, headers, newurl)
-    op = opener or urllib.request.build_opener(_HttpsOnly)
-    h = hashlib.sha256()
-    got = 0
-    try:
-        left = max(5.0, deadline - time.monotonic())
-        with op.open(urllib.request.Request(url, headers={"User-Agent": "agentj-browser-setup"}), timeout=min(60.0, left)) as r, \
-                open(dest, "wb") as f:
-            while True:
-                if time.monotonic() > deadline:
-                    raise BrowserError("download_timeout", "five-minute download budget used up")
-                chunk = r.read(1 << 20)
-                if not chunk:
-                    break
-                got += len(chunk)
-                if got > size:
-                    raise BrowserError("download_corrupt", "more bytes than the signed manifest says")
-                h.update(chunk)
-                f.write(chunk)
-    except BrowserError:
-        raise
-    except OSError as e:
-        if e.errno in (errno.ENOSPC, errno.EDQUOT):
-            raise BrowserError("no_space", type(e).__name__) from None
-        raise BrowserError("download_failed", type(e).__name__) from None
-    if got != size or h.hexdigest() != digest:
-        raise BrowserError("download_corrupt", f"size/sha256 mismatch ({got} bytes)")
+def _launch_profile(st: State, have: dict) -> pathlib.Path:
+    profile = profile_dir(st)
+    version = _version(have.get("version"))
+    last = _last_profile_version(profile)
+    legacy = _legacy_install(st)
+    if profile.name == "profile" and profile.is_dir() and legacy and not last:
+        last = _version(legacy["version"])
+    if last and (not version or version < last):
+        if profile.name == "profile-system" or not legacy:
+            raise BrowserError("profile_version", "system browser is older than the active profile")
+        return bdir(st) / "profile-system"
+    return profile
 
 
-def _extract(zip_path: pathlib.Path, dest: pathlib.Path) -> None:
-    """Unpack keeping executable bits and symlinks (macOS app bundles need both); no path escapes."""
-    if sys.platform == "darwin" and shutil.which("ditto"):
-        r = subprocess.run(["ditto", "-x", "-k", str(zip_path), str(dest)], capture_output=True, text=True, timeout=300)
-        if r.returncode != 0:
-            raise BrowserError("extract_failed", (r.stderr or "")[:200])
-        return
-    root = dest.resolve()
-    with zipfile.ZipFile(zip_path) as z:
-        for info in z.infolist():
-            target = (dest / info.filename).resolve()
-            if root != target and root not in target.parents:
-                raise BrowserError("extract_failed", "path outside the destination")
-            mode = (info.external_attr >> 16) & 0o177777
-            if info.is_dir():
-                target.mkdir(parents=True, exist_ok=True)
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if stat.S_ISLNK(mode):
-                link = z.read(info).decode()
-                if link.startswith("/") or ".." in pathlib.PurePosixPath(link).parts and \
-                        root not in (target.parent / link).resolve().parents:
-                    raise BrowserError("extract_failed", "symlink outside the destination")
-                with contextlib.suppress(FileNotFoundError):
-                    target.unlink()
-                os.symlink(link, target)
-                continue
-            with z.open(info) as src, open(target, "wb") as out:
-                shutil.copyfileobj(src, out, 1 << 20)
-            os.chmod(target, (mode & 0o777) or 0o644)
-
-
-def missing_libs(exe: str) -> list[str]:
-    """Linux only: shared libraries the browser cannot find (`ldd`). Empty = fine or unknown."""
-    if system() == "macos" or not shutil.which("ldd"):
-        return []
-    try:
-        r = subprocess.run(["ldd", exe], capture_output=True, text=True, timeout=20)
-    except (OSError, subprocess.TimeoutExpired):
-        return []
-    return sorted({ln.split("=>")[0].strip() for ln in r.stdout.splitlines() if "not found" in ln})[:40]
-
-
-def install(st: State, opener=None, now=time.monotonic) -> dict:
-    """Download + verify + unpack the manifest's build (idempotent: an existing verified install is kept)."""
-    man = manifest()
-    key = platform_key()
-    if key is None or key not in man["builds"]:
-        s = system()
-        raise BrowserError("unsupported", "WSL1: upgrade to WSL2 with WSLg" if s == "wsl1" else f"{s}/{_platform.machine()}")
-    build = man["builds"][key]
-    have = installed(st)
-    if have and have.get("version") == man["version"] and have.get("sha256") == build["sha256"]:
-        return {"result": "present", "version": man["version"], "platform": key}
-    d = ensure_dir(st)
-    free = shutil.disk_usage(d).free
-    if free < man.get("min_free_bytes", 1_500_000_000):
-        raise BrowserError("no_space", f"{free // (1 << 20)} MiB free, need ≥ {man['min_free_bytes'] // (1 << 20)} MiB")
-    sources = _sources(build, settings(st), man)
-    if not sources:
-        raise BrowserError("no_source", "browser.download_source=approved-mirror but no approved mirror is configured")
-    deadline = now() + DOWNLOAD_BUDGET
-    tmp = d / f".download-{os.getpid()}.zip"
-    last = None
-    try:
-        for attempt in range(RETRIES + 1):
-            url = sources[attempt % len(sources)]
-            try:
-                _download(url, tmp, build["size"], build["sha256"], deadline, opener)
-                last = None
-                break
-            except BrowserError as e:
-                last = e
-                if e.reason == "download_timeout" or now() > deadline:
-                    break
-        if last is not None:
-            raise last
-        unpack = d / f".unpack-{os.getpid()}"
-        shutil.rmtree(unpack, ignore_errors=True)
-        unpack.mkdir(mode=0o700)
-        try:
-            _extract(tmp, unpack)
-            final = d / "bin" / man["version"]
-            final.parent.mkdir(mode=0o700, exist_ok=True)
-            shutil.rmtree(final, ignore_errors=True)
-            os.replace(unpack, final)
-        except OSError as e:
-            raise BrowserError("no_space" if e.errno in (errno.ENOSPC, errno.EDQUOT) else "extract_failed", type(e).__name__) from None
-        finally:
-            shutil.rmtree(unpack, ignore_errors=True)
-    finally:
-        with contextlib.suppress(FileNotFoundError):
-            tmp.unlink()
-    rel = str(pathlib.PurePosixPath("bin", man["version"], *build["executable"]))
-    exe = d / rel
-    if not exe.is_file():
-        raise BrowserError("extract_failed", "browser executable missing after unpack")
-    os.chmod(exe, os.stat(exe).st_mode | 0o100)
-    for old in (d / "bin").iterdir():           # an older version is replaced, never kept around
-        if old.name != man["version"]:
-            shutil.rmtree(old, ignore_errors=True)
-    rec = {"version": man["version"], "platform": key, "sha256": build["sha256"], "executable": rel,
-           "installed_at": int(time.time()), "manifest_sha256": manifest_digest()}
-    _write_json(st, install_path(st), rec)
-    st.log("browser_installed", version=man["version"], platform=key)
-    return {"result": "installed", "version": man["version"], "platform": key}
+def _testing_binary(exe) -> bool:
+    if not isinstance(exe, str):
+        return False
+    parts = pathlib.Path(exe).parts
+    return any("chrome for testing" in p.lower() or "chrome-for-testing" in p.lower() or
+               p in ("chrome-linux64", "chrome-linux-arm64", "chrome-headless-shell") for p in parts)
 
 
 # ---------------------------------------------------------------- the process
@@ -401,37 +260,35 @@ def proc_start_time(pid: int) -> str | None:
 
 
 def listen_addresses(port: int, pid: int | None = None) -> set[str]:
-    """Local addresses listening on this TCP port (Linux /proc/net/tcp{,6}; macOS lsof)."""
-    out: set[str] = set()
-    if sys.platform.startswith("linux"):
-        for name, v6 in (("tcp", False), ("tcp6", True)):
-            try:
-                rows = pathlib.Path(f"/proc/net/{name}").read_text().splitlines()[1:]
-            except OSError:
+    """Linux listening addresses, optionally restricted to sockets owned by a specific process."""
+    owned = None
+    if pid is not None:
+        owned = set()
+        with contextlib.suppress(OSError):
+            for fd in pathlib.Path(f"/proc/{pid}/fd").iterdir():
+                with contextlib.suppress(OSError):
+                    target = os.readlink(fd)
+                    if target.startswith("socket:["):
+                        owned.add(target[8:-1])
+    out = set()
+    for name, v6 in (("tcp", False), ("tcp6", True)):
+        try:
+            rows = pathlib.Path(f"/proc/net/{name}").read_text().splitlines()[1:]
+        except OSError:
+            continue
+        for row in rows:
+            f = row.split()
+            if len(f) < 10 or f[3] != "0A" or (owned is not None and f[9] not in owned):
                 continue
-            for row in rows:
-                f = row.split()
-                if len(f) < 4 or f[3] != "0A":           # LISTEN
-                    continue
-                addr, p = f[1].split(":")
-                if int(p, 16) != port:
-                    continue
-                if v6:
-                    out.add("::1" if addr == "00000000000000000000000001000000" else
-                            "::" if addr == "0" * 32 else
-                            "127.0.0.1" if addr == "0000000000000000FFFF00000100007F" else addr)
-                else:
-                    b = bytes.fromhex(addr)[::-1]
-                    out.add(".".join(str(x) for x in b))
-        return out
-    try:
-        r = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-Fn"] + (["-a", "-p", str(pid)] if pid else []),
-                           capture_output=True, text=True, timeout=10)
-        for ln in r.stdout.splitlines():
-            if ln.startswith("n"):
-                out.add(ln[1:].rsplit(":", 1)[0].strip("[]"))
-    except (OSError, subprocess.TimeoutExpired):
-        pass
+            addr, p = f[1].split(":")
+            if int(p, 16) != port:
+                continue
+            if v6:
+                out.add("::1" if addr == "00000000000000000000000001000000" else
+                        "::" if addr == "0" * 32 else
+                        "127.0.0.1" if addr == "0000000000000000FFFF00000100007F" else addr)
+            else:
+                out.add(".".join(str(x) for x in bytes.fromhex(addr)[::-1]))
     return out
 
 
@@ -439,43 +296,84 @@ def loopback_only(addrs: set[str]) -> bool:
     return bool(addrs) and all(a in ("127.0.0.1", "::1", "localhost") for a in addrs)
 
 
+def _owned_runtime(st: State, rec) -> dict | None:
+    """Verify a recorded Linux process, its private profile and the loopback socket it owns."""
+    if not isinstance(rec, dict) or type(rec.get("pid")) is not int or type(rec.get("port")) is not int:
+        return None
+    if not 0 < rec["port"] < 65536:
+        return None
+    profiles = (bdir(st) / "profile", bdir(st) / "profile-system")
+    profile = next((p for p in profiles if rec.get("profile") == str(p)), None)
+    if profile is None or profile.is_symlink() or not _recorded_process_alive(rec):
+        return None
+    pid = rec["pid"]
+    try:
+        # Chrome may rewrite argv into one process title. Its argument and recorded binary must still match.
+        args = pathlib.Path(f"/proc/{pid}/cmdline").read_bytes()
+        flag = os.fsencode(f"--user-data-dir={profile}")
+        if (flag not in args.split(b"\0") and b" " + flag + b" " not in b" " + args.rstrip(b"\0") + b" "):
+            return None
+        if rec.get("process_exe") and os.readlink(f"/proc/{pid}/exe") != rec["process_exe"]:
+            return None
+    except OSError:
+        return None
+    port = rec["port"]
+    if listen_addresses(port) != {LOOPBACK} or LOOPBACK not in listen_addresses(port, pid):
+        return None
+    info = _endpoint_version(port, timeout=3)
+    if not info:
+        return None
+    ws = info["webSocketDebuggerUrl"]
+    if rec.get("ws_path") and ws != f"ws://{LOOPBACK}:{port}{rec['ws_path']}":
+        return None
+    return {**rec, "ws": ws, "product": info.get("Browser", "")}
+
+
+def _recorded_process_alive(rec) -> bool:
+    return (isinstance(rec, dict) and type(rec.get("pid")) is int and rec["pid"] > 0
+            and bool(rec.get("starttime")) and proc_start_time(rec["pid"]) == rec["starttime"])
+
+
 def runtime(st: State) -> dict | None:
-    """runtime.json, verified: the recorded pid is alive, the same process (start time), the endpoint answers and listens on
-    loopback only. None = not running (or not ours). With an adopted browser (P131): that endpoint, re-verified each time."""
+    """Return the verified platform runtime. Only the Linux backend exposes a loopback endpoint."""
+    kind = backend()
+    if kind == "ego-lite":
+        from . import browser_ego
+        return browser_ego.runtime(st) if settings(st)["enabled"] else None
+    if kind != "system-cdp":
+        return None
     ad = adopted(st)
     if ad:
         info = _probe_adopted(ad["port"])
-        if not info:
+        if not info or _testing_endpoint(st, info) or _agentj_endpoint(info):
             return None
         return {"pid": info.get("pid"), "port": ad["port"], "ws": info["ws"], "product": info["product"], "headless": False,
-                "source": "adopted", "adopted": True, "version": "adopted", "started_at": ad.get("adopted_at")}
+                "backend": kind, "source": "adopted", "adopted": True, "version": "adopted", "started_at": ad.get("adopted_at")}
     rec = _read_json(runtime_path(st))
-    if not isinstance(rec, dict) or type(rec.get("pid")) is not int or type(rec.get("port")) is not int:
+    if not isinstance(rec, dict) or rec.get("source") != "system" or _testing_binary(rec.get("exe")):
         return None
-    if not 0 < rec["port"] < 65536 or rec.get("profile") != str(profile_dir(st)):
-        return None
-    if rec["pid"] <= 0 or not rec.get("starttime") or proc_start_time(rec["pid"]) != rec["starttime"]:
-        return None
-    if sys.platform.startswith("linux"):
-        try:
-            # Chrome rewrites argv into one process-title string; scripts keep NUL-separated argv.
-            args = b" " + pathlib.Path(f"/proc/{rec['pid']}/cmdline").read_bytes().replace(b"\0", b" ") + b" "
-            if (b" " + os.fsencode(f"--user-data-dir={profile_dir(st)}") + b" " not in args
-                    or (rec.get("process_exe") and os.readlink(f"/proc/{rec['pid']}/exe") != rec["process_exe"])):
-                return None
-        except OSError:
-            return None
-    try:
-        with _LOCAL.open(f"http://{LOOPBACK}:{rec['port']}/json/version", timeout=3) as r:
-            info = json.loads(r.read(65536))
-    except (OSError, ValueError):
-        return None
-    ws = info.get("webSocketDebuggerUrl") or ""
-    if not ws.startswith(f"ws://{LOOPBACK}:{rec['port']}/devtools/browser/"):
-        return None
-    if not loopback_only(listen_addresses(rec["port"], rec["pid"])):
-        return None
-    return {**rec, "ws": ws, "product": info.get("Browser", "")}
+    verified = _owned_runtime(st, rec)
+    return {**verified, "backend": kind} if verified else None
+
+
+def _retire_legacy_locked(st: State, rec: dict) -> None:
+    """Close only the old Agent J owned browser, using its verified loopback socket to flush the profile."""
+    exe = rec.get("exe")
+    if (not isinstance(exe, str) or (bdir(st) / "bin").resolve() not in pathlib.Path(exe).resolve().parents
+            or login_in_progress(st)):
+        raise BrowserError("legacy_browser_open")
+    rt = _owned_runtime(st, rec)
+    if not rt:
+        raise BrowserError("legacy_browser_open")
+    from .browser_cdp import CDP, CDPError
+    with contextlib.suppress(CDPError):
+        with CDP(rt["ws"]) as cdp:
+            cdp.call("Browser.close")
+    end = time.monotonic() + 8
+    while _recorded_process_alive(rec):
+        if time.monotonic() >= end:
+            raise BrowserError("legacy_browser_open")
+        time.sleep(0.1)
 
 
 WINDOW_NAME = "Agent J 专用浏览器 · Agent J browser"
@@ -519,8 +417,8 @@ def brand_profile(profile: pathlib.Path) -> None:
         pass
 
 
-def _launch_args(exe: str, profile: pathlib.Path, headless: bool, start: str = "about:blank") -> list[str]:
-    args = [exe, f"--user-data-dir={profile}", "--remote-debugging-port=0", f"--remote-debugging-address={LOOPBACK}",
+def _launch_args(exe: str, profile: pathlib.Path, headless: bool, port: int, start: str = "about:blank") -> list[str]:
+    args = [exe, f"--user-data-dir={profile}", f"--remote-debugging-port={port}", f"--remote-debugging-address={LOOPBACK}",
             "--no-first-run", "--no-default-browser-check", "--disable-background-networking-for-update-checks",
             f"--window-size={HEADLESS_SIZE}", f"--window-name={WINDOW_NAME}", f"--class={WINDOW_CLASS}"]
     if headless:
@@ -530,18 +428,27 @@ def _launch_args(exe: str, profile: pathlib.Path, headless: bool, start: str = "
     return args + [start]
 
 
-def _wait_port(profile: pathlib.Path, proc: subprocess.Popen, wait: float) -> tuple[int, str]:
-    f = profile / "DevToolsActivePort"
+def _launch_port() -> int:
+    """Pass an unpredictable nonzero port without enabling Chrome's automatic port mode."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as reservation:
+        reservation.bind((LOOPBACK, 0))
+        return reservation.getsockname()[1]
+
+
+def _wait_port(port: int, proc: subprocess.Popen, wait: float) -> str:
     end = time.monotonic() + wait
     while time.monotonic() < end:
         if proc.poll() is not None:
             raise BrowserError("start_failed", f"browser exited with {proc.returncode}")
-        with contextlib.suppress(OSError, ValueError, IndexError):
-            lines = f.read_text().splitlines()
-            if len(lines) >= 2 and lines[0].isdigit():
-                return int(lines[0]), lines[1]
+        addrs = listen_addresses(port)
+        if addrs and addrs != {LOOPBACK}:
+            raise BrowserError("not_loopback", ",".join(sorted(addrs)))
+        if LOOPBACK in addrs and LOOPBACK in listen_addresses(port, proc.pid):
+            info = _endpoint_version(port, timeout=0.5)
+            if info:
+                return info["webSocketDebuggerUrl"].split(f":{port}", 1)[1]
         time.sleep(0.2)
-    raise BrowserError("start_failed", "no DevToolsActivePort")
+    raise BrowserError("start_failed", "no verified browser listener")
 
 
 @contextlib.contextmanager
@@ -557,24 +464,32 @@ def start_lock(st: State):
 
 
 def start_browser(st: State, headless: bool | None = None) -> tuple[subprocess.Popen | None, dict]:
-    """Reuse without sending Chrome another launch request (which would open another window)."""
+    """Reuse a verified system browser, or launch it once under the persistent profile lock."""
+    if backend() != "system-cdp":
+        raise BrowserError("unsupported")
     with start_lock(st):
         rt = runtime(st)
         if rt:
             return None, rt
+        have = installed(st)
+        if not have:
+            raise BrowserError("system_browser_required")
         rec = _read_json(runtime_path(st))
-        if (isinstance(rec, dict) and type(rec.get("pid")) is int and rec["pid"] > 0
-                and rec.get("starttime") and proc_start_time(rec["pid"]) == rec["starttime"]):
-            raise BrowserError("start_failed", "existing browser is alive but CDP is unavailable; no second launch")
-        # Older supervisors can leave Chrome's profile singleton alive without a runtime record.
-        # Do not forward a welcome-page launch to it. Never touch another host's singleton.
-        singleton = profile_dir(st) / "SingletonLock"
+        if _recorded_process_alive(rec):
+            if rec.get("source") != "bundled":
+                raise BrowserError("start_failed", "existing browser is alive but CDP is unavailable; no second launch")
+            _retire_legacy_locked(st, rec)
+        for path in (bdir(st) / "profile", bdir(st) / "profile-system"):
+            if path.is_symlink():
+                raise BrowserError("profile_path")
+        prof = _launch_profile(st, have)
+        # An older supervisor can leave a profile singleton without a runtime record.
+        singleton = prof / "SingletonLock"
         if singleton.is_symlink():
-            target = os.readlink(singleton)
-            host, _, pid = target.rpartition("-")
+            host, _, pid = os.readlink(singleton).rpartition("-")
             if host == socket.gethostname() and pid.isdigit() and proc_start_time(int(pid)):
                 raise BrowserError("start_failed", "profile is already in use; no second launch")
-        return _start_browser(st, headless)
+        return _start_browser(st, headless, have=have)
 
 
 def visible_runtime(st: State) -> dict | None:
@@ -605,45 +520,44 @@ def visible_runtime(st: State) -> dict | None:
         return runtime(st)
 
 
-def _start_browser(st: State, headless: bool | None = None) -> tuple[subprocess.Popen, dict]:
-    have = installed(st)
+def _start_browser(st: State, headless: bool | None = None, *, have: dict | None = None) -> tuple[subprocess.Popen, dict]:
+    have = have or installed(st)
     if not have:
-        raise BrowserError("not_installed", "run `agentj browser setup`")
-    prof = profile_dir(st)
+        raise BrowserError("system_browser_required")
+    prof = _launch_profile(st, have)
+    if prof.is_symlink():
+        raise BrowserError("profile_path")
     prof.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(prof, 0o700)
-    with contextlib.suppress(FileNotFoundError):
-        (prof / "DevToolsActivePort").unlink()
     if headless is None:
         headless = current_instance() != 1 or not display_env()
-    exe, source = choose_executable(st, have)
+    exe, version = have["path"], have.get("version") or "system"
     brand_profile(prof)
-    log = open(bdir(st) / "browser.log", "ab", buffering=0)
-    os.chmod(bdir(st) / "browser.log", 0o600)
-    proc = subprocess.Popen(_launch_args(exe, prof, headless, start_page(st)), stdin=subprocess.DEVNULL, stdout=log, stderr=log,
-                            start_new_session=True)
-    log.close()
     try:
-        port, path = _wait_port(prof, proc, START_WAIT)
-        addrs = set()
-        for _ in range(10):
-            addrs = listen_addresses(port, proc.pid)
-            if addrs:
-                break
-            time.sleep(0.2)
-        if not loopback_only(addrs):
-            raise BrowserError("not_loopback", ",".join(sorted(addrs)) or "no listener")
-    except BrowserError:
-        stop_proc(proc)
-        raise
-    rec = {"pid": proc.pid, "starttime": proc_start_time(proc.pid), "port": port, "exe": exe, "source": source,
-           "profile": str(prof), "headless": headless, "version": have.get("version") if source == "bundled" else "system",
-           "started_at": int(time.time()), "supervisor": os.getpid()}
-    if sys.platform.startswith("linux"):
+        port = _launch_port()
+        with open(bdir(st) / "browser.log", "ab", buffering=0) as log:
+            os.chmod(bdir(st) / "browser.log", 0o600)
+            proc = subprocess.Popen(_launch_args(exe, prof, headless, port, start_page(st)), stdin=subprocess.DEVNULL,
+                                    stdout=log, stderr=log, start_new_session=True, env=_system_browser_env(st))
+    except OSError as exc:
+        raise BrowserError("start_failed", type(exc).__name__) from None
+    try:
+        path = _wait_port(port, proc, START_WAIT)
+        starttime = proc_start_time(proc.pid)
+        if not starttime:
+            raise BrowserError("start_failed", "browser process no longer available")
+        rec = {"pid": proc.pid, "starttime": starttime, "port": port, "exe": exe, "source": "system",
+               "profile": str(prof), "headless": headless, "version": version, "ws_path": path,
+               "started_at": int(time.time()), "supervisor": os.getpid()}
         with contextlib.suppress(OSError):
             rec["process_exe"] = os.readlink(f"/proc/{proc.pid}/exe")  # distro launchers may exec a different binary
-    _write_json(st, runtime_path(st), rec)
-    st.log("browser_started", headless=headless, source=source, version=rec["version"])
+        _write_json(st, runtime_path(st), rec)
+    except (BrowserError, OSError) as exc:
+        stop_proc(proc)
+        if isinstance(exc, BrowserError):
+            raise
+        raise BrowserError("start_failed", type(exc).__name__) from None
+    st.log("browser_started", headless=headless, source="system", version=version)
     return proc, rec
 
 
@@ -670,7 +584,7 @@ def _manager_has_display() -> bool:
         return False
     env = dict(ln.split("=", 1) for ln in r.stdout.splitlines() if "=" in ln)
     if display_env(env):
-        for k in ("DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"):
+        for k in ("DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XDG_SESSION_TYPE", "DBUS_SESSION_BUS_ADDRESS"):
             if env.get(k):
                 os.environ[k] = env[k]
         return True
@@ -680,7 +594,7 @@ def _manager_has_display() -> bool:
 def run(st: State | None = None) -> int:
     """Observe one browser. Window exit is final; service restarts preserve the existing browser."""
     st = st or State()
-    if not settings(st).get("enabled") or adopted(st):
+    if backend() != "system-cdp" or not settings(st).get("enabled") or adopted(st):
         return 0
     ensure_dir(st)
     stopping = {"now": False}
@@ -769,60 +683,77 @@ def plist_bytes(label: str, argv: list[str], log_path: str, environ: dict | None
                            "StandardInPath": "/dev/null", "StandardOutPath": log_path, "StandardErrorPath": log_path, **(extra or {})})
 
 
+def _remove_owned_supervisor(st: State, name: str, plat: str) -> bool:
+    """Remove only a generated browser supervisor for this state. Never touch browser data or signal its PID."""
+    from . import service
+    from .state_paths import state_dir
+
+    current = str(state_dir())
+    instance = os.environ.get("AGENTJ_INSTANCE", "1")
+    if plat == "linux":
+        path = pathlib.Path(service.unit_dir()) / f"{name}.service"
+        if not path.is_file():
+            return False
+        text = path.read_text()
+        if not text.startswith("# Agent J browser — written by `agentj browser setup`.") or '"browser" "run"' not in text:
+            return False
+        if "AGENTJ_INSTANCE=" in text:
+            if service._sd_quote(f"AGENTJ_INSTANCE={instance}") not in text:
+                return False
+        elif instance != "1":
+            return False
+        if "AGENTJ_STATE_DIR=" in text:
+            if service._sd_quote(f"AGENTJ_STATE_DIR={st.root}") not in text:
+                return False
+        elif os.environ.get("AGENTJ_STATE_DIR") or str(st.root) != current:
+            return False
+        service._systemctl("disable", "--now", f"{name}.service", check=True)
+        path.unlink()
+        service._systemctl("daemon-reload", check=True)
+        service._systemctl("reset-failed", f"{name}.service")
+        return True
+
+    if plat == "macos":
+        path = pathlib.Path.home() / "Library" / "LaunchAgents" / f"{name}.plist"
+        if not path.is_file():
+            return False
+        rec = plistlib.loads(path.read_bytes())
+        env = rec.get("EnvironmentVariables", {})
+        if rec.get("Label") != name or rec.get("ProgramArguments", [])[-2:] != ["browser", "run"]:
+            return False
+        if str(env.get("AGENTJ_INSTANCE", "1")) != instance:
+            return False
+        if env.get("AGENTJ_STATE_DIR") != str(st.root) and (
+                env.get("AGENTJ_STATE_DIR") or os.environ.get("AGENTJ_STATE_DIR") or str(st.root) != current):
+            return False
+        if not service._bootout_wait(name):
+            raise BrowserError("no_service_manager", "old browser service did not stop")
+        path.unlink()
+        return True
+    return False
+
+
 def cleanup_legacy_services(st: State) -> list[str]:
-    """Only known former default labels, only files written for this state. No wildcard process/service killing."""
+    """Remove the exact former default label if its generated definition belongs to this state."""
     from . import service
     old, plat = service.legacy_name(), service.platform()
     if not old:
         return []
-    n = old + ("-browser" if plat == "linux" else ".browser")
-    path = (pathlib.Path(service.unit_dir()) / f"{n}.service" if plat == "linux" else
-            pathlib.Path.home() / "Library" / "LaunchAgents" / f"{n}.plist")
-    if not path.is_file():
-        return []
-    if plat == "linux":
-        text = path.read_text()
-        # Exact generated marker plus browser command; an explicit state must match.
-        if not text.startswith("# Agent J browser — written by `agentj browser setup`.") or '"browser" "run"' not in text:
-            return []
-        instance = os.environ.get("AGENTJ_INSTANCE", "1")
-        if "AGENTJ_INSTANCE=" in text:
-            if service._sd_quote(f"AGENTJ_INSTANCE={instance}") not in text:
-                return []
-        elif instance != "1":
-            return []
-        if "AGENTJ_STATE_DIR=" in text and service._sd_quote(f"AGENTJ_STATE_DIR={st.root}") not in text:
-            return []
-        if "AGENTJ_STATE_DIR=" not in text and os.environ.get("AGENTJ_STATE_DIR"):
-            return []
-        service._systemctl("disable", "--now", f"{n}.service", check=True)
-        path.unlink()
-        service._systemctl("daemon-reload", check=True)
-        service._systemctl("reset-failed", f"{n}.service")
-    elif plat == "macos":
-        rec = plistlib.loads(path.read_bytes())
-        env = rec.get("EnvironmentVariables", {})
-        if rec.get("Label") != n or rec.get("ProgramArguments", [])[-2:] != ["browser", "run"]:
-            return []
-        if str(env.get("AGENTJ_INSTANCE", "1")) != os.environ.get("AGENTJ_INSTANCE", "1"):
-            return []
-        if env.get("AGENTJ_STATE_DIR") != str(st.root) and (env.get("AGENTJ_STATE_DIR") or os.environ.get("AGENTJ_STATE_DIR")):
-            return []
-        if not service._bootout_wait(n):
-            raise BrowserError("no_service_manager", "old browser service did not stop")
-        path.unlink()
-    else:
-        return []
-    return [n]
+    name = old + ("-browser" if plat == "linux" else ".browser")
+    return [name] if _remove_owned_supervisor(st, name, plat) else []
 
 
 def refresh_service(st: State) -> None:
-    """Upgrade/reinstall: migrate an existing browser service's policy without starting a closed browser."""
+    """Update the Linux supervisor or retire the old supervisor on an Ego Lite host."""
     from . import service
-    plat, n = service.platform(), svc_name()
-    path = (pathlib.Path(service.unit_dir()) / f"{n}.service" if plat == "linux" else
-            pathlib.Path.home() / "Library" / "LaunchAgents" / f"{n}.plist")
+    kind = backend()
+    if not kind:
+        return
     legacy = cleanup_legacy_services(st)
+    if kind == "ego-lite":
+        _remove_owned_supervisor(st, svc_name(), service.platform())
+        return
+    path = pathlib.Path(service.unit_dir()) / f"{svc_name()}.service"
     if path.is_file() or legacy:
         service_install(st, start=False)
 
@@ -948,7 +879,10 @@ def parse_endpoint(url) -> int:
     from urllib.parse import urlsplit
     if not isinstance(url, str) or len(url) > 200:
         raise BrowserError("shape", "--endpoint http://127.0.0.1:<port>")
-    u = urlsplit(url if "://" in url else "http://" + url)
+    try:
+        u = urlsplit(url if "://" in url else "http://" + url)
+    except ValueError:
+        raise BrowserError("shape", "--endpoint http://127.0.0.1:<port>") from None
     if u.scheme not in ("http", "ws") or (u.hostname or "") not in _LOOPBACK_HOSTS or u.username or u.password:
         raise BrowserError("not_loopback", "only http://127.0.0.1:<port> on the Agent J host can be adopted")
     try:
@@ -987,21 +921,28 @@ def _pid_of_port(port: int) -> int | None:
     return None
 
 
-def probe_endpoint(port: int, timeout: float = 2.0) -> dict | None:
-    """Read-only: is a CDP browser answering on 127.0.0.1:<port>, listening on loopback only? Reads /json/version, nothing
-    else (no tabs, no cookies, no pages). → {port, ws, product, pid} or None."""
+def _endpoint_version(port: int, timeout: float) -> dict | None:
     try:
-        with _LOCAL.open(f"http://{LOOPBACK}:{int(port)}/json/version", timeout=timeout) as r:
+        with _LOCAL.open(f"http://{LOOPBACK}:{port}/json/version", timeout=timeout) as r:
             info = json.loads(r.read(65536))
     except (OSError, ValueError):
         return None
     ws = info.get("webSocketDebuggerUrl") if isinstance(info, dict) else None
-    if not (isinstance(ws, str) and ws.startswith(f"ws://{LOOPBACK}:{int(port)}/devtools/browser/")):
+    if isinstance(ws, str) and ws.startswith(f"ws://{LOOPBACK}:{port}/devtools/browser/"):
+        return info
+    return None
+
+
+def probe_endpoint(port: int, timeout: float = 2.0) -> dict | None:
+    """Read only /json/version and local socket metadata to discover a Linux browser."""
+    port = int(port)
+    info = _endpoint_version(port, timeout)
+    if not info or not loopback_only(listen_addresses(port)):
         return None
-    addrs = listen_addresses(int(port))
-    if addrs and not loopback_only(addrs):
-        return None                                 # also on the network: never adopt it
-    return {"port": int(port), "ws": ws, "product": str(info.get("Browser", ""))[:80], "pid": _pid_of_port(int(port))}
+    pid = _pid_of_port(port)
+    if not pid:
+        return None
+    return {"port": port, "ws": info["webSocketDebuggerUrl"], "product": str(info.get("Browser", ""))[:80], "pid": pid}
 
 
 def _probe_adopted(port: int) -> dict | None:
@@ -1009,10 +950,32 @@ def _probe_adopted(port: int) -> dict | None:
     return probe_endpoint(port) or (time.sleep(0.5), probe_endpoint(port, timeout=3.0))[1]
 
 
+def _testing_endpoint(st: State, info: dict) -> bool:
+    if "for testing" in info.get("product", "").lower():
+        return True
+    pid = info.get("pid")
+    if not pid:
+        return False
+    with contextlib.suppress(OSError):
+        path = os.readlink(f"/proc/{pid}/exe")
+        return _testing_binary(path) or (bdir(st) / "bin").resolve() in pathlib.Path(path).resolve().parents
+    return False
+
+
+def _agentj_endpoint(info: dict) -> bool:
+    pid = info.get("pid")
+    if not pid:
+        return False
+    with contextlib.suppress(OSError):
+        args = pathlib.Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ")
+        return b" --class=AgentJBrowser " in b" " + args + b" "
+    return False
+
+
 def detect_existing(st: State, ports=None) -> list[dict]:
     """CDP browsers already running on the Agent J host's usual debugging ports (not Agent J's own). Read-only (/json/version).
     AGENTJ_BROWSER_DETECT=off turns detection off (tests; an owner who never wants the question)."""
-    if os.environ.get("AGENTJ_BROWSER_DETECT") == "off":
+    if backend() != "system-cdp" or os.environ.get("AGENTJ_BROWSER_DETECT") == "off":
         return []
     own = _read_json(runtime_path(st))
     own_port = own.get("port") if isinstance(own, dict) else None
@@ -1021,12 +984,14 @@ def detect_existing(st: State, ports=None) -> list[dict]:
         if port == own_port:
             continue
         info = probe_endpoint(port, timeout=1.0)
-        if info:
+        if info and not _testing_endpoint(st, info) and not _agentj_endpoint(info):
             out.append({k: info[k] for k in ("port", "product")})
     return out
 
 
 def adopted(st: State) -> dict | None:
+    if backend() != "system-cdp":
+        return None
     rec = _read_json(adopted_path(st))
     if isinstance(rec, dict) and type(rec.get("port")) is int and 1 <= rec["port"] <= 65535:
         return rec
@@ -1050,6 +1015,8 @@ def _set_offer(st: State, port: int, product: str, by: str) -> dict:
 def adopt(st: State, endpoint, dry_run: bool = False, sites=None, _cdp=None) -> dict:
     """Propose an existing loopback CDP browser. dry_run: probe only (optionally a read-only sign-in check of template sites
     in tabs it opens and closes), write nothing. Otherwise a pending offer the owner confirms once on the phone."""
+    if backend() != "system-cdp":
+        return {"ok": False, "reason": "adopt_unsupported", "hint": HINTS["adopt_unsupported"]}
     try:
         port = parse_endpoint(endpoint)
     except BrowserError as e:
@@ -1057,6 +1024,10 @@ def adopt(st: State, endpoint, dry_run: bool = False, sites=None, _cdp=None) -> 
     info = probe_endpoint(port)
     if not info:
         return {"ok": False, "reason": "adopt_not_running", "port": port, "hint": HINTS["adopt_not_running"]}
+    if _testing_endpoint(st, info):
+        return {"ok": False, "reason": "adopt_testing_browser", "hint": HINTS["adopt_testing_browser"]}
+    if _agentj_endpoint(info):
+        return {"ok": False, "reason": "adopt_agentj_browser", "hint": HINTS["adopt_agentj_browser"]}
     out = {"ok": True, "port": port, "product": info["product"], "loopback_only": True}
     if dry_run:
         out["result"] = "would_adopt"
@@ -1076,6 +1047,30 @@ def adopt(st: State, endpoint, dry_run: bool = False, sites=None, _cdp=None) -> 
 def confirm_adopt(st: State, decision_ref: str) -> dict:
     """The owner's signed "use it" (setup_mark adopt_browser). Re-probes, then Agent J's own browser service (if any) stops —
     the profile stays. The adopted browser itself is never started, stopped, killed or changed."""
+    if backend() == "ego-lite":
+        from . import browser_ego, first_run
+        with start_lock(st):
+            path = _ego_offer_path(st)
+            pending = _ego_offer(st)
+            if not decision_ref or not pending:
+                return {"ok": False, "reason": "no_offer"}
+            profile, reason = browser_ego.resolve_profile(st, "Agent J")
+            if profile != pending["profile"]:
+                return {"ok": False, "reason": reason or "browser_profile_changed"}
+            with first_run._lock(st):
+                rec = first_run.read(st) or {}
+                row = rec.get("items", {}).get("browser") or {}
+                action = rec.get("action") or {}
+                if (row.get("owner_decision_ref") != decision_ref[:64] or action.get("state") != "running"
+                        or action.get("item") != "browser" or action.get("choice") != "adopt_browser"
+                        or action.get("ego_offer") != pending["id"]):
+                    return {"ok": False, "reason": "no_offer"}
+                browser_ego.bind_profile(st, profile)
+                path.unlink(missing_ok=True)
+            st.log("browser_ego_connected")
+            return {"ok": True, "result": "connected", "backend": "ego-lite"}
+    if backend() != "system-cdp":
+        return {"ok": False, "reason": "adopt_unsupported", "hint": HINTS["adopt_unsupported"]}
     o = offer(st)
     if not o or o.get("declined"):
         found = detect_existing(st)
@@ -1085,7 +1080,11 @@ def confirm_adopt(st: State, decision_ref: str) -> dict:
     info = probe_endpoint(o["port"])
     if not info:
         return {"ok": False, "reason": "adopt_not_running", "port": o["port"]}
-    if installed(st) or service_status().get("installed"):
+    if _testing_endpoint(st, info):
+        return {"ok": False, "reason": "adopt_testing_browser", "hint": HINTS["adopt_testing_browser"]}
+    if _agentj_endpoint(info):
+        return {"ok": False, "reason": "adopt_agentj_browser", "hint": HINTS["adopt_agentj_browser"]}
+    if profile_dir(st).is_dir() or service_status().get("installed"):
         with contextlib.suppress(Exception):
             service_stop(st)
     _write_json(st, adopted_path(st), {"port": o["port"], "product": info["product"], "adopted_at": int(time.time()),
@@ -1114,17 +1113,58 @@ def forget_adopted(st: State) -> dict:
     return {"ok": True, "result": "forgotten" if rec else "not_adopted"}
 
 
+def _ego_offer_path(st: State) -> pathlib.Path:
+    return bdir(st) / "ego-profile-offer.json"
+
+
+def _ego_offer(st: State) -> dict | None:
+    rec = _read_json(_ego_offer_path(st))
+    if isinstance(rec, dict) and isinstance(rec.get("profile"), str) and isinstance(rec.get("id"), str):
+        return rec
+    return None
+
+
+def propose_ego(st: State) -> dict:
+    from . import browser_ego
+    if backend() != "ego-lite":
+        return {"ok": False, "reason": "unsupported"}
+    if not settings(st)["enabled"]:
+        return {"ok": False, "reason": "disabled"}
+    with start_lock(st):
+        if runtime(st):
+            return {"ok": True, "result": "already"}
+        profile, reason = browser_ego.resolve_profile(st, "Agent J")
+        if not profile:
+            return {"ok": False, "reason": reason, "hint": browser_ego.HINTS.get(reason, "")}
+        offer = _ego_offer(st)
+        if not offer or offer["profile"] != profile:
+            _write_json(st, _ego_offer_path(st), {"profile": profile, "id": secrets.token_hex(16)})
+    return {
+        "ok": True, "result": "confirm_on_phone",
+        "note": "请在已配对手机的首次准备清单中确认使用 Ego Lite 的 Agent J 浏览器资料。 / "
+                "Confirm the Agent J profile in Ego Lite from the setup checklist on your paired phone.",
+    }
+
+
 def source(st: State) -> dict:
     """What the checklist shows: whose browser Agent J uses. kind: adopted | own | offer | none."""
+    kind = backend()
+    if kind == "ego-lite":
+        pending = _ego_offer(st)
+        if pending:
+            return {"kind": "offer", "backend": kind, "ego_offer": pending["id"]}
+        return {"kind": "own" if runtime(st) else "none", "backend": kind}
+    if kind != "system-cdp":
+        return {"kind": "none"}
     ad = adopted(st)
     if ad:
-        return {"kind": "adopted", "port": ad["port"], "running": bool(_probe_adopted(ad["port"]))}
+        return {"kind": "adopted", "port": ad["port"], "running": bool(runtime(st))}
     o = offer(st)
-    if installed(st):
+    if profile_dir(st).is_dir() and installed(st):
         return {"kind": "own"}
     if o and not o.get("declined"):
         return {"kind": "offer", "port": o["port"]}
-    if not o:                                    # nothing installed, never asked: is one already running here?
+    if not o:
         found = detect_existing(st)
         if found:
             return {"kind": "offer", "port": found[0]["port"]}
@@ -1169,44 +1209,38 @@ def raise_window(pid: int | None, title: str | None = WINDOW_NAME) -> dict:
 
 
 # ---------------------------------------------------------------- the commands' logic (shared by CLI and serve)
-def setup(st: State, opener=None, start_service: bool = True, own: bool = False) -> dict:
-    """Idempotent: respect a disabled browser, download/verify once, (re)write the service, wait for a verified start.
-    P131: an adopted browser is never doubled; a CDP browser already running here is offered first (own=True: install anyway)."""
-    cfg = settings(st)
-    if not cfg["enabled"]:
+def setup(st: State, start_service: bool = True, own: bool = False) -> dict:
+    """Check the selected backend and prepare Agent J's private Linux browser if requested."""
+    if not settings(st)["enabled"]:
         return {"ok": True, "result": "disabled", "note": "browser.enabled=false — `agentj browser enable` turns it back on"}
+    kind = backend()
+    if kind == "ego-lite":
+        from . import browser_ego
+        return browser_ego.setup(st)
+    if kind != "system-cdp":
+        return {"ok": False, "result": "attention", "reason": "unsupported", "hint": HINTS["unsupported"]}
     ad = adopted(st)
     if ad:
-        running = bool(probe_endpoint(ad["port"]))
+        running = bool(runtime(st))
         return {"ok": running, "result": "adopted", "port": ad["port"], **({} if running else {
             "reason": "adopt_not_running", "hint": HINTS["adopt_not_running"]})}
     if own:
         decline_offer(st)
-    elif not installed(st):
+    elif not profile_dir(st).is_dir():
         o = offer(st)
         found = [] if o and o.get("declined") else detect_existing(st)
         if found:
             _set_offer(st, found[0]["port"], found[0]["product"], "setup")
             return {"ok": False, "result": "existing_found", "port": found[0]["port"], "product": found[0]["product"],
                     "hint": HINTS["existing_found"].format(port=found[0]["port"])}
-    out = {"ok": False, "result": "attention"}
+    out = {"ok": False, "result": "attention", "backend": kind}
     try:
-        out["install"] = install(st, opener)
+        out["install"] = install(st)
     except BrowserError as e:
         st.log("browser_setup_failed", reason=e.reason)
         _write_json(st, bdir(st) / "last-error.json", {"reason": e.reason, "detail": e.detail[:200], "at": int(time.time())})
         return {**out, "reason": e.reason, "detail": e.detail, "hint": HINTS.get(e.reason, "")}
-    have = installed(st)
-    libs = missing_libs(have["path"]) if have else []
-    if libs:
-        _write_json(st, bdir(st) / "last-error.json", {"reason": "missing_libs", "detail": ",".join(libs)[:200], "at": int(time.time())})
-        return {**out, "reason": "missing_libs", "libs": libs, "hint": HINTS["missing_libs"]}
-    try:
-        _, source = choose_executable(st, have)
-    except BrowserError as e:
-        _write_json(st, bdir(st) / "last-error.json", {"reason": e.reason, "detail": e.detail[:200], "at": int(time.time())})
-        return {**out, "reason": e.reason, "hint": HINTS[e.reason]}
-    out["source"] = source
+    out["source"] = "system"
     if not start_service:
         return {**out, "ok": True, "result": "installed"}
     try:
@@ -1226,6 +1260,10 @@ def setup(st: State, opener=None, start_service: bool = True, own: bool = False)
 
 
 def status(st: State) -> dict:
+    kind = backend()
+    if kind == "ego-lite":
+        from . import browser_ego
+        return browser_ego.status(st)
     cfg = settings(st)
     have = installed(st)
     rt = runtime(st) if cfg["enabled"] else None
@@ -1233,26 +1271,33 @@ def status(st: State) -> dict:
     err = _read_json(bdir(st) / "last-error.json")
     attention = []
     if cfg["enabled"]:
-        if not have:
-            attention.append(err.get("reason") if isinstance(err, dict) and err.get("reason") else "not_installed")
+        if not kind:
+            attention.append("unsupported")
+        elif not have:
+            attention.append("system_browser_required")
         elif not rt:
-            attention.append(err.get("reason") if isinstance(err, dict) and err.get("reason") else "not_running")
+            why = err.get("reason") if isinstance(err, dict) else None
+            attention.append(why if why in HINTS else "not_running")
     ad = adopted(st)
     if ad and cfg["enabled"]:
         attention = [] if rt else ["adopt_not_running"]
     state = "disabled" if not cfg["enabled"] else "ready" if rt else "attention"
     out = {"ok": state != "attention", "state": state, "enabled": cfg["enabled"], "system": system(),
-           "platform": platform_key(), "installed": {"version": have["version"], "platform": have["platform"]} if have else None,
+           "platform": platform_key(), "backend": kind, "installed": {"version": have["version"], "platform": have["platform"]} if have else None,
            "service": svc, "attention": attention, "hints": [HINTS[a] for a in attention if a in HINTS],
            "source": source(st)}
     if rt:
-        out["runtime"] = {"pid": rt["pid"], "headless": rt.get("headless"), "loopback_only": True, "source": rt.get("source", "bundled"),
+        out["runtime"] = {"pid": rt["pid"], "headless": rt.get("headless"), "loopback_only": True, "source": rt.get("source", "system"),
                           "version": rt.get("version"), "started_at": rt.get("started_at"), "host_login": not rt.get("headless")}
     return out
 
 
 def endpoint(st: State) -> dict:
     """The local CDP HTTP endpoint for tools on the Agent J host (Playwright connect_over_cdp). Never send it anywhere."""
+    if not settings(st)["enabled"]:
+        return {"ok": False, "reason": "disabled", "hint": "agentj browser enable"}
+    if backend() == "ego-lite":
+        return {"ok": False, "reason": "ego_browser_cli", "backend": "ego-lite", "hint": HINTS["ego_browser_cli"]}
     rt = runtime(st)
     if not rt:
         return {"ok": False, "reason": "not_running", "hint": HINTS["not_running"]}
@@ -1264,6 +1309,8 @@ def set_enabled(st: State, on: bool) -> dict:
     if not res.get("ok", True):
         return {"ok": False, "reason": "config", "detail": str(res.get("error") or res)[:200]}
     if not on:
+        if backend() == "ego-lite":
+            return {"ok": True, "enabled": False, "note": "Agent J stopped using Ego Lite; browser and sign-ins kept"}
         service_stop(st)
         return {"ok": True, "enabled": False, "note": "service stopped; profile and sign-ins kept"}
     return {**setup(st), "enabled": True}
@@ -1292,23 +1339,24 @@ ENDPOINT_NOTE = ("Local only: connect with Playwright `chromium.connect_over_cdp
                  "chat, the cloud or another machine; open your own tabs and close only the tabs you opened. / 只在本机使用。")
 
 HINTS = {
-    "unsupported": "这台Agent J 主机的系统/架构不在支持列表（macOS、Linux x64/arm64、Windows 的 WSL2+WSLg）/ unsupported OS or CPU",
-    "no_space": "空间不够：浏览器约需 1.5 GB，清理后运行 agentj browser setup / free about 1.5 GB, then agentj browser setup",
-    "download_failed": "下载失败：检查网络或代理，稍后运行 agentj browser setup（国内网络可设 browser.mirror 为同字节镜像）/ download failed",
-    "download_timeout": "下载超过 5 分钟：稍后运行 agentj browser setup / the download took too long",
-    "download_corrupt": "下载的文件校验不对，已丢弃，没有使用 / the download did not match the signed manifest and was discarded",
-    "no_source": "没有可用的下载源：把 browser.download_source 改回 auto / no download source",
-    "extract_failed": "解压失败：运行 agentj browser setup 重试 / unpacking failed",
-    "missing_libs": "缺少系统库：用 `agentj sudo --why '安装浏览器依赖' -- apt-get install -y <包>`（或系统对应的包管理器），装好后 agentj browser setup / missing system libraries",
-    "no_service_manager": "没有可用的用户服务管理器（Linux: loginctl enable-linger $USER；WSL: 开启 systemd）/ no user service manager",
-    "not_installed": "浏览器还没装：agentj browser setup / not installed yet",
-    "not_running": "浏览器没在运行：agentj browser setup（会重启服务）/ not running: agentj browser setup",
-    "start_failed": "浏览器启动失败：看 agentj browser status 和 agentj doctor / the browser did not start",
-    "sandbox_blocked": "这台 Linux（Ubuntu 23.10+ 等）限制了浏览器沙箱：运行 agentj browser sandbox-fix，主人在手机密码卡上批准后只为本用户的 Agent J 浏览器开启；绝不用 --no-sandbox / this Linux blocks the browser sandbox: agentj browser sandbox-fix (phone password card)",
-    "not_loopback": "调试端口不只监听本机，已停止（安全）/ the debugging port was not loopback-only and was stopped",
+    "unsupported": "专用浏览器支持 macOS、Linux 和 Windows（Agent J 运行在 WSL2 中）/ supported on macOS, Linux, and Windows (Agent J in WSL2)",
+    "system_browser_required": "先通过系统安装 Chrome 或 Chromium，再运行 agentj browser setup / install Chrome or Chromium for your OS, then run agentj browser setup",
+    "sandbox_fix_retired": "请使用系统安装的 Chrome 或 Chromium，再运行 agentj browser setup / use OS-packaged Chrome or Chromium, then run agentj browser setup",
+    "no_service_manager": "没有可用的 systemd 用户服务管理器 / no systemd user service manager",
+    "not_running": "浏览器没在运行，请运行 agentj browser setup / browser is not running, run agentj browser setup",
+    "start_failed": "浏览器启动失败，请运行 agentj browser status 和 agentj doctor / the browser did not start, see agentj browser status and agentj doctor",
+    "not_loopback": "浏览器的调试端口未通过本机监听检查，已停止 / the browser failed the loopback listener check and was stopped",
+    "legacy_browser_open": "请先完成当前登录并关闭旧版 Agent J 浏览器，再运行 agentj browser setup / finish any sign-in and close the old Agent J browser, then run agentj browser setup",
+    "profile_version": "请把系统浏览器更新到能打开现有资料的版本，再运行 agentj browser setup / update your system browser to use your existing profile, then run agentj browser setup",
+    "profile_path": "浏览器资料目录无法安全使用，请检查 Agent J 的资料目录 / the browser profile directory could not be used safely",
+    "ego_browser_cli": "Ego Lite 请用 agentj browser open、check 或 login。 / Use agentj browser open, check or login with Ego Lite.",
+    "adopt_unsupported": "这台主机使用 Ego Lite。可以请 Agent 代装，再由 Agent 运行 agentj browser connect。 / "
+                         "This host uses Ego Lite. Ask your Agent to install it and run agentj browser connect.",
+    "adopt_agentj_browser": "这是另一个 Agent J 实例的专用浏览器。/ This browser belongs to another Agent J seat.",
+    "adopt_testing_browser": "请选择系统安装的 Chrome 或 Chromium，再登记。/ Register an OS-installed Chrome or Chromium.",
     "adopt_not_running": "你登记的浏览器没在运行：请在Agent J 主机上把它打开（Agent J 不会替你启动它）/ the browser you registered is not running; start it on the Agent J host",
     "existing_found": "发现你已有一个浏览器（端口 {port}），要直接用它吗？主人在手机清单里点「用它」；要另装专用的：agentj browser setup --own / "
-                      "found a browser you already run (port {port}); use it from the phone checklist, or install a separate one with agentj browser setup --own",
+                      "found a browser you already run (port {port}); use it from the phone checklist, or set up a dedicated one with agentj browser setup --own",
     "shape": "用法：agentj browser adopt --endpoint http://127.0.0.1:<端口> / usage: --endpoint http://127.0.0.1:<port>",
 }
 
@@ -1354,13 +1402,20 @@ def wake(st: State) -> dict | None:
     {"restarted": True}; {"reason": adopt_not_running | wake_failed, "next": …}."""
     if not settings(st).get("enabled"):
         return None
+    if backend() == "ego-lite":
+        from . import browser_ego
+        return browser_ego.wake(st)
     ad = adopted(st)
     if ad:
-        if _probe_adopted(ad["port"]):
+        if runtime(st):
             return None
         st.log("browser_wake", result="adopted_down")
         return {"reason": "adopt_not_running", "next": ADOPT_DOWN}     # the owner's browser: never started by Agent J
-    if runtime(st) or not installed(st):
+    if runtime(st):
+        return None
+    if backend() == "system-cdp" and not installed(st):
+        return {"reason": "system_browser_required", "next": HINTS["system_browser_required"]}
+    if backend() != "system-cdp":
         return None
     rt = wait_running(st, WAKE_WAIT) if service_start() else None
     st.log("browser_wake", result="restarted" if rt else "failed")
@@ -1378,12 +1433,39 @@ def _woke(res: dict, w: dict | None) -> dict:
     return out
 
 
+MIGRATION_NOTICE = {
+    "ego-lite": ("Agent J 的专用浏览器改用 Ego Lite。旧资料还在。可以请 Agent 代装并引导导入资料。"
+                 "网站仍要求登录时，请在 Ego Lite 里登录。 / Agent J now uses Ego Lite. Your old browser data stays on this computer. "
+                 "Ask your Agent to help with installation and import, and sign in again if a site asks."),
+    "system-cdp": ("Agent J 的专用浏览器改用系统 Chrome 或 Chromium。旧资料还在。系统浏览器能读取时会沿用原资料，"
+                   "仍要求登录的网站请在新浏览器里登录。 / Agent J now uses system Chrome or Chromium. Your old browser data stays on "
+                   "this computer. Agent J uses it when the system browser can open it. Sign in again if a site asks."),
+}
+
+
+def _migration_notice(st: State) -> str | None:
+    kind = backend()
+    if kind not in MIGRATION_NOTICE or not _legacy_install(st) or not settings(st)["enabled"]:
+        return None
+    marker = bdir(st) / "migration-notice.json"
+    with start_lock(st):
+        if _read_json(marker) == {"backend": kind}:
+            return None
+        _write_json(st, marker, {"backend": kind})
+    return MIGRATION_NOTICE[kind]
+
+
 def execute(req: dict, st: State | None = None) -> dict:
     """The host side of `agentj browser …` (serve's elevate.sock, or directly when serve is not running)."""
     st = st or State()
     a = req.get("action")
     w = wake(st) if a in CDP_ACTIONS and not (a == "check" and req.get("if_stale")) else None        # P418 (#183 ⑤)
-    return _woke(_execute(a, req, st), w)
+    result = _woke(_execute(a, req, st), w)
+    if a == "check" and not req.get("if_stale") and result.get("ok"):
+        note = _migration_notice(st)
+        if note:
+            return {**result, "migration_note": note}
+    return result
 
 
 def _execute(a, req: dict, st: State) -> dict:
@@ -1396,6 +1478,8 @@ def _execute(a, req: dict, st: State) -> dict:
         return out
     if a == "setup":
         return setup(st, own=req.get("own") is True)
+    if a == "connect":
+        return propose_ego(st)
     if a == "adopt":
         if req.get("forget") is True:
             return forget_adopted(st)
@@ -1521,11 +1605,11 @@ def add_parser(sub) -> None:
     p = sub.add_parser("browser", help="Agent J 专用浏览器：setup/status/check/login/sites… / Agent J's own browser")
     p.add_argument("--json", action="store_true")
     b = p.add_subparsers(dest="bcmd")
-    for name, h in (("setup", "下载校验并启动（幂等）/ download, verify, start (idempotent)"),
+    for name, h in (("setup", "准备 Agent J 主机的专用浏览器 / set up this computer's dedicated browser"),
                     ("status", "浏览器与各网站登录状态 / browser and site sign-in status"),
                     ("enable", "打开并启动 / turn on"), ("disable", "关闭，保留登录资料 / turn off, keep sign-ins"),
-                    ("endpoint", "本机 CDP 地址（只在本机用）/ local CDP endpoint (the Agent J host only)"),
-                    ("sandbox-fix", "Ubuntu 23.10+ 沙箱受限时，经手机密码卡安装 AppArmor 规则 / AppArmor profile via the phone card"),
+                    ("endpoint", "Linux 本机 CDP 地址 / local CDP endpoint on Linux"),
+                    ("sandbox-fix", "系统浏览器安装提示 / guidance for using an OS-installed browser"),
                     ("run", "（服务内部用）常驻浏览器 / (service) keep the browser running")):
         sp = b.add_parser(name, help=h)
         sp.add_argument("--json", action="store_true")
@@ -1533,12 +1617,14 @@ def add_parser(sub) -> None:
             sp.add_argument("--registry", action="store_true", help="also print the P86 capability entries")
         if name == "setup":
             sp.add_argument("--own", action="store_true",
-                            help="已有本机浏览器时仍另装专用的 / install Agent J's own even when one is already running here")
-    sp = b.add_parser("adopt", help="登记你已有的本机 CDP 浏览器（只限 127.0.0.1，主人在手机确认）/ use a browser you already run")
+                            help="Linux 上另开专用浏览器 / set up a dedicated Linux browser")
+    sp = b.add_parser("adopt", help="登记 Linux 本机 CDP 浏览器（只限 127.0.0.1，主人在手机确认）/ register a Linux loopback CDP browser")
     sp.add_argument("--endpoint", help="http://127.0.0.1:<port>")
     sp.add_argument("--dry-run", action="store_true", help="只读：探测并（加 --site）只读查登录，不登记 / probe only, register nothing")
     sp.add_argument("--site", action="append", help="with --dry-run: read-only sign-in check of a template site (repeatable)")
     sp.add_argument("--forget", action="store_true", help="不再用登记的浏览器（它继续运行）/ stop using it (it keeps running)")
+    sp.add_argument("--json", action="store_true")
+    sp = b.add_parser("connect", help="申请使用 Ego Lite 的 Agent J 浏览器资料 / request the Agent J profile in Ego Lite")
     sp.add_argument("--json", action="store_true")
     sp = b.add_parser("open", help="在本机浏览器打开网页（主人在Agent J 主机前登录用）/ open a page on the Agent J host")
     sp.add_argument("url")
@@ -1551,7 +1637,7 @@ def add_parser(sub) -> None:
     sp.add_argument("site")
     sp.add_argument("--wait", action="store_true", help=f"wait up to {TTL_WAIT} s for the result")
     sp.add_argument("--json", action="store_true")
-    sp = b.add_parser("telegram-qr", help="登录二维码是否也发 Telegram：status / off（打开只能由主人在手机卡片上点）")
+    sp = b.add_parser("telegram-qr", help="旧命令兼容：Telegram 只发文字提醒 / compatibility: Telegram sends text reminders only")
     sp.add_argument("value", nargs="?", choices=["status", "off"], default="status")
     sp.add_argument("--json", action="store_true")
     s = b.add_parser("sites", help="list / add <site> / remove <site>")

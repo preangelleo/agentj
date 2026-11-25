@@ -4,6 +4,7 @@
 //   open the sign-in page on the computer → a signed `setup_mark` (agentjarvis-control-v1 over item, choice, revision — a
 //   stale revision comes back `changed` and the page re-reads); "Check" → `setup_get` with check:true (a read-only re-probe:
 //   the owner's word is a request to check, never proof). Nothing but the ✕ flag below is stored here; no secrets, QR codes or links ever appear.
+//   The Ego Lite installation request is ordinary chat. Binding its profile still takes a signed checklist choice.
 // P131 (Leo 10-11): it never covers the chat. A host snapshot only shows a thin banner above the chat (「首次准备 3/12 · 继续」);
 // the checklist is its own page (banner or menu → page, ← back to chat). The banner's ✕ / the page's 「收起清单」 closes it at
 // once (`setup_close`: every page hides it and it no longer comes back by itself); the menu reopens it (`setup_get` open).
@@ -11,12 +12,24 @@
 // P131 追加2 (Leo 10-11 09:31 「关闭后还在反复弹」): ✕ on this device is permanent for this device (localStorage "aj.setup.hidden"):
 // no snapshot, revision, check, resume or restart brings the banner back here — only the owner's own menu tap reopens it.
 import { ask1, isReady, sendApp, randHex } from './session.js';
-import { signedWrite, whyText } from './controls.js';
+import { estop, signedWrite, whyText } from './controls.js';
 import { t, lang, onLang } from './t.js';
 import { mk, toast, pageCopy } from './ui.js';
-import { keysSet } from './api.js';
+import { keysSet, newSid, say } from './api.js';
 
 const pick = (o) => (o && typeof o === 'object' ? String((lang() === 'en' ? o.en : o.zh) ?? '') : '');
+// The checklist already owns the bilingual Ego Lite copy.
+const EGO_INSTALL = {
+  where: { zh: "发给 Agent", en: "Ask your Agent" },
+  state: { zh: "待准备", en: "Setup needed" },
+  fact: { zh: "Agent J 需要 Ego Lite 才能使用专用浏览器（Windows 版为测试版）。", en: "Agent J needs Ego Lite for its dedicated browser (Windows beta)." },
+  button: { zh: "让 Agent 帮我装", en: "Ask Agent to install" },
+  prompt: { zh: "请帮我装 Ego Lite，并带我完成专用浏览器设置。", en: "Please install Ego Lite for me and guide me through setting up the dedicated browser." },
+  sent: { zh: "已请 Agent 帮你安装", en: "Asked Agent to install" },
+  sticky: { zh: "可以在手机上让 Agent 帮你安装和连接浏览器，网站登录和系统授权按提示在 Agent J 主机上完成。",
+    en: "Ask your Agent from your phone to install and connect the browser. Follow the prompts on the Agent J host for website sign-ins and system permissions." },
+};
+
 const GROUPS = ['core', 'machine', 'browser', 'google', 'privacy', 'optional'];
 const WHERE = ['auto', 'local', 'phone'];
 const STATES = ['verified', 'pending', 'waiting_local', 'attention', 'deferred', 'unsupported', 'not_applicable', 'stale'];
@@ -105,6 +118,25 @@ async function mark(item, choice) {
   render();
 }
 
+async function askEgoInstall() {
+  if (busy) return;
+  if (estop.on) { toast(t('r.say.stopped'), 3200); return; }
+  busy = true; render();
+  try {
+    const result = await say({ sid: newSid(), text: pick(EGO_INSTALL.prompt) });
+    if (!result.ok) {
+      const key = 'r.say.err.' + result.why;
+      const error = result.why === 'stopped' ? t('r.say.stopped') : t(key);
+      toast(error === key ? t('r.say.err.other') : error, 3000);
+      return;
+    }
+    toast(pick(EGO_INSTALL.sent), 2200);
+    if (H.view() === 'setup') H.openPanel('chat');
+  } finally {
+    busy = false; render();
+  }
+}
+
 function netHint() {
   const c = navigator.connection;
   const type = c && typeof c.type === 'string' ? c.type : '';
@@ -144,8 +176,11 @@ function renderBanner() {
 }
 
 // ---------------------------------------------------------------- the page
+const needsEgoInstall = (i) => i.id === 'browser' && i.reason === 'ego_profile_required';
+
 function whereTag(i) {
   if (i.state === 'unsupported') return t('setup.where.unsupported');
+  if (needsEgoInstall(i)) return pick(EGO_INSTALL.where);
   const w = ['browser', 'phone', 'exit', 'google'].includes(i.id) ? 'phone' : i.where;   // placement follows the actual owner action, not a legacy state name
   return t('setup.where.' + (WHERE.includes(w) ? w : 'local'));
 }
@@ -155,7 +190,7 @@ function sourceLine() {
   if (!s || typeof s !== 'object') return '';
   if (s.kind === 'adopted') return t(s.running === false ? 'setup.src.adoptedOff' : 'setup.src.adopted', { port: s.port });
   if (s.kind === 'own') return t('setup.src.own');
-  if (s.kind === 'offer') return t('setup.src.offer', { port: s.port });
+  if (s.kind === 'offer') return Number.isInteger(s.port) ? t('setup.src.offer', { port: s.port }) : '';
   return t('setup.src.none');
 }
 
@@ -165,6 +200,7 @@ function actionNote() {
   const port = S.browser_source?.port ?? '';
   if (a.state === 'running') return t('setup.act.running.' + a.choice);
   if (a.state === 'failed') return t('setup.act.failed', { why: String(a.reason || a.result || '') });
+  if (a.result === 'connected') return lang() === 'en' ? 'Ego Lite is connected.' : 'Ego Lite 已连接。';
   if (a.choice === 'open_login') {
     if (a.adopted) return t(a.raised ? 'setup.act.openedAdopted' : 'setup.act.openedAdoptedNoRaise', { port });
     return t(a.raised ? 'setup.act.opened' : 'setup.act.openedNoRaise');
@@ -173,11 +209,17 @@ function actionNote() {
 }
 
 function nextButtons(row, i) {
+  if (needsEgoInstall(i)) {
+    row.append(btn('aj-action--primary', pick(EGO_INSTALL.button), askEgoInstall, 'setup-ask-ego-install'));
+    return true;
+  }
   const ex = i.explain;
   const list = (ex && Array.isArray(ex.next) ? ex.next : []).filter((n) => NEXT.includes(n));
   list.forEach((n, k) => {
     const cls = k === 0 ? 'aj-action--primary' : '';
     if (n === 'check') row.append(btn(cls, t('setup.check'), () => refresh(true, i.id), 'setup-check'));
+    else if (n === 'adopt_browser' && i.reason === 'ego_profile_offer')
+      row.append(btn(cls, lang() === 'en' ? 'Use Ego Lite' : '使用 Ego Lite', () => mark(i.id, n), 'setup-adopt-browser'));
     else row.append(btn(cls, t('setup.next.' + n), () => mark(i.id, n), 'setup-' + n.replace('_', '-')));
   });
   return list.length > 0;
@@ -213,11 +255,18 @@ function actions(box, i, inline = false) {
   box.appendChild(row);
 }
 
-function instructions(box, i) {
+function instructions(box, i, current = false) {
+  if (needsEgoInstall(i)) {
+    const fact = pageCopy(mk('p', 'setup-fact', pick(EGO_INSTALL.fact), 'aj-setup'));
+    if (current) fact.id = 'setup-fact';
+    box.append(fact);
+    return;
+  }
   box.appendChild(pageCopy(mk('p', 'setup-hint', pick(i.hint), 'aj-setup')));
   const key = ['seat', 'harness', 'desktop', 'phone', 'passkey', 'phonepermissions', 'sudo', 'awake', 'service', 'network', 'updates', 'keyring', 'files', 'macfiles', 'browser', 'google', 'fda', 'accessibility', 'automation', 'screen', 'hardware', 'tg', 'wx', 'botkey', 'exit'].includes(i.id) ? i.id
     : ['gmail', 'youtube', 'bili', 'douyin', 'wechat', 'sites'].includes(i.id) ? 'login' : null;
-  if (key) box.appendChild(pageCopy(mk('p', 'setup-step', t('setup.step.' + key), 'aj-setup')));
+  if (key && !(key === 'browser' && S.browser_source?.backend === 'ego-lite'))
+    box.appendChild(pageCopy(mk('p', 'setup-step', t('setup.step.' + key), 'aj-setup')));
   if (i.explain) for (const k of ['fact', 'effect']) {
     const text = pick(i.explain[k]);
     if (text) box.appendChild(pageCopy(mk('p', 'setup-' + k, text, 'aj-setup')));
@@ -237,6 +286,7 @@ function overview(box) {
     for (const i of rows) {
       const li = mk('li', 'setup-row');
       const st = i.choice === 'unused' ? t('setup.st.unused')
+        : needsEgoInstall(i) ? pick(EGO_INSTALL.state)
         : i.choice === 'undecided' && i.state !== 'verified' && i.state !== 'not_applicable'
           ? t('setup.st.undecided') + (i.state === 'unsupported' ? ' · ' + stateText('unsupported') : '')
           : stateText(i.state);
@@ -311,6 +361,11 @@ function preparation(box) {
 function renderPage() {
   const box = el('setup-main');
   if (!box) return;
+  const sticky = el('setup-sticky');
+  if (sticky) {
+    sticky.textContent = S?.browser_source?.backend === 'ego-lite'
+      ? pick(EGO_INSTALL.sticky) : t('setup.sticky');
+  }
   box.replaceChildren();
   preparation(box);
   if (!S) { box.appendChild(pageCopy(mk('p', 'setup-note', t('setup.needsSetup'), 'aj-setup'))); return; }
@@ -329,10 +384,12 @@ function renderPage() {
     const un = S.items.filter((i) => i.choice === 'unused').map((i) => pick(i.title));
     if (un.length) box.appendChild(pageCopy(mk('p', 'setup-note', t('setup.notEnabled', { list: un.join(lang() === 'en' ? ', ' : '、') }), 'aj-setup')));
   } else if (cur) {
-    const where = pageCopy(mk('p', 'setup-where', whereTag(cur) + ' · ' + stateText(cur.state), 'aj-setup')); where.id = 'setup-where';
+    const ego = needsEgoInstall(cur);
+    const state = ego ? pick(EGO_INSTALL.state) : stateText(cur.state);
+    const where = pageCopy(mk('p', 'setup-where', whereTag(cur) + ' · ' + state, 'aj-setup')); where.id = 'setup-where';
     box.append(where);
-    instructions(box, { ...cur, explain: null });
-    if (cur.explain) {
+    instructions(box, { ...cur, explain: null }, true);
+    if (cur.explain && !ego) {
       const f = pageCopy(mk('p', 'setup-fact', pick(cur.explain.fact), 'aj-setup')); f.id = 'setup-fact';
       const e = pageCopy(mk('p', 'setup-effect', pick(cur.explain.effect), 'aj-setup')); e.id = 'setup-effect';
       box.append(f, e);

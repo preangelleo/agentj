@@ -6,12 +6,9 @@ No upload, raw log, config, identity, URL or caller-selected collection command.
 from __future__ import annotations
 
 import collections
-import ctypes.util
 import json
 import os
 import platform
-from pathlib import Path
-import re
 import sys
 import urllib.request
 
@@ -20,9 +17,6 @@ EVENTS = frozenset(("serve_start", "serve_stop", "relay_up", "relay_down",
 CHECK_IDS = frozenset(("version", "python", "websockets", "platform", "state", "browser", "relay", "dashboard",
                        "agent", "serve", "service", "seat", "bound", "fence", "upgrade-restart", "root-structure", "main-inject"))
 STATES = frozenset(("ok", "warn", "fail"))
-LIBS = ("nss3", "nspr4", "atk-1.0", "atk-bridge-2.0", "cups", "drm", "dbus-1",
-        "X11", "Xcomposite", "Xdamage", "Xext", "Xfixes", "Xrandr", "gbm", "xcb",
-        "xkbcommon", "asound", "pango-1.0", "cairo", "glib-2.0")
 
 
 def log_summary(path):
@@ -108,29 +102,15 @@ def download_probe(url):
 
 
 def preflight(*, offline=False):
-    from . import browser, doctor
+    from . import browser_ego, doctor
     if not doctor._is_wsl():
         return {"wsl": False, "checks": [], "note": "仅 WSL / WSL only"}
-    missing = [lib for lib in LIBS if not ctypes.util.find_library(lib)]
-    # Ubuntu 24.04 renamed these ABI packages; avoid suggesting unavailable old names.
-    try:
-        distro = Path("/etc/os-release").read_text()
-    except OSError:
-        distro = ""
-    ubuntu = 'ID=ubuntu' in distro or 'ID="ubuntu"' in distro
-    modern = bool(re.search(r'VERSION_ID="?(24|25|26)\.', distro))
-    suffix = "t64" if modern else ""
-    packages = ("libnss3 libnspr4 libatk1.0-0{t} libatk-bridge2.0-0{t} libcups2{t} libdrm2 "
-                "libdbus-1-3 libx11-6 libxcomposite1 libxdamage1 libxext6 libxfixes3 libxrandr2 "
-                "libgbm1 libxcb1 libxkbcommon0 libasound2{t} libpango-1.0-0 libcairo2 libglib2.0-0{t}").format(t=suffix)
-    fix = "sudo apt-get update && sudo apt-get install -y " + packages if ubuntu else "请按发行版安装浏览器系统依赖 / install browser system dependencies for this distribution"
-    man = browser.manifest()
-    build = "linux-arm64" if platform.machine() in ("aarch64", "arm64") else "linux-x64"
-    urls = {"browser_download": man["builds"][build]["url"], "ollama_download": f"https://ollama.com/download/ollama-linux-{'arm64' if build == 'linux-arm64' else 'amd64'}.tar.zst"}
-    checks = [{"id": "browser_libraries", "status": "fail" if missing else "ok", "missing": missing}]
+    arch = "arm64" if platform.machine() in ("aarch64", "arm64") else "amd64"
+    urls = {"ego_download_page": browser_ego.DOWNLOAD, "ollama_download": f"https://ollama.com/download/ollama-linux-{arch}.tar.zst"}
+    checks = [{"id": "ego_browser_cli", "status": "ok" if browser_ego._executable("wsl2") else "fail"}]
     checks += [{"id": name, "status": "skipped" if offline else download_probe(url)} for name, url in urls.items()]
-    return {"wsl": True, "checks": checks, "repair": fix,
-            "next": "agentj browser setup", "note": "HEAD 仅验证入口连通，不证明完整下载；不执行修复 / HEAD checks reachability only; repairs are not run"}
+    return {"wsl": True, "checks": checks, "repair": browser_ego.HINTS["ego_wsl_interop"], "next": "agentj browser setup",
+            "note": "HEAD 只检查地址能否访问 / HEAD checks address reachability only"}
 
 
 def command(a):
@@ -156,6 +136,6 @@ def add_parser(sub):
     diag.set_defaults(fn=command)
     from . import layout_diag
     layout_diag.add_parser(sub, diagnostics=sp)
-    flight = sub.add_parser("preflight", help="WSL 浏览器系统库与下载预检 / WSL browser libraries and download preflight")
+    flight = sub.add_parser("preflight", help="WSL 上检查 Windows Ego Lite 和下载地址 / Windows Ego Lite and download reachability from WSL")
     flight.add_argument("--offline", action="store_true", help="跳过下载连通性 / skip download reachability")
     flight.set_defaults(fn=command)

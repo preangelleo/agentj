@@ -9,6 +9,7 @@ import json
 import os
 import stat
 import shutil
+import tempfile
 import uuid
 from functools import lru_cache
 from pathlib import Path
@@ -112,11 +113,34 @@ def points_to(path, source):
     try:return path.is_symlink() and path.resolve()==source.resolve()
     except (OSError,RuntimeError):return False
 
+def _needs_copy(source):
+    # Codex skills/list skips symlinked SKILL.md files. Keep this exception scoped
+    # to the new skill, leaving the placement of the existing inventory intact.
+    return source.name == 'SKILL.md' and source.parent.name == 'agentj-ego-lite'
+
+def installed_logic(path, source):
+    if not _needs_copy(source):
+        return points_to(path,source)
+    try:
+        expected=source.read_bytes()
+        with os.fdopen(os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK),'rb') as stream:
+            return stat.S_ISREG(os.fstat(stream.fileno()).st_mode) and stream.read(len(expected)+1)==expected
+    except OSError:
+        return False
+
+def _install_logic(source, path):
+    if _needs_copy(source):
+        with tempfile.NamedTemporaryFile(dir=path.parent,prefix='.agentj-skill-') as tmp:
+            tmp.write(source.read_bytes())
+            tmp.flush()
+            os.link(tmp.name,path)  # publish complete bytes without replacing a concurrent file
+    else:
+        path.symlink_to(source)
+
 def managed(source, target):
     """Only exact package logic paths are managed; user configuration is not evidence."""
     try:
-        return target.is_dir() and all((target/rel).is_symlink() and
-            (target/rel).resolve()==(source/rel).resolve() for rel in logic_files(source))
+        return target.is_dir() and all(installed_logic(target/rel,source/rel) for rel in logic_files(source))
     except (OSError, RuntimeError):return False
 
 def _seed(source,target):
@@ -127,7 +151,7 @@ def _seed(source,target):
         if entry.is_dir():path.mkdir(parents=True,exist_ok=True)
         elif entry.is_file():
             path.parent.mkdir(parents=True,exist_ok=True)
-            if entry.relative_to(source) in set(logic_files(source)):path.symlink_to(entry)
+            if entry.relative_to(source) in set(logic_files(source)):_install_logic(entry,path)
             else:shutil.copy2(entry,path)
 
 def _durable_overlay(source,original,destination):
@@ -154,7 +178,7 @@ def _durable_overlay(source,original,destination):
             cursor=child
         path=destination/rel
         if os.path.lexists(path):path.unlink()
-        path.symlink_to(source/rel)
+        _install_logic(source/rel,path)
 
 def _overlay(source, original, destination):
     """Local view of external trees; never write through the user's root symlink."""
@@ -172,7 +196,7 @@ def _overlay(source, original, destination):
             cursor=child
         path=destination/rel
         if os.path.lexists(path):path.unlink()
-        path.symlink_to(source/rel)
+        _install_logic(source/rel,path)
 
 def _overlay_empty(original, destination):
     destination.mkdir(mode=0o700)
@@ -225,12 +249,12 @@ def link(name,source,target,replace=False):
                     child.rename(saved);view.rename(child)
                 else:child.mkdir(exist_ok=True)
                 cursor=child
-            if points_to(path,source/rel):continue
+            if installed_logic(path,source/rel):continue
             saved=backup/rel;saved.parent.mkdir(parents=True,exist_ok=True)
             if os.path.lexists(path):
                 if path.is_symlink():saved_links.append({'path':str(path),'link':os.readlink(path),'resolved_from':str((path.parent/os.readlink(path)).absolute()),'backup':str(saved)})
                 path.rename(saved)
-            try:path.symlink_to(source/rel)
+            try:_install_logic(source/rel,path)
             except OSError:
                 if os.path.lexists(saved) and not os.path.lexists(path):saved.rename(path)
                 raise
@@ -265,7 +289,11 @@ def link(name,source,target,replace=False):
         if (observed.st_dev,observed.st_ino)!=(moved.st_dev,moved.st_ino):
             if not os.path.lexists(target):target.symlink_to(original_link or backup)
             raise OSError('skill_entry_changed')
-        try:target.symlink_to(view or source)
+        try:
+            if view is None and _needs_copy(source/'SKILL.md'):
+                _seed(source,target)
+            else:
+                target.symlink_to(view or source)
         except OSError:
             if not os.path.lexists(target):target.symlink_to(original_link or backup)
             raise

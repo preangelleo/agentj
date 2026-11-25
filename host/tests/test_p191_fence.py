@@ -65,12 +65,14 @@ class BusAndServiceManager(Fixture):
 
 
 class BrowserEndpoint(Fixture):
-    """B6: random port, loopback only, profile and runtime record inside the hidden state folder."""
+    """B6: unpredictable nonzero port, loopback only, profile and runtime record inside the hidden state folder."""
 
-    def test_port_is_random_and_loopback_only(self):
-        args = browser._launch_args("/x/chrome", pathlib.Path("/p"), False)
+    def test_port_is_random_nonzero_and_loopback_only(self):
+        port = browser._launch_port()
+        self.assertGreater(port, 0)
+        args = browser._launch_args("/x/chrome", pathlib.Path("/p"), False, port)
         ports = [a for a in args if a.startswith("--remote-debugging-port=")]
-        self.assertEqual(ports, ["--remote-debugging-port=0"], "the browser picks the port; never a fixed one")
+        self.assertEqual(ports, [f"--remote-debugging-port={port}"])
         self.assertIn(f"--remote-debugging-address={browser.LOOPBACK}", args)
         self.assertEqual(browser.LOOPBACK, "127.0.0.1")
         for bad in ("0.0.0.0", "--remote-allow-origins", "--remote-debugging-address=::"):
@@ -85,6 +87,17 @@ class BrowserEndpoint(Fixture):
         perm = os.path.realpath(self.st.perm_dir)
         self.assertEqual([x for x in self.after(a, "--bind") if x.startswith(root + os.sep)], [perm],
                          "only the permission folder returns from the state dir; never browser/")
+
+    def test_macos_ego_app_and_vendor_control_socket_stay_outside_the_agent_fence(self):
+        from agentj import browser_ego
+        profile, params = fence.sbpl_profile(self.st, str(self.home), home=str(self.home), environ={})
+        self.assertEqual(params["EGO_APP"], str(browser_ego.MAC_APP.resolve()))
+        self.assertIn('(deny process-exec (subpath (param "EGO_APP")))', profile)
+        controls = {path for key, path in params.items() if key.startswith("CTL_")}
+        self.assertIn(str(self.home.resolve() / ".local/share/ego"), controls)
+        self.assertIn(params["EGO_APP"], controls)
+        self.assertRegex("/private/var/folders/ab/fixture/T/com.citrolabs.ego.lite.fixture/SingletonSocket",
+                         fence._MAC_TMP_SOCKETS)
 
     def test_runtime_refuses_a_record_that_does_not_prove_ownership(self):
         browser.ensure_dir(self.st)

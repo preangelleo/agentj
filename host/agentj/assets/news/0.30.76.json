@@ -1,0 +1,45 @@
+{
+ "schema": "agentj.news/v1",
+ "version": "0.30.76",
+ "items": [
+  {
+   "zh": {
+    "what": "Linux 上的 Agent J 专用浏览器改用电脑已有的 Chrome 或 Chromium，使用独立浏览器资料。运行 `agentj browser check` 查看状态。",
+    "action": "运行 `agentj browser check` 查看状态。"
+   },
+   "en": {
+    "what": "On Linux, the Agent J browser uses Chrome or Chromium already on your computer, with a separate browser profile. Run `agentj browser check` to see its status.",
+    "action": "Run `agentj browser check` to see its status."
+   },
+   "applies_to": [
+    "all"
+   ]
+  },
+  {
+   "zh": {
+    "what": "macOS 和 Windows（beta）推荐使用 Ego Lite。你可以请 Agent 从官网下载。",
+    "action": "安装并完成设置后，运行 `agentj browser connect`，再用已配对的遥控器确认。"
+   },
+   "en": {
+    "what": "Agent J recommends Ego Lite on macOS and Windows (beta). You can ask your Agent to download it from the official site.",
+    "action": "After setup, run `agentj browser connect` and confirm on your paired remote."
+   },
+   "applies_to": [
+    "all"
+   ]
+  },
+  {
+   "zh": {
+    "what": "Agent J 自带 Ego Lite 使用技能，Claude Code、Codex 和 OpenCode 都可以读取。",
+    "action": "连接前请关闭 Ego Lite 的「产品改进」选项。"
+   },
+   "en": {
+    "what": "Agent J includes an Ego Lite skill that Claude Code, Codex and OpenCode can read.",
+    "action": "Turn off Product Improvement in Ego Lite before connecting."
+   },
+   "applies_to": [
+    "all"
+   ]
+  }
+ ]
+}

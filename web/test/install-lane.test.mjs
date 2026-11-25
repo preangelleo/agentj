@@ -37,10 +37,10 @@ async function fixture() {
   const context=vm.createContext({ console, document:{getElementById:id=>nodes[id]||null}, localStorage:{getItem:()=>null}, navigator:{}, Date });
   const deps={
     './session.js':{ask1:async()=>null,isReady:()=>true,sendApp:()=>{},randHex:()=> 'a'.repeat(16)},
-    './controls.js':{signedWrite:async(action,target,extra)=>{writes.push({action,target,extra}); if(action==='setup_run')return new Promise(r=>{finish=r;}); return {ok:true};},whyText:String},
+    './controls.js':{estop:{on:false},signedWrite:async(action,target,extra)=>{writes.push({action,target,extra}); if(action==='setup_run')return new Promise(r=>{finish=r;}); return {ok:true};},whyText:String},
     './t.js':{t:k=>k,lang:()=> 'en',onLang:()=>{}},
     './ui.js':{mk:(...args)=>new Element(...args),toast:()=>{},pageCopy:e=>e},
-    './api.js':{keysSet:async name=>{keys.push(name);return {ok:true};}},
+    './api.js':{say:()=>assert.fail('preparation must not send owner chat'),newSid:()=>assert.fail('preparation must not allocate a chat send'),keysSet:async name=>{keys.push(name);return {ok:true};}},
   };
   const module=new vm.SourceTextModule(readFileSync(new URL('../public/js/setup.js',import.meta.url),'utf8'),{context});
   await module.link(async name=>{

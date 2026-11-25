@@ -16,10 +16,16 @@ class ZhLines(unittest.TestCase):
         self.assertEqual(wf.zh_lines({'description': 'English only. Still English.'}, 'English only.'), {})
         self.assertEqual(wf.zh_lines({'description': 'Use for 「换个主题」「换个颜色」, "change the theme".'}, 'Use for …'), {})
 
-    def test_bundled_skills_have_a_shipped_line_in_the_web_dictionary(self):
+    def test_bundled_skills_have_localized_preview_copy(self):
         root = pathlib.Path(__file__).resolve().parents[2] / 'web/i18n'
         zh, en = (json.loads((root / f).read_text(encoding='utf-8')) for f in ('web.zh.json', 'web.en.json'))
         for s in wf.skill_dir(str(wf.SKILLS), 'bundled', None, None)[0]:
+            if s["name"] == "agentj-ego-lite":
+                # This skill is discoverable only on hosts that ship its bilingual metadata.
+                self.assertIn("Ego Lite", s["desc"])
+                self.assertRegex(s["desc_zh"], wf._CJK)
+                self.assertRegex(s["use_zh"], wf._CJK)
+                continue
             for k in ('sk', 'su'):
                 self.assertTrue(wf._CJK.search(zh.get(f'p299.{k}.{s["name"]}', '')), s['name'])
                 self.assertTrue(en.get(f'p299.{k}.{s["name"]}'), s['name'])

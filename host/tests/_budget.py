@@ -49,7 +49,7 @@ MIN_CEILING = 4096          # smaller numbers in that test are counts, not byte 
 # so their caps stay. No row is back inside its ceiling yet, so all three rows remain (ARCHITECTURE「slim-1122」lists what is left).
 WIDER = {'combined bounded allocations': 4595969,   # P0269_BUDGET_WAIVER
          'P170 e-mail channel allocation (+ P206 A mail expect) is bounded': 44175,   # P0306_BUDGET_WAIVER
-         'P114 browser package allocation is bounded': 61324,                          # P0369_BUDGET_WAIVER
+         'P114 browser package allocation is bounded': 70000,                          # Approved for 0.30.76 browser backends and bundled skill
          'P155 harness-switch allocation (+ P282 + P312) is bounded': 42352,           # P0369_BUDGET_WAIVER
          # the label is the first 120 characters of the test message
          'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0) + P198 (0.20.1) + 0.20.2 increments (P201 P203 P2': 4796240}   # P0369_BUDGET_WAIVER, lowered by slim-1122

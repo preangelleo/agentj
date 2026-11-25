@@ -165,8 +165,20 @@ class EmbeddedWindow(unittest.TestCase):
 
     def test_embedded_window_still_loading_reports_page_not_ready(self):
         self.slow = True
-        with patch.object(bl, "QR_WAIT", 3.0):
+        seen_loading = False
+        original_capture = bl.capture_qr
+
+        def observe_loading(*args, **kwargs):
+            nonlocal seen_loading
+            try:
+                return original_capture(*args, **kwargs)
+            except QRFrameLoading:
+                seen_loading = True
+                raise
+
+        with patch.object(bl, "QR_WAIT", 6.0), patch.object(bl, "capture_qr", observe_loading):
             got = self.capture(self.template())
+        self.assertTrue(seen_loading, "Chromium did not observe the embedded document loading")
         self.assertEqual(got, {"state": "none", "reason": "page_not_ready"})
 
 

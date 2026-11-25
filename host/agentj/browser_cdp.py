@@ -7,8 +7,10 @@ import base64
 import contextlib
 import itertools
 import json
+import socket
 import struct
 import time
+from urllib.parse import urlsplit
 
 from websockets.sync.client import connect
 
@@ -25,15 +27,25 @@ class CDPTimeout(CDPError):
 
 class CDP:
     def __init__(self, ws_url: str, timeout: float = 10.0):
-        if not ws_url.startswith("ws://127.0.0.1:"):
-            raise CDPError("loopback endpoints only")
         try:
-            self.ws = connect(ws_url, open_timeout=timeout, max_size=MAX_FRAME, origin=None, proxy=None)
-        except TypeError:          # websockets < 15: no proxy argument (and no proxy support either)
-            self.ws = connect(ws_url, open_timeout=timeout, max_size=MAX_FRAME)
-        except Exception as e:  # noqa: BLE001 — refused / timeout / handshake
-            raise CDPError(type(e).__name__) from None
-        self.ws = self.ws.__enter__() or self.ws   # the context-manager form (websockets ≥ 17 warns otherwise); close() exits it
+            endpoint = urlsplit(ws_url)
+            port = endpoint.port
+            local = endpoint.scheme == "ws" and bool(port) and endpoint.netloc == f"127.0.0.1:{port}"
+        except (TypeError, ValueError):
+            local = False
+        if not local:
+            raise CDPError("loopback endpoints only")
+        sock = None
+        deadline = time.monotonic() + timeout
+        try:
+            # A preconnected socket keeps the handshake on this host, including on clients that follow redirects.
+            sock = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+            ws = connect(ws_url, sock=sock, open_timeout=max(0, deadline - time.monotonic()), max_size=MAX_FRAME, origin=None)
+            self.ws = ws.__enter__() or ws
+        except Exception as exc:  # refused, timeout, redirected or invalid handshake
+            if sock is not None:
+                sock.close()
+            raise CDPError(type(exc).__name__) from None
         self.ids = itertools.count(1)
         self.timeout = timeout
 

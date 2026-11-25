@@ -15,16 +15,36 @@ class SkillShadow(unittest.TestCase):
         self.source=p.SKILLS/NAME
     def copy(self):shutil.copytree(self.source,self.target)
     def backup(self):return Path(sl._read(self.target.parent)[NAME]['backup'])
-    def test_frozen_37_builtins_no_additions(self):
+    def test_frozen_bundled_skill_inventory(self):
         expected=json.loads(p.SKILLS.with_name('bundled_skills.json').read_text())['skills']
         # Frozen inventory; any addition is a deliberate, ticketed change. 0.30.7: +agentj-relay-check (integrate1,
-        # Agents Relay self-check, docs/agents-relay 「测中转」) — 37 → 38. Plaza remains the default for new skills.
-        self.assertEqual(len(expected),38)
+        # then +agentj-ego-lite (11-24 follow-up for the dedicated browser) — 38 → 39.
+        self.assertEqual(len(expected),39)
+        self.assertIn("agentj-ego-lite", expected)
         self.assertEqual(sorted(expected),sorted(x.name for x in p.SKILLS.iterdir() if x.is_dir()))
         self.assertEqual(set(x.name for x in p.SKILLS.iterdir()),set(expected)|{'aliases.json'})
         inventory=json.loads(p.SKILLS.with_name('bundled_skills.json').read_text())['logic_files']
         for name in expected:
             self.assertEqual(inventory[name],sorted(str(x.relative_to(p.SKILLS/name)) for x in (p.SKILLS/name).rglob('*') if x.is_file() and x.suffix in sl.LOGIC_SUFFIXES))
+    def test_ego_lite_installs_regular_files_and_preserves_modified_copy(self):
+        name = "agentj-ego-lite"
+        source = p.SKILLS / name / "SKILL.md"
+        p.ensure(self.home, force=True)
+        for harness in p.HARNESS_DIRS:
+            entry = self.home / harness / name / "SKILL.md"
+            self.assertFalse(entry.is_symlink())
+            self.assertEqual(entry.read_bytes(), source.read_bytes())
+            self.assertEqual(sl.classify(name, source.parent, entry.parent)[0], "installed")
+        entry.write_text("Owner customization")
+        config = entry.with_name("personal.md")
+        config.write_text("Private preferences")
+        self.assertEqual(p.ensure(self.home, force=True), {"linked": 1, "conflicts": 0})
+        receipt = sl._read(entry.parent.parent)[name]
+        self.assertEqual((Path(receipt["backup"]) / "SKILL.md").read_text(), "Owner customization")
+        self.assertEqual(config.read_text(), "Private preferences")
+        self.assertEqual(entry.read_bytes(), source.read_bytes())
+        self.assertEqual(p.ensure(self.home, force=True), {"linked": 0, "conflicts": 0})
+
     def test_real_released_copies_across_four_harnesses(self):
         meta=json.loads((FIXTURES/'sources.json').read_text())
         self.assertEqual(hashlib.sha256((FIXTURES/'releases.zip').read_bytes()).hexdigest(),meta.pop('zip_sha256'))

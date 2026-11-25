@@ -6,8 +6,7 @@ end-to-end encrypted session, as a dedicated card that is not chat history and n
 ≤ 120 s; success / expiry / cancel / Stop everything wipe it. The audit keeps the card id, site, result and time only.
 
 Success is decided by the browser itself (the login tab reaches the site's signed-in URL), never by "I scanned it".
-Telegram: a configured bot gets a text reminder without any link; the QR image itself goes to the owner's private chat
-only after the owner turned that on with a tap on a paired phone's card (Telegram can read it) — revocable any time.
+Telegram: a configured bot gets a text reminder without any link. The QR image is confined to the paired device card.
 """
 from __future__ import annotations
 
@@ -180,7 +179,16 @@ class LoginCards:
     def _binding_live(self, binding):
         return isinstance(binding, RequestPhone) and binding.matches(self.host, binding.session())
 
+    def _profile_live(self, c):
+        profile = c.get("ego_profile")
+        if profile is None:
+            return True
+        from .browser_ego import binding_id
+        return browser.settings(self.st)["enabled"] and binding_id(self.st) == profile
+
     def _visible(self, c, s):
+        if not self._profile_live(c):
+            return False
         if c["site"] != CHANNELS and not c.get("restricted"):
             return True
         source_live = c.get("issuing_source")
@@ -299,7 +307,11 @@ class LoginCards:
         except CDPError:
             self.st.log("login_qr_failed", site=site, reason="browser_unavailable")
             return {"result": "failed", "why": "browser", "reason": "browser_unavailable"}
-        if not current() or (restricted and not self._binding_live(owner)):
+        same_runtime = True
+        if got.get("cdp") and rt.get("backend") == "ego-lite":
+            active = await asyncio.to_thread(browser.runtime, self.st)
+            same_runtime = bool(active and self._runtime_id(active) == self._runtime_id(rt))
+        if not same_runtime or not current() or (restricted and not self._binding_live(owner)):
             if got.get("cdp"):
                 got["cdp"].close()
             return {"result": "gone"}
@@ -345,7 +357,8 @@ class LoginCards:
         c = {"id": cid, "site": site, "title": t["title"][lang], "img": bytearray(got["png"]), "nonce": nonce,
              "deadline": time.monotonic() + ttl, "until": until, "by": by, "cdp": got["cdp"], "session": got["session"],
              "bind": bind_digest(self.host.channel, site, cid, nonce, until), "lock": threading.Lock(),
-             "runtime": self._runtime_id(rt), "target": got.get("target"), "revision": 0, "confirm_lock": asyncio.Lock()}
+             "runtime": self._runtime_id(rt), "target": got.get("target"), "revision": 0, "confirm_lock": asyncio.Lock(),
+             "ego_profile": rt.get("profile_id") if rt.get("backend") == "ego-lite" else None}
         if restricted:
             c.update(restricted=True, owner=owner, issuing_source=source_live)
             self.last_recipient[site] = (cid, owner)
@@ -385,14 +398,24 @@ class LoginCards:
             return {"result": "host_login_unavailable", "site": site,
                     "hint": "这台Agent J 主机没有屏幕：请在有屏幕的Agent J 主机上登录这个网站，或选支持扫码的网站 / no screen here"}
         res = await asyncio.to_thread(bs.open_url, self.st, url)
-        return {"result": "host_login", "site": site, "opened": bool(res.get("ok")),
+        if not res.get("ok"):
+            return {"result": "host_login_unavailable", "site": site, "opened": False,
+                    "hint": res.get("hint") or "登录页未打开，请检查 Agent J 浏览器。 / Could not open the sign-in page."}
+        return {"result": "host_login", "site": site, "opened": True,
                 "hint": "已在这台Agent J 主机的 Agent J 浏览器打开登录页：请主人在Agent J 主机前登录，然后运行 agentj browser check --site " + site
                         + " / opened the sign-in page on the Agent J host"}
 
     def _open_and_capture(self, rt: dict, site: str, t: dict, refresh=False, old=None) -> dict:
         """(thread) Reuse or open the login tab, wait up to 30 s for the QR element, crop it. The CDP connection stays with
         the card (its watcher); the tab is never closed by us."""
-        cdp = CDP(rt["ws"])
+        origins = [o for o in [*(t.get("origins") or []), *((t.get("qr") or {}).get("frame_origins") or [])]
+                   if isinstance(o, str)]
+        ego = rt.get("backend") == "ego-lite"
+        if ego:
+            from .browser_ego import EgoCDP
+            cdp = EgoCDP(rt, qr_origins=t.get("origins") or [])
+        else:
+            cdp = CDP(rt["ws"])
         ok = False
         try:
             failure = "browser_unavailable"
@@ -402,6 +425,8 @@ class LoginCards:
                 target = cdp.new_tab(t["login_url"], background=bool(rt.get("headless")))
                 self.tabs[site] = target
             session = cdp.attach(target)
+            if ego:
+                cdp.bind_login(session)
             failure = "page_not_ready"
             loader = None
             if refresh and reused:
@@ -419,8 +444,6 @@ class LoginCards:
             reason = "page_not_ready"
             misses, miss = 0, None      # crops of a located QR that failed, and why the last one did
             sels = t["qr"]["selectors"]
-            origins = [o for o in [*(t.get("origins") or []), *((t.get("qr") or {}).get("frame_origins") or [])]
-                       if isinstance(o, str)]
             while time.monotonic() < (end + CAPTURE_GRACE if misses else end):
                 failure = "page_not_ready"
                 try:
@@ -437,6 +460,9 @@ class LoginCards:
                         loader = None
                     expected = ready == "complete" and (page_state in ("in", "out") or href == t["login_url"])
                     reason = "qr_not_found" if expected else "page_not_ready"
+                    if ego and (not expected or not cdp.begin_qr(session)):
+                        time.sleep(1.0)
+                        continue
                     failure = None
                     try:
                         png = capture_qr(cdp, session, sels, origins=origins)
@@ -479,16 +505,7 @@ class LoginCards:
     def card_msg(self, c: dict) -> dict:
         return {"t": "login_qr", "id": c["id"], "n": c["nonce"], "site": c["site"], "title": c["title"],
                 "img": base64.b64encode(bytes(c["img"])).decode(), "ttl": max(0, int(c["deadline"] - time.monotonic())),
-                "bind": c["bind"], "tg": "none" if c.get("restricted") else self._tg_state(),
-                "channel": "" if c.get("restricted") else "Telegram"}
-
-    def _tg_state(self) -> str:
-        """none (no Telegram) | text (reminders only) | qr (the owner allowed QR codes there)."""
-        from . import telegram
-        cfg = telegram.configuration(self.st)
-        if not cfg or not (self.host.telegram and self.host.telegram.enabled()):
-            return "none"
-        return "qr" if bs.tg_consent(self.st) else "text"
+                "bind": c["bind"], "tg": "none", "channel": ""}
 
     def open_msgs(self, s) -> list[dict]:
         # The initial dispatch is the only disclosure for WeChat Channels, including after reconnect.
@@ -527,6 +544,9 @@ class LoginCards:
                 await asyncio.sleep(POLL)
                 if c["id"] not in self.cards:
                     return
+                if not self._profile_live(c):
+                    self._end(c, "gone")
+                    return
                 try:
                     state, _ = await asyncio.to_thread(self._tab, c)
                 except CDPError:
@@ -546,7 +566,8 @@ class LoginCards:
 
     @staticmethod
     def _runtime_id(rt: dict) -> tuple:
-        return (rt.get("ws"), rt.get("pid"), rt.get("starttime"), rt.get("adopted", False))
+        return (rt.get("backend"), rt.get("runtime_id"), rt.get("ws"), rt.get("pid"), rt.get("starttime"),
+                rt.get("adopted", False))
 
     def _source_state(self, cdp, session, runtime_id, rule: dict) -> str:
         if not browser.settings(self.st)["enabled"]:
@@ -600,6 +621,8 @@ class LoginCards:
         if not self.st.sign_key(s.device):            # only an approved device (same rule as the other cards)
             self.st.log("login_qr_refused", device=s.device, reason="no_key")
             return
+        if t == "login_qr_tg":                         # old phones may still send a retired setting
+            return
         if t == "login_qr_refresh":
             site = obj.get("site")
             sites = bs.load(self.st)["sites"]
@@ -636,15 +659,6 @@ class LoginCards:
             return self._end(c, "cancelled", device=s.device)
         if t == "login_qr_check":
             return await self._check_tap(s, c)
-        if t == "login_qr_tg":
-            if c.get("restricted") or c["site"] == CHANNELS:
-                return
-            on = obj.get("on") is True
-            await asyncio.to_thread(bs.set_tg_consent, self.st, on, s.device)
-            self._audit(c, "tg_consent_on" if on else "tg_consent_off", device=s.device)
-            if on:
-                await self._telegram(c)
-            await self.host._send_ready(lambda x: {"t": "login_qr_state", "id": cid, "state": "settings", "tg": self._tg_state()})
 
     async def _check_tap(self, s, c: dict) -> None:
         """#470: the owner's 「我扫好了，帮我确认」 — always the trusted check (whatever page the login tab shows); when it does
@@ -669,29 +683,22 @@ class LoginCards:
             self.host.hist_add({"k": "sys", "text": ""}, text, "done")
         await self.host.send_app(s, {"t": "login_qr_state", "id": c["id"], "state": "waiting", "why": why})
 
-    # ---------------------------------------------------------- Telegram (text by default; QR only with consent)
+    # ---------------------------------------------------------- Telegram text reminder
     async def _telegram(self, c: dict) -> str:
-        if c.get("restricted") or c["site"] == CHANNELS:
+        if c.get("restricted") or c["site"] == CHANNELS or not self._profile_live(c):
             return "none"
         from . import telegram
-        state = self._tg_state()
-        if state == "none":
-            return "none"
         cfg = telegram.configuration(self.st)
+        if not cfg or not (self.host.telegram and self.host.telegram.enabled()):
+            return "none"
         secs = max(0, int(c["deadline"] - time.monotonic()))
         zh = getattr(self.host, "lang", "zh") != "en"
+        text = (f"「{c['title']}」需要登录：请打开已配对的 Agent J 手机网页扫码（{secs} 秒内有效）。" if zh else
+                f"{c['title']} needs a sign-in: open your paired Agent J phone page to scan ({secs} s).")
         try:
-            if state == "qr":
-                cap = (f"Agent J 登录二维码：{c['title']}，{secs} 秒内有效（Telegram 能看到这张图）" if zh else
-                       f"Agent J sign-in QR: {c['title']}, valid {secs} s (Telegram can see this image)")
-                await asyncio.to_thread(telegram.upload, cfg, "sendPhoto", {"chat_id": cfg["owner_id"], "caption": cap},
-                                        "photo", "login-qr.png", "image/png", bytes(c["img"]))
-            else:
-                text = (f"「{c['title']}」需要登录：请打开已配对的 Agent J 手机网页扫码（{secs} 秒内有效）。" if zh else
-                        f"{c['title']} needs a sign-in: open your paired Agent J phone page to scan ({secs} s).")
-                await asyncio.to_thread(telegram.api, cfg, "sendMessage", {"chat_id": cfg["owner_id"], "text": text})
-            self._audit(c, "telegram_" + state)
-            return state
+            await asyncio.to_thread(telegram.api, cfg, "sendMessage", {"chat_id": cfg["owner_id"], "text": text})
+            self._audit(c, "telegram_text")
+            return "text"
         except ValueError:
             self._audit(c, "telegram_failed")
             return "failed"

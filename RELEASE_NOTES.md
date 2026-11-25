@@ -1,5 +1,5 @@
-# Agent J v0.30.75
+# Agent J v0.30.76
 
-Tap the phone page count to jump to the latest reply. Notebook stays above the keyboard. Run is available for single-line commands naming the Agent J host.
+Agent J uses system Chrome or Chromium on Linux. On macOS and Windows (beta), connect your own Ego Lite installation using the bundled skill.
 
-点击手机页码可回到最新回复。改进记事本弹层和键盘避让。明确标注 Agent J 主机的单行命令可显示执行按钮。
+Linux 上的 Agent J 改用系统 Chrome 或 Chromium。macOS 和 Windows（beta）推荐自行安装 Ego Lite，Agent J 自带使用技能。

@@ -371,6 +371,9 @@ def control_dirs(home: str, environ=None, allow_docker: bool = False, workdir: s
     if (sys.platform == "darwin") if mac is None else mac:   # no mount namespace: /tmp and $TMPDIR are shared, so their per-user socket folders too
         uid, tmpd = os.getuid() if uid is None else uid, env.get("TMPDIR") or "/private/tmp"
         user = env.get("USER") or str(uid)
+        from .browser_ego import MAC_APP
+        cand += [str(MAC_APP), os.path.join(home, ".local/share/ego"),
+                 os.path.join(home, "Library/Application Support/ego lite")]
         cand += ["/private/tmp/uscreens", "/private/tmp/screens", f"/private/tmp/zellij-{uid}", os.path.join(tmpd, f"zellij-{uid}"),
                  f"/private/tmp/emacs{uid}", os.path.join(tmpd, f"emacs{uid}"), os.path.join(tmpd, f"nvim.{user}")]
         if not allow_docker:   # sockets as paths: SBPL's subpath also matches the file itself
@@ -774,7 +777,7 @@ SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 _MAC_RO = (".ssh/environment",)   # plus _RO_FILES (~/.ssh/environment is read by sshd only when PermitUserEnvironment)
 _LAUNCHD_SOCKETS = r"^/private/tmp/com\.apple\.launchd\.[^/]+/"   # ssh-agent (SSH_AUTH_SOCK) and other launchd sockets
 # VS Code's CLI IPC and kitty's remote control in the shared per-user temp folders (paths with a random part: a regex)
-_MAC_TMP_SOCKETS = r"^/private/(tmp|var/folders/[^/]+/[^/]+/T)/(vscode-ipc-|vscode-git-|kitty)"
+_MAC_TMP_SOCKETS = r"^/private/(tmp|var/folders/[^/]+/[^/]+/T)/(vscode-ipc-|vscode-git-|kitty|com[.]citrolabs[.]ego[.]lite[.])"
 
 
 def sbpl_profile(st, workdir: str, home: str | None = None, uid: int | None = None, allow_docker: bool = False,
@@ -802,6 +805,8 @@ def sbpl_profile(st, workdir: str, home: str | None = None, uid: int | None = No
     up = sorted({x for p in py for x in _parents(p) if _under(x, params["STATE"])} - set(py))   # lookups only (metadata)
     for i, p in enumerate(up):
         params[f"PYUP_{i}"] = p
+    from .browser_ego import MAC_APP
+    params["EGO_APP"] = _real(str(MAC_APP))
     ctl = g["control"]   # absent ones too: a server may start later
     for i, p in enumerate(ctl):
         params[f"CTL_{i}"] = p
@@ -835,6 +840,7 @@ def sbpl_profile(st, workdir: str, home: str | None = None, uid: int | None = No
         ";; 4. other sessions' terminals and apps (launchd jobs are the Agent's own to manage, F14)",
         "(deny appleevent-send)",
         "(deny lsopen)",
+        '(deny process-exec (subpath (param "EGO_APP")))',
         '(deny network-outbound (remote unix-socket (subpath (param "TMUX"))))',
         f'(deny network-outbound (remote unix-socket (regex #"{_LAUNCHD_SOCKETS}")))',
         ";; 5. other programs' control sockets (herdr, screen, zellij, wezterm, emacs, nvim, Jupyter; the container engines",

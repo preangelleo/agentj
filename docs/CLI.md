@@ -1144,7 +1144,7 @@ agentj browser --help
 
 ```text
 usage: agentj browser [-h] [--json]
-                      {setup,status,enable,disable,endpoint,sandbox-fix,run,adopt,open,check,login,telegram-qr,sites} ...
+                      {setup,status,enable,disable,endpoint,sandbox-fix,run,adopt,connect,open,check,login,telegram-qr,sites} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -1155,7 +1155,7 @@ usage: agentj browser [-h] [--json]
 ### agentj browser adopt
 
 ```text
-登记你已有的本机 CDP 浏览器（只限 127.0.0.1，主人在手机确认）/ use a browser you already run
+登记 Linux 本机 CDP 浏览器（只限 127.0.0.1，主人在手机确认）/ register a Linux loopback CDP browser
 ```
 
 ```bash
@@ -1195,6 +1195,25 @@ usage: agentj browser check [-h] [--site SITE] [--if-stale] [--json]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--site` | `null` | false | — | `repeatable; default all` |
 | `--if-stale` | `false` | false | — | `only sites not confirmed in the last 15 minutes` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser connect
+
+```text
+request the Agent J profile in Ego Lite
+```
+
+```bash
+agentj browser connect --help
+```
+
+```text
+usage: agentj browser connect [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj browser disable
@@ -1238,7 +1257,7 @@ usage: agentj browser enable [-h] [--json]
 ### agentj browser endpoint
 
 ```text
-本机 CDP 地址（只在本机用）/ local CDP endpoint (the Agent J host only)
+local CDP endpoint on Linux
 ```
 
 ```bash
@@ -1317,7 +1336,7 @@ usage: agentj browser run [-h] [--json]
 ### agentj browser sandbox-fix
 
 ```text
-AppArmor profile via the phone card
+guidance for using an OS-installed browser
 ```
 
 ```bash
@@ -1336,7 +1355,7 @@ usage: agentj browser sandbox-fix [-h] [--json]
 ### agentj browser setup
 
 ```text
-下载校验并启动（幂等）/ download, verify, start (idempotent)
+set up this computer's dedicated browser
 ```
 
 ```bash
@@ -1351,7 +1370,7 @@ usage: agentj browser setup [-h] [--json] [--own]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
-| `--own` | `false` | false | — | `install Agent J's own even when one is already running here` |
+| `--own` | `false` | false | — | `set up a dedicated Linux browser` |
 
 ### agentj browser sites
 
@@ -1458,7 +1477,7 @@ usage: agentj browser status [-h] [--json] [--registry]
 ### agentj browser telegram-qr
 
 ```text
-off（打开只能由主人在手机卡片上点）
+compatibility: Telegram sends text reminders only
 ```
 
 ```bash
@@ -6157,7 +6176,7 @@ usage: agentj plaza verify [-h] [--harness {claude_code,codex,opencode}] name
 ### agentj preflight
 
 ```text
-WSL browser libraries and download preflight
+Windows Ego Lite and download reachability from WSL
 ```
 
 ```bash
@@ -9562,7 +9581,7 @@ agentj browser --help
 
 ```text
 usage: agentj browser [-h] [--json]
-                      {setup,status,enable,disable,endpoint,sandbox-fix,run,adopt,open,check,login,telegram-qr,sites} ...
+                      {setup,status,enable,disable,endpoint,sandbox-fix,run,adopt,connect,open,check,login,telegram-qr,sites} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -9573,7 +9592,7 @@ usage: agentj browser [-h] [--json]
 ### agentj browser adopt
 
 ```text
-登记你已有的本机 CDP 浏览器（只限 127.0.0.1，主人在手机确认）/ use a browser you already run
+登记 Linux 本机 CDP 浏览器（只限 127.0.0.1，主人在手机确认）/ register a Linux loopback CDP browser
 ```
 
 ```bash
@@ -9613,6 +9632,25 @@ usage: agentj browser check [-h] [--site SITE] [--if-stale] [--json]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--site` | `null` | false | — | `repeatable; default all` |
 | `--if-stale` | `false` | false | — | `only sites not confirmed in the last 15 minutes` |
+| `--json` | `false` | false | — | `` |
+
+### agentj browser connect
+
+```text
+申请使用 Ego Lite 的 Agent J 浏览器资料
+```
+
+```bash
+agentj browser connect --help
+```
+
+```text
+usage: agentj browser connect [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj browser disable
@@ -9656,7 +9694,7 @@ usage: agentj browser enable [-h] [--json]
 ### agentj browser endpoint
 
 ```text
-本机 CDP 地址（只在本机用）/ local CDP endpoint (the Agent J host only)
+Linux 本机 CDP 地址
 ```
 
 ```bash
@@ -9735,7 +9773,7 @@ usage: agentj browser run [-h] [--json]
 ### agentj browser sandbox-fix
 
 ```text
-Ubuntu 23.10+ 沙箱受限时，经手机密码卡安装 AppArmor 规则
+系统浏览器安装提示
 ```
 
 ```bash
@@ -9754,7 +9792,7 @@ usage: agentj browser sandbox-fix [-h] [--json]
 ### agentj browser setup
 
 ```text
-下载校验并启动（幂等）/ download, verify, start (idempotent)
+准备 Agent J 主机的专用浏览器
 ```
 
 ```bash
@@ -9769,7 +9807,7 @@ usage: agentj browser setup [-h] [--json] [--own]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
-| `--own` | `false` | false | — | `已有本机浏览器时仍另装专用的` |
+| `--own` | `false` | false | — | `Linux 上另开专用浏览器` |
 
 ### agentj browser sites
 
@@ -9876,7 +9914,7 @@ usage: agentj browser status [-h] [--json] [--registry]
 ### agentj browser telegram-qr
 
 ```text
-登录二维码是否也发 Telegram：status
+旧命令兼容：Telegram 只发文字提醒
 ```
 
 ```bash
@@ -14575,7 +14613,7 @@ usage: agentj plaza verify [-h] [--harness {claude_code,codex,opencode}] name
 ### agentj preflight
 
 ```text
-WSL 浏览器系统库与下载预检
+WSL 上检查 Windows Ego Lite 和下载地址
 ```
 
 ```bash

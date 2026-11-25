@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "comment": "P114 (ADR-A194 §4): signed site templates. A probe classifies only the final URL of a fixed page (signed in / sign-in page / unknown); it never reads page content, cookies or storage. in_url and out_url are regular expressions on the URL; out_dom lists selectors whose mere presence means a sign-in form is on screen (a site that keeps the app URL while showing it); only presence is read, never text. Anything else is unknown, never a guess. landing_url (optional) lists pages a finished sign-in lands on in the login tab: they only trigger the trusted check (a fresh tab on check_url decides), never mean signed in by themselves (0.26.9 #470).",
-  "adapter_version": 1,
+  "adapter_version": 2,
   "templates": {
     "google": {
       "title": {

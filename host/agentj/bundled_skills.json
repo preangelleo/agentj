@@ -13,6 +13,7 @@
     "agentj-commands",
     "agentj-config",
     "agentj-contacts",
+    "agentj-ego-lite",
     "agentj-first-run",
     "agentj-friends",
     "agentj-goal",
@@ -78,6 +79,9 @@
       "SKILL.md"
     ],
     "agentj-contacts": [
+      "SKILL.md"
+    ],
+    "agentj-ego-lite": [
       "SKILL.md"
     ],
     "agentj-first-run": [

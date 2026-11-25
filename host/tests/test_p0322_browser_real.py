@@ -96,7 +96,13 @@ class RealParity(unittest.IsolatedAsyncioTestCase):
         self.site=Site();self.addCleanup(self.site.close)
         templates={**bs.templates(),'fixture':self.site.template()}
         p=patch.object(bs,'templates',return_value=templates);p.start();self.addCleanup(p.stop)
-        p=patch.object(browser,'installed',return_value={'version':'system-test','path':chrome_path()});p.start();self.addCleanup(p.stop)
+        exe = chrome_path()
+        banner = subprocess.check_output([exe, "--version"], text=True, timeout=10)
+        # CI may use Chrome for Testing. Installed is mocked only for this real-browser fixture.
+        self.fixture_version = re.search(r"\b[0-9]+(?:\.[0-9]+){3}\b", banner)[0]
+        p = patch.object(browser, "installed", return_value={"version": self.fixture_version, "path": exe})
+        p.start()
+        self.addCleanup(p.stop)
         browser.ensure_dir(self.st);bs.add(self.st,'fixture')
         self.procs=[];self.cards=[]
         self.addAsyncCleanup(self.finish)
@@ -194,7 +200,7 @@ from agentj import browser
 from agentj.state import State
 from pathlib import Path
 st=State(Path(sys.argv[1]))
-with patch.object(browser,'installed',return_value={'version':'system-test','path':sys.argv[2]}), patch.object(browser,'_manager_has_display',return_value=False):
+with patch.object(browser,'installed',return_value={'version':sys.argv[3],'path':sys.argv[2]}), patch.object(browser,'_manager_has_display',return_value=False):
     raise SystemExit(browser.run(st))
 """
         for close in ('clean','crash'):
@@ -204,7 +210,7 @@ with patch.object(browser,'installed',return_value={'version':'system-test','pat
                 # the real supervisor process must import the same safety guard.
                 env['PYTHONPATH']=os.pathsep.join([str(Path(__file__).resolve().parent),
                     str(Path(__file__).resolve().parents[1]),env.get('PYTHONPATH','')])
-                supervisor=subprocess.Popen([sys.executable,'-c',script,str(self.st.root),chrome_path()],env=env,
+                supervisor=subprocess.Popen([sys.executable,'-c',script,str(self.st.root),chrome_path(),self.fixture_version],env=env,
                     stdout=subprocess.PIPE,stderr=subprocess.PIPE)
                 rt=None
                 try:
