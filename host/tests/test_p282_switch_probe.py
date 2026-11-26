@@ -141,10 +141,10 @@ class Login(unittest.TestCase):
         d = harness.probe(only=("codex",), timeout=10)
         self.assertEqual(next(h for h in d["harnesses"] if h["name"] == "codex")["probe_reason"], "not_logged_in")
 
-    def test_a_login_the_service_sees_keeps_the_native_code(self):
+    def test_a_login_hint_does_not_override_explicit_sign_in_failure(self):
         os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = "p282-canary"
         d = harness.probe(only=("claude",), timeout=10)
-        self.assertEqual(next(h for h in d["harnesses"] if h["name"] == "claude")["probe_reason"], "native_failed")
+        self.assertEqual(next(h for h in d["harnesses"] if h["name"] == "claude")["probe_reason"], "not_logged_in")
         self.assertNotIn("p282-canary", json.dumps(d))
 
     def test_claude_lookup_order_sources(self):

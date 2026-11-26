@@ -303,6 +303,7 @@ class ClaudeAdapter(unittest.TestCase):
         host = SimpleNamespace(turn_use=Mock(), agent_phase=Mock(), agent_text=Mock(), agent_status=Mock(),
                                st=SimpleNamespace(set_agent_session=Mock(), agent_session=lambda k: None, log=Mock()))
         a = ClaudeAgent.__new__(ClaudeAgent)
+        a.cur_send = None
         a.host, a.cfg, a.kind, a.capture, a.replay, a.turn_done, a.halting = host, {"dir": "/tmp"}, "claude", None, False, None, False
         a.last_result, a.init, a.status = None, {}, "working"
         a.cur_model = lambda: "claude-opus-5-5"

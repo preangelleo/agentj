@@ -29,21 +29,22 @@ class Result(unittest.TestCase):
             fake.behaviour['claude'] = {'answers': False}
             original = fake.__call__
             seen = []
+            job = 'p529-rollback'
             def ctl(req):
-                if req.get('cmd') == 'send' and '已切回' in req.get('text', ''):
+                if req.get('cmd') == 'switch_result':
+                    self.assertEqual(req['job'], job)
                     seen.append(sw.read_receipt(st))
                 if req.get('cmd') == 'harness_hello' and req.get('outcome') == 'rolled_back':
                     self.assertEqual(sw.read_receipt(st)['status'], 'switching')
                     self.assertEqual(st.agent_config()['kind'], 'codex')
                 return original(req)
             clock = Clock()
-            rc = sw.worker(st, 'claude', probe=fake_probe(), ctl=ctl, restart=fake.restart,
+            rc = sw.worker(st, 'claude', job=job, probe=fake_probe(), ctl=ctl, restart=fake.restart,
                            status=UP, ready=lambda *a, **k: 'idle', sleep=clock.sleep, clock=clock)
             self.assertEqual(rc, 2)
             self.assertEqual(st.agent_config()['kind'], 'codex')
-            self.assertTrue(seen)
-            self.assertEqual(seen[0]['reason'], 'no_reply')
-            self.assertTrue(any('no_reply' == r.get('reason') for r in seen))
+            self.assertEqual(len(seen), 1)
+            self.assertEqual((seen[0]['job'], seen[0]['status'], seen[0]['reason']), (job, 'rolled_back', 'no_reply'))
 
     def test_result_exit_codes(self):
         for status, code in [('ok', 0), ('probe_ok', 0), ('rolled_back', 3), ('failed', 3), ('waiting', 4), ('switching', 4)]:

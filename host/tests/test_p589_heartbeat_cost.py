@@ -146,6 +146,7 @@ class Cost(Decide):
     def test_shared_claude_transcript_anchor_and_history_replay(self):
         from agentj.shared import SharedClaudeAgent
         a = SharedClaudeAgent.__new__(SharedClaudeAgent)
+        a.cur_send = None
         a.host, a.session, a.offset, a.seen = self.host, None, 0, set()
         a.transcript = self.st.root / 'transcript.jsonl'
         a.discard_line, a.ended_at = False, None

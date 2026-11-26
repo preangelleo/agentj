@@ -16,6 +16,7 @@ import time
 from .store import BotError
 
 MAX_BYTES=2*1024*1024
+ERROR_TAIL=65536
 
 class NativeNotStarted(BotError):
     """Trusted local evidence that no child process was started."""
@@ -86,35 +87,60 @@ def command(p,root,env,selected=None):
         return [selected,'run','--pure','--agent','agentj-bot','--format','json',*model]
     raise BotError('harness_unavailable')
 
-def run(cmd,prompt,env,cwd,timeout=90,why=None):
-    """Bound output/time and terminate only this invocation's process group. P395: `why` (a list, the switch gate's probe
-    only — never the visitor-facing bots) receives the failed run's stdout so the caller can show OpenCode's own error line."""
+def run(cmd,prompt,env,cwd,timeout=90,why=None,*,capture_stderr=False):
+    """Bound output/time and terminate only this invocation's process group.
+
+    With `why`, keep the failed probe's stdout tail in memory for its caller.
+    The Claude switch probe also opts in to a bounded stderr tail.
+    """
     proc=None
     try:
         try:
-            proc=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,env=env,cwd=cwd,start_new_session=True)
+            proc=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE if why is not None and capture_stderr else subprocess.DEVNULL,
+                                  env=env,cwd=cwd,start_new_session=True)
         except FileNotFoundError:
             raise NativeNotStarted('native_executable_missing') from None
         except PermissionError:
             raise NativeNotStarted('native_executable_not_executable') from None
         except OSError:
             raise NativeNotStarted('native_spawn_failed') from None
-        proc.stdin.write(prompt.encode());proc.stdin.close()
-        out=bytearray();deadline=time.monotonic()+timeout
+        try:
+            proc.stdin.write(prompt.encode())
+            proc.stdin.close()
+        except BrokenPipeError:
+            pass  # A CLI can reject its arguments before reading the greeting.
+        out, err = bytearray(), bytearray()
+        deadline = time.monotonic() + timeout
         with selectors.DefaultSelector() as sel:
-            sel.register(proc.stdout,selectors.EVENT_READ)
+            sel.register(proc.stdout, selectors.EVENT_READ, out)
+            if proc.stderr:
+                sel.register(proc.stderr, selectors.EVENT_READ, err)
             while sel.get_map():
-                if time.monotonic()>=deadline:raise BotError('native_timeout')
-                for key,_ in sel.select(min(1,max(0,deadline-time.monotonic()))):
-                    raw=os.read(key.fd,65536)
-                    if not raw:sel.unregister(key.fileobj);continue
-                    out.extend(raw)
-                    if len(out)>MAX_BYTES:raise BotError('native_output_limit')
-        if proc.wait(timeout=max(.1,deadline-time.monotonic())):
-            if why is not None:why.append(bytes(out[-65536:]).decode('utf-8','replace'))
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise BotError('native_timeout')
+                for key, _ in sel.select(min(1, remaining)):
+                    raw = os.read(key.fd, ERROR_TAIL)
+                    if not raw:
+                        sel.unregister(key.fileobj)
+                        continue
+                    key.data.extend(raw)
+                    if key.data is err:
+                        del err[:-ERROR_TAIL]
+                    elif len(out) > MAX_BYTES:
+                        raise BotError('native_output_limit')
+        failed = proc.wait(timeout=max(.1, deadline - time.monotonic()))
+        if why is not None and (failed or err):
+            why.append(out[-ERROR_TAIL:].decode('utf-8', 'replace'))
+            if capture_stderr:
+                why.append(err.decode('utf-8', 'replace'))
+        if failed:
             # P298: OpenCode's free tier refuses this tool-free agent as "not OpenCode's own client" (403 FreeTierError)
             raise BotError('free_tier' if b'FreeTierError' in out else 'native_failed')
         return out.decode('utf-8')
+    except subprocess.TimeoutExpired:
+        raise BotError('native_timeout') from None
     except BotError:raise
     except Exception:raise BotError('native_failed') from None
     finally:
@@ -124,12 +150,14 @@ def run(cmd,prompt,env,cwd,timeout=90,why=None):
                 try:proc.wait(timeout=2)
                 except subprocess.TimeoutExpired:os.killpg(proc.pid,signal.SIGKILL);proc.wait()
             if proc.stdout:proc.stdout.close()
+            if proc.stderr:proc.stderr.close()
 
 def parse(kind,raw):
     from .provider import _usage
     if kind in ('claude','gemini'):
         obj=json.loads(raw)
-        if obj.get('is_error') or obj.get('error'):raise BotError('native_failed')
+        if obj.get('is_error') or obj.get('error') or (kind == 'claude' and obj.get('subtype') not in ('success', None)):
+            raise BotError('native_failed')
         text=obj.get('result',obj.get('response',''))
         usage=_usage(obj)
         if kind=='gemini':

@@ -129,6 +129,20 @@ class Storage(Base):
         self.assertNotIn(OTHER, (pathlib.Path(self.root) / accounts.FILE).read_text())
         self.assertEqual(set(accounts.view(self.root)["claude"]["items"][0]), {"id", "name", "method", "added", "quota"})
 
+    def test_claude_long_lived_token_prefixes(self):
+        for invalid in (GOOD.replace("oat01", "api03"), "arbitrary text"):
+            with self.assertRaisesRegex(accounts.AccountError, "^bad_token$"):
+                accounts.add_claude_token(self.root, "work", invalid.encode())
+        self.assertFalse((pathlib.Path(self.root) / accounts.FILE).exists())
+
+        oat02 = GOOD.replace("oat01", "oat02")
+        self.set_service_token(oat02)
+        for name, token in (("old", GOOD), ("new", OTHER.replace("oat01", "oat02"))):
+            item = accounts.add_claude_token(self.root, name, token.encode())
+            self.assertEqual((self.slot_dir("claude") / f"{item['id']}.token").read_bytes(), token.encode())
+        active = accounts.load(self.root)["harness"]["claude"]["active"]
+        self.assertEqual((self.slot_dir("claude") / f"{active}.token").read_bytes(), oat02.encode())
+
     def test_claude_login_migration(self):
         accounts.add_claude_token(self.root, "work", bytearray(OTHER.encode()), lang="en")
         d = accounts.load(self.root)["harness"]["claude"]

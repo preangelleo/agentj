@@ -125,6 +125,7 @@ PLAIN = {
  'binary_changed': ('检查过的 OpenCode 程序发生了变化。','The checked OpenCode program changed.'),
  'fence_unavailable': ('主机暂时无法隔离模型检查所需的运行环境。','The host could not isolate the environment needed for the model check.'),
  'not_logged_in': ('{x} 的后台登录不可用。','The background service has no usable sign-in for {x}.'),
+ 'auth': ('{x} 的账号或密钥未通过服务验证。','The service rejected the current {x} credentials.'),
  'ambiguous_install': ('设备上有多份 {x}，未能选定可用程序。','Agent J could not choose a usable {x} installation.'),
  'no_service': ('掌枢后台服务未运行，无法完成切换所需的重启。','The Agent J service is unavailable for the required restart.'),
  'rollback_failed': ('原配置已恢复，但原来的 AI 服务尚未恢复。','The previous configuration was restored, but the previous AI has not recovered.'),
@@ -150,6 +151,8 @@ ACTIONS = [
  (('first_device','first_pair'), '在掌枢完成手机配对，再从配对手机选择目标模型。','Pair the phone in Agent J, then select the model on that phone.'),
  (('rate_limited','busy','too_soon','start_timeout','native_timeout','timeout','not_idle','probe_pending'),
   '稍后在当前对话说「检查切换结果」；若仍未切换，再请求重试。','Ask for the switch result in this chat shortly. Retry if the switch has not completed.'),
+ (('plan',), '核对账号的套餐和组织权限，恢复后回到当前对话再请求切换。','Check your account plan and organization permissions, then request the switch again in this chat.'),
+ (('native_cli_unsupported',), '在 Agent J 主机更新 Claude Code 后再请求切换。','Update Claude Code on your Agent J host, then request the switch again.'),
  (('quota_exhausted','not_supported','bad_target'), '在当前对话选择另一款可用模型或 Agent。','Select another available model or agent in this chat.'),
  (('network','not_running','no_service','restart_failed','rollback_failed'), '在手机「紧急修复」检查主机连接；恢复后再请求切换。','Check the host connection in Emergency repair on your phone. Request the switch again once connected.'),
  (('ambiguous_install','native_executable_selection_failed','native_executable_not_executable','native_spawn_failed','native_executable_missing','not_installed','version_unavailable','no_trusted_binary','unsupported_version','binary_changed'),
@@ -164,7 +167,7 @@ DETAIL = {
  'starting':('会话还在启动，正在加载 MCP 或插件。','The session is still starting and loading MCP servers or plugins.'),
  'prompt':('启动时停在交互确认提示。','Startup is waiting for an interactive prompt.'),
  'approval':('正在等待手机批准卡，请先处理卡片。','A phone approval is pending. Respond to that card first.'),
- 'failed':('会话启动失败。','Session startup failed.'),
+ 'failed':('会话未能正常回复。','The session did not complete its reply.'),
  'turn':('会话已打开但尚未回答，请检查网络或代理。','The session opened without a reply. Check the network or proxy.'),
  'idle':('会话没有接到自我介绍请求。','The session did not accept its introduction request.'),
  'empty':('会话已结束，但没有返回文字。','The session ended without returning text.'),
@@ -175,7 +178,9 @@ DETAIL = {
 def reason(code, target, lang, reasons, labels, detail=None, err=None, errors=None):
     en = lang == 'en'
     default = reasons['call_failed']
-    if code in PLAIN:
+    if code == 'model_missing' and target == 'claude':
+        phrase = ('{x} 找不到所选模型，或当前账号无权使用。', '{x} could not find the selected model or this account cannot access it.')[en]
+    elif code in PLAIN:
         phrase = PLAIN[code][en]
     else:
         phrase = reasons.get(code, default)
@@ -186,5 +191,15 @@ def reason(code, target, lang, reasons, labels, detail=None, err=None, errors=No
         text += ' · ' + (('sign-in expired' if en else '登录失效') if err == 'auth' else errors[err])
     if err == 'auth':
         code = 'not_logged_in'
-    action = next(((zh,eng)[en] for codes,zh,eng in ACTIONS if code in codes),DEFAULT_ACTION[en])
+    if target == 'claude' and code == 'not_logged_in':
+        action = ('在已配对的手机上打开「设置 → 紧急修复 → AI 登录救援」，选 Claude Code 重新登录，再回到对话请它切换。',
+                  'On your paired phone, open Settings → Emergency repair → AI login rescue, sign in to Claude Code, then request the switch in this chat.')[en]
+    elif target == 'claude' and code == 'auth':
+        action = ('用订阅登录时，到手机「设置 → 紧急修复 → AI 登录救援」重登。用自配的服务商时，在「模型和 API Key」核对该服务商。',
+                  'For a subscription sign-in, use Settings → Emergency repair → AI login rescue. For a custom provider, check it in Models & API keys.')[en]
+    elif target == 'claude' and code == 'network':
+        action = ('检查 Agent J 主机访问 Claude 服务的网络和代理，恢复后再请求切换。',
+                  'Check the network and proxy from your Agent J host to Claude, then request the switch again.')[en]
+    else:
+        action = next(((zh,eng)[en] for codes,zh,eng in ACTIONS if code in codes),DEFAULT_ACTION[en])
     return text.rstrip('。.') + ('. ' if en else '。') + action

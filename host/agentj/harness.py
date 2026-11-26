@@ -572,10 +572,17 @@ def probe(only: tuple | list | None = None, model: str | None = None, timeout: f
                     cmd = native.command(cfg, root, env, selected=h["executable"])
                     why, raw = [], None
                     try:
-                        raw = native.run(cmd, "Hello. Reply with a short greeting only.", env, root, timeout=timeout, why=why)
+                        raw = native.run(cmd, "Hello. Reply with a short greeting only.", env, root, timeout=timeout, why=why,
+                                         capture_stderr=h["name"] == "claude")
                         reply, _ = native.parse(h["name"], raw)
                     except BotError as e:      # P298: refused as "not OpenCode's own client" → the formal chat path
                         if h["name"] != "opencode" or not e.args or e.args[0] != "free_tier":
+                            if h["name"] == "claude" and e.args and e.args[0] == "native_failed":
+                                from . import claude_auth
+                                failure = claude_auth.probe_failure(raw or (why[0] if why else ""), why[1] if len(why) > 1 else "")
+                                if failure:
+                                    raise BotError(failure) from None
+                                raise
                             line = _v1_line(why[0] if why else "", env) if h["name"] == "opencode" else None
                             if line:
                                 h["probe_error"] = line       # P395: OpenCode's own error, one redacted line

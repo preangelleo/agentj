@@ -42,6 +42,8 @@ REASON = {
            "native_timeout": "{x} 60 秒内没有回答，具体原因未确认",
            "native_failed": "{x} 没能完成一次调用，具体原因未确认", "call_failed": "{x} 没能完成一次调用，具体原因未确认",
            "network": "{x} 的网络连接失败", "region": "{x} 不支持当前地区",
+           "plan": "当前账号的套餐或组织权限不允许使用 {x}",
+           "native_cli_unsupported": "{x} 的程序不支持 Agent J 用于安全试调用的参数",
            "auth": "{x} 的登录或密钥验证失败", "access": "{x} 拒绝访问，尚未确认是地区还是账户权限问题",
            "empty_probe_reply": "{x} 回了空话", "provider_unavailable": "{x} 配置的模型服务不可用",
            "model_missing": "{x} 找不到所选的模型（服务商没配置，或模型名写错）——不是登录或 Key 的问题。下一步：在遥控器「模型和 API Key」换一个能用的模型再切",
@@ -67,6 +69,8 @@ REASON = {
            "native_failed": "{x} could not complete a call; the cause is unconfirmed",
            "call_failed": "{x} could not complete a call; the cause is unconfirmed",
            "network": "{x} could not connect to the network", "region": "{x} does not support this region",
+           "plan": "the current plan or organization does not allow {x}",
+           "native_cli_unsupported": "this {x} installation does not support the options Agent J uses for a safe check",
            "auth": "{x} sign-in or key verification failed", "access": "{x} denied access; region or account permissions are unconfirmed",
            "empty_probe_reply": "{x} replied with nothing", "provider_unavailable": "{x}'s configured model service is unavailable",
            "model_missing": "{x} cannot find the selected model (its provider is not set up, or the model name is wrong) — not a "
@@ -171,9 +175,9 @@ QUOTA_WHERE = {"kimi": {"zh": "（Kimi 本月额度：用量和套餐看 Kimi Co
 
 
 LOGIN_HINT = {
-    "zh": {"claude": "后台服务找不到 {x} 的登录（登录多半只放在你终端的环境变量里，比如 ~/.zshenv 的 CLAUDE_CODE_OAUTH_TOKEN，"
-                     "后台服务读不到）。办法二选一：在终端运行 claude，输入 /login 登录一次（登录会存进{store}，后台也能用）；"
-                     "或在能用 claude 的终端里运行 agentj service import-key CLAUDE_CODE_OAUTH_TOKEN，再 agentj service restart",
+    "zh": {"claude": "后台服务没有可用的 {x} 登录。先在手机「设置 → 紧急修复 → AI 登录救援」重新登录。"
+                     "也可以在 Agent J 主机运行 claude，输入 /login 一次（登录会存进{store}）；"
+                     "如果登录只在终端的环境变量中，可运行 agentj service import-key CLAUDE_CODE_OAUTH_TOKEN，再 agentj service restart",
            "codex": "后台服务找不到 {x} 的登录。在终端运行 codex login 登录一次（存进 ~/.codex/auth.json，后台也能用）；"
                     "用 API key 的话在有这个 key 的终端里运行 agentj service import-key OPENAI_API_KEY，再 agentj service restart",
 
@@ -190,10 +194,9 @@ LOGIN_HINT = {
 
            "core": "{x} 没有模型 key。让 Agent 发手机密钥卡存一把模型 key（火山方舟 ARK_API_KEY；海外 BytePlus BYTEPLUS_API_KEY），"
                    "再 agentj service restart"},
-    "en": {"claude": "the background service finds no {x} login (it probably lives only in your terminal's environment, e.g. "
-                     "CLAUDE_CODE_OAUTH_TOKEN in ~/.zshenv, which the service cannot read). Either run claude in a terminal and "
-                     "/login once (the login is stored in {store}, which the service can use too), or in a terminal where claude "
-                     "works run agentj service import-key CLAUDE_CODE_OAUTH_TOKEN, then agentj service restart",
+    "en": {"claude": "the background service has no usable {x} sign-in. Use Settings → Emergency repair → AI login rescue "
+                     "on your phone, or run claude and /login on your Agent J host (the login is stored in {store}). If your login "
+                     "only lives in a terminal variable, run agentj service import-key CLAUDE_CODE_OAUTH_TOKEN, then agentj service restart",
            "codex": "the background service finds no {x} login. Run codex login in a terminal once (stored in ~/.codex/auth.json, "
                     "which the service can use too); with an API key run agentj service import-key OPENAI_API_KEY in a terminal "
                     "that has it, then agentj service restart",
@@ -287,9 +290,10 @@ class HelloSend(Send):
     """The host's 「自报家门」 / 「切回来了」 turn: the Agent's ordinary queue, outside any phone page (turn 0, like the
     onboarding welcome), so the reply lands as the Agent's own message. Provenance: the owner's own host, no person."""
 
-    def __init__(self, text: str):
+    def __init__(self, text: str, issued_at: float | None = None):
         from .provenance import system
         super().__init__("harness-switch", "hello", 0, text=text, by="Agent J", source=system())
+        self.issued_at = issued_at
 
 
 class HandoffSend(Send):
@@ -1100,7 +1104,8 @@ def _hello(ctl, req: dict, sleep, clock, wait: float = HELLO_WAIT, pending=None,
     r = ctl({"cmd": "harness_hello", **req})
     if not r or r.get("ok") is not True or not isinstance(r.get("at"), (int, float)):
         return {"reason": "hello_refused"}
-    t0, start = r["at"], clock()
+    issued = t0 = r["at"]
+    start = clock()
     end, cap = start + wait, start + HELLO_MAX
     said, phase, err, turn_seen = False, None, None, False
     lost_at, card, deferred, anchored = None, False, False, False
@@ -1128,7 +1133,17 @@ def _hello(ctl, req: dict, sleep, clock, wait: float = HELLO_WAIT, pending=None,
             phase = ph
         if isinstance(er, str) and er in ERR["zh"]:
             err = er
-        if s.get("agent_hello_failed") or ph == "failed" or s.get("agent_turn_failed") or s.get("agent_status") in ("down", "stopped", "failed") or er == "auth":
+        native = s.get("agent_hello_error")
+        if isinstance(native, dict) and native.get("at") == issued:
+            from .claude_auth import SWITCH_FAILURES
+            code = native.get("reason")
+            if isinstance(code, str) and code in SWITCH_FAILURES:
+                return {"reason": code, "waited": int(clock() - start)}
+            if code == "no_reply":
+                return {"reason": "no_reply", "detail": "failed", "waited": int(clock() - start)}
+        turn_at = s.get("agent_turn_start_at") or 0
+        turn_failed = s.get("agent_turn_failed") and (not turn_at or turn_at >= t0)
+        if s.get("agent_hello_failed") or ph == "failed" or turn_failed or s.get("agent_status") in ("down", "stopped", "failed") or er == "auth":
             return {"reason": "no_reply", "detail": "failed", "waited": int(clock() - start), **({"err": err} if err else {})}
         if s.get("agent_hello_deferred") is True or (deferred and (s.get("agent_hello_at") or 0) <= t0):
             deferred = True

@@ -44,6 +44,30 @@ function recoverRunning() {
 }
 let root = null, timer = 0, busy = false, shownId = null, denyArmed = 0;
 const MAX_FIELD = 8192;
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+let inputScope = 0;
+
+function secretInput(input) {
+  Object.assign(input, { type: 'password', autocomplete: 'off', spellcheck: false });
+  for (const [k, v] of [['autocapitalize', 'off'], ['autocorrect', 'off'], ['enterkeyhint', 'done']]) input.setAttribute(k, v);
+  input.addEventListener('input', () => { $('elev-empty').hidden = true; paintButtons(); });
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || e.isComposing) return;
+    e.preventDefault(); e.stopPropagation();
+    decide(true);
+  });
+  return input;
+}
+
+function paintExtraFields(names) {
+  names?.slice(1).forEach((name, i) => {
+    const label = mk('label', 'elev-label', t('elev.secret.label', { name }), 'aj-auth-card', 'dialog');
+    const input = secretInput(mk('input', 'elev-input', undefined, 'aj-auth-card', 'dialog'));
+    input.id = 'elev-input-' + (i + 2);
+    label.htmlFor = input.id;
+    $('elev-empty').before(label, input);
+  });
+}
 
 function build() {
   if (root) return root;
@@ -59,9 +83,7 @@ function build() {
   const form = mk('form', 'box');
   form.id = 'elev-form'; form.autocomplete = 'off'; form.noValidate = true;
   const node = (tag, id, cls) => { const n = mk(tag, cls, undefined, cls?.split(/\s+/).includes('aj-action') ? 'aj-action' : 'aj-auth-card', 'dialog'); n.id = id; return n; };
-  const input = node('input', 'elev-input', 'elev-input');
-  Object.assign(input, { type: 'password', autocomplete: 'off', spellcheck: false });
-  for (const [k, v] of [['autocapitalize', 'off'], ['autocorrect', 'off'], ['enterkeyhint', 'done']]) input.setAttribute(k, v);
+  const input = secretInput(node('input', 'elev-input', 'elev-input'));
   const label = node('label', 'elev-label', 'elev-label');
   label.htmlFor = 'elev-input';
   const bad = node('p', 'elev-bad', 'elev-bad');
@@ -102,20 +124,25 @@ function build() {
   hide.addEventListener('click', () => collapse());
   root.querySelector('#elev-vault').addEventListener('click', () => decide(true, 'vault'));   // P414
   root.querySelector('#elev-save-on').addEventListener('change', (e) => { $('elev-note').textContent = t(e.target.checked ? 'p414.e.saveNote' : 'elev.sudo.note'); });
-  root.querySelector('#elev-input').addEventListener('input', () => { $('elev-empty').hidden = true; paintButtons(); });
   onLang(() => paintErr(cards.get(shownId)));
-  root.querySelector('#elev-input').addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' || e.isComposing) return;
-    e.preventDefault(); e.stopPropagation();
-    decide(true);                                  // Enter = submit, never decline (an empty field says so)
-  });
   onLang(() => { shownId = null; render(); });
   return root;
 }
 const $ = (id) => root.querySelector('#' + id);
-// Clear a sensitive field on disconnect without adding an editor or changing any card.
-export function forgetInput() { if(root) $('elev-input').value=''; }
-
+const inputs = () => [...root.querySelectorAll('.elev-input')];
+const wipeFields = (fields) => fields.forEach(input => { input.value = ''; });
+// Also invalidate any submit that is still waiting to read the form.
+export function forgetInput() {
+  inputScope++;
+  if (root) wipeFields(inputs());
+}
+function resetFields() {
+  forgetInput();
+  for (const extra of inputs().slice(1)) {
+    extra.previousElementSibling.remove();
+    extra.remove();
+  }
+}
 
 const str = (v, n) => (typeof v === 'string' && v.length <= n ? v : null);
 /** A card from the host (§11 `elev`); a re-sent one (wrong password → new nonce and key) replaces the old. */
@@ -152,7 +179,15 @@ export function add(m) {
     if (!c.dev || !c.cred || c.paired === null || !c.flags || c.name === null || !c.v || !c.v.has) return;
   } else {
     c.buttonOnly = m.button_only === true && m.passkey_required === false;
-    c.name = str(m.name, 128); c.purpose = str(m.purpose, m.name === 'AGENTJ_MAIL_PASSWORD' ? 2000 : 300); c.dest = str(m.dest, 1100); c.verify = str(m.verify ?? '', 800);
+    if (Object.hasOwn(m, 'names')) {
+      const names = m.names;
+      // The existing signed name binds both the spelling and order of the displayed fields.
+      if (!Array.isArray(names) || names.length < 2 || names.length > 8 ||
+          names.some(n => typeof n !== 'string' || !ENV_NAME.test(n)) ||
+          new Set(names).size !== names.length || names.join(', ') !== m.name || m.auth || m.verify) return;
+      c.names = names.slice();
+    }
+    c.name = c.names ? m.name : str(m.name, 128); c.purpose = str(m.purpose, m.name === 'AGENTJ_MAIL_PASSWORD' ? 2000 : 300); c.dest = str(m.dest, 1100); c.verify = str(m.verify ?? '', 800);
     if (!c.name || c.purpose === null || c.dest === null || c.verify === null) return;
     if (m.auth) { c.auth = authOf(m.auth); if (!c.auth) return; }
   }
@@ -296,7 +331,7 @@ function paintErr(c) {
  *  refused in silence. The chat keeps the line the Agent J host writes (「这张卡已过期，请让 Agent 重发」); the notice says it now. */
 function expire(c) {
   if (!c || !cards.has(c.id) || c.running) return;
-  if (root && shownId === c.id) $('elev-input').value = '';
+  if (root && shownId === c.id) forgetInput();
   done({ id: c.id, result: 'timeout' });
   notify({ kind: 'warn', text: t('p566.expired'), ms: 6000, shape: 'rect' });
 }
@@ -307,7 +342,7 @@ export function clear() {
   for(const id of cards.keys())forgetSpecial(id);
   completed.clear(); cards.clear(); shownId = null; busy = false; finished = null; panelOpen = false;
   if (runEl) paintRun();
-  if (root) { $('elev-input').value = ''; root.hidden = true; }
+  if (root) { resetFields(); root.hidden = true; }
   clearTimeout(timer);
 }
 export const openCount = () => cards.size;
@@ -348,11 +383,12 @@ function render() {
   const c = [...cards.values()].find((x) => !x.started && !x.collapsed);   // P406: running / collapsed ones live in the strip
   clearTimeout(timer);
   paintRun();
-  if (!c) { root.hidden = true; $('elev-auth').replaceChildren(); $('elev-input').value = ''; document.body.dataset.elev = '0'; shownId = null; refreshSpecialVisibility(); return; }
+  if (!c) { root.hidden = true; $('elev-auth').replaceChildren(); resetFields(); document.body.dataset.elev = '0'; shownId = null; refreshSpecialVisibility(); return; }
   document.body.dataset.elev = '1';
   if (shownId !== c.id) {
     shownId = c.id; busy = false;
-    $('elev-input').value = '';
+    resetFields();
+    root.toggleAttribute('data-multi-secret', !!c.names);
     const sudo = c.kind === 'sudo', vs = c.kind === 'vshare';
     const nopw = viaHelper(c) || vs;
     root.classList.toggle('nopw', nopw);
@@ -382,11 +418,12 @@ function render() {
       row(dl, t('elev.secret.verify'), c.verify, 'mono');
     }
     row(dl, t('p572.label'), c.reason.length > 400 ? t('p572.longReason') : c.reason || t('p572.noReason'));
-    $('elev-label').textContent = t(sudo || vs ? 'elev.sudo.label' : 'elev.secret.label', { name: c.name || '' });
+    $('elev-label').textContent = t(sudo || vs ? 'elev.sudo.label' : 'elev.secret.label', { name: c.names?.[0] || c.name || '' });
+    paintExtraFields(c.names);
     const mail = paintMailPassword(c, $('elev-label'), $('elev-input'), $('elev-rows'));
     if (mail) { $('elev-title').textContent = c.purpose.split('\n')[0]; $('elev-kicker').textContent = t('mail.key'); }
     $('elev-input').setAttribute('aria-label', $('elev-label').textContent);
-    $('elev-note').textContent = vs ? t('p414.e.vsNote') : (c.interpreter ? t('elev.interpreter') + ' ' : '') + t(nopw ? 'elev.sudo.noteHelper' : sudo ? 'elev.sudo.note' : 'elev.secret.note');
+    $('elev-note').textContent = vs ? t('p414.e.vsNote') : (c.interpreter ? t('elev.interpreter') + ' ' : '') + t(nopw ? 'elev.sudo.noteHelper' : sudo ? 'elev.sudo.note' : c.names ? 'elev.secret.multiNote' : 'elev.secret.note');
     // P414 (§37.10): 「用 Face ID 填入电脑密码」 when this remote holds the vault (the field stays as the second way); else, when
     // it could hold it, 「用 Face ID 记住」 (on by default); `stale` says the remembered one stopped working
     const useV = useVault(c);
@@ -447,9 +484,9 @@ function paintButtons() {
   const v = $('elev-input').value;
   const pending = busy || !!c?.running || !!c?.sending;
   if (c) $('elev-allow').textContent = c.running ? t('p392.executing') : c.kind === 'vshare' ? t('p414.e.vsAllow') : t(viaHelper(c) ? 'elev.sudo.allowHelper' : c.kind === 'sudo' ? 'elev.sudo.allow' : 'elev.secret.allow');
-  $('elev-allow').disabled = pending || !c || (!viaHelper(c) && v.length > MAX_FIELD);   // empty: enabled, says what is missing
+  $('elev-allow').disabled = pending || !c || (!viaHelper(c) && !c.names && v.length > MAX_FIELD);   // empty: enabled, says what is missing
   $('elev-deny').disabled = pending;
-  $('elev-input').disabled = pending;
+  for (const input of inputs()) input.disabled = pending;
   $('elev-grant-on').disabled = pending;
   $('elev-vault').disabled = pending; $('elev-save-on').disabled = pending;   // P414
 }
@@ -488,15 +525,20 @@ async function decide(ok, how) {
   if (busy || c.running || c.sending) { toast(t(c.sending ? 'p566.handing' : 'p566.busy'), 3000); return; }
   if (Date.now() >= c.deadline) { expire(c); return; }   // P566 (#357): never sent to be refused in silence
   setErr(c, null);
-  const input = $('elev-input');
+  const fields = inputs();
+  const scope = inputScope;
+  const currentForm = () => scope === inputScope && shownId === c.id && cards.get(c.id)?.n === c.n;
   const nopw = viaHelper(c);
   const vaultUse = ok && (c.kind === 'vshare' || (how === 'vault' && useVault(c)));   // P414: the PRF value instead of a typed one
   const typed = ok && !nopw && !vaultUse && c.kind !== 'vshare';
-  if (typed && !(c.kind === 'secret' ? input.value.trim() : input.value)) {   // nothing typed: say so, never send false
+  const secret = c.kind === 'secret';
+  const emptyField = typed ? fields.findIndex(i => !(secret ? i.value.trim() : i.value)) : -1;
+  if (emptyField !== -1) {   // An empty field only focuses it; never send false.
     const e = $('elev-empty');
-    e.textContent = t(c.kind === 'secret' ? 'elev.secret.empty' : 'elev.sudo.empty', { name: c.name === 'AGENTJ_MAIL_PASSWORD' ? $('elev-label').textContent : c.name || '' });
+    const name = c.names?.[emptyField] || (c.name === 'AGENTJ_MAIL_PASSWORD' ? $('elev-label').textContent : c.name || '');
+    e.textContent = t(secret ? 'elev.secret.empty' : 'elev.sudo.empty', { name });
     e.hidden = false;
-    try { input.focus({ preventScroll: true }); } catch { /* old browsers */ }
+    try { fields[emptyField].focus({ preventScroll: !c.names }); } catch { /* old browsers */ }
     return;
   }
   const g = gen();
@@ -541,13 +583,22 @@ async function decide(ok, how) {
       return;
     }
   }
-  const sk = await signKey();
-  if (!sk) { prf?.fill(0); busy = false; paintButtons(); setErr(c, 'elev.noSign'); toast(t('elev.noSign'), 3600); return; }
+  if (typed && !currentForm()) {
+    prf?.fill(0);
+    if (shownId === c.id) { busy = false; paintButtons(); }
+    return;
+  }
   busy = true; paintButtons();
-  let value = null;
+  let value = null, tooLarge = false;
   try {
+    const sk = await signKey();
+    if (!sk) { busy = false; paintButtons(); setErr(c, 'elev.noSign'); toast(t('elev.noSign'), 3600); return; }
     const ch = ch0, dev = await myDeviceId();
     const digest = await elevateDigest(c.kind, elevateFields(c));
+    if (typed && (!currentForm() || fields.some(i => !(secret ? i.value.trim() : i.value)))) {
+      if (shownId === c.id) { busy = false; paintButtons(); }
+      return;
+    }
     const ts = Date.now();
     const m = { t: 'elev_answer', id: c.id, ok, n: c.n, ts };
     let ctSha = null, saveSha = null;
@@ -559,8 +610,16 @@ async function decide(ok, how) {
       m.epk = b64u(s.epk); m.ct = b64u(s.ct); ctSha = s.ctSha;
       if (c.kind === 'sudo') m.vault = 1;
     } else if (typed) {
-      value = new TextEncoder().encode(c.kind === 'secret' ? input.value.trim() : input.value);
-      input.value = '';
+      value = new TextEncoder().encode(c.names
+        ? JSON.stringify(fields.map(i => i.value.trim()))
+        : secret ? fields[0].value.trim() : fields[0].value);
+      if (c.names && value.length > MAX_FIELD) {
+        tooLarge = true;
+        busy = false; paintButtons(); setErr(c, 'elev.secret.multiTooLarge');
+        return;
+      }
+      if (c.names) m.values_v = 2;
+      wipeFields(fields);
       const s = await sealValue(c.epk, value, ch, dev, c.id, c.kind, c.n, digest);
       value.fill(0);
       m.epk = b64u(s.epk); m.ct = b64u(s.ct); ctSha = s.ctSha;
@@ -570,7 +629,7 @@ async function decide(ok, how) {
         m.pepk = b64u(p2.epk); m.pct = b64u(p2.ct); saveSha = await sha256hex(p2.ct);
       }
     }
-    input.value = '';
+    if (currentForm()) wipeFields(fields);
     const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, elevateMessage(ch, dev, c.id, c.kind, ok ? 'allow' : 'deny', c.n, ts, digest, ctSha, grant, saveSha)));
     m.sig = b64u(sig);
     if (fa) m.fa = fa;
@@ -588,16 +647,20 @@ async function decide(ok, how) {
     if (!sent) { c.sending = false; throw new Error(Date.now() >= c.deadline ? 'late' : 'offline'); }
     if (c.err && c.err.key === 'p566.handing') setErr(c, null);
     if (m.vault) c.sentVault = true;   // P414: a re-armed copy without `stale` then means this Face ID did not open it
-    if (ok) { c.running = true; clearTimeout(timer); paintButtons(); paintLeft(c); }
+    if (ok) {
+      c.running = true;
+      if (shownId === c.id) { clearTimeout(timer); paintButtons(); paintLeft(c); }
+    }
     toast(t(!ok ? 'elev.sent.deny' : c.kind === 'vshare' ? 'p414.e.vsSent' : c.kind === 'sudo' ? 'elev.sent.sudo' : 'elev.sent.secret'), 2600);
   } catch (e) {
-    busy = false; c.sending = false;
+    if (shownId === c.id) busy = false;
+    c.sending = false;
     const key = !cards.has(c.id) ? null : e && e.message === 'late' ? 'p566.r.late' : e && e.message === 'offline' ? 'p566.notSent' : 'elev.fail';
     if (key) { setErr(c, key); paintButtons(); toast(t(key), 5000, 'error'); if (key === 'p566.r.late') expire(c); }
   } finally {
     if (value) value.fill(0);
     prf?.fill(0);
-    input.value = '';
+    if (!tooLarge && currentForm()) wipeFields(fields);
   }
 }
 

@@ -542,6 +542,22 @@ class Agent:
         if fn and not self.cfg.get("_workflow_ceo"):
             fn(self.kind, text)
 
+    def switch_hello(self):
+        from .switch_harness import HelloSend
+
+        send = self.cur_send
+        if isinstance(send, HelloSend) and send.issued_at is not None and getattr(self.host, "agent", None) is self:
+            return send
+        return None
+
+    def record_hello_error(self, reason: str | None) -> bool:
+        send = self.switch_hello()
+        if send is None:
+            return False
+        self._hello_error = {"at": send.issued_at, "reason": reason or "no_reply"}
+        self.host.turn_failed()
+        return True
+
     def fail_notice(self, text: str, *, recovery=False) -> None:
 
         fn = getattr(self.host, "turn_failed", None)
@@ -1439,9 +1455,10 @@ class ClaudeAgent(Agent):
                                       "nothing further ran. You can send it again."))
             elif not quiet and not self.halting:
                 from . import claude_auth
-                self._auth_signal(last)
-                self.fail_notice(claude_auth.failure_notice(self.cfg.get("language", "zh")) if claude_auth.login_failure(last) else
-                                 f"Claude Code 退出了（{code}）" + (f"：{last}" if last else ""))
+                if not self.record_hello_error(claude_auth.switch_failure(self.err_tail + "\n" + self.raw_tail)):
+                    self._auth_signal(last)
+                    self.fail_notice(claude_auth.failure_notice(self.cfg.get("language", "zh")) if claude_auth.login_failure(last) else
+                                     f"Claude Code 退出了（{code}）" + (f"：{last}" if last else ""))
             self.turn_done.set()
 
     def _observe_restart_result(self, proc, event):
@@ -1482,7 +1499,8 @@ class ClaudeAgent(Agent):
         if not child and getattr(self, "capture", None) is None and not getattr(self, "replay", False) and claude_output(ev):
             self.first_output()
         if t == "system" and ev.get("subtype") == "api_retry":
-            self._api_retry(ev)
+            if not self.switch_hello():
+                self._api_retry(ev)
         elif t == "system" and ev.get("subtype") in ("model_refusal_fallback", "model_refusal_no_fallback"):
             self._refusal_notice(ev)
         elif t == "system" and ev.get("subtype") == "init":
@@ -1536,6 +1554,8 @@ class ClaudeAgent(Agent):
         elif t == "assistant":
             msg = ev.get("message") if isinstance(ev.get("message"), dict) else {}
             synthetic = msg.get("model") == "<synthetic>"
+            if self.switch_hello() and (synthetic or ev.get("isApiErrorMessage") is True):
+                return  # only a real model reply can certify the switch
             if synthetic and self.replay:          # the kept segment re-sent after a compact_boundary: not a new reply
                 return
             if synthetic and self.capture is None and any(
@@ -1598,20 +1618,19 @@ class ClaudeAgent(Agent):
             if type(inp) is int:
                 inp += sum(u.get(k, 0) for k in ('cache_read_input_tokens', 'cache_creation_input_tokens') if type(u.get(k, 0)) is int)
             sample(self, 'result', inp, out)
-            if (ev.get("is_error") or ev.get("subtype") not in ("success", None)) and not self.halting \
-                    and self.capture is None and self._unsupported_model(ev):
-                pass                               # P219: turn() switches to the default model and sends it again
-            elif (ev.get("is_error") or ev.get("subtype") not in ("success", None)) and not self.halting \
-                    and self.capture is None:
+            if (ev.get("is_error") or ev.get("subtype") not in ("success", None)) and not self.halting and self.capture is None:
                 r = ev.get("result")
                 from . import claude_auth
-                self._auth_signal(r)
-                self.fail_notice(claude_auth.failure_notice(self.cfg.get("language", "zh")) if claude_auth.login_failure(r) else
-                                 "Agent J 这一轮没有正常完成" + (f"：{clean(r, 300)}" if isinstance(r, str) and r else "。"))
-                from . import quota_resume      # P314: a used-up usage limit → continue by itself after the reset
-                if quota_resume.claude_limit(r):
-                    with contextlib.suppress(Exception):
-                        quota_resume.main_hit(self, "claude", r, self.turn_rate)
+                if self.switch_hello():
+                    self.record_hello_error(claude_auth.switch_failure(claude_auth.result_failure(ev)))
+                elif not self._unsupported_model(ev):   # P219: ordinary turns retry an unavailable model on the default
+                    self._auth_signal(r)
+                    self.fail_notice(claude_auth.failure_notice(self.cfg.get("language", "zh")) if claude_auth.login_failure(r) else
+                                     "Agent J 这一轮没有正常完成" + (f"：{clean(r, 300)}" if isinstance(r, str) and r else "。"))
+                    from . import quota_resume
+                    if quota_resume.claude_limit(r):
+                        with contextlib.suppress(Exception):
+                            quota_resume.main_hit(self, "claude", r, self.turn_rate)
             if (report_open and self.capture is None and not self.halting and not ev.get("is_error")
                     and ev.get("subtype") in ("success", None)):
                 result = ev.get("result")

@@ -82,7 +82,7 @@ ALERT_GAP = 600                      # one phone alert per harness per 10 minute
 CODE_WAIT = 600                      # the Claude flow keeps its PTY (and PKCE verifier) for 10 minutes
 URL_WAIT = 45
 SCREEN_SECS = 25.0
-TOKEN_RE = re.compile(r"sk-ant-oat01-[A-Za-z0-9_\-]{40,}")
+TOKEN_RE = re.compile(r"sk-ant-oat0[12]-[A-Za-z0-9_\-]{40,}")
 CLAUDE_URL_RE = re.compile(r"https://(?:claude\.(?:com|ai)|console\.anthropic\.com|platform\.claude\.com)/\S*oauth/authorize\?\S+")
 CODEX_URL_RE = re.compile(r"https://auth\.openai\.com/\S+")
 CODEX_CODE_RE = re.compile(r"\b[A-Z0-9]{4}-[A-Z0-9]{4,6}\b")
@@ -1050,7 +1050,7 @@ WHY = {
            "device_disabled": "Codex 设备码登录未开启：先在 ChatGPT 设置 → 安全 里打开「设备码登录」（官方要求），再点一次",
            "expired": "这次登录已超时，请重新开始", "bad_code": "授权码格式不对（只粘贴浏览器给出的那一串）",
            "rejected": "官方拒绝了这个授权码（过期或已用过），请重新开始", "timeout": "等待超时，请重新开始",
-           "bad_token": "这不是 Claude 长期 token（应以 sk-ant-oat01- 开头）", "verify": "用这个 token 发测试消息没有拿到回复（token 无效或已撤销）",
+           "bad_token": "这不是 Claude 长期 token（应以 sk-ant-oat 开头）", "verify": "用这个 token 发测试消息没有拿到回复（token 无效或已撤销）",
            "conflict": "这台Agent J 主机还设置了 {n}，它的优先级高于订阅 token：请删掉它（在服务 env 文件或环境变量里）",
            "cancelled": "已取消", "failed": "官方登录命令失败", "busy": "已有一次救援在进行", "passkey": "需要主人通行密钥确认",
            "probe": "测试消息没有拿到回复", "io": "写入失败", "unsupported": "这个 AI 不支持这种方式",
@@ -1067,7 +1067,7 @@ WHY = {
            "device_disabled": "Codex device-code login is off: turn on 'device code login' in ChatGPT → Settings → Security (official requirement), then retry",
            "expired": "this sign-in timed out, start again", "bad_code": "that is not an authorization code (paste only the code the browser shows)",
            "rejected": "the official service refused the code (expired or used), start again", "timeout": "timed out, start again",
-           "bad_token": "not a long-lived Claude token (starts with sk-ant-oat01-)", "verify": "a test message with this token got no reply (invalid or revoked)",
+           "bad_token": "not a long-lived Claude token (starts with sk-ant-oat)", "verify": "a test message with this token got no reply (invalid or revoked)",
            "conflict": "the Agent J host also sets {n}, which outranks the subscription token: remove it (service env file or environment)",
            "cancelled": "cancelled", "failed": "the official login command failed", "busy": "a rescue is already running",
            "passkey": "the owner's passkey is required", "probe": "the test message got no reply", "io": "could not write",
@@ -1611,9 +1611,9 @@ class Rescue:
         from . import elevate
         elevate.validating_sink(sink)             # r1 B-2: live check → gate → write (_store_token)
         card = self._card("CLAUDE_CODE_OAUTH_TOKEN",
-                          "在任何一台装了 Claude Code 的Agent J 主机运行 `claude setup-token` 得到的长期 token（sk-ant-oat01-…）；先实测再存进本机服务 env 文件（0600）"
+                          "在任何一台装了 Claude Code 的Agent J 主机运行 `claude setup-token` 得到的长期 token（以 sk-ant-oat 开头）；先实测再存进本机服务 env 文件（0600）"
                           if self.lang() == "zh" else
-                          "The long-lived token from `claude setup-token` on any computer with Claude Code (sk-ant-oat01-…); "
+                          "The long-lived token from `claude setup-token` on any computer with Claude Code (starts with sk-ant-oat); "
                           "live-checked, then stored in the Agent J host's service env file (0600)", sink)
         res = await self._request_secret(card)
         if res.get("result") != "saved":
@@ -1638,7 +1638,7 @@ class Rescue:
         from . import elevate
         try:
             s = tok.decode("utf-8", "replace")
-            if not re.fullmatch(r"sk-ant-oat01-[A-Za-z0-9_\-]{40,400}", s):
+            if not re.fullmatch(r"sk-ant-oat0[12]-[A-Za-z0-9_\-]{40,400}", s):
                 outcome["why"] = "bad_token"
                 return {"result": "failed", "why": "value", "detail": self.why("bad_token")}
             if not live_claude(tok):

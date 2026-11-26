@@ -108,7 +108,8 @@ class SecretCardAfterTurn(unittest.TestCase):
                     'import subprocess,sys;print(1,flush=True);sys.stdin.readline();subprocess.run(sys.argv[1:],check=True);sys.stdin.readline()',
                     sys.executable, '-I', '-c',
                     'import sys,socket,json;s=socket.socket(socket.AF_UNIX);s.connect(sys.argv[1]);'
-                    's.sendall((sys.argv[2]+chr(10)).encode());s.recv(4096);s.close()',
+                    's.sendall((sys.argv[2]+chr(10)).encode());'
+                    'print(json.loads(s.makefile().readline()).get("why",""),flush=True);s.close()',
                     str(host.elevate.sock_path), json.dumps({'t':'secret','name':'TEST_VALUE','purpose':'Owner test',
                     'cwd':str(self.dest.parent),'dest':'file:'+str(self.d/'synthetic.txt'),'wait':0.3}),
                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -133,11 +134,11 @@ class SecretCardAfterTurn(unittest.TestCase):
                     await asyncio.sleep(0.12)
                     anchor.stdin.write(b'go\n')
                     await anchor.stdin.drain()
-                    shown = await self.wait_for('elev')
                     if prior_webhook:
-                        self.assertIsNone(host.elevate.cards[shown['id']].get('_chat_input'))
-                        await host._app(self.s, answer(self.ph, shown, False))
+                        self.assertEqual(await asyncio.wait_for(anchor.stdout.readline(), 5), b'secret_source\n')
+                        self.assertEqual(self.of('elev'), [])
                         return
+                    shown = await self.wait_for('elev')
                     self.assertTrue(shown['envelope']['source']['verified'])
                     self.assertIsNotNone(host.elevate.cards[shown['id']].get('_chat_input'))
                     self.assertEqual(shown['envelope']['source']['message_id'], turn['id'])

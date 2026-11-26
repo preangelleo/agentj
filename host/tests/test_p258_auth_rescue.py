@@ -19,6 +19,8 @@ from agentj.state import State
 
 HERE = pathlib.Path(__file__).resolve().parent
 GOOD = "sk-ant-oat01-" + "A" * 95 + "Q"
+OAT02 = GOOD.replace("oat01", "oat02")
+API_KEY = GOOD.replace("oat01", "api03")
 
 
 class Base(unittest.TestCase):
@@ -139,14 +141,27 @@ class Screens(Base):
 # ------------------------------------------------------------------ ③ Claude PTY flow
 class ClaudeFlowT(Base):
     def test_setup_token_ok(self):
-        f = ar.ClaudeFlow("setup_token", str(self.work))
-        try:
-            self.assertTrue(f.start().startswith("https://claude.com/cai/oauth/authorize?"))
-            tok = f.submit("GOODCODE")
-            self.assertEqual(bytes(tok).decode(), GOOD)
-            self.assertEqual(f.pty.buf, "")
-        finally:
-            f.close()
+        for prefix, token in (("oat01", GOOD), ("oat02", OAT02)):
+            with self.subTest(prefix=prefix), mock.patch.dict(os.environ, {"FAKE258_GOOD_TOKEN": token}):
+                f = ar.ClaudeFlow("setup_token", str(self.work))
+                try:
+                    self.assertTrue(f.start().startswith("https://claude.com/cai/oauth/authorize?"))
+                    tok = f.submit("GOODCODE")
+                    self.assertEqual(bytes(tok).decode(), token)
+                    self.assertEqual(f.pty.buf, "")
+                finally:
+                    f.close()
+
+    def test_setup_token_rejects_other_output(self):
+        for label, text in (("api03", API_KEY), ("arbitrary", "unrelated command output")):
+            with self.subTest(label=label), mock.patch.dict(os.environ, {"FAKE258_GOOD_TOKEN": text}):
+                f = ar.ClaudeFlow("setup_token", str(self.work))
+                try:
+                    f.start()
+                    with self.assertRaisesRegex(ar.RescueError, "^rejected$"):
+                        f.submit("GOODCODE")
+                finally:
+                    f.close()
 
     def test_bad_code_rejected(self):
         f = ar.ClaudeFlow("setup_token", str(self.work))
@@ -332,23 +347,38 @@ class Manager(Base, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.host.notices), 1)
 
     async def test_store_token_good(self):
-        out = {}
-        res = await asyncio.to_thread(self.r._store_token, bytearray(GOOD.encode()), out)
-        self.assertEqual(res["result"], "saved")
-        self.assertIn("CLAUDE_CODE_OAUTH_TOKEN=", self.env_text())
-        self.assertEqual(stat.S_IMODE(os.stat(ar.service_env_path()).st_mode), 0o600)
-        self.assertEqual(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"), GOOD)
-        self.assertEqual(ar.read_meta(self.st)["claude"]["minted"], date.today().isoformat())
-        self.assertNotIn(GOOD, str(res))
-        self.assertNotIn(GOOD, (pathlib.Path(self.st.root) / ar.META).read_text())
+        for prefix, token in (("oat01", GOOD), ("oat02", OAT02)):
+            with self.subTest(prefix=prefix), mock.patch.dict(os.environ, {"FAKE258_GOOD_TOKEN": token}):
+                supplied = bytearray(token.encode())
+                res = await asyncio.to_thread(self.r._store_token, supplied, {})
+                self.assertEqual(res["result"], "saved")
+                self.assertIn(f"CLAUDE_CODE_OAUTH_TOKEN={token}", self.env_text())
+                self.assertEqual(stat.S_IMODE(os.stat(ar.service_env_path()).st_mode), 0o600)
+                self.assertEqual(os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"), token)
+                self.assertEqual(ar.read_meta(self.st)["claude"]["minted"], date.today().isoformat())
+                self.assertNotIn(token, str(res))
+                self.assertNotIn(token, (pathlib.Path(self.st.root) / ar.META).read_text())
+                self.assertEqual(supplied, bytearray(len(supplied)))
 
     async def test_store_token_refusals_write_nothing(self):
-        for value, why in ((b"hello", "bad_token"), (("sk-ant-oat01-" + "B" * 96).encode(), "verify")):
+        for value, why in ((b"hello", "bad_token"), (API_KEY.encode(), "bad_token"),
+                           (("sk-ant-oat01-" + "B" * 96).encode(), "verify")):
             out = {}
             res = await asyncio.to_thread(self.r._store_token, bytearray(value), out)
             self.assertEqual(res["result"], "failed")
             self.assertEqual(out["why"], why)
             self.assertEqual(self.env_text(), "")
+
+    async def test_oauth_token_is_redacted_from_diagnostics(self):
+        for prefix, token in (("oat01", GOOD), ("oat02", OAT02)):
+            with self.subTest(prefix=prefix):
+                line = f"diagnosis {token} still visible"
+                self.assertEqual(ar.scrub(line), "diagnosis sk-ant-… still visible")
+                self.st.log("auth_fixture", why=line)
+                logged = self.st.log_path.read_text().splitlines()[-1]
+                self.assertNotIn(token, logged)
+                self.assertIn("diagnosis", logged)
+                self.assertIn("still visible", logged)
 
     async def test_passkey_required(self):
         self.host.allow = False

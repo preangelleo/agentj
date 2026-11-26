@@ -1,4 +1,4 @@
-# Agent J v0.30.76
+# Agent J v0.30.77
 
 Agent J uses system Chrome or Chromium on Linux. On macOS and Windows (beta), connect your own Ego Lite installation using the bundled skill.
 

@@ -964,7 +964,7 @@
   "ar.deviceNote": "完成后Agent J 主机会自动发现，不需要回到这里粘贴任何东西。别把设备码给别人。",
   "ar.urlStep1": "第 1 步：在任何已登录 claude.ai 的浏览器里打开这个链接，点授权。",
   "ar.urlStep2": "第 2 步：页面会显示一串授权码，复制后粘贴进弹出的密钥卡（10 分钟内）。不要发到聊天里。",
-  "ar.pasteStep": "在弹出的密钥卡里粘贴 token（sk-ant-oat01- 开头）。",
+  "ar.pasteStep": "在弹出的密钥卡里粘贴 token（sk-ant-oat 开头）。",
   "ar.done": "已恢复：AI 可以正常对话了。",
   "ar.failed": "没有成功。",
   "ar.cancel": "取消",
@@ -4206,5 +4206,7 @@
   "p0371.oldfix.why": "升级没有完成，多半是这个旧版本升级程序的一个已知问题；这台 Agent J 主机仍是 {v}，照常可用，配对和设置都不变。下面这一行会把 Agent J 自己的依赖缓存目录改成仅本人可写，然后立即升级并重启 Agent J，正在进行的任务会被打断。在这台 Agent J 主机的终端里运行它，通常就能升级；网页终端会在最后断开，重新打开后看 agentj --version。仍失败就不要重复，请按修复说明联系客服。",
   "p0371.oldfix.raw": "查看原始信息",
   "p0371.oldfix.cut": "终端已断开。如果升级正好到了最后一步，这是正常的：重新打开后看 agentj --version。",
-  "p0371.oldfix.run": "执行并升级"
+  "p0371.oldfix.run": "执行并升级",
+  "elev.secret.multiNote": "这些密钥会加密后直接保存到你的 Agent J 主机，Agent 看不到密钥内容。",
+  "elev.secret.multiTooLarge": "这些密钥加起来太长，请让 Agent 分开请求。"
 }

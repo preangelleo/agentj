@@ -7133,7 +7133,7 @@ usage: agentj secret [-h] [--name NAME] [--purpose PURPOSE] [--dest DEST]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `action` | `null` | true | `request`, `send`, `result`, `status`, `log`, `ask`, `give`, `grant`, `grants` | `` |
 | `id` | `null` | false | — | `result：卡片 id（request/send 打印的）；不写 = 最近十张 · status：变量名` |
-| `--name` | `null` | false | — | `request：变量名，如 ELEVENLABS_API_KEY · send：手机上显示的名字，如 'Shadowrocket SS 链接'` |
+| `--name` | `null` | false | — | `repeat for keys in one env file` |
 | `--purpose` | `null` | false | — | `用途（手机上原样显示）` |
 | `--dest` | `null` | false | — | `存到哪：env:<文件>[#KEY]（.env 一行）或 file:<路径>（整个文件）` |
 | `--verify-url` | `null` | false | — | `只读校验：GET 这个 https 地址，2xx = 有效` |
@@ -15570,7 +15570,7 @@ usage: agentj secret [-h] [--name NAME] [--purpose PURPOSE] [--dest DEST]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `action` | `null` | true | `request`, `send`, `result`, `status`, `log`, `ask`, `give`, `grant`, `grants` | `` |
 | `id` | `null` | false | — | `result：卡片 id（request/send 打印的）；不写 = 最近十张 · status：变量名` |
-| `--name` | `null` | false | — | `request：变量名，如 ELEVENLABS_API_KEY · send：手机上显示的名字，如 'Shadowrocket SS 链接'` |
+| `--name` | `null` | false | — | `request：可重复传入变量名 · send：手机上显示的名字` |
 | `--purpose` | `null` | false | — | `用途（手机上原样显示）` |
 | `--dest` | `null` | false | — | `存到哪：env:<文件>[#KEY]（.env 一行）或 file:<路径>（整个文件）` |
 | `--verify-url` | `null` | false | — | `只读校验：GET 这个 https 地址，2xx = 有效` |

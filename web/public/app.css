@@ -4790,6 +4790,12 @@ body:has(:is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="center"
 #elev.secret.aj-shared-popup[data-popup-system="grow"]>.box{max-height:calc(var(--vvh,100dvh) - var(--popup-top) - var(--ui-space-content))}
 /* Secret form: the header uses the theme's readable text and the underlying tools keep their layout slot. */
 #elev.secret[data-popup-system="grow"] .elev-kicker{color:var(--callout-fg)}
+#elev[data-multi-secret]{--bg:var(--noir);--text:var(--lotion);--text-muted:var(--lotion);--ink:var(--lotion);--surface:var(--sooty);--code-bg:var(--surface);--border:var(--black-mana);--accent:var(--lotion);color-scheme:dark}
+#elev.secret[data-multi-secret]>.box{background:var(--noir);color:var(--lotion)}
+#elev[data-multi-secret] .elev-kicker{display:none}
+#elev[data-multi-secret] .elev-label{white-space:normal;overflow-wrap:anywhere;overflow:visible;text-overflow:clip}
+#elev[data-multi-secret] .special-buttons541>:is(.special-allow541,.special-deny541){background:var(--lotion);color:var(--noir);border:0}
+#elev[data-multi-secret] .elev-bad{color:var(--lotion)}
 body:has(#elev.secret:not([hidden])) #tools{visibility:hidden}
 /* Metadata fields keep their own inset and a complete, independently rounded copy control. */
 .elev .elev-rows dd.mono.cc-in{min-height:calc(var(--ui-tap) + 2 * var(--sp-2));padding-right:calc(var(--ui-tap) + 2 * var(--sp-2));display:flex;align-items:center}

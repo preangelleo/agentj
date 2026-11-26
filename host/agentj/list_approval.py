@@ -181,6 +181,14 @@ def _seam_cwd(host, cwd):
     return trust_taint.effective_cwd(host, cwd)
 
 
+def _retry_display_matches(tool, cwd, inp, summary):
+    heading = f'{tool}\nWorking directory: '
+    shown_cwd, _, body = summary[len(heading):].partition('\n')
+    if shown_cwd == '~' or shown_cwd.startswith('~/'):
+        shown_cwd = os.path.expanduser(shown_cwd)
+    return summary.startswith(heading) and shown_cwd == cwd and json.loads(body) == inp
+
+
 async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
               receipt=None, only=None, host_card=False, settings_session=None, bounded_context=None, harness_permission=False, task_actions=None, task_target=None, native_context=None, settings_context=None, front=None, background=None, order_owner=False):
     try:
@@ -212,7 +220,11 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
     if native_context is not None and (not isinstance(native_context, (NativeContext, PermissionContext)) or not native_context.live(host)):
         return {'behavior':'deny', 'reason':'native_context_changed', 'message':'Native session context changed; no operation executed.'}
     cwd = native_context.cwd if native_context is not None else (getattr(host, 'agent_cfg', None) or {}).get('dir')
-    uv = uv_list.required(tool, inp, cwd=cwd, env=uv_list.host_environment(host))
+    from .claude_auto_retry import RetryContext
+    retry = type(native_context) is RetryContext
+    if retry and (not harness_permission or not await native_context.admits(host, tool, inp)):
+        return {'behavior': 'deny', 'reason': 'native_context_changed'}
+    uv = retry or uv_list.required(tool, inp, cwd=cwd, env=uv_list.host_environment(host))
     fingerprint = headless_fingerprint = headless_src = None
     if (not uv and settings_context is None and task_actions is None
             and (harness_permission or tool not in policy_registry.HOST_TOOLS)):
@@ -302,7 +314,7 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
         'cwd':os.path.realpath(cwd) if cwd else None,
         'native_session':native_context.session if native_context else None,
         'native_process':getattr(native_context.process,'pid',None) if native_context else None})
-    resumed = take_resume(host,tool,inp,uv,resume_context,settings_session)
+    resumed = None if retry else take_resume(host,tool,inp,uv,resume_context,settings_session)
     if resumed is not None:
         if isinstance(receipt,dict):
             receipt.update(reason='request_continuation',approval_card_shown=False)
@@ -368,6 +380,8 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
             from .owner_grant import typed_plan_display
             display = typed_plan_display(inp, display)
         safe_input = display(inp)
+        if retry and safe_input != inp:
+            return refused('invalid_display', 'Cannot show the exact tool input safely.')
         raw_summary = safe_input['summary'] if host_summary else tool + '\n' + (('Working directory: '+cwd+'\n') if native_context else '') + approval_review.canonical(safe_input)
     except OSError as exc:
         if str(exc) == 'local_secret_scan_incomplete':
@@ -399,6 +413,8 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
         # Freeze the exact complete wire text before either signature digest.
         # bind must not project it again or truncate executable input details.
         summary = approval_review.display_text(summary, display)
+        if retry and not _retry_display_matches(tool, cwd, inp, summary):
+            return refused('invalid_display', 'Cannot show the exact tool input safely.')
     except OSError as exc:
         if str(exc) == 'local_secret_scan_incomplete':
             return refused('invalid_display', '本地密钥扫描不完整，已拒绝 / local secret scan incomplete; refused')

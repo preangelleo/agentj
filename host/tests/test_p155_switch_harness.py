@@ -30,7 +30,7 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: E402
 
-from agentj import compose, harness, main_identity, menu, serve, slash, switch_harness as sw, wire  # noqa: E402
+from agentj import agent, compose, harness, main_identity, menu, serve, slash, switch_harness as sw, wire  # noqa: E402
 from agentj.state import State  # noqa: E402
 
 PKG = HERE.parent / "agentj"
@@ -49,6 +49,16 @@ open(log, "a").write(json.dumps(sys.argv[1:]) + "\n")
 sys.stdin.read()
 if mode == "signed_out":
     sys.stderr.write("Invalid API key · Please run /login " + "''' + CANARY + r'''\n"); sys.exit(1)
+if kind == "claude" and mode.startswith("failure:"):
+    failure, message = mode.split(":", 2)[1:]
+    if failure == "stderr":
+        # More than one pipe buffer; the failure must still reach the classifier.
+        sys.stderr.write("warning\n" * 16_000 + message + "\n"); sys.exit(1)
+    if failure == "json_warning":
+        sys.stderr.write("warning: last attempt saw an HTTP 429\n")
+    status = 0 if failure == "json_zero" else 1
+    print(json.dumps({"type": "result", "subtype": "error_during_execution", "is_error": True, "errors": [message]}))
+    sys.exit(status)
 if mode == "hang":
     time.sleep(30); sys.exit(0)
 reply = "" if mode == "empty" else "Hello! ''' + CANARY + r'''"
@@ -87,7 +97,7 @@ class FakeHarnesses(unittest.TestCase):
             env[harness.BIN_ENV[k]] = str(p)
         env["CODEX_HOME"] = str(self.bin / "codex-home")       # no owner config is read
         (self.bin / "codex-home").mkdir()
-        # P282: a signed-in owner (login files exist), so a failed call keeps its native code; test_p282 covers "no login"
+        # P282: local sign-in hints exist independently of the real probe
         (self.bin / "codex-home" / "auth.json").write_text("{}")
         env["CLAUDE_CONFIG_DIR"] = str(self.bin / "claude-home")
         (self.bin / "claude-home").mkdir()
@@ -135,12 +145,36 @@ class FakeHarnesses(unittest.TestCase):
             d = harness.probe()
         by = {h["name"]: h for h in d["harnesses"]}
         self.assertEqual(by["kimi"]["probe_reason"], "not_logged_in")
-        self.assertEqual(by["claude"]["probe_reason"], "native_failed")
+        self.assertEqual(by["claude"]["probe_reason"], "not_logged_in")
         self.assertEqual(by["codex"]["probe_reason"], "empty_probe_reply")
         self.assertEqual(d["usable"], ["opencode"])
         self.assertEqual(d["decision"], "use:opencode")
         self.assertNotIn(CANARY, json.dumps(d))
         self.assertNotIn("API key", json.dumps(d))
+
+    def test_claude_failed_probe_uses_known_evidence_without_returning_native_text(self):
+        cases = (
+            ("stderr", "API Error: 401 OAuth token has expired", "not_logged_in"),
+            ("json_warning", "API Error: 401 invalid x-api-key", "auth"),
+            ("json_zero", "API Error: 404 not_found_error: model: retired-model", "model_missing"),
+            ("json_zero", "Your subscription does not include access to Claude Code", "plan"),
+            ("stderr", "Unable to connect to API (ECONNREFUSED)", "network"),
+            ("stderr", "Proxy authentication required (407)", "network"),
+            ("json_exit", "API Error: 429 monthly usage limit reached", "quota_exhausted"),
+            ("json_zero", "API Error: 429 rate_limit_error", "rate_limited"),
+            ("stderr", "error: unknown option '--safe-mode'", "native_cli_unsupported"),
+            ("stderr", "unrecognized failure at line 429 in /tmp/407/402 with quota-example.json", "native_failed"),
+        )
+        for channel, message, code in cases:
+            with self.subTest(code=code):
+                self.mode("claude", f"failure:{channel}:{message} {CANARY}")
+                d = harness.probe(only=("claude",))
+                h = next(h for h in d["harnesses"] if h["name"] == "claude")
+                self.assertTrue(h["installed"] and h["logged_in"])
+                self.assertFalse(h["callable"])
+                self.assertEqual(h["probe_reason"], code)
+                self.assertNotIn(CANARY, json.dumps(d))
+                self.assertNotIn("probe_error", h)
 
     def test_codex_fallback_metadata_notice_is_not_a_refusal_but_a_tool_still_is(self):
         self.mode("codex", "metadata_warning")
@@ -159,7 +193,7 @@ class FakeHarnesses(unittest.TestCase):
         self.assertTrue(sw.gate("claude")["ok"])
         self.mode("claude", "signed_out")
         g = sw.gate("claude")
-        self.assertEqual((g["ok"], g["reason"]), (False, "native_failed"))
+        self.assertEqual((g["ok"], g["reason"]), (False, "not_logged_in"))
         self.assertEqual(g["version"], "2.3.1 (Claude Code)")
 
     def test_job_rebuilds_the_service_environment(self):
@@ -260,6 +294,27 @@ class FakeServe:
         return {"ok": False, "error": "unknown command"}
 
 
+class ClaudeHello(unittest.TestCase):
+    def test_native_error_has_a_fixed_reason_and_does_not_replay_or_publish_raw_error(self):
+        host = mock.Mock()
+        host.heartbeat = None
+        a = agent.ClaudeAgent(host, {"kind": "claude", "dir": "/tmp", "model": "retired-model"})
+        host.agent = a
+        a.cur_send = sw.HelloSend("fixed hello", issued_at=120)
+        error = "API Error: 400 model not found " + CANARY
+        a.on_event({"type": "system", "subtype": "api_retry", "attempt": 4, "error": CANARY})
+        a.on_event({"type": "assistant", "message": {
+            "model": "<synthetic>", "content": [{"type": "text", "text": error}]}})
+        a.on_event({"type": "result", "is_error": True, "subtype": "error_during_execution",
+                    "api_error_status": 400, "result": error})
+        host.turn_failed.assert_called_once()
+        host.agent_text.assert_not_called()
+        host.agent_notice.assert_not_called()
+        host.fallback_failure.assert_not_called()
+        self.assertIsNone(a.fallback)
+        self.assertEqual(a._hello_error, {"at": 120, "reason": "model_missing"})
+
+
 class Job(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="p155-st-")
@@ -328,6 +383,37 @@ class Job(unittest.TestCase):
         self.assertEqual(self.run_job(st, fake, "codex"), 2)
         self.check_rolled_back(st, raw, fake, "agent_down")
         self.assertGreaterEqual(self.clock.t, sw.UP_WAIT)
+
+    def test_claude_first_reply_error_keeps_fixed_reason_after_verified_rollback(self):
+        st = mk_state(self.tmp.name, "codex", model="gpt-5.4")
+
+        class FailingClaude(FakeServe):
+            def __call__(self, req):
+                result = super().__call__(req)
+                if req["cmd"] == "status" and self.kind == "claude" and self.hellos:
+                    result.update(agent_hello_error={"at": 1000, "reason": "not_logged_in"},
+                                  agent_turn_failed=True)
+                return result
+
+        fake = FailingClaude(st, "codex")
+        fake.behaviour["claude"] = {"answers": False}
+        self.assertEqual(self.run_job(st, fake, "claude"), 2)
+        self.assertEqual(st.agent_config()["kind"], "codex")
+        rec = sw.read_receipt(st)
+        self.assertEqual((rec["status"], rec["reason"]), ("rolled_back", "not_logged_in"))
+        self.assertIn("AI 登录救援", sw._say_receipt(rec, "zh"))
+        self.assertIn("AI login rescue", sw._say_receipt(rec, "en"))
+        self.assertEqual(sw._result_meta(rec)["reason"], "not_logged_in")
+
+    def test_a_failed_turn_ending_before_the_hello_does_not_abort_the_switch(self):
+        def ctl(req):
+            if req["cmd"] == "harness_hello":
+                return {"ok": True, "at": 1000}
+            return {"ok": True, "agent": "claude", "agent_status": "idle", "agent_said_at": 1001,
+                    "agent_turn_start_at": 997, "agent_turn_end_at": 998, "agent_turn_failed": True,
+                    "agent_hello_error": {"at": 999, "reason": "not_logged_in"}}
+
+        self.assertIsNone(sw._hello(ctl, {"outcome": "ok", "to": "claude"}, self.clock.sleep, self.clock))
 
     def test_no_self_introduction_rolls_back(self):
         st = mk_state(self.tmp.name, "claude")

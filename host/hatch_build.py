@@ -30,7 +30,7 @@ def _verify_equivalent(original, rewritten):
 
 def _dense_compress(data):
     from zopfli.zlib import compress
-    return compress(data, numiterations=5)[2:-4]
+    return compress(data, numiterations=30)[2:-4]
 
 
 class _DenseDeflater:

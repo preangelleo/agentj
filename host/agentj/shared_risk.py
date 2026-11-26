@@ -5,9 +5,7 @@ an independent native ask. Same-category grants are tied to the signed phone
 request and rechecked against device revocation and the emergency stop.
 """
 import asyncio
-import hashlib
-import json
-from . import danger, policy_registry, refusal_intent
+from . import policy_registry
 from .text import pick
 
 
@@ -108,73 +106,6 @@ class RiskGuard:
                               reason=delete_redirect.REASON, card=False)
                 return self._deny('trash', text)        # ADR-0308 C: shared session = the owner's main thread
         return True
-
-        a=self.adapter
-        from . import handoff
-        if not a.host.stopped() and handoff.owner_side(a) and handoff.own_read(tool, inp, a.cfg):
-            # P539 (#301): reading Agent J's own handoff file needs no card — still one approvals.log line (L2)
-            rid=await asyncio.to_thread(handoff.record_own, a.host.st, getattr(a,'kind',None), tool, inp)
-            a.host.st.log('ask_done', id=rid, tool=tool, decision='allow', reason='own_handoff')
-            return True
-        requirement=policy_registry.main_requirement(tool, inp, cwd=a.cfg.get('dir'))
-        if requirement == 'deny':
-            policy_registry.log_unknown(getattr(a.host,'st',None), tool, inp, agent=getattr(a,'kind','?'))   # P553: support can find it
-            return self._deny('unknown', tool)
-        if requirement in ('hold','uv'):
-            # Denials may suppress repeat requests; approvals never become a
-            # broad category grant for a registry-mandated card.
-            verdict=danger.classify_shared(tool,inp,a.cfg.get('danger_extra'),a.cfg.get('approvals','standard'),a.cfg.get('dir'))
-            keys=danger.shared_keys(verdict,a.cfg)
-            async with self.lock:
-                if set(keys) & self.denied:
-                    a.host.st.log('shared_risk_denied',tool=tool,reason='owner_denied_before',agent=a.kind)
-                    return self._deny('denied_before')
-                epoch=self.epoch
-                receipt={}
-                answer=await a.host.ask(policy_registry.harness_tool(tool),inp,batch=False,require_passkey=requirement == 'uv',_receipt=receipt,_harness_permission=True)
-                if answer.get('behavior') != 'allow':
-                    if epoch == self.epoch and refusal_intent.owner_denied(receipt):
-                        self.denied.update(keys)
-                    return self._deny('host',refusal_intent.message(refusal_intent.reason(receipt),getattr(a.host,'lang','zh'),answer.get('message')))
-                grant=answer.get('risk_grant')
-                if a.host.stopped():
-                    return self._deny('stopped')
-                if grant and a.host.st.sign_key(grant['device']) != grant['sign_pub']:
-                    return self._deny('revoked')
-                return True
-        verdict=danger.classify_shared(tool,inp,a.cfg.get('danger_extra'),a.cfg.get('approvals','standard'),a.cfg.get('dir'))
-        if not verdict.danger:
-            return True
-        keys=danger.shared_keys(verdict,a.cfg)   # P198: the five clear dangers ask (was: only with high_risk_warnings)
-        if not keys:
-            return True
-        async with self.lock:
-            if set(keys) & self.denied:
-                a.host.st.log('shared_risk_denied',tool=tool,reason='owner_denied_before',agent=a.kind)
-                return self._deny('denied_before')
-            for cat,grant in list(self.grants.items()):
-                if a.host.stopped() or a.host.st.sign_key(grant['device']) != grant['sign_pub']:
-                    self.grants.pop(cat,None)
-            if set(keys) <= self.grants.keys():
-                for cat in keys:
-                    a.host.st.log('shared_risk_batch',category=cat,grant=self.grants[cat]['rid'],
-                        turn=self.turn_id,input_sha256=hashlib.sha256(json.dumps(inp,sort_keys=True).encode()).hexdigest())
-                return True
-            epoch=self.epoch
-            receipt={}
-            answer=await a.host.ask(policy_registry.harness_tool(tool),inp,batch=False,risk_scope=True,_receipt=receipt,_harness_permission=True)
-            if answer.get('behavior') != 'allow':
-                if self.epoch == epoch and refusal_intent.owner_denied(receipt):
-                    self.denied.update(keys)
-                return self._deny('host',refusal_intent.message(refusal_intent.reason(receipt),getattr(a.host,'lang','zh'),answer.get('message')))
-            grant=answer.get('risk_grant')
-            if a.host.stopped():
-                return self._deny('stopped')
-            if grant and a.host.st.sign_key(grant['device']) != grant['sign_pub']:
-                return self._deny('revoked')
-            if grant and self.epoch == epoch:
-                self.grants.update({cat:grant for cat in keys if cat not in danger.ALWAYS_CARD})
-            return True
 
     def authentic(self, event):
         # An owner's own server (shared._ExternalServer) or a stopped one has no process Agent J started: nothing to

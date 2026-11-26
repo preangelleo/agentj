@@ -1,0 +1,71 @@
+{
+ "schema": "agentj.news/v1",
+ "version": "0.30.77",
+ "items": [
+  {
+   "zh": {
+    "what": "一次密钥请求可以重复使用 --name，在同一张卡里填写多个环境变量。",
+    "action": "本条未提供操作步骤，请核实是否需要设置。"
+   },
+   "en": {
+    "what": "Repeat --name in one secret request to fill several environment variables on a single card.",
+    "action": "No action steps were supplied for this change; check whether setup is needed."
+   },
+   "applies_to": [
+    "all"
+   ]
+  },
+  {
+   "zh": {
+    "what": "共享 Claude Code 自动审核拦下已登记派单时，可在已配对遥控器验证并批准该次重试。",
+    "action": "本条未提供操作步骤，请核实是否需要设置。"
+   },
+   "en": {
+    "what": "If shared Claude Code auto mode blocks a registered dispatch, verify on your paired remote to approve that retry.",
+    "action": "No action steps were supplied for this change; check whether setup is needed."
+   },
+   "applies_to": [
+    "all"
+   ]
+  },
+  {
+   "zh": {
+    "what": "同一回合的密钥卡可以分别保存。切换 Claude Code 失败时显示已确认的原因，首答失败会恢复原会话。",
+    "action": "本条未提供操作步骤，请核实是否需要设置。"
+   },
+   "en": {
+    "what": "Secret cards from one turn can be saved separately. A failed Claude Code switch shows the confirmed cause and restores the original session if the first reply fails.",
+    "action": "No action steps were supplied for this change; check whether setup is needed."
+   },
+   "applies_to": [
+    "all"
+   ]
+  },
+  {
+   "zh": {
+    "what": "密钥卡的三个操作按钮均为实底，手机窄屏可完整显示字段标签。",
+    "action": "本条未提供操作步骤，请核实是否需要设置。"
+   },
+   "en": {
+    "what": "All three secret-card actions have filled buttons, and field labels are fully visible on narrow screens.",
+    "action": "No action steps were supplied for this change; check whether setup is needed."
+   },
+   "applies_to": [
+    "all"
+   ]
+  },
+  {
+   "zh": {
+    "what": "Claude 登录救援接受 oat01 和 oat02 两种长期登录码。",
+    "action": "本条未提供操作步骤，请核实是否需要设置。"
+   },
+   "en": {
+    "what": "Claude login rescue accepts both oat01 and oat02 long-lived tokens.",
+    "action": "No action steps were supplied for this change; check whether setup is needed."
+   },
+   "applies_to": [
+    "all"
+   ]
+  }
+ ]
+}

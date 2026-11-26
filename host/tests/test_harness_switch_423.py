@@ -8,7 +8,7 @@ import tempfile
 import time
 import unittest
 from unittest import mock
-from agentj import names, serve, shared, switch_harness as sw
+from agentj import names, provenance, serve, shared, shared_turn_origin, switch_harness as sw
 from test_p155_switch_harness import Clock, UP, fake_probe, mk_state
 
 
@@ -85,6 +85,58 @@ class SharedSwitch(unittest.IsolatedAsyncioTestCase):
     async def run_job(self, model=None):
         return await asyncio.to_thread(sw.worker, self.st, 'claude', model, probe=fake_probe(), ctl=self.ctl,
             restart=self.restart, status=UP, ready=lambda *a, **k:'idle', sleep=self.clock.sleep, clock=self.clock)
+
+    async def test_shared_hello_preserves_only_current_native_error_category(self):
+        from datetime import datetime, timezone
+
+        self.st.set_agent_config('claude', self.st.agent_config()['dir'], record_root=False)
+        cases = (
+            (True, 'API Error: OAuth token has expired. Please run /login.', 'not_logged_in', None, 0),
+            (False, 'unclassified native diagnostic.', None, None, 0),
+            (False, 'unclassified native diagnostic.', None, 'A real model reply.', 0),
+            (False, 'unclassified native diagnostic.', None, 'A real model reply.', 17),
+        )
+        for explicit, message, reason, real_reply, opaque_count in cases:
+            with self.subTest(explicit=explicit, real_reply=real_reply, opaque_count=opaque_count):
+                await self.install()
+                a = self.host.agent
+                a.session['messagingSocketPath'] = '/tmp/isolated-claude-peer'
+                a.transcript = self.root / 'claude-native.jsonl'
+                req = self.host.harness_hello({'outcome': 'ok', 'from': 'codex', 'to': 'claude'})
+                a.cur_send = a.q.get_nowait()
+                a.pending_source = a.cur_send.source
+                a.pending_text = a.cur_send.text
+                att = a.native_request = shared_turn_origin.mint(a, a.cur_send, a.pending_text)
+                a.phone_turn = True
+                a.offset = 0
+                a._line_of_ended_turn = lambda _: False
+                error_text = message + ' internal-opaque-canary'
+
+                def assistant(text, *, native=False, api_error=False):
+                    return {'type': 'assistant', 'sessionId': att.session_id, 'isApiErrorMessage': api_error,
+                            'message': {'model': '<synthetic>' if native else 'claude-model',
+                                        'content': [{'type': 'text', 'text': text}]}}
+
+                delivery = {'type': 'user', 'sessionId': att.session_id, 'isMeta': True,
+                            'timestamp': datetime.now(timezone.utc).isoformat(),
+                            'origin': {'kind': 'peer', 'msg_id': att.record_id},
+                            'message': {'content': provenance.envelope(a.session['messagingSocketPath'], att.body, att.source)}}
+                events = [assistant('Please run /login', native=True, api_error=True), delivery]
+                events.extend(assistant(f'Opaque diagnostic {i}', native=True) for i in range(opaque_count))
+                events.append(assistant(error_text, native=True, api_error=explicit))
+                if real_reply:
+                    events.append(assistant(real_reply))
+                a.transcript.write_text(''.join(json.dumps(event) + '\n' for event in events))
+                with mock.patch.object(self.host, 'agent_text') as phone_reply:
+                    a._finish_stop(error_text)
+                self.assertNotIn('internal-opaque-canary', repr(phone_reply.call_args_list))
+                if real_reply:
+                    phone_reply.assert_called_once_with(real_reply)
+                else:
+                    phone_reply.assert_called_once_with('')
+                status = await asyncio.to_thread(names.ctl_call, self.st, {'cmd': 'status'})
+                self.assertEqual(status['agent_hello_error'], {'at': req['at'], 'reason': reason} if reason else None)
+                self.assertNotIn('internal-opaque-canary', json.dumps(status))
 
     async def test_idle_exact_native_model_positive_control(self):
         self.native_model = 'claude-opus-5-5'

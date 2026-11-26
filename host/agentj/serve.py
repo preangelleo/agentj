@@ -546,11 +546,7 @@ RELAY_SETTLE = 5               # N-H2: after the relay link ended, reconnect wai
 
 
 async def claim_control_sock(sock, log=None) -> None:
-    """0.30.25: what is left on the control.sock path before this serve binds it. A live serve (it accepts, or is there
-    but does not answer within 5 s) → SystemExit, as before. Everything else is residue and never stops the start: a
-    socket that refuses → removed; a non-socket (the 0-byte 0444 file a fence's mount point leaves when the socket was
-    gone for a moment, 11-16 Olares), a socket we may not connect to, or an inode of another user → moved aside to
-    control.sock.stale-<UTC time> (removed if it cannot be moved)."""
+    """Refuse a live or unresponsive serve. Remove a refused socket and quarantine other residue before binding."""
     import stat as _stat
     try:
         st_ = os.lstat(sock)
@@ -1166,10 +1162,7 @@ class Host:
         return s
 
     async def _queue_relay_frame(self, f: bytes) -> None:
-        """H1: hand one relay frame to its connection's lane without waiting for it. Unbound-callable (tests drive
-        relay_loop with a stand-in host). N-H3: the backlog is bounded per phone connection — the excess of ONE phone is
-        refused (_refuse_relay_backlog) and nobody else waits; the read loop itself only waits at RELAY_FRAME_BACKLOG,
-        which no single phone can reach."""
+        """Queue a frame without waiting. Refuse excess per phone before it can fill the relay-wide backlog."""
         running = self.__dict__.setdefault("_relay_frames_running", set())
         if len(f) < 5:
             return
@@ -1241,12 +1234,8 @@ class Host:
         return False
 
     def _relay_entry(self, lane: dict, cid: int, f: bytes) -> tuple:
-        """What the lane runs for this frame. ("raw", f): the unchanged on_frame path, decrypted when its turn comes.
-        ("app", s, obj): an application frame of a READY session, decrypted now — in arrival order, which is all the
-        Noise counter needs — so that its type is known before it is scheduled. Only when no undecrypted frame of this
-        connection is ahead of it (the handshake and `hello` always go the raw way). _app re-checks the allowlist and
-        every handler its own signature, exactly as for a frame decrypted in on_data. ("bad", reason): it
-        failed to decrypt / parse; that connection is closed when its earlier frames are done, as on_frame does."""
+        """Decrypt ready application frames in arrival order for routing. Handshakes and earlier raw frames retain
+        the on_frame path. The app allowlist and handler signatures still apply. A bad frame closes its own session."""
         s = self.__dict__.get("sessions", {}).get(cid)
         control = getattr(self, "control", None)
         if (lane["raw"] or s is None or s.state != "ready" or s.recv is None or len(f) < 7 or f[0] != wire.OP_DATA
@@ -1258,10 +1247,8 @@ class Host:
             return ("bad", f"bad_frame:{type(e).__name__}")
 
     def _refuse_relay_backlog(self, lane: dict, cid: int) -> None:
-        """N-H3: this phone connection already has PHONE_FRAME_BACKLOG frames queued or running. The excess frame cannot
-        be skipped (the next one would not decrypt), so the refusal is the connection: frames that have not started are
-        dropped — never run late, behind the owner's back — the frame that is running and any stop / approval decision
-        already accepted finish, and the cid is closed; the page reconnects and resends. Nothing is half-applied."""
+        """Close the overloaded connection because skipping Noise frames would break the counter. Drop queued work
+        and let running frames and accepted urgent actions finish."""
         lane["refused"] = True                   # until its running frame is done, whatever this cid still sends is dropped
         s = self.__dict__.get("sessions", {}).get(cid)
         self.st.log("relay_frame_backlog", cid=cid, device=s.device if s else None, count=lane["n"])
@@ -1271,10 +1258,7 @@ class Host:
 
     async def _dispatch_relay_frame(self, f: bytes, lane: dict | None = None, entry: tuple | None = None,
                                     kind: str = "q", seq: int = 0) -> None:
-        """Frames of one relay connection run strictly in arrival order; different phones run concurrently.
-        Each frame's task becomes its lane's tail before its first await, so any number of queued frames keep their order.
-        N-H3: a phone's stop / approval decisions have their own ordered lane (kind "u"), so they are not queued behind
-        that phone's slow handler. Scheduling only — they run through _app like every other frame."""
+        """Run frames in order within each phone's normal or urgent lane. Both lanes use the same app handlers."""
         if len(f) < 5:
             return
         cid = int.from_bytes(f[1:5], "big")
@@ -1321,12 +1305,8 @@ class Host:
                 self.st.log("relay_frame_stale_failed", cid=s.cid, device=s.device, exception_type=type(e).__name__)
 
     async def _settle_relay_frames(self) -> None:
-        """The relay connection ended: frames already running get RELAY_SETTLE seconds to finish before their sessions
-        are dropped (before H1 the read loop always finished its frame first). N-H2: the wait is bounded — one hung
-        frame used to hold the reconnect (up to 256 frames, each up to its own timeout) while status still pointed at the
-        dead socket. A frame that is still running after the bound is NOT cancelled: no handler is ever cut between two
-        of its steps (nothing half-applied). It finishes on its own; its session is gone by then, so whatever it still
-        sends goes nowhere (`_ws_send` raises while the link is down, send_app refuses a session that is not the live one)."""
+        """Bound reconnect's wait for running frames. Let late handlers finish without cancelling partial work.
+        A handler's retired session cannot send after reconnection."""
         tasks = list(self.__dict__.get("_relay_frames_running", ()))
         if not tasks:
             return
@@ -2937,6 +2917,7 @@ class Host:
                                              "agent_hello_deferred": isinstance(self.agent, SharedClaudeAgent) and self.agent.hello_deferred(),
                                              "agent_hello_at": getattr(self.agent, "_hello_at", 0),
                                              "agent_hello_failed": getattr(self.agent, "_hello_failed", False),
+                                             "agent_hello_error": getattr(self.agent, "_hello_error", None),
                                              "harness_readiness": getattr(self.agent, "readiness", lambda: {"ready": False, "code": "unverified"})(),
                                              "agent_said_at": getattr(self, "agent_said_at", 0),
                                              **dict(zip(("agent_turn_start_at", "agent_turn_end_at", "agent_turn_failed"),
@@ -3201,9 +3182,7 @@ class Host:
         return removed, n
 
     def _revoked_authority(self, did: str, moved: bool = False) -> None:
-        """0304 A1-2/A1-7: a removed remote loses its pending authority at once, not at TTL. Every open card only it
-        could answer is denied (list_approval then sends ask_done to every remote); same-owner rounds it started or
-        consented to end with their cards (`gone`); same-owner peers get the shorter roster now, not in ≤30 s."""
+        """Revoke device-bound approvals immediately. End its rounds on removal and refresh the peer roster."""
         for a in list(self.asks.values()):
             if getattr(a, "only", None) == did and not a.fut.done():
                 a.fut.set_result(("deny", None, None, None))
@@ -3631,7 +3610,7 @@ class Host:
         if req.get("outcome") == "ok" and (req.get("handoff") == "none" or why is not None):
             text += handoff.switch_fallback(self.hist.turns)
         at = time.time()
-        self.agent.submit(switch_harness.HelloSend(text))
+        self.agent.submit(switch_harness.HelloSend(text, issued_at=at))
         self.st.log("harness_hello", agent=self.agent.kind, outcome=req.get("outcome"), handoff=req.get("handoff"),
                     inline="ok" if inline else (why or "no"))
         return {"ok": True, "at": at}
@@ -4292,9 +4271,7 @@ class Host:
         return msg
 
     def busy_changed(self) -> None:
-        """Audit 11-22 H2b / N-H7: Board.on_change also fires in worker threads (reconcile_claude, refresh_*). Host state
-        (`wf.last`, `busy_sent`) and the post queue belong to the event loop: from any other thread the change is handed
-        to the loop, never applied there. A loop that is gone drops it — the next busy_loop tick sends the same list."""
+        """Apply Board updates on the event loop that owns host state and the post queue."""
         loop = self.__dict__.get("loop")
         if loop is None:                                 # not inside run() (unit tests): as before
             return self._busy_changed_now()
@@ -6193,13 +6170,8 @@ class Host:
         return True
 
     def _friend_main(self, s: Session, agent_text: str, label: str) -> str | None:
-        """ADR-0304-friend-card-main-agent: a verified signed 「交给主 Agent 来办」 from paired session `s` → ONE delegated
-        turn with the existing owner-approved friend-handover source `{"kind": "friend_task", "role": "task"}` (same_owner
-        ForwardSend approved=True; assist.py): the main Agent works with the owner's tools, but Host.ask treats the turn as
-        delegated — no batch, goal, parked, Full-access or Jev exemptions; every sensitive step is a fresh card; sudo asks.
-        Never `phone()`: the friend's words are in it. No automatic reply to the friend (the Agent's own `friends tell`).
-        `agent_text` = PeerService.main_text; `label` = the host-written chat line (page src `phone`: the owner tapped it;
-        its approval origin is unverified + suspicious). Submitted synchronously, last: None = queued."""
+        """ADR-0304: queue one signed friend handoff under delegated approval rules, without replying to the friend.
+        The host label belongs to the paired phone page. Friend text keeps an unverified approval origin."""
         if self.stopped():
             return "estop"
         if not self._paired_live(s):
@@ -7581,8 +7553,7 @@ class Host:
         return friend_cmds.add_friend(arg, lang, channel)
 
     def _upgrade_wait_note(self, ready: bool, why) -> None:
-        """0.26.10 #484: the upgrade recovery worker polls every 2 s; the first answer of a wait tells the phones once that
-        the new version is installed and restarts when the current task ends (≤ READY_LIMIT), and why it did not wait."""
+        """Tell the phones once when an installed upgrade waits for the current task to end."""
         if why and why != "busy":
             if getattr(self, "_upg_wait_why", None) != why:
                 self.st.log("upgrade_wait", status="ready" if ready else "waiting", reason=why)

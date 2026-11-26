@@ -1287,8 +1287,8 @@
     "styles/05-composition-layout.css": "48a0f2d6bb2e599a19ab5904606212932ccaaae29f1dacd67a68e8eb92e790ae",
     "styles/19-hero.css": "0e945eb51f97b7e117d24d9af66b7ad7ceffa79428321770972e46f9a1d8fa3b",
     "styles/20-composition-rhythm.css": "eef8954791dbdfd0a29e02de76a7ff35c08f091f3d45b208496f52c1558eb56d",
-    "public/index.html": "e43acc08669836573e7d15765cd15d7048ecd9eab7e1164984994c18ac69b38c",
-    "public/js/elevate.js": "67dfbba24e21e301e909756133574f3fb506c756f44c58317cf32906e34cb60f",
+    "public/index.html": "299c7fe154cd2ddd8fe9cafde53d7db3257ee2d39e6be80f3269419f49c258cf",
+    "public/js/elevate.js": "6231a9875ce08e3a5252b01a02370967eb9a1fd040deb07fe3151ebb27e04dec",
     "public/js/relay.js": "f6c7b9a2a398c620265e7471a1e8f04073b54e15886ce52c1c18b2f27f53fdb1",
     "public/js/bots.js": "29752fd99e8be638ae0827a93a63bb8e35d9121223a65922cb9eb41edbe9b11a",
     "public/js/controls.js": "9d5390820561605b234716c20949ecf5f71232b7afca8853562cc7097a2ebbf8",
@@ -1299,6 +1299,6 @@
     "public/js/bang.js": "7d6af4c80e22f5d3957a97baddd5a20b0f3d677e56be57313d742c6351d39d6a",
     "public/js/md.js": "1a1f0eea6053c9a783d1da26907761f7038d4229e543c4b6f514951815727409",
     "public/js/cardplace.js": "341df6edcc7afbf39101fa012cfd870f8d55c086d94dae4f02a9d5b2ae7c1e20",
-    "public/app.css": "91307bc589bcd073393f2caaf9d00ddfe311ab549ba17fbc4f0700c9f6aff4a2"
+    "public/app.css": "993ff3f3f679e20e0713ce2eccf78b193a1190ddd19f9eab960ab35eacbaf2e6"
   }
 }

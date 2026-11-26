@@ -1,25 +1,8 @@
-"""Local Claude shared hook transport. No key, tool input or reply is persisted.
+"""Local shared hook transport authenticated by session token and kernel ancestry.
 
-PermissionRequest is the only allow-returning boundary: it answers a native
-request through Host.ask. PreToolUse may only return ask, never allow.
-
-P139 (0.18.3) — the phone always has a card:
-- Another PermissionRequest hook no longer makes Agent J yield. Known observers
-  (relay_hook.py taps) never answer; known/unknown answerers race the phone card
-  — first answer wins, and when Claude drops our hook process the card is
-  withdrawn (EOF on this channel → `gone`).
-- Every hook event carries the served session's one-time token (A14), found
-  through the hook's own process ancestry (`<state>/shared-hook/<pid>.token`).
-  The host also checks, by SO_PEERCRED, that the sender descends from the served
-  Claude process; a forged session_id from anywhere else is refused.
-- Unavailable approval channel (host gone, socket error/timeout): the fallback
-  never allows. Claude: a high-risk or hook-file PreToolUse returns ask (it is
-  never silently handed back to native rules), and PermissionRequest keeps
-  re-trying the host for RECONNECT_S while the native dialog is on screen, so a
-  recovered host still puts the card on the phone; whatever stayed native is
-  spooled (tool name only) and reported to the phone when the host is back.
-  Codex treats PreToolUse ask as unsupported output and OpenCode cannot ask, so
-  their unavailable path keeps native rules (no decision).
+Only PermissionRequest can return allow. PreToolUse can ask or deny. An EOF
+withdraws the waiting card. The offline path preserves native decisions and
+denies protected writes. The recovery spool contains only time and tool name.
 """
 from __future__ import annotations
 import asyncio
@@ -36,6 +19,7 @@ import sys
 EVENTS = ('SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure',
           'SubagentStart', 'SubagentStop', 'Stop', 'PreCompact', 'PostCompact', 'SessionEnd', 'PermissionRequest',
           'Notification')   # P116 (B5): the state machine's waiting signal (permission_prompt / idle_prompt)
+DENIED = 'PermissionDenied'
 MAX_FRAME = 2 * 1024 * 1024
 # Host-generated channel names; the fallback derives the harness from the
 # channel argument already baked into every installed hook command.
@@ -68,13 +52,8 @@ def settings(path, events=EVENTS):
                        'timeout': 180 if name in ('PermissionRequest', 'PreToolUse') else 15}]}] for name in events}}
 
 
-def install(directory, path, family="claude"):
-    """Merge only our hook entries; preserve every native permission and owner hook.
-
-    Owner local settings must be valid and not symlinks. Shared hooks are durable
-    so `claude --resume` loads them too; disconnected high-risk requests fall back
-    to the native ask (Claude) or deny (Codex), see main().
-    """
+def install(directory, path, family="claude", *, denial_hook=False):
+    """Merge Agent J hooks into owner settings without changing permission rules."""
     dest = Path(directory) / ('.claude' if family == 'claude' else '.codex') / ('settings.local.json' if family == 'claude' else 'hooks.json')
     if dest.is_symlink() or dest.parent.is_symlink():
         raise ValueError('shared hook settings symlink refused')
@@ -83,7 +62,10 @@ def install(directory, path, family="claude"):
     if not isinstance(doc, dict) or not isinstance(doc.get('hooks', {}), dict):
         raise ValueError('invalid native Claude hooks')
     hooks = doc.setdefault('hooks', {})
-    for event, entries in settings(path, EVENTS if family == 'claude' else ('UserPromptSubmit','PreToolUse'))['hooks'].items():
+    events = EVENTS if family == 'claude' else ('UserPromptSubmit', 'PreToolUse')
+    if family == 'claude' and denial_hook:
+        events += (DENIED,)
+    for event, entries in settings(path, events)['hooks'].items():
         old = hooks.get(event, [])
         if not isinstance(old, list):
             raise ValueError('invalid native Claude hook entries')
@@ -165,11 +147,14 @@ def foreign_answerers(directory, tool):
     return found
 
 
-def missing(directory, path, family='claude'):
+def missing(directory, path, family='claude', *, denial_hook=False):
     """A5 (P139): events whose Agent J hook entry (pointing at this channel) is not in the settings file install() writes.
     [] = all in place. Read-only; an unreadable / invalid file counts as all missing."""
     dest = Path(directory) / ('.claude' if family == 'claude' else '.codex') / ('settings.local.json' if family == 'claude' else 'hooks.json')
-    want = settings(path, EVENTS if family == 'claude' else ('UserPromptSubmit', 'PreToolUse'))['hooks']
+    events = EVENTS if family == 'claude' else ('UserPromptSubmit', 'PreToolUse')
+    if family == 'claude' and denial_hook:
+        events += (DENIED,)
+    want = settings(path, events)['hooks']
     try:
         doc = json.loads(dest.read_text()) if not dest.is_symlink() else None
     except (OSError, ValueError):
@@ -398,13 +383,7 @@ def _risk(event):
 
 
 def fallback(name, family, event, valid_execution):
-    """Decision when the approval channel is unavailable. Never returns allow.
-
-    None means "no decision": native rules and the native dialog decide. P139 (A5): Claude's high-risk / hook-file
-    PreToolUse is never silently handed back to native rules (which may auto-allow it) — it returns ask, so a person
-    confirms it at the Agent J host. Codex/OpenCode cannot ask from PreToolUse: native rules, as before. P147: SessionStart of a Claude session only
-    adds context (how to reconnect) — never a decision.
-    """
+    """Preserve native decisions unless an offline protected operation must be denied."""
     if name == 'SessionStart' and family == 'claude' and not event.get('agent_id'):
         return {'additionalContext': RECONNECT}
     if name == 'PreToolUse':

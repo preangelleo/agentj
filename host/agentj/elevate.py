@@ -75,6 +75,7 @@ RESULTS_KEEP = 100
 
 
 REQUEST_WAIT = 100
+MAX_SECRET_KEYS = 8
 NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 _ID = re.compile(r"[0-9a-f]{32}")
 
@@ -349,17 +350,33 @@ def settings_origin(host, card: dict) -> dict:
 
 
 def norm_secret(req: dict, state_root: pathlib.Path) -> dict:
-    name = req.get("name")
-    if not isinstance(name, str) or not NAME_RE.fullmatch(name):
-        raise Refused("shape", "name: a variable name like ELEVENLABS_API_KEY")
+    names = req.get("names")
+    if "names" in req:
+        if ("name" in req or not isinstance(names, list) or not 2 <= len(names) <= MAX_SECRET_KEYS
+                or any(not isinstance(k, str) or not NAME_RE.fullmatch(k) for k in names)
+                or len(set(names)) != len(names)):
+            raise Refused("shape", "2–8 distinct variable names")
+    else:
+        name = req.get("name")
+        if not isinstance(name, str) or not NAME_RE.fullmatch(name):
+            raise Refused("shape", "name: a variable name like ELEVENLABS_API_KEY")
     purpose = _text(req.get("purpose"), 300, required=True, field="purpose")
-    if system_password_ask(name, purpose):
+    if any(system_password_ask(key, purpose) for key in (names or [name])):
         raise Refused("login_password", "Agent J 主机登录密码 / 管理员密码不能用密钥卡要：管理员命令用 `agentj sudo`。/ The Agent J host "
                                         "login or admin password is never asked for with a secret card; use `agentj sudo` "
                                         "for an admin command.")
     cwd = req.get("cwd") if isinstance(req.get("cwd"), str) else None
-    d = parse_dest(req.get("dest"), name, cwd, state_root)
+    dest = req.get("dest")
+    d = parse_dest(dest, names[0] if names else name, cwd, state_root)
     vu, vh, vc = req.get("verify_url") or "", req.get("verify_header") or "", req.get("verify_cmd") or ""
+    if names:
+        if d["mode"] != "env" or "#" in dest:
+            raise Refused("dest", "multiple keys require one env:<file> without #KEY")
+        if vu or vh or vc:
+            raise Refused("shape", "verification requires a single key")
+        name = ", ".join(names)
+        d["keys"] = tuple(names)
+        d["show"], d["replace"] = d["path"], req.get("replace") is True
     if vu and vc:
         raise Refused("shape", "one check: --verify-url or --verify-cmd")
     verify = ""
@@ -670,6 +687,16 @@ def write_secret(spec: dict, value: bytearray) -> None:
     os.chmod(path, 0o600)
 
 
+def _env_has_value(lines, key):
+    pat = re.compile(r"^\s*(?:export\s+)?" + re.escape(key) + r"\s*=(.*)$")
+    found = False
+    for line in lines:
+        if match := pat.match(line.rstrip("\r\n")):
+            value = match[1].strip()
+            found = bool(value) and value not in ('""', "''")
+    return found
+
+
 def dest_has_value(spec: dict) -> bool:
 
     path = pathlib.Path(spec.get("path") or "")
@@ -678,15 +705,8 @@ def dest_has_value(spec: dict) -> bool:
             return False
         if spec.get("mode") != "env":
             return path.stat().st_size > 0
-        pat = re.compile(r"^\s*(?:export\s+)?" + re.escape(spec["key"]) + r"\s*=(.*)$")
-        found = False
         with open(path, encoding="utf-8", errors="replace") as f:
-            for ln in f:
-                m = pat.match(ln.rstrip("\r\n"))
-                if m:
-                    v = m.group(1).strip()
-                    found = bool(v) and v not in ('""', "''")
-        return found
+            return _env_has_value(f, spec["key"])
     except (OSError, KeyError, ValueError):
         return False
 
@@ -887,6 +907,16 @@ def _chat_key_revision(text, key):
     return digest.hexdigest()
 
 
+def _dest_keys(spec):
+    return spec.get('keys') or (spec['key'],)
+
+
+def _env_revisions(text, spec):
+    if keys := spec.get('keys'):
+        return tuple(_chat_key_revision(text, key) for key in keys)
+    return _chat_key_revision(text, spec['key'])
+
+
 def _chat_read_env(name, dfd, expected):
     from . import approval_special
     if expected is None:
@@ -907,7 +937,7 @@ def _chat_location(spec):
         entry = _chat_file_id(path.name, directory=dfd)
         target = entry
         if spec['mode'] == 'env':
-            target = _chat_key_revision(_chat_read_env(path.name, dfd, entry), spec['key'])
+            target = _env_revisions(_chat_read_env(path.name, dfd, entry), spec)
             if _chat_file_id(path.name, directory=dfd) != entry:
                 raise Refused('dest', 'the destination changed')
         return (parent.st_dev, parent.st_ino), target
@@ -918,8 +948,8 @@ def _chat_location(spec):
 def _write_chat_secret(card, value, guard, state):
     """Keep reads, temporary data and the final replacement inside the originally approved directory."""
     from . import approval_special
-    chat = card.get('_chat_input') or card['_switch_input']
-    spec, location = card['dest_spec'], chat.location
+    binding = _write_binding(card)
+    spec, location = card['dest_spec'], binding.location
     path = pathlib.Path(spec['path'])
     dfd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     tmp = None
@@ -928,7 +958,7 @@ def _write_chat_secret(card, value, guard, state):
         entry = _chat_file_id(path.name, directory=dfd)
         def check():
             guard()
-            if ((chat.env_key is not None and chat.env_key.version != chat.version)
+            if (any(key.version != version for key, version in binding.versions)
                     or (parent.st_dev, parent.st_ino) != location[0] or not os.path.samestat(parent, path.parent.stat())
                     or _chat_file_id(path.name, directory=dfd) != entry):
                 raise approval_special.AuthorityChanged()
@@ -936,10 +966,16 @@ def _write_chat_secret(card, value, guard, state):
         text, target = '', entry
         if spec['mode'] == 'env':
             text = _chat_read_env(path.name, dfd, entry)
-            target = _chat_key_revision(text, spec['key'])
+            target = _env_revisions(text, spec)
         if target != location[1]:
             raise approval_special.AuthorityChanged()
-        data = _secret_bytes(spec, value, lambda: text)
+        if spec.get('keys'):
+            lines = text.splitlines()
+            if not spec['replace'] and any(_env_has_value(lines, key) for key in spec['keys']):
+                raise Refused('replace_required')
+            data = _batch_secret_bytes(spec, value, text)
+        else:
+            data = _secret_bytes(spec, value, lambda: text)
         name = '.agentj-' + secrets.token_hex(16)
         fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=dfd)
         tmp = name
@@ -963,8 +999,8 @@ def _write_chat_secret(card, value, guard, state):
                         locks.enter_context(state.devices_lock(blocking=False))
                         check()
                         os.replace(tmp, path.name, src_dir_fd=dfd, dst_dir_fd=dfd)
-                        if chat.env_key is not None:
-                            chat.env_key.version += 1
+                        for key, _ in binding.versions:
+                            key.version += 1
                         card['_chat_committed'] = True
                         return
                 except BlockingIOError:
@@ -1058,6 +1094,35 @@ class _EnvKey:
     version = 0
 
 
+@dataclass(frozen=True)
+class _BoundDestination:
+    location: tuple
+    versions: tuple
+
+
+def _write_binding(card):
+    chat = card.get('_chat_input')
+    return chat.destination if chat is not None else card.get('_switch_input') or card.get('_batch_input')
+
+
+def _batch_secret_bytes(spec, value, text):
+    keys = spec['keys']
+    try:
+        values = json.loads(value.decode('utf-8'))
+        if not isinstance(values, list) or len(values) != len(keys) or any(
+                not isinstance(entry, str) or not entry.strip() or entry.splitlines() != [entry] for entry in values):
+            raise ValueError
+        for key, entry in zip(keys, values):
+            encoded = bytearray(entry, 'utf-8')
+            try:
+                text = _secret_bytes({**spec, 'key': key}, encoded, lambda: text).decode('utf-8')
+            finally:
+                wipe(encoded)
+    except (UnicodeError, ValueError, RecursionError):
+        raise Refused('value', 'one text value is required for each key') from None
+    return text.encode('utf-8')
+
+
 def _chat_target(card):
     from . import approval_review
     keys = ('name', 'dest_spec', 'verify_url', 'verify_header', 'verify_cmd', 'verify_before_write')
@@ -1071,9 +1136,7 @@ class _ChatInput:
     session: str
     message: int
     target: str
-    location: tuple
-    env_key: _EnvKey | None
-    version: int
+    destination: _BoundDestination
     report: object = None
 
     def valid(self, host, card):
@@ -1239,6 +1302,8 @@ class Elevator:
                 m["v"] = v
         else:
             m.update(name=c["name"], purpose=c["purpose"], dest=c["dest"], verify=c.get("verify") or "")
+            if keys := (c.get('dest_spec') or {}).get('keys'):
+                m['names'] = list(keys)
         if c.get("auth"):
             m["auth"] = dict(c["auth"])
 
@@ -1466,15 +1531,26 @@ class Elevator:
         with settings:
             return await self._request_scoped(card, gone, on_card, creator_live, _chat=_chat)
 
+    def _destination_binding(self, spec):
+        if spec['mode'] != 'env':
+            return _BoundDestination(_chat_location(spec), ())
+        with self.st.file_lock('chat-env-write'):
+            keys = [self._chat_env_keys.setdefault((spec['path'], key), _EnvKey()) for key in _dest_keys(spec)]
+            return _BoundDestination(_chat_location(spec), tuple((key, key.version) for key in keys))
+
     async def _request_scoped(self, card, gone, on_card, creator_live, *, _chat=None):
         from . import approval_review
-        if any(k in card for k in ('_chat_input', '_chat_operation', '_chat_committed', '_chat_loop')):
+        if any(k in card for k in ('_chat_input', '_batch_input', '_chat_operation', '_chat_committed', '_chat_loop')):
             return {'result': 'refused', 'why': 'authority_changed'}
         if _chat is not None:
             if type(_chat) is not _ChatInput or _chat.request is not card or not _chat.valid(self.host, card):
                 return {'result': 'refused', 'why':'authority_changed'}
             card = {**card, 'dest_spec': dict(card['dest_spec'])}
-        binding = {'verified_phone_cli': card, 'location': _chat.location, 'version': _chat.version} if _chat is not None else card
+        binding = card
+        if _chat is not None:
+            versions = [version for _, version in _chat.destination.versions]
+            binding = {'verified_phone_cli': card, 'location': _chat.destination.location,
+                       'version': versions if len(versions) > 1 else next(iter(versions), 0)}
         callback_entry = None
         callbacks = self.__dict__.setdefault('_review_callbacks', [])
         if card.get('kind') == 'secret' and 'sink' in card:
@@ -1550,12 +1626,8 @@ class Elevator:
         if '_switch_job' in c:
             if not self._source_allows(c):
                 return {'result':'refused', 'why':'authority_changed'}
-            from types import SimpleNamespace
-            spec = c['dest_spec']
-            key = self._chat_env_keys.setdefault((spec['path'], spec['key']), _EnvKey())
             try:
-                c['_switch_input'] = SimpleNamespace(location=await asyncio.to_thread(_chat_location, spec),
-                                                      env_key=key, version=key.version)
+                c['_switch_input'] = await asyncio.to_thread(self._destination_binding, c['dest_spec'])
             except (Refused, OSError):
                 return {'result':'refused', 'why':'dest'}
             c['_chat_loop'] = asyncio.get_running_loop()
@@ -1563,6 +1635,21 @@ class Elevator:
             if not _chat.valid(self.host, c):
                 return {'result':'refused', 'why':'authority_changed'}
             c['_chat_input'], c['_chat_operation'] = _chat, operation
+        elif (c.get('dest_spec') or {}).get('keys'):
+            from . import approval_review, approval_special
+            owner = approval_review.snapshot(self.host) or {}
+            agent = self.host.agent
+            if owner.get('verified') is not True or owner.get('suspicious'):
+                return {'result': 'refused', 'why': 'secret_source'}
+            try:
+                c['_batch_input'] = await asyncio.to_thread(self._destination_binding, c['dest_spec'])
+            except (Refused, OSError, UnicodeError, approval_special.AuthorityChanged):
+                return {'result': 'refused', 'why': 'dest'}
+            if self.host.agent is not agent or owner.get('session') != str(self.host.hist.epoch) or self.host.stopped():
+                return {'result': 'refused', 'why': 'authority_changed'}
+            if sum(not opened['fut'].done() for opened in self.cards.values()) >= MAX_OPEN:
+                return {'result': 'busy'}
+        if _chat is not None or '_batch_input' in c:
             c['_chat_loop'] = asyncio.get_running_loop()
             for key, limit in (('purpose', 300), ('reason', 300), ('dest', 1100)):
                 c[key] = _chat_display(c.get(key), limit)
@@ -1606,6 +1693,7 @@ class Elevator:
             remember(self.st, c["id"], {"kind": "secret", "name": c["name"], "result": "pending",
                                         **({"mail_account": mail_account} if mail_account else {}),
                                         "until": int(time.time() + TTL["secret"]),
+                                        **({"names": list(d["keys"])} if d.get("keys") else {}),
                                         **({"where": {k: d.get(k) for k in ("mode", "path", "key")}} if d.get("path") else {})})
         if c["kind"] != "login":
             self.host.push_notify("ask")
@@ -1768,6 +1856,8 @@ class Elevator:
                 end = self.completed.get(rid)
                 await self.host.send_app(s, dict(end) if end else {"t": "elev_refused", "id": rid, "why": "gone"})
             return
+        if obj.get('ok') is True and (c.get('dest_spec') or {}).get('keys') and (type(obj.get('values_v')) is not int or obj['values_v'] != 2):
+            return await self.host.send_app(s, {'t': 'elev_refused', 'id': rid, 'why': 'shape'})
         why = self._check(s, c, obj)
         if why:
             self.st.log("elev_refused", id=rid, device=s.device, reason=why)
@@ -2062,7 +2152,7 @@ class Elevator:
                 ensure_live()
             else:
                 res = await asyncio.to_thread(self._save, c, value)
-                if (c.get('_chat_input') is not None or c.get('_switch_input') is not None) and c.get('_chat_committed'):
+                if _write_binding(c) is not None and c.get('_chat_committed'):
                     # Cancellation after the atomic replacement cannot undo it. Further work still needs live authority.
                     try:
                         ensure_live()
@@ -2280,7 +2370,7 @@ class Elevator:
             chat = c.get('_chat_input')
             if c.get('_switch_input') is not None and time.monotonic() >= c['deadline']:
                 raise approval_special.AuthorityChanged()
-            if chat is not None and time.monotonic() >= min(c['deadline'], c['review_adapter'].deadline):
+            if (chat is not None or '_batch_input' in c) and time.monotonic() >= min(c['deadline'], c['review_adapter'].deadline):
                 raise approval_special.ChatExpired()
             if pinned is not None and approval_special.live_context(self.host) != pinned:
                 stamp = self.host.__dict__.get('_turn_started') if chat is not None else None
@@ -2322,19 +2412,25 @@ class Elevator:
                 return {'result': 'failed', 'why': 'verify', 'detail': verified.get('detail', ''), **_key_hint(c, value)}
         ensure_source(verified is not None)
         try:
-            if c.get('_chat_input') is None and c.get('_switch_input') is None:
-                write_secret(c["dest_spec"], value)
-            else:
-                # Serialise the brief env read/merge/replace; verification stays outside the state lock.
-                merging = c['dest_spec']['mode'] == 'env'
-                with (self.st.file_lock('chat-env-write') if merging else contextlib.nullcontext()):
+            spec = c['dest_spec']
+            # Serialise all env merges with pinned card writes. Verification runs outside this lock.
+            merging = spec['mode'] == 'env'
+            with (self.st.file_lock('chat-env-write') if merging else contextlib.nullcontext()):
+                if _write_binding(c) is not None:
                     _write_chat_secret(c, value, lambda: ensure_source(verified is not None), self.st)
+                else:
+                    ensure_source(verified is not None)
+                    write_secret(spec, value)
+                    if merging and (key := self._chat_env_keys.get((spec['path'], spec['key']))):
+                        key.version += 1
         except Refused as e:
             return {"result": "failed", "why": e.why, "detail": e.detail}
         except OSError:
             if c.get("_chat_committed"):
                 return {"result": "unknown", "why": "persistence_unconfirmed"}
             return {"result": "failed", "why": "io"}
+        if keys := (c.get('dest_spec') or {}).get('keys'):
+            return {'result': 'saved', 'receipt': {'name': c['name'], 'names': list(keys), 'dest': c['dest'], 'verify': 'skipped'}}
         receipt = {"name": c["name"], "dest": c["dest"], "length": len(value), "fingerprint": fingerprint(value)}
         if c.get('_chat_input') is not None and c.get('verify_url'):
             # .34 CLI: an optional HTTP check reports on an already-stored value. A cancelled/stale
@@ -2396,13 +2492,16 @@ class Elevator:
                 spec = parse_dest(req["dest"], name, cwd, self.st.root)
             except Refused as e:
                 return {"result": "refused", "why": e.why, "detail": e.detail}
-        rows = sorted((r for r in read_results(self.st).values() if r.get("kind") == "secret" and r.get("name") == name),
+        rows = sorted((r for r in read_results(self.st).values()
+                       if r.get("kind") == "secret" and (r.get("name") == name or name in (r.get("names") or []))),
                       key=lambda r: r.get("at", 0))
         saved = next((r for r in reversed(rows) if r.get("result") == "saved"), None)
         now = time.time()
         pending = next((r for r in reversed(rows) if r.get("result") == "pending" and (r.get("until") or 0) > now), None)
         out = {"result": "status", "name": name, "status": "missing"}
         where = spec or (saved or {}).get("where")
+        if where and saved and name in (saved.get('names') or []) and spec is None:
+            where = {**where, 'key': name}
         there = await asyncio.to_thread(dest_has_value, where) if isinstance(where, dict) else None
         if there or (there is None and saved is not None):
             out["status"] = "saved"
@@ -2548,7 +2647,9 @@ class Elevator:
                 else:
                     incoming_origin = (chat_source[1] if chat_source else
                                        await asyncio.to_thread(bounded_plan.caller_origin, self.host, peer))
-                if incoming_origin is None and ctl_auth.refusal(peer, os.getpid(), self.host._agent_pids()) is None and ctl_auth.has_tty(peer):
+                agent_pids = self.host._agent_pids()
+                caller = ctl_auth.refusal(peer, os.getpid(), agent_pids) if incoming_origin is None else None
+                if incoming_origin is None and caller is None and ctl_auth.has_tty(peer):
                     turn = self.host.hist_add({"k": "host", "name": "Agent J 主机", "text": "本人在本机终端发起这项受控操作。"}, "", "done")
                     incoming_origin = approval_review.remember(self.host, turn, provenance.terminal())
                 origin_token = approval_review.ORIGIN.set(incoming_origin or {})
@@ -2945,6 +3046,20 @@ class Elevator:
                     raise Refused("shape", "t: sudo | secret | secret_out | secret_result")
                 card = norm_sudo(req) if req["t"] == "sudo" else norm_secret(req, self.st.root)
                 card["reason"] = card["why"] if card["kind"] == "sudo" else card["purpose"]
+                if card["kind"] == "secret":
+                    spec = card['dest_spec']
+                    origin = incoming_origin or {}
+                    verified = origin.get('verified') is True and not origin.get('suspicious')
+                    known_agent = caller == 'agent'
+                    if not verified and (spec.get('keys') or origin or known_agent or caller == 'terminal'):
+                        raise Refused('secret_source', '请在已配对手机的当前对话里重新发起 / Request the card from the current paired phone conversation')
+                    existing = []
+                    if req.get('replace') is not True:
+                        keys = tuple(k for k in _dest_keys(spec) if not self._last_check_failed(k if spec.get('keys') else card['name']))
+                        existing = await asyncio.to_thread(
+                            lambda: [k for k in keys if dest_has_value({**spec, 'key': k})])
+                    if existing and len(existing) != len(_dest_keys(spec)):
+                        raise Refused('replace_required', 'some keys are already set; request only missing keys or use --replace')
                 on_card = None
                 if req.get("early") is True:
                     async def on_card(c):
@@ -2960,8 +3075,7 @@ class Elevator:
                             gone.set_result(True)
                     watch = asyncio.create_task(eof())
                     res = await self.request(card, gone, on_card)
-                elif req.get("replace") is not True and not self._last_check_failed(card["name"]) \
-                        and await asyncio.to_thread(dest_has_value, card["dest_spec"]):
+                elif existing:
 
 
                     res = {"result": "already_saved", "name": card["name"], "dest": card["dest"]}
@@ -2979,19 +3093,12 @@ class Elevator:
                         from . import approval_special, chat_secret_report
                         report = chat_secret_report.Receipt(self.host, chat_source)
                         _chat_http_target(card)
-                        spec = card['dest_spec']
-                        env_key = (self._chat_env_keys.setdefault((spec['path'], spec['key']), _EnvKey())
-                                   if spec['mode'] == 'env' else None)
-                        def snapshot_location():
-                            # Concurrent chat writes to other env keys can change the file identity during the snapshot.
-                            with (self.st.file_lock('chat-env-write') if env_key is not None else contextlib.nullcontext()):
-                                return _chat_location(spec), env_key.version if env_key is not None else 0
                         try:
-                            location, version = await asyncio.to_thread(snapshot_location)
+                            destination = await asyncio.to_thread(self._destination_binding, card['dest_spec'])
                         except (OSError, UnicodeError, approval_special.AuthorityChanged):
                             raise Refused('dest', 'the destination is unavailable or changed') from None
                         chat = _ChatInput(card, chat_source[0], str(chat_source[1]['session']),
-                                          chat_source[1]['message_id'], _chat_target(card), location, env_key, version, report)
+                                          chat_source[1]['message_id'], _chat_target(card), destination, report)
                         request = self._request(card, None, note_card, _chat=chat)
                     else:
                         request = self.request(card, None, note_card)
@@ -3112,9 +3219,9 @@ SECRET_MSG = {
     "timeout": "10 分钟内手机上没人提交，卡片已过期，什么都没保存。/ Nobody submitted on the phone within 10 minutes; the card "
                "expired and nothing was saved.",
     "pending": "卡片还在手机上等主人处理（还剩 {secs} 秒）。不要再发卡，也不要让主人重填：主人提交后结果会以〔Agent J 系统提示〕自动告诉你；"
-               "也可运行 `agentj secret result {id} --wait` 或 `agentj secret status {name}` 查看。/ Still waiting on the phone ({secs} s "
+               "也可运行 `agentj secret result {id} --wait` 查看。/ Still waiting on the phone ({secs} s "
                "left). Do not send another card or ask the owner again: the outcome reaches you as an [Agent J system notice] once "
-               "the owner submits; or run `agentj secret result {id} --wait` / `agentj secret status {name}`.",
+               "the owner submits. You can also run `agentj secret result {id} --wait`.",
 
     "already_saved": "{name} 已经保存在 {dest}，没有再发卡。直接使用，不要让主人重填；确实要换新值时加 --replace 重新运行。/ {name} is "
                      "already saved in {dest}; no card was sent. Use it and do not ask the owner again; add --replace only to "
@@ -3199,7 +3306,8 @@ def _secret_report(res: dict, as_json: bool) -> int:
         r = res["receipt"]
         v = {"ok": "校验通过 / check passed", "fail": f"校验失败 / check failed ({r.get('detail')})",
              "skipped": "未校验 / not checked"}[r["verify"]]
-        print(f"SECRET_SAVED: {r['name']} → {r['dest']} · {r['length']} chars · {r['fingerprint']} · {v}")
+        fields = f" · {r['length']} chars · {r['fingerprint']}" if not r.get('names') else ""
+        print(f"SECRET_SAVED: {r['name']} → {r['dest']}{fields} · {v}")
     else:
         print(f"SECRET_RESULT: {res.get('result')} — {_say(res, 'secret')}", file=sys.stderr)
     if not as_json and (res.get("key_hint") or (res.get("receipt") or {}).get("key_hint")) == "short":
@@ -3290,6 +3398,8 @@ def _sx_cmd(a) -> int:
 
 def cmd_secret(a) -> int:
     from .state import State
+    names = a.name if isinstance(a.name, list) else [a.name] if a.name else []
+    a.name = names[-1] if names else None
     if a.action in ("ask", "give", "grant", "grants"):
         return _sx_cmd(a)
     if a.action == "log":
@@ -3325,7 +3435,8 @@ def cmd_secret(a) -> int:
               f"waits up to {REQUEST_WAIT} s. If it is interrupted the card stays valid and the outcome reaches you as an "
               f"[Agent J system notice]; or run `agentj secret result {c['id']}` later. Do not send another card.",
               file=sys.stderr, flush=True)
-    res = client_request(State(), {"t": "secret", "name": a.name, "purpose": a.purpose, "dest": a.dest,
+    key_args = {"names": names} if len(names) > 1 else {"name": a.name}
+    res = client_request(State(), {"t": "secret", **key_args, "purpose": a.purpose, "dest": a.dest,
                                    "verify_url": a.verify_url or "", "verify_header": a.verify_header or "",
                                    "verify_cmd": a.verify_cmd or "", "cwd": os.getcwd(), "wait": REQUEST_WAIT,
                                    "replace": bool(getattr(a, "replace", False))}, on_card=on_card)
@@ -3415,7 +3526,7 @@ def add_parser(sub) -> None:
                                     "signs the grant, valid 24 h; the other Same owner host checks that signature itself.")
     sc.add_argument("action", choices=["request", "send", "result", "status", "log", "ask", "give", "grant", "grants"])
     sc.add_argument("id", nargs="?", help="result：卡片 id（request/send 打印的）；不写 = 最近十张 · status：变量名")
-    sc.add_argument("--name", help="request：变量名，如 ELEVENLABS_API_KEY · send：手机上显示的名字，如 'Shadowrocket SS 链接'")
+    sc.add_argument("--name", action="append", help="request：可重复传入变量名 · send：手机上显示的名字 / repeat for keys in one env file")
     sc.add_argument("--purpose", help="用途（手机上原样显示）")
     sc.add_argument("--dest", help="存到哪：env:<文件>[#KEY]（.env 一行）或 file:<路径>（整个文件）")
     sc.add_argument("--verify-url", dest="verify_url", help="只读校验：GET 这个 https 地址，2xx = 有效")
