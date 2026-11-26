@@ -1,8 +1,7 @@
 // P393 #126 / #127 · real Chromium + real Noise to the local fake host.
 // #126: a one-tap answer's label sits in the vertical middle of its pill — one and two lines, Chinese and English,
-//       three font sizes, light and dark, every state. #127: an external link in the reply is Peachy Feeling (pure in the
-//       dark theme and the reader; P424: Bisque #fee2c5 from the palette where pure is too faint), underlined; a file card's
-//       link, the one-tap answers and the #tags are not touched.
+//       three font sizes, light and dark, every state. The 0.30.78 link contract uses underlined Lotion in reply cards
+//       and the Noir reader. The one-tap answers and their positioning retain their own visual checks.
 import assert from 'node:assert/strict';
 import {mkdirSync,writeFileSync,cpSync,mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -14,7 +13,7 @@ import {startWebServer,PUBLIC_DIR} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
 import {launch,newPage,evaluate as ev,navigate,waitState,waitFor,sleep,shoot} from './browser.mjs';
 const out=fileURLToPath(new URL('../../../reports/qa/p393/',import.meta.url));mkdirSync(out,{recursive:true});
-const tmp=mkdtempSync(join(tmpdir(),'p393-reply-'));cpSync(PUBLIC_DIR,tmp,{recursive:true});writeFileSync(join(tmp,'i18n.js'),i18nModule());
+const tmp=mkdtempSync(join(tmpdir(),'p393-reply-'));cpSync(process.env.P393_PUBLIC||PUBLIC_DIR,tmp,{recursive:true});writeFileSync(join(tmp,'i18n.js'),i18nModule());
 const rec=parityRecorder('web/test/p393_reply.mjs');let passed=false;
 const web=await startWebServer({publicDir:tmp}),fake=await startFakeHost(),B=await launch(),results=[];
 const REPLY={
@@ -68,9 +67,8 @@ try{
    assert.match(c.line,/underline/);assert.equal(c.color,c.deco,'the underline is the link colour');
    assert.equal(nums(c.rbtn).map(Math.round).join(),'250,249,245','the one-tap answers keep their Lotion words');
    const got=nums(c.color).map(Math.round).join();
-   const want=scheme==='dark'&&status!=='waiting';
    assert.equal(got,'250,249,245',`#127 ${scheme}/${status}: reply-body links follow P477 Lotion`);
-   const cr=ratio(nums(c.color),nums(c.bg));assert.ok(cr>=(want?2:3),`#127 ${scheme}/${status} contrast ${cr.toFixed(2)}`);
+   const cr=ratio(nums(c.color),nums(c.bg));assert.ok(cr>=4.5,`#127 ${scheme}/${status} contrast ${cr.toFixed(2)}`);
    link.push({status,color:c.color,bg:c.bg,contrast:+cr.toFixed(2)});
    if(w===390&&lang==='zh'||w===1440&&lang==='en'){await ev(p,`document.getElementById('main').scrollTop=1e8`);await sleep(60);
     writeFileSync(join(out,`web-reply-${w}-${scheme}-${lang}-${status}.png`),await shoot(p));}
@@ -79,10 +77,10 @@ try{
   await ev(p,`document.body.dataset.status='idle';document.body.dataset.kind=''`);
   results.push({w,scheme,lang,link});console.log(`P393 reply ${w}/${scheme}/${lang} PASS`);await p.dispose();
  }
- // A reader page: pure Peachy on Noir.
+ // A reader page: Lotion on Noir.
  {const p=await pair(390,'light','zh');
   await ev(p,`(()=>{const r=document.getElementById('rdWords');r.innerHTML='<p><a href="https://example.com/x">外部</a></p>';})()`);
-  assert.equal(nums(await ev(p,`getComputedStyle(document.querySelector('#rdWords a')).color`)).map(Math.round).join(),'217,119,87');await p.dispose();}
+  assert.equal(nums(await ev(p,`getComputedStyle(document.querySelector('#rdWords a')).color`)).map(Math.round).join(),'250,249,245');await p.dispose();}
  writeFileSync(join(out,'web-reply-result.json'),JSON.stringify({ok:true,results},null,1)+'\n');
  passed=true;console.log('P393 #126/#127 reply pills + external links PASS');
 }catch(e){console.error(e);process.exitCode=1;}finally{rec.record('p393-reply',passed);rec.write();await B.close();await fake.stop();await web.stop();rmSync(tmp,{recursive:true,force:true});}

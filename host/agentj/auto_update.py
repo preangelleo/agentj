@@ -23,6 +23,9 @@ from . import __version__, activity, controls, minisign, preferences, update, re
 RECORD = 'auto-update.json'
 JOB = 'auto-update-job.json'
 IDLE = 1800
+DISPATCH_BACKOFF = (300, 1800, 7200)
+DISPATCH_GRACE = 120
+SCHEDULE_ENV = "AGENTJ_AUTO_UPDATE_REQUEST"
 MAX_WHEEL = 32 * 1024 * 1024
 ORIGIN = 'https://agentj.app/dl/'
 # P393 (#121): the post-upgrade doctor is asked again (up to SELF_CHECK_TRIES, SELF_CHECK_WAIT s apart) while the only
@@ -45,6 +48,10 @@ RETRYABLE_INSTALL = frozenset(('dependency_download_failed',))
 # own cap) before the lease ends. Parsing, hashing and the backoff all count (the clock is read after them).
 ROLLBACK_RESERVE = 300
 RETRY_FLOOR = 30        # 0334 r3: a retry with less than this left (after the wait and the re-hash) is not launched
+
+
+class DeferredInstall(Exception):
+    """An unattended install lost permission or readiness before starting."""
 
 
 class RetryExpired(Exception):
@@ -73,7 +80,7 @@ def enabled(st):
     if update.market_managed():
         return False
     try:
-        return preferences.get(preferences.effective(st), 'updates.auto_install', True) is not False
+        return preferences.get(preferences.effective(st), 'updates.auto_install', True) is True
     except (OSError, ValueError):
         return False
 
@@ -261,8 +268,9 @@ def _primary_present():
 
 def schedules_installs(st):
     """Only the responsible instance checks for automatic installs of the shared program."""
-    from .instance import current
-    return enabled(st) and (current() == 1 or not _primary_present())
+    from .instance import current, exists
+    number = current()
+    return enabled(st) and (number == 1 or not _primary_present() and not any(exists(i) for i in range(2, number)))
 
 
 def uv_retry_scheduled(st, result):
@@ -299,34 +307,108 @@ def _due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow, 
     day = time.strftime('%Y-%m-%d', local)
     rec = read(st)
     if rec.get('day') != day:
-        rec.update(day=day, second=3*3600 + rand(2*3600), attempted=False)
+        rec.update(day=day, second=3*3600 + rand(2*3600), attempted=False, dispatch_retries=0)
         # A serve restart is not proof of thirty idle minutes.
         rec.setdefault('phone_at', now)
         write(st, rec)
     second = local.tm_hour*3600 + local.tm_min*60 + local.tm_sec
-    if rec.get('idle_day') == day:
-        return False  # A known-newer attempt already owns this day's idle/night opportunity.
-    if rec.get('attempted') or second < rec['second']:
-        if (newer and rec.get('idle_day') != day and not stopped and not blocked
-                and now - rec.get('phone_at', now) >= IDLE):
-            rec.update(idle_day=day, decision='idle')
-            write(st, rec)
-            return True
+    schedule = rec.get('schedule') or {}
+    if schedule:
+        from . import phone_update
+        if phone_update.busy(st) or now < schedule['requested_at'] + DISPATCH_GRACE:
+            return False
+        # The launcher never got a worker, or it disappeared and its lease expired.
+        if schedule.get('day') == day:
+            _defer_dispatch(rec, 'launch_failed', now)
+        else:
+            rec.pop('schedule', None)
+        write(st, rec)
+    after_retry = rec.get('retry_at')
+    retry = isinstance(after_retry, (int, float))
+    if retry and now < after_retry:
         return False
-    reason = ('window_missed' if second >= 5*3600 else 'stopped' if stopped else
-              'busy' if blocked else 'phone_recent' if now - rec.get('phone_at', now) < IDLE else 'check')
-    # Busy/recent phone/stop are temporary. Consuming the whole night's
-    # opportunity here could leave an automatic host unupgraded indefinitely.
-    # Persist the actual attempt before launch, or close the expired window.
-    changed = rec.get('decision') != reason
-    rec['attempted'] = reason in ('check', 'window_missed')
-    if reason == 'check' and newer:
-        rec['idle_day'] = day  # Do not launch the same known update again via the idle lane.
-    rec['decision'] = reason
-    write(st, rec)
-    if changed and reason != 'check':
+    if not retry and rec.get('idle_day') == day:
+        return False
+    installed_today = rec.get('install_targets') or {}
+    if (not retry and newer and installed_today.get('day') == day
+            and update.read_rec(st).get('latest') in installed_today.get('versions', ())):
+        return False
+    at_night = rec['second'] <= second < 5*3600 and not rec.get('attempted')
+    if not at_night and not newer and not retry and second < 5*3600:
+        return False
+    if not at_night and not newer and not retry and rec.get('attempted'):
+        return False
+    reason = ('stopped' if stopped else 'busy' if blocked else
+              'phone_recent' if now - rec.get('phone_at', now) < IDLE else 'check')
+    if not at_night and not newer and not retry:
+        reason = 'window_missed'
+    if reason == 'check':
+        lane = 'check' if at_night else 'idle'
+        rec['schedule'] = {'id': secrets.token_hex(16), 'requested_at': now, 'lane': lane, 'day': day,
+                           'state': 'requested'}
+        rec.pop('retry_at', None)
+        rec['decision'] = lane
+        write(st, rec)
+        return True
+    if rec.get('decision') != reason:
+        rec.update(attempted=reason == 'window_missed' or rec.get('attempted', False), decision=reason)
+        write(st, rec)
         activity.record(st, 'auto_update', result='skipped', reason=reason, text='夜间自动升级顺延 / Nightly update deferred: '+reason)
-    return reason == 'check'
+    return False
+
+
+def _defer_dispatch(rec, reason, now):
+    schedule = rec.pop('schedule', {})
+    retries = rec.get('dispatch_retries', 0)
+    rec['decision'] = reason
+    if retries < len(DISPATCH_BACKOFF):
+        rec['retry_at'] = now + DISPATCH_BACKOFF[retries]
+        rec['dispatch_retries'] = retries + 1
+    else:
+        rec.pop('retry_at', None)
+        rec['attempted'] = True
+        if schedule.get('lane') == 'idle':
+            rec['idle_day'] = rec['day']
+
+
+def _dispatch_result(st, request, reason, *, retry=False, started=False):
+    if not request:
+        return True
+    with st.config_lock():
+        rec = read(st)
+        schedule = rec.get('schedule') or {}
+        if schedule.get('id') != request:
+            return False
+        if retry:
+            _defer_dispatch(rec, reason, time.time())
+        elif started:
+            schedule['state'] = 'started'
+            rec['decision'] = reason
+        else:
+            rec.pop('schedule', None)
+            rec['decision'] = reason
+            rec['attempted'] = True
+            if schedule.get('lane') == 'idle':
+                rec['idle_day'] = rec['day']
+        write(st, rec)
+        return True
+
+
+def _start_scheduled_install(st, request, target):
+    if not request:
+        return True
+    with st.config_lock():
+        rec = read(st)
+        if (rec.get('schedule') or {}).get('id') != request:
+            return False
+        day = time.strftime('%Y-%m-%d', time.localtime(time.time()))
+        installs = rec.get('install_targets') or {}
+        versions = installs.get('versions', []) if day == installs.get('day') else []
+        if target in versions:
+            return False
+        rec['install_targets'] = {'day': day, 'versions': [*versions, target]}
+        write(st, rec)
+        return True
 
 
 # #475: a slow or flaky link (a paid macOS host: download_failed after 30 s) gets a longer read timeout and a bounded
@@ -986,15 +1068,26 @@ def launch(st):
     if update.market_managed():
         return False
     from . import phone_update, service_recovery
-    if not phone_update.reserve(st):
-        return False
+    with st.config_lock():
+        rec = read(st)
+        request = (rec.get('schedule') or {}).get('id')
+        if not schedules_installs(st) or controls.estop_state(st).get('on'):
+            return False
+        if not phone_update.reserve(st, holder=request):
+            if request:
+                _defer_dispatch(rec, 'lease_busy', time.time())
+                write(st, rec)
+            return False
+        if read(st, JOB).get('phase') == 'done':
+            (st.root / JOB).unlink(missing_ok=True)
     try:
-        # Snapshot the updater package: rolling back to a pre-P83 wheel must not
-        # remove the worker entry point needed for retry after a SIGKILL.
+        # The updater must survive replacement of the tool it is running from.
         worker = snapshot_worker(st, 'worker-lib', 'agentj.auto_update')
-        service_recovery.launch_job(st, [sys.executable, str(worker)], 'autoupdate', restart=True)
+        env = {SCHEDULE_ENV: request} if request else None
+        service_recovery.launch_job(st, [sys.executable, str(worker)], 'autoupdate', restart=True, extra_env=env)
     except Exception:
-        phone_update.release(st)
+        phone_update.release(st, holder=request)
+        _dispatch_result(st, request, 'launch_failed', retry=True)
         raise
     return True
 
@@ -1017,7 +1110,7 @@ def finish(st, result, diag=None):
         result['install_failure'] = diag['failure']
     with st.config_lock():
         _finish(st, result)
-    support = _diagnose(st, result, diag or {})
+    support = None if controls.estop_state(st).get('on') else _diagnose(st, result, diag or {})
     if support and upgrade_diag.resolution_failed(result):
         with st.config_lock():
             rec = read(st)
@@ -1178,6 +1271,11 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
     from . import phone_update, service_recovery, upgrade_diag, humane, privacy, upgrade_owner  # noqa: F401
     fd = os.open(st.root/'auto-update-worker.lock', os.O_CREAT | os.O_RDWR, 0o600)
     fcntl.flock(fd, fcntl.LOCK_EX)
+    request = os.environ.get(SCHEDULE_ENV)
+    if request and (not phone_update.holds(st, request) or not _dispatch_result(st, request, 'started', started=True)):
+        os.close(fd)
+        service_recovery.cleanup_job(st)
+        return None
     job = read(st, JOB)
     if lease_end is None and clock is time.monotonic:
         lease_end = phone_update.lease_end(st)     # 0334 r2: the 1800 s lease launch() reserved
@@ -1187,6 +1285,22 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
     def save(phase):
         job['phase'] = phase
         write(st, job, JOB)
+
+    def readiness():
+        if not enabled(st) or controls.estop_state(st).get('on'):
+            return 'stopped'
+        if request and not phone_update.holds(st, request):
+            return 'lease_busy'
+        if restart is None:
+            from .names import ctl_call
+            try:
+                ready = ctl_call(st, {'cmd': 'auto_update_ready'}, 10)
+            except (OSError, ValueError):
+                ready = None
+            if not ready or not ready.get('ready'):
+                return 'busy'
+        return None
+
     def install(wheel, *, diagnose=True):
         # A rollback (diagnose=False) records into its own `rb` dict: the first failure's evidence in `diag` stays intact.
         nonlocal stage
@@ -1250,8 +1364,13 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                             raise ValueError('installer_timeout')  # no live command to roll back
                         raise RetryExpired()
                     clear_attempt()
-                if diagnose and job.get('phase') == 'prepared':
-                    save('installing')  # journal immediately before the first mutating runner
+                if diagnose:
+                    if reason := readiness():
+                        raise DeferredInstall(reason)
+                    if job.get('phase') == 'prepared':
+                        if not _start_scheduled_install(st, request, job['to']):
+                            raise DeferredInstall('install_already_attempted')
+                        save('installing')  # journal immediately before the first mutating runner
                 if (retries or preparation.used) and runner is quiet:
                     return quiet(argv, timeout=int(left))
                 return runner(argv)
@@ -1373,14 +1492,19 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             return read(st).get('result')
         if not job:
             if not enabled(st) or controls.estop_state(st).get('on'):
+                _dispatch_result(st, request, 'stopped', retry=True)
                 return None
             latest = check_fn()
             if latest.get('status') != 'newer':
+                unavailable = latest.get('status') == 'unknown'
+                _dispatch_result(st, request, 'check_unavailable' if unavailable else 'no_newer',
+                                 retry=unavailable and latest.get('why') in ('network', 'http_429', 'http_500',
+                                                                             'http_502', 'http_503', 'http_504'))
                 return None
             info = update.install_kind()
             # No checkout git pulls or other owner code changes during unattended updates.
             job = {'attempt': secrets.token_hex(16), 'from': __version__, 'to': latest['latest'], 'install': info,
-                   'argv': update.new_argv(info), 'when': 'idle' if read(st).get('decision') == 'idle' else 'night'}
+                   'argv': update.new_argv(info), 'when': 'idle' if (read(st).get('schedule') or {}).get('lane') == 'idle' else 'night'}
             install_commands(info, '/unused.whl')
             own = upgrade_owner.blocked()
             if own:
@@ -1403,16 +1527,8 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             job.update(old=str(old), new=str(new))
             save('prepared')
         if job['phase'] == 'prepared':
-            # Recheck opt-out and stop immediately before modifying installed files.
-            if not enabled(st) or controls.estop_state(st).get('on'):
-                save('done')
-                return None
-            if restart is None:
-                from .names import ctl_call
-                ready = ctl_call(st, {'cmd': 'auto_update_ready'}, 10)
-                if not ready or not ready.get('ready'):
-                    save('done')
-                    return None
+            if reason := readiness():
+                raise DeferredInstall(reason)
             install(job['new'])
             save('installed')
         elif job['phase'] == 'installing':
@@ -1423,10 +1539,16 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             result = {**{k:job[k] for k in ('attempt','from','to','summary','summary_en','when','retry_count','uv_repaired') if k in job}, 'result': 'ok', 'reason': 'upgraded'}
             finish(st, result, {'step': 'health'})
             save('done')
+            _dispatch_result(st, request, 'verified')
             return result
         if job['phase'] == 'rollback':
             raise ValueError(upgrade_diag.category(job.get('failure', 'worker_interrupted')))
     except Exception as e:
+        if isinstance(e, DeferredInstall) and job.get('phase') == 'prepared':
+            save('done')
+            reason = str(e)
+            _dispatch_result(st, request, reason, retry=reason != 'install_already_attempted')
+            return None
         # Exception details may contain URLs or owner content: fixed codes only.
         # install_failed transfers control to rollback after a child exits or raises. It carries no new exception.
         installer_failure = isinstance(e, ValueError) and str(e) == 'install_failed'
@@ -1485,11 +1607,13 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
         finish(st, result, diag)
         if job.get('phase'):
             save('done')
+        _dispatch_result(st, request, 'rolled_back' if result['result'] == 'rolled_back' else 'install_failed',
+                         retry=result['phase'] is None and reason in ('download_failed', 'dependency_download_failed'))
         return result
     finally:
         # Auto result owns the notification, suppress manual-upgrade marker.
         (st.root/update.UPGRADED).unlink(missing_ok=True)
-        phone_update.release(st)
+        phone_update.release(st, holder=request)
         os.close(fd)
         service_recovery.cleanup_job(st)
 

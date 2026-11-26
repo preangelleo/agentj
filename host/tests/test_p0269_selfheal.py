@@ -202,7 +202,8 @@ class SharedCodexHeal(unittest.IsolatedAsyncioTestCase):
         desk = self.holder(path)
         a = self.agent()
         t = asyncio.create_task(a.turn('hello after the hang'))
-        await self.wait_for(lambda: a.desktop_wait)
+        await self.wait_for(lambda: a.desktop_wait and
+                            ((self.host.hist.get(self.host.cur_turn) or {}).get('card') or {}).get('queued'))
         page = self.host.hist.get(self.host.cur_turn)
         self.assertTrue(page['card']['queued'])
         self.assertEqual(page['reply']['text'], '')

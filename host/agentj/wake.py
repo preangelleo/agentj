@@ -9,7 +9,7 @@ import lzma
 import struct
 from .preferences import DATA, ConfigError
 
-# AJP1 is a lossless container for the complete public CMU source, not a reduced lexicon.
+# AJP2 also front-codes each pronunciation against its predecessor.
 DICTIONARY_FRAME_MAX = 4 * 1024 * 1024
 DICTIONARY_RAW_MAX = 4 * 1024 * 1024
 _DICTIONARY_HEADER = struct.Struct('>4sIIB')
@@ -17,7 +17,7 @@ _DICTIONARY_SHA = 'f7000ec3a90544c0c7c16090d8951779c2b322e14dad5006290f498567d43
 
 
 def decode_dictionary(blob):
-    """Decode one bounded XZ/AJP1 frame. No concatenation, trailing bytes or implicit recovery."""
+    """Decode one bounded XZ lexicon frame. No concatenation, trailing bytes or implicit recovery."""
     if not isinstance(blob, bytes) or not 0 < len(blob) <= 2 * 1024 * 1024:
         raise ValueError('invalid dictionary container size')
     try:
@@ -30,7 +30,7 @@ def decode_dictionary(blob):
     if len(frame) < _DICTIONARY_HEADER.size:
         raise ValueError('truncated dictionary header')
     magic, count, word_size, nphones = _DICTIONARY_HEADER.unpack_from(frame)
-    if magic != b'AJP1' or not 0 < count <= 200000 or not 0 < nphones < 256:
+    if magic not in (b'AJP1', b'AJP2') or not 0 < count <= 200000 or not 0 < nphones < 256:
         raise ValueError('invalid dictionary header')
     position, table = _DICTIONARY_HEADER.size, []
     for _ in range(nphones):
@@ -50,7 +50,8 @@ def decode_dictionary(blob):
         raise ValueError('invalid dictionary word stream size')
     words, sounds = frame[position:position + word_size], frame[position + word_size:]
     wi = si = 0
-    previous, output = b'', bytearray()
+    previous, previous_ids, output = b'', b'', bytearray()
+    sound_prefixes = magic == b'AJP2'
     for _ in range(count):
         if wi >= len(words):
             raise ValueError('truncated dictionary word')
@@ -69,13 +70,17 @@ def decode_dictionary(blob):
         wi = end + 1
         end = sounds.find(b'\0', si)
         ids = sounds[si:end] if end >= 0 else b''
+        if sound_prefixes:
+            if not ids or ids[0] - 1 > len(previous_ids):
+                raise ValueError('invalid dictionary pronunciation prefix')
+            ids = previous_ids[:ids[0] - 1] + ids[1:]
         if not 0 < len(ids) <= 256 or any(not 0 < code <= nphones for code in ids):
             raise ValueError('invalid dictionary pronunciation')
         si = end + 1
         output += word + b' ' + b' '.join(table[code - 1] for code in ids) + b'\n'
         if len(output) > DICTIONARY_RAW_MAX:
             raise ValueError('dictionary output limit exceeded')
-        previous = word
+        previous, previous_ids = word, ids
     if wi != len(words) or si != len(sounds):
         raise ValueError('trailing dictionary records')
     return bytes(output)

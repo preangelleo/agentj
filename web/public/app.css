@@ -129,8 +129,9 @@ body{
   --deepen:0%;
   --water-color:color-mix(in srgb,var(--sooty) 13%,var(--pg));
   --pg:color-mix(in srgb,var(--state) calc(100% - var(--deepen)),var(--sooty) var(--deepen));
-  /* The reply card's opaque fill = the page colour under a 22 % Sooty veil (ADR-035). */
-  --rm-bg:color-mix(in srgb,var(--sooty) 22%,var(--pg));
+  /* Give Lotion text at least 4.5:1 on the light-mode reply card, including the brightest valid state colours.
+     Dark mode already darkens the page and keeps the existing 22% card shade. */
+  --rm-bg:color-mix(in srgb,var(--sooty) max(22%,calc(33% - var(--deep))),var(--pg));
   --ink:var(--lotion);
   --ink-soft:rgba(250,249,245,.76);
   --surface:rgba(250,249,245,.15);
@@ -406,10 +407,7 @@ main::-webkit-scrollbar{display:none}
 .om.open .ommore{position:static;display:inline-grid;margin:4px 0 0 -8px}
 .om.open .ommore i{font:600 calc(12px*var(--fz))/calc(22px*var(--fz)) var(--font-body)}
 /* The reply card (owner, 2026-09-27, ADR-035 — replaces ADR-033 ⑤'s see-through veil):
-   an OPAQUE fill, the state colour darkened by 22 % Sooty — exactly what the old
-   veil composited to (#517b6e idle, #577da4 working, #ae6148 permission, #6a6698
-   question, #6c6c6c offline), derived here so it follows the state and --deepen —
-   and a FIXED height: flex 1 1 0 takes whatever the deck has left between the
+   an OPAQUE fill with the darkened state colour, and a FIXED height: flex 1 1 0 takes whatever the deck has left between the
    source card and the 5h rule, the same for every page on a screen, re-derived by
    layout on resize / rotate / unfold / keyboard. Long text scrolls inside with no
    scrollbar drawn at all; short text leaves the rest of the card empty. No shadow.
@@ -422,7 +420,7 @@ main::-webkit-scrollbar{display:none}
 .rm.host-notice>.rmbar .act:where([data-aj-owner="aj-reply-action"]),.rm.host-notice>.rmbar .wrbtn:where([data-aj-owner="aj-reply-action"]){visibility:var(--aj-reply-action-host-notice-visibility,hidden)}
 .deck.open .om{max-height:55%;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none}
 .rmhd{display:flex;align-items:center;gap:8px;min-height:44px;margin:-6px 0 4px}
-.rmhd .t{font:400 calc(12px*var(--fz))/1 var(--font-title);color:var(--ink-soft);letter-spacing:.04em}
+.rmhd .t{font:400 calc(12px*var(--fz))/1 var(--font-title);color:var(--lotion);letter-spacing:.04em}
 /* ---- the reply card's icon bar (ADR-037, design reports/design/reply-actions §1) ----
    The card's LAST row, a flex:none sibling after <main>, so the scroller ends right
    above it and the bar never scrolls or carries text. Right-packed, left → right:
@@ -1685,6 +1683,9 @@ body[data-agent="stopped"]{--state:var(--c-offline)}
 .rmpart{margin-left:auto;padding-right:4px}
 .cmdx{display:flex;flex-direction:column;gap:8px;margin-top:14px}
 .cmdx[hidden]{display:none}
+.cmdx .small{color:var(--lotion)}
+.cmdx .aj-upgrade-repair-guide:where([data-aj-owner="aj-reply"]){color:var(--lotion);text-decoration-color:currentColor}
+.cmdx .aj-upgrade-repair-guide:where([data-aj-owner="aj-reply"]):focus-visible{outline:2px solid var(--lotion);outline-offset:2px}
 .cmdmodel{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:52px;padding:8px 14px;border-radius:14px;text-align:left;
   background:var(--surface);color:var(--ink)}
 .cmdmodel:disabled{opacity:.4;cursor:default;color:var(--ink-soft)}
@@ -2693,13 +2694,13 @@ body[data-view="chat"] .share-notice{position:static;margin:0 var(--space-contro
 /* P114 (ADR-A194 §5): the sign-in QR card — only the QR on white, the time left, then full-width actions (P87: one per line,
    nowrap, ≥ 56 px). Never stored; the image leaves the page when the card ends. */
 .ajmodal.lqr{z-index:calc(var(--z-confirm) + var(--ontop-n,0))}
-.lqr .elev-kicker{margin:0 0 var(--sp-1);font:500 calc(12px*var(--fz))/1.2 var(--font-title);letter-spacing:.06em;color:var(--accent,var(--text-muted))}
+.lqr .elev-kicker{margin:0 0 var(--sp-1);font:500 calc(12px*var(--fz))/1.2 var(--font-title);letter-spacing:.06em;color:inherit}
 .lqr .lqr-frame{margin:var(--sp-3) auto 0;padding:12px;width:min(260px,100%);aspect-ratio:1;border-radius:16px;background:#fff;
   border:1px solid var(--border);display:grid;place-items:center}
 .lqr .lqr-img{display:block;width:100%;height:100%;object-fit:contain;image-rendering:pixelated;-webkit-touch-callout:default}
-.lqr .elev-note{margin:var(--sp-2) 0 0;font-size:calc(13px*var(--fz));line-height:1.5;color:var(--text-muted)}
-.lqr .elev-left{margin:var(--sp-2) 0 0;font-size:calc(13px*var(--fz));line-height:1.5;color:var(--text-muted)}
-.lqr .elev-left{text-align:center;font-weight:500;color:var(--text)}
+.lqr .lqr-img[draggable=false]{-webkit-touch-callout:none}
+.lqr .elev-note{margin:var(--sp-2) 0 0;font-size:calc(13px*var(--fz));line-height:1.5;color:inherit}
+.lqr .elev-left{margin:var(--sp-2) 0 0;font:500 calc(13px*var(--fz))/1.5 var(--font-body);text-align:center;color:inherit}
 .lqr .lqr-acts{display:flex;flex-direction:column;gap:var(--sp-2);margin-top:var(--sp-3)}
 .lqr .lqr-acts .aj-action{width:var(--aj-action-width,100%);min-height:var(--aj-action-min-height,56px);margin-top:var(--aj-action-margin-top,0);white-space:var(--aj-action-white-space,nowrap)}
 /* #577 aj-icon-action: independent equal initial contract. */
@@ -3725,20 +3726,6 @@ body[data-relink] .dot::after{animation:none}
    words to the top of the 44 px minimum) — one or two lines (a long one wraps instead of running past the card), Chinese or English, every font size and theme. */
 .words .rbtn{max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere}   /* a long answer wraps inside the card (buttons are nowrap page-wide) */
 .words .rbtn .rbtn-say{align-self:stretch;width:100%;text-align:left}
-/* P393 #127: an external link (http/https) in the Agent's reply is Peachy Feeling, underlined. Pure #d97757 on the reply card
-   measures 2.1–2.5:1 in the dark theme (kept as asked). P424 #127: where pure Peachy is too faint — the light theme
-   (1.4–1.7:1) and the waiting card (the card's own hue) — the link takes Bisque #fee2c5, a ready-made palette colour
-   (closed palette: no color-mix, no lifted hue; the old 60 % mix made an off-palette colour): 3.5–4.3:1 on the light
-   cards, 5.6:1 on the dark waiting card. The full-screen reader is Noir on every state → pure Peachy (4.6:1). File cards /
-   internal links unchanged. */
-:root{--xlink:var(--c-bisque)}
-@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --xlink:var(--c-peachy-feeling); } }
-:root[data-theme="dark"]{--xlink:var(--c-peachy-feeling)}
-body[data-status=waiting]:not([data-kind=question]){--xlink:var(--c-bisque)}
-#words a[href^="http"]:not(.mtap):not(.mcard a){color:var(--xlink);
-  font-weight:600;text-decoration-color:currentColor;text-decoration-thickness:1.5px}
-#rdWords a[href^="http"]:not(.mtap):not(.mcard a){color:var(--c-peachy-feeling);font-weight:600;text-decoration-color:currentColor;
-  text-decoration-thickness:1.5px}
 /* P406 #173: the sudo card's 「收起」 (down arrow, top right — collapsing never declines) and the status strip above the composer:
    a collapsed card / a running command (tap → its masked output, 「停止」) / a just-finished result. */
 .elev .box{position:relative}
@@ -4033,11 +4020,12 @@ html[data-ios-safari="1"] body::before{content:"";position:absolute;inset:0;back
 /* Navigation text-buttons can have currentColor borders inside components: paint only their glyphs. */
 .rm #words .fp-link{-webkit-text-fill-color:var(--lotion)}
 
-/* P0304: external links and flowchart navigation remain readable without retinting P477's text contract. */
-.rm #words a[href^="http"]:not(.mtap):not(.mcard a){color:var(--xlink)}
-.rm #words .fp-link:where([href]){-webkit-text-fill-color:var(--xlink)}
-.rd #rdWords .fp-link{color:var(--xlink);-webkit-text-fill-color:var(--xlink)}
-.rd #rdWords a:not(.mtap):not(.mcard a){color:var(--xlink);text-decoration:underline}
+/* P0378: readable links and secondary text on the reply and reader surfaces. */
+.rd #rdWords .fp-link{-webkit-text-fill-color:var(--dlg-fg)}
+.rd #rdWords a:not(.mtap):not(.mcard a){color:var(--dlg-fg);text-decoration-line:underline}
+#words a[href^="http"]:not(.mtap):not(.mcard a){font-weight:600;text-decoration-color:currentColor;text-decoration-thickness:1.5px}
+#rdWords a[href^="http"]:not(.mtap):not(.mcard a){font-weight:600;text-decoration-color:currentColor;text-decoration-thickness:1.5px}
+.rd #rdWords :is(.lhost,.lang,.rxnote,blockquote){color:var(--dlg-fg)}
 
 /* P517 preview: the same Lotion circle / logo-green digit in both entry points. */
 .remote-count-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;
@@ -4565,6 +4553,7 @@ details.fixcmd>summary{min-height:44px;display:flex;align-items:center;cursor:po
 :is(.gdlg,.ajmodal,#confirm).aj-shared-popup[data-popup-system="grow"]>:is(.sq,.box){
   width:100%;max-width:none;margin:0;border:0;border-radius:28px 28px 0 0;background:var(--water-color);color:var(--ink);box-shadow:none;outline:0;
 }
+.lqr[data-popup-system="grow"]{--water-color:var(--rm-bg)}
 #sheet.aj-shared-popup[data-popup-system="grow"]{
   /* 0304 r2: the stage cap (menu.css #stage>.sheet) has no definite height here — a tall card (Same owner, details open)
      grew under the top bar at 390. Never taller than the stage between the top bar and the quota line; it scrolls inside. */
@@ -4830,4 +4819,12 @@ body:has(#elev.secret:not([hidden])) #tools{visibility:hidden}
 #ownerQueueList p{margin:5px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .queueActions{display:flex;gap:8px;margin-top:16px}
 #ownerQueueStop,#ownerQueueClose{min-height:44px;flex:1;padding:5px 9px;border:1px solid var(--black-mana);border-radius:24px;background:transparent;color:var(--lotion);font:inherit;cursor:pointer}
+.queueActions #ownerQueueStop{border:0;background:var(--lotion);color:var(--noir)}
 .queueActions #ownerQueueClose{background:var(--lotion);color:var(--sooty)}
+#ownerQueueDialog>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px}
+#ownerQueueDialog>header h2{min-width:0;margin:0}
+#ownerQueueClear{flex:none;min-width:64px;min-height:44px;padding:5px 16px;border:0;border-radius:24px;background:var(--lotion);color:var(--noir);font:inherit;cursor:pointer}
+#ownerQueueList li:has([data-queue-drop]){display:grid;grid-template-columns:minmax(0,1fr) 44px;column-gap:8px;align-items:center}
+#ownerQueueList li:has([data-queue-drop])>:not([data-queue-drop]){grid-column:1}
+#ownerQueueList [data-queue-drop]{grid-column:2;grid-row:1/span 2;display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:50%;background:var(--lotion);color:var(--noir);cursor:pointer}
+#ownerQueueClear:disabled,#ownerQueueList [data-queue-drop]:disabled{opacity:.45;cursor:default}

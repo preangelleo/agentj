@@ -98,9 +98,9 @@ class NativeFeedback(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(self.worker.wait(),3)
         await self.f.asyncTearDown()
 
-    async def admit(self, command="agentj support feedback 'Synthetic feedback' --wait 0", call='feedback-1', turn='turn1'):
+    async def admit(self, command="agentj support feedback 'Synthetic feedback' --wait 0", call='feedback-1', turn='turn1', reason=None):
         self.a._on_request({'id':101,'method':'item/commandExecution/requestApproval','params':{
-            'threadId':self.a.tid,'turnId':turn,'itemId':call,'command':command,'cwd':str(self.root)}})
+            'threadId':self.a.tid,'turnId':turn,'itemId':call,'command':command,'cwd':str(self.root),'reason':reason}})
         async def answer_while_native_task_is_live():
             while self.a.tasks:
                 for ask in list(self.h.asks.values()):
@@ -254,6 +254,54 @@ class NativeFeedback(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await self.cli())['exit'], 3)
         self.assertEqual(self.calls, [])
 
+    async def test_observed_start_then_request_approval_matches_exact_draft(self):
+        from agentj import feedback_native
+        cmd = "agentj support feedback 'Synthetic feedback' --wait 0"
+        call = 'observed-then-rpc'
+        event = {'_agentj_path_authenticated': True, 'session_id': self.a.tid, 'turn_id': self.a.turn_id,
+                 'tool_use_id': call, 'cwd': str(self.root)}
+        feedback_native.codex_prehook(self.a, event, 'Bash', {'command': cmd})
+        self.a._on_note('item/started', {'threadId':self.a.tid, 'turnId':self.a.turn_id, 'item':{
+            'type':'commandExecution', 'id':call, 'status':'inProgress', 'command':cmd, 'cwd':str(self.root)}})
+        await self.admit(command=cmd, call=call, reason='Native request reason')
+        bad = await self.cli('Changed payload')
+        self.assertEqual(bad['exit'], 3)
+        pending = await self.cli()
+        self.assertTrue(pending['out'].startswith('SUPPORT_TASK_PENDING:'))
+        self.assertEqual(self.calls, [])
+        await self.complete(pending['out'], call=call)
+        await self.complete(pending['out'], call=call)
+        self.assertEqual(len(self.calls), 1)
+
+    async def test_late_approval_rpc_shares_the_current_observed_decision(self):
+        from agentj import feedback_native
+        cmd = "agentj support feedback 'Synthetic feedback' --wait 0"
+        call = 'observed-during-rpc'
+        event = {'_agentj_path_authenticated': True, 'session_id': self.a.tid, 'turn_id': self.a.turn_id,
+                 'tool_use_id': call, 'cwd': str(self.root)}
+        feedback_native.codex_prehook(self.a, event, 'Bash', {'command': cmd})
+        self.a._on_note('item/started', {'threadId':self.a.tid, 'turnId':self.a.turn_id, 'item':{
+            'type':'commandExecution', 'id':call, 'status':'inProgress', 'command':cmd, 'cwd':str(self.root)}})
+
+        async def waiting_for_decision():
+            while not self.broker.calls.get(call, {}).get('feedback_decision'):
+                await asyncio.sleep(.01)
+
+        with patch.object(self.h, 'ask', wraps=self.h.ask) as ask:
+            cli = asyncio.create_task(self.cli())
+            try:
+                await asyncio.wait_for(waiting_for_decision(), 3)
+                await self.admit(command=cmd, call=call, reason='Late native request reason')
+                pending = await cli
+            finally:
+                if not cli.done():
+                    cli.cancel()
+                    await asyncio.gather(cli, return_exceptions=True)
+            ask.assert_awaited_once()
+        self.assertTrue(pending['out'].startswith('SUPPORT_TASK_PENDING:'))
+        await self.complete(pending['out'], call=call)
+        self.assertEqual(len(self.calls), 1)
+
     async def test_fenced_owner_update_opens_one_version_bound_phone_card(self):
         from agentj import update
         approval_material.turn_start(self.h, self.send)
@@ -378,6 +426,23 @@ class NativeFeedback(unittest.IsolatedAsyncioTestCase):
         await self.admit();result=await self.cli();await self.complete(result['out'])
         self.assertEqual(len(self.calls),1)
         self.assertIn(privacy.LOCAL_REVIEW_NOTE,self.calls[0]['body'])
+
+    async def test_kernel_root_stays_live_across_scheduler_states(self):
+        from agentj import peer_origin
+        read_stat = peer_origin._stat
+        state = 'S'
+
+        def changed_state(proc, pid):
+            row = read_stat(proc, pid)
+            return (state, *row[1:]) if row else None
+
+        with patch.object(peer_origin, '_stat', side_effect=changed_state):
+            await self.admit()
+            pending = await self.cli()
+            self.assertTrue(pending['out'].startswith('SUPPORT_TASK_PENDING:'))
+            state = 'R'
+            await self.complete(pending['out'])
+        self.assertEqual(len(self.calls), 1)
 
     async def test_kernel_root_replacement_and_namespace_mismatch_stop_pending(self):
         await self.admit();result=await self.cli()

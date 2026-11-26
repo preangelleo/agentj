@@ -25,10 +25,15 @@ class Nightly(baseline.Nightly):
         self.assertIsNotNone(nr.check(self.st,now=self.now+60,check_fn=check))
         self.assertEqual(set(nr.field(self.st)['auto_update']),{'state','at','last'})
         self.assertEqual(check.call_count,1)
-    def test_missed_window_does_not_check_or_report_at_noon(self):
-        check=mock.Mock()
-        self.assertIsNone(nr.check(self.st,now=self.now+3*3600,rand=lambda _:0,check_fn=check))
-        check.assert_not_called();self.assertEqual(nr.field(self.st),{})
+    def test_missed_window_checks_after_wake_once_and_preserves_known_target(self):
+        check=mock.Mock(return_value={'latest':'99.0.0','status':'newer','why':'ok'})
+        wake=self.now+3*3600
+        self.assertIsNotNone(nr.check(self.st,now=wake,rand=lambda _:0,check_fn=check))
+        self.assertTrue(au.newer_known(self.st))
+        self.assertFalse(self.due(wake,newer=True,blocked=True))
+        self.assertTrue(self.due(wake+30,newer=True))
+        self.assertIsNone(nr.check(self.st,now=wake+60,check_fn=check))
+        check.assert_called_once()
     def test_last_automatic_result_is_metadata_only_and_ack_is_generation_bound(self):
         rec=au.read(self.st);rec.update(result={'from':'0.1.0','to':'0.2.0','result':'rolled_back','reason':'install_failed','recover':'private-command','stderr':'private-output'},result_at=int(self.now)-10);au.write(self.st,rec)
         nr.check(self.st,now=self.now,rand=lambda _:0,check_fn=lambda:{'latest':__version__})

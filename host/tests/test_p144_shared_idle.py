@@ -54,7 +54,7 @@ class Commands(unittest.IsolatedAsyncioTestCase):
         self.host=Mock(); self.host.lang='zh'; self.host.stopped.return_value=False
         self.a=shared.SharedClaudeAgent(self.host,{'kind':'claude','dir':'/fixture','_workflow_ceo':True})
         self.a.session={'sessionId':'owner-session','pid':123,'status':'idle'}
-        self.a.native=Mock(pid=123); self.a.master=42
+        self.a.native=Mock(pid=123, returncode=None); self.a.master=42
         self.a.read_statusline=Mock()
         self.a.cur_cmd=Cmd('clear',turn=9)
         self.clock=Clock(); self.a.state=AgentState(scheduler=self.clock,warn=self.a.state._warn)

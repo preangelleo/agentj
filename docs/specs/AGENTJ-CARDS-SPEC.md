@@ -970,6 +970,18 @@ line uses only the page host name, never its path or query. Older clients may
 ignore `why` and keep the generic waiting message. Template `landing_url` patterns
 can trigger a check; they never establish a signed-in result.
 
+On a WeChat Channels `login_qr`, `shown_ack:true` requests a display receipt.
+After the image decodes and is visible in the active remote page, that page
+sends `{t:"login_qr_shown", id, n}` on the same encrypted connection. The host
+accepts one receipt for the current request, nonce, chat epoch and unrevoked
+pairing generation after all image frames are written. Older pages can omit
+the receipt. The login command reports `display:"unconfirmed"` until receipt.
+The receipt does not authorize another request or prove a successful scan.
+`{t:"login_qr_state", id, state:"checking"}` means the host has started its
+own login check. It goes to the original remote and carries no page data.
+After reconnect, a new verified paired main conversation turn can request a
+fresh browser code. The previous session's code is never retransmitted.
+
 ### AuthRescue card presentation marker (#0269 C-2)
 
 An Agent J-owned AuthRescue `ask` carries `host_tool:true`, set by the host's

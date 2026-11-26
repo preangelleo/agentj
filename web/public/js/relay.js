@@ -1,4 +1,4 @@
-import { backgroundReport, activityKind, activityFailed, activitySummary, mergeOwnerInputs, ownerInput, ownerQueue, pendingAutomation } from './phone-activity.js';
+import { backgroundReport, activityKind, activityFailed, activitySummary, mergeOwnerInputs, ownerInput, ownerQueue, pendingAutomation, queueGone } from './phone-activity.js';
 import {paintRepair,repairOf,replyName,paintFix,oldUpdaterWords} from './repair-actions.js';
 import {fullAccess, supports as cmdSupports} from './cmdrun.js';
 import {waitsForNewRequest,rememberRefusal,waitingText,forgetRefusal,forgetRefusals} from './approval-notice.js';
@@ -1799,7 +1799,10 @@ function showPage(){
     const src = turn?.source;
     const watchdog = selfheal.queueOf(turn);
     const wait = watchdog ? t(...selfheal.prevText(selfheal.waitedNow(turn.id, watchdog, true))) : '';
-    return {wait, source: (src?.k === 'phone' && src.dev === C.myDev()) ? t('p414.e.flag.app') : sourceOf(src).label, time: hhmm(turn?.ts || q.at / 1000),
+    // 0378: a row can be removed when the computer answers queue_drop and the page is still only waiting — never the
+    // turn the Agent is on (activeTurn) or a page that already has words.
+    const drop = C.api.canQueueDrop?.() === true && Number.isInteger(q.turn) && q.turn !== activeTurn && !!turn && !visibleReply(turn);
+    return {wait, turn: q.turn, drop, source: (src?.k === 'phone' && src.dev === C.myDev()) ? t('p414.e.flag.app') : sourceOf(src).label, time: hhmm(turn?.ts || q.at / 1000),
       text: (src?.text || q.text || src?.att?.[0]?.name || t('p0319.attachment')).replace(/\s+/g, ' ').trim().slice(0, 160)};
   }), HEAL.live(), queueStuck);
   const chan = chanCard(p);                              // P543 (#308): an owner-channel message shows its words
@@ -1826,7 +1829,8 @@ function showPage(){
   document.body.dataset.pageQueued = qd ? "1" : "0";
   // P282 (追加): the working dots belong to the page being worked on. A closed page shown while another page is still open
   // (e.g. the Agent's 「切换已完成」 report landed after the owner's queued message) does not look busy itself.
-  document.body.dataset.workElsewhere = p.split === "head" && p.end !== "open" ? "1" : p.end !== "open" && Number.isInteger(activeTurn) && activeTurn !== p.id
+  const gone = queueGone(p);                           // 0378: left the queue without a normal run (removed / undelivered / unconfirmed) — never busy
+  document.body.dataset.workElsewhere = gone || p.split === "head" && p.end !== "open" ? "1" : p.end !== "open" && Number.isInteger(activeTurn) && activeTurn !== p.id
     && hist.turns.some(x => x.id === activeTurn && x.end === "open") ? "1" : "0";
   // P281: what a running /switch-harness is doing (host card.progress on the open page) — the wait line itself while no
   // words came yet, else the robot line under them; the host's own wait lines (card.wait: 「正在等待 …」, card.queued: the
@@ -1836,7 +1840,10 @@ function showPage(){
   const hostWait = open && (c.wait === true || c.queued === true) || (typeof c.switch === "string" && p === ps[ps.length - 1]);
   const absorbed = isSteered(p) && !visibleReply(p);   // 0.26.9 #471: steered into the running turn — its answer is that turn's
   const oldFix = oldUpdaterWords(p, liveHostVer);   // 0371: plain words for the 0.30.47-0.30.65 updater fault; the host's own text is folded in the card below
-  if (absorbed) renderWords(t('p0269.queue.steered'), false, "", false, false, true);
+  // only a removed page without words gets ours; undelivered / unconfirmed pages show the host's reply like any other,
+  // so 朗读 / 复制 / 转发 act on what is on screen (a page without a reply has them disabled: paintActs)
+  if (gone === "dropped" && !visibleReply(p)) renderWords(t('p0319.dropped'), false, "", false, false, true);
+  else if (absorbed) renderWords(t('p0269.queue.steered'), false, "", false, false, true);
   else if (oldFix) renderWords(oldFix, false, "", false, true, true);
   else renderWords((silentTurn(p) ? "" : p.reply?.trim()) || (noticeOnly ? t('p0269w4.notice') : qd || p.end === "open" || p.id === null ? "" : t('r.noReply')), open || qd,
     qd ? "" : progress, hostWait, sysPage(p), replyDataOnly(p) || noticeOnly);
@@ -3651,7 +3658,7 @@ export function onSayState(m){
     return;
   }
   if (m.s === "delivered" || m.s === "taken"){ activeTurn = q.turn; sawDelivered(); dequeue(m.sid); }   // P282: taken = the Agent is on it (a shared Codex opens first)
-  else if (m.s === "cancelled") withdrawn(q);
+  else if (m.s === "cancelled") m.why === "dropped" ? dequeue(m.sid) : withdrawn(q);   // 0378: removed from the queue (any remote) — gone, never back in the field; its page says so
   else if (m.s === "failed"){ dequeue(m.sid); toast(t('r.say.failedLater'), 3200); }
   else if (m.s === "done") dequeue(m.sid);         // P398 say_sync: finished / unknown on the host — nothing left to withdraw
 }
@@ -5430,7 +5437,7 @@ export function init(ctx){
   initOwnerQueue(showPage, () => {
     if (!HEAL.live() || !queuedWatchList().length) return;
     stopQueuedTurn(HEAL.signedEnd(), stopTurn);
-  }, text => executionToast(text, 3500));
+  }, text => executionToast(text, 3500), what => C.api.queueDrop(what));
   el("webReportBtn").addEventListener("click", () => hotTap(currentPage()));   // P216 / P285 @ix card.web_report
   longPress(el("webReportBtn"), openHot);   // P285 @ix card.hot_pick
   try{ const barSize = new ResizeObserver(() => fitBar());

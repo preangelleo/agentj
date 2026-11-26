@@ -751,7 +751,9 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     // The button lives in a bar above the code, never on top of it.
     const bar = doc.createElement("div");
     bar.className = "bar";
-    if (node.lang && /^[\w+#.-]{1,32}$/.test(node.lang)) {
+    const lang = String(node.lang || "").toLowerCase();
+    // Shell commands are ready to copy or paste. Keep the language hint for highlighting, out of the visible command.
+    if (node.lang && lang !== "sh" && /^[\w+#.-]{1,32}$/.test(node.lang)) {
       const lab = doc.createElement("span");
       lab.className = "lang";
       lab.textContent = node.lang;
@@ -764,7 +766,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     code.textContent = String(node.code == null ? "" : node.code);
     // P57 marks for render.js: ```mermaid → .mermaid-src (still a code block: copy, and the fallback); any other
     // named language → <pre data-lang>. Oversized blocks get no mark and stay plain.
-    const lang = String(node.lang || "").toLowerCase(), len = String(node.code == null ? "" : node.code).length;
+    const len = code.textContent.length;
     if (lang === "mermaid") { if (len <= MAX_MERMAID) wrap.className = "codeblock mermaid-src"; }
     else if (/^[\w+#.-]{1,32}$/.test(lang) && len <= MAX_CODE_HL) pre.setAttribute("data-lang", lang);
     pre.appendChild(code);

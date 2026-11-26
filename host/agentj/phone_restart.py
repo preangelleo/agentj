@@ -202,7 +202,11 @@ async def run(host, release=False):
             queued.add(id(item := queue.get_nowait()))
             pending.append(item)
         pending = [x for x in pending if id(x) in queued or getattr(x, 'state', None) == 'pending']
+    from . import native_advisory
+    stale = native_advisory.take_held(old)   # 0378: P424 held messages follow the reopened conversation or are said undelivered
+    native_advisory.drop_controls(host, old, pending)  # 0378 Q3: a waiting /compact · /clear is ended here, never orphaned or carried
     await old.stop()  # cancels the current actor and releases its turn lock; only owned native processes are killed
+    ended = native_advisory.process_ended(old)   # only a native that is verifiably gone cannot run them
     if current is not None:
         # A delivered/uncertain write is never sent again; one the harness never got goes first in the reopened queue.
         if getattr(current, 'state', None) == 'pending' and all(x is not current for x in pending):
@@ -213,9 +217,10 @@ async def run(host, release=False):
         later = []
         while not queue.empty():                 # arrivals while the old actor stopped come after the earlier ones
             later.append(queue.get_nowait())
+        native_advisory.drop_controls(host, old, later)
         seen = set()
         for item in pending + later:
-            if id(item) not in seen and getattr(item, 'state', None) != 'cancelled':
+            if id(item) not in seen and getattr(item, 'state', None) != 'cancelled' and not getattr(item, 'cancelled', False):
                 seen.add(id(item))
                 queue.put_nowait(item)
     def replacement(activate=False):
@@ -231,6 +236,14 @@ async def run(host, release=False):
             a.start()
         return a
     fresh = False
+    try:
+        return await _reopen(host, old, cfg, sid, replacement, fresh, stale, ended)
+    finally:
+        native_advisory.redeliver(host, None, stale, None, ended)   # whatever was not queued again leaves the queue
+
+
+async def _reopen(host, old, cfg, sid, replacement, fresh, stale, ended):
+    from . import native_advisory
     async with host.turn_lock:
         for gid in list(getattr(host, 'grants', {})):
             host.end_grant(gid, 'turn_end')
@@ -251,6 +264,8 @@ async def run(host, release=False):
                     shared_pin.write(host.st, a.kind, actual)
                     a.cfg['shared_session_id'] = actual
                 host.agent_cfg = dict(a.cfg)
+                if not fresh and ended:
+                    native_advisory.redeliver(host, a, stale, sid, True)
                 a.start()
                 a.set_status('idle')
                 host.st.log('phone_restart', agent=a.kind, result='new' if fresh else 'resumed')

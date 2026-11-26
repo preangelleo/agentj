@@ -241,6 +241,11 @@ class SocketRoundTrip(unittest.IsolatedAsyncioTestCase):
         sock = Path(d.name) / "ctl.sock"
         fh = FakeHost()
         h = Mock()
+        # The caller on this socket is the test runner; it has no native shell launch or owner-turn proof.
+        h.agent = None
+        h.agent_cfg = None
+        h.peer_launch = None
+        h._agent_pids.return_value = []
         h.cli_asks = ask.CliAsks(fh)
         h._ctl_send = lambda w, obj: serve.Host._ctl_send(h, w, obj)
         server = await asyncio.start_unix_server(lambda r, w: serve.Host.on_ctl(h, r, w), path=str(sock))

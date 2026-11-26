@@ -178,8 +178,10 @@ class Refusal(_Mac):
 
     def test_fence_without_foreign_owner_keeps_the_fence_message(self):
         self.root_owned = set()
-        res = self.apply(fenced=True)
-        self.assertEqual(res["reason"], "read_only")
+        with mock.patch.object(update, "_host", return_value=None):
+            res = self.apply(fenced=True)
+        self.assertEqual((res["result"], res["reason"], res["exit"]), ("refused", "fenced_read_only", 2))
+        self.assertIn("next: reconnect the original paired phone, then send /update", update.result_block(res))
         self.assertNotIn("fix", res)
 
     def test_installer_permission_error_gets_the_fix(self):

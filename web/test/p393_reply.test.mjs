@@ -7,12 +7,11 @@ test('the one-tap answer centres its label and wraps inside the card',()=>{
   assert.match(css,/\.words \.rbtn\{display:inline-flex;align-items:center;justify-content:center;/);
   assert.match(css,/\.words \.rbtn\{max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere\}/);
 });
-test('an external reply link is Peachy Feeling, lifted only where pure is too faint',()=>{
-  // P424 #127: the faint places take a ready-made palette colour (Bisque), never a color-mix toward Lotion
-  assert.match(css,/#words a\[href\^="http"\]:not\(\.mtap\):not\(\.mcard a\)\{color:var\(--xlink\);/);
-  assert.match(css,/:root\{--xlink:var\(--c-bisque\)\}/);
-  assert.match(css,/:root\[data-theme="dark"\]\{--xlink:var\(--c-peachy-feeling\)\}/);
-  assert.match(css,/body\[data-status=waiting\]:not\(\[data-kind=question\]\)\{--xlink:var\(--c-bisque\)\}/);
-  assert.doesNotMatch(css,/--xlink-lift/);
-  assert.match(css,/#rdWords a\[href\^="http"\]:not\(\.mtap\):not\(\.mcard a\)\{color:var\(--c-peachy-feeling\);/);
+test('a reply or reader link uses its surface foreground and remains underlined',()=>{
+  assert.match(css,/\.rm #words a:not\(\.mtap\):not\(\.mcard a\)\{color:var\(--lotion\);text-decoration-line:underline\}/);
+  assert.match(css,/\.rd #rdWords a:not\(\.mtap\):not\(\.mcard a\)\{color:var\(--dlg-fg\);text-decoration-line:underline\}/);
+  for(const id of ['words','rdWords']){
+    const rule='#'+id+' a[href^="http"]:not(.mtap):not(.mcard a){font-weight:600;text-decoration-color:currentColor;text-decoration-thickness:1.5px}';
+    assert.ok(css.includes(rule), 'external destinations keep the heavier underline in '+id);
+  }
 });

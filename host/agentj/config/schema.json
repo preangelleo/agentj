@@ -1510,6 +1510,17 @@
    "verify": "agentj notify --list",
    "since": "0.23.0"
   },
+  "notify.card_reminders": {
+   "type": "array",
+   "default": [],
+   "tier": "user",
+   "description": "Saved order for card reminders, currently unavailable / 卡片提醒暂不可用，已保存的顺序会保留",
+   "aliases": [],
+   "needs": [],
+   "apply": "hot",
+   "verify": "agentj config get notify.card_reminders",
+   "since": "0.30.78"
+  },
   "jev.mode": {
     "type": "string",
     "default": "",

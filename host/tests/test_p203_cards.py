@@ -228,6 +228,35 @@ class Upgrade(Base):
     def test_ctl_items_skip_the_agents_own_turn(self):
         self.host.agent.status = "working"
         self.assertEqual([i["k"] for i in self.host.upg_items()], ["turn"])
+
+    def test_signed_phone_update_cannot_launch_after_emergency_stop(self):
+        ph = Phone(self.st)
+        s = self.ready(ph)
+
+        async def go():
+            self.host.estop["on"] = True
+            with mock.patch("agentj.phone_update.reserve") as reserve:
+                await self.host._app(s, sign(ph, "update", {}, {"t": "slash", "cmd": "update"}))
+                reserve.assert_not_called()
+
+        asyncio.run(go())
+
+    def test_phone_launch_failure_gives_existing_repair_path(self):
+        async def go():
+            self.host.cmd_card = mock.Mock()
+            with mock.patch("agentj.update.market_managed", return_value=False), \
+                    mock.patch("agentj.update.check", return_value={"status": "newer"}), \
+                    mock.patch("agentj.phone_update.launch", side_effect=OSError("fixture private detail")), \
+                    mock.patch("agentj.phone_update.release") as release:
+                await self.host.phone_upgrade(3, "fixture")
+                result = self.host.cmd_card.call_args.args[1]
+                self.assertEqual(result.kind, "error")
+                self.assertIn("/update", result.text)
+                self.assertIn("https://agentj.app/docs/install/#upgrade-failed", result.text)
+                self.assertNotIn("fixture private detail", result.text)
+                release.assert_called_once_with(self.st)
+
+        asyncio.run(go())
         self.assertEqual(self.host.upg_items("agent"), [])
 
 

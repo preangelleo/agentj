@@ -459,8 +459,14 @@ async def ask(host, Ask, tool, inp, *, gone=None, ttl=None, grant_info=False,
                 source_type=request_typed['type'], trust=request_typed['trust'], card=True)
     host.activity('ask', id=rid, tool=tool, cats=[], summary=summary, task=host.task_label)
     host.emit('ask', id=rid, tool=tool, summary=summary)
-    host._post(lambda fn: host._send_ready(lambda s: fn(s) if not only or only == s.device else None),
-               lambda s: host._ask_msg(a,s))
+    if any(getattr(s, 'ask_receipt', False) is True for s in getattr(host, 'sessions', {}).values()):
+        from . import approval_delivery
+        a.delivery_subject_live = subject_live
+        remind = request_typed['type'] in ('owner_remote', 'owner_terminal') or settings_context is not None
+        host._post(approval_delivery.deliver_observed, host, a, remind)
+    else:
+        host._post(lambda fn: host._send_ready(lambda s: fn(s) if not only or only == s.device else None),
+                   lambda s: host._ask_msg(a,s))
     host.status_changed()
     host.push_notify('ask')
     if isinstance(receipt,dict):

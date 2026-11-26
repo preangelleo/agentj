@@ -1,6 +1,5 @@
-// P424 #127 (static): the reply card's external-link colour comes only from the closed palette — no color-mix, no lifted
-// hue. Every rule that colours an <a> takes a palette token (or inherits); --xlink is Peachy Feeling or Bisque, both of
-// which brand/palette.css (the build copy of the Leo palette) defines as ready-made hex values.
+// P424 #127 (static): external reply and reader links use the approved foreground (0.30.78).
+// Keep the strict palette guard against mixing a new link colour.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync,readdirSync} from 'node:fs';
@@ -18,12 +17,20 @@ test('no link colour is mixed: rules that colour an <a> never use color-mix',()=
   }
   assert.deepEqual(bad,[],'link colours must be palette colours (P424 #127)');
 });
-test('--xlink only ever names Peachy Feeling or Bisque, both ready-made palette hex values',()=>{
+test('reply and reader links use the approved Lotion foreground and an underline',()=>{
   const css=sheets.find(([f])=>f==='app.css')[1];
-  const vals=[...css.matchAll(/--xlink\s*:\s*([^;}]+)/g)].map(m=>m[1].trim());
-  assert.ok(vals.length>=4,'light, dark (media + attribute) and the waiting card');
-  for(const v of vals)assert.match(v,/^var\(--c-(peachy-feeling|bisque)\)$/,v);
-  assert.match(palette,/--c-peachy-feeling:\s*#d97757;/i);
-  assert.match(palette,/--c-bisque:\s*#fee2c5;/i);
-  assert.match(css,/#words a\[href\^="http"\]:not\(\.mtap\):not\(\.mcard a\)\{color:var\(--xlink\);/);
+  const expected=[
+    ['.rm #words a:not(.mtap):not(.mcard a)','--lotion'],
+    ['.rd #rdWords a:not(.mtap):not(.mcard a)','--dlg-fg'],
+  ];
+  for(const [selector,foreground] of expected){
+    const matches=rules(css).filter(rule=>rule.sel===selector);
+    assert.equal(matches.length,1,selector);
+    const properties=matches[0].body.split(';').map(declaration=>declaration.trim());
+    assert.ok(properties.includes('color:var('+foreground+')'),selector);
+    assert.ok(properties.includes('text-decoration-line:underline'),selector);
+  }
+  assert.match(css,/--lotion:\s*var\(--c-lotion\)/);
+  assert.match(css,/--dlg-fg:\s*var\(--c-lotion\)/);
+  assert.match(palette,/--c-lotion:\s*#faf9f5;/i);
 });

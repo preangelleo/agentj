@@ -78,7 +78,7 @@ class _Env(unittest.TestCase):
             m.start()
             self.addCleanup(m.stop)
 
-    def attempt(self, outcomes, *, clock=None, runner_extra=None, on_sleep=None):
+    def attempt(self, outcomes, *, clock=None, runner_extra=None, on_sleep=None, managed=False):
         """outcomes: what each install of the new wheel returns, in order (an int rc with NET_ERR / str stderr / an exception)."""
         old, new = self.st.root / "old.whl", self.st.root / "new.whl"
         for p, data in ((old, b"old"), (new, b"new")):
@@ -126,11 +126,21 @@ class _Env(unittest.TestCase):
         with mock.patch.object(auto_update, "enabled", return_value=True), \
                 mock.patch.object(auto_update.minisign, "verify", return_value=_sig(b"new")), \
                 mock.patch.object(upgrade_diag, "after_failure", side_effect=lambda st, res, **kw: self.sent.append(res) or res):
-            return auto_update.run(self.st, runner=runner, restart=lambda v: None, sleep=sleep,
+            restart = None if managed else lambda version: None
+            return auto_update.run(self.st, runner=runner, restart=restart, sleep=sleep,
                                    clock=clock or (lambda: t[0]))
 
 
 class Retry(_Env):
+    def test_host_becoming_busy_during_preparation_starts_no_installer(self):
+        with mock.patch("agentj.names.ctl_call", side_effect=[{'ready': True}, {'ready': False}]) as readiness:
+            result = self.attempt([0], managed=True)
+        self.assertIsNone(result)
+        self.assertEqual(readiness.call_count, 2)
+        self.assertEqual(self.installs, [])
+        self.assertEqual(self.rollbacks, [])
+        self.assertEqual(auto_update.read(self.st, auto_update.JOB)["phase"], "done")
+
     def test_network_failure_twice_then_success_upgrades_with_retry_count(self):
         r = self.attempt([1, 1, 0])
         self.assertEqual((r["result"], r["reason"], r["retry_count"]), ("ok", "upgraded", 2))

@@ -1,4 +1,4 @@
-// P114 (ADR-A194 §5): the sign-in QR card never stores the QR, sends only its four fixed requests, and has both languages.
+// P114 (ADR-A194 §5): the sign-in QR card never stores the QR, sends its fixed requests and one metadata-only display receipt, and has both languages.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -17,7 +17,10 @@ test('P114 sign-in card: no storage, no history, only the QR image as a data: PN
   assert.match(SRC, /m\.img\.length > 700000/, 'bounded image');
   assert.match(SRC, /removeAttribute\('src'\)/, 'the image leaves the page when the card ends');
   const sends = [...SRC.matchAll(/sendApp\(\{ t: '?([a-z_]+)'?/g)].map((m) => m[1]);
-  assert.deepEqual([...new Set(sends)].sort(), ['kind', 'login_qr_refresh', 'login_qr_tg']);
+  assert.deepEqual([...new Set(sends)].sort(), ['kind', 'login_qr_refresh', 'login_qr_shown', 'login_qr_tg']);
+  const receipts = [...code.matchAll(/\bsendApp\(\{\s*t:\s*'login_qr_shown'([^}]*)\}\s*,\s*g\)/g)];
+  assert.deepEqual(receipts.map(receipt => receipt[1].replace(/\s/g, '')), [',id:card.id,n:card.n'],
+    'one current-generation display receipt carries only the request id and nonce');
   assert.match(SRC, /act\('login_qr_check'\)/); assert.match(SRC, /act\('login_qr_cancel'\)/);
   for (const t of ['login_qr', 'login_qr_done', 'login_qr_state', 'login_qr_err']) assert.ok(APP.includes(`case '${t}':`), t);
   assert.match(APP, /async function forgetLocal\(\) \{[^}]*logincard\.clear\(\);[^}]*await wipeLocal\(\);/, 'unpair forgets open cards');

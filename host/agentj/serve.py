@@ -20,6 +20,7 @@ import sys
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from websockets.asyncio.client import connect
@@ -30,7 +31,7 @@ from .shared import SharedClaudeAgent
 from . import action_policy, confirm_tier, harness_cmds, notices, activity, approvals, cloud, controls, danger, fence, gate, login_flow, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
 from . import terminal as term_mod   # P408 (§38): the web terminal (terminal.py, term_*.py)
-from . import cmdrun, compose, history, hsearch, humane, inbox, menu, uploads, preferences, proxy, provenance
+from . import cmdrun, compose, history, hsearch, humane, inbox, menu, uploads, preferences, proxy, provenance, queue_drop
 from . import receipts as receipts_mod  # P313: say receipts on disk — a restart never runs a phone message twice
 from . import meeting  # P182: /会议总结 → minutes, recipients only from the owner's words
 from . import diskq  # P142: fsync'ed state writes off the loop (one ordered writer)
@@ -166,7 +167,7 @@ HIST_READY = 50                             # turns a p33 device gets on ready (
 SWEEP_EVERY = 60
 RETAIN_EVERY = 86_400
 VOICE_EVERY = 900          # #0304: expired voice originals go within 15 min of their retention
-P33_ONLY = ("web_preview_attest", "say", "say_cancel", "say_sync", "cmd_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
+P33_ONLY = ("web_preview_attest", "card_receipt", "say", "say_cancel", "say_sync", "cmd_cancel", "queue_drop", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
             "q_answer", "tts_get", "pref_set", "notice_read", "media_get", "provider_get", "provider_key", "asr_install", "models_get", "ark_plan_get", "ping",
             "tg_fwd", "wx_fwd", "turn_wait", "res_watch", "busy_get",   # P181 (§22.1) load card resources; P160 (§22) one 「在办」 row's detail
             "mail_get", "mail_set", "mail_key", "mail_test", "mail_check",   # P170 (§10.20)
@@ -266,6 +267,9 @@ class Session:
     pair1: bool = False           # P153: the page announced "pair1" (adds remotes, renders pair_device cards)
     card: str = ""                # P153: while pending, the id of its pair_device card on the paired remotes
     provenance: dict | None = None  # set by verified paired transport, never defaulted from absence
+    card_receipt: bool = False
+    ask_receipt: bool = False
+    question_probes: dict[str, tuple] = field(default_factory=dict)
 
 
 @dataclass
@@ -277,6 +281,8 @@ class Question:
     deadline: float               # monotonic
     fut: asyncio.Future
     task: str | None = None
+    delivery_epoch: int | None = None
+    reminder_live: Callable[[], bool] | None = None
 
 
 def _cfg_patch(old: dict, new: dict) -> tuple[dict, dict]:
@@ -932,6 +938,14 @@ class Host:
                 return bool(login_card and self.elevate.login._visible(login_card, s))
             if obj.get('t') == 'login_qr_err' and obj.get('op') in ('request', 'refresh'):
                 return bool(s.sign_pub and self.st.sign_key(s.device) == s.sign_pub)
+            if obj.get('t') == 'question' and 'delivery' in obj:
+                q = self.questions.get(obj['id'])
+                probe = s.question_probes.get(obj['id'])
+                return bool(q is not None and probe and probe[0] == obj['delivery']['n']
+                            and self._question_delivery_live(q, s, probe))
+            if obj.get('t') == 'ask' and 'delivery' in obj:
+                from . import approval_delivery
+                return approval_delivery.ready_to_write(self, s, obj)
             if obj.get('t')!='secret_out_val':return True
             from . import approval_special
             out=getattr(getattr(self,'elevate',None),'out',None)
@@ -1453,6 +1467,8 @@ class Host:
             s.p33 = isinstance(caps, list) and wire.CAP_P33 in caps[:16]
             s.lt1 = isinstance(caps, list) and wire.CAP_LT1 in caps[:16]
             s.pair1 = s.p33 and isinstance(caps, list) and pair_card.CAP in caps[:16]
+            s.card_receipt = s.p33 and "card_receipt1" in caps[:16]
+            s.ask_receipt = s.card_receipt and "card_ask_receipt1" in caps[:16]
             s.rc = _reconnect_reason(obj.get("rc"))
             h = obj.get("hist")
             if s.p33 and isinstance(h, dict) and type(h.get("epoch")) is int and type(h.get("last")) is int:
@@ -1511,7 +1527,7 @@ class Host:
                 return await self.send_app(s, {"t":"policy_ready", "r":r, **fields})
             except (KeyError, TypeError, ValueError):
                 return
-        if t in ("msg", "say", "answer", "slash", "blob_open", "blob_chunk", "blob_end", "ask_answer", "estop", "resume", "task_set", "task_migrate", "lt_answer") or t in elevate.PHONE_TYPES or t in ("fr_answer", "fr_accept"):
+        if t in ("msg", "say", "answer", "slash", "queue_drop", "blob_open", "blob_chunk", "blob_end", "ask_answer", "estop", "resume", "task_set", "task_migrate", "lt_answer") or t in elevate.PHONE_TYPES or t in ("fr_answer", "fr_accept"):
             self._phone_touch()                   # P292: config lock + write, off the loop
         if t == 'main_thread_interrupt':
             from . import main_thread
@@ -2900,7 +2916,8 @@ class Host:
                     from . import auto_update
                     rec = auto_update.read(self.st)
                     await self._ctl_send(w, {"ok": True, "ready": auto_update.enabled(self.st) and
-                        not self.stopped() and not auto_update.busy(self) and
+                        not self.stopped() and not auto_update.busy(self) and not auto_update.impact(self) and
+                        not getattr(self, "_phone_say_admissions", 0) and
                         time.time() - rec.get("phone_at", time.time()) >= auto_update.IDLE})
                 elif cmd == "owner_hosts_commands":
                     from . import owner_hosts
@@ -2999,7 +3016,8 @@ class Host:
                     trusted = ctl_auth.refusal(pid, os.getpid(), self._agent_pids()) is None and ctl_auth.has_tty(pid)
                     await self._ctl_send(w, await self.reload_config(trusted=trusted, by="terminal" if trusted else "agent"))
                 elif cmd == "agent_restart":        # `agentj agent restart` (P59): the owned harness, before its next turn
-                    await self._ctl_send(w, self.restart_harness("cli"))
+                    human = ctl_auth.refusal(pid, os.getpid(), self._agent_pids()) is None and ctl_auth.has_tty(pid)
+                    await self._ctl_send(w, self.restart_harness("cli", human=human))
                 elif cmd == "config_apply":
                     await self._ctl_send(w, await self.apply_preferences(req.get("raw")))
                 elif cmd == "agent_scope":          # 0372: claimed = the owner's terminal; the CLI writes its own entry
@@ -3927,13 +3945,16 @@ class Host:
         self.st.log("agent_reconnect", result="ok" if res.get("ok") else str(res.get("why"))[:16])
         return res
 
-    def restart_harness(self, why: str) -> dict:
+    def restart_harness(self, why: str, human: bool = False) -> dict:
 
         a = self.agent
         if a is None:
             return {"ok": True, "when": "next_start"}
         if not a.owns_harness():
-            return {"ok": False, "when": "own", "error": "shared"}
+            if why != "cli":
+                return {"ok": False, "when": "own", "error": "shared"}
+            from . import native_advisory   # 0378: the human at the computer may restart the shared native Agent J started
+            return native_advisory.cli_restart(self, a, human)
         return {"ok": True, "when": a.request_restart(why)}
 
     async def reload_config(self, trusted: bool = False, by: str = "cli") -> dict:
@@ -4246,11 +4267,11 @@ class Host:
                         from . import support_config_fault
                         phase = await asyncio.to_thread(support_config_fault.observed, self)
                         if phase:
-                            ticket = await asyncio.to_thread(support_config_fault.deliver, self, phase)
-                            if ticket:
-                                self.hist_add({'k': 'host', 'text': ''},
-                                              (f'Agent J 配置故障工单 {ticket}。' if self.lang != 'en' else
-                                               f'Agent J configuration incident: ticket {ticket}.'), 'done')
+                            try:
+                                ticket = await asyncio.to_thread(support_config_fault.deliver, self, phase)
+                            except (OSError, ValueError):
+                                ticket = None  # The diagnostic still describes the actual config problem.
+                            self._announce_config_fault(ticket)
             except FileNotFoundError:
                 pass
             except OSError:
@@ -4258,6 +4279,12 @@ class Host:
             except Exception as e:  # noqa: BLE001 — R-0049 H12: logged (rate-limited); the next change is applied again
                 bg.swallowed(bg.host_log(self), "preferences_loop_failed", e)
             await asyncio.sleep(0.5)
+
+    def _announce_config_fault(self, ticket: str | None) -> None:
+        if ticket:
+            self.hist_add({'k': 'host', 'text': ''},
+                          (f'Agent J 配置故障工单 {ticket}。' if self.lang != 'en' else
+                           f'Agent J configuration incident: ticket {ticket}.'), 'done')
 
     def busy_msg(self) -> dict:
 
@@ -5231,18 +5258,18 @@ class Host:
                 if not self._drift_restart_started:     # 0.30.23: new package on disk, this process still the old one
                     action = await asyncio.to_thread(update.drift_handoff, self.st, self._package_fingerprint)
                     self._drift_restart_started = action is not None
-                from . import auto_update, nightly_report
+                from . import auto_update, nightly_report, support_config_fault
+                with contextlib.suppress(OSError, ValueError):
+                    self._announce_config_fault(await asyncio.to_thread(support_config_fault.reconcile_pending, self))
                 nightly = await asyncio.to_thread(nightly_report.check, self.st)
                 if nightly is not None:
                     self.reporter.trigger("nightly_update")
                 with contextlib.suppress(Exception):     # 0.30.8 #1: trashbin daily sweep (04:30) + disk watermark, off-loop
                     from . import trash as trash_mod
                     await asyncio.to_thread(trash_mod.tick, self.st)
-                idle_newer = auto_update.newer_known(self.st) and not auto_update.impact(self)
-                if await asyncio.to_thread(auto_update.due, self.st, blocked=auto_update.busy(self), stopped=self.stopped(), newer=idle_newer):
-                    job = auto_update.read(self.st, auto_update.JOB)
-                    if job.get("phase") == "done":
-                        (self.st.root / auto_update.JOB).unlink(missing_ok=True)
+                idle_newer = auto_update.newer_known(self.st)
+                blocked = auto_update.busy(self) or bool(auto_update.impact(self)) or bool(getattr(self, "_phone_say_admissions", 0))
+                if await asyncio.to_thread(auto_update.due, self.st, blocked=blocked, stopped=self.stopped(), newer=idle_newer):
                     auto_update.launch(self.st)
                 note = nightly["notice"] if nightly is not None else await asyncio.to_thread(update.daily, self.st)
             except Exception as e:  # noqa: BLE001 — a failed check costs nothing, but remains diagnosable
@@ -7195,7 +7222,11 @@ class Host:
 
     def cmd_waiting(self, cmd, detail: str | None = None) -> None:
 
-        if not isinstance(cmd, agents.Cmd) or cmd.cancelled or cmd.native_started:
+        if not isinstance(cmd, agents.Cmd) or cmd.cancelled:
+            return
+        if cmd.native_started:          # 0378: typed already — progress on its page (no 「取消」), never ten silent minutes
+            if detail:
+                self.hist_update(cmd.turn, text=detail, end="open", card={"cmd": cmd.name, "control_pending": True})
             return
         text = detail or humane.of(self, "shared.wait_idle")
         self.hist_update(cmd.turn, text=text, end="open", card={"cmd": cmd.name, "cancel_wait": True})
@@ -7279,7 +7310,7 @@ class Host:
             return self.cmd_card(cmd.name, res, cmd.by)
         self.cmd_card(cmd.name, res, cmd.by, cmd.turn)
 
-    def queue_dropped(self, item) -> None:
+    def queue_dropped(self, item, why: str = "stopped") -> None:
 
         if getattr(item, "background_done_ids", None):
             self.background_done.complete(item)
@@ -7296,7 +7327,7 @@ class Host:
             if item.prep is not None and not item.prep.done():
                 item.prep.cancel()
             self.hist_update(item.turn, end="stopped")
-            self._post(self._send_device, item.device, {"t": "say_state", "sid": item.sid, "s": "cancelled", "why": "stopped"})
+            self._post(self._send_device, item.device, {"t": "say_state", "sid": item.sid, "s": "cancelled", "why": why})
         elif isinstance(item, agents.Cmd):
             item.cancelled = True
             if item.name == "model_set":
@@ -7415,6 +7446,8 @@ class Host:
                          sig=(authorization or {}).get("sig"), n=(authorization or {}).get("n"), ts=(authorization or {}).get("ts"))
             if why or arg:
                 return done(slash.Result("Send /update from a paired phone" if self.lang == "en" else "请从已配对手机发送 /update", "refused"))
+            if self.stopped():
+                return done(slash.Result("Resume the host before sending /update" if self.lang == "en" else "请解除主机急停后再发 /update", "refused"))
             if update.market_managed():
                 return done(slash.Result(update.market_text(self.lang), "info"))
             if not phone_update.reserve(self.st):
@@ -7475,12 +7508,17 @@ class Host:
                 rec = {"reason": "already_current" if check["status"] == "current" else "unknown", "to": check.get("latest") or update.__version__}
                 self.cmd_card("update", slash.Result(phone_update.text(rec, self.lang), "info" if check["status"] == "current" else "error"), by, turn)
                 return
+            if self.stopped():
+                self.cmd_card("update", slash.Result("Resume the host before sending /update" if self.lang == "en" else
+                                                     "请解除主机急停后再发 /update", "refused"), by, turn)
+                return
             if self.agent and self.agent.status != "idle":   # 0.26.10 #484: the signed /update answered the impact card:
                 self.upgrade_turn = self.turn_t0               # the restart does not wait for the turn running now
-            if target:
-                await asyncio.to_thread(phone_update.launch_target, self.st, target, job)
-            else:
-                await asyncio.to_thread(phone_update.launch, self.st)
+            started = await asyncio.to_thread(phone_update.launch_target, self.st, target, job) if target else await asyncio.to_thread(
+                phone_update.launch, self.st)
+            if started is False:
+                self.cmd_card("update", slash.Result(update.market_text(self.lang), "info"), by, turn)
+                return
             launched = True
             for _ in range(1800):
                 await asyncio.sleep(1)
@@ -7489,13 +7527,13 @@ class Host:
                     web, machine = await self._receipt_context() if rec.get("reason") in ("upgraded", "doctor_failed") else ("older", None)
                     self.cmd_card("update", slash.Result(phone_update.text(rec, self.lang, web, machine), "ok" if rec.get("result") == "ok" else "error"), by, turn)
                     return
-            self.cmd_card("update", slash.Result("Upgrade timed out: run `agentj doctor`" if self.lang == "en" else "升级超时：在Agent J 主机运行 `agentj doctor`", "error"), by, turn)
+            self.cmd_card("update", slash.Result(phone_update.text({"reason": "receipt_timeout"}, self.lang), "error"), by, turn)
         except Exception as e:
             from . import service as _svc
             if isinstance(e, _svc.ServiceError) and e.reason in _svc.NO_MANAGER:     # P278: no systemd to run the upgrade job
                 self.cmd_card("update", slash.Result(_svc.MESSAGES[e.reason], "error"), by, turn)
                 return
-            self.cmd_card("update", slash.Result("Could not start upgrade: run `agentj update apply`" if self.lang == "en" else "无法启动升级：在Agent J 主机运行 `agentj update apply`", "error"), by, turn)
+            self.cmd_card("update", slash.Result(phone_update.text({"reason": "launch_failed"}, self.lang), "error"), by, turn)
         finally:
             if job and not launched:
                 phone_update.record_outcome(self.st, job, target, "failed")
@@ -7585,7 +7623,12 @@ class Host:
                 self.agent.halt_quiet, note = False, self.agent.halt_note
             note = note if isinstance(note, str) and note else None
         ran = await self.scheduler.stop_running()
+        from . import native_advisory
+        cleared = native_advisory.clear_held(self, self.agent)   # 0378: held pages leave the queue (unconfirmed: may still run)
         self.status_changed()
+        if cleared and not (busy or ran) and not note:
+            return slash.Result(pick(self.lang, f"已把 {cleared} 条排队消息移出队列；它们之前已经交给主会话，可能仍会被执行。",
+                                     f"Removed {cleared} queued message(s) from the queue; they had been handed to the main session and may still run."))
         if busy or ran:
             what = humane.of(self, "stop.what_both" if busy and ran else "stop.what_turn" if busy else "stop.what_task")
             done = humane.of(self, "stop.done", what=what)
@@ -7599,7 +7642,7 @@ class Host:
 
         if s is not None and not s.p33:
             return {}
-        caps = [wire.CAP_P33, "heartbeat", wire.CAP_LT1, pair_card.CAP, "mailuv1", "privatefiles1", "privatefiles2"]
+        caps = [wire.CAP_P33, "heartbeat", wire.CAP_LT1, pair_card.CAP, "mailuv1", "privatefiles1", "privatefiles2", "card_receipt1", "card_ask_receipt1"]
         if getattr(self, "telegram", None) is not None and self.telegram.can_forward():   # P118 B10: share → the owner's Telegram
             caps.append("tgfwd")
         if getattr(self, "telegram", None) is not None:   # P183: this host forwards a reply's file too (tg_fwd {mid}); the phone
@@ -7626,6 +7669,7 @@ class Host:
         caps.extend(("hooks1", "externalmcp1"))                                  # P366: answers hook_list / hook_set (Settings → Webhook)
         caps.append(compose.CAP_SYNC)                          # P398 §10.2: answers say_sync (queued sends after a reconnect)
         caps.append("heartbeat_prompt")  # P537: append-only capability for prompt editing
+        caps.append(queue_drop.CAP)      # 0378 §10.2b: answers queue_drop (remove waiting messages)
         with contextlib.suppress(Exception):     # 0269-w2-assist (§41): only while a pinned official key ships (placeholder = off)
             if self.assist.available():
                 caps.append(assist_mod.CAP)
@@ -8163,6 +8207,8 @@ class Host:
         if t == "cmd_cancel":
             self.cancel_waiting_cmd(s, obj.get("turn"))
             return
+        if t == "queue_drop":              # 0378 (§10.2b): the owner removes waiting messages (one / all); never the running turn
+            return await queue_drop.on_phone(self, s, obj)
         if t == "turn_wait":
             more = getattr(self.agent, "wait_more", None)
             if type(obj.get("turn")) is int and obj.get("turn") == self.cur_turn and more is not None:
@@ -8371,6 +8417,11 @@ class Host:
             return await self.on_model_set(s, obj)
         if t == "q_answer":
             return self._q_answer(s, obj)
+        if t == "card_receipt":
+            if obj.get('kind') == 'ask' and s.ask_receipt:
+                from . import approval_delivery
+                return approval_delivery.receive(self, s, obj)
+            return self._question_receipt(s, obj)
 
     # ------------------------------------------------------------ say (§10.2)
     async def _accept(self, s: Session, text: str, sid: str | None, blobs: list | None = None, quote: dict | None = None,
@@ -9123,7 +9174,94 @@ class Host:
             m["task"] = q.task[:80]
         return m
 
-    async def question(self, qs: list, gone: asyncio.Future | None = None, task: str | None = None) -> tuple[str, list | None]:
+    def _question_device_revision(self, s: Session) -> str | None:
+        if (not s.card_receipt or not self._paired_live(s) or not s.sign_pub
+                or self.st.sign_key(s.device) != s.sign_pub):
+            return None
+        revision = self.st.devices().get(s.device, {}).get("pair_revision")
+        return revision if isinstance(revision, str) and revision else None
+
+    def _question_delivery_live(self, q: Question, s: Session, probe: tuple) -> bool:
+        return (self.questions.get(q.qid) is q and not q.fut.done() and not self.stopped()
+                and (q.delivery_epoch is None or self.hist.epoch == q.delivery_epoch)
+                and self.sessions.get(s.cid) is s and s.state == "ready"
+                and time.monotonic() < min(probe[1], q.deadline)
+                and probe[2] == self._question_device_revision(s))
+
+    async def _retry_observed_question(self, q: Question, targets: list) -> None:
+        await asyncio.sleep(10)
+        for s, nonce in targets:
+            probe = s.question_probes.get(q.qid)
+            if not probe or probe[0] != nonce or probe[3] == "visible" or not self._question_delivery_live(q, s, probe):
+                continue
+            message = self._question_msg(q)
+            ttl = min(message["ttl"], int(probe[1] - time.monotonic()))
+            if ttl > 0 and await self.send_app(s, {**message, "delivery": {"n": nonce, "ttl": ttl}}):
+                self.st.log("question_delivery", id=q.qid, device=s.device, phase="frame_rewritten")
+        if q.reminder_live is not None:
+            from . import approval_delivery, card_reminder
+            if not card_reminder.channels(self.preferences):
+                return
+
+            def unconfirmed():
+                if (self.questions.get(q.qid) is not q or q.fut.done() or self.stopped()
+                        or self.hist.epoch != q.delivery_epoch or time.monotonic() >= q.deadline or not q.reminder_live()):
+                    return False
+                current = []
+                for session, nonce in targets:
+                    probe = session.question_probes.get(q.qid)
+                    if (probe and probe[0] == nonce and time.monotonic() < probe[1]
+                            and self.st.is_allowed(session.pub)
+                            and approval_delivery._pair_revision(self, session) == probe[2]):
+                        current.append(probe[3])
+                return bool(current) and "visible" not in current
+
+            if unconfirmed():
+                await asyncio.sleep(10)
+                if unconfirmed():
+                    await card_reminder.deliver(self, q.qid, unconfirmed)
+
+    async def _deliver_observed_question(self, q: Question) -> None:
+        targets = []
+        for s in list(self.sessions.values()):
+            if q.fut.done() or self.questions.get(q.qid) is not q:
+                return
+            if s.state != "ready" or not s.p33 or not self.st.is_allowed(s.pub):
+                continue
+            message = self._question_msg(q)
+            revision, ttl = self._question_device_revision(s), min(60, message["ttl"])
+            if not revision or ttl < 1:
+                await self.send_app(s, message)
+                continue
+            nonce = secrets.token_hex(16)
+            s.question_probes[q.qid] = (nonce, time.monotonic() + ttl, revision, None)
+            message["delivery"] = {"n": nonce, "ttl": ttl}
+            targets.append((s, nonce))
+            if await self.send_app(s, message):
+                if q.qid in s.question_probes:
+                    self.st.log("question_delivery", id=q.qid, device=s.device, phase="frame_written")
+        if targets:
+            self._bg(self._retry_observed_question(q, targets), "question_retry")
+
+    def _question_receipt(self, s: Session, obj: dict) -> None:
+        qid, nonce, phase = obj.get("id"), obj.get("n"), obj.get("phase")
+        if (set(obj) != {"t", "kind", "id", "n", "phase"} or obj.get("kind") != "question"
+                or not isinstance(qid, str) or not isinstance(nonce, str) or phase not in ("received", "visible")):
+            return
+        q, probe = self.questions.get(qid), s.question_probes.get(qid)
+        if q is None or q.fut.done() or probe is None:
+            return
+        expected, deadline, revision, prior = probe
+        if (expected != nonce or not self._question_delivery_live(q, s, probe)
+                or (prior, phase) not in ((None, "received"), ("received", "visible"))):
+            return
+        if phase == "visible" and not s.fg:
+            return
+        s.question_probes[qid] = (expected, deadline, revision, phase)
+        self.st.log("question_delivery", id=qid, device=s.device, phase=phase)
+
+    async def question(self, qs: list, gone: asyncio.Future | None = None, task: str | None = None, *,
+                       observe: bool = False, reminder_live: Callable[[], bool] | None = None) -> tuple[str, list | None]:
 
         kind = self.agent.kind if self.agent else "?"
         qid = secrets.token_hex(16)
@@ -9138,13 +9276,17 @@ class Host:
         if not self._approvers() or sum(1 for q in self.questions.values() if not q.fut.done()) >= MAX_QUESTIONS:
             approvals.record_question(self.st, **base, decision="no_device", reason="no_device")
             return "no_device", None
-        q = Question(qid, qs, digest, time.monotonic() + Q_TTL, asyncio.get_running_loop().create_future(), task)
+        q = Question(qid, qs, digest, time.monotonic() + Q_TTL, asyncio.get_running_loop().create_future(), task,
+                     self.hist.epoch if observe else None, reminder_live if observe else None)
         self.questions[qid] = q
         self._interrupt("questions")
         self.st.log("question", id=qid, agent=kind)
         self.activity("question", id=qid, n=len(qs), task=task)
         self.emit("question", id=qid, n=len(qs))
-        self._post(self._send_p33, lambda s: self._question_msg(q))
+        if observe:
+            self._post(self._deliver_observed_question, q)
+        else:
+            self._post(self._send_p33, lambda s: self._question_msg(q))
         self.status_changed()
         self.push_notify("ask")
         did = sk = sig = picks = None
@@ -9162,6 +9304,9 @@ class Host:
                     q.fut.set_result((decision, None, None, None, None))
         finally:
             self.questions.pop(qid, None)
+            if observe:
+                for s in self.sessions.values():
+                    s.question_probes.pop(qid, None)
         if decision not in ("answer", "cancel"):
             decision = {"estop": "stopped", "serve_stop": "gone", "timeout": "timeout", "agent_gone": "gone"}.get(reason,
                                                                                                                   decision)
@@ -9203,7 +9348,23 @@ class Host:
         card = approvals.norm_questions(local[0] if local else tool_input.get("questions"))
         if card is None:
             return {"behavior": "deny", "message": Q_TIMEOUT}
-        decision, picks = await self.question(card, gone, task=self.task_label)
+        if local:
+            decision, picks = await self.question(card, gone, task=self.task_label)
+        else:
+            from . import approval_offlist, card_reminder
+            remind = (card_reminder.channels(getattr(self, "preferences", {}))
+                      and approval_offlist.source(self)['type'] in ('owner_remote', 'owner_terminal'))
+            if remind:
+                agent, authority = self.agent, self._approval_live_authority()
+
+                def owner_question_live():
+                    return (self.agent is agent and (gone is None or not gone.done())
+                            and self._approval_live_authority() == authority)
+
+                decision, picks = await self.question(card, gone, task=self.task_label, observe=True,
+                                                      reminder_live=owner_question_live)
+            else:
+                decision, picks = await self.question(card, gone, task=self.task_label, observe=True)
         if decision == "answer" and picks:
             ans = {}
             for q, p in zip(card, picks):
@@ -9356,6 +9517,9 @@ class Host:
         from . import switch_report
         switch_report.watch(self)
         self.receipts_restart()                      # P313: what the last serve left half-done → one line, never a replay
+        from . import native_advisory
+        native_advisory.close_previous_controls(self)
+        native_advisory.clear_held(self)             # 0378: a held page of the last serve leaves the queue (unconfirmed)
         from . import codex_procs                    # ADR-A178: app-servers an earlier serve left behind (one serve per state)
         ended = await asyncio.to_thread(codex_procs.sweep, self.st)
         if ended:
@@ -9540,7 +9704,10 @@ class Host:
                 with contextlib.suppress(Exception):
                     await self.hooks.stop()
             if self.agent:
+                self.agent.halting = True
+                native_advisory.drop_controls(self, self.agent, why="serve_stop")
                 await self.agent.stop()
+                native_advisory.drop_controls(self, self.agent, why="serve_stop")
             with contextlib.suppress(Exception):         # the resident ASR worker (§10.9) goes with serve
                 await asyncio.to_thread(getattr(self.asr, "shutdown", lambda: None))
             await asyncio.sleep(0)

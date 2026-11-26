@@ -4,13 +4,19 @@ import {spawn} from 'node:child_process';import {createInterface} from 'node:rea
 import {mkdirSync,writeFileSync} from 'node:fs';import {fileURLToPath} from 'node:url';
 import {startWebServer} from './serve.mjs';import {startFakeHost} from './fakehost.mjs';
 import {launch,newPage,navigate,waitState,waitFor,evaluate,sleep,shoot} from './browser.mjs';
-import {pkTestResult} from '../public/js/pk-test-result.js';
+import {pkTestBrowserError,pkTestResult} from '../public/js/pk-test-result.js';
 const out=process.env.P0300_PK_OUT||'reports/qa/0300/web/pk-test';mkdirSync(out,{recursive:true});
 const checks=[],rows=[];const check=(v,name)=>{checks.push({name,pass:!!v});assert.ok(v,name);};
 check(pkTestResult({t:'pk_check_res',ok:false,why:'no_check'}).key==='p0300.pk.testExpired','no_check is an expired challenge, not an unknown credential');
 check(pkTestResult({t:'pk_check_res',ok:false}).key==='p0300.pk.testIncomplete','older host failure is inconclusive');
 check(pkTestResult({t:'timeout'}).key==='p566.notSent','transport timeout is not a key rejection');
-for(const why of ['credential','rp','origin','signature','uv','counter','challenge'])check(pkTestResult({t:'pk_check_res',ok:false,why}).setup,'fixed verification failure '+why+' has reset path');
+const checkResult = why => pkTestResult({t:'pk_check_res',ok:false,why});
+for (const why of ['credential','signature','counter']) check(checkResult(why).setup,why+' has a set-up path');
+for (const why of ['no_check','challenge','uv']) check(checkResult(why).retry && !checkResult(why).setup,why+' retries without reset');
+for (const why of ['rp','origin']) check(checkResult(why).key==='p0378.pk.testOrigin' && !checkResult(why).setup && !checkResult(why).retry,why+' points to the paired page');
+check(checkResult('uv').key==='p0378.pk.testUv','incomplete device verification is diagnosed separately');
+for (const error of ['AbortError','NotAllowedError','WrongSeatKey','SecurityError']) check(!pkTestBrowserError(error).setup,error+' cannot infer an invalid passkey');
+console.log('p0378-touch-id-failure-diagnostics PASS');
 const py=spawn(process.env.P0300_PYTHON||'python3',[fileURLToPath(new URL('./p0300-account-host.py',import.meta.url))],{env:process.env,stdio:['pipe','pipe','pipe']});let pending=[],stderr='';py.stderr.on('data',b=>stderr+=b);createInterface({input:py.stdout}).on('line',s=>{if(s.startsWith('0300RPC:'))pending.shift()?.(JSON.parse(s.slice(8)));});
 async function rpc(req){let timer;try{const r=await Promise.race([new Promise(resolve=>{pending.push(resolve);py.stdin.write(JSON.stringify(req)+'\n');}),new Promise((_,reject)=>timer=setTimeout(()=>reject(Error(stderr||'Host bridge timeout')),15000))]);assert.ok(r.ok,(r.error||'')+(r.trace||''));return r;}finally{clearTimeout(timer);}}
 const web=await startWebServer(),fake=await startFakeHost(),B=await launch(),url=web.url.replace('127.0.0.1','localhost');let serial=0;

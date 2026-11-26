@@ -51,6 +51,8 @@ export function route(m) {
   if (m.t === "tts_script_res") { const f = scriptWait.get(m.r); if (f) { scriptWait.delete(m.r); f(m); } return true; }
   if (m.t === 'say_res' && typeof m.sid === 'string') { const f = sayWait.get(m.sid); if (f) { sayWait.delete(m.sid); f(m); } return true; }
   if (m.t === 'say_cancel_res' && typeof m.sid === 'string') { const f = cancelWait.get(m.sid); if (f) { cancelWait.delete(m.sid); f(m.r); } return true; }
+  if (m.t === 'queue_dropped') { const named = [m.turns, m.skipped].flatMap((x) => Array.isArray(x) ? x : []);
+    const i = dropWait.findIndex((w) => w.all || w.ids.some((id) => named.includes(id))); if (i >= 0) dropWait.splice(i, 1)[0].done(m); return true; }
   if (m.t === 'say_state' && typeof m.sid === 'string') { onSayState(m); return true; }
   return false;
 }
@@ -104,6 +106,31 @@ export async function sayCancel(sid) {
     setTimeout(() => { if (cancelWait.delete(sid)) resolve('timeout'); }, 15000);
   });
   try { await sendApp({ t: 'say_cancel', sid }, g); } catch { cancelWait.delete(sid); return 'offline'; }
+  return res;
+}
+
+/** 0378: this computer removes queued owner messages on request (cap `queuedrop1`); an older one never sees the frame. */
+export const canQueueDrop = () => !!(peer.p33 && peer.queuedrop1);
+const dropWait = [];             // {all, ids, done} in send order: queue_dropped carries no request id, so an answer goes to
+                                 // the oldest request it can belong to (a late answer to a timed-out request finds none)
+export const QUEUE_DROP_WAIT_MS = 8000;
+/** `turns` = page ids, or 'all'. → {ok:true, turns:[…], skipped:[…]} | {ok:false, why:'offline'|'timeout'|'shape'}.
+ *  The rows themselves leave through the host's ordinary history updates, never through this answer. */
+export async function queueDrop(turns) {
+  const g = gen();
+  if (!g || !canQueueDrop()) return { ok: false, why: 'offline' };
+  const all = turns === 'all';
+  const ids = all ? [] : (Array.isArray(turns) ? turns : []).filter(Number.isInteger).slice(0, 64);
+  if (!all && !ids.length) return { ok: false, why: 'shape' };
+  const w = { all, ids, done: null };
+  const forget = () => { const i = dropWait.indexOf(w); if (i >= 0) dropWait.splice(i, 1); return i >= 0; };
+  const res = new Promise((resolve) => {
+    w.done = (m) => resolve({ ok: true, turns: Array.isArray(m.turns) ? m.turns.filter(Number.isInteger) : [], skipped: Array.isArray(m.skipped) ? m.skipped.filter(Number.isInteger) : [] });
+    dropWait.push(w);
+    setTimeout(() => { if (forget()) resolve({ ok: false, why: 'timeout' }); }, QUEUE_DROP_WAIT_MS);
+  });
+  try { await sendApp(all ? { t: 'queue_drop', all: true } : { t: 'queue_drop', turns: ids }, g); }
+  catch { forget(); return { ok: false, why: 'offline' }; }
   return res;
 }
 

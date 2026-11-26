@@ -1,6 +1,7 @@
 """Status and recipient regressions with a synthetic clock and no browser, account, or real login material."""
 import _hermetic  # noqa: F401
 import asyncio
+import hashlib
 import itertools
 import time
 import unittest
@@ -138,6 +139,106 @@ class Errors(Base, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.cards.open_msgs(self.phone), [])
         self.assertEqual(self.cards.open_msgs(self.other), [])
         self.assertEqual(await self.cards._telegram(c), "none")
+
+    async def test_receipt_needs_actual_write_original_noise_session_and_exact_nonce(self):
+        c = self.fixture_card()
+        c.update(display="unconfirmed", chat_epoch=str(self.host.hist.epoch))
+        seen = {"t": "login_qr_shown", "id": c["id"], "n": c["nonce"]}
+        with patch.object(self.host, "stopped", return_value=False):
+            await self.cards.on_phone(self.phone, seen)
+            self.assertEqual(c["display"], "unconfirmed")
+            self.assertTrue(await self.host.send_app(self.phone, {"t": "login_qr", "id": c["id"]}))
+            await self.cards.on_phone(self.other, seen)
+            await self.cards.on_phone(self.phone, {**seen, "n": "wrong"})
+            self.assertEqual(c["display"], "unconfirmed")
+            await self.cards.on_phone(self.phone, seen)
+            await self.cards.on_phone(self.phone, seen)
+            self.assertEqual(c["display"], "shown")
+            self.assertEqual(self.cards.result({"id": c["id"]})["display"], "shown")
+            self.assertEqual((browser.bdir(self.st) / "login.log").read_text().count('"result": "shown"'), 1)
+
+    async def test_reconnect_can_request_only_a_new_code_with_live_paired_turn(self):
+        stale = self.fixture_card()
+        stale["display"] = "unconfirmed"
+        fresh = Session(cid=10, device=self.phone.device, pub=self.phone.pub, sign_pub=self.phone.sign_pub,
+                        state="ready", provenance=provenance.phone())
+        self.host.sessions[10] = fresh
+        binding = bl.RequestPhone.from_session(self.host, fresh)
+        with patch.object(self.host, "stopped", return_value=False), \
+                patch.object(browser, "runtime", return_value={"ws": "fixture"}), \
+                patch.object(browser, "settings", return_value={"enabled": True}), \
+                patch.object(self.host, "_approvers", return_value=[fresh]), \
+                patch.object(self.cards, "_end") as end, \
+                patch.object(self.cards, "_issue", AsyncMock(return_value={"result": "new-fixture"})) as issue:
+            req = {"site": bl.CHANNELS}
+            self.assertEqual((await self.cards.request(req, owner=binding, source_live=lambda: True))["result"], "refused")
+            del self.host.sessions[self.phone.cid]
+            self.assertEqual((await self.cards.request(req, owner=binding))["result"], "refused")
+            self.assertEqual((await self.cards.request(req, owner=binding, source_live=lambda: False))["result"], "gone")
+            issue.assert_not_awaited()
+            self.assertEqual((await self.cards.request(req, owner=binding, source_live=lambda: True))["result"], "new-fixture")
+            end.assert_called_once_with(stale, "refreshed")
+            self.assertIs(issue.call_args.args[3], True)
+            self.assertIsNone(issue.call_args.args[5])
+
+    async def test_checking_progress_reaches_only_the_original_live_pair(self):
+        c = self.fixture_card()
+        c["delivered"] = True
+        with patch.object(self.host, "send_app", new_callable=AsyncMock) as send:
+            await self.cards._checking(c)
+            await self.cards._checking(c)
+            send.assert_awaited_once_with(self.phone, {"t": "login_qr_state", "id": c["id"], "state": "checking"},
+                                          _already_locked=True)
+            send.reset_mock()
+            c.pop("checking")
+            self.st.add_device(self.phone.pub, "replacement", b'r' * 32)
+            await self.cards._checking(c)
+            send.assert_not_awaited()
+
+    async def test_fresh_tab_cannot_redisclose_the_previous_live_code(self):
+        image, driver = b"synthetic image", Mock()
+        self.cards.qr_history[bl.CHANNELS] = {"generation": (None, None, "old-tab"),
+                                             "sha256": hashlib.sha256(image).hexdigest(),
+                                             "deadline": time.monotonic() + 60}
+        with patch.object(self.cards, "_open_and_capture", return_value={"state": "qr", "png": image, "cdp": driver,
+                                                                        "session": "new", "target": "new-tab"}):
+            result = await self.cards._issue(bl.CHANNELS, {}, {}, True, "agent", None, lambda: True,
+                                             restricted=True, owner=self.binding)
+        self.assertEqual(result["result"], "failed")
+        self.assertNotIn("img", result)
+        self.assertFalse(self.cards.cards)
+        driver.close.assert_called_once()
+
+    async def test_reencoded_qr_payload_is_not_a_new_challenge(self):
+        from agentj import qrcrop
+        zxing = qrcrop._zx()
+        if zxing is None:
+            self.skipTest("this platform has no packaged QR decoder")
+
+        def png(scale):
+            qr = zxing.create_barcode("synthetic login challenge", zxing.BarcodeFormat.QRCode)
+            image = zxing.write_barcode_to_image(qr, scale=scale)
+            view = memoryview(image)
+            height, width = view.shape
+            return qrcrop.png_encode(qrcrop.Img(width, height, 1, view.tobytes()))
+
+        first, next_image = png(4), png(7)
+        self.assertNotEqual(first, next_image)
+        identity = bl._challenge_digest(first)
+        self.assertIsNotNone(identity)
+        self.assertEqual(bl._challenge_digest(next_image), identity)
+        self.cards.qr_history[bl.CHANNELS] = {"generation": (None, None, "old-tab"),
+                                             "sha256": hashlib.sha256(first).hexdigest(),
+                                             "deadline": time.monotonic() + 60, "verified": True,
+                                             "challenges": (identity,)}
+        driver = Mock()
+        with patch.object(self.cards, "_open_and_capture", return_value={"state": "qr", "png": next_image, "cdp": driver,
+                                                                        "session": "new", "target": "new-tab"}):
+            result = await self.cards._issue(bl.CHANNELS, {}, {}, True, "agent", None, lambda: True,
+                                             restricted=True, owner=self.binding)
+        self.assertEqual(result["result"], "failed")
+        self.assertFalse(self.cards.cards)
+        driver.close.assert_called_once()
 
     async def test_reconnect_using_identical_pairing_and_cid_cannot_inherit_request(self):
         c = self.fixture_card()

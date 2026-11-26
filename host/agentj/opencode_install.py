@@ -49,8 +49,17 @@ def install_text(lang: str = "zh", *, native_only: bool = False) -> str:
     return text if native_only else text + "。仅在已配置 Node.js 时，也可在终端运行 `" + NPM + "`"
 
 
-def upgrade_text(version, lang: str = "zh") -> str:
-    """The 1.x hint: what is installed and the one command that moves it to the newest 2.x."""
+def upgrade_text(version, lang: str = "zh", *, wsl: bool = False) -> str:
+    """Explain how to upgrade the selected legacy OpenCode installation."""
+    if wsl:
+        if lang == "en":
+            return (f"Agent J selected OpenCode {version} in WSL. Upgrade it separately inside the same WSL "
+                    f"distribution as the Agent J user. If using npm, run `{NPM}`. For a standalone install, "
+                    "use the official OpenCode install on the Agent J setup checklist. Check the selected executable "
+                    "with `agentj agent detect --json` (it should show 2.x), then restart the Agent J agent connection")
+        return (f"Agent J 在 WSL 内选中了 OpenCode {version}。请以运行 Agent J 的同一用户进入同一 WSL 发行版单独升级。"
+                f"npm 安装可运行 `{NPM}`。独立安装可在 Agent J 设置清单里安装官方 OpenCode。"
+                "再用 `agentj agent detect --json` 确认选中的可执行文件显示 2.x，重启 Agent J 的 Agent 连接")
     if lang == "en":
         return (f"OpenCode {version} is 1.x; Agent J uses the newest 2.x: the Agent runs `{NPM}`, then "
                 "`agentj agent detect --json` (must show 2.x as the one Agent J uses; 1.x never upgrades itself) and "

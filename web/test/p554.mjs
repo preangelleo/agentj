@@ -69,7 +69,9 @@ try{
    w=await why(p);assert.equal(w[0],false);assert.match(w[1],lang==='zh'?/拒收/:/refused/);assert.equal(w[2],true);
    await shot(p,lang+'-bound-refused');
    // 3. Forwarding works (any context age): no extra line.
-   await state(true,true);assert.equal((await why(p))[0],true);
+   await state(true,true);
+   await waitFor(p,`document.getElementById('set-fwd-wx-why').hidden`);
+   assert.equal((await why(p))[0],true);
    await shot(p,lang+'-bound-ok');
    // 4. WeChat refuses: not a silent failure — how-to + one-tap system share of this reply.
    await state(true,false);await closeSettings(p);

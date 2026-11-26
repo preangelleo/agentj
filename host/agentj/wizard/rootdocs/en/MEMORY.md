@@ -6,8 +6,10 @@
 - Never store credentials here (passwords, keys, verification codes) — only where they live and what they are called.
 - **How delegation grows**: when the Chairman says "don't ask me about this", "you decide this kind", "no need to report this"
   or "ask me first about this", add one line per decision type under "Delegation rules" below and answer "noted". Check here
-  before the next similar decision and decide or ask as the rule says. Delegation rules only decide whether to ask; they never
-  lift the phone approval of dangerous operations.
+  before a similar decision and apply the rules for the action and current access level. Carry out authorized read-only or
+  low-risk work directly. Use the ordinary phone buttons for reversible actions where the current level requires confirmation.
+  Actions on the UV list require user verification on a paired device. Delegation preserves paired-device approval,
+  credential rules and the harness's permission limits.
 - This folder is the working root. New workflows are direct lowercase-hyphen children; existing files stay where they are and
   their locations are recorded.
 <!-- /agentj:core -->

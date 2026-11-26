@@ -2,9 +2,9 @@
   "schema": 2,
   "authority": "component-ownership.json + current explicit HTML + verified dynamic constructors; no ID prefix inference",
   "sourceHashes": {
-    "public/index.html": "299c7fe154cd2ddd8fe9cafde53d7db3257ee2d39e6be80f3269419f49c258cf",
+    "public/index.html": "da7bd432891fbee0f09e405a2d50bbe4c231b442bd07a266e7e4bc6f781aa83f",
     "component-ownership.json": "e424b73bc80db8f309e355b01420f7374072a3dc9845339c75c720415f04681a",
-    "public/js/relay.js": "f6c7b9a2a398c620265e7471a1e8f04073b54e15886ce52c1c18b2f27f53fdb1"
+    "public/js/relay.js": "b967b0f4d2d0d5fa92ad8c51ad12febce55410ddb21a1c3a4c1e983a718167f3"
   },
   "idOwners": {
     "version-notice": {
@@ -11066,15 +11066,23 @@
       "owner": "aj-reply-action",
       "method": "direct-data-owner",
       "source": "public/index.html",
-      "line": 1766,
+      "line": 1767,
       "tag": "h2",
+      "classes": []
+    },
+    "ownerQueueClear": {
+      "owner": "aj-reply-action",
+      "method": "direct-data-owner",
+      "source": "public/index.html",
+      "line": 1768,
+      "tag": "button",
       "classes": []
     },
     "ownerQueueWait": {
       "owner": "aj-reply-action",
       "method": "explicit-component-ancestor",
       "source": "public/index.html",
-      "line": 1767,
+      "line": 1770,
       "rootId": "ownerQueueDialog",
       "rootClasses": [],
       "rootLine": 1765,
@@ -11085,7 +11093,7 @@
       "owner": "aj-reply-action",
       "method": "explicit-component-ancestor",
       "source": "public/index.html",
-      "line": 1768,
+      "line": 1771,
       "rootId": "ownerQueueDialog",
       "rootClasses": [],
       "rootLine": 1765,
@@ -11096,7 +11104,7 @@
       "owner": "aj-reply-action",
       "method": "explicit-component-ancestor",
       "source": "public/index.html",
-      "line": 1769,
+      "line": 1772,
       "rootId": "ownerQueueDialog",
       "rootClasses": [],
       "rootLine": 1765,
@@ -11107,7 +11115,7 @@
       "owner": "aj-reply-action",
       "method": "direct-data-owner",
       "source": "public/index.html",
-      "line": 1771,
+      "line": 1774,
       "tag": "button",
       "classes": []
     },
@@ -11115,7 +11123,7 @@
       "owner": "aj-reply-action",
       "method": "direct-data-owner",
       "source": "public/index.html",
-      "line": 1772,
+      "line": 1775,
       "tag": "button",
       "classes": []
     },
@@ -11123,7 +11131,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2719,
+      "line": 2726,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."
@@ -11132,7 +11140,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2719,
+      "line": 2726,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."
@@ -11141,7 +11149,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2719,
+      "line": 2726,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."
@@ -11150,7 +11158,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2719,
+      "line": 2726,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."
@@ -11159,7 +11167,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2719,
+      "line": 2726,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."
@@ -11168,7 +11176,7 @@
       "owner": "aj-reader",
       "method": "explicit-dynamic-constructor",
       "source": "public/js/relay.js",
-      "line": 2719,
+      "line": 2726,
       "constructor": "rdBuildActs",
       "rootId": "rdActs",
       "evidence": "Reader creates local clones of business controls with an independent reader visual owner; source callback/state mirroring is shared."

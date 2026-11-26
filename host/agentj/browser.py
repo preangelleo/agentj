@@ -1,10 +1,7 @@
-"""Private-profile Linux CDP supervisor, local Ego Lite adapter, and explicitly adopted Linux browsers.
-Ownership and loopback listening are verified before publishing a Linux runtime. CDP is
-unauthenticated: profile separation is not a same-user sandbox. No endpoint forwarding or cookie/credential logging.
-Adopted browsers are never installed, restarted, killed or modified; only owned tabs may close. A per-profile start lock
-serializes owned launches. Only explicit actions wake the owned service; background checks never wake it. Seats remain isolated.
+"""Verify and manage local browser runtimes. See P0261 in ARCHITECTURE.md.
 
-Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / browser.py.
+CDP is loopback-only and unauthenticated. Each seat has its own profile.
+Only explicit actions wake the owned service. Adopted browsers stay owner-managed.
 """
 from __future__ import annotations
 
@@ -493,10 +490,7 @@ def start_browser(st: State, headless: bool | None = None) -> tuple[subprocess.P
 
 
 def visible_runtime(st: State) -> dict | None:
-    """Explicit host sign-in/open only: switch our headless browser using its own profile.
-
-    Background checks/endpoints never call this. Keep an active QR session intact.
-    """
+    """Show the managed browser for explicit sign-in/open, preserving active QR sessions."""
     from .browser_cdp import CDP, CDPError
     rt = runtime(st)
     if not rt or not rt.get("headless") or adopted(st):
@@ -973,8 +967,7 @@ def _agentj_endpoint(info: dict) -> bool:
 
 
 def detect_existing(st: State, ports=None) -> list[dict]:
-    """CDP browsers already running on the Agent J host's usual debugging ports (not Agent J's own). Read-only (/json/version).
-    AGENTJ_BROWSER_DETECT=off turns detection off (tests; an owner who never wants the question)."""
+    """Read-only detection of other local CDP browsers. Opt out with AGENTJ_BROWSER_DETECT=off."""
     if backend() != "system-cdp" or os.environ.get("AGENTJ_BROWSER_DETECT") == "off":
         return []
     own = _read_json(runtime_path(st))
@@ -999,7 +992,7 @@ def adopted(st: State) -> dict | None:
 
 
 def offer(st: State) -> dict | None:
-    """A proposed (not yet confirmed) adoption: from `adopt` or from `setup` finding a browser. declined = the owner said no."""
+    """Read the pending adoption decision."""
     rec = _read_json(offer_path(st))
     if isinstance(rec, dict) and type(rec.get("port")) is int:
         return rec
@@ -1013,8 +1006,7 @@ def _set_offer(st: State, port: int, product: str, by: str) -> dict:
 
 
 def adopt(st: State, endpoint, dry_run: bool = False, sites=None, _cdp=None) -> dict:
-    """Propose an existing loopback CDP browser. dry_run: probe only (optionally a read-only sign-in check of template sites
-    in tabs it opens and closes), write nothing. Otherwise a pending offer the owner confirms once on the phone."""
+    """Propose a loopback browser for signed phone confirmation. Dry runs only probe."""
     if backend() != "system-cdp":
         return {"ok": False, "reason": "adopt_unsupported", "hint": HINTS["adopt_unsupported"]}
     try:
@@ -1045,8 +1037,7 @@ def adopt(st: State, endpoint, dry_run: bool = False, sites=None, _cdp=None) -> 
 
 
 def confirm_adopt(st: State, decision_ref: str) -> dict:
-    """The owner's signed "use it" (setup_mark adopt_browser). Re-probes, then Agent J's own browser service (if any) stops —
-    the profile stays. The adopted browser itself is never started, stopped, killed or changed."""
+    """Re-probe after signed adoption. Stop only the owned service and preserve its profile."""
     if backend() == "ego-lite":
         from . import browser_ego, first_run
         with start_lock(st):
@@ -1173,8 +1164,7 @@ def source(st: State) -> dict:
 
 # ---------------------------------------------------------------- P131: bring the window to the front
 def raise_window(pid: int | None, title: str | None = WINDOW_NAME) -> dict:
-    """Best effort per desktop: Hyprland (hyprctl), X11 (xdotool / wmctrl), macOS (System Events). Other Wayland desktops,
-    WSL and Windows cannot be forced from here — the answer says so ({"ok": False, "method": "unsupported"})."""
+    """Raise a window on supported desktops, reporting when that is unavailable."""
     s = system()
 
     def run_(argv):
@@ -1317,8 +1307,7 @@ def set_enabled(st: State, on: bool) -> dict:
 
 
 def _set_pref(st: State, key: str, value) -> dict:
-    """Edit the user override file with the configuration command's own writer (lock, comments kept, schema-checked,
-    history + last-good), exactly like `agentj config set`."""
+    """Edit the user override with the same validation and history as `agentj config set`."""
     import fcntl
     from . import preferences as p
     st.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -1398,8 +1387,7 @@ def service_start() -> bool:
 
 
 def wake(st: State) -> dict | None:
-    """Before an action that needs the browser. None = nothing to do (running, disabled, not installed: the action answers);
-    {"restarted": True}; {"reason": adopt_not_running | wake_failed, "next": …}."""
+    """Wake the managed browser for an action. Return a restart or failure receipt when attempted."""
     if not settings(st).get("enabled"):
         return None
     if backend() == "ego-lite":
@@ -1525,6 +1513,9 @@ CHANNELS_OWNER_HINT = "请在原已配对手机的主对话里重新发「恢复
 LOGIN_MSG = {
     "sent": "已发登录二维码卡到主人的已配对手机（{ttl} 秒内有效）。请主人在手机上扫码；成功由浏览器自己确认，不要相信「扫好了」这句话。"
             "/ A sign-in QR card is on the owner's paired phone ({ttl} s). Success is confirmed by the browser itself.",
+    "unconfirmed": "登录卡的数据已发出，尚未确认手机显示。若没看到，请在原已配对手机的主对话里发「恢复视频号登录」来获取新码。"
+                   " / Login card sent; display on the paired phone is unconfirmed. If it is missing, request a fresh code in the original paired phone chat.",
+    "shown": "已配对手机确认显示二维码。扫码后由专用浏览器确认登录。 / The paired phone confirmed display. The dedicated browser checks sign-in after scanning.",
     "done": "已登录，体检已确认。/ Signed in; confirmed by a check.",
     "already": "这个网站已经是登录状态。/ Already signed in.",
     "host_login": "这个网站不支持扫码：已在这台Agent J 主机的 Agent J 浏览器打开登录页，请主人在Agent J 主机前登录，然后运行 agentj browser check --site {site}。"
@@ -1535,10 +1526,11 @@ LOGIN_MSG = {
     "page_not_ready": "Agent J 未能确认登录页已加载。/ Agent J could not confirm the sign-in page was ready.",
     "qr_not_found": "登录页已加载，Agent J 未识别到可用的二维码。/ The sign-in page loaded, but Agent J could not identify a usable QR code.",
     "capture_timeout": "等待取得稳定的二维码图像超时。/ Timed out waiting for a stable QR image.",
-    "capture_blank": "找到了二维码，但 Agent J 主机的浏览器窗口三次都没画出图像（窗口被遮住、最小化或屏幕休眠）。/ The QR was found but the host browser window painted nothing three times (covered, minimised or screen asleep).",
+    "capture_blank": "找到了二维码，但未取得可用图像。请点亮主机屏幕，在原已配对手机的主对话里发「恢复视频号登录」。"
+                     " / The browser found a QR code without a usable image. Wake the host display, then request a fresh sign-in code from the original paired phone chat.",
     "not_delivered": "未能将登录卡发给原手机。/ The sign-in card could not be sent to the requesting phone.",
     "owner_phone_required": CHANNELS_OWNER_HINT,
-    "expired": "二维码已过期，没有扫码。主人可以在卡片上点「刷新」，或稍后再说「早上好」。不要反复发。/ The QR expired unscanned. Do not resend repeatedly.",
+    "expired": "二维码已过期，浏览器未确认登录。可从原已配对手机的主对话申请新码。/ The code expired before the browser could confirm sign-in. Request a fresh code from the original paired phone chat.",
     "cancelled": "主人在手机上关掉了登录卡。不要追问。/ The owner closed the card.",
     "no_device": "没有已配对的手机。/ No paired phone.",
     "no_browser": "Agent J 的浏览器没在运行：agentj browser setup。/ The browser is not running.",
@@ -1562,14 +1554,16 @@ def cmd(a) -> int:
             end = time.monotonic() + TTL_WAIT
             while time.monotonic() < end:
                 r = elevate.client_request(st, {"t": "browser_login_result", "id": res["id"]}, 10)
-                if r.get("result") not in ("pending", "unavailable"):
+                if r.get("result") != "unavailable":
                     res = {**res, **r}
+                if r.get("result") not in ("pending", "unavailable"):
                     break
                 time.sleep(2)
         if a.json:
             print(json.dumps(res, ensure_ascii=False))
         else:
-            msg = LOGIN_MSG.get(res.get("reason")) or LOGIN_MSG.get(res.get("why")) or LOGIN_MSG.get(
+            display = res.get("display") if res.get("result") in ("sent", "pending") else None
+            msg = LOGIN_MSG.get(display) or LOGIN_MSG.get(res.get("reason")) or LOGIN_MSG.get(res.get("why")) or LOGIN_MSG.get(
                 res.get("result"), res.get("detail") or res.get("why") or "")
             print(f"BROWSER_LOGIN: {res.get('result')} {res.get('id', '')} — " + msg.format(ttl=res.get("ttl", ""), site=a.site))
         return 0 if res.get("result") in ("sent", "done", "already", "host_login") else 75 if res.get("result") == "pending" else 125

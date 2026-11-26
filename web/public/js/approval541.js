@@ -16,6 +16,7 @@ export function safeDetails(e){
  return [String(e?.details||''),source.root_message_id?t('p541.rootRef',{id:source.root_message_id}):'',source.message_id?t('p541.triggerRef',{id:source.message_id}):'',source.root?.text?t('p541.rootText',{text:source.root.text}):'',chain?t('p541.chain',{chain}):'',source.task_record?t('p541.task',{task:source.task_record}):''].filter(Boolean).join('\n\n');
 }
 export const enabled=p=>p?.approval_v===2;
+export const renderedApproval=p=>active&&current===p;
 // #0304 A2①: the owner's own (verified) turn quoted outside material — say where the material came from, not 「外部消息」.
 // Guest / group / unknown roots (root missing or not verified) keep #541's wording. Display only: Allow rules do not read this.
 const QUOTE_CH=new Set(['email','wechat','telegram','friend_report','support']);

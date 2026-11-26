@@ -76,11 +76,14 @@ def deliver(host, phase):
     if not recipient or phase not in ('fault', 'default') or observed(host) != phase:
         return None
     # A healthy installation has no incident to follow up. Unrelated native reports cannot supply this predecessor.
-    if phase == 'default' and not support_incident.open_issue(st, SETTING):
+    if phase == 'default' and not support_incident.open_issue(st, SETTING, allow_pending=True):
         return None
     channel = support.channel_for(st)
     if not channel.signed:
         return None
+    from . import support_fault_mail
+    fallback = support_fault_mail.configured(st) if phase == 'fault' else None
+
     class ObserverChannel:
         signed = True
 
@@ -88,12 +91,48 @@ def deliver(host, phase):
             self.st = st
             self.ticket = None
 
+        def fault_receipt(self, nonce):
+            if support_incident.account(st) != recipient or observed(host) != phase:
+                return None
+            receipt = fallback.cached_ticket(host, nonce) if fallback else None
+            if not receipt:
+                receipt = channel.fault_receipt(nonce)
+            if receipt and support_incident.account(st) == recipient and observed(host) == phase:
+                return receipt
+            return None
+
+        def reconciled_fault(self, thread):
+            self.ticket = thread
+
         def send(self, fields):
             if support_incident.account(st) != recipient or observed(host) != phase:
                 raise support_incident.NotDispatched()
-            status, response = channel.send(fields)
+            native_send = getattr(channel, 'send', None)
+            reason = None
+            if callable(native_send):
+                status, response = native_send(fields)
+                if fallback and status in (502, 503, 504):
+                    reason = 'native_service_unavailable'
+            elif phase == 'fault':
+                reason = 'native_adapter_unavailable'
+            else:
+                raise support_incident.NotDispatched()
+            if reason:
+                from . import rescue_report
+                nonce = fields.get('nonce')
+                if reason == 'native_service_unavailable' and (receipt := self.fault_receipt(nonce)):
+                    status, response = 201, receipt
+                else:
+                    status, response = rescue_report.report_fixed_fault(
+                        host, recipient=recipient, nonce=nonce, native_failure=reason)
+                if status == 201:
+                    support.remember(st, response['thread'], 'bug', response['seq'])
+                elif fallback and status == 0 and response.get('error') == 'rescue_delivery_unconfirmed':
+                    outcome = fallback.send_fault(host, nonce)
+                    response = {'error': 'fault_mail_' + outcome}
             tid = response.get('thread') if isinstance(response, dict) else None
-            if 200 <= status < 300 and isinstance(tid, str) and support._THREAD.fullmatch(tid):
+            if (200 <= status < 300 and isinstance(tid, str) and support._THREAD.fullmatch(tid)
+                    and fields.get('thread') in (None, tid)):
                 self.ticket = tid
             return status, response
 
@@ -111,6 +150,13 @@ def deliver(host, phase):
     command = ISSUE + (' config-default' if phase == 'default' else '')
     support_incident.submit(command, guarded, send, io.StringIO(), observed=True)
     return guarded.ticket
+
+
+def reconcile_pending(host):
+    phase = observed(host)
+    if phase and support_incident.pending_receipt(host.st, SETTING, phase):
+        return deliver(host, phase)
+    return None
 
 
 def repair_default(host, key, value):

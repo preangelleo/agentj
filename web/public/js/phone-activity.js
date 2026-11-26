@@ -60,8 +60,19 @@ export function ownerInput(p){
   // Channel kind alone also describes visitors, so it is insufficient.
   return s.k==='phone' || s.k==='host';
 }
+// 0378: the one place that reads the host's markers for an owner message that left the queue without a normal run.
+// 'dropped' = the owner removed it (queue_drop), nothing was sent; 'undelivered' = the main session restarted before
+// taking it; 'unconfirmed' = removed from the queue while a copy may still run. The last two carry the host's own words
+// as the page's reply; only 'dropped' (no reply) gets a sentence from the page.
+const GONE = [['dropped', ['stopped']], ['undelivered', ['failed', 'stopped']], ['unconfirmed', ['stopped']]];
+export function queueGone(p){
+  if (!ownerInput(p)) return null;
+  const c = p.card || {};
+  for (const [mark, ends] of GONE) if (c[mark] === true && ends.includes(p.end)) return mark;
+  return null;
+}
 function pendingQueue(p){
-  if (['failed','stopped'].includes(p?.end)) return false;
+  if (['failed','stopped'].includes(p?.end) || GONE.some(([mark]) => p?.card?.[mark] === true)) return false;
   return p?.card?.queued===true && p.end==='open' || p?.card?.held==='pending' || p?.card?.held?.state==='pending';
 }
 export function ownerQueue(p){return ownerInput(p) && pendingQueue(p);}
@@ -71,7 +82,8 @@ export function pendingAutomation(p){
   // Rejected requests and actionable recovery/approval cards retain their existing surface.
   if (p?.login || p?.form || p?.media?.length || p?.source?.repair || p?.source?.guide ||
       Object.keys(c).some(k=>!['queued','held','waited_s','stuck','wait','notice','detail','activity_failure','busy_stalled'].includes(k))) return false;
-  return pendingQueue(p) || ['open','done'].includes(p?.end) && !p?.reply?.trim();
+  const finishedSilent = p?.end === 'done' && p.silent === true;
+  return pendingQueue(p) || !finishedSilent && ['open','done'].includes(p?.end) && !p?.reply?.trim();
 }
 
 // R-0005 (0.30.31, chairman approval pending — relay.js keeps it off by default): one line that says what a

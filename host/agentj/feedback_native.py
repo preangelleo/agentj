@@ -17,6 +17,19 @@ import shutil
 TTL = 300
 MAX_BODY = 65536
 
+REFUSAL_TEXT = {
+    'draft_invalid': 'the feedback draft is invalid',
+    'admission_missing': 'the host could not confirm this native call',
+    'admission_ambiguous': 'more than one current call matches the draft',
+    'caller_unverified': 'the original native caller could not be verified',
+    'already_pending': 'one matching submission is already pending',
+    'approval_refused': 'feedback approval was refused or expired',
+}
+
+
+def not_sent(reason):
+    return {'exit': 3, 'reason': reason, 'output': f'NOT SENT [{reason}] — {REFUSAL_TEXT[reason]}.\n'}
+
 
 def command(tool, inp, cwd):
     """Separate from the secret/file parser: existing harness permission hooks keep their contract."""
@@ -109,10 +122,10 @@ async def receive(broker, req, peer):
                 await asyncio.wait_for(row['native_ready'].wait(), 2)
             except asyncio.TimeoutError:
                 pass
-        if broker.calls.get(cid) is row and row.pop('observed_start', False):
+        if broker.calls.get(cid) is row and row.get('observed_start') and not row.get('admitted'):
             result = await broker.execute('Bash', row['input'], cid)
             if not result or result.get('behavior') != 'allow':
-                return {'exit': 3, 'output': 'NOT SENT — feedback approval refused or expired.\n'}
+                return not_sent('approval_refused')
     return broker.feedback_receipt(req, peer)
 
 
@@ -223,7 +236,8 @@ class Binding:
         if self.proc is None or not self.key:
             raise ValueError('native identity')
         from .peer_origin import _stat
-        self.process_identity = _stat(Path('/proc'), self.proc.pid) if sys.platform == 'linux' else None
+        process = _stat(Path('/proc'), self.proc.pid) if sys.platform == 'linux' else None
+        self.process_identity = process[1:] if process else None
         self.native_identity = self.kernel_root() if sys.platform == 'linux' else None
         self.existing_descendants = set()
         self.registered_tick = None
@@ -261,7 +275,8 @@ class Binding:
         proc = Path('/proc'); anchor = self.proc.pid
         try:
             row = peer_origin._stat(proc, anchor)
-            if row != self.process_identity:
+            # _stat rejects dead processes. Its scheduler state can change between reads.
+            if not row or row[1:] != self.process_identity:
                 return None
             wrapped = Path(os.readlink(proc / str(anchor) / 'exe')).name == 'bwrap'
             if getattr(self.agent, 'cfg', {}).get('fence') and not wrapped:
@@ -276,7 +291,7 @@ class Binding:
                 if not child or child[1] != anchor or nspid[-1] != '1' or peer_origin._uid(proc, native) != os.getuid() or os.readlink(path/'ns/pid') == os.readlink(proc/str(anchor)/'ns/pid'):
                     return None
                 anchor, row = native, child
-            return (anchor, row, os.readlink(proc/str(anchor)/'ns/pid'))
+            return (anchor, row[1:], os.readlink(proc/str(anchor)/'ns/pid'))
         except (OSError, ValueError, StopIteration, IndexError):
             return None
 

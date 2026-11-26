@@ -11,7 +11,7 @@ export function repairOf(page) {
 export const replyName=(page,normal)=>repairOf(page)?'AgentJ':normal;
 const upgradeGuide = 'https://agentj.app/docs/install/#upgrade-failed';
 function guideLink() {
- const link=mk('a','',t('p0353.repair.guide'),'aj-reply');
+ const link=mk('a','aj-upgrade-repair-guide',t('p0353.repair.guide'),'aj-reply');
  link.href=upgradeGuide;link.target='_blank';link.rel='noopener noreferrer';
  return link;
 }

@@ -22,7 +22,7 @@ import uuid
 from .text import drop_replacement, pick, strip_reasoning
 from .agent import Agent
 from .agent_opencode import OpenCodeAgent, Client, HTTPError, CONNECT_WAIT, to_tool, split_model
-from . import privacy, shared_hook, danger, provenance, handoff, approval_jev, humane
+from . import privacy, shared_hook, danger, provenance, handoff, approval_jev, humane, native_advisory
 from .shared_state import AgentState
 from .agent import hooks_blocked, _bin, CLAUDE_EFFORTS
 from .shared_risk import RiskGuard
@@ -372,6 +372,7 @@ class SharedClaudeAgent(Agent):
         self.risk_lock = asyncio.Lock()
         self.attach_lock = asyncio.Lock()
         self.control_ack = asyncio.Event()
+        self.control_accepted = asyncio.Event()   # 0378: the native took the typed control (PreCompact / SessionStart(clear))
         self.control_name = None
         self.clear_pin = cfg.get("shared_session_id")
         self.clear_seen = None
@@ -1190,6 +1191,8 @@ class SharedClaudeAgent(Agent):
                     self._compact_read_wait = None
                 self.turn_began_at = handoff.now()
             elif name == "PreCompact":
+                if self.control_name == "compact":
+                    self.control_accepted.set()
                 self.compact_handoff = handoff.fresh(self.turn_began_at)
                 self.compact_trigger = str(event.get("trigger") or "")[:16] or None
                 self.host.st.log("shared_precompact", handoff=self.compact_handoff,
@@ -1224,6 +1227,8 @@ class SharedClaudeAgent(Agent):
         self._note_background(name, event)
         self._note_skill(name, event)
         self.state.handle(event)
+        if name == "Stop" and not aid:
+            native_advisory.turn_ended(self)        # 0378: a native dialog may open 1–2 s after the turn's end
         if name == "Stop" and not aid and getattr(self.state, "_deferred_stop", None) is not event:
             self.stop_event_context = None
         if name == "Stop" and not event.get("agent_id") and getattr(self.state, "_deferred_stop", None) is event:
@@ -1258,9 +1263,11 @@ class SharedClaudeAgent(Agent):
             if callback:
                 self.clear_history_ok = callback() is not False
             if self.control_name == "clear":
+                self.control_accepted.set()
                 self.control_ack.set()
         if name == "PostCompact" and self.control_name == "compact":
             self.meter(ctx=None, source_at=None)
+            self.control_accepted.set()
             self.control_ack.set()
         elif (name == "PostCompact" or (name == "SessionStart" and event.get("source") == "compact")) and self.control_name != "compact":
             self.host.desktop_cmd_done("compact")
@@ -1677,32 +1684,49 @@ class SharedClaudeAgent(Agent):
             return Result("此控制没有执行：共享终端没有可验证的接口；请在终端运行。 / Not executed: no verified shared control receipt; run it in the terminal.", "refused")
         if self.session is None and not await self.attach():
             return Result(pick(getattr(self.host, "lang", "zh"), "没清成：Claude 会话未连接", "No change: Claude session unavailable"), "error")
-        # The phone queue already serializes phone turns. Also wait for DESKTOP
-        # turns, which do not occupy that queue. No Esc, no approval answers.
+        # The phone queue already serializes phone turns. Also wait for DESKTOP turns, which do not occupy that queue.
+        # Never an approval answer: the control is typed only while _control_ready holds (both typings), and the one other
+        # key near here is the menu desk's "not now" on the recognised autocompact advisory (native_advisory.advisory).
         import time
         started = time.monotonic()
         deadline = started + DESKTOP_IDLE_WAIT
         warned = noted = False
         prepped = False
-        shown = None
+        shown = unknown = None
+
+        def live_row(a):
+            try:
+                return native_advisory.registry(a)
+            except (OSError, ValueError, TypeError, KeyError):
+                return None
         while True:
-            if self.halting or self.host.stopped() is True or getattr(self.cur_cmd, "cancelled", False):
+            go, why, reg = await self._control_ready()
+            if why == "cancelled":
                 return Result(pick(getattr(self.host, "lang", "zh"), "已取消，未发送控制。", "Cancelled; control not sent."), "error")
-            live = claude_sessions(self.cfg['dir'], self.session['sessionId'])
-            if not live or live[0]['pid'] != self.session['pid']:
+            if why == "offline":
                 return Result(pick(getattr(self.host, "lang", "zh"), "没清成：所选桌面会话已离线", "No change: selected desktop session offline"), "error")
-            reg = live[0].get('status')
-            await self.menu_desk.poll()
-            self.validate_session(reg)
-            go, why = self._control_gate(reg)      # P243: background work alone no longer holds the control
+            if why == "lock":
+                return Result("没执行：模型切换正在进行，稍后再试。 / Not sent: a model switch is in progress.", "error")
             if go:
                 if name == "compact" and not prepped and not handoff.fresh(self.turn_began_at):
                     prepped = True          # P151: the handoff first (agentj-handoff), then wait for idle again
                     await self._handoff_prep()
+                    if getattr(self, "_prep_unaccepted", False):   # 0378 Q1: a native that cannot dequeue — not 300 s of it
+                        return Result(native_advisory.unaccepted_text(self, name), "error")
+                    noted = False
                     continue
                 if why != "idle":
                     self.host.st.log("shared_control_background", cmd=name, why=why, tasks=len(self.bg_live), registry=str(reg)[:12])
                 break
+            if not native_advisory.unknown_wait(self, reg):
+                unknown = None
+            elif unknown is None:
+                unknown = time.monotonic()
+            elif time.monotonic() - unknown >= native_advisory.STUCK_WAITING_S:
+                # 0378 Q2: a dialog nobody has a card for — end the control and free the queue, not 30 minutes of 「等…」
+                self.host.st.log("shared_control_unaccepted", cmd=name, stage="gate", registry="waiting",
+                                 waiting_for=native_advisory.waiting_for(live_row(self)), menu=None, level="warning")
+                return Result(native_advisory.blocked_text(self, name), "error")
             detail = self._wait_detail(name, why)
             if not noted or detail != shown:
                 if detail is None:
@@ -1717,40 +1741,121 @@ class SharedClaudeAgent(Agent):
                 self.host.st.log("shared_control_timeout", cmd=name, why=why, tasks=len(self.bg_live), registry=str(reg)[:12])
                 return Result(self._wait_timeout(name, why), "error")
             await asyncio.sleep(.1)
-        if self.native_lock.locked():
-            return Result("没执行：模型切换正在进行，稍后再试。 / Not sent: a model switch is in progress.", "error")
-        if getattr(self.cur_cmd, "cancelled", False):
-            return Result(pick(getattr(self.host, "lang", "zh"), "已取消，未发送控制。", "Cancelled; control not sent."), "error")
         if self.cur_cmd is not None:
             self.cur_cmd.native_started = True
-            self.host.hist_update(self.cur_cmd.turn, card={})
+            self.host.hist_update(self.cur_cmd.turn, card={"cmd": name, "control_pending": True})
         self.control_ack.clear()
+        self.control_accepted.clear()
         self.control_name = name
+        lang = getattr(self.host, "lang", "zh")
+        act = pick(lang, {"compact": "压缩", "clear": "清空"}[name], {"compact": "compacting", "clear": "clearing"}[name])
         try:
             text = '/' + name + (' ' + arg if arg else '')
-            self._control_sent = (text, time.monotonic())
-            if self.native and self.native.pid == self.session['pid'] and self.master is not None:
-                os.write(self.master, text.encode())
-                await asyncio.sleep(.1)
-                os.write(self.master, b'\r')
-            else:
-                from .shared_controls import send
-                why = await asyncio.to_thread(send, self.session, text)
-                if why != 'sent':
-                    self.host.st.log("shared_control_failed", command=name, reason=why)
-                    return Result(pick(getattr(self.host, "lang", "zh"), "没清成：无法安全控制这段桌面对话。请在 Agent J 主机上当前的 Claude Code 终端运行 /" + name + "；以后可在手机设置中把「会话模式」改为「独立会话」，由 Agent J 管理新会话。", "No change: this desktop conversation cannot be controlled safely. Run /" + name + " in its Claude Code terminal on the computer; for future phone controls, choose Use a separate session in Settings so Agent J manages the new session."), "error")
+            target = native_advisory.pty_identity(self)
+            atomic = target is not None and native_advisory.single_chunk(self.session)
+
+            async def typed():
+                self._control_sent = (text, time.monotonic())
+                if atomic:
+                    os.write(self.master, text.encode() + b'\r')   # one chunk: no gap before its Enter (security r2)
+                    why = 'sent'
+                elif target is not None:
+                    os.write(self.master, text.encode())
+                    await asyncio.sleep(.1)
+                    if not (await self._control_ready())[0] or native_advisory.pty_identity(self) != target:
+                        return 'control_changed'
+                    os.write(self.master, b'\r')
+                    why = 'sent'
+                else:
+                    from .shared_controls import send
+                    why = await asyncio.to_thread(send, self.session, text)
+                if why == 'sent':
+                    self.host.st.log("shared_control_sent", cmd=name, transport="pty" if target is not None else "herdr")
+                return why
+            sent_at = time.monotonic()
+            why = await typed()
+            if why != 'sent':
+                self.host.st.log("shared_control_failed", command=name, reason=why)
+                return Result(pick(lang, "没清成：无法安全控制这段桌面对话。请在 Agent J 主机上当前的 Claude Code 终端运行 /" + name + "；以后可在手机设置中把「会话模式」改为「独立会话」，由 Agent J 管理新会话。", "No change: this desktop conversation cannot be controlled safely. Run /" + name + " in its Claude Code terminal on the computer; for future phone controls, choose Use a separate session in Settings so Agent J manages the new session."), "error")
+            # 0378: acceptance (the native started on it) is its own, short wait; completion keeps CONTROL_WAIT. The dialog
+            # that swallowed a control used to cost ten silent minutes and the messages queued behind it.
+            if not (self.control_accepted.is_set() or self.control_ack.is_set()):
+                self.host.cmd_waiting(self.cur_cmd, pick(lang, f"已发给主会话，等它开始{act}…", f"Sent to the main session; waiting for it to start {act}…"))
+            retried, limit = False, time.monotonic() + min(native_advisory.CONTROL_ACCEPT_WAIT, CONTROL_WAIT)
+            while not (self.control_accepted.is_set() or self.control_ack.is_set()):
+                left = limit - time.monotonic()
+                if left <= 0:
+                    await self.menu_desk.poll()
+                    if retried or not atomic or getattr(self, "_advisory_closed", 0) <= sent_at:
+                        break
+                if atomic and not retried and getattr(self, "_advisory_closed", 0) > sent_at:
+                    # one retry, only because the recognised advisory took the keys and has been dismissed since
+                    retried = True
+                    while not native_advisory.settled(self) and not (self.halting or self.host.stopped() is True):
+                        await asyncio.sleep(.1)
+                    if self.control_accepted.is_set() or self.control_ack.is_set():
+                        continue
+                    # security F1: the same preconditions as the first typing, read now — a turn that started when the
+                    # dialog closed may be at a permission box, and this Enter must never reach it. Not ready → nothing typed.
+                    if not (await self._control_ready())[0] or self.control_accepted.is_set() or self.control_ack.is_set():
+                        break
+                    if native_advisory.pty_identity(self) != target or await typed() != 'sent':
+                        break
+                    limit = time.monotonic() + min(native_advisory.CONTROL_ACCEPT_WAIT, CONTROL_WAIT)
+                    continue
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(self.control_accepted.wait(), min(max(left, .01), .5))
+            if not (self.control_accepted.is_set() or self.control_ack.is_set()):
+                row = await asyncio.to_thread(native_advisory.registry, self) or {}
+                menu = getattr(self.menu_desk, "current", None)
+                self.host.st.log("shared_control_unaccepted", cmd=name, registry=str(row.get("status"))[:12],
+                                 waiting_for=native_advisory.waiting_for(row),
+                                 menu=menu.get("kind") if isinstance(menu, dict) else None, level="warning")
+                return Result(native_advisory.unaccepted_text(self, name), "error")
+            if not (self.halting or self.host.stopped() is True):
+                self.host.st.log("shared_control_accepted", cmd=name, ms=int((time.monotonic() - sent_at) * 1000))
+                if not self.control_ack.is_set():
+                    self.host.cmd_waiting(self.cur_cmd, pick(lang, f"主会话正在{act}…", f"The main session is {act}…"))
             try:
                 await asyncio.wait_for(self.control_ack.wait(), CONTROL_WAIT)
             except asyncio.TimeoutError:
                 return Result(pick(getattr(self.host, "lang", "zh"), "没清成：未收到原生回执，结果未确认；请核实桌面，勿重复发送。", "No confirmed change: native receipt timeout; check desktop before retrying."), "error")
             if self.halting or self.host.stopped() is True:
                 return Result(pick(getattr(self.host, "lang", "zh"), "控制结果尚未确认，已停止等待；请核实Agent J 主机。", "Control unconfirmed; waiting stopped, check the desktop."), "error")
+            self.host.st.log("shared_control_done", cmd=name, ms=int((time.monotonic() - sent_at) * 1000))
             self.read_statusline()
             if name == 'clear' and not self.clear_history_ok:
                 return Result(pick(getattr(self.host, "lang", "zh"), "桌面已清空，但手机历史归档失败，旧页仍保留；请检查本机磁盘。", "Desktop cleared, but phone history archive failed; check local disk."), "error")
             return Result("", sep=name == 'clear')   # P133: cmd_card adds 「✓ …」
         finally:
             self.control_name = None
+
+    async def _control_ready(self):
+        """→ (go, why, registry status): every precondition for typing a control, read now. One place for the first typing
+        and the retry (security F1). why: idle · bg · quiet (go) · fg · menu · settle · lock · cancelled · offline."""
+        if self.halting or self.host.stopped() is True or getattr(self.cur_cmd, "cancelled", False):
+            return False, "cancelled", None
+        if not self.session:
+            return False, "offline", None
+        ident = native_advisory.session_identity(self.session)
+        await self.menu_desk.poll()             # handles the autocompact offer on our own pty
+        if native_advisory.session_identity(self.session) != ident or self.menu_desk.stopping:
+            return False, "offline", None
+        live = claude_sessions(self.cfg['dir'], ident[0])
+        if not live or native_advisory.session_identity(live[0]) != ident:
+            return False, "offline", None
+        reg = live[0].get('status')
+        self.validate_session(reg)
+        go, why = self._control_gate(reg)      # P243: background work alone no longer holds the control
+        if go and not native_advisory.settled(self):
+            go, why = False, "settle"           # 0378: idle must hold CONTROL_SETTLE_S past the turn end (dialog race)
+        if go and (self.state.status != "idle" or self.native_turn or self.phone_turn):
+            go, why = False, "fg"
+        if go and self.native_lock.locked():
+            go, why = False, "lock"
+        if go and (self.halting or self.host.stopped() is True or getattr(self.cur_cmd, "cancelled", False)):
+            go, why = False, "cancelled"
+        return go, why, reg
 
     def _control_echo(self, text) -> bool:
         # P133: the transcript's echo of our native slash is no desktop turn
@@ -2329,6 +2434,8 @@ class SharedClaudeAgent(Agent):
             old = self.session or {}
             self._loss_for_choice(old, sid, pid)
             self._repin(self.cfg.get("shared_session_id", ""), selected, "choice")
+        if self.held and (self.session or {}).get("pid") not in (None, pid):
+            native_advisory.clear_held(self.host, self)   # 0378: another process now — unconfirmed, never held for good
         self.session = selected
         if self.channel and claude_auto_retry.supported(selected):
             shared_hook.install(self.cfg["dir"], self.channel.path, denial_hook=True)
@@ -2375,6 +2482,7 @@ class SharedClaudeAgent(Agent):
                     live = claude_sessions(self.cfg["dir"], self.session["sessionId"])
                     exact = live and live[0].get("pid") == self.session.get("pid")
                     self.validate_session(live[0].get("status") if exact else None)
+                    native_advisory.watch(self, live[0] if exact else None)
                 await self.menu_desk.poll(force=False)
                 self.read_statusline()
                 self.sync_compacting()
@@ -2656,8 +2764,11 @@ class SharedClaudeAgent(Agent):
 
     def _held_seen(self, text):
 
-        if not self.held or not isinstance(text, str) or not text:
+        if not isinstance(text, str) or not text:
             return
+        prep = getattr(self, "_prep_text", None)
+        if prep and prep in text:
+            self._prep_taken.set()              # 0378 Q1: the native took the handoff prompt
         for i, (tid, body) in enumerate(self.held):
             if body and body in text and not (self.phone_turn and body == self.pending_text):
                 del self.held[i]
@@ -3114,14 +3225,40 @@ class SharedClaudeAgent(Agent):
         handoff.ensure()
         before = handoff.mtime(handoff.COMPACT)
         self.system_done.clear()
+        text = handoff.prep_text(lang)
+        self._prep_unaccepted, self._prep_text, self._prep_taken = False, text, asyncio.Event()
+        gen = self.turn_gen
+        if self.cur_cmd is not None:    # 0378 Q1: what is happening, on the command's page (not the idle-wait line)
+            self.host.cmd_waiting(self.cur_cmd, pick(lang, "正在让主会话先写交接…", "Asking the main session to write the handoff first…"))
         try:
             self._host_turn()
-            await asyncio.to_thread(claude_send, self.session, handoff.prep_text(lang), provenance.system())
+            await asyncio.to_thread(claude_send, self.session, text, provenance.system())
         except (OSError, ConnectionError, KeyError, TypeError):
+            self._prep_text = None
             self.host.st.log("shared_handoff_prep", result="send_failed")
             return False
-        with contextlib.suppress(asyncio.TimeoutError):
-            await asyncio.wait_for(self.system_done.wait(), handoff.PREP_WAIT)
+        try:
+            # acceptance has its own bound (as a phone Send's): its prompt hook / transcript record, a turn that began,
+            # or the turn's end. PREP_WAIT is only for a handoff turn that did start.
+            end = time.monotonic() + min(native_advisory.CONTROL_ACCEPT_WAIT, handoff.PREP_WAIT)
+            while not (self._prep_taken.is_set() or self.system_done.is_set() or self.turn_gen != gen
+                       or self.state.status == "working"):
+                if time.monotonic() >= end:
+                    try:
+                        row = await asyncio.to_thread(native_advisory.registry, self)
+                    except (OSError, ValueError, TypeError, KeyError):
+                        row = None
+                    self._prep_unaccepted = True
+                    self.host.st.log("shared_control_unaccepted", cmd="compact", stage="handoff",
+                                     registry=str((row or {}).get("status"))[:12], waiting_for=native_advisory.waiting_for(row),
+                                     menu=None, level="warning")
+                    self.host.st.log("shared_handoff_prep", result="unaccepted")
+                    return False
+                await asyncio.sleep(.1)
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(self.system_done.wait(), handoff.PREP_WAIT)
+        finally:
+            self._prep_text = None
         after = handoff.mtime(handoff.COMPACT)
         ok = after is not None and after != before
         self.host.st.log("shared_handoff_prep", result="ok" if ok else "missing")
@@ -3230,7 +3367,10 @@ class SharedClaudeAgent(Agent):
                     tid = held.note(self.host, "") if hasattr(self.host, "hist") and hasattr(self.host, "hist_update") else None
                     if tid is not None:
                         self.held = (self.held + [(tid, self.pending_text)])[-5:]
+                    # 0378: not taken by a native that is neither busy nor holding by the owner's setting = stuck
+                    native_advisory.unaccepted(self, tid, self.native_busy() or claude_inbound.hold_reason(self.cfg.get("dir")))
                     return
+            native_advisory.recovered(self)
             # A committed native Stop belonging to this phone input ends the turn; so does the turn end the transcript
             # records when no Stop comes (P151, _turn_recorded_end). Registry idle and flush timing alone never do.
             await self._await_turn_end()
@@ -3255,6 +3395,7 @@ class SharedClaudeAgent(Agent):
                 self.fail_notice(text)
         finally:
             self.phone_turn = self.phone_claim = False
+            native_advisory.turn_ended(self)
             self.wait_more = None
             note = getattr(self.host, "turn_wait_note", None)
             if note:

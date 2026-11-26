@@ -22,7 +22,15 @@ from .text import pick
 
 
 class Screen:
-    """Bounded visible PTY surface, not scrollback. Incremental UTF-8/CSI/OSC; unknown commands fail closed."""
+    """Bounded visible PTY surface, not scrollback. Incremental UTF-8/CSI/OSC. 0378: a harmless or unknown well-formed
+    sequence (charset designators, keypad modes, private-prefix CSI such as `ESC [ > 0 q`) is skipped — it used to leave
+    the surface invalid or pending for good, so no dialog could be read at all. Only a scroll region we do not model
+    keeps the text withheld, until the next full clear."""
+    _CSI = re.compile(r'\x1b\[([<=>?]?)([0-9;:]*)([ -/]*)([@-~])')
+    _CSI_PART = re.compile(r'\x1b\[[<=>?]?[0-9;:]*[ -/]*')
+    _STR = re.compile(r'\x1b[\]P_^X].*?(?:\x07|\x1b\\)', re.S)
+    _NF = re.compile(r'\x1b[ -/]+[0-~]')
+
     def __init__(self, rows=40, cols=120):
         self.rows, self.cols = rows, cols
         self.grid = [[' '] * cols for _ in range(rows)]
@@ -31,31 +39,63 @@ class Screen:
         self.pending = ''
         self.decoder = codecs.getincrementaldecoder('utf-8')('replace')
         self.valid = True
+        self.skip = False             # inside an over-long OSC/DCS string: dropped up to its terminator
+
+    def _line(self): return [' '] * self.cols
+
+    def _down(self):
+        self.y += 1
+        if self.y >= self.rows:
+            self.grid.pop(0); self.grid.append(self._line()); self.y = self.rows - 1
 
     def feed(self, data):
         s = self.pending + self.decoder.decode(data)
         self.pending = ''
+        if self.skip:
+            m = re.search(r'\x07|\x1b\\', s)
+            if not m: return
+            self.skip = False; s = s[m.end():]
         i = 0
         while i < len(s):
             c = s[i]
             if c == '\x1b':
-                m = re.match(r'\x1b\[([0-9;?]*)([ -/]*)([@-~])', s[i:])
-                osc = re.match(r'\x1b\].*?(?:\x07|\x1b\\)', s[i:], re.S)
-                if m:
-                    self._csi(m[1], m[3]); i += len(m[0]); continue
-                if osc:
-                    i += len(osc[0]); continue
-                if i + 1 >= len(s) or s[i+1] in '[]':
-                    self.pending = s[i:][-4096:]; break
-                if s[i+1] == '7': self.saved = (self.y, self.x)
-                elif s[i+1] == '8': self.y, self.x = self.saved
-                else: self.valid = False
-                i += 2; continue
+                rest = s[i:i+2]
+                if len(rest) < 2:
+                    self.pending = s[i:]; break
+                k = rest[1]
+                if k == '[':
+                    m = self._CSI.match(s, i)
+                    if m:
+                        self._csi(m[1], m[2], m[3], m[4]); i = m.end(); continue
+                    if self._CSI_PART.fullmatch(s, i) and len(s) - i <= 256:
+                        self.pending = s[i:]; break          # cut by the read boundary: the rest comes with the next chunk
+                    i += 2; continue                         # malformed: drop the introducer, never stall on it
+                if k in ']P_^X':
+                    m = self._STR.match(s, i)
+                    if m:
+                        i = m.end(); continue
+                    if len(s) - i <= 8192: self.pending = s[i:]
+                    else: self.skip = True
+                    break
+                if ' ' <= k <= '/':
+                    m = self._NF.match(s, i)                 # ESC ( B · ESC ) 0 · ESC # 8 …: nothing we show
+                    if m:
+                        i = m.end(); continue
+                    if len(s) - i <= 8:
+                        self.pending = s[i:]; break
+                    i += 2; continue
+                if k == '7': self.saved = (self.y, self.x)
+                elif k == '8': self.y, self.x = self.saved
+                elif k == 'D': self._down()
+                elif k == 'E': self.x = 0; self._down()
+                elif k == 'M':
+                    if self.y: self.y -= 1
+                    else: self.grid.pop(); self.grid.insert(0, self._line())
+                elif k == 'c':
+                    self.grid = [self._line() for _ in range(self.rows)]; self.y = self.x = 0; self.valid = True
+                i += 2; continue                             # ESC = · ESC > · anything else two bytes long: skipped
             if c == '\r': self.x = 0
-            elif c == '\n':
-                self.y += 1
-                if self.y >= self.rows:
-                    self.grid.pop(0); self.grid.append([' '] * self.cols); self.y = self.rows - 1
+            elif c == '\n': self._down()
             elif c == '\b': self.x = max(0, self.x - 1)
             elif c == '\t': self.x = min(self.cols - 1, (self.x // 8 + 1) * 8)
             elif c >= ' ' and c != '\x7f' and not unicodedata.combining(c):
@@ -67,15 +107,22 @@ class Screen:
                 self.x += w
             i += 1
 
-    def _csi(self, args, cmd):
-        a = [int(n or 0) for n in args.lstrip('?').split(';')]
+    def _csi(self, prefix, args, inter, cmd):
+        if prefix in ('<', '=', '>') or inter or ':' in args:
+            return                                           # device queries, key protocols, cursor style: no screen change
+        try: a = [int(n or 0) for n in args.split(';')][:16]
+        except ValueError: return
         n = a[0] or 1
+        if prefix == '?':
+            if cmd not in ('J', 'K'): return                 # DEC private modes / reports (`?25l`, `?2004h`, `?u`)
         if cmd in ('H', 'f'): self.y, self.x = min(self.rows-1,n-1), min(self.cols-1,(a[1] or 1)-1 if len(a)>1 else 0)
         elif cmd == 'A': self.y = max(0,self.y-n)
-        elif cmd == 'B': self.y = min(self.rows-1,self.y+n)
-        elif cmd == 'C': self.x = min(self.cols-1,self.x+n)
+        elif cmd in ('B', 'e'): self.y = min(self.rows-1,self.y+n)
+        elif cmd in ('C', 'a'): self.x = min(self.cols-1,self.x+n)
         elif cmd == 'D': self.x = max(0,self.x-n)
-        elif cmd == 'G': self.x = min(self.cols-1,n-1)
+        elif cmd == 'E': self.y, self.x = min(self.rows-1,self.y+n), 0
+        elif cmd == 'F': self.y, self.x = max(0,self.y-n), 0
+        elif cmd in ('G', '`'): self.x = min(self.cols-1,n-1)
         elif cmd == 'd': self.y = min(self.rows-1,n-1)
         elif cmd in ('J','K'):
             mode=a[0]
@@ -86,10 +133,23 @@ class Screen:
             if cmd=='J' and mode in (2,3): self.valid=True
         elif cmd == 's': self.saved=(self.y,self.x)
         elif cmd == 'u': self.y,self.x=self.saved
-        elif cmd not in ('m','h','l','q'): self.valid=False
+        elif cmd == 'X':
+            for x in range(self.x, min(self.cols, self.x+n)): self.grid[self.y][x]=' '
+        elif cmd in ('@', 'P'):
+            row, x, n = self.grid[self.y], min(self.x, self.cols), min(n, self.cols)
+            row[x:] = ([' ']*n + row[x:])[:self.cols-x] if cmd == '@' else row[x+n:] + [' ']*min(n, self.cols-x)
+        elif cmd in ('L', 'M', 'S', 'T'):
+            at = self.y if cmd in ('L', 'M') else 0
+            for _ in range(min(n, self.rows)):
+                if cmd in ('L', 'T'): self.grid.pop(); self.grid.insert(at, self._line())
+                else: self.grid.pop(at); self.grid.append(self._line())
+        elif cmd == 'r':
+            # a partial scroll region moves lines in ways this surface does not model: withhold the text until a full clear
+            if not (a[0] in (0, 1) and (len(a) < 2 or a[1] in (0, self.rows))): self.valid=False
+        # everything else (SGR `m`, modes `h`/`l`, reports `n`/`c`/`t`, …) changes nothing that is read here
 
     def text(self):
-        return '\n'.join(''.join(row).rstrip() for row in self.grid) if self.valid and not self.pending else ''
+        return '\n'.join(''.join(row).rstrip() for row in self.grid) if self.valid and not self.pending and not self.skip else ''
 
 
 def detect(text):
@@ -98,6 +158,8 @@ def detect(text):
     text = text[-12000:]
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if not lines: return None
+    offer = _autocompact_offer(lines)
+    if offer: return offer
     # A native input prompt below a quoted menu proves that menu is history.
     # (P539: `(?!\s*N.)` — the cursor on a menu's last row is a row, not a prompt; `\s*(?!N.)` backtracked past it.)
     if any(re.match(r'^[❯>](?!\s*\d{1,2}\.)', line) for line in lines[-2:]): return None
@@ -152,6 +214,31 @@ _ESC = re.compile(r'Esc(?:ape)? to (?:cancel|exit|close)', re.I)
 MAX_ROWS = 15                      # the phone card holds 16 options: rows + Esc
 _BOX = '│┃|╭╮╰╯─━┌┐└┘ \t'
 _NAME = r'[A-Za-z0-9][A-Za-z0-9 .\-]{0,39}'
+
+
+_OFFER_HINT = re.compile(r'↑/↓ choose · ←/→ change size · enter confirm · esc not now')
+_OFFER_ROW = re.compile(r'(❯\s*)?(?:Keep auto \([0-9.]+[km]? tokens\)|Autocompact at ‹ [0-9.]+[km]? › tokens)')
+
+
+def _autocompact_offer(lines):
+    """0378: Claude Code 2.1.323's one-time "We recommend compacting earlier" advisory, exactly: the title under the
+    dialog's rule, its two rows (one ❯), and the `esc not now` key hint as the last line of the screen. It asks for no
+    permission and Esc changes nothing ("Autocompact unchanged"). Fail closed on the WHOLE visible screen: anything
+    permission-, answer-, paid- or "Session paused"-like, or any `Esc to cancel` hint anywhere, and it is not this
+    (security F4: a real box above a forged block must never be reached by the advisory's Esc)."""
+    if not _OFFER_HINT.fullmatch(lines[-1]): return None
+    screen = '\n'.join(lines)
+    if _PERMISSION.search(screen) or _PAID.search(screen) or _ESC.search(screen): return None
+    if any(x.strip(_BOX) == 'Session paused' for x in lines): return None
+    if any(_ANSWER.match(m[3]) for m in map(_MROW.match, lines) if m): return None
+    end = len(lines) - 1
+    start = max((i for i in range(end) if _RULE.match(lines[i])), default=-1)
+    if start < 0: return None
+    region = lines[start + 1:end]
+    if not region or region[0] != 'We recommend compacting earlier' or len(region) > 16: return None
+    rows = [m for m in map(_OFFER_ROW.fullmatch, region) if m]
+    if len(rows) != 2 or sum(bool(m[1]) for m in rows) != 1: return None
+    return {'kind': 'autocompact_offer', 'reset': '', 'keys': []}
 
 
 def _paused(lines):
@@ -298,6 +385,9 @@ def questions(info, lang):
         return [{'q': q, 'h': _owner('\n'.join(info['lines']))[:2400] + '\n', 'm': False, 'o': o}]
     quota = info['kind']=='quota'
     text = pick(lang, 'Claude Code 额度已用完，恢复时间：', 'Claude Code limit reached; resets ') + info['reset'] if quota else pick(lang,'Claude Code 停在回退菜单。','Claude Code is in a menu; you can exit it.').replace('回退菜单', '菜单')
+    if info['kind']=='autocompact_offer':
+        text = pick(lang, 'Claude Code 停在「建议提早自动压缩」的提示上；退出即保持现有设置。',
+                    'Claude Code is showing its "compact earlier" suggestion; exiting keeps your current setting.')
     labels = [pick(lang,'停止并等待恢复','Stop and wait'),pick(lang,'不再继续','Don’t continue'),
               pick(lang,'使用额外用量（可能收费）','Use extra credits (may cost money)'),
               pick(lang,'升级套餐（可能收费）','Upgrade (may cost money)')] if quota else []
@@ -486,6 +576,13 @@ class Desk:
                 self.retry_at=time.monotonic()+30;self.attempted=False
             self.task=None
         if not info or (self.task and not self.task.done()) or self.attempted or time.monotonic()<self.retry_at: return
+        if info['kind']=='autocompact_offer' and self._native():
+            # 0378: Claude Code's own advisory on the pty Agent J started — "not now" once, registry agreeing; no card
+            from . import native_advisory
+            state=await native_advisory.advisory(a,info)
+            if state=='closed':
+                self.current=None;self.key=None;self.closed.set()
+            if state!='card': return
         self.attempted=True
         self.gone=asyncio.get_running_loop().create_future()
         from . import bg

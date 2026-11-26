@@ -98,7 +98,7 @@
 <link rel="preload" href="brand/fonts/ubuntu-400.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="brand/palette.css">
 <link rel="stylesheet" href="brand/base.css?rev=ebfa46e0d35c2e332d54462652ca244d800d14a739ba29aec7411ea1912bf511">
-<link rel="stylesheet" href="app.css?rev=f0f649523556dab3e1e4a619ff9f6f427a72b9920ee151257164dfab63a25ac5">
+<link rel="stylesheet" href="app.css?rev=f1b81aba8f34f93ea41f82bec849e3e99383183cd38e1ea83c70a64f9be7b13f">
 <link rel="stylesheet" href="menu.css">
 <script src="brand/ui.js" defer></script>
 <link rel="stylesheet" href="five-pages.css">
@@ -1763,7 +1763,10 @@
   <i class="satband" id="satband" aria-hidden="true"></i>
   <i class="sabband" id="sabband" aria-hidden="true"></i>
   <dialog id="ownerQueueDialog" aria-labelledby="ownerQueueTitle" data-aj-owner="aj-reply-action">
-    <h2 id="ownerQueueTitle" data-aj-owner="aj-reply-action" data-i18n="p0319.title">排队消息</h2>
+    <header>
+      <h2 id="ownerQueueTitle" data-aj-owner="aj-reply-action" data-i18n="p0319.title">排队消息</h2>
+      <button type="button" id="ownerQueueClear" hidden data-i18n="p0319.clear" data-aj-owner="aj-reply-action">清空</button>
+    </header>
     <p id="ownerQueueWait" hidden></p>
     <p id="ownerQueueWarning" hidden data-i18n="p481.queueStuck">上一件事已超过 3 分钟没有新输出，可以停下它再继续。</p>
     <ol id="ownerQueueList"></ol>

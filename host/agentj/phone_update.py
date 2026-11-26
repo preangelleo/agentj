@@ -23,19 +23,35 @@ def launch_target(st, target, job=None):
     worker = auto_update.snapshot_worker(st, "phone-lib", "agentj.phone_update", **({"target": target, "job": job} if target else {}))
     service_recovery.launch_job(st, [sys.executable, str(worker)], "update")
 
-def busy(st):
-    try:
-        return time.time() - json.loads((st.root / LOCK).read_text())["at"] < 1800
-    except (OSError, ValueError, KeyError, TypeError):
-        return False
-
 LEASE = 1800
 
 
-def lease_end(st):
-    """0334 r2: when the reserved lease (busy() above) runs out, on the time.monotonic clock; None without one."""
+def _lease_state(st):
+    """Numbered instances share the installed package and its upgrade lease."""
+    from . import instance
+    from .state import State
+    number = instance.current()
+    if number > 1 and st.root.resolve() == instance.state_root(number).resolve():
+        return State(instance.state_root(1))
+    return st
+
+
+def _unexpired(state):
     try:
-        at = json.loads((st.root / LOCK).read_text())["at"]
+        return time.time() - json.loads((state.root / LOCK).read_text())["at"] < LEASE
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def busy(st):
+    lease = _lease_state(st)
+    return _unexpired(lease) or (st.root != lease.root and _unexpired(st))
+
+
+def lease_end(st):
+    """When the reserved lease runs out on the monotonic clock."""
+    try:
+        at = json.loads((_lease_state(st).root / LOCK).read_text())["at"]
     except (OSError, ValueError, KeyError, TypeError):
         return None
     if not isinstance(at, (int, float)):
@@ -43,14 +59,37 @@ def lease_end(st):
     return time.monotonic() + (at + LEASE - time.time())
 
 
-def reserve(st):
-    if busy(st):
-        return False
-    st.write_private(st.root / LOCK, json.dumps({"at": time.time()}).encode())
-    return True
+def reserve(st, *, holder=None):
+    lease = _lease_state(st)
+    lease.root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with lease.file_lock("phone-update-lease"):
+        if busy(st):
+            return False
+        row = {"at": time.time(), **({"holder": holder} if holder else {})}
+        lease.write_private(lease.root / LOCK, json.dumps(row).encode())
+        return True
 
-def release(st):
-    (st.root / LOCK).unlink(missing_ok=True)
+
+def holds(st, holder):
+    try:
+        row = json.loads((_lease_state(st).root / LOCK).read_text())
+        return row.get("holder") == holder and time.time() - row["at"] < LEASE
+    except (OSError, ValueError, AttributeError, KeyError, TypeError):
+        return False
+
+
+def release(st, *, holder=None):
+    lease = _lease_state(st)
+    if not lease.root.is_dir():
+        return
+    with lease.file_lock("phone-update-lease"):
+        path = lease.root / LOCK
+        try:
+            row = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return
+        if isinstance(row, dict) and row.get("holder") == holder:
+            path.unlink(missing_ok=True)
 
 def take(st):
     p = st.root / RESULT
@@ -78,10 +117,24 @@ def text(rec, lang="zh", web="older", machine=None):
         return humane.say("update.current", lang, to=rec["to"])
     from . import upgrade_diag
     reason = rec.get("reason")
+    if reason == "read_only":
+        guide = upgrade_diag.UPGRADE_REPAIR_GUIDE
+        return (f"The host program directory is read-only. Follow the [host upgrade repair guide]({guide}) to keep your pairings."
+                if lang == "en" else f"主机程序目录只读。请按[升级修复步骤]({guide})处理，现有配对可以保留。")
+    if reason in ("launch_failed", "receipt_timeout"):
+        guide = upgrade_diag.UPGRADE_REPAIR_GUIDE
+        if lang == "en":
+            status = "The host could not start the upgrade." if reason == "launch_failed" else "The host has not confirmed the upgrade result."
+            return f"{status} Once the host reconnects, send /update. If it still fails, follow the [host upgrade repair guide]({guide})."
+        status = "主机未能启动升级。" if reason == "launch_failed" else "主机尚未确认升级结果。"
+        return f"{status} 主机重新连上后，在这台遥控器发 /update。若仍失败，请[查看升级修复步骤]({guide})。"
     if rec.get("tell_owner") or upgrade_diag.resolution_failed(rec):          # P277: the plain sentence (what failed, where the Agent J host is, whether support has it)
         return upgrade_diag.owner_sentence(rec, _rep_of(rec), lang)
     en = lang == "en"
     # Receipt fields may come from an older updater. Only fixed vocabulary crosses into owner-visible text.
+    if reason == "estop":
+        return ("Upgrade paused. Turn off Emergency stop on your paired remote, then open Settings → Update." if en else
+                "升级已暂停。请在配对遥控器上解除急停，再从设置打开升级。")
     if reason == "unknown":
         why = "could not check the latest version (network unavailable or the release site unreachable)" if en else "暂时查不到新版（网络不通或发布站连不上）"
     elif (rec.get("step") == "download" and rec.get("errno") == 13
@@ -170,7 +223,10 @@ def read_outcome(st, job, target):
 def run(st, apply_fn=None, restart_fn=None, *, target=None, job=None):
     if update.market_managed():
         return update.market_result()
-    from . import doctor, upgrade_diag
+    from . import controls, doctor, upgrade_diag
+
+    def not_paused():
+        return not controls.estop_state(st).get("on")
     def quiet(argv, **kw):
         kw.pop("capture_output", None)
         return subprocess.run(argv, **{**kw, "stdout": subprocess.PIPE, "stderr": subprocess.PIPE,
@@ -179,10 +235,13 @@ def run(st, apply_fn=None, restart_fn=None, *, target=None, job=None):
     job_outcome = "failed"
     try:
         try:
-            kw = {"lease_end": lease_end(st)} if apply_fn is None else {}     # 0334 r2: retries stay inside the lease
-            if target is not None:
-                kw["target"] = target
-            rec = (apply_fn or update.apply)(st, svc_on=False, run=quiet, **kw)
+            if not not_paused():
+                rec = {"result": "refused", "reason": "estop"}
+            else:
+                kw = {"lease_end": lease_end(st), "start_allowed": not_paused} if apply_fn is None else {}
+                if target is not None:
+                    kw["target"] = target
+                rec = (apply_fn or update.apply)(st, svc_on=False, run=quiet, **kw)
         except Exception as e:  # noqa: BLE001 — the apply itself broke: its step stays unknown, the type is the reason
             rec = {"result": "failed", "reason": "apply_crashed", "error": type(e).__name__}
         installed = rec.get("reason") in ("upgraded", "doctor_failed")
@@ -195,7 +254,7 @@ def run(st, apply_fn=None, restart_fn=None, *, target=None, job=None):
                 rec["checks"] = [{"id": r.get("id"), "status": r.get("status"), **({"session_disconnected": True} if r.get("session_disconnected") is True else {}), **({"summary": "no verified main Agent launch"} if update.benign_waiting(r) else {})} for r in rows]
             except Exception as e:  # noqa: BLE001
                 st.log("phone_update_doctor", status="failed", reason=type(e).__name__)
-        if rec.get("result") != "ok" and (rec.get("step") or rec.get("reason") == "not_owner"):   # #475: not_owner → fix sentence
+        if rec.get("result") != "ok" and rec.get("reason") != "estop" and (rec.get("step") or rec.get("reason") == "not_owner"):   # #475: not_owner → fix sentence
             # P277: a failed phone upgrade reports itself (metadata + redacted installer tail) unless switched off
             with contextlib.suppress(Exception):
                 upgrade_diag.after_failure(st, rec, lang=_lang(st))

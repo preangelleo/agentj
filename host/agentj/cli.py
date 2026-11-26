@@ -2160,12 +2160,21 @@ def cmd_agent(a) -> None:
         if res is None or when == "next_start":
             print("✓ Agent 现在没有在运行：下一条消息启动时就用新的设置（代理、key），接着原来的对话。"
                   " / Not running now: the next message starts it with the new settings, same conversation.")
+        elif when == "now" and res.get("ok"):     # 0378: the shared session's process is one Agent J started itself
+            print("✓ 正在重启 Agent J 自己启动的主会话进程，接着原来的对话；排队的消息随后照常发送。"
+                  " / Restarting the main-session process Agent J started; same conversation, queued messages follow.")
         elif when == "next_turn":
             print("✓ 已安排重启：下一条消息之前重启 Agent 的进程（不打断正在进行的这一轮），接着原来的对话。"
                   " / Restart scheduled before the next message (the running turn is not interrupted); same conversation.")
+        elif res.get("error") == "not_human":     # 0378: Agent J's own shared session, asked by an Agent / a script
+            sys.exit("✗ 请在 Agent J 主机的终端里直接运行这条命令（不能由 Agent 或脚本代跑）；也可以在手机 设置 → 紧急修复 →「重启 Agent」。"
+                     " / Run this command yourself in a terminal on the Agent J host (not through an Agent or a script), "
+                     "or use Settings → Emergency repair → Restart Agent on the phone.")
+        elif res.get("error") == "estop":
+            sys.exit("✗ 已急停：恢复之后再重启。 / Stopped (e-stop): resume first, then restart.")
         else:
-            sys.exit("✗ 共享会话用的是你Agent J 主机上原来的进程，Agent J 不替你重启：请在Agent J 主机上自己重启它。"
-                     " / A shared session is your own process: restart it yourself.")
+            sys.exit("✗ 这个共享会话是你在 Agent J 主机终端里自己开的进程（不是 Agent J 启动的），Agent J 不替你重启：请在那个终端里自己重启它。"
+                     " / This shared session is a process you started in your own terminal (not one Agent J started): restart it there yourself.")
         return
     elif a.mode == "reset":
         for k in st.AGENT_KINDS:

@@ -230,6 +230,8 @@
     "enabled": true,
     // [{"id": "<--from name | task.<task id>>", "allow": true|false}]; not listed = refused / 每个自动化的开关; default=[]
     "automations": [],
+    // Card reminders are unavailable in this release; saved choices are retained.
+    "card_reminders": [],
   },
   // P426: skill health on the phone's 技能 page and "save it as a skill?" offers (agentj skills health | suggest).
   "skills":

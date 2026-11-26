@@ -641,6 +641,32 @@ class RealBrowser(unittest.IsolatedAsyncioTestCase):
         self.proc, _ = browser.start_browser(self.st, headless=True)
         self.addCleanup(browser.stop_proc, self.proc)
 
+    async def test_background_code_capture_neither_raises_nor_paints_the_window(self):
+        runtime = browser.runtime(self.st)
+        with browser_cdp.CDP(runtime["ws"]) as cdp:
+            target = cdp.new_tab(self.fx.origin + "/login", background=True)
+            session = cdp.attach(target)
+            self.addCleanup(cdp.close_tab, target)
+            end = time.monotonic() + 5
+            while cdp.location(session)[1] != "complete" and time.monotonic() < end:
+                await asyncio.sleep(0.05)
+            call = cdp.call
+
+            def without_painting(method, *args, **kwargs):
+                self.assertNotIn(method, ("Page.bringToFront", "Page.captureScreenshot"))
+                return call(method, *args, **kwargs)
+
+            with patch.object(cdp, "call", side_effect=without_painting):
+                allowed = (self.fx.origin,)
+                code = browser_cdp.capture_qr(cdp, session, ["canvas.qrcode"], origins=allowed, root_origins=allowed)
+                self.assertIsNotNone(code)
+                self.assertTrue(browser_cdp.painted(code))
+                self.assertLess(len(code), 60000)
+                self.assertEqual(code, browser_cdp.capture_qr(cdp, session, ["canvas.qrcode"], origins=allowed, root_origins=allowed))
+                self.assertIsNone(browser_cdp.capture_qr(cdp, session, ["canvas.qrcode"], origins=allowed,
+                                                        root_origins=("https://wrong.invalid",)))
+            cdp.close_tab(target)
+
     async def test_qr_card_scan_confirmed_by_the_browser_then_check(self):
         bs.add(self.st, "fixture")
         r = await asyncio.to_thread(bs.check, self.st, ["fixture"])

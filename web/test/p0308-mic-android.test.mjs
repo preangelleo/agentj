@@ -33,7 +33,7 @@ test('0.30.8: a page hidden by a permission dialog keeps an opening take; pagehi
 test('0.30.8 举一反三: the QR scanner and the camera sheet wait out a hide while still asking, never live while hidden', () => {
   assert.match(app, /const asking = view === 'scan' && scanActive && !scanStream;\n  if \(document\.hidden\) \{ if \(!asking\) stopScan\(\); else if \(!scanHidAt\) scanHidAt = Date\.now\(\); return; \}/);
   assert.match(app, /if \(document\.hidden \|\| hiddenTooLong\(scanHidAt\)\) \{ stream\.getTracks\(\)\.forEach\(tr => tr\.stop\(\)\); stopScan\(\); return; \}/);
-  assert.match(app, /window\.addEventListener\('pagehide', \(\) => stopScan\(\)\);/);
+  assert.match(app, /window\.addEventListener\('pagehide', \(\) => \{ stopScan\(\); cardReceipt\.clear\(\); \}\);/);
   assert.match(relay, /const asking = !el\("cam"\)\.hidden && !camStream;\n    if \(document\.visibilityState === "hidden"\)\{ if \(asking && !camHidAt\) camHidAt = Date\.now\(\); else if \(!el\("cam"\)\.hidden && camStream\) closeCam\(\); return; \}/);
   assert.match(relay, /if \(box\.hidden \|\| document\.visibilityState !== "visible" \|\| hiddenTooLong\(camHidAt\)\)\{ s\.getTracks\(\)\.forEach\(tr => tr\.stop\(\)\); if \(!box\.hidden\) closeCam\(\); return; \}/);
   assert.match(relay, /addEventListener\("pagehide", \(\) => \{ if \(!el\("cam"\)\.hidden\) closeCam\(\); \}\);/);

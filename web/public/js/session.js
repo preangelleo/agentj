@@ -85,6 +85,7 @@ let refusals = 0, removalProbe = false;
 // A transport refusal may offer an owner-initiated passkey check; only an authenticated frame can revoke access.
 export const repeatedRefusals = () => refusals >= 2;
 export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off', tgfwd: false, wxfwd: false, wxbound: false, tgbound: false, wxknown: false, tgknown: false, pair1: false, tgfile: false, busyget: false, contacts: false, hfind: false, systasks: false, plat: null, boot: null };
+const CLIENT_CAPS = Object.freeze(['p33', 'lt1', 'pair1', 'card_receipt1', 'card_ask_receipt1']);
 export function configure(hooks) { H = hooks; }
 export const current = () => sess;
 export const isReady = () => !!sess && sess.phase === 'ready';
@@ -179,19 +180,19 @@ async function onFrame(s, data) {
     // hello is the first thing on the new generation's chain: nothing else can be queued on it before this line
     if (s.mode === 'pair') {
       s.phase = 'approval';
-      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1', 'pair1'] }, MAX_JSON);
+      await sendOn(s, g, { t: 'hello', caps: CLIENT_CAPS }, MAX_JSON);
       H.onSas(await safetyCode(h));
     } else if (s.mode === 'restore') {
       // F20 (§12): hello, then the passkey assertion — the host answers pk_ok + ready, or pk_fail + close
       s.phase = 'pk-wait';
-      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1', 'pair1'], ...H.helloExtra(), ...rcField() }, MAX_JSON);
+      await sendOn(s, g, { t: 'hello', caps: CLIENT_CAPS, ...H.helloExtra(), ...rcField() }, MAX_JSON);
       const pk = { t: 'pk_restore', ...s.ctx.pk };
       try { pk.iid = await installId(s.ctx.channel); } catch { /* no storage: the record simply keeps no install hash */ }
       await sendOn(s, g, pk, MAX_JSON);
     } else {
       s.phase = 'ready-wait';
       // the host replays what this page has not seen: §8 since (old hosts), §10.5 hist (p33 hosts)
-      await sendOn(s, g, { t: 'hello', caps: ['p33', 'lt1', 'pair1'], ...H.helloExtra(), ...rcField() }, MAX_JSON);
+      await sendOn(s, g, { t: 'hello', caps: CLIENT_CAPS, ...H.helloExtra(), ...rcField() }, MAX_JSON);
     }
     return;
   }
@@ -225,6 +226,8 @@ function readCaps(m) {
   peer.heartbeat_prompt = Array.isArray(m.caps) && m.caps.includes('heartbeat_prompt');
   peer.heartbeat = Array.isArray(m.caps) && m.caps.includes('heartbeat');
   peer.p33 = Array.isArray(m.caps) && m.caps.includes('p33');
+  peer.cardReceipt1 = peer.p33 && m.mode !== 'rescue' && m.caps.includes('card_receipt1');
+  peer.cardAskReceipt1 = peer.p33 && m.mode !== 'rescue' && m.caps.includes('card_ask_receipt1');
   peer.wxbound = peer.p33 && Array.isArray(m.caps) && m.caps.includes('wxbound');
   peer.tgbound = peer.p33 && Array.isArray(m.caps) && (m.caps.includes('tgbound') || m.caps.includes('tgfwd'));
   peer.wxknown = peer.tgknown = false;   // P569: caps are a guess; only the channel's own status (wechat.js) says it is unbound
@@ -242,6 +245,7 @@ function readCaps(m) {
   peer.upg1 = peer.p33 && Array.isArray(m.caps) && m.caps.includes('upg1');     // P203 (§29.2): upgrade impact + card
   peer.mq = peer.p33 && Array.isArray(m.caps) && m.caps.includes('mq5');        // P286 (§10.6): ≤ 5 quotes in one say
   peer.ss = peer.p33 && Array.isArray(m.caps) && m.caps.includes('ss1');        // P398 (§10.2): answers say_sync
+  peer.queuedrop1 = peer.p33 && Array.isArray(m.caps) && m.caps.includes('queuedrop1');   // 0378: answers queue_drop (one queued page / all)
   peer.assist_term1 = peer.p33 && Array.isArray(m.caps) && m.caps.includes('assist_term1');
   peer.assist1 = peer.p33 && Array.isArray(m.caps) && m.caps.includes('assist1');   // 0.26.9 #468 (§B2): official remote assist (js/assist.js)
   Object.assign(peer, hostKind(m));                   // P287: what the offline line says if this computer goes away
@@ -462,14 +466,15 @@ export function reconnectNow(why = 'visibility') {
 }
 
 /** Send one app message on the ready session; resolves when it is on the socket. `g` pins a generation (gen()): when the
- *  session was reset or replaced since, the send is refused — it is never re-sent on its own (the caller re-offers it). */
-export function sendApp(obj, g = gen(), w = null) {
+ *  session was reset or replaced since, the send is refused — it is never re-sent on its own (the caller re-offers it).
+ *  `observe` can sample a transient event after pacing, before the send consumes its encryption nonce. */
+export function sendApp(obj, g = gen(), w = null, observe = null) {
   const s = sess;
   if (!s || !g || s.gen !== g || s.phase !== 'ready') return Promise.reject(new StaleSend('no session'));
   if (w && !w.live) return Promise.reject(new StaleSend('writer closed'));
-  return sendOn(s, g, obj, jsonMax(), w);
+  return sendOn(s, g, obj, jsonMax(), w, observe);
 }
-function sendOn(s, g, obj, max, w = null) {
+function sendOn(s, g, obj, max, w = null, observe = null) {
   const alive = () => g.live && s.gen === g && sess === s && (!w || w.live);
   const p = g.chain.then(async () => {
     if (!alive()) throw new StaleSend('session reset');
@@ -478,6 +483,7 @@ function sendOn(s, g, obj, max, w = null) {
       await new Promise((r) => setTimeout(r, w));
       if (!alive()) throw new StaleSend('session reset');
     }
+    if (observe && !observe()) throw new StaleSend('observation ended');
     const ct = await g.send.encrypt(EMPTY, pt);     // g.send: this generation's CipherState, never a later one
     if (!alive()) throw new StaleSend('session reset');
     if (s.ws.readyState !== WebSocket.OPEN) throw new Error('socket closed');

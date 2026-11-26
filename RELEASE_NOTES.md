@@ -1,5 +1,5 @@
-# Agent J v0.30.77
+# Agent J v0.30.78
 
-Agent J uses system Chrome or Chromium on Linux. On macOS and Windows (beta), connect your own Ego Lite installation using the bundled skill.
+/compact from the phone no longer hangs, and an unresponsive main session reports an error. Clear the queue or remove one waiting message.
 
-Linux 上的 Agent J 改用系统 Chrome 或 Chromium。macOS 和 Windows（beta）推荐自行安装 Ego Lite，Agent J 自带使用技能。
+手机发 /compact 不再卡死，主会话没反应时会报错并给出「重启 Agent」。排队消息可以清空或单条删除。登录卡、深浅色文字和自动升级补跑也有改进。

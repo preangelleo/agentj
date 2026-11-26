@@ -4,7 +4,7 @@ import { specialQuestioned, clearSpecialApprovals } from './js/approval-special5
 import * as sessionHelp from './js/session-help.js';
 import * as wechat from './js/wechat.js';
 import { floatAuthAsk } from './js/auth-overlay.js';
-import { pkTestResult } from './js/pk-test-result.js';
+import { pkTestBrowserError, pkTestResult } from './js/pk-test-result.js';
 import { showPairGuide, noteRemotes } from './js/pair-guide.js';
 import { copyButton } from './js/copycode.js';
 
@@ -107,6 +107,7 @@ import { hiddenTooLong } from './js/microphone.js';   // security r1 L3: the bou
 import { classifyScan, RV_PREFIX } from './proto/wire.js';
 import * as rvpair from './js/rvpair.js';   // P190 (§27): be scanned on the pairing screen; scan a new device from a paired one
 import * as cardsync from './js/cardsync.js';   // P203 (§29.1): rebuild the cards from the computer's snapshot
+import * as cardReceipt from './js/card-receipt.js';
 import * as upgcard from './js/upgcard.js';     // P203 (§29.2): the upgrade confirmation card
 import * as copycode from './js/copycode.js';   // P292: one copy behaviour for every code / pre
 import * as pairpage from './js/pairpage.js'; // P210: the numbered method cards of 「连上你的电脑」
@@ -361,6 +362,7 @@ const parsePairing = (input) => parseLink(input, undefined, allowRelay);
 // ---------------------------------------------------------------- session hooks
 let lastSeq = 0;
 function onHostGone() {
+  cardReceipt.clear();
   voiceCall.reset();
   snap.S.asks.clear(); snap.S.qs.clear(); snap.S.order = [];   // the host re-sends every request still open after ready
   controls.clearGrants();
@@ -502,11 +504,14 @@ function onApp(m) {
     case 'busy': busy.setBusy(m); relay.cueTasks(busy.currentCounts().task_count); return;
     case 'res': busy.setRes(m); return;              // P181 (§22.1): the load card's five resources (only while it is open)
     case 'theme': applyTheme(m); rerender(); relay.paintChrome(); return;   // P169 (§23): repaint now (logo, status bar)
-    case 'ask':
-      if (snap.addAsk(m)) { frontAsk(m); rosterbind.ensureForCeremony(m).catch(() => {}); }
+    case 'ask': {
+      const newCard = snap.addAsk(m);
+      if (newCard) { frontAsk(m); rosterbind.ensureForCeremony(m).catch(() => {}); }
+      cardReceipt.observe(m, snap.S.asks.get(m.id), newCard);
       return;
+    }
     case 'approval_questioned': specialQuestioned(m); snap.approvalQuestioned(m); relay.approvalQuestioned(m); return;
-    case 'ask_done': relay.approvalEnded(m.id); friends.answerDone(m); snap.askDone(m); pkhandin.answered('ask:' + m.id); rosterbind.grantEnded(m.id); return;   // P566: a handed-in approval ended
+    case 'ask_done': relay.approvalEnded(m.id); friends.answerDone(m); snap.askDone(m); cardReceipt.drop('ask', m.id); pkhandin.answered('ask:' + m.id); rosterbind.grantEnded(m.id); return;   // P566: a handed-in approval ended
     case 'answer_refused': {
       // 0304 R-F5: a same-owner grant from a remote not on the roster yet — the binding prompt, the card stays open (never 「没生效」)
       const bind=m.why==='roster_binding_required'&&(snap.S.asks.get(m.id)?.tool||m.ask?.tool)==='agentj secret grant'?rosterbind.grantRefused(m):null;
@@ -577,11 +582,16 @@ function onApp(m) {
     case 'lt_res': longtask.res(m); return;
     case 'lt_caps': longtask.showCaps(m); return;      // 「我的 Agent 会什么」
     case 'rt': gotTicket(m); return;                  // P122 (§12.1): this phone's renewal ticket → the HttpOnly cookie
-    case 'question': snap.addQuestion(m); return;
+    case 'question': {
+      const newCard = !snap.S.qs.has(m.id);
+      snap.addQuestion(m);
+      cardReceipt.observe(m, snap.S.qs.get(m.id), newCard);
+      return;
+    }
     case 'upg_target_card':
     case 'upg_card': upgcard.add(m); return;         // P203 (§29.2): what an upgrade now would interrupt — the owner decides
     case 'upg_card_done': upgcard.done(m); return;
-    case 'question_done': snap.questionDone(m); return;
+    case 'question_done': snap.questionDone(m); cardReceipt.drop('question', m.id); return;
     case 'auto': controls.showAuto(m); return;        // #562: legacy host event, audit-only, no notice/unread
     case 'grant': controls.setGrant(m); return;
     case 'grant_end': controls.endGrant(m.id, m.why); return;
@@ -673,6 +683,7 @@ function takeoverNote(key) {
 /** Unpair / re-pair / revoke / a new pairing (§10.14, P33-X02 / X13). In-memory first, in the same tick (no await before it):
  *  uploads, queued and in-flight sends, the tray, the quote, the field and ↑↓ history; then the sealed records and their key. */
 async function forgetLocal() {
+  cardReceipt.clear();
   showPairGuide(null);
   pkhandin.reset();                                   // P566 review N3: no hand-in of the old pairing goes out after it
   forgetShare();
@@ -793,7 +804,7 @@ function selfCheck() {
 }
 // P566 (#346, 董事长 10-28 18:5x: 「已设好」 had no way to check or redo it): 「测试一下」 = one Face ID tap over the Agent J
 // host's check challenge (pk_check, the P555 self-check — kept per device, so a drop of the socket behind the sheet does not
-// lose it); a pass changes nothing. A failure says why, with 「重新设置」 (the same set-up, no unpairing).
+// lose it); a pass changes nothing. A rejected credential can use the same set-up, without unpairing.
 let testingFaceId = false;
 function testFaceId() {
   if (testingFaceId) return;
@@ -812,8 +823,8 @@ function testFaceId() {
       let fa;
       try { fa = await passkey.approve(unb64u(c.fa_ch), c.fa, true, 'local'); }
       catch (e) {
-        const n = pkassist.errName(e);
-        testPkNotice(n === 'WrongSeatKey' ? 'p566.pk.wrongSeat' : n === 'AbortError' ? 'p539.fail.abort' : 'p539.fail.cancel', false, reset, true);
+        const result = pkTestBrowserError(pkassist.errName(e));
+        testPkNotice(result.key, false, result.retry ? testFaceId : null);
         return; // A cancelled or missing credential is not an expired host challenge.
       }
       if (session.channel() !== ch0) break;
@@ -830,12 +841,13 @@ function testFaceId() {
   })().catch(() => testPkNotice('p566.notSent', false, testFaceId)).finally(() => { testingFaceId = false; });
 }
 function testPkNotice(key, success = false, action = null, setup = false) {
-  const box = notify({kind:success?'success':'warn', text:pkassist.withBio(key), shape:action?'rect':'circle',
-    ms:action?10000:5000, actions:action?[{label:t(setup?'p0300.pk.setup':'p539.fail.retry'),fn:action}]:[]});
+  const wide = !!action || key === 'p0378.pk.testOrigin';
+  const box = notify({kind:success?'success':'warn', text:pkassist.withBio(key), shape:wide?'rect':'circle',
+    ms:wide?10000:5000, actions:action?[{label:t(setup?'p0300.pk.setup':'p539.fail.retry'),fn:action}]:[]});
   if (!box) return;
   document.body.appendChild(box); // Settings' transformed scroll container cannot clip this viewport notice.
   box.dataset.pkTest = '1';
-  if (action) { box.classList.remove('rect'); box.classList.add('square'); }
+  if (wide) { box.classList.remove('rect'); box.classList.add('square'); }
 }
 // P561 追加 11/12: 「这个浏览器不支持 Face ID」 only when this browser cannot make a key at all (passkey.setupSupport) — never the
 // pickup card's 「请到…手机上领取」 (sout.noFaceId), never a word that the owner said no
@@ -1445,7 +1457,7 @@ document.addEventListener('visibilitychange', () => {
   const long = hiddenTooLong(scanHidAt); scanHidAt = 0;
   if (long && asking) stopScan();
 });
-window.addEventListener('pagehide', () => stopScan());
+window.addEventListener('pagehide', () => { stopScan(); cardReceipt.clear(); });
 window.addEventListener('popstate', () => { if(view === 'scan') stopScan(); });
 function fitPairViewport() {
   applyViewport();          // P142: the same rule as the chat (keyboard up → visual viewport, else full height)

@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import platform
+import secrets
 import time
 
 from . import __version__, cloud, preferences
@@ -14,6 +15,7 @@ from .state import _write_private
 
 PREFIX = "product-fault "
 DAY = 86400
+RECEIPT_BACKOFF = (300, 1800, 7200)
 # Public event names only. Never include log fields, paths, exception messages or user content.
 EVENTS = {
     'config': ('config_migration_failed', 'config_history_cleanup_failed', 'pref_set'),
@@ -104,15 +106,29 @@ def account(st):
     return hashlib.sha256(json.dumps(identity).encode()).hexdigest()
 
 
-def open_issue(st, setting):
+def _observed_issue(st, setting):
     scope = 'host-preferences/' + (account(st) or '') + '/'
     try:
         rows = json.loads((st.root / 'support-product-faults.json').read_text())
         row = rows[scope + 'config/invalid-config/' + setting]
-        return (isinstance(row, dict) and isinstance(row.get('thread'), str)
-                and row.get('at', 0) + DAY > time.time() and not row.get('repaired') and not row.get('pending'))
+        if isinstance(row, dict) and row.get('at', 0) + DAY > time.time():
+            return row
     except (ValueError, TypeError, OSError, KeyError):
+        pass
+    return {}
+
+
+def open_issue(st, setting, *, allow_pending=False):
+    row = _observed_issue(st, setting)
+    if not isinstance(row.get('thread'), str) or row.get('repaired'):
         return False
+    return not row.get('pending') or bool(allow_pending and row.get('pending_thread') == row['thread'])
+
+
+def pending_receipt(st, setting, phase):
+    row = _observed_issue(st, setting)
+    return bool(row.get('nonce') and row.get('pending') and
+                (phase == 'fault') == (row.get('pending_thread') is None))
 
 
 def submit(text, channel, send, out, *, clock=time.time, observed=False):
@@ -184,6 +200,29 @@ def submit(text, channel, send, out, *, clock=time.time, observed=False):
         def save():
             _write_private(path, json.dumps(rows, separators=(',', ':')).encode())
         if entry.get('pending'):
+            receipt_lookup = getattr(channel, 'fault_receipt', None) if observed and entry.get('nonce') else None
+            receipt = None
+            if receipt_lookup and now >= entry.get('receipt_after', 0):
+                checks = entry.get('receipt_checks', 0)
+                entry.update(receipt_after=now + RECEIPT_BACKOFF[min(checks, len(RECEIPT_BACKOFF) - 1)],
+                             receipt_checks=checks + 1)
+                save()
+                try:
+                    receipt = receipt_lookup(entry['nonce'])
+                except (OSError, SupportError, ValueError):
+                    pass
+            if receipt and account(st) == recipient and enabled(st, component):
+                expected = entry.get('pending_thread')
+                if expected is None or receipt['thread'] == expected:
+                    entry.update(thread=receipt['thread'], pending=False, repaired=expected is not None)
+                    entry.pop('pending_thread', None)
+                    entry.pop('nonce', None)
+                    save()
+                    confirmed = getattr(channel, 'reconciled_fault', None)
+                    if confirmed:
+                        confirmed(entry['thread'])
+                    print('客服已确认收件 / Support confirmed receipt ' + entry['thread'], file=out)
+                    return 0
             print('发送结果待核实，请查客服工单 / Delivery unconfirmed; check support tickets.', file=out)
             return 1
         if thread and (not repair or entry.get('repaired')):
@@ -208,6 +247,10 @@ def submit(text, channel, send, out, *, clock=time.time, observed=False):
                 if account(st) != recipient:
                     raise SupportError('The bound support account changed.')
                 entry.update(at=entry.get('at', now), pending=True)
+                if observed:
+                    nonce = 'fault_' + secrets.token_urlsafe(16)
+                    fields = {**fields, 'nonce': nonce}
+                    entry.update(nonce=nonce, pending_thread=thread if repair else None, receipt_after=0, receipt_checks=0)
                 rows[key] = entry
                 save()  # an ambiguous write or process crash cannot produce a second ticket
                 try:
@@ -221,9 +264,13 @@ def submit(text, channel, send, out, *, clock=time.time, observed=False):
                 tid = response.get('thread') if isinstance(response, dict) else None
                 if 200 <= status < 300 and isinstance(tid, str) and _THREAD.fullmatch(tid) and (not repair or tid == thread):
                     entry.update(thread=tid, repaired=bool(repair), pending=False)
+                    entry.pop('nonce', None)
+                    entry.pop('pending_thread', None)
                     save()
                 elif 400 <= status < 500 and status not in (408, 409):
                     entry['pending'] = False
+                    entry.pop('nonce', None)
+                    entry.pop('pending_thread', None)
                     save()  # explicit rejection; the next attempt is eligible
                 return status, response
         return send(body, thread, ReceiptChannel())

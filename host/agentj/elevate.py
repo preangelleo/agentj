@@ -65,7 +65,7 @@ def refused_word(why: str) -> str:
 PHONE_TYPES = ("elev_answer", "secret_out_open", "secret_out_decline")
 PHONE_TYPES += ("elev_revoke",)
 PHONE_TYPES += ("elev_stop", "elev_watch")
-PHONE_TYPES += ("login_qr_check", "login_qr_cancel", "login_qr_tg", "login_qr_refresh")
+PHONE_TYPES += ("login_qr_check", "login_qr_cancel", "login_qr_tg", "login_qr_refresh", "login_qr_shown")
 PHONE_TYPES += ("help_done", "help_text", "help_cancel")
 PHONE_TYPES += ("ct_list", "ct_save", "ct_card_answer", "mail_fwd")
 PHONE_TYPES += ("ct_rm", "ct_export", "ct_import")

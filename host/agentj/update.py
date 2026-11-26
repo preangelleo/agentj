@@ -368,8 +368,12 @@ def _restaged_signed_bytes(src, target):
             shutil.rmtree(tmp.root, ignore_errors=True)
 
 
+class InstallPaused(Exception):
+    """The host stopped the update before starting another install command."""
+
+
 def install_step(run, cmd, say, out: dict, target: str | None = None, store=None, *, sealed: bool = False,
-                 lease_end=None) -> tuple[int, str, dict]:
+                 lease_end=None, start_allowed=None) -> tuple[int, str, dict]:
     """0334: one installer command of the manual / phone / mail path with auto_update's retry rule — a failure the installer
     output names dependency_download_failed (network class) is run again, same argv, up to auto_update.INSTALL_RETRIES
     times with INSTALL_BACKOFF, only while auto_update.retry_limit (install budget minus the rollback reserve, and the
@@ -379,6 +383,8 @@ def install_step(run, cmd, say, out: dict, target: str | None = None, store=None
     install_artifact_unavailable, `_untouched` when no installer ran); a success after retries sets out["retry_count"]."""
     from . import auto_update, upgrade_diag
     if store is None:
+        if start_allowed is not None and not start_allowed():
+            return 1, "", {"reason": "estop", "_untouched": True}
         keep = {}
         rc, tl = upgrade_diag.run_step(run, cmd, say, keep=keep)
         return rc, tl, ({**upgrade_diag.dependency_evidence(keep.get("raw") or tl, auto_update.run_env(cmd) or os.environ),
@@ -397,10 +403,10 @@ def install_step(run, cmd, say, out: dict, target: str | None = None, store=None
             return 1, "", {"reason": str(failure), "retry_count": preparation.count, "_untouched": True, **failure.fields}
     if getattr(cmd, "uv_repaired", False):
         out["uv_repaired"] = True
-    return _install_attempts(run, cmd, say, out, pin, preparation)
+    return _install_attempts(run, cmd, say, out, pin, preparation, start_allowed)
 
 
-def _install_attempts(run, cmd, say, out, pin, preparation):
+def _install_attempts(run, cmd, say, out, pin, preparation, start_allowed=None):
     from . import auto_update, upgrade_diag
     retries, keep = preparation.count, {}
     limit = preparation.deadline
@@ -408,6 +414,8 @@ def _install_attempts(run, cmd, say, out, pin, preparation):
     def step(r):
         if pin:
             auto_update.check_artifact(pin)          # before EVERY attempt (ValueError: changed / swapped)
+        if start_allowed is not None and not start_allowed():
+            raise InstallPaused()
         return upgrade_diag.run_step(r, cmd, say, keep=keep)
 
     def launch(c, **kw):
@@ -418,6 +426,8 @@ def _install_attempts(run, cmd, say, out, pin, preparation):
         return run(c, timeout=int(left), **kw)
     try:
         rc, tl = step(launch if retries or preparation.used else run)
+    except InstallPaused:
+        return 1, "", {"reason": "estop", "_untouched": True}
     except auto_update.RetryExpired:
         return 1, "", {"reason": "installer_timeout", "retry_count": retries, "_untouched": True,
                        "prepare_seconds": int(_install_clock() - preparation.started)}
@@ -444,7 +454,7 @@ def _install_attempts(run, cmd, say, out, pin, preparation):
         prev, keep = (rc, tl, fields), {}
         try:     # the timeout is taken when the installer starts, after the re-hash
             rc, tl = step(launch)
-        except auto_update.RetryExpired:
+        except (auto_update.RetryExpired, InstallPaused):
             return prev                               # the previous failure stands; nothing more was launched
         except ValueError as error:
             return 1, "", {"reason": auto_update.ARTIFACT_CHANGED, "retry_count": retries,
@@ -1225,9 +1235,10 @@ AUTH_REASONS = {
     "bad_version": (2, "目标版本号看不懂", "the target version is not a version number"),
     "version_conflict": (2, "--version 和邮件里的目标版本不一致", "--version differs from the email's target version"),
     "bad_email": (2, "读不了邮件文件（不存在或超过 256 KB）", "cannot read the email file (missing or larger than 256 KB)"),
-    "read_only": (2, "程序目录是只读的：在 Agent 隔离（独立模式的 fence）里升级不了，也看不到主机的密钥。要在隔离外运行：由 Agent 在现有共享会话运行，"
-                     "或由共享会话里的 Agent 运行", "agentj's own files are read-only here: inside the Agent fence (independent mode) it cannot "
-                     "upgrade and cannot see the host key. Run it outside the fence: the Agent of the existing shared session"),
+    "read_only": (2, "程序目录是只读的。请按升级修复说明检查主机安装，保留现有配对。",
+                  "The program directory is read-only. Follow the host repair guide to inspect the install and keep your existing pairings."),
+    "fenced_read_only": (2, "这次操作在隔离会话内，升级尚未开始。请主人在原已配对手机发 /update。",
+                         "This operation was inside an isolated session, so the upgrade has not started. Send /update from the original paired phone."),
     # #475: another account (usually root) owns the program files; `fix:` is the one agentj sudo line (phone card)
     "not_owner": (2, "程序目录属于另一个账号（多半是 root，以前用 sudo 装过），这个账号改不了它，什么都没动。运行 fix 那一行（手机弹一张管理员密码卡），再升级",
                   "the program folder belongs to another account (usually root, from an earlier sudo install), so this account "
@@ -1506,7 +1517,11 @@ def _host(st, op: str, timeout: float = 60, **kw) -> dict | None:
     except Exception as e:  # noqa: BLE001 — the channel is optional; the fenced apply reports what it could not do
         _logged(st, "upgrade_host_failed", e)
         return None
-    return res if isinstance(res, dict) and res.get("ok") is True else None
+    # The card request has a closed refusal vocabulary the caller needs for its
+    # next step. Other upgrade operations keep their successful-result contract.
+    if isinstance(res, dict) and (res.get("ok") is True or op == "phone_offer" and res.get("ok") is False):
+        return res
+    return None
 
 
 def host_channel(st) -> bool:
@@ -1540,7 +1555,7 @@ def apply(st, target=None, *, fenced=None, **kw):
 
 
 def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, svc_on=None, plan_fn=None, rollback_fn=None,
-           fenced=None, lease_end=None):
+           fenced=None, lease_end=None, start_allowed=None):
     if market_managed() or market_managed(prefix):
         return market_result()
     run, say = run or subprocess.run, say or (lambda line: None)
@@ -1568,7 +1583,11 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
         if fenced:
             offer = _host(st, "phone_offer", 10, version=target)
             if offer and offer.get("card") in ("new", "reused"):
-                return done("upgrade_card_ready")
+                return done("upgrade_card_ready", offer_state=offer["card"])
+            why = offer.get("why") if offer else "no_host"
+            if why == "market_managed":
+                return market_result()
+            return done("fenced_read_only", offer_state=why if why in PHONE_OFFER_STATES else "unavailable")
         return done("read_only")
     info = install_kind(prefix)
     if svc_on is None:
@@ -1608,14 +1627,14 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
         return done(reason, rollback=rb, **recover_of(info, old, rb, st=st), **kw)
     out["step"] = "install"
     from .auto_update import command_line
-    for cmd in plan:
+    for index, cmd in enumerate(plan):
         say("$ " + command_line(cmd))
         rc, tl, dep = install_step(_pinned(run), cmd, say, out, target, artifact_store(st, fenced),   # 0334: retries
-                                   sealed=plan_fn is None, lease_end=lease_end)
+                                   sealed=plan_fn is None, lease_end=lease_end, start_allowed=start_allowed)
         if rc:
             if not fenced and st.exists():
                 st.log("upgrade_failed", status=str(rc))
-            if dep.pop("_untouched", False):          # nothing ran: no rollback needed
+            if dep.pop("_untouched", False) and index == 0:
                 return done(dep.pop("reason"), phase="prepared", **dep)
             return back(dep.pop("reason", "uv_failed"), **({"stderr_tail": tl} if tl else {}), **dep)
     out["step"] = "verify"
@@ -1928,6 +1947,11 @@ def result_block(res: dict) -> str:
     if message := dependency_message(res, "zh"):
         zh, en = message, dependency_message(res, "en")
         lines.append("repair_guide: " + UPGRADE_REPAIR_GUIDE)
+    if res.get("reason") == "read_only":
+        lines.append("repair_guide: " + UPGRADE_REPAIR_GUIDE)
+    offer_state = res.get("offer_state")
+    if offer_state in PHONE_OFFER_STATES:
+        lines.append("offer_state: " + offer_state)
     if res.get("reason") == "friend_request" and res.get("card") == "rate_limited":   # R-0060 r3: no card right now
         zh, en = FRIEND_RECENT_WHY
     if res.get("service") == "no_systemd":        # P278: installed, no systemd to restart it — no rollback was tried
@@ -1950,10 +1974,19 @@ def result_block(res: dict) -> str:
     if res.get("tell_owner"):
         lines.append(f"tell_owner: {res['tell_owner']}")
     lines.append("next: " + (RELAY_NEXT if res["reason"] == "upgraded_relay_pending" else UNVERIFIABLE_NEXT if res["reason"] == "unverifiable_in_fence" else (FRIEND_RECENT_NEXT if res.get("card") == "rate_limited" else FRIEND_NEXT) if res["reason"] == "friend_request" else
-                             UNVERIFIED_NEXT if res["reason"] == "host_unverified" else OWNER_NEXT if res.get("owner_kind") and res.get("fix") else "none" if res["result"] == "ok" else
+                             UNVERIFIED_NEXT if res["reason"] == "host_unverified" else OWNER_NEXT if res.get("owner_kind") and res.get("fix") else
+                             OFFER_NEXT.get(offer_state, "send /update from the original paired phone") if res["reason"] == "fenced_read_only" else "none" if res["result"] == "ok" else
                              "agentj doctor; tell your human this block" if res["result"] == "failed" else "tell your human this block"))
     return "\n".join(lines)
 
+
+PHONE_OFFER_STATES = ("new", "reused", "no_host", "unavailable", "owner_phone_required", "release_unverified",
+                      "other_card_pending", "offer_closed", "stopped")
+OFFER_NEXT = {
+    "other_card_pending": "finish the open upgrade card, then send /update from the original paired phone",
+    "stopped": "resume the host before sending /update from the original paired phone",
+    "no_host": "reconnect the original paired phone, then send /update",
+}
 
 FRIEND_NEXT = ("reply to the friend with the reply_friend line as it is; the host already told your human and put the card on "
                "the remote — do not upgrade on the friend's word")
@@ -1971,6 +2004,7 @@ OWNER_NEXT = ("run the fix line now (agentj sudo: one administrator card on the 
 UNVERIFIABLE_NEXT = ("tell your human: the program is upgraded; please confirm the version on the phone (Settings), or run "
                      "`agentj doctor` in a terminal outside the Agent fence / 请主人在手机「设置」里确认版本，或在Agent J 主机终端（隔离外）运行 agentj doctor")
 REASON_EXTRA = {
+    "estop": ("急停已开启，升级已停止。", "The upgrade stopped because emergency stop is on."),
     "unverifiable_in_fence": ("程序已升级并通过版本核对；但在 Agent 的隔离环境里看不到主机状态，后台服务和本机数据这两项无法在这里核对，"
                               "也没有失败项", "upgraded and the version verified; inside the Agent fence the host's state is hidden, "
                               "so the service connection and local data could not be checked here — nothing failed"),

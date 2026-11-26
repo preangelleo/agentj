@@ -33,7 +33,7 @@ class Controls(unittest.IsolatedAsyncioTestCase):
         self.registry = patch.object(shared, 'claude_sessions', side_effect=lambda d, sid='': [{**self.a.session,'sessionId': sid or OLD}])
         self.registry.start(); self.addCleanup(self.registry.stop)
         master, slave = pty.openpty(); tty.setraw(slave)
-        self.a.master = master; self.a.native = Mock(pid=123)
+        self.a.master = master; self.a.native = Mock(pid=123, returncode=None)
         self.slave = slave; os.set_blocking(slave,False)
         self.addCleanup(os.close,master); self.addCleanup(os.close,slave)
     def read(self):

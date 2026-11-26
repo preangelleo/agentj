@@ -201,16 +201,26 @@ async function repair(p, lang, tag, s, realFold) {
   // recovery (#113): the card and the dot turn green at once, with the notice
   fake.setUp(true); await waitState(p, 'ready', 15000);
   await waitFor(p, `${$('rs-reset')}.dataset.state==='ok' && ${$('set-connection')}.dataset.online==='true'`, 3000);
+  // Sample 29 s after the result was set, before a screenshot or a CDP round trip can delay the read.
+  if (realFold) check(await evaluate(p, `import('./js/rescue.js').then(m => {
+    const {at, foldTimer} = m._debug().reset;
+    if (!foldTimer) return false;
+    window.__p393.openAt29s = new Promise(resolve => setTimeout(() => resolve({
+      open: !${$('rs-reset')}.hasAttribute('data-fold'), elapsed: Date.now() - at,
+    }), at + 29000 - Date.now()));
+    return true;
+  })`), 'E: fold timer armed after recovery ' + tag);
   check((await evaluate(p, `${$('rs-reset-body')}.textContent`)).includes(s.restored), 'E: ① 「现在连不上」 → 「已恢复连接」 ' + tag);
   check(await evaluate(p, `${$('set-connection')}.textContent`) === s.restored, 'E: Settings dot green 已恢复连接 ' + tag);
   await evaluate(p, `${$('rs-reset')}.scrollIntoView({block:'center'})`);
   writeFileSync(`${OUT}/web-${tag}-restored.png`, await shoot(p, ''));
   // fold: 30 s after success on a live link (real wait in one combination; the others use the test hook)
   if (realFold) {
-    check(await evaluate(p, `import('./js/rescue.js').then(m=>m._debug().reset.foldTimer)`), 'E: fold timer armed after recovery ' + tag);
-    await sleep(29000);
-    check(!(await evaluate(p, `${$('rs-reset')}.hasAttribute('data-fold')`)), 'E: still open before 30 s ' + tag);
+    const sample = await evaluate(p, 'window.__p393.openAt29s');
+    check(sample.open && sample.elapsed < 30000, `E: still open before 30 s (${sample.elapsed} ms) ${tag}`);
     await waitFor(p, `${$('rs-reset')}.hasAttribute('data-fold')`, 3000);
+    const foldedMs = await evaluate(p, `import('./js/rescue.js').then(m => Date.now() - m._debug().reset.at)`);
+    console.log(`P393 fold ${tag}: open at ${sample.elapsed} ms, fold observed at ${foldedMs} ms`);
     check(true, 'E: folded by itself ~30 s after success ' + tag);
   } else await evaluate(p, `import('./js/rescue.js').then(m=>{m._foldNow();return true})`);
   check(s.sumOk.test(await evaluate(p, `${$('rs-reset-sum')}.textContent`)), 'E: one summary line ' + tag);

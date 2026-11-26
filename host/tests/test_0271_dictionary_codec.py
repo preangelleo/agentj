@@ -10,8 +10,8 @@ from agentj import wake
 
 HEADER = struct.Struct('>4sIIB')
 
-def frame(words=b'\0A\0\x01B\0', sounds=b'\x01\0\x01\x02\0', *, count=2, table=b'AA\0B\0', nphones=2, word_size=None):
-    return HEADER.pack(b'AJP1', count, len(words) if word_size is None else word_size, nphones)+table+words+sounds
+def frame(words=b'\0A\0\x01B\0', sounds=b'\x01\0\x01\x02\0', *, count=2, table=b'AA\0B\0', nphones=2, word_size=None, magic=b'AJP1'):
+    return HEADER.pack(magic, count, len(words) if word_size is None else word_size, nphones)+table+words+sounds
 
 class DictionaryCodec(unittest.TestCase):
     def decode(self, raw):
@@ -19,6 +19,12 @@ class DictionaryCodec(unittest.TestCase):
 
     def test_independent_valid_frame_preserves_prefix_and_every_space_newline(self):
         self.assertEqual(self.decode(frame()), b'A AA\nAB AA B\n')
+
+    def test_pronunciation_prefixes_preserve_full_rows_and_reject_out_of_range(self):
+        self.assertEqual(self.decode(frame(sounds=b'\x01\x01\0\x02\x02\0', magic=b'AJP2')), b'A AA\nAB AA B\n')
+        for sounds in (b'\x02\x01\0\x02\x02\0', b'\x01\x01\0\x03\x02\0', b'\0\x02\x02\0'):
+            with self.assertRaisesRegex(ValueError, 'pronunciation prefix'):
+                self.decode(frame(sounds=sounds, magic=b'AJP2'))
 
     def test_original_hash_and_all_rows_are_unchanged(self):
         raw = wake.dictionary_bytes()

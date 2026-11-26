@@ -95,6 +95,11 @@ def validate(doc,raw=''):
         raise ConfigError('ui.remote_servers', 'up to 32 unique SSH host names and display labels (1–40 characters); no credentials or paths')
     why = notify_problem(get(doc, 'notify.automations', []))
     if why: raise ConfigError('notify.automations', why, _line(raw, 'notify.automations'))
+    reminder_order = get(doc, 'notify.card_reminders', [])
+    if (len(reminder_order) > 3 or any(item not in ('wechat', 'telegram', 'mail') for item in reminder_order)
+            or len(set(reminder_order)) != len(reminder_order)):
+        raise ConfigError('notify.card_reminders', 'list each selected channel once: wechat, telegram, mail',
+                          _line(raw, 'notify.card_reminders'))
     cats = get(doc, 'updates.skill_categories', [])
     if len(cats)>4 or any(c not in ('content','app','commerce','general') for c in cats): raise ConfigError('updates.skill_categories','allowed: content, app, commerce, general')
     order = get(doc, 'ui.composer_buttons')   # P340: a permutation of the five ids (or the complete legacy four); anything else is refused (the phone keeps the default)

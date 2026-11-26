@@ -1,9 +1,4 @@
-"""Adapter for the owner-installed Ego Lite browser and its public Page CLI.
-
-Agent J creates named task Spaces and operates only on Pages created for its task.
-CLI output is consumed in memory. Only the existing login-card path can request
-a bounded QR crop. No access to vendor profiles, cookies, or personal tabs.
-"""
+"""Use the owner-installed Ego Lite CLI only on Agent J task Pages. QR crops stay in memory."""
 from __future__ import annotations
 
 import base64
@@ -467,6 +462,35 @@ class EgoCDP:
         self._checkpoints[session] = frame
         return True
 
+    def _qr_call(self, session, action, output, seconds):
+        expected = self._checkpoints.get(session)
+        if not expected:
+            raise CDPError("Ego Lite QR document unavailable")
+        # Pin the approved document throughout this pixel extraction.
+        script = f"""
+            const rootFrame = {_ROOT_FRAME};
+            const expected = {_json(expected)};
+            const sameDocument = async () => {{
+              const frame = await rootFrame();
+              return frame.origin === expected.origin && frame.loader === expected.loader && frame.frame === expected.frame;
+            }};
+            if (!await sameDocument()) return {{}};
+            const reply = {action};
+            if (!await sameDocument()) return {{}};
+            {output}
+        """
+        return self._page(session, script, timeout=seconds + 14)
+
+    def qr_evaluate(self, session, params):
+        action = f'await page.cdp("Runtime.evaluate", {_json(params)}, {{timeout: 5000}})'
+        output = """
+            const data = reply?.result?.value;
+            return typeof data === "string" && data.length <= 699052 &&
+              data.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(data) ? {result: {value: data}} : {};
+        """
+        result = self._qr_call(session, action, output, 5)
+        return result if isinstance(result, dict) else {}
+
     def call(self, method: str, params: dict | None = None, session: str | None = None,
              timeout: float | None = None) -> dict:
         if method not in _METHODS or not session:
@@ -476,33 +500,22 @@ class EgoCDP:
         action = f"await page.cdp({_json(method)}, {_json(params)}, {{timeout: {int(seconds * 1000)}}})"
         script = "return " + action + ";"
         if method in ("Page.navigate", "Page.reload") and session in self._fresh_tabs:
-            # These settings are CDP-session scoped. A new ego-browser invocation
-            # can reattach, so apply both again in the navigation's own invocation.
+            # Reapply bypass settings to the session that actually navigates.
             script = """
               await page.cdp("Network.setCacheDisabled", {cacheDisabled: true}, {timeout: 5000});
               await page.cdp("Network.setBypassServiceWorker", {bypass: true}, {timeout: 5000});
             """ + script
             seconds += 10
         if method == "Page.captureScreenshot":
-            expected = self._checkpoints.get(session)
-            if not expected or not _is_clip(params):
+            if not _is_clip(params):
                 raise CDPError("Ego Lite QR clip unavailable")
-            # Snapshot only the approved loader. A redirect during capture discards the result inside Ego.
-            script = f"""
-                const rootFrame = {_ROOT_FRAME};
-                const expected = {_json(expected)};
-                const sameDocument = async () => {{
-                  const frame = await rootFrame();
-                  return frame.origin === expected.origin && frame.loader === expected.loader && frame.frame === expected.frame;
-                }};
-                if (!await sameDocument()) return {{}};
-                const crop = {action};
-                if (!await sameDocument()) return {{}};
-                const data = crop?.data;
+            output = """
+                const data = reply?.data;
                 return typeof data === "string" && data.length <= 700000 &&
-                  data.length % 4 === 0 && /^[A-Za-z0-9+/]+={{0,2}}$/.test(data) ? {{data}} : {{}};
+                  data.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(data) ? {data} : {};
             """
-            seconds += 10
+            reply = self._qr_call(session, action, output, seconds)
+            return reply if isinstance(reply, dict) else {}
         reply = self._page(session, script, timeout=seconds + 4)
         if method == "Network.setBypassServiceWorker" and params == {"bypass": True}:
             self._fresh_tabs.add(session)

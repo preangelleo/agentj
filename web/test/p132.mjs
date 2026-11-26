@@ -56,7 +56,8 @@ export async function runP132({B,web,fake,out='reports/qa/p132',rec=parityRecord
    await waitFor(p,`${$('pg')}.textContent==='2 / 2'`);
    inputCard=await box(p,'om');
    for(const [via,reply] of [['loop',s.loop],['task',s.task]]){
-    const t=await fake.addTurn({k:'agent',text:'',via},reply);
+    // Match Host history projection: only the legacy marker goes in reply.text for a silent turn.
+    const t=await fake.addTurn({k:'agent',text:'',via},'','done',null,{silentReply:reply});
     await click(p,'#slashBtn');
     await waitFor(p,`!${$('menu')}.hidden && document.getElementById('backgroundCommandEntry')`);
     await click(p,'#backgroundCommandEntry');

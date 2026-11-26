@@ -41,7 +41,7 @@ try{for(const lang of ['zh','en'])for(const theme of ['light','dark'])for(const 
   assert.equal(styles.theme,theme);assert.equal(styles.deep,theme==='dark'?'28%':'0%');
   assert.equal(styles.menu,theme==='light'?'#faf9f5':'#2c2b26');
   assert.equal(styles.state,theme==='light'?'#629887':'#629887','idle state hue stays safe for Lotion reply text');
-  assert.equal(styles.reply,'20px');assert.equal(styles.confirm,'rgb(44, 43, 38)');assert.equal(styles.form,'rgb(44, 43, 38)');assert.notEqual(styles.link,'rgb(250, 249, 245)');
+  assert.equal(styles.reply,'20px');assert.equal(styles.confirm,'rgb(44, 43, 38)');assert.equal(styles.form,'rgb(44, 43, 38)');assert.equal(styles.link,'rgb(250, 249, 245)');
   assert.match(styles.hint,lang==='zh'?/长按/:/hold/);
   // Six-component style sheet: reply, confirm, form, link + existing chart/steps in one safe fixture.
   const tag=`${lang}-${theme}-${width}`;

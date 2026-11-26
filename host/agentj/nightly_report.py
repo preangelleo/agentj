@@ -17,14 +17,10 @@ def check(st, *, now=None, rand=secrets.randbelow, check_fn=update.check):
     with st.config_lock():
         rec = auto_update.read(st)
         if rec.get('day') != day:
-            rec.update(day=day, second=3*3600 + rand(2*3600), attempted=False)
+            rec.update(day=day, second=3*3600 + rand(2*3600), attempted=False, dispatch_retries=0)
             rec.setdefault('phone_at', now)
             auto_update.write(st, rec)
         if rec.get('reported_day') == day or second < rec['second']:
-            return None
-        if second >= 5*3600:
-            rec['reported_day'] = day
-            auto_update.write(st, rec)
             return None
     # Network outside the config lock and event loop; even disabled/busy/stopped hosts check and report.
     try:

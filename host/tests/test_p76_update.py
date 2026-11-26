@@ -67,6 +67,32 @@ class Upgrade(unittest.IsolatedAsyncioTestCase):
         restart.assert_called_once();self.assertEqual(phone_update.take(self.st)["counts"],[1,0,0])
         restart.reset_mock();phone_update.run(self.st,apply_fn=Mock(return_value={"reason":"install_failed","result":"failed"}),restart_fn=restart)
         restart.assert_not_called();self.assertIn("Upgrade failed",phone_update.text(phone_update.take(self.st),"en"))
+    def test_detached_worker_respects_emergency_stop(self):
+        from agentj import controls
+        controls.set_estop(self.st, True, "terminal")
+        apply = Mock()
+        restart = Mock()
+        phone_update.run(self.st, apply_fn=apply, restart_fn=restart)
+        apply.assert_not_called()
+        restart.assert_not_called()
+        self.assertEqual(phone_update.take(self.st)["reason"], "estop")
+
+    def test_stop_after_artifact_preparation_prevents_the_mutating_command(self):
+        from agentj import controls, upgrade_wheels
+        from pathlib import Path
+        run = Mock()
+        def prepare(command, artifact, original, retry):
+            controls.set_estop(self.st, True, "terminal")
+            return command
+
+        with patch.object(update, "_pin_plan_wheel", return_value=(["synthetic uv"], None)), \
+                patch.object(upgrade_wheels, "prepare_update", side_effect=prepare):
+            code, _, fields = update.install_step(run, ["synthetic uv"], lambda text: None, {}, "99.0.0",
+                    Path(self.st.root), sealed=True, start_allowed=lambda: not controls.estop_state(self.st)["on"])
+        self.assertEqual(code, 1)
+        self.assertEqual(fields, {"reason": "estop", "_untouched": True})
+        run.assert_not_called()
+
     def test_linux_updater_is_separate_unit_mac_separate_process(self):
         with patch("agentj.service_recovery.launch_job") as launch:
             phone_update.launch(self.st)

@@ -39,7 +39,7 @@ def phone(outcome, picks=None, wait_gone=False):
     fake = Mock()
     fake.task_label = None
 
-    async def question(card, gone, task=None):
+    async def question(card, gone, task=None, *, observe=False, reminder_live=None):
         fake.card = card
         if wait_gone:
             await asyncio.wait_for(gone, 120)

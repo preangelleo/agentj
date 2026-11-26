@@ -811,10 +811,7 @@ def owner_request(msg, cfg: dict, state: dict, addr: str) -> str | None:
             if not ids or re.sub(r"<[^<>\s]{1,250}>", "", text).strip():
                 return "thread"
             refs.extend(ids)
-    # An unknown In-Reply-To is still a mail from the authenticated owner.  Keep
-    # the quoted material as data in deliver(); only malformed thread syntax is
-    # refused.  Known owner_threads remain useful for reply correlation, not as
-    # an authorization requirement.
+    # Thread IDs correlate authenticated owner mail. Quoted material stays data.
     if not refs and re.match(r"(?i)^\s*(re|回复|答复)\s*[:：]", decode_subject(msg)):
         return "thread"
     return None
@@ -1779,17 +1776,23 @@ class Mail:
         if raw is None:
             return done("too_big" if size > MSG_MAX else "unreadable")
         msg = email.message_from_bytes(raw, policy=email.policy.default)
+        if msg.get("Subject") == "Agent J fixed fault receipt v1":
+            from . import support_fault_mail
+            consent = support_fault_mail.configured(self.st)
+            if consent:
+                result = await asyncio.to_thread(consent.cache_receipt, self.host, msg)
+                return done("fault_receipt" if result else "fault_receipt_refused")
         v = judge(msg, cfg, s["seen"], raw)
         if not v.ok:
             if v.reason == "auto" and v.detail == "own" and msg.get(MARK):
                 self.log("service_hold", detail="系统回执、自己的副本或旧版未知格式：已保留邮件，不自动执行或回复 / Receipt, own copy or unknown legacy format retained; no automatic action or reply")
-            # Own automatic mail is deliberately not delivered. Only an authenticated allowlisted sender is processed.
+            # Automatic notices still require an authenticated allowlist match.
             row = allow_row(cfg["allow"], v.addr) if v.addr else None
             if v.reason == "auto" and row and authenticate(msg, v.addr, "strict" if row["addr"].startswith("@") else cfg["auth"], cfg.get("auth_servid") or "")[0]:
                 await self._mark_processed(cfg, s["uidvalidity"], uid, id_hash(msg_id(msg), raw[:2048]))
             return done(v.reason, v.addr, v.detail)
         if v.role == "owner" and v.notice != "signed_service_reply" and (why := owner_request(msg, cfg, s, v.addr)):
-            # Recorded no-action conclusion: no model, attachments, phone turn or reply route.
+            # Record the decision before marking the source read.
             s["seen"] = (s["seen"] + [id_hash(msg_id(msg), raw[:2048])])[-KEEP_IDS:]
             save_state(self.st, s)
             await self._mark_processed(cfg, s["uidvalidity"], uid, id_hash(msg_id(msg), raw[:2048]))

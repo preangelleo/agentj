@@ -1,6 +1,7 @@
 """Host-only preference incident provenance and the existing paired-phone repair path."""
 import _hermetic
 import asyncio
+import base64
 import io
 import json
 import os
@@ -160,3 +161,51 @@ class Witness(unittest.TestCase):
                 self.assertEqual(pending,isinstance(failure,OSError))
                 self.ch.post.side_effect=None
                 self.assertEqual(witness.deliver(self.host,'fault'),None if pending else self.ticket)
+
+    def test_lost_server_response_reconciles_the_same_observed_fault(self):
+        calls = []
+        message = 'sm_' + 'm'*22
+
+        def server(url, envelope, **kw):
+            raw = envelope['body']
+            row = json.loads(base64.urlsafe_b64decode(raw + '=' * (-len(raw) % 4)))
+            calls.append((url.rsplit('/', 1)[-1], row))
+            if row['t'] == 'support_message':
+                raise OSError('response lost after commit')
+            self.assertEqual(row['nonce'], calls[0][1]['nonce'])
+            self.assertEqual(set(row), {'v', 't', 'channel', 'ts', 'nonce'})
+            return 200, {'thread': self.ticket, 'message': message, 'seq': 1}
+
+        self.ch.post.side_effect = server
+        with self.assertRaises(OSError):
+            witness.deliver(self.host, 'fault')
+        self.assertEqual(witness.reconcile_pending(self.host), self.ticket)
+        self.assertIsNone(witness.reconcile_pending(self.host))
+        self.assertEqual([name for name, _ in calls], ['messages', 'receipt'])
+
+    def test_owner_change_or_stop_cannot_query_pending_fault(self):
+        self.ch.post.side_effect = OSError('response unknown')
+        with self.assertRaises(OSError):
+            witness.deliver(self.host, 'fault')
+        self.host.stopping.set()
+        self.assertIsNone(witness.deliver(self.host, 'fault'))
+        self.host.stopping.clear()
+        cloud.write_cloud(self.st, {**self.binding, 'linked_at': 2})
+        self.ch.post.reset_mock()
+        self.ch.post.side_effect = None
+        self.assertEqual(witness.deliver(self.host, 'fault'), self.ticket)
+        self.assertTrue(self.ch.post.call_args.args[0].endswith('/messages'))
+
+    def test_wrong_followup_receipt_does_not_announce_or_replace_original(self):
+        self.assertEqual(witness.deliver(self.host, 'fault'), self.ticket)
+        self.healthy()
+        self.ch.post.side_effect = OSError('response unknown')
+        with self.assertRaises(OSError):
+            witness.deliver(self.host, 'default')
+        self.ch.post.side_effect = None
+        self.ch.post.return_value = (200, {'thread': 'st_' + 'w'*22, 'message': 'sm_' + 'm'*22, 'seq': 2})
+        self.assertIsNone(witness.reconcile_pending(self.host))
+        raw = json.loads((self.st.root/'support-product-faults.json').read_text())
+        entry = next(iter(raw.values()))
+        self.assertTrue(entry['pending'])
+        self.assertEqual(entry['thread'], self.ticket)

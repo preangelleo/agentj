@@ -4,7 +4,7 @@ import {mkdirSync,writeFileSync} from 'node:fs';
 import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
 import {launch,newPage,navigate,evaluate,waitFor,waitState,shoot} from './browser.mjs';
-const out=process.env.P0285_B_OUT||'reports/qa/p0285-b-final/converged';mkdirSync(out,{recursive:true});
+const out=process.env.P0285_B_OUT||process.env.AJ_SHOTS||'reports/qa/p0285-b-final/converged';mkdirSync(out,{recursive:true});
 const web=await startWebServer(),fake=await startFakeHost(),B=await launch(),rows=[];
 const initial={enabled:true,available:true,busy:true,elapsed_s:900,owner_waiting:true,waiting_s:31,can_interrupt:true,turn:42,session:'a'.repeat(24)};
 try{for(const width of [390,1440])for(const theme of ['light','dark'])for(const lang of ['zh','en']){

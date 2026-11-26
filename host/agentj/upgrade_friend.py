@@ -242,14 +242,18 @@ async def phone_offer(host, version, peer):
                 and proof[1] == send.approval_origin and not host.stopped()
                 and not provenance.untrusted_turn(agent) and not provenance.owner_grant_required(agent)
                 and send.device and host.st.sign_key(send.device))
-    if not isinstance(version, str) or not re.fullmatch(VERSION, version) or update.market_managed():
-        return {'ok': False, 'why': 'unavailable'}
+    if update.market_managed():
+        return {'ok': False, 'why': 'market_managed'}
+    if not isinstance(version, str) or not re.fullmatch(VERSION, version):
+        return {'ok': False, 'why': 'release_unverified'}
     await approval_material.observe_phone_delivery(host, peer)
     if not live():
-        return {'ok': False, 'why': 'unavailable'}
+        return {'ok': False, 'why': 'stopped' if host.stopped() else 'owner_phone_required'}
     check = await asyncio.to_thread(update.check, timeout=3)
-    if check.get('status') != 'newer' or check.get('latest') != version or not live():
-        return {'ok': False, 'why': 'unavailable'}
+    if not live():
+        return {'ok': False, 'why': 'stopped' if host.stopped() else 'owner_phone_required'}
+    if check.get('status') != 'newer' or check.get('latest') != version:
+        return {'ok': False, 'why': 'release_unverified'}
     if host._upg_live():
         if host.upg.get('target') != version:
             return {'ok': False, 'why': 'other_card_pending'}

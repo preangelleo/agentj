@@ -1,8 +1,8 @@
 // P114 (P90 ADR-A194 §5): the sign-in QR card. The computer's own browser shows a site's sign-in QR code; the host crops ONLY that
 // code and sends it here inside the end-to-end encrypted session, as this card — never a chat message, never stored (no
 // localStorage / IndexedDB / history), gone when it ends. ≤ 120 s; 「刷新」 asks the computer for a fresh one. Success is decided
-// by the computer's browser reaching the signed-in page — 「我扫好了」 only asks it to look now. Telegram: a configured bot
-// gets a text reminder; the QR image goes there only after the owner taps 「也发到 Telegram」 here (Telegram can see it).
+// by the computer's browser reaching the signed-in page — 「我扫好了」 only asks it to look now. Restricted cards
+// report image visibility to their own Host over this session; they carry no instructions to save or forward the image.
 import { sendApp, gen } from './session.js';
 import { t, onLang } from './t.js';
 import { mk, toast } from './ui.js';
@@ -36,7 +36,18 @@ function build() {
   const node = (tag, id, cls) => { const n = mk(tag, cls, undefined, cls?.split(/\s+/).includes('aj-action') ? 'aj-action' : 'aj-auth-card', 'dialog'); n.id = id; return n; };
   const frame = node('div', 'lqr-frame', 'lqr-frame');
   const img = node('img', 'lqr-img', 'lqr-img');
-  img.decoding = 'sync'; img.draggable = true;
+  img.decoding = 'sync';
+  img.addEventListener('load', () => reportShown(cards.values().next().value, img));
+  img.addEventListener('error', () => {
+    const card = cards.values().next().value;
+    if (card?.restricted && img.getAttribute('src') === card.img && img.complete && !img.naturalWidth) {
+      card.imageFailed = true;
+      render();
+    }
+  });
+  img.addEventListener('contextmenu', event => {
+    if (cards.values().next().value?.restricted) event.preventDefault();
+  });
   frame.appendChild(img);
   const acts = mk('div', 'lqr-acts');
   const check = node('button', 'lqr-check', 'aj-action aj-action--primary'); check.type = 'button';
@@ -48,6 +59,7 @@ function build() {
   box.append(node('p', 'lqr-kicker', 'elev-kicker'), node('h2', 'lqr-title'), frame, node('p', 'lqr-left', 'elev-left'),
     node('p', 'lqr-note', 'elev-note'), acts, node('p', 'lqr-tgnote', 'elev-note lqr-tgnote'), tg, later);
   root.appendChild(box);
+  $('lqr-note').setAttribute('aria-live', 'polite');
   document.body.appendChild(root);
   check.addEventListener('click', () => act('login_qr_check'));
   later.addEventListener('click', () => act('login_qr_cancel'));
@@ -71,11 +83,18 @@ export function add(m) {
   if (!ID.test(m.id || '') || !ID.test(m.n || '') || !SITE.test(m.site || '')) return;
   if (typeof m.title !== 'string' || m.title.length > 60 || typeof m.img !== 'string' || m.img.length > 700000) return;
   if (!/^[A-Za-z0-9+/=]+$/.test(m.img)) return;
-  const ttl = Number.isInteger(m.ttl) && m.ttl >= 0 && m.ttl <= 120 ? m.ttl : 120;
-  const deadline = Math.min(cards.get(m.id)?.deadline ?? Infinity, Date.now() + ttl * 1000);
-  cards.set(m.id, { id: m.id, n: m.n, site: m.site, title: m.title, img: 'data:image/png;base64,' + m.img,
-    deadline, tg: ['none', 'text', 'qr'].includes(m.tg) ? m.tg : 'none',
-    channel: typeof m.channel === 'string' && /^[\w .-]{1,24}$/.test(m.channel) ? m.channel : '' });
+  const ttlValid = Number.isInteger(m.ttl) && m.ttl >= 0 && m.ttl <= 120;
+  const restricted = m.shown_ack === true;
+  if (restricted && !ttlValid) return;
+  const img = 'data:image/png;base64,' + m.img;
+  const previous = cards.get(m.id);
+  if (previous && (previous.n !== m.n || previous.site !== m.site || previous.img !== img || previous.restricted !== restricted)) return;
+  for (const card of cards.values()) if (card.site === m.site && card.id !== m.id) cards.delete(card.id);
+  const card = previous || { id: m.id, n: m.n, site: m.site, title: m.title, img, restricted, receipt: '', progress: '' };
+  card.deadline = Math.min(card.deadline ?? Infinity, Date.now() + (ttlValid ? m.ttl : 120) * 1000);
+  card.tg = !restricted && ['text', 'qr'].includes(m.tg) ? m.tg : 'none';
+  card.channel = !restricted && typeof m.channel === 'string' && /^[\w .-]{1,24}$/.test(m.channel) ? m.channel : '';
+  cards.set(m.id, card);
   retire(m.site, true);
   busy = false;
   render();
@@ -90,7 +109,7 @@ export function done(m) {
   if (m.result === 'done') toast(t('lqr.signedIn', { site: c.title }), 3600);
   else if (m.result === 'expired') {
     retire(c.site);
-    ended.set(c.site, { id: c.id, title: c.title });
+    ended.set(c.site, { id: c.id, title: c.title, restricted: c.restricted });
   }
   render();
 }
@@ -99,9 +118,12 @@ export function done(m) {
 export function state(m) {
   const c = cards.get(m.id);
   if (!c) return;
-  if (['none', 'text', 'qr'].includes(m.tg)) c.tg = m.tg;
-  if (busy && m.state === 'waiting') toast(t('lqr.waiting'), 3600);
-  busy = false;
+  if (!c.restricted && ['none', 'text', 'qr'].includes(m.tg)) c.tg = m.tg;
+  if (c.restricted && ['checking', 'waiting'].includes(m.state)) c.progress = m.state;
+  if (cards.values().next().value === c && m.state !== 'checking') {
+    if (busy && m.state === 'waiting' && !c.restricted) toast(t('lqr.waiting'), 3600);
+    busy = false;
+  }
   render();
 }
 
@@ -157,7 +179,7 @@ function render() {
     if (card.deadline > now) continue;
     cards.delete(card.id);
     retire(card.site);
-    ended.set(card.site, { id: card.id, title: card.title });
+    ended.set(card.site, { id: card.id, title: card.title, restricted: card.restricted });
     busy = false;
   }
   const c = cards.values().next().value;
@@ -168,15 +190,23 @@ function render() {
   const title = c ? c.title : e.title;
   $('lqr-kicker').textContent = t('lqr.kicker');
   $('lqr-title').textContent = c || e?.id ? t('lqr.title', { site: title }) : t('lqr.unavailable');
-  $('lqr-frame').hidden = !c;
-  if (c && $('lqr-img').getAttribute('src') !== c.img) { $('lqr-img').src = c.img; $('lqr-img').alt = t('lqr.alt', { site: title }); }
-  if (!c) $('lqr-img').removeAttribute('src');
-  $('lqr-note').textContent = c ? t('lqr.note') : e.reason ? t('lqr.err.' + e.reason) : t('lqr.expiredNote');
+  const img = $('lqr-img');
+  $('lqr-frame').hidden = !c || !!c.imageFailed;
+  img.draggable = !c?.restricted;
+  if (c) {
+    img.alt = t('lqr.alt', { site: title });
+    if (img.getAttribute('src') !== c.img) img.src = c.img;
+    reportShown(c, img);
+  } else img.removeAttribute('src');
+  const note = c ? (c.imageFailed ? 'imageFailed' : c.progress || (c.restricted ? 'restrictedNote' : 'note'))
+    : e.reason ? 'err.' + e.reason : e.restricted ? 'expiredRestricted' : 'expiredNote';
+  const words = t('lqr.' + note);
+  if ($('lqr-note').textContent !== words) $('lqr-note').textContent = words;
   $('lqr-check').textContent = t('lqr.check');
-  $('lqr-check').hidden = !c;
-  $('lqr-check').disabled = busy;
+  $('lqr-check').hidden = !c || !!c.imageFailed;
+  $('lqr-check').disabled = busy || c?.progress === 'checking';
   $('lqr-refresh').textContent = t('lqr.refresh');
-  $('lqr-refresh').hidden = !e?.id || !!e?.closed;
+  $('lqr-refresh').hidden = !e?.id || !!e?.closed || !!e?.restricted;
   $('lqr-refresh').disabled = !!e?.pending;
   $('lqr-close').textContent = t('lqr.close');
   $('lqr-close').hidden = !!c;
@@ -193,6 +223,41 @@ function render() {
   if ($('lqr-left').hidden) $('lqr-left').textContent = '';
   else paintLeft(c);
 }
+// A received frame does not establish display. The decoded image must occupy the visible top layer after paint.
+function visibleImage(img) {
+  for (let node = img; node; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    if (node.hidden || node.inert || style.visibility !== 'visible' || Number(style.opacity) < .99) return false;
+  }
+  const bounds = img.getBoundingClientRect();
+  if (bounds.width < 2 || bounds.height < 2) return false;
+  const view = window.visualViewport;
+  const left = view?.offsetLeft ?? 0, top = view?.offsetTop ?? 0;
+  if (bounds.left < left || bounds.top < top || bounds.right > left + (view?.width ?? innerWidth) ||
+      bounds.bottom > top + (view?.height ?? innerHeight)) return false;
+  return [[.02, .02], [.98, .02], [.5, .5], [.02, .98], [.98, .98]].every(([x, y]) =>
+    document.elementFromPoint(bounds.left + bounds.width * x, bounds.top + bounds.height * y) === img);
+}
+
+async function reportShown(card, img) {
+  if (!card?.restricted || card.receipt || document.hidden || !img.complete || !img.naturalWidth) return;
+  const g = gen();
+  if (!g) return;
+  card.receipt = 'pending';
+  try {
+    await img.decode();
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (gen() !== g || document.hidden || cards.values().next().value !== card || card.deadline <= Date.now() ||
+        img.getAttribute('src') !== card.img || !visibleImage(img)) return;
+    await sendApp({ t: 'login_qr_shown', id: card.id, n: card.n }, g);
+    card.receipt = 'sent';
+  } catch {
+    // A lost connection or decode failure cannot count as a display receipt.
+  } finally {
+    if (card.receipt !== 'sent') card.receipt = '';
+  }
+}
+
 function paintLeft(c) {
   if (!c) { $('lqr-left').textContent = t('lqr.expired'); return; }
   const left = Math.max(0, Math.ceil((c.deadline - Date.now()) / 1000));
@@ -203,12 +268,15 @@ function paintLeft(c) {
 
 async function act(kind) {
   const c = cards.values().next().value;
-  if (!c || busy) return;
+  if (!c || busy || (c.imageFailed && kind === 'login_qr_check')) return;
   if (c.deadline <= Date.now()) { render(); return; }
   const g = gen();
   if (!g) { toast(t('elev.net'), 3000); return; }
+  const previous = c.progress;
+  if (c.restricted && kind === 'login_qr_check') c.progress = 'checking';
   busy = true; render();
-  try { await sendApp({ t: kind, id: c.id, n: c.n }, g); } catch { busy = false; render(); toast(t('elev.fail'), 3000); }
+  try { await sendApp({ t: kind, id: c.id, n: c.n }, g); }
+  catch { c.progress = previous; busy = false; render(); toast(t('elev.fail'), 3000); }
 }
 async function toggleTg() {
   const c = cards.values().next().value;
@@ -222,7 +290,7 @@ async function toggleTg() {
 async function doRefresh() {
   if (cards.size || !ended.size) return;
   const [site, entry] = ended.entries().next().value;
-  if (!entry.id || entry.pending || entry.closed) return;
+  if (!entry.id || entry.pending || entry.closed || entry.restricted) return;
   const g = gen();
   if (!g) { toast(t('elev.net'), 3000); return; }
   entry.pending = g;

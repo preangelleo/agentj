@@ -139,6 +139,10 @@ export async function startFakeHost({ channelSeed, visualSeed, hostKeypair, ephe
   async function pushTurn(turn) { for (const c of ready()) if (c.p33) await sendApp(c, { t: 'hist_turn', epoch: st.epoch, turn }); }
   async function addTurn(src, reply = '', end = 'done', card = null, extra = {}) {
     const turn = { id: st.nextId++, ts: Date.now(), src, reply: { text: reply, ...(extra.part ? { part: extra.part } : {}) }, end, ...(card ? { card } : {}) };
+    if (typeof extra.silentReply === 'string') {
+      turn.silent = true;
+      turn.reply = { text: '〔不回群〕', pre: extra.silentReply };
+    }
     st.turns.push(turn);
     await pushTurn(turn);
     return turn;
@@ -206,6 +210,21 @@ export async function startFakeHost({ channelSeed, visualSeed, hostKeypair, ephe
         return sendApp(c, { t: 'say_cancel_res', sid: m.sid, r: 'cancelled' });
       }
       return sendApp(c, { t: 'say_cancel_res', sid: m.sid, r: st.says.some((x) => x.sid === m.sid) ? 'already_delivered' : 'not_found' });
+    }
+    if (m.t === 'queue_drop') {   // 0378: like serve — the pages end stopped + card.dropped, then the answer; st.queueDrop: false = an older host, 'mute' = no answer, 'skip' = refuses all
+      (st.queueDrops ||= []).push(m);
+      if (st.queueDrop === false || st.queueDrop === 'mute') return;
+      const waiting = (x) => x.end === 'open' && !x.reply?.text && (x.card?.queued === true || x.card?.held === 'pending' || [...st.queued.values()].some((q) => q.turn === x.id));
+      const asked = m.all === true ? st.turns.filter(waiting).map((x) => x.id) : (Array.isArray(m.turns) ? m.turns.filter(Number.isInteger) : []);
+      const turns = [], skipped = [];
+      for (const id of asked) {
+        const x = st.turns.find((y) => y.id === id);
+        if (!x || !waiting(x) || st.queueDrop === 'skip') { skipped.push(id); continue; }
+        for (const [sid, q] of st.queued) if (q.turn === id) { st.queued.delete(sid); await sendApp(q.c, { t: 'say_state', sid, s: 'cancelled', why: 'dropped' }); }   // the Send's own device hears it first
+        await updateTurn(id, { end: 'stopped', card: { dropped: true } });
+        turns.push(id);
+      }
+      return sendApp(c, { t: 'queue_dropped', turns, skipped });
     }
     if (m.t === 'say_sync') {   // P398: like serve say_sync_state — nothing while queued, delivered once handed over, done if unknown
       (st.syncs ||= []).push(m.sids);

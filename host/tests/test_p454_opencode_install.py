@@ -1,5 +1,6 @@
 """P454: recommend v2 without forcing existing v1 installations to migrate."""
 import _hermetic
+from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
@@ -39,6 +40,36 @@ class InstallAdvice(unittest.TestCase):
         self.assertIn('never upgrades itself', row['summary'])
         self.assertIn('npm i -g @opencode/cli@2', row['summary'])
         self.assertNotIn('curl', row['summary'])
+
+
+    def test_doctor_reports_the_wsl_service_executable_and_legacy_upgrade(self):
+        with tempfile.TemporaryDirectory() as root:
+            st = _state(root)
+            cfg = {'kind': 'opencode', 'dir': root, 'model': 'fixture/model'}
+            path = Path(root) / 'opencode'
+            path.touch(mode=0o700)
+            with mock.patch.object(st, 'agent_config', return_value=cfg), \
+                mock.patch('agentj.service.platform', return_value='linux'), \
+                mock.patch('agentj.service.effective_binary_environment', return_value={'AGENTJ_OPENCODE_BIN': str(path), 'HOME': root, 'PATH': '/usr/bin'}), \
+                mock.patch('agentj.doctor._is_wsl', return_value=True), \
+                mock.patch('agentj.harness.opencode_login', return_value=('ok', 'fixture')), \
+                mock.patch('agentj.names.ctl_call', return_value={'known': True, 'selected_connected': True}):
+                for version in ('1.19.3', '2.2.5', '3.0.0', 'unknown'):
+                    with self.subTest(version=version):
+                        path.write_text(f'#!/bin/sh\nprintf "%s\\n" "{version}"\n')
+                        row = doctor.check_agent_cli(st, {'installed': True})
+                        self.assertIn(version, row['summary'])
+                        if version == '1.19.3':
+                            self.assertIn('same WSL distribution', row['summary'])
+                            self.assertIn(opencode_install.NPM, row['summary'])
+                            self.assertIn('agentj agent detect --json', row['summary'])
+                        else:
+                            self.assertNotIn(opencode_install.NPM, row['summary'])
+                            self.assertEqual('Unrecognized OpenCode version' in row['summary'], version == 'unknown')
+                path.unlink()
+                row = doctor.check_agent_cli(st, {'installed': True})
+                self.assertEqual(row['status'], 'fail')
+                self.assertNotIn(opencode_install.NPM, row['summary'])
 
 
 class NativeDiscovery(unittest.TestCase):

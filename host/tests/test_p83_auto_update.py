@@ -291,7 +291,11 @@ class KnownNewerNightlyJourney(NightlyInstallJourney):
 
     def test_no_newer_at_night_preserves_automatic_daytime_new_release(self):
         self.assertTrue(self.due())
-        self.assertIsNone(au.run(self.st,check_fn=lambda:{'status':'current'}))
+        request = au.read(self.st)['schedule']['id']
+        with patch.dict(os.environ, {au.SCHEDULE_ENV: request}):
+            from agentj import phone_update
+            self.assertTrue(phone_update.reserve(self.st, holder=request))
+            self.assertIsNone(au.run(self.st,check_fn=lambda:{'status':'current'}))
         self.assertTrue(self.due(self.now+9*3600,newer=True))
         self.assertFalse(self.due(self.now+9*3600+30,newer=True))
 
@@ -302,6 +306,120 @@ class KnownNewerNightlyJourney(NightlyInstallJourney):
         phone_update.release(self.st)
         self.assertTrue(phone_update.reserve(self.st))
         phone_update.release(self.st)
+
+class DispatchRecovery(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        env = patch.dict(os.environ, {'HOME': tmp.name, 'AGENTJ_STATE_DIR': tmp.name + '/state',
+                                     'XDG_CONFIG_HOME': tmp.name + '/config', 'TZ': 'UTC'})
+        env.start()
+        self.addCleanup(env.stop)
+        self.addCleanup(time.tzset)
+        time.tzset()
+        self.st = State()
+        self.st.init()
+        self.now = time.mktime((2026, 11, 26, 3, 0, 0, 0, 0, -1))
+        au.touch(self.st, self.now - au.IDLE)
+
+    def due(self, elapsed=0, **options):
+        return au.due(self.st, now=self.now + elapsed, rand=lambda _: 0, **options)
+
+    def test_reservation_failure_retries_once_and_waits_for_idle(self):
+        from agentj import phone_update
+        with patch('time.time', return_value=self.now), patch('agentj.service_recovery.launch_job') as launch:
+            self.assertTrue(phone_update.reserve(self.st))
+            self.assertTrue(self.due())
+            self.assertFalse(au.launch(self.st))
+            self.assertEqual(au.read(self.st)['decision'], 'lease_busy')
+            self.assertFalse(au.read(self.st)['attempted'])
+            launch.assert_not_called()
+            phone_update.release(self.st)
+        self.assertFalse(self.due(299))
+        self.assertFalse(self.due(300, blocked=True))
+        self.assertFalse(self.due(330, stopped=True))
+        self.assertTrue(self.due(360))
+        self.assertFalse(self.due(361))
+
+    def test_missing_worker_recovers_and_old_request_cannot_enter(self):
+        self.assertTrue(self.due())
+        abandoned = au.read(self.st)['schedule']['id']
+        now = au.DISPATCH_GRACE + au.DISPATCH_BACKOFF[0]
+        self.assertFalse(self.due(au.DISPATCH_GRACE))
+        self.assertEqual(au.read(self.st)['decision'], 'launch_failed')
+        self.assertTrue(self.due(now))
+        newer = au.read(self.st)['schedule']['id']
+        self.assertNotEqual(abandoned, newer)
+        check = Mock(side_effect=AssertionError('stale worker must not check or install'))
+        with patch.dict(os.environ, {au.SCHEDULE_ENV: abandoned}):
+            self.assertIsNone(au.run(self.st, check_fn=check))
+        check.assert_not_called()
+        self.assertEqual(au.read(self.st)['schedule']['id'], newer)
+
+    def test_unavailable_index_retries_but_disabled_and_stop_cannot_launch(self):
+        self.assertTrue(self.due())
+        request = au.read(self.st)['schedule']['id']
+        with patch.dict(os.environ, {au.SCHEDULE_ENV: request}), patch('time.time', return_value=self.now):
+            from agentj import phone_update
+            self.assertTrue(phone_update.reserve(self.st, holder=request))
+            self.assertIsNone(au.run(self.st, check_fn=lambda: {'status': 'unknown', 'why': 'network'}))
+        self.assertEqual(au.read(self.st)['decision'], 'check_unavailable')
+        self.assertFalse(self.due(300, stopped=True))
+        with patch.object(au, 'enabled', return_value=False):
+            self.assertFalse(self.due(330))
+            self.assertFalse(au.launch(self.st))
+        self.assertTrue(self.due(360))
+
+    def test_lease_is_exclusive_and_a_late_worker_cannot_release_its_successor(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from agentj import phone_update
+        holders = ['synthetic-a', 'synthetic-b']
+        with patch('time.time', return_value=self.now), ThreadPoolExecutor(2) as pool:
+            outcomes = list(pool.map(lambda holder: phone_update.reserve(self.st, holder=holder), holders))
+        self.assertEqual(outcomes.count(True), 1)
+        original = holders[outcomes.index(True)]
+        with patch('time.time', return_value=self.now + phone_update.LEASE + 1):
+            self.assertTrue(phone_update.reserve(self.st, holder='synthetic-new'))
+            phone_update.release(self.st, holder=original)
+            phone_update.release(self.st)
+            self.assertTrue(phone_update.holds(self.st, 'synthetic-new'))
+            phone_update.release(self.st, holder='synthetic-new')
+            self.assertFalse(phone_update.busy(self.st))
+
+    def test_numbered_instances_share_one_installation_lease(self):
+        from agentj import instance, phone_update
+        primary, secondary = State(instance.state_root(1)), State(instance.state_root(2))
+        with patch('agentj.instance.current', return_value=2) as number:
+            self.assertTrue(phone_update.reserve(secondary, holder='secondary'))
+            number.return_value = 1
+            self.assertTrue(phone_update.busy(primary))
+            self.assertFalse(phone_update.reserve(primary, holder='primary'))
+            phone_update.release(primary, holder='primary')
+            self.assertTrue(phone_update.holds(primary, 'secondary'))
+            number.return_value = 2
+            phone_update.release(secondary, holder='secondary')
+            number.return_value = 1
+            self.assertTrue(phone_update.reserve(primary, holder='primary'))
+
+    def test_only_lowest_present_instance_schedules_when_primary_is_absent(self):
+        with patch.object(au, '_primary_present', return_value=False), \
+                patch('agentj.instance.exists', side_effect=lambda n: n in (2, 3)), \
+                patch('agentj.instance.current', return_value=2) as current:
+            self.assertTrue(au.schedules_installs(self.st))
+            current.return_value = 3
+            self.assertFalse(au.schedules_installs(self.st))
+
+    def test_install_budget_is_bound_to_the_target_and_local_date(self):
+        self.assertTrue(self.due())
+        request = au.read(self.st)['schedule']['id']
+        with patch('time.time', return_value=self.now):
+            self.assertTrue(au._start_scheduled_install(self.st, request, '99.0.0'))
+            self.assertFalse(au._start_scheduled_install(self.st, request, '99.0.0'))
+            self.assertFalse(au._start_scheduled_install(self.st, 'expired', '99.0.1'))
+            self.assertTrue(au._start_scheduled_install(self.st, request, '99.0.1'))
+        with patch('time.time', return_value=self.now+86400):
+            self.assertTrue(au._start_scheduled_install(self.st, request, '99.0.0'))
+
 
 if __name__=='__main__':unittest.main()
 

@@ -738,9 +738,17 @@ def check_agent_cli(st: State, svc: dict) -> dict:
         for f in ark.facts():
             s += (f" · 火山方舟 {f['provider']}: key {f['key_env'] or '—'} " +
                   ("已存 / set" if f["key_set"] else "未存 / not set (agentj provider ark → key card)"))
-    if k == "opencode" and not harness.opencode_v2(ver):           # #459: always the newest 2.x
+    old_wsl_opencode = False
+    if k == "opencode":
         from . import opencode_install
-        s += " · " + opencode_install.upgrade_text(ver, "zh") + " / " + opencode_install.upgrade_text(ver, "en")
+        major = opencode_install.major(ver)
+        if major is not None and major < opencode_install.MIN_MAJOR:
+            old_wsl_opencode = service.platform() == "linux" and _is_wsl()
+            s += " · " + opencode_install.upgrade_text(ver, "zh", wsl=old_wsl_opencode)
+            s += " / " + opencode_install.upgrade_text(ver, "en", wsl=old_wsl_opencode)
+        elif major is None and service.platform() == "linux" and _is_wsl():
+            return _c("agent_cli", WARN, s + " · WSL 内的 OpenCode 版本未识别 / Unrecognized OpenCode version in WSL",
+                      "在运行 Agent J 的 WSL 发行版中检查 `opencode --version` / Check `opencode --version` in Agent J's WSL distribution")
     if k == 'opencode' and harness.opencode_v2(ver):
         s += ' · v2 (/api)'                         # P60: supported (agent_opencode2); the live check below asks the server
     if k == "opencode" and c:
@@ -812,7 +820,7 @@ def check_agent_cli(st: State, svc: dict) -> dict:
                 "`agentj service install`")
         return _c("agent_cli", WARN, s + " — 只在这个终端的环境变量里，后台服务可能登录不了 / only an environment variable "
                   "in this shell: the background service may not be able to log in", hint)
-    return _c("agent_cli", OK, s)
+    return _c("agent_cli", WARN if old_wsl_opencode else OK, s)
 
 
 def codex_allow_rules() -> int:

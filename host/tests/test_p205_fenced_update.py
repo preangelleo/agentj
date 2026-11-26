@@ -207,6 +207,19 @@ class FencedWithHost(_Apply):
         host.assert_called_once_with(self.view, 'phone_offer', 10, version=NEW)
         self.assertEqual((res['reason'], res['exit'], run.calls), ('upgrade_card_ready', 10, []))
 
+    async def test_fenced_offer_failure_names_next_phone_step_without_installing(self):
+        for reply, state in ((None, 'no_host'), ({'ok': False, 'why': 'other_card_pending'}, 'other_card_pending'),
+                             ({'ok': False, 'why': 'owner_phone_required'}, 'owner_phone_required'),
+                             ({'ok': False, 'why': 'untrusted text'}, 'unavailable')):
+            with self.subTest(state=state), patch.object(update, 'writable', return_value=False), \
+                    patch.object(elevate, 'client_request', return_value=reply):
+                run = Runner()
+                res = await self.apply(run)
+                self.assertEqual((res['reason'], res['offer_state'], run.calls), ('fenced_read_only', state, []))
+                block = update.result_block(res)
+                self.assertIn('/update', block)
+                self.assertNotIn('untrusted text', block)
+
     async def test_success_host_records_and_checks(self):
         await self.start_host()
         run = Runner(doctor_rows=fenced_rows())

@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import json
 import pathlib
+import secrets
 import time
 
 from . import diskq
@@ -139,3 +141,120 @@ async def replay(host, session) -> int:
                   host.st.log("elev_delivery", id=rid, kind="secret", result="replayed")
               count += 1
     return count
+
+
+# A rendered-frame observation stays within the original in-memory approval authority.
+WAIT = 10
+MAX_TARGETS = 64
+
+
+@dataclass
+class Probe:
+    ask: object
+    session: object
+    pair_revision: str
+    review_revision: int
+    review_digest: str
+    deadline: float
+    nonce: str
+    phase: str = ''
+
+
+def probes(host):
+    return host.__dict__.setdefault('_approval_delivery_probes', {})
+
+
+def _pair_revision(host, session):
+    record = host.st.devices().get(session.device) or {}
+    if session.sign_pub and host.st.sign_key(session.device) == session.sign_pub:
+        return record.get('pair_revision')
+    return None
+
+
+def _card_live(host, probe):
+    ask, session = probe.ask, probe.session
+    return (time.monotonic() < probe.deadline and host.asks.get(ask.rid) is ask
+            and not ask.fut.done() and ask.review_state == 'pending'
+            and ask.review_revision == probe.review_revision and ask.envelope_digest == probe.review_digest
+            and (not ask.only or session.device == ask.only)
+            and _pair_revision(host, session) == probe.pair_revision
+            and ask.delivery_subject_live())
+
+
+def _live(host, probe):
+    return _card_live(host, probe) and host._paired_live(probe.session)
+
+
+def ready_to_write(host, session, message):
+    probe = probes(host).get((message['id'], session.cid))
+    return (probe is not None and probe.session is session and message['delivery']['n'] == probe.nonce
+            and _live(host, probe))
+
+
+def receive(host, session, message):
+    if set(message) != {'t', 'kind', 'id', 'n', 'phase'}:
+        return
+    rid, nonce, phase = message['id'], message['n'], message['phase']
+    if not isinstance(rid, str) or not isinstance(nonce, str):
+        return
+    probe = probes(host).get((rid, session.cid))
+    if (probe is None or probe.session is not session or probe.nonce != nonce or not _live(host, probe)
+            or (probe.phase, phase) not in (('', 'received'), ('received', 'visible'))
+            or (phase == 'visible' and not session.fg)):
+        return
+    probe.phase = phase
+    host.st.log('approval_delivery', id=rid, device=session.device, phase=phase)
+
+
+async def _write_observed(host, probe, phase):
+    session = probe.session
+    message = host._ask_msg(probe.ask, session)
+    ttl = min(message['ttl'], int(probe.deadline - time.monotonic()))
+    if ttl > 0 and await host.send_app(session, {**message, 'delivery': {'n': probe.nonce, 'ttl': ttl}}):
+        host.st.log('approval_delivery', id=probe.ask.rid, device=session.device, phase=phase)
+
+
+async def _follow_up(host, targets, remind):
+    try:
+        await asyncio.sleep(WAIT)
+        if any(probe.phase == 'visible' and _card_live(host, probe) for probe in targets):
+            return
+        for probe in targets:
+            if _live(host, probe):
+                await _write_observed(host, probe, 'frame_rewritten')
+        if remind:
+            await asyncio.sleep(WAIT)
+
+            def pending():
+                live = [probe for probe in targets if _card_live(host, probe)]
+                return bool(live) and all(probe.phase != 'visible' for probe in live)
+
+            if pending():
+                from . import card_reminder
+                await card_reminder.deliver(host, targets[0].ask.rid, pending)
+    finally:
+        for probe in targets:
+            probes(host).pop((probe.ask.rid, probe.session.cid), None)
+
+
+async def deliver_observed(host, ask, remind):
+    targets = []
+    try:
+        for session in list(host.sessions.values()):
+            if (session.state != 'ready' or not host.st.is_allowed(session.pub)
+                    or (ask.only and session.device != ask.only)):
+                continue
+            # Never replace the existing compatibility path for clients without observation support.
+            negotiated = getattr(session, 'ask_receipt', False) and host._paired_live(session)
+            revision = _pair_revision(host, session) if negotiated else None
+            if (not revision or len(probes(host)) >= MAX_TARGETS or ask.deadline - time.monotonic() < 1):
+                await host.send_app(session, host._ask_msg(ask, session))
+                continue
+            probe = Probe(ask, session, revision, ask.review_revision, ask.envelope_digest,
+                          min(time.monotonic() + 60, ask.deadline), secrets.token_hex(16))
+            probes(host)[(ask.rid, session.cid)] = probe
+            targets.append(probe)
+            await _write_observed(host, probe, 'frame_written')
+    finally:
+        if targets:
+            host._bg(_follow_up(host, targets, remind), 'approval_delivery')

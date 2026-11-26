@@ -5,7 +5,7 @@
 - C3 order: local checks → update.check() newer with latest == target (else refused, nothing installed, the code not used)
   → signed upgrade-auth → only on 200 the same install commands as interactive apply, pinned, stdin closed (no y/N, no
   terminal) → the version verified → marker → service re-install. Exit codes and the UPGRADE_RESULT block; the code is
-  never logged or stored (only its SHA-256, for a resumable rerun on this host); read-only (fence) refused plainly.
+  never logged or stored (only its SHA-256, for a resumable rerun on this host); a read-only installation gives the official repair guide.
 - C2 cloud call against the fake control plane (strict inner keys); C3 CLI without a terminal (refusals only: a real install
   is never reached here); serve's one phone line after the restart, in the owner's language, once.
 - A1: `appearance.language` is the one value; language.json records when it changed locally; the report carries it; the
@@ -34,7 +34,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 HOST = HERE.parent
 sys.path.insert(0, str(HOST))
 sys.path.insert(0, str(HERE))
-from agentj import __version__, cloud, main_identity, preferences, reporter, serve, update  # noqa: E402
+from agentj import __version__, cloud, main_identity, preferences, reporter, serve, update, upgrade_diag  # noqa: E402
 from agentj.state import State  # noqa: E402
 from fakecp import FakeCP  # noqa: E402
 
@@ -169,7 +169,7 @@ class AuthorizedApply(_Env):
             if not os.access(self.prefix, os.W_OK):           # (root ignores modes)
                 res, calls, auths = self._run()
                 self.assertEqual((res["result"], res["reason"], res["exit"], calls, auths), ("refused", "read_only", 2, [], []))
-                self.assertIn("fence", update.result_block(res))
+                self.assertIn("repair_guide: " + upgrade_diag.UPGRADE_REPAIR_GUIDE, update.result_block(res))
         finally:
             os.chmod(self.prefix, 0o700)
 

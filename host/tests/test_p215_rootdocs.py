@@ -99,6 +99,20 @@ class Seed(unittest.TestCase):
                     where = text if w.startswith("## ") else blk[2]               # headings the Agent appends to stay outside
                     self.assertIn(w, where, (lang, name, w))
 
+    def test_memory_uses_the_host_approval_tiers(self):
+        tiers = {
+            "zh": ("已授权的只读和低风险操作直接做", "可逆操作用手机普通按钮", "配对设备做指纹级验证"),
+            "en": ("authorized read-only or\n  low-risk work directly", "ordinary phone buttons for reversible actions",
+                   "user verification on a paired device"),
+        }
+        for lang, phrases in tiers.items():
+            root = self.seed(lang)
+            memory = (root / "documentation/MEMORY.md").read_text()
+            for phrase in phrases:
+                self.assertIn(phrase, memory)
+            self.assertNotIn("逐项请示", memory)
+            self.assertNotIn("ask for each step", memory)
+
     def test_tables_and_sections_the_agent_appends_to_stay_last(self):
         for lang, head in (("zh", "## 放权规则"), ("en", "## Delegation rules")):
             root = self.seed(lang)

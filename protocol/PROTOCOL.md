@@ -797,6 +797,49 @@ a revoke in the middle stops the message there (P33-X07).
 - **Withdraw**: the steer holds the send's lock (as `deliver` does), so `say_cancel` answers `cancelled` only when the steer
   did not go out and `already_delivered` after it did.
 
+### 10.2b `queue_drop` — the owner removes waiting messages from the queue (0.30.78, 0378)
+| direction | message | meaning |
+|---|---|---|
+| device → host | `{"t":"queue_drop","turns":[<turn id>,…≤ 64][,"r"]}` · `{"t":"queue_drop","all":true[,"r"]}` | only to a host announcing `ready.caps` `"queuedrop1"` (the phone hides both removal controls without it); p33, a paired (`ready`, allowlisted, phone-provenance) session only; unsigned like `say_cancel` (it only withdraws). `turns` = the pages to remove; `all` = every page the queue lists. |
+| host → device (the asking session) | `{"t":"queue_dropped","turns":[<dropped ids>],"skipped":[<ids not droppable>][,"r"]}` | `r` is echoed when the request carried a valid one. With `all`, `skipped` is `[]`. Every remote learns the change through the ordinary history push (§10.5 `hist_turn`). |
+- **Droppable** = a page the phone's queue lists — `src.k` `phone` / `host` / `wechat` / `telegram` / `email`, no `via`, and
+  (when the page carries them) `source_role:"owner"` with `source_kind` `phone` / `terminal` / `wechat` / `telegram` /
+  `email` (the web's `ownerInput`, exactly) — that still waits and of which nothing runs natively: `card.queued` with
+  `end:"open"` whose Send has not been handed to the harness. It is cancelled under the Send's own lock exactly as
+  `say_cancel` (its device also gets `say_state` `cancelled` `why:"dropped"` — not a withdraw: the composer is not
+  refilled; the stop switch keeps `why:"stopped"`; its attachments are staged again). Result on the page (persisted like
+  any `hist_update`, so it survives a host restart): `end:"stopped"`, the card without `queued` / `held` / `stuck` /
+  `waited_s`, plus `card.dropped:true`.
+- **A held page** (`card.held:"pending"`): its words were already written to the shared Claude Code, which has not taken
+  them. It leaves the queue (listed under `turns`) but is never called dropped or undelivered: `end:"stopped"`,
+  `card.unconfirmed:true` (no `held` / `queued` / `stuck`), the line 「已从排队中移除。这条消息之前已经交给主会话，可能仍会被执行；要确保丢弃，请到
+  设置 → 紧急修复 →「重启 Agent」。」, host.log `shared_held_unconfirmed {turn}`. Only an exact native receipt can establish that a particular send ran.
+  `/stop`, a host restart and a rebind to another process also remove still-held pages with this status.
+- **A waiting command page** (`src.k:"cmd"`): only when named in `turns`, never by `all`, and under exactly `cmd_cancel`'s
+  rule (the asking device's own `/clear` / `/compact`, not yet typed); the page then also carries `card.dropped:true`.
+- **Never**: the turn that is running (`all` skips it; named → `skipped`), a page already delivered, a typed or started
+  command, any host-made send — heartbeat, quota / compact resume, background-done, auto-notify, hook, bot hand-over,
+  official notice (`src.k:"agent"` or a `via`; a Send carrying one of those markers is refused even when named) — and a
+  message sealed for the upgrade hand-over (§14) while that hand-over is pending. host.log `queue_drop {count, by, all?}`.
+- **After 「重启 Agent」** (0378): only when the restart verifiably ended the old native process (Agent J's own child reaped,
+  or the registered process gone) may a still-held message be queued again — in order, first, for the reopened process
+  when it resumed the same conversation (`shared_held_redelivered {turn}`: `end:"open"`, `card.queued`) — or, in a new
+  conversation / with its words no longer in memory, be said not delivered: `end:"failed"`, `card.undelivered:true` (the
+  phone's own localized sentence keys on it), the 「这条消息没有送达主会话…」 line (`shared_held_undelivered {turn}`). If the old
+  process may still be alive the page is `unconfirmed` as above. A page is never left `held:"pending"` for good.
+- **Waiting commands at a restart** (0378): 「重启 Agent」 / `agentj agent restart` end every `/clear` / `/compact` of the old
+  adapter that was still waiting and not typed — `end:"stopped"`, card cleared, 「主会话已重启，这条 /<name> 没有执行；需要的话请再发一次。」,
+  host.log `shared_control_dropped {cmd, why:"restart"}`; a control is never carried over to the reopened process.
+- **A control the native does not take** (0378): `shared_control_unaccepted {cmd, stage?, registry, waiting_for, menu}` and an
+  error card naming 设置 → 紧急修复 →「重启 Agent」 — the typed control not started within 30 s (no `stage`), the `/compact`
+  handoff prompt not taken within 30 s (`stage:"handoff"`; a handoff turn that did start keeps its 300 s), or the gate
+  closed for 45 s by a registry `waiting` that no hook, menu or card explains (`stage:"gate"`; nothing was typed).
+- **`card.stuck`** on a queued / held owner page (existing field, §33): also set when the shared Claude Code stays at a native
+  dialog the host has no card for (registry `waiting` ≥ 45 s) or took a message into its queue and has not dequeued it
+  30 s later (`shared_native_stuck {why: dialog|no_dequeue, registry, waiting_for}`, once per episode; `waiting_for` is one
+  of `dialog open` · `input needed` · `sandbox request` · `goal proposal` · `other`), for a dialog together with one
+  `sys` notice carrying `card.recovery:"restart_session"` (the existing 「重启 Agent」 button).
+
 ### 10.3 Blobs — files, photos and voice, end to end
 | direction | message |
 |---|---|
@@ -932,6 +975,10 @@ ignore it). `reply_unknown` if any of them is gone.
 | host → device | `{"t":"question","id":"<32 hex>","qs":[{"q":"<≤ 1 000>","h":"<≤ 64>","m":bool,"o":[{"l":"<≤ 200>","d":"<≤ 500>"}]}],"ttl":s[,"text_max":2000,"task":"<≤ 80>"]}` — 1–8 questions, 1–16 options each, labels unique per question; `m` = several may be picked |
 | host → device | `{"t":"question_done","id","result":"answered"\|"cancelled"\|"timeout"\|"gone"\|"stopped"}` |
 | device → host | `{"t":"q_answer","id","pick":[[i,…] | "<free answer>",…],"sig"}` (free text only on hosts advertising `text_max`; numeric picks are 1-based option numbers per question, ascending; exactly one when `m` is false, ≥ 1 when true) · `{"t":"q_answer","id","cancel":true,"sig"}` (取消问题: "I will type it instead") |
+When both peers advertise `card_receipt1`, the original live message for an ordinary harness question may include `delivery:{"n":"<32 lowercase hex>","ttl":s}`, with 1–60 seconds capped by the card deadline. The phone sends `{"t":"card_receipt","kind":"question","id","n","phase":"received"}` once it accepts the full card. It may then send phase `visible` when the active foreground chat has painted the exact question and its first option is visible and can be hit-tested. Receipts stay on the original encrypted session and require the current paired identity. The host accepts each phase once before expiry. The existing `q_answer` signature remains the sole answer path, including cancellation. Historic snapshots and reconnect replay carry the original question fields.
+
+When both peers also advertise `card_ask_receipt1`, the original live `ask` for an ordinary or passkey approval using the v2 envelope may carry the same `delivery` fields. Use `kind:"ask"` in the receipt. The display receipt requires that the exact pending envelope revision was verified and its live controls are visible in the foreground. The Host can reoffer the same id and nonce once to that connection, with a reduced remaining lifetime. A transport or display receipt carries no decision and does not replace the existing approval signature or passkey requirement.
+
 - **Signature** (`agentjarvis-question-v1`, like §8's approvals): `Ed25519(device sk, UTF-8 "agentjarvis-question-v1\n" + channel
   + "\n" + device_id + "\n" + id + "\n" + ("answer"|"cancel") + "\n" + hex(SHA-256(Q)) + "\n" + P)`, where `P` = the picks as
   `1,3;2` (questions separated by `;`, numbers by `,`) or `-` for cancel, and `Q` = the lines, joined by `\n`, of
@@ -1150,6 +1197,7 @@ nothing. Disconnect ends the pending UI request; installation continues on the h
 | `mem_rm` `mem_undo` `estop` `resume` `task_set` (§8) | **yes** (`agentjarvis-control-v1`) | they change the customer's files or the stop switch |
 | `say`, `msg`, `blob_*`, `asr` blobs | no | chat input: the Noise session proves the approved device; nothing runs until the Agent decides, and every tool call it makes still needs §8's approval |
 | `say_cancel`, `grant_off` | no | they only withdraw / narrow, and only for that device's own items |
+| `queue_drop` (§10.2b) | no | it only withdraws the owner's own waiting messages (any paired remote of this host: the queue is the owner's, shown on all of them); never the running turn, nothing is delivered or run by it |
 | `hist_get`, `hist_find` (§28), `menu_get`, `mem_list`, `act_list`, `task_list`, `systask_list` | no | reads, answered to the asking session only |
 | `model_set`, `slash` | no | the human's own everyday settings, no permission change, reversible (`/clear` confirmed on the phone and undoable) |
 | `pref_set` (§10.16) | no | four everyday display / voice settings only (language, theme, hands-free, read replies aloud); nothing that lowers safety |
@@ -4589,6 +4637,18 @@ inconclusive check), or `browser` (tab/browser unavailable). The explanatory cha
 line uses only the page host name, never its path or query. Older clients may
 ignore `why` and keep the generic waiting message. Template `landing_url` patterns
 can trigger a check; they never establish a signed-in result.
+
+On a WeChat Channels `login_qr`, `shown_ack:true` requests a display receipt.
+After the image decodes and is visible in the active remote page, that page
+sends `{t:"login_qr_shown", id, n}` on the same encrypted connection. The host
+accepts one receipt for the current request, nonce, chat epoch and unrevoked
+pairing generation after all image frames are written. Older pages can omit
+the receipt. The login command reports `display:"unconfirmed"` until receipt.
+The receipt does not authorize another request or prove a successful scan.
+`{t:"login_qr_state", id, state:"checking"}` means the host has started its
+own login check. It goes to the original remote and carries no page data.
+After reconnect, a new verified paired main conversation turn can request a
+fresh browser code. The previous session's code is never retransmitted.
 
 ### AuthRescue card presentation marker (#0269 C-2)
 
